@@ -83,7 +83,6 @@
 #include <Storages/StorageValues.h>
 #include <Storages/StorageView.h>
 #include <Storages/ReadInOrderOptimizer.h>
-#include <Storages/Statistics/ConditionSelectivityEstimator.h>
 
 #include <Columns/Collator.h>
 #include <Columns/ColumnAggregateFunction.h>
@@ -196,7 +195,6 @@ namespace Setting
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode transfer_overflow_mode;
     extern const SettingsString implicit_table_at_top_level;
-    extern const SettingsBool enable_producing_buckets_out_of_order_in_aggregation;
 }
 
 namespace ServerSetting
@@ -576,10 +574,14 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     if (storage)
     {
+        if (storage->updateExternalDynamicMetadataIfExists(context))
+        {
+            metadata_snapshot = storage->getInMemoryMetadataPtr();
+        }
+
         table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
         table_id = storage->getStorageID();
 
-        storage->updateExternalDynamicMetadataIfExists(context);
         if (!metadata_snapshot)
             metadata_snapshot = storage->getInMemoryMetadataPtr();
 
@@ -805,7 +807,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
                 MergeTreeWhereOptimizer where_optimizer{
                     std::move(column_compressed_sizes),
-                    storage_snapshot,
+                    metadata_snapshot,
                     storage->getConditionSelectivityEstimatorByPredicate(storage_snapshot, nullptr, context),
                     queried_columns,
                     supported_prewhere_columns,
@@ -891,7 +893,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             /// Fix source_header for filter actions.
             if (row_policy_filter && !row_policy_filter->empty())
             {
-                row_policy_info = generateFilterActions(
+                filter_info = generateFilterActions(
                     table_id, row_policy_filter->expression, context, storage, storage_snapshot, metadata_snapshot, required_columns,
                     prepared_sets);
 
@@ -1060,6 +1062,8 @@ bool InterpreterSelectQuery::adjustParallelReplicasAfterAnalysis()
         max_rows = max_rows ? std::min(max_rows, settings[Setting::max_rows_to_read].value) : settings[Setting::max_rows_to_read];
     query_info_copy.trivial_limit = max_rows;
 
+    /// Apply filters to prewhere and add them to the query_info so we can filter out parts efficiently during row estimation
+    applyFiltersToPrewhereInAnalysis(analysis_copy);
     if (analysis_copy.prewhere_info)
     {
         query_info_copy.prewhere_info = analysis_copy.prewhere_info;
@@ -1075,13 +1079,13 @@ bool InterpreterSelectQuery::adjustParallelReplicasAfterAnalysis()
                 = query_info_copy.prewhere_info->prewhere_actions.findInOutputs(query_info_copy.prewhere_info->prewhere_column_name);
             added_filter_nodes.nodes.push_back(&node);
         }
-    }
 
-    if (query_info_copy.row_level_filter)
-    {
-        const auto & node
-            = query_info_copy.row_level_filter->actions.findInOutputs(query_info_copy.row_level_filter->column_name);
-        added_filter_nodes.nodes.push_back(&node);
+        if (query_info_copy.prewhere_info->row_level_filter)
+        {
+            const auto & node
+                = query_info_copy.prewhere_info->row_level_filter->findInOutputs(query_info_copy.prewhere_info->row_level_column_name);
+            added_filter_nodes.nodes.push_back(&node);
+        }
     }
 
     if (auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes))
@@ -1184,7 +1188,7 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
         && options.to_stage > QueryProcessingStage::WithMergeableState;
 
     analysis_result = ExpressionAnalysisResult(
-        *query_analyzer, metadata_snapshot, first_stage, second_stage, options.only_analyze, row_policy_info, additional_filter_info, *source_header);
+        *query_analyzer, metadata_snapshot, first_stage, second_stage, options.only_analyze, filter_info, additional_filter_info, *source_header);
 
     if (options.to_stage == QueryProcessingStage::Enum::FetchColumns)
     {
@@ -1570,21 +1574,6 @@ static bool hasWithTotalsInAnySubqueryInFromClause(const ASTSelectQuery & query)
     return false;
 }
 
-template <size_t size>
-ALWAYS_INLINE void executeExpression(QueryPlan & query_plan, const ActionsAndProjectInputsFlagPtr & expression, const char (&description)[size])
-{
-    if (!expression)
-        return;
-
-    auto dag = expression->dag.clone();
-    if (expression->project_input)
-        dag.appendInputsForUnusedColumns(*query_plan.getCurrentHeader());
-
-    auto expression_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(dag));
-
-    expression_step->setStepDescription(description);
-    query_plan.addStep(std::move(expression_step));
-}
 
 void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<Pipe> prepared_pipe)
 {
@@ -1642,13 +1631,13 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
         auto read_nothing = std::make_unique<ReadNothingStep>(source_header);
         query_plan.addStep(std::move(read_nothing));
 
-        if (expressions.row_policy_info)
+        if (expressions.filter_info)
         {
             auto row_level_security_step = std::make_unique<FilterStep>(
                 query_plan.getCurrentHeader(),
-                expressions.row_policy_info->actions.clone(),
-                expressions.row_policy_info->column_name,
-                expressions.row_policy_info->do_remove_column);
+                expressions.filter_info->actions.clone(),
+                expressions.filter_info->column_name,
+                expressions.filter_info->do_remove_column);
 
             row_level_security_step->setStepDescription("Row-level security filter");
             query_plan.addStep(std::move(row_level_security_step));
@@ -1656,6 +1645,18 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
 
         if (expressions.prewhere_info)
         {
+            if (expressions.prewhere_info->row_level_filter)
+            {
+                auto row_level_filter_step = std::make_unique<FilterStep>(
+                    query_plan.getCurrentHeader(),
+                    expressions.prewhere_info->row_level_filter->clone(),
+                    expressions.prewhere_info->row_level_column_name,
+                    true);
+
+                row_level_filter_step->setStepDescription("Row-level security filter (PREWHERE)");
+                query_plan.addStep(std::move(row_level_filter_step));
+            }
+
             auto prewhere_step = std::make_unique<FilterStep>(
                 query_plan.getCurrentHeader(),
                 expressions.prewhere_info->prewhere_actions.clone(),
@@ -1757,19 +1758,19 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
         {
             // If there is a storage that supports prewhere, this will always be nullptr
             // Thus, we don't actually need to check if projection is active.
-            if (expressions.row_policy_info && !(!input_pipe && storage && storage->supportsPrewhere()))
+            if (expressions.filter_info)
             {
                 auto row_level_security_step = std::make_unique<FilterStep>(
                     query_plan.getCurrentHeader(),
-                    expressions.row_policy_info->actions.clone(),
-                    expressions.row_policy_info->column_name,
-                    expressions.row_policy_info->do_remove_column);
+                    expressions.filter_info->actions.clone(),
+                    expressions.filter_info->column_name,
+                    expressions.filter_info->do_remove_column);
 
                 row_level_security_step->setStepDescription("Row-level security filter");
                 query_plan.addStep(std::move(row_level_security_step));
             }
 
-            const auto add_filter_step = [&](auto & new_filter_info, const auto & description)
+            const auto add_filter_step = [&](auto & new_filter_info, const std::string & description)
             {
                 auto filter_step = std::make_unique<FilterStep>(
                     query_plan.getCurrentHeader(),
@@ -1840,13 +1841,13 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                             plan.getCurrentHeader(),
                             std::move(order_descr),
                             0 /* LIMIT */, sort_settings);
-                        sorting_step->setStepDescription(fmt::format("Sort {} before JOIN", join_pos), options.max_step_description_length);
+                        sorting_step->setStepDescription(fmt::format("Sort {} before JOIN", join_pos));
                         plan.addStep(std::move(sorting_step));
                     };
 
                     auto crosswise_connection = CreateSetAndFilterOnTheFlyStep::createCrossConnection();
                     auto add_create_set
-                        = [&settings, crosswise_connection, max_len = options.max_step_description_length](QueryPlan & plan, const Names & key_names, JoinTableSide join_pos)
+                        = [&settings, crosswise_connection](QueryPlan & plan, const Names & key_names, JoinTableSide join_pos)
                     {
                         auto creating_set_step = std::make_unique<CreateSetAndFilterOnTheFlyStep>(
                             plan.getCurrentHeader(),
@@ -1854,7 +1855,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                             settings[Setting::max_rows_in_set_to_optimize_join],
                             crosswise_connection,
                             join_pos);
-                        creating_set_step->setStepDescription(fmt::format("Create set and filter {} joined stream", join_pos), max_len);
+                        creating_set_step->setStepDescription(fmt::format("Create set and filter {} joined stream", join_pos));
 
                         auto * step_raw_ptr = creating_set_step.get();
                         plan.addStep(std::move(creating_set_step));
@@ -1917,7 +1918,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         analysis_result.optimize_read_in_order,
                         /* use_new_analyzer_ = */ false);
 
-                    join_step->setStepDescription(fmt::format("JOIN {}", expressions.join->pipelineType()), options.max_step_description_length);
+                    join_step->setStepDescription(fmt::format("JOIN {}", expressions.join->pipelineType()));
                     std::vector<QueryPlanPtr> plans;
                     plans.emplace_back(std::make_unique<QueryPlan>(std::move(query_plan)));
                     plans.emplace_back(std::move(joined_plan));
@@ -2203,21 +2204,21 @@ void InterpreterSelectQuery::addEmptySourceToQueryPlan(QueryPlan & query_plan, c
 {
     Pipe pipe(std::make_shared<NullSource>(std::make_shared<const Block>(source_header)));
 
-    if (query_info.row_level_filter)
-    {
-        auto row_level_actions = std::make_shared<ExpressionActions>(query_info.row_level_filter->actions.clone());
-        pipe.addSimpleTransform([&](const SharedHeader & header)
-        {
-            return std::make_shared<FilterTransform>(header,
-                row_level_actions,
-                query_info.row_level_filter->column_name,
-                query_info.row_level_filter->do_remove_column);
-        });
-    }
-
     if (query_info.prewhere_info)
     {
         auto & prewhere_info = *query_info.prewhere_info;
+
+        if (prewhere_info.row_level_filter)
+        {
+            auto row_level_actions = std::make_shared<ExpressionActions>(prewhere_info.row_level_filter->clone());
+            pipe.addSimpleTransform([&](const SharedHeader & header)
+            {
+                return std::make_shared<FilterTransform>(header,
+                    row_level_actions,
+                    prewhere_info.row_level_column_name, true);
+            });
+        }
+
         auto filter_actions = std::make_shared<ExpressionActions>(prewhere_info.prewhere_actions.clone());
         pipe.addSimpleTransform([&](const SharedHeader & header)
         {
@@ -2256,9 +2257,38 @@ bool InterpreterSelectQuery::shouldMoveToPrewhere() const
     return settings[Setting::optimize_move_to_prewhere] && (!query.final() || settings[Setting::optimize_move_to_prewhere_if_final]);
 }
 
+/// Note that this is const and accepts the analysis ref to be able to use it to do analysis for parallel replicas
+/// without affecting the final analysis multiple times
+void InterpreterSelectQuery::applyFiltersToPrewhereInAnalysis(ExpressionAnalysisResult & analysis) const
+{
+    if (!analysis.filter_info)
+        return;
+
+    if (!analysis.prewhere_info)
+    {
+        const bool does_storage_support_prewhere = !input_pipe && storage && storage->supportsPrewhere();
+        if (does_storage_support_prewhere && shouldMoveToPrewhere())
+        {
+            /// Execute row level filter in prewhere as a part of "move to prewhere" optimization.
+            analysis.prewhere_info = std::make_shared<PrewhereInfo>(std::move(analysis.filter_info->actions), analysis.filter_info->column_name);
+            analysis.prewhere_info->remove_prewhere_column = std::move(analysis.filter_info->do_remove_column);
+            analysis.prewhere_info->need_filter = true;
+            analysis.filter_info = nullptr;
+        }
+    }
+    else
+    {
+        /// Add row level security actions to prewhere.
+        analysis.prewhere_info->row_level_filter = std::move(analysis.filter_info->actions);
+        analysis.prewhere_info->row_level_column_name = std::move(analysis.filter_info->column_name);
+        analysis.filter_info = nullptr;
+    }
+}
+
+
 void InterpreterSelectQuery::addPrewhereAliasActions()
 {
-    auto & row_level_filter = analysis_result.row_policy_info;
+    applyFiltersToPrewhereInAnalysis(analysis_result);
     auto & prewhere_info = analysis_result.prewhere_info;
     auto & columns_to_remove_after_prewhere = analysis_result.columns_to_remove_after_prewhere;
 
@@ -2285,12 +2315,12 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
             /// Get some columns directly from PREWHERE expression actions
             auto prewhere_required_columns = prewhere_info->prewhere_actions.getRequiredColumns().getNames();
             columns.insert(prewhere_required_columns.begin(), prewhere_required_columns.end());
-        }
 
-        if (row_level_filter)
-        {
-            auto row_level_required_columns = row_level_filter->actions.getRequiredColumns().getNames();
-            columns.insert(row_level_required_columns.begin(), row_level_required_columns.end());
+            if (prewhere_info->row_level_filter)
+            {
+                auto row_level_required_columns = prewhere_info->row_level_filter->getRequiredColumns().getNames();
+                columns.insert(row_level_required_columns.begin(), row_level_required_columns.end());
+            }
         }
 
         return columns;
@@ -2448,15 +2478,13 @@ std::optional<UInt64> InterpreterSelectQuery::getTrivialCount(UInt64 allow_exper
 
     // It's possible to optimize count() given only partition predicates
     ActionsDAG::NodeRawConstPtrs filter_nodes;
-    if (analysis_result.hasRowPolicyFilter())
-    {
-        auto & row_level_filter = analysis_result.row_policy_info;
-        filter_nodes.push_back(&row_level_filter->actions.findInOutputs(row_level_filter->column_name));
-    }
     if (analysis_result.hasPrewhere())
     {
         auto & prewhere_info = analysis_result.prewhere_info;
         filter_nodes.push_back(&prewhere_info->prewhere_actions.findInOutputs(prewhere_info->prewhere_column_name));
+
+        if (prewhere_info->row_level_filter)
+            filter_nodes.push_back(&prewhere_info->row_level_filter->findInOutputs(prewhere_info->row_level_column_name));
     }
     if (analysis_result.hasWhere())
     {
@@ -2647,11 +2675,10 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         if (max_streams == 0)
             max_streams = 1;
 
-        if (analysis_result.row_policy_info && (!input_pipe && storage && storage->supportsPrewhere()))
-            query_info.row_level_filter = analysis_result.row_policy_info;
+        auto & prewhere_info = analysis_result.prewhere_info;
 
-        if (analysis_result.prewhere_info)
-            query_info.prewhere_info = analysis_result.prewhere_info;
+        if (prewhere_info)
+            query_info.prewhere_info = prewhere_info;
 
         bool optimize_read_in_order = analysis_result.optimize_read_in_order;
         bool optimize_aggregation_in_order = analysis_result.optimize_read_in_order && !query_analyzer->useGroupingSetKey();
@@ -2755,7 +2782,8 @@ static Aggregator::Params getAggregatorParams(
         context.getServerSettings()[ServerSetting::max_entries_for_hash_table_stats],
         settings[Setting::max_size_to_preallocate_for_aggregation]);
 
-    return Aggregator::Params{
+    return Aggregator::Params
+    {
         keys,
         aggregates,
         overflow_row,
@@ -2763,8 +2791,7 @@ static Aggregator::Params getAggregatorParams(
         settings[Setting::group_by_overflow_mode],
         group_by_two_level_threshold,
         group_by_two_level_threshold_bytes,
-        Aggregator::Params::getMaxBytesBeforeExternalGroupBy(
-            settings[Setting::max_bytes_before_external_group_by], settings[Setting::max_bytes_ratio_before_external_group_by]),
+        Aggregator::Params::getMaxBytesBeforeExternalGroupBy(settings[Setting::max_bytes_before_external_group_by], settings[Setting::max_bytes_ratio_before_external_group_by]),
         settings[Setting::empty_result_for_aggregation_by_empty_set]
             || (settings[Setting::empty_result_for_aggregation_by_constant_keys_on_empty_set] && keys.empty()
                 && query_analyzer.hasConstAggregationKeys()),
@@ -2778,8 +2805,8 @@ static Aggregator::Params getAggregatorParams(
         /* only_merge */ false,
         settings[Setting::optimize_group_by_constant_keys],
         settings[Setting::min_hit_rate_to_use_consecutive_keys_optimization],
-        stats_collecting_params,
-        settings[Setting::enable_producing_buckets_out_of_order_in_aggregation]};
+        stats_collecting_params
+    };
 }
 
 void InterpreterSelectQuery::executeAggregation(
@@ -2945,6 +2972,21 @@ void InterpreterSelectQuery::executeRollupOrCube(QueryPlan & query_plan, Modific
     query_plan.addStep(std::move(step));
 }
 
+void InterpreterSelectQuery::executeExpression(QueryPlan & query_plan, const ActionsAndProjectInputsFlagPtr & expression, const std::string & description)
+{
+    if (!expression)
+        return;
+
+    auto dag = expression->dag.clone();
+    if (expression->project_input)
+        dag.appendInputsForUnusedColumns(*query_plan.getCurrentHeader());
+
+    auto expression_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(dag));
+
+    expression_step->setStepDescription(description);
+    query_plan.addStep(std::move(expression_step));
+}
+
 static bool windowDescriptionComparator(const WindowDescription * _left, const WindowDescription * _right)
 {
     const auto & left = _left->full_sort_description;
@@ -3028,7 +3070,7 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
                 window.partition_by,
                 0 /* LIMIT */,
                 sort_settings);
-            sorting_step->setStepDescription(fmt::format("Sorting for window '{}'", window.window_name), options.max_step_description_length);
+            sorting_step->setStepDescription("Sorting for window '" + window.window_name + "'");
             query_plan.addStep(std::move(sorting_step));
         }
 
@@ -3038,7 +3080,7 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
             = settings[Setting::query_plan_enable_multithreading_after_window_functions] && ((i + 1) == windows_sorted.size());
 
         auto window_step = std::make_unique<WindowStep>(query_plan.getCurrentHeader(), window, window.window_functions, streams_fan_out);
-        window_step->setStepDescription(fmt::format("Window step for window '{}'", window.window_name), options.max_step_description_length);
+        window_step->setStepDescription("Window step for window '" + window.window_name + "'");
 
         query_plan.addStep(std::move(window_step));
     }
@@ -3101,7 +3143,7 @@ void InterpreterSelectQuery::executeMergeSorted(QueryPlan & query_plan, const st
 
     auto merging_sorted = std::make_unique<SortingStep>(
         query_plan.getCurrentHeader(), std::move(sort_description), max_block_size, limit, exact_rows_before_limit);
-    merging_sorted->setStepDescription(fmt::format("Merge sorted streams {}", description), options.max_step_description_length);
+    merging_sorted->setStepDescription("Merge sorted streams " + description);
     query_plan.addStep(std::move(merging_sorted));
 }
 

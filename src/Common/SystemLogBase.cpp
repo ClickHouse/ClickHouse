@@ -2,7 +2,6 @@
 #include <Interpreters/CrashLog.h>
 #include <Interpreters/ErrorLog.h>
 #include <Interpreters/MetricLog.h>
-#include <Interpreters/AggregatedZooKeeperLog.h>
 #include <Interpreters/TransposedMetricLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/PartLog.h>
@@ -16,8 +15,6 @@
 #include <Interpreters/FilesystemCacheLog.h>
 #include <Interpreters/ObjectStorageQueueLog.h>
 #include <Interpreters/IcebergMetadataLog.h>
-#include <Interpreters/DeltaMetadataLog.h>
-#include <Common/MemoryTrackerDebugBlockerInThread.h>
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/DistributedCacheLog.h>
 #include <Interpreters/DistributedCacheServerLog.h>
@@ -33,6 +30,7 @@
 #include <Interpreters/DeadLetterQueue.h>
 #include <IO/S3/BlobStorageLogWriter.h>
 
+#include <Common/MemoryTrackerDebugBlockerInThread.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/SystemLogBase.h>
 #include <Common/ThreadPool.h>
@@ -204,8 +202,6 @@ void SystemLogQueue<LogElement>::confirm(SystemLogQueue<LogElement>::Index last_
 template <typename LogElement>
 typename SystemLogQueue<LogElement>::PopResult SystemLogQueue<LogElement>::pop()
 {
-    [[maybe_unused]] MemoryTrackerDebugBlockerInThread blocker;
-
     PopResult result;
     size_t prev_ignored_logs = 0;
 
@@ -314,6 +310,8 @@ void SystemLogBase<LogElement>::stopFlushThread()
 template <typename LogElement>
 void SystemLogBase<LogElement>::add(LogElement element)
 {
+    /// This allocation should not be take into account in the query scope (since it will be freed outside of it)
+    MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
     queue->push(std::move(element));
 }
 

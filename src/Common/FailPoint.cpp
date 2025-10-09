@@ -92,6 +92,7 @@ static struct InitFiu
     REGULAR(lazy_pipe_fds_fail_close) \
     PAUSEABLE(infinite_sleep) \
     PAUSEABLE(stop_moving_part_before_swap_with_active) \
+    REGULAR(slowdown_index_analysis) \
     REGULAR(replicated_merge_tree_all_replicas_stale) \
     REGULAR(zero_copy_lock_zk_fail_before_op) \
     REGULAR(zero_copy_lock_zk_fail_after_op) \
@@ -113,11 +114,10 @@ static struct InitFiu
     REGULAR(output_format_sleep_on_progress) \
     REGULAR(slowdown_parallel_replicas_local_plan_read) \
     ONCE(iceberg_writes_cleanup) \
-    ONCE(backup_add_empty_memory_table) \
-    REGULAR(refresh_task_delay_update_coordination_state_running) \
     REGULAR(sleep_in_logs_flush) \
     ONCE(smt_commit_exception_before_op) \
-    ONCE(disk_object_storage_fail_commit_metadata_transaction) \
+    ONCE(backup_add_empty_memory_table) \
+    REGULAR(refresh_task_delay_update_coordination_state_running)
 
 
 namespace FailPoints

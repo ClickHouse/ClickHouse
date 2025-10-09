@@ -358,37 +358,6 @@
 </footer>
 
 <script>
-    // Track all interval timers for cleanup
-    const activeTimers = {
-        intervals: [],
-        addInterval: function(timer) {
-            this.intervals.push(timer);
-            return timer;
-        },
-        clearAll: function() {
-            this.intervals.forEach(clearInterval);
-            this.intervals = [];
-        }
-    };
-
-    // Track event listeners for cleanup
-    const activeListeners = {
-        listeners: [],
-        add: function(element, type, listener) {
-            element.addEventListener(type, listener);
-            this.listeners.push({ element, type, listener });
-            return listener;
-        },
-        removeAll: function() {
-            this.listeners.forEach(({ element, type, listener }) => {
-                if (element && element.removeEventListener) {
-                    element.removeEventListener(type, listener);
-                }
-            });
-            this.listeners = [];
-        }
-    };
-
     function toggleTheme() {
         document.body.classList.toggle('night-theme');
         if (document.body.classList.contains('night-theme')) {
@@ -1035,18 +1004,14 @@
         canvas.style.display = "block";
         widget.appendChild(canvas);
         
-        // Move taskRects to outer scope so event handlers can access it
-        let taskRects = [];
-
         function resizeCanvas() {
             canvas.width = widget.clientWidth;
             canvas.height = totalHeight;
             drawTimeline();
         }
         resizeCanvas();
-        // Use our event tracker instead of direct attachment
-        activeListeners.add(window, "resize", resizeCanvas);
-
+        window.addEventListener("resize", resizeCanvas);
+        
         function getColorFromName(name) {
             let hash = 0;
             for (let i = 0; i < name.length; i++) {
@@ -1058,7 +1023,7 @@
 
         function drawTimeline() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            taskRects = []; // Reset the array instead of declaring a new one
+            let taskRects = [];
             const failedMarkers = [];
 
             const minStartTime = runtimeCache.json0.start_time;
@@ -1102,9 +1067,9 @@
                 ctx.font = "8px sans-serif";
                 ctx.fillText("❌", Math.max(x - 14, 0), y + 4);
             });
-        }
 
-        activeListeners.add(canvas, "mousemove", (event) => {
+            // Event listeners
+        canvas.addEventListener("mousemove", (event) => {
             const rect = canvas.getBoundingClientRect();
             const mouseY = event.clientY - rect.top;
 
@@ -1116,17 +1081,17 @@
                 }
             }
 
-            if (hoveredTask && statusWidget?.update) {
-                statusWidget.update(
-                    hoveredTask.name,
-                    hoveredTask.status,
-                    hoveredTask.start_time,
-                    hoveredTask.duration
-                );
+                if (hoveredTask && statusWidget?.update) {
+                    statusWidget.update(
+                        hoveredTask.name,
+                        hoveredTask.status,
+                        hoveredTask.start_time,
+                        hoveredTask.duration
+                    );
             }
         });
 
-        activeListeners.add(canvas, "mouseleave", () => {
+        canvas.addEventListener("mouseleave", () => {
             if (statusWidget?.update && originalTask) {
                 statusWidget.update(
                     originalTask.name,
@@ -1136,10 +1101,10 @@
                 );
             }
         });
+        }
 
         drawTimeline();
-
-        activeTimers.addInterval(setInterval(drawTimeline, 5000));
+        setInterval(drawTimeline, 5000);
     }
 
     function addStatusWidget(name, status, start_time, duration, container = null) {
@@ -1182,11 +1147,10 @@
                 const durationLine = document.createElement('div');
                 let seconds = Math.floor(Date.now() / 1000 - start_time);
                 durationLine.textContent = formatDuration(seconds, true);
-
-                activeTimers.addInterval(setInterval(() => {
+                setInterval(() => {
                     seconds++;
                     durationLine.textContent = formatDuration(seconds, true);
-                }, 1000));
+                }, 1000);
 
                 widget.appendChild(durationLine);
             } else {
@@ -1668,7 +1632,7 @@
         }
     }
 
-    async function fetchData(PR, REF, sha, nameParams, base_url) {
+    async function fetchData(PR, REF, sha, nameParams) {
         function normalizeTaskName(name) {
             return name.toLowerCase()
                 .replace(/[^a-z0-9]/g, '_')
@@ -1676,11 +1640,7 @@
                 .replace(/_+$/, '');
         }
 
-        // Use base_url from param if provided, else fallback to old logic
-        let baseUrl = base_url;
-        if (!baseUrl) {
-            baseUrl = window.location.origin + window.location.pathname.split('/').slice(0, -1).join('/');
-        }
+        const baseUrl = window.location.origin + window.location.pathname.split('/').slice(0, -1).join('/');
         let suffix = '';
 
         if (PR) {
@@ -1737,76 +1697,39 @@
     let openedInfoCnt = 0;
     let closedInfoCnt = 0;
     
-    async function renderResultsAuto(PR, REF, sha, nameParams, base_url) {
-        let autoRefreshTimer = null; // Store the main refresh interval timer
+    async function renderResultsAuto(PR, REF, sha, nameParams) {
 
         function clearPage() {
-            // First, clean up any existing timers and event listeners
-            activeTimers.clearAll();
-            activeListeners.removeAll();
-
-            // Then clear the DOM content
+            // Clear the main content areas
+            // document.getElementById('content').innerHTML = '';
             document.getElementById('result-container').innerHTML = '';
             document.getElementById('status-container').innerHTML = '';
         }
 
         async function checkForUpdatesAndRender(force = false) {
-            // Stop autoreload if info panels are open
-            if (openedInfoCnt - closedInfoCnt > 0) {
-                return;
-            }
-
-            // If not forced, only continue autoreload when status is "running" or "pending"
-            if (!force) {
-                let shouldContinue = false;
-
-                if (nameParams?.length === 1) {
-                    // For single-level results, check json0 status
-                    shouldContinue = ["running", "pending"].includes(runtimeCache?.json0?.status);
-                } else if (nameParams?.length === 2) {
-                    // For two-level results, check json1 status (or json0 if json1 is null)
-                    if (runtimeCache?.json1) {
-                        shouldContinue = ["running", "pending"].includes(runtimeCache?.json1?.status);
-                    } else {
-                        // If json1 is null, we might still be loading, so continue
-                        shouldContinue = true;
-                    }
-                }
-
-                if (!shouldContinue) {
-                    console.log(`Auto-reload stopped: status is ${runtimeCache?.json0?.status || runtimeCache?.json1?.status || 'unknown'}`);
-                    return;
-                }
+            if (
+                !(nameParams?.length === 1 && ["running", "pending"].includes(runtimeCache?.json0?.status))
+                && !(nameParams?.length === 2 && ["running", "pending"].includes(runtimeCache?.json1?.status) || runtimeCache?.json1 == null)
+                && !force
+                || openedInfoCnt - closedInfoCnt > 0
+            ) {
+                return
             }
 
             const statusContainer = document.getElementById('status-container');
-            const scrollTop = statusContainer ? statusContainer.scrollTop : 0;
+            const scrollTop = statusContainer.scrollTop;
 
-            if (await fetchData(PR, REF, sha, nameParams, base_url)) {
-                // Clear timers, event listeners, and DOM before refreshing content
+            if (await fetchData(PR, REF, sha, nameParams)) {
                 clearPage();
-
-                // Rebuild the page with new data
                 await renderResults(PR, sha, nameParams);
 
-                // Restore scroll position
-                if (statusContainer) {
-                    statusContainer.scrollTop = scrollTop;
-                }
-
-                console.log(`Data refreshed at ${new Date().toLocaleTimeString()}`);
+                statusContainer.scrollTop = scrollTop;
             }
         }
 
-        // Initial render
-        await checkForUpdatesAndRender(true);
-
-        // Setup periodic refresh using our timer management
-        autoRefreshTimer = activeTimers.addInterval(setInterval(() => {
-            checkForUpdatesAndRender(false);
-        }, 30000));
-
+        await checkForUpdatesAndRender(true)
         console.log("Auto-reload started");
+        setInterval(checkForUpdatesAndRender, 30000);
     }
 
     function updatePageTitle(PR, REF, sha, nameParams) {
@@ -1830,15 +1753,16 @@
         const PR = urlParams.get('PR');
         const REF = urlParams.get('REF');
         const sha = urlParams.get('sha');
-        const base_url = urlParams.get('base_url');
         const nameParams = [];
+
         urlParams.forEach((value, key) => {
             if (key.startsWith('name_')) {
                 const index = parseInt(key.split('_')[1], 10);
                 nameParams[index] = value;
             }
         });
-        await renderResultsAuto(PR, REF, sha, nameParams, base_url);
+
+        await renderResultsAuto(PR, REF, sha, nameParams);
         renderFooter(nameParams)
         updatePageTitle(PR, REF, sha, nameParams)
         fetchStatistics(nameParams[0])

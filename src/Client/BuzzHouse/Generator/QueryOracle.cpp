@@ -146,9 +146,7 @@ void QueryOracle::insertOnTableOrCluster(
             : (cluster.has_value() ? TableFunctionUsage::ClusterCall
                                    : (replaceable ? TableFunctionUsage::EngineReplace : TableFunctionUsage::RemoteCall));
 
-        gen.setAllowNotDetermistic(false);
-        gen.setTableFunction(rg, usage, t, tof->mutable_tfunc());
-        gen.setAllowNotDetermistic(true);
+        gen.setTableFunction(rg, usage, false, t, tof->mutable_tfunc());
     }
     else
     {
@@ -209,7 +207,7 @@ void QueryOracle::dumpTableContent(
         sv->set_property("output_format_write_statistics");
         sv->set_value("0");
     }
-    ts->set_format(rg.pickRandomly(rg.pickRandomly(StatementGenerator::outFormats)));
+    ts->set_format(rg.pickRandomly(StatementGenerator::outIn));
     const auto err = std::filesystem::remove(qcfile);
     UNUSED(err);
     sif->set_path(qcfile.generic_string());
@@ -226,6 +224,7 @@ void QueryOracle::generateExportQuery(
     SelectStatementCore * sel = sparen->mutable_select()->mutable_select_core();
     const std::filesystem::path & cnfile = fc.client_file_path / "table.data";
     const std::filesystem::path & snfile = fc.server_file_path / "table.data";
+    OutFormat outf = rg.pickRandomly(StatementGenerator::outIn);
 
     can_test_oracle_result &= test_content;
     /// Remove the file if exists
@@ -252,7 +251,7 @@ void QueryOracle::generateExportQuery(
                 first ? "" : ", ",
                 entry.columnPathRef(),
                 entry.path.size() > 1 ? "Array(" : "",
-                entry.getBottomType()->typeName(false, false),
+                entry.getBottomType()->typeName(false),
                 entry.path.size() > 1 ? ")" : "",
                 (entry.path.size() == 1 && entry.nullable.has_value()) ? (entry.nullable.value() ? " NULL" : " NOT NULL") : "");
             first = false;
@@ -264,7 +263,7 @@ void QueryOracle::generateExportQuery(
         gen.columnPathRef(entry, sel->add_result_columns()->mutable_etc()->mutable_col()->mutable_path());
     }
     gen.entries.clear();
-    ff->set_outformat(rg.pickRandomly(rg.pickRandomly(StatementGenerator::outFormats)));
+    ff->set_outformat(outf);
     if (rg.nextSmallNumber() < 4)
     {
         ff->set_fcomp(rg.pickRandomly(compressionMethods));
@@ -457,14 +456,23 @@ void QueryOracle::generateImportQuery(
         svs = nins->mutable_setting_values();
         svs->CopyFrom(oins.setting_values());
     }
-    if (can_test_oracle_result && inf == InFormat::IN_CSV)
+    if ((can_test_oracle_result && inf == InFormat::IN_CSV) || inf == InFormat::IN_Parquet)
     {
         svs = svs ? svs : nins->mutable_setting_values();
         SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
 
-        /// The oracle expects to read all the lines from the file
-        sv->set_property("input_format_csv_detect_header");
-        sv->set_value("0");
+        if (inf == InFormat::IN_Parquet)
+        {
+            /// Use available Parquet readers
+            sv->set_property("input_format_parquet_use_native_reader");
+            sv->set_value(rg.nextBool() ? "1" : "0");
+        }
+        else
+        {
+            /// The oracle expects to read all the lines from the file
+            sv->set_property("input_format_csv_detect_header");
+            sv->set_value("0");
+        }
     }
 }
 
@@ -491,13 +499,7 @@ bool QueryOracle::generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1)
             setv->set_property(setting);
             if (chs.oracle_values.size() == 2)
             {
-                if (setting == "enable_analyzer")
-                {
-                    /// For the analyzer, always run the old first, so we can minimize the usage of it
-                    setv->set_value("0");
-                    nsettings.push_back("1");
-                }
-                else if (rg.nextBool())
+                if (rg.nextBool())
                 {
                     setv->set_value(*chs.oracle_values.begin());
                     nsettings.push_back(*std::next(chs.oracle_values.begin(), 1));
@@ -510,16 +512,8 @@ bool QueryOracle::generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1)
             }
             else
             {
-                const String & fvalue = rg.pickRandomly(chs.oracle_values);
-                String svalue = rg.pickRandomly(chs.oracle_values);
-
-                for (uint32_t j = 0; j < 4 && fvalue == svalue; j++)
-                {
-                    /// Pick another value until they are different
-                    svalue = rg.pickRandomly(chs.oracle_values);
-                }
-                setv->set_value(fvalue);
-                nsettings.push_back(svalue);
+                setv->set_value(rg.pickRandomly(chs.oracle_values));
+                nsettings.push_back(rg.pickRandomly(chs.oracle_values));
             }
             can_test_oracle_result &= !chs.changes_behavior;
         }
@@ -579,7 +573,7 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
         Insert * ins = sq2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_insert();
         sparen = ins->mutable_select();
         FileFunc * ff = ins->mutable_tof()->mutable_tfunc()->mutable_file();
-        OutFormat outf = rg.pickRandomly(rg.pickRandomly(StatementGenerator::outFormats));
+        OutFormat outf = rg.pickRandomly(StatementGenerator::outIn);
 
         const auto err = std::filesystem::remove(qcfile);
         UNUSED(err);
@@ -801,12 +795,9 @@ bool QueryOracle::findTablesWithPeersAndReplace(
             bool res = false;
             const ExprSchemaTable & est = torfunc.est();
 
-            if ((!est.has_database()
-                 || (est.database().database() != "system" && est.database().database() != "INFORMATION_SCHEMA"
-                     && est.database().database() != "information_schema"))
-                && est.table().table().at(0) == 't')
+            if ((!est.has_database() || est.database().database() != "system") && est.table().table().at(0) == 't')
             {
-                const uint32_t tname = gen.getIdentifierFromString(est.table().table());
+                const uint32_t tname = static_cast<uint32_t>(std::stoul(est.table().table().substr(1)));
 
                 if (gen.tables.find(tname) != gen.tables.end())
                 {

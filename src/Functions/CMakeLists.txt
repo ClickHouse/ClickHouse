@@ -18,7 +18,7 @@ set(DBMS_FUNCTIONS
     checkHyperscanRegexp.cpp # checkHyperscanRegexp (Used by MultiMatchAnyImpl.h, multiMatchAny.cpp)
     CastOverloadResolver.cpp # createInternalCast (Used by WindowTransform.cpp, KeyCondition.cpp...)
     FunctionsConversion.cpp # createFunctionBaseCast (Used by CastOverloadResolver.cpp)
-    hasAnyAllTokens.cpp # FunctionSearchImpl (Used by MergeTreeIndexConditionText.cpp)
+    searchAnyAll.cpp # FunctionSearchImpl (Used by MergeTreeIndexGin.cpp)
     FunctionsConversion_impl0.cpp
     FunctionsConversion_impl1.cpp
     FunctionsConversion_impl2.cpp
@@ -63,7 +63,6 @@ list (APPEND PRIVATE_LIBS
         boost::filesystem
         divide_impl
         ch_contrib::xxHash
-        ch_contrib::stringzilla
 )
 
 if (TARGET OpenSSL::Crypto)

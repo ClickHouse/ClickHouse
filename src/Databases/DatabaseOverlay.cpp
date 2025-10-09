@@ -244,13 +244,13 @@ void DatabaseOverlay::drop(ContextPtr context_)
         db->drop(context_);
 }
 
-void DatabaseOverlay::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata, const bool validate_new_create_query)
+void DatabaseOverlay::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata)
 {
     for (auto & db : databases)
     {
         if (!db->isReadOnly() && db->isTableExist(table_id.table_name, local_context))
         {
-            db->alterTable(local_context, table_id, metadata, validate_new_create_query);
+            db->alterTable(local_context, table_id, metadata);
             return;
         }
     }

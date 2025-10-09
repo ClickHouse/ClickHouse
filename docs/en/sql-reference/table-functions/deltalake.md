@@ -5,7 +5,6 @@ sidebar_label: 'deltaLake'
 sidebar_position: 45
 slug: /sql-reference/table-functions/deltalake
 title: 'deltaLake'
-doc_type: 'reference'
 ---
 
 # deltaLake Table Function

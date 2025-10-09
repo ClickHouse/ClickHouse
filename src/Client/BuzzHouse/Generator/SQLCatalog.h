@@ -22,20 +22,6 @@ enum class DetachStatus
     PERM_DETACHED = 2
 };
 
-enum class IntegrationCall
-{
-    None = 0,
-    MySQL = 1,
-    PostgreSQL = 2,
-    SQLite = 3,
-    Redis = 4,
-    MongoDB = 5,
-    MinIO = 6,
-    Azurite = 7,
-    HTTP = 8,
-    Dolor = 9
-};
-
 enum class PeerTableDatabase
 {
     None = 0,
@@ -52,28 +38,12 @@ enum class PeerQuery
     AllPeers = 2
 };
 
-enum class LakeFormat
-{
-    All = 0,
-    Iceberg = 1,
-    DeltaLake = 2
-};
-
-enum class LakeStorage
-{
-    All = 0,
-    S3 = 1,
-    Azure = 2,
-    Local = 3
-};
-
-enum class LakeCatalog
+enum class CatalogTable
 {
     None = 0,
     Glue = 1,
     Hive = 2,
-    REST = 3,
-    Unity = 4
+    REST = 3
 };
 
 struct SQLColumn
@@ -149,11 +119,6 @@ public:
     DatabaseEngineValues deng;
     std::optional<String> cluster;
     DetachStatus attached = DetachStatus::ATTACHED;
-    IntegrationCall integration = IntegrationCall::None;
-    /// For DataLakeCatalog
-    LakeCatalog catalog = LakeCatalog::None;
-    LakeStorage storage = LakeStorage::All;
-    LakeFormat format = LakeFormat::All;
 
     static void setName(Database * db, const uint32_t name) { db->set_database("d" + std::to_string(name)); }
 
@@ -183,10 +148,6 @@ public:
 
     String getName() const { return "d" + std::to_string(dname); }
 
-    String getSparkCatalogName() const;
-
-    void setDatabasePath(RandomGenerator & rg, const FuzzConfig & fc);
-
     void finishDatabaseSpecification(DatabaseEngine * de) const;
 };
 
@@ -196,21 +157,13 @@ public:
     bool is_temp = false, is_deterministic = false, has_metadata = false, has_partition_by = false;
     uint32_t tname = 0;
     std::shared_ptr<SQLDatabase> db = nullptr;
-    std::optional<String> cluster, file_comp, partition_strategy, partition_columns_in_data_file, storage_class_name, host_params,
-        bucket_path;
+    std::optional<String> cluster, file_comp, partition_strategy, partition_columns_in_data_file, host_params, bucket_path;
     DetachStatus attached = DetachStatus::ATTACHED;
     std::optional<TableEngineOption> toption;
     TableEngineValues teng = TableEngineValues::Null, sub = TableEngineValues::Null;
     PeerTableDatabase peer_table = PeerTableDatabase::None;
     std::optional<InOutFormat> file_format;
-    IntegrationCall integration = IntegrationCall::None;
-
-    SQLBase() = default;
-    virtual ~SQLBase() = default;
-    SQLBase(const SQLBase &) = default;
-    SQLBase & operator=(const SQLBase &) = default;
-    SQLBase(SQLBase &&) = default;
-    SQLBase & operator=(SQLBase &&) = default;
+    CatalogTable catalog = CatalogTable::None;
 
     static void setDeterministic(RandomGenerator & rg, SQLBase & b) { b.is_deterministic = rg.nextSmallNumber() < 8; }
 
@@ -277,8 +230,6 @@ public:
 
     bool isAnyAzureEngine() const { return isAzureEngine() || isAzureQueueEngine(); }
 
-    bool isAnyQueueEngine() const { return isS3QueueEngine() || isAzureQueueEngine(); }
-
     bool isHudiEngine() const { return teng == TableEngineValues::Hudi; }
 
     bool isDeltaLakeS3Engine() const { return teng == TableEngineValues::DeltaLakeS3; }
@@ -321,8 +272,6 @@ public:
 
     bool isArrowFlightEngine() const { return teng == TableEngineValues::ArrowFlight; }
 
-    bool isAliasEngine() const { return teng == TableEngineValues::Alias; }
-
     bool isNotTruncableEngine() const;
 
     bool isEngineReplaceable() const;
@@ -347,21 +296,11 @@ public:
 
     String getDatabaseName() const;
 
-    String getTableName(bool full = true) const;
+    void setTablePath(RandomGenerator & rg, const FuzzConfig & fc);
 
-    String getSparkCatalogName() const;
-
-    void setTablePath(RandomGenerator & rg, const FuzzConfig & fc, bool has_dolor);
-
-    String getTablePath(RandomGenerator & rg, const FuzzConfig & fc, bool allow_not_deterministic) const;
+    String getTablePath(RandomGenerator & rg, const FuzzConfig & fc, bool no_change) const;
 
     String getMetadataPath(const FuzzConfig & fc) const;
-
-    LakeCatalog getLakeCatalog() const { return db ? db->catalog : LakeCatalog::None; }
-
-    LakeStorage getPossibleLakeStorage() const { return db ? db->storage : LakeStorage::All; }
-
-    LakeFormat getPossibleLakeFormat() const { return db ? db->format : LakeFormat::All; }
 };
 
 struct SQLTable : SQLBase
@@ -389,19 +328,14 @@ public:
 
     static void setName(ExprSchemaTable * est, const bool setdbname, std::shared_ptr<SQLDatabase> database, const uint32_t name)
     {
-        String res;
-
         if (database || setdbname)
         {
             est->mutable_database()->set_database("d" + (database ? std::to_string(database->dname) : "efault"));
         }
-        if (database && database->catalog != LakeCatalog::None)
-        {
-            res += "test.";
-        }
-        res += "t" + std::to_string(name);
-        est->mutable_table()->set_table(std::move(res));
+        est->mutable_table()->set_table("t" + std::to_string(name));
     }
+
+    String getTableName() const;
 
     String getFullName(bool setdbname) const;
 

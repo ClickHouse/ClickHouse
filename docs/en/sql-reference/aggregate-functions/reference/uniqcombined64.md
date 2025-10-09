@@ -5,7 +5,6 @@ description: 'Calculates the approximate number of different argument values. It
 sidebar_position: 206
 slug: /sql-reference/aggregate-functions/reference/uniqcombined64
 title: 'uniqCombined64'
-doc_type: 'reference'
 ---
 
 # uniqCombined64

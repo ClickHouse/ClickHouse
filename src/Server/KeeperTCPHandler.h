@@ -92,8 +92,6 @@ private:
     std::optional<CompressedReadBuffer> compressed_in;
     std::optional<CompressedWriteBuffer> compressed_out;
 
-    size_t max_request_size = 0;
-
     std::atomic<bool> connected{false};
 
     void runImpl();
