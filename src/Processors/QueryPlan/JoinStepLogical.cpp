@@ -419,8 +419,22 @@ IQueryPlanStep::UnusedColumnRemovalResult JoinStepLogical::removeUnusedColumns(N
 
     const auto removed_any_input = actions_dag.getInputs().size() < input_count_before;
 
+    const auto update_source_mapping = [&]()
+    {
+        JoinExpressionActions::NodeToSourceMapping node_sources;
+
+        for (const auto & node : actions_dag.getNodes())
+        {
+            const auto action_ref = JoinActionRef(&node, expression_actions);
+            node_sources[&node] = action_ref.getSourceRelations();
+        }
+
+        expression_actions.resetNodeSources(std::move(node_sources));
+    };
+
     if (!removed_any_input)
     {
+        update_source_mapping();
         updateOutputHeader();
         return UnusedColumnRemovalResult::updatedButKeptInputs();
     }
@@ -446,15 +460,7 @@ IQueryPlanStep::UnusedColumnRemovalResult JoinStepLogical::removeUnusedColumns(N
     for (const auto & input_header : input_headers)
         new_input_headers.push_back(remove_unused_inputs_from_header(*input_header));
 
-    JoinExpressionActions::NodeToSourceMapping node_sources;
-
-    for (const auto & node : actions_dag.getNodes())
-    {
-        const auto action_ref = JoinActionRef(&node, expression_actions);
-        node_sources[&node] = action_ref.getSourceRelations();
-    }
-
-    expression_actions.resetNodeSources(std::move(node_sources));
+    update_source_mapping();
 
     updateInputHeaders(std::move(new_input_headers));
     updateOutputHeader();
