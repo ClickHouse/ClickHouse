@@ -30,7 +30,6 @@
 #include <Storages/MergeTree/MergeProjectionPartsTask.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
-#include <Storages/MergeTree/MergeTreeIndexGin.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -80,6 +79,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool ttl_only_drop_parts;
     extern const MergeTreeSettingsBool enable_index_granularity_compression;
     extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
+    extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
+    extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
 }
 
 namespace ErrorCodes
@@ -105,6 +106,13 @@ static bool haveMutationsOfDynamicColumns(const MergeTreeData::DataPartPtr & dat
         if (!command.column_name.empty())
         {
             auto column = data_part->tryGetColumn(command.column_name);
+            if (column && column->type->hasDynamicSubcolumns())
+                return true;
+        }
+
+        for (const auto & [column_name, _] : command.column_to_update_expression)
+        {
+            auto column = data_part->tryGetColumn(column_name);
             if (column && column->type->hasDynamicSubcolumns())
                 return true;
         }
@@ -187,6 +195,7 @@ static void splitAndModifyMutationCommands(
                 || command.type == MutationCommand::Type::MATERIALIZE_STATISTICS
                 || command.type == MutationCommand::Type::MATERIALIZE_PROJECTION
                 || command.type == MutationCommand::Type::MATERIALIZE_TTL
+                || command.type == MutationCommand::Type::REWRITE_PARTS
                 || command.type == MutationCommand::Type::DELETE
                 || command.type == MutationCommand::Type::UPDATE
                 || command.type == MutationCommand::Type::APPLY_DELETED_MASK
@@ -327,6 +336,7 @@ static void splitAndModifyMutationCommands(
                 || command.type == MutationCommand::Type::MATERIALIZE_STATISTICS
                 || command.type == MutationCommand::Type::MATERIALIZE_PROJECTION
                 || command.type == MutationCommand::Type::MATERIALIZE_TTL
+                || command.type == MutationCommand::Type::REWRITE_PARTS
                 || command.type == MutationCommand::Type::DELETE
                 || command.type == MutationCommand::Type::UPDATE
                 || command.type == MutationCommand::Type::APPLY_DELETED_MASK
@@ -471,7 +481,15 @@ getColumnsForNewDataPart(
         }
     }
 
-    SerializationInfoByName new_serialization_infos;
+    SerializationInfo::Settings settings
+    {
+        (*source_part->storage.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
+        false,
+        (*source_part->storage.getSettings())[MergeTreeSetting::serialization_info_version],
+        (*source_part->storage.getSettings())[MergeTreeSetting::string_serialization_version],
+    };
+
+    SerializationInfoByName new_serialization_infos(settings);
     for (const auto & [name, old_info] : serialization_infos)
     {
         auto it = renamed_columns_from_to.find(name);
@@ -492,12 +510,6 @@ getColumnsForNewDataPart(
 
         auto old_type = part_columns.getPhysical(name).type;
         auto new_type = updated_header.getByName(new_name).type;
-
-        SerializationInfo::Settings settings
-        {
-            .ratio_of_defaults_for_sparse = (*source_part->storage.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
-            .choose_kind = false
-        };
 
         if (!new_type->supportsSparseSerialization() || settings.isAlwaysDefault())
             continue;
@@ -782,17 +794,11 @@ static NameSet collectFilesToSkip(
     for (const auto & index : indices_to_recalc)
     {
         /// Since MinMax index has .idx2 extension, we need to add correct extension.
-        files_to_skip.insert(index->getFileName() + index->getSerializedFileExtension());
-        files_to_skip.insert(index->getFileName() + mrk_extension);
-
-        // Skip all text index files, for they will be rebuilt
-        if (dynamic_cast<const MergeTreeIndexGin *>(index.get()))
+        auto index_substreams = index->getSubstreams();
+        for (const auto & index_substream : index_substreams)
         {
-            auto index_filename = index->getFileName();
-            files_to_skip.insert(index_filename + ".gin_dict");
-            files_to_skip.insert(index_filename + ".gin_post");
-            files_to_skip.insert(index_filename + ".gin_sed");
-            files_to_skip.insert(index_filename + ".gin_sid");
+            files_to_skip.insert(index->getFileName() + index_substream.suffix + index_substream.extension);
+            files_to_skip.insert(index->getFileName() + index_substream.suffix + mrk_extension);
         }
     }
 
@@ -871,8 +877,6 @@ static NameToNameVector collectFilesForRenames(
         if (command.type == MutationCommand::Type::DROP_INDEX)
         {
             static const std::array<String, 2> suffixes = {".idx2", ".idx"};
-            static const std::array<String, 4> gin_suffixes = {".gin_dict", ".gin_post", ".gin_seg", ".gin_sid"}; /// .gin_* means generalized inverted index aka. text index
-
             for (const auto & suffix : suffixes)
             {
                 const String filename = INDEX_FILE_PREFIX + command.column_name + suffix;
@@ -883,12 +887,6 @@ static NameToNameVector collectFilesForRenames(
                     add_rename(filename, "");
                     add_rename(filename_mrk, "");
                 }
-            }
-            for (const auto & gin_suffix : gin_suffixes)
-            {
-                const String filename = INDEX_FILE_PREFIX + command.column_name + gin_suffix;
-                if (source_part->checksums.has(filename))
-                    add_rename(filename, "");
             }
         }
         else if (command.type == MutationCommand::Type::DROP_PROJECTION)
@@ -985,11 +983,8 @@ static NameToNameVector collectFilesForRenames(
         }
     }
 
-    if (!source_part->getSerializationInfos().empty()
-        && new_part->getSerializationInfos().empty())
-    {
+    if (source_part->getSerializationInfos().needsPersistence() && !new_part->getSerializationInfos().needsPersistence())
         rename_vector.emplace_back(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, "");
-    }
 
     return rename_vector;
 }
@@ -1030,11 +1025,12 @@ void finalizeMutatedPart(
         written_files.push_back(std::move(out_ttl));
     }
 
-    if (!new_data_part->getSerializationInfos().empty())
+    const auto & serialization_infos = new_data_part->getSerializationInfos();
+    if (serialization_infos.needsPersistence())
     {
         auto out_serialization = new_data_part->getDataPartStorage().writeFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, 4096, context->getWriteSettings());
         HashingWriteBuffer out_hashing(*out_serialization);
-        new_data_part->getSerializationInfos().writeJSON(out_hashing);
+        serialization_infos.writeJSON(out_hashing);
         out_hashing.finalize();
         new_data_part->checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_size = out_hashing.count();
         new_data_part->checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_hash = out_hashing.getHash();
@@ -2449,6 +2445,7 @@ bool MutateTask::prepare()
     context_for_reading->setSetting("allow_asynchronous_read_from_io_pool_for_merge_tree", false);
     context_for_reading->setSetting("max_streams_for_merge_tree_reading", Field(0));
     context_for_reading->setSetting("read_from_filesystem_cache_if_exists_otherwise_bypass_cache", 1);
+    context_for_reading->setSetting("read_from_distributed_cache_if_exists_otherwise_bypass_cache", 1);
 
     bool suitable_for_ttl_optimization = ctx->metadata_snapshot->hasOnlyRowsTTL() && (*ctx->data->getSettings())[MergeTreeSetting::ttl_only_drop_parts];
     MutationHelpers::splitAndModifyMutationCommands(

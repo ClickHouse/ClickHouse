@@ -373,7 +373,7 @@ Chunk SystemRemoteDataPathsSource::generate()
         {
             storage_objects = disk->getMetadataStorage()->getStorageObjects(local_path);
         }
-        catch (const Exception & e)
+        catch (Exception & e)
         {
             /// Unfortunately in rare cases it can happen when files disappear
             /// or can be empty in case of operation interruption (like cancelled metadata fetch)
@@ -383,6 +383,7 @@ Chunk SystemRemoteDataPathsSource::generate()
                 e.code() == ErrorCodes::CANNOT_READ_ALL_DATA)
                 continue;
 
+            e.addMessage("While parsing file {}", local_path);
             throw;
         }
 

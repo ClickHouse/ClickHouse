@@ -40,6 +40,10 @@ public:
 
     String dump() const;
 
+    /// Can be used to convert "t.a.b.c" from meaning "column `t` in storage, subcolumn `a.b.c` inside it"
+    /// to meaning "column `t.a.b` in storage, subcolumn `c` inside it".
+    void setDelimiterAndTypeInStorage(const String & name_in_storage_, DataTypePtr type_in_storage_);
+
     String name;
     DataTypePtr type;
 

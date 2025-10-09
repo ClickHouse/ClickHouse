@@ -170,7 +170,18 @@ public:
     void appendFromBlock(const RowRefList * row_ref_list, bool has_default);
     void appendFromBlock(const RowRef * row_ref, bool has_default);
 
-    void appendDefaultRow();
+    void appendDefaultRow()
+    {
+        if constexpr (!lazy)
+        {
+            ++lazy_defaults_count;
+        }
+        else
+        {
+            if (has_columns_to_add)
+                lazy_output.addDefault();
+        }
+    }
 
     void applyLazyDefaults();
 
@@ -190,6 +201,8 @@ public:
     MutableColumns columns;
     IColumn::Offsets offsets_to_replicate;
     IColumn::Filter filter;
+    /// For every row with a match, if we set filter[row] = 1, we also add this row to `matched_rows` for faster ScatteredBlock::filter().
+    IColumn::Offsets matched_rows;
 
     /// for lazy
     // The default row is represented by an empty RowRef, so that fixed-size blocks can be generated sequentially,

@@ -135,7 +135,7 @@ def create_clickhouse_iceberg_database(
     node.query(
         f"""
 DROP DATABASE IF EXISTS {name};
-SET allow_experimental_database_iceberg=true;
+SET allow_database_iceberg=true;
 SET write_full_path_in_iceberg_metadata=1;
 CREATE DATABASE {name} ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', '{minio_secret_key}')
 SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
@@ -152,7 +152,7 @@ def create_clickhouse_iceberg_table(
     settings = {
         "storage_catalog_type": "rest",
         "storage_warehouse": "demo",
-        "storage_storage_endpoint": "http://minio:9000/warehouse-rest",
+        "object_storage_endpoint": "http://minio:9000/warehouse-rest",
         "storage_region": "us-east-1",
         "storage_catalog_url" : BASE_URL,
     }
@@ -165,6 +165,15 @@ SET allow_experimental_database_iceberg=true;
 SET write_full_path_in_iceberg_metadata=1;
 CREATE TABLE {CATALOG_NAME}.`{database_name}.{table_name}` {schema} ENGINE = IcebergS3('http://minio:9000/warehouse-rest/{table_name}/', '{minio_access_key}', '{minio_secret_key}')
 SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
+    """
+    )
+
+def drop_clickhouse_iceberg_table(
+    node, database_name, table_name
+):
+    node.query(
+        f"""
+DROP TABLE {CATALOG_NAME}.`{database_name}.{table_name}`
     """
     )
 
@@ -412,7 +421,7 @@ def test_backup_database(started_cluster):
     node.query("DROP DATABASE backup_database SYNC")
     assert "backup_database" not in node.query("SHOW DATABASES")
 
-    node.query(f"RESTORE DATABASE backup_database FROM {backup_name}", settings={"allow_experimental_database_iceberg": 1})
+    node.query(f"RESTORE DATABASE backup_database FROM {backup_name}", settings={"allow_database_iceberg": 1})
     assert (
         node.query("SHOW CREATE DATABASE backup_database")
         == "CREATE DATABASE backup_database\\nENGINE = DataLakeCatalog(\\'http://rest:8181/v1\\', \\'minio\\', \\'[HIDDEN]\\')\\nSETTINGS catalog_type = \\'rest\\', warehouse = \\'demo\\', storage_endpoint = \\'http://minio:9000/warehouse-rest\\'\n"
@@ -550,3 +559,19 @@ def test_create(started_cluster):
     create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x String)")
     node.query(f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES ('AAPL');", settings={"allow_experimental_insert_into_iceberg": 1, 'write_full_path_in_iceberg_metadata': 1})
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
+
+def test_drop_table(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_list_tables_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    catalog = load_catalog_impl(started_cluster)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x String)")
+    assert len(catalog.list_tables(root_namespace)) == 1
+
+    drop_clickhouse_iceberg_table(node, root_namespace, table_name)
+    assert len(catalog.list_tables(root_namespace)) == 0

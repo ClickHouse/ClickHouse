@@ -2,21 +2,20 @@
 #include <DataTypes/Serializations/JSONDataParser.h>
 #include <DataTypes/Serializations/SerializationString.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Common/JSONParsers/SimdJSONParser.h>
 #include <Common/JSONParsers/RapidJSONParser.h>
+#include <Common/assert_cast.h>
 #include <Columns/ColumnObjectDeprecated.h>
 #include <Columns/ColumnTuple.h>
-#include <Columns/ColumnString.h>
 
 #include <memory>
 #include <string>
 #include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
 #include <IO/WriteHelpers.h>
-#include <base/EnumReflection.h>
+
 
 namespace DB
 {
@@ -60,7 +59,7 @@ void SerializationObjectDeprecated<Parser>::deserializeTextImpl(IColumn & column
     assert(paths.size() == values.size());
 
     size_t old_column_size = column_object.size();
-    for (size_t i = 0; i < paths.size(); ++i)
+    for (size_t i = 0, size = paths.size(); i < size; ++i)
     {
         auto field_info = getFieldInfo(values[i]);
         if (field_info.need_fold_dimension)
