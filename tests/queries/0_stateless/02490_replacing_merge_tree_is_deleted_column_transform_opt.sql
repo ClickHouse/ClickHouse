@@ -1,4 +1,4 @@
--- Test for https://github.com/ClickHouse/ClickHouse/pull/76978
+-- Test for FINAL query on ReplacingMergeTree + is_deleted makes use of optimizations.
 
 DROP TABLE IF EXISTS tab;
 
