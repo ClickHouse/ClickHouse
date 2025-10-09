@@ -43,6 +43,8 @@ static size_t getBloomFilterSizeInBytes(size_t bits_per_row, size_t num_tokens)
 }
 
 static constexpr UInt64 MAX_CARDINALITY_FOR_RAW_POSTINGS = 16;
+static_assert(PostingListBuilder::max_small_size <= MAX_CARDINALITY_FOR_RAW_POSTINGS, "max_small_size must be less than or equal to MAX_CARDINALITY_FOR_RAW_POSTINGS");
+
 static constexpr UInt64 DEFAULT_NGRAM_SIZE = 3;
 static constexpr UInt64 DEFAULT_DICTIONARY_BLOCK_SIZE = 128;
 static constexpr bool DEFAULT_DICTIONARY_BLOCK_USE_FRONTCODING = true;
@@ -129,21 +131,35 @@ DictionaryBlock::DictionaryBlock(ColumnPtr tokens_, std::vector<TokenPostingsInf
 {
 }
 
-void PostingsSerialization::serialize(UInt64 header, PostingList && postings, WriteBuffer & ostr)
+void PostingsSerialization::serialize(UInt64 header, PostingListBuilder && postings, WriteBuffer & ostr)
 {
     if (header & Flags::RawPostings)
     {
-        for (const auto row_id : postings)
-            writeVarUInt(row_id, ostr);
+        if (postings.isSmall())
+        {
+            size_t size = postings.size();
+            const auto & array = postings.getSmall();
+            for (size_t i = 0; i < size; ++i)
+                writeVarUInt(array[i], ostr);
+        }
+        else
+        {
+            const auto & posting_list = postings.getLarge();
+            for (const auto row_id : posting_list)
+                writeVarUInt(row_id, ostr);
+        }
     }
     else
     {
-        postings.runOptimize();
-        size_t num_bytes = postings.getSizeInBytes();
+        chassert(!postings.isSmall());
+        auto & posting_list = postings.getLarge();
+
+        posting_list.runOptimize();
+        size_t num_bytes = posting_list.getSizeInBytes();
         writeVarUInt(num_bytes, ostr);
 
         std::vector<char> memory(num_bytes);
-        postings.write(memory.data());
+        posting_list.write(memory.data());
         ostr.write(memory.data(), num_bytes);
     }
 }
@@ -601,7 +617,7 @@ DictionarySparseIndex serializeTokensAndPostings(
         for (size_t i = block_begin; i < block_end; ++i)
         {
             auto & postings = *tokens_and_postings[i].second;
-            UInt32 cardinality = postings.cardinality();
+            UInt32 cardinality = postings.size();
 
             UInt64 header = 0;
             bool raw_postings = cardinality <= MAX_CARDINALITY_FOR_RAW_POSTINGS;
@@ -696,7 +712,38 @@ MergeTreeIndexTextGranuleBuilder::MergeTreeIndexTextGranuleBuilder(MergeTreeInde
 {
 }
 
-void MergeTreeIndexTextGranuleBuilder::addDocument(StringRef document, bool increment_current_row)
+void PostingListBuilder::add(UInt32 value, PostingListsHolder & postings_holder)
+{
+    if (small_size < max_small_size)
+    {
+        if (small_size)
+        {
+            /// Values are added in non-descending order.
+            chassert(small[small_size - 1] <= value);
+            if (small[small_size - 1] == value)
+                return;
+        }
+
+        small[small_size++] = value;
+
+        if (small_size == max_small_size)
+        {
+            auto small_copy = std::move(small);
+            large.first = &postings_holder.emplace_back();
+            large.second = roaring::BulkContext();
+
+            for (size_t i = 0; i < max_small_size; ++i)
+                large.first->addBulk(large.second, small_copy[i]);
+        }
+    }
+    else
+    {
+        /// Use addBulk to optimize consecutive insertions into the posting list.
+        large.first->addBulk(large.second, value);
+    }
+}
+
+void MergeTreeIndexTextGranuleBuilder::addDocument(StringRef document)
 {
     size_t cur = 0;
     size_t token_start = 0;
@@ -710,20 +757,10 @@ void MergeTreeIndexTextGranuleBuilder::addDocument(StringRef document, bool incr
 
         ArenaKeyHolder key_holder{StringRef(document.data + token_start, token_len), *arena};
         tokens_map.emplace(key_holder, it, inserted);
-        auto & [posting_list, bulk_context] = it->getMapped();
 
-        if (inserted)
-        {
-            posting_list = &posting_lists.emplace_back();
-            bulk_context = roaring::BulkContext();
-        }
-
-        /// Use addBulk to optimize consecutive insertions into the posting list.
-        posting_list->addBulk(bulk_context, current_row);
+        auto & posting_list_builder = it->getMapped();
+        posting_list_builder.add(current_row, posting_lists);
     }
-
-    if (increment_current_row)
-        ++current_row;
 }
 
 std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuilder::build()
@@ -736,7 +773,7 @@ std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuil
 
     tokens_map.forEachValue([&](const auto & key, auto & mapped)
     {
-        sorted_values.emplace_back(key, mapped.first);
+        sorted_values.emplace_back(key, &mapped);
         bloom_filter.add(key.data, key.size);
     });
 
@@ -802,12 +839,14 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
         {
             size_t element_start_row = column_offsets[current_position + i - 1];
             size_t elements_size = column_offsets[current_position + i] - element_start_row;
+
             for (size_t element_idx = 0; element_idx < elements_size; ++element_idx)
             {
                 auto ref = column_data.getDataAt(element_start_row + element_idx);
-                granule_builder.addDocument(
-                    ref, (element_idx == (elements_size - 1)) /* update current row number only on the last element */);
+                granule_builder.addDocument(ref);
             }
+
+            granule_builder.incrementCurrentRow();
         }
     }
     else
@@ -816,6 +855,7 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
         {
             auto ref = index_column->getDataAt(current_position + i);
             granule_builder.addDocument(ref);
+            granule_builder.incrementCurrentRow();
         }
     }
 
@@ -865,8 +905,6 @@ MergeTreeIndexConditionPtr MergeTreeIndexText::createIndexCondition(const Action
 }
 
 static const String ARGUMENT_TOKENIZER = "tokenizer";
-static const String ARGUMENT_NGRAM_SIZE = "ngram_size";
-static const String ARGUMENT_SEPARATORS = "separators";
 static const String ARGUMENT_DICTIONARY_BLOCK_SIZE = "dictionary_block_size";
 static const String ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION = "dictionary_block_frontcoding_compression";
 static const String ARGUMENT_MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS = "max_cardinality_for_embedded_postings";
@@ -879,30 +917,40 @@ namespace
 {
 
 template <typename Type>
-std::optional<Type> extractOption(std::unordered_map<String, Field> & options, const String & option)
+std::optional<Type> castAs(const std::optional<Field> & option, bool throw_on_unexpected_type = true)
 {
-    if (auto it = options.find(option); it != options.end())
-    {
-        Field value = std::move(it->second);
-        Field::Types::Which expected_type = Field::TypeToEnum<NearestFieldType<Type>>::value;
+    if (!option.has_value())
+        return {};
 
-        if (value.getType() != expected_type)
-        {
+    Field::Types::Which expected_type = Field::TypeToEnum<NearestFieldType<Type>>::value;
+    if (option->getType() != expected_type)
+    {
+        if (throw_on_unexpected_type)
             throw Exception(
                 ErrorCodes::INCORRECT_QUERY,
-                "Text index argument '{}' expected to be {}, but got {}",
-                option, fieldTypeToString(expected_type), value.getTypeName());
-        }
-
-        options.erase(it);
-        return value.safeGet<Type>();
+                "Text index argument expected to be {}, but got {}",
+                fieldTypeToString(expected_type),
+                option->getTypeName());
+        return {};
     }
-    return {};
+    return option->safeGet<Type>();
 }
 
-std::optional<std::vector<String>> extractOptionAsStringArray(std::unordered_map<String, Field> & options, const String & option)
+template <typename Type>
+std::optional<Type> extractOption(std::unordered_map<String, Field> & options, const String & option, bool throw_on_unexpected_type = true)
 {
-    auto array = extractOption<Array>(options, option);
+    auto it = options.find(option);
+    if (it == options.end() || !castAs<Type>(it->second, throw_on_unexpected_type))
+        return {};
+
+    Field value = std::move(it->second);
+    options.erase(it);
+    return value.safeGet<Type>();
+}
+
+std::optional<std::vector<String>> castAsStringArray(const std::optional<Field> & option)
+{
+    auto array = castAs<Array>(option);
     if (array.has_value())
     {
         std::vector<String> values;
@@ -922,7 +970,7 @@ std::unordered_map<String, Field> convertArgumentsToOptionsMap(const FieldVector
         if (argument.getType() != Field::Types::Tuple)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Arguments of text index must be key-value pair (identifier = literal)");
 
-        Tuple tuple = argument.template safeGet<Tuple>();
+        Tuple tuple = argument.safeGet<Tuple>();
         String key = tuple[0].safeGet<String>();
 
         if (options.contains(key))
@@ -933,13 +981,61 @@ std::unordered_map<String, Field> convertArgumentsToOptionsMap(const FieldVector
     return options;
 }
 
+/**
+ * Tokenizer option can be String literal, identifier or function.
+ * In case of a function, tokenizer specific argument is provided as parameter of the function.
+ * This function is responsible to extract the tokenizer name and parameter if provided.
+ */
+std::pair<String, std::optional<Field>> extractTokenizer(std::unordered_map<String, Field> & options)
+{
+    /// Check that tokenizer is present
+    if (!options.contains(ARGUMENT_TOKENIZER))
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Text index must have an '{}' argument", ARGUMENT_TOKENIZER);
+
+    /// Tokenizer is provided as Literal or Identifier.
+    if (auto tokenizer_str = extractOption<String>(options, ARGUMENT_TOKENIZER, false); tokenizer_str)
+        return {tokenizer_str.value(), {}};
+
+    /// Tokenizer is provided as Function.
+    if (auto tokenizer_tuple = extractOption<Tuple>(options, ARGUMENT_TOKENIZER, false); tokenizer_tuple)
+    {
+        /// Functions are converted into Tuples as the first entry is the name of the function and rest is arguments.
+        chassert(!tokenizer_tuple->empty());
+
+        const auto & function_name = tokenizer_tuple->at(0);
+        if (function_name.getType() != Field::Types::Which::String)
+            throw Exception(
+                ErrorCodes::INCORRECT_QUERY,
+                "Text index argument '{}': function name expected to be String, but got {}",
+                ARGUMENT_TOKENIZER,
+                function_name.getTypeName());
+
+        /// Only a single parameter is supported.
+        if (tokenizer_tuple->size() > 2)
+            throw Exception(
+                ErrorCodes::INCORRECT_QUERY,
+                "Text index argument '{}': function accepts at most one parameter, but got {}",
+                ARGUMENT_TOKENIZER,
+                tokenizer_tuple->size() - 1);
+
+        if (tokenizer_tuple->size() == 2)
+            return {function_name.safeGet<String>(), tokenizer_tuple->at(1)};
+        return {function_name.safeGet<String>(), {}};
+    }
+
+    throw Exception(
+        ErrorCodes::INCORRECT_QUERY,
+        "Text index argument '{}' expected to be either String or Function, but got {}",
+        ARGUMENT_TOKENIZER,
+        options.at(ARGUMENT_TOKENIZER).getTypeName());
+}
 }
 
 MergeTreeIndexPtr textIndexCreator(const IndexDescription & index)
 {
     std::unordered_map<String, Field> options = convertArgumentsToOptionsMap(index.arguments);
 
-    String tokenizer = extractOption<String>(options, ARGUMENT_TOKENIZER).value();
+    const auto [tokenizer, tokenizer_param] = extractTokenizer(options);
 
     std::unique_ptr<ITokenExtractor> token_extractor;
 
@@ -949,12 +1045,12 @@ MergeTreeIndexPtr textIndexCreator(const IndexDescription & index)
     }
     else if (tokenizer == NgramTokenExtractor::getExternalName())
     {
-        auto ngram_size = extractOption<UInt64>(options, ARGUMENT_NGRAM_SIZE);
+        auto ngram_size = castAs<UInt64>(tokenizer_param);
         token_extractor = std::make_unique<NgramTokenExtractor>(ngram_size.value_or(DEFAULT_NGRAM_SIZE));
     }
     else if (tokenizer == SplitTokenExtractor::getExternalName())
     {
-        auto separators = extractOptionAsStringArray(options, ARGUMENT_SEPARATORS).value_or(std::vector<String>{" "});
+        auto separators = castAsStringArray(tokenizer_param).value_or(std::vector<String>{" "});
         token_extractor = std::make_unique<SplitTokenExtractor>(separators);
     }
     else if (tokenizer == NoOpTokenExtractor::getExternalName())
@@ -992,10 +1088,7 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
 {
     std::unordered_map<String, Field> options = convertArgumentsToOptionsMap(index.arguments);
 
-    /// Check that tokenizer is present and supported
-    std::optional<String> tokenizer = extractOption<String>(options, ARGUMENT_TOKENIZER);
-    if (!tokenizer)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Text index must have an '{}' argument", ARGUMENT_TOKENIZER);
+    const auto [tokenizer, tokenizer_param] = extractTokenizer(options);
 
     const bool is_supported_tokenizer = (tokenizer.value() == DefaultTokenExtractor::getExternalName()
                                       || tokenizer.value() == NgramTokenExtractor::getExternalName()
@@ -1006,25 +1099,25 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
     {
         throw Exception(
             ErrorCodes::INCORRECT_QUERY,
-            "Text index argument '{}' supports only 'default', 'ngram', 'split', 'no_op', and 'sparse_gram' but got {}",
+            "Text index argument '{}' supports only 'splitByNonAlpha', 'ngrams', 'splitByString', 'sparse_gram', and 'array', but got {}",
             ARGUMENT_TOKENIZER,
-            tokenizer.value());
+            tokenizer);
     }
 
-    std::optional<UInt64> ngram_size;
-    if (tokenizer.value() == NgramTokenExtractor::getExternalName())
+    if (tokenizer == NgramTokenExtractor::getExternalName() && tokenizer_param.has_value())
     {
-        ngram_size = extractOption<UInt64>(options, ARGUMENT_NGRAM_SIZE);
+        auto ngram_size = castAs<UInt64>(tokenizer_param);
         if (ngram_size.has_value() && (*ngram_size < 2 || *ngram_size > 8))
             throw Exception(
                 ErrorCodes::INCORRECT_QUERY,
-                "Text index argument '{}' must be between 2 and 8, but got {}",
-                ARGUMENT_NGRAM_SIZE,
+                "Text index '{}': function '{}' parameter must be between 2 and 8, but got {}",
+                ARGUMENT_TOKENIZER,
+                tokenizer,
                 *ngram_size);
     }
-    else if (tokenizer.value() == SplitTokenExtractor::getExternalName())
+    else if (tokenizer == SplitTokenExtractor::getExternalName() && tokenizer_param.has_value())
     {
-        std::optional<DB::FieldVector> separators = extractOption<Array>(options, ARGUMENT_SEPARATORS);
+        auto separators = castAs<Array>(tokenizer_param);
         if (separators.has_value())
         {
             for (const auto & separator : separators.value())
@@ -1032,8 +1125,9 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
                 if (separator.getType() != Field::Types::String)
                     throw Exception(
                         ErrorCodes::INCORRECT_QUERY,
-                        "Element of text index argument '{}' expected to be String, but got {}",
-                        ARGUMENT_SEPARATORS,
+                        "Element of text index '{}' function '{}' parameter expected to be String, but got {}",
+                        ARGUMENT_TOKENIZER,
+                        tokenizer,
                         separator.getTypeName());
             }
         }

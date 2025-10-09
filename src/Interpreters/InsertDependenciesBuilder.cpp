@@ -3,6 +3,8 @@
 
 #include <Access/Common/AccessType.h>
 #include <Access/Common/AccessFlags.h>
+#include <Processors/ResizeProcessor.h>
+#include <Processors/Transforms/ApplySquashingTransform.h>
 #include <Processors/Transforms/RemovingSparseTransform.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -24,6 +26,7 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
 #include <Processors/Transforms/CountingTransform.h>
+#include <Processors/Transforms/PlanSquashingTransform.h>
 #include <Processors/Transforms/SquashingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/CheckConstraintsTransform.h>
@@ -130,6 +133,8 @@ namespace Setting
     extern const SettingsBool calculate_text_stack_trace;
     extern const SettingsBool use_async_executor_for_materialized_views;
     extern const SettingsBool materialized_views_ignore_errors;
+    extern const SettingsBool materialized_views_squash_parallel_inserts;
+    extern const SettingsBool parallel_view_processing;
 }
 
 namespace MergeTreeSetting
@@ -752,7 +757,7 @@ private:
 
 InsertDependenciesBuilder::InsertDependenciesBuilder(
     StoragePtr table, ASTPtr query, SharedHeader insert_header,
-    bool async_insert_, bool skip_destination_table_,
+    bool async_insert_, bool skip_destination_table_, size_t max_insert_threads,
     ContextPtr context)
     : init_table_id(table->getStorageID())
     , init_storage(table)
@@ -771,12 +776,161 @@ InsertDependenciesBuilder::InsertDependenciesBuilder(
 
     deduplicate_blocks_in_dependent_materialized_views = settings[Setting::deduplicate_blocks_in_dependent_materialized_views];
     materialized_views_ignore_errors = settings[Setting::materialized_views_ignore_errors];
+    /// Squashing from multiple streams breaks deduplication for now so the optimization will be disabled
+    /// if deduplication for MVs is enabled
+    squash_parallel_inserts = !deduplicate_blocks_in_dependent_materialized_views && settings[Setting::materialized_views_squash_parallel_inserts];
     ignore_materialized_views_with_dropped_target_table = settings[Setting::ignore_materialized_views_with_dropped_target_table];
 
     collectAllDependencies();
 
     LOG_TEST(logger, "InsertDependenciesBuilder created for table {} with query: {}, debugTree:\n{}",
         init_table_id.getFullTableName(), init_query->formatForLogging(), debugTree());
+
+    if (settings[Setting::parallel_view_processing] || !isViewsInvolved())
+        sink_stream_size = init_storage->supportsParallelInsert() ? max_insert_threads : 1;
+}
+
+namespace
+{
+
+struct SquashingTransformContext
+{
+    size_t num_squashing_transforms = 0;
+    bool squashing_transform_added = false;
+    OutputPorts::iterator output_it;
+    InputPorts::iterator input_it;
+};
+
+}
+
+std::vector<Chain> InsertDependenciesBuilder::createChainWithDependenciesForAllStreams() const
+{
+    std::vector<Chain> insert_chains;
+    std::vector<SquashingProcessorsMap> squashing_processor_maps;
+    std::unordered_map<
+        StorageIDPrivate,
+        SquashingTransformContext,
+        StorageID::DatabaseAndTableNameHash,
+        StorageID::DatabaseAndTableNameEqual>
+        views_to_squashing_context;
+
+    insert_chains.reserve(sink_stream_size);
+
+    if (squash_parallel_inserts)
+        squashing_processor_maps.reserve(sink_stream_size);
+
+    bool has_squashing_transforms = false;
+    for (size_t i = 0; i < sink_stream_size; ++i)
+    {
+        insert_chains.emplace_back(createChainWithDependencies());
+        if (squash_parallel_inserts)
+        {
+            /// Collect total amount of squashing transforms for each destination table so we can create
+            /// shrink/expand processors with enough input/output ports.
+            /// Collect all squashing processors for each chain so we don't need to recreate same chain for each destination table.
+            for (const auto & [view_id, apply_squashing_processors] : squashing_processors)
+            {
+                has_squashing_transforms |= !apply_squashing_processors.empty();
+                views_to_squashing_context[view_id].num_squashing_transforms += apply_squashing_processors.size();
+            }
+            squashing_processor_maps.emplace_back(std::move(squashing_processors));
+        }
+    }
+
+    if (!squash_parallel_inserts || !has_squashing_transforms)
+        return insert_chains;
+
+    /// We need to extract processors from chain and modify it.
+    /// For each destination table we do the following:
+    ///   - In first chain with it, we will add new chain of processors consisting of
+    ///     shrink processor -> PlanSquashingTransform -> expand processor
+    ///     We also connect the output and input ports of shrink and expand processors.
+    ///   - For every other chain with the same destination table we won't add new processors,
+    ///     we will connect processors created in first chain using the input and output port
+    ///     of shrink and expand processors.
+    /// We can create the chains only after processing all other chains because all ports need to be connected.
+    std::vector<std::pair<std::list<ProcessorPtr>, QueryPlanResourceHolder>> result_data;
+    result_data.reserve(insert_chains.size());
+
+    for (auto && [chain, squashing_processors_for_chain] : std::views::zip(insert_chains, squashing_processor_maps))
+    {
+        auto resources = chain.detachResources();
+        auto processor_list = Chain::getProcessors(std::move(chain));
+
+        for (const auto & [view_id, apply_squashing_processors] : squashing_processors_for_chain)
+        {
+            auto & squashing_context = views_to_squashing_context.at(view_id);
+            std::list<ProcessorPtr> squashing_processors_list;
+            /// First time we saw this destination table.
+            /// Add required processors, connect it and store it's output and input port iterator so other
+            /// chains with the same destination table can use it.
+            if (!squashing_context.squashing_transform_added)
+            {
+                const auto & output_header = output_headers.at(view_id);
+                const auto & inner_storage = storages.at(view_id);
+                auto insert_context = insert_contexts.at(view_id);
+                bool table_prefers_large_blocks = inner_storage->prefersLargeBlocks();
+                const auto & settings = insert_context->getSettingsRef();
+
+                if (squashing_context.num_squashing_transforms > 1)
+                {
+                    squashing_processors_list.emplace_back(
+                        std::make_shared<ResizeProcessor>(output_header, squashing_context.num_squashing_transforms, 1));
+                }
+
+                auto & plan_squashing_transform = squashing_processors_list.emplace_back(
+                    std::make_shared<PlanSquashingTransform>(
+                        output_header,
+                        table_prefers_large_blocks ? settings[Setting::min_insert_block_size_rows] : settings[Setting::max_block_size],
+                        table_prefers_large_blocks ? settings[Setting::min_insert_block_size_bytes] : 0ULL));
+
+                if (squashing_context.num_squashing_transforms > 1)
+                {
+                    auto & shrink_processor = squashing_processors_list.front();
+                    auto & expand_processor = squashing_processors_list.emplace_back(
+                        std::make_shared<ResizeProcessor>(output_header, 1, squashing_context.num_squashing_transforms));
+
+                    connect(shrink_processor->getOutputs().front(), plan_squashing_transform->getInputs().front());
+                    connect(plan_squashing_transform->getOutputs().front(), expand_processor->getInputs().front());
+                }
+
+                squashing_context.output_it = squashing_processors_list.back()->getOutputs().begin();
+                squashing_context.input_it = squashing_processors_list.front()->getInputs().begin();
+            }
+
+            for (const auto & apply_squashing_processor_it : apply_squashing_processors)
+            {
+                auto before_squashing_processor_it = std::prev(apply_squashing_processor_it);
+                connect((*before_squashing_processor_it)->getOutputs().front(), *squashing_context.input_it, true);
+                ++squashing_context.input_it;
+
+                connect(*squashing_context.output_it, (*apply_squashing_processor_it)->getInputs().front(), true);
+                ++squashing_context.output_it;
+
+                if (!std::exchange(squashing_context.squashing_transform_added, true))
+                {
+                    chassert(!squashing_processors_list.empty());
+                    processor_list.splice(apply_squashing_processor_it, std::move(squashing_processors_list));
+                    squashing_processors_list.clear();
+                }
+            }
+        }
+
+        result_data.push_back(std::make_pair(std::move(processor_list), std::move(resources)));
+    }
+
+    std::vector<Chain> result_chains;
+    result_chains.reserve(result_data.size());
+
+    for (auto & [processor_list, resources] : result_data)
+    {
+        auto & chain = result_chains.emplace_back(std::move(processor_list));
+        chain.attachResources(std::move(resources));
+        chain.setNumThreads(init_context->getSettingsRef()[Setting::max_threads]);
+        chain.setConcurrencyControl(init_context->getSettingsRef()[Setting::use_concurrency_control]);
+    }
+
+    return result_chains;
 }
 
 
@@ -1198,13 +1352,22 @@ Chain InsertDependenciesBuilder::createSelect(StorageIDPrivate view_id) const
     bool should_add_squashing = InterpreterInsertQuery::shouldAddSquashingForStorage(inner_storage, insert_context) && !no_squash && !async_insert;
     if (should_add_squashing)
     {
-        bool table_prefers_large_blocks = inner_storage->prefersLargeBlocks();
-        const auto & settings = insert_context->getSettingsRef();
+        result.addSource(std::make_shared<ApplySquashingTransform>(output_header));
 
-        result.addSource(std::make_shared<SquashingTransform>(
-            output_header,
-            table_prefers_large_blocks ? settings[Setting::min_insert_block_size_rows] : settings[Setting::max_block_size],
-            table_prefers_large_blocks ? settings[Setting::min_insert_block_size_bytes] : 0ULL));
+        if (!squash_parallel_inserts)
+        {
+            bool table_prefers_large_blocks = inner_storage->prefersLargeBlocks();
+            const auto & settings = insert_context->getSettingsRef();
+            result.addSource(
+                std::make_shared<PlanSquashingTransform>(
+                    output_header,
+                    table_prefers_large_blocks ? settings[Setting::min_insert_block_size_rows] : settings[Setting::max_block_size],
+                    table_prefers_large_blocks ? settings[Setting::min_insert_block_size_bytes] : 0ULL));
+        }
+        else
+        {
+            squashing_processors[view_id].push_back(result.getProcessors().begin());
+        }
     }
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
