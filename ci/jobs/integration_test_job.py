@@ -101,7 +101,7 @@ def main():
             use_distributed_plan = True
         elif to == "flaky":
             is_flaky_check = True
-            repeat_option = f"--count {FLAKY_CHECK_TEST_REPEAT_COUNT} --random-order --session-timeout {3600*4}"
+            repeat_option = f"--count {FLAKY_CHECK_TEST_REPEAT_COUNT} --random-order"
         elif to == "parallel":
             is_parallel = True
         elif to == "sequential":
@@ -269,7 +269,7 @@ def main():
                     cwd="./tests/integration/",
                     pytest_report_file=f"{temp_path}/pytest_sequential.jsonl",
                 )
-                if not test_result_parallel.is_ok():
+                if not test_result_sequential.is_ok():
                     print(
                         f"Flaky check: Test run fails after attempt [{attempt+1}/{module_repeat_cnt}] - break"
                     )
