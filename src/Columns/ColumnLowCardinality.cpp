@@ -350,7 +350,7 @@ MutableColumnPtr ColumnLowCardinality::cloneResized(size_t size) const
     if (size == 0)
         unique_ptr = unique_ptr->cloneEmpty();
 
-    return ColumnLowCardinality::create(IColumn::mutate(std::move(unique_ptr)), getIndexes().cloneResized(size));
+    return ColumnLowCardinality::create(IColumn::mutate(std::move(unique_ptr)), getIndexes().cloneResized(size), /*is_shared=*/false);
 }
 
 MutableColumnPtr ColumnLowCardinality::cloneNullable() const
@@ -605,7 +605,7 @@ ColumnLowCardinality::MutablePtr ColumnLowCardinality::cutAndCompact(size_t star
 {
     auto sub_positions = IColumn::mutate(idx.getPositions()->cut(start, length));
     auto new_column_unique = Dictionary::compact(getDictionary(), sub_positions);
-    return ColumnLowCardinality::create(std::move(new_column_unique), std::move(sub_positions));
+    return ColumnLowCardinality::create(std::move(new_column_unique), std::move(sub_positions), /*is_shared=*/false);
 }
 
 void ColumnLowCardinality::compactInplace()

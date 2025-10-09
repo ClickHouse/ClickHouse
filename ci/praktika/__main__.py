@@ -45,6 +45,18 @@ def create_parser():
         default=[],
     )
     run_parser.add_argument(
+        "--count",
+        help="Custom INT parameter to pass into a job script, it's up to job script how to use it (default: number of test reruns), for local test",
+        type=int,
+        default=None,
+    )
+    run_parser.add_argument(
+        "--debug",
+        help="Custom parameter to pass into a job script, it's up to job script how to use it, for local test",
+        action="store_true",
+        default="",
+    )
+    run_parser.add_argument(
         "--pr",
         help="PR number. Optional parameter for local run. Set if you want an required artifact to be uploaded from CI run in that PR",
         type=int,
@@ -128,6 +140,8 @@ def main():
                 pr=args.pr,
                 branch=args.branch,
                 sha=args.sha,
+                count=args.count,
+                debug=args.debug,
             )
     else:
         parser.print_help()

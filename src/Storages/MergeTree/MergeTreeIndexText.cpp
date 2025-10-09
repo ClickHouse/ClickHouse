@@ -42,6 +42,8 @@ static size_t getBloomFilterSizeInBytes(size_t bits_per_row, size_t num_tokens)
 }
 
 static constexpr UInt64 MAX_CARDINALITY_FOR_RAW_POSTINGS = 16;
+static_assert(PostingListBuilder::max_small_size <= MAX_CARDINALITY_FOR_RAW_POSTINGS, "max_small_size must be less than or equal to MAX_CARDINALITY_FOR_RAW_POSTINGS");
+
 static constexpr UInt64 DEFAULT_NGRAM_SIZE = 3;
 static constexpr UInt64 DEFAULT_DICTIONARY_BLOCK_SIZE = 128;
 static constexpr bool DEFAULT_DICTIONARY_BLOCK_USE_FRONTCODING = true;
@@ -128,21 +130,35 @@ DictionaryBlock::DictionaryBlock(ColumnPtr tokens_, std::vector<TokenPostingsInf
 {
 }
 
-void PostingsSerialization::serialize(UInt64 header, PostingList && postings, WriteBuffer & ostr)
+void PostingsSerialization::serialize(UInt64 header, PostingListBuilder && postings, WriteBuffer & ostr)
 {
     if (header & Flags::RawPostings)
     {
-        for (const auto row_id : postings)
-            writeVarUInt(row_id, ostr);
+        if (postings.isSmall())
+        {
+            size_t size = postings.size();
+            const auto & array = postings.getSmall();
+            for (size_t i = 0; i < size; ++i)
+                writeVarUInt(array[i], ostr);
+        }
+        else
+        {
+            const auto & posting_list = postings.getLarge();
+            for (const auto row_id : posting_list)
+                writeVarUInt(row_id, ostr);
+        }
     }
     else
     {
-        postings.runOptimize();
-        size_t num_bytes = postings.getSizeInBytes();
+        chassert(!postings.isSmall());
+        auto & posting_list = postings.getLarge();
+
+        posting_list.runOptimize();
+        size_t num_bytes = posting_list.getSizeInBytes();
         writeVarUInt(num_bytes, ostr);
 
         std::vector<char> memory(num_bytes);
-        postings.write(memory.data());
+        posting_list.write(memory.data());
         ostr.write(memory.data(), num_bytes);
     }
 }
@@ -600,7 +616,7 @@ DictionarySparseIndex serializeTokensAndPostings(
         for (size_t i = block_begin; i < block_end; ++i)
         {
             auto & postings = *tokens_and_postings[i].second;
-            UInt32 cardinality = postings.cardinality();
+            UInt32 cardinality = postings.size();
 
             UInt64 header = 0;
             bool raw_postings = cardinality <= MAX_CARDINALITY_FOR_RAW_POSTINGS;
@@ -695,7 +711,38 @@ MergeTreeIndexTextGranuleBuilder::MergeTreeIndexTextGranuleBuilder(MergeTreeInde
 {
 }
 
-void MergeTreeIndexTextGranuleBuilder::addDocument(StringRef document, bool increment_current_row)
+void PostingListBuilder::add(UInt32 value, PostingListsHolder & postings_holder)
+{
+    if (small_size < max_small_size)
+    {
+        if (small_size)
+        {
+            /// Values are added in non-descending order.
+            chassert(small[small_size - 1] <= value);
+            if (small[small_size - 1] == value)
+                return;
+        }
+
+        small[small_size++] = value;
+
+        if (small_size == max_small_size)
+        {
+            auto small_copy = std::move(small);
+            large.first = &postings_holder.emplace_back();
+            large.second = roaring::BulkContext();
+
+            for (size_t i = 0; i < max_small_size; ++i)
+                large.first->addBulk(large.second, small_copy[i]);
+        }
+    }
+    else
+    {
+        /// Use addBulk to optimize consecutive insertions into the posting list.
+        large.first->addBulk(large.second, value);
+    }
+}
+
+void MergeTreeIndexTextGranuleBuilder::addDocument(StringRef document)
 {
     size_t cur = 0;
     size_t token_start = 0;
@@ -709,20 +756,10 @@ void MergeTreeIndexTextGranuleBuilder::addDocument(StringRef document, bool incr
 
         ArenaKeyHolder key_holder{StringRef(document.data + token_start, token_len), *arena};
         tokens_map.emplace(key_holder, it, inserted);
-        auto & [posting_list, bulk_context] = it->getMapped();
 
-        if (inserted)
-        {
-            posting_list = &posting_lists.emplace_back();
-            bulk_context = roaring::BulkContext();
-        }
-
-        /// Use addBulk to optimize consecutive insertions into the posting list.
-        posting_list->addBulk(bulk_context, current_row);
+        auto & posting_list_builder = it->getMapped();
+        posting_list_builder.add(current_row, posting_lists);
     }
-
-    if (increment_current_row)
-        ++current_row;
 }
 
 std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuilder::build()
@@ -735,7 +772,7 @@ std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuil
 
     tokens_map.forEachValue([&](const auto & key, auto & mapped)
     {
-        sorted_values.emplace_back(key, mapped.first);
+        sorted_values.emplace_back(key, &mapped);
         bloom_filter.add(key.data, key.size);
     });
 
@@ -801,12 +838,14 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
         {
             size_t element_start_row = column_offsets[current_position + i - 1];
             size_t elements_size = column_offsets[current_position + i] - element_start_row;
+
             for (size_t element_idx = 0; element_idx < elements_size; ++element_idx)
             {
                 auto ref = column_data.getDataAt(element_start_row + element_idx);
-                granule_builder.addDocument(
-                    ref, (element_idx == (elements_size - 1)) /* update current row number only on the last element */);
+                granule_builder.addDocument(ref);
             }
+
+            granule_builder.incrementCurrentRow();
         }
     }
     else
@@ -815,6 +854,7 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
         {
             auto ref = index_column->getDataAt(current_position + i);
             granule_builder.addDocument(ref);
+            granule_builder.incrementCurrentRow();
         }
     }
 

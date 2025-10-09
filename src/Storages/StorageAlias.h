@@ -13,15 +13,15 @@ public:
     StorageAlias(
         const StorageID & table_id_,
         ContextPtr context_,
-        const StorageID & target_table_id_,
+        const String & target_database_,
+        const String & target_table_,
         const ColumnsDescription & columns_,
         const String & comment);
 
     std::string getName() const override { return "Alias"; }
 
     /// Get the target storage this alias points to
-    StoragePtr getTargetTable() const { return DatabaseCatalog::instance().getTable(target_table_id, getContext()); }
-    StorageID getTargetTableId() const { return target_table_id; }
+    StoragePtr getTargetTable() const { return DatabaseCatalog::instance().getTable(StorageID(target_database, target_table), getContext()); }
 
     /// Read from target table
     void read(
@@ -124,9 +124,9 @@ public:
     /// Rename alias, not the target table
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
-
 protected:
-    StorageID target_table_id = StorageID::createEmpty();
+    String target_database;
+    String target_table;
 };
 
 }
