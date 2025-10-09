@@ -393,7 +393,7 @@ MergeTreeTransactionPtr TransactionLog::beginTransaction()
         txn = std::make_shared<MergeTreeTransaction>(snapshot, ltid, ServerUUID::get(), snapshot_lock);
         bool inserted = running_list.try_emplace(txn->tid.getHash(), txn).second;
         if (!inserted)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "I's a bug: TID {} {} exists", txn->tid.getHash(), txn->tid);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "It's a bug: TID {} {} exists", txn->tid.getHash(), txn->tid);
     }
 
     LOG_TEST(log, "Beginning transaction {} ({})", txn->tid, txn->tid.getHash());

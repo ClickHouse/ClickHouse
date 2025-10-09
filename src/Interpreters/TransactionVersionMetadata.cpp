@@ -90,6 +90,7 @@ bool VersionMetadata::tryLockRemovalTID(const TransactionID & tid, const Transac
 
 void VersionMetadata::unlockRemovalTID(const TransactionID & tid, const TransactionInfoContext & context)
 {
+    chassert(!removal_tid.isEmpty());
     LOG_TEST(log, "Unlocking removal_tid by {}, table: {}, part: {}", tid, context.table.getNameForLogs(), context.part_name);
     chassert(!tid.isEmpty());
     TIDHash removal_lock_value = tid.getHash();
