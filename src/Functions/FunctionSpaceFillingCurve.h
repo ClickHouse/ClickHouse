@@ -48,7 +48,7 @@ public:
             const auto * type_tuple = typeid_cast<const DataTypeTuple *>(arguments[0].get());
             auto tuple_size = type_tuple->getElements().size();
             if (tuple_size == 0)
-                throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                                 "Empty tuple is not allowed for function {}",
                                 getName());
             if (tuple_size != (arguments.size() - 1))
