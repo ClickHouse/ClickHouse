@@ -1026,10 +1026,7 @@ void addPreliminaryLimitStep(QueryPlan & query_plan,
     UInt64 limit_length = query_analysis_result.limit_length;
     bool is_limit_negative = query_analysis_result.is_limit_negative;
 
-    if (is_limit_negative)
-        return;
-
-    if (do_not_skip_offset)
+    if (do_not_skip_offset && !is_limit_negative)
     {
         if (limit_length > std::numeric_limits<UInt64>::max() - limit_offset)
             return;
@@ -1041,13 +1038,22 @@ void addPreliminaryLimitStep(QueryPlan & query_plan,
     const auto & query_context = planner_context->getQueryContext();
     const Settings & settings = query_context->getSettingsRef();
 
-    auto limit
-        = std::make_unique<LimitStep>(query_plan.getCurrentHeader(), limit_length, limit_offset, settings[Setting::exact_rows_before_limit]);
-    if (do_not_skip_offset)
-        limit->setStepDescription("preliminary LIMIT (with OFFSET)");
+    if (is_limit_negative)
+    {
+        auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), limit_length, limit_offset);
+
+        query_plan.addStep(std::move(limit));
+    }
     else
-        limit->setStepDescription("preliminary LIMIT (without OFFSET)");
-    query_plan.addStep(std::move(limit));
+    {
+        auto limit = std::make_unique<LimitStep>(
+            query_plan.getCurrentHeader(), limit_length, limit_offset, settings[Setting::exact_rows_before_limit]);
+        if (do_not_skip_offset)
+            limit->setStepDescription("preliminary LIMIT (with OFFSET)");
+        else
+            limit->setStepDescription("preliminary LIMIT (without OFFSET)");
+        query_plan.addStep(std::move(limit));
+    }
 }
 
 bool addPreliminaryLimitOptimizationStepIfNeeded(QueryPlan & query_plan,

@@ -3242,10 +3242,7 @@ void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
     {
         auto [limit_length, limit_offset, is_negative] = getLimitLengthAndOffset(query, context);
 
-        if (is_negative)
-            return;
-
-        if (do_not_skip_offset)
+        if (do_not_skip_offset && !is_negative)
         {
             if (limit_length > std::numeric_limits<UInt64>::max() - limit_offset)
                 return;
@@ -3256,14 +3253,23 @@ void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
 
         const Settings & settings = context->getSettingsRef();
 
-        auto limit
-            = std::make_unique<LimitStep>(query_plan.getCurrentHeader(), limit_length, limit_offset, settings[Setting::exact_rows_before_limit]);
-        if (do_not_skip_offset)
-            limit->setStepDescription("preliminary LIMIT (with OFFSET)");
-        else
-            limit->setStepDescription("preliminary LIMIT (without OFFSET)");
+        if (is_negative)
+        {
+            auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), limit_length, limit_offset);
 
-        query_plan.addStep(std::move(limit));
+            query_plan.addStep(std::move(limit));
+        }
+        else
+        {
+            auto limit = std::make_unique<LimitStep>(
+                query_plan.getCurrentHeader(), limit_length, limit_offset, settings[Setting::exact_rows_before_limit]);
+            if (do_not_skip_offset)
+                limit->setStepDescription("preliminary LIMIT (with OFFSET)");
+            else
+                limit->setStepDescription("preliminary LIMIT (without OFFSET)");
+
+            query_plan.addStep(std::move(limit));
+        }
     }
 }
 
