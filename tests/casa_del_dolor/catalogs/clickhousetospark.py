@@ -4,6 +4,20 @@ import random
 import re
 import pyspark.sql.types as sp
 import pyiceberg.types as it
+from pyiceberg.schema import Schema
+from pyiceberg.partitioning import PartitionSpec, PartitionField
+from pyiceberg.table.sorting import SortOrder, SortField, SortDirection, NullOrder
+from pyiceberg.transforms import (
+    IdentityTransform,
+    BucketTransform,
+    TruncateTransform,
+    YearTransform,
+    MonthTransform,
+    DayTransform,
+    HourTransform,
+    VoidTransform,
+    UnknownTransform,
+)
 
 
 class ClickHouseMapping(Enum):
@@ -550,3 +564,146 @@ class ClickHouseTypeMapper:
                 )
                 fields.append(f"{field_name}:{field_type}")
             return f"STRUCT<{','.join(fields)}>"
+
+    def _get_random_iceberg_transform_for_type(self, field_type):
+        """Get a random appropriate transform for a field type."""
+        transforms = [IdentityTransform()]
+
+        if isinstance(field_type, it.StringType) or random.randint(1, 100) < 6:
+            transforms.extend(
+                [
+                    BucketTransform(num_buckets=random.choice([4, 8, 16, 32, 64])),
+                    TruncateTransform(width=random.choice([1, 2, 4, 8, 16])),
+                ]
+            )
+        if (
+            isinstance(
+                field_type, (it.IntegerType, it.LongType, it.FloatType, it.DoubleType)
+            )
+            or random.randint(1, 100) < 6
+        ):
+            transforms.extend(
+                [
+                    BucketTransform(num_buckets=random.choice([4, 8, 16, 32, 64, 128])),
+                ]
+            )
+        if (
+            isinstance(
+                field_type,
+                (
+                    it.DateType,
+                    it.TimestampType,
+                    it.TimestamptzType,
+                    it.TimestampNanoType,
+                    it.TimestamptzNanoType,
+                ),
+            )
+            or random.randint(1, 100) < 6
+        ):
+            transforms.extend([YearTransform(), MonthTransform(), DayTransform()])
+        if (
+            isinstance(
+                field_type,
+                (
+                    it.TimeType,
+                    it.TimestampType,
+                    it.TimestamptzType,
+                    it.TimestampNanoType,
+                    it.TimestamptzNanoType,
+                ),
+            )
+            or random.randint(1, 100) < 6
+        ):
+            transforms.extend([HourTransform()])
+        if isinstance(field_type, it.DecimalType) or random.randint(1, 100) < 6:
+            transforms.extend(
+                [
+                    BucketTransform(num_buckets=random.choice([8, 16, 32])),
+                ]
+            )
+        if random.randint(1, 100) < 11:
+            transforms.extend([VoidTransform(), UnknownTransform()])
+        return random.choice(transforms)
+
+    def generate_random_iceberg_partition_spec(
+        self, schema: Schema, max_partitions: int = 3
+    ) -> PartitionSpec:
+        """
+        Generate a random PartitionSpec from a schema.
+
+        Args:
+            schema: The Iceberg schema
+            max_partitions: Maximum number of partition fields to create
+
+        Returns:
+            A random PartitionSpec
+        """
+        # Get all fields from schema
+        available_fields = list(schema.fields)
+        if not available_fields or random.randint(1, 2) == 1:
+            return PartitionSpec()
+        # Randomly decide how many partitions to create (0 to max_partitions)
+        num_partitions = random.randint(0, min(max_partitions, len(available_fields)))
+        if num_partitions == 0:
+            return PartitionSpec()  # Unpartitioned table
+
+        # Randomly select fields to partition on
+        partition_fields_list = random.sample(available_fields, num_partitions)
+        partition_fields = []
+        partition_field_id = 1000  # Start partition field IDs at 1000
+        for field in partition_fields_list:
+            # Choose appropriate transform based on field type
+            transform = self._get_random_iceberg_transform_for_type(field.field_type)
+
+            partition_field = PartitionField(
+                source_id=field.field_id,
+                field_id=partition_field_id,
+                transform=transform,
+                name=f"{field.name}_{transform}",
+            )
+            partition_fields.append(partition_field)
+            partition_field_id += 1
+        return PartitionSpec(*partition_fields)
+
+    def generate_random_iceberg_sort_order(
+        self, schema: Schema, max_sort_fields: int = 3
+    ) -> SortOrder:
+        """
+        Generate a random SortOrder from a schema.
+
+        Args:
+            schema: The Iceberg schema
+            max_sort_fields: Maximum number of sort fields to create
+
+        Returns:
+            A random SortOrder
+        """
+        # Get all fields from schema
+        available_fields = list(schema.fields)
+        if not available_fields or random.randint(1, 2) == 1:
+            return SortOrder()
+        # Randomly decide how many sort fields to create (0 to max_sort_fields)
+        num_sort_fields = random.randint(0, min(max_sort_fields, len(available_fields)))
+        if num_sort_fields == 0:
+            return SortOrder()  # Unsorted table
+
+        # Randomly select fields to sort on (without replacement)
+        sort_fields_list = random.sample(available_fields, num_sort_fields)
+        sort_fields = []
+        for field in sort_fields_list:
+            # Choose transform (or identity)
+            transform = self._get_random_iceberg_transform_for_type(field.field_type)
+            # Choose sort direction
+            direction = random.choice([SortDirection.ASC, SortDirection.DESC])
+            # Choose null order
+            null_order = random.choice([NullOrder.NULLS_FIRST, NullOrder.NULLS_LAST])
+
+            sort_field = SortField(
+                source_id=field.field_id,
+                transform=transform,
+                direction=direction,
+                null_order=null_order,
+            )
+            sort_fields.append(sort_field)
+
+        return SortOrder(*sort_fields)

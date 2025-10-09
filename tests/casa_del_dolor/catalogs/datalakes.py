@@ -839,12 +839,8 @@ logger.jetty.level = warn
                 and catalog_type
                 in (LakeCatalogs.Hive, LakeCatalogs.REST, LakeCatalogs.Glue)
             ):
-                catalog_impl.create_table(
-                    identifier=("test", data["table_name"]),
-                    location=f"s3{"a" if catalog_type == LakeCatalogs.Hive else ""}://warehouse-{"rest" if catalog_type == LakeCatalogs.REST else ("hms" if catalog_type == LakeCatalogs.Hive else "glue")}{"/data" if catalog_type == LakeCatalogs.Hive else ""}",
-                    schema=next_table_generator.generate_catalog_schema(
-                        data["columns"]
-                    ),
+                next_table_generator.create_catalog_table(
+                    catalog_type, catalog_impl, data["columns"], next_table
                 )
             elif catalog_type == LakeCatalogs.NoCatalog:
                 self.run_query(next_session, next_sql)

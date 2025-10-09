@@ -9,6 +9,7 @@ from .laketables import (
     FileFormat,
     TableStorage,
     SparkColumn,
+    LakeCatalogs,
 )
 
 from pyspark.sql import SparkSession
@@ -169,8 +170,14 @@ class LakeTableGenerator:
         return (ddl + ";", res)
 
     @abstractmethod
-    def generate_catalog_schema(self, columns: list[dict[str, str]]):
-        return []
+    def create_catalog_table(
+        self,
+        catalog_type: LakeCatalogs,
+        catalog_impl,
+        columns: list[dict[str, str]],
+        table: SparkTable,
+    ):
+        pass
 
     def generate_alter_table_statements(
         self,
@@ -277,8 +284,14 @@ class IcebergTableGenerator(LakeTableGenerator):
     ) -> str:
         return ""
 
-    @abstractmethod
-    def generate_catalog_schema(self, columns: list[dict[str, str]]):
+    def create_catalog_table(
+        self,
+        catalog_type: LakeCatalogs,
+        catalog_impl,
+        columns: list[dict[str, str]],
+        table: SparkTable,
+    ):
+        nproperties = {}
         fields = []
 
         self.type_mapper.reset()
@@ -297,7 +310,20 @@ class IcebergTableGenerator(LakeTableGenerator):
                 )
             )
             self.type_mapper.increment()
-        return Schema(*fields)
+        nschema = Schema(*fields)
+
+        if random.randint(1, 2) == 1:
+            nproperties.update(self.generate_table_properties(table))
+        catalog_impl.create_table(
+            identifier=("test", table.table_name),
+            location=f"s3{"a" if catalog_type == LakeCatalogs.Hive else ""}://warehouse-{"rest" if catalog_type == LakeCatalogs.REST else ("hms" if catalog_type == LakeCatalogs.Hive else "glue")}{"/data" if catalog_type == LakeCatalogs.Hive else ""}",
+            schema=nschema,
+            partition_spec=self.type_mapper.generate_random_iceberg_partition_spec(
+                nschema
+            ),
+            sort_order=self.type_mapper.generate_random_iceberg_sort_order(nschema),
+            properties=nproperties,
+        )
 
     def generate_table_properties_impl(
         self,
@@ -766,9 +792,14 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
             return f" GENERATED ALWAYS AS (CAST({random.choice(list(flattened.keys()))} AS {self.type_mapper.generate_random_spark_sql_type()}))"
         return ""
 
-    @abstractmethod
-    def generate_catalog_schema(self, columns: list[dict[str, str]]):
-        return []
+    def create_catalog_table(
+        self,
+        catalog_type: LakeCatalogs,
+        catalog_impl,
+        columns: list[dict[str, str]],
+        table: SparkTable,
+    ):
+        pass
 
     def generate_table_properties_impl(
         self,
