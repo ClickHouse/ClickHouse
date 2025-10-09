@@ -522,7 +522,7 @@ void StorageWindowView::alter(
         new_metadata.columns = target_table_metadata->columns;
     }
 
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
     setInMemoryMetadata(new_metadata);
 
     startup();
@@ -646,10 +646,6 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
 
     builder = select.buildQueryPipeline();
 
-    builder.addSimpleTransform([&](const SharedHeader & current_header)
-    {
-        return std::make_shared<MaterializingTransform>(current_header);
-    });
     builder.addSimpleTransform(
         [&](const SharedHeader & current_header)
         {

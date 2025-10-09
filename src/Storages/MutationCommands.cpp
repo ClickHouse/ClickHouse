@@ -32,7 +32,9 @@ bool MutationCommand::isBarrierCommand() const
 
 bool MutationCommand::affectsAllColumns() const
 {
-    return type == DELETE || type == APPLY_DELETED_MASK;
+    return type == DELETE
+        || type == APPLY_DELETED_MASK
+        || type == REWRITE_PARTS;
 }
 
 std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command, bool parse_alter_commands)
@@ -104,7 +106,10 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         if (command->partition)
             res.partition = command->partition->clone();
         res.predicate = nullptr;
-        res.statistics_columns = command->statistics_decl->as<ASTStatisticsDeclaration &>().getColumnNames();
+        if (command->statistics_decl)
+        {
+            res.statistics_columns = command->statistics_decl->as<ASTStatisticsDeclaration &>().getColumnNames();
+        }
         return res;
     }
     if (command->type == ASTAlterCommand::MATERIALIZE_PROJECTION)
@@ -206,6 +211,15 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         MutationCommand res;
         res.ast = command->ptr();
         res.type = MATERIALIZE_TTL;
+        if (command->partition)
+            res.partition = command->partition->clone();
+        return res;
+    }
+    if (command->type == ASTAlterCommand::REWRITE_PARTS)
+    {
+        MutationCommand res;
+        res.ast = command->ptr();
+        res.type = REWRITE_PARTS;
         if (command->partition)
             res.partition = command->partition->clone();
         return res;

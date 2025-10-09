@@ -699,7 +699,14 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                     }
                     if (!secret_arguments.replacement.empty())
                     {
-                        ostr << "'" << secret_arguments.replacement << "'";
+                        if (secret_arguments.quote_replacement)
+                        {
+                            ostr << "'" << secret_arguments.replacement << "'";
+                        }
+                        else
+                        {
+                            ostr << secret_arguments.replacement;
+                        }
                     }
                     else
                     {

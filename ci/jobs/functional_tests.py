@@ -1,9 +1,9 @@
 import argparse
 import os
+import random
 import re
 import time
 from pathlib import Path
-import random
 
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
 from ci.jobs.scripts.functional_tests_results import FTResultsProcessor
@@ -68,7 +68,6 @@ def run_tests(
     extra_args="",
 ):
     test_output_file = f"{temp_dir}/test_result.txt"
-    nproc = int(Utils.cpu_count() / 2)
     if batch_num and batch_total:
         extra_args += (
             f" --run-by-hash-total {batch_total} --run-by-hash-num {batch_num-1}"
@@ -82,7 +81,7 @@ def run_tests(
     # Remove --report-logs-stats, it hides sanitizer errors in def reportLogStats(args): clickhouse_execute(args, "SYSTEM FLUSH LOGS")
     command = f"clickhouse-test --testname --check-zookeeper-session --hung-check --trace \
                 --capture-client-stacktrace --queries ./tests/queries --test-runs 1 \
-                --jobs {nproc} {extra_args} \
+                {extra_args} \
                 --queries ./tests/queries -- '{test}' | ts '%Y-%m-%d %H:%M:%S' \
                 | tee -a \"{test_output_file}\""
     if Path(test_output_file).exists():
@@ -92,11 +91,10 @@ def run_tests(
 
 def run_specific_tests(tests, runs=1, extra_args=""):
     test_output_file = f"{temp_dir}/test_result.txt"
-    nproc = int(Utils.cpu_count() / 2)
     # Remove --report-logs-stats, it hides sanitizer errors in def reportLogStats(args): clickhouse_execute(args, "SYSTEM FLUSH LOGS")
     command = f"clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --trace \
         --capture-client-stacktrace --queries ./tests/queries --test-runs {runs} \
-        --jobs {nproc} {extra_args} --order=random -- {' '.join(tests)} | ts '%Y-%m-%d %H:%M:%S' | tee -a \"{test_output_file}\""
+        {extra_args} --order=random -- {' '.join(tests)} | ts '%Y-%m-%d %H:%M:%S' | tee -a \"{test_output_file}\""
     if Path(test_output_file).exists():
         Path(test_output_file).unlink()
     Shell.run(command, verbose=True)
@@ -119,7 +117,7 @@ OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
     "s3 storage": "--s3-storage --no-stateful",
     "ParallelReplicas": "--no-zookeeper --no-shard --no-parallel-replicas",
     "AsyncInsert": " --no-async-insert",
-    "DatabaseReplicated": " --no-stateful --replicated-database --jobs 3",
+    "DatabaseReplicated": " --no-stateful --replicated-database",
     "azure": " --azure-blob-storage --no-random-settings --no-random-merge-tree-settings",  # azurite is slow, with randomization it can be super slow
     "parallel": "--no-sequential",
     "sequential": "--no-parallel",
@@ -138,7 +136,10 @@ def main():
     is_database_replicated = False
     is_shared_catalog = False
     is_encrypted_storage = random.choice([True, False])
+    is_parallel_replicas = False
     runner_options = ""
+    # optimal value for most of the jobs
+    nproc = int(Utils.cpu_count() * 0.6)
     info = Info()
 
     for to in test_options:
@@ -172,6 +173,21 @@ def main():
             is_database_replicated = True
         if "SharedCatalog" in to:
             is_shared_catalog = True
+        if "ParallelReplicas" in to:
+            is_parallel_replicas = True
+
+    if is_database_replicated or is_shared_catalog or is_parallel_replicas:
+        pass
+    else:
+        if "binary" in args.options and len(test_options) < 3:
+            # plain binary job works fast with high concurrency
+            nproc = int(Utils.cpu_count() * 1.2)
+        elif is_database_replicated:
+            nproc = int(Utils.cpu_count() * 0.4)
+        else:
+            pass
+
+    runner_options += f" --jobs {nproc}"
 
     if not info.is_local_run:
         # TODO: find a way to work with Azure secret so it's ok for local tests as well, for now keep azure disabled
@@ -268,7 +284,7 @@ def main():
                 link_to_master_head_binary = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/amd64/clickhouse"
             if not info.is_local_run or not (Path(temp_dir) / "clickhouse").exists():
                 print(
-                    f"NOTE: Clickhouse binary will be downloaded to [{temp_dir}] from [{link_to_master_head_binary}]"
+                    f"NOTE: ClickHouse binary will be downloaded to [{temp_dir}] from [{link_to_master_head_binary}]"
                 )
                 if info.is_local_run:
                     time.sleep(10)
@@ -277,6 +293,10 @@ def main():
                     f"wget -nv -P {temp_dir} {link_to_master_head_binary}",
                 )
             os.environ["GLOBAL_TAGS"] = "no-random-settings"
+
+        os.environ["MALLOC_CONF"] = (
+            f"prof_active:true,prof_prefix:{temp_dir}/jemalloc_profiles/clickhouse.jemalloc"
+        )
 
         commands.append(configure_log_export)
 
@@ -298,12 +318,6 @@ def main():
             res = CH.start_minio(test_type="stateless") and CH.start_azurite()
             res = res and CH.start()
             res = res and CH.wait_ready()
-            if res:
-                if "asan" not in info.job_name:
-                    print("Attaching gdb")
-                    res = res and CH.attach_gdb()
-                else:
-                    print("Skipping gdb attachment for asan build")
             if res:
                 if not Info().is_local_run:
                     if not CH.start_log_exports(stop_watch.start_time):
@@ -364,7 +378,7 @@ def main():
         if is_bugfix_validation:
             has_failure = False
             for r in results[-1].results:
-                if not r.is_ok():
+                if r.status == Result.StatusExtended.FAIL:
                     has_failure = True
                     break
             if not has_failure:
@@ -434,7 +448,7 @@ def main():
         stopwatch=stop_watch,
         files=CH.logs + debug_files,
         info=job_info,
-    ).complete_job(force_ok_exit=force_ok_exit)
+    ).complete_job(do_not_block_pipeline_on_failure=force_ok_exit)
 
 
 if __name__ == "__main__":

@@ -30,6 +30,7 @@ public:
     std::string getName() const override { return STEP_NAME; }
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
+    void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
@@ -38,7 +39,7 @@ private:
     StorageObjectStorageConfigurationPtr configuration;
     std::shared_ptr<IObjectIterator> iterator_wrapper;
 
-    const ReadFromFormatInfo info;
+    ReadFromFormatInfo info;
     const NamesAndTypesList virtual_columns;
     const std::optional<DB::FormatSettings> format_settings;
     const bool need_only_count;

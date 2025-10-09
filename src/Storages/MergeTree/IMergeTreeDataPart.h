@@ -217,6 +217,9 @@ public:
     UInt128 getPartBlockIDHash() const;
     String getNewPartBlockID(std::string_view token) const;
 
+    /// Returns true if it's a zero level part.
+    bool isZeroLevel() const { return info.min_block == info.max_block; }
+
     void setName(const String & new_name);
 
     const MergeTreeData & storage;
@@ -244,6 +247,7 @@ public:
     /// If true, the destructor will delete the directory with the part.
     /// FIXME Why do we need this flag? What's difference from Temporary and DeleteOnDestroy state? Can we get rid of this?
     bool is_temp = false;
+    std::atomic<bool> is_removed = false;
 
     /// This type and the field remove_tmp_policy is used as a hint
     /// to help avoid communication with keeper when temporary part is deleting.
@@ -623,6 +627,8 @@ public:
 
     mutable std::atomic<time_t> last_removal_attempt_time = 0;
 
+    void removeIfNeeded();
+
 protected:
     /// Primary key (correspond to primary.idx file).
     /// Lazily loaded in RAM. Contains each index_granularity-th value of primary key tuple.
@@ -664,8 +670,6 @@ protected:
 
     mutable std::map<String, std::shared_ptr<IMergeTreeDataPart>> projection_parts;
 
-    void removeIfNeeded();
-
     /// Set of source parts for patch parts. Empty for regular parts.
     SourcePartsSetForPatch source_parts_set;
 
@@ -699,7 +703,7 @@ private:
     NameToNumber column_name_to_position;
 
     /// Map from name of column to its serialization info.
-    SerializationInfoByName serialization_infos;
+    SerializationInfoByName serialization_infos{{}};
 
     /// Serializations for every columns and subcolumns by their names.
     SerializationByName serializations;
@@ -771,6 +775,9 @@ private:
 
     /// Returns the name of projection for projection part, empty string for regular part.
     String getProjectionName() const;
+
+    /// Returns the name of the part state as a string.
+    String stateToString() const;
 
     /// This ugly flag is needed for debug assertions only
     mutable bool part_is_probably_removed_from_disk = false;

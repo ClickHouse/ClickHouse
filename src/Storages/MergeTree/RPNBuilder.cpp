@@ -424,6 +424,11 @@ std::string RPNBuilderFunctionTreeNode::getFunctionName() const
     return dag_node->function_base->getName();
 }
 
+FunctionBasePtr RPNBuilderFunctionTreeNode::getFunctionBase() const
+{
+    return ast_node ? nullptr : dag_node->function_base;
+}
+
 size_t RPNBuilderFunctionTreeNode::getArgumentsSize() const
 {
     if (ast_node)

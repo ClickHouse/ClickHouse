@@ -246,6 +246,10 @@ private:
     std::optional<UInt64> nonce;
     String cluster;
 
+    /// For tracking connection lifetime and query count
+    UInt64 query_count = 0;
+    Stopwatch connection_timer;
+
     /// `callback_mutex` protects using `out` (WriteBuffer), `in` (ReadBuffer) and other members concurrent inside callbacks.
     /// All the methods which are run inside callbacks are marked with TSA_REQUIRES.
     std::mutex callback_mutex;
@@ -335,6 +339,8 @@ private:
     /// This function is called from different threads.
     void updateProgress(QueryState & state, const Progress & value);
     void logQueryDuration(QueryState & state);
+
+    bool connectionLimitReached();
 
     Poco::Net::SocketAddress getClientAddress(const ClientInfo & client_info);
 };

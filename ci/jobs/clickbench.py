@@ -1,4 +1,4 @@
-from ci.jobs.scripts.clickhouse_proc import ClickHouseLight
+from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
@@ -10,17 +10,16 @@ def main():
     res = True
     results = []
     stop_watch = Utils.Stopwatch()
-    ch = ClickHouseLight()
+    ch = ClickHouseProc()
 
     if res:
         print("Install ClickHouse")
 
         def install():
-            return (
-                ch.install()
-                and ch.clickbench_config_tweaks()
-                and ch.create_log_export_config()
-            )
+            res = ch.install_clickbench_config()
+            if Info().is_local_run:
+                return res
+            return res and ch.create_log_export_config()
 
         results.append(
             Result.from_commands_run(name="Install ClickHouse", command=install)
@@ -31,11 +30,10 @@ def main():
         print("Start ClickHouse")
 
         def start():
-            return ch.start() and (
-                ch.start_log_exports(check_start_time=stop_watch.start_time)
-                if not Info().is_local_run
-                else True
-            )
+            res = ch.start_light()
+            if Info().is_local_run:
+                return res
+            return res and ch.start_log_exports(check_start_time=stop_watch.start_time)
 
         results.append(
             Result.from_commands_run(
@@ -98,7 +96,7 @@ def main():
     )
 
     Result.create_from(
-        results=results, stopwatch=stop_watch, files=[ch.log_file]
+        results=results, stopwatch=stop_watch, files=ch.prepare_logs(all=False)
     ).complete_job()
 
 
