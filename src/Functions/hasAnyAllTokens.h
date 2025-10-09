@@ -32,14 +32,14 @@ struct HasAllTokensTraits
 /// Map needle into a position (for bitmap operations).
 using Needles = absl::flat_hash_map<String, UInt64>;
 
-template <class SearchTraits>
+template <class HasTokensTraits>
 class FunctionHasAnyAllTokens : public IFunction
 {
 public:
-    static constexpr auto name = SearchTraits::name;
+    static constexpr auto name = HasTokensTraits::name;
 
     static FunctionPtr create(ContextPtr context);
-    explicit FunctionHasAnyAllTokens<SearchTraits>(ContextPtr context);
+    explicit FunctionHasAnyAllTokens<HasTokensTraits>(ContextPtr context);
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 2; }
