@@ -185,7 +185,6 @@ private:
 
         IColumn::Offset offset{};
 
-        _Pragma("clang loop unroll_count(8)")
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
             for (size_t idx = 0; idx < row_length[row_idx]; ++idx)
