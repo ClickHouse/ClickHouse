@@ -5,6 +5,7 @@
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
 
+#include <absl/container/flat_hash_map.h>
 #include <initializer_list>
 #include <vector>
 #include <Common/StringHashForHeterogeneousLookup.h>
@@ -31,7 +32,7 @@ class Block
 {
 private:
     using Container = ColumnsWithTypeAndName;
-    using IndexByName = std::unordered_map<String, size_t, StringHashForHeterogeneousLookup, StringHashForHeterogeneousLookup::transparent_key_equal>;
+    using IndexByName = absl::flat_hash_map<String, size_t, StringHashForHeterogeneousLookup, StringHashForHeterogeneousLookup::transparent_key_equal>;
 
     Container data;
     IndexByName index_by_name;
@@ -43,6 +44,7 @@ public:
     Block(std::initializer_list<ColumnWithTypeAndName> il);
     Block(const ColumnsWithTypeAndName & data_); /// NOLINT
     Block(ColumnsWithTypeAndName && data_); /// NOLINT
+    Block(ColumnsWithTypeAndName && data_, const IndexByName & index);
 
     /// insert the column at the specified position
     void insert(size_t position, ColumnWithTypeAndName elem);

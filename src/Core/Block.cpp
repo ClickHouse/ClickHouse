@@ -169,11 +169,21 @@ Block::Block(ColumnsWithTypeAndName && data_) : data{std::move(data_)}
 }
 
 
+Block::Block(ColumnsWithTypeAndName && data_, const IndexByName & index)
+    : data{std::move(data_)}, index_by_name(index)
+{
+    chassert(data.size() == index.size());
+}
+
+
 void Block::initializeIndexByName()
 {
     index_by_name.reserve(data.size());
     for (size_t i = 0, size = data.size(); i < size; ++i)
-        index_by_name.emplace(data[i].name, i);
+    {
+        auto [_, inserted] = index_by_name.emplace(data[i].name, i);
+        chassert(inserted);
+    }
 }
 
 
@@ -254,18 +264,13 @@ void Block::erase(size_t position)
 
 void Block::eraseImpl(size_t position)
 {
+    index_by_name.erase(index_by_name.find((data.begin() + position)->name));
     data.erase(data.begin() + position);
 
-    for (auto it = index_by_name.begin(); it != index_by_name.end();)
+    for (auto it = index_by_name.begin(); it != index_by_name.end(); ++it)
     {
-        if (it->second == position)
-            it = index_by_name.erase(it);
-        else
-        {
-            if (it->second > position)
-                --it->second;
-            ++it;
-        }
+        if (it->second > position)
+            --it->second;
     }
 }
 
@@ -590,10 +595,7 @@ void Block::setColumn(size_t position, ColumnWithTypeAndName column)
 
 Block Block::cloneWithColumns(MutableColumns && columns) const
 {
-    Block res;
-
     size_t num_columns = data.size();
-
     if (num_columns != columns.size())
     {
         auto dump_columns = std::views::transform([](const auto & col) { return col->dumpStructure(); });
@@ -604,12 +606,13 @@ Block Block::cloneWithColumns(MutableColumns && columns) const
             columns.size(), fmt::join(columns | dump_columns, ", "));
     }
 
-    res.reserve(num_columns);
+    ColumnsWithTypeAndName cols;
+    cols.reserve(num_columns);
 
     for (size_t i = 0; i < num_columns; ++i)
-        res.insert({ std::move(columns[i]), data[i].type, data[i].name });
+        cols.emplace_back(std::move(columns[i]), data[i].type, data[i].name);
 
-    return res;
+    return Block(std::move(cols), index_by_name);
 }
 
 
@@ -632,21 +635,19 @@ Block Block::cloneWithColumns(const Columns & columns) const
     for (size_t i = 0; i < num_columns; i++)
         cols.emplace_back(columns[i], data[i].type, data[i].name);
 
-    return Block(std::move(cols));
+    return Block(std::move(cols), index_by_name);
 }
 
 
 Block Block::cloneWithoutColumns() const
 {
-    Block res;
-
     size_t num_columns = data.size();
-    res.reserve(num_columns);
+    ColumnsWithTypeAndName cols{num_columns};
 
     for (size_t i = 0; i < num_columns; ++i)
-        res.insert({ nullptr, data[i].type, data[i].name });
+        cols.emplace_back(nullptr, data[i].type, data[i].name);
 
-    return res;
+    return Block(std::move(cols), index_by_name);
 }
 
 Block Block::cloneWithCutColumns(size_t start, size_t length) const
