@@ -257,8 +257,34 @@ WildcardPartitionStrategy::WildcardPartitionStrategy(KeyDescription partition_ke
 
 ColumnPtr WildcardPartitionStrategy::computePartitionKey(const Chunk & chunk)
 {
+    // Build a block with the same header as sample_block without any columns
     Block block_with_partition_by_expr = sample_block.cloneWithoutColumns();
-    block_with_partition_by_expr.setColumns(chunk.getColumns());
+
+    // Align incoming columns to the header, truncate or pad with defaults.
+    Columns cols = chunk.getColumns();
+    if (const size_t header_cols = sample_block.columns(); cols.size() != header_cols)
+    {
+        Columns adjusted;
+        adjusted.reserve(header_cols);
+
+        const size_t keep = std::min(cols.size(), header_cols);
+        for (size_t i = 0; i < keep; ++i)
+            adjusted.emplace_back(cols[i]);
+
+        const size_t rows = chunk.getNumRows();
+        for (size_t i = keep; i < header_cols; ++i)
+        {
+            const auto & type = sample_block.getByPosition(i).type;
+            const auto mut = type->createColumn();
+            for (size_t r = 0; r < rows; ++r)
+                mut->insertDefault();
+            adjusted.emplace_back(mut->getPtr());
+        }
+
+        cols = std::move(adjusted);
+    }
+
+    block_with_partition_by_expr.setColumns(cols);
     actions_with_column_name.actions->execute(block_with_partition_by_expr);
 
     return block_with_partition_by_expr.getByName(actions_with_column_name.column_name).column;
@@ -333,8 +359,34 @@ std::string HiveStylePartitionStrategy::getPathForWrite(
 
 ColumnPtr HiveStylePartitionStrategy::computePartitionKey(const Chunk & chunk)
 {
+    // Build a block with the same header as sample_block without any columns
     Block block_with_partition_by_expr = sample_block.cloneWithoutColumns();
-    block_with_partition_by_expr.setColumns(chunk.getColumns());
+    Columns cols = chunk.getColumns();
+
+    // Align incoming columns to the header, truncate or pad with defaults.
+    if (const size_t header_cols = sample_block.columns(); cols.size() != header_cols)
+    {
+        Columns adjusted;
+        adjusted.reserve(header_cols);
+
+        const size_t keep = std::min(cols.size(), header_cols);
+        for (size_t i = 0; i < keep; ++i)
+            adjusted.emplace_back(cols[i]);
+
+        const size_t rows = chunk.getNumRows();
+        for (size_t i = keep; i < header_cols; ++i)
+        {
+            const auto & type = sample_block.getByPosition(i).type;
+            auto mut = type->createColumn();
+            for (size_t r = 0; r < rows; ++r)
+                mut->insertDefault();
+            adjusted.emplace_back(mut->getPtr());
+        }
+
+        cols = std::move(adjusted);
+    }
+
+    block_with_partition_by_expr.setColumns(cols);
     actions_with_column_name.actions->execute(block_with_partition_by_expr);
 
     return block_with_partition_by_expr.getByName(actions_with_column_name.column_name).column;
@@ -342,34 +394,8 @@ ColumnPtr HiveStylePartitionStrategy::computePartitionKey(const Chunk & chunk)
 
 ColumnRawPtrs HiveStylePartitionStrategy::getFormatChunkColumns(const Chunk & chunk)
 {
-    ColumnRawPtrs result;
-    if (partition_columns_in_data_file)
-    {
-        for (const auto & column : chunk.getColumns())
-        {
-            result.emplace_back(column.get());
-        }
-
-        return result;
-    }
-
-    if (chunk.getNumColumns() != sample_block.columns())
-    {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Incorrect number of columns in chunk. Expected {}, found {}",
-            sample_block.columns(), chunk.getNumColumns());
-    }
-
-    for (size_t i = 0; i < sample_block.columns(); i++)
-    {
-        if (!partition_columns_name_set.contains(sample_block.getByPosition(i).name))
-        {
-            result.emplace_back(chunk.getColumns()[i].get());
-        }
-    }
-
-    return result;
+    // Projection is done in the sink, don't construct anything here
+    return IPartitionStrategy::getFormatChunkColumns(chunk);
 }
 
 Block HiveStylePartitionStrategy::getFormatHeader()

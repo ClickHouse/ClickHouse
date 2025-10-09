@@ -218,27 +218,34 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
         file_path = *new_key;
     }
 
-    /// Build the final writer header in the following way:
-    /// - Take column names/order from the partition strategy (this may drop partition columns for HIVE).
-    /// - Take column types from sample_block (the current pipeline schema) to reflect any ALTERs.
-    const Block format_header = partition_strategy->getFormatHeader();
+    /// Compute the file/writer header from the current input header (sample_block):
+    /// Take the intersection of column names from the format header (provided by partition_strategy)
+    /// and the input header, ignoring columns dropped due to schema changes (e.g., ALTER DROP).
+    const Block strategy_format = partition_strategy->getFormatHeader();
     auto final_format_header = std::make_shared<Block>();
-    for (size_t i = 0; i < format_header.columns(); ++i)
+    for (size_t i = 0; i < strategy_format.columns(); ++i)
     {
-        const auto & name = format_header.getByPosition(i).name;
-        if (!sample_block->has(name))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column '{}' in format header is not present in sample_block", name);
-        const size_t pos_in = sample_block->getPositionByName(name);
-        final_format_header->insert(sample_block->getByPosition(pos_in));
+        const auto & name = strategy_format.getByPosition(i).name;
+        if (sample_block->has(name))
+        {
+            const size_t pos_in = sample_block->getPositionByName(name);
+            final_format_header->insert(sample_block->getByPosition(pos_in));
+        }
+        /// if we are here, column suggested by the strategy is absent in the current input
+        /// header (e.g. just dropped); skip it so the writer schema matches the actual data.
     }
+    /// If the strategy suggested nothing (e.g. wildcard with empty set), fall back to
+    /// writing the whole input header.
+    if (!final_format_header->columns())
+        *final_format_header = *sample_block;
 
     return std::make_shared<StorageObjectStorageSink>(
         file_path,
         object_storage,
         configuration,
         format_settings,
-        /* input_header */ sample_block,
-        /* format_header */ final_format_header,
+        sample_block, // input header
+        final_format_header, // writer/file header
         context);
 }
 
