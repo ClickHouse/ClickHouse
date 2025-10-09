@@ -339,8 +339,6 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
 
     size_t num_read_rows = read_result.numReadRows();
     size_t num_read_bytes = read_result.numBytesRead();
-    if (updater)
-        updater->addInputBytes(num_read_bytes);
 
     if (size_predictor)
     {
@@ -356,6 +354,9 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
             column->assumeMutableRef().shrinkToFit();
         block = sample_block.cloneWithColumns(read_result.columns);
     }
+
+    if (updater)
+        updater->addInputBytes(num_read_bytes, block);
 
     BlockAndProgress res = {
         .block = std::move(block),

@@ -97,22 +97,7 @@ public:
     {
     }
 
-    ~Updater()
-    {
-        if (!cache_key)
-            return;
-        LOG_DEBUG(
-            &Poco::Logger::get("debug"),
-            "statistics.input_bytes={}, statistics.output_bytes={}",
-            statistics.input_bytes,
-            statistics.output_bytes);
-        if (statistics.input_bytes_compressed)
-            statistics.input_bytes
-                = static_cast<size_t>(statistics.input_bytes / (statistics.input_bytes_sample / statistics.input_bytes_compressed));
-        statistics.output_bytes = static_cast<size_t>(statistics.output_bytes / output_compression_ratio);
-        auto & dataflow_cache = getRuntimeDataflowStatisticsCache();
-        dataflow_cache.update(*cache_key, statistics);
-    }
+    ~Updater();
 
     void setHeader(const Block & header_)
     {
@@ -121,82 +106,13 @@ public:
         header = header_;
     }
 
-    void addOutputBytes(const Chunk & chunk)
-    {
-        if (!cache_key)
-            return;
-        std::lock_guard lock(mutex);
-        const auto source_bytes = chunk.bytes();
-        statistics.output_bytes += source_bytes;
-        if (first_output && chunk.hasRows())
-        {
-            if (chunk.getNumColumns() != header.columns())
-            {
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Chunk columns number {} doesn't match header columns number {}",
-                    chunk.getNumColumns(),
-                    header.columns());
-            }
+    void addOutputBytes(const Chunk & chunk);
 
-            size_t compressed_bytes = 0;
-            for (size_t i = 0; i < chunk.getNumColumns(); ++i)
-                compressed_bytes += compressedColumnSize({chunk.getColumns()[i], header.getByPosition(i).type, ""});
-            output_compression_ratio = static_cast<double>(source_bytes) / static_cast<double>(compressed_bytes);
-            first_output = false;
-        }
-    }
+    void addInputBytes(size_t bytes, const Block & block);
 
-    void addInputBytes(size_t bytes)
-    {
-        if (!cache_key)
-            return;
-        std::lock_guard lock(mutex);
-        statistics.input_bytes += bytes;
-        // if (cnt++ % 10 == 0)
-        //     statistics.input_bytes_sample += bytes;
-    }
+    void addInputBytes(const ColumnWithTypeAndName & column);
 
-    void addInputBytes(const ColumnWithTypeAndName & column)
-    {
-        if (!cache_key)
-            return;
-        std::lock_guard lock(mutex);
-        const auto source_bytes = column.column->byteSize();
-        // statistics.input_bytes += source_bytes;
-        if (!column.column->empty() && cnt++ % 10 == 0)
-        {
-            statistics.input_bytes_sample += source_bytes;
-            statistics.input_bytes_compressed += compressedColumnSize(column);
-            // first_input = false;
-        }
-    }
-
-    void addInputBytes(const Chunk & chunk)
-    {
-        if (!cache_key)
-            return;
-        std::lock_guard lock(mutex);
-        const auto source_bytes = chunk.bytes();
-        // statistics.input_bytes += source_bytes;
-        if (chunk.hasRows() && cnt++ % 10 == 0)
-        {
-            if (chunk.getNumColumns() != header.columns())
-            {
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Chunk columns number {} doesn't match header columns number {}",
-                    chunk.getNumColumns(),
-                    header.columns());
-            }
-
-            statistics.input_bytes_sample += source_bytes;
-            for (size_t i = 0; i < chunk.getNumColumns(); ++i)
-                if (typeid_cast<const ColumnLazy *>(chunk.getColumns()[i].get()) == nullptr)
-                    statistics.input_bytes_compressed += compressedColumnSize({chunk.getColumns()[i], header.getByPosition(i).type, ""});
-            // first_input = false;
-        }
-    }
+    void addInputBytes(const Chunk & chunk);
 
 private:
     size_t compressedColumnSize(const ColumnWithTypeAndName & column)
