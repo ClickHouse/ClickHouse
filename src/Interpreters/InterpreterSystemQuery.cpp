@@ -1298,6 +1298,7 @@ DatabasePtr InterpreterSystemQuery::restoreDatabaseFromKeeperPath(
     String create_query = fmt::format("CREATE DATABASE `{}` ENGINE=Atomic", restoring_database_name);
 
     auto create_ctx = Context::createCopy(Context::getGlobalContextInstance());
+    create_ctx->setCurrentQueryId({});
     executeQuery(create_query, create_ctx, QueryFlags{.internal = true});
 
     TablesDependencyGraph tables_dependencies("Memory (" + restoring_database_name + ")");
