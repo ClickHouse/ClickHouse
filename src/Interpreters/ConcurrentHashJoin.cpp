@@ -80,22 +80,17 @@ void updateStatistics(const auto & hash_joins, const DB::StatsCollectingParams &
     if (!params.isCollectionAndUseEnabled())
         return;
 
-    // TODO
-    // Different shards may legitimately have different sizes.
-    size_t total_ht_size = 0;
-    for (const auto & hash_join : hash_joins)
-    {
-        size_t size = hash_join->data->getTotalRowCount();
-        total_ht_size += size;
-    }
+    const auto ht_size = hash_joins.at(0)->data->getTotalRowCount();
+    if (!std::ranges::all_of(hash_joins, [&](const auto & hash_join) { return hash_join->data->getTotalRowCount() == ht_size; }))
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "HashJoin instances have different sizes");
 
     const auto source_rows = std::accumulate(
         hash_joins.begin(),
         hash_joins.end(),
         0ull,
         [](auto acc, const auto & hash_join) { return acc + hash_join->data->getJoinedData()->rows_to_join; });
-    if (total_ht_size)
-        DB::getHashTablesStatistics<DB::HashJoinEntry>().update({.ht_size = total_ht_size, .source_rows = source_rows}, params);
+    if (ht_size)
+        DB::getHashTablesStatistics<DB::HashJoinEntry>().update({.ht_size = ht_size, .source_rows = source_rows}, params);
 }
 
 UInt32 toPowerOfTwo(UInt32 x)
@@ -225,7 +220,7 @@ ConcurrentHashJoin::~ConcurrentHashJoin()
             // Hash tables destruction may be very time-consuming.
             // Without the following code, they would be destroyed in the current thread (i.e. sequentially).
             pool->scheduleOrThrow(
-                [join = hash_joins[i], i, this, thread_group = CurrentThread::getGroup()]()
+                [join = hash_joins[0], i, this, thread_group = CurrentThread::getGroup()]()
                 {
                     ThreadGroupSwitcher switcher(thread_group, "ConcurrentJoin");
 
@@ -761,7 +756,7 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
                 // matches the original right block rows referenced by this slot's ScatteredColumns
                 ColumnUInt8::MutablePtr filtered = ColumnUInt8::create(sc->columns.at(0)->size(), 0);
                 // apply a contiguous [start, end) range from the source mask into the destination mask
-                // We cap 'end' by source-mask length for safety; if there is no source mask (NULLs-only), fill with 1s
+                // cap 'end' by source-mask length for safety, fill with 1s if NULLs only
                 auto apply_range = [&](size_t start, size_t end)
                 {
                     if (holder.column)
@@ -803,8 +798,6 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
                             filtered->getData()[idx] = 1;
                     }
                 }
-                // Append the rebuilt holder for this slot; memory accounting is kept to maintain the same semantics
-                // as individual slots and to avoid double-accounting after consolidation
                 combined.emplace_back(sc, std::move(filtered));
                 combined_allocated += combined.back().allocatedBytes();
             };
@@ -814,14 +807,13 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
                 auto src = getData(hash_joins[i]);
                 for (const auto & holder : src->nullmaps)
                     filter_holder_by_selector(holder);
-                // Clear per-slot nullmaps after consolidation to prevent duplicates and free memory held by masks
-                // Note: we do not free ScatteredColumns here; they are owned by the join and needed during probing/emission
+                // clear per-slot nullmaps after consolidation to prevent duplicates and free memory held by masks
                 src->nullmaps.clear();
                 src->nullmaps_allocated_size = 0;
             }
 
             auto dst = getData(hash_joins[0]);
-            // Install the consolidated list into slot 0; it will be used later to emit non-joined rows
+            // install the list into slot 0, it will be used later to emit non-joined rows
             dst->nullmaps = std::move(combined);
             dst->nullmaps_allocated_size = combined_allocated;
         }
