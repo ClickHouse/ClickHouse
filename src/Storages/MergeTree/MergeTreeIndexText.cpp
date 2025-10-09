@@ -10,6 +10,7 @@
 #include <Interpreters/BloomFilterHash.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/HashTable/HashSet.h>
+#include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <base/range.h>
 #include <fmt/ranges.h>
@@ -507,6 +508,7 @@ MergeTreeIndexGranuleTextWritable::MergeTreeIndexGranuleTextWritable(
     , tokens_map(std::move(tokens_map_))
     , posting_lists(std::move(posting_lists_))
     , arena(std::move(arena_))
+    , logger(getLogger("TextIndexGranuleWriter"))
 {
 }
 
@@ -535,18 +537,35 @@ void serializeTokensRaw(
     }
 }
 
+namespace
+{
+struct FrontCodingSerializationStats
+{
+    UInt64 front_coded_strings_size = 0;
+    UInt64 raw_strings_size = 0;
+
+    [[nodiscard]] std::string toString() const
+    {
+        return fmt::format("FrontCoded strings size = {} | Raw strings size = {}",
+                           ReadableSize(front_coded_strings_size),
+                           ReadableSize(raw_strings_size));
+    }
+};
+}
+
 /*
  * The front coding implementation is based on the idea from following papers.
  * 1. https://doi.org/10.1109/Innovate-Data.2017.9
  * 2. https://doi.org/10.1145/3448016.345279
  */
-void serializeTokensFrontCoding(
+FrontCodingSerializationStats serializeTokensFrontCoding(
     WriteBuffer & write_buffer, const SortedTokensAndPostings & tokens_and_postings, size_t block_begin, size_t block_end)
 {
     const auto & first_token = tokens_and_postings[block_begin].first;
     writeVarUInt(first_token.size, write_buffer);
     write_buffer.write(first_token.data, first_token.size);
 
+    FrontCodingSerializationStats stats;
     StringRef previous_token = first_token;
     for (size_t i = block_begin + 1; i < block_end; ++i)
     {
@@ -556,7 +575,14 @@ void serializeTokensFrontCoding(
         writeVarUInt(current_token.size - lcp, write_buffer);
         write_buffer.write(current_token.data + lcp, current_token.size - lcp);
         previous_token = current_token;
+
+        stats.raw_strings_size += getLengthOfVarUInt(current_token.size);
+        stats.raw_strings_size += (current_token.size);
+        stats.front_coded_strings_size += getLengthOfVarUInt(lcp);
+        stats.front_coded_strings_size += getLengthOfVarUInt(current_token.size - lcp);
+        stats.front_coded_strings_size += (current_token.size - lcp);
     }
+    return stats;
 }
 }
 
@@ -565,12 +591,11 @@ DictionarySparseIndex serializeTokensAndPostings(
     const SortedTokensAndPostings & tokens_and_postings,
     Stream & dictionary_stream,
     Stream & postings_stream,
-    size_t block_size,
-    size_t max_cardinality_for_embedded_postings,
-    bool dictionary_block_frontcoding_compression)
+    const MergeTreeIndexTextParams & params,
+    LoggerPtr logger)
 {
     size_t num_tokens = tokens_and_postings.size();
-    size_t num_blocks = (num_tokens + block_size - 1) / block_size;
+    size_t num_blocks = (num_tokens + params.dictionary_block_size - 1) / params.dictionary_block_size;
 
     auto sparse_index_tokens = ColumnString::create();
     auto & sparse_index_str = assert_cast<ColumnString &>(*sparse_index_tokens);
@@ -581,12 +606,12 @@ DictionarySparseIndex serializeTokensAndPostings(
     sparse_index_offsets_data.reserve(num_blocks);
 
     TokensSerializationFormat tokens_format
-        = dictionary_block_frontcoding_compression ? TokensSerializationFormat::FrontCodedStrings : TokensSerializationFormat::RawStrings;
+        = params.dictionary_block_frontcoding_compression ? TokensSerializationFormat::FrontCodedStrings : TokensSerializationFormat::RawStrings;
 
     for (size_t block_idx = 0; block_idx < num_blocks; ++block_idx)
     {
-        size_t block_begin = block_idx * block_size;
-        size_t block_end = std::min(block_begin + block_size, num_tokens);
+        size_t block_begin = block_idx * params.dictionary_block_size;
+        size_t block_end = std::min(block_begin + params.dictionary_block_size, num_tokens);
 
         /// Start a new compressed block because the dictionary blocks
         /// are usually read with random reads and it is more efficient
@@ -609,7 +634,8 @@ DictionarySparseIndex serializeTokensAndPostings(
                 serializeTokensRaw(dictionary_stream.compressed_hashing, tokens_and_postings, block_begin, block_end);
                 break;
             case TokensSerializationFormat::FrontCodedStrings:
-                serializeTokensFrontCoding(dictionary_stream.compressed_hashing, tokens_and_postings, block_begin, block_end);
+                auto stats = serializeTokensFrontCoding(dictionary_stream.compressed_hashing, tokens_and_postings, block_begin, block_end);
+                LOG_TRACE(logger, "Dictionary block #{} stats: {}", block_idx, stats.toString());
                 break;
         }
 
@@ -620,7 +646,7 @@ DictionarySparseIndex serializeTokensAndPostings(
 
             UInt64 header = 0;
             bool raw_postings = cardinality <= MAX_CARDINALITY_FOR_RAW_POSTINGS;
-            bool embedded_postings = cardinality <= max_cardinality_for_embedded_postings;
+            bool embedded_postings = cardinality <= params.max_cardinality_for_embedded_postings;
 
             if (raw_postings)
                 header |= PostingsSerialization::RawPostings;
@@ -691,9 +717,8 @@ void MergeTreeIndexGranuleTextWritable::serializeBinaryWithMultipleStreams(Merge
         tokens_and_postings,
         *dictionary_stream,
         *postings_stream,
-        params.dictionary_block_size,
-        params.max_cardinality_for_embedded_postings,
-        params.dictionary_block_frontcoding_compression);
+        params,
+        logger);
 
     serializeBloomFilter(tokens_and_postings.size(), bloom_filter, *index_stream);
     serializeSparseIndex(sparse_index_block, *index_stream);

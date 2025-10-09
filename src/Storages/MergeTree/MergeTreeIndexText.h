@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Columns/IColumn.h>
+#include <Common/Logger.h>
 #include <Formats/MarkInCompressedFile.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/StringHashMap.h>
@@ -268,6 +269,7 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
     TokenToPostingsMap tokens_map;
     std::list<PostingList> posting_lists;
     std::unique_ptr<Arena> arena;
+    LoggerPtr logger;
 };
 
 struct MergeTreeIndexTextGranuleBuilder
