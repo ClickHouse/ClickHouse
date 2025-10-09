@@ -1301,6 +1301,16 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                 auto tmp_lc_column = lc_type->createColumn();
                 auto tmp_dict_column = IColumn::mutate(assert_cast<ColumnLowCardinality *>(tmp_lc_column.get())->getDictionaryPtr());
                 dynamic_cast<IColumnUnique *>(tmp_dict_column.get())->uniqueInsertRangeFrom(*dict_column.column, 0, dict_column.column->size());
+                size_t expected_dictionary_size = dict_column.column->size() + (dict_info.default_value_index == -1) + make_nullable_if_low_cardinality;
+                if (tmp_dict_column->size() != expected_dictionary_size)
+                {
+                    throw Exception(
+                        ErrorCodes::INCORRECT_DATA,
+                        "Expected Dictionary size {}, real Dictionary size is {}. The discrepancy probably caused by duplicated values",
+                        expected_dictionary_size,
+                        tmp_dict_column->size());
+                }
+
                 dict_column.column = std::move(tmp_dict_column);
                 dict_info.values = std::make_shared<ColumnWithTypeAndName>(std::move(dict_column));
                 dict_info.dictionary_size = arrow_dict_column->length();
@@ -1315,7 +1325,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
 
             auto arrow_indexes_column = std::make_shared<arrow::ChunkedArray>(indexes_array);
             auto indexes_column = readColumnWithIndexesData(arrow_indexes_column, dict_info.default_value_index, dict_info.dictionary_size, make_nullable_if_low_cardinality);
-            auto lc_column = ColumnLowCardinality::create(dict_info.values->column, indexes_column);
+            auto lc_column = ColumnLowCardinality::create(dict_info.values->column, indexes_column, /*is_shared=*/true);
             auto lc_type = std::make_shared<DataTypeLowCardinality>(make_nullable_if_low_cardinality ? makeNullable(dict_info.values->type) : dict_info.values->type);
             return {std::move(lc_column), std::move(lc_type), column_name};
         }
@@ -1443,9 +1453,9 @@ static void checkStatus(const arrow::Status & status, const String & column_name
 /// Create empty arrow column using specified field
 static std::shared_ptr<arrow::ChunkedArray> createArrowColumn(const std::shared_ptr<arrow::Field> & field, const String & format_name)
 {
-    arrow::MemoryPool * pool = ArrowMemoryPool::instance();
     std::unique_ptr<arrow::ArrayBuilder> array_builder;
-    arrow::Status status = MakeBuilder(pool, field->type(), &array_builder);
+    /// default_memory_pool() uses posix_memalign which is intercepted and counted in MemoryTracker.
+    arrow::Status status = MakeBuilder(arrow::default_memory_pool(), field->type(), &array_builder);
     checkStatus(status, field->name(), format_name);
 
     std::shared_ptr<arrow::Array> arrow_array;

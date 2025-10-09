@@ -12,6 +12,8 @@
 #include <IO/AzureBlobStorage/copyAzureBlobStorageFile.h>
 
 
+#include <IO/WriteBufferFromString.h>
+#include <IO/copyData.h>
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #include <Disks/ObjectStorages/ObjectStorageIteratorAsync.h>
 #include <Interpreters/Context.h>
@@ -228,6 +230,23 @@ std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObject( /// NOLI
         read_settings.remote_read_buffer_restrict_seek,
         /* read_until_position */0);
 }
+
+SmallObjectDataWithMetadata AzureObjectStorage::readSmallObjectAndGetObjectMetadata( /// NOLINT
+    const StoredObject & object,
+    const ReadSettings & read_settings,
+    size_t max_size_bytes,
+    std::optional<size_t> read_hint) const
+{
+    auto buffer = readObject(object, read_settings, read_hint);
+    SmallObjectDataWithMetadata result;
+    WriteBufferFromString out(result.data);
+    copyDataMaxBytes(*buffer, out, max_size_bytes);
+    out.finalize();
+
+    result.metadata = dynamic_cast<ReadBufferFromAzureBlobStorage *>(buffer.get())->getObjectMetadataFromTheLastRequest();
+    return result;
+}
+
 
 /// Open the file for write and return WriteBufferFromFileBase object.
 std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NOLINT
