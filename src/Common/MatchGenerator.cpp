@@ -43,7 +43,7 @@ private:
     class NodeFunction
     {
     public:
-        virtual size_t operator() (char * out, size_t size) = 0;
+        virtual size_t operator() (char * out, size_t size, pcg64 * rng) = 0;
         virtual size_t getRequiredSize() = 0;
         virtual ~NodeFunction() = default;
     };
@@ -74,13 +74,13 @@ private:
         {
         }
 
-        size_t operator () (char * out, size_t size) override
+        size_t operator () (char * out, size_t size, pcg64 * rng) override
         {
             size_t total_size = 0;
 
             for (auto & child: children)
             {
-                size_t consumed = child->operator()(out, size);
+                size_t consumed = child->operator()(out, size, rng);
                 chassert(consumed <= size);
                 out += consumed;
                 size -= consumed;
@@ -110,11 +110,11 @@ private:
         {
         }
 
-        size_t operator () (char * out, size_t size) override
+        size_t operator () (char * out, size_t size, pcg64 * rng) override
         {
             std::uniform_int_distribution<int> distribution(0, static_cast<int>(children.size()-1));
-            int chosen = distribution(thread_local_rng);
-            size_t consumed = children[chosen]->operator()(out, size);
+            int chosen = distribution(rng ? *rng : thread_local_rng);
+            size_t consumed = children[chosen]->operator()(out, size, rng);
             chassert(consumed <= size);
             return consumed;
         }
@@ -141,15 +141,15 @@ private:
         {
         }
 
-        size_t operator () (char * out, size_t size) override
+        size_t operator () (char * out, size_t size, pcg64 * rng) override
         {
             std::uniform_int_distribution<int> distribution(min_repeat, max_repeat);
-            int ntimes = distribution(thread_local_rng);
+            int ntimes = distribution(rng ? *rng : thread_local_rng);
 
             size_t total_size = 0;
             for (int i = 0; i < ntimes; ++i)
             {
-                size_t consumed =func->operator()(out, size);
+                size_t consumed =func->operator()(out, size, rng);
                 chassert(consumed <= size);
                 out += consumed;
                 size -= consumed;
@@ -190,12 +190,12 @@ private:
             }
         }
 
-        size_t operator () (char * out, size_t size) override
+        size_t operator () (char * out, size_t size, pcg64 * rng) override
         {
             chassert(UTFmax <= size);
 
             std::uniform_int_distribution<int> distribution(1, char_count);
-            int chosen = distribution(thread_local_rng);
+            int chosen = distribution(rng ? *rng : thread_local_rng);
             int count_down = chosen;
 
             auto it = char_ranges.begin();
@@ -244,7 +244,7 @@ private:
             }
         }
 
-        size_t operator () (char * out, size_t size) override
+        size_t operator () (char * out, size_t size, pcg64 *) override
         {
             chassert(literal_string.size() <= size);
 
@@ -273,7 +273,7 @@ private:
             literal = String(buffer, n);
         }
 
-        size_t operator () (char * out, size_t size) override
+        size_t operator () (char * out, size_t size, pcg64 *) override
         {
             chassert(literal.size() <= size);
 
@@ -298,7 +298,7 @@ private:
         {
         }
 
-        size_t operator () (char *, size_t) override
+        size_t operator () (char *, size_t, pcg64 *) override
         {
             throw DB::Exception(
                 DB::ErrorCodes::BAD_ARGUMENTS,
@@ -317,7 +317,7 @@ private:
 
 
 public:
-    std::function<String()> getGenerator()
+    std::function<String(pcg64 *)> getGenerator()
     {
         if (root == nullptr)
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "no root has been set");
@@ -327,11 +327,11 @@ public:
 
         auto root_func = generators.at(root);
         auto required_buffer_size = root_func->getRequiredSize();
-        auto generator_func = [=] ()
+        auto generator_func = [=] (pcg64 * rng)
             -> String
         {
             auto buffer = String(required_buffer_size, '\0');
-            size_t size = root_func->operator()(buffer.data(), buffer.size());
+            size_t size = root_func->operator()(buffer.data(), buffer.size(), rng);
             buffer.resize(size);
             return buffer;
         };
@@ -475,8 +475,12 @@ RandomStringGeneratorByRegexp::RandomStringGeneratorByRegexp(const String & re_s
 
 String RandomStringGeneratorByRegexp::generate() const
 {
-    chassert(generatorFunc);
-    return generatorFunc();
+    return generatorFunc(nullptr);
+}
+
+String RandomStringGeneratorByRegexp::generate(pcg64 & rng) const
+{
+    return generatorFunc(&rng);
 }
 
 }
