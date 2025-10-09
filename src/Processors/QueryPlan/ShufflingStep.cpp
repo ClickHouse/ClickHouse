@@ -67,7 +67,7 @@ namespace ErrorCodes
     extern const int LIMIT_EXCEEDED;
 }
 
-size_t getMaxBytesInQueryBeforeExternalSort(double max_bytes_ratio_before_external_sort)
+size_t getMaxBytesInQueryBeforeExternalShuffle(double max_bytes_ratio_before_external_sort)
 {
     if (max_bytes_ratio_before_external_sort == 0.)
         return 0;
@@ -105,7 +105,7 @@ ShufflingStep::Settings::Settings(const DB::Settings & settings)
 
     max_bytes_ratio_before_external_sort = settings[Setting::max_bytes_ratio_before_external_sort];
     max_bytes_in_block_before_external_sort = settings[Setting::max_bytes_before_external_sort];
-    max_bytes_in_query_before_external_sort = getMaxBytesInQueryBeforeExternalSort(settings[Setting::max_bytes_ratio_before_external_sort]);
+    max_bytes_in_query_before_external_sort = getMaxBytesInQueryBeforeExternalShuffle(settings[Setting::max_bytes_ratio_before_external_sort]);
 
     min_free_disk_space = settings[Setting::min_free_disk_space_for_temporary_data];
     max_block_bytes = settings[Setting::prefer_external_sort_block_bytes];
@@ -126,7 +126,7 @@ ShufflingStep::Settings::Settings(const QueryPlanSerializationSettings & setting
 
     max_bytes_ratio_before_external_sort = settings[QueryPlanSerializationSetting::max_bytes_ratio_before_external_sort];
     max_bytes_in_block_before_external_sort = settings[QueryPlanSerializationSetting::max_bytes_before_external_sort];
-    max_bytes_in_query_before_external_sort = getMaxBytesInQueryBeforeExternalSort(settings[QueryPlanSerializationSetting::max_bytes_ratio_before_external_sort]);
+    max_bytes_in_query_before_external_sort = getMaxBytesInQueryBeforeExternalShuffle(settings[QueryPlanSerializationSetting::max_bytes_ratio_before_external_sort]);
 
     min_free_disk_space = settings[QueryPlanSerializationSetting::min_free_disk_space_for_temporary_data];
     max_block_bytes = settings[QueryPlanSerializationSetting::prefer_external_sort_block_bytes];
