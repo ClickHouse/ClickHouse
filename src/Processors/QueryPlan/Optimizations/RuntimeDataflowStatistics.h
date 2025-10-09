@@ -38,6 +38,8 @@ extern const int LOGICAL_ERROR;
 struct RuntimeDataflowStatistics
 {
     size_t input_bytes = 0;
+    size_t input_bytes_sample = 0;
+    size_t input_bytes_compressed = 0;
     size_t output_bytes = 0;
 };
 
@@ -99,7 +101,14 @@ public:
     {
         if (!cache_key)
             return;
-        statistics.input_bytes = static_cast<size_t>(statistics.input_bytes / input_compression_ratio);
+        LOG_DEBUG(
+            &Poco::Logger::get("debug"),
+            "statistics.input_bytes={}, statistics.output_bytes={}",
+            statistics.input_bytes,
+            statistics.output_bytes);
+        if (statistics.input_bytes_compressed)
+            statistics.input_bytes
+                = static_cast<size_t>(statistics.input_bytes / (statistics.input_bytes_sample / statistics.input_bytes_compressed));
         statistics.output_bytes = static_cast<size_t>(statistics.output_bytes / output_compression_ratio);
         auto & dataflow_cache = getRuntimeDataflowStatisticsCache();
         dataflow_cache.update(*cache_key, statistics);
@@ -138,18 +147,28 @@ public:
         }
     }
 
+    void addInputBytes(size_t bytes)
+    {
+        if (!cache_key)
+            return;
+        std::lock_guard lock(mutex);
+        statistics.input_bytes += bytes;
+        // if (cnt++ % 10 == 0)
+        //     statistics.input_bytes_sample += bytes;
+    }
+
     void addInputBytes(const ColumnWithTypeAndName & column)
     {
         if (!cache_key)
             return;
         std::lock_guard lock(mutex);
         const auto source_bytes = column.column->byteSize();
-        statistics.input_bytes += source_bytes;
-        if (first_input && !column.column->empty())
+        // statistics.input_bytes += source_bytes;
+        if (!column.column->empty() && cnt++ % 10 == 0)
         {
-            const auto compressed_bytes = compressedColumnSize(column);
-            input_compression_ratio = static_cast<double>(source_bytes) / static_cast<double>(compressed_bytes);
-            first_input = false;
+            statistics.input_bytes_sample += source_bytes;
+            statistics.input_bytes_compressed += compressedColumnSize(column);
+            // first_input = false;
         }
     }
 
@@ -159,8 +178,8 @@ public:
             return;
         std::lock_guard lock(mutex);
         const auto source_bytes = chunk.bytes();
-        statistics.input_bytes += source_bytes;
-        if (first_input && chunk.hasRows())
+        // statistics.input_bytes += source_bytes;
+        if (chunk.hasRows() && cnt++ % 10 == 0)
         {
             if (chunk.getNumColumns() != header.columns())
             {
@@ -171,12 +190,11 @@ public:
                     header.columns());
             }
 
-            size_t compressed_bytes = 0;
+            statistics.input_bytes_sample += source_bytes;
             for (size_t i = 0; i < chunk.getNumColumns(); ++i)
                 if (typeid_cast<const ColumnLazy *>(chunk.getColumns()[i].get()) == nullptr)
-                    compressed_bytes += compressedColumnSize({chunk.getColumns()[i], header.getByPosition(i).type, ""});
-            input_compression_ratio = static_cast<double>(source_bytes) / static_cast<double>(compressed_bytes);
-            first_input = false;
+                    statistics.input_bytes_compressed += compressedColumnSize({chunk.getColumns()[i], header.getByPosition(i).type, ""});
+            // first_input = false;
         }
     }
 
@@ -188,11 +206,12 @@ private:
         return blob.size();
     }
 
+    size_t cnt = 0;
+
     std::mutex mutex;
     RuntimeDataflowStatistics statistics{};
     Block header;
-    bool first_input = true;
-    double input_compression_ratio = 1.0;
+    // bool first_input = true;
     bool first_output = true;
     double output_compression_ratio = 1.0;
     std::optional<size_t> cache_key;

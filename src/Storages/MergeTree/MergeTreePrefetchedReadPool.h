@@ -6,6 +6,8 @@
 #include <boost/heap/priority_queue.hpp>
 #include <queue>
 
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
+
 namespace DB
 {
 class IMergeTreeReader;
@@ -29,7 +31,8 @@ public:
         const Names & column_names_,
         const PoolSettings & settings_,
         const MergeTreeReadTask::BlockSizeParams & params_,
-        const ContextPtr & context_);
+        const ContextPtr & context_,
+        UpdaterPtr updater_);
 
     String getName() const override { return "PrefetchedReadPool"; }
     bool preservesOrderOfRanges() const override { return false; }
@@ -116,6 +119,8 @@ private:
     MergeTreeReadTaskPtr createTask(ThreadTask & thread_task, MergeTreeReadTask * previous_task);
 
     static std::string dumpTasks(const TasksPerThread & tasks);
+
+    UpdaterPtr updater;
 
     mutable std::mutex mutex;
     ThreadPool & prefetch_threadpool;

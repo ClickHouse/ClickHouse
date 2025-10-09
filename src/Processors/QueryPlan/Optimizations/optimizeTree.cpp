@@ -24,7 +24,7 @@ namespace DB
 
 namespace Setting
 {
-extern const SettingsBool enable_automatic_parallel_replicas;
+extern const SettingsUInt64 enable_automatic_parallel_replicas;
 extern const SettingsMaxThreads max_threads;
 extern const SettingsNonZeroUInt64 max_parallel_replicas;
 extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
@@ -317,6 +317,9 @@ void considerEnablingParallelReplicas(
         reading_step->step->setDataflowCacheKey(single_replica_plan_node_hash);
         corresponding_node_in_single_replica_plan->step->setDataflowCacheKey(single_replica_plan_node_hash);
     }
+
+    if (optimization_settings.context->getSettingsRef()[Setting::enable_automatic_parallel_replicas] == 2)
+        return;
 
     const auto & stats_cache = getRuntimeDataflowStatisticsCache();
     if (const auto stats = stats_cache.getStats(single_replica_plan_node_hash))

@@ -517,6 +517,8 @@ Pipe ReadFromMergeTree::readFromPool(
       */
     bool use_prefetched_read_pool = query_info.trivial_limit == 0 && (allow_prefetched_remote || allow_prefetched_local);
 
+    auto updater = std::make_shared<Updater>(dataflow_cache_key);
+
     if (use_prefetched_read_pool)
     {
         pool = std::make_shared<MergeTreePrefetchedReadPool>(
@@ -531,7 +533,8 @@ Pipe ReadFromMergeTree::readFromPool(
             required_columns,
             pool_settings,
             block_size,
-            context);
+            context,
+            updater);
     }
     else
     {
@@ -547,12 +550,11 @@ Pipe ReadFromMergeTree::readFromPool(
             required_columns,
             pool_settings,
             block_size,
-            context);
+            context,
+            updater);
     }
 
     LOG_DEBUG(log, "Reading approx. {} rows with {} streams", total_rows, pool_settings.threads);
-
-    auto updater = std::make_shared<Updater>(dataflow_cache_key);
 
     Pipes pipes;
     for (size_t i = 0; i < pool_settings.threads; ++i)

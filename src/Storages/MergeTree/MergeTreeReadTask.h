@@ -1,16 +1,17 @@
 #pragma once
 
 #include <vector>
-#include <Storages/MergeTree/MergeTreeRangeReader.h>
-#include <boost/core/noncopyable.hpp>
 #include <Core/NamesAndTypes.h>
-#include <Storages/StorageSnapshot.h>
-#include <Storages/MergeTree/RangesInDataPart.h>
-#include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/AlterConversions.h>
+#include <Storages/MergeTree/IMergeTreeReader.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/MergeTreeReadersChain.h>
 #include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
-#include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Storages/MergeTree/RangesInDataPart.h>
+#include <Storages/StorageSnapshot.h>
+#include <boost/core/noncopyable.hpp>
+#include "Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h"
 
 namespace DB
 {
@@ -228,6 +229,9 @@ private:
 
     /// Used to satistfy preferred_block_size_bytes limitation
     MergeTreeBlockSizePredictorPtr size_predictor;
+
+public:
+    UpdaterPtr updater;
 };
 
 using MergeTreeReadTaskPtr = std::unique_ptr<MergeTreeReadTask>;

@@ -339,6 +339,8 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
 
     size_t num_read_rows = read_result.numReadRows();
     size_t num_read_bytes = read_result.numBytesRead();
+    if (updater)
+        updater->addInputBytes(num_read_bytes);
 
     if (size_predictor)
     {

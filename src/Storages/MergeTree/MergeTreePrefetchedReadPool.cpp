@@ -15,6 +15,7 @@
 #include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <Common/threadPoolCallbackRunner.h>
+#include "Storages/MergeTree/MergeTreeReadTask.h"
 
 
 namespace ProfileEvents
@@ -113,20 +114,22 @@ MergeTreePrefetchedReadPool::MergeTreePrefetchedReadPool(
     const Names & column_names_,
     const PoolSettings & settings_,
     const MergeTreeReadTask::BlockSizeParams & params_,
-    const ContextPtr & context_)
+    const ContextPtr & context_,
+    UpdaterPtr updater_)
     : MergeTreeReadPoolBase(
-        std::move(parts_),
-        std::move(mutations_snapshot_),
-        std::move(shared_virtual_fields_),
-        index_read_tasks_,
-        storage_snapshot_,
-        prewhere_info_,
-        actions_settings_,
-        reader_settings_,
-        column_names_,
-        settings_,
-        params_,
-        context_)
+          std::move(parts_),
+          std::move(mutations_snapshot_),
+          std::move(shared_virtual_fields_),
+          index_read_tasks_,
+          storage_snapshot_,
+          prewhere_info_,
+          actions_settings_,
+          reader_settings_,
+          column_names_,
+          settings_,
+          params_,
+          context_)
+    , updater(std::move(updater_))
     , prefetch_threadpool(getContext()->getPrefetchThreadpool())
     , log(getLogger(
           "MergeTreePrefetchedReadPool("
@@ -318,10 +321,13 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::stealTask(size_t thread, Merge
 
 MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::createTask(ThreadTask & task, MergeTreeReadTask * previous_task)
 {
+    MergeTreeReadTaskPtr res;
     if (task.isValidReadersFuture())
-        return MergeTreeReadPoolBase::createTask(task.read_info, task.readers_future->get(), task.ranges, task.patches_ranges);
-
-    return MergeTreeReadPoolBase::createTask(task.read_info, task.ranges, task.patches_ranges, previous_task);
+        res = MergeTreeReadPoolBase::createTask(task.read_info, task.readers_future->get(), task.ranges, task.patches_ranges);
+    else
+        res = MergeTreeReadPoolBase::createTask(task.read_info, task.ranges, task.patches_ranges, previous_task);
+    res->updater = updater;
+    return res;
 }
 
 void MergeTreePrefetchedReadPool::fillPerPartStatistics()

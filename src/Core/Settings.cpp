@@ -6564,8 +6564,9 @@ Replace external dictionary sources to Null on restore. Useful for testing purpo
     DECLARE_WITH_ALIAS(UInt64, allow_experimental_parallel_reading_from_replicas, 0, R"(
 Use up to `max_parallel_replicas` the number of replicas from each shard for SELECT query execution. Reading is parallelized and coordinated dynamically. 0 - disabled, 1 - enabled, silently disable them in case of failure, 2 - enabled, throw an exception in case of failure
 )", BETA, enable_parallel_replicas) \
-    DECLARE(Bool, enable_automatic_parallel_replicas, false, R"(
+    DECLARE(UInt64, enable_automatic_parallel_replicas, 0, R"(
 New setting
+0 - disabled, 1 - enabled, 2 - only statistics collection is enabled (swithing to execution with parallel replicas is disabled)
 )", 0) \
     DECLARE(NonZeroUInt64, max_parallel_replicas, 1000, R"(
 The maximum number of replicas for each shard when executing a query.
