@@ -87,7 +87,7 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
     auto format_filter_info = std::make_shared<FormatFilterInfo>(
         filter_actions_dag,
         context,
-        configuration->getColumnMapperForCurrentSchema(storage_snapshot->metadata, context),
+        configuration->getColumnMapperForCurrentSchema(),
         query_info.row_level_filter,
         query_info.prewhere_info);
 
