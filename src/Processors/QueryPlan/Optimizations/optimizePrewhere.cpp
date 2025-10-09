@@ -117,6 +117,10 @@ ActionsDAG splitAndFillPrewhereInfo(
 
 void optimizePrewhere(QueryPlan::Node & parent_node)
 {
+    /// Assume that there are at least 2 nodes:
+    /// 1. FilterNode - parent_node
+    /// 2. SourceStepWithFilterNode - child_node
+
     /// TODO: We can also check for UnionStep, such as StorageBuffer and local distributed plans.
     auto * filter_step = typeid_cast<FilterStep *>(parent_node.step.get());
     if (!filter_step)
@@ -127,12 +131,6 @@ void optimizePrewhere(QueryPlan::Node & parent_node)
 
     auto * child_node = parent_node.children.front();
 
-    /** Assume that on stack there are at least 3 nodes:
-      *
-      * 1. SomeNode
-      * 2. FilterNode
-      * 3. SourceStepWithFilterNode
-      */
     auto * source_step_with_filter = dynamic_cast<SourceStepWithFilter *>(child_node->step.get());
     if (!source_step_with_filter)
         return;
