@@ -339,6 +339,13 @@ static void explainStep(
 
     settings.out.write('\n');
 
+    const auto dump_column = [&out = settings.out](const ColumnWithTypeAndName & column)
+    {
+        column.dumpStructure(out);
+        if (column.column && isColumnLazy(*column.column.get()))
+            out << " (Lazy)";
+    };
+
     if (options.header)
     {
         settings.out << prefix;
@@ -355,16 +362,53 @@ static void explainStep(
             for (const auto & elem : *step.getOutputHeader())
             {
                 if (!first)
-                    settings.out << "\n" << prefix << "        ";
+                    settings.out << '\n' << prefix << "        ";
 
                 first = false;
-                elem.dumpNameAndType(settings.out);
-                if (elem.column && isColumnLazy(*elem.column.get()))
-                    settings.out << " (Lazy)";
+                dump_column(elem);
             }
         }
         settings.out.write('\n');
+    }
 
+    if (options.input_headers)
+    {
+        const std::string_view input_headers_title = "Input headers: ";
+        const std::string_view input_header_prefix = "               ";
+        settings.out << prefix << input_headers_title;
+
+        bool first_input_header = true;
+        size_t input_header_index = 0;
+
+        if (step.getInputHeaders().empty())
+        {
+            settings.out << "No input headers";
+        }
+        else
+        {
+            for (const auto & input_header : step.getInputHeaders())
+            {
+                if (!first_input_header)
+                    settings.out << '\n' << prefix << input_header_prefix;
+                first_input_header = false;
+
+                settings.out << fmt::format("#{}", input_header_index);
+                ++input_header_index;
+
+                if (input_header->empty())
+                {
+                    settings.out << " Empty header";
+                    continue;
+                }
+
+                for (const auto & elem : *input_header)
+                {
+                    settings.out << '\n' << prefix << input_header_prefix;
+                    dump_column(elem);
+                }
+            }
+        }
+        settings.out.write('\n');
     }
 
     if (options.sorting)
