@@ -63,121 +63,9 @@ returns
    └────┴─────────┘
 ```
 
-## Approximate Vector Search: Quantization With `QBit` {#approximate-nearest-neighbor-search-qbit}
-
-<ExperimentalBadge/>
-
-One common approach to speed up exact vector search is to use a lower-precision [float data type](../../../sql-reference/data-types/float.md).
-For example, if vectors are stored as `Array(BFloat16)` instead of `Array(Float32)`, the data size is reduced by half, and query runtimes are expected to decrease proportionally.
-This method is known as quantization. While it speeds up computation, it may reduce result accuracy despite performing an exhaustive scan of all vectors.
-
-With traditional quantization, we lose precision both during search and when storing the data. In the example above, we would store `BFloat16` instead of `Float32`, meaning we can never perform a more accurate search later, even if desired. One alternative approach is to store two copies of the data: quantized and full-precision. While this works, it requires redundant storage. Consider a scenario where we have `Float64` as original data and want to run searches with different precision (16-bit, 32-bit, or full 64-bit). We would need to store three separate copies of the data.
-
-ClickHouse offers the Quantized Bit (`QBit`) data type that addresses these limitations by:
-1. Storing the original full-precision data.
-2. Allowing quantization precision to be specified at query time.
-
-This is achieved by storing data in a bit-grouped format (meaning all i-th bits of all vectors are stored together), enabling reads at only the requested precision level. You get the speed benefits of reduced I/O from quantization while keeping all original data available when needed. When maximum precision is selected, the search becomes exact.
-
-:::note
-The `QBit` data type and its associated distance functions are currently experimental. To enable them, run `SET allow_experimental_qbit_type = 1`.
-If you encounter problems, please open an issue in the [ClickHouse repository](https://github.com/clickhouse/clickhouse/issues).
-:::
-
-To declare a column of `QBit` type, use the following syntax:
-
-```sql
-column_name QBit(element_type, dimension)
-```
-
-Where:
-* `element_type` – the type of each vector element. Supported types are `BFloat16`, `Float32`, and `Float64`
-* `dimension` – the number of elements in each vector
-
-### Creating a `QBit` Table and Adding Data {#qbit-create}
-
-```sql
-CREATE TABLE fruit_animal (
-    word String,
-    vec QBit(Float64, 5)
-) ENGINE = MergeTree
-ORDER BY word;
-
-INSERT INTO fruit_animal VALUES
-    ('apple', [-0.99105519, 1.28887844, -0.43526649, -0.98520696, 0.66154391]),
-    ('banana', [-0.69372815, 0.25587061, -0.88226235, -2.54593015, 0.05300475]),
-    ('orange', [0.93338752, 2.06571317, -0.54612565, -1.51625717, 0.69775337]),
-    ('dog', [0.72138876, 1.55757105, 2.10953259, -0.33961248, -0.62217325]),
-    ('cat', [-0.56611276, 0.52267331, 1.27839863, -0.59809804, -1.26721048]),
-    ('horse', [-0.61435682, 0.48542571, 1.21091247, -0.62530446, -1.33082533]);
-```
-
-### Vector Search with `QBit` {#qbit-search}
-
-Let's find the nearest neighbors to a vector representing word 'lemon' using L2 distance. The third parameter in the distance function specifies the precision in bits - higher values provide more accuracy but require more computation.
-
-You can find all available distance functions for `QBit` [here](../../../sql-reference/data-types/qbit.md#vector-search-functions).
-
-**Full precision search (64-bit):**
-
-```sql
-SELECT
-    word,
-    L2DistanceTransposed(vec, [-0.88693672, 1.31532824, -0.51182908, -0.99652702, 0.59907770], 64) AS distance
-FROM fruit_animal
-ORDER BY distance;
-```
-
-```text
-   ┌─word───┬────────────distance─┐
-1. │ apple  │ 0.14639757188169716 │
-2. │ banana │   1.998961369007679 │
-3. │ orange │   2.039041552613732 │
-4. │ cat    │   2.752802631487914 │
-5. │ horse  │  2.7555776805484813 │
-6. │ dog    │   3.382295083120104 │
-   └────────┴─────────────────────┘
-```
-
-**Reduced precision search:**
-
-```sql
-SELECT
-    word,
-    L2DistanceTransposed(vec, [-0.88693672, 1.31532824, -0.51182908, -0.99652702, 0.59907770], 12) AS distance
-FROM fruit_animal
-ORDER BY distance;
-```
-
-```text
-   ┌─word───┬───────────distance─┐
-1. │ apple  │  0.757668703053566 │
-2. │ orange │ 1.5499475034938677 │
-3. │ banana │ 1.6168396735102937 │
-4. │ cat    │  2.429752230904804 │
-5. │ horse  │  2.524650475528617 │
-6. │ dog    │   3.17766975527459 │
-   └────────┴────────────────────┘
-```
-
-Notice that with 12-bit quantization, we get a good approximation of the distances with faster query execution. The relative ordering remains largely consistent, with 'apple' still being the closest match.
-
-:::note
-In the current state, the speed-up is due to reduced I/O as we read less data. If the original data was wide, like `Float64`, choosing a lower precision will still result in distance calculation on data of the same width – just with less precision.
-:::
-
-### Performance Considerations {#qbit-performance}
-
-The performance benefit of `QBit` comes from reduced I/O operations, as less data needs to be read from storage when using lower precision. The precision parameter directly controls the trade-off between accuracy and speed:
-
-- **Higher precision** (closer to the original data width): More accurate results, slower queries
-- **Lower precision**: Faster queries with approximate results, reduced memory usage
-
-:::note
-Currently, the speed improvement comes from reduced I/O rather than computational optimizations. When using lower precision values, the distance calculations still operate on the original data width.
-:::
-
 ## Approximate vector search {#approximate-nearest-neighbor-search}
+
+### Vector Similarity Indexes {#vector-similarity-index}
 
 ClickHouse provides a special "vector similarity" index to perform approximate vector search.
 
@@ -186,7 +74,7 @@ Vector similarity indexes are available in ClickHouse version 25.8 and higher.
 If you run into problems, kindly open an issue in the [ClickHouse repository](https://github.com/clickhouse/clickhouse/issues).
 :::
 
-### Creating a Vector Similarity Index {#creating-a-vector-similarity-index}
+#### Creating a Vector Similarity Index {#creating-a-vector-similarity-index}
 
 A vector similarity index can be created on a new table like this:
 
@@ -300,7 +188,7 @@ Memory consumption = 3072 + 512 = 3584 MB
 
 Above formula does not account for additional memory required by vector similarity indexes to allocate runtime data structures like pre-allocated buffers and caches.
 
-### Using a Vector Similarity Index {#using-a-vector-similarity-index}
+#### Using a Vector Similarity Index {#using-a-vector-similarity-index}
 
 :::note
 To use vector similarity indexes, setting [compatibility](../../../operations/settings/settings.md) has be `''` (the default value), or `'25.1'` or newer.
@@ -504,7 +392,7 @@ Query id: a2a9d0c8-a525-45c1-96ca-c5a11fa66f47
 A query run without rescoring (`vector_search_with_rescoring = 0`) and with parallel replicas enabled may fall back to rescoring.
 :::
 
-### Performance tuning {#performance-tuning}
+#### Performance tuning {#performance-tuning}
 
 **Tuning compression**
 
@@ -630,7 +518,7 @@ result = chclient.query(
 In the example, the reference vector is sent as-is in binary form and reinterpreted as array of floats on the server.
 This saves CPU time on the server side, and avoids bloat in the server logs and `system.query_log`.
 
-### Administration and monitoring {#administration}
+#### Administration and monitoring {#administration}
 
 The on-disk size of vector similarity indexes can be obtained from [system.data_skipping_indices](../../../operations/system-tables/data_skipping_indices):
 
@@ -648,7 +536,7 @@ Example output:
 └──────────┴───────┴──────┴──────────────────────────┘
 ```
 
-### Differences to regular skipping indexes {#differences-to-regular-skipping-indexes}
+#### Differences to regular skipping indexes {#differences-to-regular-skipping-indexes}
 
 As all regular [skipping indexes](/optimize/skipping-indexes), vector similarity indexes are constructed over granules and each indexed block consists of `GRANULARITY = [N]`-many granules (`[N]` = 1 by default for normal skipping indexes).
 For example, if the primary index granularity of the table is 8192 (setting `index_granularity = 8192`) and `GRANULARITY = 2`, then each indexed block will contain 16384 rows.
@@ -673,7 +561,7 @@ Note that the search accuracy is with both cases equally good, only the processi
 It is generally recommended to use a large `GRANULARITY` for vector similarity indexes and fall back to a smaller `GRANULARITY` values only in case of problems like excessive memory consumption of the vector similarity structures.
 If no `GRANULARITY` was specified for vector similarity indexes, the default value is 100 million.
 
-### Example {#approximate-nearest-neighbor-search-example}
+#### Example {#approximate-nearest-neighbor-search-example}
 
 ```sql
 CREATE TABLE tab(id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 2)) ENGINE = MergeTree ORDER BY id;
@@ -703,7 +591,121 @@ Further example datasets that use approximate vector search:
 - [dbpedia](../../../getting-started/example-datasets/dbpedia-dataset)
 - [hackernews](../../../getting-started/example-datasets/hackernews-vector-search-dataset)
 
-## References {#references}
+### Quantized Bit (QBit) {#approximate-nearest-neighbor-search-qbit}
+
+<ExperimentalBadge/>
+
+One common approach to speed up exact vector search is to use a lower-precision [float data type](../../../sql-reference/data-types/float.md).
+For example, if vectors are stored as `Array(BFloat16)` instead of `Array(Float32)`, the data size is reduced by half, and query runtimes are expected to decrease proportionally.
+This method is known as quantization. While it speeds up computation, it may reduce result accuracy despite performing an exhaustive scan of all vectors.
+
+With traditional quantization, we lose precision both during search and when storing the data. In the example above, we would store `BFloat16` instead of `Float32`, meaning we can never perform a more accurate search later, even if desired. One alternative approach is to store two copies of the data: quantized and full-precision. While this works, it requires redundant storage. Consider a scenario where we have `Float64` as original data and want to run searches with different precision (16-bit, 32-bit, or full 64-bit). We would need to store three separate copies of the data.
+
+ClickHouse offers the Quantized Bit (`QBit`) data type that addresses these limitations by:
+1. Storing the original full-precision data.
+2. Allowing quantization precision to be specified at query time.
+
+This is achieved by storing data in a bit-grouped format (meaning all i-th bits of all vectors are stored together), enabling reads at only the requested precision level. You get the speed benefits of reduced I/O from quantization while keeping all original data available when needed. When maximum precision is selected, the search becomes exact.
+
+:::note
+The `QBit` data type and its associated distance functions are currently experimental. To enable them, run `SET allow_experimental_qbit_type = 1`.
+If you encounter problems, please open an issue in the [ClickHouse repository](https://github.com/clickhouse/clickhouse/issues).
+:::
+
+To declare a column of `QBit` type, use the following syntax:
+
+```sql
+column_name QBit(element_type, dimension)
+```
+
+Where:
+* `element_type` – the type of each vector element. Supported types are `BFloat16`, `Float32`, and `Float64`
+* `dimension` – the number of elements in each vector
+
+#### Creating a `QBit` Table and Adding Data {#qbit-create}
+
+```sql
+CREATE TABLE fruit_animal (
+    word String,
+    vec QBit(Float64, 5)
+) ENGINE = MergeTree
+ORDER BY word;
+
+INSERT INTO fruit_animal VALUES
+    ('apple', [-0.99105519, 1.28887844, -0.43526649, -0.98520696, 0.66154391]),
+    ('banana', [-0.69372815, 0.25587061, -0.88226235, -2.54593015, 0.05300475]),
+    ('orange', [0.93338752, 2.06571317, -0.54612565, -1.51625717, 0.69775337]),
+    ('dog', [0.72138876, 1.55757105, 2.10953259, -0.33961248, -0.62217325]),
+    ('cat', [-0.56611276, 0.52267331, 1.27839863, -0.59809804, -1.26721048]),
+    ('horse', [-0.61435682, 0.48542571, 1.21091247, -0.62530446, -1.33082533]);
+```
+
+#### Vector Search with `QBit` {#qbit-search}
+
+Let's find the nearest neighbors to a vector representing word 'lemon' using L2 distance. The third parameter in the distance function specifies the precision in bits - higher values provide more accuracy but require more computation.
+
+You can find all available distance functions for `QBit` [here](../../../sql-reference/data-types/qbit.md#vector-search-functions).
+
+**Full precision search (64-bit):**
+
+```sql
+SELECT
+    word,
+    L2DistanceTransposed(vec, [-0.88693672, 1.31532824, -0.51182908, -0.99652702, 0.59907770], 64) AS distance
+FROM fruit_animal
+ORDER BY distance;
+```
+
+```text
+   ┌─word───┬────────────distance─┐
+1. │ apple  │ 0.14639757188169716 │
+2. │ banana │   1.998961369007679 │
+3. │ orange │   2.039041552613732 │
+4. │ cat    │   2.752802631487914 │
+5. │ horse  │  2.7555776805484813 │
+6. │ dog    │   3.382295083120104 │
+   └────────┴─────────────────────┘
+```
+
+**Reduced precision search:**
+
+```sql
+SELECT
+    word,
+    L2DistanceTransposed(vec, [-0.88693672, 1.31532824, -0.51182908, -0.99652702, 0.59907770], 12) AS distance
+FROM fruit_animal
+ORDER BY distance;
+```
+
+```text
+   ┌─word───┬───────────distance─┐
+1. │ apple  │  0.757668703053566 │
+2. │ orange │ 1.5499475034938677 │
+3. │ banana │ 1.6168396735102937 │
+4. │ cat    │  2.429752230904804 │
+5. │ horse  │  2.524650475528617 │
+6. │ dog    │   3.17766975527459 │
+   └────────┴────────────────────┘
+```
+
+Notice that with 12-bit quantization, we get a good approximation of the distances with faster query execution. The relative ordering remains largely consistent, with 'apple' still being the closest match.
+
+:::note
+In the current state, the speed-up is due to reduced I/O as we read less data. If the original data was wide, like `Float64`, choosing a lower precision will still result in distance calculation on data of the same width – just with less precision.
+:::
+
+#### Performance Considerations {#qbit-performance}
+
+The performance benefit of `QBit` comes from reduced I/O operations, as less data needs to be read from storage when using lower precision. The precision parameter directly controls the trade-off between accuracy and speed:
+
+- **Higher precision** (closer to the original data width): More accurate results, slower queries
+- **Lower precision**: Faster queries with approximate results, reduced memory usage
+
+:::note
+Currently, the speed improvement comes from reduced I/O rather than computational optimizations. When using lower precision values, the distance calculations still operate on the original data width.
+:::
+
+### References {#references}
 
 Blogs:
 - [Vector Search with ClickHouse - Part 1](https://clickhouse.com/blog/vector-search-clickhouse-p1)

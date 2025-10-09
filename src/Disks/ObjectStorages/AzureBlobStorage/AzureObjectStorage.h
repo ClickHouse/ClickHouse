@@ -9,7 +9,6 @@
 #include <azure/storage/blobs.hpp>
 #include <azure/core/http/curl_transport.hpp>
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
-#include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorageConnectionInfo.h>
 
 namespace Poco
 {
@@ -60,6 +59,12 @@ public:
         const ReadSettings & read_settings,
         std::optional<size_t> read_hint = {}) const override;
 
+    SmallObjectDataWithMetadata readSmallObjectAndGetObjectMetadata( /// NOLINT
+        const StoredObject & object,
+        const ReadSettings & read_settings,
+        size_t max_size_bytes,
+        std::optional<size_t> read_hint = {}) const override;
+
     /// Open the file for write and return WriteBufferFromFileBase object.
     std::unique_ptr<WriteBufferFromFileBase> writeObject( /// NOLINT
         const StoredObject & object,
@@ -75,8 +80,6 @@ public:
     ObjectMetadata getObjectMetadata(const std::string & path) const override;
 
     std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path) const override;
-
-    ObjectStorageConnectionInfoPtr getConnectionInfo() const override;
 
     void copyObject( /// NOLINT
         const StoredObject & object_from,
