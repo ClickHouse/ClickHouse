@@ -321,15 +321,14 @@ void RegExpTreeDictionary::loadData()
         DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
         io.pipeline.setConcurrencyControl(false);
 
-        auto func = [&]()
+        io.executeWithCallbacks([&]()
         {
             Block block;
             while (executor.pull(block))
             {
                 initRegexNodes(block);
             }
-        };
-        io.executeWithCallbacks(std::move(func));
+        });
 
         initGraph();
         if (simple_regexps.empty() && complex_regexp_nodes.empty())

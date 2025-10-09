@@ -80,7 +80,6 @@ SettingsChanges readSettingsFromDictionaryConfig(const Poco::Util::AbstractConfi
     return changes;
 }
 
-/// TODO(mstetsyuk): see if this needs to be called from all the dicts
 ContextMutablePtr copyContextAndApplySettingsFromDictionaryConfig(
     const ContextPtr & context, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
 {

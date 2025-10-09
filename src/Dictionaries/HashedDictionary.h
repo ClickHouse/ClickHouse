@@ -884,7 +884,7 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::updateData()
         io.pipeline.setConcurrencyControl(false);
         update_field_loaded_block.reset();
 
-        auto func = [&]()
+        io.executeWithCallbacks([&]()
         {
             Block block;
             while (executor.pull(block))
@@ -905,8 +905,7 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::updateData()
                     saved_column->insertRangeFrom(update_column, 0, update_column.size());
                 }
             }
-        };
-        io.executeWithCallbacks(std::move(func));
+        });
     }
     else
     {
@@ -1166,7 +1165,7 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::loadData()
         DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
         io.pipeline.setConcurrencyControl(false);
         DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
-        auto func = [&]()
+        io.executeWithCallbacks([&]()
         {
             Block block;
             while (executor.pull(block))
@@ -1177,8 +1176,7 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::loadData()
                 else
                     blockToAttributes(block, arena_holder, /* shard= */ 0);
             }
-        };
-        io.executeWithCallbacks(std::move(func));
+        });
 
         if (parallel_loader)
             parallel_loader->finish();

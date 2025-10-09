@@ -596,7 +596,7 @@ Block mergeBlockWithPipe(
 
     PullingPipelineExecutor executor(io.pipeline);
 
-    auto func = [&]()
+    io.executeWithCallbacks([&]()
     {
         Block block;
         while (executor.pull(block))
@@ -635,8 +635,7 @@ Block mergeBlockWithPipe(
                 result_fetched_column->insertRangeFrom(*update_column, 0, rows);
             }
         }
-    };
-    io.executeWithCallbacks(std::move(func));
+    });
 
     size_t result_fetched_rows = result_fetched_columns.front()->size();
     size_t filter_hint = filter.size() - indexes_to_remove_count;

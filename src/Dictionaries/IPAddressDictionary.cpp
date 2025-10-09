@@ -416,7 +416,7 @@ void IPAddressDictionary::loadData()
         DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
         io.pipeline.setConcurrencyControl(false);
 
-        auto func = [&]()
+        io.executeWithCallbacks([&]()
         {
             Block block;
             while (executor.pull(block))
@@ -447,8 +447,7 @@ void IPAddressDictionary::loadData()
                     ip_records.emplace_back(addr, prefix, row_number);
                 }
             }
-        };
-        io.executeWithCallbacks(std::move(func));
+        });
     }
 
     if (access_to_key_from_attributes)

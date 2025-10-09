@@ -649,7 +649,7 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
             DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
             io.pipeline.setConcurrencyControl(false);
 
-            auto func = [&]()
+            io.executeWithCallbacks([&]()
             {
                 Block block;
                 while (executor.pull(block))
@@ -686,8 +686,7 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
                         found_keys_in_source.emplace_back(fetched_key_from_source);
                     }
                 }
-            };
-            io.executeWithCallbacks(std::move(func));
+            });
 
             PaddedPODArray<KeyType> not_found_keys_in_source;
             not_found_keys_in_source.reserve(not_found_keys.size());

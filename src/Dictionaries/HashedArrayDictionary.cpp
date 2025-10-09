@@ -487,7 +487,7 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::updateData()
         io.pipeline.setConcurrencyControl(false);
         update_field_loaded_block.reset();
 
-        auto func = [&]()
+        io.executeWithCallbacks([&]()
         {
             Block block;
             while (executor.pull(block))
@@ -508,8 +508,7 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::updateData()
                     saved_column->insertRangeFrom(update_column, 0, update_column.size());
                 }
             }
-        };
-        io.executeWithCallbacks(std::move(func));
+        });
     }
     else
     {
@@ -996,7 +995,7 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::loadData()
         size_t total_blocks = 0;
         String dictionary_name = getFullName();
 
-        auto func = [&]()
+        io.executeWithCallbacks([&]()
         {
             Block block;
             while (true)
@@ -1025,8 +1024,7 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::loadData()
                 }
                 process_time_microseconds += watch_process.elapsedMicroseconds();
             }
-        };
-        io.executeWithCallbacks(std::move(func));
+        });
 
         if (parallel_loader)
             parallel_loader->finish();

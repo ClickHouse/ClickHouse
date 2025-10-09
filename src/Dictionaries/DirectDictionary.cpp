@@ -94,7 +94,7 @@ Columns DirectDictionary<dictionary_key_type>::getColumns(
     size_t block_num = 0;
     size_t rows_num = 0;
 
-    auto func = [&]()
+    io.executeWithCallbacks([&]()
     {
         Block block;
         while (executor.pull(block))
@@ -132,8 +132,7 @@ Columns DirectDictionary<dictionary_key_type>::getColumns(
 
             block_key_columns.clear();
         }
-    };
-    io.executeWithCallbacks(std::move(func));
+    });
 
     LOG_DEBUG(getLogger("DirectDictionary"), "read {} blocks with {} rows from pipeline in {} ms",
         block_num, rows_num, watch.elapsedMilliseconds());
@@ -265,7 +264,7 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(
 
     size_t keys_found = 0;
 
-    auto func = [&]()
+    io.executeWithCallbacks([&]()
     {
         Block block;
         while (executor.pull(block))
@@ -298,8 +297,7 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(
             block_key_columns.clear();
         }
 
-    };
-    io.executeWithCallbacks(std::move(func));
+    });
 
     query_count.fetch_add(requested_keys_size, std::memory_order_relaxed);
     found_count.fetch_add(keys_found, std::memory_order_relaxed);

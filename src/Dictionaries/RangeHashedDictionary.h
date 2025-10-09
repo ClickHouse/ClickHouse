@@ -551,15 +551,14 @@ void RangeHashedDictionary<dictionary_key_type>::loadData()
 
         DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
         io.pipeline.setConcurrencyControl(false);
-        auto func = [&]()
+        io.executeWithCallbacks([&]()
         {
             Block block;
             while (executor.pull(block))
             {
                 blockToAttributes(block);
             }
-        };
-        io.executeWithCallbacks(std::move(func));
+        });
     }
     else
     {
@@ -709,7 +708,7 @@ void RangeHashedDictionary<dictionary_key_type>::updateData()
         io.pipeline.setConcurrencyControl(false);
         update_field_loaded_block.reset();
 
-        auto func = [&]()
+        io.executeWithCallbacks([&]()
         {
             Block block;
             while (executor.pull(block))
@@ -730,8 +729,7 @@ void RangeHashedDictionary<dictionary_key_type>::updateData()
                     saved_column->insertRangeFrom(update_column, 0, update_column.size());
                 }
             }
-        };
-        io.executeWithCallbacks(std::move(func));
+        });
     }
     else
     {
