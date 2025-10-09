@@ -42,12 +42,16 @@ def test_soft_limit_create(started_cluster):
     node_zk = get_connection_zk("zoo1")
     try:
         loop_time = 100000
-        node_zk.create("/test_soft_limit", b"abc")
-        path = "/test_soft_limit"
+        batch_size = 10000
 
-        for i in range(loop_time):
-            name = "node_" + str(i)
-            node.query(f"INSERT INTO system.zookeeper (name, path, value) values ('{name}', '{path}', repeat('a', 3000))")
+        node_zk.create("/test_soft_limit", b"abc")
+
+        for i in range(0, loop_time, batch_size):
+            node.query(f"""
+            INSERT INTO system.zookeeper (name, path, value)
+            SELECT 'node_' || number::String, '/test_soft_limit', repeat('a', 3000)
+            FROM numbers({i}, {batch_size})
+            """)
     except Exception as e:
         # the message contains out of memory so the users will not be confused.
         assert 'out of memory' in str(e).lower()

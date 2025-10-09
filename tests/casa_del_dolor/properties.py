@@ -146,6 +146,12 @@ possible_properties = {
     ),
     "enable_azure_sdk_logging": true_false_lambda,
     "format_alter_operations_with_parentheses": true_false_lambda,
+    "iceberg_catalog_threadpool_pool_size": threads_lambda,
+    "iceberg_catalog_threadpool_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
+    "iceberg_metadata_files_cache_max_entries": threshold_generator(0.2, 0.2, 0, 10000),
+    "iceberg_metadata_files_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
+    "iceberg_metadata_files_cache_size": threshold_generator(0.2, 0.2, 0, 5368709120),
+    "iceberg_metadata_files_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "ignore_empty_sql_security_in_create_view_query": true_false_lambda,
     "index_mark_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
     "index_mark_cache_size": threshold_generator(0.2, 0.2, 0, 5368709120),
@@ -215,9 +221,13 @@ possible_properties = {
     ),
     "mlock_executable": true_false_lambda,
     "mmap_cache_size": threshold_generator(0.2, 0.2, 0, 2000),
-    "os_threads_nice_value_distributed_cache_tcp_handler": threshold_generator(0.2, 0.2, -20, 19),
+    "os_threads_nice_value_distributed_cache_tcp_handler": threshold_generator(
+        0.2, 0.2, -20, 19
+    ),
     "os_threads_nice_value_merge_mutate": threshold_generator(0.2, 0.2, -20, 19),
-    "os_threads_nice_value_zookeeper_client_send_receive": threshold_generator(0.2, 0.2, -20, 19),
+    "os_threads_nice_value_zookeeper_client_send_receive": threshold_generator(
+        0.2, 0.2, -20, 19
+    ),
     "page_cache_free_memory_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "page_cache_history_window_ms": threshold_generator(0.2, 0.2, 0, 1000),
     "page_cache_max_size": threshold_generator(0.2, 0.2, 0, 2097152),
@@ -948,21 +958,32 @@ class LogTablePropertiesGroup(PropertiesGroup):
         #        policy_choices
         #    )
         apply_properties_recursively(property_element, log_table_properties, 0)
-        # max_size_rows cannot be smaller than reserved_size_rows
+        # max_size_rows (default 1048576) cannot be smaller than reserved_size_rows (default 8192)
         max_size_rows_xml = property_element.find("max_size_rows")
         reserved_size_rows_xml = property_element.find("reserved_size_rows")
-        if max_size_rows_xml is not None and max_size_rows_xml.text:
-            max_size_rows_xml.text = str(
-                max(
-                    int(max_size_rows_xml.text),
-                    (
-                        8192
-                        if reserved_size_rows_xml is None
-                        or not reserved_size_rows_xml.text
-                        else int(reserved_size_rows_xml.text)
-                    ),
-                )
+        if max_size_rows_xml is not None or reserved_size_rows_xml is not None:
+            max_size_rows_value = (
+                1048576
+                if (max_size_rows_xml is None or max_size_rows_xml.text is None)
+                else int(max_size_rows_xml.text)
             )
+            reserved_size_rows_value = (
+                8192
+                if (
+                    reserved_size_rows_xml is None
+                    or reserved_size_rows_xml.text is None
+                )
+                else int(reserved_size_rows_xml.text)
+            )
+            if max_size_rows_value < reserved_size_rows_value:
+                max_size_rows_xml = (
+                    ET.SubElement(property_element, "max_size_rows")
+                    if max_size_rows_xml is None
+                    else max_size_rows_xml
+                )
+                max_size_rows_xml.text = str(
+                    max(max_size_rows_value, reserved_size_rows_value)
+                )
 
 
 def add_ssl_settings(next_ssl: ET.Element):
