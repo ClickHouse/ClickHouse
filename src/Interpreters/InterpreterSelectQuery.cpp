@@ -69,6 +69,7 @@
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/NegativeLimitStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/ShufflingStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/QueryPlan/NegativeOffsetStep.h>
@@ -3261,6 +3262,22 @@ void InterpreterSelectQuery::executeMergeSorted(QueryPlan & query_plan, const st
         query_plan.getCurrentHeader(), std::move(sort_description), max_block_size, limit, exact_rows_before_limit);
     merging_sorted->setStepDescription(fmt::format("Merge sorted streams {}", description), options.max_step_description_length);
     query_plan.addStep(std::move(merging_sorted));
+}
+
+void InterpreterSelectQuery::executeShuffle(QueryPlan & query_plan)
+{
+    auto & query = getSelectQuery();
+    UInt64 limit = getLimitForSorting(query, context);
+
+    ShufflingStep::Settings sort_settings(context->getSettingsRef());
+
+    auto shuffling_step = std::make_unique<ShufflingStep>(
+        query_plan.getCurrentHeader(),
+        limit,
+        sort_settings);
+
+    shuffling_step->setStepDescription("Shuffling for SHUFFLE");
+    query_plan.addStep(std::move(shuffling_step));
 }
 
 
