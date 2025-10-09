@@ -1039,15 +1039,6 @@ void MutationsInterpreter::prepare(bool dry_run)
                 dependencies.emplace(all_columns.front().name, ColumnDependency::TTL_EXPRESSION);
             }
         }
-        else if (command.type == MutationCommand::REWRITE_PARTS)
-        {
-            mutation_kind.set(MutationKind::MUTATE_OTHER);
-            addStageIfNeeded(command.mutation_version, true);
-            stages.back().affects_all_columns = true;
-
-            need_rebuild_indexes = true;
-            need_rebuild_projections = true;
-        }
         else if (command.type == MutationCommand::READ_COLUMN)
         {
             mutation_kind.set(MutationKind::MUTATE_OTHER);

@@ -43,7 +43,7 @@ public:
 
     DataSourceDescription getDataSourceDescription() const override { return data_source_description; }
 
-    bool supportZeroCopyReplication() const override { return metadata_storage->getType() != MetadataStorageType::Keeper; }
+    bool supportZeroCopyReplication() const override { return true; }
 
     bool supportParallelWrite() const override { return object_storage->supportParallelWrite(); }
 
@@ -117,6 +117,8 @@ public:
     void createDirectory(const String & path) override;
 
     void createDirectories(const String & path) override;
+
+    void clearDirectory(const String & path) override;
 
     void moveDirectory(const String & from_path, const String & to_path) override;
 
@@ -271,7 +273,7 @@ private:
     scope_guard resource_changes_subscription;
     std::atomic_bool enable_distributed_cache;
 
-    const bool use_fake_transaction;
+    bool use_fake_transaction;
     UInt64 remove_shared_recursive_file_limit;
 };
 

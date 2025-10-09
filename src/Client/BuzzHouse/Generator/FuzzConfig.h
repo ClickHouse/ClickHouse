@@ -29,7 +29,6 @@ using JSONParserImpl = DB::DummyJSONParser;
 }
 #endif
 
-#include <Client/BuzzHouse/AST/SQLProtoStr.h>
 #include <Client/ClientBase.h>
 #include <Common/logger_useful.h>
 
@@ -47,8 +46,7 @@ const constexpr uint64_t allow_bool = (UINT64_C(1) << 0), allow_unsigned_int = (
                          allow_ipv4 = (UINT64_C(1) << 23), allow_ipv6 = (UINT64_C(1) << 24), allow_geo = (UINT64_C(1) << 25),
                          set_any_datetime_precision = (UINT64_C(1) << 26), set_no_decimal_limit = (UINT64_C(1) << 27),
                          allow_fixed_strings = (UINT64_C(1) << 28), allow_time = (UINT64_C(1) << 29), allow_time64 = (UINT64_C(1) << 30),
-                         allow_int16 = (UINT64_C(1) << 31), allow_float64 = (UINT64_C(1) << 32), allow_bfloat16 = (UINT64_C(1) << 33),
-                         allow_qbit = (UINT64_C(1) << 34);
+                         allow_int16 = (UINT64_C(1) << 31), allow_float64 = (UINT64_C(1) << 32), allow_bfloat16 = (UINT64_C(1) << 33);
 
 const constexpr uint64_t allow_replacing_mergetree
     = (UINT64_C(1) << 0),
@@ -76,7 +74,7 @@ using JSONObjectType = JSONParserImpl::Element;
 class Catalog
 {
 public:
-    String client_hostname, server_hostname, path, region, warehouse;
+    String client_hostname, server_hostname, path, region;
     uint32_t port;
 
     Catalog()
@@ -84,7 +82,6 @@ public:
         , server_hostname("localhost")
         , path()
         , region()
-        , warehouse()
         , port(0)
     {
     }
@@ -94,13 +91,11 @@ public:
         const String & server_hostname_,
         const String & path_,
         const String & region_,
-        const String & warehouse_,
         const uint32_t port_)
         : client_hostname(client_hostname_)
         , server_hostname(server_hostname_)
         , path(path_)
         , region(region_)
-        , warehouse(warehouse_)
         , port(port_)
     {
     }
@@ -232,12 +227,6 @@ public:
     SystemTable(SystemTable && c) = default;
     SystemTable & operator=(const SystemTable & c) = default;
     SystemTable & operator=(SystemTable && c) noexcept = default;
-
-    void setName(ExprSchemaTable * est) const
-    {
-        est->mutable_database()->set_database(schema_name);
-        est->mutable_table()->set_table(table_name);
-    }
 };
 
 class FuzzConfig
@@ -249,7 +238,7 @@ public:
     LoggerPtr log;
     std::ofstream outf;
     DB::Strings collations, storage_policies, timezones, disks, keeper_disks, clusters, caches, remote_servers, remote_secure_servers,
-        http_servers, https_servers, arrow_flight_servers, hot_settings, disallowed_settings, hot_table_settings;
+        http_servers, https_servers, arrow_flight_servers, hot_settings, disallowed_settings;
     std::optional<ServerCredentials> clickhouse_server, mysql_server, postgresql_server, sqlite_server, mongodb_server, redis_server,
         minio_server, http_server, azurite_server, dolor_server;
     std::unordered_map<String, PerformanceMetric> metrics;
@@ -257,8 +246,7 @@ public:
     String host = "localhost", keeper_map_path_prefix;
     bool read_log = false, fuzz_floating_points = true, test_with_fill = true, compare_success_results = false, measure_performance = false,
          allow_infinite_tables = false, compare_explains = false, allow_memory_tables = true, allow_client_restarts = false,
-         enable_fault_injection_settings = false, enable_force_settings = false, allow_hardcoded_inserts = true,
-         allow_async_requests = false;
+         enable_fault_injection_settings = false, enable_force_settings = false, allow_hardcoded_inserts = true;
     uint64_t seed = 0, min_insert_rows = 1, max_insert_rows = 1000, min_nested_rows = 0, max_nested_rows = 10, flush_log_wait_time = 1000,
              type_mask = std::numeric_limits<uint64_t>::max(), engine_mask = std::numeric_limits<uint64_t>::max();
     uint32_t max_depth = 3, max_width = 3, max_databases = 4, max_functions = 4, max_tables = 10, max_views = 5, max_dictionaries = 5,
@@ -266,9 +254,10 @@ public:
              use_dump_table_oracle = 2, max_reconnection_attempts = 3, time_to_sleep_between_reconnects = 3000, min_string_length = 0,
              max_string_length = 1009;
     std::filesystem::path log_path = std::filesystem::temp_directory_path() / "out.sql",
-                          client_file_path = "/var/lib/clickhouse/user_files", server_file_path = "/var/lib/clickhouse/user_files",
+                          client_file_path = std::filesystem::temp_directory_path() / "db",
+                          server_file_path = std::filesystem::temp_directory_path() / "db",
                           fuzz_client_out = client_file_path / "fuzz.data", fuzz_server_out = server_file_path / "fuzz.data",
-                          lakes_path = "/var/lib/clickhouse/user_files/lakehouses";
+                          lakes_path = std::filesystem::temp_directory_path() / "lakes";
 
     FuzzConfig()
         : cb(nullptr)
@@ -296,8 +285,6 @@ public:
     bool hasMutations();
 
     String getRandomMutation(uint64_t rand_val);
-
-    String getRandomIcebergHistoryValue(const String & property);
 
     bool tableHasPartitions(bool detached, const String & database, const String & table);
 

@@ -73,7 +73,7 @@ class ClickHouseSparkTypeMapper:
 
     def clickhouse_to_spark(
         self, ch_type: str, inside_nullable: bool
-    ) -> Tuple[str, bool, DataType]:
+    ) -> Tuple[str, bool, Any]:
         """
         Convert ClickHouse type to Spark SQL type string.
 
@@ -154,10 +154,10 @@ class ClickHouseSparkTypeMapper:
                     next_tp, next_null, next_spark = self.clickhouse_to_spark(
                         elem, False
                     )
-                    spark_elements.append(f"`{i + 1}`: {next_tp}")
+                    spark_elements.append(f"_{i}: {next_tp}")
                     struct_fields.append(
                         StructField(
-                            name=f"{i + 1}", dataType=next_spark, nullable=next_null
+                            name=f"_{i}", dataType=next_spark, nullable=next_null
                         )
                     )
 
@@ -191,10 +191,7 @@ class ClickHouseSparkTypeMapper:
         decimal_match = re.match(r"Decimal(?:\d+)?\((\d+)(?:,\s*(\d+))?\)", ch_type)
         if decimal_match:
             nprecision = min(38, int(decimal_match.group(1)))
-            nscale = min(
-                nprecision,
-                int(decimal_match.group(2) if decimal_match.group(2) else "0"),
-            )
+            nscale = min(nprecision, int(decimal_match.group(2) if decimal_match.group(2) else "0"))
             return (
                 f"DECIMAL({nprecision}, {nscale})",
                 inside_nullable,
@@ -386,71 +383,3 @@ class ClickHouseSparkTypeMapper:
             if name:
                 fields[name] = ch_type
         return fields
-
-    def generate_random_spark_sql_type(
-        self, max_depth=3, current_depth=0, allow_complex=True
-    ):
-        """
-        Generate a random Spark SQL data type as a SQL string.
-
-        Args:
-            max_depth: Maximum nesting depth for complex types (STRUCT, ARRAY, MAP)
-            current_depth: Current depth in the type hierarchy
-            allow_complex: Whether to allow complex types at this level
-
-        Returns:
-            A SQL type string (e.g., "INT", "ARRAY<STRING>", "STRUCT<a:INT,b:STRING>")
-        """
-
-        # Primitive types
-        primitive_types = [
-            "TINYINT",
-            "SMALLINT",
-            "INT",
-            "BIGINT",
-            "FLOAT",
-            "DOUBLE",
-            f"DECIMAL({random.randint(1, 38)},{random.randint(0, 10)})",
-            "STRING",
-            "BINARY",
-            "BOOLEAN",
-            "DATE",
-            "TIMESTAMP",
-        ]
-
-        # If we've reached max depth or complex types not allowed, return primitive
-        if current_depth >= max_depth or not allow_complex:
-            return random.choice(primitive_types)
-
-        # Choose between primitive and complex types
-        type_choice = random.choice(["primitive", "array", "map", "struct"])
-
-        if type_choice == "primitive":
-            return random.choice(primitive_types)
-        elif type_choice == "array":
-            # Generate random element type (can be nested)
-            element_type = self.generate_random_spark_sql_type(
-                max_depth=max_depth, current_depth=current_depth + 1, allow_complex=True
-            )
-            return f"ARRAY<{element_type}>"
-        elif type_choice == "map":
-            # Generate random key and value types
-            # Keys are typically primitive types
-            key_type = random.choice(primitive_types)
-            value_type = self.generate_random_spark_sql_type(
-                max_depth=max_depth, current_depth=current_depth + 1, allow_complex=True
-            )
-            return f"MAP<{key_type},{value_type}>"
-        elif type_choice == "struct":
-            # Generate random number of fields (1-5)
-            num_fields = random.randint(1, 5)
-            fields = []
-            for i in range(num_fields):
-                field_name = f"field_{i}"
-                field_type = self.generate_random_spark_sql_type(
-                    max_depth=max_depth,
-                    current_depth=current_depth + 1,
-                    allow_complex=True,
-                )
-                fields.append(f"{field_name}:{field_type}")
-            return f"STRUCT<{','.join(fields)}>"

@@ -146,7 +146,7 @@ struct NgramTokenExtractor final : public ITokenExtractorHelper<NgramTokenExtrac
     explicit NgramTokenExtractor(size_t n_) : n(n_) {}
 
     static const char * getName() { return "ngrambf_v1"; }
-    static const char * getExternalName() { return "ngrams"; }
+    static const char * getExternalName() { return "ngram"; }
 
     std::vector<std::string_view> getTokensView(const char * data, size_t length) const override;
     bool nextInString(const char * data, size_t length, size_t *  __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const override;
@@ -163,7 +163,7 @@ private:
 struct DefaultTokenExtractor final : public ITokenExtractorHelper<DefaultTokenExtractor>
 {
     static const char * getName() { return "tokenbf_v1"; }
-    static const char * getExternalName() { return "splitByNonAlpha"; }
+    static const char * getExternalName() { return "default"; }
 
     bool nextInString(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const override;
     bool nextInStringPadded(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const override;
@@ -180,7 +180,7 @@ struct SplitTokenExtractor final : public ITokenExtractorHelper<SplitTokenExtrac
 {
     explicit SplitTokenExtractor(const std::vector<String> & separators_);
 
-    static const char * getName() { return "splitByString"; }
+    static const char * getName() { return "split"; }
     static const char * getExternalName() { return getName(); }
 
     bool nextInString(const char * data, size_t length, size_t * pos, size_t * token_start, size_t * token_length) const override;
@@ -194,7 +194,7 @@ private:
 /// Parser doing "no operation". Returns the entire input as a single token.
 struct NoOpTokenExtractor final : public ITokenExtractorHelper<NoOpTokenExtractor>
 {
-    static const char * getName() { return "array"; }
+    static const char * getName() { return "no_op"; }
     static const char * getExternalName() { return getName(); }
 
     std::vector<std::string_view> getTokensView(const char * data, size_t length) const override;

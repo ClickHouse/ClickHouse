@@ -414,9 +414,6 @@ struct CheckRequest : virtual Request
     /// should it check if a node DOES NOT exist
     bool not_exists = false;
 
-    /// should it check node stat
-    std::optional<Stat> stat_to_check;
-
     void addRootPath(const String & root_path) override;
     String getPath() const override { return path; }
 

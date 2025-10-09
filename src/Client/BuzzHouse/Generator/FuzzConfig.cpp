@@ -27,7 +27,6 @@ static std::optional<Catalog> loadCatalog(const JSONParserImpl::Element & jobj, 
     String server_hostname = "localhost";
     String path;
     String region = default_region;
-    String warehouse = "data";
     uint32_t port = default_port;
 
     static const SettingEntries configEntries
@@ -35,7 +34,6 @@ static std::optional<Catalog> loadCatalog(const JSONParserImpl::Element & jobj, 
            {"server_hostname", [&](const JSONObjectType & value) { server_hostname = String(value.getString()); }},
            {"path", [&](const JSONObjectType & value) { path = String(value.getString()); }},
            {"region", [&](const JSONObjectType & value) { region = String(value.getString()); }},
-           {"warehouse", [&](const JSONObjectType & value) { warehouse = String(value.getString()); }},
            {"port", [&](const JSONObjectType & value) { port = static_cast<uint32_t>(value.getUInt64()); }}};
 
     for (const auto [key, value] : jobj.getObject())
@@ -49,7 +47,7 @@ static std::optional<Catalog> loadCatalog(const JSONParserImpl::Element & jobj, 
         configEntries.at(nkey)(value);
     }
 
-    return std::optional<Catalog>(Catalog(client_hostname, server_hostname, path, region, warehouse, port));
+    return std::optional<Catalog>(Catalog(client_hostname, server_hostname, path, region, port));
 }
 
 static std::optional<ServerCredentials> loadServerCredentials(
@@ -143,7 +141,7 @@ loadPerformanceMetric(const JSONParserImpl::Element & jobj, const uint32_t defau
         metricEntries.at(nkey)(value);
     }
 
-    return PerformanceMetric(std::move(enabled), std::move(threshold), std::move(minimum));
+    return PerformanceMetric(enabled, threshold, minimum);
 }
 
 static std::function<void(const JSONObjectType &)>
@@ -261,8 +259,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
            {"ipv4", allow_ipv4},
            {"ipv6", allow_ipv6},
            {"geo", allow_geo},
-           {"fixedstring", allow_fixed_strings},
-           {"qbit", allow_qbit}};
+           {"fixedstring", allow_fixed_strings}};
 
     static const std::unordered_map<std::string_view, uint64_t> engine_entries
         = {{"replacingmergetree", allow_replacing_mergetree},
@@ -361,7 +358,6 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"allow_infinite_tables", [&](const JSONObjectType & value) { allow_infinite_tables = value.getBool(); }},
         {"compare_explains", [&](const JSONObjectType & value) { compare_explains = value.getBool(); }},
         {"allow_hardcoded_inserts", [&](const JSONObjectType & value) { allow_hardcoded_inserts = value.getBool(); }},
-        {"allow_async_requests", [&](const JSONObjectType & value) { allow_async_requests = value.getBool(); }},
         {"allow_memory_tables", [&](const JSONObjectType & value) { allow_memory_tables = value.getBool(); }},
         {"allow_client_restarts", [&](const JSONObjectType & value) { allow_client_restarts = value.getBool(); }},
         {"max_reconnection_attempts",
@@ -389,7 +385,6 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"arrow_flight_servers", [&](const JSONObjectType & value) { arrow_flight_servers = loadArray(value); }},
         {"hot_settings", [&](const JSONObjectType & value) { hot_settings = loadArray(value); }},
         {"disallowed_settings", [&](const JSONObjectType & value) { disallowed_settings = loadArray(value); }},
-        {"hot_table_settings", [&](const JSONObjectType & value) { hot_table_settings = loadArray(value); }},
         {"disabled_types", parseDisabledOptions(type_mask, "disabled_types", type_entries)},
         {"disabled_engines", parseDisabledOptions(engine_mask, "disabled_engines", engine_entries)},
         {"disallowed_error_codes", parseErrorCodes(disallowed_error_codes)},
@@ -564,7 +559,7 @@ bool FuzzConfig::tableHasPartitions(const bool detached, const String & database
     if (processServerQuery(
             true,
             fmt::format(
-                R"(SELECT count() FROM "system"."{}" WHERE {}"table" = '{}' AND "partition_id" != 'all' INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;)",
+                R"(SELECT count() FROM "system"."{}" WHERE {}"table" = '{}' AND "partition_id" != 'all' INTO OUTFILE '{}' TRUNCATE FORMAT CSV;)",
                 detached_tbl,
                 db_clause,
                 table,
@@ -586,8 +581,7 @@ bool FuzzConfig::hasMutations()
     if (processServerQuery(
             false,
             fmt::format(
-                R"(SELECT count() FROM "system"."mutations" INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;)",
-                fuzz_server_out.generic_string())))
+                R"(SELECT count() FROM "system"."mutations" INTO OUTFILE '{}' TRUNCATE FORMAT CSV;)", fuzz_server_out.generic_string())))
     {
         std::ifstream infile(fuzz_client_out);
         if (std::getline(infile, buf))
@@ -608,7 +602,7 @@ String FuzzConfig::getRandomMutation(const uint64_t rand_val)
             fmt::format(
                 "SELECT z.y FROM (SELECT (row_number() OVER () - 1) AS x, \"mutation_id\" AS y FROM \"system\".\"mutations\") as z "
                 "WHERE z.x = (SELECT {} % max2(count(), 1) FROM \"system\".\"mutations\") INTO OUTFILE '{}' TRUNCATE "
-                "FORMAT TabSeparated;",
+                "FORMAT RawBlob;",
                 rand_val,
                 fuzz_server_out.generic_string())))
     {
@@ -616,24 +610,6 @@ String FuzzConfig::getRandomMutation(const uint64_t rand_val)
         std::getline(infile, res);
     }
     return res;
-}
-
-String FuzzConfig::getRandomIcebergHistoryValue(const String & property)
-{
-    String res;
-
-    /// Can't use sampling here either
-    if (processServerQuery(
-            false,
-            fmt::format(
-                R"(SELECT {} FROM "system"."iceberg_history" ORDER BY rand() LIMIT 1 INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;)",
-                property,
-                fuzz_server_out.generic_string())))
-    {
-        std::ifstream infile(fuzz_client_out, std::ios::in);
-        std::getline(infile, res);
-    }
-    return res.empty() ? "-1" : res;
 }
 
 String FuzzConfig::tableGetRandomPartitionOrPart(
@@ -651,7 +627,7 @@ String FuzzConfig::tableGetRandomPartitionOrPart(
                 "\"partition_id\" != 'all') AS z WHERE z.x = (SELECT {} % max2(count(), 1) FROM \"system\".\"{}\" WHERE "
                 "{}\"table\" "
                 "= "
-                "'{}') INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
+                "'{}') INTO OUTFILE '{}' TRUNCATE FORMAT RawBlob;",
                 partition ? "partition_id" : "name",
                 detached_tbl,
                 db_clause,

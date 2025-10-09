@@ -373,6 +373,7 @@ def test_host_is_drop_from_cache_after_consecutive_failures(cluster_ready):
         regexp="Code: 198. DB::NetException: Not found address of host: InvalidHostThatDoesNotExist.",
         # There's noize in a normal log, let's search the error log for the exception
         filename="/var/log/clickhouse-server/clickhouse-server.err.log",
+        look_behind_lines=300,
     )
     assert node4.wait_for_log_line(
         "Cached hosts not found:.*InvalidHostThatDoesNotExist**",

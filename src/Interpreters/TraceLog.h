@@ -23,9 +23,6 @@ struct TraceLogElement
     using TraceDataType = DataTypeEnum8;
     static const TraceDataType::Values trace_values;
 
-    using ContextDataType = DataTypeEnum8;
-    static const ContextDataType::Values context_values;
-
     time_t event_time{};
     Decimal64 event_time_microseconds{};
     UInt64 timestamp_ns{};
@@ -37,9 +34,6 @@ struct TraceLogElement
     Int64 size{};
     /// Allocation ptr for TraceType::MemorySample.
     UInt64 ptr{};
-    /// For memory tracing
-    std::optional<VariableContext> memory_context{};
-    std::optional<VariableContext> memory_blocked_context{};
     /// ProfileEvent for TraceType::ProfileEvent.
     ProfileEvents::Event event{ProfileEvents::end()};
     /// Increment of profile event for TraceType::ProfileEvent.

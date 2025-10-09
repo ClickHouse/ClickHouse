@@ -116,6 +116,11 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
+namespace FailPoints
+{
+    extern const char slowdown_index_analysis[];
+}
+
 
 MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(const MergeTreeData & data_)
     : data(data_), log(getLogger(data.getLogName() + " (SelectExecutor)"))
@@ -382,6 +387,14 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
 
         if (upper_limit_rational < size_of_universum)
             has_upper_limit = true;
+
+        /*std::cerr << std::fixed << std::setprecision(100)
+            << "relative_sample_size: " << relative_sample_size << "\n"
+            << "relative_sample_offset: " << relative_sample_offset << "\n"
+            << "lower_limit_float: " << lower_limit_rational << "\n"
+            << "upper_limit_float: " << upper_limit_rational << "\n"
+            << "lower: " << lower << "\n"
+            << "upper: " << upper << "\n";*/
 
         if ((has_upper_limit && upper == 0)
             || (has_lower_limit && has_upper_limit && lower == upper))
@@ -670,20 +683,14 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     const auto original_num_parts = parts_with_ranges.size();
     const Settings & settings = context->getSettingsRef();
 
+    /// If parallel_replicas_support_projection is enabled, selected_marks will be used to determine the optimal projection.
     if (context->canUseParallelReplicasOnFollower() && settings[Setting::parallel_replicas_local_plan]
-        && settings[Setting::parallel_replicas_index_analysis_only_on_coordinator])
+        && settings[Setting::parallel_replicas_index_analysis_only_on_coordinator]
+        && !settings[Setting::parallel_replicas_support_projection])
     {
-        /// If parallel replicas support projection optimization, selected_marks will be used to determine the optimal projection.
-        bool is_handling_projection_parts = std::any_of(
-            parts_with_ranges.begin(),
-            parts_with_ranges.end(),
-            [](const auto & part) { return part.data_part->isProjectionPart(); }) || find_exact_ranges;
-        bool support_projection_optimization = settings[Setting::parallel_replicas_support_projection] && (is_handling_projection_parts || metadata_snapshot->hasProjections());
-
-        if (!support_projection_optimization)
-            // Skip index analysis and return parts with all marks
-            // The coordinator will choose ranges to read for workers based on index analysis on its side
-            return parts_with_ranges;
+        // Skip index analysis and return parts with all marks
+        // The coordinator will choose ranges to read for workers based on index analysis on its side
+        return parts_with_ranges;
     }
 
     if (use_skip_indexes && settings[Setting::force_data_skipping_indices].changed)
@@ -1640,16 +1647,11 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         MarkRange result_range;
 
         size_t last_mark = marks_count - (has_final_mark ? 1 : 0);
-
-        /// Invariant: !check_in_range(0..searched_left).can_be_true
-        ///             check_in_range(0..searched_right).can_be_true
-        /// (last_mark+1 is a sentinel out-of-bounds index, such that by definition
-        ///  check_in_range(x..last_mark+1).can_be_true is true. The binary search will never
-        ///  actually call check_in_range with this out-of-bounds index.)
-        /// If the condition is not true anywhere, we'll end up with searched_left == last_mark.
         size_t searched_left = 0;
-        size_t searched_right = last_mark + 1;
+        size_t searched_right = last_mark;
 
+        bool check_left = false;
+        bool check_right = false;
         while (searched_left + 1 < searched_right)
         {
             const size_t middle = (searched_left + searched_right) / 2;
@@ -1659,13 +1661,11 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             else
                 searched_left = middle;
             ++steps;
+            check_left = true;
         }
         result_range.begin = searched_left;
         LOG_TRACE(log, "Found (LEFT) boundary mark: {}", searched_left);
 
-        /// Invariant:  check_in_range(searched_left..last_mark).can_be_true
-        ///            !check_in_range(searched_right..last_mark).can_be_true
-        /// (Except if searched_left was initially already equal to last_mark.)
         searched_right = last_mark;
         while (searched_left + 1 < searched_right)
         {
@@ -1676,36 +1676,49 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             else
                 searched_right = middle;
             ++steps;
+            check_right = true;
         }
         result_range.end = searched_right;
         LOG_TRACE(log, "Found (RIGHT) boundary mark: {}", searched_right);
 
         if (result_range.begin < result_range.end)
         {
-            res.emplace_back(result_range);
-
             if (exact_ranges)
             {
-                auto result_exact_range = result_range;
-                if (result_exact_range.begin < result_exact_range.end &&
-                    check_in_range({result_exact_range.begin, result_exact_range.begin + 1}, BoolMask::consider_only_can_be_false).can_be_false)
-                    ++result_exact_range.begin;
-
-                if (result_exact_range.begin < result_exact_range.end &&
-                    check_in_range({result_exact_range.end - 1, result_exact_range.end}, BoolMask::consider_only_can_be_false).can_be_false)
-                    --result_exact_range.end;
-
-                if (result_exact_range.begin < result_exact_range.end)
+                if (result_range.begin + 1 == result_range.end)
                 {
-                    if (check_in_range(result_exact_range, BoolMask::consider_only_can_be_false).can_be_false)
+                    auto check_result = check_in_range(result_range);
+                    if (check_result.can_be_true)
                     {
-                        /// key_condition.matchesExactContinuousRange returned true, but the
-                        /// range doesn't seem to be continuous.
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent KeyCondition behavior");
+                        if (!check_result.can_be_false)
+                            exact_ranges->emplace_back(result_range);
+                        res.emplace_back(std::move(result_range));
+                    }
+                }
+                else
+                {
+                    /// Candidate range with size > 1 is already can_be_true
+                    auto result_exact_range = result_range;
+                    if (check_in_range({result_range.begin, result_range.begin + 1}, BoolMask::consider_only_can_be_false).can_be_false)
+                        ++result_exact_range.begin;
+
+                    if (check_in_range({result_range.end - 1, result_range.end}, BoolMask::consider_only_can_be_false).can_be_false)
+                        --result_exact_range.end;
+
+                    if (result_exact_range.begin < result_exact_range.end)
+                    {
+                        chassert(check_in_range(result_exact_range, BoolMask::consider_only_can_be_false) == BoolMask(true, false));
+                        exact_ranges->emplace_back(std::move(result_exact_range));
                     }
 
-                    exact_ranges->emplace_back(std::move(result_exact_range));
+                    res.emplace_back(std::move(result_range));
                 }
+            }
+            else
+            {
+                /// Candidate range with both ends checked is already can_be_true
+                if ((check_left && check_right) || check_in_range(result_range, BoolMask::consider_only_can_be_true).can_be_true)
+                    res.emplace_back(std::move(result_range));
             }
         }
 
@@ -2025,6 +2038,11 @@ void MergeTreeDataSelectExecutor::selectPartsToRead(
 
         if (query_status)
             query_status->checkTimeLimit();
+
+        fiu_do_on(FailPoints::slowdown_index_analysis,
+        {
+            sleepForMilliseconds(1000);
+        });
 
         const auto * part = part_or_projection->isProjectionPart() ? part_or_projection->getParentPart() : part_or_projection.get();
         if (part_values && !part_values->contains(part->name))

@@ -9,7 +9,6 @@
 #include <Formats/EscapingRuleUtils.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Chunk.h>
-#include <DataTypes/IDataType.h>
 
 namespace DB
 {
@@ -86,7 +85,7 @@ NamesAndTypesList extractHivePartitionColumnsFromPath(
         {
             if (const auto type = tryInferDataTypeByEscapingRule(value, format_settings ? *format_settings : getFormatSettings(context), FormatSettings::EscapingRule::Raw))
             {
-                if (type->canBeInsideLowCardinality() && isStringOrFixedString(type))
+                if (type->canBeInsideLowCardinality())
                 {
                     hive_partition_columns_to_read_from_file_path.emplace_back(key, std::make_shared<DataTypeLowCardinality>(type));
                 }

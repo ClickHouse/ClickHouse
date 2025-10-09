@@ -3,8 +3,6 @@
 #include <Core/Block_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/QueryViewsLog.h>
-#include <Processors/IProcessor.h>
-#include <Processors/Port.h>
 #include <Storages/StorageSnapshot.h>
 
 #include <QueryPipeline/Chain.h>
@@ -95,28 +93,13 @@ public:
         return std::make_shared<const MakeSharedEnabler>(std::forward<Args>(args)...);
     }
 
-    std::vector<Chain> createChainWithDependenciesForAllStreams() const;
-
+    Chain createChainWithDependencies() const;
     bool isViewsInvolved() const;
 
     void logQueryView(StorageID view_id, std::exception_ptr exception, bool before_start = false) const;
 
-    const auto & getSquashingProcessors() const { return squashing_processors; }
-
-    size_t getSinkStreamSize() const
-    {
-        return sink_stream_size;
-    }
-
 protected:
-    InsertDependenciesBuilder(
-        StoragePtr table,
-        ASTPtr query,
-        SharedHeader insert_header,
-        bool async_insert_,
-        bool skip_destination_table_,
-        size_t max_insert_threads,
-        ContextPtr context);
+    InsertDependenciesBuilder(StoragePtr table, ASTPtr query, SharedHeader insert_header, bool async_insert_, bool skip_destination_table_, ContextPtr context);
 
 private:
     bool isView(StorageIDPrivate id) const;
@@ -126,8 +109,6 @@ private:
     String debugTree() const;
     String debugPath(const DependencyPath & path) const;
     void collectAllDependencies();
-
-    Chain createChainWithDependencies() const;
 
     Chain createPreSink(StorageIDPrivate view_id) const;
     Chain createSelect(StorageIDPrivate view_id) const;
@@ -144,7 +125,6 @@ private:
 
     bool async_insert = false;
     bool skip_destination_table = false;
-    size_t sink_stream_size = 1;
 
     /// When the insertion is made into a materialized view, the root_view is the view itself and dependent_views contains its inner table.
     /// When the insertion is made into a regular table (it is init_table_id), the root_view is {} / StorageID::createEmpty() and dependent_views contains init_table_id.
@@ -164,14 +144,6 @@ private:
     MapIdBlock output_headers;
     MapIdThreadGroup thread_groups;
 
-    using SquashingProcessorsMap = std::unordered_map<
-        StorageIDPrivate,
-        std::vector<std::list<ProcessorPtr>::const_iterator>,
-        StorageID::DatabaseAndTableNameHash,
-        StorageID::DatabaseAndTableNameEqual>;
-
-    mutable SquashingProcessorsMap squashing_processors;
-
     ViewErrorsRegistryPtr views_error_registry;
 
     LoggerPtr logger;
@@ -181,7 +153,6 @@ public:
     bool deduplicate_blocks_in_dependent_materialized_views = false;
     bool insert_null_as_default = false;
     bool materialized_views_ignore_errors = false;
-    bool squash_parallel_inserts = false;
     bool ignore_materialized_views_with_dropped_target_table = false;
 };
 

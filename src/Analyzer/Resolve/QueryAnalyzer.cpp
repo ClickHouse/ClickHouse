@@ -1949,8 +1949,6 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
 {
     auto & matcher_node_typed = matcher_node->as<MatcherNode &>();
 
-    std::unordered_map<std::string, QueryTreeNodePtr> replace_transformer_mappings;
-
     QueryTreeNodesWithNames matched_expression_nodes_with_names;
 
     if (matcher_node_typed.isQualified())
@@ -2094,8 +2092,6 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                 if (replace_transformer->isStrict())
                     strict_transformer_to_used_column_names[replace_transformer].insert(column_name);
 
-                replace_transformer_mappings[column_name] = replace_expression;
-
                 node = replace_expression->clone();
                 node_projection_names = resolveExpressionNode(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
@@ -2203,136 +2199,6 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
     matcher_node = std::move(list);
     if (original_ast)
         matcher_node->setOriginalAST(original_ast);
-
-    /// Apply REPLACE transformer mappings to WHERE and HAVING clauses of the current query
-    if (!replace_transformer_mappings.empty())
-    {
-        auto * query_scope = scope.getNearestQueryScope();
-        if (query_scope && query_scope->scope_node)
-        {
-            auto * query_node = query_scope->scope_node->as<QueryNode>();
-            if (query_node)
-            {
-                auto replace_identifiers_in_node = [&](QueryTreeNodePtr & node) -> void
-                {
-                    if (!node) return;
-
-                    std::function<void(QueryTreeNodePtr &)> replace_recursive = [&](QueryTreeNodePtr & current) -> void
-                    {
-                        if (!current) return;
-
-                        if (auto * identifier = current->as<IdentifierNode>())
-                        {
-                            auto it = replace_transformer_mappings.find(identifier->getIdentifier().getFullName());
-                            if (it != replace_transformer_mappings.end())
-                            {
-                                current = it->second->clone();
-                                return;
-                            }
-                        }
-
-                        if (auto * function_node = current->as<FunctionNode>())
-                        {
-                            auto & arguments = function_node->getArguments().getNodes();
-                            for (auto & arg : arguments)
-                                replace_recursive(arg);
-
-                            /// Also process WindowNode for window functions like ROW_NUMBER() OVER (ORDER BY ...)
-                            if (function_node->getWindowNode())
-                            {
-                                auto window_node = function_node->getWindowNode();
-                                replace_recursive(window_node);
-                                function_node->getWindowNode() = window_node;
-                            }
-                        }
-                        else if (auto * list_node = current->as<ListNode>())
-                        {
-                            auto & nodes = list_node->getNodes();
-                            for (auto & child_node : nodes)
-                                replace_recursive(child_node);
-                        }
-                        else if (auto * sort_node = current->as<SortNode>())
-                        {
-                            if (auto & expression = sort_node->getExpression())
-                                replace_recursive(expression);
-                        }
-                        else if (auto * window_node = current->as<WindowNode>())
-                        {
-                            if (window_node->hasOrderBy())
-                            {
-                                auto order_by_node = window_node->getOrderByNode();
-                                replace_recursive(order_by_node);
-                                window_node->getOrderByNode() = order_by_node;
-                            }
-                            if (window_node->hasPartitionBy())
-                            {
-                                auto partition_by_node = window_node->getPartitionByNode();
-                                replace_recursive(partition_by_node);
-                                window_node->getPartitionByNode() = partition_by_node;
-                            }
-                        }
-                    };
-
-                    replace_recursive(node);
-                };
-
-                if (query_node->getWhere())
-                {
-                    auto where_node = query_node->getWhere();
-                    replace_identifiers_in_node(where_node);
-                    query_node->getWhere() = where_node;
-                }
-
-                if (query_node->hasHaving())
-                {
-                    auto having_node = query_node->getHaving();
-                    replace_identifiers_in_node(having_node);
-                    query_node->getHaving() = having_node;
-                }
-
-                if (query_node->getPrewhere())
-                {
-                    auto prewhere_node = query_node->getPrewhere();
-                    replace_identifiers_in_node(prewhere_node);
-                    query_node->getPrewhere() = prewhere_node;
-                }
-
-                if (query_node->hasOrderBy())
-                {
-                    auto order_by_node = query_node->getOrderByNode();
-                    replace_identifiers_in_node(order_by_node);
-                    query_node->getOrderByNode() = order_by_node;
-                }
-
-                if (query_node->hasGroupBy())
-                {
-                    auto group_by_node = query_node->getGroupByNode();
-                    replace_identifiers_in_node(group_by_node);
-                    query_node->getGroupByNode() = group_by_node;
-                }
-
-                if (query_node->hasLimitBy())
-                {
-                    auto limit_by_node = query_node->getLimitByNode();
-                    replace_identifiers_in_node(limit_by_node);
-                    query_node->getLimitByNode() = limit_by_node;
-                }
-
-                if (query_node->hasWindow())
-                {
-                    auto window_node = query_node->getWindowNode();
-                    replace_identifiers_in_node(window_node);
-                    query_node->getWindowNode() = window_node;
-                }
-
-                {
-                    auto projection_node = query_node->getProjectionNode();
-                    replace_identifiers_in_node(projection_node);
-                    query_node->getProjectionNode() = projection_node;
-                }
-            }
-        }
-    }
 
     return result_projection_names;
 }

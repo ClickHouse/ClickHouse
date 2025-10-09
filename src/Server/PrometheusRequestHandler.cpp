@@ -90,12 +90,6 @@ public:
 
         if (config().expose_errors)
             metrics_writer().writeErrors(out);
-
-        if (config().expose_histograms)
-            metrics_writer().writeHistogramMetrics(out);
-
-        if (config().expose_dimensional_metrics)
-            metrics_writer().writeDimensionalMetrics(out);
     }
 };
 

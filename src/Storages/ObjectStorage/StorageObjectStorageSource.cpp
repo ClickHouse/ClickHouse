@@ -79,7 +79,6 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     String name_,
     ObjectStoragePtr object_storage_,
     StorageObjectStorageConfigurationPtr configuration_,
-    StorageSnapshotPtr storage_snapshot_,
     const ReadFromFormatInfo & info,
     const std::optional<FormatSettings> & format_settings_,
     ContextPtr context_,
@@ -92,7 +91,6 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     , name(std::move(name_))
     , object_storage(object_storage_)
     , configuration(configuration_)
-    , storage_snapshot(std::move(storage_snapshot_))
     , read_context(context_)
     , format_settings(format_settings_)
     , max_block_size(max_block_size_)
@@ -135,7 +133,6 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     StorageObjectStorageConfigurationPtr configuration,
     const StorageObjectStorageQuerySettings & query_settings,
     ObjectStoragePtr object_storage,
-    StorageMetadataPtr storage_metadata,
     bool distributed_processing,
     const ContextPtr & local_context,
     const ActionsDAG::Node * predicate,
@@ -194,7 +191,10 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     else if (configuration->supportsFileIterator())
     {
         auto iter = configuration->iterate(
-            filter_actions_dag, file_progress_callback, query_settings.list_object_keys_size, storage_metadata, local_context);
+            filter_actions_dag,
+            file_progress_callback,
+            query_settings.list_object_keys_size,
+            local_context);
 
         if (filter_actions_dag)
         {
@@ -251,8 +251,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
 
     if (is_archive)
     {
-        return std::make_shared<ArchiveIterator>(
-            object_storage, configuration, std::move(iterator), local_context, read_keys, ignore_archive_globs);
+        return std::make_shared<ArchiveIterator>(object_storage, configuration, std::move(iterator), local_context, read_keys, ignore_archive_globs);
     }
 
     return iterator;
@@ -271,6 +270,7 @@ void StorageObjectStorageSource::lazyInitialize()
 
 Chunk StorageObjectStorageSource::generate()
 {
+
     lazyInitialize();
 
     while (true)
@@ -558,7 +558,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             auto mapper = configuration->getColumnMapperForObject(object_info);
             if (!mapper)
                 return format_filter_info;
-            return std::make_shared<FormatFilterInfo>(format_filter_info->filter_actions_dag, format_filter_info->context.lock(), mapper, nullptr, nullptr);
+            return std::make_shared<FormatFilterInfo>(format_filter_info->filter_actions_dag, format_filter_info->context.lock(), mapper);
         }();
 
         auto input_format = FormatFactory::instance().getInput(
@@ -657,7 +657,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         && DistributedCache::Registry::instance().isReady(
             effective_read_settings.distributed_cache_settings.read_only_from_current_az))
     {
-        connection_info = DistributedCache::getConnectionInfo(*object_storage);
+        connection_info = object_storage->getConnectionInfo();
         if (connection_info)
             use_distributed_cache = true;
     }
