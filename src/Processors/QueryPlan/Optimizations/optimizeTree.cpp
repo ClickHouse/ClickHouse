@@ -1,10 +1,10 @@
-#include <Common/Exception.h>
-#include <Processors/QueryPlan/ReadFromLocalReplica.h>
-#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/ReadFromLocalReplica.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/UnionStep.h>
+#include <Common/Exception.h>
 
 #include <stack>
 
@@ -21,8 +21,39 @@ namespace ErrorCodes
 namespace QueryPlanOptimizations
 {
 
-void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
+/// Find `ReadFromLocalParallelReplicaStep` and replace it with local plan.
+void unwrapReadFromLocalParallelReplica(QueryPlan & query_plan, QueryPlan::Node & root, QueryPlan::Nodes &)
 {
+    Stack stack;
+    stack.push_back({.node = &root});
+    while (!stack.empty())
+    {
+        auto & frame = stack.back();
+
+        /// Traverse all children first.
+        if (frame.next_child < frame.node->children.size())
+        {
+            auto next_frame = Frame{.node = frame.node->children[frame.next_child]};
+            ++frame.next_child;
+            stack.push_back(next_frame);
+            continue;
+        }
+        if (auto * read_from_local = typeid_cast<ReadFromLocalParallelReplicaStep *>(frame.node->step.get()))
+        {
+            auto local_plan = read_from_local->extractQueryPlan();
+            auto * local_plan_node = frame.node;
+            query_plan.replaceNodeWithPlan(local_plan_node, std::move(local_plan));
+        }
+
+        stack.pop_back();
+    }
+}
+
+void optimizeTreeFirstPass(
+    const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes, QueryPlan & query_plan)
+{
+    unwrapReadFromLocalParallelReplica(query_plan, root, nodes);
+
     if (!optimization_settings.optimize_plan)
         return;
 
@@ -158,8 +189,7 @@ void traverseQueryPlan(Stack & stack, QueryPlan::Node & root, Func1 && on_enter,
 }
 
 
-void optimizeTreeSecondPass(
-    const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes, QueryPlan & query_plan)
+void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
 {
     const size_t max_optimizations_to_apply = optimization_settings.max_optimizations_to_apply;
     std::unordered_set<String> applied_projection_names;
@@ -333,43 +363,7 @@ void optimizeTreeSecondPass(
         stack.pop_back();
     }
 
-    /// Find ReadFromLocalParallelReplicaStep and replace with optimized local plan.
-    /// Place it after projection optimization to avoid executing projection optimization twice in the local plan,
-    /// Which would cause an exception when force_use_projection is enabled.
-    bool read_from_local_parallel_replica_plan = false;
-    stack.push_back({.node = &root});
-    while (!stack.empty())
-    {
-        auto & frame = stack.back();
-
-        /// Traverse all children first.
-        if (frame.next_child < frame.node->children.size())
-        {
-            auto next_frame = Frame{.node = frame.node->children[frame.next_child]};
-            ++frame.next_child;
-            stack.push_back(next_frame);
-            continue;
-        }
-        if (auto * read_from_local = typeid_cast<ReadFromLocalParallelReplicaStep*>(frame.node->step.get()))
-        {
-            read_from_local_parallel_replica_plan = true;
-
-            auto local_plan = read_from_local->extractQueryPlan();
-            local_plan->optimize(optimization_settings);
-
-            auto * local_plan_node = frame.node;
-            query_plan.replaceNodeWithPlan(local_plan_node, std::move(local_plan));
-
-            // after applying optimize() we still can have several expression in a row,
-            // so merge them to make plan more concise
-            if (optimization_settings.merge_expressions)
-                tryMergeExpressions(local_plan_node, nodes, {});
-        }
-
-        stack.pop_back();
-    }
-    // local plan can contain redundant sorting
-    if (read_from_local_parallel_replica_plan && optimization_settings.remove_redundant_sorting)
+    if (optimization_settings.remove_redundant_sorting)
         tryRemoveRedundantSorting(&root);
 
     /// Vector search first pass optimization sets up everything for vector index usage.
