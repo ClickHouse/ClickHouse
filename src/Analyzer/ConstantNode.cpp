@@ -166,12 +166,12 @@ std::shared_ptr<ASTLiteral> ConstantNode::getCachedAST(const F &ast_generator) c
     auto hash = getSipHash128AsPair(hash_state);
 
     if (cached_ast && hash == hash_ast)
-        return cached_ast;
+        return std::make_shared<ASTLiteral>(*cached_ast);
 
     hash_ast = hash;
     cached_ast = ast_generator(*this);
 
-    return cached_ast;
+    return std::make_shared<ASTLiteral>(*cached_ast);
 }
 
 ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
