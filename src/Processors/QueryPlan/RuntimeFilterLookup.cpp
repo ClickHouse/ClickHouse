@@ -3,8 +3,8 @@
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+#include <Common/SharedLockGuard.h>
 #include <Common/SharedMutex.h>
-#include <shared_mutex>
 
 namespace DB
 {
@@ -199,7 +199,7 @@ public:
 
     RuntimeFilterConstPtr find(const String & name) const override
     {
-        std::shared_lock g(rw_lock);
+        SharedLockGuard g(rw_lock);
         auto it = filters_by_name.find(name);
         if (it == filters_by_name.end())
             return nullptr;
@@ -212,7 +212,7 @@ public:
 
 private:
     mutable SharedMutex rw_lock;
-    std::unordered_map<String, RuntimeFilterPtr> filters_by_name;
+    std::unordered_map<String, RuntimeFilterPtr> filters_by_name TSA_GUARDED_BY(rw_lock);
 };
 
 RuntimeFilterLookupPtr createRuntimeFilterLookup()
