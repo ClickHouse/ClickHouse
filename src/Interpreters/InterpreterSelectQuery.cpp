@@ -1481,7 +1481,7 @@ static std::pair<UInt64, bool> getLimitAbsAndSign(const ASTPtr & node, const Con
         throw Exception(
             ErrorCodes::INVALID_LIMIT_EXPRESSION, "Illegal type {} of {} expression, must be numeric type", type->getName(), expr);
 
-    // First check if it is positive limit since they are more common
+    // First check if it is nonnegative limit since they are more common
     {
         const Field converted_value = convertFieldToType(field, DataTypeUInt64());
         if (!converted_value.isNull())

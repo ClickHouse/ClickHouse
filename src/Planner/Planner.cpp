@@ -42,6 +42,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/StorageID.h>
 
@@ -160,6 +161,7 @@ namespace ErrorCodes
     extern const int TOO_DEEP_SUBQUERIES;
     extern const int NOT_IMPLEMENTED;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int INVALID_LIMIT_EXPRESSION;
 }
 
 namespace
@@ -345,6 +347,28 @@ void extendQueryContextAndStoragesLifetime(QueryPlan & query_plan, const Planner
     }
 }
 
+static std::pair<UInt64, bool> getLimitAbsAndSign(const Field & field)
+{
+    // First check if it is nonnegative limit since they are more common
+    const Field converted_value_uint = convertFieldToType(field, DataTypeUInt64());
+    if (!converted_value_uint.isNull())
+        return {converted_value_uint.safeGet<UInt64>(), false};
+
+    const Field converted_value_int = convertFieldToType(field, DataTypeInt64());
+
+    assert(!converted_value_int.isNull() && "limit/offset type should be either UInt64 or Int64");
+
+    Int64 int_value = converted_value_int.safeGet<Int64>();
+
+    assert(int_value < 0 && "nonnegative limit/offset values should be handled with UInt64");
+
+    // We need to be careful because -Int64::min() is not representable as Int64
+    const UInt64 magnitude = (int_value == std::numeric_limits<Int64>::min())
+        ? (static_cast<UInt64>(std::numeric_limits<Int64>::max()) + 1ULL)
+        : static_cast<UInt64>(-int_value);
+    return {magnitude, true};
+}
+
 class QueryAnalysisResult
 {
 public:
@@ -374,29 +398,47 @@ public:
         if (query_node.hasLimit())
         {
             /// Constness of limit is validated during query analysis stage
-            limit_length = query_node.getLimit()->as<ConstantNode &>().getValue().safeGet<UInt64>();
+            bool limit_sign{};
+            std::tie(limit_length, limit_sign) = getLimitAbsAndSign(query_node.getLimit()->as<ConstantNode &>().getValue());
 
             if (query_node.hasOffset() && limit_length)
             {
                 /// Constness of offset is validated during query analysis stage
-                limit_offset = query_node.getOffset()->as<ConstantNode &>().getValue().safeGet<UInt64>();
+                bool offset_sign{};
+                std::tie(limit_offset, offset_sign) = getLimitAbsAndSign(query_node.getOffset()->as<ConstantNode &>().getValue());
+
+                if (limit_sign != offset_sign) // one is negative, another is positive
+                {
+                    throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION, "LIMIT and OFFSET should be both nonnegative or both negative");
+                }
             }
+            is_limit_negative = limit_sign;
         }
         else if (query_node.hasOffset())
         {
             /// Constness of offset is validated during query analysis stage
-            limit_offset = query_node.getOffset()->as<ConstantNode &>().getValue().safeGet<UInt64>();
+            std::tie(limit_offset, is_limit_negative) = getLimitAbsAndSign(query_node.getOffset()->as<ConstantNode &>().getValue());
         }
 
-        /// Partial sort can be done if there is LIMIT, but no DISTINCT, LIMIT WITH TIES, LIMIT BY, ARRAY JOIN
+        /// Partial sort can be done if there is LIMIT, but no DISTINCT, LIMIT WITH TIES, LIMIT BY, ARRAY JOIN, NEGATIVE LIMIT
         if (limit_length != 0 &&
             !query_node.isDistinct() &&
             !query_node.isLimitWithTies() &&
             !query_node.hasLimitBy() &&
             !query_has_array_join_in_join_tree &&
-            limit_length <= std::numeric_limits<UInt64>::max() - limit_offset)
+            limit_length <= std::numeric_limits<UInt64>::max() - limit_offset &&
+            !is_limit_negative)
         {
             partial_sorting_limit = limit_length + limit_offset;
+        }
+
+        if (is_limit_negative)
+        {
+            if (query_node.hasLimitBy())
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Negative LIMIT BY is not supported yet");
+
+            if (query_node.isLimitWithTies())
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Negative LIMIT WITH TIES is not supported yet");
         }
     }
 
@@ -410,6 +452,7 @@ public:
     UInt64 limit_length = 0;
     UInt64 limit_offset = 0;
     UInt64 partial_sorting_limit = 0;
+    bool is_limit_negative = false;
 };
 
 template <size_t size>
@@ -980,10 +1023,14 @@ void addPreliminaryLimitStep(QueryPlan & query_plan,
 {
     UInt64 limit_offset = query_analysis_result.limit_offset;
     UInt64 limit_length = query_analysis_result.limit_length;
+    bool is_limit_negative = query_analysis_result.is_limit_negative;
+
+    if (is_limit_negative)
+        return;
 
     if (do_not_skip_offset)
     {
-        if (limit_length > std::numeric_limits<UInt64>::max() - limit_offset)
+        if (limit_length > std::numeric_limits<Int64>::max() - limit_offset)
             return;
 
         limit_length += limit_offset;

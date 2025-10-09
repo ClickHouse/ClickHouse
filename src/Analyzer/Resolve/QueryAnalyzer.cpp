@@ -632,7 +632,7 @@ void QueryAnalyzer::convertLimitOffsetExpression(QueryTreeNodePtr & expression_n
 
     // We support limit in the range [INT64_MIN, UINT64_MAX]
 
-    // Consider the positive limit case first as they are more common
+    // Consider the nonnegative limit case first as they are more common
     {
         Field converted_value = convertFieldToType(limit_offset_constant_node->getValue(), DataTypeUInt64());
 
