@@ -818,8 +818,7 @@ try
     const auto & insert_query = assert_cast<const ASTInsertQuery &>(*key.query);
 
     auto insert_context = Context::createCopy(global_context);
-    // TODO(mstetsyuk): consider whether internal should be set to true
-    bool internal = false; // To enable logging this query
+    bool internal = true;
     bool async_insert = true;
 
     /// Disabled query spans. Could be activated by initializing this to a SpanHolder

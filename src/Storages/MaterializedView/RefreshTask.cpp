@@ -668,8 +668,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t roo
     LOG_DEBUG(log, "Refreshing view {}", view_storage_id.getFullTableName());
     execution.progress.reset();
 
-    // TODO(mstetsyuk): consider setting to true
-    static constexpr bool internal = false;
+    static constexpr bool internal = true;
 
     ContextMutablePtr refresh_context = view->getContext();
     ProcessList::EntryPtr process_list_entry;

@@ -120,10 +120,6 @@ std::string ClickHouseDictionarySource::getUpdateFieldAndDate()
     return query_builder->composeLoadAllQuery();
 }
 
-/// TODO(mstetsyuk): we need to pass context to all of these methods
-/// because a weak ptr to context is saved to pipeline.process_list_entry.it (via : WithContext)
-/// and it's expected that it's always pointing at non-null
-
 BlockIO ClickHouseDictionarySource::loadAll()
 {
     return createStreamForQuery(load_all_query);

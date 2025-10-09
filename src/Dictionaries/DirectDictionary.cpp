@@ -367,21 +367,41 @@ public:
         return std::is_same_v<PullingAsyncPipelineExecutor, TExecutor> ? "SourceFromQueryPipelineAsync" : "SourceFromQueryPipeline";
     }
 
-    /// TODO(mstetsyuk): try to wrap in try catch and call io_holder.onException(), and call io_holder.onFinish() in dtor if no exception was thrown
     Chunk generate() override
     {
-        Chunk chunk;
-        while (executor.pull(chunk))
+        try
         {
-            if (chunk)
-                return chunk;
+            Chunk chunk;
+            while (executor.pull(chunk))
+            {
+                if (chunk)
+                    return chunk;
+            }
+        }
+        catch (...)
+        {
+            if (io_holder)
+            {
+                io_holder->onException();
+            }
+            throw;
         }
 
+        if (io_holder)
+        {
+            io_holder->onFinish();
+        }
         return {};
     }
 
 private:
+    /// DirectDictionary<...>::read does not execute the pipeline it receives from the source itself.
+    /// It returns it to be executed by the caller instead.
+    /// And we need to retain the BlockIO object until the pipeline has been executed because:
+    /// * We count on it holding the context and the query scope.
+    /// * We need to run BlockIO::onFinish or BlockIO::onException.
     std::optional<BlockIO> io_holder;
+
     TExecutor executor;
 };
 
