@@ -86,7 +86,7 @@ std::unique_ptr<IQueryPlanStep> NegativeLimitStep::deserialize(Deserialization &
 
 void registerNegativeLimitStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("Limit", NegativeLimitStep::deserialize);
+    registry.registerStep("Negative Limit", NegativeLimitStep::deserialize);
 }
 
 }
