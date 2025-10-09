@@ -15,25 +15,28 @@
 
 #include <functional>
 
+
 namespace DB
 {
-
-using S3BackupClientCreator = std::function<std::shared_ptr<S3::Client>(DiskPtr)>;
 
 class S3BackupClientFactory
 {
 public:
-    std::shared_ptr<S3::Client> getOrCreate(DiskPtr disk, S3BackupClientCreator creator);
-
-private:
-    mutable std::mutex clients_mutex;
-    struct ClientEntry
+    struct Entry
     {
         std::shared_ptr<S3::Client> backup_client;
         std::weak_ptr<const S3::Client> disk_reported_client;
     };
+    using CreatorFn = std::function<Entry(DiskPtr)>;
+    explicit S3BackupClientFactory(const CreatorFn & creator_fn_);
+    std::shared_ptr<S3::Client> getOrCreate(DiskPtr disk);
+
+private:
+    const CreatorFn creator_fn;
+
+    mutable std::mutex clients_mutex;
     /// Disk name to client entry;
-    std::unordered_map<std::string, ClientEntry> clients TSA_GUARDED_BY(clients_mutex);
+    std::unordered_map<std::string, Entry> clients TSA_GUARDED_BY(clients_mutex);
 };
 
 /// Represents a backup stored to AWS S3.
@@ -106,11 +109,11 @@ private:
     const S3::URI s3_uri;
     const DataSourceDescription data_source_description;
     S3Settings s3_settings;
+
     std::shared_ptr<S3::Client> client;
 
-    S3BackupClientCreator client_creator;
-    S3BackupClientFactory client_factory;
     S3Capabilities s3_capabilities;
+    S3BackupClientFactory client_factory;
     BlobStorageLogWriterPtr blob_storage_log;
 };
 
