@@ -1,6 +1,9 @@
 -- Tags: no-fasttest
 -- Tag no-fasttest: needs s3
---
+
+-- Use correlated subqueries which are supported only by the new analyzer.
+set enable_analyzer = 1;
+
 INSERT INTO TABLE FUNCTION s3('http://localhost:11111/test/test-data-03644_object_storage.csv', 'test', 'testtest', 'CSV', 'number UInt64') SELECT number FROM numbers(10) SETTINGS s3_truncate_on_insert = 1;
 
 SELECT n1.c1
