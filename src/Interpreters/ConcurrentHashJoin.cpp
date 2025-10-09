@@ -220,7 +220,7 @@ ConcurrentHashJoin::~ConcurrentHashJoin()
             // Hash tables destruction may be very time-consuming.
             // Without the following code, they would be destroyed in the current thread (i.e. sequentially).
             pool->scheduleOrThrow(
-                [join = hash_joins[i], i, this, thread_group = CurrentThread::getGroup()]()
+                [join = hash_joins[0], i, this, thread_group = CurrentThread::getGroup()]()
                 {
                     ThreadGroupSwitcher switcher(thread_group, "ConcurrentJoin");
 
