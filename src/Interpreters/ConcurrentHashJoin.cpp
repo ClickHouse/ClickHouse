@@ -807,7 +807,6 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
                 auto src = getData(hash_joins[i]);
                 for (const auto & holder : src->nullmaps)
                     filter_holder_by_selector(holder);
-                src->nullmaps_allocated_size = 0;
             }
 
             auto dst = getData(hash_joins[0]);
