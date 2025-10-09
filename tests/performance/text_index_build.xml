@@ -1,0 +1,37 @@
+<test>
+  <settings>
+      <allow_experimental_full_text_index>1</allow_experimental_full_text_index>
+  </settings>
+
+  <create_query>
+    CREATE TABLE text_index_build (text String, INDEX idx_text (text) TYPE text(tokenizer = splitByNonAlpha)) ENGINE = MergeTree ORDER BY tuple();
+  </create_query>
+  <create_query>
+    CREATE TABLE text_index_build_src_50 (text String) ENGINE = Memory;
+  </create_query>
+  <create_query>
+    CREATE TABLE text_index_build_src_5000 (text String) ENGINE = Memory;
+  </create_query>
+  <create_query>
+    CREATE TABLE text_index_build_src_500000 (text String) ENGINE = Memory;
+  </create_query>
+
+  <fill_query>
+    INSERT INTO text_index_build_src_50 SELECT arrayStringConcat(arrayMap(x -> toString(rand(number * 30 + x) % 50), range(30)), ' ') FROM numbers(100000);
+  </fill_query>
+  <fill_query>
+    INSERT INTO text_index_build_src_5000 SELECT arrayStringConcat(arrayMap(x -> toString(rand(number * 30 + x) % 5000), range(30)), ' ') FROM numbers(100000);
+  </fill_query>
+  <fill_query>
+    INSERT INTO text_index_build_src_500000 SELECT arrayStringConcat(arrayMap(x -> toString(rand(number * 30 + x) % 500000), range(30)), ' ') FROM numbers(100000);
+  </fill_query>
+
+  <query>INSERT INTO text_index_build SELECT * FROM text_index_build_src_50</query>
+  <query>INSERT INTO text_index_build SELECT * FROM text_index_build_src_5000</query>
+  <query>INSERT INTO text_index_build SELECT * FROM text_index_build_src_500000</query>
+
+  <drop_query>DROP TABLE IF EXISTS text_index_build</drop_query>
+  <drop_query>DROP TABLE IF EXISTS text_index_build_src_50</drop_query>
+  <drop_query>DROP TABLE IF EXISTS text_index_build_src_5000</drop_query>
+  <drop_query>DROP TABLE IF EXISTS text_index_build_src_500000</drop_query>
+</test>
