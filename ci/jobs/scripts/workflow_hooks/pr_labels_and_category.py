@@ -34,7 +34,6 @@ LABEL_CATEGORIES = {
         "Not for changelog",
     ],
     "pr-performance": ["Performance Improvement"],
-    "pr-ci": ["CI Fix or Improvement (changelog entry is not required)"],
     "pr-experimental": ["Experimental Feature"],
 }
 
@@ -57,7 +56,6 @@ class Labels:
     PR_BACKPORTS_CREATED = "pr-backports-created"
     PR_BACKPORTS_CREATED_CLOUD = "pr-backports-created-cloud"
     PR_CHERRYPICK = "pr-cherrypick"
-    PR_CI = "pr-ci"
     PR_FEATURE = "pr-feature"
     PR_EXPERIMENTAL = "pr-experimental"
     PR_PERFORMANCE = "pr-performance"

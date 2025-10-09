@@ -57,7 +57,7 @@ Changelog entry rules:
   * Make it a single, user-facing sentence in plain English.
   * Limit strictly to a maximum of 50 words.
 - If there is no valid entry, generate it from the PR title and change summary with the same constraints (plain text, one sentence, <= 50 words, no quotes or markdown).
-- If category is not for changelog — leave this section blank.
+- If category is not for changelog — remove this section including header.
 
 Additional Information handling:
 - Preserve any additional technical details from the existing PR body by placing them under a final section titled exactly "### Additional Information".
@@ -88,16 +88,15 @@ Execution notes:
     res = True
     results = []
 
-    pat = Secret.Config(
-        name="maxknv_tmp_test", type=Secret.Type.AWS_SSM_PARAMETER
+    os.environ["GH_TOKEN"] = Secret.Config(
+        name="/github-tokens/robot-2-copilot", type=Secret.Type.AWS_SSM_PARAMETER
     ).get_value()
-    os.environ["GH_TOKEN"] = pat
 
     if res:
         results.append(
             Result.from_commands_run(
                 name="prompt",
-                command=f"copilot -p {shlex.quote(prompt)}  --allow-all-tools",
+                command=f"copilot -p {shlex.quote(prompt)} --allow-all-tools",
                 with_info=True,
             )
         )
