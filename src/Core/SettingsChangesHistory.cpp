@@ -62,6 +62,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"exclude_materialize_skip_indexes_on_insert", "", "", "New setting."},
             {"optimize_empty_string_comparisons", false, true, "A new setting."},
             {"query_plan_use_logical_join_step", true, true, "Added alias"},
+            {"count_distinct_optimization", false, true, "Enabled the optimization by default"},
             {"schema_inference_make_columns_nullable", 1, 3, "Take nullability information from Parquet/ORC/Arrow metadata by default, instead of making everything nullable."},
             {"materialized_views_squash_parallel_inserts", false, true, "Added setting to preserve old behavior if needed."},
         });
