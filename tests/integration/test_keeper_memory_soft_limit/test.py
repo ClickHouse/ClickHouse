@@ -93,23 +93,12 @@ def test_soft_limit_create(started_cluster):
         txn.create(f"{test_path}/node_1000001_{i}", b"abcde")
         txn.commit()
 
-        # Retry fetching metric to make it stable
-        retries = 5
-        wait_seconds = 1
-        for _ in range(5):
-            node.query("SYSTEM FLUSH LOGS metric_log")
-            result = int(
-                node.query(
-                    "SELECT sum(ProfileEvent_ZooKeeperHardwareExceptions) FROM system.metric_log"
-                ).strip()
-            )
-            if result > 0:
-                break
-            time.sleep(wait_seconds)
-        else:
-            raise Exception(
-                "ZooKeeper hardware exceptions metric not registered after OOM"
-            )
+        node.query_with_retry(
+            "SYSTEM FLUSH LOGS metric_log; SELECT sum(ProfileEvent_ZooKeeperHardwareExceptions) FROM system.metric_log",
+            check_callback=lambda res: int(res.strip()) > 0,
+            retry_count=5,
+            sleep_time=1,
+        )
 
         return
 
