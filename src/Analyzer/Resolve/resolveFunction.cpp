@@ -32,6 +32,7 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/grouping.h>
 #include <Storages/StorageJoin.h>
+#include <Columns/ColumnNothing.h>
 
 namespace DB
 {
@@ -66,6 +67,7 @@ namespace Setting
     extern const SettingsOverflowMode set_overflow_mode;
     extern const SettingsBool allow_experimental_correlated_subqueries;
     extern const SettingsBool rewrite_in_to_join;
+    extern const SettingsBool use_variant_as_common_type;
 }
 
 namespace
