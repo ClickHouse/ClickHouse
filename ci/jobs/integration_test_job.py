@@ -325,6 +325,12 @@ def main():
 
         files = [Utils.compress_files_gz(files, f"{temp_path}/logs.tar.gz")]
 
+    for r in test_results:
+        if not r.is_ok():
+            r.set_clickable_label(
+                label="cidb", link=info.get_cidb_test_case_statistics_url(r.name)
+            )
+
     R = Result.create_from(results=test_results, stopwatch=sw, files=files)
 
     if has_error:

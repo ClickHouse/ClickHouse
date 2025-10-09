@@ -386,6 +386,13 @@ def main():
                 results[-1].set_failed()
             else:
                 results[-1].set_success()
+        else:
+            for r in test_result.results:
+                if not r.is_ok():
+                    r.set_clickable_label(
+                        label="cidb",
+                        link=info.get_cidb_test_case_statistics_url(r.name),
+                    )
 
         results[-1].set_timing(stopwatch=stop_watch_)
         if results[-1].info:
