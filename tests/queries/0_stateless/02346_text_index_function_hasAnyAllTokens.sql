@@ -1,6 +1,7 @@
 -- Tags: no-parallel-replicas
 
 SET enable_analyzer = 1;
+SET use_query_condition_cache = 0;
 SET allow_experimental_full_text_index = 1;
 -- Force using skip indexes in planning to proper test with EXPLAIN indexes = 1.
 SET use_skip_indexes_on_data_read = 0;
@@ -20,7 +21,7 @@ CREATE TABLE tab
 ENGINE = MergeTree
 ORDER BY (id);
 
-INSERT INTO tab VALUES (1, 'b', 'b', ['c']), (2, 'c', 'c', ['c']);
+INSERT INTO tab VALUES (1, 'b', 'b', ['c']), (2, 'c', 'c', ['c']), (3, '', '', ['']);
 
 -- Must accept two arguments
 SELECT id FROM tab WHERE hasAnyTokens(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
@@ -52,6 +53,12 @@ SELECT hasAllTokens('a b', ['a', 'b']);
 SELECT hasAllTokens('a b', ['a', 'c']);
 SELECT hasAllTokens(materialize('a b'), ['a', 'b']);
 SELECT hasAllTokens(materialize('a b'), ['a', 'c']);
+
+SELECT 'Test singular aliases';
+SELECT hasAnyToken('a b', ['b']);
+SELECT hasAnyToken('a b', ['c']);
+SELECT hasAllToken('a b', ['b']);
+SELECT hasAllToken('a b', ['c']);
 -- { echoOff }
 
 -- These are equivalent to the lines above, but using Search{Any,All} in the filter step.
@@ -67,6 +74,10 @@ SELECT id FROM tab WHERE hasAllTokens('a b', ['a c']);
 SELECT id FROM tab WHERE hasAllTokens(col_str, ['a b']);
 SELECT id FROM tab WHERE hasAllTokens(col_str, ['a c']);
 
+SELECT 'Testing edge cases on non-indexed column';
+SELECT count() FROM tab WHERE hasAnyTokens(col_str, []);
+SELECT count() FROM tab WHERE hasAllTokens(col_str, []);
+SELECT id FROM tab WHERE hasAnyTokens(col_str, ['']);
 
 DROP TABLE tab;
 
@@ -118,7 +129,7 @@ SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, ['foo', 'ba']);
 SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, ['fo', 'ba']);
 
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, ['abc']);
-SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, ['ab']);
+SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, ['ab']);
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, ['foo']);
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, ['bar']);
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, ['abc', 'foo']);
@@ -288,7 +299,7 @@ SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, tokens('foo ba', 'spl
 SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, tokens('fo ba', 'splitByNonAlpha'));
 
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, tokens('abc', 'splitByNonAlpha'));
-SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, tokens('ab', 'splitByNonAlpha'));
+SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, tokens('ab', 'splitByNonAlpha'));
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, tokens('foo', 'splitByNonAlpha'));
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, tokens('bar', 'splitByNonAlpha'));
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, tokens('abc foo', 'splitByNonAlpha'));
@@ -605,3 +616,28 @@ SELECT trimLeft(explain) AS explain FROM (
 )
 WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
 LIMIT 2, 3;
+
+DROP TABLE tab;
+
+CREATE TABLE tab
+(
+    id UInt8,
+    s FixedString(11)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO tab VALUES (1, 'hello world'), (2, 'goodbye'), (3, 'hello moon');
+
+SELECT 'Test hasAnyTokens and hasAllTokens on a non-indexed FixedString column';
+
+SELECT id FROM tab WHERE hasAnyTokens(s, ['hello']) ORDER BY id;
+SELECT id FROM tab WHERE hasAnyTokens(s, ['moon', 'goodbye']) ORDER BY id;
+SELECT id FROM tab WHERE hasAnyTokens(s, ['unknown', 'goodbye']) ORDER BY id;
+
+SELECT id FROM tab WHERE hasAllTokens(s, ['hello', 'world']) ORDER BY id;
+SELECT id FROM tab WHERE hasAllTokens(s, ['goodbye']) ORDER BY id;
+SELECT id FROM tab WHERE hasAllTokens(s, ['hello', 'moon']) ORDER BY id;
+SELECT id FROM tab WHERE hasAllTokens(s, ['hello', 'unknown']) ORDER BY id;
+
+DROP TABLE IF EXISTS tab;

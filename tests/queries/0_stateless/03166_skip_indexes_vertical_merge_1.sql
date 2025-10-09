@@ -1,3 +1,4 @@
+SET use_query_condition_cache = 0;
 DROP TABLE IF EXISTS t_ind_merge_1;
 
 -- Force using skip indexes in planning to proper test with EXPLAIN indexes = 1.
