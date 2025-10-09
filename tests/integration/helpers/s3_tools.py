@@ -85,7 +85,7 @@ class S3Downloader:
 
         result_files = []
         for obj in objects:
-            result_files.append(obj)
+            result_files.append(obj.object_name)
             diff_path = os.path.relpath(obj.object_name, start=remote_blobs_path)
             local_file_path = os.path.join(local_path, diff_path)
             os.makedirs(os.path.dirname(local_file_path), exist_ok=True)
