@@ -136,7 +136,7 @@ INSERT INTO test_agg_single_${CLICKHOUSE_DATABASE} VALUES (600, '[]');
 SELECT user_id, avgMerge(avg_session_length) FROM test_agg_single_${CLICKHOUSE_DATABASE} WHERE user_id = 600 GROUP BY user_id;
 " 2>&1)"
 
-echo $out2
+echo "$out2"
 
 echo "=== Test 12: CSV format - value ==="
 ${CLICKHOUSE_CLIENT} -q "
