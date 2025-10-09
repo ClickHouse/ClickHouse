@@ -16,7 +16,6 @@ from pyiceberg.transforms import (
     DayTransform,
     HourTransform,
     VoidTransform,
-    UnknownTransform,
 )
 
 
@@ -594,8 +593,6 @@ class ClickHouseTypeMapper:
                     it.DateType,
                     it.TimestampType,
                     it.TimestamptzType,
-                    it.TimestampNanoType,
-                    it.TimestamptzNanoType,
                 ),
             )
             or random.randint(1, 100) < 6
@@ -608,8 +605,6 @@ class ClickHouseTypeMapper:
                     it.TimeType,
                     it.TimestampType,
                     it.TimestamptzType,
-                    it.TimestampNanoType,
-                    it.TimestamptzNanoType,
                 ),
             )
             or random.randint(1, 100) < 6
@@ -622,7 +617,7 @@ class ClickHouseTypeMapper:
                 ]
             )
         if random.randint(1, 100) < 11:
-            transforms.extend([VoidTransform(), UnknownTransform()])
+            transforms.extend([VoidTransform()])
         return random.choice(transforms)
 
     def generate_random_iceberg_partition_spec(

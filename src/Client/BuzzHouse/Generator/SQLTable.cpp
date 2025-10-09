@@ -1327,8 +1327,6 @@ void StatementGenerator::generateEngineDetails(
     }
     else if (te->has_engine() && (b.isAnyIcebergEngine() || b.isAnyDeltaLakeEngine() || b.isAnyS3Engine() || b.isAnyAzureEngine()))
     {
-        const bool prev_allow_not_deterministic = this->allow_not_deterministic;
-
         if (b.integration != IntegrationCall::None)
         {
             if (SQLTable * t = dynamic_cast<SQLTable *>(&b))
@@ -1341,9 +1339,14 @@ void StatementGenerator::generateEngineDetails(
             chassert(b.isOnLocal());
             te->add_params()->set_rvalue("local");
         }
-        this->allow_not_deterministic = false;
-        setObjectStoreParams<SQLBase, TableEngine>(rg, b, te);
-        this->allow_not_deterministic = prev_allow_not_deterministic;
+        if (b.getLakeCatalog() == LakeCatalog::None)
+        {
+            const bool prev_allow_not_deterministic = this->allow_not_deterministic;
+
+            this->allow_not_deterministic = false;
+            setObjectStoreParams<SQLBase, TableEngine>(rg, b, te);
+            this->allow_not_deterministic = prev_allow_not_deterministic;
+        }
     }
     else if (te->has_engine() && b.isArrowFlightEngine())
     {
@@ -2272,8 +2275,8 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
     {
         ct->mutable_cluster()->set_cluster(next.cluster.value());
     }
-    if (((next.isAnyIcebergEngine() && next.integration == IntegrationCall::Dolor) || next.isAliasEngine()
-         || (next.projs.empty() && next.idxs.empty() && next.constrs.empty() && rg.nextMediumNumber() < 11)))
+    if ((next.isAnyIcebergEngine() && next.integration == IntegrationCall::Dolor && next.getLakeCatalog() == LakeCatalog::None)
+        || next.isAliasEngine() || (next.projs.empty() && next.idxs.empty() && next.constrs.empty() && rg.nextMediumNumber() < 11))
     {
         /// For Iceberg tables created from Spark, don't give table schema
         ct->clear_table_def();

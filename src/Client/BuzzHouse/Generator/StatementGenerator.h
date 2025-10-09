@@ -532,7 +532,8 @@ private:
             if (add_path && nopt < (add_path + 1))
             {
                 /// Path to the bucket
-                next->set_key(b.isOnS3() ? "filename" : (b.isOnAzure() ? "blob_path" : "path"));
+                next->set_key(
+                    b.isOnS3() ? (b.getLakeCatalog() == LakeCatalog::None ? "filename" : "url") : (b.isOnAzure() ? "blob_path" : "path"));
                 next->set_value(b.getTablePath(rg, fc, this->allow_not_deterministic));
                 added_path++;
             }

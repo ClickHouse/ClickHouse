@@ -291,7 +291,7 @@ class IcebergTableGenerator(LakeTableGenerator):
         columns: list[dict[str, str]],
         table: SparkTable,
     ):
-        nproperties = {}
+        nproperties = self.set_basic_properties()
         fields = []
 
         self.type_mapper.reset()
@@ -748,7 +748,7 @@ class IcebergTableGenerator(LakeTableGenerator):
                 "set_current_snapshot",
                 "cherrypick_snapshot",
             ]
-            return f"CALL `{table.catalog_name}`.system.{random.choice(calls)}(table => '{table.get_namespace_path()}', snapshot_id => '{random.choice(snapshots)}')"
+            return f"CALL `{table.catalog_name}`.system.{random.choice(calls)}(table => '{table.get_namespace_path()}', snapshot_id => {random.choice(snapshots)})"
         timestamps = self.get_timestamps(spark, table)
         if len(timestamps) > 0 and next_option in (13, 14):
             return f"CALL `{table.catalog_name}`.system.rollback_to_timestamp(table => '{table.get_namespace_path()}', timestamp => TIMESTAMP '{random.choice(timestamps)}')"

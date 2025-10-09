@@ -353,6 +353,8 @@ public:
 
     void setTablePath(RandomGenerator & rg, const FuzzConfig & fc, bool has_dolor);
 
+    String getTablePath(const FuzzConfig & fc) const;
+
     String getTablePath(RandomGenerator & rg, const FuzzConfig & fc, bool allow_not_deterministic) const;
 
     String getMetadataPath(const FuzzConfig & fc) const;

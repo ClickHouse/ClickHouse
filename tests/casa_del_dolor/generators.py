@@ -79,11 +79,12 @@ class BuzzHouseGenerator(Generator):
         if args.with_minio:
             buzz_config["minio"] = {
                 "database": cluster.minio_bucket,
-                "server_hostname": cluster.minio_host,
+                "server_hostname": "minio",
                 "client_hostname": cluster.minio_ip,
-                "port": cluster.minio_port,
+                "port": 9000,
                 "user": "minio",
-                "password": cluster.minio_secret_key,
+                "password": cluster.minio_access_key,
+                "secret": cluster.minio_secret_key,
                 "named_collection": "s3",
             }
         if args.with_postgresql:
@@ -166,12 +167,14 @@ class BuzzHouseGenerator(Generator):
             if args.with_hms:
                 buzz_config["dolor"]["hive"] = {
                     "server_hostname": "hive",
+                    "region": "us-east-1",
                     "port": 9083,
                     "warehouse": "warehouse-hms/data",
                 }
             if args.with_rest:
                 buzz_config["dolor"]["rest"] = {
                     "server_hostname": "rest",
+                    "region": "us-east-1",
                     "port": 8181,
                     "path": "/v1",
                     "warehouse": "warehouse-rest",

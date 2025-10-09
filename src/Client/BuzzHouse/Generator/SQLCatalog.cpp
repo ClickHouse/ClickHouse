@@ -191,7 +191,7 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
                         chassert(0);
                 }
                 next_bucket_path = fmt::format(
-                    "http://{}:{}/{}/t{}", fc.minio_server.value().server_hostname, fc.minio_server.value().port, cat->warehouse, tname);
+                    "http://{}:{}/{}/t{}/", fc.minio_server.value().server_hostname, fc.minio_server.value().port, cat->warehouse, tname);
             }
         }
         else if (isS3QueueEngine() || isAzureQueueEngine())
@@ -299,31 +299,11 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
     }
 }
 
-String SQLBase::getTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bool allow_not_deterministic) const
+String SQLBase::getTablePath(const FuzzConfig & fc) const
 {
     if (isAnyIcebergEngine() || isAnyDeltaLakeEngine() || isAnyS3Engine() || isAnyAzureEngine())
     {
-        String res = bucket_path.value();
-
-        if ((isS3Engine() || isAzureEngine()) && allow_not_deterministic && rg.nextSmallNumber() < 8)
-        {
-            /// Replace PARTITION BY str
-            const size_t partition_pos = res.find(PARTITION_STR);
-            if (partition_pos != std::string::npos && rg.nextMediumNumber() < 81)
-            {
-                res.replace(
-                    partition_pos,
-                    PARTITION_STR.length(),
-                    rg.nextBool() ? std::to_string(rg.randomInt<uint32_t>(0, 100)) : rg.nextString("", true, rg.nextStrlen()));
-            }
-            /// Use globs
-            const size_t slash_pos = res.rfind('/');
-            if (slash_pos != std::string::npos && rg.nextMediumNumber() < 81)
-            {
-                res.replace(slash_pos + 1, std::string::npos, rg.nextBool() ? "*" : "**");
-            }
-        }
-        return res;
+        return bucket_path.value();
     }
     if (isFileEngine())
     {
@@ -345,6 +325,31 @@ String SQLBase::getTablePath(RandomGenerator & rg, const FuzzConfig & fc, const 
     }
     chassert(0);
     return "";
+}
+
+String SQLBase::getTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bool allow_not_deterministic) const
+{
+    if ((isS3Engine() || isAzureEngine()) && allow_not_deterministic && rg.nextSmallNumber() < 8)
+    {
+        String res = bucket_path.value();
+        /// Replace PARTITION BY str
+        const size_t partition_pos = res.find(PARTITION_STR);
+        if (partition_pos != std::string::npos && rg.nextMediumNumber() < 81)
+        {
+            res.replace(
+                partition_pos,
+                PARTITION_STR.length(),
+                rg.nextBool() ? std::to_string(rg.randomInt<uint32_t>(0, 100)) : rg.nextString("", true, rg.nextStrlen()));
+        }
+        /// Use globs
+        const size_t slash_pos = res.rfind('/');
+        if (slash_pos != std::string::npos && rg.nextMediumNumber() < 81)
+        {
+            res.replace(slash_pos + 1, std::string::npos, rg.nextBool() ? "*" : "**");
+        }
+        return res;
+    }
+    return getTablePath(fc);
 }
 
 String SQLBase::getMetadataPath(const FuzzConfig & fc) const
