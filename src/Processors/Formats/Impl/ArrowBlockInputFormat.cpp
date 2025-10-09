@@ -130,7 +130,7 @@ const BlockMissingValues * ArrowBlockInputFormat::getMissingValues() const
 static std::shared_ptr<arrow::RecordBatchReader> createStreamReader(ReadBuffer & in)
 {
     auto options = arrow::ipc::IpcReadOptions::Defaults();
-    options.memory_pool = arrow::default_memory_pool();
+    options.memory_pool = ArrowMemoryPool::instance();
     auto stream_reader_status = arrow::ipc::RecordBatchStreamReader::Open(std::make_unique<ArrowInputStreamFromReadBuffer>(in), options);
     if (!stream_reader_status.ok())
         throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
@@ -145,7 +145,7 @@ static std::shared_ptr<arrow::ipc::RecordBatchFileReader> createFileReader(ReadB
         return nullptr;
 
     auto options = arrow::ipc::IpcReadOptions::Defaults();
-    options.memory_pool = arrow::default_memory_pool();
+    options.memory_pool = ArrowMemoryPool::instance();
     auto file_reader_status = arrow::ipc::RecordBatchFileReader::Open(arrow_file, options);
     if (!file_reader_status.ok())
         throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
@@ -174,7 +174,6 @@ void ArrowBlockInputFormat::prepareReader()
         getPort().getHeader(),
         "Arrow",
         format_settings,
-        std::nullopt,
         std::nullopt,
         format_settings.arrow.allow_missing_columns,
         format_settings.null_as_default,

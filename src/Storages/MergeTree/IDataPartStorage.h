@@ -138,15 +138,17 @@ public:
     virtual std::unique_ptr<ReadBufferFromFileBase> readFile(
         const std::string & name,
         const ReadSettings & settings,
-        std::optional<size_t> read_hint) const = 0;
+        std::optional<size_t> read_hint,
+        std::optional<size_t> file_size) const = 0;
 
     virtual std::unique_ptr<ReadBufferFromFileBase> readFileIfExists(
         const std::string & name,
         const ReadSettings & settings,
-        std::optional<size_t> read_hint) const
+        std::optional<size_t> read_hint,
+        std::optional<size_t> file_size) const
     {
         if (existsFile(name))
-            return readFile(name, settings, read_hint);
+            return readFile(name, settings, read_hint, file_size);
         return {};
     }
 

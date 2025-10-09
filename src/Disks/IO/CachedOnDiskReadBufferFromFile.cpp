@@ -7,7 +7,6 @@
 #include <IO/BoundedReadBuffer.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/SwapHelper.h>
-#include <IO/ReadBufferFromS3.h>
 #include <Interpreters/Context.h>
 #include <base/hex.h>
 #include <base/scope_guard.h>
@@ -109,7 +108,6 @@ void CachedOnDiskReadBufferFromFile::appendFilesystemCacheLog(
         .read_buffer_id = current_buffer_id,
         .profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(
             current_file_segment_counters.getPartiallyAtomicSnapshot()),
-        .user_id = user.user_id,
     };
 
     current_file_segment_counters.reset();
@@ -549,7 +547,7 @@ bool CachedOnDiskReadBufferFromFile::completeFileSegmentAndGetNext()
     chassert(file_offset_of_buffer_end > completed_range.right);
     cache_file_reader.reset();
 
-    file_segments->completeAndPopFront(settings.filesystem_cache_allow_background_download, /*force_shrink_to_downloaded_size=*/false);
+    file_segments->completeAndPopFront(settings.filesystem_cache_allow_background_download);
     if (file_segments->empty() && !nextFileSegmentsBatch())
         return false;
 
@@ -573,7 +571,7 @@ CachedOnDiskReadBufferFromFile::~CachedOnDiskReadBufferFromFile()
 
     if (file_segments && !file_segments->empty() && !file_segments->front().isCompleted())
     {
-        file_segments->completeAndPopFront(settings.filesystem_cache_allow_background_download, /*force_shrink_to_downloaded_size=*/false);
+        file_segments->completeAndPopFront(settings.filesystem_cache_allow_background_download);
         file_segments = {};
     }
 }
@@ -826,9 +824,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 {
     last_caller_id = FileSegment::getCallerId();
 
-    chassert(
-        file_offset_of_buffer_end <= read_until_position,
-        fmt::format("file_offset_of_buffer_end {}, read_until_position {}", file_offset_of_buffer_end, read_until_position));
+    chassert(file_offset_of_buffer_end <= read_until_position);
     if (file_offset_of_buffer_end == read_until_position)
         return false;
 
@@ -838,7 +834,6 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
     if (file_segments->empty() && !nextFileSegmentsBatch())
         return false;
 
-    chassert(!internal_buffer.empty());
     const size_t original_buffer_size = internal_buffer.size();
     if (!original_buffer_size)
         throw Exception(
@@ -1002,14 +997,6 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 
         Stopwatch watch(CLOCK_MONOTONIC);
 
-        if (implementation_buffer->internalBuffer().empty())
-        {
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Internal buffer cannot be empty (use external buffer: {}; {})",
-                use_external_buffer, getInfoForLog());
-        }
-
         result = implementation_buffer->next();
 
         watch.stop();
@@ -1116,6 +1103,10 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
                         file_offset_of_buffer_end, read_until_position, size, current_read_range.toString(), file_segments->size(), file_segments->toString(true)));
     }
 
+    swap.reset();
+
+    current_file_segment_counters.increment(ProfileEvents::FileSegmentUsedBytes, available());
+
     if (size == 0 && file_offset_of_buffer_end < read_until_position)
     {
         size_t cache_file_size = getFileSizeFromReadBuffer(*implementation_buffer);
@@ -1130,69 +1121,40 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
         else
             download_finished_time = "None";
 
-        std::optional<size_t> object_size;
-        std::optional<size_t> impl_read_until_position;
-        std::optional<std::string> impl_read_stop_reason;
-        if (read_type != ReadType::CACHED)
-        {
-            object_size = implementation_buffer->tryGetFileSize();
-#if USE_AWS_S3
-            if (const auto * s3_buf = dynamic_cast<const ReadBufferFromS3 *>(implementation_buffer.get()))
-            {
-                impl_read_until_position = s3_buf->getReadUntilPosition();
-                impl_read_stop_reason = s3_buf->getStopReason();
-            }
-#endif
-        }
-
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Having zero bytes, but range is not finished: "
             "result: {}, "
             "file offset: {}, "
             "read bytes: {}, "
-            "object size: {}, "
             "initial read offset: {}, "
             "nextimpl working buffer offset: {},"
             "reading until: {}, "
             "read type: {}, "
-            "impl read stop reason: {}, "
-            "impl working buffer size: {}, "
-            "impl internal buffer size: {}, "
-            "impl available: {}, "
-            "impl offset: {}, "
-            "impl last position: {}, "
-            "impl eof: {}, "
+            "working buffer size: {}, "
+            "internal buffer size: {}, "
             "finished download time: {}, "
             "cache file size: {}, "
             "cache file path: {}, "
+            "cache file offset: {}, "
             "remaining file segments: {}, "
             "current file segment: {}",
             result,
             file_offset_of_buffer_end,
             size,
-            object_size ? std::to_string(*object_size) : "None",
             first_offset,
             nextimpl_working_buffer_offset,
             read_until_position,
             toString(read_type),
-            impl_read_stop_reason ? *impl_read_stop_reason : "None",
             implementation_buffer->buffer().size(),
             implementation_buffer->internalBuffer().size(),
-            implementation_buffer->available(),
-            implementation_buffer->getFileOffsetOfBufferEnd(),
-            impl_read_until_position ? std::to_string(*impl_read_until_position) : "None",
-            implementation_buffer->eof(),
             download_finished_time,
             cache_file_size ? std::to_string(cache_file_size) : "None",
             cache_file_path,
+            implementation_buffer->getFileOffsetOfBufferEnd(),
             file_segments->size(),
             file_segment.getInfoForLog());
     }
-
-    swap.reset();
-
-    current_file_segment_counters.increment(ProfileEvents::FileSegmentUsedBytes, available());
 
     // No necessary because of the SCOPE_EXIT above, but useful for logging below.
     if (download_current_segment)

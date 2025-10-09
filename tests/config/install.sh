@@ -19,7 +19,6 @@ USE_ASYNC_INSERT=${USE_ASYNC_INSERT:0}
 BUGFIX_VALIDATE_CHECK=0
 NO_AZURE=0
 KEEPER_INJECT_AUTH=1
-REMOTE_DATABASE_DISK=1
 
 while [[ "$#" -gt 0 ]]; do
     case $1 in
@@ -40,9 +39,6 @@ while [[ "$#" -gt 0 ]]; do
         --bugfix-validation) BUGFIX_VALIDATE_CHECK=1 ;;
 
         --no-keeper-inject-auth) KEEPER_INJECT_AUTH=0 ;;
-        --no-remote-database-disk) REMOTE_DATABASE_DISK=0 ;;
-
-        --encrypted-storage) USE_ENCRYPTED_STORAGE=1 ;;
         *) echo "Unknown option: $1" ; exit 1 ;;
     esac
     shift
@@ -104,9 +100,6 @@ ln -sf $SRC_PATH/config.d/merge_tree_old_dirs_cleanup.xml $DEST_SERVER_PATH/conf
 ln -sf $SRC_PATH/config.d/test_cluster_with_incorrect_pw.xml $DEST_SERVER_PATH/config.d/
 # copy to not update original file later on in the script
 cp $SRC_PATH/config.d/keeper_port.xml $DEST_SERVER_PATH/config.d/
-if check_clickhouse_version 25.10; then
-    ln -sf $SRC_PATH/config.d/keeper_max_request_size.xml $DEST_SERVER_PATH/config.d/
-fi
 ln -sf $SRC_PATH/config.d/logging_no_rotate.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/merge_tree.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/lost_forever_check.xml $DEST_SERVER_PATH/config.d/
@@ -114,17 +107,9 @@ ln -sf $SRC_PATH/config.d/tcp_with_proxy.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/prometheus.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/top_level_domains_lists.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/top_level_domains_path.xml $DEST_SERVER_PATH/config.d/
-
-ln -sf $SRC_PATH/config.d/transactions_info_log.xml $DEST_SERVER_PATH/config.d/
-if [[ -z "$USE_ENCRYPTED_STORAGE" ]] || [[ "$USE_ENCRYPTED_STORAGE" == "0" ]]; then
-    ln -sf $SRC_PATH/config.d/transactions.xml $DEST_SERVER_PATH/config.d/
-fi
-
+ln -sf $SRC_PATH/config.d/transactions.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/encryption.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/zookeeper_log.xml $DEST_SERVER_PATH/config.d/
-
-# Lower all caches size to 128MB
-ln -sf $SRC_PATH/config.d/small_caches.xml $DEST_SERVER_PATH/config.d/
 
 # Randomize which logger is used (until sync logger is removed, if that ever happens)
 ln -sf $SRC_PATH/config.d/logger_trace.xml $DEST_SERVER_PATH/config.d/
@@ -153,16 +138,9 @@ ln -sf $SRC_PATH/config.d/zero_copy_destructive_operations.xml $DEST_SERVER_PATH
 ln -sf $SRC_PATH/config.d/handlers.yaml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/threadpool_writer_pool_size.yaml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/serverwide_trace_collector.xml $DEST_SERVER_PATH/config.d/
-ln -sf $SRC_PATH/config.d/memory_profiler.yaml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/rocksdb.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/process_query_plan_packet.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/storage_conf_03008.xml $DEST_SERVER_PATH/config.d/
-ln -sf $SRC_PATH/config.d/memory_access.xml $DEST_SERVER_PATH/config.d/
-ln -sf $SRC_PATH/config.d/jemalloc_flush_profile.yaml $DEST_SERVER_PATH/config.d/
-
-if [ "$FAST_TEST" != "1" ]; then
-    ln -sf $SRC_PATH/config.d/abort_on_logical_error.yaml $DEST_SERVER_PATH/config.d/
-fi
 
 # Not supported with fasttest.
 if [ "$FAST_TEST" != "1" ]; then
@@ -280,39 +258,29 @@ if [[ -n "$USE_DATABASE_ORDINARY" ]] && [[ "$USE_DATABASE_ORDINARY" -eq 1 ]]; th
     ln -sf $SRC_PATH/users.d/database_ordinary.xml $DEST_SERVER_PATH/users.d/
 fi
 
-object_key_types_options=("generate-full-key" "generate-template-key")
-object_key_type="${object_key_types_options[0]}"
+if [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
+    object_key_types_options=("generate-suffix" "generate-full-key" "generate-template-key")
+    object_key_type="${object_key_types_options[0]}"
 
-if [[ -n "$RANDOMIZE_OBJECT_KEY_TYPE" ]] && [[ "$RANDOMIZE_OBJECT_KEY_TYPE" -eq 1 ]]; then
-    object_key_type="${object_key_types_options[$(($RANDOM % ${#object_key_types_options[@]}))]}"
-fi
+    if [[ -n "$RANDOMIZE_OBJECT_KEY_TYPE" ]] && [[ "$RANDOMIZE_OBJECT_KEY_TYPE" -eq 1 ]]; then
+      object_key_type="${object_key_types_options[$(($RANDOM % ${#object_key_types_options[@]}))]}"
+    fi
 
-function setup_storage_policy()
-{
     case $object_key_type in
         "generate-full-key")
+            ln -sf $SRC_PATH/config.d/storage_metadata_with_full_object_key.xml $DEST_SERVER_PATH/config.d/
             ln -sf $SRC_PATH/config.d/s3_storage_policy_by_default.xml $DEST_SERVER_PATH/config.d/
             ;;
         "generate-template-key")
+            ln -sf $SRC_PATH/config.d/storage_metadata_with_full_object_key.xml $DEST_SERVER_PATH/config.d/
             ln -sf $SRC_PATH/config.d/s3_storage_policy_with_template_object_key.xml $DEST_SERVER_PATH/config.d/s3_storage_policy_by_default.xml
             ;;
+        "generate-suffix"|*)
+            ln -sf $SRC_PATH/config.d/s3_storage_policy_by_default.xml $DEST_SERVER_PATH/config.d/
+            ;;
     esac
-}
-
-if [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
-    setup_storage_policy
-
-    if [[ -n "$USE_ENCRYPTED_STORAGE" ]] && [[ "$USE_ENCRYPTED_STORAGE" -eq 1 ]]; then
-        ln -sf $SRC_PATH/config.d/s3_encrypted_storage_policy_for_merge_tree_by_default.xml $DEST_SERVER_PATH/config.d/
-    else
-        ln -sf $SRC_PATH/config.d/s3_storage_policy_for_merge_tree_by_default.xml $DEST_SERVER_PATH/config.d/
-    fi
 elif [[ "$USE_AZURE_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
-    if [[ -n "$USE_ENCRYPTED_STORAGE" ]] && [[ "$USE_ENCRYPTED_STORAGE" -eq 1 ]]; then
-        ln -sf $SRC_PATH/config.d/azure_encrypted_storage_policy_by_default.xml $DEST_SERVER_PATH/config.d/
-    else
-        ln -sf $SRC_PATH/config.d/azure_storage_policy_by_default.xml $DEST_SERVER_PATH/config.d/
-    fi
+    ln -sf $SRC_PATH/config.d/azure_storage_policy_by_default.xml $DEST_SERVER_PATH/config.d/
 fi
 
 if [[ "$EXPORT_S3_STORAGE_POLICIES" == "1" ]]; then
@@ -350,7 +318,6 @@ if [[ "$USE_DATABASE_REPLICATED" == "1" ]]; then
     ln -sf $SRC_PATH/config.d/database_replicated.xml $DEST_SERVER_PATH/config.d/
     rm $DEST_SERVER_PATH/config.d/zookeeper.xml
     rm $DEST_SERVER_PATH/config.d/keeper_port.xml
-    rm $DEST_SERVER_PATH/config.d/keeper_max_request_size.xml
 
     # There is a bug in config reloading, so we cannot override macros using --macros.replica r2
     # And we have to copy configs...
@@ -369,12 +336,10 @@ if [[ "$USE_DATABASE_REPLICATED" == "1" ]]; then
     cat $DEST_SERVER_PATH/config.d/macros.xml | sed "s|<replica>r1</replica>|<replica>r2</replica>|" > $ch_server_1_path/config.d/macros.xml
     cat $DEST_SERVER_PATH/config.d/macros.xml | sed "s|<shard>s1</shard>|<shard>s2</shard>|" > $ch_server_2_path/config.d/macros.xml
 
-    if [[ -z "$USE_ENCRYPTED_STORAGE" ]] || [[ "$USE_ENCRYPTED_STORAGE" == "0" ]]; then
-        rm $ch_server_1_path/config.d/transactions.xml
-        rm $ch_server_2_path/config.d/transactions.xml
-        cat $DEST_SERVER_PATH/config.d/transactions.xml | sed "s|/test/clickhouse/txn|/test/clickhouse/txn1|" > $ch_server_1_path/config.d/transactions.xml
-        cat $DEST_SERVER_PATH/config.d/transactions.xml | sed "s|/test/clickhouse/txn|/test/clickhouse/txn2|" > $ch_server_2_path/config.d/transactions.xml
-    fi
+    rm $ch_server_1_path/config.d/transactions.xml
+    rm $ch_server_2_path/config.d/transactions.xml
+    cat $DEST_SERVER_PATH/config.d/transactions.xml | sed "s|/test/clickhouse/txn|/test/clickhouse/txn1|" > $ch_server_1_path/config.d/transactions.xml
+    cat $DEST_SERVER_PATH/config.d/transactions.xml | sed "s|/test/clickhouse/txn|/test/clickhouse/txn2|" > $ch_server_2_path/config.d/transactions.xml
 
 #    ch_server_lib_1=$DEST_SERVER_PATH/../../var/lib/clickhouse1
 #    ch_server_lib_2=$DEST_SERVER_PATH/../../var/lib/clickhouse2
@@ -399,13 +364,11 @@ if [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 ]]; then
     remove_keeper_config "use_xid_64" "[[:digit:]]\+"
 fi
 
-if [[ $REMOTE_DATABASE_DISK -eq 1 ]]; then
-    # Enable remote_database_disk in ASAN build
-    build_opts=$(clickhouse local -q "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'")
-    if [[ "$build_opts" == *-fsanitize=address* ]]; then
-        ln -sf $SRC_PATH/config.d/remote_database_disk.xml $DEST_SERVER_PATH/config.d/
-        echo "Installed remote_database_disk.xml config"
-    fi
+# Enable remote_database_disk in DEBUG and ASAN build
+build_opts=$(clickhouse local -q "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'")
+if [[ "$build_opts" != *NDEBUG* && "$build_opts" == *-fsanitize=address* ]]; then
+    ln -sf $SRC_PATH/config.d/remote_database_disk.xml $DEST_SERVER_PATH/config.d/
+    echo "Installed remote_database_disk.xml config"
 fi
 
 ln -sf $SRC_PATH/client_config.xml $DEST_CLIENT_PATH/config.xml

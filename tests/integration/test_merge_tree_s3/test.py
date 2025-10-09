@@ -71,20 +71,15 @@ FILES_OVERHEAD = 1
 FILES_OVERHEAD_PER_COLUMN = 2  # Data and mark files
 FILES_OVERHEAD_DEFAULT_COMPRESSION_CODEC = 1
 FILES_OVERHEAD_METADATA_VERSION = 1
-FILES_OVERHEAD_COLUMNS_SUBSTREAMS = 1
 FILES_OVERHEAD_PER_PART_WIDE = (
     FILES_OVERHEAD_PER_COLUMN * 3
     + 2
     + 6
     + FILES_OVERHEAD_DEFAULT_COMPRESSION_CODEC
     + FILES_OVERHEAD_METADATA_VERSION
-    + FILES_OVERHEAD_COLUMNS_SUBSTREAMS
 )
 FILES_OVERHEAD_PER_PART_COMPACT = (
-    10
-    + FILES_OVERHEAD_DEFAULT_COMPRESSION_CODEC
-    + FILES_OVERHEAD_METADATA_VERSION
-    + FILES_OVERHEAD_COLUMNS_SUBSTREAMS
+    10 + FILES_OVERHEAD_DEFAULT_COMPRESSION_CODEC + FILES_OVERHEAD_METADATA_VERSION + 1
 )
 
 
@@ -945,7 +940,10 @@ def test_merge_canceled_by_s3_errors_when_move(cluster, broken_s3, node_name):
 
     node.query("OPTIMIZE TABLE merge_canceled_by_s3_errors_when_move FINAL")
 
-    node.wait_for_log_line("ExpectedError Message: mock s3 injected unretryable error")
+    node.wait_for_log_line(
+        "ExpectedError Message: mock s3 injected unretryable error",
+        look_behind_lines=1000,
+    )
 
     count = node.query("SELECT count() FROM merge_canceled_by_s3_errors_when_move")
     assert int(count) == 2000, count

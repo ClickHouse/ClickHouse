@@ -1,4 +1,3 @@
-#include <Access/ContextAccess.h>
 #include <TableFunctions/ITableFunction.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageTableFunction.h>
@@ -13,24 +12,12 @@ namespace ProfileEvents
     extern const Event TableFunctionExecute;
 }
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;;
-}
-
 namespace DB
 {
 
-const char * ITableFunction::getNonClusteredStorageEngineName() const
-{
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
-}
-
 std::optional<AccessTypeObjects::Source> ITableFunction::getSourceAccessObject() const
 {
-    if (isClusterFunction())
-        return StorageFactory::instance().getSourceAccessObject(getNonClusteredStorageEngineName());
-    return StorageFactory::instance().getSourceAccessObject(getStorageEngineName());
+    return StorageFactory::instance().getSourceAccessObject(getStorageTypeName());
 }
 
 StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name,
@@ -40,11 +27,10 @@ StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr conte
 
     if (const auto access_object = getSourceAccessObject())
     {
-        AccessType type_to_check = AccessType::READ;
         if (is_insert_query)
-            type_to_check = AccessType::WRITE;
-
-        context->getAccess()->checkAccessWithFilter(type_to_check, toStringSource(*access_object), getFunctionURI());
+            context->checkAccess(AccessType::WRITE, toStringSource(*access_object));
+        else
+            context->checkAccess(AccessType::READ, toStringSource(*access_object));
     }
 
     auto table_function_properties = TableFunctionFactory::instance().tryGetProperties(getName());

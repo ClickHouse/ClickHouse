@@ -11,7 +11,6 @@
 #include <Common/Stopwatch.h>
 #include <Common/Throttler.h>
 #include <Common/logger_useful.h>
-#include <Common/FailPoint.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/CurrentThread.h>
 #include <base/sleep.h>
@@ -36,11 +35,6 @@ namespace DB
 namespace S3RequestSetting
 {
     extern const S3RequestSettingsUInt64 max_single_read_retries;
-}
-
-namespace FailPoints
-{
-    extern const char s3_read_buffer_throw_expired_token[];
 }
 
 namespace ErrorCodes
@@ -85,10 +79,7 @@ bool ReadBufferFromS3::nextImpl()
     if (read_until_position)
     {
         if (read_until_position == offset)
-        {
-            stop_reason = fmt::format("Last read position was reached ({})", read_until_position.load());
             return false;
-        }
 
         if (read_until_position < offset)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset.load(), read_until_position - 1);
@@ -96,24 +87,8 @@ bool ReadBufferFromS3::nextImpl()
 
     if (impl)
     {
-        fiu_do_on(FailPoints::s3_read_buffer_throw_expired_token,
-        {
-            throw Exception(
-                ErrorCodes::S3_ERROR,
-                "Unable to parse ExceptionName: ExpiredToken Message: The provided token has expired. This error happened for S3 disk");
-        });
-
         if (impl->isResultReleased())
-        {
-            if (read_until_position)
-            {
-                LOG_TRACE(
-                    log, "Impl was released, but expected read range is not finished. "
-                    "Current offset: {}, end offset: {}", offset.load(), read_until_position.load());
-            }
-            stop_reason = fmt::format("Connection was released (read offset: {}/{})", offset.load(), read_until_position.load());
             return false;
-        }
 
         if (use_external_buffer)
         {
@@ -190,7 +165,6 @@ bool ReadBufferFromS3::nextImpl()
         read_all_range_successfully = true;
         // release result to free pooled HTTP session for reuse
         impl->releaseResult();
-        stop_reason = fmt::format("EOF (read offset: {}/{})", offset.load(), read_until_position.load());
         return false;
     }
 
@@ -204,7 +178,9 @@ bool ReadBufferFromS3::nextImpl()
     if (impl->isStreamEof() || is_read_until_position)
         impl->releaseResult();
 
-    stop_reason = "";
+    if (read_settings.remote_throttler)
+        read_settings.remote_throttler->add(working_buffer.size());
+
     return true;
 }
 
@@ -234,6 +210,9 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
 
             if (cancelled)
                 return initial_n - n + bytes_copied;
+
+            if (read_settings.remote_throttler)
+                read_settings.remote_throttler->add(bytes_copied);
 
             /// Read remaining bytes after the end of the payload
             istr.ignore(INT64_MAX);
@@ -412,7 +391,6 @@ bool ReadBufferFromS3::atEndOfRequestedRangeGuess()
 
 std::unique_ptr<S3::ReadBufferFromGetObjectResult> ReadBufferFromS3::initialize(size_t attempt)
 {
-    stop_reason = "";
     read_all_range_successfully = false;
 
     /**
@@ -460,8 +438,7 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ReadBufferFromS3InitMicroseconds);
 
     // We do not know in advance how many bytes we are going to consume, to avoid blocking estimated it from below
-    CurrentThread::IOSchedulingScope io_scope(read_settings.io_scheduling);
-    CurrentThread::ReadThrottlingScope read_throttling_scope(read_settings.remote_throttler);
+    CurrentThread::IOScope io_scope(read_settings.io_scheduling);
     Aws::S3::Model::GetObjectOutcome outcome = client_ptr->GetObject(req);
 
     if (outcome.IsSuccess())

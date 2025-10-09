@@ -52,8 +52,7 @@ public:
     void alterTable(
         ContextPtr context,
         const StorageID & table_id,
-        const StorageInMemoryMetadata & metadata,
-        bool validate_new_create_query) override;
+        const StorageInMemoryMetadata & metadata) override;
 
     time_t getObjectMetadataModificationTime(const String & table_name) const override;
 

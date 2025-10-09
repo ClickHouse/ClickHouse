@@ -175,6 +175,7 @@ bool S3ObjectStorage::exists(const StoredObject & object) const
 std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObject( /// NOLINT
     const StoredObject & object,
     const ReadSettings & read_settings,
+    std::optional<size_t>,
     std::optional<size_t>) const
 {
     auto settings_ptr = s3_settings.get();
@@ -506,7 +507,7 @@ void S3ObjectStorage::applyNewSettings(
     if (options.allow_client_change
         && (current_settings->auth_settings.hasUpdates(modified_settings->auth_settings) || for_disk_s3))
     {
-        auto new_client = getClient(uri, *modified_settings, context, for_disk_s3, disk_name);
+        auto new_client = getClient(uri, *modified_settings, context, for_disk_s3);
         client.set(std::move(new_client));
     }
     s3_settings.set(std::move(modified_settings));

@@ -4,7 +4,6 @@ sidebar_label: 'Window Functions'
 sidebar_position: 1
 slug: /sql-reference/window-functions/
 title: 'Window Functions'
-doc_type: 'reference'
 ---
 
 # Window functions 
@@ -775,6 +774,7 @@ https://dev.mysql.com/doc/refman/8.0/en/window-function-descriptions.html
 https://dev.mysql.com/doc/refman/8.0/en/window-functions-usage.html
 
 https://dev.mysql.com/doc/refman/8.0/en/window-functions-frames.html
+
 
 ## Related Content {#related-content}
 

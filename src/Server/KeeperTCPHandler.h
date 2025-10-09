@@ -72,6 +72,7 @@ private:
     LoggerPtr log;
     std::shared_ptr<KeeperDispatcher> keeper_dispatcher;
     KeeperContextPtr keeper_context;
+    Poco::Timespan operation_timeout;
     Poco::Timespan min_session_timeout;
     Poco::Timespan max_session_timeout;
     Poco::Timespan session_timeout;
@@ -91,8 +92,6 @@ private:
     std::optional<WriteBufferFromPocoSocket> out;
     std::optional<CompressedReadBuffer> compressed_in;
     std::optional<CompressedWriteBuffer> compressed_out;
-
-    size_t max_request_size = 0;
 
     std::atomic<bool> connected{false};
 

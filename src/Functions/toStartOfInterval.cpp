@@ -413,7 +413,8 @@ private:
                     origin /= SECONDS_PER_DAY;
                 }
 
-                result_data[i] = (result_scale < origin_scale) ? (origin + offset) / scale_diff : (origin + offset) * scale_diff;
+                result_data[i] = 0;
+                result_data[i] += (result_scale < origin_scale) ? (origin + offset) / scale_diff : (origin + offset) * scale_diff;
             }
         }
         else // Overload: Default

@@ -5,7 +5,6 @@
 #include <Core/SortDescription.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
-#include <Processors/QueryPlan/Serialization.h>
 #include <QueryPipeline/StreamLocalLimits.h>
 
 #include <memory>
@@ -42,11 +41,16 @@ using PreparedSetsPtr = std::shared_ptr<PreparedSets>;
 
 struct PrewhereInfo
 {
+    /// Actions for row level security filter. Applied separately before prewhere_actions.
+    /// This actions are separate because prewhere condition should not be executed over filtered rows.
+    std::optional<ActionsDAG> row_level_filter;
     /// Actions which are executed on block in order to get filter column for prewhere step.
     ActionsDAG prewhere_actions;
+    String row_level_column_name;
     String prewhere_column_name;
     bool remove_prewhere_column = false;
     bool need_filter = false;
+    bool generated_by_optimizer = false;
 
     PrewhereInfo() = default;
     explicit PrewhereInfo(ActionsDAG prewhere_actions_, String prewhere_column_name_)
@@ -54,10 +58,23 @@ struct PrewhereInfo
 
     std::string dump() const;
 
-    PrewhereInfo clone() const;
+    PrewhereInfoPtr clone() const
+    {
+        PrewhereInfoPtr prewhere_info = std::make_shared<PrewhereInfo>();
 
-    void serialize(IQueryPlanStep::Serialization & ctx) const;
-    static PrewhereInfo deserialize(IQueryPlanStep::Deserialization & ctx);
+        if (row_level_filter)
+            prewhere_info->row_level_filter = row_level_filter->clone();
+
+        prewhere_info->prewhere_actions = prewhere_actions.clone();
+
+        prewhere_info->row_level_column_name = row_level_column_name;
+        prewhere_info->prewhere_column_name = prewhere_column_name;
+        prewhere_info->remove_prewhere_column = remove_prewhere_column;
+        prewhere_info->need_filter = need_filter;
+        prewhere_info->generated_by_optimizer = generated_by_optimizer;
+
+        return prewhere_info;
+    }
 };
 
 /// Same as FilterInfo, but with ActionsDAG.
@@ -68,9 +85,6 @@ struct FilterDAGInfo
     bool do_remove_column = false;
 
     std::string dump() const;
-
-    void serialize(IQueryPlanStep::Serialization & ctx) const;
-    static FilterDAGInfo deserialize(IQueryPlanStep::Deserialization & ctx);
 };
 
 struct InputOrderInfo
@@ -188,10 +202,6 @@ struct SelectQueryInfo
     bool has_window = false;
     bool has_order_by = false;
     bool need_aggregate = false;
-
-    /// Actions for row level security filter. Applied separately before prewhere.
-    /// This actions are separate because prewhere condition should not be executed over filtered rows.
-    FilterDAGInfoPtr row_level_filter;
     PrewhereInfoPtr prewhere_info;
 
     /// If query has aggregate functions

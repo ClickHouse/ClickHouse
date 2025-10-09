@@ -72,9 +72,6 @@ struct S3RequestSettings
     ThrottlerPtr put_request_throttler;
     std::shared_ptr<ProxyConfigurationResolver> proxy_resolver;
 
-    void serialize(WriteBuffer & out, ContextPtr context) const;
-    static S3RequestSettings deserialize(ReadBuffer & in, ContextPtr context);
-
 private:
     void finishInit(const DB::Settings & settings, bool validate_settings);
     void normalizeSettings();

@@ -2,12 +2,9 @@
 
 #include <Columns/IColumn_fwd.h>
 #include <Core/Types_fwd.h>
-#include <Core/SettingsEnums.h>
 #include <base/demangle.h>
 #include <Common/typeid_cast.h>
 #include <Common/ThreadPool_fwd.h>
-#include <Formats/MarkInCompressedFile.h>
-#include <Storages/MergeTree/MergeTreeDataPartType.h>
 
 #include <boost/noncopyable.hpp>
 #include <unordered_map>
@@ -37,8 +34,6 @@ using SerializationPtr = std::shared_ptr<const ISerialization>;
 
 class SerializationInfo;
 using SerializationInfoPtr = std::shared_ptr<const SerializationInfo>;
-
-using ValueSizeMap = std::map<std::string, double>;
 
 class Field;
 
@@ -175,9 +170,6 @@ public:
             ArrayElements,
             ArraySizes,
 
-            StringSizes,
-            InlinedStringSizes,
-
             NullableElements,
             NullMap,
 
@@ -210,20 +202,6 @@ public:
             ObjectTypedPath,
             ObjectDynamicPath,
             ObjectSharedData,
-            ObjectSharedDataBucket,
-            ObjectSharedDataStructure,
-            ObjectSharedDataStructurePrefix,
-            ObjectSharedDataStructureSuffix,
-            ObjectSharedDataData,
-            ObjectSharedDataSubstreams,
-            ObjectSharedDataPathsMarks,
-            ObjectSharedDataSubstreamsMarks,
-            ObjectSharedDataPathsSubstreamsMetadata,
-            ObjectSharedDataPathsInfos,
-            ObjectSharedDataCopy,
-            ObjectSharedDataCopySizes,
-            ObjectSharedDataCopyPathsIndexes,
-            ObjectSharedDataCopyValues,
             ObjectStructure,
 
             Regular,
@@ -242,9 +220,6 @@ public:
 
         /// Path name for Object type elements.
         String object_path_name;
-
-        /// Index of a bucket in Object shared data serialization.
-        size_t object_shared_data_bucket = 0;
 
         /// Data for current substream.
         SubstreamData data;
@@ -267,12 +242,7 @@ public:
 
     /// Cache for common substreams of one type, but possible different its subcolumns.
     /// E.g. sizes of arrays of Nested data type.
-    struct ISubstreamsCacheElement
-    {
-        virtual ~ISubstreamsCacheElement() = default;
-    };
-
-    using SubstreamsCache = std::unordered_map<String, std::unique_ptr<ISubstreamsCacheElement>>;
+    using SubstreamsCache = std::unordered_map<String, ColumnPtr>;
 
     using StreamCallback = std::function<void(const SubstreamPath &)>;
 
@@ -285,27 +255,14 @@ public:
         /// It may be needed when dynamic subcolumns are processed separately.
         bool enumerate_dynamic_streams = true;
 
-        /// If set to false, don't enumerate virtual subcolumns
-        /// (such as .size subcolumn in String column).
-        bool enumerate_virtual_streams = false;
-
-        /// If set to true, enumerate also specialized substreams for prefixes and suffixes.
+        /// If set to true, enumerate also specialized substreams for prefixes.
         /// For example for discriminators in Variant column we should enumerate a separate
         /// substream VariantDiscriminatorsPrefix together with substream VariantDiscriminators that is
         /// used for discriminators data.
         /// It's needed in compact parts when we write mark per each substream, because
-        /// all prefixes are serialized before the data (suffixes - after) and we need to separate streams
-        /// for prefixes/suffixes and for data to be able to seek to them separately.
-        bool use_specialized_prefixes_and_suffixes_substreams = false;
-
-        /// Serialization version that should be used for Object column.
-        MergeTreeObjectSerializationVersion object_serialization_version = MergeTreeObjectSerializationVersion::V2;
-        /// Serialization version that should be used for shared data inside Object column.
-        MergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version = MergeTreeObjectSharedDataSerializationVersion::MAP;
-        /// Number of buckets that should be used for Object shared data serialization.
-        size_t object_shared_data_buckets = 1;
-        /// Type of MergeTree data part we serialize/deserialize data from if any.
-        MergeTreeDataPartType data_part_type = MergeTreeDataPartType::Unknown;
+        /// all prefixes are serialized before the data and we need to separate streams for prefixes
+        /// and for data to be able to seek to them separately.
+        bool use_specialized_prefixes_substreams = false;
     };
 
     virtual void enumerateStreams(
@@ -319,16 +276,8 @@ public:
         const DataTypePtr & type = nullptr,
         const ColumnPtr & column = nullptr) const;
 
-    /// Similar to enumerateStreams, but also includes virtual substreams.
-    /// For example, DataTypeString has a virtual `.size` substream, which is included here.
-    void enumerateAllStreams(
-        const StreamCallback & callback,
-        const DataTypePtr & type = nullptr,
-        const ColumnPtr & column = nullptr) const;
-
     using OutputStreamGetter = std::function<WriteBuffer*(const SubstreamPath &)>;
     using InputStreamGetter = std::function<ReadBuffer*(const SubstreamPath &)>;
-    using StreamMarkGetter = std::function<MarkInCompressedFile(const SubstreamPath &)>;
 
     struct SerializeBinaryBulkSettings
     {
@@ -346,39 +295,24 @@ public:
         {
             NONE,   /// Don't write statistics.
             PREFIX, /// Write statistics in prefix.
-            PREFIX_EMPTY, /// Write empty statistics in prefix.
             SUFFIX, /// Write statistics in suffix.
         };
         ObjectAndDynamicStatisticsMode object_and_dynamic_write_statistics = ObjectAndDynamicStatisticsMode::NONE;
 
-        /// Serialization versions that should be used for Dynamic and Object columns.
-        MergeTreeDynamicSerializationVersion dynamic_serialization_version = MergeTreeDynamicSerializationVersion::V2;
-        MergeTreeObjectSerializationVersion object_serialization_version = MergeTreeObjectSerializationVersion::V2;
-        /// Serialization version that should be used for shared data inside Object column.
-        MergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version = MergeTreeObjectSharedDataSerializationVersion::MAP;
-
-        /// Number of buckets to use in Object shared data serialization if corresponding version supports it.
-        size_t object_shared_data_buckets = 1;
+        /// Use old V1 serialization of JSON and Dynamic types. Needed for compatibility.
+        bool use_v1_object_and_dynamic_serialization = false;
 
         bool native_format = false;
         const FormatSettings * format_settings = nullptr;
 
-        /// If set to true, all prefixes and suffixes should be written to separate specialized substreams.
+        /// If set to true, all prefixes should be written to separate specialized substreams.
         /// For example prefix for discriminators in Variant column should be written in a separate
         /// substream VariantDiscriminatorsPrefix instead of substream VariantDiscriminators that is
         /// used for discriminators data.
         /// It's needed in compact parts when we write mark per each substream, because
-        /// all prefixes are serialized before the data (suffixes - after) and we need to separate streams
-        /// for prefixes/suffixes and for data to be able to seek to them separately.
-        bool use_specialized_prefixes_and_suffixes_substreams = false;
-
-        /// Callback to get current mark of the specific stream.
-        /// Used only in MergeTree for Object shared data serialization.
-        StreamMarkGetter stream_mark_getter;
-
-        /// Type of MergeTree data part we serialize data from if any.
-        /// Some serializations may differ from type part for more optimal deserialization.
-        MergeTreeDataPartType data_part_type = MergeTreeDataPartType::Unknown;
+        /// all prefixes are serialized before the data and we need to separate streams for prefixes
+        /// and for data to be able to seek to them separately.
+        bool use_specialized_prefixes_substreams = false;
     };
 
     struct DeserializeBinaryBulkSettings
@@ -394,6 +328,9 @@ public:
         bool native_format = false;
         const FormatSettings * format_settings;
 
+        /// If not zero, may be used to avoid reallocations while reading column of String type.
+        double avg_value_size_hint = 0;
+
         bool object_and_dynamic_read_statistics = false;
 
         /// Callback that should be called when new dynamic subcolumns are discovered during prefix deserialization.
@@ -403,37 +340,14 @@ public:
         /// ThreadPool that can be used to read prefixes of subcolumns in parallel.
         ThreadPool * prefixes_deserialization_thread_pool = nullptr;
 
-        /// If set to true, all prefixes and suffixes should be read from separate specialized substreams.
+        /// If set to true, all prefixes should be read from separate specialized substreams.
         /// For example prefix for discriminators in Variant column should be read from a separate
         /// substream VariantDiscriminatorsPrefix instead of substream VariantDiscriminators that is
         /// used for discriminators data.
         /// It's needed in compact parts when we write mark per each substream, because
-        /// all prefixes are serialized before the data (suffixes - after) and we need to separate streams
-        /// for prefixes/suffixes and for data to be able to seek to them separately.
-        bool use_specialized_prefixes_and_suffixes_substreams = false;
-
-        /// Callback to seek specific stream to a specific mark.
-        /// Used only in MergeTree for Object shared data deserialization.
-        std::function<void(const SubstreamPath &, const MarkInCompressedFile &)> seek_stream_to_mark_callback;
-        /// Callback to seek specific stream to a current mark that we read from.
-        /// Used only in MergeTree and Compact part for Object shared data deserialization.
-        std::function<void(const SubstreamPath &)> seek_stream_to_current_mark_callback;
-
-        /// Callback used to get avg_value_size_hint for each substream.
-        std::function<double(const SubstreamPath &)> get_avg_value_size_hint_callback;
-
-        /// Callback used to update avg_value_size_hint for each substream.
-        std::function<void(const SubstreamPath &, const IColumn &)> update_avg_value_size_hint_callback;
-
-        /// Type of MergeTree data part we deserialize data from if any.
-        /// Some serializations may differ from type part for more optimal deserialization.
-        MergeTreeDataPartType data_part_type = MergeTreeDataPartType::Unknown;
-
-        /// Usually substreams cache contains the whole column with rows from
-        /// multiple ranges. But sometimes we need to read a separate column
-        /// with rows only from current range. If this flag is true and
-        /// there is a column in cache, insert only rows from current range from it.
-        bool insert_only_rows_in_current_range_from_substreams_cache = false;
+        /// all prefixes are serialized before the data and we need to separate streams for prefixes
+        /// and for data to be able to seek to them separately.
+        bool use_specialized_prefixes_substreams = false;
     };
 
     /// Call before serializeBinaryBulkWithMultipleStreams chain to write something before first mark.
@@ -575,16 +489,12 @@ public:
 
     static String getFileNameForStream(const NameAndTypePair & column, const SubstreamPath & path);
     static String getFileNameForStream(const String & name_in_storage, const SubstreamPath & path);
-    static String getFileNameForRenamedColumnStream(const NameAndTypePair & column_from, const NameAndTypePair & column_to, const String & file_name);
-    static String getFileNameForRenamedColumnStream(const String & name_from, const String & name_to, const String & file_name);
 
-    static String getSubcolumnNameForStream(const SubstreamPath & path, bool encode_sparse_stream = false);
-    static String getSubcolumnNameForStream(const SubstreamPath & path, size_t prefix_len, bool encode_sparse_stream = false);
+    static String getSubcolumnNameForStream(const SubstreamPath & path);
+    static String getSubcolumnNameForStream(const SubstreamPath & path, size_t prefix_len);
 
-    static void addColumnWithNumReadRowsToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, ColumnPtr column, size_t num_read_rows);
-    static std::optional<std::pair<ColumnPtr, size_t>> getColumnWithNumReadRowsFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path);
-    static void addElementToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, std::unique_ptr<ISubstreamsCacheElement> && element);
-    static ISubstreamsCacheElement * getElementFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path);
+    static void addToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, ColumnPtr column);
+    static ColumnPtr getFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path);
 
     static void addToSubstreamsDeserializeStatesCache(SubstreamsDeserializeStatesCache * cache, const SubstreamPath & path, DeserializeBinaryBulkStatePtr state);
     static DeserializeBinaryBulkStatePtr getFromSubstreamsDeserializeStatesCache(SubstreamsDeserializeStatesCache * cache, const SubstreamPath & path);
@@ -606,17 +516,9 @@ public:
     static bool isDynamicOrObjectStructureSubcolumn(const SubstreamPath & path);
 
     /// Return true if the specified path contains prefix that should be deserialized in deserializeBinaryBulkStatePrefix.
-    static bool hasPrefix(const SubstreamPath & path, bool use_specialized_prefixes_and_suffixes_substreams = false);
-
-    /// If we have data in substreams cache for substream path from settings insert it
-    /// into resulting column and return true, otherwise do nothing and return false.
-    static bool insertDataFromSubstreamsCacheIfAny(SubstreamsCache * cache, const DeserializeBinaryBulkSettings & settings, ColumnPtr & result_column);
-    /// Perform insertion from column found in substreams cache.
-    static void insertDataFromCachedColumn(const DeserializeBinaryBulkSettings & settings, ColumnPtr & result_column, const ColumnPtr & cached_column, size_t num_read_rows);
+    static bool hasPrefix(const SubstreamPath & path, bool use_specialized_prefixes_substreams = false);
 
 protected:
-    void addSubstreamAndCallCallback(SubstreamPath & path, const StreamCallback & callback, Substream substream) const;
-
     template <typename State, typename StatePtr>
     State * checkAndGetState(const StatePtr & state) const;
 

@@ -61,8 +61,8 @@ namespace
     }
 }
 
-WorkloadEntityDiskStorage::WorkloadEntityDiskStorage(const ContextPtr & global_context_, const String & dir_path_, std::unique_ptr<IWorkloadEntityStorage> next_storage_)
-    : WorkloadEntityStorageBase(global_context_, std::move(next_storage_))
+WorkloadEntityDiskStorage::WorkloadEntityDiskStorage(const ContextPtr & global_context_, const String & dir_path_)
+    : WorkloadEntityStorageBase(global_context_)
     , dir_path{makeDirectoryPathCanonical(dir_path_)}
 {
     log = getLogger("WorkloadEntityDiskStorage");
@@ -117,9 +117,8 @@ ASTPtr WorkloadEntityDiskStorage::tryLoadEntity(WorkloadEntityType entity_type, 
 }
 
 
-void WorkloadEntityDiskStorage::loadEntities(const Poco::Util::AbstractConfiguration & config)
+void WorkloadEntityDiskStorage::loadEntities()
 {
-    WorkloadEntityStorageBase::loadEntities(config);
     if (!entities_loaded)
         loadEntitiesImpl();
 }
@@ -174,7 +173,7 @@ void WorkloadEntityDiskStorage::loadEntitiesImpl()
         }
     }
 
-    setLocalEntities(entities_name_and_queries);
+    setAllEntities(entities_name_and_queries);
     entities_loaded = true;
 
     LOG_DEBUG(log, "Workload entities loaded");
