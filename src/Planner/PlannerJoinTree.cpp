@@ -1217,7 +1217,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     if (!data_header->findByName(static_cast<std::string_view>("_table")))
                     {
                         String table_name;
-                        if (table_node && !table_node->getTemporaryTableName().empty())
+                        if (table_node && !(table_node->getTemporaryTableName().empty()))
                             table_name = table_node->getTemporaryTableName();
                         else
                             table_name = storage->getStorageID().getTableName();
