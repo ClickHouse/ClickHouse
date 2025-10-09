@@ -1,8 +1,8 @@
-#!/usr/bin/env sh
-#
-CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+#!/usr/bin/env bash
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
-. "$CURDIR"/../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS cancel_huge_mutation_subquery"
 $CLICKHOUSE_CLIENT -n -q "
