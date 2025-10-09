@@ -19,7 +19,8 @@
 === Test 7: String aggregate function - array format ===
 302	3
 303	2
-=== Test 8: VALUES format - value ===
+=== Test 8: VALUES and TabSeparated format - value and TabSeparated ===
+400	999
 400	999
 === Test 9: Error handling - invalid format ===
 Error validation works correctly
