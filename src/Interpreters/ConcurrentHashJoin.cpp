@@ -807,9 +807,6 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
                 auto src = getData(hash_joins[i]);
                 for (const auto & holder : src->nullmaps)
                     filter_holder_by_selector(holder);
-                // clear per-slot nullmaps after consolidation to prevent duplicates and free memory held by masks
-                src->nullmaps.clear();
-                src->nullmaps_allocated_size = 0;
             }
 
             auto dst = getData(hash_joins[0]);
