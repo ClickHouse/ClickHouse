@@ -154,10 +154,10 @@ void PaimonMetadata::update(const ContextPtr &)
 }
 
 ObjectIterator PaimonMetadata::iterate(
-    const ActionsDAG * /* filter_dag */, 
-    FileProgressCallback callback, 
-    size_t /* list_batch_size */, 
-    StorageMetadataPtr /*storage_metadata*/, 
+    const ActionsDAG * /* filter_dag */,
+    FileProgressCallback callback,
+    size_t /* list_batch_size */,
+    StorageMetadataPtr /*storage_metadata*/,
     ContextPtr /* context */) const
 {
     SharedLockGuard shared_lock(mutex);

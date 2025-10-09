@@ -66,10 +66,10 @@ public:
     void update(const ContextPtr & local_context) override;
 
     ObjectIterator
-    iterate(const ActionsDAG * /* filter_dag */, 
-        FileProgressCallback callback, 
-        size_t /* list_batch_size */, 
-        StorageMetadataPtr /* storage_metadata */, 
+    iterate(const ActionsDAG * /* filter_dag */,
+        FileProgressCallback callback,
+        size_t /* list_batch_size */,
+        StorageMetadataPtr /* storage_metadata */,
         ContextPtr /* context */)
         const override;
     const char * getName() const override { return name; }
