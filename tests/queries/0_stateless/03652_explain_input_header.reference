@@ -4,209 +4,209 @@ Expression ((Project names + Projection))
       ReadFromMemoryStorage
 Expression ((Project names + Projection))
 Input headers: #0
-               __table1.x Int32 Int32(size = 0)
-               __table1.y String String(size = 0)
+               __table1.x Int32
+               __table1.y String
   Limit (preliminary LIMIT (without OFFSET))
   Input headers: #0
-                 __table1.x Int32 Int32(size = 0)
-                 __table1.y String String(size = 0)
+                 __table1.x Int32
+                 __table1.y String
     Filter ((WHERE + Change column names to column identifiers))
     Input headers: #0
-                   x Int32 Int32(size = 0)
-                   y String String(size = 0)
+                   x Int32
+                   y String
       ReadFromMemoryStorage
       Input headers: No input headers
 Expression ((Project names + Projection))
-Header: x Int32 Int32(size = 0)
-        y String String(size = 0)
+Header: x Int32
+        y String
   Limit (preliminary LIMIT (without OFFSET))
-  Header: __table1.x Int32 Int32(size = 0)
-          __table1.y String String(size = 0)
+  Header: __table1.x Int32
+          __table1.y String
     Filter ((WHERE + Change column names to column identifiers))
-    Header: __table1.x Int32 Int32(size = 0)
-            __table1.y String String(size = 0)
+    Header: __table1.x Int32
+            __table1.y String
       ReadFromMemoryStorage
-      Header: x Int32 Int32(size = 0)
-              y String String(size = 0)
+      Header: x Int32
+              y String
 Expression ((Project names + Projection))
-Header: x Int32 Int32(size = 0)
-        y String String(size = 0)
+Header: x Int32
+        y String
 Input headers: #0
-               __table1.x Int32 Int32(size = 0)
-               __table1.y String String(size = 0)
+               __table1.x Int32
+               __table1.y String
   Limit (preliminary LIMIT (without OFFSET))
-  Header: __table1.x Int32 Int32(size = 0)
-          __table1.y String String(size = 0)
+  Header: __table1.x Int32
+          __table1.y String
   Input headers: #0
-                 __table1.x Int32 Int32(size = 0)
-                 __table1.y String String(size = 0)
+                 __table1.x Int32
+                 __table1.y String
     Filter ((WHERE + Change column names to column identifiers))
-    Header: __table1.x Int32 Int32(size = 0)
-            __table1.y String String(size = 0)
+    Header: __table1.x Int32
+            __table1.y String
     Input headers: #0
-                   x Int32 Int32(size = 0)
-                   y String String(size = 0)
+                   x Int32
+                   y String
       ReadFromMemoryStorage
-      Header: x Int32 Int32(size = 0)
-              y String String(size = 0)
+      Header: x Int32
+              y String
       Input headers: No input headers
 Union
-Header: x Int32 Int32(size = 0)
-        y String String(size = 0)
-        t2.y String String(size = 0)
+Header: x Int32
+        y String
+        t2.y String
 Input headers: #0
-               x Int32 Int32(size = 0)
-               y String String(size = 0)
-               t2.y String String(size = 0)
+               x Int32
+               y String
+               t2.y String
                #1
-               x Int32 Int32(size = 0)
-               y String String(size = 0)
-               t2.y String String(size = 0)
+               x Int32
+               y String
+               t2.y String
   Expression ((Project names + Projection))
-  Header: x Int32 Int32(size = 0)
-          y String String(size = 0)
-          t2.y String String(size = 0)
+  Header: x Int32
+          y String
+          t2.y String
   Input headers: #0
-                 __table2.x Int32 Int32(size = 0)
-                 __table2.y String String(size = 0)
-                 __table3.y String String(size = 0)
+                 __table2.x Int32
+                 __table2.y String
+                 __table3.y String
     Limit (preliminary LIMIT (without OFFSET))
-    Header: __table2.x Int32 Int32(size = 0)
-            __table2.y String String(size = 0)
-            __table3.y String String(size = 0)
+    Header: __table2.x Int32
+            __table2.y String
+            __table3.y String
     Input headers: #0
-                   __table2.x Int32 Int32(size = 0)
-                   __table2.y String String(size = 0)
-                   __table3.y String String(size = 0)
+                   __table2.x Int32
+                   __table2.y String
+                   __table3.y String
       Filter (WHERE)
-      Header: __table2.x Int32 Int32(size = 0)
-              __table2.y String String(size = 0)
-              __table3.y String String(size = 0)
+      Header: __table2.x Int32
+              __table2.y String
+              __table3.y String
       Input headers: #0
-                     __table2.x Int32 Int32(size = 0)
-                     __table2.y String String(size = 0)
-                     __table3.y String String(size = 0)
+                     __table2.x Int32
+                     __table2.y String
+                     __table3.y String
         Expression (Post Join Actions)
-        Header: __table2.x Int32 Int32(size = 0)
-                __table2.y String String(size = 0)
-                __table3.y String String(size = 0)
+        Header: __table2.x Int32
+                __table2.y String
+                __table3.y String
         Input headers: #0
-                       __table2.x Int32 Int32(size = 0)
-                       __table2.y String String(size = 0)
-                       __table3.y String String(size = 0)
+                       __table2.x Int32
+                       __table2.y String
+                       __table3.y String
           Join
-          Header: __table2.x Int32 Int32(size = 0)
-                  __table2.y String String(size = 0)
-                  __table3.y String String(size = 0)
+          Header: __table2.x Int32
+                  __table2.y String
+                  __table3.y String
           Input headers: #0
-                         __table2.x Int32 Int32(size = 0)
-                         __table2.y String String(size = 0)
+                         __table2.x Int32
+                         __table2.y String
                          #1
-                         __table3.x Int32 Int32(size = 0)
-                         __table3.y String String(size = 0)
+                         __table3.x Int32
+                         __table3.y String
             Expression (Left Pre Join Actions)
-            Header: __table2.x Int32 Int32(size = 0)
-                    __table2.y String String(size = 0)
+            Header: __table2.x Int32
+                    __table2.y String
             Input headers: #0
-                           __table2.x Int32 Int32(size = 0)
-                           __table2.y String String(size = 0)
+                           __table2.x Int32
+                           __table2.y String
               Expression (Change column names to column identifiers)
-              Header: __table2.x Int32 Int32(size = 0)
-                      __table2.y String String(size = 0)
+              Header: __table2.x Int32
+                      __table2.y String
               Input headers: #0
-                             x Int32 Int32(size = 0)
-                             y String String(size = 0)
+                             x Int32
+                             y String
                 ReadFromMemoryStorage
-                Header: x Int32 Int32(size = 0)
-                        y String String(size = 0)
+                Header: x Int32
+                        y String
                 Input headers: No input headers
             Expression (Right Pre Join Actions)
-            Header: __table3.x Int32 Int32(size = 0)
-                    __table3.y String String(size = 0)
+            Header: __table3.x Int32
+                    __table3.y String
             Input headers: #0
-                           __table3.y String String(size = 0)
-                           __table3.x Int32 Int32(size = 0)
+                           __table3.y String
+                           __table3.x Int32
               Expression (Change column names to column identifiers)
-              Header: __table3.y String String(size = 0)
-                      __table3.x Int32 Int32(size = 0)
+              Header: __table3.y String
+                      __table3.x Int32
               Input headers: #0
-                             y String String(size = 0)
-                             x Int32 Int32(size = 0)
+                             y String
+                             x Int32
                 ReadFromMemoryStorage
-                Header: y String String(size = 0)
-                        x Int32 Int32(size = 0)
+                Header: y String
+                        x Int32
                 Input headers: No input headers
   Expression ((Conversion before UNION + (Project names + Projection)))
-  Header: x Int32 Int32(size = 0)
-          y String String(size = 0)
-          t2.y String String(size = 0)
+  Header: x Int32
+          y String
+          t2.y String
   Input headers: #0
-                 __table5.x Int32 Int32(size = 0)
-                 __table5.y String String(size = 0)
-                 __table6.y String String(size = 0)
+                 __table5.x Int32
+                 __table5.y String
+                 __table6.y String
     Limit (preliminary LIMIT (without OFFSET))
-    Header: __table5.x Int32 Int32(size = 0)
-            __table5.y String String(size = 0)
-            __table6.y String String(size = 0)
+    Header: __table5.x Int32
+            __table5.y String
+            __table6.y String
     Input headers: #0
-                   __table5.x Int32 Int32(size = 0)
-                   __table5.y String String(size = 0)
-                   __table6.y String String(size = 0)
+                   __table5.x Int32
+                   __table5.y String
+                   __table6.y String
       Filter (WHERE)
-      Header: __table5.x Int32 Int32(size = 0)
-              __table5.y String String(size = 0)
-              __table6.y String String(size = 0)
+      Header: __table5.x Int32
+              __table5.y String
+              __table6.y String
       Input headers: #0
-                     __table5.x Int32 Int32(size = 0)
-                     __table5.y String String(size = 0)
-                     __table6.y String String(size = 0)
+                     __table5.x Int32
+                     __table5.y String
+                     __table6.y String
         Expression (Post Join Actions)
-        Header: __table5.x Int32 Int32(size = 0)
-                __table5.y String String(size = 0)
-                __table6.y String String(size = 0)
+        Header: __table5.x Int32
+                __table5.y String
+                __table6.y String
         Input headers: #0
-                       __table5.x Int32 Int32(size = 0)
-                       __table5.y String String(size = 0)
-                       __table6.y String String(size = 0)
+                       __table5.x Int32
+                       __table5.y String
+                       __table6.y String
           Join
-          Header: __table5.x Int32 Int32(size = 0)
-                  __table5.y String String(size = 0)
-                  __table6.y String String(size = 0)
+          Header: __table5.x Int32
+                  __table5.y String
+                  __table6.y String
           Input headers: #0
-                         __table5.x Int32 Int32(size = 0)
-                         __table5.y String String(size = 0)
+                         __table5.x Int32
+                         __table5.y String
                          #1
-                         __table6.x Int32 Int32(size = 0)
-                         __table6.y String String(size = 0)
+                         __table6.x Int32
+                         __table6.y String
             Expression (Left Pre Join Actions)
-            Header: __table5.x Int32 Int32(size = 0)
-                    __table5.y String String(size = 0)
+            Header: __table5.x Int32
+                    __table5.y String
             Input headers: #0
-                           __table5.x Int32 Int32(size = 0)
-                           __table5.y String String(size = 0)
+                           __table5.x Int32
+                           __table5.y String
               Expression (Change column names to column identifiers)
-              Header: __table5.x Int32 Int32(size = 0)
-                      __table5.y String String(size = 0)
+              Header: __table5.x Int32
+                      __table5.y String
               Input headers: #0
-                             x Int32 Int32(size = 0)
-                             y String String(size = 0)
+                             x Int32
+                             y String
                 ReadFromMemoryStorage
-                Header: x Int32 Int32(size = 0)
-                        y String String(size = 0)
+                Header: x Int32
+                        y String
                 Input headers: No input headers
             Expression (Right Pre Join Actions)
-            Header: __table6.x Int32 Int32(size = 0)
-                    __table6.y String String(size = 0)
+            Header: __table6.x Int32
+                    __table6.y String
             Input headers: #0
-                           __table6.y String String(size = 0)
-                           __table6.x Int32 Int32(size = 0)
+                           __table6.y String
+                           __table6.x Int32
               Expression (Change column names to column identifiers)
-              Header: __table6.y String String(size = 0)
-                      __table6.x Int32 Int32(size = 0)
+              Header: __table6.y String
+                      __table6.x Int32
               Input headers: #0
-                             y String String(size = 0)
-                             x Int32 Int32(size = 0)
+                             y String
+                             x Int32
                 ReadFromMemoryStorage
-                Header: y String String(size = 0)
-                        x Int32 Int32(size = 0)
+                Header: y String
+                        x Int32
                 Input headers: No input headers

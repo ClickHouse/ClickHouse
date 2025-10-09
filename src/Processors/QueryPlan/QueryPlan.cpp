@@ -341,7 +341,7 @@ static void explainStep(
 
     const auto dump_column = [&out = settings.out](const ColumnWithTypeAndName & column)
     {
-        column.dumpStructure(out);
+        column.dumpNameAndType(out);
         if (column.column && isColumnLazy(*column.column.get()))
             out << " (Lazy)";
     };
