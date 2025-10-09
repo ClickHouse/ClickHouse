@@ -219,37 +219,22 @@ void optimizeTreeSecondPass(
             convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings);
         });
 
-
     /// If join runtime filters were added re-run optimizePrewhere and filter push down optimizations
     /// to move newly added runtime filter as deep in the tree as possible
     if (join_runtime_filters_were_added)
     {
-        stack.push_back({.node = &root});
-        while (!stack.empty())
-        {
-            auto & frame = stack.back();
-
-            if (frame.next_child == 0)
+        traverseQueryPlan(stack, root,
+            [&](auto & frame_node)
             {
-                tryMergeExpressions(frame.node, nodes, {});
-                tryMergeFilters(frame.node, nodes, {});
-                tryPushDownFilter(frame.node, nodes, {});
-            }
-
-            /// Traverse all children first.
-            if (frame.next_child < frame.node->children.size())
+                tryMergeExpressions(&frame_node, nodes, {});
+                tryMergeFilters(&frame_node, nodes, {});
+                tryPushDownFilter(&frame_node, nodes, {});
+            },
+            [&](auto & frame_node)
             {
-                auto next_frame = Frame{.node = frame.node->children[frame.next_child]};
-                ++frame.next_child;
-                stack.push_back(next_frame);
-                continue;
-            }
-
-            if (optimization_settings.optimize_prewhere)
-                optimizePrewhere(*frame.node);
-
-            stack.pop_back();
-        }
+                if (optimization_settings.optimize_prewhere)
+                    optimizePrewhere(frame_node);
+            });
     }
 
     traverseQueryPlan(stack, root,
