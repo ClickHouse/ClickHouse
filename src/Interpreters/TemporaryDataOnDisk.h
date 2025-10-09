@@ -10,7 +10,6 @@
 #include <Compression/CompressedWriteBuffer.h>
 
 #include <Disks/IVolume.h>
-#include <Disks/TemporaryFileOnDisk.h>
 
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
@@ -162,7 +161,7 @@ protected:
 class TemporaryFileHolder
 {
 public:
-    TemporaryFileHolder();
+    explicit TemporaryFileHolder(CurrentMetrics::Metric current_metric_ = CurrentMetrics::TemporaryFilesUnknown);
 
     virtual std::unique_ptr<WriteBuffer> write() = 0;
     virtual std::unique_ptr<SeekableReadBuffer> read(size_t buffer_size) const = 0;
@@ -174,6 +173,9 @@ public:
     virtual String describeFilePath() const = 0;
 
     virtual ~TemporaryFileHolder() = default;
+
+private:
+    CurrentMetrics::Increment metric_increment;
 };
 
 /// Reads raw data from temporary file

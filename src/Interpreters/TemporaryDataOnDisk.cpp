@@ -75,7 +75,8 @@ inline CompressionCodecPtr getCodec(const TemporaryDataOnDiskSettings & settings
 
 }
 
-TemporaryFileHolder::TemporaryFileHolder()
+TemporaryFileHolder::TemporaryFileHolder(CurrentMetrics::Metric current_metric_)
+    : metric_increment(current_metric_)
 {
     ProfileEvents::increment(ProfileEvents::ExternalProcessingFilesTotal);
 }
@@ -84,8 +85,12 @@ TemporaryFileHolder::TemporaryFileHolder()
 class TemporaryFileInLocalCache : public TemporaryFileHolder
 {
 public:
-    explicit TemporaryFileInLocalCache(FileCache & file_cache, size_t reserve_size = 0, size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE)
-        : buffer_size(buffer_size_)
+    explicit TemporaryFileInLocalCache(FileCache & file_cache,
+                                       size_t reserve_size,
+                                       size_t buffer_size_,
+                                       CurrentMetrics::Metric current_metric_)
+        : TemporaryFileHolder(current_metric_)
+        , buffer_size(buffer_size_)
     {
         const auto key = FileSegment::Key::random();
         LOG_TRACE(getLogger("TemporaryFileInLocalCache"), "Creating temporary file in cache with key {}", key);
@@ -121,8 +126,10 @@ private:
 class TemporaryFileInDistributedCache final : public TemporaryFileHolder
 {
 public:
-    explicit TemporaryFileInDistributedCache(size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE)
-        : file_key(fmt::format("__tmp_{}", toString(UUIDHelpers::generateV4())))
+    explicit TemporaryFileInDistributedCache(size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
+        CurrentMetrics::Metric current_metric_ = CurrentMetrics::TemporaryFilesUnknown)
+        : TemporaryFileHolder(current_metric_)
+        , file_key(fmt::format("__tmp_{}", toString(UUIDHelpers::generateV4())))
         , buffer_size(buffer_size_)
         , log(getLogger("TemporaryFileInDistributedCache"))
     {
@@ -210,8 +217,9 @@ private:
 class TemporaryFileOnLocalDisk : public TemporaryFileHolder
 {
 public:
-    explicit TemporaryFileOnLocalDisk(VolumePtr volume, size_t reserve_size = 0, size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE)
-        : path_to_file("tmp" + toString(UUIDHelpers::generateV4()))
+    explicit TemporaryFileOnLocalDisk(VolumePtr volume, size_t reserve_size = 0, size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE, CurrentMetrics::Metric current_metric_ = CurrentMetrics::TemporaryFilesUnknown)
+        : TemporaryFileHolder(current_metric_)
+        , path_to_file("tmp" + toString(UUIDHelpers::generateV4()))
         , buffer_size(buffer_size_)
     {
         LOG_TRACE(getLogger("TemporaryFileOnLocalDisk"), "Creating temporary file '{}'", path_to_file);
@@ -298,7 +306,7 @@ TemporaryFileProvider createTemporaryFileProvider(VolumePtr volume)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Volume is not initialized");
     return [volume](const TemporaryDataOnDiskSettings & settings, size_t max_size) -> std::unique_ptr<TemporaryFileHolder>
     {
-        return std::make_unique<TemporaryFileOnLocalDisk>(volume, max_size, settings.buffer_size);
+        return std::make_unique<TemporaryFileOnLocalDisk>(volume, max_size, settings.buffer_size, settings.current_metric);
     };
 }
 
@@ -308,7 +316,7 @@ TemporaryFileProvider createTemporaryFileProvider(FileCache * file_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "File cache is not initialized");
     return [file_cache](const TemporaryDataOnDiskSettings & settings, size_t max_size) -> std::unique_ptr<TemporaryFileHolder>
     {
-        return std::make_unique<TemporaryFileInLocalCache>(*file_cache, max_size, settings.buffer_size);
+        return std::make_unique<TemporaryFileInLocalCache>(*file_cache, max_size, settings.buffer_size, settings.current_metric);
     };
 }
 
@@ -322,7 +330,7 @@ TemporaryFileProvider createTemporaryFileProvider(DistributedCacheTag)
         if (!DistributedCache::Registry::instance().isReady(read_settings.distributed_cache_settings.read_only_from_current_az))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Distributed cache is not ready yet");
 
-        return std::make_unique<TemporaryFileInDistributedCache>(settings.buffer_size);
+        return std::make_unique<TemporaryFileInDistributedCache>(settings.buffer_size, settings.current_metric);
     };
 }
 #endif
