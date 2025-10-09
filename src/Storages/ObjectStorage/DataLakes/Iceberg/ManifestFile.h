@@ -61,6 +61,7 @@ struct ManifestFileEntry
     String file_path_key;
     // It's a processed file path to be used by Object Storage
     String file_path;
+    Int64 row_number;
 
     ManifestEntryStatus status;
     Int64 added_sequence_number;

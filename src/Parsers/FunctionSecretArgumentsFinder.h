@@ -56,6 +56,8 @@ public:
         /// `azureBlobStorage('DefaultEndpointsProtocol=https;AccountKey=secretkey;...', ...)` should be replaced with
         /// `azureBlobStorage('DefaultEndpointsProtocol=https;AccountKey=[HIDDEN];...', ...)`.
         std::string replacement;
+        /// Whether to wrap a result using full argument replacement in quotes.
+        bool quote_replacement = true;
 
         bool hasSecrets() const
         {
@@ -676,6 +678,10 @@ protected:
         {
             findDataLakeCatalogSecretArguments();
         }
+        else if (engine_name == "Backup")
+        {
+            findBackupDatabaseSecretArguments();
+        }
     }
 
     void findMySQLDatabaseSecretArguments()
@@ -712,6 +718,46 @@ protected:
         /// we need a function to check if the url is S3 or Azure.
         /// right now we assume it's a S3 url
         findS3DatabaseSecretArguments();
+    }
+
+    void findBackupDatabaseSecretArguments()
+    {
+        auto storage_arg = function->arguments->at(1);
+        auto storage_function = storage_arg->getFunction();
+
+        /// Backup('', S3('url', 'access_key_id', 'secret_access_key'))
+        if (storage_function && storage_function->name() == "S3" && storage_function->arguments->size() >= 3)
+        {
+            std::string replacement = "S3(";
+
+            for (size_t i = 0; i < storage_function->arguments->size(); ++i)
+            {
+                if (i > 0)
+                {
+                    replacement += ", ";
+                }
+
+                if (i == 2) // Secret key position
+                {
+                    replacement += "'[HIDDEN]'";
+                }
+                else
+                {
+                    String arg_value;
+                    if (!storage_function->arguments->at(i)->tryGetString(&arg_value, true))
+                    {
+                        return;
+                    }
+                    replacement += "'" + arg_value + "'";
+                }
+            }
+            replacement += ")";
+
+            result.start = 1;
+            result.count = 1;
+            result.replacement = std::move(replacement);
+            result.quote_replacement = false;
+        }
     }
 
     void findBackupNameSecretArguments()

@@ -71,6 +71,8 @@
 
 namespace ProfileEvents
 {
+extern const Event IcebergIteratorInitializationMicroseconds;
+extern const Event IcebergMetadataUpdateMicroseconds;
 extern const Event IcebergTrivialCountOptimizationApplied;
 }
 
@@ -155,6 +157,7 @@ IcebergMetadata::initializePersistentTableComponents(IcebergMetadataFilesCachePt
 {
     const auto [metadata_version, metadata_file_path, compression_method]
         = getLatestOrExplicitMetadataFileAndVersion(object_storage, getConfiguration(), cache_ptr, context_, log.get());
+    LOG_DEBUG(log, "Latest metadata file path is {}, version {}", metadata_file_path, metadata_version);
     auto metadata_object
         = getMetadataJSONObject(metadata_file_path, object_storage, getConfiguration(), cache_ptr, context_, log, compression_method);
     Int32 format_version = metadata_object->getValue<Int32>(f_format_version);
@@ -439,6 +442,7 @@ IcebergMetadata::getState(const ContextPtr & local_context, const String & metad
         DB::IcebergMetadataLogLevel::Metadata,
         configuration_ptr->getRawPath().path,
         metadata_path,
+        std::nullopt,
         std::nullopt);
 
     chassert(persistent_components.format_version == metadata_object->getValue<int>(f_format_version));
@@ -573,15 +577,15 @@ void IcebergMetadata::createInitial(
         compression_suffix = "." + compression_suffix;
 
     auto filename = fmt::format("{}metadata/v1{}.metadata.json", configuration_ptr->getRawPath().path, compression_suffix);
-    auto cleanup = [&]() { object_storage->removeObjectIfExists(StoredObject(filename)); };
 
-    writeMessageToFile(metadata_content, filename, object_storage, local_context, cleanup, compression_method);
+    writeMessageToFile(metadata_content, filename, object_storage, local_context, "*", "", compression_method);
 
     if (configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_use_version_hint].value)
     {
         auto filename_version_hint = configuration_ptr->getRawPath().path + "metadata/version-hint.text";
-        writeMessageToFile(filename, filename_version_hint, object_storage, local_context, cleanup);
+        writeMessageToFile(filename, filename_version_hint, object_storage, local_context, "*", "");
     }
+
     if (catalog)
     {
         auto catalog_filename = configuration_ptr->getTypeName() + "://" + configuration_ptr->getNamespace() + "/"
@@ -830,6 +834,8 @@ ObjectIterator IcebergMetadata::iterate(
             persistent_components.table_location);
     }
 
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergIteratorInitializationMicroseconds);
+
     return std::make_shared<IcebergIterator>(
         object_storage,
         local_context,
@@ -849,6 +855,7 @@ NamesAndTypesList IcebergMetadata::getTableSchema(ContextPtr local_context) cons
 
 StorageInMemoryMetadata IcebergMetadata::getStorageSnapshotMetadata(ContextPtr local_context) const
 {
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergMetadataUpdateMicroseconds);
     auto [actual_data_snapshot, actual_table_state_snapshot] = getRelevantState(local_context);
     StorageInMemoryMetadata result;
     result.setColumns(
@@ -857,6 +864,13 @@ StorageInMemoryMetadata IcebergMetadata::getStorageSnapshotMetadata(ContextPtr l
     return result;
 }
 
+void IcebergMetadata::modifyFormatSettings(FormatSettings & format_settings, const Context & local_context) const
+{
+    if (!local_context.getSettingsRef()[Setting::use_roaring_bitmap_iceberg_positional_deletes].value)
+        /// IcebergStreamingPositionDeleteTransform requires increasing row numbers from both the
+        /// data reader and the deletes reader.
+        format_settings.parquet.preserve_order = true;
+}
 
 void IcebergMetadata::addDeleteTransformers(
     ObjectInfoPtr object_info,
@@ -1007,7 +1021,6 @@ void IcebergMetadata::drop(ContextPtr context)
             object_storage->removeObjectIfExists(StoredObject(file));
     }
 }
-
 
 ColumnMapperPtr IcebergMetadata::getColumnMapperForObject(ObjectInfoPtr object_info) const
 {

@@ -127,6 +127,12 @@ public:
         return current_metadata->supportsDelete();
     }
 
+    bool supportsParallelInsert() const override
+    {
+        assertInitialized();
+        return current_metadata->supportsParallelInsert();
+    }
+
     void mutate(const MutationCommands & commands,
         ContextPtr context,
         const StorageID & storage_id,
@@ -252,10 +258,10 @@ public:
     }
 #endif
 
-    void modifyFormatSettings(FormatSettings & settings_) const override
+    void modifyFormatSettings(FormatSettings & settings_, const Context & local_context) const override
     {
         assertInitialized();
-        current_metadata->modifyFormatSettings(settings_);
+        current_metadata->modifyFormatSettings(settings_, local_context);
     }
 
     ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr object_info) const override

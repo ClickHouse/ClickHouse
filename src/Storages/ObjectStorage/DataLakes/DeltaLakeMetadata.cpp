@@ -509,7 +509,7 @@ struct DeltaLakeMetadataImpl
         THROW_ARROW_NOT_OK(
             parquet::arrow::OpenFile(
                 asArrowFile(*buf, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES),
-                ArrowMemoryPool::instance(),
+                arrow::default_memory_pool(),
                 &reader));
 
         ArrowColumnToCHColumn column_reader(

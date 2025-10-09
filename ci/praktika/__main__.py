@@ -40,8 +40,9 @@ def create_parser():
     run_parser.add_argument(
         "--test",
         help="Custom parameter to pass into a job script, it's up to job script how to use it, for local test",
+        nargs="+",
         type=str,
-        default="",
+        default=[],
     )
     run_parser.add_argument(
         "--pr",
@@ -123,7 +124,7 @@ def main():
                 local_run=not args.ci,
                 no_docker=args.no_docker,
                 param=args.param,
-                test=args.test,
+                test=" ".join(args.test),
                 pr=args.pr,
                 branch=args.branch,
                 sha=args.sha,

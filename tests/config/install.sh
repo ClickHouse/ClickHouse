@@ -104,6 +104,9 @@ ln -sf $SRC_PATH/config.d/merge_tree_old_dirs_cleanup.xml $DEST_SERVER_PATH/conf
 ln -sf $SRC_PATH/config.d/test_cluster_with_incorrect_pw.xml $DEST_SERVER_PATH/config.d/
 # copy to not update original file later on in the script
 cp $SRC_PATH/config.d/keeper_port.xml $DEST_SERVER_PATH/config.d/
+if check_clickhouse_version 25.10; then
+    ln -sf $SRC_PATH/config.d/keeper_max_request_size.xml $DEST_SERVER_PATH/config.d/
+fi
 ln -sf $SRC_PATH/config.d/logging_no_rotate.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/merge_tree.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/lost_forever_check.xml $DEST_SERVER_PATH/config.d/
@@ -347,6 +350,7 @@ if [[ "$USE_DATABASE_REPLICATED" == "1" ]]; then
     ln -sf $SRC_PATH/config.d/database_replicated.xml $DEST_SERVER_PATH/config.d/
     rm $DEST_SERVER_PATH/config.d/zookeeper.xml
     rm $DEST_SERVER_PATH/config.d/keeper_port.xml
+    rm $DEST_SERVER_PATH/config.d/keeper_max_request_size.xml
 
     # There is a bug in config reloading, so we cannot override macros using --macros.replica r2
     # And we have to copy configs...
