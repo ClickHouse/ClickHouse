@@ -11,6 +11,7 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/logger_useful.h>
+#include "Interpreters/ITokenExtractor.h"
 #include <base/range.h>
 #include <fmt/ranges.h>
 
@@ -870,6 +871,9 @@ static const String ARGUMENT_DICTIONARY_BLOCK_SIZE = "dictionary_block_size";
 static const String ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION = "dictionary_block_frontcoding_compression";
 static const String ARGUMENT_MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS = "max_cardinality_for_embedded_postings";
 static const String ARGUMENT_BLOOM_FILTER_FALSE_POSITIVE_RATE = "bloom_filter_false_positive_rate";
+static const String ARGUMENT_SPARSE_GRAMS_MIN_LENGTH = "min_length";
+static const String ARGUMENT_SPARSE_GRAMS_MAX_LENGTH = "max_length";
+static const String ARGUMENT_SPARSE_GRAMS_MIN_CUTOFF_LENGTH = "min_cutoff_length";
 
 namespace
 {
@@ -957,6 +961,14 @@ MergeTreeIndexPtr textIndexCreator(const IndexDescription & index)
     {
         token_extractor = std::make_unique<NoOpTokenExtractor>();
     }
+    else if (tokenizer == SparseGramTokenExtractor::getExternalName())
+    {
+        auto min_length = extractOption<UInt64>(options, ARGUMENT_SPARSE_GRAMS_MIN_LENGTH);
+        auto max_length = extractOption<UInt64>(options, ARGUMENT_SPARSE_GRAMS_MAX_LENGTH);
+        auto min_cutoff_length = extractOption<UInt64>(options, ARGUMENT_SPARSE_GRAMS_MIN_CUTOFF_LENGTH);
+
+        token_extractor = std::make_unique<SparseGramTokenExtractor>(min_length.value_or(2), max_length.value_or(100), min_cutoff_length);
+    }
     else
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Tokenizer {} not supported", tokenizer);
@@ -988,12 +1000,13 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
     const bool is_supported_tokenizer = (tokenizer.value() == DefaultTokenExtractor::getExternalName()
                                       || tokenizer.value() == NgramTokenExtractor::getExternalName()
                                       || tokenizer.value() == SplitTokenExtractor::getExternalName()
-                                      || tokenizer.value() == NoOpTokenExtractor::getExternalName());
+                                      || tokenizer.value() == NoOpTokenExtractor::getExternalName()
+                                      || tokenizer.value() == SparseGramTokenExtractor::getExternalName());
     if (!is_supported_tokenizer)
     {
         throw Exception(
             ErrorCodes::INCORRECT_QUERY,
-            "Text index argument '{}' supports only 'default', 'ngram', 'split', and 'no_op', but got {}",
+            "Text index argument '{}' supports only 'default', 'ngram', 'split', 'no_op', and 'sparse_gram' but got {}",
             ARGUMENT_TOKENIZER,
             tokenizer.value());
     }
@@ -1023,6 +1036,36 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
                         ARGUMENT_SEPARATORS,
                         separator.getTypeName());
             }
+        }
+    }
+    else if (tokenizer.value() == SparseGramTokenExtractor::getExternalName())
+    {
+        auto min_length = extractOption<UInt64>(options, ARGUMENT_SPARSE_GRAMS_MIN_LENGTH);
+        auto max_length = extractOption<UInt64>(options, ARGUMENT_SPARSE_GRAMS_MAX_LENGTH);
+        auto min_cutoff_length = extractOption<UInt64>(options, ARGUMENT_SPARSE_GRAMS_MIN_CUTOFF_LENGTH);
+        if (min_length.has_value() && max_length.has_value() && (*min_length > *max_length))
+        {
+            throw Exception(
+                ErrorCodes::INCORRECT_QUERY,
+                "Minimal length {} can not be larger than maximum {}",
+                *min_length,
+                *max_length);
+        }
+        if (min_length.has_value() && min_cutoff_length.has_value() && (*min_length > *min_cutoff_length))
+        {
+            throw Exception(
+                ErrorCodes::INCORRECT_QUERY,
+                "Minimal length {} can not be larger than minimum cutoff {}",
+                *min_length,
+                *min_cutoff_length);
+        }
+        if (max_length.has_value() && min_cutoff_length.has_value() && (*max_length < *min_cutoff_length))
+        {
+            throw Exception(
+                ErrorCodes::INCORRECT_QUERY,
+                "Minimal cutoff length {} can not be smaller than maximum {}",
+                *min_cutoff_length,
+                *max_length);
         }
     }
 

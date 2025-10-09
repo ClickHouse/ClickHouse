@@ -30,3 +30,7 @@ Test text(tokenizer = "ngram", ngram_size = 2) on UTF-8 data
 af	text
 102	clickhouse你好
 1
+Test text(tokenizer = "sparse_gram", min_length = 2,max_length = 100) on UTF-8 data
+af	text
+102	clickhouse你好
+1
