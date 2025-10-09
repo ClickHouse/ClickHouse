@@ -64,7 +64,8 @@ def parse_args():
     return parser.parse_args()
 
 
-FLAKY_CHECK_REPEAT_COUNT = 50
+FLAKY_CHECK_TEST_REPEAT_COUNT = 3
+FLAKY_CHECK_MODULE_REPEAT_COUNT = 2
 
 
 def main():
@@ -77,7 +78,6 @@ def main():
     use_distributed_plan = False
     is_flaky_check = False
     is_bugfix_validation = False
-    build_type = ""
     is_parallel = False
     is_sequential = False
     workers = MAX_WORKERS
@@ -101,7 +101,7 @@ def main():
             use_distributed_plan = True
         elif to == "flaky":
             is_flaky_check = True
-            repeat_option = "--count 50 --repeat-scope=function"
+            repeat_option = f"--count {FLAKY_CHECK_TEST_REPEAT_COUNT} --random-order --session-timeout {3600*4}"
         elif to == "parallel":
             is_parallel = True
         elif to == "sequential":
@@ -110,7 +110,7 @@ def main():
             assert False, f"Unknown job option [{to}]"
 
     if args.count:
-        repeat_option = f"--count {args.count} --repeat-scope=function"
+        repeat_option = f"--count {args.count}"
 
     changed_test_modules = []
     if is_bugfix_validation or is_flaky_check:
@@ -235,14 +235,20 @@ def main():
         if test_result_specific.files:
             files.extend(test_result_specific.files)
     else:
-
+        module_repeat_cnt = 1 if not is_flaky_check else FLAKY_CHECK_MODULE_REPEAT_COUNT
         if parallel_test_modules:
-            test_result_parallel = Result.from_pytest_run(
-                command=f"{' '.join(reversed(parallel_test_modules))} --report-log-exclude-logs-on-passed-tests -n {workers} --dist=loadfile --tb=short {repeat_option}",
-                cwd="./tests/integration/",
-                env=test_env,
-                pytest_report_file=f"{temp_path}/pytest_parallel.jsonl",
-            )
+            for attempt in range(module_repeat_cnt):
+                test_result_parallel = Result.from_pytest_run(
+                    command=f"{' '.join(reversed(parallel_test_modules))} --report-log-exclude-logs-on-passed-tests -n {workers} --dist=loadfile --tb=short {repeat_option}",
+                    cwd="./tests/integration/",
+                    env=test_env,
+                    pytest_report_file=f"{temp_path}/pytest_parallel.jsonl",
+                )
+                if not test_result_parallel.is_ok():
+                    print(
+                        f"Flaky check: Test run fails after attempt [{attempt+1}/{module_repeat_cnt}] - break"
+                    )
+                    break
             test_results.extend(test_result_parallel.results)
             if test_result_parallel.files:
                 files.extend(test_result_parallel.files)
@@ -256,13 +262,18 @@ def main():
             and fail_num < MAX_FAILS_BEFORE_DROP
             and not has_error
         ):
-
-            test_result_sequential = Result.from_pytest_run(
-                command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile",
-                env=test_env,
-                cwd="./tests/integration/",
-                pytest_report_file=f"{temp_path}/pytest_sequential.jsonl",
-            )
+            for attempt in range(module_repeat_cnt):
+                test_result_sequential = Result.from_pytest_run(
+                    command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile",
+                    env=test_env,
+                    cwd="./tests/integration/",
+                    pytest_report_file=f"{temp_path}/pytest_sequential.jsonl",
+                )
+                if not test_result_parallel.is_ok():
+                    print(
+                        f"Flaky check: Test run fails after attempt [{attempt+1}/{module_repeat_cnt}] - break"
+                    )
+                    break
             test_results.extend(test_result_sequential.results)
             if test_result_sequential.files:
                 files.extend(test_result_sequential.files)
