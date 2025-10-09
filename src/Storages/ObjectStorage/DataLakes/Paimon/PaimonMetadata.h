@@ -51,7 +51,7 @@ public:
     {
     }
 
-    NamesAndTypesList getTableSchema() const override;
+    NamesAndTypesList getTableSchema(ContextPtr /*local_context*/) const override;
 
     bool operator==(const IDataLakeMetadata & other) const override
     {
@@ -63,14 +63,18 @@ public:
 
     bool supportsUpdate() const override { return true; }
 
-    bool update(const ContextPtr & local_context) override;
+    void update(const ContextPtr & local_context) override;
 
     ObjectIterator
-    iterate(const ActionsDAG * /* filter_dag */, FileProgressCallback /* callback */, size_t /* list_batch_size */, ContextPtr context)
+    iterate(const ActionsDAG * /* filter_dag */, 
+        FileProgressCallback callback, 
+        size_t /* list_batch_size */, 
+        StorageMetadataPtr /* storage_metadata */, 
+        ContextPtr /* context */)
         const override;
-
+    const char * getName() const override { return name; }
 private:
-    bool updateState();
+    void updateState();
     void checkSupportCofiguration();
 
     mutable SharedMutex mutex;

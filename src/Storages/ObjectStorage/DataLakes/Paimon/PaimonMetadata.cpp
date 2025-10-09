@@ -63,7 +63,7 @@ DataLakeMetadataPtr PaimonMetadata::create(
     return std::make_unique<PaimonMetadata>(object_storage, configuration_ptr, local_context, schema_json, table_client_ptr);
 }
 
-bool PaimonMetadata::updateState()
+void PaimonMetadata::updateState()
 {
     std::lock_guard lock(mutex);
     /// update schema
@@ -95,7 +95,7 @@ bool PaimonMetadata::updateState()
     auto snapshot_meta_info = table_client_ptr->getLastestTableSnapshotInfo();
     if (snapshot.has_value() && snapshot_meta_info.first == snapshot->id)
     {
-        return false;
+        return;
     }
     snapshot = table_client_ptr->getSnapshot(snapshot_meta_info);
     /// init manifest by snapshot
@@ -116,7 +116,6 @@ bool PaimonMetadata::updateState()
     {
         delta_manifest.emplace_back(table_client_ptr->getDataManifest(manifest_meta.file_name, *table_schema, getOrDefault(PAIMON_DEFAULT_PARTITION_NAME, PARTITION_DEFAULT_VALUE, table_schema->options)));
     }
-    return true;
 }
 
 PaimonMetadata::PaimonMetadata(
@@ -135,7 +134,7 @@ PaimonMetadata::PaimonMetadata(
     updateState();
 }
 
-NamesAndTypesList PaimonMetadata::getTableSchema() const
+NamesAndTypesList PaimonMetadata::getTableSchema(ContextPtr /*local_context*/) const
 {
     SharedLockGuard shared_lock(mutex);
     NamesAndTypesList names_types_list;
@@ -149,13 +148,17 @@ NamesAndTypesList PaimonMetadata::getTableSchema() const
     return names_types_list;
 }
 
-bool PaimonMetadata::update(const ContextPtr &)
+void PaimonMetadata::update(const ContextPtr &)
 {
-    return updateState();
+    updateState();
 }
 
 ObjectIterator PaimonMetadata::iterate(
-    const ActionsDAG * /* filter_dag */, FileProgressCallback callback, size_t /* list_batch_size */, ContextPtr /* context */) const
+    const ActionsDAG * /* filter_dag */, 
+    FileProgressCallback callback, 
+    size_t /* list_batch_size */, 
+    StorageMetadataPtr /*storage_metadata*/, 
+    ContextPtr /* context */) const
 {
     SharedLockGuard shared_lock(mutex);
     auto configuration_ptr = configuration.lock();
