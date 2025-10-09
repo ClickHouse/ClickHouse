@@ -635,7 +635,7 @@ class ClickHouseTypeMapper:
         """
         # Get all fields from schema
         available_fields = list(schema.fields)
-        if not available_fields or random.randint(1, 2) == 1:
+        if not available_fields or random.randint(1, 5) != 5:
             return PartitionSpec()
         # Randomly decide how many partitions to create (0 to max_partitions)
         num_partitions = random.randint(0, min(max_partitions, len(available_fields)))
@@ -675,7 +675,7 @@ class ClickHouseTypeMapper:
         """
         # Get all fields from schema
         available_fields = list(schema.fields)
-        if not available_fields or random.randint(1, 2) == 1:
+        if not available_fields or random.randint(1, 5) != 5:
             return SortOrder()
         # Randomly decide how many sort fields to create (0 to max_sort_fields)
         num_sort_fields = random.randint(0, min(max_sort_fields, len(available_fields)))

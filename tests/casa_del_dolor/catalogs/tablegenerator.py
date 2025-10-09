@@ -102,6 +102,7 @@ class LakeTableGenerator:
         file_format: str,
         deterministic: bool,
         next_storage: TableStorage,
+        next_catalog: LakeCatalogs,
     ) -> tuple[str, SparkTable]:
         """
         Generate a complete CREATE TABLE DDL statement with random properties
@@ -143,6 +144,7 @@ class LakeTableGenerator:
             LakeFormat.lakeformat_from_str(self.get_format()),
             self.write_format,
             next_storage,
+            next_catalog,
         )
 
         # Add Partition by, can't partition by all columns
@@ -172,7 +174,6 @@ class LakeTableGenerator:
     @abstractmethod
     def create_catalog_table(
         self,
-        catalog_type: LakeCatalogs,
         catalog_impl,
         columns: list[dict[str, str]],
         table: SparkTable,
@@ -286,7 +287,6 @@ class IcebergTableGenerator(LakeTableGenerator):
 
     def create_catalog_table(
         self,
-        catalog_type: LakeCatalogs,
         catalog_impl,
         columns: list[dict[str, str]],
         table: SparkTable,
@@ -316,7 +316,7 @@ class IcebergTableGenerator(LakeTableGenerator):
             nproperties.update(self.generate_table_properties(table))
         catalog_impl.create_table(
             identifier=("test", table.table_name),
-            location=f"s3{"a" if catalog_type == LakeCatalogs.Hive else ""}://warehouse-{"rest" if catalog_type == LakeCatalogs.REST else ("hms" if catalog_type == LakeCatalogs.Hive else "glue")}{"/data" if catalog_type == LakeCatalogs.Hive else ""}",
+            location=f"s3{"a" if table.catalog == LakeCatalogs.Hive else ""}://warehouse-{"rest" if table.catalog == LakeCatalogs.REST else ("hms" if table.catalog == LakeCatalogs.Hive else "glue")}/data",
             schema=nschema,
             partition_spec=self.type_mapper.generate_random_iceberg_partition_spec(
                 nschema
@@ -794,7 +794,6 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
 
     def create_catalog_table(
         self,
-        catalog_type: LakeCatalogs,
         catalog_impl,
         columns: list[dict[str, str]],
         table: SparkTable,

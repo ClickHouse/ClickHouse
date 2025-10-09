@@ -169,7 +169,7 @@ class BuzzHouseGenerator(Generator):
                     "server_hostname": "hive",
                     "region": "us-east-1",
                     "port": 9083,
-                    "warehouse": "warehouse-hms/data",
+                    "warehouse": "warehouse-hms",
                 }
             if args.with_rest:
                 buzz_config["dolor"]["rest"] = {

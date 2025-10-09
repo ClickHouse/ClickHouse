@@ -2281,6 +2281,8 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
         /// For Iceberg tables created from Spark, don't give table schema
         ct->clear_table_def();
     }
+    /// For catalog tables, they are already created in the catalog
+    ct->set_if_not_exists(next.getLakeCatalog() != LakeCatalog::None);
     if (next.hasDatabasePeer())
     {
         flatTableColumnPath(0, next.cols, [](const SQLColumn & c) { return c.canBeInserted(); });

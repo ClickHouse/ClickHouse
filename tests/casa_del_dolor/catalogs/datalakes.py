@@ -437,7 +437,7 @@ logger.jetty.level = warn
 
                     builder.config(
                         f"spark.sql.catalog.{catalog_name}.warehouse",
-                        "s3://warehouse-glue",
+                        "s3://warehouse-glue/data",
                     )
             elif catalog == LakeCatalogs.Hive:
                 builder.config(
@@ -517,7 +517,7 @@ logger.jetty.level = warn
 
                     builder.config(
                         f"spark.sql.catalog.{catalog_name}.warehouse",
-                        "s3://warehouse-rest",
+                        "s3://warehouse-rest/data",
                     )
             elif catalog == LakeCatalogs.Unity and lake == LakeFormat.DeltaLake:
                 builder.config(
@@ -821,6 +821,7 @@ logger.jetty.level = warn
             data["format"],
             data["deterministic"] > 0,
             next_storage,
+            catalog_type,
         )
         next_session = self.get_next_session(
             cluster,
@@ -840,7 +841,7 @@ logger.jetty.level = warn
                 in (LakeCatalogs.Hive, LakeCatalogs.REST, LakeCatalogs.Glue)
             ):
                 next_table_generator.create_catalog_table(
-                    catalog_type, catalog_impl, data["columns"], next_table
+                    catalog_impl, data["columns"], next_table
                 )
             elif catalog_type == LakeCatalogs.NoCatalog:
                 self.run_query(next_session, next_sql)

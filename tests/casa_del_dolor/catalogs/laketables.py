@@ -119,6 +119,7 @@ class SparkTable:
         _lake_format: LakeFormat,
         _file_format: FileFormat,
         _storage: TableStorage,
+        _catalog: LakeCatalogs,
     ):
         self.catalog_name = _catalog_name
         self.database_name = _database_name
@@ -128,6 +129,7 @@ class SparkTable:
         self.lake_format = _lake_format
         self.file_format = _file_format
         self.storage = _storage
+        self.catalog = _catalog
 
     def get_namespace_path(self) -> str:
         return f"test.{self.table_name}"
@@ -136,7 +138,9 @@ class SparkTable:
         return f"{self.catalog_name}.test.{self.table_name}"
 
     def get_clickhouse_path(self) -> str:
-        return f"{self.database_name}.{self.table_name}"
+        if self.catalog == LakeCatalogs.NoCatalog:
+            return f"{self.database_name}.{self.table_name}"
+        return f"{self.database_name}.`test,{self.table_name}`"
 
     def flat_columns(self) -> dict[str, DataType]:
         res = {}
