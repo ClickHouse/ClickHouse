@@ -1493,7 +1493,7 @@ static std::pair<UInt64, bool> getLimitAbsAndSign(const ASTPtr & node, const Con
         if (!converted_value.isNull())
         {
             Int64 int_value = converted_value.safeGet<Int64>();
-            assert(int_value < 0 && "positive values should be handled with UInt64");
+            assert(int_value < 0 && "nonnegative limit/offset values should be handled with UInt64");
 
             // We need to be careful because -Int64::min() is not representable as Int64
             const UInt64 magnitude = (int_value == std::numeric_limits<Int64>::min())
@@ -1529,9 +1529,9 @@ std::tuple<UInt64, UInt64, bool> InterpreterSelectQuery::getLimitLengthAndOffset
             bool off_sign{};
             std::tie(offset, off_sign) = getLimitAbsAndSign(query.limitOffset(), context_, "OFFSET");
 
-            if (lim_sign ^ off_sign)
+            if (lim_sign != off_sign) // one is negative, another is positive
             {
-                throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION, "LIMIT and OFFSET should be both positive or both negative");
+                throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION, "LIMIT and OFFSET should be both nonnegative or both negative");
             }
         }
 
@@ -3241,6 +3241,9 @@ void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
     {
         auto [limit_length, limit_offset, is_negative] = getLimitLengthAndOffset(query, context);
 
+        if (is_negative)
+            return;
+
         if (do_not_skip_offset)
         {
             if (limit_length > std::numeric_limits<UInt64>::max() - limit_offset)
@@ -3277,7 +3280,7 @@ void InterpreterSelectQuery::executeLimitBy(QueryPlan & query_plan)
     auto [length, offset, is_negative] = getLimitLengthAndOffset(query, context);
 
     if (is_negative)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Negative LIMIT BY is not supported");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Negative LIMIT BY is not supported yet");
 
     auto limit_by = std::make_unique<LimitByStep>(query_plan.getCurrentHeader(), length, offset, columns);
     query_plan.addStep(std::move(limit_by));
@@ -3348,7 +3351,7 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
             order_descr = getSortDescription(query, context);
 
             if (is_negative)
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Negative LIMIT WITH TIES is not supported");
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Negative LIMIT WITH TIES is not supported yet");
         }
 
         auto limit = std::make_unique<LimitStep>(
