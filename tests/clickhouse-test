@@ -32,6 +32,7 @@ import socket
 import string
 import subprocess
 import sys
+import shlex
 import traceback
 import urllib.parse
 
@@ -1253,6 +1254,62 @@ def replace_in_file_re(filename, what, with_what):
     os.system(f"LC_ALL=C sed -i -e 's/{what}/{with_what}/' {filename}")
 
 
+def _coerce_value(v: str):
+    # ints, floats, booleans; leave "32Mi" etc. as strings
+    vl = v.lower()
+    if vl in ("true", "false"):
+        return vl == "true"
+    try:
+        if "." in v:
+            return float(v)
+        return int(v)
+    except ValueError:
+        return v
+
+
+def parse_settings_cli_blob(blob: str) -> Dict[str, object]:
+    """
+    Accepts strings like:
+      "--max_threads 1 --fsync_metadata 1 --http_wait_end_of_query True"
+    Returns dict: {"max_threads": 1, "fsync_metadata": 1, "http_wait_end_of_query": True}
+    """
+    if not blob:
+        return {}
+    tokens = shlex.split(blob)
+    out: Dict[str, object] = {}
+    i = 0
+    while i < len(tokens):
+        key = tokens[i].lstrip("-")
+        if not key:
+            i += 1
+            continue
+        # value may be missing → treat as boolean flag
+        if i + 1 >= len(tokens) or tokens[i + 1].startswith("--"):
+            out[key] = True
+            i += 1
+            continue
+        out[key] = _coerce_value(tokens[i + 1])
+        i += 2
+    return out
+
+
+def load_settings_from_file(path: str, *, kind: str) -> Dict[str, object]:
+    """
+    File must contain ONLY the inner blob (space-separated `--k v` pairs),
+    NOT the outer `--settings "..."` or `--merge-tree-settings "..."`.
+    """
+    with open(path, "r", encoding="utf-8") as f:
+        content = f.read().strip()
+    bad_prefixes = ("--settings", "--merge-tree-settings")
+    for p in bad_prefixes:
+        if content.startswith(p):
+            raise ValueError(
+                f"{kind} file '{path}' must NOT include the leading '{p}'; "
+                "put only the inner space-separated --key value pairs."
+            )
+    return parse_settings_cli_blob(content)
+
+
 # unlike functools.cache() ignore args
 # (since args can be non-hashable)
 def cache_ignore_args(func):
@@ -1500,11 +1557,20 @@ class TestCase:
             or self.has_show_create_table_in_test()
         )
 
-        if self.randomize_settings:
+        # If user supplied explicit settings, use exactly those (no randomization)
+        if getattr(args, "fixed_settings_dict", None):
+            self.randomize_settings = True
+            self.random_settings = dict(args.fixed_settings_dict)
+        if getattr(args, "fixed_merge_tree_settings_dict", None):
+            self.randomize_merge_tree_settings = True
+            self.merge_tree_random_settings = dict(args.fixed_merge_tree_settings_dict)
+
+
+        if self.randomize_settings and not getattr(args, "fixed_settings_dict", None):
             self.random_settings = SettingsRandomizer.get_random_settings(args)
             self.apply_random_settings_limits(self.random_settings)
 
-        if self.randomize_merge_tree_settings:
+        if self.randomize_merge_tree_settings and not getattr(args, "fixed_merge_tree_settings_dict", None):
             self.merge_tree_random_settings = (
                 MergeTreeSettingsRandomizer.get_random_settings(args)
             )
@@ -3889,6 +3955,30 @@ def parse_args():
         default=False,
         help="Disable MergeTree settings randomization",
     )
+    # Explicit, non-random settings (copy-paste friendly)
+    parser.add_argument(
+        "--settings",
+        type=str,
+        help='Explicit ClickHouse settings to use. Paste the CI blob inside quotes, e.g.: '
+             '--settings "--max_threads 1 --fsync_metadata 1 ..."',
+    )
+    parser.add_argument(
+        "--settings-file",
+        type=str,
+        help="Path to a file containing ONLY the inner space-separated settings blob "
+             '(e.g. "--max_threads 1 --fsync_metadata 1 ...").',
+    )
+    parser.add_argument(
+        "--merge-tree-settings",
+        type=str,
+        help='Explicit MergeTree settings to use. Paste the CI blob inside quotes, e.g.: '
+             '--merge-tree-settings "--index_granularity 8192 ..."',
+    )
+    parser.add_argument(
+        "--merge-tree-settings-file",
+        type=str,
+        help="Path to a file containing ONLY the inner space-separated MergeTree settings blob."
+    )
     parser.add_argument(
         "--run-by-hash-num",
         type=int,
@@ -4125,6 +4215,28 @@ if __name__ == "__main__":
         args = parse_args()
     except Exception as e:
         print(e, file=sys.stderr)
+        sys.exit(1)
+
+    # Collect explicit settings (if any)
+    args.fixed_settings_dict = {}
+    args.fixed_merge_tree_settings_dict = {}
+    try:
+        if getattr(args, "settings_file", None):
+            args.fixed_settings_dict.update(
+                load_settings_from_file(args.settings_file, kind="settings")
+            )
+        if getattr(args, "settings", None):
+            args.fixed_settings_dict.update(parse_settings_cli_blob(args.settings))
+        if getattr(args, "merge_tree_settings_file", None):
+            args.fixed_merge_tree_settings_dict.update(
+                load_settings_from_file(args.merge_tree_settings_file, kind="merge-tree settings")
+            )
+        if getattr(args, "merge_tree_settings", None):
+            args.fixed_merge_tree_settings_dict.update(
+                parse_settings_cli_blob(args.merge_tree_settings)
+            )
+    except Exception as _e:
+        print(f"Failed to parse provided settings: {_e}", file=sys.stderr)
         sys.exit(1)
 
     if args.queries and not os.path.isdir(args.queries):
