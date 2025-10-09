@@ -190,6 +190,7 @@ class Info:
         return None
 
     def store_kv_data(self, key, value):
+        print(f"Store workflow kv data: key [{key}], value [{value}]")
         self.env.JOB_KV_DATA[key] = value
         self.env.dump()
 
@@ -234,3 +235,9 @@ class Info:
                 print(f"Job [{subresult.name}] is not ok, status [{subresult.status}]")
                 return False
         return True
+
+    def docker_tag(self, image_name):
+        runconfig = self.get_kv_data("workflow_config")
+        if runconfig:
+            return runconfig.get("digest_dockers", None).get(image_name, None)
+        return None

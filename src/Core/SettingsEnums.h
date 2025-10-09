@@ -423,6 +423,22 @@ enum class GeoToH3ArgumentOrder : uint8_t
 
 DECLARE_SETTING_ENUM(GeoToH3ArgumentOrder)
 
+enum class MergeTreeSerializationInfoVersion : uint8_t
+{
+    DEFAULT = 0,
+    WITH_TYPES = 1,
+};
+
+DECLARE_SETTING_ENUM(MergeTreeSerializationInfoVersion)
+
+enum class MergeTreeStringSerializationVersion : uint8_t
+{
+    DEFAULT = 0,
+    WITH_SIZE_STREAM = 1,
+};
+
+DECLARE_SETTING_ENUM(MergeTreeStringSerializationVersion)
+
 enum class MergeTreeObjectSerializationVersion : uint8_t
 {
     V1,
@@ -459,4 +475,15 @@ enum class SearchOrphanedPartsDisks : uint8_t
 
 DECLARE_SETTING_ENUM(SearchOrphanedPartsDisks)
 
+enum class IcebergMetadataLogLevel : uint8_t
+{
+    None = 0,
+    Metadata = 1,
+    ManifestListMetadata = 2,
+    ManifestListEntry = 3,
+    ManifestFileMetadata = 4,
+    ManifestFileEntry = 5,
+};
+
+DECLARE_SETTING_ENUM(IcebergMetadataLogLevel)
 }

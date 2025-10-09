@@ -9,7 +9,11 @@
 #include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
+#include <IO/AzureBlobStorage/copyAzureBlobStorageFile.h>
 
+
+#include <IO/WriteBufferFromString.h>
+#include <IO/copyData.h>
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #include <Disks/ObjectStorages/ObjectStorageIteratorAsync.h>
 #include <Interpreters/Context.h>
@@ -212,7 +216,6 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
 std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObject( /// NOLINT
     const StoredObject & object,
     const ReadSettings & read_settings,
-    std::optional<size_t>,
     std::optional<size_t>) const
 {
     auto settings_ptr = settings.get();
@@ -227,6 +230,23 @@ std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObject( /// NOLI
         read_settings.remote_read_buffer_restrict_seek,
         /* read_until_position */0);
 }
+
+SmallObjectDataWithMetadata AzureObjectStorage::readSmallObjectAndGetObjectMetadata( /// NOLINT
+    const StoredObject & object,
+    const ReadSettings & read_settings,
+    size_t max_size_bytes,
+    std::optional<size_t> read_hint) const
+{
+    auto buffer = readObject(object, read_settings, read_hint);
+    SmallObjectDataWithMetadata result;
+    WriteBufferFromString out(result.data);
+    copyDataMaxBytes(*buffer, out, max_size_bytes);
+    out.finalize();
+
+    result.metadata = dynamic_cast<ReadBufferFromAzureBlobStorage *>(buffer.get())->getObjectMetadataFromTheLastRequest();
+    return result;
+}
+
 
 /// Open the file for write and return WriteBufferFromFileBase object.
 std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NOLINT
@@ -324,29 +344,50 @@ ObjectMetadata AzureObjectStorage::getObjectMetadata(const std::string & path) c
     return result;
 }
 
+std::optional<ObjectMetadata> AzureObjectStorage::tryGetObjectMetadata(const std::string & path) const
+try
+{
+    return getObjectMetadata(path);
+}
+catch (const Azure::Storage::StorageException & e)
+{
+    if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
+        return {};
+    throw;
+}
+
 void AzureObjectStorage::copyObject( /// NOLINT
     const StoredObject & object_from,
     const StoredObject & object_to,
-    const ReadSettings &,
+    const ReadSettings & read_settings,
     const WriteSettings &,
     std::optional<ObjectAttributes> object_to_attributes)
 {
+    auto settings_ptr = settings.get();
     auto client_ptr = client.get();
-    auto dest_blob_client = client_ptr->GetBlobClient(object_to.remote_path);
-    auto source_blob_client = client_ptr->GetBlobClient(object_from.remote_path);
-
-    Azure::Storage::Blobs::CopyBlobFromUriOptions copy_options;
-    if (object_to_attributes.has_value())
-    {
-        for (const auto & [key, value] : *object_to_attributes)
-            copy_options.Metadata[key] = value;
-    }
+    auto object_metadata = getObjectMetadata(object_from.remote_path);
 
     ProfileEvents::increment(ProfileEvents::AzureCopyObject);
     if (client_ptr->IsClientForDisk())
         ProfileEvents::increment(ProfileEvents::DiskAzureCopyObject);
+    LOG_TRACE(log, "AzureObjectStorage::copyObject of size {}", object_metadata.size_bytes);
 
-    dest_blob_client.CopyFromUri(source_blob_client.GetUrl(), copy_options);
+    auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), "AzureObjCopy");
+
+    copyAzureBlobStorageFile(
+        client_ptr,
+        client_ptr,
+        connection_params.getContainer(),
+        object_from.remote_path,
+        0,
+        object_metadata.size_bytes,
+        connection_params.getContainer(),
+        object_to.remote_path,
+        settings_ptr,
+        read_settings,
+        object_to_attributes,
+        true,
+        scheduler);
 }
 
 void AzureObjectStorage::applyNewSettings(
@@ -374,11 +415,6 @@ void AzureObjectStorage::applyNewSettings(
     client.set(std::move(new_client));
 }
 
-
-ObjectStorageConnectionInfoPtr AzureObjectStorage::getConnectionInfo() const
-{
-    return DB::getAzureObjectStorageConnectionInfo(connection_params);
-}
 
 }
 

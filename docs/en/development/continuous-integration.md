@@ -4,6 +4,7 @@ sidebar_label: 'Continuous Integration (CI)'
 sidebar_position: 55
 slug: /development/continuous-integration
 title: 'Continuous Integration (CI)'
+doc_type: 'reference'
 ---
 
 # Continuous Integration (CI)
@@ -156,17 +157,18 @@ To run a local debug build:
 
 ```bash
 python -m ci.praktika run "Build (amd_debug)"
+```
 
 If the above approach does not work for you, use the cmake options from the build log and follow the [general build process](../development/build.md).
-
-
 ## Functional stateless tests {#functional-stateless-tests}
+
 Runs [stateless functional tests](tests.md#functional-tests) for ClickHouse binaries built in various configurations -- release, debug, with sanitizers, etc.
 Look at the report to see which tests fail, then reproduce the failure locally as described [here](/development/tests#functional-tests).
 Note that you have to use the correct build configuration to reproduce -- a test might fail under AddressSanitizer but pass in Debug.
 Download the binary from [CI build checks page](/install/advanced), or build it locally.
 
 ## Integration tests {#integration-tests}
+
 Runs [integration tests](tests.md#integration-tests).
 
 ## Bugfix validate check {#bugfix-validate-check}
@@ -175,6 +177,7 @@ Checks that either a new test (functional or integration) or there some changed 
 This check is triggered when pull request has "pr-bugfix" label.
 
 ## Stress test {#stress-test}
+
 Runs stateless functional tests concurrently from several clients to detect concurrency-related errors. If it fails:
 
     * Fix all other test failures first;
@@ -187,10 +190,12 @@ Checks that `clickhouse` binary runs on distributions with old libc versions.
 If it fails, ask a maintainer for help.
 
 ## AST fuzzer {#ast-fuzzer}
+
 Runs randomly generated queries to catch program errors.
 If it fails, ask a maintainer for help.
 
 ## Performance tests {#performance-tests}
+
 Measure changes in query performance.
 This is the longest check that takes just below 6 hours to run.
 The performance test report is described in detail [here](https://github.com/ClickHouse/ClickHouse/tree/master/docker/test/performance-comparison#how-to-read-the-report).
