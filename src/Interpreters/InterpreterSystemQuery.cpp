@@ -72,6 +72,7 @@
 #include <Storages/StorageURL.h>
 #include <Storages/System/StorageSystemFilesystemCache.h>
 #include <base/coverage.h>
+#include <Common/getRandomASCIIString.h>
 #include <Common/ActionLock.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/DNSResolver.h>
@@ -872,6 +873,7 @@ BlockIO InterpreterSystemQuery::execute()
             result = Unfreezer(getContext()).systemUnfreeze(query.backup_name);
             break;
         }
+#if USE_LIBFIU
         case Type::ENABLE_FAILPOINT:
         {
             getContext()->checkAccess(AccessType::SYSTEM_FAILPOINT);
@@ -892,6 +894,12 @@ BlockIO InterpreterSystemQuery::execute()
             LOG_TRACE(log, "Finished waiting for failpoint {}", query.fail_point_name);
             break;
         }
+#else // USE_LIBFIU
+        case Type::ENABLE_FAILPOINT:
+        case Type::DISABLE_FAILPOINT:
+        case Type::WAIT_FAILPOINT:
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without FIU support");
+#endif // USE_LIBFIU
         case Type::RESET_COVERAGE:
         {
             getContext()->checkAccess(AccessType::SYSTEM);
@@ -925,7 +933,7 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::JEMALLOC_FLUSH_PROFILE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_JEMALLOC);
-            auto filename = Jemalloc::flushProfile(query.jemalloc_profile_path.empty() ? "/tmp/jemalloc_clickhouse" : query.jemalloc_profile_path);
+            auto filename = Jemalloc::flushProfile("/tmp/jemalloc_clickhouse");
             auto col = ColumnString::create();
             col->insertData(filename.data(), filename.size());
             Columns columns;
