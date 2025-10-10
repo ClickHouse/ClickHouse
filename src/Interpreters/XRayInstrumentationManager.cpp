@@ -273,7 +273,8 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
     };
     std::latch work_done(num_jobs);
 
-    auto work = [&function_addresses, &binary_path, &work_done](Job & job) {
+    auto work = [&function_addresses, &binary_path, &work_done](Job & job)
+    {
         LOG_DEBUG(logger, "Start work job with ranges {} to {}", job.range.first, job.range.second);
 
         /// Initialize the LLVM symbolizer to resolve function names
