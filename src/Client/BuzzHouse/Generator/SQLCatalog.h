@@ -145,6 +145,7 @@ public:
 struct SQLDatabase
 {
 public:
+    bool random_engine = false;
     uint32_t dname = 0;
     DatabaseEngineValues deng;
     std::optional<String> cluster;
@@ -154,6 +155,8 @@ public:
     LakeCatalog catalog = LakeCatalog::None;
     LakeStorage storage = LakeStorage::All;
     LakeFormat format = LakeFormat::All;
+
+    static void setRandomDatabase(RandomGenerator & rg, SQLDatabase & d) { d.random_engine = rg.nextMediumNumber() < 4; }
 
     static void setName(Database * db, const uint32_t name) { db->set_database("d" + std::to_string(name)); }
 
@@ -193,7 +196,7 @@ public:
 struct SQLBase
 {
 public:
-    bool is_temp = false, is_deterministic = false, has_metadata = false, has_partition_by = false;
+    bool is_temp = false, is_deterministic = false, has_metadata = false, has_partition_by = false, random_engine = false;
     uint32_t tname = 0;
     std::shared_ptr<SQLDatabase> db = nullptr;
     std::optional<String> cluster, file_comp, partition_strategy, partition_columns_in_data_file, storage_class_name, host_params,
@@ -212,7 +215,11 @@ public:
     SQLBase(SQLBase &&) = default;
     SQLBase & operator=(SQLBase &&) = default;
 
-    static void setDeterministic(RandomGenerator & rg, SQLBase & b) { b.is_deterministic = rg.nextSmallNumber() < 8; }
+    static void setDeterministic(RandomGenerator & rg, SQLBase & b)
+    {
+        b.is_deterministic = rg.nextSmallNumber() < 8;
+        b.random_engine = !b.is_deterministic && rg.nextMediumNumber() < 16;
+    }
 
     static bool supportsFinal(const TableEngineValues teng)
     {
@@ -352,6 +359,8 @@ public:
     String getSparkCatalogName() const;
 
     void setTablePath(RandomGenerator & rg, const FuzzConfig & fc, bool has_dolor);
+
+    String getTablePath(const FuzzConfig & fc) const;
 
     String getTablePath(RandomGenerator & rg, const FuzzConfig & fc, bool allow_not_deterministic) const;
 

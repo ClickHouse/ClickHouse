@@ -58,7 +58,6 @@ void StatementGenerator::addColNestedAccess(RandomGenerator & rg, ExprColumn * e
                 const uint32_t noption2 = rg.nextMediumNumber();
                 JSONColumn * jcol = i == 0 ? subcols->mutable_jcol() : subcols->add_other_jcols();
 
-                this->width++;
                 if (noption2 < 31)
                 {
                     jcol->set_jcol(true);
@@ -68,6 +67,7 @@ void StatementGenerator::addColNestedAccess(RandomGenerator & rg, ExprColumn * e
                     jcol->set_jarray(0);
                 }
                 jcol->mutable_col()->set_column(rg.nextJSONCol());
+                this->width++;
             }
             if (noption < 4)
             {

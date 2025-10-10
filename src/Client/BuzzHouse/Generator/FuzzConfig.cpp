@@ -63,6 +63,7 @@ static std::optional<ServerCredentials> loadServerCredentials(
     String unix_socket;
     String user = "test";
     String password;
+    String secret;
     String database = "test";
     String named_collection;
     std::filesystem::path user_files_dir = std::filesystem::temp_directory_path();
@@ -81,6 +82,7 @@ static std::optional<ServerCredentials> loadServerCredentials(
            {"unix_socket", [&](const JSONObjectType & value) { unix_socket = String(value.getString()); }},
            {"user", [&](const JSONObjectType & value) { user = String(value.getString()); }},
            {"password", [&](const JSONObjectType & value) { password = String(value.getString()); }},
+           {"secret", [&](const JSONObjectType & value) { secret = String(value.getString()); }},
            {"database", [&](const JSONObjectType & value) { database = String(value.getString()); }},
            {"named_collection", [&](const JSONObjectType & value) { named_collection = String(value.getString()); }},
            {"user_files_dir", [&](const JSONObjectType & value) { user_files_dir = std::filesystem::path(String(value.getString())); }},
@@ -110,6 +112,7 @@ static std::optional<ServerCredentials> loadServerCredentials(
         unix_socket,
         user,
         password,
+        secret,
         database,
         named_collection,
         user_files_dir,
