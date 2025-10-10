@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/Scheduler/ResourceLink.h>
+#include <Common/Scheduler/WorkloadSettings.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
 
