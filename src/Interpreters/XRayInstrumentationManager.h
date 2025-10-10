@@ -34,7 +34,7 @@ class XRayInstrumentationManager
 public:
     struct InstrumentedFunctionInfo
     {
-        uint64_t instrumentation_point_id;
+        uint64_t id;
         uint32_t function_id;
         String function_name;
         String handler_name;

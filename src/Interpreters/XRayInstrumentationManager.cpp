@@ -142,7 +142,7 @@ void XRayInstrumentationManager::unpatchFunction(uint64_t instrumentation_point_
     bool found = false;
     for (const auto & function_info : instrumented_functions)
     {
-        if (function_info.instrumentation_point_id == instrumentation_point_id)
+        if (function_info.id == instrumentation_point_id)
         {
             instrumented_function = function_info;
             found = true;
