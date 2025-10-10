@@ -34,7 +34,7 @@ public:
         const KeyMetadataPtr key_metadata;
 
         std::atomic<size_t> size;
-        size_t hits = 0;
+        std::atomic<size_t> hits = 0;
         std::atomic<bool> invalidated = false;
 
         std::string toString() const { return fmt::format("{}:{}:{}", key, offset, size.load()); }

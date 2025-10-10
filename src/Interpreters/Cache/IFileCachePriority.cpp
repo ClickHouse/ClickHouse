@@ -41,7 +41,7 @@ IFileCachePriority::Entry::Entry(const Entry & other)
     , offset(other.offset)
     , key_metadata(other.key_metadata)
     , size(other.size.load())
-    , hits(other.hits)
+    , hits(other.hits.load())
 {
 }
 
