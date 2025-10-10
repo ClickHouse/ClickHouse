@@ -37,6 +37,8 @@ public:
     /// Returns ResourceLink that should be used to access resource.
     /// Returned link is valid until classifier destruction.
     virtual ResourceLink get(const String & resource_name) = 0;
+
+    virtual WorkloadSettings getWorkloadSettings(const String & resource_name) const { return {}; }
 };
 
 using ClassifierPtr = std::shared_ptr<IClassifier>;

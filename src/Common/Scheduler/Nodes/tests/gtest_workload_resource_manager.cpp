@@ -1283,8 +1283,9 @@ TEST(SchedulerWorkloadResourceManager, MaxCPUsDerivedFromShare)
     ClassifierPtr c = t.manager->acquire("all");
 
     // The expected hard cap is max_cpu_share * getNumberOfCPUCoresToUse()
+    WorkloadSettings settings = c->getWorkloadSettings("cpu");
     double expected_cap = 0.5 * getNumberOfCPUCoresToUse();
-    double actual_cap = c->getSettings().max_cpus;
+    double actual_cap = settings.max_cpus;
 
     EXPECT_DOUBLE_EQ(actual_cap, expected_cap);
 }
