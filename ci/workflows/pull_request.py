@@ -20,6 +20,10 @@ FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES = [
 
 REGULAR_BUILD_NAMES = [job.name for job in JobConfigs.build_jobs]
 
+PLAIN_FUNCTIONAL_TEST_JOB = [
+    j for j in JobConfigs.functional_tests_jobs if "amd_debug, parallel" in j.name
+][0]
+
 workflow = Workflow.Config(
     name="PR",
     event=Workflow.Event.PULL_REQUEST,
@@ -138,6 +142,12 @@ workflow = Workflow.Config(
         "python3 ./ci/jobs/scripts/workflow_hooks/new_tests_check.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/can_be_merged.py",
     ],
+    job_aliases={
+        "integration": JobConfigs.integration_test_jobs_non_required[
+            0
+        ].name,  # plain integration test job, no old analyzer, no dist plan
+        "functional": PLAIN_FUNCTIONAL_TEST_JOB.name,
+    },
 )
 
 WORKFLOWS = [
