@@ -20,8 +20,8 @@ sidebar_position: 51
 
 ### Table/Database discovery {#discovery}
 
-* `SHOW TABLES FROM dboverlay` — returns the **union** of member database tables. The order of the results are in alphabatical order ascending.
-* `SELECT … FROM dboverlay.table` — **reads** transparently hit the underlying table. The results are following the orginial table ordering. In case two databases contain tables with the same name, the table from the first defined database appearing in the `CREATE` statement of the `Overlay` database will be used.
+* `SHOW TABLES FROM dboverlay` — returns the **union** of member database tables. The order of the results are in alphabetical order ascending.
+* `SELECT … FROM dboverlay.table` — **reads** transparently hit the underlying table. The results are following the original table ordering. In case two databases contain tables with the same name, the table from the first defined database appearing in the `CREATE` statement of the `Overlay` database will be used.
 
 ### Mutating operations (facade mode) {#operations}
 
