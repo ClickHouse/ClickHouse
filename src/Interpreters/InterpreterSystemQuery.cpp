@@ -1611,7 +1611,7 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
 
 bool InterpreterSystemQuery::trySyncReplica(StoragePtr table, SyncReplicaMode sync_replica_mode, const std::unordered_set<String> & src_replicas, ContextPtr context_)
  {
-    auto table_id = table->getStorageID();
+    auto table_id_ = table->getStorageID();
 
     /// If materialized view, sync its target table.
     for (int i = 0;; ++i)
@@ -1632,14 +1632,14 @@ bool InterpreterSystemQuery::trySyncReplica(StoragePtr table, SyncReplicaMode sy
         auto sync_timeout = context_->getSettingsRef()[Setting::receive_timeout].totalMilliseconds();
         if (!storage_replicated->waitForProcessingQueue(sync_timeout, sync_replica_mode, src_replicas))
         {
-            LOG_ERROR(log, "SYNC REPLICA {}: Timed out.", table_id.getNameForLogs());
+            LOG_ERROR(log, "SYNC REPLICA {}: Timed out.", table_id_.getNameForLogs());
             throw Exception(
                 ErrorCodes::TIMEOUT_EXCEEDED,
                 "SYNC REPLICA {}: command timed out. "
                 "See the 'receive_timeout' setting",
-                table_id.getNameForLogs());
+                table_id_.getNameForLogs());
         }
-        LOG_TRACE(log, "SYNC REPLICA {}: OK", table_id.getNameForLogs());
+        LOG_TRACE(log, "SYNC REPLICA {}: OK", table_id_.getNameForLogs());
     }
     else
         return false;
