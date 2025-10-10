@@ -32,6 +32,7 @@ public:
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
+    QueryPlanStepPtr clone() const override;
 
 private:
     ObjectStoragePtr object_storage;
