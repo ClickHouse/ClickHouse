@@ -206,7 +206,7 @@ void FunctionNode::updateTreeHashImpl(HashState & hash_state, CompareOptions com
     hash_state.update(isWindowFunction());
     hash_state.update(nulls_action);
 
-    /// is_operator is ignored here becausei t affects only AST formatting
+    /// is_operator is ignored here because it affects only AST formatting
 
     if (!compare_options.compare_types)
         return;
