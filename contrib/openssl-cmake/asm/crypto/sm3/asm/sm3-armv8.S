@@ -1,4 +1,4 @@
-// Copyright 2021-2023 The OpenSSL Project Authors. All Rights Reserved.
+// Copyright 2021-2025 The OpenSSL Project Authors. All Rights Reserved.
 //
 // Licensed under the Apache License 2.0 (the "License").  You may not use
 // this file except in compliance with the License.  You can obtain a copy
@@ -28,13 +28,13 @@ ossl_hwsm3_block_data_order:
 
 .Loop:
 	// load input
-	ld1	{v0.16b,v1.16b,v2.16b,v3.16b}, [x1], #64
+	ld1	{v0.4s,v1.4s,v2.4s,v3.4s}, [x1], #64
 	sub	w2, w2, #1
 
 	mov	v18.16b, v5.16b
 	mov	v19.16b, v6.16b
 
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v0.16b, v0.16b
 	rev32	v1.16b, v1.16b
 	rev32	v2.16b, v2.16b

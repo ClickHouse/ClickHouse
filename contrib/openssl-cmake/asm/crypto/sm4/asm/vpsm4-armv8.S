@@ -2003,7 +2003,7 @@ vpsm4_cbc_encrypt:
 	zip2	v7.2d,v9.2d,v11.2d
 	ld1	{v15.4s},[x4]
 	ld1	{v8.4s,v9.4s,v10.4s,v11.4s},[x0],#64
-	// note ivec1 and vtmpx[3] are resuing the same register
+	// note ivec1 and vtmpx[3] are reusing the same register
 	// care needs to be taken to avoid conflict
 	eor	v0.16b,v0.16b,v15.16b
 	ld1	{v12.4s,v13.4s,v14.4s,v15.4s},[x0],#64
