@@ -1364,12 +1364,14 @@ bool ClientBase::receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_)
 
 void ClientBase::onProgress(const Progress & value)
 {
+    processed_rows += value.written_rows;
+
     if (!progress_indication.updateProgress(value))
     {
         // Just a keep-alive update.
         return;
     }
-    processed_rows += value.written_rows;
+
     if (output_format)
         output_format->onProgress(value);
 
