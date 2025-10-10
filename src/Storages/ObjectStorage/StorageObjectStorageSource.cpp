@@ -213,7 +213,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
         {
             iter = std::make_shared<ObjectIteratorSplitByBuckets>(
                 std::move(iter),
-                configuration,
+                configuration->format,
                 object_storage,
                 local_context
             );
