@@ -102,8 +102,8 @@ private:
     [[clang::xray_never_instrument]] void log(int32_t func_id, XRayEntryType entry_type);
     [[clang::xray_never_instrument]] void profile(int32_t func_id, XRayEntryType entry_type);
 
-    FunctionsContainer functionsContainer;
-    std::unordered_map<String, XRayHandlerFunction> handlerNameToFunction;
+    FunctionsContainer functions_container;
+    std::unordered_map<String, XRayHandlerFunction> handler_name_to_function;
 
     SharedMutex shared_mutex;
     std::atomic<uint64_t> instrumentation_point_ids;

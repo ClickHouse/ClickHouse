@@ -10,6 +10,8 @@
 #include <thread>
 #include <unistd.h>
 #include <variant>
+#include <iterator>
+#include <latch>
 
 #include <base/getThreadId.h>
 #include <Interpreters/XRayInstrumentationProfilingLog.h>
@@ -19,6 +21,7 @@
 #include <Common/logger_useful.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/ThreadStatus.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Interpreters/Context.h>
 #include <Poco/String.h>
 
@@ -57,7 +60,7 @@ auto logger = getLogger("XRayInstrumentationManager");
 
 void XRayInstrumentationManager::registerHandler(const String & name, XRayHandlerFunction handler)
 {
-    handlerNameToFunction[name] = handler;
+    handler_name_to_function[name] = handler;
 }
 
 XRayInstrumentationManager::XRayInstrumentationManager()
@@ -92,18 +95,18 @@ HandlerType XRayInstrumentationManager::getHandlerType(const String & handler_na
 void XRayInstrumentationManager::setHandlerAndPatch(const String & function_name, const String & handler_name, std::optional<std::vector<InstrumentParameter>> &parameters, ContextPtr context)
 {
     auto handler_name_lower = Poco::toLower(handler_name);
-    auto handler_it = handlerNameToFunction.find(handler_name_lower);
-    if (handler_it == handlerNameToFunction.end())
+    auto handler_it = handler_name_to_function.find(handler_name_lower);
+    if (handler_it == handler_name_to_function.end())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown XRay handler: ({})", handler_name);
 
     int64_t function_id;
-    auto fn_it = functionsContainer.get<FunctionName>().find(function_name);
-    if (fn_it != functionsContainer.get<FunctionName>().end())
+    auto fn_it = functions_container.get<FunctionName>().find(function_name);
+    if (fn_it != functions_container.get<FunctionName>().end())
         function_id = fn_it->function_id;
     else
     {
-        auto stripped_it = functionsContainer.get<StrippedFunctionName>().find(function_name);
-        if (stripped_it != functionsContainer.get<StrippedFunctionName>().end())
+        auto stripped_it = functions_container.get<StrippedFunctionName>().find(function_name);
+        if (stripped_it != functions_container.get<StrippedFunctionName>().end())
             function_id = stripped_it->function_id;
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown function to instrument: ({})", function_name);
@@ -186,8 +189,8 @@ XRayInstrumentationManager::InstrumentedFunctions XRayInstrumentationManager::ge
 
 XRayHandlerFunction XRayInstrumentationManager::getHandler(const String & name) const
 {
-    auto it = handlerNameToFunction.find(name);
-    if (it == handlerNameToFunction.end())
+    auto it = handler_name_to_function.find(name);
+    if (it == handler_name_to_function.end())
         throw std::runtime_error("Handler not found: " + name);
     return it->second;
 }
@@ -213,8 +216,8 @@ void XRayInstrumentationManager::dispatchHandlerImpl(int32_t func_id, XRayEntryT
 
     for (const auto & [type, ip_it] : handlers_set_it->second)
     {
-        auto handler_it = handlerNameToFunction.find(ip_it->handler_name);
-        if (handler_it == handlerNameToFunction.end())
+        auto handler_it = handler_name_to_function.find(ip_it->handler_name);
+        if (handler_it == handler_name_to_function.end())
         {
             LOG_ERROR(logger, "Handler not found");
         }
@@ -255,40 +258,79 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
     /// Retrieve the mapping of function IDs to addresses
     auto function_addresses = instr_map.getFunctionAddresses();
 
-    /// Initialize the LLVM symbolizer to resolve function names
-    LLVMSymbolizer symbolizer;
-
-    functionsContainer.reserve(function_addresses.size());
+    functions_container.reserve(function_addresses.size());
 
     const auto & context = CurrentThread::getQueryContext();
+    const auto num_jobs = std::thread::hardware_concurrency();
 
-    LOG_DEBUG(logger, "Starting to parse the XRay instrumentation map. This takes a few seconds...");
+    LOG_DEBUG(logger, "Starting to parse the XRay instrumentation map using {} jobs. This takes a few seconds...", num_jobs);
 
-    /// Iterate over all instrumented functions
-    for (const auto &[func_id, addr] : function_addresses)
+    struct Job
     {
-        /// Create a SectionedAddress structure to hold the function address
-        object::SectionedAddress module_address;
-        module_address.Address = addr;
-        module_address.SectionIndex = object::SectionedAddress::UndefSection;
+        std::pair<uint64_t, uint64_t> range;
+        FunctionsContainer functions_container;
+        BackgroundSchedulePool::TaskHolder task;
+    };
+    std::latch work_done(num_jobs);
 
-        /// Default function name if symbolization fails
-        String function_name = UNKNOWN;
+    auto work = [&function_addresses, &binary_path, &work_done](Job & job) {
+        LOG_DEBUG(logger, "Start work job with ranges {} to {}", job.range.first, job.range.second);
 
-        /// Attempt to symbolize the function address (resolve its name)
-        if (auto res_or_err = symbolizer.symbolizeCode(binary_path, module_address))
+        /// Initialize the LLVM symbolizer to resolve function names
+        LLVMSymbolizer symbolizer;
+
+        /// Iterate over all instrumented functions
+        for (uint64_t i = job.range.first; i < job.range.second; ++i)
         {
-            auto &di = *res_or_err;
-            if (di.FunctionName != DILineInfo::BadString)
-                function_name = di.FunctionName;
+            auto it = std::next(function_addresses.begin(), i);
+
+            auto func_id = it->first;
+            auto addr = it->second;
+
+            /// Create a SectionedAddress structure to hold the function address
+            object::SectionedAddress module_address;
+            module_address.Address = addr;
+            module_address.SectionIndex = object::SectionedAddress::UndefSection;
+
+            /// Default function name if symbolization fails
+            String function_name = UNKNOWN;
+
+            /// Attempt to symbolize the function address (resolve its name)
+            if (auto res_or_err = symbolizer.symbolizeCode(binary_path, module_address))
+            {
+                auto & di = *res_or_err;
+                if (di.FunctionName != DILineInfo::BadString)
+                    function_name = di.FunctionName;
+            }
+
+            /// map function ID to its resolved name and vice versa
+            if (function_name != UNKNOWN)
+            {
+                auto stripped_function_name = extractNearestNamespaceAndFunction(function_name);
+                job.functions_container.get<FunctionId>().emplace(func_id, function_name, stripped_function_name);
+            }
         }
 
-        /// map function ID to its resolved name and vice versa
-        if (function_name != UNKNOWN)
-        {
-            auto stripped_function_name = extractNearestNamespaceAndFunction(function_name);
-            functionsContainer.get<FunctionId>().emplace(func_id, function_name, stripped_function_name);
-        }
+        LOG_DEBUG(logger, "Finish work job with ranges {} to {}", job.range.first, job.range.second);
+        work_done.count_down();
+    };
+
+    std::vector<Job> jobs(num_jobs);
+    auto chunk_size = function_addresses.size() / num_jobs;
+    for (size_t i = 0; i < jobs.size(); ++i)
+    {
+        auto & job = jobs[i];
+        job.range.first = i * chunk_size;
+        job.range.second = job.range.first + ((i < jobs.size() - 1 || jobs.size() == 1) ? chunk_size : function_addresses.size() % num_jobs);
+        job.task = context->getSchedulePool().createTask(fmt::format("{}_{}", "ParserXRayFunctions", i), [work, &job]() { work(job); });
+        job.task->schedule();
+    }
+
+    work_done.wait();
+    for (const auto & job : jobs)
+    {
+        for (const auto & function_info : job.functions_container)
+            functions_container.get<FunctionId>().emplace(function_info);
     }
 
     LOG_DEBUG(logger, "Finished parsing the XRay instrumentation map");
@@ -422,7 +464,7 @@ void XRayInstrumentationManager::profile(int32_t func_id, XRayEntryType entry_ty
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "No context for profiling instrumentation");
         }
         XRayInstrumentationProfilingLogElement element;
-        element.function_name = functionsContainer.get<FunctionId>().find(func_id)->stripped_function_name;
+        element.function_name = functions_container.get<FunctionId>().find(func_id)->stripped_function_name;
         element.tid = getThreadId();
         using namespace std::chrono;
 
