@@ -4743,7 +4743,10 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
             {
                 dropTable(false, true, tname);
             }
-            this->tables[tname] = std::move(this->staged_tables[tname]);
+            if (!this->staged_tables[tname].random_engine)
+            {
+                this->tables[tname] = std::move(this->staged_tables[tname]);
+            }
         }
         dropTable(true, !success, tname);
     }
@@ -4757,7 +4760,10 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
             {
                 this->views.erase(tname);
             }
-            this->views[tname] = std::move(this->staged_views[tname]);
+            if (!this->staged_views[tname].random_engine)
+            {
+                this->views[tname] = std::move(this->staged_views[tname]);
+            }
         }
         this->staged_views.erase(tname);
     }
@@ -4771,7 +4777,10 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
             {
                 this->dictionaries.erase(dname);
             }
-            this->dictionaries[dname] = std::move(this->staged_dictionaries[dname]);
+            if (!this->staged_dictionaries[dname].random_engine)
+            {
+                this->dictionaries[dname] = std::move(this->staged_dictionaries[dname]);
+            }
         }
         this->staged_dictionaries.erase(dname);
     }
@@ -5134,7 +5143,7 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
     {
         const uint32_t dname = getIdentifierFromString(query.create_database().database().database());
 
-        if (!ssq.explain().is_explain() && success)
+        if (!ssq.explain().is_explain() && success && !this->staged_databases[dname]->random_engine)
         {
             this->databases[dname] = std::move(this->staged_databases[dname]);
         }

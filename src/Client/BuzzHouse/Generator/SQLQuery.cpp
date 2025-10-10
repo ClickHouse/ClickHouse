@@ -981,8 +981,8 @@ bool StatementGenerator::joinedTableOrFunction(
 
             for (uint32_t j = 0; j < ncols; j++)
             {
-                this->width++;
                 generateExpression(rg, j == 0 ? elist->mutable_expr() : elist->add_extra_exprs());
+                this->width++;
             }
             this->width -= ncols;
         }
@@ -1562,8 +1562,6 @@ void StatementGenerator::generateWherePredicate(RandomGenerator & rg, Expr * exp
 
         for (uint32_t i = 0; i < nclauses; i++)
         {
-            this->width++;
-
             if (rg.nextSmallNumber() < 3)
             {
                 /// Negate clause
@@ -1612,6 +1610,7 @@ void StatementGenerator::generateWherePredicate(RandomGenerator & rg, Expr * exp
                 }
                 addWhereFilter(rg, available_cols, predicate);
             }
+            this->width++;
         }
         this->width -= nclauses;
     }
@@ -1744,9 +1743,9 @@ bool StatementGenerator::generateGroupBy(
 
             for (uint32_t i = 0; i < nclauses; i++)
             {
-                this->width++;
                 generateGroupByExpr(
                     rg, enforce_having, i, ncols, available_cols, gcols, i == 0 ? elist->mutable_expr() : elist->add_extra_exprs());
+                this->width++;
             }
         }
         else
@@ -1763,14 +1762,14 @@ bool StatementGenerator::generateGroupBy(
                 OptionalExprList * oel = i == 0 ? gsets->mutable_exprs() : gsets->add_other_exprs();
 
                 has_global |= nelems == 0;
-                this->width++;
                 for (uint32_t j = 0; j < nelems; j++)
                 {
-                    this->width++;
                     generateGroupByExpr(rg, enforce_having, j, ncols, available_cols, gcols, oel->add_exprs());
+                    this->width++;
                 }
                 this->width -= nelems;
                 std::shuffle(available_cols.begin(), available_cols.end(), rg.generator);
+                this->width++;
             }
             this->levels[this->current_level].global_aggregate |= gcols.empty() && has_global;
         }
@@ -1854,7 +1853,6 @@ void StatementGenerator::generateOrderBy(
             Expr * expr = eot->mutable_expr();
             const uint32_t next_option = rg.nextSmallNumber();
 
-            this->width++;
             if (!available_cols.empty() && next_option < 7)
             {
                 refColumn(rg, available_cols[i], expr);
@@ -1909,6 +1907,7 @@ void StatementGenerator::generateOrderBy(
                     }
                 }
             }
+            this->width++;
         }
         this->width -= nclauses;
 
@@ -2213,7 +2212,6 @@ void StatementGenerator::generateSelect(
         {
             ExprColAlias * eca = ssc->add_result_columns()->mutable_eca();
 
-            this->width++;
             generateExpression(rg, eca->mutable_expr());
             if (!top && rg.nextBool())
             {
@@ -2226,6 +2224,7 @@ void StatementGenerator::generateSelect(
                 this->levels[this->current_level].projections.emplace_back(ncname);
             }
             eca->set_use_parenthesis(rg.nextLargeNumber() < 11);
+            this->width++;
         }
         this->depth--;
         this->width -= ncols;

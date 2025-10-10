@@ -2946,6 +2946,9 @@ CONV_FN(DatabaseEngineParam, dep)
             DatabaseToString(ret, dep.disk().database());
             ret += "')";
             break;
+        case DatabaseEngineParamType::kExpr:
+            ExprToString(ret, dep.expr());
+            break;
         default:
             ret += "d0";
     }
