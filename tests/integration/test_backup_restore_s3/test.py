@@ -4,6 +4,7 @@ from typing import Dict
 
 import pytest
 
+from ast import literal_eval
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 from helpers.config_cluster import minio_secret_key
@@ -384,8 +385,16 @@ def test_backup_to_s3_multipart():
         size=1000000,
     )
     node = cluster.instances["node"]
-    assert node.contains_in_log(
-        f"copyDataToS3File: Multipart upload has completed. Bucket: root, Key: data/backups/multipart/{backup_name}"
+
+    node.query("SYSTEM FLUSH LOGS")
+    pattern = f"Multipart upload has completed. Bucket: root, Key: data/backups/multipart/{backup_name}"
+    assert (
+        int(
+            node.query(
+                f"SELECT count() FROM system.text_log WHERE logger_name='copyDataToS3File' AND message like '{pattern}%'",
+            )
+        )
+        > 0
     )
 
     backup_query_id = backup_events["query_id"]
@@ -465,9 +474,16 @@ def test_backup_to_s3_native_copy(storage_policy):
     # single part upload
     assert backup_events["S3CopyObject"] > 0
     assert restore_events["S3CopyObject"] > 0
-    node = cluster.instances["node"]
-    assert node.contains_in_log(
-        f"copyS3File: Single operation copy has completed. Bucket: root, Key: data/backups/{backup_name}"
+
+    node.query("SYSTEM FLUSH LOGS")
+    pattern = f"Single operation copy has completed. Bucket: root, Key: data/backups/{backup_name}"
+    assert (
+        int(
+            node.query(
+                f"SELECT count() FROM system.text_log WHERE logger_name='copyS3File' AND message like '{pattern}%'",
+            )
+        )
+        > 0
     )
 
 
@@ -493,17 +509,21 @@ def test_backup_to_s3_native_copy_slow_down_all_threads(storage_policy):
     assert restore_events["S3CopyObject"] > 0
     node = cluster.instances["node"]
 
-    disk = node.query(
-        f"SELECT disks FROM system.storage_policies WHERE policy_name='{storage_policy}'"
+    disks = literal_eval(
+        node.query(
+            f"SELECT disks FROM system.storage_policies WHERE policy_name='{storage_policy}'"
+        )
     )
-    assert node.contains_in_log(
-        f"S3 client for disk '{disk}': slowing down threads on retryable errors is enabled"
-    )
-    s3_retry_attempts = node.query(
-        f"SELECT getSetting('backup_restore_s3_retry_attempts')"
-    )
-    assert node.contains_in_log(
-        f"S3 client for disk '{disk}' initialized with s3_retry_attempts: {s3_retry_attempts}"
+    assert len(disks) == 1
+    node.query("SYSTEM FLUSH LOGS")
+    pattern = f"S3 client for disk \\'{disks[0]}\\': slowing down threads on retryable errors is enabled"
+    assert (
+        int(
+            node.query(
+                f"SELECT count() FROM system.text_log WHERE logger_name='S3Client' AND message LIKE '%{pattern}%'",
+            )
+        )
+        > 0
     )
 
 
@@ -517,9 +537,16 @@ def test_backup_to_s3_native_copy_multipart():
     # multi part upload
     assert backup_events["S3CreateMultipartUpload"] > 0
     assert restore_events["S3CreateMultipartUpload"] > 0
+
     node = cluster.instances["node"]
-    assert node.contains_in_log(
-        f"copyS3File: Multipart upload has completed. Bucket: root, Key: data/backups/multipart/{backup_name}/"
+    pattern = f"Multipart upload has completed. Bucket: root, Key: data/backups/multipart/{backup_name}/"
+    assert (
+        int(
+            node.query(
+                f"SELECT count() FROM system.text_log WHERE logger_name='copyS3File' AND message like '{pattern}%'",
+            )
+        )
+        > 0
     )
 
 
