@@ -279,8 +279,7 @@ size_t HashJoin::NullMapHolder::allocatedBytes() const
     size_t sel = selector_rows;
     if (!sel)
         sel = columns ? columns->selector.size() : rows;
-    if (sel > rows)
-        sel = rows;
+    sel = std::min(sel, rows);
     return column->allocatedBytes() * sel / rows;
 }
 
