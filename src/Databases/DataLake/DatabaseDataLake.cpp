@@ -61,10 +61,8 @@ namespace Setting
     extern const SettingsBool allow_experimental_database_glue_catalog;
     extern const SettingsBool allow_experimental_database_hms_catalog;
     extern const SettingsBool use_hive_partitioning;
-    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsString cluster_for_parallel_replicas;
-    extern const SettingsParallelReplicasMode parallel_replicas_mode;
 
 }
 
@@ -465,6 +463,10 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         return storage_cluster;
     }
 
+    bool can_use_distributed_iterator =
+        context_->getClientInfo().collaborate_with_initiator &&
+        can_use_parallel_replicas;
+
     return std::make_shared<StorageObjectStorage>(
         configuration,
         configuration->createObjectStorage(context_copy, /* is_readonly */ false),
@@ -478,7 +480,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         getCatalog(),
         /* if_not_exists*/true,
         /* is_datalake_query*/true,
-        /* distributed_processing */can_use_parallel_replicas,
+        /* distributed_processing */can_use_distributed_iterator,
         /* partition_by */nullptr,
         /* is_table_function */false,
         /* lazy_init */true);
