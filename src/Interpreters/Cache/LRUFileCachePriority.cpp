@@ -49,7 +49,7 @@ IFileCachePriority::IteratorPtr LRUFileCachePriority::add( /// NOLINT
     KeyMetadataPtr key_metadata,
     size_t offset,
     size_t size,
-    const UserInfo &,
+    const OriginInfo &,
     const CachePriorityGuard::Lock & lock,
     bool)
 {
@@ -295,7 +295,7 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
     EvictionCandidates & res,
     IFileCachePriority::IteratorPtr /* reservee */,
     bool continue_from_last_eviction_pos,
-    const UserID &,
+    const OriginInfo &,
     const CachePriorityGuard::Lock & lock)
 {
     if (canFit(size, elements, 0, 0, lock))
@@ -474,7 +474,7 @@ IFileCachePriority::PriorityDumpPtr LRUFileCachePriority::dump(const CachePriori
         res.emplace_back(FileSegment::getInfo(segment_metadata->file_segment));
         return IterationResult::CONTINUE;
     }, lock);
-    return std::make_shared<LRUPriorityDump>(res);
+    return std::make_shared<IPriorityDump>(res);
 }
 
 bool LRUFileCachePriority::modifySizeLimits(

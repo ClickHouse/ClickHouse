@@ -34,6 +34,7 @@ ColumnsDescription StorageSystemFilesystemCache::getColumnsDescription()
         {"kind", std::make_shared<DataTypeString>(), "File segment kind (used to distringuish between file segments added as a part of 'Temporary data in cache')"},
         {"unbound", std::make_shared<DataTypeNumber<UInt8>>(), "Internal implementation flag"},
         {"user_id", std::make_shared<DataTypeString>(), "User id of the user which created the file segment"},
+        {"segment_type", std::make_shared<DataTypeString>(), "Type of the segment. Used to separate data files(`.json`, `.txt` and etc) from data file(`.bin`, mark files)."},
         {"file_size", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "File size of the file to which current file segment belongs"},
     };
 }
@@ -64,7 +65,7 @@ void StorageSystemFilesystemCache::fillData(MutableColumns & res_columns, Contex
 
             const auto path = cache->getFileSegmentPath(
                 file_segment.key, file_segment.offset, file_segment.kind,
-                FileCache::UserInfo(file_segment.user_id, file_segment.user_weight));
+                file_segment.origin);
             res_columns[i++]->insert(path);
             res_columns[i++]->insert(file_segment.key.toString());
             res_columns[i++]->insert(file_segment.range_left);
@@ -77,7 +78,8 @@ void StorageSystemFilesystemCache::fillData(MutableColumns & res_columns, Contex
             res_columns[i++]->insert(file_segment.downloaded_size);
             res_columns[i++]->insert(toString(file_segment.kind));
             res_columns[i++]->insert(file_segment.is_unbound);
-            res_columns[i++]->insert(file_segment.user_id);
+            res_columns[i++]->insert(file_segment.origin.user_id);
+            res_columns[i++]->insert(toString(file_segment.origin.segment_type));
 
             std::error_code ec;
             auto size = fs::file_size(path, ec);
@@ -85,7 +87,7 @@ void StorageSystemFilesystemCache::fillData(MutableColumns & res_columns, Contex
                 res_columns[i++]->insert(size);
             else
                 res_columns[i++]->insertDefault();
-        }, FileCache::getCommonUser().user_id);
+        }, FileCache::getCommonOrigin().user_id);
     }
 }
 
