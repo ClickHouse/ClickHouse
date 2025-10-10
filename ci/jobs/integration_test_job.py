@@ -4,7 +4,6 @@ import subprocess
 import time
 from pathlib import Path
 
-from ci.defs.defs import DOCKERS
 from ci.jobs.scripts.integration_tests_configs import IMAGES_ENV, get_optimal_test_batch
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -45,10 +44,34 @@ def parse_args():
     parser.add_argument("--options", help="Job parameters: ...")
     parser.add_argument(
         "--test",
-        help="Optional test name patterns (can be space-separated and flag can repeat)",
+        help="Optional. Test name patterns (space-separated)",
         default=[],
         nargs="+",
         action="extend",
+    )
+    parser.add_argument(
+        "--count",
+        help="Optional. Number of times to repeat each test",
+        default=None,
+        type=int,
+    )
+    parser.add_argument(
+        "--debug",
+        help="Optional. Open python debug console on exception",
+        default=False,
+        action="store_true",
+    )
+    parser.add_argument(
+        "--path",
+        help="Optional. Path to custom clickhouse binary",
+        type=str,
+        default="",
+    )
+    parser.add_argument(
+        "--path_1",
+        help="Optional. Path to custom server config",
+        type=str,
+        default="",
     )
     return parser.parse_args()
 
@@ -98,6 +121,9 @@ def main():
         else:
             assert False, f"Unknown job option [{to}]"
 
+    if args.count:
+        repeat_option = f"--count {args.count} --repeat-scope=function"
+
     changed_test_modules = []
     if is_bugfix_validation or is_flaky_check:
         changed_files = info.get_changed_files()
@@ -123,15 +149,24 @@ def main():
             )
 
     clickhouse_path = f"{Utils.cwd()}/ci/tmp/clickhouse"
+    clickhouse_server_config_dir = f"{Utils.cwd()}/programs/server"
     if info.is_local_run:
-        if Path(clickhouse_path).is_file():
-            pass
-        elif Path(f"{Utils.cwd()}/build/programs/clickhouse").is_file():
-            clickhouse_path = f"{Utils.cwd()}/build/programs/clickhouse"
-        elif Path(f"{Utils.cwd()}/clickhouse").is_file():
-            clickhouse_path = f"{Utils.cwd()}/clickhouse"
+        if args.path:
+            clickhouse_path = args.path
         else:
-            raise FileNotFoundError(f"Clickhouse binary not found")
+            if Path(clickhouse_path).is_file():
+                pass
+            elif Path(f"{Utils.cwd()}/build/programs/clickhouse").is_file():
+                clickhouse_path = f"{Utils.cwd()}/build/programs/clickhouse"
+            elif Path(f"{Utils.cwd()}/clickhouse").is_file():
+                clickhouse_path = f"{Utils.cwd()}/clickhouse"
+            else:
+                raise FileNotFoundError(f"Clickhouse binary not found")
+        if args.path_1:
+            clickhouse_server_config_dir = args.path_1
+    assert Path(
+        clickhouse_server_config_dir
+    ), f"Clickhouse config dir does not exist [{clickhouse_server_config_dir}]"
     print(f"Using ClickHouse binary at [{clickhouse_path}]")
 
     Shell.check(f"chmod +x {clickhouse_path}", verbose=True, strict=True)
@@ -195,7 +230,7 @@ def main():
             assert False, f"No tag found for image [{image_name}]"
 
     test_env = {
-        "CLICKHOUSE_TESTS_BASE_CONFIG_DIR": f"{Utils.cwd()}/programs/server",
+        "CLICKHOUSE_TESTS_BASE_CONFIG_DIR": clickhouse_server_config_dir,
         "CLICKHOUSE_TESTS_SERVER_BIN_PATH": clickhouse_path,
         "CLICKHOUSE_BINARY": clickhouse_path,  # some test cases support alternative binary location
         "CLICKHOUSE_TESTS_CLIENT_BIN_PATH": clickhouse_path,
@@ -212,7 +247,7 @@ def main():
 
     if args.test:
         test_result_specific = Result.from_pytest_run(
-            command=f"{' '.join(args.test)} {repeat_option}",  # TODO: support passing --pdb for debugging
+            command=f"{' '.join(args.test)} {'--pdb' if args.debug else ''} {repeat_option}",
             cwd="./tests/integration/",
             env=test_env,
             pytest_report_file=f"{temp_path}/pytest.jsonl",
