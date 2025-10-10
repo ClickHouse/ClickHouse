@@ -1516,6 +1516,18 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0) \
+    DECLARE(Bool, use_skip_indexes_on_disjuncts, true, R"(
+Enable using data skipping indexes on predicates with OR clause(s)
+
+When enabled, skip indexes are used for identifying granules for predicates with OR clause(s)
+
+e.g WHERE A = 5 AND (B = 5 OR C = 5)
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+)", 0) \
     DECLARE(Bool, materialize_skip_indexes_on_insert, true, R"(
 If INSERTs build and store skip indexes. If disabled, skip indexes will only be built and stored [during merges](merge-tree-settings.md/#materialize_skip_indexes_on_merge) or by explicit [MATERIALIZE INDEX](/sql-reference/statements/alter/skipping-index.md/#materialize-index).
 
