@@ -5,7 +5,6 @@
 #include <Interpreters/Context.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <IO/ReadBufferFromFileBase.h>
-#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <Core/Settings.h>
 #include <Core/Defines.h>
 #include <Storages/ObjectStorage/Utils.h>
@@ -76,19 +75,43 @@ ObjectInfoPtr ObjectIteratorWithPathAndFileFilter::next(size_t id)
     return {};
 }
 
-ObjectIteratorSplittedByBuckets::ObjectIteratorSplittedByBuckets(
+ObjectIteratorSplitByBuckets::ObjectIteratorSplitByBuckets(
     ObjectIterator iterator_,
-    StorageObjectStorageConfigurationPtr configuration_,
+    const String & format_,
     ObjectStoragePtr object_storage_,
     const ContextPtr & context_)
     : WithContext(context_)
     , iterator(iterator_)
-    , configuration(configuration_)
+    , format(format_)
     , object_storage(object_storage_)
 {
 }
 
-ObjectInfoPtr ObjectIteratorSplittedByBuckets::next(size_t id)
+std::vector<std::vector<size_t>> ObjectIteratorSplitByBuckets::splitObjectToBuckets(const std::vector<size_t> bucket_sizes)
+{
+    size_t bucket_size = getContext()->getSettingsRef()[Setting::cluster_table_function_buckets_batch_size];
+    std::vector<std::vector<size_t>> buckets;
+    size_t current_weight = 0;
+    buckets.push_back({});
+    for (size_t i = 0; i < bucket_sizes.size(); ++i)
+    {
+        if (current_weight + bucket_sizes[i] <= bucket_size)
+        {
+            buckets.back().push_back(i);
+            current_weight += bucket_sizes[i];
+        }
+        else
+        {
+            current_weight = 0;
+            buckets.push_back({});
+            buckets.back().push_back(i);
+            current_weight += bucket_sizes[i];
+        }
+    }
+    return buckets;
+}
+
+ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
 {
     if (!pending_objects_info.empty())
     {
@@ -100,9 +123,9 @@ ObjectInfoPtr ObjectIteratorSplittedByBuckets::next(size_t id)
     if (!last_object_info)
         return {};
 
-    auto buffer = createReadBuffer(*last_object_info, object_storage, getContext(), getLogger("GlobIterator"));
+    auto buffer = createReadBuffer(*last_object_info, object_storage, getContext(), log);
     auto input_format = FormatFactory::instance().getInput(
-        last_object_info->getFileFormat().value_or(configuration->format),
+        last_object_info->getFileFormat().value_or(format),
         *buffer,
         {},
         getContext(),
@@ -111,25 +134,7 @@ ObjectInfoPtr ObjectIteratorSplittedByBuckets::next(size_t id)
     auto bucket_sizes = input_format->getChunksByteSizes();
     if (bucket_sizes)
     {
-        size_t bucket_size = getContext()->getSettingsRef()[Setting::cluster_table_function_buckets_batch_size];
-        std::vector<std::vector<size_t>> buckets;
-        size_t current_weight = 0;
-        buckets.push_back({});
-        for (size_t i = 0; i < bucket_sizes->size(); ++i)
-        {
-            if (current_weight + bucket_sizes->at(i) <= bucket_size)
-            {
-                buckets.back().push_back(i);
-                current_weight += bucket_sizes->at(i);
-            }
-            else
-            {
-                current_weight = 0;
-                buckets.push_back({});
-                buckets.back().push_back(i);
-                current_weight += bucket_sizes->at(i);
-            }
-        }
+        std::vector<std::vector<size_t>> buckets = splitObjectToBuckets(*bucket_sizes);
         for (const auto & bucket : buckets)
         {
             auto copy_object_info = *last_object_info;

@@ -645,8 +645,6 @@ std::optional<std::vector<size_t>> ParquetBlockInputFormat::getChunksByteSizes()
 
 void ParquetBlockInputFormat::setBucketsToRead(const std::vector<size_t> & buckets_to_read_)
 {
-    arrow_file = asArrowFile(*in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES, /* avoid_buffering */ true, io_pool);
-    metadata = parquet::ReadMetaData(arrow_file);
     buckets_to_read = buckets_to_read_;
 }
 

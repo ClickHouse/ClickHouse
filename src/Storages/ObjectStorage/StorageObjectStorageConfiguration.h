@@ -15,6 +15,7 @@
 #include <Common/Exception.h>
 #include <Storages/StorageFactory.h>
 #include <Formats/FormatFilterInfo.h>
+#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 
 namespace DB
 {
@@ -145,14 +146,14 @@ public:
 
     virtual IDataLakeMetadata * getExternalMetadata() { return nullptr; }
 
-    virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr, std::shared_ptr<RelativePathWithMetadata>) const { return {}; }
+    virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr, ObjectInfoPtr) const { return {}; }
 
-    virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr, std::shared_ptr<RelativePathWithMetadata>) const { return {}; }
+    virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr, ObjectInfoPtr) const { return {}; }
 
     virtual void modifyFormatSettings(FormatSettings &, const Context &) const {}
 
     virtual void addDeleteTransformers(
-        std::shared_ptr<RelativePathWithMetadata> object_info,
+        ObjectInfoPtr object_info,
         QueryPipelineBuilder & builder,
         const std::optional<FormatSettings> & format_settings,
         ContextPtr local_context) const;

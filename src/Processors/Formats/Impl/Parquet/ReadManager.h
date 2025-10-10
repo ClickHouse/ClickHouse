@@ -109,6 +109,7 @@ private:
     std::priority_queue<Task, std::vector<Task>, Task::Comparator> delivery_queue;
     std::condition_variable delivery_cv;
     std::exception_ptr exception;
+    /// Nullopt means that ReadManager reads all row groups
     std::optional<std::unordered_set<UInt64>> row_groups_to_read;
 
     void scheduleTask(Task task, bool is_first_in_group, MemoryUsageDiff & diff, std::vector<Task> & out_tasks);

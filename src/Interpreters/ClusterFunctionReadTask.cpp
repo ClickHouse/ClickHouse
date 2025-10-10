@@ -73,7 +73,7 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t protoc
         {
             writeVarInt(buckets_to_read->size(), out);
             for (auto chunk : *buckets_to_read)
-                writeVarInt(chunk, out);
+                writeVarUInt(chunk, out);
         }
         else
             writeVarInt(-1, out);
@@ -114,9 +114,9 @@ void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
             buckets_to_read = std::vector<size_t>{};
             for (Int32 i = 0; i < size_chunks; ++i)
             {
-                Int32 chunk;
-                readVarInt(chunk, in);
-                buckets_to_read->push_back(chunk);
+                size_t bucket;
+                readVarUInt(bucket, in);
+                buckets_to_read->push_back(bucket);
             }
         }
         else

@@ -312,10 +312,6 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     size_t total_rows = 0;
     for (size_t row_group_idx = 0; row_group_idx < file_metadata.row_groups.size(); ++row_group_idx)
     {
-        /*if (row_groups_to_read && !row_groups_to_read->contains(row_group_idx))
-        {
-            continue;
-        }*/
         const auto * meta = &file_metadata.row_groups[row_group_idx];
         if (meta->num_rows <= 0)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Row group {} has <= 0 rows: {}", row_group_idx, meta->num_rows);
@@ -335,7 +331,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
 
         RowGroup & row_group = row_groups.emplace_back();
         row_group.meta = meta;
-        row_group.need_to_process = !(row_groups_to_read && !row_groups_to_read->contains(row_group_idx));
+        row_group.need_to_process = !row_groups_to_read.has_value() || row_groups_to_read->contains(row_group_idx);
         row_group.row_group_idx = row_group_idx;
         row_group.start_global_row_idx = total_rows - size_t(meta->num_rows);
         row_group.columns.resize(primitive_columns.size());
@@ -2006,8 +2002,7 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_grou
             mut_filter.expand(row_subgroup.filter.filter, /*inverted*/ false);
 
         row_subgroup.filter.filter = std::move(mut_filter.getData());
-        if (row_group.need_to_process)
-            row_subgroup.filter.rows_pass = rows_pass;
+        row_subgroup.filter.rows_pass = rows_pass;
     }
 }
 

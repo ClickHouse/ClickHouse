@@ -2,6 +2,8 @@
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Processors/ISimpleTransform.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
+#include "Common/Logger.h"
+#include "Common/Macros.h"
 
 namespace DB
 {
@@ -43,12 +45,12 @@ private:
     const std::shared_ptr<ExpressionActions> filter_actions;
 };
 
-class ObjectIteratorSplittedByBuckets : public IObjectIterator, private WithContext
+class ObjectIteratorSplitByBuckets : public IObjectIterator, private WithContext
 {
 public:
-    ObjectIteratorSplittedByBuckets(
+    ObjectIteratorSplitByBuckets(
         ObjectIterator iterator_,
-        StorageObjectStorageConfigurationPtr configuration_,
+        const String & format_,
         ObjectStoragePtr object_storage_,
         const ContextPtr & context_);
 
@@ -58,10 +60,12 @@ public:
 
 private:
     const ObjectIterator iterator;
-    StorageObjectStorageConfigurationPtr configuration;
+    String format;
     ObjectStoragePtr object_storage;
 
+    std::vector<std::vector<size_t>> splitObjectToBuckets(const std::vector<size_t> bucket_sizes);
     std::queue<ObjectInfoPtr> pending_objects_info;
+    const LoggerPtr log = getLogger("GlobIterator");
 };
 
 

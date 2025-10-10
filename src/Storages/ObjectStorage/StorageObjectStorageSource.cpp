@@ -211,7 +211,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
         }
         if (local_context->getSettingsRef()[Setting::enable_split_in_cluster_table_function])
         {
-            iter = std::make_shared<ObjectIteratorSplittedByBuckets>(
+            iter = std::make_shared<ObjectIteratorSplitByBuckets>(
                 std::move(iter),
                 configuration,
                 object_storage,
