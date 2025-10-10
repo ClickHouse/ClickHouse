@@ -31,7 +31,6 @@ public:
         size_t buckets_num_,
         size_t max_loading_retries_,
         std::atomic<size_t> & metadata_ref_count_,
-        bool use_persistent_processing_nodes_,
         LoggerPtr log_);
 
     struct BucketHolder;
@@ -50,7 +49,7 @@ public:
 
     static std::vector<std::string> getMetadataPaths(size_t buckets_num);
 
-    static void migrateToBuckets(const std::string & zk_path, size_t value, size_t prev_value);
+    static void migrateToBuckets(const std::string & zk_path, size_t value);
 
     /// Return vector of indexes of filtered paths.
     static void filterOutProcessedAndFailed(

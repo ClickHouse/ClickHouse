@@ -4,7 +4,6 @@ sidebar_label: 'PROJECTION'
 sidebar_position: 49
 slug: /sql-reference/statements/alter/projection
 title: 'Projections'
-doc_type: 'reference'
 ---
 
 Projections store data in a format that optimizes query execution, this feature is useful for:
@@ -138,50 +137,6 @@ As mentioned before, we could review the `system.query_log` table. On the `proje
 SELECT query, projections FROM system.query_log WHERE query_id='<query_id>'
 ```
 
-## Normal projection with `_part_offset` field {#normal-projection-with-part-offset-field}
-
-Creating a table with a normal projection that utilizes the `_part_offset` field:
-
-```sql
-CREATE TABLE events
-(
-    `event_time` DateTime,
-    `event_id` UInt64,
-    `user_id` UInt64,
-    `huge_string` String,
-    PROJECTION order_by_user_id
-    (
-        SELECT
-            _part_offset
-        ORDER BY user_id
-    )
-)
-ENGINE = MergeTree()
-ORDER BY (event_id);
-```
-
-Inserting some sample data:
-
-```sql
-INSERT INTO events SELECT * FROM generateRandom() LIMIT 100000;
-```
-
-### Using `_part_offset` as a secondary index {#normal-projection-secondary-index}
-
-The `_part_offset` field preserves its value through merges and mutations, making it valuable for secondary indexing. We can leverage this in queries:
-
-```sql
-SELECT
-    count()
-FROM events
-WHERE _part_starting_offset + _part_offset IN (
-    SELECT _part_starting_offset + _part_offset
-    FROM events
-    WHERE user_id = 42
-)
-SETTINGS enable_shared_storage_snapshot_in_query = 1
-```
-
 # Manipulating Projections
 
 The following operations with [projections](/engines/table-engines/mergetree-family/mergetree.md/#projections) are available:
@@ -201,6 +156,7 @@ The following operations with [projections](/engines/table-engines/mergetree-fam
 ## CLEAR PROJECTION {#clear-projection}
 
 `ALTER TABLE [db.]table [ON CLUSTER cluster] CLEAR PROJECTION [IF EXISTS] name [IN PARTITION partition_name]` - Deletes projection files from disk without removing description. Implemented as a [mutation](/sql-reference/statements/alter/index.md#mutations).
+
 
 The commands `ADD`, `DROP` and `CLEAR` are lightweight in a sense that they only change metadata or remove files.
 

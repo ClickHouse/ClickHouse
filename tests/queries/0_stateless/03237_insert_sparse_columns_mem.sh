@@ -62,7 +62,7 @@ $MY_CLICKHOUSE_CLIENT --query "
     WHERE table = 't_insert_mem' AND database = '$CLICKHOUSE_DATABASE'
     GROUP BY serialization_kind ORDER BY serialization_kind;
 
-    SYSTEM FLUSH LOGS query_log;
+    SYSTEM FLUSH LOGS;
 
     SELECT written_bytes <= 10000000 FROM system.query_log
     WHERE query LIKE 'INSERT INTO t_insert_mem%' AND current_database = '$CLICKHOUSE_DATABASE' AND type = 'QueryFinish'

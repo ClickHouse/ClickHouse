@@ -41,9 +41,8 @@ SlotCount ConcurrencyControlState::available(std::unique_lock<std::mutex> &) con
 }
 
 
-ConcurrencyControlRoundRobinScheduler::Slot::Slot(SlotAllocationPtr && allocation_, size_t slot_id_)
-    : IAcquiredSlot(slot_id_)
-    , allocation(std::move(allocation_))
+ConcurrencyControlRoundRobinScheduler::Slot::Slot(SlotAllocationPtr && allocation_)
+    : allocation(std::move(allocation_))
     , acquired_slot_increment(CurrentMetrics::ConcurrencyControlAcquired)
 {
 }
@@ -80,17 +79,21 @@ ConcurrencyControlRoundRobinScheduler::Allocation::~Allocation()
         {
             ProfileEvents::increment(ProfileEvents::ConcurrencyControlSlotsAcquired, 1);
             std::unique_lock lock{mutex};
-            return AcquiredSlotPtr(new Slot(shared_from_this(), last_slot_id++)); // can't use std::make_shared due to private ctor
+            return AcquiredSlotPtr(new Slot(shared_from_this())); // can't use std::make_shared due to private ctor
         }
     }
     return {}; // avoid unnecessary locking
 }
 
-[[nodiscard]] AcquiredSlotPtr ConcurrencyControlRoundRobinScheduler::Allocation::acquire()
+SlotCount ConcurrencyControlRoundRobinScheduler::Allocation::grantedCount() const
 {
-    auto result = tryAcquire();
-    chassert(result);
-    return result;
+    return granted.load();
+}
+
+SlotCount ConcurrencyControlRoundRobinScheduler::Allocation::allocatedCount() const
+{
+    std::unique_lock lock{mutex};
+    return allocated;
 }
 
 // Grant single slot to allocation returns true iff more slot(s) are required
@@ -190,9 +193,8 @@ void ConcurrencyControlRoundRobinScheduler::schedule(std::unique_lock<std::mutex
 }
 
 
-ConcurrencyControlFairRoundRobinScheduler::Slot::Slot(SlotAllocationPtr && allocation_, bool competing_, size_t slot_id_)
-    : IAcquiredSlot(slot_id_)
-    , allocation(std::move(allocation_))
+ConcurrencyControlFairRoundRobinScheduler::Slot::Slot(SlotAllocationPtr && allocation_, bool competing_)
+    : allocation(std::move(allocation_))
     , competing(competing_)
     , acquired_slot_increment(competing ? CurrentMetrics::ConcurrencyControlAcquired : CurrentMetrics::ConcurrencyControlAcquiredNonCompeting)
 {
@@ -234,7 +236,7 @@ ConcurrencyControlFairRoundRobinScheduler::Allocation::~Allocation()
         {
             ProfileEvents::increment(ProfileEvents::ConcurrencyControlSlotsAcquiredNonCompeting, 1);
             std::unique_lock lock{mutex};
-            return AcquiredSlotPtr(new Slot(shared_from_this(), false, last_slot_id++)); // can't use std::make_shared due to private ctor
+            return AcquiredSlotPtr(new Slot(shared_from_this(), false)); // can't use std::make_shared due to private ctor
         }
     }
 
@@ -246,18 +248,22 @@ ConcurrencyControlFairRoundRobinScheduler::Allocation::~Allocation()
         {
             ProfileEvents::increment(ProfileEvents::ConcurrencyControlSlotsAcquired, 1);
             std::unique_lock lock{mutex};
-            return AcquiredSlotPtr(new Slot(shared_from_this(), true, last_slot_id++)); // can't use std::make_shared due to private ctor
+            return AcquiredSlotPtr(new Slot(shared_from_this(), true)); // can't use std::make_shared due to private ctor
         }
     }
 
     return {}; // avoid unnecessary locking
 }
 
-[[nodiscard]] AcquiredSlotPtr ConcurrencyControlFairRoundRobinScheduler::Allocation::acquire()
+SlotCount ConcurrencyControlFairRoundRobinScheduler::Allocation::grantedCount() const
 {
-    auto result = tryAcquire();
-    chassert(result);
-    return result;
+    return noncompeting.load() + granted.load();
+}
+
+SlotCount ConcurrencyControlFairRoundRobinScheduler::Allocation::allocatedCount() const
+{
+    std::unique_lock lock{mutex};
+    return min + allocated;
 }
 
 // Grant single slot to allocation returns true iff more slot(s) are required

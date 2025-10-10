@@ -3,7 +3,6 @@ description: 'System table which shows the content of the query cache.'
 keywords: ['system table', 'query_cache']
 slug: /operations/system-tables/query_cache
 title: 'system.query_cache'
-doc_type: 'reference'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
@@ -28,11 +27,11 @@ Columns:
 
 **Example**
 
-```sql
+``` sql
 SELECT * FROM system.query_cache FORMAT Vertical;
 ```
 
-```text
+``` text
 Row 1:
 ──────
 query:       SELECT 1 SETTINGS use_query_cache = 1

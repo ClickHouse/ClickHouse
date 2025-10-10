@@ -281,6 +281,12 @@ bool tryBuildPrewhereSteps(
         else
         {
             result_node = new_condition_nodes.front();
+            /// Check if explicit cast is needed for the condition to serve as a filter.
+            if (!isUInt8(removeNullable(removeLowCardinality(result_node->result_type))))
+            {
+                /// Build "condition AND True" expression to "cast" the condition to UInt8 or Nullable(UInt8) depending on its type.
+                result_node = &addAndTrue(step_dag, *result_node);
+            }
         }
 
         step_dag->getOutputs().insert(step_dag->getOutputs().begin(), result_node);
@@ -343,7 +349,6 @@ bool tryBuildPrewhereSteps(
                     step.original_node && !all_outputs.contains(step.original_node) && node_to_step[step.original_node] <= step_index,
                 .need_filter = force_short_circuit_execution,
                 .perform_alter_conversions = true,
-                .mutation_version = std::nullopt,
             };
 
             prewhere.steps.push_back(std::make_shared<PrewhereExprStep>(std::move(new_step)));

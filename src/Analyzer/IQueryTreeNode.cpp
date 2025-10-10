@@ -3,6 +3,7 @@
 #include <unordered_map>
 
 #include <Common/SipHash.h>
+#include <DataTypes/DataTypesBinaryEncoding.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -374,6 +375,23 @@ void IQueryTreeNode::dumpTree(WriteBuffer & buffer) const
 {
     FormatState state;
     dumpTreeImpl(buffer, state, 0);
+}
+
+void IQueryTreeNode::updateHashForType(HashState & hash_state, const DataTypePtr & type)
+{
+    if (type->hasDynamicSubcolumnsDeprecated())
+    {
+        auto name = type->getName();
+        hash_state.update(name.size());
+        hash_state.update(name);
+        return;
+    }
+
+    WriteBufferFromOwnString buf;
+    encodeDataType(type, buf);
+    buf.finalize();
+    hash_state.update(buf.str().size());
+    hash_state.update(buf.str());
 }
 
 }

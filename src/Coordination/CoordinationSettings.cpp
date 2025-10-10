@@ -37,14 +37,13 @@ namespace ErrorCodes
     DECLARE(Milliseconds, startup_timeout, 180000, "How much time we will wait until RAFT to start.", 0) \
     DECLARE(Milliseconds, sleep_before_leader_change_ms, 8000, "How much time we will wait before removing leader (so as leader could commit accepted but non-committed commands and they won't be lost -- leader removal is not synchronized with committing)", 0) \
     DECLARE(LogsLevel, raft_logs_level, LogsLevel::information, "Log internal RAFT logs into main server log level. Valid values: 'trace', 'debug', 'information', 'warning', 'error', 'fatal', 'none'", 0) \
-    DECLARE(NonZeroUInt64, rotate_log_storage_interval, 100000, "How many records will be stored in one log storage file", 0) \
+    DECLARE(UInt64, rotate_log_storage_interval, 100000, "How many records will be stored in one log storage file", 0) \
     DECLARE(UInt64, snapshots_to_keep, 3, "How many compressed snapshots to keep on disk", 0) \
     DECLARE(UInt64, stale_log_gap, 10000, "When node became stale and should receive snapshots from leader", 0) \
     DECLARE(UInt64, fresh_log_gap, 200, "When node became fresh", 0) \
     DECLARE(UInt64, max_request_queue_size, 100000, "Maximum number of request that can be in queue for processing", 0) \
     DECLARE(UInt64, max_requests_batch_size, 100, "Max size of batch of requests that can be sent to RAFT", 0) \
     DECLARE(UInt64, max_requests_batch_bytes_size, 100*1024, "Max size in bytes of batch of requests that can be sent to RAFT", 0) \
-    DECLARE(UInt64, max_request_size, 0, "Max request size (in bytes). Zero means unlimited.", 0) \
     DECLARE(UInt64, max_requests_append_size, 100, "Max size of batch of requests that can be sent to replica in append request", 0) \
     DECLARE(UInt64, max_flush_batch_size, 1000, "Max size of batch of requests that can be flushed together", 0) \
     DECLARE(UInt64, max_requests_quick_batch_size, 100, "Max size of batch of requests to try to get before proceeding with RAFT. Keeper will not wait for requests but take only requests that are already in queue" , 0) \
@@ -60,7 +59,6 @@ namespace ErrorCodes
     DECLARE(UInt64, raft_limits_response_limit, 20, "Total wait time for a response is calculated by multiplying response_limit with heart_beat_interval_ms", 0) \
     DECLARE(Bool, async_replication, false, "Enable async replication. All write and read guarantees are preserved while better performance is achieved. Settings is disabled by default to not break backwards compatibility.", 0) \
     DECLARE(Bool, experimental_use_rocksdb, false, "Use rocksdb as backend storage", 0) \
-    DECLARE(UInt64, rocksdb_load_batch_size, 1000, "Size of write batch used during snapshot loading", 0) \
     DECLARE(UInt64, latest_logs_cache_size_threshold, 1_GiB, "Maximum total size of in-memory cache of latest log entries.", 0) \
     DECLARE(UInt64, latest_logs_cache_entry_count_threshold, 200'000, "Maximum number of entries in in-memory cache of latest log entries.", 0) \
     DECLARE(UInt64, commit_logs_cache_size_threshold, 500_MiB, "Maximum total size of in-memory cache of log entries needed next for commit.", 0) \
@@ -106,12 +104,12 @@ void CoordinationSettingsImpl::loadFromConfig(const String & config_elem, const 
         max_requests_append_size = max_requests_batch_size;
 }
 
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) \
     CoordinationSettings##TYPE NAME = &CoordinationSettingsImpl ::NAME;
 
 namespace CoordinationSetting
 {
-LIST_OF_COORDINATION_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
+LIST_OF_COORDINATION_SETTINGS(INITIALIZE_SETTING_EXTERN, SKIP_ALIAS)
 }
 
 #undef INITIALIZE_SETTING_EXTERN
@@ -238,8 +236,6 @@ void KeeperConfigurationAndSettings::dump(WriteBufferFromOwnString & buf) const
     write_int(coordination_settings[CoordinationSetting::max_requests_batch_size]);
     writeText("max_requests_batch_bytes_size=", buf);
     write_int(coordination_settings[CoordinationSetting::max_requests_batch_bytes_size]);
-    writeText("max_request_size=", buf);
-    write_int(coordination_settings[CoordinationSetting::max_request_size]);
     writeText("max_flush_batch_size=", buf);
     write_int(coordination_settings[CoordinationSetting::max_flush_batch_size]);
     writeText("max_request_queue_size=", buf);

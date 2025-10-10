@@ -6,7 +6,6 @@ keywords: ['Native']
 output_format: true
 slug: /interfaces/formats/Native
 title: 'Native'
-doc_type: 'reference'
 ---
 
 | Input | Output | Alias |
@@ -28,6 +27,6 @@ You can use this format to quickly generate dumps that can only be read by the C
 It might not be practical to work with this format yourself.
 :::
 
-## Example usage {#example-usage}
+## Example Usage {#example-usage}
 
-## Format settings {#format-settings}
+## Format Settings {#format-settings}

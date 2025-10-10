@@ -4,7 +4,6 @@ description: 'System table containing information about setting changes in previ
 keywords: ['system table', 'settings_changes']
 slug: /operations/system-tables/settings_changes
 title: 'system.settings_changes'
-doc_type: 'reference'
 ---
 
 # system.settings_changes
@@ -19,14 +18,14 @@ Columns:
 
 **Example**
 
-```sql
+``` sql
 SELECT *
 FROM system.settings_changes
 WHERE version = '23.5'
 FORMAT Vertical
 ```
 
-```text
+``` text
 Row 1:
 ──────
 type:    Core

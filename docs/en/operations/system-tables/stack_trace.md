@@ -4,7 +4,6 @@ description: 'System table which contains stack traces of all server threads. Al
 keywords: ['system table', 'stack_trace']
 slug: /operations/system-tables/stack_trace
 title: 'system.stack_trace'
-doc_type: 'reference'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
@@ -32,17 +31,17 @@ Check out the Knowledge Base for some handy queries, including [how to see what 
 
 Enabling introspection functions:
 
-```sql
+``` sql
 SET allow_introspection_functions = 1;
 ```
 
 Getting symbols from ClickHouse object files:
 
-```sql
+``` sql
 WITH arrayMap(x -> demangle(addressToSymbol(x)), trace) AS all SELECT thread_name, thread_id, query_id, arrayStringConcat(all, '\n') AS res FROM system.stack_trace LIMIT 1 \G;
 ```
 
-```text
+``` text
 Row 1:
 ──────
 thread_name: QueryPipelineEx
@@ -68,11 +67,11 @@ void* std::__1::__thread_proxy[abi:v15000]<std::__1::tuple<std::__1::unique_ptr<
 
 Getting filenames and line numbers in ClickHouse source code:
 
-```sql
+``` sql
 WITH arrayMap(x -> addressToLine(x), trace) AS all, arrayFilter(x -> x LIKE '%/dbms/%', all) AS dbms SELECT thread_name, thread_id, query_id, arrayStringConcat(notEmpty(dbms) ? dbms : all, '\n') AS res FROM system.stack_trace LIMIT 1 \G;
 ```
 
-```text
+``` text
 Row 1:
 ──────
 thread_name: clickhouse-serv
@@ -102,5 +101,5 @@ res:       /lib/x86_64-linux-gnu/libc-2.27.so
 
 - [Introspection Functions](../../sql-reference/functions/introspection.md) — Which introspection functions are available and how to use them.
 - [system.trace_log](../system-tables/trace_log.md) — Contains stack traces collected by the sampling query profiler.
-- [arrayMap](/sql-reference/functions/array-functions#arrayMap)) — Description and usage example of the `arrayMap` function.
-- [arrayFilter](/sql-reference/functions/array-functions#arrayFilter) — Description and usage example of the `arrayFilter` function.
+- [arrayMap](/sql-reference/functions/array-functions#arraymapfunc-arr1-)) — Description and usage example of the `arrayMap` function.
+- [arrayFilter](/sql-reference/functions/array-functions#arrayfilterfunc-arr1-) — Description and usage example of the `arrayFilter` function.

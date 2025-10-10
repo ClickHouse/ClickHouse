@@ -1,6 +1,5 @@
 services:
     mongo1:
-        stop_grace_period: 5s
         image: mongo:6.0
         restart: always
         environment:
@@ -11,14 +10,12 @@ services:
         command: --profile=2 --verbose
 
     mongo_no_cred:
-        stop_grace_period: 5s
         image: mongo:6.0
         restart: always
         ports:
             - ${MONGO_NO_CRED_EXTERNAL_PORT:-27017}:${MONGO_NO_CRED_INTERNAL_PORT:-27017}
 
     mongo_secure:
-        stop_grace_period: 5s
         image: mongo:6.0
         restart: always
         environment:

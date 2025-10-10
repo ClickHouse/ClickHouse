@@ -9,8 +9,6 @@
 
 #include <boost/noncopyable.hpp>
 
-class SipHash;
-
 namespace DB
 {
 
@@ -103,16 +101,13 @@ public:
     /// Storage type (e.g. Int64 for Interval)
     virtual TypeIndex getColumnType() const { return getTypeId(); }
 
-    void updateHash(SipHash & hash) const;
-    virtual void updateHashImpl(SipHash & hash) const = 0;
+    bool hasSubcolumn(std::string_view subcolumn_name) const;
 
-    bool hasSubcolumn(std::string_view subcolumn_name, SerializationPtr override_default = nullptr) const;
+    DataTypePtr tryGetSubcolumnType(std::string_view subcolumn_name) const;
+    DataTypePtr getSubcolumnType(std::string_view subcolumn_name) const;
 
-    DataTypePtr tryGetSubcolumnType(std::string_view subcolumn_name, SerializationPtr override_default = nullptr) const;
-    DataTypePtr getSubcolumnType(std::string_view subcolumn_name, SerializationPtr override_default = nullptr) const;
-
-    ColumnPtr tryGetSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column, SerializationPtr override_default = nullptr) const;
-    ColumnPtr getSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column, SerializationPtr override_default = nullptr) const;
+    ColumnPtr tryGetSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column) const;
+    ColumnPtr getSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column) const;
 
     SerializationPtr getSubcolumnSerialization(std::string_view subcolumn_name, const SerializationPtr & serialization) const;
 
@@ -141,22 +136,18 @@ public:
     virtual bool supportsSparseSerialization() const { return !haveSubtypes(); }
     virtual bool canBeInsideSparseColumns() const { return supportsSparseSerialization(); }
 
-    SerializationPtr getDefaultSerialization(SerializationPtr override_default = {}) const;
-    SerializationPtr getSparseSerialization(SerializationPtr override_default = {}) const;
+    SerializationPtr getDefaultSerialization() const;
+    SerializationPtr getSparseSerialization() const;
 
     /// Chooses serialization according to serialization kind.
-    SerializationPtr getSerialization(ISerialization::Kind kind, SerializationPtr override_default = {}) const;
+    SerializationPtr getSerialization(ISerialization::Kind kind) const;
 
     /// Chooses serialization according to collected information about content of column.
     virtual SerializationPtr getSerialization(const SerializationInfo & info) const;
 
-    SerializationPtr getSerialization(const SerializationInfoSettings & settings) const;
-
     /// Chooses between subcolumn serialization and regular serialization according to @column.
     /// This method typically should be used to get serialization for reading column or subcolumn.
     static SerializationPtr getSerialization(const NameAndTypePair & column, const SerializationInfo & info);
-
-    static SerializationPtr getSerialization(const NameAndTypePair & column, const SerializationInfoSettings & settings);
 
     static SerializationPtr getSerialization(const NameAndTypePair & column);
 
@@ -347,14 +338,14 @@ protected:
     friend class DataTypeFactory;
     friend class AggregateFunctionSimpleState;
 
+    /// Customize this DataType
+    void setCustomization(DataTypeCustomDescPtr custom_desc_) const;
+
     /// This is mutable to allow setting custom name and serialization on `const IDataType` post construction.
     mutable DataTypeCustomNamePtr custom_name;
     mutable SerializationPtr custom_serialization;
 
 public:
-    /// Customize this DataType
-    void setCustomization(DataTypeCustomDescPtr custom_desc_) const;
-
     bool hasCustomName() const { return static_cast<bool>(custom_name.get()); }
     const IDataTypeCustomName * getCustomName() const { return custom_name.get(); }
     const ISerialization * getCustomSerialization() const { return custom_serialization.get(); }
@@ -371,7 +362,7 @@ protected:
         bool throw_if_null) const
     {
         if (throw_if_null)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDynamicSubcolumnData is not implemented for type {}", getName());
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDynamicSubcolumnData() is not implemented for type {}", getName());
         return nullptr;
     }
 };
@@ -436,10 +427,6 @@ struct WhichDataType
     constexpr bool isDateTime64() const { return idx == TypeIndex::DateTime64; }
     constexpr bool isDateTimeOrDateTime64() const { return isDateTime() || isDateTime64(); }
     constexpr bool isDateOrDate32OrDateTimeOrDateTime64() const { return isDateOrDate32() || isDateTimeOrDateTime64(); }
-    constexpr bool isTime() const { return idx == TypeIndex::Time; }
-    constexpr bool isTime64() const { return idx == TypeIndex::Time64; }
-    constexpr bool isTimeOrTime64() const { return isTime() || isTime64(); }
-    constexpr bool isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64() const { return isDateOrDate32() || isTimeOrTime64() || isDateTimeOrDateTime64(); }
 
     constexpr bool isString() const { return idx == TypeIndex::String; }
     constexpr bool isFixedString() const { return idx == TypeIndex::FixedString; }
@@ -450,7 +437,6 @@ struct WhichDataType
     constexpr bool isIPv6() const { return idx == TypeIndex::IPv6; }
     constexpr bool isArray() const { return idx == TypeIndex::Array; }
     constexpr bool isTuple() const { return idx == TypeIndex::Tuple; }
-    constexpr bool isQBit() const { return idx == TypeIndex::QBit; }
     constexpr bool isMap() const {return idx == TypeIndex::Map; }
     constexpr bool isSet() const { return idx == TypeIndex::Set; }
     constexpr bool isInterval() const { return idx == TypeIndex::Interval; }
@@ -517,10 +503,6 @@ bool isDateTime(TYPE data_type); \
 bool isDateTime64(TYPE data_type); \
 bool isDateTimeOrDateTime64(TYPE data_type); \
 bool isDateOrDate32OrDateTimeOrDateTime64(TYPE data_type); \
-bool isTime(TYPE data_type); \
-bool isTime64(TYPE data_type); \
-bool isTimeOrTime64(TYPE data_type); \
-bool isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(TYPE data_type); \
 \
 bool isString(TYPE data_type); \
 bool isFixedString(TYPE data_type); \
@@ -531,7 +513,6 @@ bool isIPv4(TYPE data_type); \
 bool isIPv6(TYPE data_type); \
 bool isArray(TYPE data_type); \
 bool isTuple(TYPE data_type); \
-bool isQBit(TYPE data_type); \
 bool isMap(TYPE data_type); \
 bool isInterval(TYPE data_type); \
 bool isObjectDeprecated(TYPE data_type); \
@@ -558,7 +539,7 @@ template <typename T, typename DataType>
 inline bool isColumnedAsDecimalT(const DataType & data_type)
 {
     const WhichDataType which(data_type);
-    return (which.isDecimal() || which.isDateTime64() || which.isTime64()) && which.idx == TypeToTypeIndex<T>;
+    return (which.isDecimal() || which.isDateTime64()) && which.idx == TypeToTypeIndex<T>;
 }
 
 inline bool isBool(const DataTypePtr & data_type)
@@ -574,7 +555,6 @@ inline bool isNullableOrLowCardinalityNullable(const DataTypePtr & data_type)
 template <typename DataType> constexpr bool IsDataTypeDecimal = false;
 template <typename DataType> constexpr bool IsDataTypeNumber = false;
 template <typename DataType> constexpr bool IsDataTypeDateOrDateTime = false;
-template <typename DataType> constexpr bool IsDataTypeDateOrDateTimeOrTime = false;
 template <typename DataType> constexpr bool IsDataTypeDate = false;
 template <typename DataType> constexpr bool IsDataTypeEnum = false;
 template <typename DataType> constexpr bool IsDataTypeStringOrFixedString = false;
@@ -591,8 +571,6 @@ class DataTypeDate;
 class DataTypeDate32;
 class DataTypeDateTime;
 class DataTypeDateTime64;
-class DataTypeTime;
-class DataTypeTime64;
 class DataTypeString;
 class DataTypeFixedString;
 
@@ -600,7 +578,6 @@ template <is_decimal T> constexpr bool IsDataTypeDecimal<DataTypeDecimal<T>> = t
 
 /// TODO: this is garbage, remove it.
 template <> inline constexpr bool IsDataTypeDecimal<DataTypeDateTime64> = true;
-template <> inline constexpr bool IsDataTypeDecimal<DataTypeTime64> = true;
 
 template <typename T> constexpr bool IsDataTypeNumber<DataTypeNumber<T>> = true;
 
@@ -611,13 +588,6 @@ template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDate> = true;
 template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDate32> = true;
 template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDateTime> = true;
 template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDateTime64> = true;
-
-template <> inline constexpr bool IsDataTypeDateOrDateTimeOrTime<DataTypeDate> = true;
-template <> inline constexpr bool IsDataTypeDateOrDateTimeOrTime<DataTypeDate32> = true;
-template <> inline constexpr bool IsDataTypeDateOrDateTimeOrTime<DataTypeDateTime> = true;
-template <> inline constexpr bool IsDataTypeDateOrDateTimeOrTime<DataTypeDateTime64> = true;
-template <> inline constexpr bool IsDataTypeDateOrDateTimeOrTime<DataTypeTime> = true;
-template <> inline constexpr bool IsDataTypeDateOrDateTimeOrTime<DataTypeTime64> = true;
 
 template <> inline constexpr bool IsDataTypeStringOrFixedString<DataTypeString> = true;
 template <> inline constexpr bool IsDataTypeStringOrFixedString<DataTypeFixedString> = true;

@@ -2,9 +2,10 @@
 #include <Columns/ColumnObject.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <IO/ReadBufferFromMemory.h>
+#include <IO/WriteBufferFromString.h>
 
 #include <Common/Arena.h>
-#include <Core/Field.h>
+#include "Core/Field.h"
 #include <gtest/gtest.h>
 
 using namespace DB;

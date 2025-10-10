@@ -3,7 +3,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/HashTable/HashSet.h>
 #include <bit>
-#include <Columns/ColumnsCommon.h>
+#include "ColumnsCommon.h"
 
 
 namespace DB

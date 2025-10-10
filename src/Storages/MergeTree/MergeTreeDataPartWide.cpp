@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/MergeTreeDataPartWide.h>
+#include "MergeTreeDataPartWide.h"
 #include <Storages/MergeTree/MergeTreeReaderWide.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterWide.h>
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
@@ -8,7 +8,6 @@
 #include <DataTypes/NestedUtils.h>
 #include <Common/quoteString.h>
 #include <Core/NamesAndTypes.h>
-#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -24,10 +23,6 @@ namespace ErrorCodes
 namespace MergeTreeSetting
 {
     extern MergeTreeSettingsBool enable_index_granularity_compression;
-    extern const MergeTreeSettingsMergeTreeObjectSerializationVersion object_serialization_version;
-    extern const MergeTreeSettingsMergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version;
-    extern const MergeTreeSettingsMergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version_for_zero_level_parts;
-    extern const MergeTreeSettingsNonZeroUInt64 object_shared_data_buckets_for_wide_part;
 }
 
 MergeTreeDataPartWide::MergeTreeDataPartWide(
@@ -40,8 +35,7 @@ MergeTreeDataPartWide::MergeTreeDataPartWide(
 {
 }
 
-MergeTreeReaderPtr createMergeTreeReaderWide(
-    const MergeTreeDataPartInfoForReaderPtr & read_info,
+IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartWide::getReader(
     const NamesAndTypesList & columns_to_read,
     const StorageSnapshotPtr & storage_snapshot,
     const MarkRanges & mark_ranges,
@@ -49,10 +43,12 @@ MergeTreeReaderPtr createMergeTreeReaderWide(
     UncompressedCache * uncompressed_cache,
     MarkCache * mark_cache,
     DeserializationPrefixesCache * deserialization_prefixes_cache,
+    const AlterConversionsPtr & alter_conversions,
     const MergeTreeReaderSettings & reader_settings,
     const ValueSizeMap & avg_value_size_hints,
-    const ReadBufferFromFileBase::ProfileCallback & profile_callback)
+    const ReadBufferFromFileBase::ProfileCallback & profile_callback) const
 {
+    auto read_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), alter_conversions);
     return std::make_unique<MergeTreeReaderWide>(
         read_info,
         columns_to_read,
@@ -97,54 +93,33 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWideWriter(
 /// Takes into account the fact that several columns can e.g. share their .size substreams.
 /// When calculating totals these should be counted only once.
 ColumnSize MergeTreeDataPartWide::getColumnSizeImpl(
-    const NameAndTypePair & column, std::unordered_set<String> * processed_substreams) const
+    const NameAndTypePair & column, std::unordered_set<String> * processed_substreams, std::optional<Block> columns_sample) const
 {
     ColumnSize size;
     if (checksums.empty())
         return size;
 
-    auto add_stream_size = [&](const String & stream_name)
+    getSerialization(column.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
     {
-        auto bin_checksum = checksums.files.find(stream_name + ".bin");
+        auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, checksums);
+
+        if (!stream_name)
+            return;
+
+        if (processed_substreams && !processed_substreams->insert(*stream_name).second)
+            return;
+
+        auto bin_checksum = checksums.files.find(*stream_name + ".bin");
         if (bin_checksum != checksums.files.end())
         {
             size.data_compressed += bin_checksum->second.file_size;
             size.data_uncompressed += bin_checksum->second.uncompressed_size;
         }
 
-        auto mrk_checksum = checksums.files.find(stream_name + getMarksFileExtension());
+        auto mrk_checksum = checksums.files.find(*stream_name + getMarksFileExtension());
         if (mrk_checksum != checksums.files.end())
             size.marks += mrk_checksum->second.file_size;
-    };
-
-    if (column.type->hasDynamicSubcolumns() && !columns_substreams.empty())
-    {
-        auto column_position = getColumnPosition(column.name);
-        if (!column_position)
-            return size;
-
-        const auto & substreams = columns_substreams.getColumnSubstreams(*column_position);
-        for (const auto & substream : substreams)
-        {
-            if (auto stream_name = IMergeTreeDataPart::getStreamNameOrHash(substream, checksums))
-                add_stream_size(*stream_name);
-        }
-    }
-    else
-    {
-        getSerialization(column.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
-        {
-            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, checksums);
-
-            if (!stream_name)
-                return;
-
-            if (processed_substreams && !processed_substreams->insert(*stream_name).second)
-                return;
-
-            add_stream_size(*stream_name);
-        }, column.type, getColumnSample(column));
-    }
+    }, column.type, columns_sample && columns_sample->has(column.name) ? columns_sample->getByName(column.name).column : getColumnSample(column));
 
     return size;
 }
@@ -176,7 +151,7 @@ void MergeTreeDataPartWide::loadIndexGranularityImpl(
     }
     else
     {
-        auto marks_file = data_part_storage_.readFile(marks_file_path, getReadSettings().adjustBufferSize(marks_file_size), marks_file_size);
+        auto marks_file = data_part_storage_.readFile(marks_file_path, getReadSettings().adjustBufferSize(marks_file_size), marks_file_size, std::nullopt);
 
         std::unique_ptr<ReadBuffer> marks_reader;
         if (!index_granularity_info_.mark_type.compressed)
@@ -449,12 +424,12 @@ std::optional<String> MergeTreeDataPartWide::getFileNameForColumn(const NameAndT
     return filename;
 }
 
-void MergeTreeDataPartWide::calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const
+void MergeTreeDataPartWide::calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size, std::optional<Block> columns_sample) const
 {
     std::unordered_set<String> processed_substreams;
     for (const auto & column : columns)
     {
-        ColumnSize size = getColumnSizeImpl(column, &processed_substreams);
+        ColumnSize size = getColumnSizeImpl(column, &processed_substreams, columns_sample);
         each_columns_size[column.name] = size;
         total_size.add(size);
 

@@ -44,7 +44,7 @@ class DataSkippingIndicesSource : public ISource
 public:
     DataSkippingIndicesSource(
         std::vector<UInt8> columns_mask_,
-        SharedHeader header,
+        Block header,
         UInt64 max_block_size_,
         ColumnPtr databases_,
         ContextPtr context_)
@@ -196,7 +196,7 @@ public:
         std::vector<UInt8> columns_mask_,
         size_t max_block_size_)
         : SourceStepWithFilter(
-            std::make_shared<const Block>(std::move(sample_block)),
+            std::move(sample_block),
             column_names_,
             query_info_,
             storage_snapshot_,

@@ -4,7 +4,6 @@ description: 'System table containing information about local files that are in 
 keywords: ['system table', 'distribution_queue']
 slug: /operations/system-tables/distribution_queue
 title: 'system.distribution_queue'
-doc_type: 'reference'
 ---
 
 Contains information about local files that are in the queue to be sent to the shards. These local files contain new parts that are created by inserting new data into the Distributed table in asynchronous mode.
@@ -33,11 +32,11 @@ Columns:
 
 **Example**
 
-```sql
+``` sql
 SELECT * FROM system.distribution_queue LIMIT 1 FORMAT Vertical;
 ```
 
-```text
+``` text
 Row 1:
 ──────
 database:              default

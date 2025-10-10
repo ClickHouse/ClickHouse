@@ -1,4 +1,4 @@
-#include <Processors/Formats/Impl/PostgreSQLOutputFormat.h>
+#include "PostgreSQLOutputFormat.h"
 
 #include <Columns/IColumn.h>
 #include <Formats/FormatFactory.h>
@@ -9,14 +9,11 @@
 namespace DB
 {
 
-PostgreSQLOutputFormat::PostgreSQLOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & settings_)
+PostgreSQLOutputFormat::PostgreSQLOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & settings_)
     : IOutputFormat(header_, out_)
     , format_settings(settings_)
     , message_transport(&out)
 {
-    // PostgreSQL uses 't' and 'f' for boolean values
-    format_settings.bool_true_representation = "t";
-    format_settings.bool_false_representation = "f";
 }
 
 void PostgreSQLOutputFormat::writePrefix()
@@ -32,7 +29,7 @@ void PostgreSQLOutputFormat::writePrefix()
         for (size_t i = 0; i < header.columns(); ++i)
         {
             const auto & column_name = header.getColumnsWithTypeAndName()[i].name;
-            columns.emplace_back(column_name, data_types[i]);
+            columns.emplace_back(column_name, data_types[i]->getTypeId());
             serializations.emplace_back(data_types[i]->getDefaultSerialization());
         }
         message_transport.send(PostgreSQLProtocol::Messaging::RowDescription(columns));
@@ -74,10 +71,8 @@ void registerOutputFormatPostgreSQLWire(FormatFactory & factory)
         "PostgreSQLWire",
         [](WriteBuffer & buf,
            const Block & sample,
-           const FormatSettings & settings,
-           FormatFilterInfoPtr /*format_filter_info*/) { return std::make_shared<PostgreSQLOutputFormat>(buf, std::make_shared<const Block>(sample), settings); });
+           const FormatSettings & settings) { return std::make_shared<PostgreSQLOutputFormat>(buf, sample, settings); });
     factory.markOutputFormatNotTTYFriendly("PostgreSQLWire");
-    factory.setContentType("PostgreSQLWire", "application/octet-stream");
 }
 
 }

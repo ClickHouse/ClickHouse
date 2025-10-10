@@ -1,5 +1,7 @@
 ---Explain Syntax---
-SELECT *
+SELECT
+    day_,
+    type_1
 FROM
 (
     SELECT
@@ -16,7 +18,9 @@ FROM
             GROUPING SETS (
                 (day_, type_1),
                 (day_))
+        HAVING if(type_1 = \'\', \'all\', type_1) = \'all\'
     ) AS t
+    WHERE type_1 = \'all\'
 )
 WHERE type_1 = \'all\'
 
