@@ -251,7 +251,7 @@ private:
     private:
         const ClassifierSettings settings;
         WorkloadResourceManager * resource_manager;
-        std::mutex mutex;
+        mutable std::mutex mutex;
         struct Attachment
         {
             ResourcePtr resource;
