@@ -39,7 +39,7 @@ def test_writes_mutate_delete(started_cluster_iceberg_with_spark, storage_type, 
     instance.query(f"ALTER TABLE {TABLE_NAME} DELETE WHERE x = '999';", settings={"allow_experimental_insert_into_iceberg": 1})
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '456\n890\n'
 
-    if storage_type != "local":
+    if storage_type == "azure":
         return
     initial_files = default_download_directory(
         started_cluster_iceberg_with_spark,
