@@ -26,7 +26,7 @@ private:
 
     std::uniform_int_distribution<uint16_t> uints16;
 
-    std::uniform_int_distribution<int32_t> ints32, time_hours;
+    std::uniform_int_distribution<int32_t> ints32, time_hours, second_offsets;
 
     std::uniform_int_distribution<uint32_t> uints32, dist1, dist2, dist3, dist4, date_years, datetime_years, datetime64_years, months,
         hours, minutes, subseconds, strlens;
@@ -82,6 +82,10 @@ private:
 
     const DB::Strings jcols{"c0", "c1", "c0.c1", "😆", "😉😉"};
 
+    String getDate();
+    String getCurrentTimeWithOffset();
+    String getDateTimeWithOffset();
+
 public:
     pcg64_fast generator;
 
@@ -95,6 +99,7 @@ public:
         , uints16(std::numeric_limits<uint16_t>::min(), std::numeric_limits<uint16_t>::max())
         , ints32(std::numeric_limits<int32_t>::min(), std::numeric_limits<int32_t>::max())
         , time_hours(-999, 999)
+        , second_offsets(-60, 60)
         , uints32(std::numeric_limits<uint32_t>::min(), std::numeric_limits<uint32_t>::max())
         , dist1(UINT32_C(1), UINT32_C(10))
         , dist2(UINT32_C(1), UINT32_C(100))

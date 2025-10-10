@@ -417,7 +417,7 @@ class IcebergTableGenerator(LakeTableGenerator):
             "commit.manifest.min-count-to-merge": lambda: str(
                 random.choice([1, 2, 8, 50, 100, 200, 500])
             ),
-            "commit.manifest-merge.enabled": lambda: true_false_lambda,
+            "commit.manifest-merge.enabled": true_false_lambda,
             # Snapshot retention
             "history.expire.max-snapshot-age-ms": lambda: str(
                 random.choice(
