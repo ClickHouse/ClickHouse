@@ -134,16 +134,8 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
         max_num_tries, code);
 }
 
-void ObjectStorageQueueUnorderedFileMetadata::prepareProcessedAtStartRequests(
-    Coordination::Requests & requests,
-    const zkutil::ZooKeeperPtr &)
-{
-    requests.push_back(
-        zkutil::makeCreateRequest(
-            processed_node_path, node_metadata.toString(), zkutil::CreateMode::Persistent));
-}
-
-void ObjectStorageQueueUnorderedFileMetadata::prepareProcessedRequestsImpl(Coordination::Requests & requests)
+void ObjectStorageQueueUnorderedFileMetadata::prepareProcessedRequestsImpl(Coordination::Requests & requests,
+    LastProcessedFileInfoMapPtr /* created_nodes */)
 {
     if (processing_id_version.has_value())
     {
