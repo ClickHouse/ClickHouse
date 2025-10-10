@@ -37,4 +37,4 @@ af	text
 Test text(tokenizer = "sparse_gram", min_length = 2,max_length = 100, min_cutoff_length=40) on UTF-8 data
 af	text
 102	clickhouse你好
-0
+1
