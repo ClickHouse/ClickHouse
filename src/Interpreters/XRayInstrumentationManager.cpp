@@ -160,7 +160,7 @@ void XRayInstrumentationManager::unpatchFunction(std::variant<uint64_t, bool> id
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown instrumentation_point_id to remove: ({})", std::get<uint64_t>(id));
     }
 
-    for ( const auto & instrumented_function : functions_to_unpatch)
+    for (const auto & instrumented_function : functions_to_unpatch)
     {
         HandlerType type = getHandlerType(instrumented_function.handler_name);
         instrumented_functions.erase(functionIdToHandlers[instrumented_function.function_id][type]);
