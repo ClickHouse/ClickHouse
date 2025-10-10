@@ -361,7 +361,6 @@ public:
     {
         Columns columns;
         ScatteredBlock::Selector selector;
-        size_t selector_rows = 0;
 
         size_t allocatedBytes() const;
     };
@@ -370,6 +369,7 @@ public:
     {
         const ScatteredColumns * columns;
         ColumnPtr column;
+        size_t selector_rows = 0;
 
         size_t allocatedBytes() const;
     };
