@@ -929,7 +929,7 @@ String StatementGenerator::setMergeTableParameter(RandomGenerator & rg, const St
 template <typename T>
 void StatementGenerator::randomEngineParams(RandomGenerator & rg, std::optional<SQLRelation> & rel, T * te)
 {
-    const uint32_t nparams = std::max(std::min(this->fc.max_width - this->width, (rg.nextMediumNumber() % UINT32_C(3)) + 1), UINT32_C(1));
+    const uint32_t nparams = std::min(this->fc.max_width - this->width, rg.nextSmallNumber() - 1);
 
     for (uint32_t i = 0; i < nparams; i++)
     {

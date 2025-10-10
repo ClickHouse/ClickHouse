@@ -151,22 +151,22 @@ public:
     bool nextBool();
 
     /// Range [1970-01-01, 2149-06-06]
-    String nextDate(const String separator, bool allow_func);
+    String nextDate(const String & separator, bool allow_func);
 
     /// Range [1900-01-01, 2299-12-31]
-    String nextDate32(const String separator, bool allow_func);
+    String nextDate32(const String & separator, bool allow_func);
 
     /// Range [-999:59:59, 999:59:59]
-    String nextTime(const String separator, bool allow_func);
+    String nextTime(const String & separator, bool allow_func);
 
     /// Range [-999:59:59.999999999, 999:59:59.999999999]
-    String nextTime64(const String separator, bool allow_func, bool has_subseconds);
+    String nextTime64(const String & separator, bool allow_func, bool has_subseconds);
 
     /// Range [1970-01-01 00:00:00, 2106-02-07 06:28:15]
-    String nextDateTime(const String separator, bool allow_func, bool has_subseconds);
+    String nextDateTime(const String & separator, bool allow_func, bool has_subseconds);
 
     /// Range [1900-01-01 00:00:00, 2299-12-31 23:59:59.99999999]
-    String nextDateTime64(const String separator, bool allow_func, bool has_subseconds);
+    String nextDateTime64(const String & separator, bool allow_func, bool has_subseconds);
 
     template <typename T>
     T thresholdGenerator(const double always_on_prob, const double always_off_prob, T min_val, T max_val)

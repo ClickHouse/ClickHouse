@@ -80,7 +80,7 @@ bool RandomGenerator::nextBool()
     return dist4(generator) == 2;
 }
 
-String RandomGenerator::nextDate(const String separator, const bool allow_func)
+String RandomGenerator::nextDate(const String & separator, const bool allow_func)
 {
     if (allow_func && this->nextMediumNumber() < 16)
     {
@@ -96,7 +96,7 @@ String RandomGenerator::nextDate(const String separator, const bool allow_func)
     }
 }
 
-String RandomGenerator::nextDate32(const String separator, const bool allow_func)
+String RandomGenerator::nextDate32(const String & separator, const bool allow_func)
 {
     if (allow_func && this->nextMediumNumber() < 16)
     {
@@ -119,13 +119,13 @@ String RandomGenerator::nextDate32(const String separator, const bool allow_func
     }
 }
 
-String RandomGenerator::nextTime(const String separator, const bool allow_func)
+String RandomGenerator::nextTime(const String & separator, const bool allow_func)
 {
     if (allow_func && this->nextMediumNumber() < 21)
     {
         const int32_t offset_seconds = second_offsets(generator);
 
-        return fmt::format("{}Seconds(now(), {})::Time", offset_seconds < 0 ? "subtract" : "add", offset_seconds);
+        return fmt::format("addSeconds(now(), {})::Time", offset_seconds);
     }
     else
     {
@@ -137,13 +137,13 @@ String RandomGenerator::nextTime(const String separator, const bool allow_func)
     }
 }
 
-String RandomGenerator::nextTime64(const String separator, const bool allow_func, const bool has_subseconds)
+String RandomGenerator::nextTime64(const String & separator, const bool allow_func, const bool has_subseconds)
 {
     if (allow_func && this->nextMediumNumber() < 21)
     {
         const int32_t offset_seconds = second_offsets(generator);
 
-        return fmt::format("{}Seconds(now(), {})::Time64", offset_seconds < 0 ? "subtract" : "add", offset_seconds);
+        return fmt::format("addSeconds(now(), {})::Time64", offset_seconds);
     }
     else
     {
@@ -165,13 +165,13 @@ String RandomGenerator::nextTime64(const String separator, const bool allow_func
     }
 }
 
-String RandomGenerator::nextDateTime(const String separator, const bool allow_func, const bool has_subseconds)
+String RandomGenerator::nextDateTime(const String & separator, const bool allow_func, const bool has_subseconds)
 {
     if (allow_func && this->nextMediumNumber() < 21)
     {
         const int32_t offset_seconds = second_offsets(generator);
 
-        return fmt::format("{}Seconds(now(), {})::Time64", offset_seconds < 0 ? "subtract" : "add", offset_seconds);
+        return fmt::format("addSeconds(now(), {})", offset_seconds);
     }
     else
     {
@@ -201,13 +201,13 @@ String RandomGenerator::nextDateTime(const String separator, const bool allow_fu
     }
 }
 
-String RandomGenerator::nextDateTime64(const String separator, const bool allow_func, const bool has_subseconds)
+String RandomGenerator::nextDateTime64(const String & separator, const bool allow_func, const bool has_subseconds)
 {
     if (allow_func && this->nextMediumNumber() < 21)
     {
         const int32_t offset_seconds = second_offsets(generator);
 
-        return fmt::format("{}Seconds(now(), {})::Time64", offset_seconds < 0 ? "subtract" : "add", offset_seconds);
+        return fmt::format("addSeconds(now(), {})", offset_seconds);
     }
     else
     {
