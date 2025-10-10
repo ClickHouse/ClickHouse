@@ -2324,6 +2324,12 @@ std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool is_table_functio
         return std::make_unique<DateDiffLayer>();
     if (function_name_lowercase == "grouping")
         return std::make_unique<FunctionLayer>(function_name_lowercase, allow_function_parameters_);
+
+    /// NOT is always parsed as an operator, because there is no difference between
+    /// the operator form: NOT (1 + 2), and the functional form: not(1 + 2), when the operand has to be in parentheses.
+    if (function_name_lowercase == "not" && !is_table_function)
+        return std::make_unique<FunctionLayer>(function_name_lowercase, allow_function_parameters_, false, true);
+
     return std::make_unique<FunctionLayer>(function_name, allow_function_parameters_, identifier->as<ASTIdentifier>()->compound());
 }
 
