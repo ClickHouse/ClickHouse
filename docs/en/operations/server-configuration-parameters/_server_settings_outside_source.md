@@ -2215,7 +2215,7 @@ Accepted values are:
 Section of the configuration file that contains settings:
 - Path to configuration file with predefined users.
 - Path to folder where users created by SQL commands are stored.
-- ZooKeeper node path where users created by SQL commands are stored and replicated (experimental).
+- ZooKeeper node path where users created by SQL commands are stored and replicated.
 
 If this section is specified, the path from [users_config](/operations/server-configuration-parameters/settings#users_config) and [access_control_path](../../operations/server-configuration-parameters/settings.md#access_control_path) won't be used.
 
