@@ -1,11 +1,6 @@
-import logging
-import os
 import random
-import re
-import shutil
 import string
-import threading
-import time
+import uuid
 from typing import Any, Dict
 
 import pytest
@@ -186,3 +181,19 @@ def test_database_replicated_settings_zero_logs_to_keep(started_cluster):
         + r"'{shard}', '{replica}') "
         + "SETTINGS logs_to_keep=0"
     )
+
+def test_create_database_replicated_with_default_args(started_cluster):
+    db_name = "test_" + get_random_string()
+    db_uuid = uuid.uuid4()
+    assert "within an ON CLUSTER query" in node1.query_and_get_error(f"CREATE DATABASE {db_name} Engine=Replicated")
+
+    node1.query(f"CREATE DATABASE {db_name}_1 ON CLUSTER default Engine=Replicated")
+    node2.query(f"CREATE DATABASE {db_name}_2 ON CLUSTER default Engine=Replicated")
+
+    node1.query(f"CREATE DATABASE {db_name}_explicit UUID '{db_uuid}' Engine=Replicated")
+    node2.query(f"CREATE DATABASE {db_name}_explicit UUID '{db_uuid}' Engine=Replicated")
+
+    for db in [f"{db_name}_1", f"{db_name}_2", f"{db_name}_explicit"]:
+        resp1 = node1.query(f"SELECT database, zookeeper_path FROM system.database_replicas WHERE database='{db}' ORDER BY ALL")
+        resp2 = node2.query(f"SELECT database, zookeeper_path FROM system.database_replicas WHERE database='{db}' ORDER BY ALL")
+        assert resp1 == resp2
