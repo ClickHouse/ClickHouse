@@ -57,7 +57,7 @@ auto logger = getLogger("XRayInstrumentationManager");
 
 void XRayInstrumentationManager::registerHandler(const String & name, XRayHandlerFunction handler)
 {
-    xrayHandlerNameToFunction[name] = handler;
+    handlerNameToFunction[name] = handler;
 }
 
 XRayInstrumentationManager::XRayInstrumentationManager()
@@ -92,19 +92,19 @@ HandlerType XRayInstrumentationManager::getHandlerType(const String & handler_na
 void XRayInstrumentationManager::setHandlerAndPatch(const String & function_name, const String & handler_name, std::optional<std::vector<InstrumentParameter>> &parameters, ContextPtr context)
 {
     auto handler_name_lower = Poco::toLower(handler_name);
-    auto handler_it = xrayHandlerNameToFunction.find(handler_name_lower);
-    if (handler_it == xrayHandlerNameToFunction.end())
+    auto handler_it = handlerNameToFunction.find(handler_name_lower);
+    if (handler_it == handlerNameToFunction.end())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown XRay handler: ({})", handler_name);
 
     int64_t function_id;
-    auto fn_it = functionNameToXRayID.find(function_name);
-    if (fn_it != functionNameToXRayID.end())
-        function_id = fn_it->second;
+    auto fn_it = functionsContainer.get<FunctionName>().find(function_name);
+    if (fn_it != functionsContainer.get<FunctionName>().end())
+        function_id = fn_it->function_id;
     else
     {
-        auto stripped_it = strippedFunctionNameToXRayID.find(function_name);
-        if (stripped_it != strippedFunctionNameToXRayID.end())
-            function_id = stripped_it->second.back();
+        auto stripped_it = functionsContainer.get<StrippedFunctionName>().find(function_name);
+        if (stripped_it != functionsContainer.get<StrippedFunctionName>().end())
+            function_id = stripped_it->function_id;
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown function to instrument: ({})", function_name);
     }
@@ -186,8 +186,8 @@ XRayInstrumentationManager::InstrumentedFunctions XRayInstrumentationManager::ge
 
 XRayHandlerFunction XRayInstrumentationManager::getHandler(const String & name) const
 {
-    auto it = xrayHandlerNameToFunction.find(name);
-    if (it == xrayHandlerNameToFunction.end())
+    auto it = handlerNameToFunction.find(name);
+    if (it == handlerNameToFunction.end())
         throw std::runtime_error("Handler not found: " + name);
     return it->second;
 }
@@ -213,8 +213,8 @@ void XRayInstrumentationManager::dispatchHandlerImpl(int32_t func_id, XRayEntryT
 
     for (const auto & [type, ip_it] : handlers_set_it->second)
     {
-        auto handler_it = xrayHandlerNameToFunction.find(ip_it->handler_name);
-        if (handler_it == xrayHandlerNameToFunction.end())
+        auto handler_it = handlerNameToFunction.find(ip_it->handler_name);
+        if (handler_it == handlerNameToFunction.end())
         {
             LOG_ERROR(logger, "Handler not found");
         }
@@ -258,6 +258,10 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
     /// Initialize the LLVM symbolizer to resolve function names
     LLVMSymbolizer symbolizer;
 
+    functionsContainer.reserve(function_addresses.size());
+
+    const auto & context = CurrentThread::getQueryContext();
+
     LOG_DEBUG(logger, "Starting to parse the XRay instrumentation map. This takes a few seconds...");
 
     /// Iterate over all instrumented functions
@@ -283,9 +287,7 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
         if (function_name != UNKNOWN)
         {
             auto stripped_function_name = extractNearestNamespaceAndFunction(function_name);
-            strippedFunctionNameToXRayID[stripped_function_name].push_back(func_id);
-            functionNameToXRayID[function_name] = func_id;
-            xrayIdToFunctionName[func_id] = stripped_function_name;
+            functionsContainer.get<FunctionId>().emplace(func_id, function_name, stripped_function_name);
         }
     }
 
@@ -420,7 +422,7 @@ void XRayInstrumentationManager::profile(int32_t func_id, XRayEntryType entry_ty
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "No context for profiling instrumentation");
         }
         XRayInstrumentationProfilingLogElement element;
-        element.function_name = xrayIdToFunctionName[func_id];
+        element.function_name = functionsContainer.get<FunctionId>().find(func_id)->stripped_function_name;
         element.tid = getThreadId();
         using namespace std::chrono;
 
