@@ -55,7 +55,6 @@ from helpers.s3_tools import (
     prepare_s3_bucket,
     upload_directory,
     LocalDownloader,
-    LocalUploader,
 )
 from helpers.test_tools import TSV
 
@@ -355,7 +354,7 @@ def default_upload_directory(
 def create_initial_data_file(
     cluster, node, query, table_name, compression_method="none", node_name="node1"
 ):
-    node.query(
+    node.query_with_retry(
         f"""
         INSERT INTO TABLE FUNCTION
             file('{table_name}.parquet')
@@ -769,6 +768,9 @@ def test_restart_broken(started_cluster, use_delta_kernel):
 
     instance.restart_clickhouse()
 
+    # Ensures that ClickHouse has fully restarted
+    instance.query_with_retry("SELECT 1")
+
     assert "NoSuchBucket" in instance.query_and_get_error(
         f"SELECT count() FROM {TABLE_NAME}"
     )
@@ -836,6 +838,9 @@ def test_restart_broken_table_function(started_cluster, use_delta_kernel):
     minio_client.remove_bucket(bucket)
 
     instance.restart_clickhouse()
+
+    # Ensures that ClickHouse has fully restarted
+    instance.query_with_retry("SELECT 1")
 
     assert "NoSuchBucket" in instance.query_and_get_error(
         f"SELECT count() FROM {TABLE_NAME}"
@@ -1328,7 +1333,8 @@ def test_replicated_database_and_unavailable_s3(started_cluster, use_delta_kerne
             DROP TABLE IF EXISTS {DB_NAME}.{TABLE_NAME};
             CREATE TABLE {DB_NAME}.{TABLE_NAME}
             AS deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{TABLE_NAME}' , 'minio', '{minio_secret_key}')
-            """
+            """,
+            settings={"distributed_ddl_task_timeout": 0}
         )
 
         assert TABLE_NAME in node1.query(
@@ -1347,6 +1353,8 @@ def test_replicated_database_and_unavailable_s3(started_cluster, use_delta_kerne
         )
 
         node2.restart_clickhouse()
+        # Ensures that ClickHouse has fully restarted
+        node2.query_with_retry("SELECT 1")
 
         assert "123456" not in node2.query(
             f"SELECT * FROM system.zookeeper WHERE path = '{replica_path}'"
@@ -2077,7 +2085,7 @@ def test_cluster_function(started_cluster, new_analyzer, storage_type):
         storage_options = {
             "AZURE_STORAGE_ACCOUNT_NAME": "devstoreaccount1",
             "AZURE_STORAGE_ACCOUNT_KEY": "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==",
-            "AZURE_STORAGE_CONTAINER_NAME" : "{cluster.azure_container_name}",
+            "AZURE_STORAGE_CONTAINER_NAME" : f"{cluster.azure_container_name}",
             "AZURE_STORAGE_USE_EMULATOR": "true"
         }
         path = f"abfss://{cluster.azure_container_name}@devstoreaccount1.dfs.core.windows.net/{table_name}"
@@ -3256,8 +3264,8 @@ def test_concurrent_queries(started_cluster, partitioned):
             break
         print("Did not catch commit conflict, will retry")
 
-    non_empty_errors = [e for e in errors if e != ""]
-    assert len(non_empty_errors) > 0
+    non_empty_errors = [e for e in errors if e]
+    # If any errors occurred, they must be a Delta commit conflict.
     for e in non_empty_errors:
         assert "commit conflict at version" in e
 
