@@ -141,12 +141,14 @@ void CassandraDictionarySource::maybeAllowFiltering(String & query) const
     query += " ALLOW FILTERING;";
 }
 
-QueryPipeline CassandraDictionarySource::loadAll()
+BlockIO CassandraDictionarySource::loadAll()
 {
     String query = query_builder.composeLoadAllQuery();
     maybeAllowFiltering(query);
     LOG_INFO(log, "Loading all using query: {}", query);
-    return QueryPipeline(std::make_shared<CassandraSource>(getSession(), query, sample_block, max_block_size));
+    BlockIO io;
+    io.pipeline = QueryPipeline(std::make_shared<CassandraSource>(getSession(), query, sample_block, max_block_size));
+    return io;
 }
 
 std::string CassandraDictionarySource::toString() const
@@ -154,15 +156,18 @@ std::string CassandraDictionarySource::toString() const
     return "Cassandra: " + configuration.db + '.' + configuration.table;
 }
 
-QueryPipeline CassandraDictionarySource::loadIds(const std::vector<UInt64> & ids)
+BlockIO CassandraDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     String query = query_builder.composeLoadIdsQuery(ids);
     maybeAllowFiltering(query);
     LOG_INFO(log, "Loading ids using query: {}", query);
-    return QueryPipeline(std::make_shared<CassandraSource>(getSession(), query, sample_block, max_block_size));
+
+    BlockIO io;
+    io.pipeline = QueryPipeline(std::make_shared<CassandraSource>(getSession(), query, sample_block, max_block_size));
+    return io;
 }
 
-QueryPipeline CassandraDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+BlockIO CassandraDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     if (requested_rows.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No rows requested");
@@ -186,10 +191,12 @@ QueryPipeline CassandraDictionarySource::loadKeys(const Columns & key_columns, c
         pipes.push_back(Pipe(std::make_shared<CassandraSource>(getSession(), query, sample_block, max_block_size)));
     }
 
-    return QueryPipeline(Pipe::unitePipes(std::move(pipes)));
+    BlockIO io;
+    io.pipeline = QueryPipeline(Pipe::unitePipes(std::move(pipes)));
+    return io;
 }
 
-QueryPipeline CassandraDictionarySource::loadUpdatedAll()
+BlockIO CassandraDictionarySource::loadUpdatedAll()
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadUpdatedAll is unsupported for CassandraDictionarySource");
 }

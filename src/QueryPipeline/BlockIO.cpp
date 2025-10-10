@@ -80,5 +80,4 @@ void BlockIO::setAllDataSent() const
         process_list_entry->getQueryStatus()->setAllDataSent();
 }
 
-
 }

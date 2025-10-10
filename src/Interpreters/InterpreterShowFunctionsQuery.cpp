@@ -16,7 +16,13 @@ InterpreterShowFunctionsQuery::InterpreterShowFunctionsQuery(const ASTPtr & quer
 
 BlockIO InterpreterShowFunctionsQuery::execute()
 {
-    return executeQuery(getRewrittenQuery(), getContext(), QueryFlags{ .internal = true }).second;
+    auto query_context = Context::createCopy(getContext());
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId({});
+
+    BlockIO io = executeQuery(getRewrittenQuery(), query_context, QueryFlags{ .internal = true }).second;
+    io.context_holder = std::move(query_context);
+    return io;
 }
 
 String InterpreterShowFunctionsQuery::getRewrittenQuery()
