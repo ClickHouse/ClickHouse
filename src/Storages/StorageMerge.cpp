@@ -502,7 +502,7 @@ ReadFromMerge::ReadFromMerge(
 {
 }
 
-void ReadFromMerge::addFilter(FilterDAGInfo filter)
+void ReadFromMerge::addFilterDAGInfo(FilterDAGInfo filter)
 {
     output_header = std::make_shared<const Block>(FilterTransform::transformHeader(
             *output_header,

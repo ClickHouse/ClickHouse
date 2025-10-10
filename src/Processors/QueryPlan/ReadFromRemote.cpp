@@ -238,6 +238,8 @@ static ASTPtr tryBuildAdditionalFilterAST(
     Tables * external_tables,
     const ContextPtr & context)
 {
+    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "input DAG:\n{}", dag.dumpDAG());
+
     std::unordered_map<const ActionsDAG::Node *, ASTPtr> node_to_ast;
 
     struct Frame
@@ -427,7 +429,7 @@ static void addFilters(
     const PlannerContextPtr & planner_context,
     const ActionsDAG & pushed_down_filters)
 {
-    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "\n{}", StackTrace().toString());
+    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "\n{}\n{}", pushed_down_filters.dumpDAG(), StackTrace().toString());
 
     if (!query_tree || !planner_context)
         return;
@@ -903,6 +905,11 @@ void ReadFromParallelRemoteReplicasStep::enforceAggregationInOrder(const SortDes
 
 void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
+    if (filter_actions_dag)
+        addFilters(&external_tables, context, query_ast, query_tree, planner_context, *filter_actions_dag);
+
+    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "\n{}", formattedAST(query_ast));
+
     Pipes pipes = addPipes(query_ast, output_header);
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
@@ -994,9 +1001,6 @@ Pipe ReadFromParallelRemoteReplicasStep::createPipeForSingeReplica(
         assert(stage != QueryProcessingStage::Complete);
 
     assert(output_header);
-
-    if (filter_actions_dag)
-        addFilters(&external_tables, context, query_ast, query_tree, planner_context, *filter_actions_dag);
 
     auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
         pool,
