@@ -279,7 +279,7 @@ MergeTreeReaderWide::FileStreams::iterator MergeTreeReaderWide::addStream(const 
     size_t num_marks_in_part = data_part_info_for_read->getMarksCount();
 
     auto marks_loader = std::make_shared<MergeTreeMarksLoader>(
-        data_part_info_for_read,
+        data_part_info_for_read->getDataPartStorage(),
         mark_cache,
         data_part_info_for_read->getIndexGranularityInfo().getMarksFilePath(stream_name),
         num_marks_in_part,
