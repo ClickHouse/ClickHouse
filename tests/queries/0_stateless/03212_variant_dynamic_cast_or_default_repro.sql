@@ -1,3 +1,8 @@
+-- Deterministic repro for Dynamic → IP casts when reading from shared-data.
+-- This test forces ALL values into shared data (max_types=0) and checks
+-- that only the expected IPs appear after casting.
+-- NOTE: Strings are prefixed with 's_' so they do NOT parse as IPs.
+
 SET allow_experimental_dynamic_type = 1;
 
 ----------------------------------------------------------------
@@ -17,9 +22,12 @@ SETTINGS
     object_shared_data_serialization_version_for_zero_level_parts = 'map';
 
 -- Create multiple parts, then merge, with mostly non-IP plus two true IPs
-INSERT INTO t_shared_v2_map SELECT number, number::Int64             FROM numbers(512);
-INSERT INTO t_shared_v2_map SELECT 10000 + number, toString(number)  FROM numbers(512);
-INSERT INTO t_shared_v2_map SELECT 20000 + number, ( [number] )::Array(Int32) FROM numbers(64);
+INSERT INTO t_shared_v2_map SELECT number, number::Int64 FROM numbers(512);
+-- Make strings non-parsable as IPs
+INSERT INTO t_shared_v2_map
+SELECT 10000 + number, concat('s_', toString(number)) FROM numbers(512);
+INSERT INTO t_shared_v2_map
+SELECT 20000 + number, ( [number] )::Array(Int32) FROM numbers(64);
 INSERT INTO t_shared_v2_map VALUES (900000000, toIPv4('192.168.0.1'));
 INSERT INTO t_shared_v2_map VALUES (900000001, toIPv6('::1'));
 
@@ -88,9 +96,11 @@ SETTINGS
     object_shared_data_serialization_version = 'advanced',
     object_shared_data_serialization_version_for_zero_level_parts = 'advanced';
 
-INSERT INTO t_shared_v3_adv SELECT number, number::Int64             FROM numbers(512);
-INSERT INTO t_shared_v3_adv SELECT 10000 + number, toString(number)  FROM numbers(512);
-INSERT INTO t_shared_v3_adv SELECT 20000 + number, ( [number] )::Array(Int32) FROM numbers(64);
+INSERT INTO t_shared_v3_adv SELECT number, number::Int64 FROM numbers(512);
+INSERT INTO t_shared_v3_adv
+SELECT 10000 + number, concat('s_', toString(number)) FROM numbers(512);
+INSERT INTO t_shared_v3_adv
+SELECT 20000 + number, ( [number] )::Array(Int32) FROM numbers(64);
 INSERT INTO t_shared_v3_adv VALUES (900000000, toIPv4('192.168.0.1'));
 INSERT INTO t_shared_v3_adv VALUES (900000001, toIPv6('::1'));
 
@@ -161,9 +171,11 @@ SETTINGS
     object_shared_data_buckets_for_compact_part = 16,
     object_shared_data_buckets_for_wide_part = 4;
 
-INSERT INTO t_shared_v3_buckets SELECT number, number::Int64             FROM numbers(512);
-INSERT INTO t_shared_v3_buckets SELECT 10000 + number, toString(number)  FROM numbers(512);
-INSERT INTO t_shared_v3_buckets SELECT 20000 + number, ( [number] )::Array(Int32) FROM numbers(64);
+INSERT INTO t_shared_v3_buckets SELECT number, number::Int64 FROM numbers(512);
+INSERT INTO t_shared_v3_buckets
+SELECT 10000 + number, concat('s_', toString(number)) FROM numbers(512);
+INSERT INTO t_shared_v3_buckets
+SELECT 20000 + number, ( [number] )::Array(Int32) FROM numbers(64);
 INSERT INTO t_shared_v3_buckets VALUES (900000000, toIPv4('192.168.0.1'));
 INSERT INTO t_shared_v3_buckets VALUES (900000001, toIPv6('::1'));
 
@@ -215,4 +227,3 @@ SELECT * FROM
          FROM t_shared_v3_buckets)
 )
 ORDER BY seq;
-
