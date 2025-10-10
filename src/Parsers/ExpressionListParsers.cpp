@@ -1256,7 +1256,7 @@ private:
     bool is_operator;
 };
 
-/// Layer for priority brackets and tuple function
+/// Layer for priority brackets and the tuple function
 class RoundBracketsLayer : public Layer
 {
 public:
@@ -1299,7 +1299,7 @@ public:
 protected:
     bool getResultImpl(ASTPtr & node) override
     {
-        // Round brackets can mean priority operator as well as function tuple()
+        // Round brackets can mean priority operator as well as function tuple
         if (!is_tuple && elements.size() == 1)
             node = std::move(elements[0]);
         else
@@ -1924,7 +1924,7 @@ public:
     {
         bool result = LayerWithSeparator::parse(pos, expected, action);
 
-        /// Check that after the tuple() function there is no lambdas operator
+        /// Check that after the tuple(...) function there is no lambdas operator
         if (finished && pos->type == TokenType::Arrow)
             return false;
 
@@ -1934,7 +1934,7 @@ public:
 protected:
     bool getResultImpl(ASTPtr & node) override
     {
-        node = makeASTOperator("tuple", std::move(elements));
+        node = makeASTFunction("tuple", std::move(elements));
         return true;
     }
 };
