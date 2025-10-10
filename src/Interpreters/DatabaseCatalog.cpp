@@ -776,6 +776,7 @@ DatabasePtr DatabaseCatalog::getDatabase(const String & database_name) const
             backQuoteIfNeed(database_name),
             backQuoteIfNeed(names[0]));
     }
+    assert(database_name == db->getDatabaseName());
     return db;
 }
 
@@ -786,6 +787,7 @@ DatabasePtr DatabaseCatalog::tryGetDatabase(const String & database_name) const
     auto it = databases.find(database_name);
     if (it == databases.end())
         return {};
+    assert(database_name == it->second->getDatabaseName());
     return it->second;
 }
 
