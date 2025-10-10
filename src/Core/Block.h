@@ -44,7 +44,6 @@ public:
     Block(std::initializer_list<ColumnWithTypeAndName> il);
     Block(const ColumnsWithTypeAndName & data_); /// NOLINT
     Block(ColumnsWithTypeAndName && data_); /// NOLINT
-    Block(ColumnsWithTypeAndName && data_, const IndexByName & index);
 
     /// insert the column at the specified position
     void insert(size_t position, ColumnWithTypeAndName elem);

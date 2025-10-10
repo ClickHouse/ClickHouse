@@ -21,7 +21,6 @@
 #include <boost/algorithm/string.hpp>
 #include <fmt/ranges.h>
 
-
 namespace DB
 {
 
@@ -168,14 +167,6 @@ Block::Block(ColumnsWithTypeAndName && data_) : data{std::move(data_)}
     initializeIndexByName();
 }
 
-
-Block::Block(ColumnsWithTypeAndName && data_, const IndexByName & index)
-    : data{std::move(data_)}, index_by_name(index)
-{
-    chassert(data.size() == index.size());
-}
-
-
 void Block::initializeIndexByName()
 {
     index_by_name.reserve(data.size());
@@ -224,6 +215,10 @@ void Block::insert(ColumnWithTypeAndName elem)
         throw Exception(ErrorCodes::AMBIGUOUS_COLUMN_NAME, "Column name in Block cannot be empty");
 
     auto [it, inserted] = index_by_name.emplace(elem.name, data.size());
+    /// Note that !inserted is possible when inserting columns with the same name multiple times
+    /// This will leave the block in an inconsistent state as the data will be found twice but only once in the index
+    /// Note that when removing this column with erase the data added multiple times won't be referenciable any longer
+    /// This is a bug and leads to issues down the line, but fixing it requires fixing other places on the code that relies on it
     if (!inserted)
         checkColumnStructure<void>(data[it->second], elem,
             "(columns with identical name must have identical structure)", true, ErrorCodes::AMBIGUOUS_COLUMN_NAME);
@@ -264,14 +259,21 @@ void Block::erase(size_t position)
 
 void Block::eraseImpl(size_t position)
 {
-    index_by_name.erase(index_by_name.find((data.begin() + position)->name));
     data.erase(data.begin() + position);
 
+    IndexByName::iterator it_to_delete = index_by_name.end();
     for (auto it = index_by_name.begin(); it != index_by_name.end(); ++it)
     {
-        if (it->second > position)
+        if (it->second == position)
+            it_to_delete = it;
+        else if (it->second > position)
             --it->second;
     }
+
+    /// This shouldn't happen but it does. Some operations (multiple additions of the same column) leave the data and index in an
+    /// inconsistent status, so a column might be added but not found in the index
+    if (it_to_delete != index_by_name.end())
+        index_by_name.erase(it_to_delete);
 }
 
 
@@ -612,7 +614,7 @@ Block Block::cloneWithColumns(MutableColumns && columns) const
     for (size_t i = 0; i < num_columns; ++i)
         cols.emplace_back(std::move(columns[i]), data[i].type, data[i].name);
 
-    return Block(std::move(cols), index_by_name);
+    return Block(std::move(cols));
 }
 
 
@@ -635,19 +637,18 @@ Block Block::cloneWithColumns(const Columns & columns) const
     for (size_t i = 0; i < num_columns; i++)
         cols.emplace_back(columns[i], data[i].type, data[i].name);
 
-    return Block(std::move(cols), index_by_name);
+    return Block(std::move(cols));
 }
 
 
 Block Block::cloneWithoutColumns() const
 {
-    size_t num_columns = data.size();
-    ColumnsWithTypeAndName cols{num_columns};
+    ColumnsWithTypeAndName cols{data};
 
-    for (size_t i = 0; i < num_columns; ++i)
-        cols.emplace_back(nullptr, data[i].type, data[i].name);
+    for (auto & col : cols)
+        col.column = nullptr;
 
-    return Block(std::move(cols), index_by_name);
+    return Block(std::move(cols));
 }
 
 Block Block::cloneWithCutColumns(size_t start, size_t length) const
