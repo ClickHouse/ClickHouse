@@ -62,7 +62,7 @@ private:
 
     SortCursorImpls cursors;
 
-    SortQueueVariants<QueueImplType::LoserTree> queue_variants;
+    SortQueueVariants<> queue_variants;
 
     template <typename TSortingQueue>
     Status mergeImpl(TSortingQueue & queue);
