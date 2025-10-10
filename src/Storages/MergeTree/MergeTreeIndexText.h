@@ -125,7 +125,7 @@ struct PostingsSerialization
         EmbeddedPostings = 1ULL << 1,
     };
 
-    static void serialize(UInt64 header, PostingListBuilder && postings, WriteBuffer & ostr);
+    static UInt64 serialize(UInt64 header, PostingListBuilder && postings, WriteBuffer & ostr);
     static PostingList deserialize(UInt64 header, UInt32 cardinality, ReadBuffer & istr);
 };
 

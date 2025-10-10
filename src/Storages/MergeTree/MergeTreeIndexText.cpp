@@ -131,8 +131,9 @@ DictionaryBlock::DictionaryBlock(ColumnPtr tokens_, std::vector<TokenPostingsInf
 {
 }
 
-void PostingsSerialization::serialize(UInt64 header, PostingListBuilder && postings, WriteBuffer & ostr)
+UInt64 PostingsSerialization::serialize(UInt64 header, PostingListBuilder && postings, WriteBuffer & ostr)
 {
+    UInt64 written_bytes = 0;
     if (header & Flags::RawPostings)
     {
         if (postings.isSmall())
@@ -140,13 +141,19 @@ void PostingsSerialization::serialize(UInt64 header, PostingListBuilder && posti
             size_t size = postings.size();
             const auto & array = postings.getSmall();
             for (size_t i = 0; i < size; ++i)
+            {
                 writeVarUInt(array[i], ostr);
+                written_bytes += getLengthOfVarUInt(array[i]);
+            }
         }
         else
         {
             const auto & posting_list = postings.getLarge();
             for (const auto row_id : posting_list)
+            {
                 writeVarUInt(row_id, ostr);
+                written_bytes += getLengthOfVarUInt(row_id);
+            }
         }
     }
     else
@@ -157,11 +164,14 @@ void PostingsSerialization::serialize(UInt64 header, PostingListBuilder && posti
         posting_list.runOptimize();
         size_t num_bytes = posting_list.getSizeInBytes();
         writeVarUInt(num_bytes, ostr);
+        written_bytes += getLengthOfVarUInt(num_bytes);
 
         std::vector<char> memory(num_bytes);
         posting_list.write(memory.data());
         ostr.write(memory.data(), num_bytes);
+        written_bytes += num_bytes;
     }
+    return written_bytes;
 }
 
 PostingList PostingsSerialization::deserialize(UInt64 header, UInt32 cardinality, ReadBuffer & istr)
@@ -514,6 +524,25 @@ MergeTreeIndexGranuleTextWritable::MergeTreeIndexGranuleTextWritable(
 
 namespace
 {
+struct SerializationStats
+{
+    UInt64 front_coded_strings_size = 0;
+    UInt64 raw_strings_size = 0;
+    UInt64 posting_lists_size = 0;
+
+    [[nodiscard]] std::string toString() const
+    {
+        if (front_coded_strings_size != 0)
+            return fmt::format("FrontCoded strings size = {} | Raw strings size = {} | Posting lists size = {}",
+                               ReadableSize(front_coded_strings_size),
+                               ReadableSize(raw_strings_size),
+                               ReadableSize(posting_lists_size));
+
+        return fmt::format("Raw strings size = {} | Posting lists size = {}",
+                           ReadableSize(raw_strings_size), ReadableSize(posting_lists_size));
+    }
+};
+
 size_t computeCommonPrefixLength(const StringRef & lhs, const StringRef & rhs)
 {
     size_t common_prefix_length = 0;
@@ -525,32 +554,24 @@ size_t computeCommonPrefixLength(const StringRef & lhs, const StringRef & rhs)
 }
 
 void serializeTokensRaw(
-    WriteBuffer & write_buffer, const SortedTokensAndPostings & tokens_and_postings, size_t block_begin, size_t block_end)
+    SerializationStats & stats,
+    WriteBuffer & write_buffer,
+    const SortedTokensAndPostings & tokens_and_postings,
+    size_t block_begin,
+    size_t block_end)
 {
     /// Write tokens the same as in SerializationString::serializeBinaryBulk
     /// to be able to read them later with SerializationString::deserializeBinaryBulk.
+
     for (size_t i = block_begin; i < block_end; ++i)
     {
         auto current_token = tokens_and_postings[i].first;
         writeVarUInt(current_token.size, write_buffer);
         write_buffer.write(current_token.data, current_token.size);
-    }
-}
 
-namespace
-{
-struct FrontCodingSerializationStats
-{
-    UInt64 front_coded_strings_size = 0;
-    UInt64 raw_strings_size = 0;
-
-    [[nodiscard]] std::string toString() const
-    {
-        return fmt::format("FrontCoded strings size = {} | Raw strings size = {}",
-                           ReadableSize(front_coded_strings_size),
-                           ReadableSize(raw_strings_size));
+        stats.raw_strings_size += getLengthOfVarUInt(current_token.size);
+        stats.raw_strings_size += (current_token.size);
     }
-};
 }
 
 /*
@@ -558,14 +579,17 @@ struct FrontCodingSerializationStats
  * 1. https://doi.org/10.1109/Innovate-Data.2017.9
  * 2. https://doi.org/10.1145/3448016.345279
  */
-FrontCodingSerializationStats serializeTokensFrontCoding(
-    WriteBuffer & write_buffer, const SortedTokensAndPostings & tokens_and_postings, size_t block_begin, size_t block_end)
+void serializeTokensFrontCoding(
+    SerializationStats & stats,
+    WriteBuffer & write_buffer,
+    const SortedTokensAndPostings & tokens_and_postings,
+    size_t block_begin,
+    size_t block_end)
 {
     const auto & first_token = tokens_and_postings[block_begin].first;
     writeVarUInt(first_token.size, write_buffer);
     write_buffer.write(first_token.data, first_token.size);
 
-    FrontCodingSerializationStats stats;
     StringRef previous_token = first_token;
     for (size_t i = block_begin + 1; i < block_end; ++i)
     {
@@ -582,7 +606,6 @@ FrontCodingSerializationStats serializeTokensFrontCoding(
         stats.front_coded_strings_size += getLengthOfVarUInt(current_token.size - lcp);
         stats.front_coded_strings_size += (current_token.size - lcp);
     }
-    return stats;
 }
 }
 
@@ -608,6 +631,7 @@ DictionarySparseIndex serializeTokensAndPostings(
     TokensSerializationFormat tokens_format
         = params.dictionary_block_frontcoding_compression ? TokensSerializationFormat::FrontCodedStrings : TokensSerializationFormat::RawStrings;
 
+    SerializationStats stats;
     for (size_t block_idx = 0; block_idx < num_blocks; ++block_idx)
     {
         size_t block_begin = block_idx * params.dictionary_block_size;
@@ -631,11 +655,10 @@ DictionarySparseIndex serializeTokensAndPostings(
         switch (tokens_format)
         {
             case TokensSerializationFormat::RawStrings:
-                serializeTokensRaw(dictionary_stream.compressed_hashing, tokens_and_postings, block_begin, block_end);
+                serializeTokensRaw(stats, dictionary_stream.compressed_hashing, tokens_and_postings, block_begin, block_end);
                 break;
             case TokensSerializationFormat::FrontCodedStrings:
-                auto stats = serializeTokensFrontCoding(dictionary_stream.compressed_hashing, tokens_and_postings, block_begin, block_end);
-                LOG_TRACE(logger, "Dictionary block #{} stats: {}", block_idx, stats.toString());
+                serializeTokensFrontCoding(stats, dictionary_stream.compressed_hashing, tokens_and_postings, block_begin, block_end);
                 break;
         }
 
@@ -656,10 +679,12 @@ DictionarySparseIndex serializeTokensAndPostings(
 
             writeVarUInt(header, dictionary_stream.compressed_hashing);
             writeVarUInt(cardinality, dictionary_stream.compressed_hashing);
+            stats.posting_lists_size += getLengthOfVarUInt(header);
+            stats.posting_lists_size += getLengthOfVarUInt(cardinality);
 
             if (embedded_postings)
             {
-                PostingsSerialization::serialize(header, std::move(postings), dictionary_stream.compressed_hashing);
+                stats.posting_lists_size += PostingsSerialization::serialize(header, std::move(postings), dictionary_stream.compressed_hashing);
             }
             else
             {
@@ -670,10 +695,12 @@ DictionarySparseIndex serializeTokensAndPostings(
                 UInt64 offset_in_file = postings_mark.offset_in_compressed_file;
 
                 writeVarUInt(offset_in_file, dictionary_stream.compressed_hashing);
-                PostingsSerialization::serialize(header, std::move(postings), postings_stream.compressed_hashing);
+                stats.posting_lists_size += getLengthOfVarUInt(offset_in_file);
+                stats.posting_lists_size += PostingsSerialization::serialize(header, std::move(postings), postings_stream.compressed_hashing);
             }
         }
     }
+    LOG_TRACE(logger, "Dictionary stats: {}", stats.toString());
 
     return DictionarySparseIndex(std::move(sparse_index_tokens), std::move(sparse_index_offsets));
 }
