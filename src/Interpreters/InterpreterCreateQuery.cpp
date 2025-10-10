@@ -178,6 +178,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_TABLES;
     extern const int TOO_MANY_DATABASES;
     extern const int THERE_IS_NO_COLUMN;
+    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
 }
 
 namespace fs = std::filesystem;
@@ -1017,6 +1018,17 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
         if (!all_columns.emplace(column.name).second)
             throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Column {} already exists", backQuoteIfNeed(column.name));
     }
+
+    /// Check in advance if indexes have valid column names, otherwise we may run into problems later
+    /// in a special case where we exclude indexes from being materialized on insert, see issue 88169
+    for (const auto & index : properties.indices)
+        for (const auto & col_name : index.column_names)
+            if (!all_columns.contains(col_name))
+                throw Exception(
+                    ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
+                    "Index {} requires column {} but column does not exist.",
+                    backQuoteIfNeed(index.name),
+                    backQuoteIfNeed(col_name));
 
     const auto & settings = getContext()->getSettingsRef();
 
