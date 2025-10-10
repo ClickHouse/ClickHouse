@@ -231,6 +231,8 @@ TEST_F(MetadataPlainRewritableDiskTest, CreateNotFromRoot)
 
     /// It is a bug. It should not be possible to create folder unlinked from root.
     EXPECT_TRUE(metadata->existsDirectory("A/B/C"));
+    EXPECT_FALSE(metadata->existsDirectory("A"));
+    EXPECT_FALSE(metadata->existsDirectory("A/B"));
 }
 
 TEST_F(MetadataPlainRewritableDiskTest, RemoveDirectory)
