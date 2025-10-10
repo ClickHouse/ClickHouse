@@ -2792,83 +2792,40 @@ Result:
 └─────────────────────────────────────┘
 ```
 
-
 ## conv
 
-Converts numbers between different number bases. The function takes a number in one base and converts it to another base, supporting bases from 2 to 36. This function is compatible with MySQL's CONV() function and handles partial invalid inputs by processing valid digits until the first invalid character.
+Converts numbers between different number bases, supporting bases from 2 to 36. This function is compatible with MySQL's
+[CONV()](https://dev.mysql.com/doc/refman/8.4/en/mathematical-functions.html#function_conv) function and handles partial
+invalid inputs by processing valid digits until the first invalid character.
 
-__Syntax__
+**Syntax**
 
 ```sql
 conv(number, from_base, to_base)
 ```
 
-__Arguments__
+**Arguments**
 
-- `number` — The number to convert. Can be a string or numeric type. Leading and trailing whitespace is automatically trimmed. String or Number
-- `from_base` — The source base (2-36). Must be an integer. Integer
-- `to_base` — The target base (2-36). Must be an integer. Integer
+- `number` — The number to convert. [String](../data-types/string.md), [FixedString](../data-types/fixedstring.md) or [Integer](../data-types/int-uint)
+- `from_base` — The source base (2-36). [Integer](../data-types/int-uint)
+- `to_base` — The target base (2-36). [Integer](../data-types/int-uint)
 
-__Returned value__
+**Returned value**
 
-- Returns the string representation of the number in the target base. String
+- Returns the string representation of the number in the target base. [String](../data-types/string.md)
 
-__Examples__
-
-Query:
+**Example**
 
 ```sql
 SELECT conv('10', 10, 2);
 ```
 
-Response:
+Result:
 
-```response
+```result
 ┌─conv('10', 10, 2)─┐
 │ 1010              │
 └───────────────────┘
-```
-
-Query:
-
-```sql
-SELECT conv('FF', 16, 10);
-```
-
-Response:
-
-```response
-┌─conv('FF', 16, 10)─┐
-│ 255                │
-└────────────────────┘
-```
-
-Query:
-
-```sql
-SELECT conv('123XYZ', 10, 16);
-```
-
-Response:
-
-```response
-   ┌─conv('123XYZ', 10, 16)─┐
-1. │ 7B                     │
-   └────────────────────────┘
-```
-
-Query:
-
-```sql
-SELECT conv('-1', 10, 16);
-```
-
-Response:
-
-```response
-┌─conv('-1', 10, 16)─┐
-│ FFFFFFFFFFFFFFFF   │
-└────────────────────┘
 ```
 
 <!-- 
