@@ -2,6 +2,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnDynamic.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Access/User.h>
@@ -22,7 +23,7 @@ ColumnsDescription SystemStorageXRayInstrumentation::getColumnsDescription()
         {"id", std::make_shared<DataTypeUInt32>(), "ID of the instrumentation point"},
         {"function_id", std::make_shared<DataTypeUInt32>(), "ID assigned to the function in xray_instr_map section of elf-binary."},
         {"function_name", std::make_shared<DataTypeString>(), "Name of the instrumented function."},
-        {"handler_name", std::make_shared<DataTypeString>(), "Handler that was patched into instrumentation points of the function."},
+        {"handler_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Handler that was patched into instrumentation points of the function."},
         {"parameters", std::make_shared<DataTypeDynamic>(), "Parameters for the handler call"},
     };
 }
@@ -36,7 +37,7 @@ void SystemStorageXRayInstrumentation::fillData(MutableColumns & res_columns, Co
     auto & column_id = assert_cast<ColumnUInt32 &>(*res_columns[column_index++]).getData();
     auto & column_function_id = assert_cast<ColumnUInt32 &>(*res_columns[column_index++]).getData();
     auto & column_function_name = assert_cast<ColumnString &>(*res_columns[column_index++]);
-    auto & column_handler_name = assert_cast<ColumnString &>(*res_columns[column_index++]);
+    auto & column_handler_name = assert_cast<ColumnLowCardinality &>(*res_columns[column_index++]);
     auto & column_parameters = assert_cast<ColumnDynamic&>(*res_columns[column_index++]);
 
     auto add_row = [&](UInt32 id, UInt32 function_id, const String & function_name, const String & handler_name, std::optional<std::vector<InstrumentParameter>> parameters)

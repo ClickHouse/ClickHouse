@@ -139,28 +139,8 @@ void XRayInstrumentationManager::setHandlerAndPatch(const String & function_name
 void XRayInstrumentationManager::unpatchFunction(std::variant<uint64_t, bool> id)
 {
     SharedLockGuard lock(shared_mutex);
-    InstrumentedFunctions functions_to_unpatch;
 
-    if (std::holds_alternative<bool>(id))
-    {
-        functions_to_unpatch = instrumented_functions;
-    }
-    else
-    {
-        for (const auto & function_info : instrumented_functions)
-        {
-            if (function_info.id == std::get<uint64_t>(id))
-            {
-                functions_to_unpatch.emplace_back(function_info);
-                break;
-            }
-        }
-
-        if (functions_to_unpatch.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown instrumentation_point_id to remove: ({})", std::get<uint64_t>(id));
-    }
-
-    for (const auto & instrumented_function : functions_to_unpatch)
+    auto remove_function = [this](const InstrumentedFunctionInfo & instrumented_function) TSA_REQUIRES_SHARED(shared_mutex)
     {
         HandlerType type = getHandlerType(instrumented_function.handler_name);
         instrumented_functions.erase(functionIdToHandlers[instrumented_function.function_id][type]);
@@ -170,6 +150,29 @@ void XRayInstrumentationManager::unpatchFunction(std::variant<uint64_t, bool> id
             functionIdToHandlers.erase(instrumented_function.function_id);
             __xray_unpatch_function(instrumented_function.function_id);
         }
+    };
+
+    if (std::holds_alternative<bool>(id))
+    {
+        for (const auto & instrumented_function : instrumented_functions)
+            remove_function(instrumented_function);
+    }
+    else
+    {
+        std::optional<InstrumentedFunctionInfo> function;
+        for (const auto & function_info : instrumented_functions)
+        {
+            if (function_info.id == std::get<uint64_t>(id))
+            {
+                function = function_info;
+                break;
+            }
+        }
+
+        if (!function)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown instrumentation point id to remove: ({})", std::get<uint64_t>(id));
+
+        remove_function(function.value());
     }
 }
 
@@ -253,7 +256,6 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
     /// Initialize the LLVM symbolizer to resolve function names
     LLVMSymbolizer symbolizer;
 
-
     /// Iterate over all instrumented functions
     for (const auto &[func_id, addr] : function_addresses)
     {
@@ -286,13 +288,8 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
 
 void XRayInstrumentationManager::sleep(int32_t func_id, XRayEntryType entry_type)
 {
-    static thread_local bool in_hook = false;
-    if (in_hook || entry_type != XRayEntryType::ENTRY)
-    {
+    if (entry_type != XRayEntryType::ENTRY)
         return;
-    }
-    in_hook = true;
-    SCOPE_EXIT({ in_hook = false; });
 
     SharedLockGuard lock(shared_mutex);
     HandlerType type = HandlerType::Sleep;
@@ -301,7 +298,9 @@ void XRayInstrumentationManager::sleep(int32_t func_id, XRayEntryType entry_type
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing parameters for sleep instrumentation");
     }
-    auto & params_opt = parameters_it->second->parameters;
+    const auto params_opt = parameters_it->second->parameters;
+    lock.unlock();
+
     if (!params_opt.has_value())
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing parameters for sleep instrumentation");
@@ -342,14 +341,8 @@ void XRayInstrumentationManager::sleep(int32_t func_id, XRayEntryType entry_type
 
 void XRayInstrumentationManager::log(int32_t func_id, XRayEntryType entry_type)
 {
-    static thread_local bool in_hook = false;
-    if (in_hook || entry_type != XRayEntryType::ENTRY)
-    {
+    if (entry_type != XRayEntryType::ENTRY)
         return;
-    }
-
-    in_hook = true;
-    SCOPE_EXIT({ in_hook = false; });
 
     SharedLockGuard lock(shared_mutex);
     HandlerType type = HandlerType::Log;
@@ -358,7 +351,9 @@ void XRayInstrumentationManager::log(int32_t func_id, XRayEntryType entry_type)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing parameters for log instrumentation");
     }
-    auto & params_opt = parameters_it->second->parameters;
+    const auto params_opt = parameters_it->second->parameters;
+    lock.unlock();
+
     if (!params_opt.has_value())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing parameters for log instrumentation");
 
