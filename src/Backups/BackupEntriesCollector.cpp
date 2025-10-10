@@ -397,7 +397,7 @@ void BackupEntriesCollector::gatherDatabasesMetadata()
 
             case ASTBackupQuery::ElementType::ALL:
             {
-                for (const auto & [database_name, database] : DatabaseCatalog::instance().getDatabases())
+                for (const auto & [database_name, database] : DatabaseCatalog::instance().getDatabases(false))
                 {
                     if (!element.except_databases.contains(database_name))
                     {
