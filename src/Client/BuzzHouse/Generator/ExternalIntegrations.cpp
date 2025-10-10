@@ -1021,7 +1021,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
     }
     else if ((dttp = dynamic_cast<DateTimeType *>(tp)))
     {
-        String buf = dttp->extended ? rg.nextDateTime64(rg.nextBool()) : rg.nextDateTime(rg.nextBool());
+        String buf = dttp->extended ? rg.nextDateTime64("", false, rg.nextBool()) : rg.nextDateTime("", false, rg.nextBool());
 
         if constexpr (is_document<T>)
         {
