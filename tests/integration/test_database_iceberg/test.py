@@ -606,4 +606,22 @@ def test_cluster_select(started_cluster):
     node2.query("SYSTEM FLUSH LOGS system.query_log")
 
     assert node1.query(f"SELECT Settings['parallel_replicas_for_cluster_engines'] AS parallel_replicas_for_cluster_engines FROM system.query_log WHERE query_id = '{query_id}' LIMIT 1;") == '1\n'
+
+    for replica in [node1, node2]:
+        cluster_secondary_queries = (
+            replica.query(
+                f"""
+                SELECT query, type, is_initial_query, read_rows, read_bytes FROM system.query_log
+                WHERE
+                    type = 'QueryStart' AND
+                    positionCaseInsensitive(query, 's3Cluster') != 0 AND
+                    position(query, 'system.query_log') = 0 AND
+                    NOT is_initial_query
+            """
+            )
+            .strip()
+            .split("\n")
+        )
+        assert len(cluster_secondary_queries) == 1
+
     assert node2.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`", settings={"parallel_replicas_for_cluster_engines":1, 'enable_parallel_replicas': 2, 'cluster_for_parallel_replicas': 'cluster_simple', 'parallel_replicas_for_cluster_engines' : 1}) == 'pablo\n'
