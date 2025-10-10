@@ -47,6 +47,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"s3queue_keeper_fault_injection_probablility", 0, 0, "New setting."},
             {"join_runtime_bloom_filter_bytes", 512_KiB, 512_KiB, "New setting"},
             {"use_join_disjunctions_push_down", false, false, "New setting."},
+            {"joined_block_split_single_row", false, false, "New setting"},
             {"join_runtime_bloom_filter_hash_functions", 3, 3, "New setting"},
             {"rewrite_in_to_join", false, false, "New experimental setting"},
             {"iceberg_insert_max_rows_in_data_file", 100000, 1000000, "New setting."},
