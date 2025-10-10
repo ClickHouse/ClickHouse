@@ -178,6 +178,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_TABLES;
     extern const int TOO_MANY_DATABASES;
     extern const int THERE_IS_NO_COLUMN;
+    extern const int TOO_MANY_SUBCOLUMNS;
 }
 
 namespace fs = std::filesystem;
@@ -1010,6 +1011,12 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & create,
                                                     const InterpreterCreateQuery::TableProperties & properties) const
 {
+    /// Check sub columns limit
+    auto get_column_options = GetColumnsOptions(GetColumnsOptions::None).withSubcolumns();
+    NamesAndTypesList subcolumns = properties.columns.get(get_column_options);
+    if (subcolumns.size() > 5) 
+        throw Exception(ErrorCodes::TOO_MANY_SUBCOLUMNS, "Too many subcolumns");
+
     /// Check for duplicates
     std::set<String> all_columns;
     for (const auto & column : properties.columns)
