@@ -66,34 +66,34 @@ namespace HistogramMetrics
     MetricFamily & KeeperResponseTime = Factory::instance().registerMetric(
         "keeper_response_time_ms",
         "The response time of Keeper, in milliseconds",
-        {1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2500, 5000, 10000},
-        {"operation"}
+        {1, 10, 100, 250, 500},
+        {"operation_type"}
     );
 
     Metric & KeeperClientQueueDuration = Factory::instance().registerMetric(
         "keeper_client_queue_duration_milliseconds",
         "Time requests spend waiting to be enqueued and waiting in the queue before processed",
-        {1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2500, 5000, 10000}
+        {1, 10, 100, 250, 500}
     );
 
     Metric & KeeperClientSendDuration = Factory::instance().registerMetric(
         "keeper_client_send_duration_milliseconds",
         "Time to send requests to the Keeper after dequeuing",
-        {1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2500, 5000, 10000}
+        {1, 10, 100, 250, 500}
     );
 
     MetricFamily & KeeperClientRoundtripDuration = Factory::instance().registerMetric(
         "keeper_client_roundtrip_duration_milliseconds",
         "Time from sending requests to receiving response from the Keeper (network + Keeper processing)",
-        {1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2500, 5000, 10000},
-        {"operation"}
+        {1, 10, 100, 250, 500},
+        {"operation_type"}
     );
 
 
     MetricFamily & KeeperServerPreprocessRequestDurationMetricFamily = Factory::instance().registerMetric(
         "keeper_server_preprocess_request_duration_milliseconds",
         "Time to preprocess request on the Keeper server",
-        {1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2500, 5000, 10000},
+        {1, 10, 100, 250, 500},
         {}
     );
     Metric & KeeperServerPreprocessRequestDuration = KeeperServerPreprocessRequestDurationMetricFamily.withLabels({});
@@ -101,14 +101,14 @@ namespace HistogramMetrics
     MetricFamily & KeeperServerProcessRequestDuration = Factory::instance().registerMetric(
         "keeper_server_process_request_duration_milliseconds",
         "Time to process request on the Keeper server",
-        {1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2500, 5000, 10000},
-        {"operation"}
+        {1, 10, 100, 250, 500},
+        {"operation_type"}
     );
 
     MetricFamily & KeeperServerQueueDurationMetricFamily = Factory::instance().registerMetric(
         "keeper_server_queue_duration_milliseconds",
         "Time responses spend waiting to be enqueued and waiting in the queue before being processed",
-        {1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2500, 5000, 10000},
+        {1, 10, 100, 250, 500},
         {}
     );
     Metric & KeeperServerQueueDuration = KeeperServerQueueDurationMetricFamily.withLabels({});
@@ -116,7 +116,7 @@ namespace HistogramMetrics
     MetricFamily & KeeperServerSendDurationMetricFamily = Factory::instance().registerMetric(
         "keeper_server_send_duration_milliseconds",
         "Time to send responses on the Keeper server after dequeueing",
-        {1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2500, 5000, 10000},
+        {1, 10, 100, 250, 500},
         {}
     );
     Metric & KeeperServerSendDuration = KeeperServerSendDurationMetricFamily.withLabels({});

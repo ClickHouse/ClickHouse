@@ -48,8 +48,8 @@ enum class OpNum : int32_t
 
 OpNum getOpNum(int32_t raw_op_num);
 
-/// Returns snake_case name for use in metric labels (e.g., OpNum::GetACL -> "get_acl")
-const char * toMetricLabel(OpNum op_num);
+/// Returns operation type for use in metric labels (e.g., OpNum::Get -> "readonly", OpNum::Set -> "write")
+const char * toOperationTypeMetricLabel(OpNum op_num);
 
 static constexpr int32_t ZOOKEEPER_PROTOCOL_VERSION = 0;
 static constexpr int32_t ZOOKEEPER_PROTOCOL_VERSION_WITH_COMPRESSION = 10;

@@ -3345,7 +3345,10 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
 
         ProfileEvents::increment(ProfileEvents::KeeperProcessElapsedMicroseconds, elapsed_us);
 
-        HistogramMetrics::observe(HistogramMetrics::KeeperServerProcessRequestDuration, {toMetricLabel(zk_request->getOpNum())}, elapsed_ms);
+        HistogramMetrics::observe(
+            HistogramMetrics::KeeperServerProcessRequestDuration,
+            {toOperationTypeMetricLabel(zk_request->getOpNum())},
+            elapsed_ms);
     });
 
     if (!initialized)
