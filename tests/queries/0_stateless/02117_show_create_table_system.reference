@@ -599,10 +599,9 @@ CREATE TABLE system.parts_columns
     `column_ttl_min` Nullable(DateTime),
     `column_ttl_max` Nullable(DateTime),
     `statistics` Array(String),
-    `estimates` Tuple(
-        min Nullable(Float64),
-        max Nullable(Float64),
-        cardinality Nullable(UInt64)),
+    `estimates.min` Nullable(Float64),
+    `estimates.max` Nullable(Float64),
+    `estimates.cardinality` Nullable(UInt64),
     `serialization_kind` String,
     `substreams` Array(String),
     `filenames` Array(String),
