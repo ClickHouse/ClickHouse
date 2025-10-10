@@ -4,6 +4,7 @@ slug: /engines/database-engines/overlay
 description: 'Creates a logical read-only database that exposes the union of tables from multiple underlying databases.'
 sidebar_label: 'Overlay'
 sidebar_position: 51
+doc_type: reference
 ---
 
 # `Overlay` — design & behavior (current implementation)
