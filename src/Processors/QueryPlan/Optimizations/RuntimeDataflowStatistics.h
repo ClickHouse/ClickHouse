@@ -7,6 +7,7 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <IO/WriteBufferFromString.h>
 #include <Processors/Chunk.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Common/CacheBase.h>
 
 #include <Poco/Logger.h>
@@ -108,11 +109,9 @@ public:
 
     void addOutputBytes(const Chunk & chunk);
 
-    void addInputBytes(size_t bytes, const Block & block);
+    void addInputBytes(const IMergeTreeDataPart::ColumnSizeByName & column_sizes, const Block & block, size_t bytes);
 
-    void addInputBytes(const ColumnWithTypeAndName & column);
-
-    void addInputBytes(const Chunk & chunk);
+    void addInputBytes(const IMergeTreeDataPart::ColumnSizeByName & column_sizes, const ColumnWithTypeAndName & column);
 
 private:
     size_t compressedColumnSize(const ColumnWithTypeAndName & column)
@@ -122,12 +121,9 @@ private:
         return blob.size();
     }
 
-    size_t cnt = 0;
-
     std::mutex mutex;
     RuntimeDataflowStatistics statistics{};
     Block header;
-    // bool first_input = true;
     bool first_output = true;
     double output_compression_ratio = 1.0;
     std::optional<size_t> cache_key;

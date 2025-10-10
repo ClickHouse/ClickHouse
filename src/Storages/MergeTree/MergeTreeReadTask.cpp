@@ -1,14 +1,15 @@
-#include <Storages/MergeTree/MergeTreeReadTask.h>
+#include <IO/Operators.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
-#include <Storages/MergeTree/MergeTreeReaderIndex.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
+#include <Storages/MergeTree/MergeTreeReadTask.h>
+#include <Storages/MergeTree/MergeTreeReaderIndex.h>
 #include <Storages/MergeTree/MergeTreeReaderTextIndex.h>
+#include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
-#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
-#include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Common/Exception.h>
-#include <IO/Operators.h>
 
 namespace DB
 {
@@ -356,7 +357,7 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
     }
 
     if (updater)
-        updater->addInputBytes(num_read_bytes, block);
+        updater->addInputBytes(info->data_part->getColumnSizes(), block, num_read_bytes);
 
     BlockAndProgress res = {
         .block = std::move(block),

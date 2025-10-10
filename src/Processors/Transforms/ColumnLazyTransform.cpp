@@ -47,7 +47,7 @@ void ColumnLazyTransform::transform(Chunk & chunk)
     if (updater)
     {
         for (auto & column_with_type_and_name : res_columns)
-            updater->addInputBytes(column_with_type_and_name);
+            updater->addInputBytes(lazy_column_reader->getColumnSizes(), column_with_type_and_name);
     }
 
     for (auto & column_with_type_and_name : res_columns)

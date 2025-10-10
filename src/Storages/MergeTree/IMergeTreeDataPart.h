@@ -125,6 +125,8 @@ public:
     /// Populates columns_to_size map (compressed size).
     void accumulateColumnSizes(ColumnToSize & /* column_to_size */) const;
 
+    ColumnSizeByName getColumnSizes() const { return columns_sizes; }
+
     Type getType() const { return part_type; }
     MergeTreeDataPartFormat getFormat() const { return {part_type, getDataPartStorage().getType()}; }
 

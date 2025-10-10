@@ -17,6 +17,8 @@
 #include <boost/qvm/vec_traits.hpp>
 #include <base/scope_guard.h>
 
+#include <Columns/ColumnString.h>
+
 #ifdef __SSE2__
 #include <emmintrin.h>
 #endif
@@ -934,8 +936,15 @@ static size_t getTotalBytesInColumns(const Columns & columns)
 {
     size_t total_bytes = 0;
     for (const auto & column : columns)
+    {
         if (column)
-            total_bytes += column->byteSize();
+        {
+            if (auto * col_str = typeid_cast<const ColumnString *>(column.get()))
+                total_bytes += col_str->getChars().size();
+            else
+                total_bytes += column->byteSize();
+        }
+    }
     return total_bytes;
 }
 
