@@ -34,8 +34,6 @@ diag/ipv4_set_ok	1
 diag/ipv6_set_ok	1
 diag/non_ip_to_ipv4_unexpected_count	0
 diag/non_ip_to_ipv6_unexpected_count	0
-fail/ipv4_set	[]
-fail/ipv6_set	[]
 -128
 -127
 -1

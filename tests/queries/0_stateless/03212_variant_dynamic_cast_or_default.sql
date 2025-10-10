@@ -114,16 +114,16 @@ SELECT 'diag/non_ip_to_ipv6_unexpected_count' AS tag,
 -- If the IPv4 set is wrong, print the actual distinct set we saw.
 SELECT
   'fail/ipv4_set' AS tag,
-  arraySort(arrayDistinct(groupArray(toString(toIPv4OrDefault(d))))) AS ipv4_set
-FROM t
+  (SELECT arraySort(arrayDistinct(groupArray(toString(toIPv4OrDefault(d))))) FROM t) AS ipv4_set
+FROM system.one
 WHERE (SELECT arraySort(arrayDistinct(groupArray(toString(toIPv4OrDefault(d))))) FROM t)
       != ['0.0.0.0','192.168.0.1'];
 
 -- If the IPv6 set is wrong, print the actual distinct set we saw.
 SELECT
   'fail/ipv6_set' AS tag,
-  arraySort(arrayDistinct(groupArray(toString(toIPv6OrDefault(d))))) AS ipv6_set
-FROM t
+  (SELECT arraySort(arrayDistinct(groupArray(toString(toIPv6OrDefault(d))))) FROM t) AS ipv6_set
+FROM system.one
 WHERE (SELECT arraySort(arrayDistinct(groupArray(toString(toIPv6OrDefault(d))))) FROM t)
       != ['::','::1','::ffff:192.168.0.1'];
 
@@ -182,14 +182,10 @@ SELECT
   (SELECT toString(any(value)) FROM system.settings WHERE name = 'object_shared_data_serialization_version_for_zero_level_parts') AS sh_ver_zero
 FROM system.one
 WHERE
-      (SELECT countIf(dynamicType(d) NOT IN ('IPv4','String')
-                      AND toIPv4OrDefault(d) != toIPv4('0.0.0.0')) FROM t) > 0
-   OR (SELECT countIf(dynamicType(d) NOT IN ('IPv6','IPv4','String')
-                      AND toIPv6OrDefault(d) != toIPv6('::')) FROM t) > 0
-   OR (SELECT arraySort(arrayDistinct(groupArray(toString(toIPv4OrDefault(d))))) FROM t)
-         != ['0.0.0.0','192.168.0.1']
-   OR (SELECT arraySort(arrayDistinct(groupArray(toString(toIPv6OrDefault(d))))) FROM t)
-         != ['::','::1','::ffff:192.168.0.1'];
+      (SELECT countIf(dynamicType(d) NOT IN ('IPv4','String') AND toIPv4OrDefault(d) != toIPv4('0.0.0.0')) FROM t) > 0
+   OR (SELECT countIf(dynamicType(d) NOT IN ('IPv6','IPv4','String') AND toIPv6OrDefault(d) != toIPv6('::')) FROM t) > 0
+   OR (SELECT arraySort(arrayDistinct(groupArray(toString(toIPv4OrDefault(d))))) FROM t) != ['0.0.0.0','192.168.0.1']
+   OR (SELECT arraySort(arrayDistinct(groupArray(toString(toIPv6OrDefault(d))))) FROM t) != ['::','::1','::ffff:192.168.0.1'];
 
 -- ================== END DEBUG ==================
 
