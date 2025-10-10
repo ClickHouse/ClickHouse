@@ -1,4 +1,5 @@
 import random
+import typing
 from abc import abstractmethod
 
 from .clickhousetospark import ClickHouseSparkTypeMapper
@@ -11,7 +12,24 @@ from .laketables import (
 )
 
 from pyspark.sql import SparkSession
-from pyspark.sql.types import DateType, TimestampType, StructType, DataType
+from pyspark.sql.types import (
+    ByteType,
+    ShortType,
+    IntegerType,
+    LongType,
+    DateType,
+    TimestampType,
+    DataType,
+)
+
+Parameter = typing.Callable[[], int | float | str]
+
+true_false_lambda = lambda: random.choice(["false", "true"])
+
+
+def sample_from_dict(d: dict[str, Parameter], sample: int) -> dict[str, Parameter]:
+    items = random.sample(list(d.items()), sample)
+    return dict(items)
 
 
 class LakeTableGenerator:
@@ -28,12 +46,22 @@ class LakeTableGenerator:
         )
 
     @abstractmethod
+    def generate_table_properties_impl(
+        self,
+        table: SparkTable,
+    ) -> dict[str, Parameter]:
+        pass
+
     def generate_table_properties(
         self,
         table: SparkTable,
-        include_all: bool = False,
     ) -> dict[str, str]:
-        pass
+        properties = {}
+        props = self.generate_table_properties_impl(table)
+        selected_properties = sample_from_dict(props, random.randint(0, len(props)))
+        for key, val in selected_properties.items():
+            properties[key] = val()
+        return properties
 
     @abstractmethod
     def get_format(self) -> str:
@@ -50,6 +78,10 @@ class LakeTableGenerator:
     @abstractmethod
     def add_partition_clauses(self, table: SparkTable) -> list[str]:
         return []
+
+    @abstractmethod
+    def add_generated_col(self, columns: dict[str, SparkColumn], col: DataType) -> str:
+        return ""
 
     def random_ordered_columns(self, table: SparkTable, with_asc_desc: bool):
         columns_list = []
@@ -95,10 +127,13 @@ class LakeTableGenerator:
             str_type, nullable, spark_type = self.type_mapper.clickhouse_to_spark(
                 val["type"], False
             )
+            generated = self.add_generated_col(columns_spark, spark_type)
             columns_def.append(
-                f"{val["name"]} {str_type}{"" if nullable else " NOT NULL"}"
+                f"{val["name"]} {str_type}{"" if nullable else " NOT NULL"}{generated}"
             )
-            columns_spark[val["name"]] = SparkColumn(val["name"], spark_type, nullable)
+            columns_spark[val["name"]] = SparkColumn(
+                val["name"], spark_type, nullable, len(generated) > 0
+            )
         ddl += ",".join(columns_def)
         ddl += ")"
 
@@ -244,333 +279,231 @@ class IcebergTableGenerator(LakeTableGenerator):
             res.append(f"truncate({random.randint(0, 1000)}, {k})")
         return res
 
-    def generate_table_properties(
+    def add_generated_col(self, columns: dict[str, SparkColumn], col: DataType) -> str:
+        return ""
+
+    def generate_table_properties_impl(
         self,
         table: SparkTable,
-        include_all: bool = False,
-    ) -> dict[str, str]:
+    ) -> dict[str, Parameter]:
         """
         Generate random Iceberg table properties
-
-        Args:
-            include_all: If True, includes all possible properties.
-                        If False, randomly selects which properties to include.
         """
-        properties = {}
-
-        # File format properties
-        if include_all or random.random() > 0.3:
-            properties.update(self._generate_format_properties())
-
-        # Compaction properties
-        if include_all or random.random() > 0.4:
-            properties.update(self._generate_compaction_properties())
-
-        # Snapshot properties
-        if include_all or random.random() > 0.5:
-            properties.update(self._generate_snapshot_properties())
-
-        # Commit properties
-        if include_all or random.random() > 0.4:
-            properties.update(self._generate_commit_properties())
-
-        # Manifest properties
-        if include_all or random.random() > 0.5:
-            properties.update(self._generate_manifest_properties())
-
-        # Metadata properties
-        if include_all or random.random() > 0.6:
-            properties.update(self._generate_metadata_properties(table))
-
-        # Write properties
-        if include_all or random.random() > 0.3:
-            properties.update(self._generate_write_properties(table))
-
-        # Read properties
-        if include_all or random.random() > 0.5:
-            properties.update(self._generate_read_properties())
-
-        # Table behavior properties
-        if include_all or random.random() > 0.4:
-            properties.update(self._generate_behavior_properties())
-
-        return properties
-
-    def _generate_format_properties(self) -> dict[str, str]:
-        """Generate file format related properties"""
-        properties = {}
-
-        # Default file format
-        properties["format-version"] = random.choice(["1", "2"])
-
+        next_properties = {
+            # Default file format
+            "format-version": lambda: random.choice(["1", "2", "3"]),
+            # Target file size
+            "write.target-file-size-bytes": lambda: str(
+                random.choice(
+                    [
+                        1048576,  # 1MB
+                        2097152,  # 2MB
+                        134217728,  # 128MB
+                        268435456,  # 256MB
+                        536870912,  # 512MB
+                        1073741824,  # 1GB
+                    ]
+                )
+            ),
+            "write.delete.target-file-size-bytes": lambda: str(
+                random.choice(
+                    [
+                        1048576,  # 1MB
+                        2097152,  # 2MB
+                        134217728,  # 128MB
+                        268435456,  # 256MB
+                        536870912,  # 512MB
+                        1073741824,  # 1GB
+                    ]
+                )
+            ),
+            # Compaction settings
+            "commit.manifest.target-size-bytes": lambda: str(
+                random.choice(
+                    [1048576, 2097152, 4194304, 8388608, 16777216, 33554432]
+                )  # 1MB, 2MB, 4MB, 8MB, 16MB, 32MB
+            ),
+            "commit.manifest.min-count-to-merge": lambda: str(
+                random.choice([1, 2, 8, 50, 100, 200, 500])
+            ),
+            "commit.manifest-merge.enabled": lambda: true_false_lambda,
+            # Snapshot retention
+            "history.expire.max-snapshot-age-ms": lambda: str(
+                random.choice(
+                    [
+                        1000,  # 1 second
+                        60000,  # 1 minute
+                        3600000,  # 1 hour
+                    ]
+                )
+            ),
+            "history.expire.min-snapshots-to-keep": lambda: str(
+                random.choice([1, 3, 5, 10])
+            ),
+            # Snapshot references
+            "history.expire.max-ref-age-ms": lambda: str(
+                random.choice(
+                    [
+                        1000,  # 1 second
+                        60000,  # 1 minute
+                        3600000,  # 1 hour
+                    ]
+                )
+            ),
+            # Retry settings
+            "commit.retry.num-retries": lambda: str(random.randint(3, 10)),
+            "commit.retry.min-wait-ms": lambda: str(random.choice([100, 500, 1000])),
+            "commit.retry.max-wait-ms": lambda: str(
+                random.choice([1000, 10000, 30000, 60000])
+            ),
+            "commit.retry.total-timeout-ms": lambda: str(
+                random.choice([1000, 60000, 180000, 300000])
+            ),
+            # Locking
+            "commit.lock.enabled": true_false_lambda,
+            "commit.lock.timeout-ms": lambda: str(
+                random.choice([1000, 30000, 60000, 120000])
+            ),
+            "write.manifest.min-added-files": lambda: str(
+                random.choice([1, 8, 16, 100, 500, 1000, 5000])
+            ),
+            "write.manifest.max-added-files": lambda: str(
+                random.choice([1, 100, 1000, 10000, 50000, 100000])
+            ),
+            # Manifest list parallelism
+            "manifest-lists.enabled": true_false_lambda,
+            "manifest-lists.parallelism": lambda: str(random.choice([1, 2, 4, 8, 16])),
+            # Metadata deletion
+            "write.metadata.delete-after-commit.enabled": true_false_lambda,
+            "write.metadata.previous-versions-max": lambda: str(
+                random.choice([1, 2, 3, 5, 10, 20])
+            ),
+            # Metrics collection
+            "write.metadata.metrics.default": lambda: random.choice(
+                ["none", "counts", "truncate(16)", "full"]
+            ),
+            # Column statistics
+            f"write.metadata.metrics.column.{random.choice(list(table.columns.keys()))}": lambda: random.choice(
+                ["none", "counts", "truncate(8)", "truncate(16)", "full"]
+            ),
+            # Distribution mode
+            "write.distribution-mode": lambda: random.choice(["none", "hash", "range"]),
+            "write.delete.distribution-mode": lambda: random.choice(
+                ["none", "hash", "range"]
+            ),
+            # Write parallelism
+            "write.tasks.max": lambda: str(
+                random.choice([1, 2, 8, 100, 500, 1000, 2000])
+            ),
+            "write.tasks.min": lambda: str(random.choice([1, 2, 10, 50, 100])),
+            # Sorting
+            "write.sort.enabled": true_false_lambda,
+            "write.sort.order": lambda: self.random_ordered_columns(table, True),
+            # Write modes
+            "write.update.mode": lambda: random.choice(
+                ["copy-on-write", "merge-on-read"]
+            ),
+            "write.delete.mode": lambda: random.choice(
+                ["copy-on-write", "merge-on-read"]
+            ),
+            "write.merge.mode": lambda: random.choice(
+                ["copy-on-write", "merge-on-read"]
+            ),
+            # Split size
+            "read.split.target-size": lambda: str(
+                random.choice(
+                    [
+                        1048576,
+                        2097152,
+                        4194304,
+                        8388608,
+                        134217728,
+                        268435456,
+                        536870912,
+                    ]
+                )  # 128MB  # 256MB  # 512MB
+            ),
+            "read.split.metadata-target-size": lambda: str(
+                random.choice(
+                    [1048576, 2097152, 4194304, 8388608, 33554432, 67108864, 134217728]
+                )  # 32MB  # 64MB  # 128MB
+            ),
+            "read.split.planning-lookback": lambda: str(random.choice([10, 50, 100])),
+            # Streaming
+            "read.stream.enabled": true_false_lambda,
+            "read.stream.skip-delete-snapshots": true_false_lambda,
+            "read.stream.skip-overwrite-snapshots": true_false_lambda,
+            # Parquet vectorization
+            "read.parquet.vectorization.enabled": true_false_lambda,
+            "read.parquet.vectorization.batch-size": lambda: str(
+                random.choice([1, 16, 32, 128, 1024, 2048, 4096, 8192])
+            ),
+            # Compatibility
+            "compatibility.snapshot-id-inheritance.enabled": true_false_lambda,
+            # Schema evolution
+            "schema.auto-evolve": true_false_lambda,
+            # Data locality
+            "write.data.locality.enabled": true_false_lambda,
+        }
         # Parquet specific properties
         if self.write_format == FileFormat.Parquet:
-            properties["write.parquet.compression-codec"] = random.choice(
-                ["snappy", "gzip", "zstd", "lz4", "uncompressed"]
+            next_properties.update(
+                {
+                    "write.parquet.compression-codec": lambda: random.choice(
+                        ["snappy", "gzip", "zstd", "lz4", "uncompressed"]
+                    ),
+                    "write.parquet.compression-level": lambda: str(
+                        random.randint(1, 9)
+                    ),
+                    "write.parquet.dict-size-bytes": lambda: str(
+                        random.choice(
+                            [1048576, 2097152, 4194304, 8388608]
+                        )  # 1MB, 2MB, 4MB, 8MB
+                    ),
+                    "write.parquet.page-size-bytes": lambda: str(
+                        random.choice(
+                            [1048576, 2097152, 4194304, 8388608]
+                        )  # 1MB, 2MB, 4MB, 8MB
+                    ),
+                    "write.parquet.row-group-size-bytes": lambda: str(
+                        random.choice(
+                            [1048576, 2097152, 4194304, 8388608]
+                        )  # 1MB, 2MB, 4MB, 8MB
+                    ),
+                }
             )
-            properties["write.parquet.compression-level"] = str(random.randint(1, 9))
-            properties["write.parquet.dict-size-bytes"] = str(
-                random.choice(
-                    [1048576, 2097152, 4194304, 8388608]
-                )  # 1MB, 2MB, 4MB, 8MB
-            )
-            properties["write.parquet.page-size-bytes"] = str(
-                random.choice(
-                    [1048576, 2097152, 4194304, 8388608]
-                )  # 1MB, 2MB, 4MB, 8MB
-            )
-            properties["write.parquet.row-group-size-bytes"] = str(
-                random.choice(
-                    [1048576, 2097152, 4194304, 8388608]
-                )  # 1MB, 2MB, 4MB, 8MB
-            )
-
         # ORC specific properties
         elif self.write_format == FileFormat.ORC:
-            properties["write.orc.compression-codec"] = random.choice(
-                ["snappy", "zlib", "lzo", "zstd", "none"]
+            next_properties.update(
+                {
+                    "write.orc.compression-codec": lambda: random.choice(
+                        ["snappy", "zlib", "lzo", "zstd", "none"]
+                    ),
+                    "write.orc.compression-strategy": lambda: random.choice(
+                        ["speed", "compression"]
+                    ),
+                    "write.orc.stripe-size-bytes": lambda: str(
+                        random.choice(
+                            [1048576, 2097152, 4194304, 8388608]
+                        )  # 1MB, 2MB, 4MB, 8MB
+                    ),
+                    "write.orc.block-size-bytes": lambda: str(
+                        random.choice(
+                            [1048576, 2097152, 4194304, 8388608]
+                        )  # 1MB, 2MB, 4MB, 8MB
+                    ),
+                }
             )
-            properties["write.orc.compression-strategy"] = random.choice(
-                ["speed", "compression"]
-            )
-            properties["write.orc.stripe-size-bytes"] = str(
-                random.choice(
-                    [1048576, 2097152, 4194304, 8388608]
-                )  # 1MB, 2MB, 4MB, 8MB
-            )
-            properties["write.orc.block-size-bytes"] = str(
-                random.choice(
-                    [1048576, 2097152, 4194304, 8388608]
-                )  # 1MB, 2MB, 4MB, 8MB
-            )
-
         # AVRO specific properties
         elif self.write_format == FileFormat.Avro:
-            properties["write.avro.compression-codec"] = random.choice(
-                ["snappy", "bzip2", "xz", "uncompressed"]
+            next_properties.update(
+                {
+                    "write.avro.compression-codec": lambda: random.choice(
+                        ["snappy", "bzip2", "xz", "uncompressed"]
+                    )
+                }
             )
-
-        return properties
-
-    def _generate_compaction_properties(self) -> dict[str, str]:
-        """Generate compaction related properties"""
-        properties = {}
-
-        # Target file size
-        properties["write.target-file-size-bytes"] = str(
-            random.choice(
-                [
-                    1048576,  # 1MB
-                    2097152,  # 2MB
-                    134217728,  # 128MB
-                    268435456,  # 256MB
-                    536870912,  # 512MB
-                    1073741824,  # 1GB
-                ]
-            )
-        )
-
-        # Compaction settings
-        properties["commit.manifest.target-size-bytes"] = str(
-            random.choice(
-                [1048576, 2097152, 4194304, 8388608, 16777216, 33554432]
-            )  # 1MB, 2MB, 4MB, 8MB, 16MB, 32MB
-        )
-        properties["commit.manifest.min-count-to-merge"] = str(
-            random.choice([1, 2, 8, 50, 100, 200, 500])
-        )
-        properties["commit.manifest-merge.enabled"] = random.choice(["true", "false"])
-
-        return properties
-
-    def _generate_snapshot_properties(self) -> dict[str, str]:
-        """Generate snapshot management properties"""
-        properties = {}
-
-        # Snapshot retention
-        properties["history.expire.max-snapshot-age-ms"] = str(
-            random.choice(
-                [
-                    1000,  # 1 second
-                    60000,  # 1 minute
-                    3600000,  # 1 hour
-                ]
-            )
-        )
-        properties["history.expire.min-snapshots-to-keep"] = str(
-            random.choice([1, 3, 5, 10])
-        )
-
-        # Snapshot references
-        properties["history.expire.max-ref-age-ms"] = str(
-            random.choice(
-                [
-                    1000,  # 1 second
-                    60000,  # 1 minute
-                    3600000,  # 1 hour
-                ]
-            )
-        )
-
-        return properties
-
-    def _generate_commit_properties(self) -> dict[str, str]:
-        """Generate commit related properties"""
-        properties = {}
-
-        # Retry settings
-        properties["commit.retry.num-retries"] = str(random.randint(3, 10))
-        properties["commit.retry.min-wait-ms"] = str(random.choice([100, 500, 1000]))
-        properties["commit.retry.max-wait-ms"] = str(
-            random.choice([1000, 10000, 30000, 60000])
-        )
-        properties["commit.retry.total-timeout-ms"] = str(
-            random.choice([1000, 60000, 180000, 300000])
-        )
-
-        # Locking
-        properties["commit.lock.enabled"] = random.choice(["true", "false"])
-
-        if properties["commit.lock.enabled"] == "true":
-            properties["commit.lock.timeout-ms"] = str(
-                random.choice([1000, 30000, 60000, 120000])
-            )
-
-        return properties
-
-    def _generate_manifest_properties(self) -> dict[str, str]:
-        """Generate manifest file properties"""
-        properties = {}
-
-        properties["write.manifest.min-added-files"] = str(
-            random.choice([1, 8, 16, 100, 500, 1000, 5000])
-        )
-        properties["write.manifest.max-added-files"] = str(
-            random.choice([1, 100, 1000, 10000, 50000, 100000])
-        )
-
-        # Manifest list parallelism
-        properties["manifest-lists.enabled"] = random.choice(["true", "false"])
-
-        if properties["manifest-lists.enabled"] == "true":
-            properties["manifest-lists.parallelism"] = str(
-                random.choice([1, 2, 4, 8, 16])
-            )
-
-        return properties
-
-    def _generate_metadata_properties(self, table: SparkTable) -> dict[str, str]:
-        """Generate metadata related properties"""
-        properties = {}
-
-        # Metadata deletion
-        properties["write.metadata.delete-after-commit.enabled"] = random.choice(
-            ["true", "false"]
-        )
-        properties["write.metadata.previous-versions-max"] = str(
-            random.choice([1, 2, 3, 5, 10, 20])
-        )
-
-        # Metrics collection
-        properties["write.metadata.metrics.default"] = random.choice(
-            ["none", "counts", "truncate(16)", "full"]
-        )
-
-        # Column statistics
-        properties[
-            f"write.metadata.metrics.column.{random.choice(list(table.columns.keys()))}"
-        ] = random.choice(["none", "counts", "truncate(8)", "truncate(16)", "full"])
-
-        return properties
-
-    def _generate_write_properties(self, table: SparkTable) -> dict[str, str]:
-        """Generate write operation properties"""
-        properties = {}
-
-        # Distribution mode
-        properties["write.distribution-mode"] = random.choice(["none", "hash", "range"])
-
-        # Write parallelism
-        properties["write.tasks.max"] = str(
-            random.choice([1, 2, 8, 100, 500, 1000, 2000])
-        )
-        properties["write.tasks.min"] = str(random.choice([1, 2, 10, 50, 100]))
-
-        # Sorting
-        properties["write.sort.enabled"] = random.choice(["true", "false"])
-
-        if properties["write.sort.enabled"] == "true":
-            properties["write.sort.order"] = self.random_ordered_columns(table, True)
-
-        # Write modes
-        properties["write.update.mode"] = random.choice(
-            ["copy-on-write", "merge-on-read"]
-        )
-        properties["write.delete.mode"] = random.choice(
-            ["copy-on-write", "merge-on-read"]
-        )
-        properties["write.merge.mode"] = random.choice(
-            ["copy-on-write", "merge-on-read"]
-        )
-
-        return properties
-
-    def _generate_read_properties(self) -> dict[str, str]:
-        """Generate read operation properties"""
-        properties = {}
-
-        # Split size
-        properties["read.split.target-size"] = str(
-            random.choice(
-                [1048576, 2097152, 4194304, 8388608, 134217728, 268435456, 536870912]
-            )  # 128MB  # 256MB  # 512MB
-        )
-        properties["read.split.metadata-target-size"] = str(
-            random.choice(
-                [1048576, 2097152, 4194304, 8388608, 33554432, 67108864, 134217728]
-            )  # 32MB  # 64MB  # 128MB
-        )
-        properties["read.split.planning-lookback"] = str(random.choice([10, 50, 100]))
-
-        # Streaming
-        properties["read.stream.enabled"] = random.choice(["true", "false"])
-
-        if properties["read.stream.enabled"] == "true":
-            properties["read.stream.skip-delete-snapshots"] = random.choice(
-                ["true", "false"]
-            )
-            properties["read.stream.skip-overwrite-snapshots"] = random.choice(
-                ["true", "false"]
-            )
-
-        # Parquet vectorization
-        properties["read.parquet.vectorization.enabled"] = random.choice(
-            ["true", "false"]
-        )
-
-        if properties["read.parquet.vectorization.enabled"] == "true":
-            properties["read.parquet.vectorization.batch-size"] = str(
-                random.choice([1, 16, 32, 128, 1024, 2048, 4096, 8192])
-            )
-
-        return properties
-
-    def _generate_behavior_properties(self) -> dict[str, str]:
-        """Generate table behavior properties"""
-        properties = {}
-
-        # Compatibility
-        properties["compatibility.snapshot-id-inheritance.enabled"] = random.choice(
-            ["true", "false"]
-        )
-
-        # Schema evolution
-        properties["schema.auto-evolve"] = random.choice(["true", "false"])
-
-        # Data locality
-        properties["write.data.locality.enabled"] = random.choice(["true", "false"])
-
-        return properties
+        return next_properties
 
     def get_snapshots(self, spark: SparkSession, table: SparkTable):
         result = spark.sql(
@@ -584,23 +517,111 @@ class IcebergTableGenerator(LakeTableGenerator):
         ).collect()
         return [r.made_current_at for r in result]
 
+    def add_options(self, options: dict[str, Parameter]) -> str:
+        selected_opts = sample_from_dict(options, random.randint(1, len(options)))
+        res = ", options => map("
+        res += ",".join([f"'{key}', '{val()}'" for key, val in selected_opts.items()])
+        res += ")"
+        return res
+
     def generate_extra_statement(
         self,
         spark: SparkSession,
         table: SparkTable,
     ) -> str:
-        next_option = random.randint(1, 13)
+        next_option = random.randint(1, 14)
 
         if next_option == 1:
             res = f"CALL `{table.catalog_name}`.system.remove_orphan_files(table => '{table.get_namespace_path()}'"
             if random.randint(1, 2) == 1:
                 res += f", dry_run => {random.choice(["true", "false"])}"
+            if random.randint(1, 2) == 1:
+                res += f", max_concurrent_deletes => {random.randint(0, 20)}"
+            if random.randint(1, 2) == 1:
+                res += f", prefix_listing => {random.choice(["true", "false"])}"
             timestamps = self.get_timestamps(spark, table)
             if len(timestamps) > 0 and random.randint(1, 2) == 1:
                 res += f", older_than => TIMESTAMP '{random.choice(timestamps)}'"
             res += ")"
             return res
         if next_option == 2:
+            res = f"CALL `{table.catalog_name}`.system.rewrite_position_delete_files('{table.get_namespace_path()}')"
+            if random.randint(1, 2) == 1:
+                # Add options
+                options = {
+                    "max-concurrent-file-group-rewrites": lambda: random.randint(0, 10),
+                    "partial-progress.enabled": true_false_lambda,
+                    "partial-progress.max-commits": lambda: random.randint(0, 20),
+                    "use-starting-sequence-number": true_false_lambda,
+                    "rewrite-job-order": random.choice(
+                        ["bytes-asc", "bytes-desc", "files-asc", "files-desc", "none"]
+                    ),
+                    "target-file-size-bytes": lambda: random.choice(
+                        [
+                            1048576,  # 1MB
+                            2097152,  # 2MB
+                            134217728,  # 128MB
+                            268435456,  # 256MB
+                            536870912,  # 512MB
+                            1073741824,  # 1GB
+                        ]
+                    ),
+                    "min-input-files": lambda: random.randint(0, 20),
+                    "rewrite-all": true_false_lambda,
+                    "max-file-group-size-bytes": lambda: random.choice(
+                        [
+                            1048576,  # 1MB
+                            2097152,  # 2MB
+                            134217728,  # 128MB
+                            268435456,  # 256MB
+                            536870912,  # 512MB
+                            1073741824,  # 1GB
+                        ]
+                    ),
+                    "max-files-to-rewrite": lambda: random.randint(0, 100),
+                }
+                res += self.add_options(options)
+            res += ")"
+            return res
+        if next_option == 3:
+            res = f"CALL `{table.catalog_name}`.system.rewrite_manifests(table => '{table.get_namespace_path()}'"
+            if random.randint(1, 2) == 1:
+                res += f", use_caching => {random.choice(["true", "false"])}"
+            res += ")"
+            return res
+        if next_option == 4:
+            res = f"CALL `{table.catalog_name}`.system.expire_snapshots(table => '{table.get_namespace_path()}'"
+            timestamps = self.get_timestamps(spark, table)
+            if len(timestamps) > 0 and random.randint(1, 2) == 1:
+                res += f", older_than => TIMESTAMP '{random.choice(timestamps)}'"
+            if random.randint(1, 2) == 1:
+                res += f", stream_results => {random.choice(["true", "false"])}"
+            if random.randint(1, 2) == 1:
+                res += f", retain_last => {random.randint(1, 10)}"
+            if random.randint(1, 2) == 1:
+                res += f", max_concurrent_deletes => {random.randint(0, 20)}"
+            if random.randint(1, 2) == 1:
+                res += f", clean_expired_metadata => {random.choice(["true", "false"])}"
+            res += ")"
+            return res
+        if next_option == 5:
+            res = f"CALL `{table.catalog_name}`.system.compute_table_stats(table => '{table.get_namespace_path()}'"
+            snapshots = self.get_snapshots(spark, table)
+            if len(snapshots) > 0 and random.randint(1, 2) == 1:
+                res += f", snapshot_id  => {random.choice(snapshots)}"
+            res += ")"
+            return res
+        if next_option == 6:
+            res = f"CALL `{table.catalog_name}`.system.compute_partition_stats(table => '{table.get_namespace_path()}'"
+            snapshots = self.get_snapshots(spark, table)
+            if len(snapshots) > 0 and random.randint(1, 2) == 1:
+                res += f", snapshot_id  => {random.choice(snapshots)}"
+            res += ")"
+            return res
+        if next_option == 7:
+            return f"CALL `{table.catalog_name}`.system.ancestors_of('{table.get_namespace_path()}')"
+        if next_option in (8, 9):
+            zorder = False
             next_strategy = random.choice(["sort", "binpack"])
 
             res = f"CALL `{table.catalog_name}`.system.rewrite_data_files(table => '{table.get_namespace_path()}', strategy => '{next_strategy}'"
@@ -613,45 +634,72 @@ class IcebergTableGenerator(LakeTableGenerator):
                 if zorder:
                     res += ")"
                 res += "'"
+            if random.randint(1, 3) == 1:
+                # Add options
+                options = {
+                    "max-concurrent-file-group-rewrites": lambda: random.randint(0, 10),
+                    "partial-progress.enabled": true_false_lambda,
+                    "partial-progress.max-commits": lambda: random.randint(0, 20),
+                    "use-starting-sequence-number": true_false_lambda,
+                    "rewrite-job-order": random.choice(
+                        ["bytes-asc", "bytes-desc", "files-asc", "files-desc", "none"]
+                    ),
+                    "target-file-size-bytes": lambda: random.choice(
+                        [
+                            1048576,  # 1MB
+                            2097152,  # 2MB
+                            134217728,  # 128MB
+                            268435456,  # 256MB
+                            536870912,  # 512MB
+                            1073741824,  # 1GB
+                        ]
+                    ),
+                    "min-input-files": lambda: random.randint(0, 20),
+                    "rewrite-all": true_false_lambda,
+                    "max-file-group-size-bytes": lambda: random.choice(
+                        [
+                            1048576,  # 1MB
+                            2097152,  # 2MB
+                            134217728,  # 128MB
+                            268435456,  # 256MB
+                            536870912,  # 512MB
+                            1073741824,  # 1GB
+                        ]
+                    ),
+                    "delete-file-threshold": lambda: random.randint(0, 10000),
+                    "delete-ratio-threshold": lambda: random.uniform(0, 1),
+                    "remove-dangling-deletes": true_false_lambda,
+                }
+                if next_strategy == "sort":
+                    options.update(
+                        {
+                            "compression-factor": lambda: random.uniform(0, 1),
+                            "shuffle-partitions-per-file": lambda: random.randint(
+                                0, 20
+                            ),
+                        }
+                    )
+                if zorder:
+                    options.update(
+                        {
+                            "var-length-contribution": lambda: random.randint(0, 100),
+                            "max-output-size": lambda: random.choice(
+                                [
+                                    1048576,  # 1MB
+                                    2097152,  # 2MB
+                                    134217728,  # 128MB
+                                    268435456,  # 256MB
+                                    536870912,  # 512MB
+                                    1073741824,  # 1GB
+                                ]
+                            ),
+                        }
+                    )
+                res += self.add_options(options)
             res += ")"
             return res
-        if next_option == 3:
-            res = f"CALL `{table.catalog_name}`.system.rewrite_manifests(table => '{table.get_namespace_path()}'"
-            if random.randint(1, 2) == 1:
-                res += f", use_caching => {random.choice(["true", "false"])}"
-            res += ")"
-            return res
-        if next_option == 4:
-            return f"CALL `{table.catalog_name}`.system.rewrite_position_delete_files('{table.get_namespace_path()}')"
-        if next_option == 5:
-            res = f"CALL `{table.catalog_name}`.system.expire_snapshots(table => '{table.get_namespace_path()}'"
-            timestamps = self.get_timestamps(spark, table)
-            if len(timestamps) > 0 and random.randint(1, 2) == 1:
-                res += f", older_than => TIMESTAMP '{random.choice(timestamps)}'"
-            if random.randint(1, 2) == 1:
-                res += f", stream_results => {random.choice(["true", "false"])}"
-            if random.randint(1, 2) == 1:
-                res += f", retain_last => {random.randint(1, 10)}"
-            res += ")"
-            return res
-        if next_option == 6:
-            res = f"CALL `{table.catalog_name}`.system.compute_table_stats(table => '{table.get_namespace_path()}'"
-            snapshots = self.get_snapshots(spark, table)
-            if len(snapshots) > 0 and random.randint(1, 2) == 1:
-                res += f", snapshot_id  => {random.choice(snapshots)}"
-            res += ")"
-            return res
-        if next_option == 7:
-            res = f"CALL `{table.catalog_name}`.system.compute_partition_stats(table => '{table.get_namespace_path()}'"
-            snapshots = self.get_snapshots(spark, table)
-            if len(snapshots) > 0 and random.randint(1, 2) == 1:
-                res += f", snapshot_id  => {random.choice(snapshots)}"
-            res += ")"
-            return res
-        if next_option == 8:
-            return f"CALL `{table.catalog_name}`.system.ancestors_of('{table.get_namespace_path()}')"
         snapshots = self.get_snapshots(spark, table)
-        if len(snapshots) > 0 and next_option in (9, 10, 11):
+        if len(snapshots) > 0 and next_option in (10, 11, 12):
             calls = [
                 "rollback_to_snapshot",
                 "set_current_snapshot",
@@ -659,7 +707,7 @@ class IcebergTableGenerator(LakeTableGenerator):
             ]
             return f"CALL `{table.catalog_name}`.system.{random.choice(calls)}(table => '{table.get_namespace_path()}', snapshot_id => {random.choice(snapshots)})"
         timestamps = self.get_timestamps(spark, table)
-        if len(timestamps) > 0 and next_option in (12, 13):
+        if len(timestamps) > 0 and next_option in (13, 14):
             return f"CALL `{table.catalog_name}`.system.rollback_to_timestamp(table => '{table.get_namespace_path()}', timestamp => TIMESTAMP '{random.choice(timestamps)}')"
         return ""
 
@@ -685,256 +733,131 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
             res.append(k)
         return res
 
-    def generate_table_properties(
+    def add_generated_col(self, columns: dict[str, SparkColumn], col: DataType) -> str:
+        if isinstance(col, LongType) and random.randint(1, 10) < 3:
+            return f" GENERATED {random.choice(["ALWAYS", "BY DEFAULT"])} AS IDENTITY"
+        if len(columns) > 0 and random.randint(1, 10) < 3:
+            flattened = {}
+            for _, val in columns.items():
+                val.flat_column(flattened)
+            if (
+                isinstance(col, (ByteType, ShortType, IntegerType, LongType))
+                and random.randint(1, 2) == 1
+            ):
+                return f" GENERATED ALWAYS AS ({random.choice(["year", "month", "day", "hour"])}({random.choice(list(flattened.keys()))}))"
+            return f" GENERATED ALWAYS AS (CAST({random.choice(list(flattened.keys()))} AS {self.type_mapper.generate_random_spark_sql_type()}))"
+        return ""
+
+    def generate_table_properties_impl(
         self,
         table: SparkTable,
-        include_all: bool = False,
-    ) -> dict[str, str]:
+    ) -> dict[str, Parameter]:
         """
         Generate random Delta Lake table properties
-
-        Args:
-            include_all: If True, includes all possible properties.
-                        If False, randomly selects which properties to include.
         """
-        properties = {}
-
-        # Data retention and vacuum properties
-        if include_all or random.random() > 0.3:
-            properties.update(self._generate_retention_properties())
-
-        # Optimization properties
-        if include_all or random.random() > 0.4:
-            properties.update(self._generate_optimization_properties())
-
-        # Delta cache properties
-        if include_all or random.random() > 0.5:
-            properties.update(self._generate_cache_properties())
-
-        # Column mapping properties
-        if include_all or random.random() > 0.6:
-            properties.update(self._generate_column_mapping_properties())
-
-        # File size properties
-        if include_all or random.random() > 0.3:
-            properties.update(self._generate_file_properties())
-
-        # Data skipping properties
-        if include_all or random.random() > 0.4:
-            properties.update(self._generate_data_skipping_properties())
-
-        # Change data feed properties
-        if include_all or random.random() > 0.5:
-            properties.update(self._generate_cdf_properties())
-
-        # Table features
-        if include_all or random.random() > 0.4:
-            properties.update(self._generate_table_features())
-
-        return properties
-
-    def _generate_retention_properties(self) -> dict[str, str]:
-        """Generate data retention and vacuum related properties"""
-        properties = {}
-
-        # Log retention
-        properties["delta.logRetentionDuration"] = random.choice(
-            [
-                "interval 1 second",
-                "interval 1 minute",
-                "interval 1 hour",
-            ]
-        )
-
-        # Deleted file retention (for VACUUM)
-        properties["delta.deletedFileRetentionDuration"] = random.choice(
-            [
-                "interval 1 second",
-                "interval 1 minute",
-                "interval 1 hour",
-            ]
-        )
-
-        # Sample ratio for stats collection
-        properties["delta.dataSkippingNumIndexedCols"] = str(
-            random.choice([1, 8, 16, 32, 64, 128, 256])
-        )
-
-        return properties
-
-    def _generate_optimization_properties(self) -> dict[str, str]:
-        """Generate optimization related properties"""
-        properties = {}
-
-        # Auto optimize
-        properties["delta.autoOptimize.optimizeWrite"] = random.choice(
-            ["true", "false"]
-        )
-
-        properties["delta.autoOptimize.autoCompact"] = random.choice(["true", "false"])
-
-        # Optimize write
-        properties["spark.databricks.delta.autoCompact.enabled"] = random.choice(
-            ["true", "false"]
-        )
-
-        # Adaptive shuffle
-        properties["spark.databricks.delta.optimizeWrite.enabled"] = random.choice(
-            ["true", "false"]
-        )
-
-        return properties
-
-    def _generate_cache_properties(self) -> dict[str, str]:
-        """Generate Delta cache related properties"""
-        properties = {}
-
-        # Delta cache
-        properties["spark.databricks.io.cache.enabled"] = random.choice(
-            ["true", "false"]
-        )
-
-        if properties["spark.databricks.io.cache.enabled"] == "true":
-            properties["spark.databricks.io.cache.maxDiskUsage"] = random.choice(
+        return {
+            # Log retention
+            "delta.logRetentionDuration": lambda: random.choice(
+                [
+                    "interval 1 second",
+                    "interval 1 minute",
+                    "interval 1 hour",
+                ]
+            ),
+            # Deleted file retention (for VACUUM)
+            "delta.deletedFileRetentionDuration": lambda: random.choice(
+                [
+                    "interval 1 second",
+                    "interval 1 minute",
+                    "interval 1 hour",
+                ]
+            ),
+            # Sample ratio for stats collection
+            "delta.dataSkippingNumIndexedCols": lambda: str(
+                random.choice([1, 8, 16, 32, 64, 128, 256])
+            ),
+            # Auto optimize
+            "delta.autoOptimize.optimizeWrite": true_false_lambda,
+            "delta.autoOptimize.autoCompact": true_false_lambda,
+            # Optimize write
+            "spark.databricks.delta.autoCompact.enabled": true_false_lambda,
+            # Adaptive shuffle
+            "spark.databricks.delta.optimizeWrite.enabled": true_false_lambda,
+            # Delta cache
+            "spark.databricks.io.cache.enabled": true_false_lambda,
+            "spark.databricks.io.cache.maxDiskUsage": lambda: random.choice(
                 ["10g", "20g", "50g", "100g"]
-            )
-
-            properties["spark.databricks.io.cache.maxMetaDataCache"] = random.choice(
+            ),
+            "spark.databricks.io.cache.maxMetaDataCache": lambda: random.choice(
                 ["1g", "2g", "5g", "10g"]
-            )
-
-            properties["spark.databricks.io.cache.compression.enabled"] = random.choice(
-                ["true", "false"]
-            )
-
-        return properties
-
-    def _generate_column_mapping_properties(self) -> dict[str, str]:
-        """Generate column mapping properties"""
-        properties = {}
-
-        # Column mapping mode
-        mapping_mode = random.choice(["none", "name", "id"])
-        properties["delta.columnMapping.mode"] = mapping_mode
-
-        # Set minimum versions for readers and writers
-        properties["delta.minReaderVersion"] = random.choice(
-            [f"{i}" for i in range(1, 4)]
-        )
-        properties["delta.minWriterVersion"] = random.choice(
-            [f"{i}" for i in range(1, 8)]
-        )
-
-        return properties
-
-    def _generate_file_properties(self) -> dict[str, str]:
-        """Generate file size and format properties"""
-        properties = {}
-
-        # Target file size
-        properties["spark.databricks.delta.optimize.maxFileSize"] = random.choice(
-            ["1mb", "2mb", "8mb", "64mb", "128mb", "256mb", "512mb", "1gb"]
-        )
-
-        # Parquet compression
-        properties["spark.sql.parquet.compression.codec"] = random.choice(
-            ["snappy", "gzip", "lzo", "lz4", "zstd", "uncompressed"]
-        )
-
-        # Parquet file size
-        properties["spark.databricks.delta.parquet.blockSize"] = str(
-            random.choice([134217728, 268435456, 536870912])  # 128MB  # 256MB  # 512MB
-        )
-
-        return properties
-
-    def _generate_data_skipping_properties(self) -> dict[str, str]:
-        """Generate data skipping and statistics properties"""
-        properties = {}
-
-        # Statistics columns
-        properties["delta.dataSkippingNumIndexedCols"] = str(
-            random.choice([1, 8, 16, 32, 64, 128, 256])
-        )
-
-        # Statistics collection
-        properties["delta.checkpoint.writeStatsAsJson"] = random.choice(
-            ["true", "false"]
-        )
-
-        properties["delta.checkpoint.writeStatsAsStruct"] = random.choice(
-            ["true", "false"]
-        )
-
-        # Sampling for stats
-        properties["spark.databricks.delta.stats.skipping"] = random.choice(
-            ["true", "false"]
-        )
-
-        return properties
-
-    def _generate_cdf_properties(self) -> dict[str, str]:
-        """Generate Change Data Feed properties"""
-        properties = {}
-
-        # Enable CDF
-        cdf_enabled = random.choice(["true", "false"])
-        properties["delta.enableChangeDataFeed"] = cdf_enabled
-
-        if cdf_enabled == "true":
-            # CDF requires specific versions
-            properties["delta.minReaderVersion"] = "1"
-            properties["delta.minWriterVersion"] = "4"
-
-        return properties
-
-    def _generate_table_features(self) -> dict[str, str]:
-        """Generate table feature properties (Delta 3.0+)"""
-        properties = {}
-
-        # Append-only table
-        properties["delta.appendOnly"] = random.choice(["true", "false"])
-
-        # Isolation level
-        properties["delta.isolationLevel"] = str(
-            random.choice(["Serializable"])  # , "WriteSerializable" is not supported
-        )
-
-        # Checkpoint interval
-        properties["delta.checkpointInterval"] = str(
-            random.choice([1, 5, 10, 20, 50, 100])
-        )
-
-        # Checkpoint retention
-        properties["delta.checkpointRetentionDuration"] = random.choice(
-            [
-                "interval 1 second",
-                "interval 1 minute",
-                "interval 1 day",
-            ]
-        )
-
-        # Compatibility
-        properties["delta.compatibility.symlinkFormatManifest.enabled"] = random.choice(
-            ["true", "false"]
-        )
-
-        # Enable deletion vectors (Delta 3.0+)
-        if "delta.compatibility.symlinkFormatManifest.enabled" == "false":
-            properties["delta.enableDeletionVectors"] = random.choice(["true", "false"])
-
-        # Row tracking
-        properties["delta.enableRowTracking"] = random.choice(["true", "false"])
-
-        # Type widening
-        properties["delta.enableTypeWidening"] = random.choice(["true", "false"])
-
-        # Timestamp NTZ support
-        properties["delta.feature.timestampNtz"] = random.choice(
-            ["supported", "enabled"]
-        )
-
-        return properties
+            ),
+            "spark.databricks.io.cache.compression.enabled": true_false_lambda,
+            # Column mapping mode
+            "delta.columnMapping.mode": lambda: random.choice(["none", "name", "id"]),
+            # Set minimum versions for readers and writers
+            "delta.minReaderVersion": lambda: random.choice(
+                [f"{i}" for i in range(1, 4)]
+            ),
+            "delta.minWriterVersion": lambda: random.choice(
+                [f"{i}" for i in range(1, 8)]
+            ),
+            # Target file size
+            "spark.databricks.delta.optimize.maxFileSize": lambda: random.choice(
+                ["1mb", "2mb", "8mb", "64mb", "128mb", "256mb", "512mb", "1gb"]
+            ),
+            # Parquet compression
+            "spark.sql.parquet.compression.codec": lambda: random.choice(
+                ["snappy", "gzip", "lzo", "lz4", "zstd", "uncompressed"]
+            ),
+            # Parquet file size
+            "spark.databricks.delta.parquet.blockSize": lambda: str(
+                random.choice(
+                    [134217728, 268435456, 536870912]
+                )  # 128MB  # 256MB  # 512MB
+            ),
+            # Statistics columns
+            "delta.dataSkippingNumIndexedCols": lambda: str(
+                random.choice([1, 8, 16, 32, 64, 128, 256])
+            ),
+            # Statistics collection
+            "delta.checkpoint.writeStatsAsJson": true_false_lambda,
+            "delta.checkpoint.writeStatsAsStruct": true_false_lambda,
+            # Sampling for stats
+            "spark.databricks.delta.stats.skipping": true_false_lambda,
+            "delta.enableChangeDataFeed": true_false_lambda,  # FIXME later requires specific writer version
+            # Append-only table
+            "delta.appendOnly": true_false_lambda,
+            # Isolation level
+            "delta.isolationLevel": lambda: str(
+                random.choice(
+                    ["Serializable"]
+                )  # , "WriteSerializable" is not supported
+            ),
+            # Checkpoint interval
+            "delta.checkpointInterval": lambda: str(
+                random.choice([1, 5, 10, 20, 50, 100])
+            ),
+            # Checkpoint retention
+            "delta.checkpointRetentionDuration": lambda: random.choice(
+                [
+                    "interval 1 second",
+                    "interval 1 minute",
+                    "interval 1 day",
+                ]
+            ),
+            # Compatibility
+            "delta.compatibility.symlinkFormatManifest.enabled": true_false_lambda,
+            # Enable deletion vectors (Delta 3.0+)
+            "delta.enableDeletionVectors": true_false_lambda,
+            # Row tracking
+            "delta.enableRowTracking": true_false_lambda,
+            # Type widening
+            "delta.enableTypeWidening": true_false_lambda,
+            # Timestamp NTZ support
+            "delta.feature.timestampNtz": lambda: random.choice(
+                ["supported", "enabled"]
+            ),
+        }
 
     def generate_extra_statement(
         self,
