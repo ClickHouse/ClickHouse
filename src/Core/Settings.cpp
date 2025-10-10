@@ -183,6 +183,10 @@ Minimum block size in rows for JOIN input and output blocks (if join algorithm s
     DECLARE(UInt64, min_joined_block_size_bytes, 512 * 1024, R"(
 Minimum block size in bytes for JOIN input and output blocks (if join algorithm supports it). Small blocks will be squashed. 0 means unlimited.
 )", 0) \
+    DECLARE(Bool, joined_block_split_single_row, false, R"(
+Allow to chunk hash join result by rows corresponding to single row from left table.
+This may reduce memory usage in case of row with many matches in right table, but may increase CPU usage.
+)", 0) \
     DECLARE(UInt64, max_insert_threads, 0, R"(
 The maximum number of threads to execute the `INSERT SELECT` query.
 
@@ -1971,7 +1975,7 @@ For testing of `exception safety` - throw an exception every time you allocate m
 For testing of `PartsSplitter` - split read ranges into intersecting and non intersecting every time you read from MergeTree with the specified probability.
 )", 0) \
     \
-    DECLARE(Bool, enable_http_compression, false, R"(
+    DECLARE(Bool, enable_http_compression, true, R"(
 Enables or disables data compression in the response to an HTTP request.
 
 For more information, read the [HTTP interface description](../../interfaces/http.md).
