@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Tags: use_xray, no-parallel
+# no-parallel: avoid other tests interfering with the global system.xray_instrumentation table
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+# Reading the instrumentation points forces the initial load of the symbols
+
+$CLICKHOUSE_CLIENT -m -q """
+    SYSTEM INSTRUMENT REMOVE ALL;
+    SELECT count() FROM system.xray_instrumentation;
+
+    SYSTEM INSTRUMENT ADD \`DB::executeQuery\` LOG 'my log in executeQuery';
+
+    SYSTEM INSTRUMENT ADD \`DB::executeQuery\` LOG 'my log in executeQuery'; -- { serverError BAD_ARGUMENTS }
+    SELECT count() FROM system.xray_instrumentation;
+    SELECT function_name, handler_name, parameters FROM system.xray_instrumentation ORDER BY id ASC;
+
+    SYSTEM INSTRUMENT ADD \`QueryMetricLog::startQuery\` LOG 'my log in startQuery';
+    SELECT count() FROM system.xray_instrumentation;
+    SELECT function_name, handler_name, parameters FROM system.xray_instrumentation ORDER BY id ASC;
+"""
+
+id=$($CLICKHOUSE_CLIENT -q "SELECT id FROM system.xray_instrumentation WHERE function_name = 'QueryMetricLog::startQuery';")
+
+$CLICKHOUSE_CLIENT -m -q """
+    SYSTEM INSTRUMENT REMOVE $id;
+    SELECT count() FROM system.xray_instrumentation;
+    SELECT function_name, handler_name, parameters FROM system.xray_instrumentation ORDER BY id ASC;
+
+    SYSTEM INSTRUMENT ADD \`QueryMetricLog::startQuery\` LOG 'my other in startQuery';
+    SELECT count() FROM system.xray_instrumentation;
+    SELECT function_name, handler_name, parameters FROM system.xray_instrumentation ORDER BY id ASC;
+    SYSTEM INSTRUMENT REMOVE ALL;
+    SELECT count() FROM system.xray_instrumentation;
+"""
