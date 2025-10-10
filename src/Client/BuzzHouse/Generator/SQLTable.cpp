@@ -453,7 +453,7 @@ void StatementGenerator::generateTTLExpression(RandomGenerator & rg, const std::
         IntLiteral * il = ie->mutable_expr()->mutable_lit_val()->mutable_int_lit();
         std::uniform_int_distribution<int64_t> next_dist(-15, 15);
 
-        bexpr->set_op(rg.nextBool() ? BinaryOperator::BINOP_PLUS : BinaryOperator::BINOP_MINUS);
+        bexpr->set_op(rg.nextMediumNumber() < 76 ? BinaryOperator::BINOP_PLUS : BinaryOperator::BINOP_MINUS);
         columnPathRef(rg.pickRandomly(filtered_entries).get(), bexpr->mutable_lhs());
         ie->set_interval(
             static_cast<IntervalExpr_Interval>((rg.nextRandomUInt32() % static_cast<uint32_t>(IntervalExpr_Interval_MINUTE)) + 1));

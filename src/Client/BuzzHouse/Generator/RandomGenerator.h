@@ -99,7 +99,7 @@ public:
         , uints16(std::numeric_limits<uint16_t>::min(), std::numeric_limits<uint16_t>::max())
         , ints32(std::numeric_limits<int32_t>::min(), std::numeric_limits<int32_t>::max())
         , time_hours(-999, 999)
-        , second_offsets(-60, 60)
+        , second_offsets(-10, 80)
         , uints32(std::numeric_limits<uint32_t>::min(), std::numeric_limits<uint32_t>::max())
         , dist1(UINT32_C(1), UINT32_C(10))
         , dist2(UINT32_C(1), UINT32_C(100))
