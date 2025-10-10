@@ -2,6 +2,7 @@
 
 #include <Common/Exception.h>
 #include <Common/SharedLockGuard.h>
+#include <Common/re2.h>
 #include <Common/quoteString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -53,14 +54,14 @@ namespace
     {
     public:
         TransformFunc2To1Adapter(
-            const TransformFunc2 & transform_func_, const TagNamesAndValuesPtr & other_argument_, bool is_other_argument_second_)
-            : transform_func(transform_func_)
+            TransformFunc2 && transform_func_, const TagNamesAndValuesPtr & other_argument_, bool is_other_argument_second_)
+            : transform_func(std::move(transform_func_))
             , other_argument(other_argument_)
             , is_other_argument_second(is_other_argument_second_)
         {
         }
 
-        TagNamesAndValuesPtr operator()(const TagNamesAndValuesPtr & tags) const
+        TagNamesAndValuesPtr operator()(const TagNamesAndValuesPtr & tags)
         {
             if (is_other_argument_second)
                 return transform_func(tags, other_argument);
@@ -69,9 +70,50 @@ namespace
         }
 
     private:
-        const TransformFunc2 & transform_func;
+        TransformFunc2 transform_func;
         TagNamesAndValuesPtr other_argument;
         bool is_other_argument_second;
+    };
+
+    /// Implements transformation for function removeTagFromGroup().
+    class RemoveTagFromGroupTransformFunc
+    {
+    public:
+        explicit RemoveTagFromGroupTransformFunc(const String & tag_to_remove_)
+            : tag_to_remove(tag_to_remove_)
+        {
+        }
+
+        TagNamesAndValuesPtr operator()(const TagNamesAndValuesPtr & old_tags) const
+        {
+            size_t old_size = old_tags->size();
+            size_t mismatch_pos = static_cast<size_t>(-1);
+
+            for (size_t i = 0; i != old_size; ++i)
+            {
+                const auto & tag_name = (*old_tags)[i].first;
+                if (tag_name == tag_to_remove)
+                {
+                    mismatch_pos = i;
+                    break;
+                }
+            }
+
+            if (mismatch_pos == static_cast<size_t>(-1))
+                return old_tags;
+
+            auto new_tags = std::make_shared<TagNamesAndValues>();
+            new_tags->reserve(old_size - 1);
+            new_tags->assign(old_tags->begin(), old_tags->begin() + mismatch_pos);
+
+            if (mismatch_pos + 1 < old_size)
+                new_tags->insert(new_tags->end(), old_tags->begin() + mismatch_pos + 1, old_tags->end());
+
+            return new_tags;
+        }
+
+    private:
+        std::string_view tag_to_remove;
     };
 
     /// Implements transformation for function removeTagsFromGroup().
@@ -84,27 +126,33 @@ namespace
 
         TagNamesAndValuesPtr operator()(const TagNamesAndValuesPtr & old_tags) const
         {
+            size_t old_size = old_tags->size();
             size_t mismatch_pos = static_cast<size_t>(-1);
-            for (size_t i = 0; i != old_tags->size(); ++i)
+
+            for (size_t i = 0; i != old_size; ++i)
             {
-                const auto & tag_name_and_value = (*old_tags)[i];
-                if (tags_to_remove.contains(tag_name_and_value.first))
+                const auto & tag_name = (*old_tags)[i].first;
+                if (tags_to_remove.contains(tag_name))
                 {
                     mismatch_pos = i;
                     break;
                 }
             }
+
             if (mismatch_pos == static_cast<size_t>(-1))
                 return old_tags;
+
             auto new_tags = std::make_shared<TagNamesAndValues>();
-            new_tags->reserve(old_tags->size() - 1);
+            new_tags->reserve(old_size - 1);
             new_tags->assign(old_tags->begin(), old_tags->begin() + mismatch_pos);
-            for (size_t i = mismatch_pos + 1; i != old_tags->size(); ++i)
+
+            for (size_t i = mismatch_pos + 1; i != old_size; ++i)
             {
                 const auto & tag_name_and_value = (*old_tags)[i];
                 if (!tags_to_remove.contains(tag_name_and_value.first))
                     new_tags->emplace_back(tag_name_and_value);
             }
+
             return new_tags;
         }
 
@@ -122,28 +170,33 @@ namespace
 
         TagNamesAndValuesPtr operator()(const TagNamesAndValuesPtr & old_tags) const
         {
-            size_t mismatch_pos = static_cast<size_t>(-1);
             size_t old_size = old_tags->size();
+            size_t mismatch_pos = static_cast<size_t>(-1);
+
             for (size_t i = 0; i != old_size; ++i)
             {
-                const auto & tag_name_and_value = (*old_tags)[i];
-                if (!tags_to_keep.contains(tag_name_and_value.first))
+                const auto & tag_name = (*old_tags)[i].first;
+                if (!tags_to_keep.contains(tag_name))
                 {
                     mismatch_pos = i;
                     break;
                 }
             }
+
             if (mismatch_pos == static_cast<size_t>(-1))
                 return old_tags;
+
             auto new_tags = std::make_shared<TagNamesAndValues>();
             new_tags->reserve(old_size - 1);
             new_tags->assign(old_tags->begin(), old_tags->begin() + mismatch_pos);
+
             for (size_t i = mismatch_pos + 1; i != old_size; ++i)
             {
                 const auto & tag_name_and_value = (*old_tags)[i];
                 if (tags_to_keep.contains(tag_name_and_value.first))
                     new_tags->emplace_back(tag_name_and_value);
             }
+
             return new_tags;
         }
 
@@ -167,7 +220,7 @@ namespace
             num_tags_to_copy = tags_to_copy.size();
         }
 
-        TagNamesAndValuesPtr operator()(const TagNamesAndValuesPtr & dest_tags, const TagNamesAndValuesPtr & src_tags) const
+        TagNamesAndValuesPtr operator()(const TagNamesAndValuesPtr & dest_tags, const TagNamesAndValuesPtr & src_tags)
         {
             /// Extract the values of the tags we're going to copy from `src_tags`.
             size_t num_found_tags_in_src = 0;
@@ -202,9 +255,9 @@ namespace
             {
                 if (i == dest_size)
                 {
-                    for (size_t j = i; j != num_tags_to_copy; ++j)
+                    for (size_t k = i; k != num_tags_to_copy; ++k)
                     {
-                        auto & [tag_to_copy, value_to_copy] = tags_to_copy[j];
+                        auto & [tag_to_copy, value_to_copy] = tags_to_copy[k];
                         if (!value_to_copy.empty())
                         {
                             new_tags->emplace_back(tag_to_copy, value_to_copy);
@@ -242,16 +295,61 @@ namespace
 
     private:
         std::vector<std::pair<std::string_view, std::string_view>> tags_to_copy;
-        std::unoredered_map<std::string_view, size_t> positions_in_tags_to_copy;
+        std::unordered_map<std::string_view, size_t> positions_in_tags_to_copy;
         size_t num_tags_to_copy;
     };
+
+    /// Adds the tag `dest_tag` with a specified value to the list of tags keeping the list sorted.
+    /// If the specified value is empty then the function will remove this tag from the list.
+    TagNamesAndValuesPtr addDestTag(const TagNamesAndValuesPtr & old_tags, std::string_view dest_tag, String && dest_value)
+    {
+        size_t old_size = old_tags->size();
+        size_t new_size = old_size;
+
+        if (!dest_value.empty())
+            ++new_size;
+        
+        for (const auto & [tag_name, _] : *old_tags)
+        {
+            if (tag_name == dest_tag)
+                --new_size;
+        }
+
+        auto new_tags = std::make_shared<TagNamesAndValues>();
+        new_tags->reserve(new_size);
+
+        for (auto it = old_tags->begin(); it != old_tags->end(); ++it)
+        {
+            const auto & [tag_name, tag_value] = *it;
+            int cmp = tag_name.compare(dest_tag);
+            if (cmp < 0)
+            {
+                new_tags->emplace_back(tag_name, tag_value);
+            }
+            else
+            {
+                if (!dest_value.empty())
+                    new_tags->emplace_back(dest_tag, std::exchange(dest_value, {}));
+                if (cmp == 0)
+                    ++it;
+                new_tags->insert(new_tags->end(), it, old_tags->end());
+                break;
+            }
+        }
+
+        if (!dest_value.empty())
+            new_tags->emplace_back(dest_tag, std::move(dest_value));
+
+        chassert(new_tags->size() == new_size);
+        return new_tags;
+    }
 
     /// Implements transformation for function labelJoin().
     class LabelJoinTransformFunc
     {
     public:
-        LabelJoinTransformFunc(const String & dst_tag_, const String & separator_, const Strings & src_tags_)
-        : dst_tag(dst_tag_), separator(separator_)
+        LabelJoinTransformFunc(const String & dest_tag_, const String & separator_, const Strings & src_tags_)
+        : dest_tag(dest_tag_), separator(separator_)
         {
             src_values.resize(src_tags_.size());
             for (size_t i = 0; i != src_tags_.size(); ++i)
@@ -259,11 +357,9 @@ namespace
             separators_total_length = src_values.empty() ? 0 : (separator.length() * (src_values.size() - 1));
         }
 
-        TagNamesAndValuesPtr operator()(const TagNamesAndValuesPtr & old_tags) const
+        TagNamesAndValuesPtr operator()(const TagNamesAndValuesPtr & old_tags)
         {
-            size_t old_size = old_tags->size();
-            size_t new_size = old_size + 1;
-            size_t dst_length = separators_total_length;
+            size_t dest_length = separators_total_length;
 
             /// Collect all values we're going to concatenate in `src_values` in the correct order.
             for (const auto & [tag_name, tag_value] : *old_tags)
@@ -274,67 +370,34 @@ namespace
                     for (size_t i : it->second)
                     {
                         src_values[i] = tag_value;
-                        dst_length += tag_value.length();
+                        dest_length += tag_value.length();
                     }
                 }
-                if (tag_name == dst_tag)
-                    --new_size;
             }
 
             /// Calculate the concatenated value.
-            String dst_value;
+            String dest_value;
 
-            if (dst_length)
+            if (dest_length)
             {
-                dst_value.reserve(dst_length);
+                dest_value.reserve(dest_length);
                 chassert(!src_values.empty());
-                dst_value += src_values[0];
+                dest_value += src_values[0];
                 src_values[0] = {};
                 for (size_t i = 1; i != src_values.size(); ++i)
                 {
-                    dst_value += separator;
-                    dst_value += src_values[i];
+                    dest_value += separator;
+                    dest_value += src_values[i];
                     src_values[i] = {};
                 }
             }
-            else
-            {
-                --new_size;
-            }
 
-            auto new_tags = std::make_shared<TagNamesAndValues>();
-            new_tags->reserve(new_size);
-
-            /// Copy the old tags to the result set along with inserting the concatenated value as the tag `dst_tag`
-            /// at the proper position to keep the set sorted.
-            for (auto it = old_tags->begin(); it != old_tags->end(); ++it)
-            {
-                const auto & [tag_name, tag_value] = *it;
-                int cmp = tag_name.compare(dst_tag);
-                if (cmp < 0)
-                {
-                    new_tags->emplace_back(tag_name, tag_value);
-                }
-                else
-                {
-                    if (!dst_value.empty())
-                        new_tags->emplace_back(dst_tag, std::exchange(dst_value, {}));
-                    if (cmp == 0)
-                        ++it;
-                    new_tags->insert(new_tags->end(), it, old_tags->end());
-                    break;
-                }
-            }
-
-            if (!dst_value.empty())
-                new_tags->emplace_back(dst_tag, std::move(dst_value));
-
-            chassert(new_tags->size() == new_size);
-            return new_tags;
+            /// Add the tag `dest_tag` to the list of tags.
+            return addDestTag(old_tags, dest_tag, std::move(dest_value));
         }
 
     private:
-        std::string_view dst_tag;
+        std::string_view dest_tag;
         std::string_view separator;
         std::unordered_map<std::string_view, std::vector<size_t>> positions_in_src_tags;
         std::vector<std::string_view> src_values;
@@ -345,12 +408,144 @@ namespace
     class LabelReplaceTransformFunc
     {
     public:
-        LabelReplaceTransformFunc(const String & replacement, const Strings & src_tag, const String & regex);
-
-        TagNamesAndValuesPtr operator()(const TagNamesAndValuesPtr & old_tags) const
+        LabelReplaceTransformFunc(const String & dest_tag_, const String & replacement_, const String & src_tag_, const String & regex_)
+            : dest_tag(dest_tag_)
+            , src_tag(src_tag_)
+            , regex(regex_)
         {
-
+            parseReplacementPattern(replacement_);
+            submatches.resize(1 + regex.NumberOfCapturingGroups());
         }
+
+        TagNamesAndValuesPtr operator()(const TagNamesAndValuesPtr & old_tags)
+        {
+            /// Find `src_tag` in the old tags.
+            std::string_view src_value;
+            for (const auto & [tag_name, tag_value] : *old_tags)
+            {
+                if (tag_name == src_tag)
+                    src_value = tag_value;
+            }
+
+            /// Check if it matches and extract submatches if it is so.
+            if (!regex.Match(src_value, 0, src_value.length(), re2::RE2::ANCHOR_BOTH, submatches.data(), submatches.size()))
+            {
+                /// If the regular expression doesn't match then the original tags are returned unchanged.
+                return old_tags;
+            }
+
+            /// Calculate the replacement using the specified pattern and extracted submatches.
+            String dest_value;
+            for (const auto & fragment : replacement_fragments)
+            {
+                if (!fragment.text.empty())
+                    dest_value += fragment.text;
+                else
+                    dest_value += submatches.at(fragment.capturing_group);
+            }
+
+            /// Add the tag `dest_tag` to the list of tags.
+            return addDestTag(old_tags, dest_tag, std::move(dest_value));
+        }
+
+    private:
+        void parseReplacementPattern(std::string_view replacement_)
+        {
+            for (size_t pos = 0; pos != replacement_.length();)
+            {
+                if (replacement_[pos] != '$')
+                {
+                    size_t next_dollar = replacement_.find('$', pos);
+                    if (next_dollar == String::npos)
+                        next_dollar = replacement_.length();
+
+                    addTextFragment(replacement_.substr(pos, next_dollar - pos));
+                    pos = next_dollar;
+                }
+                else if (pos + 1 == replacement_.length())
+                {
+                    addTextFragment(replacement_[pos++]);
+                }
+                else if (replacement_[pos + 1] == '$')
+                {
+                    addTextFragment("$");
+                    pos += 2;
+                }
+                else if (std::isdigit(replacement_[pos + 1]))
+                {
+                    addCapturingGroupFragment(replacement_[pos + 1] - '0');
+                    pos += 2;
+                }
+                else if (std::isalnum(replacement_[pos + 1]) || replacement_[pos + 1] == '_')
+                {
+                    size_t i = pos + 2;
+                    while ((i < replacement_.length()) && (std::isalnum(replacement_[i]) || (replacement_[i] == '_')))
+                        ++i;
+                    size_t after_name = i;
+                    addCapturingGroupFragment(replacement_.substr(pos + 1, after_name - pos - 1));
+                    pos = after_name;
+                }
+                else if (replacement_[pos + 1] != '{')
+                {
+                    addTextFragment(replacement_[pos++]);
+                }
+                else if (size_t closing_brace = replacement_.find('}', pos + 2); closing_brace == String::npos)
+                {
+                    addTextFragment(replacement_[pos++]);
+                }
+                else
+                {
+                    std::string_view between_braces = replacement_.substr(pos + 2, closing_brace - pos - 2);
+                    if ((between_braces.length() == 1) && std::isdigit(between_braces[0]))
+                        addCapturingGroupFragment(between_braces[0] - '0');
+                    else
+                        addCapturingGroupFragment(between_braces);
+                    pos = closing_brace + 1;
+                }
+            }
+        }
+
+        void addTextFragment(std::string_view text)
+        {
+            if (text.empty())
+                return;
+            if (replacement_fragments.empty() || replacement_fragments.back().text.empty())
+                replacement_fragments.emplace_back(ReplacementFragment{.text = String{text}});
+            else
+                replacement_fragments.back().text += text;
+        }
+
+        void addTextFragment(char c)
+        {
+            addTextFragment(std::string_view{&c, 1});
+        }
+
+        void addCapturingGroupFragment(int capturing_group)
+        {
+            if (capturing_group <= regex.NumberOfCapturingGroups())
+                replacement_fragments.emplace_back().capturing_group = capturing_group;
+        }
+
+        void addCapturingGroupFragment(std::string_view named_capturing_group)
+        {
+            const auto & groups = regex.NamedCapturingGroups();
+            auto it = groups.find(String{named_capturing_group});
+            if (it != groups.end())
+                addCapturingGroupFragment(it->second);
+        }
+
+        std::string_view dest_tag;
+        std::string_view src_tag;
+        re2::RE2 regex;
+
+        struct ReplacementFragment
+        {
+            String text;
+            int capturing_group = -1;
+        };
+
+        std::vector<ReplacementFragment> replacement_fragments;
+        std::vector<std::string_view> submatches;
     };
 }
 
@@ -667,7 +862,7 @@ std::vector<TagNamesAndValuesPtr> ContextTimeSeriesTagsCollector::getTagsByID(co
 
 
 template <typename TranformFunc>
-Group ContextTimeSeriesTagsCollector::transformTags(Group group, const TranformFunc & transform_func)
+Group ContextTimeSeriesTagsCollector::transformTags(Group group, TranformFunc && transform_func)
 {
     auto old_tags = getTagsByGroup(group);
     auto new_tags = transform_func(old_tags);
@@ -678,7 +873,7 @@ Group ContextTimeSeriesTagsCollector::transformTags(Group group, const TranformF
 
 
 template <typename TranformFunc>
-std::vector<Group> ContextTimeSeriesTagsCollector::transformTags(const std::vector<Group> & groups_, const TranformFunc & transform_func)
+std::vector<Group> ContextTimeSeriesTagsCollector::transformTags(const std::vector<Group> & groups_, TranformFunc && transform_func)
 {
     auto tags_vector = getTagsByGroup(groups_);
     chassert(tags_vector.size() == groups_.size());
@@ -716,6 +911,18 @@ std::vector<Group> ContextTimeSeriesTagsCollector::transformTags(const std::vect
 }
 
 
+Group ContextTimeSeriesTagsCollector::removeTagFromGroup(Group group, const String & tag_to_remove)
+{
+    return transformTags(group, RemoveTagFromGroupTransformFunc{tag_to_remove});
+}
+
+
+std::vector<Group> ContextTimeSeriesTagsCollector::removeTagFromGroup(const std::vector<Group> & groups_, const String & tag_to_remove)
+{
+    return transformTags(groups_, RemoveTagFromGroupTransformFunc{tag_to_remove});
+}
+
+
 Group ContextTimeSeriesTagsCollector::removeTagsFromGroup(Group group, const Strings & tags_to_remove)
 {
     return transformTags(group, RemoveTagsFromGroupTransformFunc{tags_to_remove});
@@ -741,7 +948,7 @@ std::vector<Group> ContextTimeSeriesTagsCollector::removeAllTagsFromGroupExcept(
 
 
 template <typename TransformFunc2>
-Group ContextTimeSeriesTagsCollector::transformTags2(Group group1, Group group2, const TransformFunc2 & transform_func)
+Group ContextTimeSeriesTagsCollector::transformTags2(Group group1, Group group2, TransformFunc2 && transform_func)
 {
     auto tags1 = getTagsByGroup(group1);
     auto tags2 = getTagsByGroup(group2);
@@ -752,28 +959,28 @@ Group ContextTimeSeriesTagsCollector::transformTags2(Group group1, Group group2,
 
 template <typename TransformFunc2>
 std::vector<Group>
-ContextTimeSeriesTagsCollector::transformTags2(const std::vector<Group> & groups1, Group group2, const TransformFunc2 & transform_func)
+ContextTimeSeriesTagsCollector::transformTags2(const std::vector<Group> & groups1, Group group2, TransformFunc2 && transform_func)
 {
     return transformTags(
         groups1,
         TransformFunc2To1Adapter<TransformFunc2>{
-            transform_func, /* other_argument = */ getTagsByGroup(group2), /* is_other_argument_second = */ true});
+            std::move(transform_func), /* other_argument = */ getTagsByGroup(group2), /* is_other_argument_second = */ true});
 }
 
 
 template <typename TransformFunc2>
 std::vector<Group>
-ContextTimeSeriesTagsCollector::transformTags2(Group group1, const std::vector<Group> & groups2, const TransformFunc2 & transform_func)
+ContextTimeSeriesTagsCollector::transformTags2(Group group1, const std::vector<Group> & groups2, TransformFunc2 && transform_func)
 {
     return transformTags(
         groups2,
         TransformFunc2To1Adapter<TransformFunc2>{
-            transform_func, /* other_argument = */ getTagsByGroup(group1), /* is_other_argument_second = */ false});
+            std::move(transform_func), /* other_argument = */ getTagsByGroup(group1), /* is_other_argument_second = */ false});
 }
 
 
 template <typename TransformFunc2>
-std::vector<Group> ContextTimeSeriesTagsCollector::transformTags2(const std::vector<Group> & groups1, const std::vector<Group> & groups2, const TransformFunc2 & transform_func)
+std::vector<Group> ContextTimeSeriesTagsCollector::transformTags2(const std::vector<Group> & groups1, const std::vector<Group> & groups2, TransformFunc2 && transform_func)
 {
     chassert(groups1.size() == groups2.size());
 
@@ -843,27 +1050,27 @@ std::vector<Group> ContextTimeSeriesTagsCollector::copyTagsToGroup(const std::ve
 }
 
 
-Group ContextTimeSeriesTagsCollector::labelJoin(Group group, const String & dst_tag, const String & separator, const Strings & src_tags)
+Group ContextTimeSeriesTagsCollector::labelJoin(Group group, const String & dest_tag, const String & separator, const Strings & src_tags)
 {
-    return transformTags(group, LabelJoinTransformFunc{dst_tag, separator, src_tags});
+    return transformTags(group, LabelJoinTransformFunc{dest_tag, separator, src_tags});
 }
 
 
-std::vector<Group> ContextTimeSeriesTagsCollector::labelJoin(const std::vector<Group> & groups, const String & dst_tag, const String & separator, const Strings & src_tags)
+std::vector<Group> ContextTimeSeriesTagsCollector::labelJoin(const std::vector<Group> & groups_, const String & dest_tag, const String & separator, const Strings & src_tags)
 {
-    return transformTags(groups, LabelJoinTransformFunc{dst_tag, separator, src_tags});
+    return transformTags(groups_, LabelJoinTransformFunc{dest_tag, separator, src_tags});
 }
 
 
-Group ContextTimeSeriesTagsCollector::labelReplace(Group group, const String & dst_tag, const String & replacement, const Strings & src_tag, const String & regex)
+Group ContextTimeSeriesTagsCollector::labelReplace(Group group, const String & dest_tag, const String & replacement, const String & src_tag, const String & regex)
 {
-    return transformTags(group, LabelReplaceTransformFunc{dst_tag, replacement, src_tag, regexp});
+    return transformTags(group, LabelReplaceTransformFunc{dest_tag, replacement, src_tag, regex});
 }
 
 
-std::vector<Group> ContextTimeSeriesTagsCollector::labelReplace(const std::vector<Group> & groups, const String & dst_tag, const String & replacement, const Strings & src_tag, const String & regex)
+std::vector<Group> ContextTimeSeriesTagsCollector::labelReplace(const std::vector<Group> & groups_, const String & dest_tag, const String & replacement, const String & src_tag, const String & regex)
 {
-    return transformTags(groups, LabelReplaceTransformFunc{dst_tag, replacement, src_tag, regexp});
+    return transformTags(groups_, LabelReplaceTransformFunc{dest_tag, replacement, src_tag, regex});
 }
 
 

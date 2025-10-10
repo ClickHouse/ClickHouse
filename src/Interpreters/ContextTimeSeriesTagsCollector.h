@@ -77,7 +77,12 @@ public:
     template <typename IDType>
     std::vector<TagNamesAndValuesPtr> getTagsByID(const std::vector<IDType> & ids) const;
 
-    /// Removes some tags from a group and returns the result group.
+    /// Removes a tag from a group and returns the result group.
+    /// If the result set of tags hasn't been added to the collector yet then this functions adds it and assigns a group to it.
+    Group removeTagFromGroup(Group group, const String & tag_to_remove);
+    std::vector<Group> removeTagFromGroup(const std::vector<Group> & groups_, const String & tag_to_remove);
+
+    /// Removes multiple tags from a group and returns the result group.
     /// If the result set of tags hasn't been added to the collector yet then this functions adds it and assigns a group to it.
     Group removeTagsFromGroup(Group group, const Strings & tags_to_remove);
     std::vector<Group> removeTagsFromGroup(const std::vector<Group> & groups_, const Strings & tags_to_remove);
@@ -95,43 +100,43 @@ public:
     std::vector<Group> copyTagsToGroup(const std::vector<Group> & dest_groups, Group src_group, const Strings & tags_to_copy);
     std::vector<Group> copyTagsToGroup(const std::vector<Group> & dest_groups, const std::vector<Group> & src_groups, const Strings & tags_to_copy);
 
-    /// Joins all the values of all the `src_tags` using `separator` and returns the group with the tag `dst_tag` containing the joined value.
+    /// Joins all the values of all the `src_tags` using `separator` and returns the group with the tag `dest_tag` containing the joined value.
     /// This function implements the logic of promql function label_join().
-    Group labelJoin(Group group, const String & dst_tag, const String & separator, const Strings & src_tags);
-    std::vector<Group> labelJoin(const std::vector<Group> & groups, const String & dst_tag, const String & separator, const Strings & src_tags);
+    Group labelJoin(Group group, const String & dest_tag, const String & separator, const Strings & src_tags);
+    std::vector<Group> labelJoin(const std::vector<Group> & groups, const String & dest_tag, const String & separator, const Strings & src_tags);
 
     /// Matches the regular expression `regex` against the value of the tag `src_tag`.
-    /// If it matches, the value of the tag `dst_tag` in the returned group will be the expansion of `replacement`,
+    /// If it matches, the value of the tag `dest_tag` in the returned group will be the expansion of `replacement`,
     /// together with the original tags in the input.
     /// Capturing groups in the regular expression can be referenced with $1, $2, etc.
     /// Named capturing groups in the regular expression can be referenced with $name (where name is the capturing group name).
     /// If the regular expression doesn't match then the original group is returned unchanged.
     /// This function implements the logic of promql function label_replace().
-    Group labelReplace(Group group, const String & dst_tag, const String & replacement, const Strings & src_tag, const String & regex);
-    std::vector<Group> labelReplace(const std::vector<Group> & groups, const String & dst_tag, const String & replacement, const Strings & src_tag, const String & regex);
+    Group labelReplace(Group group, const String & dest_tag, const String & replacement, const String & src_tag, const String & regex);
+    std::vector<Group> labelReplace(const std::vector<Group> & groups, const String & dest_tag, const String & replacement, const String & src_tag, const String & regex);
 
 private:
     /// Transforms the set of tags assigned to a group using a one-argument function, returns the result group.
     /// If the result set of tags hasn't been added to the collector yet then this functions adds it and assigns a group to it.
     template <typename TranformFunc>
-    Group transformTags(Group group, const TranformFunc & transform_func);
+    Group transformTags(Group group, TranformFunc && transform_func);
 
     template <typename TranformFunc>
-    std::vector<Group> transformTags(const std::vector<Group> & groups_, const TranformFunc & transform_func);
+    std::vector<Group> transformTags(const std::vector<Group> & groups_, TranformFunc && transform_func);
 
     /// Transforms the set of tags assigned to a group using a two-arguments function, returns the result group.
     /// If the result set of tags hasn't been added to the collector yet then this functions adds it and assigns a group to it.
     template <typename TransformFunc2>
-    Group transformTags2(Group group1, Group group2, const TransformFunc2 & transform_func);
+    Group transformTags2(Group group1, Group group2, TransformFunc2 && transform_func);
 
     template <typename TransformFunc2>
-    std::vector<Group> transformTags2(Group group1, const std::vector<Group> & groups2, const TransformFunc2 & transform_func);
+    std::vector<Group> transformTags2(Group group1, const std::vector<Group> & groups2, TransformFunc2 && transform_func);
 
     template <typename TransformFunc2>
-    std::vector<Group> transformTags2(const std::vector<Group> & groups1, Group group2, const TransformFunc2 & transform_func);
+    std::vector<Group> transformTags2(const std::vector<Group> & groups1, Group group2, TransformFunc2 && transform_func);
 
     template <typename TransformFunc2>
-    std::vector<Group> transformTags2(const std::vector<Group> & groups1, const std::vector<Group> & groups2, const TransformFunc2 & transform_func);
+    std::vector<Group> transformTags2(const std::vector<Group> & groups1, const std::vector<Group> & groups2, TransformFunc2 && transform_func);
 
     mutable SharedMutex mutex;
 

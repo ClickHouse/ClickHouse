@@ -1,3 +1,4 @@
+#if 0
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
@@ -153,3 +154,4 @@ REGISTER_FUNCTION(TimeSeriesTagsGroupToTags)
 }
 
 }
+#endif
