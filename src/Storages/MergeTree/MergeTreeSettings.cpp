@@ -521,7 +521,42 @@ namespace ErrorCodes
     )", 0) \
     DECLARE(Bool, materialize_skip_indexes_on_merge, true, R"(
     When enabled, merges build and store skip indices for new parts.
-    Otherwise they can be created/stored by explicit MATERIALIZE INDEX
+    Otherwise they can be created/stored by explicit [MATERIALIZE INDEX](/sql-reference/statements/alter/skipping-index.md/#materialize-index)
+    or [during INSERTs](/operations/settings/settings.md/#materialize_skip_indexes_on_insert).
+
+    See also [exclude_materialize_skip_indexes_on_merge](#exclude_materialize_skip_indexes_on_merge) for more fine-grained control.
+    )", 0) \
+    DECLARE(String, exclude_materialize_skip_indexes_on_merge, "", R"(
+    Excludes provided comma delimited list of skip indexes from being built and stored during merges. Has no effect if
+    [materialize_skip_indexes_on_merge](#materialize_skip_indexes_on_merge) is false.
+
+    The excluded skip indexes will still be built and stored by an explicit
+    [MATERIALIZE INDEX](/sql-reference/statements/alter/skipping-index.md/#materialize-index) query or during INSERTs depending on
+    the [materialize_skip_indexes_on_insert](/operations/settings/settings.md/#materialize_skip_indexes_on_insert)
+    session setting.
+
+    Example:
+
+    ```sql
+    CREATE TABLE tab
+    (
+        a UInt64,
+        b UInt64,
+        INDEX idx_a a TYPE minmax,
+        INDEX idx_b b TYPE set(3)
+    )
+    ENGINE = MergeTree ORDER BY tuple() SETTINGS exclude_materialize_skip_indexes_on_merge = 'idx_a';
+
+    INSERT INTO tab SELECT number, number / 50 FROM numbers(100); -- setting has no effect on INSERTs
+
+    -- idx_a will be excluded from update during background or explicit merge via OPTIMIZE TABLE FINAL
+
+    -- can exclude multiple indexes by providing a list
+    ALTER TABLE tab MODIFY SETTING exclude_materialize_skip_indexes_on_merge = 'idx_a, idx_b';
+
+    -- default setting, no indexes excluded from being updated during merge
+    ALTER TABLE tab MODIFY SETTING exclude_materialize_skip_indexes_on_merge = '';
+    ```
     )", 0) \
     DECLARE(UInt64, merge_selecting_sleep_ms, 5000, R"(
     Minimum time to wait before trying to select parts to merge again after no
@@ -1795,6 +1830,11 @@ namespace ErrorCodes
     DECLARE(Bool, shared_merge_tree_enable_keeper_parts_extra_data, false, R"(
     Enables writing attributes into virtual parts and committing blocks in keeper
     )", EXPERIMENTAL) \
+    DECLARE(Bool, shared_merge_tree_activate_coordinated_merges_tasks, false, R"(
+    Activates rescheduling of coordinated merges tasks. It can be useful even when
+    shared_merge_tree_enable_coordinated_merges=0 because this will populate merge coordinator
+    statistics and help with cold start.
+    )", EXPERIMENTAL) \
     DECLARE(Bool, shared_merge_tree_enable_coordinated_merges, false, R"(
     Enables coordinated merges strategy
     )", EXPERIMENTAL) \
@@ -1816,7 +1856,7 @@ namespace ErrorCodes
     DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_max_period_ms, 10000, R"(
     Maximum time between runs of merge coordinator thread
     )", EXPERIMENTAL) \
-    DECLARE(UInt64, shared_merge_tree_merge_coordinator_factor, 2, R"(
+    DECLARE(Float, shared_merge_tree_merge_coordinator_factor, 1.1f, R"(
     Time changing factor for delay of coordinator thread
     )", EXPERIMENTAL) \
     DECLARE(Milliseconds, shared_merge_tree_merge_worker_fast_timeout_ms, 100, R"(

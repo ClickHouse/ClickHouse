@@ -179,9 +179,12 @@ String IntType::insertNumberEntry(RandomGenerator & rg, StatementGenerator & gen
 {
     if (size > 8 && rg.nextSmallNumber() < 8)
     {
-        String buf = (!is_unsigned && rg.nextBool()) ? "-" : "";
+        String buf = "CAST(";
 
-        buf += "number";
+        buf += (!is_unsigned && rg.nextBool()) ? "-" : "";
+        buf += "number AS ";
+        buf += typeName(false, false);
+        buf += ")";
         return buf;
     }
     return appendRandomRawValue(rg, gen);
@@ -221,9 +224,12 @@ String FloatType::insertNumberEntry(RandomGenerator & rg, StatementGenerator & g
 {
     if (rg.nextSmallNumber() < 8)
     {
-        String buf = rg.nextBool() ? "-" : "";
+        String buf = "CAST(";
 
-        buf += "number";
+        buf += rg.nextBool() ? "-" : "";
+        buf += "number AS ";
+        buf += typeName(false, false);
+        buf += ")";
         return buf;
     }
     return appendRandomRawValue(rg, gen);
@@ -456,9 +462,12 @@ String DecimalType::insertNumberEntry(RandomGenerator & rg, StatementGenerator &
 {
     if (rg.nextSmallNumber() < 8)
     {
-        String buf = rg.nextBool() ? "-" : "";
+        String buf = "CAST(";
 
-        buf += "number";
+        buf += rg.nextBool() ? "-" : "";
+        buf += "number AS ";
+        buf += typeName(false, false);
+        buf += ")";
         return buf;
     }
     return appendRandomRawValue(rg, gen);
@@ -1676,8 +1685,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t al
     const uint32_t j_type = 20 * static_cast<uint32_t>(!low_card && (allowed_types & allow_JSON) != 0);
     const uint32_t dynamic_type = 30 * static_cast<uint32_t>(!low_card && (allowed_types & allow_dynamic) != 0);
     const uint32_t time_type = 15 * static_cast<uint32_t>((allowed_types & allow_time) != 0);
-    const uint32_t qbit_type
-        = 15 * static_cast<uint32_t>(!low_card && (allowed_types & allow_qbit) != 0 && allow_floats && supports_cloud_features);
+    const uint32_t qbit_type = 15 * static_cast<uint32_t>(!low_card && (allowed_types & allow_qbit) != 0 && allow_floats);
     const uint32_t prob_space = int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + bool_type
         + enum_type + uuid_type + ipv4_type + ipv6_type + j_type + dynamic_type + time_type + qbit_type;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);

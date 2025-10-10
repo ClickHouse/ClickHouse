@@ -5031,18 +5031,22 @@ void Context::initializeTraceCollector()
 /// Call after unexpected crash happen.
 void Context::handleCrash() const
 {
-    std::lock_guard<std::mutex> lock(mutex_shared_context);
-    if (!shared)
-        return;
-
     std::optional<SystemLogs> system_logs;
     {
-        SharedLockGuard lock2(shared->mutex);
-        if (!shared->system_logs)
+        std::lock_guard<std::mutex> lock(mutex_shared_context);
+        if (!shared)
             return;
-        system_logs.emplace(*shared->system_logs);
+
+        {
+            SharedLockGuard lock2(shared->mutex);
+            if (!shared->system_logs)
+                return;
+            system_logs.emplace(*shared->system_logs);
+        }
     }
 
+    /// Must be called without mutex_shared_context to avoid deadlock:
+    /// handleCrash() -> SystemLog<...>::prepareTable -> keeper -> Context::getZooKeeperLog() -> mutex_shared_context
     system_logs->handleCrash();
 }
 
