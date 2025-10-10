@@ -9,6 +9,7 @@
 #include <stdexcept>
 #include <thread>
 #include <unistd.h>
+#include <variant>
 
 #include <base/getThreadId.h>
 #include <Interpreters/XRayInstrumentationProfilingLog.h>
@@ -135,31 +136,40 @@ void XRayInstrumentationManager::setHandlerAndPatch(const String & function_name
 }
 
 
-void XRayInstrumentationManager::unpatchFunction(uint64_t instrumentation_point_id)
+void XRayInstrumentationManager::unpatchFunction(std::variant<uint64_t, bool> id)
 {
     SharedLockGuard lock(shared_mutex);
-    InstrumentedFunctionInfo instrumented_function;
-    bool found = false;
-    for (const auto & function_info : instrumented_functions)
+    InstrumentedFunctions functions_to_unpatch;
+
+    if (std::holds_alternative<bool>(id))
     {
-        if (function_info.id == instrumentation_point_id)
+        functions_to_unpatch = instrumented_functions;
+    }
+    else
+    {
+        for (const auto & function_info : instrumented_functions)
         {
-            instrumented_function = function_info;
-            found = true;
-            break;
+            if (function_info.id == std::get<uint64_t>(id))
+            {
+                functions_to_unpatch.emplace_back(function_info);
+                break;
+            }
         }
+
+        if (functions_to_unpatch.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown instrumentation_point_id to remove: ({})", std::get<uint64_t>(id));
     }
 
-    if (!found)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown instrumentation_point_id to remove: ({})", instrumentation_point_id);
-
-    HandlerType type = getHandlerType(instrumented_function.handler_name);
-    instrumented_functions.erase(functionIdToHandlers[instrumented_function.function_id][type]);
-    functionIdToHandlers[instrumented_function.function_id].erase(type);
-    if (functionIdToHandlers[instrumented_function.function_id].empty())
+    for ( const auto & instrumented_function : functions_to_unpatch)
     {
-        functionIdToHandlers.erase(instrumented_function.function_id);
-        __xray_unpatch_function(instrumented_function.function_id);
+        HandlerType type = getHandlerType(instrumented_function.handler_name);
+        instrumented_functions.erase(functionIdToHandlers[instrumented_function.function_id][type]);
+        functionIdToHandlers[instrumented_function.function_id].erase(type);
+        if (functionIdToHandlers[instrumented_function.function_id].empty())
+        {
+            functionIdToHandlers.erase(instrumented_function.function_id);
+            __xray_unpatch_function(instrumented_function.function_id);
+        }
     }
 }
 

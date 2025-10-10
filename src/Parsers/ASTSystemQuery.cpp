@@ -471,22 +471,22 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         }
         case Type::INSTRUMENT_ADD:
         {
-            if (!function_name.empty())
+            if (!instrumentation_function_name.empty())
             {
                 ostr << ' ';
-                print_identifier(function_name);
+                print_identifier(instrumentation_function_name);
             }
 
-            if (!handler_name.empty())
+            if (!instrumentation_handler_name.empty())
             {
                 ostr << ' ';
-                print_identifier(handler_name);
+                print_identifier(instrumentation_handler_name);
             }
 
-            if (parameters && !parameters->empty())
+            if (instrumentation_parameters && !instrumentation_parameters->empty())
             {
                 bool comma = false;
-                for (const auto & param : *parameters)
+                for (const auto & param : *instrumentation_parameters)
                 {
                     if (comma)
                         ostr << ',';
@@ -507,7 +507,12 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::INSTRUMENT_REMOVE:
         {
             if (instrumentation_point_id)
-                ostr << ' ' << *instrumentation_point_id;
+            {
+                if (std::holds_alternative<bool>(instrumentation_point_id.value()))
+                    ostr << " ALL";
+                else
+                    ostr << ' ' << std::get<uint64_t>(instrumentation_point_id.value());
+            }
             break;
         }
         case Type::KILL:

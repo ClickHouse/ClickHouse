@@ -45,7 +45,7 @@ public:
     static XRayInstrumentationManager & instance();
 
     void setHandlerAndPatch(const String & function_name, const String & handler_name, std::optional<std::vector<InstrumentParameter>> &parameters, ContextPtr context);
-    void unpatchFunction(uint64_t instrumentation_point_id);
+    void unpatchFunction(std::variant<uint64_t, bool> id);
 
     using InstrumentedFunctions = std::list<InstrumentedFunctionInfo>;
     using HandlerTypeToIP = std::unordered_map<HandlerType, InstrumentedFunctions::iterator>;

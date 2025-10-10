@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <csignal>
 #include <filesystem>
+#include <variant>
 #include <unistd.h>
 #include <Access/AccessControl.h>
 #include <Access/Common/AllowedClientHosts.h>
@@ -1733,18 +1734,29 @@ void InterpreterSystemQuery::instrumentWithXRay(bool add, ASTSystemQuery & query
     try
     {
         if (add)
-            XRayInstrumentationManager::instance().setHandlerAndPatch(query.function_name, query.handler_name, query.parameters, getContext());
+            XRayInstrumentationManager::instance().setHandlerAndPatch(query.instrumentation_function_name, query.instrumentation_handler_name, query.instrumentation_parameters, getContext());
         else
-            XRayInstrumentationManager::instance().unpatchFunction(*query.instrumentation_point_id);
+            XRayInstrumentationManager::instance().unpatchFunction(query.instrumentation_point_id.value());
     }
     catch (const DB::Exception & e)
     {
+        String id;
+        if (query.instrumentation_point_id)
+        {
+            if (std::holds_alternative<bool>(query.instrumentation_point_id.value()))
+                id = "ALL";
+            else
+                id = std::to_string(std::get<uint64_t>(query.instrumentation_point_id.value()));
+            }
+        else
+            id = "None";
+
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Failed to instrument function '{}' with handler '{}' and instrumentation_point_id '{}': {}",
-            query.function_name,
-            query.handler_name,
-            query.instrumentation_point_id ? std::to_string(*query.instrumentation_point_id) : "None",
+            query.instrumentation_function_name,
+            query.instrumentation_handler_name,
+            id,
             e.what());
     }
 }
