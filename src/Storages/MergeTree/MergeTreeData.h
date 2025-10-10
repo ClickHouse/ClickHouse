@@ -718,7 +718,7 @@ public:
 
     /// Returns a part in Active state with the given name or a part containing it. If there is no such part, returns nullptr.
     DataPartPtr getActiveContainingPart(const String & part_name) const;
-    DataPartPtr getActiveContainingPart(const String & part_name, DataPartsLock & lock) const;
+    DataPartPtr getActiveContainingPart(const String & part_name, DataPartsAnyLock lock) const;
     DataPartPtr getActiveContainingPart(const MergeTreePartInfo & part_info) const;
     DataPartPtr getActiveContainingPart(const MergeTreePartInfo & part_info, DataPartState state, DataPartsAnyLock lock) const;
 

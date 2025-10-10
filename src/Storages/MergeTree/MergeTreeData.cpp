@@ -5677,7 +5677,7 @@ MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(const String &
     return getActiveContainingPart(part_info);
 }
 
-MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(const String & part_name, DataPartsLock & lock) const
+MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(const String & part_name, DataPartsAnyLock lock) const
 {
     auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
     return getActiveContainingPart(part_info, DataPartState::Active, lock);
