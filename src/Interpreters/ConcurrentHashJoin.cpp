@@ -799,6 +799,7 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
                     }
                 }
                 combined.emplace_back(sc, std::move(filtered));
+                combined.back().selector_rows = sc->selector.size();
                 combined_allocated += combined.back().allocatedBytes();
             };
 
@@ -807,6 +808,10 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
                 auto src = getData(hash_joins[i]);
                 for (const auto & holder : src->nullmaps)
                     filter_holder_by_selector(holder);
+                // Clear per-slot nullmaps after consolidation to prevent duplicates and free memory held by masks
+                // we do not free ScatteredColumns here; they are owned by the join and needed during probing/emission
+                src->nullmaps.clear();
+                src->nullmaps_allocated_size = 0;
             }
 
             auto dst = getData(hash_joins[0]);
