@@ -1,4 +1,3 @@
-#include <QueryPipeline/BlockIO.h>
 #include "config.h"
 
 #if USE_YTSAURUS

@@ -22,7 +22,6 @@
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
-#include <Interpreters/Context_fwd.h>
 
 #include <DataTypes/DataTypesDecimal.h>
 
@@ -1156,9 +1155,9 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::loadData()
 {
     if (!source_ptr->hasUpdateField())
     {
-        std::unique_ptr<DictionaryParallelLoaderType> parallel_loader;
+        std::optional<DictionaryParallelLoaderType> parallel_loader;
         if constexpr (sharded)
-            parallel_loader = std::make_unique<DictionaryParallelLoaderType>(*this);
+            parallel_loader.emplace(*this);
 
         BlockIO io = source_ptr->loadAll();
 

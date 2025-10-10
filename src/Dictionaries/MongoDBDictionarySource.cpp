@@ -1,4 +1,3 @@
-#include <QueryPipeline/BlockIO.h>
 #include "config.h"
 
 #include <Dictionaries/DictionarySourceFactory.h>
@@ -8,10 +7,8 @@
 
 #include <Columns/IColumn.h>
 #include <Common/logger_useful.h>
-#include <Core/BlockInfo.h>
 #include <Processors/Sources/MongoDBSource.h>
 #include <Storages/NamedCollectionsHelpers.h>
-
 
 #include <Poco/URI.h>
 

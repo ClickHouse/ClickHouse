@@ -391,6 +391,7 @@ void RegExpTreeDictionary::loadData()
         if (err != HS_SUCCESS)
             throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Could not allocate scratch space for vectorscan");
 #endif
+
     }
     else
     {
@@ -746,9 +747,9 @@ std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::match(
                             unsigned long long /* from */, // NOLINT
                             unsigned long long /* to */, // NOLINT
                             unsigned int /* flags */,
-                            void * context_) -> int
+                            void * context) -> int
             {
-                static_cast<MatchContext *>(context_)->insertIdx(id);
+                static_cast<MatchContext *>(context)->insertIdx(id);
                 return 0;
             };
 

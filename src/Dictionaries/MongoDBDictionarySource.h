@@ -1,11 +1,11 @@
 #pragma once
 
-#include <QueryPipeline/BlockIO.h>
 #include "config.h"
 
 #if USE_MONGODB
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionarySource.h>
+#include <QueryPipeline/BlockIO.h>
 
 #include <Core/Block.h>
 #include <Storages/StorageMongoDB.h>

@@ -3,13 +3,13 @@
 #include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <Common/HashTable/HashMap.h>
+#include <Interpreters/Context.h>
 #include <Functions/FunctionHelpers.h>
 
 #include <Dictionaries/ClickHouseDictionarySource.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/DictionarySourceHelpers.h>
 #include <Dictionaries/HierarchyDictionariesUtils.h>
-#include <Interpreters/Context.h>
 
 #include <Processors/ISource.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
@@ -424,7 +424,6 @@ BlockIO DirectDictionary<dictionary_key_type>::loadKeys(const PaddedPODArray<Key
     return source_ptr->loadKeys(key_columns, requested_rows);
 }
 
-// NOTE(mstetsyuk): this way we don't run io.onFinish or io.onException (and so no logging), but other that this, everything should work
 template <DictionaryKeyType dictionary_key_type>
 Pipe DirectDictionary<dictionary_key_type>::read(const Names & /* column_names */, size_t /* max_block_size */, size_t /* num_streams */) const
 {

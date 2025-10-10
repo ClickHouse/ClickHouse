@@ -2,11 +2,9 @@
 
 #include <memory>
 #include <Poco/Logger.h>
-#include <Common/SettingsChanges.h>
 #include <QueryPipeline/BlockIO.h>
 #include <Client/ConnectionPoolWithFailover.h>
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/ClientInfo.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/ExternalQueryBuilder.h>
 #include <Dictionaries/IDictionarySource.h>

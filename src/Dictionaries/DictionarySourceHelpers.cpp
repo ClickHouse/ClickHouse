@@ -80,6 +80,7 @@ SettingsChanges readSettingsFromDictionaryConfig(const Poco::Util::AbstractConfi
     return changes;
 }
 
+
 ContextMutablePtr copyContextAndApplySettingsFromDictionaryConfig(
     const ContextPtr & context, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
 {

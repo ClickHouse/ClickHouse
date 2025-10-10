@@ -8,7 +8,6 @@
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/DictionaryHelpers.h>
-#include <QueryPipeline/QueryPipeline.h>
 
 
 namespace DB
