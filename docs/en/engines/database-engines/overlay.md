@@ -12,7 +12,7 @@ sidebar_position: 51
 
 `Overlay` is a logical "view" database that exposes **the union of tables from multiple underlying databases**. It does **not** own data itself.
 
-`Overlay` is used in `clickhouse-local` for to load local files in temporary ephemeral databases.
+`Overlay` is used in `clickhouse-local` to represent local files from the filesystem in the default database.
 
 ---
 
