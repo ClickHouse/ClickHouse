@@ -603,6 +603,8 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t l
                     if (response_for_session.response->xid != Coordination::WATCH_XID)
                         response_for_session.request = request_for_session->request;
 
+                    response_for_session.response->enqueue_ts = std::chrono::steady_clock::now();
+
                     try_push(response_for_session);
                 }
             }
