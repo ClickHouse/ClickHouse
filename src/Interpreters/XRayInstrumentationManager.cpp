@@ -53,6 +53,8 @@ const String LogHandler
 const String ProfileHandler
     = "profile";
 
+auto logger = getLogger("XRayInstrumentationManager");
+
 void XRayInstrumentationManager::registerHandler(const String & name, XRayHandlerFunction handler)
 {
     xrayHandlerNameToFunction[name] = handler;
@@ -214,7 +216,7 @@ void XRayInstrumentationManager::dispatchHandlerImpl(int32_t func_id, XRayEntryT
         auto handler_it = xrayHandlerNameToFunction.find(ip_it->handler_name);
         if (handler_it == xrayHandlerNameToFunction.end())
         {
-            LOG_ERROR(getLogger("XRayInstrumentationManager::dispatchHandler"), "Handler not found");
+            LOG_ERROR(logger, "Handler not found");
         }
         auto handler = handler_it->second;
         if (handler)
@@ -225,12 +227,12 @@ void XRayInstrumentationManager::dispatchHandlerImpl(int32_t func_id, XRayEntryT
             }
             catch (const std::exception & e)
             {
-                LOG_ERROR(getLogger("XRayInstrumentationManager::dispatchHandler"), "Exception in handler '{}': {}", ip_it->handler_name, e.what());
+                LOG_ERROR(logger, "Exception in handler '{}': {}", ip_it->handler_name, e.what());
             }
         }
         else
         {
-            LOG_ERROR(getLogger("XRayInstrumentationManager::dispatchHandler"), "Handler not found");
+            LOG_ERROR(logger, "Handler not found");
         }
     }
 }
@@ -255,6 +257,8 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
 
     /// Initialize the LLVM symbolizer to resolve function names
     LLVMSymbolizer symbolizer;
+
+    LOG_DEBUG(logger, "Starting to parse the XRay instrumentation map. This takes a few seconds...");
 
     /// Iterate over all instrumented functions
     for (const auto &[func_id, addr] : function_addresses)
@@ -284,6 +288,8 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
             xrayIdToFunctionName[func_id] = stripped_function_name;
         }
     }
+
+    LOG_DEBUG(logger, "Finished parsing the XRay instrumentation map");
 }
 
 void XRayInstrumentationManager::sleep(int32_t func_id, XRayEntryType entry_type)
@@ -368,7 +374,7 @@ void XRayInstrumentationManager::log(int32_t func_id, XRayEntryType entry_type)
     {
         String logger_info = std::get<String>(param);
         auto function_name = parameters_it->second->function_name;
-        LOG_DEBUG(getLogger("XRayInstrumentationManager::log"), "{}: {}", function_name, logger_info);
+        LOG_DEBUG(logger, "{}: {}", function_name, logger_info);
     }
     else
     {
@@ -388,7 +394,7 @@ void XRayInstrumentationManager::profile(int32_t func_id, XRayEntryType entry_ty
     SCOPE_EXIT({ in_hook = false; });
 
     SharedLockGuard lock(shared_mutex);
-    LOG_DEBUG(getLogger("XRayInstrumentationManager::profile"), "function with id {}", toString(func_id));
+    LOG_DEBUG(logger, "Profile: function with id {}", toString(func_id));
     HandlerType type = HandlerType::Profile;
     static thread_local std::unordered_map<int32_t, XRayInstrumentationProfilingLogElement> active_elements;
     if (entry_type == XRayEntryType::ENTRY)
