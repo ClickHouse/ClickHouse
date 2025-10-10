@@ -3115,7 +3115,7 @@ KeeperDigest KeeperStorage<Container>::preprocessRequest(
     Stopwatch watch;
     SCOPE_EXIT({
         watch.stop();
-        
+
         const auto elapsed_ms = watch.elapsedMilliseconds();
         const auto elapsed_us = watch.elapsedMicroseconds();
 
