@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: use_xray, no-parallel
+# Tags: use_xray, no-parallel, no-fasttest
 # no-parallel: avoid other tests interfering with the global system.xray_instrumentation table
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -8,7 +8,14 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # Reading the instrumentation points forces the initial load of the symbols
 
-$CLICKHOUSE_CLIENT -m -q """
+function cleanup()
+{
+    $CLICKHOUSE_CLIENT -q "SYSTEM INSTRUMENT REMOVE ALL;"
+}
+
+trap cleanup EXIT
+
+$CLICKHOUSE_CLIENT -q """
     SYSTEM INSTRUMENT REMOVE ALL;
     SELECT count() FROM system.xray_instrumentation;
 
@@ -25,7 +32,7 @@ $CLICKHOUSE_CLIENT -m -q """
 
 id=$($CLICKHOUSE_CLIENT -q "SELECT id FROM system.xray_instrumentation WHERE function_name = 'QueryMetricLog::startQuery';")
 
-$CLICKHOUSE_CLIENT -m -q """
+$CLICKHOUSE_CLIENT -q """
     SYSTEM INSTRUMENT REMOVE $id;
     SELECT count() FROM system.xray_instrumentation;
     SELECT function_name, handler_name, parameters FROM system.xray_instrumentation ORDER BY id ASC;
