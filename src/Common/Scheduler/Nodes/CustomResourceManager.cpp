@@ -179,7 +179,7 @@ ResourceLink CustomResourceManager::Classifier::get(const String & resource_name
 
 WorkloadSettings CustomResourceManager::Classifier::getWorkloadSettings(const String & resource_name) const
 {
-    (void)resource_name;
+    UNUSED(resource_name);
     return {};
 }
 
