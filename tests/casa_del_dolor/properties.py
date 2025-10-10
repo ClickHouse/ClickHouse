@@ -375,7 +375,6 @@ cache_storage_properties = {
     "background_download_queue_size_limit": threshold_generator(0.2, 0.2, 0, 128),
     "background_download_threads": threads_lambda,
     "boundary_alignment": threshold_generator(0.2, 0.2, 0, 128),
-    "cache_hits_threshold": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
     "cache_on_write_operations": true_false_lambda,
     "enable_bypass_cache_with_threshold": true_false_lambda,
     "enable_filesystem_query_cache_limit": true_false_lambda,
