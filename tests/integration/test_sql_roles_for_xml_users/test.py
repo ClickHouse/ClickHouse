@@ -3,7 +3,12 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance("instance", user_configs=["configs/users.xml"])
+instance = cluster.add_instance(
+    "instance",
+    main_configs=["configs/access_control_path.xml"],
+    user_configs=["configs/users.xml"],
+    stay_alive=True,
+)
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -22,4 +27,8 @@ def test_user_grants():
     instance.replace_in_config("/etc/clickhouse-server/users.d/users.xml", "<grants></grants>", "<grants><query>GRANT role1</query></grants>")
     instance.query("system reload users")
     instance.wait_for_log_line("performing update on configuration")
+    assert instance.query("show grants for user1") == "GRANT role1 TO user1\n"
+    # Make sure that assigning roles created in SQL to XML users works after restart
+    instance.stop_clickhouse()
+    instance.start_clickhouse()
     assert instance.query("show grants for user1") == "GRANT role1 TO user1\n"
