@@ -14,6 +14,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int SUPPORT_IS_DISABLED;
 };
 
 #if USE_LIBFIU
@@ -92,7 +93,6 @@ static struct InitFiu
     REGULAR(lazy_pipe_fds_fail_close) \
     PAUSEABLE(infinite_sleep) \
     PAUSEABLE(stop_moving_part_before_swap_with_active) \
-    REGULAR(slowdown_index_analysis) \
     REGULAR(replicated_merge_tree_all_replicas_stale) \
     REGULAR(zero_copy_lock_zk_fail_before_op) \
     REGULAR(zero_copy_lock_zk_fail_after_op) \
@@ -116,8 +116,11 @@ static struct InitFiu
     ONCE(iceberg_writes_cleanup) \
     ONCE(backup_add_empty_memory_table) \
     REGULAR(refresh_task_delay_update_coordination_state_running) \
+    REGULAR(sleep_in_logs_flush) \
     ONCE(smt_commit_exception_before_op) \
     ONCE(disk_object_storage_fail_commit_metadata_transaction) \
+    ONCE(database_replicated_drop_before_removing_keeper_failed) \
+    ONCE(database_replicated_drop_after_removing_keeper_failed) \
 
 
 namespace FailPoints
@@ -126,6 +129,8 @@ namespace FailPoints
 APPLY_FOR_FAILPOINTS(M, M, M, M)
 #undef M
 }
+
+#if USE_LIBFIU
 
 std::unordered_map<String, std::shared_ptr<FailPointChannel>> FailPointInjection::fail_point_wait_channels;
 std::mutex FailPointInjection::mu;
@@ -193,7 +198,6 @@ void FailPointInjection::pauseFailPoint(const String & fail_point_name)
 
 void FailPointInjection::enableFailPoint(const String & fail_point_name)
 {
-#if USE_LIBFIU
 #define SUB_M(NAME, flags, pause)                                                                               \
     if (fail_point_name == FailPoints::NAME)                                                                    \
     {                                                                                                           \
@@ -217,7 +221,6 @@ void FailPointInjection::enableFailPoint(const String & fail_point_name)
 #undef PAUSEABLE_ONCE
 #undef PAUSEABLE
 
-#endif
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find fail point {}", fail_point_name);
 }
 
@@ -260,5 +263,39 @@ void FailPointInjection::enableFromGlobalConfig(const Poco::Util::AbstractConfig
     }
 }
 
+#else // USE_LIBFIU
+
+void FailPointInjection::pauseFailPoint(const String &)
+{
+}
+
+void FailPointInjection::enableFailPoint(const String &)
+{
+}
+
+void FailPointInjection::enablePauseFailPoint(const String &, UInt64)
+{
+}
+
+void FailPointInjection::disableFailPoint(const String &)
+{
+}
+
+void FailPointInjection::wait(const String &)
+{
+}
+
+void FailPointInjection::enableFromGlobalConfig(const Poco::Util::AbstractConfiguration & config)
+{
+    String root_key = "fail_points_active";
+
+    Poco::Util::AbstractConfiguration::Keys fail_point_names;
+    config.keys(root_key, fail_point_names);
+
+    if (!fail_point_names.empty())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "FIU is not enabled");
+}
+
+#endif // USE_LIBFIU
 
 }

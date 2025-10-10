@@ -128,7 +128,7 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
 {
     chassert(
         !bucket_path.has_value() && !file_format.has_value() && !file_comp.has_value() && !partition_strategy.has_value()
-        && !partition_columns_in_data_file.has_value());
+        && !partition_columns_in_data_file.has_value() && !storage_class_name.has_value());
     has_partition_by = (isRedisEngine() || isKeeperMapEngine() || isMaterializedPostgreSQLEngine() || isAnyIcebergEngine()
                         || isAzureEngine() || isS3Engine())
         && rg.nextSmallNumber() < 5;
@@ -138,7 +138,7 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
         String next_bucket_path;
 
         /// Set integration call to use, sometimes create tables in ClickHouse, others also in Spark
-        if (getLakeCatalog() != LakeCatalog::None || (has_dolor && (isAnyIcebergEngine() || isAnyDeltaLakeEngine()) && rg.nextBool()))
+        if (has_dolor && (isAnyIcebergEngine() || isAnyDeltaLakeEngine()) && rg.nextBool())
         {
             integration = IntegrationCall::Dolor;
         }
@@ -153,14 +153,43 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
 
         if (isAnyIcebergEngine() || isAnyDeltaLakeEngine())
         {
-            /// Set bucket path, Spark has the catalog concept on the path :(
-            next_bucket_path = fmt::format(
-                "{}{}{}{}t{}",
-                isOnLocal() ? fc.lakes_path.generic_string() : "",
-                isOnLocal() ? "/" : "",
-                (integration == IntegrationCall::Dolor) ? getSparkCatalogName() : "",
-                (integration == IntegrationCall::Dolor) ? "/test/" : "",
-                tname);
+            const LakeCatalog catalog = getLakeCatalog();
+
+            if (catalog == LakeCatalog::None)
+            {
+                /// DeltaLake tables on Spark must be on the `spark_catalog` :(
+                next_bucket_path = fmt::format(
+                    "{}{}{}{}t{}",
+                    isOnLocal() ? fc.lakes_path.generic_string() : "",
+                    isOnLocal() ? "/" : "",
+                    (integration == IntegrationCall::Dolor) ? getSparkCatalogName() : "",
+                    (integration == IntegrationCall::Dolor) ? "/test/" : "",
+                    tname);
+            }
+            else
+            {
+                const Catalog * cat = nullptr;
+                const ServerCredentials & sc = fc.dolor_server.value();
+
+                switch (catalog)
+                {
+                    case LakeCatalog::Glue:
+                        cat = &sc.glue_catalog.value();
+                        break;
+                    case LakeCatalog::Hive:
+                        cat = &sc.hive_catalog.value();
+                        break;
+                    case LakeCatalog::REST:
+                        cat = &sc.rest_catalog.value();
+                        break;
+                    case LakeCatalog::Unity:
+                        cat = &sc.unity_catalog.value();
+                        break;
+                    default:
+                        chassert(0);
+                }
+                next_bucket_path = fmt::format("{}/t{}", cat->warehouse, tname);
+            }
         }
         else if (isS3QueueEngine() || isAzureQueueEngine())
         {
@@ -232,6 +261,10 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
     if ((isS3Engine() || isAzureEngine()) && rg.nextMediumNumber() < 21)
     {
         partition_columns_in_data_file = rg.nextBool() ? "1" : "0";
+    }
+    if (isS3Engine() && rg.nextMediumNumber() < 21)
+    {
+        storage_class_name = rg.nextBool() ? "STANDARD" : "INTELLIGENT_TIERING";
     }
     if (isExternalDistributedEngine())
     {

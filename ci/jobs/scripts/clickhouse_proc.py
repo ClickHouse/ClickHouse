@@ -98,6 +98,8 @@ class ClickHouseProc:
         self.debug_artifacts = []
         self.extra_tests_results = []
         self.logs = []
+        self.log_export_host, self.log_export_password = None, None
+        self.system_db_uuid = None
 
         Utils.set_env("CLICKHOUSE_CONFIG_DIR", self.ch_config_dir)
         Utils.set_env("CLICKHOUSE_CONFIG", self.config_file)
@@ -320,7 +322,7 @@ profiles:
         for command in commands:
             res = res and Shell.check(command, verbose=True)
 
-        with open(f"{temp_dir}/config.xml", 'a') as config_file:
+        with open(f"{temp_dir}/config.xml", "a") as config_file:
             config_file.write(c1)
         return res
 
@@ -358,7 +360,11 @@ profiles:
 
     def start_log_exports(self, check_start_time):
         print("Start log export")
-        os.environ["CLICKHOUSE_CI_LOGS_CLUSTER"] = CLICKHOUSE_CI_LOGS_CLUSTER
+        if self.log_export_host:
+            os.environ["CLICKHOUSE_CI_LOGS_CLUSTER"] = CLICKHOUSE_CI_LOGS_CLUSTER
+            os.environ["CLICKHOUSE_CI_LOGS_HOST"] = self.log_export_host
+            os.environ["CLICKHOUSE_CI_LOGS_USER"] = CLICKHOUSE_CI_LOGS_USER
+            os.environ["CLICKHOUSE_CI_LOGS_PASSWORD"] = self.log_export_password
         info = Info()
         os.environ["EXTRA_COLUMNS_EXPRESSION"] = (
             f"toLowCardinality('{info.repo_name}') AS repo, CAST({info.pr_number} AS UInt32) AS pull_request_number, '{info.sha}' AS commit_sha, toDateTime('{Utils.timestamp_to_str(check_start_time)}', 'UTC') AS check_start_time, toLowCardinality('{info.job_name}') AS check_name, toLowCardinality('{info.instance_type}') AS instance_type, '{info.instance_id}' AS instance_id"
@@ -663,6 +669,9 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             )
 
         self._flush_system_logs()
+
+        self.save_system_metadata_files_from_remote_database_disk()
+
         print("Terminate ClickHouse processes")
 
         Shell.check(f"ps -ef | grep  clickhouse")
@@ -841,7 +850,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         results.append(
             Result.from_commands_run(
                 name="S3_ERROR No such key thrown (in clickhouse-server.log or clickhouse-server.err.log)",
-                command=f"cd {self.log_dir} && ! grep -a 'Code: 499.*The specified key does not exist' clickhouse-server*.log | grep -v -e 'a.myext' -e 'DistributedCacheTCPHandler' -e 'ReadBufferFromDistributedCache' -e 'ReadBufferFromS3' -e 'ReadBufferFromAzureBlobStorage' -e 'AsynchronousBoundedReadBuffer' -e 'caller id: None:DistribCache' | head -n100 | tee /dev/stderr | grep -q .",
+                command=f"cd {self.log_dir} && ! grep -a 'Code: 499.*The specified key does not exist' clickhouse-server*.log | grep -v -e 'a.myext' -e 'ReadBuffer is canceled by the exception'  -e 'DistributedCacheTCPHandler' -e 'ReadBufferFromDistributedCache' -e 'ReadBufferFromS3' -e 'ReadBufferFromAzureBlobStorage' -e 'AsynchronousBoundedReadBuffer' -e 'caller id: None:DistribCache' | head -n100 | tee /dev/stderr | grep -q .",
             )
         )
         if Shell.check(f"dmesg > {self.DMESG_LOG}"):
@@ -1000,6 +1009,8 @@ quit
         )
         res = True
 
+        self.restore_system_metadata_files_from_remote_database_disk()
+
         for table in TABLES:
             path_arg = f" --path {self.run_path0}"
             res = Shell.check(
@@ -1040,6 +1051,62 @@ quit
                     )
                     res = False
         return [f for f in glob.glob(f"{temp_dir}/system_tables/*.tsv")]
+
+    def save_system_metadata_files_from_remote_database_disk(self):
+        if not os.path.exists(
+            "/etc/clickhouse-server/config.d/remote_database_disk.xml"
+        ):
+            return
+
+        # Store system database and table metadata files
+        self.system_db_uuid = Shell.get_output(
+            "clickhouse disks -C /etc/clickhouse-server/config.xml --disk disk_db_remote -q 'read metadata/system.sql' | grep -F UUID | awk -F\"'\" '{print $2}'",
+            verbose=True,
+        )
+        self.system_db_sql = Shell.get_output(
+            "clickhouse disks -C /etc/clickhouse-server/config.xml --disk disk_db_remote -q 'read metadata/system.sql'",
+            verbose=True,
+        )
+        print(f"system_db_uuid = {self.system_db_uuid}")
+        print(f"system_db_sql = {self.system_db_sql}")
+
+        system_table_sql_files = (
+            Shell.get_output(
+                f"clickhouse disks -C /etc/clickhouse-server/config.xml --disk disk_db_remote -q 'ls store/{self.system_db_uuid[:3]}/{self.system_db_uuid}/'",
+                verbose=True,
+            )
+            .strip()
+            .split("\n")
+        )
+        self.system_table_sql_map = {}
+        for system_table_sql_file in system_table_sql_files:
+            sql_content = Shell.get_output(
+                f"clickhouse disks -C /etc/clickhouse-server/config.xml --disk disk_db_remote -q 'read store/{self.system_db_uuid[:3]}/{self.system_db_uuid}/{system_table_sql_file}'",
+                verbose=True,
+            )
+            self.system_table_sql_map[system_table_sql_file] = sql_content
+
+    def restore_system_metadata_files_from_remote_database_disk(self):
+        if self.system_db_uuid is None:
+            return
+
+        # Ensure no remote database disk config
+        if os.path.exists("/etc/clickhouse-server/config.d/remote_database_disk.xml"):
+            os.remove("/etc/clickhouse-server/config.d/remote_database_disk.xml")
+
+        # Restore system database and table metadata files for `clickhouse local`
+        with open(f"{self.run_path0}/metadata/system.sql", "w") as file:
+            file.write(self.system_db_sql)
+        res = Shell.check(
+            f"mkdir -p {self.run_path0}/store/{self.system_db_uuid[:3]}/{self.system_db_uuid}",
+            verbose=True,
+        )
+        for system_table_sql_file, content in self.system_table_sql_map.items():
+            with open(
+                f"{self.run_path0}/store/{self.system_db_uuid[:3]}/{self.system_db_uuid}/{system_table_sql_file}",
+                "w",
+            ) as file:
+                file.write(content)
 
     @staticmethod
     def set_random_timezone():

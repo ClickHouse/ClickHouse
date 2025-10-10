@@ -19,6 +19,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
 #include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Sources/ArrowFlightSource.h>
@@ -133,7 +134,12 @@ StorageArrowFlight::StorageArrowFlight(
     , log(&Poco::Logger::get("StorageArrowFlight (" + table_id_.table_name + ")"))
 {
     StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(columns_);
+
+    if (columns_.empty())
+        storage_metadata.setColumns(getTableStructureFromData(connection_, dataset_name_));
+    else
+        storage_metadata.setColumns(columns_);
+
     storage_metadata.setConstraints(constraints_);
     setInMemoryMetadata(storage_metadata);
 }
@@ -158,12 +164,14 @@ std::string buildArrowFlightQueryString(const std::vector<std::string> & column_
     return oss.str();
 }
 
-Names StorageArrowFlight::getColumnNames()
+ColumnsDescription StorageArrowFlight::getTableStructureFromData(
+    std::shared_ptr<ArrowFlightConnection> connection_,
+    const String & dataset_name_)
 {
-    auto client = connection->getClient();
-    auto options = connection->getOptions();
+    auto client = connection_->getClient();
+    auto options = connection_->getOptions();
 
-    arrow::flight::FlightDescriptor descriptor = arrow::flight::FlightDescriptor::Path({dataset_name});
+    arrow::flight::FlightDescriptor descriptor = arrow::flight::FlightDescriptor::Path({dataset_name_});
     auto status = client->GetSchema(*options, descriptor);
     if (!status.ok())
     {
@@ -177,7 +185,8 @@ Names StorageArrowFlight::getColumnNames()
     }
     auto schema = std::move(schema_result).ValueOrDie();
 
-    return schema->field_names();
+    auto header = ArrowColumnToCHColumn::arrowSchemaToCHHeader(*schema, nullptr, "Arrow", /* format_settings= */ {});
+    return ColumnsDescription::fromNamesAndTypes(header.getNamesAndTypes());
 }
 
 Pipe StorageArrowFlight::read(
