@@ -18,6 +18,7 @@
 #include <Common/Scheduler/Nodes/tests/ResourceTest.h>
 #include <Common/Scheduler/Workload/WorkloadEntityStorageBase.h>
 #include <Common/Scheduler/Nodes/WorkloadResourceManager.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 
 #include <base/scope_guard.h>
 
