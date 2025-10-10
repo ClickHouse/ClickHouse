@@ -87,14 +87,28 @@ public:
     Group removeAllTagsFromGroupExcept(Group group, const Strings & tags_to_keep);
     std::vector<Group> removeAllTagsFromGroupExcept(const std::vector<Group> & groups_, const Strings & tags_to_keep);
 
-    /// Appends tags from the second groups to the tags from the first group, returns the result group.
-    /// The function also sorts the result set of tags (because a set of tags should always be sorted).
-    /// If same tags with different values present in both groups, the function will prefer values from the second group.
+    /// Copies specified tags from `src_group` to `dest_group`. The function replaces any previous values of the copied tags in `dest_group`.
+    /// If some of the copied tags don't present in `src_group` then the function will remove them in `dest_group` as well.
     /// If the result set of tags hasn't been added to the collector yet then this functions adds it and assigns a group to it.
-    Group appendTagsFromGroup(Group group1, Group group2);
-    std::vector<Group> appendTagsFromGroup(const std::vector<Group> & groups1, Group group2);
-    std::vector<Group> appendTagsFromGroup(Group group1, const std::vector<Group> & groups2);
-    std::vector<Group> appendTagsFromGroup(const std::vector<Group> & groups1, const std::vector<Group> & groups2);
+    Group copyTagsToGroup(Group dest_group, Group src_group, const Strings & tags_to_copy);
+    std::vector<Group> copyTagsToGroup(Group dest_group, const std::vector<Group> & src_groups, const Strings & tags_to_copy);
+    std::vector<Group> copyTagsToGroup(const std::vector<Group> & dest_groups, Group src_group, const Strings & tags_to_copy);
+    std::vector<Group> copyTagsToGroup(const std::vector<Group> & dest_groups, const std::vector<Group> & src_groups, const Strings & tags_to_copy);
+
+    /// Joins all the values of all the `src_tags` using `separator` and returns the group with the tag `dst_tag` containing the joined value.
+    /// This function implements the logic of promql function label_join().
+    Group labelJoin(Group group, const String & dst_tag, const String & separator, const Strings & src_tags);
+    std::vector<Group> labelJoin(const std::vector<Group> & groups, const String & dst_tag, const String & separator, const Strings & src_tags);
+
+    /// Matches the regular expression `regex` against the value of the tag `src_tag`.
+    /// If it matches, the value of the tag `dst_tag` in the returned group will be the expansion of `replacement`,
+    /// together with the original tags in the input.
+    /// Capturing groups in the regular expression can be referenced with $1, $2, etc.
+    /// Named capturing groups in the regular expression can be referenced with $name (where name is the capturing group name).
+    /// If the regular expression doesn't match then the original group is returned unchanged.
+    /// This function implements the logic of promql function label_replace().
+    Group labelReplace(Group group, const String & dst_tag, const String & replacement, const Strings & src_tag, const String & regex);
+    std::vector<Group> labelReplace(const std::vector<Group> & groups, const String & dst_tag, const String & replacement, const Strings & src_tag, const String & regex);
 
 private:
     /// Transforms the set of tags assigned to a group using a one-argument function, returns the result group.

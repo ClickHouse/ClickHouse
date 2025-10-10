@@ -152,51 +152,204 @@ namespace
     };
 
     /// Implements transformation for function appendTagsFromGroup().
-    class AppendTagsFromGroupTransformFunc2
+    class CopyTagsToGroupTransformFunc2
     {
     public:
-        TagNamesAndValuesPtr operator()(const TagNamesAndValuesPtr & tags1, const TagNamesAndValuesPtr & tags2) const
+        explicit CopyTagsToGroupTransformFunc2(const Strings & tags_to_copy_)
         {
-            size_t size1 = tags1->size();
-            size_t size2 = tags2->size();
+            tags_to_copy.reserve(tags_to_copy_.size());
+            for (const auto & tag_name : tags_to_copy_)
+            {
+                bool inserted = positions_in_tags_to_copy.try_emplace(tag_name, tags_to_copy.size()).second;
+                if (inserted)
+                    tags_to_copy.emplace_back(tag_name, std::string_view{});
+            }
+            num_tags_to_copy = tags_to_copy.size();
+        }
+
+        TagNamesAndValuesPtr operator()(const TagNamesAndValuesPtr & dest_tags, const TagNamesAndValuesPtr & src_tags) const
+        {
+            /// Extract the values of the tags we're going to copy from `src_tags`.
+            size_t num_found_tags_in_src = 0;
+            for (const auto & [tag_name, tag_value] : *src_tags)
+            {
+                auto it = positions_in_tags_to_copy.find(tag_name);
+                if (it != positions_in_tags_to_copy.end())
+                {
+                    size_t i = it->second;
+                    tags_to_copy[i].second = tag_value;
+                    ++num_found_tags_in_src;
+                }
+            }
+
+            /// Calculate number of tags in the result group.
+            size_t dest_size = dest_tags->size();
+            size_t new_size = dest_size + num_found_tags_in_src;
+            for (const auto & [tag_name, _] : *dest_tags)
+            {
+                if (positions_in_tags_to_copy.contains(tag_name))
+                    --new_size;
+            }
+
             auto new_tags = std::make_shared<TagNamesAndValues>();
-            new_tags->reserve(size1 + size2);
-            /// Merge two sorted lists `tags1` and `tags2` into one sorted `new_tags`.
+            new_tags->reserve(new_size);
+
+            /// Merge two sorted lists `dest_tags` and `tags_to_copy` into one sorted list `new_tags`.
+            /// NOTE: Some elements in `tags_to_copy` can have empty values which means we should skip them.
             size_t i = 0;
             size_t j = 0;
             for (;;)
             {
-                if (i == size1)
+                if (i == dest_size)
                 {
-                    new_tags->insert(new_tags->end(), tags2->begin() + i, tags2->end());
+                    for (size_t j = i; j != num_tags_to_copy; ++j)
+                    {
+                        auto & [tag_to_copy, value_to_copy] = tags_to_copy[j];
+                        if (!value_to_copy.empty())
+                        {
+                            new_tags->emplace_back(tag_to_copy, value_to_copy);
+                            value_to_copy = {}; /// Clear the values of the copied tags for the next call of operator().
+                        }
+                    }
                     break;
                 }
-                if (j == size2)
+                if (j == num_tags_to_copy)
                 {
-                    new_tags->insert(new_tags->end(), tags1->begin() + i, tags1->end());
+                    new_tags->insert(new_tags->end(), dest_tags->begin() + i, dest_tags->end());
                     break;
                 }
-                const auto & [name1, value1] = (*tags1)[i];
-                const auto & [name2, value2] = (*tags2)[j];
-                if (name1 < name2)
+                const auto & [dest_tag, dest_value] = (*dest_tags)[i];
+                auto & [tag_to_copy, value_to_copy] = tags_to_copy[j];
+                int cmp = dest_tag.compare(tag_to_copy);
+                if (cmp < 0)
                 {
-                    new_tags->emplace_back(name1, value1);
+                    new_tags->emplace_back(dest_tag, dest_value);
                     ++i;
-                }
-                else if (name2 < name1)
-                {
-                    new_tags->emplace_back(name2, value2);
-                    ++j;
                 }
                 else
                 {
-                    /// If same tags with different values present in both groups, we prefer values from the second group.
-                    new_tags->emplace_back(name2, value2);
-                    ++i;
+                    if (!value_to_copy.empty())
+                        new_tags->emplace_back(tag_to_copy, value_to_copy);
+                    if (cmp == 0)
+                        ++i;
                     ++j;
+                    value_to_copy = {}; /// Clear the values of the copied tags for the next call of operator().
                 }
             }
+            chassert(new_tags->size() == new_size);
             return new_tags;
+        }
+
+    private:
+        std::vector<std::pair<std::string_view, std::string_view>> tags_to_copy;
+        std::unoredered_map<std::string_view, size_t> positions_in_tags_to_copy;
+        size_t num_tags_to_copy;
+    };
+
+    /// Implements transformation for function labelJoin().
+    class LabelJoinTransformFunc
+    {
+    public:
+        LabelJoinTransformFunc(const String & dst_tag_, const String & separator_, const Strings & src_tags_)
+        : dst_tag(dst_tag_), separator(separator_)
+        {
+            src_values.resize(src_tags_.size());
+            for (size_t i = 0; i != src_tags_.size(); ++i)
+                positions_in_src_tags[src_tags_[i]].push_back(i);
+            separators_total_length = src_values.empty() ? 0 : (separator.length() * (src_values.size() - 1));
+        }
+
+        TagNamesAndValuesPtr operator()(const TagNamesAndValuesPtr & old_tags) const
+        {
+            size_t old_size = old_tags->size();
+            size_t new_size = old_size + 1;
+            size_t dst_length = separators_total_length;
+
+            /// Collect all values we're going to concatenate in `src_values` in the correct order.
+            for (const auto & [tag_name, tag_value] : *old_tags)
+            {
+                auto it = positions_in_src_tags.find(tag_name);
+                if (it != positions_in_src_tags.end())
+                {
+                    for (size_t i : it->second)
+                    {
+                        src_values[i] = tag_value;
+                        dst_length += tag_value.length();
+                    }
+                }
+                if (tag_name == dst_tag)
+                    --new_size;
+            }
+
+            /// Calculate the concatenated value.
+            String dst_value;
+
+            if (dst_length)
+            {
+                dst_value.reserve(dst_length);
+                chassert(!src_values.empty());
+                dst_value += src_values[0];
+                src_values[0] = {};
+                for (size_t i = 1; i != src_values.size(); ++i)
+                {
+                    dst_value += separator;
+                    dst_value += src_values[i];
+                    src_values[i] = {};
+                }
+            }
+            else
+            {
+                --new_size;
+            }
+
+            auto new_tags = std::make_shared<TagNamesAndValues>();
+            new_tags->reserve(new_size);
+
+            /// Copy the old tags to the result set along with inserting the concatenated value as the tag `dst_tag`
+            /// at the proper position to keep the set sorted.
+            for (auto it = old_tags->begin(); it != old_tags->end(); ++it)
+            {
+                const auto & [tag_name, tag_value] = *it;
+                int cmp = tag_name.compare(dst_tag);
+                if (cmp < 0)
+                {
+                    new_tags->emplace_back(tag_name, tag_value);
+                }
+                else
+                {
+                    if (!dst_value.empty())
+                        new_tags->emplace_back(dst_tag, std::exchange(dst_value, {}));
+                    if (cmp == 0)
+                        ++it;
+                    new_tags->insert(new_tags->end(), it, old_tags->end());
+                    break;
+                }
+            }
+
+            if (!dst_value.empty())
+                new_tags->emplace_back(dst_tag, std::move(dst_value));
+
+            chassert(new_tags->size() == new_size);
+            return new_tags;
+        }
+
+    private:
+        std::string_view dst_tag;
+        std::string_view separator;
+        std::unordered_map<std::string_view, std::vector<size_t>> positions_in_src_tags;
+        std::vector<std::string_view> src_values;
+        size_t separators_total_length;
+    };
+
+    /// Implements transformation for function labelReplace().
+    class LabelReplaceTransformFunc
+    {
+    public:
+        LabelReplaceTransformFunc(const String & replacement, const Strings & src_tag, const String & regex);
+
+        TagNamesAndValuesPtr operator()(const TagNamesAndValuesPtr & old_tags) const
+        {
+
         }
     };
 }
@@ -666,27 +819,51 @@ std::vector<Group> ContextTimeSeriesTagsCollector::transformTags2(const std::vec
 }
 
 
-Group ContextTimeSeriesTagsCollector::appendTagsFromGroup(Group group1, Group group2)
+Group ContextTimeSeriesTagsCollector::copyTagsToGroup(Group dest_group, Group src_group, const Strings & tags_to_copy)
 {
-    return transformTags2(group1, group2, AppendTagsFromGroupTransformFunc2{});
+    return transformTags2(dest_group, src_group, CopyTagsToGroupTransformFunc2{tags_to_copy});
 }
 
 
-std::vector<Group> ContextTimeSeriesTagsCollector::appendTagsFromGroup(const std::vector<Group> & groups1, Group group2)
+std::vector<Group> ContextTimeSeriesTagsCollector::copyTagsToGroup(Group dest_group, const std::vector<Group> & src_groups, const Strings & tags_to_copy)
 {
-    return transformTags2(groups1, group2, AppendTagsFromGroupTransformFunc2{});
+    return transformTags2(dest_group, src_groups, CopyTagsToGroupTransformFunc2{tags_to_copy});
 }
 
 
-std::vector<Group> ContextTimeSeriesTagsCollector::appendTagsFromGroup(Group group1, const std::vector<Group> & groups2)
+std::vector<Group> ContextTimeSeriesTagsCollector::copyTagsToGroup(const std::vector<Group> & dest_groups, Group src_group, const Strings & tags_to_copy)
 {
-    return transformTags2(group1, groups2, AppendTagsFromGroupTransformFunc2{});
+    return transformTags2(dest_groups, src_group, CopyTagsToGroupTransformFunc2{tags_to_copy});
 }
 
 
-std::vector<Group> ContextTimeSeriesTagsCollector::appendTagsFromGroup(const std::vector<Group> & groups1, const std::vector<Group> & groups2)
+std::vector<Group> ContextTimeSeriesTagsCollector::copyTagsToGroup(const std::vector<Group> & dest_groups, const std::vector<Group> & src_groups, const Strings & tags_to_copy)
 {
-    return transformTags2(groups1, groups2, AppendTagsFromGroupTransformFunc2{});
+    return transformTags2(dest_groups, src_groups, CopyTagsToGroupTransformFunc2{tags_to_copy});
+}
+
+
+Group ContextTimeSeriesTagsCollector::labelJoin(Group group, const String & dst_tag, const String & separator, const Strings & src_tags)
+{
+    return transformTags(group, LabelJoinTransformFunc{dst_tag, separator, src_tags});
+}
+
+
+std::vector<Group> ContextTimeSeriesTagsCollector::labelJoin(const std::vector<Group> & groups, const String & dst_tag, const String & separator, const Strings & src_tags)
+{
+    return transformTags(groups, LabelJoinTransformFunc{dst_tag, separator, src_tags});
+}
+
+
+Group ContextTimeSeriesTagsCollector::labelReplace(Group group, const String & dst_tag, const String & replacement, const Strings & src_tag, const String & regex)
+{
+    return transformTags(group, LabelReplaceTransformFunc{dst_tag, replacement, src_tag, regexp});
+}
+
+
+std::vector<Group> ContextTimeSeriesTagsCollector::labelReplace(const std::vector<Group> & groups, const String & dst_tag, const String & replacement, const Strings & src_tag, const String & regex)
+{
+    return transformTags(groups, LabelReplaceTransformFunc{dst_tag, replacement, src_tag, regexp});
 }
 
 

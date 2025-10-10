@@ -1,4 +1,3 @@
-#if 0
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
@@ -22,12 +21,12 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-/// Function timeSeriesRemoveTagsFromTagsGroup(<group>, 'tag1', 'tag2', ...) returns a tags group associated with <group>
-/// with specified tags 'tag1', 'tag2', ... removed.
-class FunctionTimeSeriesRemoveTagsFromTagsGroupToTags : public IFunction, private WithContext
+/// Function FunctionTimeSeriesRemoveTagsFromGroup(<group>, ['<tag_name1>', '<tag_name2>', ...]) removes specified tags from a tags group,
+/// and returns a new tags group. The names of the tags to remove are const.
+class FunctionTimeSeriesRemoveTagsFromGroup : public IFunction, private WithContext
 {
 public:
-    static constexpr auto name = "timeSeriesRemoveTagsFromTagsGroup";
+    static constexpr auto name = "timeSeriesRemoveTagsFromGroup";
 
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionTimeSeriesRemoveTagsFromTagsGroupToTags>(context_); }
     explicit FunctionTimeSeriesRemoveTagsFromTagsGroupToTags(ContextPtr context_) : WithContext(context_) {}
@@ -49,6 +48,7 @@ public:
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} must be called with one argument", name);
 
         checkDataTypeOfGroup(arguments[0].type, 0);
+        
         return std::make_shared<DataTypeUInt64>();
     }
 
@@ -74,7 +74,7 @@ public:
     }
 
     /// Converts a vector of tags to a result column.
-    static ColumnPtr makeResultColumn(const std::vector<TagNamesAndValuesPtr> & tags_vector)
+    static ColumnPtr makeResultColumn(const std::vector<Group> & groups)
     {
         size_t total_tags = 0;
         for (const auto & tags : tags_vector)
@@ -141,7 +141,7 @@ public:
 REGISTER_FUNCTION(TimeSeriesTagsGroupToTags)
 {
     FunctionDocumentation::Description description = R"(Finds tags associated with a group index. Group indices are numbers 0, 1, 2, 3 associated with each unique set of tags in the context of the currently executed query.)";
-    FunctionDocumentation::Syntax syntax = "timeSeriesTagsGroupToTags(group)";
+    FunctionDocumentation::Syntax syntax = "timeSeriesRemoveTagsFromGroup(group, ['tag_name1', 'tag_name2', ...])";
     FunctionDocumentation::Arguments arguments = {{"group", "Group index associated with a time series.", {"UInt64"}}};
     FunctionDocumentation::ReturnedValue returned_value = {"Array of pairs (tag_name, tag_value).", {"Array(Tuple(String, String))"}};
     FunctionDocumentation::Examples examples = {{"Example", "SELECT timeSeriesStoreTags(8374283493092, [('region', 'eu'), ('env', 'dev')], '__name__', 'http_requests_count') AS id, timeSeriesIdToTagsGroup(id) AS group, timeSeriesTagsGroupToTags(group)", "8374283493092    0    [('__name__', ''http_requests_count''), ('env', 'dev'), ('region', 'eu')]"}};
@@ -153,4 +153,3 @@ REGISTER_FUNCTION(TimeSeriesTagsGroupToTags)
 }
 
 }
-#endif
