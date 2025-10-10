@@ -33,6 +33,7 @@ const char * auto_config_build[]
     "USE_PROTOBUF", "@USE_PROTOBUF@",
     "USE_BROTLI", "@USE_BROTLI@",
     "USE_SSL", "@USE_SSL@",
+    "USE_OPENSSL_FIPS", "@USE_OPENSSL_FIPS@",
     "OPENSSL_VERSION", "@OPENSSL_VERSION@",
     "USE_VECTORSCAN", "@USE_VECTORSCAN@",
     "USE_SIMDJSON", "@USE_SIMDJSON@",
