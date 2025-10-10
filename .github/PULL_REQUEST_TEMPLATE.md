@@ -1,9 +1,5 @@
-<!---
-A technical comment, you are free to remove or leave it as it is when PR is created
-The following categories are used in the next scripts, update them accordingly
-utils/changelog/changelog.py
-tests/ci/cancel_and_rerun_workflow_lambda/app.py
--->
+<!---AI changelog entry and formatting assistance: true-->
+
 ### Changelog category (leave one):
 - New Feature
 - Experimental Feature
@@ -14,7 +10,6 @@ tests/ci/cancel_and_rerun_workflow_lambda/app.py
 - Documentation (changelog entry is not required)
 - Critical Bug Fix (crash, data loss, RBAC) or LOGICAL_ERROR
 - Bug Fix (user-visible misbehavior in an official stable release)
-- CI Fix or Improvement (changelog entry is not required)
 - Not for changelog (changelog entry is not required)
 
 

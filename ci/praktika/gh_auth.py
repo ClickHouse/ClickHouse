@@ -14,8 +14,8 @@ except (ImportError, AssertionError):
     )
     from jwt import jwk_from_pem, JWT
 
-from .info import Info
-from .utils import Shell
+from ci.praktika.info import Info
+from ci.praktika.utils import Shell
 
 
 class GHAuth:
@@ -32,11 +32,7 @@ class GHAuth:
         response.raise_for_status()
         data = response.json()
         for installation in data:
-            if installation["account"]["login"] == Info().repo_owner:
-                installation_id = installation["id"]
-                break
-        else:
-            raise KeyError("No installations found")
+            installation_id = installation["id"]
 
         return installation_id
 
@@ -96,13 +92,16 @@ class GHAuth:
         Shell.check(f"echo {access_token} | gh auth login --with-token", strict=True)
 
 
-# if __name__ == "__main__":
-#     pem = Secret.Config(
-#         name="woolenwolf_gh_app.clickhouse-app-key",
-#         type=Secret.Type.AWS_SSM_SECRET,
-#     ).get_value()
-#     app_id = Secret.Config(
-#         name="woolenwolf_gh_app.clickhouse-app-id",
-#         type=Secret.Type.AWS_SSM_SECRET,
-#     ).get_value()
-#     GHAuth.auth(app_id, pem)
+if __name__ == "__main__":
+    from ci.praktika.secret import Secret
+
+    pem = Secret.Config(
+        name="woolenwolf_gh_app.clickhouse-app-key",
+        type=Secret.Type.AWS_SSM_SECRET,
+    ).get_value()
+    app_id = Secret.Config(
+        name="woolenwolf_gh_app.clickhouse-app-id",
+        type=Secret.Type.AWS_SSM_SECRET,
+    ).get_value()
+    print(app_id, pem)
+    GHAuth.auth(app_id, pem)
