@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Processors/Transforms/SortingTransform.h>
+#include <Processors/Transforms/ShufflingTransform.h>
 #include <Common/filesystemHelpers.h>
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
@@ -14,7 +14,7 @@ using VolumePtr = std::shared_ptr<IVolume>;
 
 /// Takes sorted separate chunks of data. Sorts them.
 /// Returns stream with globally sorted data.
-class MergeShufflingTransform : public SortingTransform
+class MergeShufflingTransform : public ShufflingTransform
 {
 public:
     /// limit - if not 0, allowed to return just first 'limit' rows in sorted order.
@@ -41,15 +41,14 @@ protected:
     Processors expandPipeline() override;
 
 private:
-    size_t max_bytes_before_remerge;
+    // size_t max_bytes_before_remerge;
     double remerge_lowered_memory_bytes_ratio;
-    size_t max_bytes_in_block_before_external_sort;
-    size_t max_bytes_in_query_before_external_sort;
+    // size_t max_bytes_in_block_before_external_sort;
+    // size_t max_bytes_in_query_before_external_sort;
     TemporaryDataOnDiskScopePtr tmp_data;
     size_t temporary_files_num = 0;
-    size_t min_free_disk_space;
-    size_t max_block_bytes;
-
+    // size_t min_free_disk_space;
+    // size_t max_block_bytes;
     size_t sum_rows_in_blocks = 0;
     size_t sum_bytes_in_blocks = 0;
 
