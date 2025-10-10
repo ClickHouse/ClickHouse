@@ -1,0 +1,15 @@
+10	v2/map ip_rows_in_shared == 2	1
+11	v2/map ipv4_set_ok	1
+12	v2/map ipv6_set_ok	1
+13	v2/map non_ip_to_ipv4_unexpected_count	0
+14	v2/map non_ip_to_ipv6_unexpected_count	0
+20	v3/advanced ip_rows_in_shared == 2	1
+21	v3/advanced ipv4_set_ok	1
+22	v3/advanced ipv6_set_ok	1
+23	v3/advanced non_ip_to_ipv4_unexpected_count	0
+24	v3/advanced non_ip_to_ipv6_unexpected_count	0
+30	v3/buckets ip_rows_in_shared == 2	1
+31	v3/buckets ipv4_set_ok	1
+32	v3/buckets ipv6_set_ok	1
+33	v3/buckets non_ip_to_ipv4_unexpected_count	0
+34	v3/buckets non_ip_to_ipv6_unexpected_count	0

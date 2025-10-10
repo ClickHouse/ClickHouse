@@ -83,6 +83,117 @@ INSERT INTO t VALUES ([(1, (2, ['aa', 'bb']), [(3, 'cc'), (4, 'dd')]), (5, (6, [
 
 optimize table t final;
 
+
+-- ================== BEGIN DEBUG (runs before IP selects) ==================
+
+-- Invariants: these four rows are stable on correct builds.
+SELECT 'diag/ipv4_set_ok' AS tag,
+       toUInt8(
+         (SELECT arraySort(arrayDistinct(groupArray(toString(toIPv4OrDefault(d)))))
+          FROM t) = ['0.0.0.0','192.168.0.1']
+       ) AS val;
+
+SELECT 'diag/ipv6_set_ok' AS tag,
+       toUInt8(
+         (SELECT arraySort(arrayDistinct(groupArray(toString(toIPv6OrDefault(d)))))
+          FROM t) = ['::','::1','::ffff:192.168.0.1']
+       ) AS val;
+
+SELECT 'diag/non_ip_to_ipv4_unexpected_count' AS tag,
+       (SELECT countIf(dynamicType(d) NOT IN ('IPv4','String')
+                       AND toIPv4OrDefault(d) != toIPv4('0.0.0.0'))
+        FROM t) AS val;
+
+SELECT 'diag/non_ip_to_ipv6_unexpected_count' AS tag,
+       (SELECT countIf(dynamicType(d) NOT IN ('IPv6','IPv4','String')
+                       AND toIPv6OrDefault(d) != toIPv6('::'))
+        FROM t) AS val;
+
+-- ---------- Conditional dumps (emit rows ONLY when something is wrong) ----------
+
+-- If the IPv4 set is wrong, print the actual distinct set we saw.
+SELECT
+  'fail/ipv4_set' AS tag,
+  arraySort(arrayDistinct(groupArray(toString(toIPv4OrDefault(d))))) AS ipv4_set
+FROM t
+WHERE (SELECT arraySort(arrayDistinct(groupArray(toString(toIPv4OrDefault(d))))) FROM t)
+      != ['0.0.0.0','192.168.0.1'];
+
+-- If the IPv6 set is wrong, print the actual distinct set we saw.
+SELECT
+  'fail/ipv6_set' AS tag,
+  arraySort(arrayDistinct(groupArray(toString(toIPv6OrDefault(d))))) AS ipv6_set
+FROM t
+WHERE (SELECT arraySort(arrayDistinct(groupArray(toString(toIPv6OrDefault(d))))) FROM t)
+      != ['::','::1','::ffff:192.168.0.1'];
+
+-- If any non-IP values produced real IPv4s, show which addresses and from which Dynamic kind (top 10).
+SELECT
+  'fail/ipv4_from_non_ip' AS tag,
+  toString(toIPv4OrDefault(d)) AS ipv4,
+  dynamicType(d)               AS from_type
+FROM t
+WHERE dynamicType(d) NOT IN ('IPv4','String')
+  AND toIPv4OrDefault(d) != toIPv4('0.0.0.0')
+ORDER BY ipv4, from_type
+LIMIT 10;
+
+-- Same for IPv6 (top 10 offenders).
+SELECT
+  'fail/ipv6_from_non_ip' AS tag,
+  toString(toIPv6OrDefault(d)) AS ipv6,
+  dynamicType(d)               AS from_type
+FROM t
+WHERE dynamicType(d) NOT IN ('IPv6','IPv4','String')
+  AND toIPv6OrDefault(d) != toIPv6('::')
+ORDER BY ipv6, from_type
+LIMIT 10;
+
+-- If anything went wrong, also dump which types had rows in shared-data (helps prove the hypothesis).
+SELECT
+  'fail/shared_types' AS tag,
+  dynamicType(d)      AS type,
+  sum(isDynamicElementInSharedData(d)) AS shared_rows
+FROM t
+GROUP BY type
+HAVING shared_rows > 0
+  AND (
+        (SELECT countIf(dynamicType(d) NOT IN ('IPv4','String')
+                        AND toIPv4OrDefault(d) != toIPv4('0.0.0.0')) FROM t) > 0
+        OR
+        (SELECT countIf(dynamicType(d) NOT IN ('IPv6','IPv4','String')
+                        AND toIPv6OrDefault(d) != toIPv6('::')) FROM t) > 0
+        OR
+        (SELECT arraySort(arrayDistinct(groupArray(toString(toIPv4OrDefault(d))))) FROM t)
+            != ['0.0.0.0','192.168.0.1']
+        OR
+        (SELECT arraySort(arrayDistinct(groupArray(toString(toIPv6OrDefault(d))))) FROM t)
+            != ['::','::1','::ffff:192.168.0.1']
+      )
+ORDER BY shared_rows DESC, type
+LIMIT 20;
+
+-- If anything went wrong, also print env knobs (only then; keeps reference stable).
+SELECT
+  'fail/env' AS tag,
+  version() AS ch_version,
+  (SELECT toString(any(value)) FROM system.settings WHERE name = 'dynamic_serialization_version') AS dyn_ver,
+  (SELECT toString(any(value)) FROM system.settings WHERE name = 'object_shared_data_serialization_version') AS sh_ver,
+  (SELECT toString(any(value)) FROM system.settings WHERE name = 'object_shared_data_serialization_version_for_zero_level_parts') AS sh_ver_zero
+FROM system.one
+WHERE
+      (SELECT countIf(dynamicType(d) NOT IN ('IPv4','String')
+                      AND toIPv4OrDefault(d) != toIPv4('0.0.0.0')) FROM t) > 0
+   OR (SELECT countIf(dynamicType(d) NOT IN ('IPv6','IPv4','String')
+                      AND toIPv6OrDefault(d) != toIPv6('::')) FROM t) > 0
+   OR (SELECT arraySort(arrayDistinct(groupArray(toString(toIPv4OrDefault(d))))) FROM t)
+         != ['0.0.0.0','192.168.0.1']
+   OR (SELECT arraySort(arrayDistinct(groupArray(toString(toIPv6OrDefault(d))))) FROM t)
+         != ['::','::1','::ffff:192.168.0.1'];
+
+-- ================== END DEBUG ==================
+
+
 select distinct toInt8OrDefault(d) as res from t order by res;
 select distinct toUInt8OrDefault(d) as res from t order by res;
 select distinct toInt16OrDefault(d) as res from t order by res;
@@ -108,8 +219,12 @@ select distinct toDateOrDefault(d) as res from t order by res;
 select distinct toDate32OrDefault(d) as res from t order by res;
 select distinct toDateTimeOrDefault(d) as res from t order by res;
 
-select distinct toIPv4OrDefault(toString(d)) as res from t order by res;
-select distinct toIPv6OrDefault(toString(d)) as res from t order by res;
+-- Debug
+-- select distinct toIPv4OrDefault(toString(d)) as res from t order by res;
+-- select distinct toIPv6OrDefault(toString(d)) as res from t order by res;
+
+select distinct toIPv4OrDefault(d) as res from t order by res;
+select distinct toIPv6OrDefault(d) as res from t order by res;
 
 select distinct toUUIDOrDefault(d) as res from t order by res;
 
