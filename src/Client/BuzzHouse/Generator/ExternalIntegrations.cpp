@@ -1543,7 +1543,8 @@ void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabas
     }
     sv2->set_property("warehouse");
     sv2->set_value("'" + d.getName() + "'");
-    if (d.storage == LakeStorage::S3)
+    chassert(d.storage == LakeStorage::S3);
+    if (d.format == LakeFormat::Iceberg)
     {
         const ServerCredentials & minio = fc.minio_server.value();
 
@@ -1554,11 +1555,6 @@ void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabas
         sv3->set_property("storage_endpoint");
         sv3->set_value(fmt::format("'http://{}:{}/{}'", minio.server_hostname, minio.port, cat->warehouse));
     }
-    else
-    {
-        /// I don't know how to set for other storages
-        chassert(0);
-    }
     if (!cat->region.empty())
     {
         SetValue * sv4 = svs->add_other_values();
@@ -1566,12 +1562,12 @@ void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabas
         sv4->set_property("region");
         sv4->set_value("'" + cat->region + "'");
     }
-    if (rg.nextSmallNumber() < 4)
+    if (d.catalog == LakeCatalog::Unity || rg.nextSmallNumber() < 4)
     {
         SetValue * sv5 = svs->add_other_values();
 
         sv5->set_property("vended_credentials");
-        sv5->set_value(rg.nextBool() ? "1" : "0");
+        sv5->set_value(d.catalog == LakeCatalog::Unity || rg.nextBool() ? "1" : "0");
     }
 }
 

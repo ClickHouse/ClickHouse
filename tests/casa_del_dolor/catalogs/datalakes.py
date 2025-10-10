@@ -235,11 +235,9 @@ logger.jetty.level = warn
                         "Java not found on PATH. Install JDK 17 and/or set JAVA_HOME."
                     )
 
-                env = os.environ.copy()
-                env["UC_HOST"] = "localhost"
-                env["UC_PORT"] = "8081"
-                env["UC_DIR"] = str(self.uc_server_dir)
+                uc_port = 8085
                 uc_server_bin = self.uc_server_dir / "bin" / "start-uc-server"
+                cmd = [str(uc_server_bin), "-p", str(uc_port)]
                 os.makedirs(self.uc_server_run_dir, exist_ok=True)
                 # Start the server
                 with open(self.uc_server_run_dir / "uc_server_bin.log", "w+") as f1:
@@ -247,16 +245,16 @@ logger.jetty.level = warn
                         self.uc_server_run_dir / "uc_server_bin.err.log", "w+"
                     ) as f2:
                         self.uc_server = subprocess.Popen(
-                            [str(uc_server_bin)],
+                            cmd,
                             cwd=str(self.uc_server_run_dir),
-                            env=env,
+                            env=os.environ.copy(),
                             stdout=f1,
                             stderr=f2,
                             text=True,
                             bufsize=1,
                         )
                 self.logger.info(f"Starting UC server using pid = {self.uc_server.pid}")
-                if not wait_for_port(env["UC_HOST"], env["UC_PORT"], timeout=120):
+                if not wait_for_port("localhost", uc_port, timeout=120):
                     # Print a few lines of output to help debug
                     try:
                         for _ in range(50):
@@ -269,28 +267,19 @@ logger.jetty.level = warn
                     except Exception:
                         pass
                     raise TimeoutError(
-                        f"UC server did not start on {env["UC_HOST"]}:{env["UC_PORT"]} within timeout"
+                        f"UC server did not start on localhost:{uc_port} within timeout"
                     )
                 self.logger.info(
-                    f"UC server is accepting connections on http://{env["UC_HOST"]}:{env["UC_PORT"]}"
+                    f"UC server is accepting connections on http://localhost:{uc_port}"
                 )
 
-    def create_uc_namespace(self, catalog_name: str):
+    def run_unity_cmd(self, args: list[str]):
         if self.uc_server_dir is None:
             raise RuntimeError(
                 "with_unity argument with path to unity server dir is required"
             )
-        uc_server_bin = self.uc_server_dir / "bin" / "uc"
-        cmd = [
-            str(uc_server_bin),
-            "schema",
-            "create",
-            "--catalog",
-            "unity",
-            "--name",
-            catalog_name,
-        ]
-        self.logger.info(f"Creating unity namespace {catalog_name}")
+        cmd: list[str] = [str(self.uc_server_dir / "bin" / "uc")]
+        cmd.extend(args)
         proc = subprocess.Popen(
             cmd, cwd=str(self.uc_server_run_dir), env=os.environ.copy(), text=True
         )
@@ -487,7 +476,7 @@ logger.jetty.level = warn
                 )
                 builder.config(
                     f"spark.sql.catalog.{catalog_name}.uri",
-                    f"http://localhost:{"8081/api/2.1/unity-catalog/iceberg" if catalog == LakeCatalogs.Unity else "8182"}",
+                    f"http://localhost:{"8085/api/2.1/unity-catalog/iceberg" if catalog == LakeCatalogs.Unity else "8182"}",
                 )
                 if storage == TableStorage.S3:
                     builder.config(
@@ -520,7 +509,7 @@ logger.jetty.level = warn
                     )
             elif catalog == LakeCatalogs.Unity and lake == LakeFormat.DeltaLake:
                 builder.config(
-                    f"spark.sql.catalog.{catalog_name}.uri", "http://localhost:8081"
+                    f"spark.sql.catalog.{catalog_name}.uri", "http://localhost:8085"
                 )
                 builder.config(f"spark.sql.catalog.{catalog_name}.token", "")
                 builder.config("spark.sql.defaultCatalog", f"{catalog_name}")
@@ -751,7 +740,8 @@ logger.jetty.level = warn
             next_catalog_impl = load_catalog(catalog_name, **params)
         elif next_catalog == LakeCatalogs.Unity:
             self.start_uc_server()
-            self.create_uc_namespace(catalog_name)
+            self.logger.info(f"Creating unity catalog {catalog_name}")
+            self.run_unity_cmd(["catalog", "create", "--name", catalog_name])
         else:
             raise Exception("I have not implemented this case yet")
 
@@ -763,7 +753,16 @@ logger.jetty.level = warn
             )
         if next_lake == LakeFormat.Iceberg and next_storage == TableStorage.S3:
             try:
+                self.logger.info(f"Creating Iceberg catalog {catalog_name}")
                 next_catalog_impl.create_namespace("test")
+            except Exception:
+                pass  # already exists
+        elif next_lake == LakeFormat.DeltaLake and next_storage == TableStorage.S3:
+            try:
+                self.logger.info(f"Creating Delta Lake catalog {catalog_name}")
+                self.run_unity_cmd(
+                    ["schema", "create", "--catalog", catalog_name, "--name", "test"]
+                )
             except Exception:
                 pass  # already exists
         else:

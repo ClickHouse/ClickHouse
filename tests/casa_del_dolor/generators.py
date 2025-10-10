@@ -181,8 +181,8 @@ class BuzzHouseGenerator(Generator):
                 }
             if args.with_unity:
                 buzz_config["dolor"]["unity"] = {
-                    "server_hostname": "localhost",
-                    "port": 8081,
+                    "server_hostname": "host.docker.internal",
+                    "port": 8085,
                     "path": "/api/2.1/unity-catalog",
                     "warehouse": "unity",
                 }

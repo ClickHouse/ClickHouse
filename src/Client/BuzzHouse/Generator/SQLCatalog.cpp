@@ -46,9 +46,8 @@ void SQLDatabase::setDatabasePath(RandomGenerator & rg, const FuzzConfig & fc)
         }
 
         integration = IntegrationCall::Dolor; /// Has to use La Casa Del Dolor
-        format = (catalog == LakeCatalog::REST || catalog == LakeCatalog::Hive || catalog == LakeCatalog::Glue || rg.nextBool())
-            ? LakeFormat::Iceberg
-            : LakeFormat::DeltaLake;
+        format = (catalog == LakeCatalog::REST || catalog == LakeCatalog::Hive || catalog == LakeCatalog::Glue) ? LakeFormat::Iceberg
+                                                                                                                : LakeFormat::DeltaLake;
         storage = LakeStorage::S3; /// What ClickHouse supports now
     }
 }
@@ -57,7 +56,7 @@ String SQLDatabase::getSparkCatalogName() const
 {
     chassert(isDataLakeCatalogDatabase());
     /// DeltaLake tables on Spark must be on the `spark_catalog` :(
-    return format == LakeFormat::DeltaLake ? "spark_catalog" : getName();
+    return (catalog == LakeCatalog::None && format == LakeFormat::DeltaLake) ? "spark_catalog" : getName();
 }
 
 bool SQLBase::isNotTruncableEngine() const
