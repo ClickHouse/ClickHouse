@@ -241,7 +241,7 @@ private:
         /// NOTE: It is called from query threads (possibly multiple)
         bool has(const String & resource_name) override;
         ResourceLink get(const String & resource_name) override;
-        WorkloadSettings getWorkloadSettings(const String & resource_name) override;
+        WorkloadSettings getWorkloadSettings(const String & resource_name) const override;
 
         /// Attaches/detaches a specific resource
         /// NOTE: It is called from scheduler threads (possibly multiple)
