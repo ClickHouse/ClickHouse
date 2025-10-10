@@ -425,7 +425,7 @@ ResourceLink WorkloadResourceManager::Classifier::get(const String & resource_na
 
 WorkloadSettings WorkloadResourceManager::Classifier::getWorkloadSettings(const String & resource_name) const
 {
-    std::lock_guard lock{mutex};
+    std::unique_lock lock{mutex};
     auto iter = attachments.find(resource_name);
     if (iter != attachments.end())
     {
