@@ -1,5 +1,4 @@
--- Tags: no-fasttest
--- Tag no-fasttest: Depends on S3
+-- Tags: no-parallel, no-fasttest, no-random-settings
 -- Issue: https://github.com/ClickHouse/ClickHouse/issues/87517
 
 DROP TABLE IF EXISTS test_03631_0;
