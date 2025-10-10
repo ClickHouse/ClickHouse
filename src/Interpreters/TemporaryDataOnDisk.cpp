@@ -41,6 +41,11 @@
 #include <Server/DistributedCache/DistributedCacheServerInstance.h>
 #endif
 
+namespace CurrentMetrics
+{
+    extern const Metric TemporaryFilesUnknown;
+}
+
 namespace ProfileEvents
 {
     extern const Event ExternalProcessingFilesTotal;
