@@ -173,10 +173,10 @@ public:
     bool isDatabaseExist(const String & database_name) const;
     /// Datalake catalogs are implement at IDatabase level in ClickHouse.
     /// In general case Datalake catalog is a some remote service which contains iceberg/delta tables.
-    /// Sometimes this service charges money for requests. With this flag we explictely protect ourself
+    /// Sometimes this service charges money for requests. With this flag we explicitly protect ourself
     /// to not accidentally query external non-free service for some trivial things like
     /// autocompletion hints or system.tables query. We have a setting which allow to show
-    /// these databases everywhere, but user must explicetly specify it.
+    /// these databases everywhere, but user must explicitly specify it.
     Databases getDatabases(bool skip_datalake_catalogs) const;
 
     /// Same as getDatabase(const String & database_name), but if database_name is empty, current database of local_context is used
