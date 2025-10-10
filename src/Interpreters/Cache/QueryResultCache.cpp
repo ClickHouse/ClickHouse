@@ -124,8 +124,8 @@ struct HasSystemTablesMatcher
         ///     Function clusterAllReplicas (children 1)
         ///       ExpressionList (children 2)
         ///         Literal 'test_shard_localhost'
-        ///         Literal 'system.one'
         ///     [...]
+        ///         Literal 'system.one'
         else if (const auto * function = node->as<ASTFunction>())
         {
             if (function->name == "clusterAllReplicas")
@@ -188,7 +188,12 @@ bool isQueryResultCacheRelatedSetting(const String & setting_name)
     return (setting_name.starts_with("query_cache_") || setting_name.ends_with("_query_cache")) && setting_name != "query_cache_tag";
 }
 
-class RemoveQueryResultCacheSettingsMatcher
+bool isLogCommentSetting(const String & setting_name)
+{
+    return setting_name == "log_comment";
+}
+
+class RemoveIgnoredSettingsMatcher
 {
 public:
     struct Data {};
@@ -201,12 +206,12 @@ public:
         {
             chassert(!set_clause->is_standalone);
 
-            auto is_query_cache_related_setting = [](const auto & change)
+            auto is_ignored_settings = [](const auto & change)
             {
-                return isQueryResultCacheRelatedSetting(change.name);
+                return isQueryResultCacheRelatedSetting(change.name) || isLogCommentSetting(change.name);
             };
 
-            std::erase_if(set_clause->changes, is_query_cache_related_setting);
+            std::erase_if(set_clause->changes, is_ignored_settings);
         }
     }
 
@@ -216,7 +221,7 @@ public:
     /// currently don't match.
 };
 
-using RemoveQueryResultCacheSettingsVisitor = InDepthNodeVisitor<RemoveQueryResultCacheSettingsMatcher, true>;
+using RemoveIgnoredSettingsVisitor = InDepthNodeVisitor<RemoveIgnoredSettingsMatcher, true>;
 
 /// Consider
 ///   (1) SET use_query_cache = true;
@@ -229,19 +234,25 @@ using RemoveQueryResultCacheSettingsVisitor = InDepthNodeVisitor<RemoveQueryResu
 /// cache. However, query results are indexed by their query ASTs and therefore no result will be found. Insert and retrieval behave overall
 /// more natural if settings related to the query result cache are erased from the AST key. Note that at this point the settings themselves
 /// have been parsed already, they are not lost or discarded.
-ASTPtr removeQueryResultCacheSettings(ASTPtr ast)
+///
+/// Likewise, setting `log_comment` does not affect query execution, its only purpose is to disambiguate entries in system.query_log.
+/// We ignore it such that query (*) in
+///     SELECT expensiveComputation(...) SETTINGS log_comment = 'abc';
+///     SELECT expensiveComputation(...) SETTINGS log_comment = 'def'; -- (*)
+/// can be serve from the query result cache.
+ASTPtr removeIgnoredSettings(ASTPtr ast)
 {
     ASTPtr transformed_ast = ast->clone();
 
-    RemoveQueryResultCacheSettingsMatcher::Data visitor_data;
-    RemoveQueryResultCacheSettingsVisitor(visitor_data).visit(transformed_ast);
+    RemoveIgnoredSettingsMatcher::Data visitor_data;
+    RemoveIgnoredSettingsVisitor(visitor_data).visit(transformed_ast);
 
     return transformed_ast;
 }
 
 IASTHash calculateAstHash(ASTPtr ast, const String & current_database, const Settings & settings)
 {
-    ast = removeQueryResultCacheSettings(ast);
+    ast = removeIgnoredSettings(ast);
 
     /// Hash the AST, we must consider aliases (issue #56258)
     SipHash hash;
@@ -259,7 +270,7 @@ IASTHash calculateAstHash(ASTPtr ast, const String & current_database, const Set
     for (const auto & change : changed_settings)
     {
         const String & name = change.name;
-        if (!isQueryResultCacheRelatedSetting(name)) /// see removeQueryResultCacheSettings() why this is a good idea
+        if (!isQueryResultCacheRelatedSetting(name) && !isLogCommentSetting(name)) /// see removeIgnoredSettings() why this is a good idea
             changed_settings_sorted.push_back({name, Settings::valueToStringUtil(change.name, change.value)});
     }
     std::sort(changed_settings_sorted.begin(), changed_settings_sorted.end(), [](auto & lhs, auto & rhs) { return lhs.first < rhs.first; });
