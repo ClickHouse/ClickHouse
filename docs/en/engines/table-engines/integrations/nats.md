@@ -190,7 +190,7 @@ The number of rows in one NATS message depends on whether the format is row-base
 
 ## Using JetStream {#using-jetstream}
 
-Before using NATS engine with NATS JetStream, you must create a NATS stream and a durable pull consumer. For this, you can use, for example, the nats utility from the [natscli](https://github.com/nats-io/natscli) package:
+Before using NATS engine with NATS JetStream, you must create a NATS stream and a durable pull consumer. For this, you can use, for example, the nats utility from the [NATS CLI](https://github.com/nats-io/natscli) package:
 <details>
 <summary>creating stream</summary>
 
