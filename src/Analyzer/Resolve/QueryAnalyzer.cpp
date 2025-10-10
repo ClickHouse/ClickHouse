@@ -4565,8 +4565,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     TableFunctionsWithClusterAlternativesVisitor table_function_visitor;
     table_function_visitor.visit(query_node);
-    auto query_ast = query_node->toAST();
-    if (!table_function_visitor.shouldReplaceWithClusterAlternatives() && scope.context->hasQueryContext() && extractTableFunctionFromSelectQuery(query_ast))
+    if (!table_function_visitor.shouldReplaceWithClusterAlternatives() && scope.context->hasQueryContext())
         scope.context->getQueryContext()->setSetting("parallel_replicas_for_cluster_engines", false);
 
     initializeQueryJoinTreeNode(query_node_typed.getJoinTree(), scope);
