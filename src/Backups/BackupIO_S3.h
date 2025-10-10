@@ -27,12 +27,12 @@ public:
         std::shared_ptr<S3::Client> backup_client;
         std::weak_ptr<const S3::Client> disk_reported_client;
     };
-    using CreatorFn = std::function<Entry(DiskPtr)>;
-    explicit S3BackupDiskClientFactory(const CreatorFn & creator_fn_);
+    using CreateFn = std::function<Entry(DiskPtr)>;
+    explicit S3BackupDiskClientFactory(const CreateFn & create_fn_);
     std::shared_ptr<S3::Client> getOrCreate(DiskPtr disk);
 
 private:
-    const CreatorFn creator_fn;
+    const CreateFn create_fn;
 
     mutable std::mutex clients_mutex;
     /// Disk name to client entry;

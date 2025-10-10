@@ -217,8 +217,8 @@ private:
 }
 
 
-S3BackupDiskClientFactory::S3BackupDiskClientFactory(const S3BackupDiskClientFactory::CreatorFn & creator_fn_)
-    : creator_fn(creator_fn_)
+S3BackupDiskClientFactory::S3BackupDiskClientFactory(const S3BackupDiskClientFactory::CreateFn & create_fn_)
+    : create_fn(create_fn_)
 {
 }
 
@@ -226,11 +226,17 @@ std::shared_ptr<S3::Client> S3BackupDiskClientFactory::getOrCreate(DiskPtr disk)
 {
     std::lock_guard lock(clients_mutex);
 
-    auto [it, _] = clients.try_emplace(disk->getName(), Entry{});
+    auto [it, inserted] = clients.try_emplace(disk->getName(), Entry{});
+    auto log = getLogger("S3BackupDiskClientFactory");
     auto & entry = it->second;
-    /// Reuse the existing client if the reported object storage client matches the actual one.
+    if (inserted)
+        LOG_TRACE(log, "Creating S3 client for copy from disk '{}' to backup bucket", disk->getName());
+    else if (const_pointer_cast<const S3::Client>(entry.disk_reported_client.lock()) != disk->getS3StorageClient())
+        LOG_INFO(
+            log, "Updating S3 client for copy from disk '{}' to the backup bucket because the disk client was updated", disk->getName());
+
     while (const_pointer_cast<const S3::Client>(entry.disk_reported_client.lock()) != disk->getS3StorageClient())
-        entry = creator_fn(disk);
+        entry = create_fn(disk);
 
     chassert(entry.backup_client);
     return entry.backup_client;
