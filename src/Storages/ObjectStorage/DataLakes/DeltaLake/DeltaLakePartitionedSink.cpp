@@ -93,17 +93,44 @@ void DeltaLakePartitionedSink::consume(Chunk & chunk)
 {
     const ColumnPtr partition_by_result_column = partition_strategy->computePartitionKey(chunk);
 
-    /// Not all columns are serialized using the format writer
-    /// (e.g, hive partitioning stores partition columns in the file path)
-    const auto columns_to_consume = partition_strategy->getFormatChunkColumns(chunk);
-    if (columns_to_consume.empty())
+    /// Build columns for the writer in the format header order, materializing defaults for missing non-partition columns.
+    const Block format_header = partition_strategy->getFormatHeader();
+    if (format_header.columns() == 0)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "No column to write as all columns are partition columns");
+
+    const auto & table_header = getHeader();
+    std::unordered_map<std::string, size_t> name_to_pos;
+    name_to_pos.reserve(table_header.columns());
+    for (size_t i = 0; i < table_header.columns(); ++i)
+        name_to_pos.emplace(table_header.getByPosition(i).name, i);
+
+    const size_t chunk_rows = chunk.getNumRows();
+    Columns default_owners;
+    std::vector<const IColumn *> columns_to_consume;
+    columns_to_consume.reserve(format_header.columns());
+
+    for (size_t i = 0; i < format_header.columns(); ++i)
     {
-        throw Exception(
-            ErrorCodes::INCORRECT_DATA, "No column to write "
-            "as all columns are specified as partition columns");
+        const auto & writer_col = format_header.getByPosition(i);
+        auto it = name_to_pos.find(writer_col.name);
+        if (it == name_to_pos.end())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Writer column '{}' not found in table header", writer_col.name);
+
+        if (const size_t pos_in_table = it->second; pos_in_table < chunk.getNumColumns())
+        {
+            columns_to_consume.emplace_back(chunk.getColumns()[pos_in_table].get());
+        }
+        else
+        {
+            MutableColumnPtr mut = writer_col.type->createColumn();
+            mut->reserve(chunk_rows);
+            for (size_t r = 0; r < chunk_rows; ++r)
+                mut->insertDefault();
+            default_owners.emplace_back(mut->getPtr());
+            columns_to_consume.emplace_back(default_owners.back().get());
+        }
     }
 
-    size_t chunk_rows = chunk.getNumRows();
     chunk_row_index_to_partition_index.resize(chunk_rows);
 
     HashMapWithSavedHash<StringRef, size_t> partition_id_to_chunk_index;
@@ -111,8 +138,7 @@ void DeltaLakePartitionedSink::consume(Chunk & chunk)
     for (size_t row = 0; row < chunk_rows; ++row)
     {
         auto partition_key = partition_by_result_column->getDataAt(row);
-        auto [it, inserted] = partition_id_to_chunk_index.insert(
-            makePairNoInit(partition_key, partition_id_to_chunk_index.size()));
+        auto [it, inserted] = partition_id_to_chunk_index.insert(makePairNoInit(partition_key, partition_id_to_chunk_index.size()));
 
         if (inserted)
             it->value.first = copyStringInArena(partition_keys_arena, partition_key);
@@ -120,7 +146,7 @@ void DeltaLakePartitionedSink::consume(Chunk & chunk)
         chunk_row_index_to_partition_index[row] = it->getMapped();
     }
 
-    size_t columns_size = columns_to_consume.size();
+    const size_t columns_size = columns_to_consume.size();
     size_t partitions_size = partition_id_to_chunk_index.size();
 
     Chunks partition_index_to_chunk;
@@ -129,9 +155,7 @@ void DeltaLakePartitionedSink::consume(Chunk & chunk)
     for (size_t column_index = 0; column_index < columns_size; ++column_index)
     {
         const IColumn * column_to_consume = columns_to_consume[column_index];
-        MutableColumns partition_index_to_column_split = column_to_consume->scatter(
-            partitions_size,
-            chunk_row_index_to_partition_index);
+        MutableColumns partition_index_to_column_split = column_to_consume->scatter(partitions_size, chunk_row_index_to_partition_index);
 
         /// Add chunks into partition_index_to_chunk with sizes of result columns
         if (column_index == 0)
@@ -152,8 +176,7 @@ void DeltaLakePartitionedSink::consume(Chunk & chunk)
         auto & data_files = getPartitionDataForPartitionKey(partition_key)->data_files;
         auto & partition_chunk = partition_index_to_chunk[partition_index];
 
-        if (data_files.empty()
-            || data_files.back().written_rows >= data_file_max_rows
+        if (data_files.empty() || data_files.back().written_rows >= data_file_max_rows
             || data_files.back().written_bytes >= data_file_max_bytes)
         {
             data_files.emplace_back(createSinkForPartition(partition_key));
