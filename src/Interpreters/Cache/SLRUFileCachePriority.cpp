@@ -384,16 +384,6 @@ bool SLRUFileCachePriority::tryIncreasePriority(
         return protected_queue.tryIncreasePriority(iterator.lru_iterator, queue_guard, state_guard);
     }
 
-    /// Entry can be not movable (between probationary and protected queues)
-    /// in case it is in process of being evicted.
-    if (!iterator.movable)
-    {
-        /// Entry could not be chosen for eviction
-        /// in case there is at least one reference to the corresponding file segment.
-        /// But if someone called increasePriority(), then there must be one.
-        return probationary_queue.tryIncreasePriority(iterator.lru_iterator, queue_guard, state_guard);
-    }
-
     chassert(iterator.lru_iterator.cache_priority == &probationary_queue);
 
     EntryPtr entry = iterator.getEntry();
@@ -403,6 +393,18 @@ bool SLRUFileCachePriority::tryIncreasePriority(
     EvictionInfo info;
     {
         auto lock = state_guard.lock();
+
+        /// Entry can be not movable (between probationary and protected queues)
+        /// in case it is in process of being evicted.
+        if (!iterator.movable)
+        {
+            lock.unlock();
+            /// Entry could not be chosen for eviction
+            /// in case there is at least one reference to the corresponding file segment.
+            /// But if someone called increasePriority(), then there must be one.
+            return probationary_queue.tryIncreasePriority(iterator.lru_iterator, queue_guard, state_guard);
+        }
+
         info = protected_queue.checkEvictionInfo(entry->size, 1, nullptr, lock);
     }
     //if (entry->size > protected_queue.getSizeLimit(lock))
