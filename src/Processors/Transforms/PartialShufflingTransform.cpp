@@ -1,5 +1,3 @@
-#include <Core/SortCursor.h>
-#include <Interpreters/sortBlock.h>
 #include <Processors/Transforms/PartialShufflingTransform.h>
 #include <Common/PODArray.h>
 #include <Common/iota.h>
@@ -16,7 +14,7 @@ PartialShufflingTransform::PartialShufflingTransform(
     : ISimpleTransform(header_, header_, false)
     , limit(limit_)
 {
-    LOG_TRACE(getLogger("PartialShufflingTransform"), "PartialShufflingTransform::PartialShufflingTransform");
+    // LOG_TRACE(getLogger("PartialShufflingTransform"), "PartialShufflingTransform::PartialShufflingTransform");
 }
 
 void PartialShufflingTransform::transform(Chunk & chunk)
@@ -30,7 +28,7 @@ void PartialShufflingTransform::transform(Chunk & chunk)
         assert(chunk.getNumColumns());
     }
 
-    LOG_TRACE(getLogger("PartialShufflingTransform"), "transform, rows: {}", chunk.getNumRows());
+    // LOG_TRACE(getLogger("PartialShufflingTransform"), "transform, rows: {}", chunk.getNumRows());
 
 
     if (read_rows)
@@ -64,7 +62,7 @@ void PartialShufflingTransform::shuffleBlock(Block & block)
 {
     auto size = block.rows();
 
-    LOG_TRACE(getLogger("PartialShufflingTransform"), "shuffleBlock, size: {}", size);
+    // LOG_TRACE(getLogger("PartialShufflingTransform"), "shuffleBlock, size: {}", size);
 
     IColumn::Permutation permutation = getIdentityPermutation(size);
 
