@@ -59,6 +59,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"read_from_distributed_cache_if_exists_otherwise_bypass_cache", false, false, "New setting"},
             {"s3_slow_all_threads_after_retryable_error", false, false, "Disable the setting by default"},
             {"backup_slow_all_threads_after_retryable_s3_error", false, false, "Disable the setting by default"},
+            {"enable_http_compression", false, true, "It should be beneficial in general"},
             {"inject_random_order_for_select_without_order_by", false, false, "New setting"},
             {"exclude_materialize_skip_indexes_on_insert", "", "", "New setting."},
             {"optimize_empty_string_comparisons", false, true, "A new setting."},
