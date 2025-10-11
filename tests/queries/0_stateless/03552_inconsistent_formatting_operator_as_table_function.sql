@@ -4,7 +4,6 @@ SELECT * FROM negate(x); -- { serverError UNKNOWN_FUNCTION }
 
 SELECT not((SELECT * AND(16)) AND 1);
 
-SELECT (1,1) c0, (1,(1)) c0; -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
 SELECT -[(1)]; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT NOT ((1, 1, 1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT ProfileEvents['LoadedMarksCount'], 1 OR toLowCardinality(1) FROM system.nonexistent PREWHERE tupleElement(*, 1) AND match(query, 'SELECT * FROM t_prewarm_add_column%') AND (currentDatabase() = current_database) WHERE ('SELECT * FROM t_prewarm_add_column%' NOT LIKE query) AND (type = 'QueryFinish') AND (current_database = currentDatabase()) ORDER BY ALL DESC NULLS FIRST; -- { serverError UNKNOWN_TABLE }
