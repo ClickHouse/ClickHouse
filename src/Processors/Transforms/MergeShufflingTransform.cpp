@@ -139,14 +139,14 @@ MergeShufflingTransform::MergeShufflingTransform(
     size_t ,
     UInt64 limit_,
     bool increase_sort_description_compile_attempts,
-    size_t ,
+    size_t max_bytes_before_remerge_,
     double remerge_lowered_memory_bytes_ratio_,
     size_t ,
     size_t ,
     TemporaryDataOnDiskScopePtr tmp_data_,
     size_t )
     : ShufflingTransform(header, max_merged_block_size_, limit_, increase_sort_description_compile_attempts)
-    // , max_bytes_before_remerge(max_bytes_before_remerge_)
+    , max_bytes_before_remerge(max_bytes_before_remerge_)
     , remerge_lowered_memory_bytes_ratio(remerge_lowered_memory_bytes_ratio_)
     // , max_bytes_in_block_before_external_sort(max_bytes_in_block_before_external_sort_)
     // , max_bytes_in_query_before_external_sort(max_bytes_in_query_before_external_sort_)
@@ -194,29 +194,24 @@ void MergeShufflingTransform::consume(Chunk chunk)
       * - at the end, merge all sorted streams from temporary files and also from rest of blocks in memory.
       */
 
-    /// If there were only const columns in sort description, then there is no need to sort.
-    /// Return the chunk as is.
-    
-        generated_chunk = std::move(chunk);
-        return;
 
-    // removeConstColumns(chunk);
+    removeConstColumns(chunk);
 
-    // sum_rows_in_blocks += chunk.getNumRows();
-    // sum_bytes_in_blocks += chunk.allocatedBytes();
-    // chunks.push_back(std::move(chunk));
+    sum_rows_in_blocks += chunk.getNumRows();
+    sum_bytes_in_blocks += chunk.allocatedBytes();
+    chunks.push_back(std::move(chunk));
 
-    // /** If significant amount of data was accumulated, perform preliminary merging step.
-    //   */
-    // if (chunks.size() > 1
-    //     && limit
-    //     && limit * 2 < sum_rows_in_blocks   /// 2 is just a guess.
-    //     && remerge_is_useful
-    //     && max_bytes_before_remerge
-    //     && sum_bytes_in_blocks > max_bytes_before_remerge)
-    // {
-    //     remerge();
-    // }
+    /** If significant amount of data was accumulated, perform preliminary merging step.
+      */
+    if (chunks.size() > 1
+        && limit
+        && limit * 2 < sum_rows_in_blocks   /// 2 is just a guess.
+        && remerge_is_useful
+        && max_bytes_before_remerge
+        && sum_bytes_in_blocks > max_bytes_before_remerge)
+    {
+        remerge();
+    }
 
     // /** If too many of them and if external shuffling is enabled,
     //   *  will merge blocks that we have in memory at this moment and write merged stream to temporary (compressed) file.
