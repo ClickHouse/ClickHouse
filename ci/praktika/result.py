@@ -308,6 +308,11 @@ class Result(MetaClasses.Serializable):
             self.ext["labels"] = []
         self.ext["labels"].append(label)
 
+    def set_clickable_label(self, label, link):
+        if not self.ext.get("hlabels", None):
+            self.ext["hlabels"] = []
+        self.ext["hlabels"].append((label, link))
+
     def set_required_label(self):
         self.set_label(self.Label.REQUIRED)
 

@@ -241,3 +241,17 @@ class Info:
         if runconfig:
             return runconfig.get("digest_dockers", None).get(image_name, None)
         return None
+
+    def get_cidb_test_case_statistics_url(self, test_name):
+        # TODO: make it generic CI feature: read url, user via settings
+        query = f"""\
+SELECT *
+FROM checks
+WHERE 1
+--and check_name LIKE '{self.job_name}'
+and test_name = '{test_name}'
+and test_status = 'FAIL'
+and pull_request_number = 0
+and check_start_time > now() - interval 30 days
+"""
+        return f"https://play.clickhouse.com/play?user=play#{Utils.to_base64(query)}"
