@@ -71,7 +71,7 @@ void StorageSystemMutations::fillData(MutableColumns & res_columns, ContextPtr c
     for (const auto & db : DatabaseCatalog::instance().getDatabases())
     {
         /// Check if database can contain MergeTree tables
-        if (!db.second->canContainMergeTreeTables())
+        if (db.second->isExternal())
             continue;
 
         const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, db.first);
