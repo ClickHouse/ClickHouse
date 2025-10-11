@@ -95,7 +95,7 @@ namespace ErrorCodes
 
 struct DataPartsLock
 {
-    DataPartsLock(DB::SharedMutex & data_parts_mutex_, std::function<void(DataPartsLock &)> callback_);
+    DataPartsLock(DB::SharedMutex & data_parts_mutex_, std::function<void(DataPartsLock &)> && callback_);
     ~DataPartsLock();
 
     DataPartsLock(const DataPartsLock &) = delete;
@@ -109,12 +109,30 @@ private:
     std::optional<Stopwatch> lock_watch;
     std::function<void(DataPartsLock &)> callback;
 };
-using DataPartsSharedLock = std::shared_lock<DB::SharedMutex>;
 
-// some functions can accept either type of lock at the caller's preference.
+struct DataPartsSharedLock
+{
+    explicit DataPartsSharedLock(DB::SharedMutex & data_parts_mutex_);
+    ~DataPartsSharedLock();
+
+    DataPartsSharedLock(const DataPartsSharedLock &) = delete;
+    DataPartsSharedLock & operator=(const DataPartsSharedLock &) = delete;
+    DataPartsSharedLock(DataPartsSharedLock &&) = default;
+    DataPartsSharedLock & operator=(DataPartsSharedLock &&) = default;
+
+private:
+    std::optional<Stopwatch> wait_watch;
+    std::shared_lock<DB::SharedMutex> lock;
+    std::optional<Stopwatch> lock_watch;
+};
+
+// Some functions can accept either type of lock at the caller's preference.
 class DataPartsAnyLock final
 {
 public:
+    DataPartsAnyLock(const DataPartsAnyLock &) = delete;
+    DataPartsAnyLock(DataPartsAnyLock &&) = delete;
+
     DataPartsAnyLock(const DataPartsLock &) noexcept {} // NOLINT(google-explicit-constructor)
     DataPartsAnyLock(const DataPartsSharedLock &) noexcept {} // NOLINT(google-explicit-constructor)
 };
@@ -675,8 +693,8 @@ public:
     /// Returns absolutely all parts (and snapshot of their states)
     DataPartsVector getAllDataPartsVector(DataPartStateVector * out_states = nullptr) const;
 
-    DataPartsVector getDataPartsVectorInPartitionForInternalUsage(const DataPartState & state, const String & partition_id, DataPartsAnyLock acquired_lock) const;
-    DataPartsVector getDataPartsVectorInPartitionForInternalUsage(const DataPartStates & affordable_states, const String & partition_id, DataPartsAnyLock acquired_lock) const;
+    DataPartsVector getDataPartsVectorInPartitionForInternalUsage(const DataPartState & state, const String & partition_id, const DataPartsAnyLock & acquired_lock) const;
+    DataPartsVector getDataPartsVectorInPartitionForInternalUsage(const DataPartStates & affordable_states, const String & partition_id, const DataPartsAnyLock & acquired_lock) const;
 
     /// Returns the number of data mutations suitable for applying on the fly.
     virtual MutationCounters getMutationCounters() const = 0;
@@ -693,16 +711,16 @@ public:
 
     /// Returns parts that visible with current snapshot
     DataPartsVector getVisibleDataPartsVector(ContextPtr local_context) const;
-    // If using a shared lock, it guarantees no mutation has happened, so we return a shared copy of parts list
-    std::shared_ptr<const DataPartsVector> getVisibleDataPartsVectorUnlocked(ContextPtr local_context, const DataPartsSharedLock & lock) const;
-    // Whereas if a unique lock is used, mutations could have happened, meaning shared part list *may* have been invalidated.
+    /// If using a shared lock, it guarantees no mutation has happened, so we return a shared copy of parts list
+    std::shared_ptr<const DataPartsVector> getVisibleDataPartsVectorUnlocked(ContextPtr query_context, const DataPartsSharedLock & lock) const;
+    /// Whereas if a unique lock is used, mutations could have happened, meaning shared part list *may* have been invalidated.
     DataPartsVector getVisibleDataPartsVectorUnlocked(ContextPtr local_context, const DataPartsLock & lock) const;
     DataPartsVector getVisibleDataPartsVector(const MergeTreeTransactionPtr & txn) const;
     DataPartsVector getVisibleDataPartsVector(CSN snapshot_version, TransactionID current_tid) const;
 
     /// Returns all parts in specified partition
-    DataPartsVector getVisibleDataPartsVectorInPartition(MergeTreeTransaction * txn, const String & partition_id, DataPartsAnyLock acquired_lock) const;
-    DataPartsVector getVisibleDataPartsVectorInPartition(ContextPtr local_context, const String & partition_id, DataPartsAnyLock lock) const;
+    DataPartsVector getVisibleDataPartsVectorInPartition(MergeTreeTransaction * txn, const String & partition_id, const DataPartsAnyLock & acquired_lock) const;
+    DataPartsVector getVisibleDataPartsVectorInPartition(ContextPtr local_context, const String & partition_id, const DataPartsAnyLock & lock) const;
     DataPartsVector getVisibleDataPartsVectorInPartition(ContextPtr local_context, const String & partition_id) const;
     DataPartsVector getVisibleDataPartsVectorInPartitions(ContextPtr local_context, const std::unordered_set<String> & partition_ids) const;
 
@@ -718,17 +736,17 @@ public:
 
     /// Returns a part in Active state with the given name or a part containing it. If there is no such part, returns nullptr.
     DataPartPtr getActiveContainingPart(const String & part_name) const;
-    DataPartPtr getActiveContainingPart(const String & part_name, DataPartsAnyLock lock) const;
+    DataPartPtr getActiveContainingPart(const String & part_name, const DataPartsAnyLock & lock) const;
     DataPartPtr getActiveContainingPart(const MergeTreePartInfo & part_info) const;
-    DataPartPtr getActiveContainingPart(const MergeTreePartInfo & part_info, DataPartState state, DataPartsAnyLock lock) const;
+    DataPartPtr getActiveContainingPart(const MergeTreePartInfo & part_info, DataPartState state, const DataPartsAnyLock & lock) const;
 
     /// Swap part with it's identical copy (possible with another path on another disk).
     /// If original part is not active or doesn't exist exception will be thrown.
     void swapActivePart(MergeTreeData::DataPartPtr part_copy, DataPartsLock &);
 
     /// Returns the part with the given name and state or nullptr if no such part.
-    DataPartPtr getPartIfExistsUnlocked(const String & part_name, const DataPartStates & valid_states, DataPartsAnyLock acquired_lock) const;
-    DataPartPtr getPartIfExistsUnlocked(const MergeTreePartInfo & part_info, const DataPartStates & valid_states, DataPartsAnyLock acquired_lock) const;
+    DataPartPtr getPartIfExistsUnlocked(const String & part_name, const DataPartStates & valid_states, const DataPartsAnyLock & acquired_lock) const;
+    DataPartPtr getPartIfExistsUnlocked(const MergeTreePartInfo & part_info, const DataPartStates & valid_states, const DataPartsAnyLock & acquired_lock) const;
     DataPartPtr getPartIfExists(const String & part_name, const DataPartStates & valid_states) const;
     DataPartPtr getPartIfExists(const MergeTreePartInfo & part_info, const DataPartStates & valid_states) const;
 
@@ -1057,7 +1075,7 @@ public:
 
     /// For ATTACH/DETACH/DROP/FORGET PARTITION.
     String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context) const;
-    String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context, DataPartsAnyLock lock) const;
+    String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context, const DataPartsAnyLock & lock) const;
     std::unordered_set<String> getPartitionIDsFromQuery(const ASTs & asts, ContextPtr context) const;
     std::set<String> getPartitionIdsAffectedByCommands(const MutationCommands & commands, ContextPtr query_context) const;
 
@@ -1592,7 +1610,7 @@ protected:
     void removePartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part) const;
 
     /// If there is no part in the partition with ID `partition_id`, returns empty ptr. Should be called under the lock.
-    DataPartPtr getAnyPartInPartition(const String & partition_id, DataPartsAnyLock data_parts_lock) const;
+    DataPartPtr getAnyPartInPartition(const String & partition_id, const DataPartsAnyLock & data_parts_lock) const;
 
     /// Return parts in the Active set that are covered by the new_part_info or the part that covers it.
     /// Will check that the new part doesn't already exist and that it doesn't intersect existing part.

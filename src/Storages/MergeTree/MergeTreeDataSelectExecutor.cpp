@@ -181,11 +181,11 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
 {
     const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
 
-    // if merge_tree_enable_remove_parts_from_snapshot_optimization is true it nukes our list of parts
-    const RangesInDataParts v = snapshot_data.parts ? *snapshot_data.parts : RangesInDataParts();
+    /// If merge_tree_enable_remove_parts_from_snapshot_optimization is true it nukes our list of parts
+    const RangesInDataParts ranges = snapshot_data.parts ? *snapshot_data.parts : RangesInDataParts();
 
     auto step = readFromParts(
-        v,
+        ranges,
         snapshot_data.mutations_snapshot,
         column_names_to_return,
         storage_snapshot,
@@ -2181,11 +2181,11 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
 
         counters = PartFilterCounters();
 
-        auto x = filtered_parts;
+        auto initial_filtered_parts = filtered_parts;
         filtered_parts = {};
 
         /// Second attempt didn't help, throw an exception
-        if (!select_parts(x, filtered_parts))
+        if (!select_parts(initial_filtered_parts, filtered_parts))
             throw Exception(ErrorCodes::DUPLICATED_PART_UUIDS, "Found duplicate UUIDs while processing query.");
     }
 

@@ -466,11 +466,11 @@ void MergeTreeData::initializeDirectoriesAndFormatVersion(const std::string & re
             throw Exception(ErrorCodes::METADATA_MISMATCH, "MergeTree data format version on disk doesn't support custom partitioning");
     }
 }
-DataPartsLock::DataPartsLock(DB::SharedMutex & data_parts_mutex_, std::function<void(DataPartsLock &)> callback_)
+DataPartsLock::DataPartsLock(DB::SharedMutex & data_parts_mutex_, std::function<void(DataPartsLock &)> && callback_)
     : wait_watch(Stopwatch(CLOCK_MONOTONIC))
     , lock(data_parts_mutex_)
     , lock_watch(Stopwatch(CLOCK_MONOTONIC))
-    , callback(callback_)
+    , callback(std::move(callback_))
 {
     ProfileEvents::increment(ProfileEvents::PartsLockWaitMicroseconds, wait_watch->elapsedMicroseconds());
 }
@@ -479,6 +479,21 @@ DataPartsLock::DataPartsLock(DB::SharedMutex & data_parts_mutex_, std::function<
 DataPartsLock::~DataPartsLock()
 {
     callback(*this);
+    if (lock_watch.has_value())
+        ProfileEvents::increment(ProfileEvents::PartsLockHoldMicroseconds, lock_watch->elapsedMicroseconds());
+}
+
+DataPartsSharedLock::DataPartsSharedLock(DB::SharedMutex & data_parts_mutex_)
+    : wait_watch(Stopwatch(CLOCK_MONOTONIC))
+    , lock(data_parts_mutex_)
+    , lock_watch(Stopwatch(CLOCK_MONOTONIC))
+{
+    ProfileEvents::increment(ProfileEvents::PartsLockWaitMicroseconds, wait_watch->elapsedMicroseconds());
+}
+
+
+DataPartsSharedLock::~DataPartsSharedLock()
+{
     if (lock_watch.has_value())
         ProfileEvents::increment(ProfileEvents::PartsLockHoldMicroseconds, lock_watch->elapsedMicroseconds());
 }
@@ -789,7 +804,7 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
     if (!local_context->getSettingsRef()[Setting::allow_statistics_optimize])
         return nullptr;
 
-    const auto parts = *assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data).parts;
+    const auto & parts = *assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data).parts;
 
     if (parts.empty())
         return {};
@@ -5598,7 +5613,7 @@ void MergeTreeData::throwLightweightUpdateIfNeeded(UInt64 added_uncompressed_byt
 }
 
 MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(
-    const MergeTreePartInfo & part_info, MergeTreeData::DataPartState state, DataPartsAnyLock /*lock*/) const
+    const MergeTreePartInfo & part_info, MergeTreeData::DataPartState state, const DataPartsAnyLock & /*lock*/) const
 {
     auto current_state_parts_range = getDataPartsStateRange(state);
 
@@ -5677,7 +5692,7 @@ MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(const String &
     return getActiveContainingPart(part_info);
 }
 
-MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(const String & part_name, DataPartsAnyLock lock) const
+MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(const String & part_name, const DataPartsAnyLock & lock) const
 {
     auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
     return getActiveContainingPart(part_info, DataPartState::Active, lock);
@@ -5685,18 +5700,18 @@ MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(const String &
 
 MergeTreeData::DataPartsVector MergeTreeData::getVisibleDataPartsVectorInPartition(ContextPtr local_context, const String & partition_id) const
 {
-    auto l = readLockParts();
-    return getVisibleDataPartsVectorInPartition(local_context->getCurrentTransaction().get(), partition_id, l);
+    auto lock = readLockParts();
+    return getVisibleDataPartsVectorInPartition(local_context->getCurrentTransaction().get(), partition_id, lock);
 }
 
 MergeTreeData::DataPartsVector MergeTreeData::getVisibleDataPartsVectorInPartition(
-    ContextPtr local_context, const String & partition_id, DataPartsAnyLock lock) const
+    ContextPtr local_context, const String & partition_id, const DataPartsAnyLock & lock) const
 {
     return getVisibleDataPartsVectorInPartition(local_context->getCurrentTransaction().get(), partition_id, lock);
 }
 
 MergeTreeData::DataPartsVector MergeTreeData::getVisibleDataPartsVectorInPartition(
-    MergeTreeTransaction * txn, const String & partition_id, DataPartsAnyLock lock) const
+    MergeTreeTransaction * txn, const String & partition_id, const DataPartsAnyLock & lock) const
 {
     if (txn)
     {
@@ -5714,7 +5729,7 @@ MergeTreeData::DataPartsVector MergeTreeData::getVisibleDataPartsVectorInPartiti
     return getDataPartsVectorInPartitionForInternalUsage(MergeTreeDataPartState::Active, partition_id, lock);
 }
 
-MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorInPartitionForInternalUsage(const DataPartStates & affordable_states, const String & partition_id, DataPartsAnyLock /* lock */) const
+MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorInPartitionForInternalUsage(const DataPartStates & affordable_states, const String & partition_id, const DataPartsAnyLock & /* lock */) const
 {
     DataPartsVector res;
     for (const auto & state : affordable_states)
@@ -5726,7 +5741,7 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorInPartitionForIn
 }
 
 MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorInPartitionForInternalUsage(
-    const MergeTreeData::DataPartState & state, const String & partition_id, DataPartsAnyLock /* lock */) const
+    const MergeTreeData::DataPartState & state, const String & partition_id, const DataPartsAnyLock & /* lock */) const
 {
     DataPartStateAndPartitionID state_with_partition{state, partition_id};
 
@@ -5781,12 +5796,12 @@ MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const String & part_na
     return getPartIfExistsUnlocked(part_name, valid_states, lock);
 }
 
-MergeTreeData::DataPartPtr MergeTreeData::getPartIfExistsUnlocked(const String & part_name, const DataPartStates & valid_states, DataPartsAnyLock acquired_lock) const
+MergeTreeData::DataPartPtr MergeTreeData::getPartIfExistsUnlocked(const String & part_name, const DataPartStates & valid_states, const DataPartsAnyLock & acquired_lock) const
 {
     return getPartIfExistsUnlocked(MergeTreePartInfo::fromPartName(part_name, format_version), valid_states, acquired_lock);
 }
 
-MergeTreeData::DataPartPtr MergeTreeData::getPartIfExistsUnlocked(const MergeTreePartInfo & part_info, const DataPartStates & valid_states, DataPartsAnyLock /* acquired_lock */) const
+MergeTreeData::DataPartPtr MergeTreeData::getPartIfExistsUnlocked(const MergeTreePartInfo & part_info, const DataPartStates & valid_states, const DataPartsAnyLock & /* acquired_lock */) const
 {
     auto it = data_parts_by_info.find(part_info);
     if (it == data_parts_by_info.end())
@@ -6785,12 +6800,12 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
 
 String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr local_context) const
 {
-    auto l = readLockParts();
-    return getPartitionIDFromQuery(ast, local_context, l);
+    auto lock = readLockParts();
+    return getPartitionIDFromQuery(ast, local_context, lock);
 }
 
 
-String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr local_context, DataPartsAnyLock lock) const
+String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr local_context, const DataPartsAnyLock & lock) const
 {
     const auto & partition_ast = ast->as<ASTPartition &>();
 
@@ -6977,8 +6992,7 @@ std::shared_ptr<const DataPartsVector> MergeTreeData::getVisibleDataPartsVectorU
 {
     if (const auto * txn = local_context->getCurrentTransaction().get())
     {
-        // I don't want to deal with complexity of potentially caching list of parts during transaction
-        // in this case let's just make the copy etc as before.
+        /// In case of transactions we cannot use shared version
         DataPartsVector res;
         res = getDataPartsVectorForInternalUsage({DataPartState::Active, DataPartState::Outdated}, lock);
         filterVisibleDataParts(res, txn->getSnapshot(), txn->tid);
@@ -7760,7 +7774,7 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage
 }
 
 MergeTreeData::DataPartPtr MergeTreeData::getAnyPartInPartition(
-    const String & partition_id, DataPartsAnyLock /*data_parts_lock*/) const
+    const String & partition_id, const DataPartsAnyLock & /*data_parts_lock*/) const
 {
     auto it = data_parts_by_state_and_info.lower_bound(DataPartStateAndPartitionID{DataPartState::Active, partition_id});
 
@@ -7908,8 +7922,8 @@ void MergeTreeData::Transaction::renameParts()
 
 MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit()
 {
-    auto l = data.lockParts();
-    return commit(l);
+    auto lock = data.lockParts();
+    return commit(lock);
 }
 
 MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock & acquired_parts_lock)

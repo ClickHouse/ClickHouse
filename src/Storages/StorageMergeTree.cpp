@@ -1854,8 +1854,8 @@ ActionLock StorageMergeTree::stopMergesAndWaitForPartition(String partition_id)
 
     DataPartsVector parts_to_wait;
     {
-        auto l = readLockParts();
-        parts_to_wait = getDataPartsVectorInPartitionForInternalUsage(MergeTreeDataPartState::Active, partition_id, l);
+        auto parts_lock = readLockParts();
+        parts_to_wait = getDataPartsVectorInPartitionForInternalUsage(MergeTreeDataPartState::Active, partition_id, parts_lock);
     }
     LOG_TRACE(log, "StorageMergeTree::stopMergesAndWaitForPartition parts to wait: {} ({} items)",
         fmt::join(getNameWithState(parts_to_wait), ", "), parts_to_wait.size());

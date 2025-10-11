@@ -4544,10 +4544,10 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
 
     DataPartsVector partition_range;
     {
-        auto l = readLockParts();
+        auto parts_lock = readLockParts();
         partition_range = getDataPartsVectorInPartitionForInternalUsage({MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated},
                                                                         broken_part_info.getPartitionId(),
-                                                                        l);
+                                                                        parts_lock);
     }
 
     Strings detached_parts;
