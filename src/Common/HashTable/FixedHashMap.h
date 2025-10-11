@@ -117,8 +117,16 @@ public:
     template <typename Func>
     void ALWAYS_INLINE mergeToViaIndexFilter(Self & that, Func && func, UInt32 worker_id, UInt32 total_worker)
     {
-        /// Increment by total_worker to make distribution of merge evenly.
-        for (UInt32 i = worker_id; i < this->getBufferSizeInCells(); i += total_worker)
+        /// We still want to use min/max for source hash map (this one), as this can help for trivial aggregation function
+        /// performance like count, sum.
+        const auto * first_cell = this->firstPopulatedCell();
+        const auto * last_cell = this->lastPopulatedCell();
+        UInt32 start_index = first_cell - this->buf;
+        UInt32 end_index = last_cell - this->buf;
+
+        /// Increment by total_worker to make distribution of merge evenly. We use index directly instead of iterator
+        /// because we need to precisely control the cells for each worker. Iterator however would skip zero cells.
+        for (UInt32 i = start_index + worker_id; i < end_index; i += total_worker)
         {
             if (!this->buf[i].isZero(*this))
             {

@@ -2035,24 +2035,6 @@ void Aggregator::ensureLimitsFixedMapMerge(AggregatedDataVariantsPtr data) const
         throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "ensureLimitsFixedMapMerge only supports key8 and key16 variants.");
 }
 
-bool Aggregator::hasFunctionsBenefitFromParallelMerge() const
-{
-    for (const auto & aggregate_function : aggregate_functions)
-    {
-        const String & function_name = aggregate_function->getName();
-        if (function_name.starts_with("sum") ||
-            function_name.starts_with("count") ||
-            function_name.starts_with("any") ||
-            function_name.starts_with("avg") ||
-            function_name.starts_with("min") ||
-            function_name.starts_with("max"))
-        {
-            continue;
-        }
-        return true;
-    }
-    return false;
-}
 
 bool Aggregator::isTypeFixedSize(const ManyAggregatedDataVariants & data_variants) const
 {
@@ -2064,17 +2046,19 @@ bool Aggregator::isTypeFixedSize(const ManyAggregatedDataVariants & data_variant
            first->type == AggregatedDataVariants::Type::key16;
 }
 
+
 void Aggregator::disableMinMaxOptimizationForFixedHashMaps(ManyAggregatedDataVariants & data_variants) const
 {
-    for (auto & variant : data_variants)
-    {
-        if (variant->type == AggregatedDataVariants::Type::key8)
-            variant->key8->data.disableMinMaxOptimization();
-        else if (variant->type == AggregatedDataVariants::Type::key16)
-            variant->key16->data.disableMinMaxOptimization();
-        else
-            throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "disableMinMaxOptimizationForFixedHashMaps only supports key8 and key16 variants.");
-    }
+    // for (auto & variant : data_variants)
+    // {
+    auto & variant = data_variants.at(0);
+    if (variant->type == AggregatedDataVariants::Type::key8)
+        variant->key8->data.disableMinMaxOptimization();
+    else if (variant->type == AggregatedDataVariants::Type::key16)
+        variant->key16->data.disableMinMaxOptimization();
+    else
+        throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "disableMinMaxOptimizationForFixedHashMaps only supports key8 and key16 variants.");
+    // }
 }
 
 

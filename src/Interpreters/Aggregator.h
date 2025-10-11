@@ -644,9 +644,6 @@ private:
 
     void ensureLimitsFixedMapMerge(AggregatedDataVariantsPtr data) const;
 
-    /// Check if aggregation uses computationally expensive functions that benefit from parallel merge.
-    bool hasFunctionsBenefitFromParallelMerge() const;
-
     /// Check if data variants use fixed-size hash tables (key8/key16) suitable for parallel merge
     /// at single level.
     bool isTypeFixedSize(const ManyAggregatedDataVariants & data_variants) const;

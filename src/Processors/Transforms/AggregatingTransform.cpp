@@ -443,7 +443,7 @@ private:
         if (!params->aggregator.isTypeFixedSize(*data))
             return false;
 
-        return params->aggregator.hasFunctionsBenefitFromParallelMerge();
+        return true;
     }
 
     IProcessor::Status prepareParallelizeSingleLevel()
@@ -690,6 +690,7 @@ private:
     void createSourcesForFixedHashMap()
     {
         /// Disable min max optimization to avoid race condition.
+        /// Maybe we can just disable the first one?
         params->aggregator.disableMinMaxOptimizationForFixedHashMaps(*data);
 
         processors.reserve(num_threads);
