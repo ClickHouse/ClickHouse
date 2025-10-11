@@ -663,10 +663,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     ReadFromMergeTree::IndexStats & index_stats,
     bool use_skip_indexes,
     bool find_exact_ranges,
-    bool is_final_query,
-    bool is_parallel_reading_from_replicas)
+    bool is_final_query)
 {
-
     const auto original_num_parts = parts_with_ranges.size();
     const Settings & settings = context->getSettingsRef();
 
@@ -743,7 +741,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         num_threads = std::min<size_t>(num_streams, settings[Setting::max_threads_for_indexes]);
     }
 
-    const bool use_skip_indexes_on_data_read = settings[Setting::use_skip_indexes_on_data_read] && !is_parallel_reading_from_replicas;
+    const bool use_skip_indexes_on_data_read = settings[Setting::use_skip_indexes_on_data_read];
 
     /// Let's find what range to read from each part.
     {
@@ -1271,8 +1269,7 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
         column_names_to_return,
         log,
         indexes,
-        /*find_exact_ranges*/false,
-        /*is_parallel_reading_from_replicas*/false);
+        /*find_exact_ranges*/false);
 }
 
 QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
