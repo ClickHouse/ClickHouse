@@ -124,7 +124,7 @@ void StorageSystemDistributionQueue::fillData(MutableColumns & res_columns, Cont
     for (const auto & db : DatabaseCatalog::instance().getDatabases())
     {
         /// Check if database can contain distributed tables
-        if (!db.second->canContainDistributedTables())
+        if (db.second->isExternal())
             continue;
 
         const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, db.first);
