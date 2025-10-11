@@ -1,5 +1,6 @@
 #include <Backups/BackupCoordinationLocal.h>
 
+#include <Common/ObjectStorageKeyGenerator.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/logger_useful.h>
 
@@ -9,11 +10,12 @@ namespace DB
 
 BackupCoordinationLocal::BackupCoordinationLocal(
     bool is_plain_backup_,
+    ObjectStorageKeysGeneratorPtr keys_gen,
     bool allow_concurrent_backup_,
     BackupConcurrencyCounters & concurrency_counters_)
     : log(getLogger("BackupCoordinationLocal"))
     , concurrency_check(/* is_restore = */ false, /* on_cluster = */ false, /* zookeeper_path = */ "", allow_concurrent_backup_, concurrency_counters_)
-    , file_infos(is_plain_backup_)
+    , file_infos(is_plain_backup_, keys_gen)
 {
 }
 

@@ -18,12 +18,16 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
+class IIObjectStorageKeysGenerator;
+using ObjectStorageKeysGeneratorPtr = std::shared_ptr<IObjectStorageKeysGenerator>;
+
 /// Implementation of the IBackupCoordination interface performing coordination in memory.
 class BackupCoordinationLocal : public IBackupCoordination
 {
 public:
     explicit BackupCoordinationLocal(
         bool is_plain_backup_,
+        ObjectStorageKeysGeneratorPtr keys_gen,
         bool allow_concurrent_backup_,
         BackupConcurrencyCounters & concurrency_counters_);
 

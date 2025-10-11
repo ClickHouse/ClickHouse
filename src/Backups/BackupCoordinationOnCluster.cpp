@@ -3,6 +3,7 @@
 #include <Access/Common/AccessEntityType.h>
 #include <Backups/BackupCoordinationReplicatedAccess.h>
 #include <Backups/BackupCoordinationStage.h>
+#include <Common/ObjectStorageKeyGenerator.h>
 #include <Common/ZooKeeper/Common.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/escapeForFileName.h>
@@ -172,7 +173,8 @@ BackupCoordinationOnCluster::BackupCoordinationOnCluster(
     bool allow_concurrent_backup_,
     BackupConcurrencyCounters & concurrency_counters_,
     ThreadPoolCallbackRunnerUnsafe<void> schedule_,
-    QueryStatusPtr process_list_element_)
+    QueryStatusPtr process_list_element_,
+    ObjectStorageKeysGeneratorPtr keys_gen_)
     : root_zookeeper_path(root_zookeeper_path_)
     , zookeeper_path(root_zookeeper_path_ + "/backup-" + toString(backup_uuid_))
     , keeper_settings(keeper_settings_)
@@ -183,6 +185,7 @@ BackupCoordinationOnCluster::BackupCoordinationOnCluster(
     , current_host_index(findCurrentHostIndex(current_host, all_hosts))
     , plain_backup(is_plain_backup_)
     , process_list_element(process_list_element_)
+    , keys_gen(keys_gen_)
     , log(getLogger("BackupCoordinationOnCluster"))
     , with_retries(log, get_zookeeper_, keeper_settings, process_list_element_, [root_zookeeper_path_](Coordination::ZooKeeperWithFaultInjection::Ptr zk) { zk->sync(root_zookeeper_path_); })
     , cleaner(/* is_restore = */ false, zookeeper_path, with_retries, log)
@@ -777,7 +780,7 @@ void BackupCoordinationOnCluster::prepareFileInfos() const
     if (file_infos)
         return;
 
-    file_infos.emplace(plain_backup);
+    file_infos.emplace(plain_backup, keys_gen);
 
     Strings hosts_with_file_infos;
     {

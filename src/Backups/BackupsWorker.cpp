@@ -15,6 +15,7 @@
 #include <Backups/RestoreCoordinationLocal.h>
 #include <Backups/RestoreSettings.h>
 #include <Backups/RestorerFromBackup.h>
+#include <Backups/getBackupObjectKeyGenerator.h>
 #if CLICKHOUSE_CLOUD
 #include <Backups/BackupsHelper.h>
 #endif
@@ -1090,10 +1091,11 @@ void BackupsWorker::sendQueryToOtherHosts(const ASTBackupQuery & backup_or_resto
 std::shared_ptr<IBackupCoordination>
 BackupsWorker::makeBackupCoordination(bool on_cluster, const BackupSettings & backup_settings, const ContextPtr & context) const
 {
+    auto keys_gen = getBackupObjectKeyGenerator(context->getConfigRef(), "");
     if (!on_cluster)
     {
         return std::make_shared<BackupCoordinationLocal>(
-            !backup_settings.deduplicate_files, allow_concurrent_backups, *concurrency_counters);
+            /*is_plain_backup*/!backup_settings.deduplicate_files, keys_gen, allow_concurrent_backups, *concurrency_counters);
     }
 
     bool is_internal_backup = backup_settings.internal;
@@ -1123,7 +1125,8 @@ BackupsWorker::makeBackupCoordination(bool on_cluster, const BackupSettings & ba
         allow_concurrent_backups,
         *concurrency_counters,
         schedule,
-        context->getProcessListElement());
+        context->getProcessListElement(),
+        keys_gen);
 }
 
 std::shared_ptr<IRestoreCoordination>
