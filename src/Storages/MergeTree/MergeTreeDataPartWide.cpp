@@ -24,6 +24,10 @@ namespace ErrorCodes
 namespace MergeTreeSetting
 {
     extern MergeTreeSettingsBool enable_index_granularity_compression;
+    extern const MergeTreeSettingsMergeTreeObjectSerializationVersion object_serialization_version;
+    extern const MergeTreeSettingsMergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version;
+    extern const MergeTreeSettingsMergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version_for_zero_level_parts;
+    extern const MergeTreeSettingsNonZeroUInt64 object_shared_data_buckets_for_wide_part;
 }
 
 MergeTreeDataPartWide::MergeTreeDataPartWide(
@@ -172,7 +176,7 @@ void MergeTreeDataPartWide::loadIndexGranularityImpl(
     }
     else
     {
-        auto marks_file = data_part_storage_.readFile(marks_file_path, getReadSettings().adjustBufferSize(marks_file_size), marks_file_size, std::nullopt);
+        auto marks_file = data_part_storage_.readFile(marks_file_path, getReadSettings().adjustBufferSize(marks_file_size), marks_file_size);
 
         std::unique_ptr<ReadBuffer> marks_reader;
         if (!index_granularity_info_.mark_type.compressed)

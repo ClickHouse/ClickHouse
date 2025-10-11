@@ -267,7 +267,7 @@ public:
 
     /// Same as above, but may return non-fully initialized StoragePtr objects which are not suitable for reading.
     /// Useful for queries like "SHOW TABLES"
-    virtual DatabaseTablesIteratorPtr getLightweightTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name = {}, bool skip_not_loaded = false) const /// NOLINT
+    virtual DatabaseTablesIteratorPtr getLightweightTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name = {}, bool skip_not_loaded = false, [[maybe_unused]] bool skip_data_lake_catalog = false) const /// NOLINT
     {
         return getTablesIterator(context, filter_by_table_name, skip_not_loaded);
     }
@@ -335,7 +335,8 @@ public:
     virtual void alterTable(
         ContextPtr /*context*/,
         const StorageID & /*table_id*/,
-        const StorageInMemoryMetadata & /*metadata*/);
+        const StorageInMemoryMetadata & /*metadata*/,
+        bool validate_new_create_query);
 
     /// Special method for ReplicatedMergeTree and DatabaseReplicated
     virtual bool canExecuteReplicatedMetadataAlter() const { return true; }
@@ -346,15 +347,18 @@ public:
         return static_cast<time_t>(0);
     }
 
-    /// Get the CREATE TABLE query for the table. It can also provide information for detached tables for which there is metadata.
-    ASTPtr tryGetCreateTableQuery(const String & name, ContextPtr context) const noexcept
+    /// Get the CREATE TABLE query for the table.
+    /// It can also provide information for detached tables for which there is metadata.
+    ///
+    /// Does not throw if the table does not exist, but can throw on other errors.
+    ASTPtr tryGetCreateTableQuery(const String & name, ContextPtr context) const
     {
-        return getCreateTableQueryImpl(name, context, false);
+        return getCreateTableQueryImpl(name, context, /*throw_on_error=*/ false);
     }
 
     ASTPtr getCreateTableQuery(const String & name, ContextPtr context) const
     {
-        return getCreateTableQueryImpl(name, context, true);
+        return getCreateTableQueryImpl(name, context, /*throw_on_error=*/ true);
     }
 
     /// Get the CREATE DATABASE query for current database.

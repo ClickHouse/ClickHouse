@@ -132,22 +132,26 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     const ObjectStorageQueueTableMetadata & table_metadata_,
     size_t cleanup_interval_min_ms_,
     size_t cleanup_interval_max_ms_,
+    bool use_persistent_processing_nodes_,
+    size_t persistent_processing_nodes_ttl_seconds_,
     size_t keeper_multiread_batch_size_)
     : table_metadata(table_metadata_)
     , storage_type(storage_type_)
     , mode(table_metadata.getMode())
     , zookeeper_path(zookeeper_path_)
+    , keeper_multiread_batch_size(keeper_multiread_batch_size_)
     , cleanup_interval_min_ms(cleanup_interval_min_ms_)
     , cleanup_interval_max_ms(cleanup_interval_max_ms_)
-    , keeper_multiread_batch_size(keeper_multiread_batch_size_)
+    , use_persistent_processing_nodes(use_persistent_processing_nodes_)
+    , persistent_processing_node_ttl_seconds(persistent_processing_nodes_ttl_seconds_)
     , buckets_num(table_metadata_.getBucketsNum())
     , log(getLogger("StorageObjectStorageQueue(" + zookeeper_path_.string() + ")"))
     , local_file_statuses(std::make_shared<LocalFileStatuses>())
 {
     LOG_TRACE(
-        log, "Mode: {}, buckets: {}, processing threads: {}, result buckets num: {}",
+        log, "Mode: {}, buckets: {}, processing threads: {}, result buckets num: {}, use persistent processing nodes: {}",
         table_metadata.mode, table_metadata.buckets.load(),
-        table_metadata.processing_threads_num.load(), buckets_num);
+        table_metadata.processing_threads_num.load(), buckets_num, use_persistent_processing_nodes.load());
 }
 
 ObjectStorageQueueMetadata::~ObjectStorageQueueMetadata()
@@ -208,6 +212,7 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 buckets_num,
                 table_metadata.loading_retries,
                 *metadata_ref_count,
+                use_persistent_processing_nodes,
                 log);
         case ObjectStorageQueueMode::UNORDERED:
             return std::make_shared<ObjectStorageQueueUnorderedFileMetadata>(
@@ -216,6 +221,7 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 file_status,
                 table_metadata.loading_retries,
                 *metadata_ref_count,
+                use_persistent_processing_nodes,
                 log);
     }
 }
@@ -473,6 +479,7 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
                 buckets_num,
                 table_metadata.loading_retries,
                 noop,
+                /* use_persistent_processing_nodes */false, /// Processing nodes will not be created.
                 log).prepareProcessedAtStartRequests(requests, zookeeper);
         }
 
@@ -764,7 +771,7 @@ void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_i
                 if (supports_remove_recursive)
                 {
                     requests.push_back(zkutil::makeCheckRequest(registry_path, stat.version));
-                    requests.push_back(zkutil::makeRemoveRecursiveRequest(zookeeper_path, std::numeric_limits<uint32_t>::max()));
+                    requests.push_back(zkutil::makeRemoveRecursiveRequest(*zk_client, zookeeper_path, std::numeric_limits<uint32_t>::max()));
                 }
                 else
                 {
@@ -927,7 +934,7 @@ void ObjectStorageQueueMetadata::updateRegistryFunc()
 {
     try
     {
-        zkutil::EventPtr wait_event = std::make_shared<Poco::Event>();
+        Coordination::EventPtr wait_event = std::make_shared<Poco::Event>();
         while (!shutdown_called.load())
         {
             try
@@ -1031,6 +1038,8 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
         return;
     }
     /// TODO because of this lock we might not update local file statuses on time on one of the nodes.
+
+    cleanupPersistentProcessingNodes(zk_client);
 
     const fs::path zookeeper_processed_path = zookeeper_path / "processed";
     const fs::path zookeeper_failed_path = zookeeper_path / "failed";
@@ -1248,6 +1257,100 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
         remove_nodes(/*node_limit=*/false);
 
     LOG_TRACE(log, "Node limits check finished");
+}
+
+void ObjectStorageQueueMetadata::updateSettings(const SettingsChanges & changes)
+{
+    for (const auto & change : changes)
+    {
+        if (change.name == "cleanup_interval_min_ms")
+            cleanup_interval_min_ms = change.value.safeGet<UInt64>();
+        if (change.name == "cleanup_interval_max_ms")
+            cleanup_interval_max_ms = change.value.safeGet<UInt64>();
+        if (change.name == "use_persistent_processing_nodes")
+            use_persistent_processing_nodes = change.value.safeGet<bool>();
+        if (change.name == "persistent_processing_node_ttl_seconds")
+            persistent_processing_node_ttl_seconds = change.value.safeGet<UInt64>();
+    }
+}
+
+void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes(zkutil::ZooKeeperPtr zk_client)
+{
+    const fs::path zookeeper_persistent_processing_path = zookeeper_path / "processing";
+
+    Strings persistent_processing_nodes;
+    auto code = zk_client->tryGetChildren(zookeeper_persistent_processing_path, persistent_processing_nodes);
+    if (code != Coordination::Error::ZOK)
+    {
+        if (code == Coordination::Error::ZNONODE)
+        {
+            LOG_TEST(log, "Path {} does not exist", zookeeper_persistent_processing_path.string());
+            return;
+        }
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected error: {}", magic_enum::enum_name(code));
+    }
+
+    auto current_time = getCurrentTime();
+    Strings nodes_to_remove;
+    Strings get_batch;
+    auto get_paths = [&]
+    {
+        auto response = zk_client->tryGet(get_batch);
+
+        for (size_t i = 0; i < response.size(); ++i)
+        {
+            if (response[i].error == Coordination::Error::ZNONODE)
+            {
+                LOG_ERROR(log, "Failed to fetch node metadata {}", get_batch[i]);
+                continue;
+            }
+
+            LOG_TEST(
+                log, "Node: {}, mtime: {}, ttl sec: {}, current time: {}",
+                get_batch[i], response[i].stat.mtime, persistent_processing_node_ttl_seconds.load(), current_time);
+
+            if (response[i].stat.mtime / 1000 + persistent_processing_node_ttl_seconds < current_time)
+                nodes_to_remove.push_back(get_batch[i]);
+        }
+        get_batch.clear();
+    };
+
+    for (const auto & node : persistent_processing_nodes)
+    {
+        get_batch.push_back(zookeeper_persistent_processing_path / node);
+        try
+        {
+            if (get_batch.size() == keeper_multiread_batch_size)
+                get_paths();
+        }
+        catch (const zkutil::KeeperException & e)
+        {
+            if (!Coordination::isHardwareError(e.code))
+            {
+                LOG_WARNING(log, "Unexpected exception: {}", getCurrentExceptionMessage(true));
+                chassert(false);
+            }
+
+            /// Will retry with a new zk connection.
+            throw;
+        }
+    }
+    if (!get_batch.empty())
+        get_paths();
+
+    if (nodes_to_remove.empty())
+    {
+        if (!persistent_processing_nodes.empty())
+            LOG_TRACE(log, "No persistent processing nodes to remove, "
+                     "total persistent processing nodes: {}", persistent_processing_nodes.size());
+        return;
+    }
+
+    for (const auto & node : nodes_to_remove)
+        zk_client->remove(node);
+
+    LOG_DEBUG(log, "Removed {} persistent processing nodes", nodes_to_remove.size());
 }
 
 }

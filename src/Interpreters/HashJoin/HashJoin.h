@@ -410,6 +410,11 @@ public:
         }
     };
 
+    /// For INNER/LEFT ALL JOINs, if the right side has no duplicates inside the join key columns,
+    /// we can switch from ALL to RightAny strictness for better performance.
+    bool all_values_unique = true;
+    bool all_join_was_promoted_to_right_any = false;
+
     using RightTableDataPtr = std::shared_ptr<RightTableData>;
 
     /// We keep correspondence between used_flags and hash table internal buffer.
@@ -463,8 +468,8 @@ private:
     friend class HashJoinMethods;
 
     std::shared_ptr<TableJoin> table_join;
-    const JoinKind kind;
-    const JoinStrictness strictness;
+    JoinKind kind;
+    JoinStrictness strictness;
 
     /// This join was created from StorageJoin and it is already filled.
     bool from_storage_join = false;
@@ -508,6 +513,7 @@ private:
     /// Maximum number of rows in result block. If it is 0, then no limits.
     size_t max_joined_block_rows = 0;
     size_t max_joined_block_bytes = 0;
+    bool joined_block_split_single_row = false;
 
     /// When tracked memory consumption is more than a threshold, we will shrink to fit stored blocks.
     bool shrink_blocks = false;
@@ -528,6 +534,8 @@ private:
     void initRightBlockStructure(Block & saved_block_sample);
 
     JoinResultPtr joinBlockImplCross(Block block) const;
+
+    bool preferUseMapsAll() const;
 
     bool empty() const;
 

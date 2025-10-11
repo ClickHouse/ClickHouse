@@ -17,7 +17,6 @@
     M(TextLog,               text_log,             "Contains logging entries which are normally written to a log file or to stdout.") \
     M(MetricLog,             metric_log,           "Contains history of metrics values from tables system.metrics and system.events, periodically flushed to disk.") \
     M(TransposedMetricLog,   transposed_metric_log,"Contains history of metrics values from tables system.metrics and system.events. Periodically flushed to disk. Transposed form of system.metric_log.") \
-    M(LatencyLog,            latency_log,          "Contains history of all latency buckets, periodically flushed to disk.") \
     M(ErrorLog,              error_log,            "Contains history of error values from table system.errors, periodically flushed to disk.") \
     M(FilesystemCacheLog,    filesystem_cache_log, "Contains a history of all events occurred with filesystem cache for objects on a remote filesystem.") \
     M(FilesystemReadPrefetchesLog, filesystem_read_prefetches_log, "Contains a history of all prefetches done during reading from MergeTables backed by a remote filesystem.") \
@@ -35,6 +34,10 @@
     M(BlobStorageLog,        blob_storage_log,     "Contains logging entries with information about various blob storage operations such as uploads and deletes.") \
     M(QueryMetricLog,        query_metric_log,     "Contains history of memory and metric values from table system.events for individual queries, periodically flushed to disk.") \
     M(DeadLetterQueue,       dead_letter_queue,    "Contains messages that came from a streaming engine (e.g. Kafka) and were parsed unsuccessfully.") \
+    M(ZooKeeperConnectionLog, zookeeper_connection_log, "Contains history of ZooKeeper connections.") \
+    M(AggregatedZooKeeperLog, aggregated_zookeeper_log, "Contains statistics (number of operations, latencies, errors) of ZooKeeper operations grouped by session_id, parent_path and operation. Periodically flushed to disk.") \
+    M(IcebergMetadataLog,    iceberg_metadata_log, "Contains content of Iceberg metadata files.") \
+    M(DeltaMetadataLog,    delta_lake_metadata_log, "Contains content of Delta metadata files.") \
 
 #define LIST_OF_CLOUD_SYSTEM_LOGS(M) \
     M(DistributedCacheLog, distributed_cache_log, "Contains the history of all interactions with distributed cache.") \
@@ -89,7 +92,7 @@ public:
     SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConfiguration & config);
     SystemLogs(const SystemLogs & other) = default;
 
-    void flush(bool should_prepare_tables_anyway, const Strings & names);
+    void flush(const Strings & names);
     void flushAndShutdown();
     void shutdown();
     void handleCrash();
@@ -105,6 +108,8 @@ public:
 
 private:
     std::vector<ISystemLog *> getAllLogs() const;
+
+    void flushImpl(const Strings & names, bool should_prepare_tables_anyway, bool ignore_errors);
 };
 
 struct SystemLogSettings

@@ -34,8 +34,7 @@ public:
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
         const ReadSettings & read_settings,
-        std::optional<size_t> read_hint = {},
-        std::optional<size_t> file_size = {}) const override;
+        std::optional<size_t> read_hint = {}) const override;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
     std::unique_ptr<WriteBufferFromFileBase> writeObject( /// NOLINT
@@ -68,7 +67,7 @@ public:
 
     ObjectMetadata getObjectMetadata(const std::string & path) const override;
 
-    ObjectStorageConnectionInfoPtr getConnectionInfo() const override { return object_storage->getConnectionInfo(); }
+    std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path) const override;
 
     void shutdown() override;
 
