@@ -1,18 +1,19 @@
-#include <Processors/QueryPlan/CreatingSetsStep.h>
-#include <Processors/QueryPlan/Optimizations/Optimizations.h>
-#include <Processors/QueryPlan/Optimizations/Utils.h>
-#include <Processors/QueryPlan/FilterStep.h>
-#include <Processors/QueryPlan/JoinStepLogical.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
-#include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnSet.h>
+#include <Core/Block.h>
 #include <DataTypes/DataTypeSet.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/tuple.h>
 #include <Interpreters/ActionsDAG.h>
-#include <Interpreters/TableJoin.h>
 #include <Interpreters/JoinExpressionActions.h>
+#include <Interpreters/TableJoin.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 
 
 namespace DB::ErrorCodes
@@ -38,17 +39,32 @@ struct NamePair
 using NamePairs = std::vector<NamePair>;
 
 InConversion buildInConversion(
-    const SharedHeader & header,
+    const SharedHeader & lhs_input_header,
+    const SharedHeader & expected_output_header,
     const NamePairs & name_pairs,
     std::unique_ptr<QueryPlan> in_source,
     bool transform_null_in,
     SizeLimits size_limits,
     size_t max_size_for_index)
 {
-    ActionsDAG lhs_dag(header->getColumnsWithTypeAndName());
-    std::unordered_map<std::string_view, const ActionsDAG::Node *> lhs_outputs;
-    for (const auto & output : lhs_dag.getOutputs())
-        lhs_outputs.emplace(output->result_name, output);
+    ActionsDAG lhs_dag(lhs_input_header->getColumnsWithTypeAndName());
+    std::unordered_map<std::string_view, const ActionsDAG::Node *> lhs_inputs;
+    for (const auto & output : lhs_dag.getInputs())
+        lhs_inputs.emplace(output->result_name, output);
+
+    if (!blocksHaveEqualStructure(*lhs_input_header, *expected_output_header))
+    {
+        ActionsDAG::NodeRawConstPtrs new_outputs;
+        for (const auto & column : expected_output_header->getColumnsWithTypeAndName())
+        {
+            const auto * maybe_output = lhs_dag.tryFindInOutputs(column.name);
+            if (!maybe_output)
+                new_outputs.push_back(&lhs_dag.addInput(column.name, column.type));
+            else
+                new_outputs.push_back(maybe_output);
+        }
+        lhs_dag.getOutputs() = std::move(new_outputs);
+    }
 
     ActionsDAG rhs_dag(in_source->getCurrentHeader()->getColumnsWithTypeAndName());
     std::unordered_map<std::string_view, const ActionsDAG::Node *> rhs_outputs;
@@ -60,14 +76,14 @@ InConversion buildInConversion(
     std::vector<const ActionsDAG::Node *> left_columns;
     for (const auto & name_pair : name_pairs)
     {
-        auto it = lhs_outputs.find(name_pair.lhs_name);
-        if (it == lhs_outputs.end())
+        auto it = lhs_inputs.find(name_pair.lhs_name);
+        if (it == lhs_inputs.end())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find left key {} in JOIN step", name_pair.lhs_name);
         left_columns.push_back(it->second);
 
         auto jt = rhs_outputs.find(name_pair.rhs_name);
         if (jt == rhs_outputs.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find left key {} in JOIN step", name_pair.lhs_name);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find right key {} in JOIN step", name_pair.lhs_name);
         rhs_dag.getOutputs().push_back(jt->second);
     }
 
@@ -82,7 +98,7 @@ InConversion buildInConversion(
         left_columns.front() :
         &lhs_dag.addFunction(func_tuple_builder, std::move(left_columns), {});
 
-    auto generateRandomHash =[]()
+    auto get_random_hash = []()
     {
         auto uuid = UUIDHelpers::generateV4();
         return FutureSet::Hash(UUIDHelpers::getLowBytes(uuid), UUIDHelpers::getHighBytes(uuid));
@@ -90,14 +106,7 @@ InConversion buildInConversion(
 
     /// right parameter of IN function
     auto future_set = std::make_shared<FutureSetFromSubquery>(
-        generateRandomHash(),
-        nullptr,
-        std::move(in_source),
-        nullptr,
-        nullptr,
-        transform_null_in,
-        size_limits,
-        max_size_for_index);
+        get_random_hash(), nullptr, std::move(in_source), nullptr, nullptr, transform_null_in, size_limits, max_size_for_index);
 
     ColumnPtr set_col = ColumnSet::create(1, future_set);
     const ActionsDAG::Node * in_rhs_arg =
@@ -168,7 +177,7 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
 
     /// Check output columns come from one side.
     {
-        auto hasAnyInSet = [](const SharedHeader & sub, const SharedHeader & super)
+        auto has_any_in_set = [](const SharedHeader & sub, const SharedHeader & super)
         {
             for (const auto & column : *sub)
                 if (super->has(column.name))
@@ -176,7 +185,7 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
             return false;
         };
 
-        if (isInnerOrLeft(join_operator.kind) && !hasAnyInSet(right_input_header, join_output_header))
+        if (isInnerOrLeft(join_operator.kind) && !has_any_in_set(right_input_header, join_output_header))
         {
             /// Transform right to IN
         }
@@ -226,6 +235,7 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
 
     auto in_conversion = buildInConversion(
         lhs_in_node->step->getOutputHeader(),
+        join->getOutputHeader(),
         name_pairs,
         std::make_unique<QueryPlan>(QueryPlan::extractSubplan(rhs_in_node, nodes)),
         transform_null_in,
@@ -245,7 +255,7 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
         settings.network_transfer_limits,
         nullptr);
 
-    creating_sets_step->setStepDescription("Create sets after JOIN -> IN optimiation");
+    creating_sets_step->setStepDescription("Create sets after JOIN -> IN optimization");
     parent = std::move(creating_sets_step);
     parent_node->children = {lhs_in_node};
 
