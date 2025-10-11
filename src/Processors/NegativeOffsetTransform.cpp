@@ -192,7 +192,7 @@ IProcessor::Status NegativeOffsetTransform::tryPushWholeFrontChunk()
     Chunk & chunk = front.chunk;
     const UInt64 front_chunk_rows = chunk.getNumRows();
 
-    /// Make sure that front entry can be completey pushed without potentially
+    /// Make sure that front chunk can be completey pushed without potentially
     /// going into the offset area.
     if (queued_row_count - front_chunk_rows < offset)
         return Status::Finished;
@@ -248,7 +248,7 @@ IProcessor::Status NegativeOffsetTransform::tryPushRemainingChunkPrefix()
     /// queued_row_count    <---------------------->
     /// front_chunk_rows    <---------->
     ///           offset           <--------------->
-    ///                     <-------> (cut `take` amount)
+    ///                     <------> (cut `take` amount)
 
     /// Push the prefix that leaves exactly 'offset' queued.
     const UInt64 take = queued_row_count - offset;
