@@ -248,7 +248,7 @@ IProcessor::Status NegativeOffsetTransform::tryPushRemainingChunkPrefix()
     /// queued_row_count    <---------------------->
     /// front_chunk_rows    <---------->
     ///           offset           <--------------->
-    ///                     <------> (cut `take` amount)
+    ///                     <-----> (cut `take` amount)
 
     /// Push the prefix that leaves exactly 'offset' queued.
     const UInt64 take = queued_row_count - offset;
