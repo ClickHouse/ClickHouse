@@ -16,7 +16,6 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/LimitReadBuffer.h>
-#include <IO/EmptyReadBuffer.h>
 #include <IO/ReadBuffer.h>
 #include <IO/copyData.h>
 
