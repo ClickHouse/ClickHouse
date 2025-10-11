@@ -1,5 +1,5 @@
 #include <IO/Operators.h>
-#include <Processors/OffsetTransform.h>
+#include <Processors/NegativeOffsetTransform.h>
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/NegativeOffsetStep.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
@@ -31,7 +31,7 @@ NegativeOffsetStep::NegativeOffsetStep(const SharedHeader & input_header_, UInt6
 
 void NegativeOffsetStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    auto transform = std::make_shared<OffsetTransform>(pipeline.getHeader(), offset, pipeline.getNumStreams());
+    auto transform = std::make_shared<NegativeOffsetTransform>(pipeline.getHeader(), offset, pipeline.getNumStreams());
 
     pipeline.addTransform(std::move(transform));
 }
