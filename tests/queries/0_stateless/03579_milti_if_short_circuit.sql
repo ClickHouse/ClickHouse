@@ -1,3 +1,5 @@
+SET enable_analyzer = 1;
+
 WITH 0 AS n SELECT multiIf(n = 0, 42, intDiv(100, n));
 WITH 0 AS n SELECT multiIf(n = 1, 42, intDiv(100, n)); -- { serverError ILLEGAL_DIVISION }
 

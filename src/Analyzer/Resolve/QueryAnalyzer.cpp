@@ -2725,8 +2725,8 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
 
             if (!resolved_identifier_node)
             {
-                if (disable_constant_folding)
-                    break;
+//                if (disable_constant_folding)
+//                    break;
 
                 std::string message_clarification;
                 if (allow_lambda_expression)
