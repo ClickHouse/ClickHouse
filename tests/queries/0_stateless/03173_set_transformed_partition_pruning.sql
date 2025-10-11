@@ -1,4 +1,4 @@
--- Tags: no-msan
+-- Tags: no-msan, long
 -- msan: too slow
 
 SELECT '-- Single partition by function';
