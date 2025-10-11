@@ -28,6 +28,7 @@
 
 #include <Databases/DataLake/Common.h>
 #include <Disks/DiskType.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/RowNumbersTransform.h>
 #include <Core/Settings.h>
 #include <Core/NamesAndTypes.h>
 #include <Databases/DataLake/ICatalog.h>
@@ -884,6 +885,12 @@ void IcebergMetadata::addDeleteTransformers(
 
     if (!iceberg_object_info->position_deletes_objects.empty())
     {
+        // Add RowNumbersTransform before position delete transform
+        builder.addSimpleTransform([](const Block & header)
+        {
+            return std::make_shared<RowNumbersTransform>(header.cloneEmpty());
+        });
+
         builder.addSimpleTransform(
             [&](const SharedHeader & header)
             { return iceberg_object_info->getPositionDeleteTransformer(object_storage, header, format_settings, local_context); });
