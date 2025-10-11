@@ -3312,7 +3312,7 @@ bool ReadFromMergeTree::areSkipIndexColumnsInPrimaryKey(const Names & primary_ke
 
     for (const auto & skip_index : skip_indexes.useful_indices)
     {
-        for (auto column : skip_index.index->index.column_names)
+        for (const auto & column : skip_index.index->index.column_names)
         {
             if (primary_key_columns_set.find(column) == primary_key_columns_set.end())
                 return false;
