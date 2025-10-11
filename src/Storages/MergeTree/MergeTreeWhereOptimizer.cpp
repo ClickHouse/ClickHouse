@@ -148,8 +148,8 @@ void MergeTreeWhereOptimizer::optimize(SelectQueryInfo & select_query_info, cons
         select.prewhere()->formatForLogging(context->getSettingsRef()[Setting::log_queries_cut_to_length]));
 }
 
-MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::optimize(const ActionsDAG & filter_dag,
-    const std::string & filter_column_name,
+MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::optimize(
+    const ActionsDAG::Node * predicate,
     const ContextPtr & context,
     bool is_final)
 {
@@ -164,7 +164,7 @@ MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::op
     where_optimizer_context.use_statistics = context->getSettingsRef()[Setting::allow_statistics_optimize] && estimator != nullptr;
 
     RPNBuilderTreeContext tree_context(context);
-    RPNBuilderTreeNode node(&filter_dag.findInOutputs(filter_column_name), tree_context);
+    RPNBuilderTreeNode node(predicate, tree_context);
 
     auto optimize_result = optimizeImpl(node, where_optimizer_context);
     if (!optimize_result)

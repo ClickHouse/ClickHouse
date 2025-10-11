@@ -51,10 +51,7 @@ public:
         bool fully_moved_to_prewhere = false;
     };
 
-    FilterActionsOptimizeResult optimize(const ActionsDAG & filter_dag,
-        const std::string & filter_column_name,
-        const ContextPtr & context,
-        bool is_final);
+    FilterActionsOptimizeResult optimize(const ActionsDAG::Node * predicate, const ContextPtr & context, bool is_final);
 
 private:
     struct Condition
