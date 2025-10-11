@@ -314,6 +314,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     else
                         common_type = getLeastSupertype(DataTypes{possibly_invalid_argument_node->getResultType(), constant_if_result_node->getResultType()});
                     node = buildCastFunction(constant_if_result_node, common_type, scope.context, true);
+                    resolveExpressionNode(node,
+                        scope,
+                        false /*allow_lambda_expression*/,
+                        false /*allow_table_expression*/);
                 }
                 else
                     node = std::move(constant_if_result_node);
@@ -390,6 +394,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         else
                             common_type = getLeastSupertype(DataTypes{if_function_arguments[1]->getResultType(), node->getResultType()});
                         node = buildCastFunction(node, common_type, scope.context, true);
+                        resolveExpressionNode(node,
+                            scope,
+                            false /*allow_lambda_expression*/,
+                            false /*allow_table_expression*/);
                     }
 
                     result_projection_names[0].insert(strlen("multiIf") + 1, arguments_projection_names[0] + ", " + second_argument_projection_name + ", ");
