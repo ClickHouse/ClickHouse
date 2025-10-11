@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <csignal>
 #include <filesystem>
+#include <variant>
 #include <unistd.h>
 #include <Access/AccessControl.h>
 #include <Access/Common/AllowedClientHosts.h>
@@ -50,6 +51,7 @@
 #include <Interpreters/DeltaMetadataLog.h>
 #include <Interpreters/ZooKeeperLog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/XRayInstrumentationManager.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -915,7 +917,23 @@ BlockIO InterpreterSystemQuery::execute()
             unloadPrimaryKeys();
             break;
         }
-
+#if USE_XRAY
+        case Type::INSTRUMENT_ADD:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_INSTRUMENT_ADD);
+            instrumentWithXRay(true, query);
+            break;
+        }
+        case Type::INSTRUMENT_REMOVE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_INSTRUMENT_REMOVE);
+            instrumentWithXRay(false, query);
+            break;
+        }
+#else
+        case Type::INSTRUMENT_ADD:
+        case Type::INSTRUMENT_REMOVE:
+#endif
 #if USE_JEMALLOC
         case Type::JEMALLOC_PURGE:
         {
@@ -1714,6 +1732,43 @@ void InterpreterSystemQuery::loadOrUnloadPrimaryKeysImpl(bool load)
     }
 }
 
+#if USE_XRAY
+void InterpreterSystemQuery::instrumentWithXRay(bool add, ASTSystemQuery & query)
+{
+    /// query.handler_name -- handler to be set for the function
+    /// query.function_name -- name of the function to be patched - rename in query to function name
+    /// query.parameters -- parameters for the handler. should be one of the following: string, int, float
+    try
+    {
+        if (add)
+            XRayInstrumentationManager::instance().setHandlerAndPatch(query.instrumentation_function_name, query.instrumentation_handler_name, query.instrumentation_parameters, getContext());
+        else
+            XRayInstrumentationManager::instance().unpatchFunction(query.instrumentation_point_id.value());
+    }
+    catch (const DB::Exception & e)
+    {
+        String id;
+        if (query.instrumentation_point_id)
+        {
+            if (std::holds_alternative<bool>(query.instrumentation_point_id.value()))
+                id = "ALL";
+            else
+                id = std::to_string(std::get<uint64_t>(query.instrumentation_point_id.value()));
+            }
+        else
+            id = "None";
+
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Failed to instrument function '{}' with handler '{}' and instrumentation_point_id '{}': {}",
+            query.instrumentation_function_name,
+            query.instrumentation_handler_name,
+            id,
+            e.what());
+    }
+}
+#endif
+
 void InterpreterSystemQuery::syncReplicatedDatabase(ASTSystemQuery & query)
 {
     const auto database_name = query.getDatabase();
@@ -2148,6 +2203,16 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::UNLOCK_SNAPSHOT:
         {
             required_access.emplace_back(AccessType::BACKUP);
+            break;
+        }
+        case Type::INSTRUMENT_ADD:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_INSTRUMENT_ADD);
+            break;
+        }
+        case Type::INSTRUMENT_REMOVE:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_INSTRUMENT_REMOVE);
             break;
         }
         case Type::STOP_THREAD_FUZZER:

@@ -5,6 +5,7 @@
 #include <Parsers/SyncReplicaMode.h>
 #include <Server/ServerType.h>
 
+#include <variant>
 
 namespace DB
 {
@@ -120,6 +121,8 @@ public:
         STOP_REDUCE_BLOCKING_PARTS,
         START_REDUCE_BLOCKING_PARTS,
         UNLOCK_SNAPSHOT,
+        INSTRUMENT_ADD,
+        INSTRUMENT_REMOVE,
         END
     };
 
@@ -175,6 +178,13 @@ public:
     Strings logs;
 
     ServerType server_type;
+
+    // For SYSTEM INSTRUMENT ADD/REMOVE
+    using InstrumentParameter = std::variant<String, Int64, Float64>;
+    String instrumentation_function_name;
+    String instrumentation_handler_name;
+    std::optional<std::variant<uint64_t, bool>> instrumentation_point_id;
+    std::optional<std::vector<InstrumentParameter>> instrumentation_parameters;
 
     /// For SYSTEM TEST VIEW <name> (SET FAKE TIME <time> | UNSET FAKE TIME).
     /// Unix time.

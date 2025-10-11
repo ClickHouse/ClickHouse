@@ -6,6 +6,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/Operators.h>
 
+#include <type_traits>
 
 namespace DB
 {
@@ -465,6 +466,52 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
                     comma = true;
                 ostr << ' ';
                 print_identifier(cur_log);
+            }
+            break;
+        }
+        case Type::INSTRUMENT_ADD:
+        {
+            if (!instrumentation_function_name.empty())
+            {
+                ostr << ' ';
+                print_identifier(instrumentation_function_name);
+            }
+
+            if (!instrumentation_handler_name.empty())
+            {
+                ostr << ' ';
+                print_identifier(instrumentation_handler_name);
+            }
+
+            if (instrumentation_parameters && !instrumentation_parameters->empty())
+            {
+                bool comma = false;
+                for (const auto & param : *instrumentation_parameters)
+                {
+                    if (comma)
+                        ostr << ',';
+                    else
+                        comma = true;
+                    std::visit([&](const auto & value)
+                    {
+                        using T = std::decay_t<decltype(value)>;
+                        if constexpr (std::is_same_v<T, String>)
+                            ostr << ' ' << quoteString(value);
+                        else
+                            ostr << ' ' << value;
+                    }, param);
+                }
+            }
+            break;
+        }
+        case Type::INSTRUMENT_REMOVE:
+        {
+            if (instrumentation_point_id)
+            {
+                if (std::holds_alternative<bool>(instrumentation_point_id.value()))
+                    ostr << " ALL";
+                else
+                    ostr << ' ' << std::get<uint64_t>(instrumentation_point_id.value());
             }
             break;
         }
