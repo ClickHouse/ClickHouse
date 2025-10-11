@@ -468,6 +468,8 @@ else ()
 endif ()
 option(ENABLE_OPENSSL_DYNAMIC "This option removes SSL from ClickHouse and will link to the OpenSSL version supplied by OS." ${ENABLE_OPENSSL_DYNAMIC_DEFAULT})
 
+option(ENABLE_OPENSSL_FIPS "Allow using OpenSSL library in FIPS mode." OFF)
+
 # when installing to /usr - place configs to /etc but for /usr/local place to /usr/local/etc
 if (CMAKE_INSTALL_PREFIX STREQUAL "/usr")
     set (CLICKHOUSE_ETC_DIR "/etc")
