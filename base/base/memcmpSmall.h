@@ -840,3 +840,8 @@ inline bool memequalSmallLikeZeroPaddedAllowOverflow15(const Char * a, size_t a_
 {
     return 0 == memcmpSmallLikeZeroPaddedAllowOverflow15(a, a_size, b, b_size);
 }
+
+inline int memcmpSmallCharsAllowOverflow15(const UInt8* a, size_t a_size, const UInt8* b, size_t b_size)
+{
+    return memcmpSmallAllowOverflow15(a, a_size, b, b_size);
+}
