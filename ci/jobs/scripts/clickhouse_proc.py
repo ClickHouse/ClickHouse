@@ -1059,14 +1059,22 @@ quit
             return
 
         # Store system database and table metadata files
-        self.system_db_uuid = Shell.get_output(
-            "clickhouse disks -C /etc/clickhouse-server/config.xml --disk disk_db_remote -q 'read metadata/system.sql' | grep -F UUID | awk -F\"'\" '{print $2}'",
-            verbose=True,
-        )
-        self.system_db_sql = Shell.get_output(
-            "clickhouse disks -C /etc/clickhouse-server/config.xml --disk disk_db_remote -q 'read metadata/system.sql'",
-            verbose=True,
-        )
+        READ_SYSTEM_DB_SQL_CMD = "clickhouse disks -C /etc/clickhouse-server/config.xml --disk disk_db_remote -q 'read metadata/system.sql'"
+        retry_count = 3
+        for _ in range(retry_count):
+            try:
+                self.system_db_uuid = Shell.get_output(
+                    f"{READ_SYSTEM_DB_SQL_CMD} | grep -F UUID | awk -F\"'\" '{{print $2}}'",
+                    verbose=True,
+                )
+                self.system_db_sql = Shell.get_output(READ_SYSTEM_DB_SQL_CMD, verbose=True)
+                break
+            except RuntimeError as re:
+                print(f"Got error: '{re}', retrying with debug logging enabled to get more information about failure reason")
+                debug_output = Shell.get_output(f"{READ_SYSTEM_DB_SQL_CMD} --log-level trace", verbose=True)
+                print(f"Debug output:\n{debug_output}")
+                time.sleep(1)
+
         print(f"system_db_uuid = {self.system_db_uuid}")
         print(f"system_db_sql = {self.system_db_sql}")
 
