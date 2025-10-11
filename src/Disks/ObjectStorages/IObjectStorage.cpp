@@ -110,4 +110,15 @@ std::string RelativePathWithMetadata::getPathOrPathToArchiveIfArchive() const
     return getPath();
 }
 
+String RelativePathWithMetadata::getIdentifier() const
+{
+    String result = getPath();
+    if (buckets_to_read)
+    {
+        for (auto chunk : *buckets_to_read)
+            result += "_" + std::to_string(chunk);
+    }
+    return result;
+}
+
 }

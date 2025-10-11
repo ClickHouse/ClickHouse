@@ -6,7 +6,6 @@
 #include <Storages/prepareReadingFromFormat.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Interpreters/StorageID.h>
 #include <Databases/DataLake/ICatalog.h>
@@ -15,12 +14,16 @@
 #include <Storages/IStorage.h>
 #include <Common/Exception.h>
 #include <Storages/StorageFactory.h>
+#include <Formats/FormatFilterInfo.h>
+#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 
 namespace DB
 {
 
 class NamedCollection;
 class SinkToStorage;
+class IDataLakeMetadata;
+struct IObjectIterator;
 using SinkToStoragePtr = std::shared_ptr<SinkToStorage>;
 
 namespace ErrorCodes
@@ -175,7 +178,7 @@ public:
 
     virtual bool supportsPartialPathPrefix() const { return true; }
 
-    virtual ObjectIterator iterate(
+    virtual std::shared_ptr<IObjectIterator> iterate(
         const ActionsDAG * /* filter_dag */,
         std::function<void(FileProgress)> /* callback */,
         size_t /* list_batch_size */,
@@ -237,7 +240,7 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataLakeSettings() is not implemented for configuration type {}", getTypeName());
     }
 
-    virtual ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr /**/) const { return nullptr; }
+    virtual ColumnMapperPtr getColumnMapperForObject(std::shared_ptr<RelativePathWithMetadata> /**/) const { return nullptr; }
 
     virtual ColumnMapperPtr getColumnMapperForCurrentSchema(StorageMetadataPtr /**/, ContextPtr /**/) const { return nullptr; }
 

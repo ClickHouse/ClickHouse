@@ -1,3 +1,4 @@
+#include <optional>
 #include <Processors/Formats/IInputFormat.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WithFileName.h>
@@ -5,6 +6,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 ChunkInfoRowNumbers::ChunkInfoRowNumbers(size_t row_num_offset_, std::optional<IColumnFilter> applied_filter_)
     : row_num_offset(row_num_offset_), applied_filter(std::move(applied_filter_)) { }
@@ -70,4 +76,15 @@ void IInputFormat::onFinish()
 {
     resetReadBuffer();
 }
+
+void IInputFormat::setBucketsToRead(const std::vector<size_t> & /*buckets_to_read*/)
+{
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not skip chunks for format {}", getName());
+}
+
+std::optional<std::vector<size_t>> IInputFormat::getChunksByteSizes()
+{
+    return std::nullopt;
+}
+
 }

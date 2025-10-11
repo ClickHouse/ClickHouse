@@ -15,7 +15,6 @@
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/prepareReadingFromFormat.h>
 
-
 namespace DataLake
 {
 class ICatalog;

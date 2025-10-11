@@ -11,6 +11,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 Parquet::ReadOptions convertReadOptions(const FormatSettings & format_settings)
 {
     Parquet::ReadOptions options;
@@ -81,7 +86,7 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
         reader.emplace();
         reader->reader.prefetcher.init(in, read_options, parser_shared_resources);
         reader->reader.init(read_options, getPort().getHeader(), format_filter_info);
-        reader->init(parser_shared_resources);
+        reader->init(parser_shared_resources, buckets_to_read);
     }
 }
 
@@ -109,6 +114,26 @@ Chunk ParquetV3BlockInputFormat::read()
     previous_block_missing_values = res.block_missing_values;
     previous_approx_bytes_read_for_chunk = res.virtual_bytes_read;
     return std::move(res.chunk);
+}
+
+std::optional<std::vector<size_t>> ParquetV3BlockInputFormat::getChunksByteSizes()
+{
+    buckets_to_read = std::vector<size_t>{};
+    initializeIfNeeded();
+
+    std::vector<size_t> result;
+    for (const auto & row_group_info : reader->reader.file_metadata.row_groups)
+    {
+        result.push_back(row_group_info.total_byte_size);
+    }
+    return result;
+}
+
+void ParquetV3BlockInputFormat::setBucketsToRead(const std::vector<size_t> & buckets_to_read_)
+{
+    if (reader)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Reader already initialized");
+    buckets_to_read = buckets_to_read_;
 }
 
 const BlockMissingValues * ParquetV3BlockInputFormat::getMissingValues() const

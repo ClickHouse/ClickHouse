@@ -32,6 +32,9 @@ public:
         return previous_approx_bytes_read_for_chunk;
     }
 
+    std::optional<std::vector<size_t>> getChunksByteSizes() override;
+    void setBucketsToRead(const std::vector<size_t> & buckets_to_read_) override;
+
 private:
     Chunk read() override;
 
@@ -49,6 +52,7 @@ private:
     size_t previous_approx_bytes_read_for_chunk = 0;
 
     void initializeIfNeeded();
+    std::optional<std::vector<size_t>> buckets_to_read;
 };
 
 class NativeParquetSchemaReader : public ISchemaReader
