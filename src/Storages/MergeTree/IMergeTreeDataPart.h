@@ -217,6 +217,9 @@ public:
     UInt128 getPartBlockIDHash() const;
     String getNewPartBlockID(std::string_view token) const;
 
+    /// Returns true if it's a zero level part.
+    bool isZeroLevel() const { return info.min_block == info.max_block; }
+
     void setName(const String & new_name);
 
     const MergeTreeData & storage;
@@ -700,7 +703,7 @@ private:
     NameToNumber column_name_to_position;
 
     /// Map from name of column to its serialization info.
-    SerializationInfoByName serialization_infos;
+    SerializationInfoByName serialization_infos{{}};
 
     /// Serializations for every columns and subcolumns by their names.
     SerializationByName serializations;
@@ -772,6 +775,9 @@ private:
 
     /// Returns the name of projection for projection part, empty string for regular part.
     String getProjectionName() const;
+
+    /// Returns the name of the part state as a string.
+    String stateToString() const;
 
     /// This ugly flag is needed for debug assertions only
     mutable bool part_is_probably_removed_from_disk = false;

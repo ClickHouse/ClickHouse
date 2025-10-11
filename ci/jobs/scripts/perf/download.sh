@@ -81,16 +81,6 @@ function download
     done
     cd -
 
-    mkdir ~/fg ||:
-    (
-        cd ~/fg
-        wget -nv -nd -c "https://raw.githubusercontent.com/brendangregg/FlameGraph/cd9ee4c4449775a2f867acf31c84b7fe4b132ad5/flamegraph.pl"
-        wget -nv -nd -c "https://raw.githubusercontent.com/brendangregg/FlameGraph/cd9ee4c4449775a2f867acf31c84b7fe4b132ad5/difffolded.pl"
-        chmod +x ~/fg/difffolded.pl
-        chmod +x ~/fg/flamegraph.pl
-    ) &
-
-    wait
     echo "ATTACH DATABASE default ENGINE=Ordinary" > db0/metadata/default.sql
     echo "ATTACH DATABASE datasets ENGINE=Ordinary" > db0/metadata/datasets.sql
     ls db0/metadata

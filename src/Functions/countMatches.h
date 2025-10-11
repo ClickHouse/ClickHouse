@@ -27,7 +27,7 @@ namespace Setting
 
 using Pos = const char *;
 
-template <class CountMatchesBase>
+template <typename CountMatchesBase>
 class FunctionCountMatches : public IFunction
 {
     const bool count_matches_stop_at_empty_match;
@@ -95,7 +95,7 @@ public:
             {
                 Pos pos = reinterpret_cast<Pos>(&src_chars[current_src_offset]);
                 current_src_offset = src_offsets[i];
-                Pos end = reinterpret_cast<Pos>(&src_chars[current_src_offset]) - 1;
+                Pos end = reinterpret_cast<Pos>(&src_chars[current_src_offset]);
 
                 std::string_view str(pos, end - pos);
                 vec_res[i] = countMatches(str, re, matches);
@@ -145,7 +145,7 @@ public:
 
                 /// Progress is made by a single character in case the pattern does not match or have zero-byte match.
                 /// The reason is simply because the pattern could match another part of input when forwarded.
-                pos++;
+                ++pos;
             }
         }
 

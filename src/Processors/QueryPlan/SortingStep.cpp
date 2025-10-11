@@ -89,7 +89,7 @@ size_t getMaxBytesInQueryBeforeExternalSort(double max_bytes_ratio_before_extern
     }
     else
     {
-        LOG_WARNING(getLogger("SortingStep"), "No system memory limits configured. Ignoring max_bytes_ratio_before_external_sort");
+        LOG_TRACE(getLogger("SortingStep"), "No system memory limits configured. Ignoring max_bytes_ratio_before_external_sort");
         return 0;
     }
 }
@@ -345,8 +345,9 @@ void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescr
             SortingQueueStrategy::Batch,
             limit_,
             always_read_till_end,
-            nullptr,
-            false,
+            /*out_row_sources_buf=*/ nullptr,
+            /*filter_column_name=*/ std::nullopt,
+            /*use_average_block_sizes=*/ false,
             apply_virtual_row_conversions);
 
         pipeline.addTransform(std::move(transform));

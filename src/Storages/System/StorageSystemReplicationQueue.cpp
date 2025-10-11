@@ -56,7 +56,7 @@ ColumnsDescription StorageSystemReplicationQueue::getColumnsDescription()
         { "last_exception",          std::make_shared<DataTypeString>(), "Text message about the last error that occurred (if any)."},
         { "last_exception_time",     std::make_shared<DataTypeDateTime>(), "Date and time when the last error occurred."},
         { "last_attempt_time",       std::make_shared<DataTypeDateTime>(), "Date and time when the task was last attempted."},
-        { "num_postponed",           std::make_shared<DataTypeUInt32>(), "The number of postponed tasks."},
+        { "num_postponed",           std::make_shared<DataTypeUInt32>(), "The number of times the action was postponed."},
         { "postpone_reason",         std::make_shared<DataTypeString>(), "The reason why the task was postponed."},
         { "last_postpone_time",      std::make_shared<DataTypeDateTime>(), "Date and time when the task was last postponed."},
         { "merge_type",              std::make_shared<DataTypeString>(), "Type of the current merge. Empty if it's a mutation."},

@@ -4,6 +4,7 @@ import subprocess
 import sys
 import time
 import traceback
+from collections import defaultdict
 from pathlib import Path
 
 from ci.praktika import Secret
@@ -39,7 +40,7 @@ class ClickHouseProc:
 """
     MINIO_LOG = f"{temp_dir}/minio.log"
     AZURITE_LOG = f"{temp_dir}/azurite.log"
-    LOGS_SAVER_CLIENT_OPTIONS = "--max_block_size 8192 --max_memory_usage 10G --max_threads 1 --max_result_rows 0 --max_result_bytes 0 --max_bytes_to_read 0"
+    LOGS_SAVER_CLIENT_OPTIONS = "--max_memory_usage 10G --max_threads 1 --max_result_rows 0 --max_result_bytes 0 --max_bytes_to_read 0 --max_execution_time 0 --max_execution_time_leaf 0 --max_estimated_execution_time 0"
     DMESG_LOG = f"{temp_dir}/dmesg.log"
     GDB_LOG = f"{temp_dir}/gdb.log"
     # TODO: run servers in  dedicated wds to keep trash localised
@@ -97,6 +98,8 @@ class ClickHouseProc:
         self.debug_artifacts = []
         self.extra_tests_results = []
         self.logs = []
+        self.log_export_host, self.log_export_password = None, None
+        self.system_db_uuid = None
 
         Utils.set_env("CLICKHOUSE_CONFIG_DIR", self.ch_config_dir)
         Utils.set_env("CLICKHOUSE_CONFIG", self.config_file)
@@ -304,22 +307,45 @@ profiles:
             res = res and Shell.check(command, verbose=True)
         return res
 
+    def install_vector_search_config(self):
+        # Large values are set, ClickHouse will auto downsize
+        c1 = """
+<max_server_memory_usage_to_ram_ratio>0.95</max_server_memory_usage_to_ram_ratio>
+<cache_size_to_ram_max_ratio>0.95</cache_size_to_ram_max_ratio>
+<vector_similarity_index_cache_size>214748364800</vector_similarity_index_cache_size>
+<max_build_vector_similarity_index_thread_pool_size>48</max_build_vector_similarity_index_thread_pool_size>
+<vector_similarity_index_cache_size_ratio>0.99</vector_similarity_index_cache_size_ratio>
+</clickhouse>
+        """
+        commands = [f'sed -i "s|</clickhouse>||g" {temp_dir}/config.xml']
+        res = True
+        for command in commands:
+            res = res and Shell.check(command, verbose=True)
+
+        with open(f"{temp_dir}/config.xml", "a") as config_file:
+            config_file.write(c1)
+        return res
+
     def create_log_export_config(self):
         print("Create log export config")
         config_file = Path(self.ch_config_dir) / "config.d" / "system_logs_export.yaml"
         config_file.parent.mkdir(parents=True, exist_ok=True)
 
-        self.log_export_host = Secret.Config(
-            name="clickhouse_ci_logs_host",
-            type=Secret.Type.AWS_SSM_VAR,
-            region="us-east-1",
-        ).get_value()
-
-        self.log_export_password = Secret.Config(
-            name="clickhouse_ci_logs_password",
-            type=Secret.Type.AWS_SSM_VAR,
-            region="us-east-1",
-        ).get_value()
+        self.log_export_host, self.log_export_password = (
+            Secret.Config(
+                name="clickhouse_ci_logs_host",
+                type=Secret.Type.AWS_SSM_PARAMETER,
+                region="us-east-1",
+            )
+            .join_with(
+                Secret.Config(
+                    name="clickhouse_ci_logs_password",
+                    type=Secret.Type.AWS_SSM_PARAMETER,
+                    region="us-east-1",
+                )
+            )
+            .get_value()
+        )
 
         config_content = LOG_EXPORT_CONFIG_TEMPLATE.format(
             CLICKHOUSE_CI_LOGS_CLUSTER=CLICKHOUSE_CI_LOGS_CLUSTER,
@@ -334,7 +360,11 @@ profiles:
 
     def start_log_exports(self, check_start_time):
         print("Start log export")
-        os.environ["CLICKHOUSE_CI_LOGS_CLUSTER"] = CLICKHOUSE_CI_LOGS_CLUSTER
+        if self.log_export_host:
+            os.environ["CLICKHOUSE_CI_LOGS_CLUSTER"] = CLICKHOUSE_CI_LOGS_CLUSTER
+            os.environ["CLICKHOUSE_CI_LOGS_HOST"] = self.log_export_host
+            os.environ["CLICKHOUSE_CI_LOGS_USER"] = CLICKHOUSE_CI_LOGS_USER
+            os.environ["CLICKHOUSE_CI_LOGS_PASSWORD"] = self.log_export_password
         info = Info()
         os.environ["EXTRA_COLUMNS_EXPRESSION"] = (
             f"toLowCardinality('{info.repo_name}') AS repo, CAST({info.pr_number} AS UInt32) AS pull_request_number, '{info.sha}' AS commit_sha, toDateTime('{Utils.timestamp_to_str(check_start_time)}', 'UTC') AS check_start_time, toLowCardinality('{info.job_name}') AS check_name, toLowCardinality('{info.instance_type}') AS instance_type, '{info.instance_id}' AS instance_id"
@@ -377,8 +407,36 @@ profiles:
             strict=True,
         )
 
+        Shell.check(
+            f"rm -rf {temp_dir}/jemalloc_profiles && mkdir -p {temp_dir}/jemalloc_profiles",
+            verbose=True,
+            strict=True,
+        )
+
+        replicas = 3 if self.is_db_replicated else 1
+        tsan_memory_limit_mb = (
+            Utils.physical_memory() * 65 // 100 // 1024 // 1024 // replicas
+        )
+
+        env = os.environ.copy()
+        env["TSAN_OPTIONS"] = " ".join(
+            filter(
+                lambda x: x is not None,
+                [
+                    env.get("TSAN_OPTIONS", None),
+                    f"memory_limit_mb={tsan_memory_limit_mb}",
+                ],
+            )
+        )
+        tsan_options = env["TSAN_OPTIONS"]
+        print(f"TSAN_OPTIONS = {tsan_options}")
+
         proc = subprocess.Popen(
-            command, stderr=subprocess.STDOUT, shell=True, cwd=run_path
+            command,
+            stderr=subprocess.STDOUT,
+            shell=True,
+            cwd=run_path,
+            env=env,
         )
         if replica_num == 1:
             self.proc_1 = proc
@@ -390,7 +448,7 @@ profiles:
             assert False
         started = False
         try:
-            for _ in range(5):
+            for _ in range(15):
                 pid = Shell.get_output(f"cat {pid_file}").strip()
                 if not pid:
                     Utils.sleep(1)
@@ -611,6 +669,9 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             )
 
         self._flush_system_logs()
+
+        self.save_system_metadata_files_from_remote_database_disk()
+
         print("Terminate ClickHouse processes")
 
         Shell.check(f"ps -ef | grep  clickhouse")
@@ -633,6 +694,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
 
     def prepare_logs(self, all=False):
         res = self._get_logs_archives_server()
+        res += self._get_jemalloc_profiles()
         if Path(self.GDB_LOG).exists():
             res.append(self.GDB_LOG)
         if all:
@@ -676,6 +738,57 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             print("WARNING: Coordination logs not found")
             return []
 
+    @classmethod
+    def _get_jemalloc_profiles(cls):
+        profiles = Shell.get_output(f"ls {temp_dir}/jemalloc_profiles")
+        if not profiles:
+            return []
+
+        profiles = profiles.split("\n")
+
+        res = []
+
+        # We will generate flamegraphs for last jemalloc profile of each PID
+        # format of jemalloc profile: clickhouse.jemalloc.$PID.$COUNT.m$COUNT.heap
+        # test runs can generate jemalloc profiles for multiple PIDs because clickhouse local and multiple servers
+        # can be started
+
+        # group profiles by pid
+        grouped_profiles = defaultdict(list)
+        for profile in profiles:
+            parts = profile.split(".")
+            pid = int(parts[2])
+            count = int(parts[3])
+            grouped_profiles[pid].append((count, profile))
+
+        # for each group, get the file with the highest count number
+        latest_profiles = {}
+        for pid, files_in_group in grouped_profiles.items():
+            file_with_max_third_number = max(files_in_group, key=lambda x: x[0])[1]
+            latest_profiles[pid] = file_with_max_third_number
+
+        chbinary = Shell.get_output("readlink -f $(which clickhouse)")
+        for pid, profile in latest_profiles.items():
+            Shell.check(
+                f"jeprof {chbinary} {temp_dir}/jemalloc_profiles/{profile} --text > {temp_dir}/jemalloc_profiles/jemalloc.{pid}.txt 2>/dev/null",
+                verbose=True,
+            )
+            Shell.check(
+                f"jeprof {chbinary} {temp_dir}/jemalloc_profiles/{profile} --collapsed 2>/dev/null | flamegraph.pl --color mem --width 2560 > {temp_dir}/jemalloc_profiles/jemalloc.{pid}.svg",
+                verbose=True,
+            )
+
+        Shell.check(
+            f"cd {temp_dir} && tar -czf jemalloc.tar.zst --files-from <(find . -type d -name jemalloc_profiles)",
+            verbose=True,
+        )
+        if Path(f"{temp_dir}/jemalloc.tar.zst").exists():
+            res.append(f"{temp_dir}/jemalloc.tar.zst")
+        else:
+            print("WARNING: Jemalloc profiles not found")
+            return []
+        return res
+
     def _get_logs_archives_server(self):
         assert Path(
             self.log_dir
@@ -700,25 +813,25 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         )
         results.append(
             Result.from_commands_run(
-                name="Killed by signal (in clickhouse-server.log)",
+                name="Killed by signal (in clickhouse-server.log or clickhouse-server.err.log)",
                 command=f"cd {self.log_dir} && ! grep -a ' <Fatal>' clickhouse-server*.log | tee /dev/stderr | grep -q .",
             )
         )
         results.append(
             Result.from_commands_run(
-                name="Fatal messages (in clickhouse-server.log)",
+                name="Fatal messages (in clickhouse-server.log or clickhouse-server.err.log)",
                 command=f"cd {self.log_dir} && ! grep -a -A50 '#######################################' clickhouse-server*.log| grep '<Fatal>' | head -n100 | tee /dev/stderr | grep -q .",
             )
         )
         results.append(
             Result.from_commands_run(
-                name="Logical error thrown (see clickhouse-server.log or logical_errors.txt)",
+                name="Logical error thrown (in clickhouse-server.log or clickhouse-server.err.log)",
                 command=f"cd {self.log_dir} && ! grep -a -A10 'Code: 49. DB::Exception: ' clickhouse-server*.log | head -n100 | tee /dev/stderr | grep -q .",
             )
         )
         results.append(
             Result.from_commands_run(
-                name="No lost s3 keys",
+                name="Lost s3 keys",
                 command=f"cd {self.log_dir} && ! grep -a 'Code: 499.*The specified key does not exist' clickhouse-server*.log | grep -v -e 'a.myext' -e 'DistributedCacheTCPHandler' -e 'ReadBufferFromDistributedCache' -e 'ReadBufferFromS3' -e 'ReadBufferFromAzureBlobStorage' -e 'AsynchronousBoundedReadBuffer' -e 'caller id: None:DistribCache' | head -n100 | tee /dev/stderr | grep -q .",
             )
         )
@@ -736,8 +849,8 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         )
         results.append(
             Result.from_commands_run(
-                name="S3_ERROR No such key thrown (see clickhouse-server.log or no_such_key_errors.txt)",
-                command=f"cd {self.log_dir} && ! grep -a 'Code: 499.*The specified key does not exist' clickhouse-server*.log | grep -v -e 'a.myext' -e 'DistributedCacheTCPHandler' -e 'ReadBufferFromDistributedCache' -e 'ReadBufferFromS3' -e 'ReadBufferFromAzureBlobStorage' -e 'AsynchronousBoundedReadBuffer' -e 'caller id: None:DistribCache' | head -n100 | tee /dev/stderr | grep -q .",
+                name="S3_ERROR No such key thrown (in clickhouse-server.log or clickhouse-server.err.log)",
+                command=f"cd {self.log_dir} && ! grep -a 'Code: 499.*The specified key does not exist' clickhouse-server*.log | grep -v -e 'a.myext' -e 'ReadBuffer is canceled by the exception'  -e 'DistributedCacheTCPHandler' -e 'ReadBufferFromDistributedCache' -e 'ReadBufferFromS3' -e 'ReadBufferFromAzureBlobStorage' -e 'AsynchronousBoundedReadBuffer' -e 'caller id: None:DistribCache' | head -n100 | tee /dev/stderr | grep -q .",
             )
         )
         if Shell.check(f"dmesg > {self.DMESG_LOG}"):
@@ -864,10 +977,10 @@ quit
             "error_log",
             "query_metric_log",
             "part_log",
-            "latency_log",
             "minio_audit_logs",
             "minio_server_logs",
         ]
+
         command_args = self.LOGS_SAVER_CLIENT_OPTIONS
         # command_args += f" --config-file={self.ch_config_dir}/config.xml"
         command_args += " --only-system-tables --stacktrace"
@@ -895,6 +1008,8 @@ quit
             f"rm -rf {temp_dir}/system_tables && mkdir -p {temp_dir}/system_tables"
         )
         res = True
+
+        self.restore_system_metadata_files_from_remote_database_disk()
 
         for table in TABLES:
             path_arg = f" --path {self.run_path0}"
@@ -936,6 +1051,62 @@ quit
                     )
                     res = False
         return [f for f in glob.glob(f"{temp_dir}/system_tables/*.tsv")]
+
+    def save_system_metadata_files_from_remote_database_disk(self):
+        if not os.path.exists(
+            "/etc/clickhouse-server/config.d/remote_database_disk.xml"
+        ):
+            return
+
+        # Store system database and table metadata files
+        self.system_db_uuid = Shell.get_output(
+            "clickhouse disks -C /etc/clickhouse-server/config.xml --disk disk_db_remote -q 'read metadata/system.sql' | grep -F UUID | awk -F\"'\" '{print $2}'",
+            verbose=True,
+        )
+        self.system_db_sql = Shell.get_output(
+            "clickhouse disks -C /etc/clickhouse-server/config.xml --disk disk_db_remote -q 'read metadata/system.sql'",
+            verbose=True,
+        )
+        print(f"system_db_uuid = {self.system_db_uuid}")
+        print(f"system_db_sql = {self.system_db_sql}")
+
+        system_table_sql_files = (
+            Shell.get_output(
+                f"clickhouse disks -C /etc/clickhouse-server/config.xml --disk disk_db_remote -q 'ls store/{self.system_db_uuid[:3]}/{self.system_db_uuid}/'",
+                verbose=True,
+            )
+            .strip()
+            .split("\n")
+        )
+        self.system_table_sql_map = {}
+        for system_table_sql_file in system_table_sql_files:
+            sql_content = Shell.get_output(
+                f"clickhouse disks -C /etc/clickhouse-server/config.xml --disk disk_db_remote -q 'read store/{self.system_db_uuid[:3]}/{self.system_db_uuid}/{system_table_sql_file}'",
+                verbose=True,
+            )
+            self.system_table_sql_map[system_table_sql_file] = sql_content
+
+    def restore_system_metadata_files_from_remote_database_disk(self):
+        if self.system_db_uuid is None:
+            return
+
+        # Ensure no remote database disk config
+        if os.path.exists("/etc/clickhouse-server/config.d/remote_database_disk.xml"):
+            os.remove("/etc/clickhouse-server/config.d/remote_database_disk.xml")
+
+        # Restore system database and table metadata files for `clickhouse local`
+        with open(f"{self.run_path0}/metadata/system.sql", "w") as file:
+            file.write(self.system_db_sql)
+        res = Shell.check(
+            f"mkdir -p {self.run_path0}/store/{self.system_db_uuid[:3]}/{self.system_db_uuid}",
+            verbose=True,
+        )
+        for system_table_sql_file, content in self.system_table_sql_map.items():
+            with open(
+                f"{self.run_path0}/store/{self.system_db_uuid[:3]}/{self.system_db_uuid}/{system_table_sql_file}",
+                "w",
+            ) as file:
+                file.write(content)
 
     @staticmethod
     def set_random_timezone():

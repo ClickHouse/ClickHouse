@@ -28,8 +28,8 @@ public:
         ObjectStoragePtr object_storage_,
         const std::string & metadata_key_prefix_);
 
-    void execute(std::unique_lock<SharedMutex> & metadata_lock) override;
-    void undo(std::unique_lock<SharedMutex> & metadata_lock) override;
+    void execute() override;
+    void undo() override;
 };
 
 
@@ -56,9 +56,8 @@ public:
         ObjectStoragePtr object_storage_,
         const std::string & metadata_key_prefix_);
 
-    void execute(std::unique_lock<SharedMutex> & metadata_lock) override;
-
-    void undo(std::unique_lock<SharedMutex> & metadata_lock) override;
+    void execute() override;
+    void undo() override;
 };
 
 
@@ -82,8 +81,8 @@ public:
         ObjectStoragePtr object_storage_,
         const std::string & metadata_key_prefix_);
 
-    void execute(std::unique_lock<SharedMutex> & metadata_lock) override;
-    void undo(std::unique_lock<SharedMutex> & metadata_lock) override;
+    void execute() override;
+    void undo() override;
 };
 
 
@@ -100,8 +99,8 @@ public:
     MetadataStorageFromPlainObjectStorageWriteFileOperation(
         const std::string & path, InMemoryDirectoryPathMap & path_map_, ObjectStoragePtr object_storage_);
 
-    void execute(std::unique_lock<SharedMutex> & metadata_lock) override;
-    void undo(std::unique_lock<SharedMutex> & metadata_lock) override;
+    void execute() override;
+    void undo() override;
 };
 
 
@@ -119,8 +118,8 @@ public:
     MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation(
         std::filesystem::path && path_, InMemoryDirectoryPathMap & path_map_, ObjectStoragePtr object_storage_);
 
-    void execute(std::unique_lock<SharedMutex> & metadata_lock) override;
-    void undo(std::unique_lock<SharedMutex> & metadata_lock) override;
+    void execute() override;
+    void undo() override;
 };
 
 /// Throws an exception if path_to_ already exists.
@@ -143,8 +142,8 @@ public:
         InMemoryDirectoryPathMap & path_map_,
         ObjectStoragePtr object_storage_);
 
-    void execute(std::unique_lock<SharedMutex> & metadata_lock) override;
-    void undo(std::unique_lock<SharedMutex> & metadata_lock) override;
+    void execute() override;
+    void undo() override;
 };
 
 /**
@@ -184,18 +183,16 @@ public:
      *  3. Copy remote_path_from to remote_path_to.
      *  4. Remove remote_path_to.
      *  5. Update path_map
-     * @param metadata_lock the lock of metadata.
      */
-    void execute(std::unique_lock<SharedMutex> & metadata_lock) override;
+    void execute() override;
     /**
      * @brief Undo the `execute` logic:
      *  1. If remote_path_from is copied to remote_path_to, remove remote_path_to
      *  2. Restore remote_path_from from tmp_remote_path_from if it is copied.
      *  3. Restore remote_path_to from tmp_remote_path_to if it is copied.
      *  5. Update path_map
-     * @param metadata_lock the lock of metadata.
      */
-    void undo(std::unique_lock<SharedMutex> & metadata_lock) override;
+    void undo() override;
     /**
      * @brief Finalize `execute` logic
      *  1. Remove tmp_remote_path_from if exists

@@ -185,3 +185,43 @@ def test_distributed_insert_select_to_rmt_limit(started_cluster):
     node1.query(
         f"""DROP TABLE IF EXISTS {table} ON CLUSTER '{cluster_name}' SYNC;"""
     )
+
+
+def test_distributed_insert_select_to_rmt_cte_const(started_cluster):
+    table = "t_rmt_target"
+    cluster_name = "cluster_1_shard_3_replicas"
+
+    node1.query(
+        f"""DROP TABLE IF EXISTS {table} ON CLUSTER '{cluster_name}' SYNC;"""
+    )
+
+    node1.query(
+        f"""
+    CREATE TABLE {table} ON CLUSTER {cluster_name} (a String, b UInt64)
+    ENGINE=ReplicatedMergeTree('/clickhouse/tables/178ed413-b055-46eb-9657-442811aef552/{table}', '{{replica}}')
+    ORDER BY (a, b);
+        """
+    )
+
+    node1.query(
+        f"""
+    INSERT INTO {table} WITH 1 + 1 as two SELECT a, b + (select sum(number) from numbers(10) where number < 2) FROM s3Cluster(
+        '{cluster_name}',
+        'http://minio1:9001/root/data/generated/*.csv', 'minio', '{minio_secret_key}', 'CSV','a String, b UInt64'
+    ) SETTINGS parallel_distributed_insert_select=2;
+        """
+    )
+
+    node1.query(f"SYSTEM SYNC REPLICA ON CLUSTER {cluster_name} {table}")
+
+    assert (
+        int(
+            node1.query(
+                f"SELECT count(*) FROM {table};"
+            ).strip()
+        ) == generated_rows
+    )
+
+    node1.query(
+        f"""DROP TABLE IF EXISTS {table} ON CLUSTER '{cluster_name}' SYNC;"""
+    )
