@@ -1,13 +1,9 @@
-#if 0
-#include <Functions/FunctionFactory.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ContextTimeSeriesTagsCollector.h>
 
@@ -23,20 +19,21 @@ namespace ErrorCodes
 }
 
 /// Function FunctionTimeSeriesRemoveTagsFromGroup(<group>, ['<tag_name1>', '<tag_name2>', ...]) removes specified tags from a tags group,
-/// and returns a new tags group. The names of the tags to remove are const.
+/// and returns the new tags group.
 class FunctionTimeSeriesRemoveTagsFromGroup : public IFunction, private WithContext
 {
 public:
     static constexpr auto name = "timeSeriesRemoveTagsFromGroup";
 
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionTimeSeriesRemoveTagsFromTagsGroupToTags>(context_); }
-    explicit FunctionTimeSeriesRemoveTagsFromTagsGroupToTags(ContextPtr context_) : WithContext(context_) {}
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionTimeSeriesRemoveTagsFromGroup>(context_); }
+    explicit FunctionTimeSeriesRemoveTagsFromGroup(ContextPtr context_) : WithContext(context_) {}
 
     String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 1; }
+    size_t getNumberOfArguments() const override { return 2; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    /// Function timeSeriesTagsGroupToTags(<group>) returns the information stored in the query context by function timeSeriesStoreTags(),
+    /// Function timeSeriesRemoveTagsFromGroup() uses the information stored in the query context by function timeSeriesStoreTags(),
     /// so it's deterministic in the scope of the current query.
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return true; }
@@ -45,81 +42,66 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.size() != 1)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} must be called with one argument", name);
-
-        checkDataTypeOfGroup(arguments[0].type, 0);
-        
+        checkDataTypes(arguments);
         return std::make_shared<DataTypeUInt64>();
     }
 
-    static void checkDataTypeOfGroup(const DataTypePtr & data_type, size_t argument_index)
+    static void checkDataTypes(const ColumnsWithTypeAndName & arguments)
     {
-        if (isUInt64(data_type))
-            return;
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument #{} of function {} has wrong type {}, it must be {}",
-                        argument_index + 1, name, data_type, "UInt64");
+        if (arguments.size() != 2)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} must be called with two arguments", name);
+
+        if (!isUInt64(arguments[0].type))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument #{} of function {} has wrong type {}, it must be {}",
+                            1, name, arguments[1].type, "UInt64");
+
+        if (!isArray(arguments[1].type) || !isString(typeid_cast<const DataTypeArray &>(*arguments[1].type).getNestedType()))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument #{} of function {} has wrong type {}, it must be {}",
+                            2, name, arguments[0].type, "Array(String)");
     }
 
     using TagNamesAndValuesPtr = ContextTimeSeriesTagsCollector::TagNamesAndValuesPtr;
+    using Group = ContextTimeSeriesTagsCollector::Group;
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {
-        chassert(arguments.size() == 1);
-        const auto & column_groups = arguments[0].column;
+        chassert(arguments.size() == 2);
+        auto old_groups = extractGroups(*arguments[0].column, 0);
+        Strings tags_to_remove = extractTagNames(*arguments[1].column, 1);
 
-        auto tags_vector = getTags(*column_groups, 0);
-        chassert(tags_vector.size() == input_rows_count);
+        auto & tags_collector = getContext()->getQueryContext()->getTimeSeriesTagsCollector();
+        std::vector<Group> new_groups;
+    
+        if (old_groups.size() == 1)
+            new_groups.push_back(tags_collector.removeTagsFromGroup(old_groups[0], tags_to_remove));
+        else
+            new_groups = tags_collector.removeTagsFromGroup(old_groups, tags_to_remove);
 
-        return makeResultColumn(tags_vector);
+        return makeResultColumn(new_groups, input_rows_count);
     }
 
-    /// Converts a vector of tags to a result column.
-    static ColumnPtr makeResultColumn(const std::vector<Group> & groups)
-    {
-        size_t total_tags = 0;
-        for (const auto & tags : tags_vector)
-            total_tags += tags->size();
-
-        auto tag_names = ColumnString::create();
-        auto tag_values = ColumnString::create();
-        auto offsets = ColumnArray::ColumnOffsets::create();
-
-        tag_names->reserve(total_tags);
-        tag_values->reserve(total_tags);
-        offsets->reserve(tags_vector.size());
-
-        for (const auto & tags : tags_vector)
-        {
-            for (const auto & [tag_name, tag_value] : *tags)
-            {
-                tag_names->insertData(tag_name.data(), tag_name.length());
-                tag_values->insertData(tag_value.data(), tag_value.length());
-            }
-            offsets->insertValue(tag_names->size());
-        }
-
-        MutableColumns tuple_columns;
-        tuple_columns.reserve(2);
-        tuple_columns.push_back(std::move(tag_names));
-        tuple_columns.push_back(std::move(tag_values));
-        return ColumnArray::create(ColumnTuple::create(std::move(tuple_columns)), std::move(offsets));
-    }
-
-    /// Gets the names and values of the tags associated with specified identifiers.
-    std::vector<TagNamesAndValuesPtr> getTags(const IColumn & column_groups, size_t argument_index) const
+    /// Extracts groups from the column.
+    static std::vector<Group> extractGroups(const IColumn & column_groups, size_t argument_index)
     {
         /// Group must be UInt64.
         if (checkColumn<ColumnUInt64>(&column_groups))
         {
-            auto groups = extractGroups(column_groups);
-            return getContext()->getQueryContext()->getTimeSeriesTagsCollector().getTagsByGroup(groups);
+            std::string_view data = column_groups.getRawData();
+            chassert(data.size() == column_groups.size() * sizeof(UInt64));
+            const UInt64 * begin = reinterpret_cast<const UInt64 *>(data.data());
+            return std::vector<Group>(begin, begin + column_groups.size());
         }
 
-        /// The argument can be wrapped in ColumnConst or ColumnLowCardinality.
+        /// The argument can be wrapped in ColumnConst.
+        if (const auto * const_column = checkAndGetColumnConstData<ColumnUInt64>(&column_groups))
+        {
+            return extractGroups(*const_column, argument_index);
+        }
+
+        /// The argument can be wrapped in ColumnLowCardinality.
         if (auto full_column = column_groups.convertToFullIfNeeded(); full_column.get() != &column_groups)
         {
-            return getTags(*full_column, argument_index);
+            return extractGroups(*full_column, argument_index);
         }
 
         throw Exception(
@@ -128,30 +110,54 @@ public:
             column_groups.getName(), argument_index + 1, name, "UInt64");
     }
 
-    /// Extracts groups from the column.
-    static std::vector<size_t> extractGroups(const IColumn & column_groups)
+    static Strings extractTagNames(const IColumn & column_tag_names, size_t argument_index)
     {
-        std::string_view data = column_groups.getRawData();
-        chassert(data.size() == column_groups.size() * sizeof(UInt64));
-        const UInt64 * begin = reinterpret_cast<const UInt64 *>(data.data());
-        return std::vector<size_t>(begin, begin + column_groups.size());
+        const auto * array_column = checkAndGetColumnConstData<ColumnArray>(&column_tag_names);
+        if (!array_column)
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Argument #{} of function {} must be a constant Array(String)", argument_index + 1, name);
+
+        size_t count = array_column->getOffsets()[0];
+        const auto * string_column = checkAndGetColumn<ColumnString>(&array_column->getData());
+        if (!string_column)
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Argument #{} of function {} must be a constant Array(String)", argument_index + 1, name);
+
+        Strings tag_names;
+        tag_names.reserve(count);
+        for (size_t i = 0; i != count; ++i)
+            tag_names.emplace_back(String{string_column->getDataAt(i)});
+
+        return tag_names;
+    }
+
+    /// Converts a vector of tags to a result column.
+    static ColumnPtr makeResultColumn(const std::vector<Group> & groups, size_t output_rows_count)
+    {
+        auto res = ColumnUInt64::create();
+        res->reserve(groups.size());
+        for (auto group : groups)
+            res->insertValue(group);
+
+        if (output_rows_count != groups.size())
+            return ColumnConst::create(std::move(res), output_rows_count);
+        else
+            return res;
     }
 };
 
 
-REGISTER_FUNCTION(TimeSeriesTagsGroupToTags)
+REGISTER_FUNCTION(TimeSeriesRemoveTagsFromGroup)
 {
-    FunctionDocumentation::Description description = R"(Finds tags associated with a group index. Group indices are numbers 0, 1, 2, 3 associated with each unique set of tags in the context of the currently executed query.)";
-    FunctionDocumentation::Syntax syntax = "timeSeriesRemoveTagsFromGroup(group, ['tag_name1', 'tag_name2', ...])";
-    FunctionDocumentation::Arguments arguments = {{"group", "Group index associated with a time series.", {"UInt64"}}};
-    FunctionDocumentation::ReturnedValue returned_value = {"Array of pairs (tag_name, tag_value).", {"Array(Tuple(String, String))"}};
-    FunctionDocumentation::Examples examples = {{"Example", "SELECT timeSeriesStoreTags(8374283493092, [('region', 'eu'), ('env', 'dev')], '__name__', 'http_requests_count') AS id, timeSeriesIdToTagsGroup(id) AS group, timeSeriesTagsGroupToTags(group)", "8374283493092    0    [('__name__', ''http_requests_count''), ('env', 'dev'), ('region', 'eu')]"}};
+    FunctionDocumentation::Description description = R"(Removes specified tags from a tags group. If there are no such tag in the group then the group is returned unchanged.)";
+    FunctionDocumentation::Syntax syntax = "timeSeriesRemoveTagsFromGroup(group, tags_to_remove)";
+    FunctionDocumentation::Arguments arguments = {{"group", "A group associated with a set of tags.", {"UInt64"}},
+                                                  {"tags_to_remove", "The names of tags to remove from the group.", {"Array(String)"}}};
+    FunctionDocumentation::ReturnedValue returned_value = {"A tags group without the specified tags.", {"UInt64"}};
+    FunctionDocumentation::Examples examples = {{"Example", "SELECT timeSeriesStoreTags(8374283493092, [('region', 'eu'), ('env', 'dev')], '__name__', 'http_requests_count') AS id, timeSeriesIdToTagsGroup(id) AS group, timeSeriesRemoveTagsFromGroup(group, ['env', 'region']) AS group1, timeSeriesTagsGroupToTags(group1)", "8374283493092    0    1    [('__name__','http_requests_count')]"}};
     FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::TimeSeries;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionTimeSeriesTagsGroupToTags>(documentation);
+    factory.registerFunction<FunctionTimeSeriesRemoveTagsFromGroup>(documentation);
 }
 
 }
-#endif

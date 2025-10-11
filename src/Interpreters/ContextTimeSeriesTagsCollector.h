@@ -17,13 +17,15 @@ namespace DB
 /// Each unique set of tags is assigned an index named "group". Groups are integers 0, 1, 2, 3, ...
 /// If the same set of tags is added multiple times to the mapping only one group will be added.
 /// It's so even in the case when the same set of tags is added with different identifiers.
+/// Group 0 is always reserved for an empty set of tags.
 ///
 /// Example of the mapping stored in this class:
-/// id: 8df7aad3-37c4-49a8-94c4-63fb2e09535c  -->  group: 0  -->  {'__name__': 'http_requests', 'env': 'dev'}
-/// id: 060d6345-5438-4fa8-8cae-de9d0099cd2f  -->  group: 1  -->  {'__name__': 'http_requests', 'env': 'prod'}
-/// id: 8f1f8376-a0b3-4894-bc5b-3ca49451e275  -->  group: 2  -->  {'__name__': 'http_failures', 'code': '404', 'job': 'prometheus'}
-/// id: 82c596fd-78ba-4213-9fa8-91aaaa0d0174  -->  group: 2  -->  {'__name__': 'http_failures', 'code': '404', 'job': 'prometheus'}
-/// id: 0ac8129e-3248-4f81-b636-5779eb6e7782  -->  group: 3  -->  {'__name__': 'http_response_bytes', 'env': 'prod'}
+///                                           -->  group: 0  -->  {}
+/// id: 8df7aad3-37c4-49a8-94c4-63fb2e09535c  -->  group: 1  -->  {'__name__': 'http_requests', 'env': 'dev'}
+/// id: 060d6345-5438-4fa8-8cae-de9d0099cd2f  -->  group: 2  -->  {'__name__': 'http_requests', 'env': 'prod'}
+/// id: 8f1f8376-a0b3-4894-bc5b-3ca49451e275  -->  group: 3  -->  {'__name__': 'http_failures', 'code': '404', 'job': 'prometheus'}
+/// id: 82c596fd-78ba-4213-9fa8-91aaaa0d0174  -->  group: 3  -->  {'__name__': 'http_failures', 'code': '404', 'job': 'prometheus'}
+/// id: 0ac8129e-3248-4f81-b636-5779eb6e7782  -->  group: 4  -->  {'__name__': 'http_response_bytes', 'env': 'prod'}
 /// ...
 ///
 class ContextTimeSeriesTagsCollector
@@ -54,9 +56,8 @@ public:
     Group getGroupForTags(const TagNamesAndValuesPtr & tags);
     std::vector<Group> getGroupForTags(const std::vector<TagNamesAndValuesPtr> & tags_vector);
 
-    /// Returns the group assigned to an empty set of tags.
-    /// If that set of tags hasn't been added to the collector yet then this functions adds it.
-    Group getGroupForNoTags();
+    /// Group #0 is always reserved for an empty set of tags.
+    static Group getGroupForNoTags() { return 0; }
 
     /// Returns the set of tags which is assigned a specified group.
     TagNamesAndValuesPtr getTagsByGroup(Group group) const;
@@ -153,7 +154,6 @@ private:
     };
 
     std::unordered_map<TagNamesAndValuesPtr, Group, Hash, Equal> groups_for_tags;
-    std::optional<Group> group_for_no_tags;
 
     template <typename IDType>
     struct IDMap

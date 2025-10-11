@@ -584,7 +584,15 @@ size_t ContextTimeSeriesTagsCollector::Hash::operator ()(const TagNamesAndValues
 }
 
 
-ContextTimeSeriesTagsCollector::ContextTimeSeriesTagsCollector() = default;
+ContextTimeSeriesTagsCollector::ContextTimeSeriesTagsCollector()
+{
+    /// Group #0 is reserved for an empty set of tags.
+    auto no_tags = std::make_shared<TagNamesAndValues>();
+    groups.push_back(no_tags);
+    groups_for_tags.try_emplace(no_tags, 0);
+}
+
+
 ContextTimeSeriesTagsCollector::~ContextTimeSeriesTagsCollector() = default;
 
 
@@ -645,29 +653,6 @@ std::vector<Group> ContextTimeSeriesTagsCollector::getGroupForTags(const std::ve
     }
 
     return res;
-}
-
-
-Group ContextTimeSeriesTagsCollector::getGroupForNoTags()
-{
-    {
-        SharedLockGuard lock{mutex};
-        if (group_for_no_tags)
-            return *group_for_no_tags;
-    }
-
-    {
-        std::lock_guard lock{mutex};
-        if (group_for_no_tags)
-            return *group_for_no_tags;
-        auto no_tags = std::make_shared<TagNamesAndValues>();
-        auto [it, inserted] = groups_for_tags.try_emplace(no_tags, groups.size());
-        if (inserted)
-            groups.push_back(no_tags);
-        group_for_no_tags = it->second;
-        return *group_for_no_tags;
-    }
-
 }
 
 
