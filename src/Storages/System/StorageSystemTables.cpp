@@ -89,21 +89,32 @@ ColumnPtr getFilteredTables(
 {
     Block sample{
         ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeString>(), "name"),
+        ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeString>(), "uuid"),
         ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeString>(), "engine")};
 
-    MutableColumnPtr database_column = ColumnString::create();
+    MutableColumnPtr table_column = ColumnString::create();
+    MutableColumnPtr uuid_column;
     MutableColumnPtr engine_column;
 
     auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &sample);
     if (dag)
     {
         bool filter_by_engine = false;
+        bool filter_by_uuid = false;
         for (const auto * input : dag->getInputs())
+        {
             if (input->result_name == "engine")
                 filter_by_engine = true;
 
+            if (input->result_name == "uuid")
+                filter_by_uuid = true;
+        }
+
         if (filter_by_engine)
             engine_column = ColumnString::create();
+
+        if (filter_by_uuid)
+            uuid_column = ColumnUUID::create();
     }
 
     for (size_t database_idx = 0; database_idx < filtered_databases_column->size(); ++database_idx)
@@ -118,7 +129,7 @@ ColumnPtr getFilteredTables(
             auto table_it = database->getDetachedTablesIterator(context, {}, false);
             for (; table_it->isValid(); table_it->next())
             {
-                database_column->insert(table_it->table());
+                table_column->insert(table_it->table());
             }
         }
         else
@@ -129,16 +140,20 @@ ColumnPtr getFilteredTables(
                                                                    !context->getSettingsRef()[DB::Setting::show_data_lake_catalogs_in_system_tables]);
             for (; table_it->isValid(); table_it->next())
             {
-                database_column->insert(table_it->name());
+                table_column->insert(table_it->name());
                 if (engine_column)
                     engine_column->insert(table_it->table()->getName());
+                if (uuid_column)
+                    uuid_column->insert(table_it->table()->getStorageID().uuid);
             }
         }
     }
 
-    Block block{ColumnWithTypeAndName(std::move(database_column), std::make_shared<DataTypeString>(), "name")};
+    Block block{ColumnWithTypeAndName(std::move(table_column), std::make_shared<DataTypeString>(), "name")};
     if (engine_column)
         block.insert(ColumnWithTypeAndName(std::move(engine_column), std::make_shared<DataTypeString>(), "engine"));
+    if (uuid_column)
+        block.insert(ColumnWithTypeAndName(std::move(uuid_column), std::make_shared<DataTypeUUID>(), "uuid"));
 
     if (dag)
         VirtualColumnUtils::filterBlockWithExpression(VirtualColumnUtils::buildFilterExpression(std::move(*dag), context), block);
