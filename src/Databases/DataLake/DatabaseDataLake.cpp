@@ -492,7 +492,6 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIterator(
                     }
                     catch (...)
                     {
-                        tryLogCurrentException(log, fmt::format("Ignoring table {}", table_name));
                         promise->set_exception(std::current_exception());
                     }
                 });
@@ -579,7 +578,7 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getLightweightTablesIterator(
                     }
                     catch (...)
                     {
-                        tryLogCurrentException(log, fmt::format("ignoring table {}", table_name));
+                        tryLogCurrentException(log, fmt::format("Ignoring table {}", table_name));
                     }
                     promise->set_value(storage);
                 });
