@@ -10,6 +10,7 @@
 #include <Common/SensitiveDataMasker.h>
 #include <Common/FailPoint.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/RewriteRules/RewriteRules.h>
 
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/Cache/QueryResultCache.h>
@@ -69,6 +70,7 @@
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/RewriteRulesASTTraversal.h>
 #include <Common/ProfileEvents.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Core/ServerSettings.h>
@@ -1157,6 +1159,8 @@ static BlockIO executeQueryImpl(
             }
 #endif
         }
+
+        astTraversal(out_ast, context);
 
         const char * query_end = end;
         bool is_create_parameterized_view = false;

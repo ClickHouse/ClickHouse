@@ -38,6 +38,10 @@
 #include <Parsers/ASTTransactionControl.h>
 #include <Parsers/ASTUpdateQuery.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
+#include <Parsers/ASTCreateRewriteRuleQuery.h>
+#include <Parsers/ASTAlterRewriteRuleQuery.h>
+#include <Parsers/ASTDropRewriteRuleQuery.h>
+
 
 #include <Parsers/Access/ASTCreateQuotaQuery.h>
 #include <Parsers/Access/ASTCreateRoleQuery.h>
@@ -382,6 +386,18 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     else if (query->as<ASTParallelWithQuery>())
     {
         interpreter_name = "InterpreterParallelWithQuery";
+    }
+    else if (query->as<ASTCreateRewriteRuleQuery>())
+    {
+        interpreter_name = "InterpreterCreateRewriteRuleQuery";
+    }
+    else if (query->as<ASTAlterRewriteRuleQuery>())
+    {
+        interpreter_name = "InterpreterAlterRewriteRuleQuery";
+    }
+    else if (query->as<ASTDropRewriteRuleQuery>())
+    {
+        interpreter_name = "InterpreterDropRewriteRuleQuery";
     }
 
     if (!interpreters.contains(interpreter_name))

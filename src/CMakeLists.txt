@@ -134,6 +134,7 @@ add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes)
 add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes/Iceberg)
 add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes/DeltaLake)
 add_headers_and_sources(dbms Common/NamedCollections)
+add_headers_and_sources(dbms Common/RewriteRules)
 add_headers_and_sources(dbms Common/Scheduler/Workload)
 
 
