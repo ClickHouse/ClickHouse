@@ -275,7 +275,7 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
 
     auto work = [&function_addresses, &binary_path, &work_done](Job & job)
     {
-        LOG_DEBUG(logger, "Start work job with ranges {} to {}", job.range.first, job.range.second);
+        LOG_TRACE(logger, "Start work job with range [{}, {})", job.range.first, job.range.second);
 
         /// Initialize the LLVM symbolizer to resolve function names
         LLVMSymbolizer symbolizer;
@@ -312,17 +312,23 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
             }
         }
 
-        LOG_DEBUG(logger, "Finish work job with ranges {} to {}", job.range.first, job.range.second);
+        LOG_TRACE(logger, "Finish work job with range [{}, {})", job.range.first, job.range.second);
         work_done.count_down();
     };
 
     std::vector<Job> jobs(num_jobs);
     auto chunk_size = function_addresses.size() / num_jobs;
+    auto remainder = function_addresses.size() % num_jobs;
+
+    LOG_DEBUG(logger, "Dividing the work to parse {} symbols into {} parallel jobs. Chunk size: {}, remainder for last job: {}", function_addresses.size(), num_jobs, chunk_size, remainder);
     for (size_t i = 0; i < jobs.size(); ++i)
     {
         auto & job = jobs[i];
         job.range.first = i * chunk_size;
-        job.range.second = job.range.first + ((i < jobs.size() - 1 || jobs.size() == 1) ? chunk_size : function_addresses.size() % num_jobs);
+        job.range.second = job.range.first + chunk_size;
+        if (i == (jobs.size() - 1))
+            job.range.second += remainder;
+
         job.task = context->getSchedulePool().createTask(fmt::format("{}_{}", "ParserXRayFunctions", i), [work, &job]() { work(job); });
         job.task->schedule();
     }
