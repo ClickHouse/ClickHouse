@@ -28,22 +28,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-/// This function compares the authorization methods used to access AzureBlobStorage
-/// It takes 2 variables of variant type as input and checks if they are the same type and value
-static bool compareAuthMethod (AzureBlobStorage::AuthMethod auth_method_a, AzureBlobStorage::AuthMethod auth_method_b)
-{
-    try
-    {
-        return compareAzureAuthMethod(auth_method_a, auth_method_b);
-    }
-    catch (const Azure::Core::Credentials::AuthenticationException & e)
-    {
-        /// This is added to catch exception from GetToken. We want to log & fail silently i.e return false so that we can fallback to read & copy (i.e not native copy)
-        LOG_DEBUG(getLogger("compareAuthMethod"), "Exception caught while comparing credentials, error = {}", e.what());
-        return false;
-    }
-}
-
 BackupReaderAzureBlobStorage::BackupReaderAzureBlobStorage(
     const AzureBlobStorage::ConnectionParams & connection_params_,
     const String & blob_path_,

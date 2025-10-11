@@ -1,6 +1,5 @@
 #include <Common/ProfileEvents.h>
 #include <Disks/IDisk.h>
-#include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
 #include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
 #include <Disks/ObjectStorages/S3/diskSettings.h>
@@ -276,7 +275,6 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                 auto settings = azure_storage->getSettings();
                 auto read_settings = getReadSettings();
                 const auto read_settings_to_use = azure_storage->patchSettings(read_settings);
-                bool same_credentials = compareAzureAuthMethod(azure_storage->getAzureBlobStorageAuthMethod(), connection_params.auth_method);
                 auto scheduler = threadPoolCallbackRunnerUnsafe<void>(
                     IObjectStorage::getThreadPoolWriter(),
                     "ObjStorQueue_move_azure");
@@ -294,7 +292,6 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                     settings,
                     read_settings,
                     std::optional<ObjectAttributes>(),
-                    same_credentials,
                     scheduler
                 );
                 LOG_INFO(log, "removing object {}", object_from.remote_path);
