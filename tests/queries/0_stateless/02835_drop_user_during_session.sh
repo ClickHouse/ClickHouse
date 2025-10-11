@@ -65,7 +65,7 @@ timeout 10s bash -c "http_with_session_id_session ${TEST_USER}" >/dev/null 2>&1 
 
 wait_for_queries_start $TEST_USER 3
 ${CLICKHOUSE_CLIENT} -q "DROP USER ${TEST_USER}"
-${CLICKHOUSE_CLIENT} -q "KILL QUERY WHERE user = '${TEST_USER}' SYNC" >/dev/null &
+${CLICKHOUSE_CLIENT} -q "KILL QUERY WHERE user = '${TEST_USER}' SYNC SETTINGS kill_throw_if_noop = false" >/dev/null &
 
 wait
 
@@ -82,7 +82,7 @@ wait_for_queries_start $TEST_USER 3
 ${CLICKHOUSE_CLIENT} -q "DROP ROLE ${TEST_ROLE}"
 ${CLICKHOUSE_CLIENT} -q "DROP USER ${TEST_USER}"
 
-${CLICKHOUSE_CLIENT} -q "KILL QUERY WHERE user = '${TEST_USER}' SYNC" >/dev/null &
+${CLICKHOUSE_CLIENT} -q "KILL QUERY WHERE user = '${TEST_USER}' SYNC SETTINGS kill_throw_if_noop = false" >/dev/null &
 
 wait
 
@@ -99,7 +99,7 @@ wait_for_queries_start $TEST_USER 3
 ${CLICKHOUSE_CLIENT} -q "DROP SETTINGS PROFILE '${TEST_PROFILE}'"
 ${CLICKHOUSE_CLIENT} -q "DROP USER ${TEST_USER}"
 
-${CLICKHOUSE_CLIENT} -q "KILL QUERY WHERE user = '${TEST_USER}' SYNC" >/dev/null &
+${CLICKHOUSE_CLIENT} -q "KILL QUERY WHERE user = '${TEST_USER}' SYNC SETTINGS kill_throw_if_noop = false" >/dev/null &
 
 wait
 
