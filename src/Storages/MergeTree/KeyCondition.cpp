@@ -53,6 +53,7 @@ namespace Setting
 {
     extern const SettingsBool analyze_index_with_space_filling_curves;
     extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
+    extern const SettingsTimezone session_timezone;
 }
 
 namespace ErrorCodes
@@ -1093,7 +1094,7 @@ bool applyFunctionChainToColumn(
     }
 
     // And cast it to the argument type of the first function in the chain
-    auto in_argument_type = getArgumentTypeOfMonotonicFunction(*functions[0]);
+    auto in_argument_type = removeLowCardinality(getArgumentTypeOfMonotonicFunction(*functions[0]));
     if (canBeSafelyCast(result_type, in_argument_type))
     {
         result_column = castColumnAccurate({result_column, result_type, ""}, in_argument_type);
@@ -1122,13 +1123,13 @@ bool applyFunctionChainToColumn(
         if (func->getArgumentTypes().empty())
             return false;
 
-        auto argument_type = getArgumentTypeOfMonotonicFunction(*func);
+        auto argument_type = removeLowCardinality(getArgumentTypeOfMonotonicFunction(*func));
         if (!canBeSafelyCast(result_type, argument_type))
             return false;
 
         result_column = castColumnAccurate({result_column, result_type, ""}, argument_type);
-        result_column = func->execute({{result_column, argument_type, ""}}, func->getResultType(), result_column->size(), /* dry_run = */ false);
-        result_type = func->getResultType();
+        result_type = removeLowCardinality(func->getResultType());
+        result_column = func->execute({{result_column, argument_type, ""}}, result_type, result_column->size(), /* dry_run = */ false);
 
         // Transforming nullable columns to the nested ones, in case no nulls found
         if (result_column->isNullable())
@@ -1141,7 +1142,7 @@ bool applyFunctionChainToColumn(
                     return false;
             }
             result_column = result_column_nullable.getNestedColumnPtr();
-            result_type = removeNullable(func->getResultType());
+            result_type = removeNullable(result_type);
         }
     }
     out_column = result_column;
@@ -1903,48 +1904,57 @@ bool KeyCondition::extractMonotonicFunctionsChainFromKey(
                     auto func_name = func->function_base->getName();
                     auto func_base = func->function_base;
 
-                    ColumnsWithTypeAndName arguments;
                     ColumnWithTypeAndName const_arg;
                     FunctionWithOptionalConstArg::Kind kind = FunctionWithOptionalConstArg::Kind::NO_CONST;
 
                     if (date_time_parsing_functions.contains(func_name))
                     {
-                        const auto & arg_types = func_base->getArgumentTypes();
-                        if (!arg_types.empty() && isStringOrFixedString(arg_types[0]))
-                            func_name = func_name + "OrNull";
+                        const auto & func_arg_types = func_base->getArgumentTypes();
+
+                        const bool has_string_argument = !func_arg_types.empty() && isStringOrFixedString(func_arg_types[0]);
+                        const bool has_session_timezone = !context->getSettingsRef()[Setting::session_timezone].value.empty();
+
+                        // Skipping analysis in case when is requires parsing datetime from string
+                        // with `session_timezone` specified
+                        if (has_string_argument && has_session_timezone)
+                            return false;
+
+                        // Otherwise, in case when datetime parsing is required, rebuilding the function,
+                        // to get its "-OrNull" version required for safe parsing, and not failing on
+                        // values with incorrect format
+                        if (has_string_argument)
+                        {
+                            ColumnsWithTypeAndName new_args;
+                            for (const auto & type : func->function_base->getArgumentTypes())
+                                new_args.push_back({nullptr, type, ""});
+
+                            const auto func_builder = FunctionFactory::instance().tryGet(func_name + "OrNull", context);
+                            func_base = func_builder->build(new_args);
+                        }
                     }
 
-                    auto func_builder = FunctionFactory::instance().tryGet(func_name, context);
-
-                    if (func->children.size() == 1)
-                    {
-                        arguments.push_back({nullptr, removeLowCardinality(func->children[0]->result_type), ""});
-                    }
-                    else if (func->children.size() == 2)
+                    // For single argument functions, the input may be used as-is, for binary functions,
+                    // we'll produce a partially applied version of `func` with the reduced arity
+                    if (func->children.size() == 2)
                     {
                         const auto * left = func->children[0];
                         const auto * right = func->children[1];
                         if (left->column && isColumnConst(*left->column))
                         {
                             const_arg = {left->result_type->createColumnConst(0, (*left->column)[0]), left->result_type, ""};
-                            arguments.push_back(const_arg);
-                            arguments.push_back({nullptr, removeLowCardinality(right->result_type), ""});
                             kind = FunctionWithOptionalConstArg::Kind::LEFT_CONST;
                         }
                         else
                         {
                             const_arg = {right->result_type->createColumnConst(0, (*right->column)[0]), right->result_type, ""};
-                            arguments.push_back({nullptr, removeLowCardinality(left->result_type), ""});
-                            arguments.push_back(const_arg);
                             kind = FunctionWithOptionalConstArg::Kind::RIGHT_CONST;
                         }
                     }
 
-                    auto out_func = func_builder->build(arguments);
                     if (kind == FunctionWithOptionalConstArg::Kind::NO_CONST)
-                        out_functions_chain.push_back(out_func);
+                        out_functions_chain.push_back(func_base);
                     else
-                        out_functions_chain.push_back(std::make_shared<FunctionWithOptionalConstArg>(out_func, const_arg, kind));
+                        out_functions_chain.push_back(std::make_shared<FunctionWithOptionalConstArg>(func_base, const_arg, kind));
                 }
 
                 out_key_column_num = it->second;
