@@ -21,6 +21,7 @@ PartialShufflingTransform::PartialShufflingTransform(
 
 void PartialShufflingTransform::transform(Chunk & chunk)
 {
+
     if (chunk.getNumRows())
     {
         // The following code works with Blocks and will lose the number of
@@ -28,6 +29,9 @@ void PartialShufflingTransform::transform(Chunk & chunk)
         // we have to shuffle by at least one column.
         assert(chunk.getNumColumns());
     }
+
+    LOG_TRACE(getLogger("PartialShufflingTransform"), "transform, rows: {}", chunk.getNumRows());
+
 
     if (read_rows)
         read_rows->add(chunk.getNumRows());
@@ -70,7 +74,7 @@ void PartialShufflingTransform::shuffleBlock(Block & block)
     for (size_t i = 0; i < columns; ++i)
     {
         auto & column_to_shuffle = block.getByPosition(i).column;
-        column_to_shuffle = column_to_shuffle->permute(permutation, size);
+        column_to_shuffle = column_to_shuffle->permute(permutation, limit);
     }
 }
 }

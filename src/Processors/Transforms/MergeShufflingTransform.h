@@ -41,7 +41,7 @@ protected:
     Processors expandPipeline() override;
 
 private:
-    // size_t max_bytes_before_remerge;
+    size_t max_bytes_before_remerge;
     double remerge_lowered_memory_bytes_ratio;
     // size_t max_bytes_in_block_before_external_sort;
     // size_t max_bytes_in_query_before_external_sort;
