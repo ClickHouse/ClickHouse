@@ -2200,7 +2200,7 @@ Calculates the approximate distance between two points (the values of the vector
     FunctionDocumentation::Syntax syntax_l2_distance_transposed = "L2DistanceTransposed(vector1, vector2, p)";
     FunctionDocumentation::Arguments arguments_l2_distance_transposed
         = {{"vectors", "Vectors.", {"QBit(T, UInt64)"}}, {"reference", "Reference vector.", {"Array(T)"}}, {"p", "Number of bits from each vector element to use in the distance calculation (1 to element bit-width). The quantization level controls the precision-speed trade-off. Using fewer bits results in faster I/O and calculations with reduced accuracy, while using more bits increases accuracy at the cost of performance.", {"UInt"}}};
-    FunctionDocumentation::ReturnedValue returned_value_l2_distance_transposed = {"Returns the approximate 2-norm distance.", {"Float"}};
+    FunctionDocumentation::ReturnedValue returned_value_l2_distance_transposed = {"Returns the approximate 2-norm distance.", {"Float64"}};
     FunctionDocumentation::Examples examples_l2_distance_transposed
         = {{"Basic usage",
             R"(

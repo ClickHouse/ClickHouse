@@ -132,7 +132,7 @@ Tuple SerializationQBit::deserializeFloatsToQBitTuple(ReadBuffer & istr) const
     const size_t bytes_per_fixedstring = DataTypeQBit::bitsToBytes(dimension);
     const size_t padded_n = bytes_per_fixedstring * 8;
 
-    std::vector<FloatType> value_floats(element_size);
+    std::vector<FloatType> value_floats(padded_n);
     readVectorBinary(value_floats, istr);
 
     const char * value_bytes = reinterpret_cast<const char *>(value_floats.data());
@@ -180,7 +180,7 @@ void SerializationQBit::deserializeFloatsToQBit(IColumn & column, ReadFunc && re
     const size_t bytes_per_fixedstring = DataTypeQBit::bitsToBytes(dimension);
     const size_t padded_n = bytes_per_fixedstring * 8;
 
-    std::vector<FloatType> value_floats(element_size);
+    std::vector<FloatType> value_floats(padded_n);
     read_func(value_floats);
 
     const char * value_bytes = reinterpret_cast<const char *>(value_floats.data());
