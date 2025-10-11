@@ -1147,7 +1147,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
 
             auto arrow_indexes_column = std::make_shared<arrow::ChunkedArray>(indexes_array);
             auto indexes_column = readColumnWithIndexesData(arrow_indexes_column, dict_info.default_value_index, dict_info.dictionary_size, is_lc_nullable);
-            auto lc_column = ColumnLowCardinality::create(dict_info.values->column, indexes_column);
+            auto lc_column = ColumnLowCardinality::create(dict_info.values->column, indexes_column, /*is_shared=*/true);
             auto lc_type = std::make_shared<DataTypeLowCardinality>(is_lc_nullable ? makeNullable(dict_info.values->type) : dict_info.values->type);
             return {std::move(lc_column), std::move(lc_type), column_name};
         }

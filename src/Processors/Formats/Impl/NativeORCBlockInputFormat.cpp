@@ -1313,7 +1313,7 @@ static ColumnWithTypeAndName readColumnWithEncodedStringOrFixedStringData(
             }
         }
 
-        return ColumnLowCardinality::create(std::move(dictionary_column), std::move(new_index_column));
+        return ColumnLowCardinality::create(std::move(dictionary_column), std::move(new_index_column), /*is_shared=*/false);
     };
 
     MutableColumnPtr internal_column;
