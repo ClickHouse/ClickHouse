@@ -76,6 +76,7 @@ PartitionPruner::PartitionPruner(
         partition_key = DB::KeyDescription::getKeyFromAST(
             partition_key_ast,
             partition_columns_description,
+            DB::LoadingStrictnessLevel::CREATE,
             context);
 
         DB::ActionsDAGWithInversionPushDown inverted_dag(filter_dag.getOutputs().front(), context);
