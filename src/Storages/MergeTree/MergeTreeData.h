@@ -923,6 +923,7 @@ public:
         const ASTPtr & new_settings,
         AlterLockHolder & table_lock_holder);
 
+    static std::pair<String, bool> getNewImplicitStatisticsTypes(const StorageInMemoryMetadata & new_metadata, const MergeTreeSettings & old_settings);
     static void verifySortingKey(const KeyDescription & sorting_key);
 
     /// Should be called if part data is suspected to be corrupted.
