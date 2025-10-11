@@ -1882,17 +1882,18 @@ template <typename Method>
 void Aggregator::mergeSingleLevelDataImplFixedMap(
     ManyAggregatedDataVariants & non_empty_data,
     Arena * arena,
+    const std::vector<FixedHashMapRange>& ranges,
     const UInt32 worker_id,
     const UInt32 total_worker,
     std::atomic<bool> & is_cancelled) const
 {
     AggregatedDataVariantsPtr & res = non_empty_data[0];
-    ParallelMergeWorker parallel_param{worker_id, total_worker};
 
     /// We merge all aggregation results to the first.
     for (size_t result_num = 1, size = non_empty_data.size(); result_num < size; ++result_num)
     {
         AggregatedDataVariants & current = *non_empty_data[result_num];
+        ParallelMergeWorker parallel_param{worker_id, total_worker, ranges[result_num].min_index, ranges[result_num].max_index};
 
 #if USE_EMBEDDED_COMPILER
         if (compiled_aggregate_functions_holder)
@@ -2035,24 +2036,6 @@ void Aggregator::ensureLimitsFixedMapMerge(AggregatedDataVariantsPtr data) const
         throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "ensureLimitsFixedMapMerge only supports key8 and key16 variants.");
 }
 
-bool Aggregator::hasFunctionsBenefitFromParallelMerge() const
-{
-    for (const auto & aggregate_function : aggregate_functions)
-    {
-        const String & function_name = aggregate_function->getName();
-        if (function_name.starts_with("sum") ||
-            function_name.starts_with("count") ||
-            function_name.starts_with("any") ||
-            function_name.starts_with("avg") ||
-            function_name.starts_with("min") ||
-            function_name.starts_with("max"))
-        {
-            continue;
-        }
-        return true;
-    }
-    return false;
-}
 
 bool Aggregator::isTypeFixedSize(const ManyAggregatedDataVariants & data_variants) const
 {
@@ -2064,17 +2047,28 @@ bool Aggregator::isTypeFixedSize(const ManyAggregatedDataVariants & data_variant
            first->type == AggregatedDataVariants::Type::key16;
 }
 
-void Aggregator::disableMinMaxOptimizationForFixedHashMaps(ManyAggregatedDataVariants & data_variants) const
+
+std::vector<Aggregator::FixedHashMapRange> Aggregator::disableMinMaxOptimizationForFixedHashMaps(ManyAggregatedDataVariants & data_variants) const
 {
+    std::vector<Aggregator::FixedHashMapRange> ranges;
     for (auto & variant : data_variants)
     {
         if (variant->type == AggregatedDataVariants::Type::key8)
+        {
+            auto range = variant->key8->data.getMinMaxIndex();
+            ranges.push_back(Aggregator::FixedHashMapRange{range.first, range.second});
             variant->key8->data.disableMinMaxOptimization();
+        }
         else if (variant->type == AggregatedDataVariants::Type::key16)
+        {
+            auto range = variant->key16->data.getMinMaxIndex();
+            ranges.push_back(Aggregator::FixedHashMapRange{range.first, range.second});
             variant->key16->data.disableMinMaxOptimization();
+        }
         else
             throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "disableMinMaxOptimizationForFixedHashMaps only supports key8 and key16 variants.");
     }
+    return ranges;
 }
 
 
@@ -2846,7 +2840,7 @@ void NO_INLINE Aggregator::mergeDataImpl(
         {
             if constexpr (std::is_same_v<Method, typename decltype(AggregatedDataVariants::key8)::element_type> ||
                 std::is_same_v<Method, typename decltype(AggregatedDataVariants::key16)::element_type>)
-                table_src.mergeToViaIndexFilter(table_dst, std::move(merge), parallel_worker->worker_id, parallel_worker->total_worker);
+                table_src.mergeToViaIndexFilter(table_dst, std::move(merge), parallel_worker->worker_id, parallel_worker->total_worker, parallel_worker->min_index, parallel_worker->max_index);
         }
         else
         {
@@ -2884,7 +2878,7 @@ void NO_INLINE Aggregator::mergeDataImpl(
     {
         if constexpr (std::is_same_v<Method, typename decltype(AggregatedDataVariants::key8)::element_type> ||
             std::is_same_v<Method, typename decltype(AggregatedDataVariants::key16)::element_type>)
-            table_src.mergeToViaIndexFilter(table_dst, std::move(merge), parallel_worker->worker_id, parallel_worker->total_worker);
+            table_src.mergeToViaIndexFilter(table_dst, std::move(merge), parallel_worker->worker_id, parallel_worker->total_worker, parallel_worker->min_index, parallel_worker->max_index);
     }
     else
     {
@@ -3131,6 +3125,7 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
 void Aggregator::mergeSingleLevelDataImplFixedMap(
     ManyAggregatedDataVariants & non_empty_data,
     Arena * arena,
+    const std::vector<FixedHashMapRange>& ranges,
     UInt32 worker_id,
     UInt32 total_worker,
     std::atomic<bool> & is_cancelled) const
@@ -3140,17 +3135,17 @@ void Aggregator::mergeSingleLevelDataImplFixedMap(
 
     AggregatedDataVariantsPtr & first = non_empty_data[0];
     if (first->type == AggregatedDataVariants::Type::key8)
-        mergeSingleLevelDataImplFixedMap<decltype(first->key8)::element_type>(non_empty_data, arena, worker_id, total_worker, is_cancelled);
+        mergeSingleLevelDataImplFixedMap<decltype(first->key8)::element_type>(non_empty_data, arena, ranges, worker_id, total_worker, is_cancelled);
     else if (first->type == AggregatedDataVariants::Type::key16)
-        mergeSingleLevelDataImplFixedMap<decltype(first->key16)::element_type>(non_empty_data, arena, worker_id, total_worker, is_cancelled);
+        mergeSingleLevelDataImplFixedMap<decltype(first->key16)::element_type>(non_empty_data, arena, ranges, worker_id, total_worker, is_cancelled);
     else
         throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "mergeSingleLevelDataImplFixedMap only supports key8 and key16 variants.");
 }
 
 template void NO_INLINE Aggregator::mergeSingleLevelDataImplFixedMap<decltype(AggregatedDataVariants::key8)::element_type>(
-    ManyAggregatedDataVariants & non_empty_data, Arena * arena, UInt32 worker_id, UInt32 total_worker, std::atomic<bool> & is_cancelled) const;
+    ManyAggregatedDataVariants & non_empty_data, Arena * arena, const std::vector<FixedHashMapRange>& ranges, UInt32 worker_id, UInt32 total_worker, std::atomic<bool> & is_cancelled) const;
 template void NO_INLINE Aggregator::mergeSingleLevelDataImplFixedMap<decltype(AggregatedDataVariants::key16)::element_type>(
-    ManyAggregatedDataVariants & non_empty_data, Arena * arena, UInt32 worker_id, UInt32 total_worker, std::atomic<bool> & is_cancelled) const;
+    ManyAggregatedDataVariants & non_empty_data, Arena * arena, const std::vector<FixedHashMapRange>& ranges, UInt32 worker_id, UInt32 total_worker, std::atomic<bool> & is_cancelled) const;
 
 
 void Aggregator::resetAggregatorExceptFirst(ManyAggregatedDataVariants & data_variants) const

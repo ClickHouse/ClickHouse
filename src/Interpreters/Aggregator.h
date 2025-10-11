@@ -441,6 +441,8 @@ private:
     {
         UInt32 worker_id;
         UInt32 total_worker;
+        UInt32 min_index;
+        UInt32 max_index;
     };
 
     /// Merge NULL key data from hash table `src` into `dst`.
@@ -481,10 +483,20 @@ private:
     void mergeSingleLevelDataImpl(
         ManyAggregatedDataVariants & non_empty_data, std::atomic<bool> & is_cancelled) const;
 
+    struct FixedHashMapRange
+    {
+        UInt32 min_index;
+        UInt32 max_index;
+    };
+
+    /// Disable min-max optimization for fixed-size hash tables to avoid race conditions.
+    std::vector<FixedHashMapRange> disableMinMaxOptimizationForFixedHashMaps(ManyAggregatedDataVariants & data_variants) const;
+
     template <typename Method>
     void mergeSingleLevelDataImplFixedMap(
         ManyAggregatedDataVariants & non_empty_data,
         Arena * arena,
+        const std::vector<FixedHashMapRange>& ranges,
         UInt32 worker_id,
         UInt32 total_worker,
         std::atomic<bool> & is_cancelled) const;
@@ -493,6 +505,7 @@ private:
     void mergeSingleLevelDataImplFixedMap(
         ManyAggregatedDataVariants & non_empty_data,
         Arena * arena,
+        const std::vector<FixedHashMapRange>& ranges,
         UInt32 worker_id,
         UInt32 total_worker,
         std::atomic<bool> & is_cancelled) const;
@@ -644,15 +657,9 @@ private:
 
     void ensureLimitsFixedMapMerge(AggregatedDataVariantsPtr data) const;
 
-    /// Check if aggregation uses computationally expensive functions that benefit from parallel merge.
-    bool hasFunctionsBenefitFromParallelMerge() const;
-
     /// Check if data variants use fixed-size hash tables (key8/key16) suitable for parallel merge
     /// at single level.
     bool isTypeFixedSize(const ManyAggregatedDataVariants & data_variants) const;
-
-    /// Disable min-max optimization for fixed-size hash tables to avoid race conditions.
-    void disableMinMaxOptimizationForFixedHashMaps(ManyAggregatedDataVariants & data_variants) const;
 
     void prepareAggregateInstructions(
         Columns columns,
