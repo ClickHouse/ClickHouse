@@ -10,11 +10,11 @@ INSTANTIATE_TEST_SUITE_P(
         ::testing::ValuesIn(std::initializer_list<ParserTestCase>{
         {
             "print tobool(A)",
-            "SELECT multiIf(toString(A) = 'true', true, toString(A) = 'false', false, toInt64OrNull(toString(A)) != 0)"
+            "SELECT multiIf(toString(A) = 'true', true, toString(A) = 'false', false, CAST(toInt64OrNull(toString(A)) != 0, 'Nullable(Bool)'))"
         },
         {
             "print toboolean(A)",
-            "SELECT multiIf(toString(A) = 'true', true, toString(A) = 'false', false, toInt64OrNull(toString(A)) != 0)"
+            "SELECT multiIf(toString(A) = 'true', true, toString(A) = 'false', false, CAST(toInt64OrNull(toString(A)) != 0, 'Nullable(Bool)'))"
         },
         {
             "print todouble(A)",
