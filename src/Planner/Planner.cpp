@@ -28,6 +28,7 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/ShufflingStep.h>
 #include <Processors/QueryPlan/FillingStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/OffsetStep.h>
@@ -779,6 +780,8 @@ void addSortingStep(QueryPlan & query_plan,
     const QueryAnalysisResult & query_analysis_result,
     const PlannerContextPtr & planner_context)
 {
+    LOG_TRACE(getLogger("Planner"), "addSortingStep");
+
     const auto & sort_description = query_analysis_result.sort_description;
     const auto & query_context = planner_context->getQueryContext();
     SortingStep::Settings sort_settings(query_context->getSettingsRef());
@@ -792,6 +795,25 @@ void addSortingStep(QueryPlan & query_plan,
     query_plan.addStep(std::move(sorting_step));
 }
 
+void addShufflingStep(QueryPlan & query_plan,
+    const QueryAnalysisResult & query_analysis_result,
+    const PlannerContextPtr & planner_context)
+{
+    LOG_TRACE(getLogger("Planner"), "addShufflingStep");
+
+    // const auto & sort_description = query_analysis_result.sort_description;
+    const auto & query_context = planner_context->getQueryContext();
+    ShufflingStep::Settings shuffle_settings(query_context->getSettingsRef());
+
+    auto shuffling_step = std::make_unique<ShufflingStep>(
+        query_plan.getCurrentHeader(),
+        query_analysis_result.partial_sorting_limit,
+        shuffle_settings);
+    shuffling_step->setStepDescription("Shuffling for SHUFFLE");
+    query_plan.addStep(std::move(shuffling_step));
+}
+
+void addMergeSortingStep(QueryPlan & query_plan,
 template<size_t size>
 ALWAYS_INLINE void addMergeSortingStep(QueryPlan & query_plan,
     const QueryAnalysisResult & query_analysis_result,
@@ -811,6 +833,23 @@ ALWAYS_INLINE void addMergeSortingStep(QueryPlan & query_plan,
         settings[Setting::exact_rows_before_limit]);
     merging_sorted->setStepDescription(description);
     query_plan.addStep(std::move(merging_sorted));
+}
+
+void addMergeShufflingStep(QueryPlan & query_plan,
+    const QueryAnalysisResult & query_analysis_result,
+    const PlannerContextPtr & planner_context,
+    const std::string & description)
+{
+    const auto & query_context = planner_context->getQueryContext();
+    const auto & settings = query_context->getSettingsRef();
+
+    auto merging_shuffled = std::make_unique<ShufflingStep>(
+        query_plan.getCurrentHeader(),
+        settings[Setting::max_block_size],
+        query_analysis_result.partial_sorting_limit,
+        settings[Setting::exact_rows_before_limit]);
+    merging_shuffled->setStepDescription("Merge shuffled streams " + description);
+    query_plan.addStep(std::move(merging_shuffled));
 }
 
 void addWithFillStepIfNeeded(QueryPlan & query_plan,
@@ -1063,6 +1102,10 @@ void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(
 
     if (expressions_analysis_result.hasSort())
         addSortingStep(query_plan, query_analysis_result, planner_context);
+
+    if (query_node.isShuffle()) {
+        addShufflingStep(query_plan, query_analysis_result, planner_context);
+    }
 
     /** For DISTINCT step, pre_distinct = false, because if we have limit and distinct,
       * we need to merge streams to one and calculate overall distinct.
@@ -1533,6 +1576,7 @@ void Planner::buildPlanForQueryNode()
     current_storage_limits.push_back(select_query_info.local_storage_limits);
     select_query_info.storage_limits = std::make_shared<StorageLimitsList>(current_storage_limits);
     select_query_info.has_order_by = query_node.hasOrderBy();
+    select_query_info.has_shuffle = query_node.isShuffle();
     select_query_info.has_window = hasWindowFunctionNodes(query_tree);
     select_query_info.has_aggregates = hasAggregateFunctionNodes(query_tree);
     select_query_info.need_aggregate = query_node.hasGroupBy() || select_query_info.has_aggregates;
@@ -1912,6 +1956,27 @@ void Planner::buildPlanForQueryNode()
                 addMergeSortingStep(query_plan, query_analysis_result, planner_context, "Merge sorted streams for ORDER BY, without aggregation");
             else
                 addSortingStep(query_plan, query_analysis_result, planner_context);
+        }
+
+        if (query_node.isShuffle())
+        {
+            /** If there is an ORDER BY for distributed query processing,
+              * but there is no aggregation, then on the remote servers ORDER BY was made
+              * and we merge the sorted streams from remote servers.
+              *
+              * Also in case of remote servers was process the query up to WithMergeableStateAfterAggregationAndLimit
+              * (distributed_group_by_no_merge=2 or optimize_distributed_group_by_sharding_key=1 takes place),
+              * then merge the sorted streams is enough, since remote servers already did full ORDER BY.
+              */
+            if (query_processing_info.isFromAggregationState())
+                addMergeShufflingStep(query_plan, query_analysis_result, planner_context, "after aggregation stage for ORDER BY");
+            else if (!query_processing_info.isFirstStage() &&
+                !expression_analysis_result.hasAggregation() &&
+                !expression_analysis_result.hasWindow() &&
+                !(query_node.isGroupByWithTotals() && !query_analysis_result.aggregate_final))
+                addMergeShufflingStep(query_plan, query_analysis_result, planner_context, "for ORDER BY, without aggregation");
+            else
+                addShufflingStep(query_plan, query_analysis_result, planner_context);
         }
 
         /** Optimization if there are several sources and there is LIMIT, then first apply the preliminary LIMIT,
