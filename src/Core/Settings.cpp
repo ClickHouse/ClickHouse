@@ -183,6 +183,10 @@ Minimum block size in rows for JOIN input and output blocks (if join algorithm s
     DECLARE(UInt64, min_joined_block_size_bytes, 512 * 1024, R"(
 Minimum block size in bytes for JOIN input and output blocks (if join algorithm supports it). Small blocks will be squashed. 0 means unlimited.
 )", 0) \
+    DECLARE(Bool, joined_block_split_single_row, false, R"(
+Allow to chunk hash join result by rows corresponding to single row from left table.
+This may reduce memory usage in case of row with many matches in right table, but may increase CPU usage.
+)", 0) \
     DECLARE(UInt64, max_insert_threads, 0, R"(
 The maximum number of threads to execute the `INSERT SELECT` query.
 
@@ -469,11 +473,11 @@ When set to `true`, all threads executing S3 requests to the same backup endpoin
 after any single s3 request encounters a retryable network error, such as socket timeout.
 When set to `false`, each thread handles S3 request backoff independently of the others.
 )", 0) \
-    DECLARE_WITH_ALIAS(Bool, s3_slow_all_threads_after_retryable_error, false, R"(
-When set to `true`, all threads executing S3 requests to the same endpoint are slowed down
+    DECLARE(Bool, backup_slow_all_threads_after_retryable_s3_error, false, R"(
+When set to `true`, all threads executing S3 requests to the same backup endpoint are slowed down
 after any single S3 request encounters a retryable S3 error, such as 'Slow Down'.
 When set to `false`, each thread handles s3 request backoff independently of the others.
-)", 0, backup_slow_all_threads_after_retryable_s3_error) \
+)", 0) \
     DECLARE(UInt64, azure_list_object_keys_size, 1000, R"(
 Maximum number of files that could be returned in batch by ListObject request
 )", 0) \
@@ -1971,7 +1975,7 @@ For testing of `exception safety` - throw an exception every time you allocate m
 For testing of `PartsSplitter` - split read ranges into intersecting and non intersecting every time you read from MergeTree with the specified probability.
 )", 0) \
     \
-    DECLARE(Bool, enable_http_compression, false, R"(
+    DECLARE(Bool, enable_http_compression, true, R"(
 Enables or disables data compression in the response to an HTTP request.
 
 For more information, read the [HTTP interface description](../../interfaces/http.md).
@@ -6137,6 +6141,9 @@ Only has an effect in ClickHouse Cloud. Maximum backoff milliseconds for distrib
     DECLARE(Bool, distributed_cache_prefer_bigger_buffer_size, false, R"(
 Only has an effect in ClickHouse Cloud. Same as filesystem_cache_prefer_bigger_buffer_size, but for distributed cache.
 )", 0) \
+    DECLARE(Bool, read_from_distributed_cache_if_exists_otherwise_bypass_cache, false, R"(
+Only has an effect in ClickHouse Cloud. Same as read_from_filesystem_cache_if_exists_otherwise_bypass_cache, but for distributed cache.
+)", 0) \
     DECLARE(Bool, filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage, true, R"(
 Only has an effect in ClickHouse Cloud. Wait time to lock cache for space reservation in filesystem cache
 )", 0) \
@@ -6974,6 +6981,12 @@ Use roaring bitmap for iceberg positional deletes.
     DECLARE(Bool, query_rules, false, R"(
 Active query rules
 )", 0) \
+    DECLARE(Bool, inject_random_order_for_select_without_order_by, false, R"(
+If enabled, injects 'ORDER BY rand()' into SELECT queries without ORDER BY clause.
+Applied only for subquery depth = 0. Subqueries and INSERT INTO ... SELECT are not affected.
+If the top-level construct is UNION, 'ORDER BY rand()' is injected into all children independently.
+Only useful for testing and development (missing ORDER BY is a source of non-deterministic query results).
+    )", 0) \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \
     /* ## ADD PRODUCTION / BETA FEATURES BEFORE THIS BLOCK  ## */ \
@@ -7228,6 +7241,7 @@ Sets the evaluation time to be used with promql dialect. 'auto' means the curren
     MAKE_OBSOLETE(M, Bool, enable_variant_type, true) \
     MAKE_OBSOLETE(M, Bool, enable_dynamic_type, true) \
     MAKE_OBSOLETE(M, Bool, enable_json_type, true) \
+    MAKE_OBSOLETE(M, Bool, s3_slow_all_threads_after_retryable_error, false) \
     \
     /* moved to config.xml: see also src/Core/ServerSettings.h */ \
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_buffer_flush_schedule_pool_size, 16) \
