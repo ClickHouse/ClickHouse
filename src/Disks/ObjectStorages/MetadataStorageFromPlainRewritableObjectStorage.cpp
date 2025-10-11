@@ -237,7 +237,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load)
     runner.waitForAllToFinishAndRethrowFirstError();
 
     /// Now check which paths have to be removed in memory.
-    num_dirs_removed = path_map->removeOutdatedPaths(set_of_remote_paths);
+    num_dirs_removed = path_map->removeOutdatedPaths(std::move(set_of_remote_paths));
 
     size_t num_dirs_in_memory = path_map->directoriesCount();
 
