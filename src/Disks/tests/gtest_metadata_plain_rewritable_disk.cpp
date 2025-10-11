@@ -1,6 +1,7 @@
 #include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <Disks/ObjectStorages/Local/LocalObjectStorage.h>
 #include <Disks/ObjectStorages/MetadataStorageFromPlainRewritableObjectStorage.h>
+#include <Disks/ObjectStorages/createMetadataStorageMetrics.h>
 #include <Disks/ObjectStorages/PlainRewritableObjectStorage.h>
 #include <Disks/ObjectStorages/StoredObject.h>
 #include <Disks/WriteMode.h>
@@ -59,8 +60,13 @@ public:
 private:
     std::shared_ptr<IMetadataStorage> createMetadataStorage(const std::string & key_prefix)
     {
-        LocalObjectStorageSettings settings("./" + key_prefix, /*read_only_=*/false);
         MetadataStorageMetrics metadata_storage_metrics = MetadataStorageMetrics::create<LocalObjectStorage, MetadataStorageType::PlainRewritable>();
+        EXPECT_EQ(metadata_storage_metrics.directory_created, ProfileEvents::DiskPlainRewritableLocalDirectoryCreated);
+        EXPECT_EQ(metadata_storage_metrics.directory_removed, ProfileEvents::DiskPlainRewritableLocalDirectoryRemoved);
+        EXPECT_EQ(metadata_storage_metrics.directory_map_size, CurrentMetrics::DiskPlainRewritableLocalDirectoryMapSize);
+        EXPECT_EQ(metadata_storage_metrics.file_count, CurrentMetrics::DiskPlainRewritableLocalFileCount);
+
+        LocalObjectStorageSettings settings("./" + key_prefix, /*read_only_=*/false);
         auto object_storage = std::make_shared<PlainRewritableObjectStorage<LocalObjectStorage>>(std::move(metadata_storage_metrics), std::move(settings));
         auto metadata_storage = std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, "", 0);
 
