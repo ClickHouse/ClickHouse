@@ -38,12 +38,12 @@ PRELIMINARY_JOBS = [
 
 INTEGRATION_TEST_FLAKY_CHECK_JOBS = [
     "Build (amd_asan)",
-    "Integration tests (asan, flaky check)",
+    "Integration tests (amd_asan, flaky check)",
 ]
 
 FUNCTIONAL_TEST_FLAKY_CHECK_JOBS = [
     "Build (amd_asan)",
-    "Stateless tests (asan, flaky check)",
+    "Stateless tests (amd_asan, flaky check)",
 ]
 
 _info_cache = None
@@ -54,7 +54,7 @@ def should_skip_job(job_name):
     if _info_cache is None:
         _info_cache = Info()
 
-    changed_files = _info_cache.get_custom_data("changed_files")
+    changed_files = _info_cache.get_kv_data("changed_files")
     if not changed_files:
         print("WARNING: no changed files found for PR - do not filter jobs")
         return False, ""
@@ -78,7 +78,7 @@ def should_skip_job(job_name):
     ):
         return (
             True,
-            f"Skipped, labeled with '{Labels.CI_INTEGRATION_FLAKY}' - run integration test jobs only",
+            f"Skipped, labeled with '{Labels.CI_INTEGRATION_FLAKY}' - run integration test flaky check job only",
         )
 
     if (

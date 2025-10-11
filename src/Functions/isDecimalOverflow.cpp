@@ -155,7 +155,36 @@ private:
 
 REGISTER_FUNCTION(IsDecimalOverflow)
 {
-    factory.registerFunction<FunctionIsDecimalOverflow>();
+    FunctionDocumentation::Description description_isDecimalOverflow = R"(
+Checks if a decimal number has too many digits to fit properly in a Decimal data type with given precision.
+    )";
+    FunctionDocumentation::Syntax syntax_isDecimalOverflow = "isDecimalOverflow(value[, precision])";
+    FunctionDocumentation::Arguments arguments_isDecimalOverflow = {
+        {"value", "Decimal value to check.", {"Decimal"}},
+        {"precision", "Optional. The precision of the Decimal type. If omitted, the initial precision of the first argument is used.", {"UInt8"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_isDecimalOverflow = {"Returns `1` if the decimal value has more digits than allowed by its precision, `0` if the decimal value satisfies the specified precision.", {"UInt8"}};
+    FunctionDocumentation::Examples examples_isDecimalOverflow = {
+    {
+        "Usage example",
+        R"(
+SELECT isDecimalOverflow(toDecimal32(1000000000, 0), 9),
+       isDecimalOverflow(toDecimal32(1000000000, 0)),
+       isDecimalOverflow(toDecimal32(-1000000000, 0), 9),
+       isDecimalOverflow(toDecimal32(-1000000000, 0));
+        )",
+        R"(
+┌─isDecimalOverflow(toDecimal32(1000000000, 0), 9)─┬─isDecimalOverflow(toDecimal32(1000000000, 0))─┬─isDecimalOverflow(toDecimal32(-1000000000, 0), 9)─┬─isDecimalOverflow(toDecimal32(-1000000000, 0))─┐
+│                                                1 │                                             1 │                                                 1 │                                              1 │
+└──────────────────────────────────────────────────┴───────────────────────────────────────────────┴───────────────────────────────────────────────────┴────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_isDecimalOverflow = {20, 8};
+    FunctionDocumentation::Category category_isDecimalOverflow = FunctionDocumentation::Category::Decimal;
+    FunctionDocumentation documentation_isDecimalOverflow = {description_isDecimalOverflow, syntax_isDecimalOverflow, arguments_isDecimalOverflow, returned_value_isDecimalOverflow, examples_isDecimalOverflow, introduced_in_isDecimalOverflow, category_isDecimalOverflow};
+
+    factory.registerFunction<FunctionIsDecimalOverflow>(documentation_isDecimalOverflow);
 }
 
 }

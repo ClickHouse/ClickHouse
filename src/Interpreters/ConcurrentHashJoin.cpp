@@ -622,6 +622,14 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
         }
     }
 
+    /// Synchronize all `HashJoin`s on the `all_values_unique` flag.
+    bool all_values_unique = true;
+    for (const auto & hash_join : hash_joins)
+        all_values_unique &= hash_join->data->all_values_unique;
+
+    for (const auto & hash_join : hash_joins)
+        hash_join->data->all_values_unique = all_values_unique;
+
     // `onBuildPhaseFinish` cannot be called concurrently with other IJoin methods, so we don't need a lock to access internal joins.
     // The following calls must be done after the final common map is constructed, otherwise we will incorrectly initialize `used_flags`.
     for (const auto & hash_join : hash_joins)

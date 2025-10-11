@@ -126,7 +126,7 @@ protected:
 
     virtual bool buzzHouse()
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Clickhouse was compiled without BuzzHouse enabled");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ClickHouse was compiled without BuzzHouse enabled");
     }
 
     virtual void connect() = 0;

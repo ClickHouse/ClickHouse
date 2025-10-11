@@ -47,7 +47,8 @@ public:
     DatabaseTablesIteratorPtr getLightweightTablesIterator(
         ContextPtr context,
         const FilterByNameFunction & filter_by_table_name,
-        bool skip_not_loaded) const override;
+        bool skip_not_loaded,
+        bool skip_data_lake_catalog) const override;
 
 
     void shutdown() override {}
@@ -61,6 +62,11 @@ public:
         const String & /*name*/,
         const StoragePtr & /*table*/,
         const ASTPtr & /*query*/) override {}
+
+    void dropTable( /// NOLINT
+        ContextPtr context_,
+        const String & name,
+        bool /*sync*/) override;
 
 protected:
     ASTPtr getCreateTableQueryImpl(const String & table_name, ContextPtr context, bool throw_on_error) const override;
