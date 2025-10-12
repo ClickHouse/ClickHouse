@@ -11,7 +11,7 @@ FROM
     system.parts_columns
 WHERE
     active = 1
-    AND (database = {db:String})
+    AND (database = {db:String} OR database = currentDatabase())
     AND (match(table, {table:String}))
     AND (match(column, {column:String}))
 GROUP BY
