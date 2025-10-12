@@ -712,7 +712,7 @@ public:
     /// Returns parts that visible with current snapshot
     DataPartsVector getVisibleDataPartsVector(ContextPtr local_context) const;
     /// If using a shared lock, it guarantees no mutation has happened, so we return a shared copy of parts list
-    std::shared_ptr<const DataPartsVector> getVisibleDataPartsVectorUnlocked(ContextPtr query_context, const DataPartsSharedLock & lock) const;
+    std::shared_ptr<const DataPartsVector> getVisibleDataPartsVectorUnlocked(ContextPtr local_context, const DataPartsSharedLock & lock) const;
     /// Whereas if a unique lock is used, mutations could have happened, meaning shared part list *may* have been invalidated.
     DataPartsVector getVisibleDataPartsVectorUnlocked(ContextPtr local_context, const DataPartsLock & lock) const;
     DataPartsVector getVisibleDataPartsVector(const MergeTreeTransactionPtr & txn) const;
