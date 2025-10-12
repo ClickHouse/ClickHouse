@@ -405,16 +405,15 @@ std::optional<size_t> getLimitFromQueryInfo(const SelectQueryInfo & query_info, 
     if (!query_info.query)
         return {};
 
-    auto [limit_length, limit_offset, is_negative]
-        = InterpreterSelectQuery::getLimitLengthAndOffset(query_info.query->as<ASTSelectQuery &>(), context);
+    const auto lim_info = InterpreterSelectQuery::getLimitLengthAndOffset(query_info.query->as<ASTSelectQuery &>(), context);
 
-    if (is_negative)
+    if (lim_info.is_limit_length_negative)
         return {};
 
-    if (!shouldPushdownLimit(query_info, limit_length))
+    if (!shouldPushdownLimit(query_info, lim_info.limit_length))
         return {};
 
-    return limit_length + limit_offset;
+    return lim_info.limit_length + lim_info.limit_offset;
 }
 
 }

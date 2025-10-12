@@ -206,7 +206,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_entries_for_hash_table_stats;
 }
 
-static std::pair<UInt64, bool> getLimitAbsAndSign(const ASTPtr & node, const ContextPtr & context, const std::string & expr);
+static std::pair<UInt64, bool> getLimitOffsetAbsAndSign(const ASTPtr & node, const ContextPtr & context, const std::string & expr);
 
 namespace ErrorCodes
 {
@@ -1475,7 +1475,7 @@ static SortDescription getSortDescriptionFromGroupBy(const ASTSelectQuery & quer
     return order_descr;
 }
 
-static std::pair<UInt64, bool> getLimitAbsAndSign(const ASTPtr & node, const ContextPtr & context, const std::string & expr)
+static std::pair<UInt64, bool> getLimitOffsetAbsAndSign(const ASTPtr & node, const ContextPtr & context, const std::string & expr)
 {
     const auto & [field, type] = evaluateConstantExpression(node, context);
 
@@ -1512,38 +1512,28 @@ static std::pair<UInt64, bool> getLimitAbsAndSign(const ASTPtr & node, const Con
         expr);
 }
 
-// (limit length, limit offset, whether limit is negative)
-std::tuple<UInt64, UInt64, bool> InterpreterSelectQuery::getLimitLengthAndOffset(const ASTSelectQuery & query, const ContextPtr & context_)
+InterpreterSelectQuery::LimitInfo InterpreterSelectQuery::getLimitLengthAndOffset(const ASTSelectQuery & query, const ContextPtr & context_)
 {
-    // Holds the magnitude of the limit, offset
-    UInt64 length = 0;
-    UInt64 offset = 0;
-
-    bool is_negative = false;
+    // Holds the magnitude, sign of the limit, offset
+    LimitInfo lim_info;
 
     if (query.limitLength())
     {
-        bool lim_sign{};
-        std::tie(length, lim_sign) = getLimitAbsAndSign(query.limitLength(), context_, "LIMIT");
+        std::tie(lim_info.limit_length, lim_info.is_limit_length_negative)
+            = getLimitOffsetAbsAndSign(query.limitLength(), context_, "LIMIT");
 
-        if (query.limitOffset() && length)
+        if (query.limitOffset() && lim_info.limit_length)
         {
-            bool off_sign{};
-            std::tie(offset, off_sign) = getLimitAbsAndSign(query.limitOffset(), context_, "OFFSET");
-
-            if (lim_sign != off_sign) // one is negative, another is positive
-            {
-                throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION, "LIMIT and OFFSET should be both nonnegative or both negative");
-            }
+            std::tie(lim_info.limit_offset, lim_info.is_limit_offset_negative)
+                = getLimitOffsetAbsAndSign(query.limitOffset(), context_, "OFFSET");
         }
-
-        is_negative = lim_sign;
     }
     else if (query.limitOffset())
     {
-        std::tie(offset, is_negative) = getLimitAbsAndSign(query.limitOffset(), context_, "OFFSET");
+        std::tie(lim_info.limit_offset, lim_info.is_limit_offset_negative)
+            = getLimitOffsetAbsAndSign(query.limitOffset(), context_, "OFFSET");
     }
-    return {length, offset, is_negative};
+    return lim_info;
 }
 
 
@@ -1552,15 +1542,15 @@ UInt64 InterpreterSelectQuery::getLimitForSorting(const ASTSelectQuery & query, 
     /// Partial sort can be done if there is LIMIT but no DISTINCT or LIMIT BY, neither ARRAY JOIN.
     if (!query.distinct && !query.limitBy() && !query.limit_with_ties && !query.arrayJoinExpressionList().first && query.limitLength())
     {
-        auto [limit_length, limit_offset, is_negative] = getLimitLengthAndOffset(query, context_);
+        const LimitInfo lim_info = getLimitLengthAndOffset(query, context_);
 
-        if (is_negative)
+        if (lim_info.is_limit_length_negative)
             return 0;
 
-        if (limit_length > std::numeric_limits<UInt64>::max() - limit_offset)
+        if (lim_info.limit_length > std::numeric_limits<UInt64>::max() - lim_info.limit_offset)
             return 0;
 
-        return limit_length + limit_offset;
+        return lim_info.limit_length + lim_info.limit_offset;
     }
     return 0;
 }
@@ -2564,7 +2554,7 @@ UInt64 InterpreterSelectQuery::maxBlockSizeByLimit() const
 {
     const auto & query = query_ptr->as<const ASTSelectQuery &>();
 
-    auto [limit_length, limit_offset, is_negative] = getLimitLengthAndOffset(query, context);
+    const LimitInfo lim_info = getLimitLengthAndOffset(query, context);
 
     if (!query.distinct
        && !query.limit_with_ties
@@ -2579,9 +2569,9 @@ UInt64 InterpreterSelectQuery::maxBlockSizeByLimit() const
        && !query_analyzer->hasAggregation()
        && !query_analyzer->hasWindow()
        && query.limitLength()
-       && limit_length <= std::numeric_limits<UInt64>::max() - limit_offset
-       && !is_negative)
-        return limit_length + limit_offset;
+       && lim_info.limit_length <= std::numeric_limits<UInt64>::max() - lim_info.limit_offset
+       && !lim_info.is_limit_length_negative)
+        return lim_info.limit_length + lim_info.limit_offset;
 
     return 0;
 }
@@ -3212,9 +3202,9 @@ void InterpreterSelectQuery::executeDistinct(QueryPlan & query_plan, bool before
         /// then you can get no more than limit_length + limit_offset of different rows.
         if ((!query.orderBy() || !before_order) && !query.limitBy())
         {
-            auto [limit_length, limit_offset, is_negative] = getLimitLengthAndOffset(query, context);
-            if (limit_length <= std::numeric_limits<UInt64>::max() - limit_offset)
-                limit_for_distinct = limit_length + limit_offset;
+            const LimitInfo lim_info = getLimitLengthAndOffset(query, context);
+            if (lim_info.limit_length <= std::numeric_limits<UInt64>::max() - lim_info.limit_offset)
+                limit_for_distinct = lim_info.limit_length + lim_info.limit_offset;
         }
 
         SizeLimits limits(settings[Setting::max_rows_in_distinct], settings[Setting::max_bytes_in_distinct], settings[Setting::distinct_overflow_mode]);
@@ -3241,33 +3231,51 @@ void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
     /// If there is LIMIT
     if (query.limitLength())
     {
-        auto [limit_length, limit_offset, is_negative] = getLimitLengthAndOffset(query, context);
+        LimitInfo lim_info = getLimitLengthAndOffset(query, context);
 
-        if (do_not_skip_offset && !is_negative)
+        if (do_not_skip_offset && !lim_info.is_limit_length_negative)
         {
-            if (limit_length > std::numeric_limits<UInt64>::max() - limit_offset)
+            if (lim_info.limit_length > std::numeric_limits<UInt64>::max() - lim_info.limit_offset)
                 return;
 
-            limit_length += limit_offset;
-            limit_offset = 0;
+            lim_info.limit_length += lim_info.limit_offset;
+            lim_info.limit_offset = 0;
         }
 
         const Settings & settings = context->getSettingsRef();
 
-        if (is_negative)
-        {
-            auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), limit_length, limit_offset);
-
-            query_plan.addStep(std::move(limit));
-        }
-        else
+        if (!lim_info.is_limit_length_negative && !lim_info.is_limit_offset_negative) [[likely]]
         {
             auto limit = std::make_unique<LimitStep>(
-                query_plan.getCurrentHeader(), limit_length, limit_offset, settings[Setting::exact_rows_before_limit]);
+                query_plan.getCurrentHeader(), lim_info.limit_length, lim_info.limit_offset, settings[Setting::exact_rows_before_limit]);
             if (do_not_skip_offset)
                 limit->setStepDescription("preliminary LIMIT (with OFFSET)");
             else
                 limit->setStepDescription("preliminary LIMIT (without OFFSET)");
+
+            query_plan.addStep(std::move(limit));
+        }
+        else if (lim_info.is_limit_length_negative && lim_info.is_limit_offset_negative)
+        {
+            auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), lim_info.limit_length, lim_info.limit_offset);
+
+            query_plan.addStep(std::move(limit));
+        }
+        else if (lim_info.is_limit_length_negative && !lim_info.is_limit_offset_negative)
+        {
+            auto offsets_step = std::make_unique<OffsetStep>(query_plan.getCurrentHeader(), lim_info.limit_offset);
+            query_plan.addStep(std::move(offsets_step));
+
+            auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), lim_info.limit_length, 0);
+            query_plan.addStep(std::move(limit));
+        }
+        else // !is_limit_length_negative && is_limit_offset_negative
+        {
+            auto offsets_step = std::make_unique<NegativeOffsetStep>(query_plan.getCurrentHeader(), lim_info.limit_offset);
+            query_plan.addStep(std::move(offsets_step));
+
+            auto limit = std::make_unique<LimitStep>(
+                query_plan.getCurrentHeader(), lim_info.limit_length, 0, settings[Setting::exact_rows_before_limit]);
 
             query_plan.addStep(std::move(limit));
         }
@@ -3285,12 +3293,12 @@ void InterpreterSelectQuery::executeLimitBy(QueryPlan & query_plan)
     for (const auto & elem : query.limitBy()->children)
         columns.emplace_back(elem->getColumnName());
 
-    auto [length, offset, is_negative] = getLimitLengthAndOffset(query, context);
+    const LimitInfo lim_info = getLimitLengthAndOffset(query, context);
 
-    if (is_negative)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Negative LIMIT BY is not supported yet");
+    if (lim_info.is_limit_length_negative || lim_info.is_limit_offset_negative)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Negative LIMIT/OFFSET with LIMIT BY is not supported yet");
 
-    auto limit_by = std::make_unique<LimitByStep>(query_plan.getCurrentHeader(), length, offset, columns);
+    auto limit_by = std::make_unique<LimitByStep>(query_plan.getCurrentHeader(), lim_info.limit_length, lim_info.limit_offset, columns);
     query_plan.addStep(std::move(limit_by));
 }
 
@@ -3349,7 +3357,7 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
         if (!query.group_by_with_totals && hasWithTotalsInAnySubqueryInFromClause(query))
             always_read_till_end = true;
 
-        auto [limit_length, limit_offset, is_negative] = getLimitLengthAndOffset(query, context);
+        const LimitInfo lim_info = getLimitLengthAndOffset(query, context);
 
         SortDescription order_descr;
         if (query.limit_with_ties)
@@ -3358,20 +3366,46 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "LIMIT WITH TIES without ORDER BY");
             order_descr = getSortDescription(query, context);
 
-            if (is_negative)
+            if (lim_info.is_limit_length_negative || lim_info.is_limit_offset_negative)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Negative LIMIT WITH TIES is not supported yet");
         }
 
-        if (is_negative)
+        if (!lim_info.is_limit_length_negative && !lim_info.is_limit_offset_negative) [[likely]]
         {
-            auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), limit_length, limit_offset);
+            auto limit = std::make_unique<LimitStep>(
+                query_plan.getCurrentHeader(),
+                lim_info.limit_length,
+                lim_info.limit_offset,
+                always_read_till_end,
+                query.limit_with_ties,
+                order_descr);
+
+            if (query.limit_with_ties)
+                limit->setStepDescription("LIMIT WITH TIES");
 
             query_plan.addStep(std::move(limit));
         }
-        else
+        else if (lim_info.is_limit_length_negative && lim_info.is_limit_offset_negative)
         {
+            auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), lim_info.limit_length, lim_info.limit_offset);
+
+            query_plan.addStep(std::move(limit));
+        }
+        else if (lim_info.is_limit_length_negative && !lim_info.is_limit_offset_negative)
+        {
+            auto offsets_step = std::make_unique<OffsetStep>(query_plan.getCurrentHeader(), lim_info.limit_offset);
+            query_plan.addStep(std::move(offsets_step));
+
+            auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), lim_info.limit_length, 0);
+            query_plan.addStep(std::move(limit));
+        }
+        else // !lim_info.is_limit_length_negative && lim_info.is_limit_offset_negative
+        {
+            auto offsets_step = std::make_unique<NegativeOffsetStep>(query_plan.getCurrentHeader(), lim_info.limit_offset);
+            query_plan.addStep(std::move(offsets_step));
+
             auto limit = std::make_unique<LimitStep>(
-                query_plan.getCurrentHeader(), limit_length, limit_offset, always_read_till_end, query.limit_with_ties, order_descr);
+                query_plan.getCurrentHeader(), lim_info.limit_length, 0, always_read_till_end, query.limit_with_ties, order_descr);
 
             if (query.limit_with_ties)
                 limit->setStepDescription("LIMIT WITH TIES");
@@ -3388,16 +3422,16 @@ void InterpreterSelectQuery::executeOffset(QueryPlan & query_plan)
     /// If there is not a LIMIT but an offset
     if (!query.limitLength() && query.limitOffset())
     {
-        auto [limit_length, limit_offset, is_negative] = getLimitLengthAndOffset(query, context);
+        const LimitInfo lim_info = getLimitLengthAndOffset(query, context);
 
-        if (is_negative)
+        if (lim_info.is_limit_offset_negative) [[unlikely]]
         {
-            auto offsets_step = std::make_unique<NegativeOffsetStep>(query_plan.getCurrentHeader(), limit_offset);
+            auto offsets_step = std::make_unique<NegativeOffsetStep>(query_plan.getCurrentHeader(), lim_info.limit_offset);
             query_plan.addStep(std::move(offsets_step));
         }
         else
         {
-            auto offsets_step = std::make_unique<OffsetStep>(query_plan.getCurrentHeader(), limit_offset);
+            auto offsets_step = std::make_unique<OffsetStep>(query_plan.getCurrentHeader(), lim_info.limit_offset);
             query_plan.addStep(std::move(offsets_step));
         }
     }
