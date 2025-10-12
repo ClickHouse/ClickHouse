@@ -30,7 +30,7 @@ ALTER TABLE t_apply_patches APPLY PATCHES;
 
 SELECT b, c, count() FROM t_apply_patches GROUP BY b, c ORDER BY b, c SETTINGS apply_patch_parts = 0;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS part_log;
 
 SELECT
     ProfileEvents['MutationSomePartColumns'],
@@ -62,7 +62,7 @@ ALTER TABLE t_apply_patches_smt APPLY PATCHES;
 
 SELECT b, c, count() FROM t_apply_patches GROUP BY b, c ORDER BY b, c SETTINGS apply_patch_parts = 0;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS part_log;
 
 SELECT
     ProfileEvents['MutationSomePartColumns'],
