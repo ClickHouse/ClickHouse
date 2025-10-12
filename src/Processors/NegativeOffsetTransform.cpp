@@ -227,7 +227,9 @@ IProcessor::Status NegativeOffsetTransform::tryPushRemainingChunkPrefix()
     const UInt64 front_chunk_rows = chunk.getNumRows();
 
     if (queued_row_count - front_chunk_rows >= offset)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "tryPushRemainingChunkPrefix must not be required to fully push the front chunk");
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "NegativeOffsetTransformtryPushRemainingChunkPrefix must not be required to fully push the front chunk");
 
     if (output.isFinished())
     {
@@ -256,6 +258,8 @@ IProcessor::Status NegativeOffsetTransform::tryPushRemainingChunkPrefix()
     queued_row_count -= take;
 
     output.push(std::move(chunk));
+
+    queued_row_count -= front_chunk_rows;
     queue.pop();
 
     return Status::PortFull;
