@@ -205,10 +205,10 @@ IProcessor::Status NegativeOffsetTransform::tryPushWholeFrontChunk()
     if (!output.canPush())
         return Status::PortFull;
 
-    queued_row_count -= front_chunk_rows;
     output.push(std::move(chunk));
 
     queue.pop();
+    queued_row_count -= front_chunk_rows;
 
     return Status::PortFull;
 }
@@ -255,12 +255,14 @@ IProcessor::Status NegativeOffsetTransform::tryPushRemainingChunkPrefix()
         columns[i] = columns[i]->cut(0, take);
 
     chunk.setColumns(std::move(columns), take);
-    queued_row_count -= take;
+
+    /// Remove the remaining rows after the cut.
+    queued_row_count -= (front_chunk_rows - take);
 
     output.push(std::move(chunk));
 
-    queued_row_count -= front_chunk_rows;
     queue.pop();
+    queued_row_count -= take;
 
     return Status::PortFull;
 }
