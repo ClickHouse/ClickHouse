@@ -727,13 +727,6 @@ public:
     /// Return the number of marks in all parts
     size_t getTotalMarksCount() const;
 
-    /// Adjust the set of data parts that should be used for SELECT queries.
-    /// Skips very new parts if they're not in cache yet (ignore_cold_parts_seconds), and replaces
-    /// recently merged parts with the pre-merge source parts if the merged part is not in cache yet
-    /// (prefer_warmed_unmerged_parts_seconds). This improves cache hit rate and latency when cache
-    /// warmer is enabled.
-    void adjustDataPartsVectorBasedOnCacheWarmness(DataPartsVector & parts, const ContextPtr & local_context, const DataPartsLock & lock) const;
-
     /// Returns a part in Active state with the given name or a part containing it. If there is no such part, returns nullptr.
     DataPartPtr getActiveContainingPart(const String & part_name) const;
     DataPartPtr getActiveContainingPart(const String & part_name, const DataPartsAnyLock & lock) const;
