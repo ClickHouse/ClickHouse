@@ -50,7 +50,8 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        FunctionArgumentDescriptors args{
+        FunctionArgumentDescriptors args
+        {
             {"haystack", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"},
             {"pattern", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "constant String"}
         };
@@ -135,21 +136,26 @@ public:
         uint64_t match_count = 0;
         while (pos < end)
         {
-            if (re.match(pos, end - pos, matches, matches_limit) && matches[0].length > 0)
+            if (re.match(pos, end - pos, matches, matches_limit))
             {
-                pos += matches[0].offset + matches[0].length;
-                ++match_count;
+                if (matches[0].length > 0)
+                {
+                    pos += matches[0].offset + matches[0].length;
+                    ++match_count;
+                }
+                else
+                {
+                    if (count_matches_stop_at_empty_match)
+                        /// Progress should be made, but with empty match the progress will not be done.
+                        break;
+
+                    /// Progress is made by a single character in case the pattern does not match or have zero-byte match.
+                    /// The reason is simply because the pattern could match another part of input when forwarded.
+                    ++pos;
+                }
             }
             else
-            {
-                if (count_matches_stop_at_empty_match)
-                    /// Progress should be made, but with empty match the progress will not be done.
-                    break;
-
-                /// Progress is made by a single character in case the pattern does not match or have zero-byte match.
-                /// The reason is simply because the pattern could match another part of input when forwarded.
-                ++pos;
-            }
+                break;
         }
 
         return match_count;
