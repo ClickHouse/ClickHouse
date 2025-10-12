@@ -145,10 +145,12 @@ NegativeOffsetTransform::Status NegativeOffsetTransform::advancePort(PortsData &
 
     input.setNeeded();
 
-    /// Pull all currently available chunks.
-    while (input.hasData())
+    if (input.hasData())
     {
         Chunk chunk = input.pull(true);
+
+        input.setNeeded();
+
         auto rows = chunk.getNumRows();
 
         queued_row_count += rows;
@@ -159,8 +161,6 @@ NegativeOffsetTransform::Status NegativeOffsetTransform::advancePort(PortsData &
         }
 
         queue.push(ChunkWithPort{&output, std::move(chunk)});
-
-        input.setNeeded();
 
         /// Push whole chunks while we can still keep the required offset.
         /// Ensures that queue does not grow too large.
