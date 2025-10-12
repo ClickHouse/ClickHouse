@@ -82,10 +82,13 @@ struct MutationCommand
     bool read_for_patch = false;
 
     /// If parse_alter_commands, than consider more Alter commands as mutation commands
-    static std::optional<MutationCommand> parse(ASTAlterCommand * command, bool parse_alter_commands = false);
+    static std::optional<MutationCommand> parse(ASTAlterCommand * command, bool parse_alter_commands = false, bool with_pure_metadata_commands = false);
 
     /// This command shouldn't stick with other commands
     bool isBarrierCommand() const;
+    bool isPureMetadataCommand() const;
+    bool isEmptyCommand() const;
+    bool isDropOrRename() const;
     bool affectsAllColumns() const;
 };
 
@@ -96,8 +99,8 @@ public:
     std::shared_ptr<ASTExpressionList> ast(bool with_pure_metadata_commands = false) const;
 
     void writeText(WriteBuffer & out, bool with_pure_metadata_commands) const;
-    void readText(ReadBuffer & in);
-    std::string toString() const;
+    void readText(ReadBuffer & in, bool with_pure_metadata_commands);
+    std::string toString(bool with_pure_metadata_commands) const;
     bool hasNonEmptyMutationCommands() const;
 
     bool hasAnyUpdateCommand() const;
