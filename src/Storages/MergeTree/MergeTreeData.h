@@ -832,7 +832,7 @@ public:
     void removePartsInRangeFromWorkingSet(MergeTreeTransaction * txn, const MergeTreePartInfo & drop_range, DataPartsLock & lock);
 
     DataPartsVector grabActivePartsToRemoveForDropRange(
-        MergeTreeTransaction * txn, const MergeTreePartInfo & drop_range, DataPartsLock & lock);
+        MergeTreeTransaction * txn, const MergeTreePartInfo & drop_range, const DataPartsAnyLock & lock);
 
     /// This wrapper is required to restrict access to parts in Deleting state
     class PartToRemoveFromZooKeeper

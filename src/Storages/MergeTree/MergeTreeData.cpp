@@ -5056,7 +5056,7 @@ void MergeTreeData::removePartsInRangeFromWorkingSet(MergeTreeTransaction * txn,
 }
 
 DataPartsVector MergeTreeData::grabActivePartsToRemoveForDropRange(
-    MergeTreeTransaction * txn, const MergeTreePartInfo & drop_range, DataPartsLock & lock)
+    MergeTreeTransaction * txn, const MergeTreePartInfo & drop_range, const DataPartsAnyLock & lock)
 {
     DataPartsVector parts_to_remove;
 

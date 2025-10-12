@@ -9595,7 +9595,7 @@ bool StorageReplicatedMergeTree::addOpsToDropAllPartsInPartition(
         DataPartsVector patches_in_partition;
 
         {
-            auto parts_lock = lockParts();
+            auto parts_lock = readLockParts();
             parts_to_detach = grabActivePartsToRemoveForDropRange(NO_TRANSACTION_RAW, drop_range_info, parts_lock);
             patches_in_partition = getPatchPartsVectorForPartition(partition_id, parts_lock);
         }
