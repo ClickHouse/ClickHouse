@@ -108,7 +108,12 @@ void Chunk::addColumn(ColumnPtr column)
 
 void Chunk::addColumn(size_t position, ColumnPtr column)
 {
-    if (position >= columns.size())
+    if (position == columns.size())
+    {
+        addColumn(column);
+        return;
+    }
+    if (position > columns.size())
         throw Exception(ErrorCodes::POSITION_OUT_OF_BOUND,
                         "Position {} out of bound in Chunk::addColumn(), max position = {}",
                         position, !columns.empty() ? columns.size() - 1 : 0);

@@ -40,6 +40,11 @@ struct ObjectInfo
 
     std::optional<ObjectMetadata> getObjectMetadata() const { return relative_path_with_metadata.metadata; }
     void setObjectMetadata(const ObjectMetadata & metadata) { relative_path_with_metadata.metadata = metadata; }
+
+    void setFileMetaInfo(std::optional<DataFileMetaInfoPtr> file_meta_info)
+        { relative_path_with_metadata.setFileMetaInfo(file_meta_info); }
+    std::optional<DataFileMetaInfoPtr> getFileMetaInfo() const
+        { return relative_path_with_metadata.getFileMetaInfo(); }
 };
 
 using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;

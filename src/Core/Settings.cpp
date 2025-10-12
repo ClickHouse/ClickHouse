@@ -7234,6 +7234,9 @@ Number of hash functions in a bloom filter used as JOIN runtime filter (see enab
     DECLARE(Bool, rewrite_in_to_join, false, R"(
 Rewrite expressions like 'x IN subquery' to JOIN. This might be useful for optimizing the whole query with join reordering.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_iceberg_read_optimization, false, R"(
+Allow Iceberg read optimization based on Iceberg metadata.
+)", EXPERIMENTAL) \
     \
     /** Experimental timeSeries* aggregate functions. */ \
     DECLARE_WITH_ALIAS(Bool, allow_experimental_time_series_aggregate_functions, false, R"(

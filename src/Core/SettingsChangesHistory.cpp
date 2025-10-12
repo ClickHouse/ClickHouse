@@ -59,6 +59,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"input_format_parquet_verify_checksums", true, true, "New setting."},
             {"output_format_parquet_write_checksums", false, true, "New setting."},
             {"database_shared_drop_table_delay_seconds", 8 * 60 * 60, 8 * 60 * 60, "New setting."},
+            {"allow_experimental_iceberg_read_optimization", false, false, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.10",
         {

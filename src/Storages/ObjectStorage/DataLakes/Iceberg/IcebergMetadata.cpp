@@ -887,12 +887,14 @@ void IcebergMetadata::addDeleteTransformers(
 
     if (!iceberg_object_info->info.position_deletes_objects.empty())
     {
+        LOG_DEBUG(log, "Constructing filter transform for position delete, there are {} delete objects", iceberg_object_info->info.position_deletes_objects.size());
         builder.addSimpleTransform(
             [&](const SharedHeader & header)
             { return iceberg_object_info->getPositionDeleteTransformer(object_storage, header, format_settings, local_context); });
     }
     const auto & delete_files = iceberg_object_info->info.equality_deletes_objects;
-    LOG_DEBUG(log, "Constructing filter transform for equality delete, there are {} delete files", delete_files.size());
+    if (!delete_files.empty())
+        LOG_DEBUG(log, "Constructing filter transform for equality delete, there are {} delete files", delete_files.size());
     for (const EqualityDeleteObject & delete_file : delete_files)
     {
         auto simple_transform_adder = [&](const SharedHeader & header)

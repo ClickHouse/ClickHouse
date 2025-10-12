@@ -20,9 +20,11 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool cluster_function_process_archive_on_multiple_nodes;
+    extern const SettingsBool allow_experimental_iceberg_read_optimization;
 }
 
 ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr object, const ContextPtr & context)
+    : iceberg_read_optimization_enabled(context->getSettingsRef()[Setting::allow_experimental_iceberg_read_optimization])
 {
     if (!object)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "`object` cannot be null");
@@ -36,6 +38,8 @@ ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr o
         iceberg_info = dynamic_cast<IcebergDataObjectInfo &>(*object).info;
     }
 #endif
+
+    file_meta_info = object->getFileMetaInfo();
 
     const bool send_over_whole_archive = !context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes];
     path = send_over_whole_archive ? object->getPathOrPathToArchiveIfArchive() : object->getPath();
@@ -68,6 +72,7 @@ ObjectInfoPtr ClusterFunctionReadTaskResponse::getObjectInfo() const
         object = std::make_shared<ObjectInfo>(path);
     }
     object->data_lake_metadata = data_lake_metadata;
+    object->setFileMetaInfo(file_meta_info);
     return object;
 }
 
@@ -98,6 +103,15 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t worker
         {
             writeVarUInt(0, out);
         }
+    }
+    
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_COLUMNS_METADATA)
+    {
+        /// This info is not used when optimization is disabled, so there is no need to send it.
+        if (iceberg_read_optimization_enabled && file_meta_info.has_value())
+            file_meta_info.value()->serialize(out);
+        else
+            DataFileMetaInfo().serialize(out);
     }
 }
 
@@ -135,6 +149,14 @@ void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
             iceberg_info = Iceberg::IcebergObjectSerializableInfo{};
             iceberg_info->deserializeForClusterFunctionProtocol(in, protocol_version);
         }
+    }
+
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_COLUMNS_METADATA)
+    {
+        auto info = std::make_shared<DataFileMetaInfo>(DataFileMetaInfo::deserialize(in));
+
+        if (!path.empty() && !info->empty())
+            file_meta_info = info;
     }
 }
 
