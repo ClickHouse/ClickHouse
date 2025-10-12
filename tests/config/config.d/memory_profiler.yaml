@@ -1,2 +1,4 @@
 ---
 total_memory_profiler_step: 100Mi
+total_memory_tracker_sample_probability: 0.01
+total_memory_profiler_sample_min_allocation_size: 4Mi
