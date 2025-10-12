@@ -13,7 +13,7 @@ TEST(MutationsCommands, Deserialization)
     std::string_view str{"MODIFY TTL timestamp + toIntervalMonth(3), MATERIALIZE TTL"};
     ReadBufferFromString in(str);
     MutationCommands commands;
-    commands.readText(in);
+    commands.readText(in, true);
     WriteBufferFromOwnString out;
     commands.writeText(out, true);
     EXPECT_EQ(out.str(), "(MODIFY TTL timestamp + toIntervalMonth(3)), (MATERIALIZE TTL)");
