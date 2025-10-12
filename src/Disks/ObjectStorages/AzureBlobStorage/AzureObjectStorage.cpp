@@ -355,7 +355,6 @@ void AzureObjectStorage::copyObject( /// NOLINT
         settings_ptr,
         read_settings,
         object_to_attributes,
-        true,
         scheduler);
 }
 
