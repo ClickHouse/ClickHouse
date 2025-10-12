@@ -2725,8 +2725,8 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
 
             if (!resolved_identifier_node)
             {
-//                if (disable_constant_folding)
-//                    break;
+                if (disable_constant_folding)
+                    break;
 
                 std::string message_clarification;
                 if (allow_lambda_expression)
@@ -2980,7 +2980,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNodeList(
             result_nodes.push_back(std::move(node_to_resolve));
         }
 
-        if (!disable_constant_folding && expression_node_projection_names.size() != expected_projection_names_size)
+        if (/*!disable_constant_folding && */expression_node_projection_names.size() != expected_projection_names_size)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Expression nodes list expected {} projection names. Actual: {}",
                 expected_projection_names_size,
