@@ -1581,6 +1581,13 @@ String ZooKeeper::getConnectedHostAvailabilityZone() const
     return availability_zones.at(*idx);
 }
 
+std::vector<Coordination::WatchSnapshot> ZooKeeper::getWatchesSnapshot()
+{
+    if (auto * zk = dynamic_cast<Coordination::ZooKeeper *>(impl.get()))
+        return zk->getWatchesSnapshot();
+    return {};
+}
+
 size_t getFailedOpIndex(Coordination::Error exception_code, const Coordination::Responses & responses)
 {
     if (responses.empty())

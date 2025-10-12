@@ -59,6 +59,7 @@
 #include <Storages/System/StorageSystemTables.h>
 #include <Storages/System/StorageSystemProjections.h>
 #include <Storages/System/StorageSystemZooKeeper.h>
+#include <Storages/System/StorageSystemZooKeeperWatches.h>
 #include <Storages/System/StorageSystemContributors.h>
 #include <Storages/System/StorageSystemErrors.h>
 #include <Storages/System/StorageSystemWarnings.h>
@@ -247,6 +248,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     {
         attachNoDescription<StorageSystemZooKeeper>(context, system_database, "zookeeper", "Exposes data from the [Zoo]Keeper cluster defined in the config. Allow to get the list of children for a particular node or read the value written inside it.");
         attach<StorageSystemZooKeeperConnection>(context, system_database, "zookeeper_connection", "Shows the information about current connections to [Zoo]Keeper (including auxiliary [ZooKeepers)");
+        attach<StorageSystemZooKeeperWatches>(context, system_database, "zookeeper_watches", "Shows active ZooKeeper watches created by ClickHouse server.");
     }
 
     if (context->getConfigRef().getInt("allow_experimental_transactions", 0))

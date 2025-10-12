@@ -7,6 +7,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
+#include <Common/ZooKeeper/WatchSnapshot.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Coordination/KeeperConstants.h>
 
@@ -591,6 +592,9 @@ public:
     /// So we update the version of /clickhouse/sessions/server_uuid node when starting a new session.
     /// And there's an option to check this version when committing something.
     void addCheckSessionOp(Coordination::Requests & requests) const;
+
+    /// Snapshot currently registered watches with metadata
+    std::vector<Coordination::WatchSnapshot> getWatchesSnapshot();
 
 private:
     void init(ZooKeeperArgs args_, std::unique_ptr<Coordination::IKeeper> existing_impl);
