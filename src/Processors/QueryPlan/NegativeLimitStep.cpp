@@ -18,7 +18,8 @@ extern const int CORRUPTED_DATA;
 
 static ITransformingStep::Traits getTraits()
 {
-    return ITransformingStep::Traits{
+    return ITransformingStep::Traits
+    {
         {
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
@@ -26,7 +27,8 @@ static ITransformingStep::Traits getTraits()
         },
         {
             .preserves_number_of_rows = false,
-        }};
+        }
+    };
 }
 
 NegativeLimitStep::NegativeLimitStep(const SharedHeader & input_header_, size_t limit_, size_t offset_)
