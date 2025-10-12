@@ -5,7 +5,6 @@ sidebar_label: 'DeltaLake'
 sidebar_position: 40
 slug: /engines/table-engines/integrations/deltalake
 title: 'DeltaLake Table Engine'
-doc_type: 'reference'
 ---
 
 # DeltaLake table engine

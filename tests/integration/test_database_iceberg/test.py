@@ -135,8 +135,7 @@ def create_clickhouse_iceberg_database(
     node.query(
         f"""
 DROP DATABASE IF EXISTS {name};
-SET allow_database_iceberg=true;
-SET write_full_path_in_iceberg_metadata=1;
+SET allow_experimental_database_iceberg=true;
 CREATE DATABASE {name} ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', '{minio_secret_key}')
 SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     """
@@ -144,38 +143,6 @@ SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     show_result = node.query(f"SHOW DATABASE {name}")
     assert minio_secret_key not in show_result
     assert "HIDDEN" in show_result
-
-
-def create_clickhouse_iceberg_table(
-    started_cluster, node, database_name, table_name, schema, additional_settings={}
-):
-    settings = {
-        "storage_catalog_type": "rest",
-        "storage_warehouse": "demo",
-        "object_storage_endpoint": "http://minio:9000/warehouse-rest",
-        "storage_region": "us-east-1",
-        "storage_catalog_url" : BASE_URL,
-    }
-
-    settings.update(additional_settings)
-
-    node.query(
-        f"""
-SET allow_experimental_database_iceberg=true;
-SET write_full_path_in_iceberg_metadata=1;
-CREATE TABLE {CATALOG_NAME}.`{database_name}.{table_name}` {schema} ENGINE = IcebergS3('http://minio:9000/warehouse-rest/{table_name}/', '{minio_access_key}', '{minio_secret_key}')
-SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
-    """
-    )
-
-def drop_clickhouse_iceberg_table(
-    node, database_name, table_name
-):
-    node.query(
-        f"""
-DROP TABLE {CATALOG_NAME}.`{database_name}.{table_name}`
-    """
-    )
 
 
 @pytest.fixture(scope="module")
@@ -421,7 +388,7 @@ def test_backup_database(started_cluster):
     node.query("DROP DATABASE backup_database SYNC")
     assert "backup_database" not in node.query("SHOW DATABASES")
 
-    node.query(f"RESTORE DATABASE backup_database FROM {backup_name}", settings={"allow_database_iceberg": 1})
+    node.query(f"RESTORE DATABASE backup_database FROM {backup_name}", settings={"allow_experimental_database_iceberg": 1})
     assert (
         node.query("SHOW CREATE DATABASE backup_database")
         == "CREATE DATABASE backup_database\\nENGINE = DataLakeCatalog(\\'http://rest:8181/v1\\', \\'minio\\', \\'[HIDDEN]\\')\\nSETTINGS catalog_type = \\'rest\\', warehouse = \\'demo\\', storage_endpoint = \\'http://minio:9000/warehouse-rest\\'\n"
@@ -525,53 +492,3 @@ def test_timestamps(started_cluster):
 
     assert node.query(f"SHOW CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`") == f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`\\n(\\n    `timestamp` Nullable(DateTime64(6)),\\n    `timestamptz` Nullable(DateTime64(6, \\'UTC\\'))\\n)\\nENGINE = Iceberg(\\'http://minio:9000/warehouse-rest/data/\\', \\'minio\\', \\'[HIDDEN]\\')\n"
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "2024-01-01 12:00:00.000000\t2024-01-01 12:00:00.000000\n"
-
-
-def test_insert(started_cluster):
-    node = started_cluster.instances["node1"]
-
-    test_ref = f"test_list_tables_{uuid.uuid4()}"
-    table_name = f"{test_ref}_table"
-    root_namespace = f"{test_ref}_namespace"
-
-    catalog = load_catalog_impl(started_cluster)
-    catalog.create_namespace(root_namespace)
-
-    create_table(catalog, root_namespace, table_name, DEFAULT_SCHEMA, PartitionSpec(), DEFAULT_SORT_ORDER)
-
-    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
-    node.query(f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES (NULL, 'AAPL', 193.24, 193.31, tuple('bot'));", settings={"allow_experimental_insert_into_iceberg": 1, 'write_full_path_in_iceberg_metadata': 1})
-    catalog.load_table(f"{root_namespace}.{table_name}")
-    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "\\N\tAAPL\t193.24\t193.31\t('bot')\n"
-
-    node.query(f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES (NULL, 'Pavel Ivanov (pudge1000-7) pereezhai v amsterdam', 193.24, 193.31, tuple('bot'));", settings={"allow_experimental_insert_into_iceberg": 1, 'write_full_path_in_iceberg_metadata': 1})
-    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}` ORDER BY ALL") == "\\N\tAAPL\t193.24\t193.31\t('bot')\n\\N\tPavel Ivanov (pudge1000-7) pereezhai v amsterdam\t193.24\t193.31\t('bot')\n"
-
-
-def test_create(started_cluster):
-    node = started_cluster.instances["node1"]
-
-    test_ref = f"test_list_tables_{uuid.uuid4()}"
-    table_name = f"{test_ref}_table"
-    root_namespace = f"{test_ref}_namespace"
-
-    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
-    create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x String)")
-    node.query(f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES ('AAPL');", settings={"allow_experimental_insert_into_iceberg": 1, 'write_full_path_in_iceberg_metadata': 1})
-    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
-
-def test_drop_table(started_cluster):
-    node = started_cluster.instances["node1"]
-
-    test_ref = f"test_list_tables_{uuid.uuid4()}"
-    table_name = f"{test_ref}_table"
-    root_namespace = f"{test_ref}_namespace"
-
-    catalog = load_catalog_impl(started_cluster)
-
-    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
-    create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x String)")
-    assert len(catalog.list_tables(root_namespace)) == 1
-
-    drop_clickhouse_iceberg_table(node, root_namespace, table_name)
-    assert len(catalog.list_tables(root_namespace)) == 0

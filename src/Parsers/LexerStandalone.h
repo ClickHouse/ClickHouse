@@ -105,13 +105,22 @@ struct string_view
     {
     }
 
-    string_view(const char * begin, const char * end) : ptr(begin), size(end - begin)
+    inline const char * data() const
     {
+        return ptr;
     }
 
-    inline size_t find(string_view other) const
+    inline size_t find(char c, size_t offset) const
     {
-        for (size_t offset = 0; offset + other.size <= size; ++offset)
+        for (; offset < size; ++offset)
+            if (c == ptr[offset])
+                return offset;
+        return string::npos;
+    }
+
+    inline size_t find(string_view other, size_t offset) const
+    {
+        for (; offset + other.size <= size; ++offset)
         {
             size_t other_pos = 0;
             for (; other_pos < other.size; ++other_pos)

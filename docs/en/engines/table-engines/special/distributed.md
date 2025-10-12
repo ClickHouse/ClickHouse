@@ -7,7 +7,6 @@ sidebar_label: 'Distributed'
 sidebar_position: 10
 slug: /engines/table-engines/special/distributed
 title: 'Distributed Table Engine'
-doc_type: 'reference'
 ---
 
 # Distributed table engine
@@ -52,8 +51,9 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster] AS [db2.]name2
 
 **See Also**
 
-- [distributed_foreground_insert](../../../operations/settings/settings.md#distributed_foreground_insert) setting
-- [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes) for the examples
+ - [distributed_foreground_insert](../../../operations/settings/settings.md#distributed_foreground_insert) setting
+ - [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes) for the examples
+
 ### Distributed settings {#distributed-settings}
 
 | Setting                                    | Description                                                                                                                                                                                                                           | Default value |

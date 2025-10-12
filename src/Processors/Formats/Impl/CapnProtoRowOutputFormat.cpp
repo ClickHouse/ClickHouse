@@ -53,8 +53,7 @@ void registerOutputFormatCapnProto(FormatFactory & factory)
     factory.registerOutputFormat("CapnProto", [](
         WriteBuffer & buf,
         const Block & sample,
-        const FormatSettings & format_settings,
-        FormatFilterInfoPtr /*format_filter_info*/)
+        const FormatSettings & format_settings)
     {
             return std::make_shared<CapnProtoRowOutputFormat>(
                 buf,

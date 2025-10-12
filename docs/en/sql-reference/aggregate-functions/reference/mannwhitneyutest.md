@@ -4,7 +4,6 @@ sidebar_label: 'mannWhitneyUTest'
 sidebar_position: 161
 slug: /sql-reference/aggregate-functions/reference/mannwhitneyutest
 title: 'mannWhitneyUTest'
-doc_type: 'reference'
 ---
 
 # mannWhitneyUTest
@@ -28,9 +27,9 @@ The null hypothesis is that two populations are stochastically equal. Also one-s
 **Parameters**
 
 - `alternative` — alternative hypothesis. (Optional, default: `'two-sided'`.) [String](../../../sql-reference/data-types/string.md).
-  - `'two-sided'`;
-  - `'greater'`;
-  - `'less'`.
+    - `'two-sided'`;
+    - `'greater'`;
+    - `'less'`.
 - `continuity_correction` — if not 0 then continuity correction in the normal approximation for the p-value is applied. (Optional, default: 1.) [UInt64](../../../sql-reference/data-types/int-uint.md).
 
 **Returned values**
@@ -39,6 +38,7 @@ The null hypothesis is that two populations are stochastically equal. Also one-s
 
 - calculated U-statistic. [Float64](../../../sql-reference/data-types/float.md).
 - calculated p-value. [Float64](../../../sql-reference/data-types/float.md).
+
 
 **Example**
 

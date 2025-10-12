@@ -34,8 +34,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
-    extern const SettingsNonZeroUInt64 merge_tree_min_read_task_size;
-    extern const SettingsNonZeroUInt64 apply_patch_parts_join_cache_buckets;
+    extern const SettingsUInt64 merge_tree_min_read_task_size;
 }
 
 namespace MergeTreeSetting
@@ -86,7 +85,6 @@ private:
 
     MergeTreeReadTask::Readers readers;
     MergeTreeReadersChain readers_chain;
-    PatchJoinCachePtr patch_join_cache;
 
     /// Should read using direct IO
     bool read_with_direct_io;
@@ -133,23 +131,16 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     /// is only used in background merges.
     addTotalRowsApprox(data_part->rows_count);
 
-    if (!read_task_info->patch_parts.empty())
-    {
-        size_t merge_tree_min_read_task_size = storage.getContext()->getSettingsRef()[Setting::merge_tree_min_read_task_size];
-        RangesInPatchParts ranges_in_patch_parts(merge_tree_min_read_task_size);
+    size_t merge_tree_min_read_task_size = storage.getContext()->getSettingsRef()[Setting::merge_tree_min_read_task_size];
+    RangesInPatchParts ranges_in_patch_parts(merge_tree_min_read_task_size);
 
-        ranges_in_patch_parts.addPart(data_part, read_task_info->patch_parts, mark_ranges);
-        ranges_in_patch_parts.optimize();
-
-        patch_ranges = ranges_in_patch_parts.getRanges(data_part, read_task_info->patch_parts, mark_ranges);
-        patch_join_cache = std::make_shared<PatchJoinCache>(storage.getContext()->getSettingsRef()[Setting::apply_patch_parts_join_cache_buckets]);
-        patch_join_cache->init(ranges_in_patch_parts);
-    }
+    ranges_in_patch_parts.addPart(data_part, read_task_info->patch_parts, mark_ranges);
+    ranges_in_patch_parts.optimize();
+    patch_ranges = ranges_in_patch_parts.getRanges(data_part, read_task_info->patch_parts, mark_ranges);
 
     const auto & context = storage.getContext();
     ReadSettings read_settings = context->getReadSettings();
     read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache
-        = read_settings.distributed_cache_settings.read_if_exists_otherwise_bypass
         = !(*storage.getSettings())[MergeTreeSetting::force_read_through_cache_for_merges];
 
     /// It does not make sense to use pthread_threadpool for background merges/mutations
@@ -181,7 +172,6 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     MergeTreeReadTask::Extras extras =
     {
         .mark_cache = mark_cache.get(),
-        .patch_join_cache = patch_join_cache.get(),
         .reader_settings = reader_settings,
         .storage_snapshot = storage_snapshot,
     };

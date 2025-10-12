@@ -4,7 +4,6 @@ sidebar_label: 'Data Replication'
 sidebar_position: 20
 slug: /engines/table-engines/mergetree-family/replication
 title: 'Data Replication'
-doc_type: 'reference'
 ---
 
 # Data replication
@@ -155,6 +154,7 @@ Avoid using `ReplicatedMergeTree` or specifying replication parameters, as repli
 | `zoo_path`      | The path to the table in ClickHouse Keeper.                                  |
 | `replica_name`  | The replica name in ClickHouse Keeper.                                       |
 | `other_parameters` | Parameters of an engine used for creating the replicated version, for example, version in `ReplacingMergeTree`. |
+
 
 Example:
 

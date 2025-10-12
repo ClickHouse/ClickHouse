@@ -47,8 +47,8 @@
 #include <Planner/PlannerActionsVisitor.h>
 
 #include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/AggregatingStep.h>
-#include <Processors/QueryPlan/LimitStep.h>
+
+#include <stack>
 
 namespace DB
 {
@@ -342,14 +342,16 @@ bool queryHasArrayJoinInJoinTree(const QueryTreeNodePtr & query_node)
     return false;
 }
 
-bool queryTreeHasWithTotalsInAnySubqueryInJoinTree(const IQueryTreeNode * node)
+bool queryHasWithTotalsInAnySubqueryInJoinTree(const QueryTreeNodePtr & query_node)
 {
-    std::vector<const IQueryTreeNode *> join_tree_nodes_to_process;
-    join_tree_nodes_to_process.push_back(node);
+    const auto & query_node_typed = query_node->as<const QueryNode &>();
+
+    std::vector<QueryTreeNodePtr> join_tree_nodes_to_process;
+    join_tree_nodes_to_process.push_back(query_node_typed.getJoinTree());
 
     while (!join_tree_nodes_to_process.empty())
     {
-        const auto * join_tree_node_to_process = join_tree_nodes_to_process.back();
+        auto join_tree_node_to_process = join_tree_nodes_to_process.back();
         join_tree_nodes_to_process.pop_back();
 
         auto join_tree_node_type = join_tree_node_to_process->getNodeType();
@@ -364,41 +366,41 @@ bool queryTreeHasWithTotalsInAnySubqueryInJoinTree(const IQueryTreeNode * node)
             }
             case QueryTreeNodeType::QUERY:
             {
-                const auto & query_node_to_process = join_tree_node_to_process->as<QueryNode &>();
+                auto & query_node_to_process = join_tree_node_to_process->as<QueryNode &>();
                 if (query_node_to_process.isGroupByWithTotals())
                     return true;
 
-                join_tree_nodes_to_process.push_back(query_node_to_process.getJoinTree().get());
+                join_tree_nodes_to_process.push_back(query_node_to_process.getJoinTree());
                 break;
             }
             case QueryTreeNodeType::UNION:
             {
-                const auto & union_node = join_tree_node_to_process->as<UnionNode &>();
-                const auto & union_queries = union_node.getQueries().getNodes();
+                auto & union_node = join_tree_node_to_process->as<UnionNode &>();
+                auto & union_queries = union_node.getQueries().getNodes();
 
-                for (const auto & union_query : union_queries)
-                    join_tree_nodes_to_process.push_back(union_query.get());
+                for (auto & union_query : union_queries)
+                    join_tree_nodes_to_process.push_back(union_query);
                 break;
             }
             case QueryTreeNodeType::ARRAY_JOIN:
             {
-                const auto & array_join_node = join_tree_node_to_process->as<ArrayJoinNode &>();
-                join_tree_nodes_to_process.push_back(array_join_node.getTableExpression().get());
+                auto & array_join_node = join_tree_node_to_process->as<ArrayJoinNode &>();
+                join_tree_nodes_to_process.push_back(array_join_node.getTableExpression());
                 break;
             }
             case QueryTreeNodeType::CROSS_JOIN:
             {
-                const auto & cross_join_node = join_tree_node_to_process->as<CrossJoinNode &>();
+                auto & cross_join_node = join_tree_node_to_process->as<CrossJoinNode &>();
                 for (const auto & expr : cross_join_node.getTableExpressions())
-                    join_tree_nodes_to_process.push_back(expr.get());
+                    join_tree_nodes_to_process.push_back(expr);
 
                 break;
             }
             case QueryTreeNodeType::JOIN:
             {
-                const auto & join_node = join_tree_node_to_process->as<JoinNode &>();
-                join_tree_nodes_to_process.push_back(join_node.getLeftTableExpression().get());
-                join_tree_nodes_to_process.push_back(join_node.getRightTableExpression().get());
+                auto & join_node = join_tree_node_to_process->as<JoinNode &>();
+                join_tree_nodes_to_process.push_back(join_node.getLeftTableExpression());
+                join_tree_nodes_to_process.push_back(join_node.getRightTableExpression());
                 break;
             }
             default:
@@ -413,13 +415,6 @@ bool queryTreeHasWithTotalsInAnySubqueryInJoinTree(const IQueryTreeNode * node)
 
     return false;
 }
-
-bool queryHasWithTotalsInAnySubqueryInJoinTree(const QueryTreeNodePtr & query_node)
-{
-    const auto & query_node_typed = query_node->as<const QueryNode &>();
-    return queryTreeHasWithTotalsInAnySubqueryInJoinTree(query_node_typed.getJoinTree().get());
-}
-
 
 QueryTreeNodePtr mergeConditionNodes(const QueryTreeNodes & condition_nodes, const ContextPtr & context)
 {
@@ -627,45 +622,6 @@ ActionsDAG::NodeRawConstPtrs getConjunctsList(ActionsDAG::Node * predicate)
         }
     }
     return conjuncts;
-}
-
-bool optimizePlanForExists(QueryPlan & query_plan)
-{
-    auto * node = query_plan.getRootNode();
-    while (true)
-    {
-        if (typeid_cast<ExpressionStep *>(node->step.get()))
-        {
-            node = node->children[0];
-            continue;
-        }
-        if (auto * aggregation = typeid_cast<AggregatingStep *>(node->step.get()))
-        {
-            const auto & params = aggregation->getParams();
-            if (params.keys_size == 0 && !params.empty_result_for_aggregation_by_empty_set)
-            {
-                /// Subquery will always produce at least one row
-                return true;
-            }
-            node = node->children[0];
-            continue;
-        }
-        if (typeid_cast<LimitStep *>(node->step.get()))
-        {
-            /// TODO: Support LimitStep in decorrelation process.
-            /// For now, we just remove it, because it only increases the number of rows in the result.
-            /// It doesn't affect the result of correlated subquery.
-            node = node->children[0];
-            continue;
-        }
-        break;
-    }
-
-    if (node != query_plan.getRootNode())
-    {
-        query_plan = query_plan.extractSubplan(node);
-    }
-    return false;
 }
 
 }

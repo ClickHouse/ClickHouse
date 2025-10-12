@@ -7,20 +7,18 @@
 
 #include <Core/NamesAndTypes.h>
 #include <Core/Types.h>
-#include <Formats/FormatFilterInfo.h>
 #include <Interpreters/ActionsDAG.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <base/defines.h>
+
+
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
 #include <Common/SharedMutex.h>
 
 #include <unordered_map>
-namespace DB::Iceberg
+namespace DB
 {
-
-ColumnMapperPtr createColumnMapper(Poco::JSON::Object::Ptr schema_object);
 
 /**
  * Iceberg supports the following data types (see https://iceberg.apache.org/spec/#schemas-and-data-types):
@@ -92,13 +90,9 @@ public:
 
     static DataTypePtr getSimpleType(const String & type_name);
 
-    static std::unordered_map<String, Int64> traverseSchema(Poco::JSON::Array::Ptr schema);
-
     void registerSnapshotWithSchemaId(Int64 snapshot_id, Int32 schema_id);
     Int32 getSchemaIdForSnapshot(Int64 snapshot_id) const;
     std::optional<Int32> tryGetSchemaIdForSnapshot(Int64 snapshot_id) const;
-
-    ColumnMapperPtr getColumnMapperById(Int32 id) const;
 
 private:
     std::unordered_map<Int32, Poco::JSON::Object::Ptr> iceberg_table_schemas_by_ids TSA_GUARDED_BY(mutex);
@@ -127,5 +121,4 @@ private:
     mutable SharedMutex mutex;
 };
 
-using IcebergSchemaProcessorPtr = std::shared_ptr<IcebergSchemaProcessor>;
 }

@@ -11,8 +11,7 @@ namespace DB
 
 void drainRequestIfNeeded(HTTPServerRequest & request, HTTPServerResponse & response) noexcept
 {
-    auto input_stream = request.getStream();
-    if (input_stream->isCanceled())
+    if (request.getStream().isCanceled())
     {
         response.setKeepAlive(false);
         LOG_WARNING(getLogger("sendExceptionToHTTPClient"), "Cannot read remaining request body during exception handling. The request read buffer is canceled. Set keep alive to false on the response.");
@@ -26,24 +25,15 @@ void drainRequestIfNeeded(HTTPServerRequest & request, HTTPServerResponse & resp
         && (request.getChunkedTransferEncoding() || request.hasContentLength())
         && response.getKeepAlive())
     {
-        /// If the client expects 100 Continue, but we never sent it, don't attempt to read the body and
-        /// don't reuse the connection.
-        if (request.getExpectContinue() && response.getStatus() != Poco::Net::HTTPResponse::HTTP_CONTINUE)
+        try
         {
-            response.setKeepAlive(false);
+            if (!request.getStream().eof())
+                request.getStream().ignoreAll();
         }
-        else
+        catch (...)
         {
-            try
-            {
-                if (!input_stream->eof())
-                    input_stream->ignoreAll();
-            }
-            catch (...)
-            {
-                tryLogCurrentException("sendExceptionToHTTPClient", "Cannot read remaining request body during exception handling. Set keep alive to false on the response.");
-                response.setKeepAlive(false);
-            }
+            tryLogCurrentException("sendExceptionToHTTPClient", "Cannot read remaining request body during exception handling. Set keep alive to false on the response.");
+            response.setKeepAlive(false);
         }
     }
 }

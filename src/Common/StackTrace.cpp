@@ -294,7 +294,7 @@ void StackTrace::forEachFrame(
             }
         }
 
-        if (const auto * symbol = symbol_index.findSymbol(current_frame.physical_addr))
+        if (const auto * symbol = symbol_index.findSymbol(current_frame.virtual_addr))
             current_frame.symbol = demangle(symbol->name);
 
         for (const auto & frame : inline_frames)
@@ -380,12 +380,6 @@ StackTrace::StackTrace(const ucontext_t & signal_context)
         }
     }
 }
-
-StackTrace::StackTrace(FramePointers frame_pointers_, size_t size_, size_t offset_)
-    : size(size_)
-    , offset(offset_)
-    , frame_pointers(std::move(frame_pointers_))
-{}
 
 void StackTrace::tryCapture()
 {

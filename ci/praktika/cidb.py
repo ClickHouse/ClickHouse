@@ -4,19 +4,10 @@ import json
 import urllib
 from typing import Optional
 
+import requests
+
 from ._environment import _Environment
 from .info import Info
-
-try:
-    import requests
-except ImportError as ex:
-    if not Info().is_local_run:
-        raise ex
-    else:
-        print(
-            f"WARNING: 'requests' module is not installed: {ex}. CIDB will not work - ok for local runs only."
-        )
-
 from .result import Result
 from .settings import Settings
 from .usage import ComputeUsage, StorageUsage
@@ -79,7 +70,7 @@ class CIDB:
             check_status=result.status,
             check_duration_ms=int(result.duration * 1000) if result.duration else None,
             check_start_time=Utils.timestamp_to_str(result.start_time),
-            report_url=Info().get_job_report_url(),
+            report_url=Info().get_report_url(),
             pull_request_url=env.CHANGE_URL,
             base_ref=env.BASE_BRANCH,
             base_repo=env.REPOSITORY,

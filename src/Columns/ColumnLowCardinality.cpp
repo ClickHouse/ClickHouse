@@ -279,11 +279,6 @@ StringRef ColumnLowCardinality::serializeValueIntoArena(size_t n, Arena & arena,
     return getDictionary().serializeValueIntoArena(getIndexes().getUInt(n), arena, begin);
 }
 
-StringRef ColumnLowCardinality::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
-{
-    return getDictionary().serializeAggregationStateValueIntoArena(getIndexes().getUInt(n), arena, begin);
-}
-
 char * ColumnLowCardinality::serializeValueIntoMemory(size_t n, char * memory) const
 {
     return getDictionary().serializeValueIntoMemory(getIndexes().getUInt(n), memory);
@@ -317,16 +312,6 @@ const char * ColumnLowCardinality::deserializeAndInsertFromArena(const char * po
     return new_pos;
 }
 
-const char * ColumnLowCardinality::deserializeAndInsertAggregationStateValueFromArena(const char * pos)
-{
-    compactIfSharedDictionary();
-
-    const char * new_pos;
-    idx.insertPosition(getDictionary().uniqueDeserializeAndInsertAggregationStateValueFromArena(pos, new_pos));
-
-    return new_pos;
-}
-
 const char * ColumnLowCardinality::skipSerializedInArena(const char * pos) const
 {
     return getDictionary().skipSerializedInArena(pos);
@@ -350,7 +335,7 @@ MutableColumnPtr ColumnLowCardinality::cloneResized(size_t size) const
     if (size == 0)
         unique_ptr = unique_ptr->cloneEmpty();
 
-    return ColumnLowCardinality::create(IColumn::mutate(std::move(unique_ptr)), getIndexes().cloneResized(size), /*is_shared=*/false);
+    return ColumnLowCardinality::create(IColumn::mutate(std::move(unique_ptr)), getIndexes().cloneResized(size));
 }
 
 MutableColumnPtr ColumnLowCardinality::cloneNullable() const
@@ -584,7 +569,7 @@ std::vector<MutableColumnPtr> ColumnLowCardinality::scatter(ColumnIndex num_colu
     for (auto & column : columns)
     {
         auto unique_ptr = dictionary.getColumnUniquePtr();
-        column = ColumnLowCardinality::create(IColumn::mutate(std::move(unique_ptr)), std::move(column), /*is_shared=*/false);
+        column = ColumnLowCardinality::create(IColumn::mutate(std::move(unique_ptr)), std::move(column));
     }
 
     return columns;
@@ -603,7 +588,7 @@ ColumnLowCardinality::MutablePtr ColumnLowCardinality::cutAndCompact(size_t star
 {
     auto sub_positions = IColumn::mutate(idx.getPositions()->cut(start, length));
     auto new_column_unique = Dictionary::compact(getDictionary(), sub_positions);
-    return ColumnLowCardinality::create(std::move(new_column_unique), std::move(sub_positions), /*is_shared=*/false);
+    return ColumnLowCardinality::create(std::move(new_column_unique), std::move(sub_positions));
 }
 
 void ColumnLowCardinality::compactInplace()

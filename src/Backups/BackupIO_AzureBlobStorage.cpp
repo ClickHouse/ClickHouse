@@ -13,7 +13,6 @@
 
 #include <Poco/Util/AbstractConfiguration.h>
 #include <azure/storage/blobs/blob_options.hpp>
-#include <azure/core/context.hpp>
 
 #include <filesystem>
 
@@ -36,7 +35,7 @@ BackupReaderAzureBlobStorage::BackupReaderAzureBlobStorage(
     const WriteSettings & write_settings_,
     const ContextPtr & context_)
     : BackupReaderDefault(read_settings_, write_settings_, getLogger("BackupReaderAzureBlobStorage"))
-    , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::Azure, MetadataStorageType::None, connection_params_.getConnectionURL(), false, false, ""}
+    , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::Azure, MetadataStorageType::None, connection_params_.getConnectionURL(), false, false}
     , connection_params(connection_params_)
     , blob_path(blob_path_)
 {
@@ -48,10 +47,8 @@ BackupReaderAzureBlobStorage::BackupReaderAzureBlobStorage(
         connection_params.auth_method,
         std::move(client_ptr),
         std::move(settings_ptr),
-        connection_params,
         connection_params.getContainer(),
-        connection_params.getConnectionURL(),
-        /*common_key_prefix*/ "");
+        connection_params.getConnectionURL());
 
     client = object_storage->getAzureBlobStorageClient();
     settings = object_storage->getSettings();
@@ -132,7 +129,7 @@ BackupWriterAzureBlobStorage::BackupWriterAzureBlobStorage(
     const ContextPtr & context_,
     bool attempt_to_create_container)
     : BackupWriterDefault(read_settings_, write_settings_, getLogger("BackupWriterAzureBlobStorage"))
-    , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::Azure, MetadataStorageType::None, connection_params_.getConnectionURL(), false, false, ""}
+    , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::Azure, MetadataStorageType::None, connection_params_.getConnectionURL(), false, false}
     , connection_params(connection_params_)
     , blob_path(blob_path_)
 {
@@ -147,10 +144,8 @@ BackupWriterAzureBlobStorage::BackupWriterAzureBlobStorage(
         connection_params.auth_method,
         std::move(client_ptr),
         std::move(settings_ptr),
-        connection_params,
         connection_params.getContainer(),
-        connection_params.getConnectionURL(),
-        /*common_key_prefix*/ "");
+        connection_params.getConnectionURL());
 
 
     client = object_storage->getAzureBlobStorageClient();

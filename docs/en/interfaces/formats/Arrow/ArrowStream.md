@@ -6,7 +6,6 @@ keywords: ['ArrowStream']
 output_format: true
 slug: /interfaces/formats/ArrowStream
 title: 'ArrowStream'
-doc_type: 'reference'
 ---
 
 | Input | Output | Alias |
@@ -20,3 +19,4 @@ doc_type: 'reference'
 ## Example usage {#example-usage}
 
 ## Format settings {#format-settings}
+

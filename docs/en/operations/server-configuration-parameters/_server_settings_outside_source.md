@@ -63,18 +63,11 @@ This setting is configured by default as:
 
 ## bcrypt_workfactor {#bcrypt_workfactor}
 
-Work factor for the `bcrypt_password` authentication type which uses the [Bcrypt algorithm](https://wildlyinaccurate.com/bcrypt-choosing-a-work-factor/).
-The work factor defines the amount of computations and time needed to compute the hash and verify the password.
+Work factor for the bcrypt_password authentication type which uses the [Bcrypt algorithm](https://wildlyinaccurate.com/bcrypt-choosing-a-work-factor/).
 
 ```xml
 <bcrypt_workfactor>12</bcrypt_workfactor>
 ```
-
-:::warning
-For applications with high-frequency authentication,
-consider alternative authentication methods due to
-bcrypt's computational overhead at higher work factors.
-:::
 
 ## table_engines_require_grant {#table_engines_require_grant}
 
@@ -819,23 +812,20 @@ The location and format of log messages.
 
 **Keys**:
 
-| Key                    | Description                                                                                                                                                        |
-|------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `level`                | Log level. Acceptable values: `none` (turn logging off), `fatal`, `critical`, `error`, `warning`, `notice`, `information`,`debug`, `trace`, `test`                 |
-| `log`                  | The path to the log file.                                                                                                                                          |
-| `errorlog`             | The path to the error log file.                                                                                                                                    |
-| `size`                 | Rotation policy: Maximum size of the log files in bytes. Once the log file size exceeds this threshold, it is renamed and archived, and a new log file is created. |
-| `count`                | Rotation policy: How many historical log files Clickhouse are kept at most.                                                                                        |
-| `stream_compress`      | Compress log messages using LZ4. Set to `1` or `true` to enable.                                                                                                   |
-| `console`              | Enable logging to the console. Set to `1` or `true` to enable. Default is `1` if Clickhouse does not run in daemon mode, `0` otherwise.                            |
-| `console_log_level`    | Log level for console output. Defaults to `level`.                                                                                                                 |
-| `formatting.type`      | Log format for console output. Currently, only `json` is supported                                                                                                 |
-| `use_syslog`           | Also forward log output to syslog.                                                                                                                                 |
-| `syslog_level`         | Log level for logging to syslog.                                                                                                                                   |
-| `async`                | When `true` (default) logging will happen asynchronously (one background thread per output channel). Otherwise it will log inside the thread calling LOG           |
-| `async_queue_max_size` | When using async logging, the max amount of messages that will be kept in the the queue waiting for flushing. Extra messages will be dropped                       |
-| `startup_level`        | Startup level is used to set the root logger level at server startup. After startup log level is reverted to the `level` setting                                   |
-| `shutdown_level`       | Shutdown level is used to set the root logger level at server Shutdown.                                                                                            |
+| Key                 | Description                                                                                                                                                                         |
+|---------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `level`             | Log level. Acceptable values: `none` (turn logging off), `fatal`, `critical`, `error`, `warning`, `notice`, `information`,`debug`, `trace`, `test`                                  |
+| `log`               | The path to the log file.                                                                                                                                                           |
+| `errorlog`          | The path to the error log file.                                                                                                                                                     |
+| `size`              | Rotation policy: Maximum size of the log files in bytes. Once the log file size exceeds this threshold, it is renamed and archived, and a new log file is created.                  |
+| `count`             | Rotation policy: How many historical log files Clickhouse are kept at most.                                                                                                         |
+| `stream_compress`   | Compress log messages using LZ4. Set to `1` or `true` to enable.                                                                                                                    |
+| `console`           | Do not write log messages to log files, instead print them in the console. Set to `1` or `true` to enable. Default is `1` if Clickhouse does not run in daemon mode, `0` otherwise. |
+| `console_log_level` | Log level for console output. Defaults to `level`.                                                                                                                                  |
+| `formatting`        | Log format for console output. Currently, only `json` is supported                                                                                                                  |
+| `use_syslog`        | Also forward log output to syslog.                                                                                                                                                  |
+| `syslog_level`      | Log level for logging to syslog.                                                                                                                                                    |
+| `async`             | When `true` (default) logging will happen asynchronously (one background thread per output channel). Otherwise it will log inside the thread calling LOG                            |
 
 **Log format specifiers**
 
@@ -1243,6 +1233,39 @@ To disable `metric_log` setting, you should create the following file `/etc/clic
 ```
 
 <SystemLogParameters/>
+
+## latency_log {#latency_log}
+
+It is disabled by default.
+
+**Enabling**
+
+To manually turn on latency history collection [`system.latency_log`](../../operations/system-tables/latency_log.md), create `/etc/clickhouse-server/config.d/latency_log.xml` with the following content:
+
+```xml
+<clickhouse>
+    <latency_log>
+        <database>system</database>
+        <table>latency_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
+    </latency_log>
+</clickhouse>
+```
+
+**Disabling**
+
+To disable `latency_log` setting, you should create the following file `/etc/clickhouse-server/config.d/disable_latency_log.xml` with the following content:
+
+```xml
+<clickhouse>
+<latency_log remove="1" />
+</clickhouse>
+```
 
 ## replicated_merge_tree {#replicated_merge_tree}
 
@@ -1658,7 +1681,7 @@ Settings for the [asynchronous_insert_log](/operations/system-tables/asynchronou
 
 ## crash_log {#crash_log}
 
-Settings for the [crash_log](../../operations/system-tables/crash_log.md) system table operation.
+Settings for the [crash_log](../../operations/system-tables/crash-log.md) system table operation.
 
 <SystemLogParameters/>
 
@@ -1876,14 +1899,6 @@ Port for communicating with clients over PostgreSQL protocol.
 <postgresql_port>9005</postgresql_port>
 ```
 
-## mysql_require_secure_transport {#mysql_require_secure_transport}
-
-If set to true, secure communication is required with clients over [mysql_port](#mysql_port). Connection with option `--ssl-mode=none` will be refused. Use it with [OpenSSL](#openssl) settings.
-
-## postgresql_require_secure_transport {#postgresql_require_secure_transport}
-
-If set to true, secure communication is required with clients over [postgresql_port](#postgresql_port). Connection with option `sslmode=disable` will be refused. Use it with [OpenSSL](#openssl) settings.
-
 ## tmp_path {#tmp_path}
 
 Path on the local filesystem to store temporary data for processing large queries.
@@ -2011,23 +2026,6 @@ The default settings are:
     <partition_by>toYYYYMM(event_date)</partition_by>
     <flush_interval_milliseconds>7500</flush_interval_milliseconds>
 </s3queue_log>
-```
-
-## dead_letter_queue {#dead_letter_queue}
-
-Setting for the 'dead_letter_queue' system table.
-
-<SystemLogParameters/>
-
-The default settings are:
-
-```xml
-<dead_letter_queue>
-    <database>system</database>
-    <table>dead_letter</table>
-    <partition_by>toYYYYMM(event_date)</partition_by>
-    <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-</dead_letter_queue>
 ```
 
 ## zookeeper {#zookeeper}
@@ -2336,6 +2334,7 @@ Select a parent field in the tabs below to view their children:
 
   </TabItem>
   <TabItem value="http_https" label="<http> and <https>">
+
 
 | Field   | Description          |
 |---------|----------------------|

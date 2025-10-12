@@ -23,7 +23,13 @@
 
 using namespace DB;
 
-namespace DB::Iceberg
+namespace ProfileEvents
+{
+    extern const Event IcebergPartitionPrunedFiles;
+    extern const Event IcebergMinMaxIndexPrunedFiles;
+}
+
+namespace Iceberg
 {
 
 DB::ASTPtr getASTFromTransform(const String & transform_name_src, const String & column_name)
@@ -96,7 +102,7 @@ std::unique_ptr<DB::ActionsDAG> ManifestFilesPruner::transformFilterDagForManife
 
 
 ManifestFilesPruner::ManifestFilesPruner(
-    const IcebergSchemaProcessor & schema_processor_,
+    const DB::IcebergSchemaProcessor & schema_processor_,
     Int32 current_schema_id_,
     Int32 initial_schema_id_,
     const DB::ActionsDAG * filter_dag,
@@ -124,10 +130,10 @@ ManifestFilesPruner::ManifestFilesPruner(
     if (manifest_file.hasBoundsInfoInManifests() && transformed_dag != nullptr)
     {
         {
-            const auto & bounded_columns = manifest_file.getColumnsIDsWithBounds();
+            const auto & bounded_colums = manifest_file.getColumnsIDsWithBounds();
             for (Int32 used_column_id : used_columns_in_filter)
             {
-                if (!bounded_columns.contains(used_column_id))
+                if (!bounded_colums.contains(used_column_id))
                     continue;
 
                 auto name_and_type = schema_processor.tryGetFieldCharacteristics(initial_schema_id, used_column_id);
@@ -146,7 +152,7 @@ ManifestFilesPruner::ManifestFilesPruner(
     }
 }
 
-PruningReturnStatus ManifestFilesPruner::canBePruned(const ManifestFileEntry & entry) const
+bool ManifestFilesPruner::canBePruned(const ManifestFileEntry & entry) const
 {
     if (partition_key_condition.has_value())
     {
@@ -164,7 +170,8 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(const ManifestFileEntry & e
 
         if (!can_be_true)
         {
-            return PruningReturnStatus::PARTITION_PRUNED;
+            ProfileEvents::increment(ProfileEvents::IcebergPartitionPrunedFiles);
+            return true;
         }
     }
 
@@ -186,14 +193,17 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(const ManifestFileEntry & e
 
 
         auto hyperrectangle = it->second.hyperrectangle;
-        if (hyperrectangle.has_value() && it->second.nulls_count.has_value() && *it->second.nulls_count == 0 && !key_condition.mayBeTrueInRange(1, &hyperrectangle->left, &hyperrectangle->right, {name_and_type->type}))
+        if (hyperrectangle.has_value() && !key_condition.mayBeTrueInRange(1, &hyperrectangle->left, &hyperrectangle->right, {name_and_type->type}))
         {
-            return PruningReturnStatus::MIN_MAX_INDEX_PRUNED;
+            ProfileEvents::increment(ProfileEvents::IcebergMinMaxIndexPrunedFiles);
+            return true;
         }
     }
 
-    return PruningReturnStatus::NOT_PRUNED;
+    return false;
 }
+
+
 }
 
 #endif
