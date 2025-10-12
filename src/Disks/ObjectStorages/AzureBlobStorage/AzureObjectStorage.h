@@ -29,8 +29,10 @@ public:
         AzureBlobStorage::AuthMethod auth_method,
         ClientPtr && client_,
         SettingsPtr && settings_,
+        const AzureBlobStorage::ConnectionParams & connection_params_,
         const String & object_namespace_,
-        const String & description_);
+        const String & description_,
+        const String & common_key_prefix_);
 
     void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override;
 
@@ -44,7 +46,7 @@ public:
     std::string getRootPrefix() const override { return object_namespace; }
 
     /// Object keys are unique within the object namespace (container + prefix).
-    std::string getCommonKeyPrefix() const override { return ""; }
+    std::string getCommonKeyPrefix() const override { return common_key_prefix; }
 
     std::string getDescription() const override { return description; }
 
@@ -104,6 +106,11 @@ public:
 
     bool supportParallelWrite() const override { return true; }
 
+    const AzureBlobStorage::ConnectionParams & getConnectionParameters() const
+    {
+        return connection_params;
+    }
+
 private:
     void removeObjectImpl(
         const StoredObject & object,
@@ -119,6 +126,10 @@ private:
 
     /// We use source url without container and prefix as description, because in Azure there are no limitations for operations between different containers.
     const String description;
+
+    const String common_key_prefix;
+
+    const AzureBlobStorage::ConnectionParams connection_params;
 
     LoggerPtr log;
 };

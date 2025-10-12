@@ -47,8 +47,10 @@ BackupReaderAzureBlobStorage::BackupReaderAzureBlobStorage(
         connection_params.auth_method,
         std::move(client_ptr),
         std::move(settings_ptr),
+        connection_params,
         connection_params.getContainer(),
-        connection_params.getConnectionURL());
+        connection_params.getConnectionURL(),
+        /*common_key_prefix*/ "");
 
     client = object_storage->getAzureBlobStorageClient();
     settings = object_storage->getSettings();
@@ -144,8 +146,10 @@ BackupWriterAzureBlobStorage::BackupWriterAzureBlobStorage(
         connection_params.auth_method,
         std::move(client_ptr),
         std::move(settings_ptr),
+        connection_params,
         connection_params.getContainer(),
-        connection_params.getConnectionURL());
+        connection_params.getConnectionURL(),
+        /*common_key_prefix*/ "");
 
 
     client = object_storage->getAzureBlobStorageClient();
