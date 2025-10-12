@@ -112,21 +112,21 @@ void executeHasAnyTokens(
     const Needles & needles,
     PaddedPODArray<UInt8> & col_result)
 {
-    std::vector<std::string_view> tokens;
     for (size_t i = 0; i < input_rows_count; ++i)
     {
-        const std::string_view value = col_input.getDataAt(i).toView();
+        StringRef value = col_input.getDataAt(i);
         col_result[i] = false;
 
-        tokens = token_extractor->getTokensView(value.data(), value.size());
-        for (const auto & token : tokens)
+        forEachTokenPadded(*token_extractor, value.data, value.size, [&](const char * token_start, size_t token_len)
         {
-            if (needles.contains(token))
+            if (needles.contains(std::string_view(token_start, token_len)))
             {
                 col_result[i] = true;
-                break;
+                return true;
             }
-        }
+
+            return false;
+        });
     }
 }
 
@@ -142,25 +142,27 @@ void executeHasAllTokens(
     const UInt64 expected_mask = ((1ULL << (ns - 1)) + ((1ULL << (ns - 1)) - 1));
 
     UInt64 mask;
-    std::vector<std::string_view> tokens;
     for (size_t i = 0; i < input_rows_count; ++i)
     {
-        const std::string_view value = col_input.getDataAt(i).toView();
+        StringRef value = col_input.getDataAt(i);
         col_result[i] = false;
-
         mask = 0;
-        tokens = token_extractor->getTokensView(value.data(), value.size());
-        for (const auto & token : tokens)
+
+        forEachTokenPadded(*token_extractor, value.data, value.size, [&](const char * token_start, size_t token_len)
         {
-            if (auto it = needles.find(token); it != needles.end())
+            if (auto it = needles.find(std::string_view(token_start, token_len)); it != needles.end())
+            {
                 mask |= (1ULL << it->second);
+            }
 
             if (mask == expected_mask)
             {
                 col_result[i] = true;
-                break;
+                return true;
             }
-        }
+
+            return false;
+        });
     }
 }
 
@@ -240,7 +242,6 @@ ColumnPtr FunctionHasAnyAllTokens<HasTokensTraits>::executeImpl(
             execute<HasTokensTraits>(&default_token_extractor, *column_string, input_rows_count, needles_tmp, col_result->getData());
         else if (const auto * column_fixed_string = checkAndGetColumn<ColumnFixedString>(col_input.get()))
             execute<HasTokensTraits>(&default_token_extractor, *column_fixed_string, input_rows_count, needles_tmp, col_result->getData());
-
     }
     else
     {

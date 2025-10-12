@@ -151,18 +151,18 @@ private:
     {
         auto & offsets_data = column_offsets_input.getData();
         offsets_data.resize(input_rows_count);
-
-        std::vector<std::string_view> tokens;
         size_t tokens_count = 0;
+
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            std::string_view input = column_input.getDataAt(i).toView();
-            tokens = token_extractor->getTokensView(input.data(), input.size());
-            tokens_count += tokens.size();
+            StringRef input = column_input.getDataAt(i);
 
-            for (const auto & token : tokens)
-                column_result.insertData(token.data(), token.size());
-            tokens.clear();
+            forEachTokenPadded(*token_extractor, input.data, input.size, [&](const char * token_start, size_t token_len)
+            {
+                column_result.insertData(token_start, token_len);
+                ++tokens_count;
+                return false;
+            });
 
             offsets_data[i] = tokens_count;
         }
