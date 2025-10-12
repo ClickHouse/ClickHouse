@@ -182,9 +182,6 @@ IProcessor::Status NegativeOffsetTransform::tryPushWholeFrontChunk()
     if (queued_row_count <= offset)
         return Status::Finished;
 
-    if (queue.empty())
-        return Status::Finished;
-
     auto & front = queue.front();
 
     auto & output = *front.output_port;
@@ -220,9 +217,6 @@ IProcessor::Status NegativeOffsetTransform::tryPushRemainingChunkPrefix()
 {
     /// Need to keep at least 'offset' rows queued.
     if (queued_row_count <= offset)
-        return Status::Finished;
-
-    if (queue.empty())
         return Status::Finished;
 
     auto & front = queue.front();
