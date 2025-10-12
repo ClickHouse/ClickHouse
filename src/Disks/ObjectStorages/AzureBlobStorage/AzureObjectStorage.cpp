@@ -9,6 +9,7 @@
 #include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
+#include <IO/AzureBlobStorage/copyAzureBlobStorageFile.h>
 
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #include <Disks/ObjectStorages/ObjectStorageIteratorAsync.h>
