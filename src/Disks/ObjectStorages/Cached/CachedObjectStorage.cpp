@@ -202,11 +202,6 @@ ObjectMetadata CachedObjectStorage::getObjectMetadata(const std::string & path) 
     return object_storage->getObjectMetadata(path);
 }
 
-std::optional<ObjectMetadata> CachedObjectStorage::tryGetObjectMetadata(const std::string & path) const
-{
-    return object_storage->tryGetObjectMetadata(path);
-}
-
 void CachedObjectStorage::shutdown()
 {
     object_storage->shutdown();

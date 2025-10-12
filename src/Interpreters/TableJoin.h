@@ -161,7 +161,6 @@ private:
     const size_t sort_right_minimum_perkey_rows = 0;
     const size_t sort_right_maximum_table_rows = 0;
     const bool allow_join_sorting = false;
-    const bool allow_dynamic_type_in_join_keys = false;
 
     /// Value if setting max_memory_usage for query, can be used when max_bytes_in_join is not specified.
     size_t max_memory_usage = 0;

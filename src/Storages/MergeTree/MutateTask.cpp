@@ -79,8 +79,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool ttl_only_drop_parts;
     extern const MergeTreeSettingsBool enable_index_granularity_compression;
     extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
-    extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
-    extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
 }
 
 namespace ErrorCodes
@@ -195,7 +193,6 @@ static void splitAndModifyMutationCommands(
                 || command.type == MutationCommand::Type::MATERIALIZE_STATISTICS
                 || command.type == MutationCommand::Type::MATERIALIZE_PROJECTION
                 || command.type == MutationCommand::Type::MATERIALIZE_TTL
-                || command.type == MutationCommand::Type::REWRITE_PARTS
                 || command.type == MutationCommand::Type::DELETE
                 || command.type == MutationCommand::Type::UPDATE
                 || command.type == MutationCommand::Type::APPLY_DELETED_MASK
@@ -336,7 +333,6 @@ static void splitAndModifyMutationCommands(
                 || command.type == MutationCommand::Type::MATERIALIZE_STATISTICS
                 || command.type == MutationCommand::Type::MATERIALIZE_PROJECTION
                 || command.type == MutationCommand::Type::MATERIALIZE_TTL
-                || command.type == MutationCommand::Type::REWRITE_PARTS
                 || command.type == MutationCommand::Type::DELETE
                 || command.type == MutationCommand::Type::UPDATE
                 || command.type == MutationCommand::Type::APPLY_DELETED_MASK
@@ -481,15 +477,7 @@ getColumnsForNewDataPart(
         }
     }
 
-    SerializationInfo::Settings settings
-    {
-        (*source_part->storage.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
-        false,
-        (*source_part->storage.getSettings())[MergeTreeSetting::serialization_info_version],
-        (*source_part->storage.getSettings())[MergeTreeSetting::string_serialization_version],
-    };
-
-    SerializationInfoByName new_serialization_infos(settings);
+    SerializationInfoByName new_serialization_infos;
     for (const auto & [name, old_info] : serialization_infos)
     {
         auto it = renamed_columns_from_to.find(name);
@@ -510,6 +498,12 @@ getColumnsForNewDataPart(
 
         auto old_type = part_columns.getPhysical(name).type;
         auto new_type = updated_header.getByName(new_name).type;
+
+        SerializationInfo::Settings settings
+        {
+            .ratio_of_defaults_for_sparse = (*source_part->storage.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
+            .choose_kind = false
+        };
 
         if (!new_type->supportsSparseSerialization() || settings.isAlwaysDefault())
             continue;
@@ -983,8 +977,11 @@ static NameToNameVector collectFilesForRenames(
         }
     }
 
-    if (source_part->getSerializationInfos().needsPersistence() && !new_part->getSerializationInfos().needsPersistence())
+    if (!source_part->getSerializationInfos().empty()
+        && new_part->getSerializationInfos().empty())
+    {
         rename_vector.emplace_back(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, "");
+    }
 
     return rename_vector;
 }
@@ -1025,12 +1022,11 @@ void finalizeMutatedPart(
         written_files.push_back(std::move(out_ttl));
     }
 
-    const auto & serialization_infos = new_data_part->getSerializationInfos();
-    if (serialization_infos.needsPersistence())
+    if (!new_data_part->getSerializationInfos().empty())
     {
         auto out_serialization = new_data_part->getDataPartStorage().writeFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, 4096, context->getWriteSettings());
         HashingWriteBuffer out_hashing(*out_serialization);
-        serialization_infos.writeJSON(out_hashing);
+        new_data_part->getSerializationInfos().writeJSON(out_hashing);
         out_hashing.finalize();
         new_data_part->checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_size = out_hashing.count();
         new_data_part->checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_hash = out_hashing.getHash();
@@ -2445,7 +2441,6 @@ bool MutateTask::prepare()
     context_for_reading->setSetting("allow_asynchronous_read_from_io_pool_for_merge_tree", false);
     context_for_reading->setSetting("max_streams_for_merge_tree_reading", Field(0));
     context_for_reading->setSetting("read_from_filesystem_cache_if_exists_otherwise_bypass_cache", 1);
-    context_for_reading->setSetting("read_from_distributed_cache_if_exists_otherwise_bypass_cache", 1);
 
     bool suitable_for_ttl_optimization = ctx->metadata_snapshot->hasOnlyRowsTTL() && (*ctx->data->getSettings())[MergeTreeSetting::ttl_only_drop_parts];
     MutationHelpers::splitAndModifyMutationCommands(

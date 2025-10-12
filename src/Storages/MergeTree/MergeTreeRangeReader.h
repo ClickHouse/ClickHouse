@@ -167,8 +167,6 @@ private:
         ///       some columns may have different size (for example, default columns may be zero size).
         size_t read(Columns & columns, size_t from_mark, size_t offset, size_t num_rows);
 
-        size_t numDelayedRows() const { return num_delayed_rows; }
-
         /// Skip extra rows to current_offset and perform actual reading
         size_t finalize(Columns & columns);
 
@@ -237,8 +235,6 @@ private:
 
         void checkNotFinished() const;
         void checkEnoughSpaceInCurrentGranule(size_t num_rows) const;
-        void checkNoDelayedRows() const;
-
         size_t readRows(Columns & columns, size_t num_rows);
         void toNextMark();
         size_t ceilRowsToCompleteGranules(size_t rows_num) const;

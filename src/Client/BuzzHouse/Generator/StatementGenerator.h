@@ -19,7 +19,7 @@ public:
 
     SQLRelationCol() = default;
 
-    SQLRelationCol(const String & rname, const DB::Strings & names)
+    SQLRelationCol(const String rname, const DB::Strings names)
         : rel_name(rname)
         , path(names)
     {
@@ -45,7 +45,7 @@ public:
 
     SQLRelation() = default;
 
-    explicit SQLRelation(const String & n)
+    explicit SQLRelation(const String n)
         : name(n)
     {
     }
@@ -368,20 +368,16 @@ private:
     void generateNextKill(RandomGenerator & rg, Kill * kil);
     void generateUptDelWhere(RandomGenerator & rg, const SQLTable & t, Expr * expr);
     void generateAlter(RandomGenerator & rg, Alter * at);
-    void generateHotTableSettingsValues(RandomGenerator & rg, bool create, SettingValues * vals);
+    void setRandomSetting(RandomGenerator & rg, const std::unordered_map<String, CHSetting> & settings, SetValue * set);
     void generateSettingValues(RandomGenerator & rg, const std::unordered_map<String, CHSetting> & settings, SettingValues * vals);
     void generateSettingValues(
         RandomGenerator & rg, const std::unordered_map<String, CHSetting> & settings, size_t nvalues, SettingValues * vals);
-    void generateHotTableSettingList(RandomGenerator & rg, SettingList * sl);
     void generateSettingList(RandomGenerator & rg, const std::unordered_map<String, CHSetting> & settings, SettingList * sl);
     void generateAttach(RandomGenerator & rg, Attach * att);
     void generateDetach(RandomGenerator & rg, Detach * det);
     void generateNextCreateFunction(RandomGenerator & rg, CreateFunction * cf);
     void generateNextSystemStatement(RandomGenerator & rg, bool allow_table_statements, SystemCommand * sc);
-    void generateNextShowStatement(RandomGenerator & rg, ShowStatement * st);
 
-    void generateLikeExpr(RandomGenerator & rg, Expr * expr);
-    Expr * generatePartialSearchExpr(RandomGenerator & rg, Expr * expr) const;
     void addFieldAccess(RandomGenerator & rg, Expr * expr, uint32_t nested_prob);
     void addColNestedAccess(RandomGenerator & rg, ExprColumn * expr, uint32_t nested_prob);
     void addSargableColRef(RandomGenerator & rg, const SQLRelationCol & rel_col, Expr * expr);
@@ -489,7 +485,6 @@ private:
         uint32_t added_partition_strategy = 0;
         uint32_t added_partition_columns_in_data_file = 0;
         uint32_t added_structure = 0;
-        uint32_t added_storage_class_name = 0;
         const uint32_t toadd_path = 1;
         const uint32_t toadd_format = (b.file_format.has_value() || this->allow_not_deterministic) && rg.nextMediumNumber() < 91;
         const uint32_t toadd_compression = (b.file_comp.has_value() || this->allow_not_deterministic) && rg.nextMediumNumber() < 51;
@@ -499,11 +494,9 @@ private:
         const uint32_t toadd_partition_columns_in_data_file
             = (b.partition_columns_in_data_file.has_value() || ((b.isS3Engine() || b.isAzureEngine()) && this->allow_not_deterministic))
             && rg.nextMediumNumber() < 21;
-        const uint32_t toadd_storage_class_name
-            = (b.storage_class_name.has_value() || (b.isS3Engine() && this->allow_not_deterministic)) && rg.nextMediumNumber() < 21;
         const uint32_t toadd_structure = !std::is_same_v<U, TableEngine> && (!this->allow_not_deterministic || rg.nextMediumNumber() < 91);
         const uint32_t total_to_add = toadd_path + toadd_format + toadd_compression + toadd_partition_strategy
-            + toadd_partition_columns_in_data_file + toadd_storage_class_name + toadd_structure;
+            + toadd_partition_columns_in_data_file + toadd_structure;
 
         for (uint32_t i = 0; i < total_to_add; i++)
         {
@@ -514,10 +507,9 @@ private:
             const uint32_t add_partition_strategy = 2 * static_cast<uint32_t>(added_partition_strategy < toadd_partition_strategy);
             const uint32_t add_partition_columns_in_data_file
                 = 2 * static_cast<uint32_t>(added_partition_columns_in_data_file < toadd_partition_columns_in_data_file);
-            const uint32_t add_storage_class_name = 2 * static_cast<uint32_t>(added_storage_class_name < toadd_storage_class_name);
             const uint32_t add_structure = 4 * static_cast<uint32_t>(added_structure < toadd_structure);
-            const uint32_t prob_space = add_path + add_format + add_compression + add_partition_strategy
-                + add_partition_columns_in_data_file + add_storage_class_name + add_structure;
+            const uint32_t prob_space
+                = add_path + add_format + add_compression + add_partition_strategy + add_partition_columns_in_data_file + add_structure;
             std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
             const uint32_t nopt = next_dist(rg.generator);
 
@@ -585,25 +577,10 @@ private:
                 added_partition_columns_in_data_file++;
             }
             else if (
-                add_storage_class_name
-                && nopt
-                    < (add_path + add_format + add_compression + add_partition_strategy + add_partition_columns_in_data_file
-                       + add_storage_class_name + 1))
-            {
-                /// Storage class name in S3
-                const String next_scn = (b.storage_class_name.has_value() && (!this->allow_not_deterministic || rg.nextMediumNumber() < 81))
-                    ? b.storage_class_name.value()
-                    : (rg.nextBool() ? "STANDARD" : "INTELLIGENT_TIERING");
-
-                next->set_key("storage_class_name");
-                next->set_value(next_scn);
-                added_storage_class_name++;
-            }
-            else if (
                 add_structure
                 && nopt
-                    < (add_path + add_format + add_compression + add_partition_strategy + add_partition_columns_in_data_file
-                       + add_storage_class_name + add_structure + 1))
+                    < (add_path + add_format + add_compression + add_partition_strategy + add_partition_columns_in_data_file + add_structure
+                       + 1))
             {
                 /// Structure for table function
                 next->set_key("structure");

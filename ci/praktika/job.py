@@ -130,11 +130,6 @@ class Job:
             """
             return copy.deepcopy(self)
 
-        def set_name(self, name):
-            res = copy.deepcopy(self)
-            res.name = name
-            return res
-
         def set_dependency(self, job, reset=False):
             res = copy.deepcopy(self)
             if not (isinstance(job, list) or isinstance(job, tuple)):
@@ -169,11 +164,6 @@ class Job:
                     )
             return res
 
-        def set_runs_on(self, runs_on):
-            res = copy.deepcopy(self)
-            res.runs_on = runs_on
-            return res
-
         def unset_provides(self, artifact_keyword):
             """
             removes artifact matching artifact_keyword
@@ -191,11 +181,6 @@ class Job:
         def set_allow_merge_on_failure(self, value):
             res = copy.deepcopy(self)
             res.allow_merge_on_failure = value
-            return res
-
-        def set_post_hooks(self, post_hooks):
-            res = copy.deepcopy(self)
-            res.post_hooks = post_hooks
             return res
 
         @staticmethod

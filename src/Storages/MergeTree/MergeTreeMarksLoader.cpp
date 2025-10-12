@@ -1,16 +1,15 @@
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
-#include <Interpreters/Context.h>
-#include <Parsers/parseIdentifierOrStringLiteral.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
-#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ThreadPool.h>
-#include <Common/threadPoolCallbackRunner.h>
+#include <Parsers/parseIdentifierOrStringLiteral.h>
+#include <Interpreters/Context.h>
 
 #include <utility>
 
@@ -19,7 +18,6 @@ namespace ProfileEvents
     extern const Event WaitMarksLoadMicroseconds;
     extern const Event BackgroundLoadingMarksTasks;
     extern const Event LoadingMarksTasksCanceled;
-    extern const Event MarksTasksFromCache;
     extern const Event LoadedMarksFiles;
     extern const Event LoadedMarksCount;
     extern const Event LoadedMarksMemoryBytes;
@@ -97,8 +95,6 @@ MergeTreeMarksLoader::~MergeTreeMarksLoader()
 
 MergeTreeMarksGetterPtr MergeTreeMarksLoader::loadMarks()
 {
-    OpenTelemetry::SpanHolder span("MergeTreeMarksLoader::loadMarks");
-
     std::lock_guard lock(load_mutex);
 
     if (marks)
@@ -260,17 +256,6 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksSync()
 
 std::future<MarkCache::MappedPtr> MergeTreeMarksLoader::loadMarksAsync()
 {
-    /// Avoid queueing jobs into thread pool if marks are in cache
-    auto data_part_storage = data_part_reader->getDataPartStorage();
-    auto key = MarkCache::hash(fs::path(data_part_storage->getFullPath()) / mrk_path);
-    if (MarkCache::MappedPtr loaded_marks = mark_cache->get(key))
-    {
-        ProfileEvents::increment(ProfileEvents::MarksTasksFromCache);
-        auto promise = std::promise<MarkCache::MappedPtr>();
-        promise.set_value(std::move(loaded_marks));
-        return promise.get_future();
-    }
-
     return scheduleFromThreadPoolUnsafe<MarkCache::MappedPtr>(
         [this]() -> MarkCache::MappedPtr
         {

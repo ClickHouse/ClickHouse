@@ -170,7 +170,7 @@ SELECT formatReadableSize(filesystemCapacity()) AS "Capacity";
 
     FunctionDocumentation::Description description_filesystemUnreserved = R"(
 Returns the total amount of free space on the filesystem hosting the database persistence (previously `filesystemFree`).
-See also [`filesystemAvailable`](#filesystemAvailable).
+See also [`filesystemAvailable`](#fileSystemAvailable).
 )";
     FunctionDocumentation::Syntax syntax_filesystemUnreserved = "filesystemUnreserved([disk_name])";
     FunctionDocumentation::Arguments arguments_filesystemUnreserved = {

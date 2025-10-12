@@ -1658,7 +1658,7 @@ Settings for the [asynchronous_insert_log](/operations/system-tables/asynchronou
 
 ## crash_log {#crash_log}
 
-Settings for the [crash_log](../../operations/system-tables/crash_log.md) system table operation.
+Settings for the [crash_log](../../operations/system-tables/crash-log.md) system table operation.
 
 <SystemLogParameters/>
 

@@ -249,6 +249,8 @@ public:
         Disabled,
     };
 
+    /// TODO [parquet]: Add metrics for queue size and active threads, and maybe event for tasks executed.
+
     ThreadPoolCallbackRunnerFast();
 
     void initManual()
@@ -280,9 +282,6 @@ public:
     bool isIdle() const { return active_tasks.load(std::memory_order_relaxed) == 0; }
 
 private:
-    /// Stop thread if it had nothing to do for this long.
-    static constexpr UInt64 THREAD_IDLE_TIMEOUT_NS = 3'000'000; // 3 ms
-
     Mode mode = Mode::Disabled;
     ThreadPool * pool = nullptr;
     size_t max_threads = 0;
@@ -309,25 +308,6 @@ private:
 #else
     std::condition_variable queue_cv;
 #endif
-
-    /// We dynamically start more threads when queue grows and stop idle threads after a timeout.
-    ///
-    /// Interestingly, this is required for correctness, not just performance.
-    /// If we kept max_threads threads at all times, we may deadlock because the "threads" that we
-    /// schedule on ThreadPool are not necessarily running, they may be sitting in ThreadPool's
-    /// queue, blocking other "threads" from running. E.g. this may happen:
-    ///  1. Iceberg reader creates many parquet readers, and their ThreadPoolCallbackRunnerFast(s)
-    ///     occupy all slots in the shared ThreadPool (getFormatParsingThreadPool()).
-    ///  2. Iceberg reader creates some more parquet readers for positional deletes, using separate
-    ///     ThreadPoolCallbackRunnerFast-s (because the ones from above are mildly inconvenient to
-    ///     propagate to that code site). Those ThreadPoolCallbackRunnerFast-s make
-    ///     pool->scheduleOrThrowOnError calls, but ThreadPool just adds them to queue, no actual
-    ///     ThreadPoolCallbackRunnerFast::threadFunction()-s are started.
-    ///  3. The readers from step 2 are stuck because their ThreadPoolCallbackRunnerFast-s have no
-    ///     threads. The readers from step 1 are idle but not destroyed (keep occupying threads)
-    ///     because the iceberg reader is waiting for positional deletes to be read (by readers
-    ///     from step 2). We're stuck.
-    void startMoreThreadsIfNeeded(size_t active_tasks_, std::unique_lock<std::mutex> &);
 
     void threadFunction();
 };
@@ -359,9 +339,12 @@ private:
 ///     }
 /// }
 ///
-/// Fun fact: ShutdownHelper can almost be replaced with SharedMutex.
+/// Fun fact: ShutdownHelper can almost be replaced with std::shared_mutex.
 /// Background tasks would do try_lock_shared(). Shutdown would do lock() and never unlock.
-/// Alas, SharedMutex::try_lock_shared() is allowed to spuriously fail, so this doesn't work.
+/// Alas, std::shared_mutex::try_lock_shared() is allowed to spuriously fail, so this doesn't work.
+/// (In Common/SharedMutex.h, the futex-based implementation has reliable try_lock_shared(), but the
+/// fallback absl implementation can fail spuriously. In Common/CancelableSharedMutex.h there's
+/// another suitable futex-based linux-only implementation.)
 class ShutdownHelper
 {
 public:

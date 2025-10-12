@@ -163,7 +163,7 @@ public:
         if constexpr (std::endian::native == std::endian::little)
             ms = std::byteswap(ms);
 
-        return DecimalUtils::dateTimeFromComponents(ms / intExp10(DATETIME_SCALE), ms % intExp10(DATETIME_SCALE), DATETIME_SCALE);
+        return DecimalUtils::decimalFromComponents<DateTime64>(ms / intExp10(DATETIME_SCALE), ms % intExp10(DATETIME_SCALE), DATETIME_SCALE);
     }
 };
 

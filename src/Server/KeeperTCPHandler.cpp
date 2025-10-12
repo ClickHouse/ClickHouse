@@ -10,7 +10,6 @@
 #    include <IO/ReadBufferFromFileDescriptor.h>
 #    include <IO/ReadBufferFromPocoSocket.h>
 #    include <IO/WriteBufferFromPocoSocket.h>
-#    include <IO/LimitReadBuffer.h>
 #    include <base/defines.h>
 #    include <base/hex.h>
 #    include <Poco/Net/NetException.h>
@@ -48,7 +47,6 @@ namespace CoordinationSetting
 {
     extern const CoordinationSettingsUInt64 log_slow_connection_operation_threshold_ms;
     extern const CoordinationSettingsUInt64 log_slow_total_threshold_ms;
-    extern const CoordinationSettingsUInt64 max_request_size;
     extern const CoordinationSettingsBool use_xid_64;
 }
 
@@ -70,7 +68,6 @@ namespace ErrorCodes
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
     extern const int TIMEOUT_EXCEEDED;
     extern const int BAD_ARGUMENTS;
-    extern const int LIMIT_EXCEEDED;
     extern const int AUTHENTICATION_FAILED;
 }
 
@@ -439,8 +436,6 @@ void KeeperTCPHandler::runImpl()
         compressed_out.emplace(*out, CompressionCodecFactory::instance().get("LZ4",{}));
     }
 
-    max_request_size = static_cast<UInt64>(keeper_context->getCoordinationSettings()[CoordinationSetting::max_request_size]);
-
     auto response_callback = [my_responses = this->responses, my_poll_wrapper = this->poll_wrapper](
                                  const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request)
     {
@@ -633,22 +628,9 @@ ReadBuffer & KeeperTCPHandler::getReadBuffer()
 
 std::pair<Coordination::OpNum, Coordination::XID> KeeperTCPHandler::receiveRequest()
 {
-    std::optional<LimitReadBuffer> limited_buffer_holder;
-    /// Wrap regular read buffer with LimitReadBuffer to apply max_request_size
-    /// (this should be done on per-request basis)
-    auto get_read_buffer_with_limit = [&]() -> ReadBuffer &
-    {
-        if (max_request_size == 0)
-            return getReadBuffer();
-        limited_buffer_holder.emplace(getReadBuffer(), LimitReadBuffer::Settings{.read_no_more = max_request_size, .expect_eof = false, .excetion_hint = "too long packet."});
-        return *limited_buffer_holder;
-    };
-    auto & read_buffer = get_read_buffer_with_limit();
+    auto & read_buffer = getReadBuffer();
     int32_t length;
     Coordination::read(length, read_buffer);
-    if (length < 0 || (max_request_size > 0 && static_cast<uint32_t>(length) > max_request_size))
-        throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Request size {} is too big request (limit: {})", length, max_request_size);
-
     int64_t xid;
     if (use_xid_64)
         Coordination::read(xid, read_buffer);

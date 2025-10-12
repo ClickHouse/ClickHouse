@@ -104,32 +104,32 @@ String toString(TargetArch arch);
 /// NOLINTNEXTLINE
 #define USE_MULTITARGET_CODE 1
 
-#define AVX512BF16_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4.2,popcnt,avx,avx2,avx512f,avx512bw,avx512vl,avx512vbmi,avx512vbmi2,avx512bf16")))
-#define AVX512VBMI2_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4.2,popcnt,avx,avx2,avx512f,avx512bw,avx512vl,avx512vbmi,avx512vbmi2")))
-#define AVX512VBMI_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4.2,popcnt,avx,avx2,avx512f,avx512bw,avx512vl,avx512vbmi")))
-#define AVX512BW_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4.2,popcnt,avx,avx2,avx512f,avx512bw")))
-#define AVX512_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4.2,popcnt,avx,avx2,avx512f")))
-#define AVX2_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4.2,popcnt,avx,avx2,bmi2")))
-#define AVX_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4.2,popcnt,avx")))
-#define SSE42_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4.2,popcnt")))
+#define AVX512BF16_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,avx512f,avx512bw,avx512vl,avx512vbmi,avx512vbmi2,avx512bf16")))
+#define AVX512VBMI2_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,avx512f,avx512bw,avx512vl,avx512vbmi,avx512vbmi2")))
+#define AVX512VBMI_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,avx512f,avx512bw,avx512vl,avx512vbmi")))
+#define AVX512BW_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,avx512f,avx512bw")))
+#define AVX512_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,avx512f")))
+#define AVX2_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,bmi2")))
+#define AVX_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4,popcnt,avx")))
+#define SSE42_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4,popcnt")))
 #define DEFAULT_FUNCTION_SPECIFIC_ATTRIBUTE
 
 #   define BEGIN_AVX512BF16_SPECIFIC_CODE \
-        _Pragma("clang attribute push(__attribute__((target(\"sse,sse2,sse3,ssse3,sse4.2,popcnt,avx,avx2,avx512f,avx512bw,avx512vl,avx512vbmi,avx512vbmi2,avx512bf16\"))),apply_to=function)")
+        _Pragma("clang attribute push(__attribute__((target(\"sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,avx512f,avx512bw,avx512vl,avx512vbmi,avx512vbmi2,avx512bf16\"))),apply_to=function)")
 #   define BEGIN_AVX512VBMI2_SPECIFIC_CODE \
-        _Pragma("clang attribute push(__attribute__((target(\"sse,sse2,sse3,ssse3,sse4.2,popcnt,avx,avx2,avx512f,avx512bw,avx512vl,avx512vbmi,avx512vbmi2\"))),apply_to=function)")
+        _Pragma("clang attribute push(__attribute__((target(\"sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,avx512f,avx512bw,avx512vl,avx512vbmi,avx512vbmi2\"))),apply_to=function)")
 #   define BEGIN_AVX512VBMI_SPECIFIC_CODE \
-        _Pragma("clang attribute push(__attribute__((target(\"sse,sse2,sse3,ssse3,sse4.2,popcnt,avx,avx2,avx512f,avx512bw,avx512vl,avx512vbmi\"))),apply_to=function)")
+        _Pragma("clang attribute push(__attribute__((target(\"sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,avx512f,avx512bw,avx512vl,avx512vbmi\"))),apply_to=function)")
 #   define BEGIN_AVX512BW_SPECIFIC_CODE \
-        _Pragma("clang attribute push(__attribute__((target(\"sse,sse2,sse3,ssse3,sse4.2,popcnt,avx,avx2,avx512f,avx512bw\"))),apply_to=function)")
+        _Pragma("clang attribute push(__attribute__((target(\"sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,avx512f,avx512bw\"))),apply_to=function)")
 #   define BEGIN_AVX512F_SPECIFIC_CODE \
-        _Pragma("clang attribute push(__attribute__((target(\"sse,sse2,sse3,ssse3,sse4.2,popcnt,avx,avx2,avx512f\"))),apply_to=function)")
+        _Pragma("clang attribute push(__attribute__((target(\"sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,avx512f\"))),apply_to=function)")
 #   define BEGIN_AVX2_SPECIFIC_CODE \
-        _Pragma("clang attribute push(__attribute__((target(\"sse,sse2,sse3,ssse3,sse4.2,popcnt,avx,avx2,bmi2\"))),apply_to=function)")
+        _Pragma("clang attribute push(__attribute__((target(\"sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,bmi2\"))),apply_to=function)")
 #   define BEGIN_AVX_SPECIFIC_CODE \
-        _Pragma("clang attribute push(__attribute__((target(\"sse,sse2,sse3,ssse3,sse4.2,popcnt,avx\"))),apply_to=function)")
+        _Pragma("clang attribute push(__attribute__((target(\"sse,sse2,sse3,ssse3,sse4,popcnt,avx\"))),apply_to=function)")
 #   define BEGIN_SSE42_SPECIFIC_CODE \
-        _Pragma("clang attribute push(__attribute__((target(\"sse,sse2,sse3,ssse3,sse4.2,popcnt\"))),apply_to=function)")
+        _Pragma("clang attribute push(__attribute__((target(\"sse,sse2,sse3,ssse3,sse4,popcnt\"))),apply_to=function)")
 #   define END_TARGET_SPECIFIC_CODE \
         _Pragma("clang attribute pop")
 

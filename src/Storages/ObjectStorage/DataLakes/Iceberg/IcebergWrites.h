@@ -280,12 +280,10 @@ public:
     void onFinish() override;
 
 private:
-    LoggerPtr log = getLogger("IcebergStorageSink");
     SharedHeader sample_block;
     std::unordered_map<ChunkPartitioner::PartitionKey, MultipleFileWriter, ChunkPartitioner::PartitionKeyHasher> writer_per_partition_key;
     ObjectStoragePtr object_storage;
     Poco::JSON::Object::Ptr metadata;
-    Int64 current_schema_id;
     Poco::JSON::Object::Ptr current_schema;
     ContextPtr context;
     StorageObjectStorageConfigurationPtr configuration;

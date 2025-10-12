@@ -115,27 +115,24 @@ ActionsDAG splitAndFillPrewhereInfo(
     return std::move(split_result.second);
 }
 
-void optimizePrewhere(QueryPlan::Node & parent_node)
+void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
 {
-    /// Assume that there are at least 2 nodes:
-    /// 1. FilterNode - parent_node
-    /// 2. SourceStepWithFilterNode - child_node
-
-    /// TODO: We can also check for UnionStep, such as StorageBuffer and local distributed plans.
-    auto * filter_step = typeid_cast<FilterStep *>(parent_node.step.get());
-    if (!filter_step)
+    if (stack.size() < 2)
         return;
 
-    if (parent_node.children.size() != 1)
-        return;
+    auto & frame = stack.back();
 
-    auto * child_node = parent_node.children.front();
-
-    auto * source_step_with_filter = dynamic_cast<SourceStepWithFilter *>(child_node->step.get());
+    /** Assume that on stack there are at least 3 nodes:
+      *
+      * 1. SomeNode
+      * 2. FilterNode
+      * 3. SourceStepWithFilterNode
+      */
+    auto * source_step_with_filter = dynamic_cast<SourceStepWithFilter *>(frame.node->step.get());
     if (!source_step_with_filter)
         return;
 
-    if (typeid_cast<ReadFromMerge *>(child_node->step.get()))
+    if (typeid_cast<ReadFromMerge *>(frame.node->step.get()))
         return;
 
     const auto & storage_snapshot = source_step_with_filter->getStorageSnapshot();
@@ -143,7 +140,14 @@ void optimizePrewhere(QueryPlan::Node & parent_node)
     if (!storage.canMoveConditionsToPrewhere())
         return;
 
-    if (source_step_with_filter->getPrewhereInfo())
+    const auto & storage_prewhere_info = source_step_with_filter->getPrewhereInfo();
+    if (storage_prewhere_info)
+        return;
+
+    /// TODO: We can also check for UnionStep, such as StorageBuffer and local distributed plans.
+    QueryPlan::Node * filter_node = (stack.rbegin() + 1)->node;
+    auto * filter_step = typeid_cast<FilterStep *>(filter_node->step.get());
+    if (!filter_step)
         return;
 
     const auto & context = source_step_with_filter->getContext();
@@ -162,7 +166,7 @@ void optimizePrewhere(QueryPlan::Node & parent_node)
     /// - vector search lookups with disabled rescoring
     /// - PREWHERE
     /// The former is more impactful, therefore disable PREWHERE if both may be used.
-    auto * read_from_merge_tree_step = typeid_cast<ReadFromMergeTree *>(child_node->step.get());
+    auto * read_from_merge_tree_step = typeid_cast<ReadFromMergeTree *>(frame.node->step.get());
     if (read_from_merge_tree_step && read_from_merge_tree_step->getVectorSearchParameters().has_value() && !settings[Setting::vector_search_with_rescoring])
         return;
 
@@ -190,7 +194,11 @@ void optimizePrewhere(QueryPlan::Node & parent_node)
     if (optimize_result.prewhere_nodes.empty())
         return;
 
-    PrewhereInfoPtr prewhere_info = std::make_shared<PrewhereInfo>();
+    PrewhereInfoPtr prewhere_info;
+    if (storage_prewhere_info)
+        prewhere_info = storage_prewhere_info->clone();
+    else
+        prewhere_info = std::make_shared<PrewhereInfo>();
 
     auto remaining_expr = splitAndFillPrewhereInfo(
         prewhere_info,
@@ -220,7 +228,7 @@ void optimizePrewhere(QueryPlan::Node & parent_node)
     }
 
     new_step->setStepDescription(*filter_step);
-    parent_node.step = std::move(new_step);
+    filter_node->step = std::move(new_step);
 }
 
 }

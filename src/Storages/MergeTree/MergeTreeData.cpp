@@ -267,8 +267,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsSearchOrphanedPartsDisks search_orphaned_parts_disks;
     extern const MergeTreeSettingsBool allow_part_offset_column_in_projections;
     extern const MergeTreeSettingsUInt64 max_uncompressed_bytes_in_patches;
-    extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
-    extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
 }
 
 namespace ServerSetting
@@ -1020,7 +1018,7 @@ void MergeTreeData::checkProperties(
 
             indices_names.insert(index.name);
 
-            /// Workaround for https://github.com/ClickHouse/ClickHouse/issues/82385 where functions hasAllTokens/hasAnyTokens don't work
+            /// Workaround for https://github.com/ClickHouse/ClickHouse/issues/82385 where functions searchAll/searchAny don't work
             /// on columns with more than one text index
             if (index.type == TEXT_INDEX_NAME)
             {
@@ -3194,7 +3192,7 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
         for (const auto & it_to_delete : parts_to_delete)
         {
             res.emplace_back(*it_to_delete);
-            modifyPartState(it_to_delete, DataPartState::Deleting, parts_lock);
+            modifyPartState(it_to_delete, DataPartState::Deleting);
         }
     }
 
@@ -3213,7 +3211,7 @@ void MergeTreeData::rollbackDeletingParts(const MergeTreeData::DataPartsVector &
     {
         /// We should modify it under data_parts_mutex
         part->assertState({DataPartState::Deleting});
-        modifyPartState(part, DataPartState::Outdated, lock);
+        modifyPartState(part, DataPartState::Outdated);
         part->removal_state.store(DataPartRemovalState::REMOVE_ROLLED_BACK, std::memory_order_relaxed);
     }
 }
@@ -3736,7 +3734,7 @@ void MergeTreeData::dropAllData()
             ++skipped_parts;
             continue;
         }
-        modifyPartState(it, DataPartState::Deleting, lock);
+        modifyPartState(it, DataPartState::Deleting);
         all_parts.push_back(*it);
     }
     if (skipped_parts > 0)
@@ -3822,12 +3820,7 @@ void MergeTreeData::dropAllData()
         disk->removeFileIfExists(fs::path(relative_data_path) / FORMAT_VERSION_FILE_NAME);
 
         if (disk->existsDirectory(fs::path(relative_data_path) / DETACHED_DIR_NAME))
-        {
-            if (disk->supportZeroCopyReplication())
-                disk->removeSharedRecursive(fs::path(relative_data_path) / DETACHED_DIR_NAME, /*keep_all_shared_data*/ true, {});
-            else
-                disk->removeRecursive(fs::path(relative_data_path) / DETACHED_DIR_NAME);
-        }
+            disk->removeSharedRecursive(fs::path(relative_data_path) / DETACHED_DIR_NAME, /*keep_all_shared_data*/ true, {});
 
         if (disk->existsDirectory(fs::path(relative_data_path) / MOVING_DIR_NAME))
             disk->removeRecursive(fs::path(relative_data_path) / MOVING_DIR_NAME);
@@ -4988,7 +4981,7 @@ void MergeTreeData::removePartsFromWorkingSet(MergeTreeTransaction * txn, const 
             part->remove_time.store(remove_time, std::memory_order_relaxed);
 
         if (part->getState() != MergeTreeDataPartState::Outdated)
-            modifyPartState(part, MergeTreeDataPartState::Outdated, acquired_lock);
+            modifyPartState(part, MergeTreeDataPartState::Outdated);
     }
 
     if (removed_active_part)
@@ -5007,7 +5000,7 @@ void MergeTreeData::removePartsFromWorkingSetImmediatelyAndSetTemporaryState(con
 
         assert(part->getState() == MergeTreeDataPartState::PreActive);
 
-        modifyPartState(part, MergeTreeDataPartState::Temporary, lock);
+        modifyPartState(part, MergeTreeDataPartState::Temporary);
         /// Erase immediately
         LOG_TEST(log, "removePartsFromWorkingSetImmediatelyAndSetTemporaryState: removing {} from data_parts_indexes", part->getNameWithState());
         data_parts_indexes.erase(it_part);
@@ -5201,7 +5194,7 @@ void MergeTreeData::restoreAndActivatePart(const DataPartPtr & part, DataPartsLo
     addPartContributionToColumnAndSecondaryIndexSizes(part);
     addPartContributionToUncompressedBytesInPatches(part);
     addPartContributionToDataVolume(part);
-    modifyPartState(part, DataPartState::Active, lock);
+    modifyPartState(part, DataPartState::Active);
 }
 
 
@@ -5245,7 +5238,7 @@ void MergeTreeData::forcefullyMovePartToDetachedAndRemoveFromMemory(const MergeT
         removed_active_part = true;
     }
 
-    modifyPartState(it_part, DataPartState::Deleting, lock);
+    modifyPartState(it_part, DataPartState::Deleting);
     asMutableDeletingPart(part)->renameToDetached(prefix, /*ignore_error=*/ replicated);
     LOG_TEST(log, "forcefullyMovePartToDetachedAndRemoveFromMemory: removing {} from data_parts_indexes", part->getNameWithState());
     data_parts_indexes.erase(it_part);
@@ -5284,7 +5277,7 @@ bool MergeTreeData::tryRemovePartImmediately(DataPartPtr && part)
                 return false;
             }
 
-            modifyPartState(it, DataPartState::Deleting, lock);
+            modifyPartState(it, DataPartState::Deleting);
 
             part_to_delete = *it;
         }
@@ -5620,7 +5613,7 @@ MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(
 }
 
 
-void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy, DataPartsLock & lock)
+void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy, DataPartsLock &)
 {
     for (auto original_active_part : getDataPartsStateRange(DataPartState::Active)) // NOLINT (copy is intended)
     {
@@ -5642,13 +5635,13 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy, DataPar
                 original_active_part->force_keep_shared_data = true;
             }
 
-            modifyPartState(original_active_part, DataPartState::DeleteOnDestroy, lock);
+            modifyPartState(original_active_part, DataPartState::DeleteOnDestroy);
             LOG_TEST(log, "swapActivePart: removing {} from data_parts_indexes", (*active_part_it)->getNameWithState());
             data_parts_indexes.erase(active_part_it);
 
             LOG_TEST(log, "swapActivePart: inserting {} into data_parts_indexes", part_copy->getNameWithState());
             auto part_it = data_parts_indexes.insert(part_copy).first;
-            modifyPartState(part_it, DataPartState::Active, lock);
+            modifyPartState(part_it, DataPartState::Active);
 
             ssize_t diff_bytes = part_copy->getBytesOnDisk() - original_active_part->getBytesOnDisk();
             ssize_t diff_rows = part_copy->rows_count - original_active_part->rows_count;
@@ -7936,7 +7929,7 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
                         LOG_INFO(data.log, "Tried to commit obsolete part {} covered by {}", part->name, covering_part->getNameWithState());
 
                     part->remove_time.store(0, std::memory_order_relaxed); /// The part will be removed without waiting for old_parts_lifetime seconds.
-                    data.modifyPartState(part, DataPartState::Outdated, *owing_parts_lock);
+                    data.modifyPartState(part, DataPartState::Outdated);
                 }
                 else
                 {
@@ -7951,7 +7944,7 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
                         reduce_bytes += covered_part->getBytesOnDisk();
                         reduce_rows += covered_part->rows_count;
 
-                        data.modifyPartState(covered_part, DataPartState::Outdated, *owing_parts_lock);
+                        data.modifyPartState(covered_part, DataPartState::Outdated);
                         data.removePartContributionToColumnAndSecondaryIndexSizes(covered_part);
                         data.removePartContributionToUncompressedBytesInPatches(covered_part);
                     }
@@ -7962,7 +7955,7 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
                     add_rows += part->rows_count;
                     ++add_parts;
 
-                    data.modifyPartState(part, DataPartState::Active, *owing_parts_lock);
+                    data.modifyPartState(part, DataPartState::Active);
                     data.addPartContributionToColumnAndSecondaryIndexSizes(part);
                     data.addPartContributionToUncompressedBytesInPatches(part);
                 }
@@ -8343,13 +8336,6 @@ void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & 
 {
     std::unordered_map<String, std::pair<String, String>> stream_name_to_full_name;
     auto columns_list = Nested::collect(columns.getAllPhysical());
-    SerializationInfo::Settings serialization_settings
-    {
-        settings[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
-        false,
-        settings[MergeTreeSetting::serialization_info_version],
-        settings[MergeTreeSetting::string_serialization_version],
-    };
 
     for (const auto & column : columns_list)
     {
@@ -8368,8 +8354,14 @@ void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & 
             column_streams.emplace(stream_name, full_stream_name);
         };
 
-        auto serialization = column.type->getSerialization(serialization_settings);
+        auto serialization = column.type->getDefaultSerialization();
         serialization->enumerateStreams(callback);
+
+        if (column.type->supportsSparseSerialization() && settings[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization] < 1.0)
+        {
+            auto sparse_serialization = column.type->getSparseSerialization();
+            sparse_serialization->enumerateStreams(callback);
+        }
 
         for (const auto & [stream_name, full_stream_name] : column_streams)
         {
@@ -9775,12 +9767,10 @@ static void updateSerializationHintsForPart(const DataPartPtr & part, const Colu
 
 void MergeTreeData::resetSerializationHints(const DataPartsLock & /*lock*/)
 {
-    SerializationInfo::Settings settings
+    SerializationInfo::Settings settings =
     {
-        (*getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
-        true,
-        (*getSettings())[MergeTreeSetting::serialization_info_version],
-        (*getSettings())[MergeTreeSetting::string_serialization_version],
+        .ratio_of_defaults_for_sparse = (*getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
+        .choose_kind = true,
     };
 
     const auto metadata_snapshot = getInMemoryMetadataPtr();
@@ -9809,7 +9799,10 @@ void MergeTreeData::updateSerializationHints(const AddedParts & added_parts, con
 SerializationInfoByName MergeTreeData::getSerializationHints() const
 {
     auto lock = lockParts();
-    return serialization_hints.clone();
+    SerializationInfoByName res;
+    for (const auto & [name, info] : serialization_hints)
+        res.emplace(name, info->clone());
+    return res;
 }
 
 bool MergeTreeData::supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
@@ -9996,15 +9989,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
     if ((*settings)[MergeTreeSetting::assign_part_uuids])
         new_data_part->uuid = UUIDHelpers::generateV4();
 
-    SerializationInfo::Settings info_settings
-    {
-        (*settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
-        false,
-        (*settings)[MergeTreeSetting::serialization_info_version],
-        (*settings)[MergeTreeSetting::string_serialization_version],
-    };
-
-    new_data_part->setColumns(columns, SerializationInfoByName{info_settings}, metadata_snapshot->getMetadataVersion());
+    new_data_part->setColumns(columns, {}, metadata_snapshot->getMetadataVersion());
     new_data_part->rows_count = block.rows();
     new_data_part->existing_rows_count = block.rows();
 

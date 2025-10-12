@@ -311,10 +311,6 @@ void StorageSystemPartsColumns::processNextStorage(
                 if (isTuple(data.type) || isNested(data.type))
                     return;
 
-                /// Skip ephemeral subcolumns that don't store any real data.
-                if (ISerialization::isEphemeralSubcolumn(subpath, subpath.size()))
-                    return;
-
                 subcolumn_names.push_back(name);
                 subcolumn_types.push_back(data.type->getName());
                 subcolumn_serializations.push_back(ISerialization::kindToString(data.serialization->getKind()));

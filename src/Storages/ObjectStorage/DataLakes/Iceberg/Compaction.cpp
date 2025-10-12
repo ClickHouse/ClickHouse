@@ -247,7 +247,7 @@ void writeDataFiles(
             8192,
             format_settings,
             parser_shared_resources,
-            std::make_shared<FormatFilterInfo>(nullptr, context, nullptr, nullptr, nullptr),
+            std::make_shared<FormatFilterInfo>(nullptr, context, nullptr),
             true /* is_remote_fs */,
             chooseCompressionMethod(data_file->data_object_info->getPath(), configuration->compression_method),
             false);

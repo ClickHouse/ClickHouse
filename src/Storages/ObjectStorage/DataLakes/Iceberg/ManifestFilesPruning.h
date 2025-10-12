@@ -1,6 +1,7 @@
 #pragma once
 #include "config.h"
 
+#if USE_AVRO
 
 #include <Core/NamesAndTypes.h>
 #include <Parsers/IAST_fwd.h>
@@ -19,13 +20,6 @@ enum class PruningReturnStatus
     PARTITION_PRUNED,
     MIN_MAX_INDEX_PRUNED
 };
-
-}
-
-#if USE_AVRO
-
-namespace DB::Iceberg
-{
 
 struct ManifestFileEntry;
 class ManifestFileContent;

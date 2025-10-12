@@ -359,7 +359,7 @@ void MergeTreeReaderWide::deserializePrefix(
     ISerialization::StreamCallback prefixes_prefetch_callback)
 {
     const auto & name = name_and_type.name;
-    if (!deserialize_state_map.contains(name))
+    if (!deserialize_binary_bulk_state_map.contains(name))
     {
         ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
         deserialize_settings.object_and_dynamic_read_statistics = true;
@@ -517,7 +517,9 @@ void MergeTreeReaderWide::readData(
     ISerialization::SubstreamsCache & cache,
     ISerialization::SubstreamsDeserializeStatesCache & deserialize_states_cache)
 {
+    double & avg_value_size_hint = avg_value_size_hints[name_and_type.name];
     ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
+    deserialize_settings.avg_value_size_hint = avg_value_size_hint;
     deserialize_settings.data_part_type = MergeTreeDataPartType::Wide;
 
     deserializePrefix(serialization, name_and_type, from_mark, current_task_last_mark, deserialize_binary_bulk_state_map, cache, deserialize_states_cache, {});
@@ -543,33 +545,12 @@ void MergeTreeReaderWide::readData(
         streams[*stream_name]->seekToMark(mark);
     };
 
-    deserialize_settings.get_avg_value_size_hint_callback
-        = [&](const ISerialization::SubstreamPath & substream_path) -> double
-    {
-        auto stream_name
-            = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, data_part_info_for_read->getChecksums());
-        if (!stream_name)
-            return 0.0;
-
-        return avg_value_size_hints[*stream_name];
-    };
-
-    deserialize_settings.update_avg_value_size_hint_callback
-        = [&](const ISerialization::SubstreamPath & substream_path, const IColumn & column_)
-    {
-        auto stream_name
-            = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, data_part_info_for_read->getChecksums());
-        if (!stream_name)
-            return;
-
-        IDataType::updateAvgValueSizeHint(column_, avg_value_size_hints[*stream_name]);
-    };
-
     deserialize_settings.continuous_reading = continue_reading;
     auto & deserialize_state = deserialize_binary_bulk_state_map[name_and_type.name];
 
-    serialization->deserializeBinaryBulkWithMultipleStreams(
-        column, rows_offset, max_rows_to_read, deserialize_settings, deserialize_state, &cache);
+    serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_offset, max_rows_to_read, deserialize_settings, deserialize_state, &cache);
+
+    IDataType::updateAvgValueSizeHint(*column, avg_value_size_hint);
 }
 
 }
