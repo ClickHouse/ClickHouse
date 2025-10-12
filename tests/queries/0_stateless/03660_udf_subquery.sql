@@ -9,8 +9,10 @@ CREATE OR REPLACE FUNCTION udf_type_of_int AS
 int_ -> (select if(name = 'one', 'The One', 'other') from dict where id = int_);
 
 -- this part worked successfully
+SELECT * FROM (
 select udf_type_of_int(1) union all
-select udf_type_of_int(2);
+select udf_type_of_int(2)
+) ORDER BY ALL;
 
 SELECT '';
 
