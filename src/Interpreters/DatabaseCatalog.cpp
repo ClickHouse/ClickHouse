@@ -813,10 +813,10 @@ bool DatabaseCatalog::isDatabaseExist(const String & database_name) const
     return databases.end() != databases.find(database_name);
 }
 
-Databases DatabaseCatalog::getDatabases(bool show_datalake_catalogs) const
+Databases DatabaseCatalog::getDatabases(bool skip_datalake_catalogs) const
 {
     std::lock_guard lock{databases_mutex};
-    if (show_datalake_catalogs)
+    if (skip_datalake_catalogs)
         return databases;
 
     Databases filtered_databases;
