@@ -134,7 +134,7 @@ protected:
             Names cols_required_for_primary_key;
             Names cols_required_for_sampling;
             IStorage::ColumnSizeByName column_sizes;
-            SerializationInfoByName serialization_hints;
+            SerializationInfoByName serialization_hints{{}};
 
             {
                 StoragePtr storage = storages.at(std::make_pair(database_name, table_name));

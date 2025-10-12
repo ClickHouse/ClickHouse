@@ -11,7 +11,6 @@ from environment import set_environment_variables
 from integration.helpers.client import CommandRequest
 from integration.helpers.cluster import ClickHouseInstance
 from integration.helpers.config_cluster import (
-    minio_secret_key,
     pg_pass,
     mysql_pass,
     mongo_pass,
@@ -64,7 +63,6 @@ class BuzzHouseGenerator(Generator):
             f"{Path(cluster.instances_dir) / "node0" / "database" / "user_files"}"
         )
         buzz_config["server_file_path"] = "/var/lib/clickhouse/user_files"
-        buzz_config["lakes_path"] = "/lakehouses"
         # Set available servers
         for entry in [
             ("remote_servers", "9000"),
@@ -85,7 +83,7 @@ class BuzzHouseGenerator(Generator):
                 "client_hostname": cluster.minio_ip,
                 "port": cluster.minio_port,
                 "user": "minio",
-                "password": minio_secret_key,
+                "password": cluster.minio_secret_key,
                 "named_collection": "s3",
             }
         if args.with_postgresql:
@@ -163,26 +161,30 @@ class BuzzHouseGenerator(Generator):
                     "server_hostname": "glue",
                     "region": "us-east-1",
                     "port": 3000,
+                    "warehouse": "warehouse-glue",
                 }
             if args.with_hms:
                 buzz_config["dolor"]["hive"] = {
                     "server_hostname": "hive",
                     "port": 9083,
+                    "warehouse": "warehouse-hms",
                 }
             if args.with_rest:
                 buzz_config["dolor"]["rest"] = {
                     "server_hostname": "rest",
                     "port": 8181,
                     "path": "/v1",
+                    "warehouse": "warehouse-rest",
                 }
             if args.with_unity:
                 buzz_config["dolor"]["unity"] = {
                     "server_hostname": "localhost",
                     "port": 8081,
                     "path": "/api/2.1/unity-catalog",
+                    "warehouse": "unity",
                 }
 
-        with open(self.temp.name, "w") as file2:
+        with open(self.temp.name, "w+") as file2:
             file2.write(json.dumps(buzz_config))
 
     def get_run_cmd(self, server: ClickHouseInstance) -> list[str]:

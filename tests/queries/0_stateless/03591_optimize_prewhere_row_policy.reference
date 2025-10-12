@@ -1,0 +1,144 @@
+-- {echoOn}
+
+SET use_query_condition_cache = 0;
+SET enable_parallel_replicas = 0;
+DROP TABLE IF EXISTS 03591_test;
+DROP ROW POLICY IF EXISTS 03591_rp ON 03591_test;
+CREATE TABLE 03591_test (a Int32, b Int32) ENGINE=MergeTree ORDER BY tuple();
+INSERT INTO 03591_test VALUES (3, 1), (2, 2), (3, 2);
+SELECT * FROM 03591_test;
+3	1
+2	2
+3	2
+SELECT * FROM 03591_test WHERE throwIf(b=1, 'Should throw') SETTINGS optimize_move_to_prewhere = 1; -- {serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO}
+CREATE ROW POLICY 03591_rp ON 03591_test USING b=2 TO CURRENT_USER;
+SELECT * FROM 03591_test;
+2	2
+3	2
+-- Print plan with actions to make sure both a > 0 and b=2 are present in the prewhere section
+EXPLAIN PLAN actions=1 SELECT * FROM 03591_test WHERE a > 0 SETTINGS optimize_move_to_prewhere = 1, allow_experimental_analyzer = 1;
+Expression ((Project names + Projection))
+Actions: INPUT : 0 -> __table1.b Int32 : 0
+         INPUT : 1 -> __table1.a Int32 : 1
+         ALIAS __table1.b :: 0 -> b Int32 : 2
+         ALIAS __table1.a :: 1 -> a Int32 : 0
+Positions: 0 2
+  Expression ((WHERE + Change column names to column identifiers))
+  Actions: INPUT : 0 -> b Int32 : 0
+           INPUT : 1 -> a Int32 : 1
+           ALIAS b :: 0 -> __table1.b Int32 : 2
+           ALIAS a :: 1 -> __table1.a Int32 : 0
+  Positions: 2 0
+    ReadFromMergeTree (default.03591_test)
+    ReadType: Default
+    Parts: 1
+    Granules: 1
+    Prewhere info
+    Need filter: 1
+      Prewhere filter
+      Prewhere filter column: greater(__table1.a, 0_UInt8) (removed)
+      Actions: INPUT : 0 -> a Int32 : 0
+               COLUMN Const(UInt8) -> 0_UInt8 UInt8 : 1
+               FUNCTION greater(a : 0, 0_UInt8 :: 1) -> greater(__table1.a, 0_UInt8) UInt8 : 2
+      Positions: 0 2
+      Row level filter
+      Row level filter column: equals(b, 2_UInt8) (removed)
+      Actions: INPUT : 0 -> b Int32 : 0
+               COLUMN Const(UInt8) -> 2_UInt8 UInt8 : 1
+               FUNCTION equals(b : 0, 2_UInt8 :: 1) -> equals(b, 2_UInt8) UInt8 : 2
+      Positions: 2 0
+EXPLAIN PLAN actions=1 SELECT * FROM 03591_test WHERE a > 0 SETTINGS optimize_move_to_prewhere = 1, allow_experimental_analyzer = 0;
+Expression ((Projection + Before ORDER BY))
+Actions: INPUT :: 0 -> a Int32 : 0
+         INPUT :: 1 -> b Int32 : 1
+Positions: 0 1
+  Expression (WHERE)
+  Actions: INPUT :: 0 -> a Int32 : 0
+           INPUT :: 1 -> b Int32 : 1
+  Positions: 0 1
+    ReadFromMergeTree (default.03591_test)
+    ReadType: Default
+    Parts: 1
+    Granules: 1
+    Prewhere info
+    Need filter: 1
+      Prewhere filter
+      Prewhere filter column: greater(a, 0) (removed)
+      Actions: INPUT : 0 -> a Int32 : 0
+               COLUMN Const(UInt8) -> 0 UInt8 : 1
+               FUNCTION greater(a : 0, 0 :: 1) -> greater(a, 0) UInt8 : 2
+      Positions: 0 2
+      Row level filter
+      Row level filter column: equals(b, 2) (removed)
+      Actions: INPUT : 0 -> b Int32 : 0
+               COLUMN Const(UInt8) -> 2 UInt8 : 1
+               FUNCTION equals(b : 0, 2 :: 1) -> equals(b, 2) UInt8 : 2
+      Positions: 2 0
+SELECT * FROM 03591_test WHERE throwIf(b=1, 'Should not throw because b=1 is not visible to this user due to the b=2 row policy') SETTINGS optimize_move_to_prewhere = 1;
+-- Print plan with actions to make sure a > 0, b = 2 and a = 3 are present in the prewhere section
+EXPLAIN PLAN actions=1 SELECT * FROM 03591_test WHERE a > 0 SETTINGS optimize_move_to_prewhere = 1, additional_table_filters={'03591_test': 'a=3'}, allow_experimental_analyzer = 1;
+Expression ((Project names + Projection))
+Actions: INPUT : 0 -> __table1.a Int32 : 0
+         INPUT : 1 -> __table1.b Int32 : 1
+         ALIAS __table1.a :: 0 -> a Int32 : 2
+         ALIAS __table1.b :: 1 -> b Int32 : 0
+Positions: 2 0
+  Expression (((WHERE + Change column names to column identifiers) + additional filter))
+  Actions: INPUT : 1 -> b Int32 : 0
+           INPUT : 0 -> a Int32 : 1
+           ALIAS b :: 0 -> __table1.b Int32 : 2
+           ALIAS a :: 1 -> __table1.a Int32 : 0
+  Positions: 0 2
+    ReadFromMergeTree (default.03591_test)
+    ReadType: Default
+    Parts: 1
+    Granules: 1
+    Prewhere info
+    Need filter: 1
+      Prewhere filter
+      Prewhere filter column: and(equals(a, 3_UInt8), greater(__table1.a, 0_UInt8)) (removed)
+      Actions: INPUT : 0 -> a Int32 : 0
+               COLUMN Const(UInt8) -> 3_UInt8 UInt8 : 1
+               COLUMN Const(UInt8) -> 0_UInt8 UInt8 : 2
+               FUNCTION equals(a : 0, 3_UInt8 :: 1) -> equals(a, 3_UInt8) UInt8 : 3
+               FUNCTION greater(a : 0, 0_UInt8 :: 2) -> greater(__table1.a, 0_UInt8) UInt8 : 1
+               FUNCTION and(equals(a, 3_UInt8) :: 3, greater(__table1.a, 0_UInt8) :: 1) -> and(equals(a, 3_UInt8), greater(__table1.a, 0_UInt8)) UInt8 : 2
+      Positions: 0 2
+      Row level filter
+      Row level filter column: equals(b, 2_UInt8) (removed)
+      Actions: INPUT : 0 -> b Int32 : 0
+               COLUMN Const(UInt8) -> 2_UInt8 UInt8 : 1
+               FUNCTION equals(b : 0, 2_UInt8 :: 1) -> equals(b, 2_UInt8) UInt8 : 2
+      Positions: 2 0
+EXPLAIN PLAN actions=1 SELECT * FROM 03591_test WHERE a > 0 SETTINGS optimize_move_to_prewhere = 1, additional_table_filters={'03591_test': 'a=3'}, allow_experimental_analyzer = 0;
+Expression ((Projection + Before ORDER BY))
+Actions: INPUT :: 0 -> a Int32 : 0
+         INPUT :: 1 -> b Int32 : 1
+Positions: 0 1
+  Expression ((WHERE + Additional filter))
+  Actions: INPUT :: 0 -> a Int32 : 0
+           INPUT :: 1 -> b Int32 : 1
+  Positions: 0 1
+    ReadFromMergeTree (default.03591_test)
+    ReadType: Default
+    Parts: 1
+    Granules: 1
+    Prewhere info
+    Need filter: 1
+      Prewhere filter
+      Prewhere filter column: and(equals(a, 3), greater(a, 0)) (removed)
+      Actions: INPUT : 0 -> a Int32 : 0
+               COLUMN Const(UInt8) -> 3 UInt8 : 1
+               COLUMN Const(UInt8) -> 0 UInt8 : 2
+               FUNCTION equals(a : 0, 3 :: 1) -> equals(a, 3) UInt8 : 3
+               FUNCTION greater(a : 0, 0 :: 2) -> greater(a, 0) UInt8 : 1
+               FUNCTION and(equals(a, 3) :: 3, greater(a, 0) :: 1) -> and(equals(a, 3), greater(a, 0)) UInt8 : 2
+      Positions: 0 2
+      Row level filter
+      Row level filter column: equals(b, 2) (removed)
+      Actions: INPUT : 0 -> b Int32 : 0
+               COLUMN Const(UInt8) -> 2 UInt8 : 1
+               FUNCTION equals(b : 0, 2 :: 1) -> equals(b, 2) UInt8 : 2
+      Positions: 2 0
+DROP ROW POLICY 03591_rp ON 03591_test;
+SELECT * FROM 03591_test WHERE throwIf(b=2, 'Should throw') SETTINGS optimize_move_to_prewhere = 1; -- {serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO}

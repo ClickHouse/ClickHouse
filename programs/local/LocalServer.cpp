@@ -35,6 +35,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Common/Jemalloc.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Loggers/OwnFormattingChannel.h>
 #include <Loggers/OwnPatternFormatter.h>
@@ -134,6 +135,10 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_format_parsing_thread_pool_free_size;
     extern const ServerSettingsUInt64 format_parsing_thread_pool_queue_size;
     extern const ServerSettingsString allowed_disks_for_table_engines;
+    extern const ServerSettingsBool jemalloc_enable_global_profiler;
+    extern const ServerSettingsBool jemalloc_collect_global_profile_samples_in_trace_log;
+    extern const ServerSettingsBool jemalloc_enable_background_threads;
+    extern const ServerSettingsUInt64 jemalloc_max_background_threads_num;
 }
 
 namespace ErrorCodes
@@ -215,6 +220,14 @@ void LocalServer::initialize(Poco::Util::Application & self)
     }
 
     server_settings.loadSettingsFromConfig(config());
+
+#if USE_JEMALLOC
+    Jemalloc::setup(
+        server_settings[ServerSetting::jemalloc_enable_global_profiler],
+        server_settings[ServerSetting::jemalloc_enable_background_threads],
+        server_settings[ServerSetting::jemalloc_max_background_threads_num],
+        server_settings[ServerSetting::jemalloc_collect_global_profile_samples_in_trace_log]);
+#endif
 
     GlobalThreadPool::initialize(
         server_settings[ServerSetting::max_thread_pool_size],

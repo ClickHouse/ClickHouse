@@ -14,9 +14,10 @@ The following versions of ClickHouse server are currently supported with securit
 
 | Version | Supported |
 |:-|:-|
+| 25.9 | ✔️ |
 | 25.8 | ✔️ |
 | 25.7 | ✔️ |
-| 25.6 | ✔️ |
+| 25.6 | ❌ |
 | 25.5 | ❌ |
 | 25.4 | ❌ |
 | 25.3 | ✔️ |
@@ -74,3 +75,4 @@ Removal criteria:
 
 Notification process:
 ClickHouse will post notifications within our OSS Trust Center and notify subscribers. Subscribers must log in to the Trust Center to download the notification. The notification will include the timeframe for public disclosure.
+

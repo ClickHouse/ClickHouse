@@ -273,6 +273,9 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 struct StorageSnapshot;
 using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 
+/// IRuntimeFilterLookup allows to store and find per-query runtime filters under unique names.
+/// Runtime filters are used to optimize JOINs in some cases by building a bloom filter from the right side
+/// of the JOIN and use it to do early pre-filtering on the left side of the JOIN.
 struct IRuntimeFilterLookup;
 using RuntimeFilterLookupPtr = std::shared_ptr<IRuntimeFilterLookup>;
 RuntimeFilterLookupPtr createRuntimeFilterLookup();
@@ -541,12 +544,6 @@ protected:
     /// Used at query runtime to save per-query runtime filters and find them by names
     RuntimeFilterLookupPtr runtime_filter_lookup;
 
-    /// indicates how the query operates storage alias:
-    /// 0: operate on original storage
-    /// 1: operate on alias storage, for example, drop table ...
-    /// 2: throw exception on DDL, for example, alter table ... add column ...
-    uint8_t storage_alias_behaviour = 0;
-
 public:
     /// Some counters for current query execution.
     /// Most of them are workarounds and should be removed in the future.
@@ -686,6 +683,7 @@ public:
         MAX_ATTACHED_DICTIONARIES,
         MAX_ATTACHED_TABLES,
         MAX_ATTACHED_VIEWS,
+        MAX_NAMED_COLLECTIONS,
         MAX_NUM_THREADS_LOWER_THAN_LIMIT,
         MAX_PENDING_MUTATIONS_EXCEEDS_LIMIT,
         MAX_PENDING_MUTATIONS_OVER_THRESHOLD,
@@ -1093,6 +1091,7 @@ public:
     void setHTTPHeaderFilter(const Poco::Util::AbstractConfiguration & config);
     const HTTPHeaderFilter & getHTTPHeaderFilter() const;
 
+    size_t getMaxNamedCollectionNumToWarn() const;
     size_t getMaxTableNumToWarn() const;
     size_t getMaxViewNumToWarn() const;
     size_t getMaxDictionaryNumToWarn() const;
@@ -1101,6 +1100,7 @@ public:
     size_t getMaxPendingMutationsToWarn() const;
     size_t getMaxPendingMutationsExecutionTimeToWarn() const;
 
+    void setMaxNamedCollectionNumToWarn(size_t max_named_collection_to_warn);
     void setMaxTableNumToWarn(size_t max_table_to_warn);
     void setMaxViewNumToWarn(size_t max_view_to_warn);
     void setMaxDictionaryNumToWarn(size_t max_dictionary_to_warn);
@@ -1603,11 +1603,10 @@ public:
     void setPreparedSetsCache(const PreparedSetsCachePtr & cache);
     PreparedSetsCachePtr getPreparedSetsCache() const;
 
+    /// IRuntimeFilterLookup allows to store and find per-query runtime filters under unique names. Those are used
+    /// to optimize some JOINs by early pre-filtering left side of the JOIN by a filter built form the right side.
     void setRuntimeFilterLookup(const RuntimeFilterLookupPtr & filter_lookup);
     RuntimeFilterLookupPtr getRuntimeFilterLookup() const;
-
-    void setStorageAliasBehaviour(uint8_t storage_alias_behaviour_);
-    uint8_t getStorageAliasBehaviour() const;
 
     void setPartitionIdToMaxBlock(const UUID & table_uuid, PartitionIdToMaxBlockPtr partitions);
     PartitionIdToMaxBlockPtr getPartitionIdToMaxBlock(const UUID & table_uuid) const;
