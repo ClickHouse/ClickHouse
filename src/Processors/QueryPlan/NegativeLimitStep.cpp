@@ -1,5 +1,5 @@
 #include <IO/Operators.h>
-#include <Processors/LimitTransform.h>
+#include <Processors/NegativeLimitTransform.h>
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/NegativeLimitStep.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
@@ -38,8 +38,7 @@ NegativeLimitStep::NegativeLimitStep(const SharedHeader & input_header_, size_t 
 
 void NegativeLimitStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    auto transform = std::make_shared<LimitTransform>(
-        pipeline.getSharedHeader(), limit, offset, pipeline.getNumStreams(), false, false, SortDescription{});
+    auto transform = std::make_shared<NegativeLimitTransform>(pipeline.getSharedHeader(), limit, offset, pipeline.getNumStreams());
 
     pipeline.addTransform(std::move(transform));
 }
