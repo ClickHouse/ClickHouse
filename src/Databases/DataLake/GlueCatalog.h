@@ -81,6 +81,8 @@ private:
     /// This method allows to clarify the actual type of the timestamp column.
     bool classifyTimestampTZ(const String & column_name, const TableMetadata & table_metadata) const;
 
+    String resolveMetadataPathFromTableLocation(const String & table_location, const TableMetadata & table_metadata) const;
+
     mutable DB::CacheBase<String, Poco::JSON::Object::Ptr> metadata_objects;
 };
 
