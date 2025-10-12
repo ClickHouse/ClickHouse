@@ -67,21 +67,18 @@ public:
         if (arguments.size() < 1)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} must be called with at least 1 arguments", name);
 
-        if ((arguments.size() % 2) != 1)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} must be called with odd number of arguments", name);
-
-        TimeSeriesTagsHelpers::checkArgumentTypesForTagNamesAndValues(name, arguments, 0, 1);
+        TimeSeriesTagsHelpers::checkArgumentTypesForTagNamesAndValues(name, arguments, 0);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {
-        chassert((arguments.size() >= 1) && ((arguments.size() % 2) == 1));
-        auto tags_vector = TimeSeriesTagsHelpers::extractTagNamesAndValuesFromArguments(name, arguments, 0, 1);
+        chassert(arguments.size() >= 1);
+        auto tags_vector = TimeSeriesTagsHelpers::extractTagNamesAndValuesFromArguments(name, arguments, 0);
 
         auto & tags_collector = getContext()->getQueryContext()->getTimeSeriesTagsCollector();
         auto groups = tags_collector.getGroupForTags(tags_vector);
 
-        return TimeSeriesTagsHelpers::makeColumnForGroups(groups);
+        return TimeSeriesTagsHelpers::makeColumnForGroup(groups);
     }
 };
 

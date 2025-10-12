@@ -6,50 +6,46 @@ namespace DB
 
 namespace
 {
-    static void checkDataTypeOfTagsArray(const DataTypePtr & data_type, size_t argument_index)
+    /// Checks that the column's type is Array(Tuple(String, String)).
+    void checkTypeOfTagsArrayArgument(std::string_view function_name, const DataTypePtr & type, size_t argument_index)
     {
-        auto type = removeNullableOrLowCardinalityNullable(data_type);
+        auto nested_type = removeNullableOrLowCardinalityNullable(type);
 
-        if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
-            type = map_type->getNestedType();
+        if (const auto * map_type = typeid_cast<const DataTypeMap *>(nested_type.get()))
+            nested_type = map_type->getNestedType();
 
-        if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
+        if (const auto * array_type = typeid_cast<const DataTypeArray *>(nested_type.get()))
         {
             if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(array_type->getNestedType().get()))
             {
                 if (tuple_type->getElements().size() == 2)
                 {
-                    auto tuple_first_type = removeNullableOrLowCardinalityNullable(tuple_type->getElements()[0]);
-                    auto tuple_second_type = removeNullableOrLowCardinalityNullable(tuple_type->getElements()[1]);
-                    if (isStringOrFixedString(tuple_first_type) && isStringOrFixedString(tuple_second_type))
+                    auto first_type = removeNullableOrLowCardinalityNullable(tuple_type->getElements()[0]);
+                    auto second_type = removeNullableOrLowCardinalityNullable(tuple_type->getElements()[1]);
+                    if (isStringOrFixedString(first_type) && isStringOrFixedString(second_type))
                         return;
                 }
             }
         }
 
-        if (isNothing(type))
+        if (isNothing(nested_type))
             return;
 
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument #{} of function {} has wrong type {}, it must be {}",
-                        argument_index + 1, name, data_type, "Array(Tuple(String, String))");
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Argument #{} of function {} has wrong type {}, it must be {}",
+            argument_index + 1,
+            function_name,
+            type,
+            "Array(Tuple(String, String))");
     }
 
-    static void checkDataTypeOfSeparateTagNames(const DataTypePtr & data_type, size_t argument_index)
-    {
-        auto type = removeNullableOrLowCardinalityNullable(data_type);
-        if (isStringOrFixedString(type) || isNothing(type))
-            return;
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument #{} of function {} has wrong type {}, it must be {}",
-                        argument_index + 1, name, data_type, "String or FixedString");
-    }
-
-    static void checkDataTypeOfSeparateTagValues(const DataTypePtr & data_type, size_t argument_index)
-    {
-        checkDataTypeOfSeparateTagNames(data_type, argument_index);
-    }
-
-    /// Extracts tags from the second argument of type Array(Tuple(String, String)) containing pairs {tag_name, tag_value}.
-    void extractTagsFromTagsArrayColumn(std::vector<TagNamesAndValues> & out_tags_vector, const IColumn & column_tags_array, size_t argument_index)
+    /// Extracts tags from a column of type Array(Tuple(String, String)) containing pairs (tag_name, tag_value).
+    void extractTagsArrayFromArgument(
+        std::string_view function_name,
+        const IColumn & column_tags_array,
+        size_t argument_index,
+        std::vector<TagNamesAndValues> & out_tags_vector)
     {
         size_t num_rows = column_tags_array.size();
         chassert(out_tags_vector.size() == num_rows);
@@ -72,8 +68,9 @@ namespace
                     {
                         auto tag_name = std::string_view{tag_names.getDataAt(j)};
                         auto tag_value = std::string_view{tag_values.getDataAt(j)};
-                        if (!tag_name.empty() && !tag_value.empty())
-                            res.emplace_back(tag_name, tag_value);
+                        if (tag_name.empty())
+                            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} must not be called with an empty tag name", function_name);
+                        res.emplace_back(tag_name, tag_value);
                     }
                 }
                 return;
@@ -87,7 +84,7 @@ namespace
             const auto & nested_column = nullable_column->getNestedColumn();
             std::vector<TagNamesAndValues> tags_vector_from_nested_column;
             tags_vector_from_nested_column.resize(num_rows);
-            extractTagsFromTagsArrayColumn(tags_vector_from_nested_column, nested_column, argument_index);
+            extractTagsArrayFromArgument(function_name, nested_column, argument_index, tags_vector_from_nested_column);
             for (size_t i = 0; i != num_rows; ++i)
             {
                 if (!null_map[i])
@@ -103,45 +100,40 @@ namespace
         /// The argument can be wrapped in a ColumnMap.
         if (const auto * map_column = checkAndGetColumn<ColumnMap>(&column_tags_array))
         {
-            extractTagsFromTagsArrayColumn(out_tags_vector, map_column->getNestedColumn(), argument_index);
+            extractTagsArrayFromArgument(function_name, map_column->getNestedColumn(), argument_index, out_tags_vector);
             return;
         }
 
         /// The argument can be wrapped in ColumnConst or ColumnLowCardinality.
         if (auto full_column = column_tags_array.convertToFullIfNeeded(); full_column.get() != &column_tags_array)
         {
-            extractTagsFromTagsArrayColumn(out_tags_vector, *full_column, argument_index);
+            extractTagsArrayFromArgument(function_name, *full_column, argument_index, out_tags_vector);
             return;
         }
 
         throw Exception(
             ErrorCodes::ILLEGAL_COLUMN,
             "Illegal column {} of argument #{} of function {}, it must be {}",
-            column_tags_array.getName(), argument_index + 1, name, "Array(Tuple(String, String))");
+            column_tags_array.getName(), argument_index + 1, function_name, "Array(Tuple(String, String))");
     }
 
-    /// Extracts tags from two arguments - the first argument contains the name of a tag and the second argument contains the value of the tag.
-    void extractTagsFromSeparateTagNamesAndTagValuesColumns(std::vector<TagNamesAndValues> & out_tags_vector,
-                                                                   const IColumn & column_separate_tag_names,
-                                                                   const IColumn & column_separate_tag_values)
+    /// Checks that the column's type is String or FixedString.
+    void checkTypeOfTagNameArgument(std::string_view function_name, const DataTypePtr & type, size_t argument_index)
     {
-        size_t num_rows = column_separate_tag_names.size();
-        chassert(column_separate_tag_values.size() == num_rows);
-        chassert(out_tags_vector.size() == num_rows);
-
-        std::vector<std::string_view> tag_names = extractStringsFromColumn(column_separate_tag_names);
-        std::vector<std::string_view> tag_values = extractStringsFromColumn(column_separate_tag_values);
-        for (size_t i = 0; i != num_rows; ++i)
-        {
-            auto tag_name = tag_names[i];
-            auto tag_value = tag_values[i];
-            if (!tag_name.empty() && !tag_value.empty())
-                out_tags_vector[i].emplace_back(tag_name, tag_value);
-        }
+        auto nested_type = removeNullableOrLowCardinalityNullable(type);
+        if (isStringOrFixedString(nested_type) || isNothing(nested_type))
+            return;
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument #{} of function {} has wrong type {}, it must be {}",
+                        argument_index + 1, function_name, type, "String or FixedString");
     }
 
-    /// Extracts strings from a column containing either separate tag names or their values.
-    std::vector<std::string_view> extractStringsFromColumn(const IColumn & column)
+    void checkTypeOfTagValueArgument(std::string_view function_name, const DataTypePtr & type, size_t argument_index)
+    {
+        checkTypeOfTagNameArgument(function_name, type, argument_index);
+    }
+
+    /// Extracts strings from a column.
+    std::vector<std::string_view> extractStringViewFromArgument(const IColumn & column)
     {
         size_t num_rows = column.size();
         std::vector<std::string_view> res{num_rows, ""};
@@ -157,47 +149,58 @@ namespace
         return res;
     }
 
-    /// Sorts each set of tags and removes duplicate tags in each set of tags.
-    void sortTagsAndRemoveDuplicates(std::vector<TagNamesAndValues> & tags_vector)
+    /// Extracts tags from two columns: the first column contains names and the second column contains values.
+    void extractTagNameAndValueFromTwoArguments(std::string_view function_name,
+                                                const IColumn & column_tag_names,
+                                                const IColumn & column_tag_values,
+                                                std::vector<TagNamesAndValues> & out_tags_vector)
+    {
+        size_t num_rows = column_tag_names.size();
+        chassert(column_tag_values.size() == num_rows);
+        chassert(out_tags_vector.size() == num_rows);
+
+        std::vector<std::string_view> tag_names = extractStringViewFromArgument(column_tag_names);
+        std::vector<std::string_view> tag_values = extractStringViewFromArgument(column_tag_values);
+        for (size_t i = 0; i != num_rows; ++i)
+        {
+            auto tag_name = tag_names[i];
+            auto tag_value = tag_values[i];
+            if (tag_name.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} must not be called with an empty tag name", function_name);
+            out_tags_vector[i].emplace_back(tag_name, tag_value);
+        }
+    }
+
+    /// Sorts each set of tags and removes duplicate tags.
+    /// The function also removes tags with empty values.
+    void sortTagsAndRemoveDuplicates(std::string_view function_name, std::vector<TagNamesAndValues> & tags_vector)
     {
         auto less_by_tag_name = [](const std::pair<String, String> & left, const std::pair<String, String> & right)
         {
             return left.first < right.first;
         };
-        for (auto & tags : tags_vector)
-        {
-            std::sort(tags.begin(), tags.end(), less_by_tag_name);
-            tags.erase(std::unique(tags.begin(), tags.end()), tags.end());
-        }
-    }
-
-    /// Checks that our sorted set of tags is ok to store in the query context.
-    void checkTags(const std::vector<TagNamesAndValues> & tags_vector)
-    {
-        auto empty_name_or_value = [](const std::pair<String, String> & x)
-        {
-            return x.first.empty() || x.second.empty();
-        };
         auto equal_by_tag_name = [](const std::pair<String, String> & left, const std::pair<String, String> & right)
         {
             return left.first == right.first;
         };
-        for (const auto & tags : tags_vector)
+        auto is_tag_value_empty = [](const std::pair<String, String> & x)
         {
-            auto with_empty_name_or_value = std::find_if(tags.begin(), tags.end(), empty_name_or_value);
-            if (with_empty_name_or_value != tags.end())
-            {
-                throw Exception(ErrorCodes::ILLEGAL_TIME_SERIES_TAGS,
-                    "Found tag with empty name {} or value {} while executing function {}",
-                    quoteString(with_empty_name_or_value->first), quoteString(with_empty_name_or_value->second), name);
-            }
+            return x.second.empty();
+        };
+        for (auto & tags : tags_vector)
+        {
+            std::sort(tags.begin(), tags.end(), less_by_tag_name);
+            tags.erase(std::unique(tags.begin(), tags.end()), tags.end());
+
             auto adjacent = std::adjacent_find(tags.begin(), tags.end(), equal_by_tag_name);
             if (adjacent != tags.end())
             {
-                throw Exception(ErrorCodes::ILLEGAL_TIME_SERIES_TAGS,
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Found two tags with the same name {} but different values {} and {} while executing function {}",
                     quoteString(adjacent->first), quoteString(adjacent->second), quoteString(std::next(adjacent)->second), name);
             }
+
+            std::erase_if(tags, is_tag_value_empty);
         }
     }
 
@@ -218,74 +221,57 @@ namespace
 void checkArgumentTypesForTagNamesAndValues(
     std::string_view function_name,
     const ColumnsWithTypeAndName & arguments,
-    size_t array_of_tuples_argument_index,
-    size_t name_value_pairs_start_argument_index)
+    size_t start_argument_index)
 {
-    if (arguments.size() < 1)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} must be called with at least 1 arguments", name);
+    if (start_argument_index < arguments.size())
+        checkTypeOfTagsArrayArgument(function_name, arguments[start_argument_index].type, start_argument_index, tags_vector);
 
-    if ((arguments.size() % 2) != 1)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} must be called with odd number of arguments", name);
-
-    checkDataTypeOfTagsArray(arguments[1].type, 1);
-
-    for (size_t i = 2; i < arguments.size(); i += 2)
+    if (start_argument_index + 1 < arguments.size())
     {
-        checkDataTypeOfSeparateTagNames(arguments[i].type, i);
-        checkDataTypeOfSeparateTagValues(arguments[i + 1].type, i + 1);
+        bool nargs_should_be_odd = (start_argument_index % 2) == 0;
+        if ((arguments.size() % 2) != nargs_should_be_odd)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                            "Expected {} number of arguments of function {}",
+                            nargs_should_be_odd ? "odd" "even",
+                            function_name);
+
+        for (size_t i = start_argument_index + 1; i < arguments.size(); i += 2)
+        {
+            checkTypeOfTagNameArgument(function_name, arguments[i].type, i);
+            checkTypeOfTagValueArgument(function_name, arguments[i + 1].type, i + 1);
+        }
     }
 }
 
 std::vector<TagNamesAndValuesPtr> extractTagNamesAndValuesFromArguments(
-        const ColumnsWithTypeAndName & arguments,
-        size_t array_of_tuples_argument_index,
-        size_t name_value_pairs_start_argument_index)
+    std::string_view function_name,
+    const ColumnsWithTypeAndName & arguments,
+    size_t start_argument_index,
+    size_t input_rows_count)
 {
-    chassert((arguments.size() >= 1) && ((arguments.size() % 2) == 1));
-
     std::vector<TagNamesAndValues> tags_vector;
     tags_vector.resize(input_rows_count);
 
-    const auto & column_tags_array = arguments[0].column;
-    extractTagsFromTagsArrayColumn(tags_vector, *column_tags_array, 0);
+    if (start_argument_index < arguments.size())
+        extractTagsArraysFromArgument(function_name, *arguments[start_argument_index], start_argument_index);
 
-    for (size_t i = 1; i != arguments.size(); i += 2)
+    if (start_argument_index + 1 < arguments.size())
     {
-        const auto & column_separate_tag_names = arguments[i].column;
-        const auto & column_separate_tag_values = arguments[i + 1].column;
-        extractTagsFromSeparateTagNamesAndTagValuesColumns(tags_vector, *column_separate_tag_names, *column_separate_tag_values);
+        chassert(((arguments.size() - start_argument_index - 1) % 2) == 0);
+        for (size_t i = start_argument_index + 1; i < arguments.size(); i += 2)
+        {
+            const auto & column_separate_tag_names = arguments[i].column;
+            const auto & column_separate_tag_values = arguments[i + 1].column;
+            extractTagNameAndValueFromTwoArguments(function_name, *column_separate_tag_names, *column_separate_tag_values, tags_vector);
+        }
     }
 
     sortTagsAndRemoveDuplicates(tags_vector);
-    checkTags(tags_vector);
-
     return makeTagsPtrVector(std::move(tags_vector));
 }
 
 
-
-    static void checkArgumentTypes(const ColumnsWithTypeAndName & arguments)
-    {
-        if (arguments.size() < 1)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} must be called with at least 1 arguments", name);
-
-        if ((arguments.size() % 2) != 1)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} must be called with odd number of arguments", name);
-
-        checkDataTypeOfTagsArray(arguments[1].type, 1);
-
-        for (size_t i = 2; i < arguments.size(); i += 2)
-        {
-            checkDataTypeOfSeparateTagNames(arguments[i].type, i);
-            checkDataTypeOfSeparateTagValues(arguments[i + 1].type, i + 1);
-        }
-    }
-
-
-
-
-/// Converts a vector of tags to a result column.
-ColumnPtr tagsGroupsToColumn(const std::vector<Group> & groups)
+ColumnPtr makeColumnForGroup(const std::vector<Group> & groups)
 {
     auto res = ColumnUInt64::create();
     res->reserve(groups.size());
