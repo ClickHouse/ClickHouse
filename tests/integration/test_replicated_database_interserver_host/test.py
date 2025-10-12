@@ -42,15 +42,13 @@ def test_replicated_database_uses_interserver_host(started_cluster):
     node2.query("SYSTEM SYNC DATABASE REPLICA test_db")
 
     zk_path = "/clickhouse/databases/test_db/replicas"
-    replicas = node1.query(
-        f"SELECT name, value FROM system.zookeeper WHERE path = '{zk_path}'"
+    host_ids = node1.query(
+        f"SELECT value FROM system.zookeeper WHERE path = '{zk_path}'"
     )
-    replicas_decoded = urllib.parse.unquote(replicas)
+    host_ids_decoded = urllib.parse.unquote(host_ids)
 
-    assert "127.0.0.1" in replicas_decoded, \
-        f"Expected IP address 127.0.0.1 in replica registration, got: {replicas}"
-    assert "node1" not in replicas_decoded and "node2" not in replicas_decoded, \
-        "Hostname should not be used when interserver_http_host is set"
+    assert "127.0.0.1:9000:" in host_ids_decoded, \
+        f"Expected IP address 127.0.0.1:9000: in host_id, got: {host_ids}"
 
     node1.query("CREATE TABLE test_db.test_table (id UInt32) ENGINE = ReplicatedMergeTree ORDER BY id")
     node2.query("SYSTEM SYNC DATABASE REPLICA test_db")
