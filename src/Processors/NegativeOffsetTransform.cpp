@@ -92,9 +92,6 @@ IProcessor::Status NegativeOffsetTransform::prepare(const PortNumbers & updated_
         /// All data fetching is done. We can now start pushing out the remaining data
         if (num_input_ports_finished == ports_data.size())
         {
-            for (auto & port : ports_data)
-                port.input_port->close();
-
             stage = Stage::Push;
         }
         else
@@ -124,6 +121,7 @@ IProcessor::Status NegativeOffsetTransform::prepare(const PortNumbers & updated_
 
         for (auto & port : ports_data)
         {
+            port.input_port->close();
             port.output_port->finish();
         }
         return Status::Finished;

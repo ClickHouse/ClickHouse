@@ -77,9 +77,6 @@ IProcessor::Status NegativeLimitTransform::prepare(const PortNumbers & updated_i
         /// All data fetching is done
         if (num_input_ports_finished == ports_data.size())
         {
-            for (auto & port : ports_data)
-                port.input_port->close();
-
             stage = Stage::Push;
         }
         else
@@ -135,6 +132,7 @@ IProcessor::Status NegativeLimitTransform::prepare(const PortNumbers & updated_i
 
         for (auto & port : ports_data)
         {
+            port.input_port->close();
             port.output_port->finish();
         }
         return Status::Finished;
