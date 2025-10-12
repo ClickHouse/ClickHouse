@@ -40,7 +40,6 @@ String StorageObjectStorageCluster::getPathSample(ContextPtr context)
         configuration,
         query_settings,
         object_storage,
-        nullptr, // storage_metadata
         false, // distributed_processing
         context,
         {}, // predicate
@@ -77,7 +76,8 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     configuration->update(
         object_storage,
         context_,
-        /* if_not_updated_before */ false);
+        /* if_not_updated_before */false,
+        /* check_consistent_with_previous_metadata */true);
 
     ColumnsDescription columns{columns_in_table_or_function_definition};
     std::string sample_path;
@@ -102,14 +102,6 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
 
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns));
     setInMemoryMetadata(metadata);
-
-    /// This will update metadata which contains specific information about table state (e.g. for Iceberg)
-
-    if (configuration->needsUpdateForSchemaConsistency())
-    {
-        auto metadata_snapshot = configuration->getStorageSnapshotMetadata(context_);
-        setInMemoryMetadata(metadata_snapshot);
-    }
 }
 
 std::string StorageObjectStorageCluster::getName() const
@@ -122,7 +114,8 @@ std::optional<UInt64> StorageObjectStorageCluster::totalRows(ContextPtr query_co
     configuration->update(
         object_storage,
         query_context,
-        /* if_not_updated_before */ false);
+        /* if_not_updated_before */false,
+        /* check_consistent_with_previous_metadata */true);
     return configuration->totalRows(query_context);
 }
 
@@ -131,7 +124,8 @@ std::optional<UInt64> StorageObjectStorageCluster::totalBytes(ContextPtr query_c
     configuration->update(
         object_storage,
         query_context,
-        /* if_not_updated_before */ false);
+        /* if_not_updated_before */false,
+        /* check_consistent_with_previous_metadata */true);
     return configuration->totalBytes(query_context);
 }
 
@@ -195,32 +189,18 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
     }
 }
 
-void StorageObjectStorageCluster::updateExternalDynamicMetadataIfExists(ContextPtr query_context)
-{
-    configuration->update(
-        object_storage,
-        query_context,
-        /* if_not_updated_before */ true);
-    if (configuration->needsUpdateForSchemaConsistency())
-    {
-        auto metadata_snapshot = configuration->getStorageSnapshotMetadata(query_context);
-        setInMemoryMetadata(metadata_snapshot);
-    }
-}
 
 RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExtension(
     const ActionsDAG::Node * predicate,
     const ActionsDAG * filter,
     const ContextPtr & local_context,
-    ClusterPtr cluster,
-    StorageMetadataPtr storage_metadata_snapshot) const
+    ClusterPtr cluster) const
 {
     auto iterator = StorageObjectStorageSource::createFileIterator(
         configuration,
         configuration->getQuerySettings(local_context),
         object_storage,
-        storage_metadata_snapshot,
-        /* distributed_processing */ false,
+        /* distributed_processing */false,
         local_context,
         predicate,
         filter,

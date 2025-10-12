@@ -74,12 +74,25 @@ public:
         const Settings & settings,
         LoggerPtr log);
 
-    static std::pair<MarkRanges, RangesInDataPartReadHints> filterMarksUsingIndex(
+private:
+    const MergeTreeData & data;
+    LoggerPtr log;
+
+    /// Get the approximate value (bottom estimate - only by full marks) of the number of rows falling under the index.
+    static size_t getApproximateTotalRowsToRead(
+        const RangesInDataParts & parts,
+        const StorageMetadataPtr & metadata_snapshot,
+        const KeyCondition & key_condition,
+        const Settings & settings,
+        LoggerPtr log);
+
+    static std::pair<MarkRanges, RangesInDataPartReadHints>  filterMarksUsingIndex(
         MergeTreeIndexPtr index_helper,
         MergeTreeIndexConditionPtr condition,
         MergeTreeData::DataPartPtr part,
         const MarkRanges & ranges,
         const RangesInDataPartReadHints & in_read_hints,
+        const Settings & settings,
         const MergeTreeReaderSettings & reader_settings,
         MarkCache * mark_cache,
         UncompressedCache * uncompressed_cache,
@@ -91,22 +104,11 @@ public:
         MergeTreeIndexMergedConditionPtr condition,
         MergeTreeData::DataPartPtr part,
         const MarkRanges & ranges,
+        const Settings & settings,
         const MergeTreeReaderSettings & reader_settings,
         MarkCache * mark_cache,
         UncompressedCache * uncompressed_cache,
         VectorSimilarityIndexCache * vector_similarity_index_cache,
-        LoggerPtr log);
-
-private:
-    const MergeTreeData & data;
-    LoggerPtr log;
-
-    /// Get the approximate value (bottom estimate - only by full marks) of the number of rows falling under the index.
-    static size_t getApproximateTotalRowsToRead(
-        const RangesInDataParts & parts,
-        const StorageMetadataPtr & metadata_snapshot,
-        const KeyCondition & key_condition,
-        const Settings & settings,
         LoggerPtr log);
 
     struct PartFilterCounters
@@ -206,8 +208,7 @@ public:
         ReadFromMergeTree::IndexStats & index_stats,
         bool use_skip_indexes,
         bool find_exact_ranges,
-        bool is_final_query,
-        bool is_parallel_reading_from_replicas);
+        bool is_final_query);
 
     /// Filter parts using query condition cache.
     static void filterPartsByQueryConditionCache(

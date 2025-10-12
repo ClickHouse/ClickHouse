@@ -83,7 +83,6 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             ("allow_settings_after_format_in_insert", "allow SETTINGS after FORMAT, but note, that this is not always safe")
             ("seed", po::value<std::string>(), "seed (arbitrary string) that determines the result of obfuscation")
             ("show_secrets", po::bool_switch()->default_value(false), "show secret values like passwords, API keys, etc.")
-            ("semicolons_inline", "In multiquery mode put semicolon on last line of query instead of a new line")
         ;
 
         Settings cmd_settings;
@@ -110,7 +109,6 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
         bool backslash = options.count("backslash");
         bool allow_settings_after_format_in_insert = options.count("allow_settings_after_format_in_insert");
         bool show_secrets = options["show_secrets"].as<bool>();
-        bool semicolon_inline = options.count("semicolons_inline");
 
         std::function<void(std::string_view)> comments_callback;
         if (options.count("comments"))
@@ -307,7 +305,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
 
                         if (multiple && !insert_query_payload)
                         {
-                            if (oneline || !has_multiple_lines || semicolon_inline)
+                            if (oneline || !has_multiple_lines)
                                 std::cout << ";\n";
                             else
                                 std::cout << "\n;\n";

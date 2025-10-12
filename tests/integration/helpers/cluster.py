@@ -2,7 +2,6 @@ import base64
 import concurrent
 import errno
 import http.client
-import json
 import logging
 import os
 import os.path as p
@@ -20,6 +19,8 @@ import time
 import traceback
 import urllib.parse
 import uuid
+from glob import glob
+from collections import defaultdict
 from contextlib import contextmanager
 from functools import cache
 from pathlib import Path
@@ -40,10 +41,12 @@ try:
     import pymongo
     import pymysql
     import nats
-    from confluent_kafka.avro.cached_schema_registry_client import CachedSchemaRegistryClient
     # Not an easy dep
     import cassandra.cluster
     from cassandra.policies import RoundRobinPolicy
+    from confluent_kafka.avro.cached_schema_registry_client import (
+        CachedSchemaRegistryClient,
+    )
 
 except Exception as e:
     logging.warning(f"Cannot import some modules, some tests may not work: {e}")
@@ -67,7 +70,6 @@ HELPERS_DIR = p.dirname(__file__)
 CLICKHOUSE_ROOT_DIR = p.join(p.dirname(__file__), "../../..")
 LOCAL_DOCKER_COMPOSE_DIR = p.join(CLICKHOUSE_ROOT_DIR, "tests/integration/compose/")
 DEFAULT_ENV_NAME = ".env"
-
 
 def find_default_config_path():
     path = os.environ.get("CLICKHOUSE_TESTS_BASE_CONFIG_DIR", None)
@@ -127,7 +129,6 @@ try:
     os.remove(NET_LOCK_PATH)
 except Exception:
     pass
-
 
 # to create docker-compose env file
 def _create_env_file(path, variables):
@@ -205,56 +206,39 @@ def is_port_free(port: int) -> bool:
 
 class PortPoolManager:
     """
-    Thread/process-safe port pool manager using a JSON file and filelock.
-    Ensures only one worker modifies ports.json at a time.
+    This class is used for distribution of ports allocated to single pytest-xdist worker
+    It can be used by multiple ClickHouseCluster instances
     """
 
-    PORTS_FILE = Path("/tmp/ports.json")
-    LOCK_FILE = PORTS_FILE.with_suffix(".lock")
-    START_PORT = 30000
-    END_PORT = 50000
+    # Shared between instances
+    all_ports = None
+    free_ports = None
 
-    @classmethod
-    def get_port(cls):
-        lock = FileLock(str(cls.LOCK_FILE))
+    def __init__(self):
+        self.used_ports = []
 
-        try:
-            with lock.acquire(timeout=5):
-                return cls._allocate_port()
-        except Timeout:
-            # Force unlock if lock file is stale
-            print(f"[WARN] Lock timeout exceeded, removing {cls.LOCK_FILE}")
-            try:
-                os.remove(cls.LOCK_FILE)
-            except FileNotFoundError:
-                pass
-            # Retry once after force unlock
-            with lock:
-                return cls._allocate_port()
+        if self.all_ports is None:
+            worker_ports = os.getenv("WORKER_FREE_PORTS")
+            ports = [int(p) for p in worker_ports.split(" ")]
 
-    @classmethod
-    def _allocate_port(cls):
-        if cls.PORTS_FILE.exists():
-            with open(cls.PORTS_FILE, "r", encoding="utf-8") as f:
-                ports = json.load(f)
-        else:
-            ports = {"used_ports": []}
+            # Static vars
+            PortPoolManager.all_ports = ports
+            PortPoolManager.free_ports = ports
 
-        used_ports = ports["used_ports"]
-
-        for port in range(cls.START_PORT, cls.END_PORT):
-            if port in used_ports:
-                continue
+    def get_port(self):
+        for port in self.free_ports:
             if is_port_free(port):
-                used_ports.append(port)
-                ports_data = {
-                    "used_ports": used_ports,
-                }
-                with open(cls.PORTS_FILE, "w", encoding="utf-8") as f:
-                    json.dump(ports_data, f, indent=2)
+                self.free_ports.remove(port)
+                self.used_ports.append(port)
                 return port
 
-        raise Exception(f"No free ports available in range {cls.START_PORT} - {cls.END_PORT}")
+        raise Exception(
+            f"No free ports: {self.all_ports}",
+        )
+
+    def return_used_ports(self):
+        self.free_ports.extend(self.used_ports)
+        self.used_ports.clear()
 
 
 def docker_exec(*args: str) -> Tuple[str, ...]:
@@ -330,7 +314,6 @@ def check_postgresql_java_client_is_available(postgresql_java_client_id):
     )
     p.communicate()
     return p.returncode == 0
-
 
 def check_mysql_dotnet_client_is_available(postgresql_java_client_id):
     p = subprocess.Popen(
@@ -414,23 +397,28 @@ def rabbitmq_debuginfo(rabbitmq_id, cookie):
     p.communicate()
 
 
-async def check_nats_is_available(cluster):
-    nc = await nats_connect_ssl(cluster, max_reconnect_attempts=1)
+async def check_nats_is_available(nats_port, ssl_ctx=None):
+    nc = await nats_connect_ssl(
+        nats_port,
+        user="click",
+        password="house",
+        ssl_ctx=ssl_ctx,
+        max_reconnect_attempts=1,
+    )
     available = nc.is_connected
     await nc.close()
     return available
 
 
-async def nats_connect_ssl(cluster, **connect_options):
-    ssl_ctx = cluster.nats_ssl_context
+async def nats_connect_ssl(nats_port, user, password, ssl_ctx=None, **connect_options):
     if not ssl_ctx:
         ssl_ctx = ssl.create_default_context()
         ssl_ctx.check_hostname = False
         ssl_ctx.verify_mode = ssl.CERT_NONE
     nc = await nats.connect(
-        "tls://localhost:{}".format(cluster.nats_port),
-        user=nats_user,
-        password=nats_pass,
+        "tls://localhost:{}".format(nats_port),
+        user=user,
+        password=password,
         tls=ssl_ctx,
         **connect_options,
     )
@@ -490,7 +478,6 @@ def find_binary(name):
 
     raise RuntimeError(f"{name} was not found in PATH")
 
-
 class ClickHouseCluster:
     """ClickHouse cluster with several instances and (possibly) ZooKeeper.
 
@@ -516,7 +503,6 @@ class ClickHouseCluster:
         custom_keeper_configs=[],
         enable_thread_fuzzer=False,
         thread_fuzzer_settings={},
-        azurite_default_port=0,
     ):
         for param in list(os.environ.keys()):
             logging.debug("ENV %40s %s" % (param, os.environ[param]))
@@ -666,9 +652,6 @@ class ClickHouseCluster:
         self.minio_redirect_port = 8080
         self.minio_docker_id = self.get_instance_docker_id(self.minio_host)
         self.resolver_logs_dir = os.path.join(self.instances_dir, "resolver")
-        # Make it cleaner
-        self.minio_access_key = minio_access_key
-        self.minio_secret_key = minio_secret_key
 
         self.spark_session = None
         self.with_iceberg_catalog = False
@@ -678,13 +661,7 @@ class ClickHouseCluster:
         self.with_azurite = False
         self.azurite_container = "azurite-container"
         self.blob_service_client = None
-        # When using plugins for Spark, it expects Azurite to run on port 10000
-        self._azurite_port = azurite_default_port
-        self.azurite_host = "azurite1"
-        self.azurite_ip = None
-        self.azurite_account = "devstoreaccount1"
-        self.azurite_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
-        self.azure_container_name = "cont"
+        self._azurite_port = 0
 
         # available when with_kafka == True
         self.kafka_host = "kafka1"
@@ -748,7 +725,7 @@ class ClickHouseCluster:
         self.rabbitmq_cookie = self.get_instance_docker_id(self.rabbitmq_host)
 
         self.nats_host = "nats1"
-        self._nats_port = 0
+        self.nats_port = 4444
         self.nats_docker_id = None
         self.nats_dir = p.abspath(p.join(self.instances_dir, "nats"))
         self.nats_cert_dir = os.path.join(self.nats_dir, "cert")
@@ -864,7 +841,7 @@ class ClickHouseCluster:
         self.prometheus_remote_write_handlers = []
         self.prometheus_remote_read_handlers = []
 
-        self._ytsaurus_port = None
+        self.ytsaurus_port = 80
 
         self.docker_client: docker.DockerClient = None
         self.is_up = False
@@ -877,6 +854,7 @@ class ClickHouseCluster:
         if with_spark:
             import pyspark
 
+            # if you change packages, don't forget to update them in docker/test/integration/runner/dockerd-entrypoint.sh
             (
                 pyspark.sql.SparkSession.builder.appName("spark_test")
                 # The jars are now linked to "$SPARK_HOME/jars" and we don't
@@ -972,18 +950,8 @@ class ClickHouseCluster:
         self._redis_port = self.port_pool.get_port()
         return self._redis_port
 
-    @property
-    def nats_port(self):
-        if self._nats_port:
-            return self._nats_port
-        self._nats_port = self.port_pool.get_port()
-        return self._nats_port
-
-    @property
-    def ytsaurus_port(self):
-        if not self._ytsaurus_port:
-            self._ytsaurus_port = self.port_pool.get_port()
-        return self._ytsaurus_port
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.port_pool.return_used_ports()
 
     def print_all_docker_pieces(self):
         res_networks = subprocess.check_output(
@@ -1511,8 +1479,6 @@ class ClickHouseCluster:
         env_variables["NATS_INTERNAL_PORT"] = "4444"
         env_variables["NATS_EXTERNAL_PORT"] = str(self.nats_port)
         env_variables["NATS_CERT_DIR"] = self.nats_cert_dir
-        env_variables["NATS_USER"] = nats_user
-        env_variables["NATS_PASSWORD"] = nats_pass
 
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_nats.yml")]
@@ -1849,7 +1815,7 @@ class ClickHouseCluster:
         with_minio=False,
         # The config is defined in tests/integration/helpers/remote_database_disk.xml
         # However, some tests cannot use with_remote_database_disk by their configs: e.g using secure keeper
-        # So, we set the default value of with_remote_database_disk to None and try to enable it if possible in ASAN build (i.e. if not explicitly set to false)
+        # So, we set the default value of with_remote_database_disk to None and try to enable it if possible in DEBUG and ASAN build (i.e. if not explicitly set to false)
         with_remote_database_disk=None,
         with_azurite=False,
         with_cassandra=False,
@@ -1863,6 +1829,7 @@ class ClickHouseCluster:
         with_iceberg_catalog=False,
         with_glue_catalog=False,
         with_hms_catalog=False,
+
         with_ytsaurus=False,
         handle_prometheus_remote_write=None,
         handle_prometheus_remote_read=None,
@@ -1929,16 +1896,8 @@ class ClickHouseCluster:
             with_remote_database_disk = False
 
         if with_remote_database_disk is None:
-            if ClickHouseInstance.is_local_server_asan_build == None:
-                build_opts = subprocess.check_output(
-                    f"""{self.server_bin_path} local -q "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'" """,
-                    stderr=subprocess.STDOUT,
-                    shell=True,
-                ).decode()
-                ClickHouseInstance.is_local_server_asan_build = (
-                    "-fsanitize=address" in build_opts
-                )
-            with_remote_database_disk = ClickHouseInstance.is_local_server_asan_build
+            # Not enabled in public
+            with_remote_database_disk = False
 
         if with_remote_database_disk:
             logging.debug(f"Instance {name}, with_remote_database_disk enabled")
@@ -2839,7 +2798,7 @@ class ClickHouseCluster:
         retries = 0
         while True:
             if asyncio.run(
-                check_nats_is_available(self)
+                check_nats_is_available(self.nats_port, ssl_ctx=self.nats_ssl_context)
             ):
                 break
             else:
@@ -3023,7 +2982,6 @@ class ClickHouseCluster:
     def wait_azurite_to_start(self, timeout=180):
         from azure.storage.blob import BlobServiceClient
 
-        self.azurite_ip = self.get_instance_ip(self.azurite_host)
         connection_string = (
             f"DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;"
             f"AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;"
@@ -3166,6 +3124,7 @@ class ClickHouseCluster:
     def wait_arrowflight_to_start(self):
         time.sleep(5) # TODO
 
+
     def start(self):
         pytest_xdist_logging_to_separate_files.setup()
         logging.info("Running tests in {}".format(self.base_path))
@@ -3222,7 +3181,7 @@ class ClickHouseCluster:
                         "Got exception pulling images: %s", kwargs["exception"]
                     )
 
-            retry(log_function=logging_pulling_images, retries=3, delay=8, jitter=8)(run_and_check, images_pull_cmd, nothrow=True)
+            retry(log_function=logging_pulling_images)(run_and_check, images_pull_cmd)
 
             if self.with_zookeeper_secure and self.base_zookeeper_cmd:
                 logging.debug("Setup ZooKeeper Secure")
@@ -3792,10 +3751,7 @@ class ClickHouseCluster:
 
         if self.with_net_trics:
             try:
-                if self.docker_net_lock is not None:
-                    self.docker_net_lock.release()
-                else:
-                    logging.debug("docker_net_lock is None, nothing to release")
+                self.docker_net_lock.release()
             except Exception as e:
                 logging.warning(f"Failed to release lock: {e}")
 
@@ -3942,23 +3898,16 @@ services:
             - {logs_dir}:/var/log/clickhouse-server/
             - /etc/passwd:/etc/passwd:ro
             - {HELPERS_DIR}/../integration-tests-entrypoint.sh:/integration-tests-entrypoint.sh
-            - {CLICKHOUSE_ROOT_DIR}:/debug:ro
+            - /debug:/debug:ro
             {metrika_xml}
             {binary_volume}
             {external_dirs_volumes}
             {odbc_ini_path}
             {keytab_path}
             {krb5_conf}
-            {lakehouses_path}
         entrypoint: /integration-tests-entrypoint.sh {entrypoint_cmd}
-        # Increase it to allow jeprof to dump the profile report and gdb collect stacktraces
-        #
-        # NOTE: it has been proven that 5m is not enough slightly, but anyway
-        # this should not be a problem, since in
-        # integration-tests-entrypoint.sh we have "timeout" of 1 minute, and
-        # later we will attach with gdb to collect stacktraces, and once it
-        # will be done it will exit.
-        stop_grace_period: 10m
+        # increase it to allow jeprof to dump the profile report
+        stop_grace_period: 2m
         tmpfs: {tmpfs}
         {mem_limit}
         cap_add:
@@ -3991,7 +3940,6 @@ services:
 
 
 class ClickHouseInstance:
-    is_local_server_asan_build = None
     def __init__(
         self,
         cluster,
@@ -4161,11 +4109,7 @@ class ClickHouseInstance:
         self.clickhouse_start_command_in_daemon = "{} --daemon -- {}".format(
             clickhouse_start_command_with_conf, clickhouse_start_extra_args
         )
-        # NOTE: as a child command we have only clickhouse, so it is OK to assume so
-        # and there is no other way to kill clickhouse properly (easily), since
-        # clickhosue is spawned with --daemon, and it is not a child neither in
-        # the same session.
-        self.clickhouse_stay_alive_command = "bash -c \"trap 'pkill tail; pkill clickhouse' INT TERM; {}; coproc tail -f /dev/null; wait $$!\"".format(
+        self.clickhouse_stay_alive_command = "bash -c \"trap 'pkill tail' INT TERM; {}; coproc tail -f /dev/null; wait $$!\"".format(
             self.clickhouse_start_command_in_daemon
         )
 
@@ -4192,9 +4136,6 @@ class ClickHouseInstance:
         else:
             self.keytab_path = ""
             self.krb5_conf = ""
-
-        # Use a common path for data lakes on the filesystem
-        self.lakehouses_path = "- /var/lib/clickhouse/user_files/lakehouses:/var/lib/clickhouse/user_files/lakehouses" if with_dolor else ""
 
         self.docker_client = None
         self.ip_address = None
@@ -4540,12 +4481,11 @@ class ClickHouseInstance:
         return (None, str(code) + " " + http.client.responses[code] + ": " + r.text)
 
     # Connects to the instance via HTTP interface, sends a query and returns the answer
-    # @param url - URI without leading slash
-    def http_request(self, url, method="GET", params=None, data=None, headers=None, *args, **kwargs):
-        logging.debug(f"Sending HTTP request '{url}' to {self.name}")
-        url = f"http://{self.ip_address}:8123/{url}"
+    def http_request(self, url, method="GET", params=None, data=None, headers=None):
+        logging.debug(f"Sending HTTP request {url} to {self.name}")
+        url = "http://" + self.ip_address + ":8123/" + url
         return requests.request(
-            method=method, url=url, params=params, data=data, headers=headers, *args, **kwargs
+            method=method, url=url, params=params, data=data, headers=headers
         )
 
     def stop_clickhouse(self, stop_wait_sec=30, kill=False):
@@ -4731,12 +4671,6 @@ class ClickHouseInstance:
             user="root",
         )
 
-    def give_user_files_permissions(self):
-        self.exec_in_container(
-            ["bash", "-c", f"chown -R {str(os.getuid())}:{str(os.getgid())} /var/lib/clickhouse/user_files"],
-            user="root",
-        )
-
     def contains_in_log(
         self,
         substring,
@@ -4809,14 +4743,20 @@ class ClickHouseInstance:
         filename="/var/log/clickhouse-server/clickhouse-server.log",
         timeout=30,
         repetitions=1,
-        look_behind_lines=10000,
+        look_behind_lines=100,
     ):
         start_time = time.time()
         result = self.exec_in_container(
             [
                 "bash",
                 "-c",
-                f"timeout {timeout} stdbuf -o0 -e0 tail -Fn{look_behind_lines} {shlex.quote(filename)} | stdbuf -o0 -e0 tee -a {filename}.wait_for_log_line | grep -Em {repetitions} {shlex.quote(regexp)}",
+                'timeout {} stdbuf -o0 -e0 tail -Fn{} "{}" | stdbuf -o0 -e0 tee /dev/stderr | grep -Em {} {}'.format(
+                    timeout,
+                    look_behind_lines,
+                    filename,
+                    repetitions,
+                    shlex.quote(regexp),
+                ),
             ]
         )
 
@@ -5334,7 +5274,7 @@ class ClickHouseInstance:
         # async replication is only supported in version 23.9+
         # for tags that don't specify a version we assume it has a version of ClickHouse
         # that supports async replication if a test for it is present
-        if not self.with_dolor and (
+        if (
             version == None
             or version["major"] > 23
             or (version["major"] == 23 and version["minor"] >= 9)
@@ -5559,7 +5499,6 @@ class ClickHouseInstance:
                     odbc_ini_path=odbc_ini_path,
                     keytab_path=self.keytab_path,
                     krb5_conf=self.krb5_conf,
-                    lakehouses_path=self.lakehouses_path,
                     entrypoint_cmd=entrypoint_cmd,
                     networks=networks,
                     app_net=app_net,
@@ -5569,7 +5508,6 @@ class ClickHouseInstance:
                     net_alias1=net_alias1,
                     init_flag="true" if self.docker_init_flag else "false",
                     HELPERS_DIR=HELPERS_DIR,
-                    CLICKHOUSE_ROOT_DIR=CLICKHOUSE_ROOT_DIR
                 )
             )
 

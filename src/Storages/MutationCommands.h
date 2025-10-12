@@ -39,7 +39,6 @@ struct MutationCommand
         DROP_PROJECTION,
         DROP_STATISTICS,
         MATERIALIZE_TTL,
-        REWRITE_PARTS,
         RENAME_COLUMN,
         MATERIALIZE_COLUMN,
         APPLY_DELETED_MASK,

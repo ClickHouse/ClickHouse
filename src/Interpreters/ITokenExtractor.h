@@ -3,6 +3,7 @@
 #include <base/types.h>
 
 #include <Interpreters/BloomFilter.h>
+#include <Interpreters/GinFilter.h>
 
 
 namespace DB
@@ -11,12 +12,7 @@ namespace DB
 /// Interface for string parsers.
 struct ITokenExtractor
 {
-    ITokenExtractor() = default;
-    ITokenExtractor(const ITokenExtractor &) = default;
-    ITokenExtractor & operator=(const ITokenExtractor &) = default;
-
     virtual ~ITokenExtractor() = default;
-    virtual std::unique_ptr<ITokenExtractor> clone() const = 0;
 
     /// Fast inplace implementation for regular use.
     /// Gets string (data ptr and len) and start position for extracting next token (state of extractor).
@@ -59,24 +55,29 @@ struct ITokenExtractor
 
     virtual void stringLikeToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter) const = 0;
 
-    /// Collects copy of tokens into vector. This method is inefficient and should be used only for constants.
-    virtual void stringToTokens(const char * data, size_t length, std::vector<String> & tokens) const = 0;
+    /// Updates GIN filter from exact-match string filter value
+    virtual void stringToGinFilter(const char * data, size_t length, GinQueryString & gin_query_string) const = 0;
 
-    /// Collects copy of tokens into vector from substring-match string filter value.
+    /// Updates GIN filter from substring-match string filter value.
     /// An `ITokenExtractor` implementation may decide to skip certain
     /// tokens depending on whether the substring is a prefix or a suffix.
-    /// This method is inefficient and should be used only for constants.
-    virtual void substringToTokens(
+    virtual void substringToGinFilter(
         const char * data,
         size_t length,
-        std::vector<String> & tokens,
+        GinQueryString & gin_query_string,
         bool /*is_prefix*/,
         bool /*is_suffix*/) const
     {
-        stringToTokens(data, length, tokens);
+        stringToGinFilter(data, length, gin_query_string);
     }
 
-    virtual void stringLikeToTokens(const char * data, size_t length, std::vector<String> & tokens) const = 0;
+    virtual void stringPaddedToGinFilter(const char * data, size_t length, GinQueryString & gin_query_string) const
+    {
+        stringToGinFilter(data, length, gin_query_string);
+    }
+
+    virtual void stringLikeToGinFilter(const char * data, size_t length, GinQueryString & gin_query_string) const = 0;
+
     virtual bool supportsStringLike() const = 0;
 };
 
@@ -85,11 +86,6 @@ using TokenExtractorPtr = const ITokenExtractor *;
 template <typename Derived>
 class ITokenExtractorHelper : public ITokenExtractor
 {
-    std::unique_ptr<ITokenExtractor> clone() const override
-    {
-        return std::make_unique<Derived>(*static_cast<const Derived *>(this));
-    }
-
     void stringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter) const override
     {
         size_t cur = 0;
@@ -119,23 +115,35 @@ class ITokenExtractorHelper : public ITokenExtractor
             bloom_filter.add(token.c_str(), token.size());
     }
 
-    void stringToTokens(const char * data, size_t length, std::vector<String> & tokens) const override
+    void stringToGinFilter(const char * data, size_t length, GinQueryString & gin_query_string) const override
     {
+        gin_query_string.setQueryString({data, length});
+        const auto & tokens = getTokensView(data, length);
+        for (const auto & token : tokens)
+            gin_query_string.addTerm(token);
+    }
+
+    void stringPaddedToGinFilter(const char * data, size_t length, GinQueryString & gin_query_string) const override
+    {
+        gin_query_string.setQueryString({data, length});
+
         size_t cur = 0;
         size_t token_start = 0;
         size_t token_len = 0;
 
-        while (cur < length && static_cast<const Derived *>(this)->nextInString(data, length, &cur, &token_start, &token_len))
-            tokens.push_back({data + token_start, token_len});
+        while (cur < length && static_cast<const Derived *>(this)->nextInStringPadded(data, length, &cur, &token_start, &token_len))
+            gin_query_string.addTerm({data + token_start, token_len});
     }
 
-    void stringLikeToTokens(const char * data, size_t length, std::vector<String> & tokens) const override
+    void stringLikeToGinFilter(const char * data, size_t length, GinQueryString & gin_query_string) const override
     {
+        gin_query_string.setQueryString({data, length});
+
         size_t cur = 0;
         String token;
 
         while (cur < length && static_cast<const Derived *>(this)->nextInStringLike(data, length, &cur, token))
-            tokens.push_back(token);
+            gin_query_string.addTerm(token);
     }
 };
 
@@ -146,7 +154,7 @@ struct NgramTokenExtractor final : public ITokenExtractorHelper<NgramTokenExtrac
     explicit NgramTokenExtractor(size_t n_) : n(n_) {}
 
     static const char * getName() { return "ngrambf_v1"; }
-    static const char * getExternalName() { return "ngrams"; }
+    static const char * getExternalName() { return "ngram"; }
 
     std::vector<std::string_view> getTokensView(const char * data, size_t length) const override;
     bool nextInString(const char * data, size_t length, size_t *  __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const override;
@@ -163,13 +171,13 @@ private:
 struct DefaultTokenExtractor final : public ITokenExtractorHelper<DefaultTokenExtractor>
 {
     static const char * getName() { return "tokenbf_v1"; }
-    static const char * getExternalName() { return "splitByNonAlpha"; }
+    static const char * getExternalName() { return "default"; }
 
     bool nextInString(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const override;
     bool nextInStringPadded(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const override;
     bool nextInStringLike(const char * data, size_t length, size_t * __restrict pos, String & token) const override;
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
-    void substringToTokens(const char * data, size_t length, std::vector<String> & tokens, bool is_prefix, bool is_suffix) const override;
+    void substringToGinFilter(const char * data, size_t length, GinQueryString & gin_query_string, bool is_prefix, bool is_suffix) const override;
 
     bool supportsStringLike() const override { return true; }
 };
@@ -180,7 +188,7 @@ struct SplitTokenExtractor final : public ITokenExtractorHelper<SplitTokenExtrac
 {
     explicit SplitTokenExtractor(const std::vector<String> & separators_);
 
-    static const char * getName() { return "splitByString"; }
+    static const char * getName() { return "split"; }
     static const char * getExternalName() { return getName(); }
 
     bool nextInString(const char * data, size_t length, size_t * pos, size_t * token_start, size_t * token_length) const override;
@@ -194,7 +202,7 @@ private:
 /// Parser doing "no operation". Returns the entire input as a single token.
 struct NoOpTokenExtractor final : public ITokenExtractorHelper<NoOpTokenExtractor>
 {
-    static const char * getName() { return "array"; }
+    static const char * getName() { return "no_op"; }
     static const char * getExternalName() { return getName(); }
 
     std::vector<std::string_view> getTokensView(const char * data, size_t length) const override;

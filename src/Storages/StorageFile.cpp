@@ -1669,8 +1669,9 @@ void ReadFromFile::applyFilters(ActionDAGNodes added_filter_nodes)
 
 void ReadFromFile::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
 {
-    info = updateFormatPrewhereInfo(info, query_info.row_level_filter, prewhere_info_value);
+    info = updateFormatPrewhereInfo(info, prewhere_info_value);
     query_info.prewhere_info = prewhere_info_value;
+    prewhere_info = prewhere_info_value;
     output_header = std::make_shared<const Block>(info.source_header);
 }
 
@@ -1719,9 +1720,9 @@ void StorageFile::read(
         PrepareReadingFromFormatHiveParams {file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap()});
 
     if (query_info.prewhere_info)
-        read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.row_level_filter, query_info.prewhere_info);
+        read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.prewhere_info);
 
-    bool need_only_count = (query_info.optimize_trivial_count || (read_from_format_info.requested_columns.empty() && !read_from_format_info.prewhere_info && !read_from_format_info.row_level_filter))
+    bool need_only_count = (query_info.optimize_trivial_count || (read_from_format_info.requested_columns.empty() && !read_from_format_info.prewhere_info))
         && context->getSettingsRef()[Setting::optimize_count_from_files];
 
     auto reading = std::make_unique<ReadFromFile>(
@@ -1780,7 +1781,8 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
         progress_callback(FileProgress(0, storage->total_bytes_to_read));
 
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(ctx->getSettingsRef(), num_streams);
-    auto format_filter_info = std::make_shared<FormatFilterInfo>(filter_actions_dag, ctx, nullptr, query_info.row_level_filter, query_info.prewhere_info);
+    auto format_filter_info = std::make_shared<FormatFilterInfo>(filter_actions_dag, ctx, nullptr);
+    format_filter_info->prewhere_info = prewhere_info;
 
     for (size_t i = 0; i < num_streams; ++i)
     {

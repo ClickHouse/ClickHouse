@@ -4,7 +4,6 @@ sidebar_label: 'String'
 sidebar_position: 8
 slug: /sql-reference/data-types/string
 title: 'String'
-doc_type: 'reference'
 ---
 
 # String

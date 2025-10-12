@@ -1,7 +1,5 @@
 #include <Databases/DataLake/GlueCatalog.h>
 #include <Poco/JSON/Object.h>
-#include <Core/ServerSettings.h>
-#include <IO/SeekableReadBuffer.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 
 #if USE_AWS_S3 && USE_AVRO
@@ -69,12 +67,6 @@ namespace DB::Setting
     extern const SettingsUInt64 s3_request_timeout_ms;
 }
 
-namespace DB::ServerSetting
-{
-    extern const ServerSettingsUInt64 s3_max_redirects;
-    extern const ServerSettingsUInt64 s3_retry_attempts;
-}
-
 namespace DB::StorageObjectStorageSetting
 {
     extern const StorageObjectStorageSettingsString iceberg_metadata_file_path;
@@ -114,19 +106,10 @@ GlueCatalog::GlueCatalog(
     DB::S3::CredentialsConfiguration creds_config;
     creds_config.use_environment_credentials = true;
 
-    const auto & server_settings = getContext()->getGlobalContext()->getServerSettings();
     const DB::Settings & global_settings = getContext()->getGlobalContext()->getSettingsRef();
 
-    int s3_max_redirects = static_cast<int>(server_settings[DB::ServerSetting::s3_max_redirects]);
-    // just for compatibility with old setting
-    if (global_settings.isChanged("s3_max_redirects"))
-        s3_max_redirects = static_cast<int>(global_settings[DB::Setting::s3_max_redirects]);
-
-    int s3_retry_attempts = static_cast<int>(server_settings[DB::ServerSetting::s3_retry_attempts]);
-    // just for compatibility with old setting
-    if (global_settings.isChanged("s3_retry_attempts"))
-        s3_retry_attempts = static_cast<int>(global_settings[DB::Setting::s3_retry_attempts]);
-
+    int s3_max_redirects = static_cast<int>(global_settings[DB::Setting::s3_max_redirects]);
+    int s3_retry_attempts = static_cast<int>(global_settings[DB::Setting::s3_retry_attempts]);
     bool s3_slow_all_threads_after_network_error = global_settings[DB::Setting::s3_slow_all_threads_after_network_error];
     bool s3_slow_all_threads_after_retryable_error = global_settings[DB::Setting::s3_slow_all_threads_after_retryable_error];
     bool enable_s3_requests_logging = global_settings[DB::Setting::enable_s3_requests_logging];
@@ -432,12 +415,10 @@ bool GlueCatalog::empty() const
 bool GlueCatalog::classifyTimestampTZ(const String & column_name, const TableMetadata & table_metadata) const
 {
     String metadata_path;
-    String metadata_uri;
     if (auto table_specific_properties = table_metadata.getDataLakeSpecificProperties();
         table_specific_properties.has_value())
     {
         metadata_path = table_specific_properties->iceberg_metadata_file_location;
-        metadata_uri = metadata_path;
         if (metadata_path.starts_with("s3:/"))
             metadata_path = metadata_path.substr(5);
 
@@ -449,23 +430,22 @@ bool GlueCatalog::classifyTimestampTZ(const String & column_name, const TableMet
     else
         throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Metadata specific properties should be defined");
 
-    if (!metadata_objects.get(metadata_uri))
+    if (!metadata_objects.get(metadata_path))
     {
         DB::ASTStorage * storage = table_engine_definition->as<DB::ASTStorage>();
         DB::ASTs args = storage->engine->arguments->children;
 
-        String storage_endpoint = !settings.storage_endpoint.empty() ? settings.storage_endpoint : metadata_uri;
+        auto table_endpoint = settings.storage_endpoint;
         if (args.empty())
-            args.emplace_back(std::make_shared<DB::ASTLiteral>(storage_endpoint));
+            args.emplace_back(std::make_shared<DB::ASTLiteral>(table_endpoint));
         else
-            args[0] = std::make_shared<DB::ASTLiteral>(storage_endpoint);
+            args[0] = std::make_shared<DB::ASTLiteral>(table_endpoint);
 
-        if (args.size() == 1)
+        if (args.size() == 1 && table_metadata.hasStorageCredentials())
         {
-            if (table_metadata.hasStorageCredentials())
-                table_metadata.getStorageCredentials()->addCredentialsToEngineArgs(args);
-            else if (!credentials.IsExpiredOrEmpty())
-                DataLake::S3Credentials(credentials.GetAWSAccessKeyId(), credentials.GetAWSSecretKey(), credentials.GetSessionToken()).addCredentialsToEngineArgs(args);
+            auto storage_credentials = table_metadata.getStorageCredentials();
+            if (storage_credentials)
+                storage_credentials->addCredentialsToEngineArgs(args);
         }
 
         auto storage_settings = std::make_shared<DB::DataLakeStorageSettings>();
@@ -484,9 +464,9 @@ bool GlueCatalog::classifyTimestampTZ(const String & column_name, const TableMet
         Poco::JSON::Parser parser;
         Poco::Dynamic::Var result = parser.parse(metadata_file);
         auto metadata_object = result.extract<Poco::JSON::Object::Ptr>();
-        metadata_objects.set(metadata_uri, std::make_shared<Poco::JSON::Object::Ptr>(metadata_object));
+        metadata_objects.set(metadata_path, std::make_shared<Poco::JSON::Object::Ptr>(metadata_object));
     }
-    auto metadata_object = *metadata_objects.get(metadata_uri);
+    auto metadata_object = *metadata_objects.get(metadata_path);
     auto current_schema_id = metadata_object->getValue<Int64>("current-schema-id");
     auto schemas = metadata_object->getArray(DB::Iceberg::f_schemas);
     for (size_t i = 0; i < schemas->size(); ++i)

@@ -5,7 +5,6 @@ set serialize_query_plan = 0;
 set enable_parallel_replicas = 0;
 set prefer_localhost_replica=1;
 set optimize_aggregation_in_order=0, optimize_read_in_order=0;
-set use_query_condition_cache = 0;
 
 select '============ #66878';
 

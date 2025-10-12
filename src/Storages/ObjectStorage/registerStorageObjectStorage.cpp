@@ -16,7 +16,6 @@
 #include <Storages/ObjectStorage/StorageObjectStorageDefinitions.h>
 #include <Storages/StorageFactory.h>
 #include <Poco/Logger.h>
-#include <Disks/DiskType.h>
 
 namespace DB
 {
@@ -31,10 +30,6 @@ namespace Setting
     extern const SettingsBool write_full_path_in_iceberg_metadata;
 }
 
-namespace DataLakeStorageSetting
-{
-    extern const DataLakeStorageSettingsString disk;
-}
 
 namespace
 {
@@ -45,6 +40,10 @@ namespace
 std::shared_ptr<StorageObjectStorage>
 createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObjectStorageConfigurationPtr configuration)
 {
+    auto & engine_args = args.engine_args;
+    if (engine_args.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");
+
     const auto context = args.getLocalContext();
     StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, context, false);
 
@@ -187,7 +186,9 @@ void registerStorageObjectStorage(StorageFactory & factory)
     UNUSED(factory);
 }
 
-[[maybe_unused]] static DataLakeStorageSettingsPtr getDataLakeStorageSettings(const ASTStorage & storage_def)
+#if USE_AVRO /// StorageIceberg depending on Avro to parse metadata with Avro format.
+
+static DataLakeStorageSettingsPtr getDataLakeStorageSettings(const ASTStorage & storage_def)
 {
     auto storage_settings = std::make_shared<DataLakeStorageSettings>();
     if (storage_def.settings)
@@ -195,89 +196,31 @@ void registerStorageObjectStorage(StorageFactory & factory)
     return storage_settings;
 }
 
-#if USE_AVRO /// StorageIceberg depending on Avro to parse metadata with Avro format.
-
 void registerStorageIceberg(StorageFactory & factory)
 {
+#if USE_AWS_S3
     factory.registerStorage(
         IcebergDefinition::storage_engine_name,
         [&](const StorageFactory::Arguments & args)
         {
             const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
-            const auto disk_name = storage_settings && (*storage_settings)[DataLakeStorageSetting::disk].changed
-                ? (*storage_settings)[DataLakeStorageSetting::disk].value
-                : "";
-
-            StorageObjectStorageConfigurationPtr configuration;
-            if (!disk_name.empty())
-            {
-                auto disk = Context::getGlobalContextInstance()->getDisk(disk_name);
-                switch (disk->getObjectStorage()->getType())
-                {
-#if USE_AWS_S3
-                    case ObjectStorageType::S3:
-                        configuration = std::make_shared<StorageS3IcebergConfiguration>(storage_settings);
-                        break;
-#endif
-#if USE_AZURE_BLOB_STORAGE
-                    case ObjectStorageType::Azure:
-                        configuration = std::make_shared<StorageAzureIcebergConfiguration>(storage_settings);
-                        break;
-#endif
-                    case ObjectStorageType::Local:
-                        configuration = std::make_shared<StorageLocalIcebergConfiguration>(storage_settings);
-                        break;
-                    default:
-                        throw Exception(
-                            ErrorCodes::BAD_ARGUMENTS,
-                            "Unsupported disk type for {}: {}",
-                            IcebergDefinition::storage_engine_name,
-                            disk->getObjectStorage()->getType());
-                }
-            }
-            else
-#if USE_AWS_S3
-                configuration = std::make_shared<StorageS3IcebergConfiguration>(storage_settings);
-#endif
-            if (configuration == nullptr)
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "This storage configuration is not available at this build");
-            }
+            auto configuration = std::make_shared<StorageS3IcebergConfiguration>(storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
         {
             .supports_settings = true,
             .supports_sort_order = true,
             .supports_schema_inference = true,
-            /// This source access type is probably a bug which was overlooked and we do not know how to fix it simply, so we keep it as it is.
             .source_access_type = AccessTypeObjects::Source::S3,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
         });
-#if USE_AWS_S3
+
     factory.registerStorage(
         IcebergS3Definition::storage_engine_name,
         [&](const StorageFactory::Arguments & args)
         {
             const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
-            const auto disk_name = storage_settings && (*storage_settings)[DataLakeStorageSetting::disk].changed
-                ? (*storage_settings)[DataLakeStorageSetting::disk].value
-                : "";
-
-            StorageObjectStorageConfigurationPtr configuration;
-            if (!disk_name.empty())
-            {
-                auto disk = Context::getGlobalContextInstance()->getDisk(disk_name);
-                switch (disk->getObjectStorage()->getType())
-                {
-                case ObjectStorageType::S3:
-                    configuration = std::make_shared<StorageS3IcebergConfiguration>(storage_settings);
-                    break;
-                default:
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported disk type for {}: {}", IcebergS3Definition::storage_engine_name, disk->getObjectStorage()->getType());
-                }
-            }
-            else
-                configuration = std::make_shared<StorageS3IcebergConfiguration>(storage_settings);
+            auto configuration = std::make_shared<StorageS3IcebergConfiguration>(storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
         {
@@ -294,25 +237,7 @@ void registerStorageIceberg(StorageFactory & factory)
         [&](const StorageFactory::Arguments & args)
         {
             const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
-            const auto disk_name = storage_settings && (*storage_settings)[DataLakeStorageSetting::disk].changed
-                ? (*storage_settings)[DataLakeStorageSetting::disk].value
-                : "";
-
-            StorageObjectStorageConfigurationPtr configuration;
-            if (!disk_name.empty())
-            {
-                auto disk = Context::getGlobalContextInstance()->getDisk(disk_name);
-                switch (disk->getObjectStorage()->getType())
-                {
-                case ObjectStorageType::Azure:
-                    configuration = std::make_shared<StorageAzureIcebergConfiguration>(storage_settings);
-                    break;
-                default:
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported disk type for {}: {}", IcebergAzureDefinition::storage_engine_name, disk->getObjectStorage()->getType());
-                }
-            }
-            else
-                configuration = std::make_shared<StorageAzureIcebergConfiguration>(storage_settings);
+            auto configuration = std::make_shared<StorageAzureIcebergConfiguration>(storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
         {
@@ -345,25 +270,7 @@ void registerStorageIceberg(StorageFactory & factory)
         [&](const StorageFactory::Arguments & args)
         {
             const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
-            const auto disk_name = storage_settings && (*storage_settings)[DataLakeStorageSetting::disk].changed
-                ? (*storage_settings)[DataLakeStorageSetting::disk].value
-                : "";
-
-            StorageObjectStorageConfigurationPtr configuration;
-            if (!disk_name.empty())
-            {
-                auto disk = Context::getGlobalContextInstance()->getDisk(disk_name);
-                switch (disk->getObjectStorage()->getType())
-                {
-                    case ObjectStorageType::Local:
-                        configuration = std::make_shared<StorageLocalIcebergConfiguration>(storage_settings);
-                        break;
-                    default:
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported disk type for {}: {}", IcebergLocalDefinition::storage_engine_name, disk->getObjectStorage()->getType());
-                }
-            }
-            else
-                configuration = std::make_shared<StorageLocalIcebergConfiguration>(storage_settings);
+            auto configuration = std::make_shared<StorageLocalIcebergConfiguration>(storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
         {
@@ -387,34 +294,7 @@ void registerStorageDeltaLake(StorageFactory & factory)
         [&](const StorageFactory::Arguments & args)
         {
             const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
-            const auto disk_name = storage_settings && (*storage_settings)[DataLakeStorageSetting::disk].changed
-                ? (*storage_settings)[DataLakeStorageSetting::disk].value
-                : "";
-
-            StorageObjectStorageConfigurationPtr configuration;
-            if (!disk_name.empty())
-            {
-                auto disk = Context::getGlobalContextInstance()->getDisk(disk_name);
-                switch (disk->getObjectStorage()->getType())
-                {
-                    case ObjectStorageType::S3:
-                    {
-                        configuration = std::make_shared<StorageS3DeltaLakeConfiguration>(storage_settings);
-                        break;
-                    }
-                    case ObjectStorageType::Azure:
-                        configuration = std::make_shared<StorageAzureDeltaLakeConfiguration>(storage_settings);
-                        break;
-                    case ObjectStorageType::Local:
-                        configuration = std::make_shared<StorageLocalDeltaLakeConfiguration>(storage_settings);
-                        break;
-                    default:
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported disk type for {}: {}", DeltaLakeDefinition::storage_engine_name, disk->getObjectStorage()->getType());
-                }
-            }
-            else
-                configuration = std::make_shared<StorageS3DeltaLakeConfiguration>(storage_settings);
-
+            auto configuration = std::make_shared<StorageS3DeltaLakeConfiguration>(storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
         {
@@ -428,28 +308,7 @@ void registerStorageDeltaLake(StorageFactory & factory)
         [&](const StorageFactory::Arguments & args)
         {
             const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
-            const auto disk_name = storage_settings && (*storage_settings)[DataLakeStorageSetting::disk].changed
-                ? (*storage_settings)[DataLakeStorageSetting::disk].value
-                : "";
-
-            StorageObjectStorageConfigurationPtr configuration;
-            if (!disk_name.empty())
-            {
-                auto disk = Context::getGlobalContextInstance()->getDisk(disk_name);
-                switch (disk->getObjectStorage()->getType())
-                {
-                case ObjectStorageType::S3:
-                {
-                    configuration = std::make_shared<StorageS3DeltaLakeConfiguration>(storage_settings);
-                    break;
-                }
-                default:
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported disk type for {}: {}", DeltaLakeS3Definition::storage_engine_name, disk->getObjectStorage()->getType());
-                }
-            }
-            else
-                configuration = std::make_shared<StorageS3DeltaLakeConfiguration>(storage_settings);
-
+            auto configuration = std::make_shared<StorageS3DeltaLakeConfiguration>(storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
         {
@@ -465,25 +324,7 @@ void registerStorageDeltaLake(StorageFactory & factory)
         [&](const StorageFactory::Arguments & args)
         {
             const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
-            const auto disk_name = storage_settings && (*storage_settings)[DataLakeStorageSetting::disk].changed
-                ? (*storage_settings)[DataLakeStorageSetting::disk].value
-                : "";
-
-            StorageObjectStorageConfigurationPtr configuration;
-            if (!disk_name.empty())
-            {
-                auto disk = Context::getGlobalContextInstance()->getDisk(disk_name);
-                switch (disk->getObjectStorage()->getType())
-                {
-                    case ObjectStorageType::Azure:
-                        configuration = std::make_shared<StorageAzureDeltaLakeConfiguration>(storage_settings);
-                        break;
-                    default:
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported disk type for {}: {}", DeltaLakeAzureDefinition::storage_engine_name, disk->getObjectStorage()->getType());
-                }
-            }
-            else
-                configuration = std::make_shared<StorageAzureDeltaLakeConfiguration>(storage_settings);
+            auto configuration = std::make_shared<StorageAzureDeltaLakeConfiguration>(storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
         {
@@ -498,25 +339,7 @@ void registerStorageDeltaLake(StorageFactory & factory)
         [&](const StorageFactory::Arguments & args)
         {
             const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
-            const auto disk_name = storage_settings && (*storage_settings)[DataLakeStorageSetting::disk].changed
-                ? (*storage_settings)[DataLakeStorageSetting::disk].value
-                : "";
-
-            StorageObjectStorageConfigurationPtr configuration;
-            if (!disk_name.empty())
-            {
-                auto disk = Context::getGlobalContextInstance()->getDisk(disk_name);
-                switch (disk->getObjectStorage()->getType())
-                {
-                    case ObjectStorageType::Local:
-                        configuration = std::make_shared<StorageLocalDeltaLakeConfiguration>(storage_settings);
-                        break;
-                    default:
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported disk type for {}: {}", DeltaLakeLocalDefinition::storage_engine_name, disk->getObjectStorage()->getType());
-                }
-            }
-            else
-                configuration = std::make_shared<StorageLocalDeltaLakeConfiguration>(storage_settings);
+            auto configuration = std::make_shared<StorageLocalDeltaLakeConfiguration>(storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
         {

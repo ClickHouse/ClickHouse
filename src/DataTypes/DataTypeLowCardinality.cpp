@@ -133,7 +133,7 @@ MutableColumnPtr DataTypeLowCardinality::createColumn() const
 {
     MutableColumnPtr indexes = DataTypeUInt8().createColumn();
     MutableColumnPtr dictionary = createColumnUnique(*dictionary_type);
-    return ColumnLowCardinality::create(std::move(dictionary), std::move(indexes), /*is_shared=*/false);
+    return ColumnLowCardinality::create(std::move(dictionary), std::move(indexes));
 }
 
 Field DataTypeLowCardinality::getDefault() const

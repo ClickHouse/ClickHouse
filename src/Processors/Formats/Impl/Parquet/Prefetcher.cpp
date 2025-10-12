@@ -15,11 +15,6 @@ namespace DB::ErrorCodes
     extern const int CANNOT_READ_ALL_DATA;
 }
 
-namespace ProfileEvents
-{
-    extern const Event ParquetFetchWaitTimeMicroseconds;
-}
-
 namespace DB::Parquet
 {
 
@@ -414,24 +409,16 @@ std::span<const char> Prefetcher::getRangeData(const PrefetchHandle & request)
     const RequestState * req = request.request;
     chassert(req->state == RequestState::State::HasTask);
     Task * task = req->task;
-    Task::State s = task->state.load(std::memory_order_acquire);
-    if (s == Task::State::Scheduled || s == Task::State::Running)
+    auto s = task->state.load(std::memory_order_acquire);
+    if (s == Task::State::Scheduled)
     {
-        Stopwatch wait_time;
-
-        if (s == Task::State::Scheduled)
-        {
-            s = runTask(task);
-            chassert(s != Task::State::Scheduled);
-        }
-
-        if (s == Task::State::Running) // (not `else`, the runTask above may return Running)
-        {
-            task->completion.wait();
-            s = task->state.load();
-        }
-
-        ProfileEvents::increment(ProfileEvents::ParquetFetchWaitTimeMicroseconds, wait_time.elapsedMicroseconds());
+        s = runTask(task);
+        chassert(s != Task::State::Scheduled);
+    }
+    if (s == Task::State::Running)
+    {
+        task->completion.wait();
+        s = task->state.load();
     }
     if (s == Task::State::Exception)
         rethrowException(task);

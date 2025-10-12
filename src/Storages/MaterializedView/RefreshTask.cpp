@@ -165,13 +165,6 @@ OwnedRefreshTask RefreshTask::create(
     task->refresh_task = context->getSchedulePool().createTask("RefreshTask",
         [self = task.get()] { self->refreshTask(); });
 
-    task->refresh_task_watch_callback = std::make_shared<Coordination::WatchCallback>([w = task->coordination.watches, task_waker = task->refresh_task->getWatchCallback()](const Coordination::WatchResponse & response)
-    {
-        w->root_watch_active.store(false);
-        w->should_reread_znodes.store(true);
-        (*task_waker)(response);
-    });
-
     if (strategy.dependencies)
         for (auto && dependency : strategy.dependencies->children)
             task->initial_dependencies.emplace_back(dependency->as<const ASTTableIdentifier &>());
@@ -949,12 +942,24 @@ void RefreshTask::readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeepe
     if (!coordination.watches->root_watch_active.load())
     {
         coordination.watches->root_watch_active.store(true);
-        zookeeper->existsWatch(coordination.path, nullptr, refresh_task_watch_callback);
+        zookeeper->existsWatch(coordination.path, nullptr,
+            [w = coordination.watches, task_waker = refresh_task->getWatchCallback()](const Coordination::WatchResponse & response)
+            {
+                w->root_watch_active.store(false);
+                w->should_reread_znodes.store(true);
+                task_waker(response);
+            });
     }
     if (!coordination.watches->children_watch_active.load())
     {
         coordination.watches->children_watch_active.store(true);
-        zookeeper->getChildrenWatch(coordination.path, nullptr, refresh_task_watch_callback);
+        zookeeper->getChildrenWatch(coordination.path, nullptr,
+            [w = coordination.watches, task_waker = refresh_task->getWatchCallback()](const Coordination::WatchResponse & response)
+            {
+                w->children_watch_active.store(false);
+                w->should_reread_znodes.store(true);
+                task_waker(response);
+            });
     }
 
     Strings paths {coordination.path, coordination.path + "/running", coordination.path + "/paused"};

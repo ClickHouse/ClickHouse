@@ -1,4 +1,4 @@
-personal_ws-1.1 en 3452
+personal_ws-1.1 en 3452 
 AArch
 ACLs
 ALTERs
@@ -33,7 +33,6 @@ AppleClang
 Approximative
 ArrayJoin
 ArrowCompression
-ArrowFlight
 ArrowStream
 AsyncInsertCacheSize
 AsynchronousHeavyMetricsCalculationTimeSpent
@@ -281,7 +280,6 @@ DiskSpaceReservedForMerge
 DiskTotal
 DiskUnreserved
 DiskUsed
-DistanceTransposed
 DistributedCacheLogMode
 DistributedCachePoolBehaviourOnLimit
 DistributedDDLOutputMode
@@ -535,7 +533,6 @@ JavaHash
 Jemalloc
 Jepsen
 JetBrains
-JetStream
 Jitter
 Joda
 JoinAlgorithm
@@ -910,7 +907,6 @@ Punycode
 PyArrow
 PyCharm
 QATlib
-QBit
 QEMU
 QTCreator
 Quantile
@@ -1152,7 +1148,6 @@ ThreadPoolRemoteFSReaderThreads
 ThreadPoolRemoteFSReaderThreadsActive
 ThreadsActive
 ThreadsInOvercommitTracker
-Tiering
 TimeSeries
 TimescaleDB's
 TimestampType
@@ -1260,7 +1255,6 @@ XORs
 Xeon
 YAML
 YAMLRegExpTree
-YTsaurus
 YTsaurus
 YYYY
 YYYYMMDD
@@ -1416,7 +1410,6 @@ arrayUniq
 arrayWithConstant
 arrayZip
 arrayZipUnaligned
-arrowFlight
 ascii
 asin
 asinh
@@ -1458,7 +1451,6 @@ backupview
 balancer
 basename
 bcrypt
-bcrypt's
 bech
 benchmarked
 benchmarking
@@ -2069,7 +2061,6 @@ gtid
 gunzip
 gzip
 gzipped
-hackernews
 hadoop
 halfMD
 halfday
@@ -2078,9 +2069,7 @@ hardlinked
 hardlinking
 hardlinks
 hasAll
-hasAllTokens
 hasAny
-hasAnyTokens
 hasColumnInTable
 hasSubsequence
 hasSubsequenceCaseInsensitive
@@ -2182,7 +2171,6 @@ isNotDistinctFrom
 isNotNull
 isNull
 isNullable
-isValidASCII
 isValidJSON
 isValidUTF
 isZeroOrNull
@@ -2443,7 +2431,6 @@ multiline
 multilinestring
 multiplyDecimal
 multipolygon
-multiquery
 multiread
 multisearchany
 multisets
@@ -2454,7 +2441,6 @@ multiword
 munmap
 murmurHash
 murmurhash
-musl
 musqldump
 mutex
 mydb
@@ -2553,7 +2539,6 @@ observability
 odbc
 ok
 omclickhouse
-oneof
 onstraints
 ontime
 onwards
@@ -2721,7 +2706,6 @@ punycodeEncode
 pushdown
 pwrite
 py
-qbit
 qryn
 quantile
 quantileBFloat
@@ -2736,7 +2720,6 @@ quantileExactWeighted
 quantileExactWeightedInterpolated
 quantileGK
 quantileInterpolatedWeighted
-quantilePrometheusHistogram
 quantileTDigest
 quantileTDigestWeighted
 quantileTiming
@@ -2909,6 +2892,8 @@ satisfiable
 scala
 sccache
 schemas
+searchAll
+searchAny
 sectio
 seekable
 seektable
@@ -3037,9 +3022,7 @@ structs
 structureToCapnProtoSchema
 structureToProtobufSchema
 studentTTest
-studentTTestOneSample
 studentttest
-studentttestonesample
 subBitmap
 subDate
 subarray
@@ -3145,7 +3128,6 @@ throwIf
 throwif
 timeDiff
 timeSeries
-timeSeriesChangesToGrid
 timeSeriesData
 timeSeriesDeltaToGrid
 timeSeriesDerivToGrid
@@ -3160,7 +3142,6 @@ timeSeriesPredictLinearToGrid
 timeSeriesRange
 timeSeriesRateToGrid
 timeSeriesResampleToGridWithStaleness
-timeSeriesResetsToGrid
 timeSeriesSelector
 timeSeriesTags
 timeSlot
@@ -3273,8 +3254,6 @@ tokenization
 tokenize
 tokenized
 tokenizer
-tokenizers
-tokenizes
 tokenizing
 toml
 toolchain
