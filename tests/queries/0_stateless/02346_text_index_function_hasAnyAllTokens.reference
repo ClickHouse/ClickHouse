@@ -1,6 +1,7 @@
 Negative tests
-Test what happens hasAnyTokens/All are called on columns without index
--- It is expected that the default tokenizer is used
+Test singular aliases
+Test what happens when hasAnyTokens/All is called on a column without index
+-- We expected that the default tokenizer is used
 -- { echoOn }
 SELECT hasAnyTokens('a b', ['b']);
 1
@@ -19,24 +20,43 @@ SELECT hasAllTokens(materialize('a b'), ['a', 'b']);
 1
 SELECT hasAllTokens(materialize('a b'), ['a', 'c']);
 0
-SELECT 'Test singular aliases';
-Test singular aliases
-SELECT hasAnyToken('a b', ['b']);
-1
-SELECT hasAnyToken('a b', ['c']);
-0
-SELECT hasAllToken('a b', ['b']);
-1
-SELECT hasAllToken('a b', ['c']);
-0
+-- These are equivalent to the lines above, but using Search{Any,All} in the filter step.
+-- We keep this test because the direct read optimization substituted Search{Any,All} only
+-- when they are in the filterStep, and we want to detect any variation eagerly.
+SELECT id FROM tab WHERE hasAnyTokens('a b', ['b']);
 1
 2
 3
+SELECT id FROM tab WHERE hasAnyTokens('a b', ['c']);
+SELECT id FROM tab WHERE hasAnyTokens(col_str, ['b']);
 1
+SELECT id FROM tab WHERE hasAnyTokens(col_str, ['c']);
 2
-Testing edge cases on non-indexed column
+SELECT id FROM tab WHERE hasAllTokens('a b', ['a b']);
+SELECT id FROM tab WHERE hasAllTokens('a b', ['a c']);
+SELECT id FROM tab WHERE hasAllTokens(col_str, ['a b']);
+SELECT id FROM tab WHERE hasAllTokens(col_str, ['a c']);
+-- Test search without needle on non-empty columns (all are expected to match)
+SELECT count() FROM tab WHERE hasAnyTokens(col_str, []);
 3
+SELECT count() FROM tab WHERE hasAllTokens(col_str, []);
 3
+-- { echoOn }
+SELECT id FROM tab WHERE hasAnyTokens(s, ['hello']) ORDER BY id;
+1
+3
+SELECT id FROM tab WHERE hasAnyTokens(s, ['moon', 'goodbye']) ORDER BY id;
+2
+3
+SELECT id FROM tab WHERE hasAnyTokens(s, ['unknown', 'goodbye']) ORDER BY id;
+2
+SELECT id FROM tab WHERE hasAllTokens(s, ['hello', 'world']) ORDER BY id;
+1
+SELECT id FROM tab WHERE hasAllTokens(s, ['goodbye']) ORDER BY id;
+2
+SELECT id FROM tab WHERE hasAllTokens(s, ['hello', 'moon']) ORDER BY id;
+3
+SELECT id FROM tab WHERE hasAllTokens(s, ['hello', 'unknown']) ORDER BY id;
 FixedString input columns
 [1]
 [1]
@@ -238,12 +258,3 @@ Text index should choose 25% of granules
 Description: text GRANULARITY 1
 Parts: 1/1
 Granules: 256/1024
-Test hasAnyTokens and hasAllTokens on a non-indexed FixedString column
-1
-3
-2
-3
-2
-1
-2
-3
