@@ -42,11 +42,11 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        checkDataTypes(arguments);
+        checkArgumentTypes(arguments);
         return std::make_shared<DataTypeUInt64>();
     }
 
-    static void checkDataTypes(const ColumnsWithTypeAndName & arguments)
+    static void checkArgumentTypes(const ColumnsWithTypeAndName & arguments)
     {
         if (arguments.size() != 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} must be called with two arguments", name);
