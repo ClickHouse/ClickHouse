@@ -870,6 +870,13 @@ Default value: default
 
 Instead of the `--host`, `--port`, `--user` and `--password` options, the client also supports [connection strings](#connection_string).
 
+
+**`--proto-caps <value>`** 
+
+Enable/disable chunking in data transfer. 
+
+choices: `chunked_optional`, `notchunked,` `notchunked_optional,` `send_chunked,` `send_chunked_optional`, `send_notchunked`, `send_notchunked_optional`, `recv_chunked`, `recv_chunked_optional`, `recv_notchunked`, `recv_notchunked_optional`. 
+
 ### Query options {#command-line-options-query}
 
 **`--param_<name>=<value>`**
