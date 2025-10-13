@@ -358,7 +358,7 @@ def main():
         else:
             R.set_success()
 
-    R.complete_job()
+    R.sort().complete_job()
 
 
 if __name__ == "__main__":
