@@ -16,8 +16,9 @@ safe_drop() {
          DROP TABLE IF EXISTS ${name}"
 }
 
+# Pre-test cleanup: keep DROP blocking so we don't collide with leftovers.
 for i in $(seq $REPLICAS); do
-    safe_drop "concurrent_alter_detach_$i"
+    $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS concurrent_alter_detach_$i"
 done
 
 for i in $(seq $REPLICAS); do
