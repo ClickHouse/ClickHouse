@@ -2,11 +2,10 @@
 #include <Parsers/IAST.h>
 #include <Parsers/IAST_erase.h>
 #include <Parsers/ASTSystemQuery.h>
+#include <Poco/String.h>
 #include <Common/quoteString.h>
 #include <IO/WriteBuffer.h>
 #include <IO/Operators.h>
-
-#include <xray/xray_interface.h>
 
 namespace DB
 {
@@ -480,16 +479,19 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             if (!instrumentation_handler_name.empty())
             {
                 ostr << ' ';
-                print_identifier(instrumentation_handler_name);
+                print_identifier(Poco::toUpper(instrumentation_handler_name));
             }
 
             if (instrumentation_entry_type.has_value())
             {
                 switch (instrumentation_entry_type.value())
                 {
-                    case XRayEntryType::ENTRY: ostr << " Entry"; break;
-                    case XRayEntryType::EXIT: ostr << " Exit"; break;
-                    default: break;
+                    case XRayEntryType::ENTRY:
+                        ostr << " ENTRY"; break;
+                    case XRayEntryType::EXIT:
+                        ostr << " EXIT"; break;
+                    default:
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown entry type: {}", instrumentation_entry_type.value());
                 }
             }
 

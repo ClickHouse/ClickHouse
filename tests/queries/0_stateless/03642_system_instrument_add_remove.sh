@@ -19,27 +19,23 @@ $CLICKHOUSE_CLIENT -q """
     SYSTEM INSTRUMENT REMOVE ALL;
     SELECT count() FROM system.xray_instrumentation;
 
-    SYSTEM INSTRUMENT ADD \`DB::executeQuery\` LOG 'my log in executeQuery';
+    SYSTEM INSTRUMENT ADD \`DB::executeQuery\` LOG ENTRY 'my log in executeQuery';
+    SELECT function_name, handler, entry_type, parameters FROM system.xray_instrumentation ORDER BY id ASC;
+    SYSTEM INSTRUMENT ADD \`DB::executeQuery\` LOG ENTRY 'another log in executeQuery'; -- { serverError BAD_ARGUMENTS }
+    SELECT function_name, handler, entry_type, parameters FROM system.xray_instrumentation ORDER BY id ASC;
 
-    SYSTEM INSTRUMENT ADD \`DB::executeQuery\` LOG 'my log in executeQuery'; -- { serverError BAD_ARGUMENTS }
-    SELECT count() FROM system.xray_instrumentation;
-    SELECT function_name, handler_name, parameters FROM system.xray_instrumentation ORDER BY id ASC;
-
-    SYSTEM INSTRUMENT ADD \`QueryMetricLog::startQuery\` LOG 'my log in startQuery';
-    SELECT count() FROM system.xray_instrumentation;
-    SELECT function_name, handler_name, parameters FROM system.xray_instrumentation ORDER BY id ASC;
+    SYSTEM INSTRUMENT ADD \`QueryMetricLog::startQuery\` LOG ENTRY 'my log in startQuery';
+    SELECT function_name, handler, entry_type, parameters FROM system.xray_instrumentation ORDER BY id ASC;
 """
 
 id=$($CLICKHOUSE_CLIENT -q "SELECT id FROM system.xray_instrumentation WHERE function_name = 'QueryMetricLog::startQuery';")
 
 $CLICKHOUSE_CLIENT -q """
     SYSTEM INSTRUMENT REMOVE $id;
-    SELECT count() FROM system.xray_instrumentation;
-    SELECT function_name, handler_name, parameters FROM system.xray_instrumentation ORDER BY id ASC;
+    SELECT function_name, handler, entry_type, parameters FROM system.xray_instrumentation ORDER BY id ASC;
 
-    SYSTEM INSTRUMENT ADD \`QueryMetricLog::startQuery\` LOG 'my other in startQuery';
-    SELECT count() FROM system.xray_instrumentation;
-    SELECT function_name, handler_name, parameters FROM system.xray_instrumentation ORDER BY id ASC;
+    SYSTEM INSTRUMENT ADD \`QueryMetricLog::startQuery\` LOG ENTRY 'my other in startQuery';
+    SELECT function_name, handler, entry_type, parameters FROM system.xray_instrumentation ORDER BY id ASC;
     SYSTEM INSTRUMENT REMOVE ALL;
     SELECT count() FROM system.xray_instrumentation;
 """

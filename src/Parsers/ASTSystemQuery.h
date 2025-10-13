@@ -4,9 +4,13 @@
 #include <Parsers/IAST.h>
 #include <Parsers/SyncReplicaMode.h>
 #include <Server/ServerType.h>
-#include "Interpreters/XRayInstrumentationManager.h"
 
+#include "config.h"
+
+#ifdef USE_XRAY
+#include <xray/xray_interface.h>
 #include <variant>
+#endif
 
 namespace DB
 {
@@ -180,13 +184,15 @@ public:
 
     ServerType server_type;
 
-    // For SYSTEM INSTRUMENT ADD/REMOVE
+#ifdef USE_XRAY
+    /// For SYSTEM INSTRUMENT ADD/REMOVE
     using InstrumentParameter = std::variant<String, Int64, Float64>;
     String instrumentation_function_name;
     String instrumentation_handler_name;
     std::optional<XRayEntryType> instrumentation_entry_type;
     std::optional<std::variant<UInt64, bool>> instrumentation_point_id;
     std::optional<std::vector<InstrumentParameter>> instrumentation_parameters;
+#endif
 
     /// For SYSTEM TEST VIEW <name> (SET FAKE TIME <time> | UNSET FAKE TIME).
     /// Unix time.

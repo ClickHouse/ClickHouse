@@ -8,7 +8,6 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <Poco/String.h>
-#include "Interpreters/XRayInstrumentationManager.h"
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 

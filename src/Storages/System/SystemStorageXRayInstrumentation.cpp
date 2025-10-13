@@ -1,6 +1,8 @@
 #include <Storages/System/SystemStorageXRayInstrumentation.h>
-#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeDynamic.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnString.h>
@@ -9,9 +11,7 @@
 #include <Access/EnabledRolesInfo.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/XRayInstrumentationManager.h>
-#include <DataTypes/DataTypeDynamic.h>
 #include <xray/xray_interface.h>
-#include "DataTypes/DataTypeNullable.h"
 
 #if USE_XRAY
 
@@ -25,7 +25,7 @@ ColumnsDescription SystemStorageXRayInstrumentation::getColumnsDescription()
         {"id", std::make_shared<DataTypeUInt32>(), "ID of the instrumentation point"},
         {"function_id", std::make_shared<DataTypeUInt32>(), "ID assigned to the function in xray_instr_map section of elf-binary."},
         {"function_name", std::make_shared<DataTypeString>(), "Name of the instrumented function."},
-        {"handler_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Handler that was patched into instrumentation points of the function."},
+        {"handler", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Handler that was patched into instrumentation points of the function."},
         {"entry_type", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())), "Entry type for the patch."},
         {"parameters", std::make_shared<DataTypeDynamic>(), "Parameters for the handler call."},
     };
@@ -53,7 +53,7 @@ void SystemStorageXRayInstrumentation::fillData(MutableColumns & res_columns, Co
 
         if (entry_type.has_value())
         {
-            const String entry_type_string = entry_type == XRayEntryType::ENTRY ? "Entry" : "Exit";
+            const String entry_type_string = entry_type == XRayEntryType::ENTRY ? "entry" : "exit";
             column_entry_type.insertData(entry_type_string.data(), entry_type_string.size());
         }
         else

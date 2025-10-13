@@ -1,12 +1,9 @@
 0
-1
-DB::executeQuery	log	my log in executeQuery
-2
-DB::executeQuery	log	my log in executeQuery
-QueryMetricLog::startQuery	log	my log in startQuery
-1
-DB::executeQuery	log	my log in executeQuery
-2
-DB::executeQuery	log	my log in executeQuery
-QueryMetricLog::startQuery	log	my other in startQuery
+DB::executeQuery	log	entry	my log in executeQuery
+DB::executeQuery	log	entry	my log in executeQuery
+DB::executeQuery	log	entry	my log in executeQuery
+QueryMetricLog::startQuery	log	entry	my log in startQuery
+DB::executeQuery	log	entry	my log in executeQuery
+DB::executeQuery	log	entry	my log in executeQuery
+QueryMetricLog::startQuery	log	entry	my other in startQuery
 0

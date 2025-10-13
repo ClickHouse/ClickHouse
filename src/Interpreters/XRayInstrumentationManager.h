@@ -113,7 +113,6 @@ private:
 
     XRayInstrumentationManager();
     void registerHandler(const String & name, XRayHandlerFunction handler);
-    XRayHandlerFunction getHandler(const String & name) const;
     void parseXRayInstrumentationMap();
 
     [[clang::xray_never_instrument]] static void dispatchHandler(int32_t func_id, XRayEntryType entry_type);
