@@ -7,33 +7,36 @@ namespace DB
 class EvictionCandidates : private boost::noncopyable
 {
 public:
-    using FinalizeEvictionFunc = std::function<void(const CachePriorityGuard::WriteLock & lk)>;
+    using AfterEvictWriteFunc = std::function<void(const CachePriorityGuard::WriteLock & lk)>;
+    using AfterEvictStateFunc = std::function<void(const CacheStateGuard::Lock & lk)>;
 
     EvictionCandidates();
     ~EvictionCandidates();
 
+    size_t size() const { return candidates_size; }
+    size_t bytes() const { return candidates_bytes; }
+
+    auto begin() const { return candidates.begin(); }
+    auto end() const { return candidates.end(); }
+
     /// Add a new eviction candidate.
     void add(const FileSegmentMetadataPtr & candidate, LockedKey & locked_key);
+    /// Set a callback to be executed after eviction is finished.
+    void setAfterEvictWriteFunc(AfterEvictWriteFunc && func) { after_evict_write_func = func; }
+    void setAfterEvictStateFunc(AfterEvictStateFunc && func) { after_evict_state_func = func; }
 
     /// Evict all candidates, which were added before via add().
     void evict();
+    /// Finalize eviction state.
+    void afterEvictWrite(const CachePriorityGuard::WriteLock & lock);
+    void afterEvictState(const CacheStateGuard::Lock & lock);
 
-    /// In case of dynamic cache resize we want to remove queue entries in advance.
-    /// In ordinary eviction we would do this in finalize().
+    /// Used only for dynamic cache resize,
+    /// allows to remove queue entries in advance.
     void removeQueueEntries(const CachePriorityGuard::WriteLock &);
-
-    void invalidateQueueEntries(const CacheStateGuard::Lock &);
 
     /// Whether finalize() is required.
     bool needFinalize() const;
-
-    /// Set a callback to be called on finalize().
-    void onFinalize(FinalizeEvictionFunc && func) { on_finalize.emplace_back(std::move(func)); }
-
-    /// Finalize eviction (remove invalidated queue entries).
-    void finalize(
-        FileCacheQueryLimit::QueryContext * query_context,
-        const CachePriorityGuard::WriteLock &);
 
     struct KeyCandidates
     {
@@ -41,7 +44,6 @@ public:
         std::vector<FileSegmentMetadataPtr> candidates;
         std::vector<std::string> error_messages;
     };
-
     /// Get eviction candidates which failed to be evicted during evict().
     struct FailedCandidates
     {
@@ -56,19 +58,6 @@ public:
 
     FailedCandidates getFailedCandidates() const { return failed_candidates; }
 
-    size_t size() const { return candidates_size; }
-    size_t bytes() const { return candidates_bytes; }
-
-    auto begin() const { return candidates.begin(); }
-
-    auto end() const { return candidates.end(); }
-
-    void setSpaceHolder(
-        size_t size,
-        size_t elements,
-        IFileCachePriority & priority,
-        const CacheStateGuard::Lock &);
-
 private:
 
     std::unordered_map<FileCacheKey, KeyCandidates> candidates;
@@ -76,7 +65,8 @@ private:
     size_t candidates_bytes = 0;
     FailedCandidates failed_candidates;
 
-    std::vector<FinalizeEvictionFunc> on_finalize;
+    AfterEvictWriteFunc after_evict_write_func;
+    AfterEvictStateFunc after_evict_state_func;
 
     std::vector<IFileCachePriority::IteratorPtr> queue_entries_to_invalidate;
     bool removed_queue_entries = false;
@@ -84,6 +74,8 @@ private:
     IFileCachePriority::HoldSpacePtr hold_space;
 
     LoggerPtr log;
+
+    void invalidateQueueEntries(const CacheStateGuard::Lock &);
 };
 
 using EvictionCandidatesPtr = std::unique_ptr<EvictionCandidates>;

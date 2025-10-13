@@ -344,8 +344,8 @@ private:
         std::string & failure_reason);
 
     bool doEviction(
-        const IFileCachePriority::EvictionInfo & main_eviction_info,
-        const IFileCachePriority::EvictionInfo & query_eviction_info,
+        const IFileCachePriority::EvictionState & main_eviction_info,
+        const IFileCachePriority::EvictionState & query_eviction_info,
         FileSegment & file_segment,
         const UserInfo & user,
         const IFileCachePriority::IteratorPtr & main_priority_iterator,

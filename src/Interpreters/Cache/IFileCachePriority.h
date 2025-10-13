@@ -37,7 +37,8 @@ public:
         std::atomic<size_t> hits = 0;
         std::atomic<bool> invalidated = false;
 
-        std::string toString() const { return fmt::format("{}:{}:{}", key, offset, size.load()); }
+        std::string toString() const
+        { return fmt::format("{}:{}:{} (invalidated: {}, evicting: {})", key, offset, size.load(), invalidated.load(), evicting.load()); }
 
         bool isEvictingUnlocked() const { return evicting; }
         bool isEvicting(const LockedKey &) const { return evicting; }
@@ -173,7 +174,7 @@ public:
     virtual std::string getStateInfoForLog(const CacheStateGuard::Lock &) const = 0;
     virtual void check(const CacheStateGuard::Lock &) const;
 
-    struct EvictionInfo
+    struct QueueEvictionState
     {
         size_t size_to_evict = 0;
         size_t elements_to_evict = 0;
@@ -183,7 +184,36 @@ public:
         bool requiresEviction() const { return size_to_evict || elements_to_evict; }
         void releaseHoldSpace(const CacheStateGuard::Lock & lock) const;
     };
-    virtual EvictionInfo collectEvictionState(
+    using QueueID = size_t;
+    struct EvictionState : public std::map<QueueID, QueueEvictionState>
+    {
+        EvictionState() = default;
+        explicit EvictionState(QueueID queue_id, QueueEvictionState && info)
+        {
+            add(queue_id, std::move(info));
+        }
+
+        void add(QueueID queue_id, QueueEvictionState && info)
+        {
+            size_to_evict += info.size_to_evict;
+            elements_to_evict += info.elements_to_evict;
+            emplace(queue_id, std::move(info));
+        }
+
+        size_t size_to_evict = 0;
+        size_t elements_to_evict = 0;
+
+        std::string formatForLog() const;
+        bool requiresEviction() const { return size_to_evict || elements_to_evict; }
+
+        void releaseHoldSpace(const CacheStateGuard::Lock & lock) const
+        {
+            for (const auto & [_, elem] : *this)
+                elem.releaseHoldSpace(lock);
+        }
+    };
+
+    virtual EvictionState collectEvictionState(
         size_t size,
         size_t elements,
         IFileCachePriority::Iterator * reservee,
@@ -240,8 +270,7 @@ public:
     /// Collect eviction candidates sufficient to free `size` bytes
     /// and `elements` elements from cache.
     virtual bool collectCandidatesForEviction(
-        size_t size,
-        size_t elements,
+        const EvictionState & eviction_info,
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
         IteratorPtr reservee,

@@ -76,6 +76,7 @@ LRUFileCachePriority::LRUFileCachePriority(
     , description(description_)
     , log(getLogger("LRUFileCachePriority" + (description.empty() ? "" : "(" + description + ")")))
     , eviction_pos(queue.end())
+    , queue_id(randomSeed())
 {
     if (state_)
         state = state_;
@@ -112,7 +113,7 @@ LRUFileCachePriority::LRUIterator LRUFileCachePriority::add(
     for (const auto & queue_entry : queue)
     {
         /// entry.size == 0 means entry was invalidated.
-        if (queue_entry->size != 0
+        if (!queue_entry->invalidated
             && !queue_entry->isEvictingUnlocked()
             && queue_entry->key == entry->key && queue_entry->offset == entry->offset)
         {
@@ -124,7 +125,7 @@ LRUFileCachePriority::LRUIterator LRUFileCachePriority::add(
     }
 #endif
 
-    if (entry->size && !canFit(entry->size, 1, *state_lock))
+    if (entry->size && !canFit(entry->size, 1, *state_lock)) ///FIXME
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
@@ -339,13 +340,13 @@ bool LRUFileCachePriority::canFit(
             || current_elements_num + elements - released_elements_assumption <= (max_elements_ ? *max_elements_ : max_elements.load()));
 }
 
-IFileCachePriority::EvictionInfo LRUFileCachePriority::collectEvictionState(
+IFileCachePriority::EvictionState LRUFileCachePriority::collectEvictionState(
     size_t size,
     size_t elements,
     IFileCachePriority::Iterator *,
     const CacheStateGuard::Lock & lock)
 {
-    EvictionInfo info;
+    QueueEvictionState info;
 
     const size_t available_size = max_size.load() - state->getSize(lock);
     if (available_size < size)
@@ -376,12 +377,11 @@ IFileCachePriority::EvictionInfo LRUFileCachePriority::collectEvictionState(
             *this,
             lock);
     }
-    return info;
+    return EvictionState(queue_id, std::move(info));
 }
 
 bool LRUFileCachePriority::collectCandidatesForEviction(
-    size_t size,
-    size_t elements,
+    const EvictionState & eviction_info,
     FileCacheReserveStat & stat,
     EvictionCandidates & res,
     IFileCachePriority::IteratorPtr /* reservee */,
@@ -390,6 +390,9 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
     const CachePriorityGuard::ReadLock & lock)
 {
     ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionTries);
+
+    size_t size = eviction_info.at(queue_id).size_to_evict;
+    size_t elements = eviction_info.at(queue_id).elements_to_evict;
 
     auto start_pos = queue.begin();
     LRUQueue::iterator current_eviction_pos;
@@ -529,8 +532,7 @@ bool LRUFileCachePriority::tryIncreasePriority(
     CachePriorityGuard & queue_guard,
     CacheStateGuard &)
 {
-    iterator.getEntry()->hits += 1;
-
+    auto lock = queue_guard.writeLock();
     auto it = dynamic_cast<const LRUFileCachePriority::LRUIterator &>(iterator).get();
     {
         std::lock_guard lk(eviction_pos_mutex);
@@ -538,7 +540,7 @@ bool LRUFileCachePriority::tryIncreasePriority(
             eviction_pos = std::next(it);
     }
 
-    auto lock = queue_guard.writeLock();
+    iterator.getEntry()->hits += 1;
     queue.splice(queue.end(), queue, it);
     return true;
 }
