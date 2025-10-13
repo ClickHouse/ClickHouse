@@ -218,18 +218,18 @@ SELECT count() FROM tab WHERE hasToken(comment, 'clickhouse');
 
 Functions `hasToken` and `hasTokenOrNull` are the most performant functions to use with the `text` index.
 
-#### `searchAny` and `searchAll` {#functions-example-searchany-searchall}
+#### `hasAnyTokens` and `hasAllTokens` {#functions-example-hasanytokens-hasalltokens}
 
-Functions [searchAny](/sql-reference/functions/string-search-functions.md/#searchany) and [searchAll](/sql-reference/functions/string-search-functions.md/#searchall) match against one or all of the given tokens.
+Functions [hasAnyTokens](/sql-reference/functions/string-search-functions.md/#hasanytokens) and [hasAllTokens](/sql-reference/functions/string-search-functions.md/#hasalltokens) match against one or all of the given tokens.
 
 Like `hasToken`, no tokenization of the search terms takes place.
 
 Example:
 
 ```sql
-SELECT count() FROM tab WHERE searchAny(comment, ['clickhouse', 'olap']);
+SELECT count() FROM tab WHERE hasAnyTokens(comment, ['clickhouse', 'olap']);
 
-SELECT count() FROM tab WHERE searchAll(comment, ['clickhouse', 'olap']);
+SELECT count() FROM tab WHERE hasAllTokens(comment, ['clickhouse', 'olap']);
 ```
 
 #### `has` {#functions-example-has}
@@ -407,8 +407,8 @@ If the cardinality of a posting list is less than 16 (configurable by parameter 
 
 ### Direct read {#direct-read}
 
-Certain types of text queries can be sped up significantly by an optimization called "direct read".
-More specifically, if the SELECT query does _not_ project from the text column, the optimization can be applied.
+Certain types of text queries can be speed up significantly by an optimization called "direct read".
+More specifically, the optimization can be applied if the SELECT query does _not_ project from the text column.
 
 Example:
 
@@ -418,7 +418,13 @@ FROM [...]
 WHERE string_search_function(column_with_text_index)
 ```
 
-#### Supported functions {#supported-functions}
+The direct read optimization in ClickHouse answers the query exclusively using the text index (i.e., text index lookups) without accessing the underlying text column.
+Text index lookups read relatively little data and are therefore much faster than usual skip indexes in ClickHouse (which do a skip index lookup, followed by loading and filtering surviving granules).
+
+**Supported functions**
+The direct read optimization supports functions `hasToken`, `searchAll`, and `searchAny`.
+These functions can also be combined by AND, OR, and NOT operators.
+The WHERE clause can also contain additional non-text-search-functions filters (for text columns or other columns) - in that case, the direct read optimization will still be used but less effective (it only applies to the supported text search functions).
 
 ## Example: Hackernews dataset {#hacker-news-dataset}
 
