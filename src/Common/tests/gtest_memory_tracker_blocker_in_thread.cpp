@@ -31,14 +31,36 @@ TEST(MemoryTrackerBlockerInThread, Nested)
         {
             MemoryTrackerBlockerInThread blocker_user(VariableContext::User);
             ASSERT_TRUE(MemoryTrackerBlockerInThread::isBlocked(VariableContext::User));
-            ASSERT_FALSE(MemoryTrackerBlockerInThread::isBlocked(VariableContext::Global));
-            ASSERT_EQ(MemoryTrackerBlockerInThread::getLevel(), VariableContext::User);
+            ASSERT_TRUE(MemoryTrackerBlockerInThread::isBlocked(VariableContext::Global));
+            ASSERT_EQ(MemoryTrackerBlockerInThread::getLevel(), VariableContext::Global);
         }
         ASSERT_TRUE(MemoryTrackerBlockerInThread::isBlocked(VariableContext::Global));
         ASSERT_EQ(MemoryTrackerBlockerInThread::getLevel(), VariableContext::Global);
     }
     ASSERT_FALSE(MemoryTrackerBlockerInThread::isBlocked(VariableContext::Process));
     ASSERT_EQ(MemoryTrackerBlockerInThread::getLevel(), VariableContext::Max);
+}
+
+TEST(MemoryTrackerBlockerInThread, DeeplyNested)
+{
+    MemoryTrackerBlockerInThread b(VariableContext::User);
+    {
+        MemoryTrackerBlockerInThread b1(VariableContext::Global);
+        {
+            MemoryTrackerBlockerInThread b2(VariableContext::User);
+            {
+                MemoryTrackerBlockerInThread b3(VariableContext::Global);
+                {
+                    MemoryTrackerBlockerInThread b4(VariableContext::User);
+                    ASSERT_EQ(MemoryTrackerBlockerInThread::getLevel(), VariableContext::Global);
+                }
+                ASSERT_EQ(MemoryTrackerBlockerInThread::getLevel(), VariableContext::Global);
+            }
+            ASSERT_EQ(MemoryTrackerBlockerInThread::getLevel(), VariableContext::Global);
+        }
+        ASSERT_EQ(MemoryTrackerBlockerInThread::getLevel(), VariableContext::Global);
+    }
+    ASSERT_EQ(MemoryTrackerBlockerInThread::getLevel(), VariableContext::User);
 }
 
 TEST(MemoryTrackerBlockerInThread, Move)
