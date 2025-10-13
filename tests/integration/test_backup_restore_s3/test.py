@@ -293,6 +293,13 @@ def check_system_tables(cluster, backup_query_id=None):
 
 
 @pytest.mark.parametrize(
+    "key_prefix_template",
+    [
+        pytest.param("", id="no_key_prefix"),
+        pytest.param("[a-z]{3}", id="regex_key_prefix"),
+    ],
+)
+@pytest.mark.parametrize(
     "storage_policy, to_disk",
     [
         pytest.param(
@@ -322,12 +329,22 @@ def check_system_tables(cluster, backup_query_id=None):
         ),
     ],
 )
-def test_backup_to_disk(storage_policy, to_disk):
+def test_backup_to_disk(storage_policy, to_disk, key_prefix_template):
     backup_name = new_backup_name()
     backup_destination = f"Disk('{to_disk}', '{backup_name}')"
-    check_backup_and_restore(cluster, storage_policy, backup_destination)
+    backup_settings = {"key_prefix_template": key_prefix_template}
+    check_backup_and_restore(
+        cluster, storage_policy, backup_destination, backup_settings=backup_settings
+    )
 
 
+@pytest.mark.parametrize(
+    "key_prefix_template",
+    [
+        pytest.param("", id="no_key_prefix"),
+        pytest.param("[a-z]{3}", id="regex_key_prefix"),
+    ],
+)
 @pytest.mark.parametrize(
     "storage_policy, to_disk",
     [
@@ -343,11 +360,14 @@ def test_backup_to_disk(storage_policy, to_disk):
         ),
     ],
 )
-def test_backup_from_s3_to_s3_disk_native_copy(storage_policy, to_disk):
+def test_backup_from_s3_to_s3_disk_native_copy(
+    storage_policy, to_disk, key_prefix_template
+):
     backup_name = new_backup_name()
     backup_destination = f"Disk('{to_disk}', '{backup_name}')"
+    backup_settings = {"key_prefix_template": key_prefix_template}
     (backup_events, restore_events) = check_backup_and_restore(
-        cluster, storage_policy, backup_destination
+        cluster, storage_policy, backup_destination, backup_settings=backup_settings
     )
 
     assert backup_events["S3CopyObject"] > 0
@@ -357,12 +377,20 @@ def test_backup_from_s3_to_s3_disk_native_copy(storage_policy, to_disk):
     assert backup_events["S3GetObject"] == backup_events["BackupLockFileReads"]
 
 
-def test_backup_to_s3():
+@pytest.mark.parametrize(
+    "key_prefix_template",
+    [
+        pytest.param("", id="no_key_prefix"),
+        pytest.param("[a-z]{3}", id="regex_key_prefix"),
+    ],
+)
+def test_backup_to_s3(key_prefix_template):
     storage_policy = "default"
     backup_name = new_backup_name()
     backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', '{minio_secret_key}')"
+    backup_settings = {"key_prefix_template": key_prefix_template}
     (backup_events, _) = check_backup_and_restore(
-        cluster, storage_policy, backup_destination
+        cluster, storage_policy, backup_destination, backup_settings=backup_settings
     )
     check_system_tables(cluster, backup_events["query_id"])
 
@@ -374,14 +402,23 @@ def test_backup_to_s3_named_collection():
     check_backup_and_restore(cluster, storage_policy, backup_destination)
 
 
-def test_backup_to_s3_multipart():
+@pytest.mark.parametrize(
+    "key_prefix_template",
+    [
+        pytest.param("", id="no_key_prefix"),
+        pytest.param("[a-z]{3}", id="regex_key_prefix"),
+    ],
+)
+def test_backup_to_s3_multipart(key_prefix_template):
     storage_policy = "default"
     backup_name = new_backup_name()
     backup_destination = f"S3('http://minio1:9001/root/data/backups/multipart/{backup_name}', 'minio', '{minio_secret_key}')"
+    backup_settings = {"key_prefix_template": key_prefix_template}
     (backup_events, restore_events) = check_backup_and_restore(
         cluster,
         storage_policy,
         backup_destination,
+        backup_settings={"key_prefix_template": key_prefix_template},
         size=1000000,
     )
     node = cluster.instances["node"]
@@ -458,6 +495,13 @@ def test_backup_to_s3_multipart():
 
 
 @pytest.mark.parametrize(
+    "key_prefix_template",
+    [
+        pytest.param("", id="no_key_prefix"),
+        pytest.param("[a-z]{3}", id="regex_key_prefix"),
+    ],
+)
+@pytest.mark.parametrize(
     "storage_policy",
     [
         "policy_s3",
@@ -465,11 +509,15 @@ def test_backup_to_s3_multipart():
         "policy_s3_plain_rewritable",
     ],
 )
-def test_backup_to_s3_native_copy(storage_policy):
+def test_backup_to_s3_native_copy(storage_policy, key_prefix_template):
     backup_name = new_backup_name()
     backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', '{minio_secret_key}')"
+    backup_settings = {"key_prefix_template": key_prefix_template}
     (backup_events, restore_events) = check_backup_and_restore(
-        cluster, storage_policy, backup_destination
+        cluster,
+        storage_policy,
+        backup_destination,
+        backup_settings=backup_settings,
     )
     # single part upload
     assert backup_events["S3CopyObject"] > 0
@@ -527,12 +575,24 @@ def test_backup_to_s3_native_copy_slow_down_all_threads(storage_policy):
     )
 
 
-def test_backup_to_s3_native_copy_multipart():
+@pytest.mark.parametrize(
+    "key_prefix_template",
+    [
+        pytest.param("", id="no_key_prefix"),
+        pytest.param("[a-z]{3}", id="regex_key_prefix"),
+    ],
+)
+def test_backup_to_s3_native_copy_multipart(key_prefix_template):
     storage_policy = "policy_s3"
     backup_name = new_backup_name()
     backup_destination = f"S3('http://minio1:9001/root/data/backups/multipart/{backup_name}', 'minio', '{minio_secret_key}')"
+    backup_settings = {"key_prefix_template": key_prefix_template}
     (backup_events, restore_events) = check_backup_and_restore(
-        cluster, storage_policy, backup_destination, size=1000000
+        cluster,
+        storage_policy,
+        backup_destination,
+        backup_settings=backup_settings,
+        size=1000000,
     )
     # multi part upload
     assert backup_events["S3CreateMultipartUpload"] > 0
@@ -747,7 +807,14 @@ def test_backup_to_tar_xz():
     check_backup_and_restore(cluster, storage_policy, backup_destination)
 
 
-def test_user_specific_auth():
+@pytest.mark.parametrize(
+    "key_prefix_template",
+    [
+        pytest.param("", id="no_key_prefix"),
+        pytest.param("[a-z]{3}", id="regex_key_prefix"),
+    ],
+)
+def test_user_specific_auth(key_prefix_template):
     node = cluster.instances["node"]
 
     def create_user(user):
@@ -761,7 +828,16 @@ def test_user_specific_auth():
     node.query("CREATE TABLE specific_auth (col UInt64) ENGINE=MergeTree ORDER BY col")
     node.query("INSERT INTO specific_auth VALUES (1)")
 
-    def backup_restore(backup, user, should_fail, on_cluster=False, base_backup=None):
+    backup_settings = {"key_prefix_template": key_prefix_template}
+
+    def backup_restore(
+        backup,
+        user,
+        should_fail,
+        backup_settings=backup_settings,
+        on_cluster=False,
+        base_backup=None,
+    ):
         on_cluster_clause = "ON CLUSTER 'cluster'" if on_cluster else ""
         base_backup = (
             f" SETTINGS base_backup = {base_backup}" if base_backup is not None else ""

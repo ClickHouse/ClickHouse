@@ -7,5 +7,6 @@
 namespace DB
 {
 
-ObjectStorageKeysGeneratorPtr getBackupObjectKeyGenerator(const Poco::Util::AbstractConfiguration & config, const BackupSettings & settings);
+ObjectStorageKeysGeneratorPtr
+getBackupObjectKeyGenerator(const Poco::Util::AbstractConfiguration & config, const BackupSettings & settings);
 }
