@@ -1142,7 +1142,17 @@ bool DDLWorker::initializeMainThread()
             auto zookeeper = getAndSetZooKeeper();
             zookeeper->createAncestors(fs::path(queue_dir) / "");
             initializeReplication();
-            markReplicasActive(true);
+            try
+            {
+                /// We have this try/catch for a very weird edge case when it's related to localhost
+                /// Each replica has a localhost as hostid and if we configured multiple replicas to add their
+                /// localhosts to some clusters multiple of them may think that they must mark it as active.
+                markReplicasActive(true);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Cannot mark replica as active: ");
+            }
             initialized = true;
             return true;
         }
