@@ -75,7 +75,7 @@ SELECT
     toStartOfDay(check_start_time) AS day,
     count() AS failures,
     groupUniqArray(pull_request_number) AS prs,
-    any(report_url) AS report_url,
+    any(report_url) AS report_url
 FROM {table}
 WHERE (now() - toIntervalDay(interval_days)) <= check_start_time
     AND test_name = '{tn}'
@@ -90,7 +90,7 @@ ORDER BY day DESC
         base = self.url or ""
         if user:
             sep = "&" if "?" in base else "?"
-            base = f"{base}{sep}user={urllib.parse.quote(user, safe='')}"
+            base = f"{base}/play{sep}user={urllib.parse.quote(user, safe='')}&run=1"
         return f"{base}#{Utils.to_base64(query)}"
 
     @classmethod
