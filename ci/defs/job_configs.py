@@ -561,6 +561,7 @@ class JobConfigs:
     bugfix_validation_it_job = common_integration_test_job_config.set_name(
         JobNames.BUGFIX_VALIDATE_IT
     ).set_runs_on(RunnerLabels.AMD_SMALL_MEM)
+    bugfix_validation_it_job.parameter = "bugfix"
     unittest_jobs = Job.Config(
         name=JobNames.UNITTEST,
         runs_on=[],  # from parametrize()
