@@ -7,8 +7,17 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 REPLICAS=3
 
+# Helper: drop a table but don’t block on replicated DB fan-out.
+safe_drop() {
+    local name=$1
+    $CLICKHOUSE_CLIENT --query \
+        "SET distributed_ddl_output_mode='null_status_on_timeout';
+         SET distributed_ddl_task_timeout=3;
+         DROP TABLE IF EXISTS ${name}"
+}
+
 for i in $(seq $REPLICAS); do
-    $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS concurrent_alter_detach_$i"
+    safe_drop "concurrent_alter_detach_$i"
 done
 
 for i in $(seq $REPLICAS); do
@@ -112,5 +121,5 @@ for i in $(seq $REPLICAS); do
     $CLICKHOUSE_CLIENT --query "SELECT COUNT() FROM system.mutations WHERE database = '$CLICKHOUSE_DATABASE' and is_done=0 and table = 'concurrent_alter_detach_$i'" # all mutations have to be done
     $CLICKHOUSE_CLIENT --query "SELECT * FROM system.mutations WHERE database = '$CLICKHOUSE_DATABASE' and is_done=0 and table = 'concurrent_alter_detach_$i'" # all mutations have to be done
     $CLICKHOUSE_CLIENT --query "SELECT * FROM system.replication_queue WHERE table = 'concurrent_alter_detach_$i' and (type = 'ALTER_METADATA' or type = 'MUTATE_PART')" # all mutations and alters have to be done
-    $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS concurrent_alter_detach_$i"
+    safe_drop "concurrent_alter_detach_$i"
 done
