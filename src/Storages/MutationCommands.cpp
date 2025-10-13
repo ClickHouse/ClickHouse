@@ -180,7 +180,7 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         res.type = MutationCommand::Type::DROP_STATISTICS;
         if (command->partition)
             res.partition = command->partition->clone();
-        if (command->clear_index)
+        if (command->clear_statistics)
             res.clear = true;
         if (command->statistics_decl)
             res.statistics_columns = command->statistics_decl->as<ASTStatisticsDeclaration &>().getColumnNames();

@@ -720,7 +720,8 @@ private:
     /// It is used while reading from wide parts.
     ColumnsDescription columns_description_with_collected_nested;
 
-    /// TODO: comment.
+    /// Small state of finalized statistics for suitable statistics types.
+    /// Lazily initialized on a first access.
     mutable std::mutex estimates_mutex;
     mutable std::optional<Estimates> estimates;
 

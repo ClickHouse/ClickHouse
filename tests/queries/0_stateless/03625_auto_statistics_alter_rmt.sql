@@ -3,7 +3,7 @@
 
 SET mutations_sync = 2;
 SET allow_experimental_statistics = 1;
-DROP TABLE IF EXISTS t_alter_auto_statistics;
+DROP TABLE IF EXISTS t_alter_auto_statistics SYNC;
 
 CREATE TABLE t_alter_auto_statistics
 (
@@ -11,7 +11,7 @@ CREATE TABLE t_alter_auto_statistics
     b UInt64 STATISTICS (minmax),
     c String
 )
-ENGINE = MergeTree ORDER BY a SETTINGS auto_statistics_types = '';
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_alter_auto_statistics', '1') ORDER BY a SETTINGS auto_statistics_types = '';
 
 INSERT INTO t_alter_auto_statistics VALUES (1, 1, 'xxx');
 
@@ -60,4 +60,4 @@ FROM system.parts_columns
 WHERE table = 't_alter_auto_statistics' AND database = currentDatabase() AND active = 1
 ORDER BY name, column;
 
-DROP TABLE IF EXISTS t_alter_auto_statistics;
+DROP TABLE IF EXISTS t_alter_auto_statistics SYNC;

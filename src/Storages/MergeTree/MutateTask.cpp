@@ -167,8 +167,8 @@ static NameSet getRemovedStatistics(const StorageMetadataPtr & metadata_snapshot
 
 static std::optional<String> getStatisticFilename(const String & statistic_name, const IMergeTreeDataPart & part)
 {
-    auto stats_name = escapeForFileName(statistic_name);
-    auto stream_name = IMergeTreeDataPart::getStreamNameOrHash(stats_name, STATS_FILE_SUFFIX, part.checksums);
+    auto escaped_name = escapeForFileName(statistic_name);
+    auto stream_name = IMergeTreeDataPart::getStreamNameOrHash(escaped_name, STATS_FILE_SUFFIX, part.checksums);
     return stream_name ? std::make_optional(*stream_name + STATS_FILE_SUFFIX) : std::nullopt;
 }
 

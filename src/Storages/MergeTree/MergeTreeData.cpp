@@ -4008,7 +4008,9 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
     removeImplicitStatistics(new_metadata.columns);
     commands.apply(new_metadata, local_context);
-    addImplicitStatistics(new_metadata.columns, (*getSettings())[MergeTreeSetting::auto_statistics_types]);
+
+    auto [auto_statistics_types, statistics_changed] = MergeTreeData::getNewImplicitStatisticsTypes(new_metadata, *settings_from_storage);
+    addImplicitStatistics(new_metadata.columns, auto_statistics_types);
 
     if (AlterCommands::hasTextIndex(new_metadata) && !settings[Setting::allow_experimental_full_text_index])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
