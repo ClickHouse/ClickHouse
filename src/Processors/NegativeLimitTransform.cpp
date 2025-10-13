@@ -286,6 +286,14 @@ IProcessor::Status NegativeLimitTransform::tryPushWholeFrontChunk()
             "In NegativeLimitTransform::tryPushWholeFrontChunk, queued rows should be less than or equal to limit + offset");
     }
 
+    while (!queue.empty() && queue.front().output_port->isFinished())
+    {
+        auto & front = queue.front();
+        const UInt64 front_chunk_rows = front.chunk.getNumRows();
+        queue.pop();
+        queued_row_count -= front_chunk_rows;
+    }
+
     /// Need to keep at least 'offset' rows queued.
     if (queued_row_count <= offset)
         return Status::Finished;
