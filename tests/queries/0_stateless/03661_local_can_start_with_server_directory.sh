@@ -27,4 +27,6 @@ done
 kill $PID
 wait
 
-$CLICKHOUSE_LOCAL --path "${CLICKHOUSE_TMP}/" --query "SELECT uuid = '$(basename $(readlink ${CLICKHOUSE_TMP}/metadata/default))' FROM system.databases WHERE name = 'default'"
+$CLICKHOUSE_LOCAL --path "${CLICKHOUSE_TMP}/" --query "
+    SELECT uuid = '$(basename $(readlink ${CLICKHOUSE_TMP}/metadata/default))' FROM system.databases WHERE name = 'default'
+" || cat "${CLICKHOUSE_TMP}/server.log"
