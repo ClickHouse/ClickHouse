@@ -146,6 +146,8 @@ public:
         read_settings = context->getReadSettings();
         write_settings = context->getWriteSettings();
         timeouts = ConnectionTimeouts::getTCPTimeoutsWithoutFailover(context->getSettingsRef());
+        receive_throttler = context->getDistributedCacheReadThrottler();
+        send_throttler = context->getDistributedCacheWriteThrottler();
         distributed_cache_log = context->getDistributedCacheLog();
 
         SipHash hash;
@@ -172,7 +174,14 @@ public:
     {
         ProfileEvents::increment(ProfileEvents::DistrCacheTemporaryFilesCreated);
         return std::make_unique<WriteBufferFromDistributedCache>(
-            file_key, write_settings, timeouts, distributed_cache_server, distributed_cache_log, buffer_size);
+            file_key,
+            write_settings,
+            timeouts,
+            receive_throttler,
+            send_throttler,
+            distributed_cache_server,
+            distributed_cache_log,
+            buffer_size);
     }
 
     std::unique_ptr<SeekableReadBuffer> read(size_t buffer_size_) const override
@@ -186,7 +195,14 @@ public:
         auto local_read_settings = read_settings;
         local_read_settings.remote_fs_buffer_size = buffer_size_;
         return std::make_unique<ReadBufferFromDistributedCache>(
-            file_key, bytes_written, local_read_settings, timeouts, distributed_cache_server, distributed_cache_log);
+            file_key,
+            bytes_written,
+            local_read_settings,
+            timeouts,
+            receive_throttler,
+            send_throttler,
+            distributed_cache_server,
+            distributed_cache_log);
     }
 
     void releaseWriteBuffer(std::unique_ptr<WriteBuffer> write_buffer) override
@@ -207,6 +223,8 @@ private:
     ReadSettings read_settings;
     WriteSettings write_settings;
     ConnectionTimeouts timeouts;
+    ThrottlerPtr receive_throttler;
+    ThrottlerPtr send_throttler;
     size_t bytes_written = 0;
     std::shared_ptr<DistributedCacheLog> distributed_cache_log;
     size_t buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
