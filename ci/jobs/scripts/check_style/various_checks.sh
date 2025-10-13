@@ -79,7 +79,7 @@ for i in "${ROOT_PATH}"/tests/integration/test_*; do FILE="${i}/__init__.py"; [ 
 
 # Check for executable bit on non-executable files
 git ls-files -s $ROOT_PATH/{src,base,programs,utils,tests,docs,cmake} | \
-    awk '!/^100644 / { print $3 }' | grep -E '\.(cpp|h|sql|j2|xml|reference|txt|md)$' && echo "These files should not be executable."
+    awk '!/^100644 / { print $4 }' | grep -E '\.(cpp|h|sql|j2|xml|reference|txt|md)$' && echo "These files should not be executable."
 
 # Check for BOM
 find $ROOT_PATH/{src,base,programs,utils,tests,docs,cmake} -name '*.md' -or -name '*.cpp' -or -name '*.h' | xargs grep -l -F $'\xEF\xBB\xBF' | grep -P '.' && echo "Files should not have UTF-8 BOM"
