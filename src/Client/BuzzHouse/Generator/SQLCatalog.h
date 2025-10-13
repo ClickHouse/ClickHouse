@@ -196,7 +196,8 @@ public:
     bool is_temp = false, is_deterministic = false, has_metadata = false, has_partition_by = false;
     uint32_t tname = 0;
     std::shared_ptr<SQLDatabase> db = nullptr;
-    std::optional<String> cluster, file_comp, partition_strategy, partition_columns_in_data_file, host_params, bucket_path;
+    std::optional<String> cluster, file_comp, partition_strategy, partition_columns_in_data_file, storage_class_name, host_params,
+        bucket_path;
     DetachStatus attached = DetachStatus::ATTACHED;
     std::optional<TableEngineOption> toption;
     TableEngineValues teng = TableEngineValues::Null, sub = TableEngineValues::Null;
@@ -275,6 +276,8 @@ public:
     bool isAzureQueueEngine() const { return teng == TableEngineValues::AzureQueue; }
 
     bool isAnyAzureEngine() const { return isAzureEngine() || isAzureQueueEngine(); }
+
+    bool isAnyQueueEngine() const { return isS3QueueEngine() || isAzureQueueEngine(); }
 
     bool isHudiEngine() const { return teng == TableEngineValues::Hudi; }
 

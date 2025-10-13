@@ -53,6 +53,11 @@ ReadFromObjectStorageStep::ReadFromObjectStorageStep(
 {
 }
 
+QueryPlanStepPtr ReadFromObjectStorageStep::clone() const
+{
+    return std::make_unique<ReadFromObjectStorageStep>(*this);
+}
+
 void ReadFromObjectStorageStep::applyFilters(ActionDAGNodes added_filter_nodes)
 {
     SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
