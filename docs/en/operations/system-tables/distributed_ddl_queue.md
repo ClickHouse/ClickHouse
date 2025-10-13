@@ -4,7 +4,6 @@ description: 'System table containing information about distributed ddl queries 
 keywords: ['system table', 'distributed_ddl_queue']
 slug: /operations/system-tables/distributed_ddl_queue
 title: 'system.distributed_ddl_queue'
-doc_type: 'reference'
 ---
 
 Contains information about [distributed ddl queries (ON CLUSTER clause)](../../sql-reference/distributed-ddl.md) that were executed on a cluster.
@@ -26,6 +25,7 @@ Columns:
 - `exception_text` ([Nullable(String)](../../sql-reference/data-types/string.md)) - Exception message
 - `query_finish_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Query finish time.
 - `query_duration_ms` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Duration of query execution (in milliseconds).
+
 
 **Example**
 

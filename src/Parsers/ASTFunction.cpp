@@ -268,8 +268,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
     {
         std::string nl_or_nothing = settings.one_line ? "" : "\n";
         std::string indent_str = settings.one_line ? "" : std::string(4u * frame.indent, ' ');
-        if (!name.empty())
-            ostr << backQuoteIfNeed(name);
+        ostr << name;
         ostr << "(";
         ostr << nl_or_nothing;
         FormatStateStacked frame_nested = frame;
@@ -281,28 +280,9 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
         return;
     }
 
-    if (arguments && !parameters && arguments->children.size() == 2 && name == "viewIfPermitted"sv)
-    {
-        /// viewIfPermitted() needs special formatting: ELSE instead of comma between arguments, and better indents too.
-        const auto * nl_or_nothing = settings.one_line ? "" : "\n";
-        auto indent0 = settings.one_line ? "" : String(4u * frame.indent, ' ');
-        auto indent1 = settings.one_line ? "" : String(4u * (frame.indent + 1), ' ');
-        auto indent2 = settings.one_line ? "" : String(4u * (frame.indent + 2), ' ');
-        ostr << name << "(" << nl_or_nothing;
-        FormatStateStacked frame_nested = frame;
-        frame_nested.need_parens = false;
-        frame_nested.indent += 2;
-        arguments->children[0]->format(ostr, settings, state, frame_nested);
-        ostr << nl_or_nothing << indent1 << (settings.one_line ? " " : "")
-             << "ELSE " << nl_or_nothing << indent2;
-        arguments->children[1]->format(ostr, settings, state, frame_nested);
-        ostr << nl_or_nothing << indent0 << ")";
-        return;
-    }
-
     /// Should this function to be written as operator?
     bool written = false;
-    if (is_operator && arguments && !parameters && frame.allow_operators && nulls_action == NullsAction::EMPTY)
+    if (arguments && !parameters && frame.allow_operators && nulls_action == NullsAction::EMPTY)
     {
         /// Unary prefix operators.
         if (arguments->children.size() == 1)
@@ -567,6 +547,25 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                     ostr << ')';
                 written = true;
             }
+
+            if (!written && name == "viewIfPermitted"sv)
+            {
+                /// viewIfPermitted() needs special formatting: ELSE instead of comma between arguments, and better indents too.
+                const auto * nl_or_nothing = settings.one_line ? "" : "\n";
+                auto indent0 = settings.one_line ? "" : String(4u * frame.indent, ' ');
+                auto indent1 = settings.one_line ? "" : String(4u * (frame.indent + 1), ' ');
+                auto indent2 = settings.one_line ? "" : String(4u * (frame.indent + 2), ' ');
+                ostr << name << "(" << nl_or_nothing;
+                FormatStateStacked frame_nested = frame;
+                frame_nested.need_parens = false;
+                frame_nested.indent += 2;
+                arguments->children[0]->format(ostr, settings, state, frame_nested);
+                ostr << nl_or_nothing << indent1 << (settings.one_line ? " " : "")
+                              << "ELSE " << nl_or_nothing << indent2;
+                arguments->children[1]->format(ostr, settings, state, frame_nested);
+                ostr << nl_or_nothing << indent0 << ")";
+                return;
+            }
         }
 
         if (!written && arguments->children.size() >= 2)
@@ -656,9 +655,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
         return;
     }
 
-    /// Empty names are used rarely, to format queries with an extra pair of parentheses for external databases.
-    if (!name.empty())
-        ostr << backQuoteIfNeed(name);
+    ostr << name;
 
     if (parameters)
     {
@@ -699,14 +696,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                     }
                     if (!secret_arguments.replacement.empty())
                     {
-                        if (secret_arguments.quote_replacement)
-                        {
-                            ostr << "'" << secret_arguments.replacement << "'";
-                        }
-                        else
-                        {
-                            ostr << secret_arguments.replacement;
-                        }
+                        ostr << "'" << secret_arguments.replacement << "'";
                     }
                     else
                     {

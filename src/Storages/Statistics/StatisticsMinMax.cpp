@@ -3,7 +3,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Common/FieldVisitorConvertToNumber.h>
 
 #include <algorithm>
 
@@ -24,31 +23,16 @@ StatisticsMinMax::StatisticsMinMax(const SingleStatisticsDescription & descripti
 
 void StatisticsMinMax::build(const ColumnPtr & column)
 {
-    Field min_field;
-    Field max_field;
-
-    column->getExtremes(min_field, max_field);
-
-    if (!min_field.isNull())
+    for (size_t row = 0; row < column->size(); ++row)
     {
-        Float64 current_min = applyVisitor(FieldVisitorConvertToNumber<Float64>(), min_field);
-        min = std::min(min, current_min);
-    }
+        if (column->isNullAt(row))
+            continue;
 
-    if (!max_field.isNull())
-    {
-        Float64 current_max = applyVisitor(FieldVisitorConvertToNumber<Float64>(), max_field);
-        max = std::max(max, current_max);
+        auto value = column->getFloat64(row);
+        min = std::min(value, min);
+        max = std::max(value, max);
     }
-
     row_count += column->size();
-}
-
-void StatisticsMinMax::merge(const StatisticsPtr & other_stats)
-{
-    const StatisticsMinMax * other = typeid_cast<const StatisticsMinMax *>(other_stats.get());
-    min = std::min(min, other->min);
-    max = std::max(max, other->max);
 }
 
 void StatisticsMinMax::serialize(WriteBuffer & buf)

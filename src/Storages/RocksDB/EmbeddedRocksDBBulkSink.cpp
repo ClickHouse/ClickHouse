@@ -213,6 +213,9 @@ std::pair<ColumnString::Ptr, ColumnString::Ptr> EmbeddedRocksDBBulkSink::seriali
                     writeString(ts_string, writer_value);
                 }
 
+                /// String in ColumnString must be null-terminated
+                writeChar('\0', writer_key);
+                writeChar('\0', writer_value);
                 serialized_key_offsets.emplace_back(writer_key.count());
                 serialized_value_offsets.emplace_back(writer_value.count());
             }

@@ -41,8 +41,7 @@ void registerOutputFormatTSKV(FormatFactory & factory)
     factory.registerOutputFormat("TSKV", [](
         WriteBuffer & buf,
         const Block & sample,
-        const FormatSettings & settings,
-        FormatFilterInfoPtr /*format_filter_info*/)
+        const FormatSettings & settings)
     {
         return std::make_shared<TSKVRowOutputFormat>(buf, std::make_shared<const Block>(sample), settings);
     });

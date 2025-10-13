@@ -3,7 +3,6 @@ description: 'System table containing information about each detached table.'
 keywords: ['system table', 'detached_tables']
 slug: /operations/system-tables/detached_tables
 title: 'system.detached_tables'
-doc_type: 'reference'
 ---
 
 Contains information of each detached table.
@@ -19,6 +18,7 @@ Columns:
 - `metadata_path` ([String](../../sql-reference/data-types/string.md)) - Path to the table metadata in the file system.
 
 - `is_permanently` ([UInt8](../../sql-reference/data-types/int-uint.md)) - Flag indicates that the table was detached PERMANENTLY.
+
 
 **Example**
 

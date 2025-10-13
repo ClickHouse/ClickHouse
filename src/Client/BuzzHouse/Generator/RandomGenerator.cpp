@@ -174,7 +174,7 @@ String RandomGenerator::nextDateTime64(const bool has_subseconds)
 
 double RandomGenerator::randomGauss(const double mean, const double stddev)
 {
-    std::normal_distribution<double> d{mean, stddev};
+    std::normal_distribution d{mean, stddev};
     return d(generator);
 }
 
@@ -188,11 +188,6 @@ String RandomGenerator::nextJSONCol()
     const String & pick = pickRandomly(jcols);
 
     return pick;
-}
-
-String RandomGenerator::nextTokenString()
-{
-    return pickRandomly(this->nextSmallNumber() < 3 ? nasty_strings : (this->nextBool() ? common_english : common_chinese));
 }
 
 String RandomGenerator::nextString(const String & delimiter, const bool allow_nasty, const uint32_t limit)

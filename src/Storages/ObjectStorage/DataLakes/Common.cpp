@@ -13,15 +13,7 @@ std::vector<String> listFiles(
     const StorageObjectStorageConfiguration & configuration,
     const String & prefix, const String & suffix)
 {
-    return listFiles(object_storage, configuration.getPathForRead().path, prefix, suffix);
-}
-
-std::vector<String> listFiles(
-    const IObjectStorage & object_storage,
-    const String & path,
-    const String & prefix, const String & suffix)
-{
-    auto key = std::filesystem::path(path) / prefix;
+    auto key = std::filesystem::path(configuration.getPath()) / prefix;
     RelativePathsWithMetadata files_with_metadata;
     object_storage.listObjects(key, files_with_metadata, 0);
     Strings res;
@@ -34,6 +26,5 @@ std::vector<String> listFiles(
     LOG_TRACE(getLogger("DataLakeCommon"), "Listed {} files ({})", res.size(), fmt::join(res, ", "));
     return res;
 }
-
 
 }

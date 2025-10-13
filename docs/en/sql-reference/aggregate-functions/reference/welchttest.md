@@ -4,7 +4,6 @@ sidebar_label: 'welchTTest'
 sidebar_position: 214
 slug: /sql-reference/aggregate-functions/reference/welchttest
 title: 'welchTTest'
-doc_type: 'reference'
 ---
 
 # welchTTest
@@ -37,6 +36,7 @@ The null hypothesis is that means of populations are equal. Normal distribution 
 - calculated p-value. [Float64](../../../sql-reference/data-types/float.md).
 - calculated confidence-interval-low. [Float64](../../../sql-reference/data-types/float.md).
 - calculated confidence-interval-high. [Float64](../../../sql-reference/data-types/float.md).
+
 
 **Example**
 
@@ -71,3 +71,4 @@ Result:
 
 - [Welch's t-test](https://en.wikipedia.org/wiki/Welch%27s_t-test)
 - [studentTTest function](/sql-reference/aggregate-functions/reference/studentttest)
+

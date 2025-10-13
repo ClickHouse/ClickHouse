@@ -4,7 +4,6 @@ description: 'System table containing error codes with the number of times they 
 keywords: ['system table', 'errors']
 slug: /operations/system-tables/errors
 title: 'system.errors'
-doc_type: 'reference'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
@@ -12,8 +11,6 @@ import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 <SystemTableCloud/>
 
 Contains error codes with the number of times they have been triggered.
-
-To show all possible error codes, including ones which were not triggered, set setting [system_events_show_zero_values](../settings/settings.md#system_events_show_zero_values) to 1.
 
 Columns:
 

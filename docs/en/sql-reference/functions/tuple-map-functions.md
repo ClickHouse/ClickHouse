@@ -3,7 +3,6 @@ description: 'Documentation for Tuple Map Functions'
 sidebar_label: 'Maps'
 slug: /sql-reference/functions/tuple-map-functions
 title: 'Map Functions'
-doc_type: 'reference'
 ---
 
 ## map {#map}
@@ -467,6 +466,7 @@ Result:
 └──────────────────────────────┴───────────────────────────────────┘
 ```
 
+
 ## mapKeys {#mapkeys}
 
 Returns the keys of a given map.
@@ -553,6 +553,7 @@ Result:
 └────────────────────────┘
 ```
 
+
 ## mapContainsKeyLike {#mapcontainskeylike}
 
 **Syntax**
@@ -629,6 +630,7 @@ Result:
 │ {}                         │
 └────────────────────────────┘
 ```
+
 
 ## mapValues {#mapvalues}
 

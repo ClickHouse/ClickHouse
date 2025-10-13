@@ -1,0 +1,199 @@
+Negative tests
+Default tokenizer
+[1,2,3,4,5,6]
+[]
+[1,3,5]
+[2,4,6]
+[1,2,3,4,5,6]
+[1,2,3,4,5,6]
+[1,2,3,4,5,6]
+[1,3,5]
+[]
+[1,2,3,4,5,6]
+[1,2,3,4,5,6]
+[1,2,3,4,5,6]
+[1,3,5]
+[]
+[1,2,3,4,5,6]
+[]
+[1,3,5]
+[2,4,6]
+[1,3,5]
+[2,4,6]
+[]
+[]
+[1,3,5]
+[2,4,6]
+[]
+[]
+Ngram tokenizer
+[3,4,5]
+[]
+[1,2,3]
+[2,3,4]
+[1,2,3,4]
+[1,2,3,4,5]
+[3,4,5]
+[]
+[1,2,3]
+[2,3,4]
+[2,3]
+[3]
+Split tokenizer
+[2,3]
+[2,4,5]
+[2,5]
+[2,3,4,5]
+[2,3,5]
+[2,4,5]
+[2,3]
+[2,4,5]
+[2,5]
+[2]
+[2]
+[2,5]
+NoOp tokenizer
+[]
+[]
+[]
+[4]
+[]
+[]
+[]
+[4]
+Text index analysis
+searchAny is used during index analysis
+Text index should choose none for non-existent term
+Description: text GRANULARITY 1
+Parts: 0/4
+Granules: 0/4096
+Text index should choose 1 part and 1024 granules out of 4 parts and 4096 granules
+Description: text GRANULARITY 1
+Parts: 1/4
+Granules: 1024/4096
+Text index should choose 1 part and 1024 granules out of 4 parts and 4096 granules
+Description: text GRANULARITY 1
+Parts: 1/4
+Granules: 1024/4096
+Text index should choose 1 part and 1024 granules out of 4 parts and 4096 granules
+Description: text GRANULARITY 1
+Parts: 1/4
+Granules: 1024/4096
+Text index should choose 2 parts and 2048 granules out of 4 parts and 4096 granules
+Description: text GRANULARITY 1
+Parts: 2/4
+Granules: 2048/4096
+Text index should choose 2 parts and 2048 granules out of 4 parts and 4096 granules
+Description: text GRANULARITY 1
+Parts: 2/4
+Granules: 2048/4096
+Text index should choose 2 parts and 2048 granules out of 4 parts and 4096 granules
+Description: text GRANULARITY 1
+Parts: 2/4
+Granules: 2048/4096
+Text index should choose 3 parts and 3072 granules out of 4 parts and 4096 granules
+Description: text GRANULARITY 1
+Parts: 3/4
+Granules: 3072/4096
+Text index should choose 3 parts and 3072 granules out of 4 parts and 4096 granules
+Description: text GRANULARITY 1
+Parts: 3/4
+Granules: 3072/4096
+Text index should choose all 4 parts and 4096 granules
+Description: text GRANULARITY 1
+Parts: 4/4
+Granules: 4096/4096
+Text index should choose all 4 parts and 4096 granules
+Description: text GRANULARITY 1
+Parts: 4/4
+Granules: 4096/4096
+searchAll is used during index analysis
+Text index should choose none for non-existent term
+Description: text GRANULARITY 1
+Parts: 0/4
+Granules: 0/4096
+Text index should choose 1 part and 1024 granules out of 4 parts and 4096 granules
+Description: text GRANULARITY 1
+Parts: 1/4
+Granules: 1024/4096
+Text index should choose 1 part and 1024 granules out of 4 parts and 4096 granules
+Description: text GRANULARITY 1
+Parts: 1/4
+Granules: 1024/4096
+Text index should choose 1 part and 1024 granules out of 4 parts and 4096 granules
+Description: text GRANULARITY 1
+Parts: 1/4
+Granules: 1024/4096
+Text index should choose none if any term does not exists in dictionary
+Description: text GRANULARITY 1
+Parts: 0/4
+Granules: 0/4096
+Text index should choose none if any term does not exists in dictionary
+Description: text GRANULARITY 1
+Parts: 0/4
+Granules: 0/4096
+Text index should choose 2 parts and 2048 granules out of 4 parts and 4096 granules
+Description: text GRANULARITY 1
+Parts: 2/4
+Granules: 2048/4096
+Text index should choose none
+Description: text GRANULARITY 1
+Parts: 0/4
+Granules: 0/4096
+Text index should choose none
+Description: text GRANULARITY 1
+Parts: 0/4
+Granules: 0/4096
+Text index should choose none
+Description: text GRANULARITY 1
+Parts: 0/4
+Granules: 0/4096
+Text index should choose none
+Description: text GRANULARITY 1
+Parts: 0/4
+Granules: 0/4096
+Text index should choose 3 parts and 3072 granules out of 4 parts and 4096 granules
+Description: text GRANULARITY 1
+Parts: 3/4
+Granules: 3072/4096
+Text index should choose none
+Description: text GRANULARITY 1
+Parts: 0/4
+Granules: 0/4096
+Text index should choose none
+Description: text GRANULARITY 1
+Parts: 0/4
+Granules: 0/4096
+Chooses mixed granules inside part
+Text index should choose 50% of granules
+Description: text GRANULARITY 1
+Parts: 1/1
+Granules: 512/1024
+Text index should choose 50% of granules
+Description: text GRANULARITY 1
+Parts: 1/1
+Granules: 512/1024
+Text index should choose all granules
+Description: text GRANULARITY 1
+Parts: 1/1
+Granules: 1024/1024
+Text index should choose all granules
+Description: text GRANULARITY 1
+Parts: 1/1
+Granules: 1024/1024
+Text index should choose 25% of granules
+Description: text GRANULARITY 1
+Parts: 1/1
+Granules: 256/1024
+Text index should choose 25% of granules
+Description: text GRANULARITY 1
+Parts: 1/1
+Granules: 256/1024
+Text index should choose 25% of granules
+Description: text GRANULARITY 1
+Parts: 1/1
+Granules: 256/1024
+Text index should choose 25% of granules
+Description: text GRANULARITY 1
+Parts: 1/1
+Granules: 256/1024

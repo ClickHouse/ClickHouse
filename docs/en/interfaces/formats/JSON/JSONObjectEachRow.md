@@ -6,7 +6,6 @@ keywords: ['JSONObjectEachRow']
 output_format: true
 slug: /interfaces/formats/JSONObjectEachRow
 title: 'JSONObjectEachRow'
-doc_type: 'reference'
 ---
 
 | Input | Output | Alias |
@@ -88,6 +87,7 @@ DESCRIBE file('data.json', JSONObjectEachRow) SETTING format_json_object_each_ro
 │ number      │ Nullable(Int64) │
 └─────────────┴─────────────────┘
 ```
+
 
 ### Inserting data {#json-inserting-data}
 

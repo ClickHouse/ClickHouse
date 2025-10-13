@@ -129,7 +129,7 @@ public:
         {
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Function '{}' supports only tokenizers 'splitByNonAlpha', 'ngrams', 'splitByString', and 'array'", name);
+                "Function '{}' supports only tokenizers 'default', 'ngram', 'split', and 'no_op'", name);
         }
 
         if (const auto * column_string = checkAndGetColumn<ColumnString>(col_input.get()))
@@ -152,12 +152,12 @@ private:
         auto & offsets_data = column_offsets_input.getData();
         offsets_data.resize(input_rows_count);
 
-        std::vector<std::string_view> tokens;
+        std::vector<String> tokens;
         size_t tokens_count = 0;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             std::string_view input = column_input.getDataAt(i).toView();
-            tokens = token_extractor->getTokensView(input.data(), input.size());
+            tokens = token_extractor->getTokens(input.data(), input.size());
             tokens_count += tokens.size();
 
             for (const auto & token : tokens)
@@ -171,42 +171,8 @@ private:
 
 REGISTER_FUNCTION(Tokens)
 {
-    FunctionDocumentation::Description description = R"(
-Splits a string into tokens using the given tokenizer.
-The default tokenizer uses non-alphanumeric ASCII characters as separators.
-
-In case of the `split` tokenizer, if the tokens do not form a [prefix code](https://en.wikipedia.org/wiki/Prefix_code), you likely want that the matching prefers longer separators first.
-To do so, pass the separators in order of descending length.
-For example, with separators = `['%21', '%']` string `%21abc` would be tokenized as `['abc']`, whereas separators = `['%', '%21']` would tokenize to `['21ac']` (which is likely not what you wanted).
-)";
-    FunctionDocumentation::Syntax syntax = "tokens(value[, tokenizer[, ngrams[, separators]]])";
-    FunctionDocumentation::Arguments arguments = {
-        {"value", "The input string.", {"String", "FixedString"}},
-        {"tokenizer", "The tokenizer to use. Valid arguments are `default`, `ngram`, `split`, and `no_op`. Optional, if not set explicitly, defaults to `default`.", {"const String"}},
-        {"ngrams", "Only relevant if argument `tokenizer` is `ngram`: An optional parameter which defines the length of the ngrams. If not set explicitly, defaults to `3`.", {"const UInt8"}},
-        {"separators", "Only relevant if argument `tokenizer` is `split`: An optional parameter which defines the separator strings. If not set explicitly, defaults to `[' ']`.", {"const Array(String)"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the resulting array of tokens from input string.", {"Array"}};
-    FunctionDocumentation::Examples examples = {
-    {
-        "Default tokenizer",
-        R"(SELECT tokens('test1,;\\\\ test2,;\\\\ test3,;\\\\   test4') AS tokens;)",
-        R"(
-['test1','test2','test3','test4']
-        )"
-    },
-    {
-        "Ngram tokenizer",
-        "SELECT tokens('abc def', 'ngram', 3) AS tokens;",
-        R"(
-['abc','bc ','c d',' de','def']
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {21, 11};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSplitting;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
-
-    factory.registerFunction<FunctionTokens>(documentation);
+    factory.registerFunction<FunctionTokens>(FunctionDocumentation{
+        .description = "Splits the text into tokens by a given tokenizer.",
+        .category = FunctionDocumentation::Category::StringSplitting});
 }
 }

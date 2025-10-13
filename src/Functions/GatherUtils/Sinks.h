@@ -90,6 +90,8 @@ struct StringSink
 
     void ALWAYS_INLINE next()
     {
+        elements.push_back(0);
+        ++current_offset;
         offsets[row_num] = current_offset;
         ++row_num;
     }
