@@ -36,6 +36,7 @@
 #include <Parsers/ASTDropNamedCollectionQuery.h>
 #include <Parsers/ASTAlterNamedCollectionQuery.h>
 #include <Parsers/ASTTransactionControl.h>
+#include <Parsers/ASTUpdateQuery.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 
 #include <Parsers/Access/ASTCreateQuotaQuery.h>
@@ -64,7 +65,6 @@
 #include <Interpreters/Context.h>
 
 #include <Parsers/ASTSystemQuery.h>
-#include <Parsers/ASTExternalDDLQuery.h>
 #include <Common/ProfileEvents.h>
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>
@@ -327,10 +327,6 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     {
         interpreter_name = "InterpreterShowPrivilegesQuery";
     }
-    else if (query->as<ASTExternalDDLQuery>())
-    {
-        interpreter_name = "InterpreterExternalDDLQuery";
-    }
     else if (query->as<ASTTransactionControl>())
     {
         interpreter_name = "InterpreterTransactionControlQuery";
@@ -378,6 +374,10 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     else if (query->as<ASTDeleteQuery>())
     {
         interpreter_name = "InterpreterDeleteQuery";
+    }
+    else if (query->as<ASTUpdateQuery>())
+    {
+        interpreter_name = "InterpreterUpdateQuery";
     }
     else if (query->as<ASTParallelWithQuery>())
     {

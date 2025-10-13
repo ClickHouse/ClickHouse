@@ -9,13 +9,14 @@
 #include <Formats/FormatFactory.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
+#include <Storages/IPartitionStrategy.h>
 
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/HivePartitioningUtils.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/extractTableFunctionFromSelectQuery.h>
 #include <Storages/ObjectStorage/StorageObjectStorageStableTaskDistributor.h>
-
 
 namespace DB
 {
@@ -30,7 +31,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-String StorageObjectStorageCluster::getPathSample(StorageInMemoryMetadata metadata, ContextPtr context)
+String StorageObjectStorageCluster::getPathSample(ContextPtr context)
 {
     auto query_settings = configuration->getQuerySettings(context);
     /// We don't want to throw an exception if there are no files with specified path.
@@ -39,11 +40,13 @@ String StorageObjectStorageCluster::getPathSample(StorageInMemoryMetadata metada
         configuration,
         query_settings,
         object_storage,
+        nullptr, // storage_metadata
         false, // distributed_processing
         context,
         {}, // predicate
         {},
-        metadata.getColumns().getAll(), // virtual_columns
+        {}, // virtual_columns
+        {}, // hive_columns
         nullptr, // read_keys
         {} // file_progress_callback
     );
@@ -55,41 +58,58 @@ String StorageObjectStorageCluster::getPathSample(StorageInMemoryMetadata metada
 
 StorageObjectStorageCluster::StorageObjectStorageCluster(
     const String & cluster_name_,
-    ConfigurationPtr configuration_,
+    StorageObjectStorageConfigurationPtr configuration_,
     ObjectStoragePtr object_storage_,
     const StorageID & table_id_,
-    const ColumnsDescription & columns_,
+    const ColumnsDescription & columns_in_table_or_function_definition,
     const ConstraintsDescription & constraints_,
+    const ASTPtr & partition_by,
     ContextPtr context_)
     : IStorageCluster(
         cluster_name_, table_id_, getLogger(fmt::format("{}({})", configuration_->getEngineName(), table_id_.table_name)))
     , configuration{configuration_}
     , object_storage(object_storage_)
 {
+    configuration->initPartitionStrategy(partition_by, columns_in_table_or_function_definition, context_);
     /// We allow exceptions to be thrown on update(),
     /// because Cluster engine can only be used as table function,
     /// so no lazy initialization is allowed.
     configuration->update(
         object_storage,
         context_,
-        /* if_not_updated_before */false,
-        /* check_consistent_with_previous_metadata */true);
+        /* if_not_updated_before */ false);
 
-    ColumnsDescription columns{columns_};
+    ColumnsDescription columns{columns_in_table_or_function_definition};
     std::string sample_path;
     resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, {}, sample_path, context_);
     configuration->check(context_);
+
+    if (sample_path.empty() && context_->getSettingsRef()[Setting::use_hive_partitioning] && !configuration->isDataLakeConfiguration() && !configuration->partition_strategy)
+        sample_path = getPathSample(context_);
+
+    /// Not grabbing the file_columns because it is not necessary to do it here.
+    std::tie(hive_partition_columns_to_read_from_file_path, std::ignore) = HivePartitioningUtils::setupHivePartitioningForObjectStorage(
+        columns,
+        configuration,
+        sample_path,
+        columns_in_table_or_function_definition.empty(),
+        std::nullopt,
+        context_);
 
     StorageInMemoryMetadata metadata;
     metadata.setColumns(columns);
     metadata.setConstraints(constraints_);
 
-    if (sample_path.empty() && context_->getSettingsRef()[Setting::use_hive_partitioning] && !configuration->isDataLakeConfiguration())
-        sample_path = getPathSample(metadata, context_);
-
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
-        metadata.columns, context_, sample_path, std::nullopt, configuration->isDataLakeConfiguration()));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns));
     setInMemoryMetadata(metadata);
+
+    /// This will update metadata which contains specific information about table state (e.g. for Iceberg)
+
+    if (configuration->needsUpdateForSchemaConsistency())
+    {
+        auto metadata_snapshot = configuration->getStorageSnapshotMetadata(context_);
+        setInMemoryMetadata(metadata_snapshot);
+    }
 }
 
 std::string StorageObjectStorageCluster::getName() const
@@ -102,8 +122,7 @@ std::optional<UInt64> StorageObjectStorageCluster::totalRows(ContextPtr query_co
     configuration->update(
         object_storage,
         query_context,
-        /* if_not_updated_before */false,
-        /* check_consistent_with_previous_metadata */true);
+        /* if_not_updated_before */ false);
     return configuration->totalRows(query_context);
 }
 
@@ -112,8 +131,7 @@ std::optional<UInt64> StorageObjectStorageCluster::totalBytes(ContextPtr query_c
     configuration->update(
         object_storage,
         query_context,
-        /* if_not_updated_before */false,
-        /* check_consistent_with_previous_metadata */true);
+        /* if_not_updated_before */ false);
     return configuration->totalBytes(query_context);
 }
 
@@ -177,30 +195,58 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
     }
 }
 
+void StorageObjectStorageCluster::updateExternalDynamicMetadataIfExists(ContextPtr query_context)
+{
+    configuration->update(
+        object_storage,
+        query_context,
+        /* if_not_updated_before */ true);
+    if (configuration->needsUpdateForSchemaConsistency())
+    {
+        auto metadata_snapshot = configuration->getStorageSnapshotMetadata(query_context);
+        setInMemoryMetadata(metadata_snapshot);
+    }
+}
 
 RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExtension(
     const ActionsDAG::Node * predicate,
     const ActionsDAG * filter,
     const ContextPtr & local_context,
-    const size_t number_of_replicas) const
+    ClusterPtr cluster,
+    StorageMetadataPtr storage_metadata_snapshot) const
 {
     auto iterator = StorageObjectStorageSource::createFileIterator(
         configuration,
         configuration->getQuerySettings(local_context),
         object_storage,
-        /* distributed_processing */false,
+        storage_metadata_snapshot,
+        /* distributed_processing */ false,
         local_context,
         predicate,
         filter,
         virtual_columns,
+        hive_partition_columns_to_read_from_file_path,
         nullptr,
         local_context->getFileProgressCallback(),
         /*ignore_archive_globs=*/false,
         /*skip_object_metadata=*/true);
 
+    std::vector<std::string> ids_of_hosts;
+    for (const auto & shard : cluster->getShardsInfo())
+    {
+        if (shard.per_replica_pools.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cluster {} with empty shard {}", cluster->getName(), shard.shard_num);
+        for (const auto & replica : shard.per_replica_pools)
+        {
+            if (!replica)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cluster {}, shard {} with empty node", cluster->getName(), shard.shard_num);
+            ids_of_hosts.push_back(replica->getAddress());
+        }
+    }
+
     auto task_distributor = std::make_shared<StorageObjectStorageStableTaskDistributor>(
         iterator,
-        number_of_replicas,
+        std::move(ids_of_hosts),
         /* send_over_whole_archive */!local_context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes]);
 
     auto callback = std::make_shared<TaskIterator>(
@@ -212,7 +258,7 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
             return std::make_shared<ClusterFunctionReadTaskResponse>();
         });
 
-    return RemoteQueryExecutor::Extension{.task_iterator = std::move(callback)};
+    return RemoteQueryExecutor::Extension{ .task_iterator = std::move(callback) };
 }
 
 }

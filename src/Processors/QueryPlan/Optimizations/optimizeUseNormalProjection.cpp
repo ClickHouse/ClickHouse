@@ -74,7 +74,11 @@ static std::optional<ActionsDAG> makeMaterializingDAG(const Block & proj_header,
     return dag;
 }
 
-std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
+std::optional<String> optimizeUseNormalProjections(
+    Stack & stack,
+    QueryPlan::Nodes & nodes,
+    bool is_parallel_replicas_initiator_with_projection_support,
+    size_t max_step_description_length)
 {
     const auto & frame = stack.back();
 
@@ -344,16 +348,24 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
         reading->getNumStreams(),
         max_added_blocks,
         best_candidate->merge_tree_projection_select_result_ptr,
-        reading->isParallelReadingEnabled());
+        reading->isParallelReadingEnabled(),
+        reading->getParallelReadingExtension());
 
-    if (!projection_reading)
+    /// Filter out parts in parent_ranges that overlap with those already read by the best candidate projection
+    filterPartsByProjection(*parent_reading_select_result, best_candidate->parent_parts);
+
+    /// Only the initiator should read the projection to avoid potential data duplication.
+    bool has_parent_parts = !parent_reading_select_result->parts_with_ranges.empty();
+    bool should_skip_projection_reading_on_remote_replicas = reading->isParallelReadingEnabled() && !is_parallel_replicas_initiator_with_projection_support
+        && has_parent_parts;
+    if (!projection_reading || should_skip_projection_reading_on_remote_replicas)
     {
-        Pipe pipe(std::make_shared<NullSource>(proj_snapshot->getSampleBlockForColumns(required_columns)));
+        Pipe pipe(std::make_shared<NullSource>(std::make_shared<const Block>(proj_snapshot->getSampleBlockForColumns(required_columns))));
         if (projection_query_info.prewhere_info)
         {
             auto filter_actions = std::make_shared<ExpressionActions>(std::move(projection_query_info.prewhere_info->prewhere_actions));
             pipe.addSimpleTransform(
-                [&](const Block & header)
+                [&](const SharedHeader & header)
                 {
                     return std::make_shared<FilterTransform>(
                         header,
@@ -365,8 +377,8 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
         projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
     }
 
-    /// Filter out parts in parent_ranges that overlap with those already read by the best candidate projection
-    filterPartsByProjection(*parent_reading_select_result, best_candidate->parent_parts);
+    if (has_parent_parts && is_parallel_replicas_initiator_with_projection_support)
+        fallbackToLocalProjectionReading(projection_reading);
 
     if (!query_info.is_internal && context->hasQueryContext())
     {
@@ -377,7 +389,7 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
         });
     }
 
-    projection_reading->setStepDescription(best_candidate->projection->name);
+    projection_reading->setStepDescription(best_candidate->projection->name, max_step_description_length);
 
     auto & projection_reading_node = nodes.emplace_back(QueryPlan::Node{.step = std::move(projection_reading)});
     auto * next_node = &projection_reading_node;
@@ -400,7 +412,7 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
         const auto & main_stream = iter->node->children[iter->next_child - 1]->step->getOutputHeader();
         const auto * proj_stream = &next_node->step->getOutputHeader();
 
-        if (auto materializing = makeMaterializingDAG(*proj_stream, main_stream))
+        if (auto materializing = makeMaterializingDAG(**proj_stream, *main_stream))
         {
             auto converting = std::make_unique<ExpressionStep>(*proj_stream, std::move(*materializing));
             proj_stream = &converting->getOutputHeader();
@@ -411,7 +423,7 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
         }
 
         auto & union_node = nodes.emplace_back();
-        Headers input_headers = {main_stream, *proj_stream};
+        SharedHeaders input_headers = {main_stream, *proj_stream};
         union_node.step = std::make_unique<UnionStep>(std::move(input_headers));
         union_node.children = {iter->node->children[iter->next_child - 1], next_node};
         iter->node->children[iter->next_child - 1] = &union_node;

@@ -24,7 +24,7 @@ class JSONEachRowRowInputFormat : public IRowInputFormat
 public:
     JSONEachRowRowInputFormat(
         ReadBuffer & in_,
-        const Block & header_,
+        SharedHeader header_,
         Params params_,
         const FormatSettings & format_settings_,
         bool yield_strings_);

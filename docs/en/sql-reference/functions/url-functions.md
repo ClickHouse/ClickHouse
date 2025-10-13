@@ -1,9 +1,9 @@
 ---
 description: 'Documentation for Functions for Working with URLs'
 sidebar_label: 'URLs'
-sidebar_position: 200
 slug: /sql-reference/functions/url-functions
 title: 'Functions for Working with URLs'
+doc_type: 'reference'
 ---
 
 # Functions for Working with URLs
@@ -36,7 +36,7 @@ The table below details which symbols in a URL can (`✔`) or cannot (`✗`) be 
 
 symbols marked `*` are sub-delimiters in RFC 3986 and allowed for user info following the `@` symbol.
 
-## Functions that Extract Parts of a URL {#functions-that-extract-parts-of-a-url}
+## Functions that extract parts of a URL {#functions-that-extract-parts-of-a-url}
 
 If the relevant part isn't present in a URL, an empty string is returned.
 
@@ -425,7 +425,6 @@ Result:
 │                                                                         │ example.com                                                                │
 └─────────────────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────────────────────┘
 ```
-
 
 ### cutToFirstSignificantSubdomainWithWWW {#cuttofirstsignificantsubdomainwithwww}
 

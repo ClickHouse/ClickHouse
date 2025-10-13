@@ -4,9 +4,10 @@ sidebar_label: 'Combinators'
 sidebar_position: 37
 slug: /sql-reference/aggregate-functions/combinators
 title: 'Aggregate Function Combinators'
+doc_type: 'reference'
 ---
 
-# Aggregate Function Combinators
+# Aggregate function combinators
 
 The name of an aggregate function can have a suffix appended to it. This changes the way the aggregate function works.
 

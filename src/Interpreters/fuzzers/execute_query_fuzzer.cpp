@@ -75,7 +75,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         {
             PullingPipelineExecutor executor(io.pipeline);
             Block res;
-            while (!res && executor.pull(res));
+            while (res.empty() && executor.pull(res));
         }
         /// We don't want to execute it and thus need to finish it properly.
         else

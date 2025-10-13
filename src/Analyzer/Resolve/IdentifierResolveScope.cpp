@@ -27,6 +27,7 @@ IdentifierResolveScope::IdentifierResolveScope(QueryTreeNodePtr scope_node_, Ide
         subquery_depth = parent_scope->subquery_depth;
         context = parent_scope->context;
         projection_mask_map = parent_scope->projection_mask_map;
+        global_with_aliases = parent_scope->global_with_aliases;
     }
     else
         projection_mask_map = std::make_shared<std::map<IQueryTreeNode::Hash, size_t>>();

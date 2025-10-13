@@ -42,7 +42,7 @@ class IRowInputFormat : public IInputFormat
 public:
     using Params = RowInputFormatParams;
 
-    IRowInputFormat(Block header, ReadBuffer & in_, Params params_);
+    IRowInputFormat(SharedHeader header, ReadBuffer & in_, Params params_);
 
     Chunk read() override;
 

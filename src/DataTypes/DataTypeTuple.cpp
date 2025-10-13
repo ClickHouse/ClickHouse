@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <DataTypes/Serializations/SerializationTuple.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
@@ -411,6 +412,22 @@ void DataTypeTuple::forEachChild(const ChildCallback & callback) const
     {
         callback(*elem);
         elem->forEachChild(callback);
+    }
+}
+
+void DataTypeTuple::updateHashImpl(SipHash & hash) const
+{
+    hash.update(elems.size());
+    for (const auto & elem : elems)
+        elem->updateHash(hash);
+
+    hash.update(has_explicit_names);
+    // Include names in the hash if they are explicitly set
+    if (has_explicit_names)
+    {
+        hash.update(names.size());
+        for (const auto & name : names)
+            hash.update(name);
     }
 }
 

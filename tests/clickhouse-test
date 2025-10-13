@@ -32,6 +32,7 @@ import socket
 import string
 import subprocess
 import sys
+import shlex
 import traceback
 import urllib.parse
 
@@ -397,13 +398,13 @@ def read_file_as_binary_string(file_path):
 
 
 # First and last lines of the log
-def trim_for_log(s):
+def trim_for_log(s, limit=10000):
     if not s:
         return s
     lines = s.splitlines()
-    if len(lines) > 10000:
-        separator = "-" * 40 + str(len(lines) - 10000) + " lines are hidden" + "-" * 40
-        return "\n".join(lines[:5000] + [] + [separator] + [] + lines[-5000:])
+    if len(lines) > limit:
+        separator = "-" * 40 + str(len(lines) - limit) + " lines are hidden" + "-" * 40
+        return "\n".join(lines[:limit//2] + [] + [separator] + [] + lines[-limit//2:])
     return "\n".join(lines)
 
 
@@ -542,24 +543,54 @@ def clickhouse_execute_json(
 CAPTURE_CLIENT_STACKTRACE = False
 
 
-def kill_process_group(pgid):
-    print(f"Killing process group {pgid}")
-    print(f"Processes in process group {pgid}:")
-    print(
-        subprocess.check_output(
-            f"pgrep --pgroup {pgid} -a", shell=True, stderr=subprocess.STDOUT
-        ).decode("utf-8"),
-        end="",
-    )
+def kill_process_group(pgid, fatal_log):
     try:
+        print(f"Processes left in process group {pgid}:")
+        print(
+            subprocess.check_output(
+                f"pgrep --pgroup {pgid} -a", shell=True, stderr=subprocess.STDOUT
+            ).decode("utf-8"),
+            end="",
+        )
+
+        if SANITIZED:
+            print("Wait 60 seconds to let sanitizers print the report...")
+            sleep(60)
+
+        print(f"Killing process group {pgid}")
+        print(f"Processes in process group {pgid}:")
+        print(
+            subprocess.check_output(
+                f"pgrep --pgroup {pgid} -a", shell=True, stderr=subprocess.STDOUT
+            ).decode("utf-8"),
+            end="",
+        )
+
         if CAPTURE_CLIENT_STACKTRACE:
             # Let's try to dump stacktrace in client (useful to catch issues there)
             os.killpg(pgid, signal.SIGTSTP)
-            # Wait some time for clickhouse utilities to gather stacktrace
-            if RELEASE_NON_SANITIZED:
-                sleep(0.5)
-            else:
-                sleep(10)
+            stacktrace_delay = 0.5 if RELEASE_NON_SANITIZED else 10
+            print(f"Wait {stacktrace_delay} seconds for clickhouse utilities to handle SIGTSTP...")
+            sleep(stacktrace_delay)
+
+            # Let's check maybe clickhouse already printed the stacktrace, then no need to do the same with gdb
+            client_printed_stacktrace = False
+            try:
+                if fatal_log and os.path.exists(fatal_log):
+                    with open(fatal_log, "rb") as f:
+                        if b'This is a signal used for debugging purposes by the user' in f.read():
+                            client_printed_stacktrace = True
+            except:
+                print(f"Cannot read {fatal_log}. Ignoring.")
+
+            if not client_printed_stacktrace:
+                pgrep = subprocess.run(f"pgrep --pgroup {pgid} clickhouse", shell=True, capture_output=True, text=False)
+                processes = pgrep.stdout.decode("utf-8").strip().split("\n")
+                processes = map(lambda x: x.strip(), processes)
+                processes = filter(lambda x: len(x) > 0, processes)
+                processes = list(map(lambda x: int(x.strip()), processes))
+                for child in processes:
+                    print(get_stacktraces_from_gdb(child))
         # NOTE: this still may leave some processes, that had been
         # created by timeout(1), since it also creates new process
         # group. But this should not be a problem with default
@@ -617,7 +648,7 @@ def cleanup_child_processes(pid):
             continue
 
         if child_pgid != pgid:
-            kill_process_group(child_pgid)
+            kill_process_group(child_pgid, None)
 
     # SIGKILL should not be sent, since this will kill the script itself
     os.killpg(pgid, signal.SIGTERM)
@@ -769,32 +800,13 @@ def get_transactions_list(args):
         return f"Cannot get list of transactions: {e}"
 
 
-def kill_gdb_if_any():
-    # Check if we have running gdb.
-    code = subprocess.call("pidof gdb", shell=True)
-    if code != 0:
-        return
-
-    for i in range(5):
-        code = subprocess.call("kill -TERM $(pidof gdb)", shell=True, timeout=30)
-        if code != 0:
-            sleep(i)
-        else:
-            break
-
-
 # collect server stacktraces using gdb
-def get_stacktraces_from_gdb(server_pid):
+def get_stacktraces_from_gdb(pid):
     try:
-        # We could attach gdb to clickhouse-server before running some tests
-        # to print stacktraces of all crashes even if clickhouse cannot print it for some reason.
-        # We should kill existing gdb if any before starting new one.
-        kill_gdb_if_any()
-
-        cmd = f"gdb -batch -ex 'thread apply all backtrace' -p {server_pid}"
+        cmd = f"gdb -batch -ex 'thread apply all backtrace' -p {pid}"
         return subprocess.check_output(cmd, shell=True).decode("utf-8")
     except Exception as e:
-        print(f"Error occurred while receiving stack traces from gdb: {e}")
+        print(f"Error occurred while receiving stack traces from gdb (for {pid}): {e}")
         return None
 
 
@@ -954,6 +966,7 @@ class FailureReason(enum.Enum):
     NO_STATELESS = "no-stateless"
     NO_STATEFUL = "no-stateful"
     NO_OPENSSL_FIPS = "no-openssl-fips"
+    ENCRYPTED_STORAGE = "encrypted-storage"
 
     # UNKNOWN reasons
     NO_REFERENCE = "no reference file"
@@ -1025,6 +1038,8 @@ class SettingsRandomizer:
         "prefer_localhost_replica": lambda: random.randint(0, 1),
         "max_block_size": lambda: random.randint(8000, 100000),
         "max_joined_block_size_rows": lambda: random.randint(8000, 100000),
+        "joined_block_split_single_row": lambda: random.randint(0, 1),
+        "join_output_by_rowlist_perkey_rows_threshold": lambda: random.choices([0, 1, 1_000_000, random.randint(0, 1000)], weights=[1, 1, 1, 10])[0],
         "max_threads": lambda: 32 if random.random() < 0.03 else random.randint(1, 3),
         "optimize_append_index": lambda: random.randint(0, 1),
         "use_hedged_requests": lambda: random.randint(0, 1),
@@ -1127,12 +1142,14 @@ class SettingsRandomizer:
         "max_parsing_threads": lambda: random.choice([0, 1, 10]),
         "optimize_functions_to_subcolumns": lambda: random.randint(0, 1),
         "parallel_replicas_local_plan": lambda: random.randint(0, 1),
-        "query_plan_join_swap_table": lambda: random.choice(["auto", "false", "true"]),
+        "query_plan_join_swap_table": lambda: random.choice(["auto", "false"]), # true forces swap, which is harmfull for some tests
         "enable_vertical_final": lambda: random.randint(0, 1),
         "optimize_extract_common_expressions": lambda: random.randint(0, 1),
+        "use_async_executor_for_materialized_views": lambda: random.randint(0, 1),
         "use_query_condition_cache": lambda: random.randint(0, 1),
         "secondary_indices_enable_bulk_filtering": lambda: random.randint(0, 1),
         "use_skip_indexes_if_final": lambda: random.randint(0, 1),
+        "use_skip_indexes_on_data_read": lambda: random.randint(0, 1),
         **randomize_external_sort_group_by(),
     }
 
@@ -1207,6 +1224,16 @@ class MergeTreeSettingsRandomizer:
         "enable_block_offset_column": lambda: random.randint(0, 1),
         "use_primary_key_cache": lambda: random.randint(0, 1),
         "prewarm_primary_key_cache": lambda: random.randint(0, 1),
+        "object_serialization_version": lambda: random.choice(["v2", "v3"]),
+        "object_shared_data_serialization_version": lambda: random.choice(
+            ["map", "map_with_buckets", "advanced"]),
+        "object_shared_data_serialization_version_for_zero_level_parts": lambda: random.choice(
+            ["map", "map_with_buckets", "advanced"]),
+        "object_shared_data_buckets_for_compact_part": lambda: random.randint(1, 32),
+        "object_shared_data_buckets_for_wide_part": lambda: random.randint(1, 32),
+        "dynamic_serialization_version": lambda: random.choice(["v2", "v3"]),
+        "serialization_info_version": lambda: random.choice(["default", "with_types"]),
+        "string_serialization_version": lambda: random.choice(["default", "with_size_stream"]),
     }
 
     @staticmethod
@@ -1227,6 +1254,61 @@ def replace_in_file(filename, what, with_what):
 
 def replace_in_file_re(filename, what, with_what):
     os.system(f"LC_ALL=C sed -i -e 's/{what}/{with_what}/' {filename}")
+
+
+def _coerce_value(v: str):
+    vl = v.lower()
+    if vl in ("true", "false"):
+        return vl == "true"
+    try:
+        if "." in v:
+            return float(v)
+        return int(v)
+    except ValueError:
+        return v
+
+
+def parse_settings_cli_blob(blob: str) -> Dict[str, object]:
+    """
+    Accepts strings like:
+      "--max_threads 1 --fsync_metadata 1 --http_wait_end_of_query True"
+    Returns dict: {"max_threads": 1, "fsync_metadata": 1, "http_wait_end_of_query": True}
+    """
+    if not blob:
+        return {}
+    tokens = shlex.split(blob)
+    out: Dict[str, object] = {}
+    i = 0
+    while i < len(tokens):
+        key = tokens[i].lstrip("-")
+        if not key:
+            i += 1
+            continue
+        # value may be missing → treat as boolean flag
+        if i + 1 >= len(tokens) or tokens[i + 1].startswith("--"):
+            out[key] = True
+            i += 1
+            continue
+        out[key] = _coerce_value(tokens[i + 1])
+        i += 2
+    return out
+
+
+def load_settings_from_file(path: str, *, kind: str) -> Dict[str, object]:
+    """
+    File must contain ONLY the inner blob (space-separated `--k v` pairs),
+    NOT the outer `--settings "..."` or `--merge-tree-settings "..."`.
+    """
+    with open(path, "r", encoding="utf-8") as f:
+        content = f.read().strip()
+    bad_prefixes = ("--settings", "--merge-tree-settings")
+    for p in bad_prefixes:
+        if content.startswith(p):
+            raise ValueError(
+                f"{kind} file '{path}' must NOT include the leading '{p}'; "
+                "put only the inner space-separated --key value pairs."
+            )
+    return parse_settings_cli_blob(content)
 
 
 # unlike functools.cache() ignore args
@@ -1310,15 +1392,13 @@ class TestCase:
 
         testcase_args.testcase_start_time = datetime.now()
         testcase_basename = os.path.basename(case_file)
-        testcase_args.testcase_client = (
-            f"{testcase_args.client} --log_comment '{testcase_basename}'"
-        )
         testcase_args.testcase_basename = testcase_basename
 
         if testcase_args.database:
             database = testcase_args.database
             os.environ.setdefault("CLICKHOUSE_DATABASE", database)
             os.environ.setdefault("CLICKHOUSE_TMP", suite_tmp_dir)
+            os.environ.setdefault("CLICKHOUSE_WRITE_COVERAGE", f"coverage.{database}")
             testcase_args.test_tmp_dir = suite_tmp_dir
         else:
             # If --database is not specified, we will create temporary database with
@@ -1347,6 +1427,7 @@ class TestCase:
             testcase_args.test_tmp_dir = os.path.join(suite_tmp_dir, database)
             os.mkdir(testcase_args.test_tmp_dir)
             os.environ["CLICKHOUSE_TMP"] = testcase_args.test_tmp_dir
+            os.environ["CLICKHOUSE_WRITE_COVERAGE"] = f"coverage.{database}"
 
         testcase_args.testcase_database = database
 
@@ -1358,6 +1439,10 @@ class TestCase:
         # Since using CLICKHOUSE_TMP is easier to use in expect.
         testcase_args.debug_log_file = (
             os.path.join(testcase_args.test_tmp_dir, testcase_basename) + ".debuglog"
+        )
+
+        testcase_args.testcase_client = (
+            f"{testcase_args.client} --log_comment f'{testcase_args.testcase_basename}-{testcase_args.testcase_database}'"
         )
 
         return testcase_args
@@ -1376,10 +1461,10 @@ class TestCase:
     def has_show_create_table_in_test(self):
         return not subprocess.call(["grep", "-iq", "show create", self.case_file])
 
-    def add_random_settings(self, client_options):
+    def add_effective_settings(self, client_options):
         new_options = ""
-        if self.randomize_settings:
-            http_params = self.http_format_settings(self.random_settings)
+        if self.effective_settings:
+            http_params = self.http_format_settings(self.effective_settings)
             if len(self.base_url_params) == 0:
                 os.environ["CLICKHOUSE_URL_PARAMS"] = http_params
             else:
@@ -1387,10 +1472,10 @@ class TestCase:
                     self.base_url_params + "&" + http_params
                 )
 
-            new_options += f" {self.cli_format_settings(self.random_settings)}"
+            new_options += f" {self.cli_format_settings(self.effective_settings)}"
 
-        if self.randomize_merge_tree_settings:
-            new_options += f" --allow_merge_tree_settings {self.cli_format_settings(self.merge_tree_random_settings)}"
+        if self.effective_merge_tree_settings:
+            new_options += f" --allow_merge_tree_settings {self.cli_format_settings(self.effective_merge_tree_settings)}"
 
         if new_options != "":
             new_options += " --allow_repeated_settings"
@@ -1402,15 +1487,15 @@ class TestCase:
 
         return client_options + new_options
 
-    def remove_random_settings_from_env(self):
+    def remove_settings_from_env(self):
         os.environ["CLICKHOUSE_URL_PARAMS"] = self.base_url_params
         os.environ["CLICKHOUSE_CLIENT_OPT"] = self.base_client_options
 
     def add_info_about_settings(self, description):
-        if self.randomize_settings:
-            description += f"\nSettings used in the test: {self.cli_format_settings(self.random_settings)}"
-        if self.randomize_merge_tree_settings:
-            description += f"\n\nMergeTree settings used in test: {self.cli_format_settings(self.merge_tree_random_settings)}"
+        if self.effective_settings:
+            description += f"\nSettings used in the test: {self.cli_format_settings(self.effective_settings)}"
+        if self.effective_merge_tree_settings:
+            description += f"\n\nMergeTree settings used in test: {self.cli_format_settings(self.effective_merge_tree_settings)}"
 
         return description + "\n"
 
@@ -1454,34 +1539,40 @@ class TestCase:
         self.runs_count = 0
 
         has_no_random_settings_tag = self.tags and "no-random-settings" in self.tags
-
-        self.randomize_settings = not (
-            args.no_random_settings or has_no_random_settings_tag
-        )
-
         has_no_random_merge_tree_settings_tag = (
             self.tags and "no-random-merge-tree-settings" in self.tags
         )
 
+        allow_random_settings = not (args.no_random_settings or has_no_random_settings_tag)
         # If test contains SHOW CREATE TABLE do not
         # randomize merge tree settings, because
         # they will be added to table definition and test will fail
-        self.randomize_merge_tree_settings = not (
+        allow_random_mt_settings = not (
             args.no_random_merge_tree_settings
             or has_no_random_settings_tag
             or has_no_random_merge_tree_settings_tag
             or self.has_show_create_table_in_test()
         )
 
-        if self.randomize_settings:
-            self.random_settings = SettingsRandomizer.get_random_settings(args)
-            self.apply_random_settings_limits(self.random_settings)
+        # Base randomized dicts (or empty if not allowed)
+        base_settings = {}
+        if allow_random_settings:
+            base_settings = SettingsRandomizer.get_random_settings(args)
+            self.apply_random_settings_limits(base_settings)
 
-        if self.randomize_merge_tree_settings:
-            self.merge_tree_random_settings = (
-                MergeTreeSettingsRandomizer.get_random_settings(args)
-            )
-            self.apply_random_settings_limits(self.merge_tree_random_settings)
+        base_mt_settings = {}
+        if allow_random_mt_settings:
+            base_mt_settings = MergeTreeSettingsRandomizer.get_random_settings(args)
+            self.apply_random_settings_limits(base_mt_settings)
+
+        # User-specified fixed dicts
+        fixed_settings = dict(args.fixed_settings or {})
+        fixed_mt_settings = dict(args.fixed_merge_tree_settings or {})
+
+        # - If user passed fixed settings, use them exclusively.
+        # - Otherwise, use randomized (if allowed), else empty.
+        self.effective_settings = fixed_settings if fixed_settings else base_settings
+        self.effective_merge_tree_settings = fixed_mt_settings if fixed_mt_settings else base_mt_settings
 
         self.base_url_params = (
             os.environ["CLICKHOUSE_URL_PARAMS"]
@@ -1571,6 +1662,10 @@ class TestCase:
         if tags and ("no-replicated-database" in tags) and args.replicated_database:
             return FailureReason.REPLICATED_DB
 
+        # RocksDB tests cannot be used with replicated database as, in our CI, the databases share the same user_files
+        if tags and ("use-rocksdb" in tags) and args.replicated_database:
+            return FailureReason.REPLICATED_DB
+
         if tags and ("no-distributed-cache" in tags) and args.distributed_cache:
             return FailureReason.DISTRIBUTED_CACHE
 
@@ -1622,6 +1717,9 @@ class TestCase:
         if tags and ("no-openssl-fips" in tags) and args.openssl_fips:
             return FailureReason.NO_OPENSSL_FIPS
 
+        if tags and ("no-encrypted-storage" in tags) and args.encrypted_storage:
+            return FailureReason.ENCRYPTED_STORAGE
+
         if tags:
             for build_flag in args.build_flags:
                 if "no-" + build_flag in tags:
@@ -1640,7 +1738,7 @@ class TestCase:
             if proc.returncode is None:
                 f = io.StringIO()
                 with redirect_stdout(f):
-                    kill_process_group(os.getpgid(proc.pid))
+                    kill_process_group(os.getpgid(proc.pid), self.fatal_sanitizer_prefix)
                 kill_output = f.getvalue()
 
         description = ""
@@ -1673,7 +1771,7 @@ class TestCase:
                 stderr += str(stdfd.read(), errors="replace", encoding="utf-8")
 
         if debug_log:
-            debug_log = "\n".join(debug_log.splitlines()[-100:])
+            debug_log = trim_for_log(debug_log, 100)
 
         if proc:
             if proc.returncode is None:
@@ -1753,7 +1851,7 @@ class TestCase:
             re.search(r"(^|\W)(Net|Errno|)Exception(\W|$)", stdout)
             and "X-ClickHouse-Exception-Code" not in stdout
         ):
-            description += "\n{}\n".format("\n".join(stdout.splitlines()[:100]))
+            description += "\n{}\n".format(trim_for_log(stdout, 100))
             if debug_log:
                 description += "\n"
                 description += debug_log
@@ -1886,29 +1984,31 @@ class TestCase:
 
             # Check for dumped coverage files
 
-            # FIXME: This is a race condition
-            file_pattern = "coverage.*"
-            matching_files = glob.glob(file_pattern)
-            for file_path in matching_files:
-                try:
-                    body = read_file_as_binary_string(file_path)
-                    clickhouse_execute(
-                        args,
-                        "INSERT INTO system.coverage_log "
-                        "SETTINGS async_insert=1, wait_for_async_insert=0, async_insert_busy_timeout_min_ms=200, async_insert_busy_timeout_max_ms=1000 "
-                        f"SELECT now(), '{self.case}', groupArray(data) FROM input('data UInt64') FORMAT RowBinary",
-                        body=body,
-                        retry_error_codes=True,
-                    )
-                except Exception as e:
-                    print("Cannot insert coverage data: ", str(e))
+            if self.testcase_args and self.testcase_args.testcase_database:
+                file_pattern = f"coverage.{self.testcase_args.testcase_database}.*"
+                matching_files = glob.glob(file_pattern)
+                for file_path in matching_files:
+                    try:
+                        body = read_file_as_binary_string(file_path)
+                        clickhouse_execute(
+                            args,
+                            "INSERT INTO system.coverage_log "
+                            "SETTINGS async_insert=1, wait_for_async_insert=0, async_insert_busy_timeout_min_ms=200, async_insert_busy_timeout_max_ms=1000 "
+                            f"SELECT now(), '{self.case}', groupArray(data) FROM input('data UInt64') FORMAT RowBinary",
+                            body=body,
+                            retry_error_codes=True,
+                        )
+                    except Exception as e:
+                        print("Cannot insert coverage data: ", str(e))
 
-                # Remove the file even in case of exception to avoid accumulation and quadratic complexity.
-                try:
-                    os.remove(file_path)
-                except Exception as e:
-                    print("FIXME: Race! Cannot remove coverage file: ", str(e))
-            # FIXME: This is a race condition. END
+                    # Remove the file even in case of exception to avoid accumulation and quadratic complexity.
+                    try:
+                        os.remove(file_path)
+                    except Exception as e:
+                        print("FIXME: Race! Cannot remove coverage file: ", str(e))
+            else:
+                # self.testcase_args not configured - test was skipped
+                pass
 
             coverage = clickhouse_execute(
                 args,
@@ -1972,7 +2072,7 @@ class TestCase:
         ) + log_opt
 
         # This is for .sh tests
-        os.environ["CLICKHOUSE_LOG_COMMENT"] = args.testcase_basename
+        os.environ["CLICKHOUSE_LOG_COMMENT"] = f'{args.testcase_basename}-{args.testcase_database}'
 
         query_params = ""
         if "need-query-parameters" in self.tags:
@@ -2121,7 +2221,7 @@ class TestCase:
                 args, self.case_file, suite.suite_tmp_path
             )
 
-            client_options = self.add_random_settings(client_options)
+            client_options = self.add_effective_settings(client_options)
 
             if not is_valid_utf_8(self.case_file) or (
                 self.reference_file and not is_valid_utf_8(self.reference_file)
@@ -2243,7 +2343,7 @@ class TestCase:
                 self.get_description_from_exception_info(sys.exc_info()),
             )
         finally:
-            self.remove_random_settings_from_env()
+            self.remove_settings_from_env()
 
     def _cleanup(self, passed):
         args = self.testcase_args
@@ -2273,7 +2373,7 @@ class TestCase:
                     f"SHOW TABLES FROM {database}",
                     timeout=timeout,
                     settings={
-                        "log_comment": args.testcase_basename,
+                        "log_comment": f'{args.testcase_basename}-{args.testcase_database}',
                     },
                 )
                 .decode()
@@ -2298,7 +2398,7 @@ class TestCase:
                     drop_database_query,
                     timeout=timeout,
                     settings={
-                        "log_comment": args.testcase_basename,
+                        "log_comment": f'{args.testcase_basename}-{args.testcase_database}',
                     },
                 )
             except HTTPError as e:
@@ -2512,6 +2612,7 @@ class TestSuite:
         self.parallel_tests = []
 
         self.all_tests = self.apply_test_runs(all_tests)
+
         self.all_tests.sort(key=self.tests_in_suite_key_func)
 
         post_run_check_tests = []
@@ -2559,7 +2660,6 @@ class TestSuite:
         return (
             ("no-parallel" in self.all_tags[test_name])
             or ("sequential" in self.all_tags[test_name])
-            or ("stateful" in self.all_tags[test_name])
         )
 
     def get_selected_tests(self, filter_func):
@@ -2759,7 +2859,7 @@ def run_tests_array(
                     raise TimeoutError("Test execution timed out")
 
                 signal.signal(signal.SIGALRM, timeout_handler)
-                signal.alarm(int(args.timeout * 1.1) + 5)
+                signal.alarm(int(args.timeout * 1.1) + 60)
                 test_result = None
                 try:
                     test_result = test_case.run(args, test_suite, client_options)
@@ -2894,6 +2994,8 @@ class BuildFlags:
 
 # Release and non-sanitizer build
 RELEASE_NON_SANITIZED = False
+# Build with any sanitizer
+SANITIZED = False
 
 
 def collect_build_flags(args):
@@ -2906,12 +3008,16 @@ def collect_build_flags(args):
     )
     if b"-fsanitize=thread" in value:
         result.append(BuildFlags.THREAD)
+        SANITIZED = True
     elif b"-fsanitize=address" in value:
         result.append(BuildFlags.ADDRESS)
+        SANITIZED = True
     elif b"-fsanitize=undefined" in value:
         result.append(BuildFlags.UNDEFINED)
+        SANITIZED = True
     elif b"-fsanitize=memory" in value:
         result.append(BuildFlags.MEMORY)
+        SANITIZED = True
     elif b"-DSANITIZE_COVERAGE=1" in value:
         result.append(BuildFlags.SANITIZE_COVERAGE)
 
@@ -3049,7 +3155,8 @@ def do_run_tests(
         # because the distribution and the amount
         # of failures will be nearly the same for all tests from the group.
         # TODO: add shuffle for sequential tests
-        random.shuffle(test_suite.parallel_tests)
+        if jobs > 1:
+            random.shuffle(test_suite.parallel_tests)
 
         batch_size = len(test_suite.parallel_tests) // jobs
         manager = multiprocessing.Manager()
@@ -3095,7 +3202,6 @@ def do_run_tests(
 
             if server_died.is_set():
                 print("Server died, terminating all processes...")
-                kill_gdb_if_any()
                 # Wait for test results
                 sleep(args.timeout)
                 for p in processes:
@@ -3590,6 +3696,10 @@ def main(args):
     else:
         print("All tests have finished.")
 
+    unchecked_memory = int(clickhouse_execute(args, "SELECT sum(value) FROM system.events WHERE event = 'MemoryAllocatedWithoutCheckBytes'"))
+    if unchecked_memory > 1e9:
+        print(f"Too much memory has been allocated without checking for memory limits: {unchecked_memory/1024/1024/1024} GiB")
+
     if args.report_logs_stats:
         try:
             reportLogStats(args)
@@ -3603,20 +3713,28 @@ def main(args):
 
 
 def find_binary(name):
-    if os.access(name, os.X_OK):
+    def is_executable(path):
+        return os.access(path, os.X_OK) and os.path.isfile(path)
+
+    if is_executable(name):
         return name
     paths = os.environ.get("PATH").split(":")
     for path in paths:
         bin_path = os.path.join(path, name)
-        if os.access(bin_path, os.X_OK):
+        if is_executable(bin_path):
             return bin_path
 
     # maybe it wasn't in PATH
     bin_path = os.path.join("/usr/local/bin", name)
-    if os.access(bin_path, os.X_OK):
+    if is_executable(bin_path):
         return bin_path
     bin_path = os.path.join("/usr/bin", name)
-    if os.access(bin_path, os.X_OK):
+    if is_executable(bin_path):
+        return bin_path
+
+    # Default binary path if source folder contains build
+    bin_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), f"../build/programs/{name}")
+    if is_executable(bin_path):
         return bin_path
 
     raise TestException(f"{name} was not found in PATH")
@@ -3835,6 +3953,30 @@ def parse_args():
         default=False,
         help="Disable MergeTree settings randomization",
     )
+    # Explicit, non-random settings (copy-paste friendly)
+    parser.add_argument(
+        "--settings",
+        type=str,
+        help='Explicit ClickHouse settings to use. Paste the CI blob inside quotes, e.g.: '
+             '--settings "--max_threads 1 --fsync_metadata 1 ..."',
+    )
+    parser.add_argument(
+        "--settings-file",
+        type=str,
+        help="Path to a file containing ONLY the inner space-separated settings blob "
+             '(e.g. "--max_threads 1 --fsync_metadata 1 ...").',
+    )
+    parser.add_argument(
+        "--merge-tree-settings",
+        type=str,
+        help='Explicit MergeTree settings to use. Paste the CI blob inside quotes, e.g.: '
+             '--merge-tree-settings "--index_granularity 8192 ..."',
+    )
+    parser.add_argument(
+        "--merge-tree-settings-file",
+        type=str,
+        help="Path to a file containing ONLY the inner space-separated MergeTree settings blob."
+    )
     parser.add_argument(
         "--run-by-hash-num",
         type=int,
@@ -3850,6 +3992,12 @@ def parse_args():
         "--show-whitespaces-in-diff",
         action="store_true",
         help="Display $ characters after line with trailing whitespaces in diff output",
+    )
+    parser.add_argument(
+        "--encrypted-storage",
+        action="store_true",
+        default=False,
+        help="Run tests over encrypted storage",
     )
 
     group = parser.add_mutually_exclusive_group(required=False)
@@ -4067,6 +4215,28 @@ if __name__ == "__main__":
         print(e, file=sys.stderr)
         sys.exit(1)
 
+    # Collect explicit settings (if any)
+    args.fixed_settings = {}
+    args.fixed_merge_tree_settings = {}
+    try:
+        if getattr(args, "settings_file", None):
+            args.fixed_settings.update(
+                load_settings_from_file(args.settings_file, kind="settings")
+            )
+        if getattr(args, "settings", None):
+            args.fixed_settings.update(parse_settings_cli_blob(args.settings))
+        if getattr(args, "merge_tree_settings_file", None):
+            args.fixed_merge_tree_settings.update(
+                load_settings_from_file(args.merge_tree_settings_file, kind="merge-tree settings")
+            )
+        if getattr(args, "merge_tree_settings", None):
+            args.fixed_merge_tree_settings.update(
+                parse_settings_cli_blob(args.merge_tree_settings)
+            )
+    except Exception as _e:
+        print(f"Failed to parse provided settings: {_e}", file=sys.stderr)
+        sys.exit(1)
+
     if args.queries and not os.path.isdir(args.queries):
         print(
             f"Cannot access the specified directory with queries ({args.queries})",
@@ -4193,6 +4363,10 @@ if __name__ == "__main__":
 
     if args.replace_replicated_with_shared:
         args.s3_storage = True
+
+    if args.encrypted_storage and not args.s3_storage and not args.azure_blob_storage:
+        print("Disabling encrypted storage. To run tests with encrypted storage, either s3_storage or azure_blob_storage should be enabled.")
+        args.encrypted_storage = False
 
     try:
         main(args)

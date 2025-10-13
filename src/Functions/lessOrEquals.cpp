@@ -17,8 +17,8 @@ REGISTER_FUNCTION(LessOrEquals)
     // Documentation for lessOrEquals
     FunctionDocumentation::Description description = "Compares two values for less-than-or-equal-to relation.";
     FunctionDocumentation::Syntax syntax = R"(
-    lessOrEquals(a, b)
-    -- a <= b
+lessOrEquals(a, b)
+-- a <= b
 )";
     FunctionDocumentation::Arguments arguments = {
         {"a", "First value.<sup>[*](#comparison-rules)</sup>"},

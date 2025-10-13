@@ -11,6 +11,7 @@
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnVariant.h>
 #include <Core/Field.h>
+#include <Common/SipHash.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -42,6 +43,11 @@ String DataTypeDynamic::doGetName() const
     if (max_dynamic_types == DEFAULT_MAX_DYNAMIC_TYPES)
         return "Dynamic";
     return "Dynamic(max_types=" + toString(max_dynamic_types) + ")";
+}
+
+void DataTypeDynamic::updateHashImpl(SipHash & hash) const
+{
+    hash.update(max_dynamic_types);
 }
 
 Field DataTypeDynamic::getDefault() const
@@ -279,6 +285,15 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnDa
     }
 
     return res;
+}
+
+bool hasDynamicType(const DataTypePtr & type)
+{
+    bool result = false;
+    auto check = [&](const IDataType & t) { result |= isDynamic(t); };
+    check(*type);
+    type->forEachChild(check);
+    return result;
 }
 
 }

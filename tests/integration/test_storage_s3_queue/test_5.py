@@ -23,6 +23,7 @@ from helpers.s3_queue_common import (
     create_mv,
     generate_random_string,
 )
+from helpers.config_cluster import minio_secret_key
 
 AVAILABLE_MODES = ["unordered", "ordered"]
 
@@ -544,7 +545,7 @@ def test_failed_commit(started_cluster):
 
     def check_failpoint():
         return node.contains_in_log(
-            f"StorageS3Queue (default.{table_name}): Failed to process data: Code: 1002. DB::Exception: Failed to commit processed files. (UNKNOWN_EXCEPTION)"
+            f"StorageS3Queue (default.{table_name}): Failed to process data: Code: 999. Coordination::Exception: Failed to commit processed files"
         )
 
     for _ in range(100):
@@ -566,7 +567,7 @@ def test_failed_commit(started_cluster):
 
     count_failed = int(
         node.count_in_log(
-            f"StorageS3Queue (default.{table_name}): Failed to process data: Code: 1002. DB::Exception: Failed to commit processed files. (UNKNOWN_EXCEPTION)"
+            f"StorageS3Queue (default.{table_name}): Failed to process data: Code: 999. Coordination::Exception: Failed to commit processed files"
         )
     )
     count = get_count()
@@ -692,6 +693,7 @@ def test_failure_in_the_middle(started_cluster):
             f"SELECT rows_processed FROM system.s3queue_log WHERE table = '{table_name}' and status = 'Processed'"
         )
     )
+    node.query(f"DROP TABLE {dst_table_name} SYNC")
 
 
 def test_macros_support(started_cluster):
@@ -836,7 +838,7 @@ def test_shutdown_logs(started_cluster):
     dst_table_name = f"{table_name}_dst"
     keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
     files_path = f"{table_name}_data"
-    files_to_generate = 300
+    files_to_generate = 10
 
     create_table(
         started_cluster,
@@ -850,7 +852,7 @@ def test_shutdown_logs(started_cluster):
         },
     )
     total_values = generate_random_files(
-        started_cluster, files_path, files_to_generate, start_ind=0, row_num=100000
+        started_cluster, files_path, files_to_generate, start_ind=0, row_num=100
     )
     create_mv(node, table_name, dst_table_name)
     start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -872,3 +874,554 @@ def test_shutdown_logs(started_cluster):
     )
     assert 1 == check_in_text_log("Shutting down system logs", "DatabaseCatalog")
     assert 0 == check_in_text_log("Shutting down system databases", "DatabaseCatalog")
+    node.query(f"DROP TABLE {dst_table_name} SYNC")
+
+
+def test_shutdown_order(started_cluster):
+    node = started_cluster.instances["instance"]
+    table_name = f"test_shutdown_order_{generate_random_string()}"
+    dst_table_name = f"a_{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    format = "column1 Int32, column2 String"
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        format=format,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_processing_threads_num": 1,
+            "polling_max_timeout_ms": 0,
+            "polling_min_timeout_ms": 0,
+        },
+    )
+
+    def insert():
+        files_to_generate = 10
+        table_name_suffix = f"{uuid.uuid4()}"
+        for i in range(files_to_generate):
+            file_name = f"file_{table_name}_{table_name_suffix}_{i}.csv"
+            s3_function = f"s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/{files_path}/{file_name}', 'minio', '{minio_secret_key}')"
+            node.query(
+                f"INSERT INTO FUNCTION {s3_function} select number, randomString(100) FROM numbers(5000000)"
+            )
+
+    insert()
+
+    mv_table_name = f"{table_name}_mv"
+    create_mv(
+        node,
+        table_name,
+        dst_table_name,
+        mv_name=mv_table_name,
+        format=format,
+        dst_table_engine=f"ReplicatedMergeTree('/clickhouse/tables/{table_name}', 'node')",
+    )
+
+    node.restart_clickhouse()
+
+    def check_in_text_log(message, logger_name):
+        return int(
+            node.query(
+                f"SELECT count() FROM system.text_log WHERE logger_name ilike '%{logger_name}%' and message ilike '%{message}%'"
+            )
+        )
+
+    assert 0 == check_in_text_log(
+        "Failed to process data", f"StorageS3Queue(default.{table_name})"
+    )
+    assert 0 == int(
+        node.query(
+            f"SELECT count() FROM system.s3queue_log WHERE table = '{table_name}' and status = 'Failed'"
+        )
+    )
+    new_table_name = f"{table_name}_new"
+    new_mv_table_name = f"{new_table_name}_mv"
+    node.query(f"DROP TABLE {mv_table_name} SYNC")
+    node.query(f"RENAME TABLE {table_name} to {new_table_name}")
+
+    create_mv(
+        node,
+        new_table_name,
+        dst_table_name,
+        mv_name=new_mv_table_name,
+        format=format,
+        dst_table_exists=True,
+    )
+    insert()
+    time.sleep(0.1)
+
+    node.restart_clickhouse()
+    assert 0 == check_in_text_log(
+        "Failed to process data", f"StorageS3Queue(default.{table_name})"
+    )
+    assert 0 == int(
+        node.query(
+            f"SELECT count() FROM system.s3queue_log WHERE table = '{table_name}' and status = 'Failed'"
+        )
+    )
+
+    node.query(f"DROP TABLE {new_table_name} SYNC")
+    node.query(f"DROP TABLE {dst_table_name} SYNC")
+
+
+@pytest.mark.parametrize("mode", ["unordered", "ordered"])
+@pytest.mark.parametrize("limit", [1, 9999999999])
+def test_mv_settings(started_cluster, mode, limit):
+    node = started_cluster.instances["instance"]
+    table_name = f"test_mv_settings_{generate_random_string()}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    if limit == 9999999999:
+        expected_parts_num = 1
+    else:
+        expected_parts_num = 5
+
+    format = "column1 String"
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        mode,
+        files_path,
+        format=format,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_processing_threads_num": 1,
+            "polling_max_timeout_ms": 0,
+            "polling_min_timeout_ms": 0,
+            "min_insert_block_size_rows_for_materialized_views": limit,
+            "min_insert_block_size_bytes_for_materialized_views": limit,
+        },
+    )
+
+    num_rows = 10
+
+    def insert():
+        files_to_generate = 5
+        table_name_suffix = f"{uuid.uuid4()}"
+        for i in range(files_to_generate):
+            file_name = f"file_{table_name}_{table_name_suffix}_{i}.csv"
+            s3_function = f"s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/{files_path}/{file_name}', 'minio', '{minio_secret_key}')"
+            node.query(
+                f"INSERT INTO FUNCTION {s3_function} select randomString(10) FROM numbers({num_rows})"
+            )
+
+    insert()
+
+    mv_table_name = f"{table_name}_mv"
+    create_mv(
+        node,
+        table_name,
+        dst_table_name,
+        mv_name=mv_table_name,
+        format=format,
+    )
+    node.query(f"SYSTEM STOP MERGES {dst_table_name}")
+
+    def get_count():
+        return int(node.query(f"SELECT count() FROM {dst_table_name}"))
+
+    expected_rows = num_rows
+    for _ in range(20):
+        if expected_rows == get_count():
+            break
+        time.sleep(1)
+
+    assert expected_parts_num == int(
+        node.query(
+            f"SELECT count() FROM system.parts WHERE table = '{dst_table_name}' AND level = 0"
+        )
+    )
+
+
+def test_detach_attach_table(started_cluster):
+    node = started_cluster.instances["instance"]
+    table_name = f"test_detach_attach_table_{generate_random_string()}"
+    dst_table_name = f"{table_name}_dst"
+    mv_table_name = f"{table_name}_mv"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    format = "column1 Int32, column2 String"
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        format=format,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_processing_threads_num": 1,
+            "polling_max_timeout_ms": 0,
+            "polling_min_timeout_ms": 0,
+        },
+    )
+
+    node.query(f"DETACH TABLE {table_name}")
+    node.query(f"ATTACH TABLE {table_name}")
+
+    num_rows = 10000
+    file_count = [0]
+
+    def insert():
+        table_name_suffix = f"{uuid.uuid4()}"
+        file_count[0] += 1
+        file_name = f"file_{table_name}_{table_name_suffix}_{file_count[0]}.csv"
+        s3_function = f"s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/{files_path}/{file_name}', 'minio', '{minio_secret_key}')"
+        node.query(
+            f"INSERT INTO FUNCTION {s3_function} select number, randomString(100) FROM numbers({num_rows})"
+        )
+
+    insert()
+
+    create_mv(
+        node,
+        table_name,
+        dst_table_name,
+        mv_name=mv_table_name,
+        format=format,
+    )
+
+    def get_count():
+        return int(node.query(f"SELECT count() FROM {dst_table_name}"))
+
+    for _ in range(20):
+        if num_rows == get_count():
+            break
+        time.sleep(1)
+
+    assert num_rows == get_count()
+
+
+def test_failed_startup(started_cluster):
+    node = started_cluster.instances["instance"]
+    table_name = f"test_failed_startup_{generate_random_string()}"
+    dst_table_name = f"{table_name}_dst"
+    mv_table_name = f"{table_name}_mv"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    format = "column1 Int32, column2 String"
+    node.query(f"SYSTEM ENABLE FAILPOINT object_storage_queue_fail_startup")
+    assert "Failed to startup" in create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        format=format,
+        expect_error=True,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_processing_threads_num": 1,
+            "polling_max_timeout_ms": 0,
+            "polling_min_timeout_ms": 0,
+        },
+    )
+    node.query(f"SYSTEM DISABLE FAILPOINT object_storage_queue_fail_startup")
+
+    zk = started_cluster.get_kazoo_client("zoo1")
+    try:
+        zk.get(f"{keeper_path}")
+        assert False
+    except NoNodeError:
+        pass
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        format=format,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_processing_threads_num": 1,
+            "polling_max_timeout_ms": 0,
+            "polling_min_timeout_ms": 0,
+        },
+    )
+
+    assert len(zk.get(f"{keeper_path}")) > 0
+
+
+def test_create_or_replace_table(started_cluster):
+    node1 = started_cluster.instances["instance"]
+    node2 = started_cluster.instances["instance2"]
+
+    table_name = f"test_rename_table_2_{uuid.uuid4().hex[:8]}"
+    db_name = f"db_{table_name}"
+    dst_table_name = f"{table_name}_dst"
+    mv_name = f"{table_name}_mv"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    node1.query(
+        f"CREATE DATABASE {db_name} ENGINE=Replicated('/clickhouse/databases/{table_name}', 'shard1', 'node1')"
+    )
+    node2.query(
+        f"CREATE DATABASE {db_name} ENGINE=Replicated('/clickhouse/databases/{table_name}', 'shard1', 'node2')"
+    )
+
+    create_table(
+        started_cluster,
+        node1,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "polling_min_timeout_ms": 100,
+            "polling_max_timeout_ms": 100,
+            "polling_backoff_ms": 0,
+        },
+        database_name=db_name,
+    )
+    node2.query(f"SYSTEM SYNC DATABASE REPLICA {db_name}")
+
+    create_table(
+        started_cluster,
+        node1,
+        table_name,
+        "unordered",
+        files_path,
+        replace=True,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "polling_min_timeout_ms": 100,
+            "polling_max_timeout_ms": 200,
+            "polling_backoff_ms": 0,
+        },
+        database_name=db_name,
+    )
+
+    create_mv(node1, f"{db_name}.{table_name}", dst_table_name, mv_name=mv_name)
+    node2.query(f"SYSTEM SYNC DATABASE REPLICA {db_name}")
+
+
+def test_persistent_processing_nodes_cleanup(started_cluster):
+    node = started_cluster.instances["instance"]
+    table_name = "max_persistent_processing_nodes_cleanup"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+    files_path = f"{table_name}_data"
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "polling_max_timeout_ms": 1000,
+            "polling_backoff_ms": 1000,
+            "use_persistent_processing_nodes": 1,
+            "persistent_processing_node_ttl_seconds": 10,
+            "cleanup_interval_min_ms": 0,
+            "cleanup_interval_max_ms": 0,
+        },
+    )
+
+    zk = started_cluster.get_kazoo_client("zoo1")
+    zk.create(f"{keeper_path}/processing/test", b"somedata")
+    assert b"somedata" == zk.get(f"{keeper_path}/processing/test")[0]
+
+    time.sleep(5)
+    assert b"somedata" == zk.get(f"{keeper_path}/processing/test")[0]
+    time.sleep(6)
+    try:
+        zk.get(f"{keeper_path}/processing/test")[0]
+        assert False
+    except NoNodeError:
+        pass
+
+
+def test_persistent_processing(started_cluster):
+    node = started_cluster.instances["instance"]
+    table_name = "max_persistent_processing"
+    dst_table_name = f"{table_name}_dst"
+    mv_name = f"{table_name}_mv"
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+    files_path = f"{table_name}_data"
+    format = "a Int32, b String"
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        format=format,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "polling_max_timeout_ms": 1000,
+            "polling_backoff_ms": 1000,
+            "use_persistent_processing_nodes": 1,
+            "persistent_processing_node_ttl_seconds": 10,
+            "cleanup_interval_min_ms": 100,
+            "cleanup_interval_max_ms": 500,
+            "polling_max_timeout_ms": 1000,
+            "polling_backoff_ms": 100,
+        },
+    )
+    file_name = f"file_{table_name}.csv"
+    s3_function = f"s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/{files_path}/{file_name}', 'minio', '{minio_secret_key}')"
+    node.query(
+        f"INSERT INTO FUNCTION {s3_function} select number, randomString(100) FROM numbers(10)"
+    )
+
+    zk = started_cluster.get_kazoo_client("zoo1")
+    nodes = zk.get_children(f"{keeper_path}/processing")
+    assert len(nodes) == 0
+
+    node.query(
+        f"""
+        CREATE TABLE {dst_table_name} ({format})
+        ENGINE = MergeTree
+        ORDER BY a;
+    """
+    )
+    node.query(
+        f"""
+        CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT * FROM {table_name} WHERE NOT sleepEachRow(1);
+        """
+    )
+
+    found = False
+    for _ in range(10):
+        nodes = zk.get_children(f"{keeper_path}/processing")
+        if len(nodes) > 0:
+            found = True
+            break
+        time.sleep(1)
+    assert found
+
+    time.sleep(10)
+
+    nodes = zk.get_children(f"{keeper_path}/processing")
+    assert len(nodes) == 0
+
+
+def test_persistent_processing_failed_commit_retries(started_cluster):
+    node = started_cluster.instances["instance"]
+    table_name = f"max_persistent_processing_failed_commit_retries_{generate_random_string()}"
+    dst_table_name = f"{table_name}_dst"
+    mv_name = f"{table_name}_mv"
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+    files_path = f"{table_name}_data"
+    format = "a Int32, b String"
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        format=format,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "polling_max_timeout_ms": 1000,
+            "polling_backoff_ms": 1000,
+            "use_persistent_processing_nodes": 1,
+            "persistent_processing_node_ttl_seconds": 60,
+            "cleanup_interval_min_ms": 100,
+            "cleanup_interval_max_ms": 500,
+            "polling_max_timeout_ms": 1000,
+            "polling_backoff_ms": 100,
+        },
+    )
+    i = [0]
+
+    def insert():
+        i[0] += 1
+        file_name = f"file_{table_name}_{i[0]}.csv"
+        s3_function = f"s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/{files_path}/{file_name}', 'minio', '{minio_secret_key}')"
+        node.query(
+            f"INSERT INTO FUNCTION {s3_function} select number, randomString(100) FROM numbers(10)"
+        )
+
+    insert()
+
+    zk = started_cluster.get_kazoo_client("zoo1")
+    nodes = zk.get_children(f"{keeper_path}/processing")
+    assert len(nodes) == 0
+
+    node.query(
+        f"""
+        CREATE TABLE {dst_table_name} ({format})
+        ENGINE = MergeTree
+        ORDER BY a;
+    """
+    )
+
+    node.query(f"SYSTEM ENABLE FAILPOINT object_storage_queue_fail_commit_once")
+    node.query(
+        f"""
+        CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT * FROM {table_name} WHERE NOT sleepEachRow(0.3);
+        """
+    )
+
+    found = False
+    for _ in range(10):
+        nodes = zk.get_children(f"{keeper_path}/processing")
+        if len(nodes) > 0:
+            found = True
+            break
+        time.sleep(1)
+    assert found
+
+    found = False
+    for _ in range(10):
+        if node.contains_in_log(
+            f"StorageS3Queue (default.{table_name}): Successfully committed"
+        ):
+            found = True
+            break
+        time.sleep(1)
+    assert found
+
+    assert node.contains_in_log(
+        f"StorageS3Queue (default.{table_name}): Failed to commit processed files at try 1/6"
+    )
+    assert not node.contains_in_log(
+        f"StorageS3Queue (default.{table_name}): Failed to commit processed files at try 5/6"
+    )
+
+    nodes = zk.get_children(f"{keeper_path}/processing")
+    assert len(nodes) == 0
+
+    node.query(f"SYSTEM ENABLE FAILPOINT object_storage_queue_fail_commit")
+    insert()
+
+    found = False
+    for _ in range(20):
+        if node.contains_in_log(
+            f"StorageS3Queue (default.{table_name}): Failed to process data: Code: 999. Coordination::Exception: Failed to commit processed files"
+        ):
+            found = True
+            break
+        time.sleep(1)
+
+    node.query(f"SYSTEM DISABLE FAILPOINT object_storage_queue_fail_commit")
+    assert found
+
+    assert node.contains_in_log(
+        f"StorageS3Queue (default.{table_name}): Failed to commit processed files at try 6/6"
+    )
+
+    found = False
+    for _ in range(30):
+        nodes = zk.get_children(f"{keeper_path}/processing")
+        if len(nodes) == 0:
+            found = True
+            break
+        time.sleep(1)
+    assert found
