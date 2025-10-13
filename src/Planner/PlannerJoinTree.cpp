@@ -2599,7 +2599,8 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
             for (size_t j = i + 1; j < table_expressions_stack.size(); ++j)
             {
                 const auto & node = table_expressions_stack[j];
-                if (node->getNodeType() == QueryTreeNodeType::JOIN || node->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
+                if (node->getNodeType() == QueryTreeNodeType::JOIN || node->getNodeType() == QueryTreeNodeType::ARRAY_JOIN
+                    || node->getNodeType() == QueryTreeNodeType::CROSS_JOIN)
                 {
                     parent_join_tree = node;
                     break;
