@@ -6,7 +6,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/Operators.h>
 
-#include <type_traits>
+#include <xray/xray_interface.h>
 
 namespace DB
 {
@@ -483,6 +483,16 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
                 print_identifier(instrumentation_handler_name);
             }
 
+            if (instrumentation_entry_type.has_value())
+            {
+                switch (instrumentation_entry_type.value())
+                {
+                    case XRayEntryType::ENTRY: ostr << " Entry"; break;
+                    case XRayEntryType::EXIT: ostr << " Exit"; break;
+                    default: break;
+                }
+            }
+
             if (instrumentation_parameters && !instrumentation_parameters->empty())
             {
                 bool comma = false;
@@ -511,7 +521,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
                 if (std::holds_alternative<bool>(instrumentation_point_id.value()))
                     ostr << " ALL";
                 else
-                    ostr << ' ' << std::get<uint64_t>(instrumentation_point_id.value());
+                    ostr << ' ' << std::get<UInt64>(instrumentation_point_id.value());
             }
             break;
         }

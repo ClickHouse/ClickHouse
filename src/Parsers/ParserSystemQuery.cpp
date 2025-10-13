@@ -8,6 +8,7 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <Poco/String.h>
+#include "Interpreters/XRayInstrumentationManager.h"
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 
@@ -768,23 +769,33 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         }
         case Type::INSTRUMENT_ADD:
         {
-            String function_name;
             ASTPtr temporary_identifier;
             if (ParserIdentifier{}.parse(pos, temporary_identifier, expected))
-                function_name = temporary_identifier->as<ASTIdentifier &>().name();
+                res->instrumentation_function_name = temporary_identifier->as<ASTIdentifier &>().name();
             else
                 return false;
 
-            res->instrumentation_function_name = std::move(function_name);
-
             String handler_name;
             if (ParserIdentifier{}.parse(pos, temporary_identifier, expected))
-            {
-                handler_name = temporary_identifier->as<ASTIdentifier &>().name();
-            }
-            res->instrumentation_handler_name = std::move(handler_name);
+                res->instrumentation_handler_name = temporary_identifier->as<ASTIdentifier &>().name();
+            else
+                return false;
+
             if (Poco::toLower(res->instrumentation_handler_name) == "profile")
                 break;
+
+            if (ParserIdentifier{}.parse(pos, temporary_identifier, expected))
+            {
+                String entry_type = temporary_identifier->as<ASTIdentifier &>().name();
+                if (Poco::toLower(entry_type) == "entry")
+                    res->instrumentation_entry_type = XRayEntryType::ENTRY;
+                else if (Poco::toLower(entry_type) == "exit")
+                    res->instrumentation_entry_type = XRayEntryType::EXIT;
+                else
+                    return false;
+            }
+            else
+                return false;
 
             res->instrumentation_parameters.emplace();
             do

@@ -1737,11 +1737,12 @@ void InterpreterSystemQuery::instrumentWithXRay(bool add, ASTSystemQuery & query
 {
     /// query.handler_name -- handler to be set for the function
     /// query.function_name -- name of the function to be patched - rename in query to function name
+    /// query.entry_type -- entry type: None, Entry or Exit
     /// query.parameters -- parameters for the handler. should be one of the following: string, int, float
     try
     {
         if (add)
-            XRayInstrumentationManager::instance().setHandlerAndPatch(query.instrumentation_function_name, query.instrumentation_handler_name, query.instrumentation_parameters, getContext());
+            XRayInstrumentationManager::instance().setHandlerAndPatch(getContext(), query.instrumentation_function_name, query.instrumentation_handler_name, query.instrumentation_entry_type , query.instrumentation_parameters);
         else
             XRayInstrumentationManager::instance().unpatchFunction(query.instrumentation_point_id.value());
     }
@@ -1753,7 +1754,7 @@ void InterpreterSystemQuery::instrumentWithXRay(bool add, ASTSystemQuery & query
             if (std::holds_alternative<bool>(query.instrumentation_point_id.value()))
                 id = "ALL";
             else
-                id = std::to_string(std::get<uint64_t>(query.instrumentation_point_id.value()));
+                id = std::to_string(std::get<UInt64>(query.instrumentation_point_id.value()));
             }
         else
             id = "None";
