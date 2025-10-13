@@ -1970,10 +1970,6 @@ void executeQuery(
         }
     };
     auto implicit_tcl_executor = std::make_shared<ImplicitTransactionControlExecutor>();
-    SCOPE_EXIT({
-        /// We release query slot here to make sure client can safely reuse the slot with his next query, otherwise it will be released too late
-        context->releaseQuerySlot();
-    });
     try
     {
         streams = executeQueryImpl(begin, end, context, flags, QueryProcessingStage::Complete, istr, ast, implicit_tcl_executor, http_continue_callback);
@@ -2144,7 +2140,7 @@ void executeQuery(
     if (implicit_tcl_executor->transactionRunning())
         implicit_tcl_executor->commit(context);
 
-    /// We release query slot here to make sure client can safely reuse the slot with his next query, otherwise it will be released too late
+    /// We release query slot here to make sure client can safely reuse the slot with his next query, otherwise it will be released too late by BlockIO.
     context->releaseQuerySlot();
 
     /// The order is important here:
