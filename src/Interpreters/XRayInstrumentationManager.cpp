@@ -425,7 +425,7 @@ void XRayInstrumentationManager::log(int32_t func_id, XRayEntryType entry_type)
     {
         String logger_info = std::get<String>(param);
         auto function_name = parameters_it->second->function_name;
-        LOG_DEBUG(logger, "{}: {}", function_name, logger_info);
+        LOG_DEBUG(logger, "{}: {}\nStack trace:\n{}", function_name, logger_info, StackTrace().toString());
     }
     else
     {
