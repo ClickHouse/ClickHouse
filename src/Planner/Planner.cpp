@@ -348,7 +348,7 @@ void extendQueryContextAndStoragesLifetime(QueryPlan & query_plan, const Planner
     }
 }
 
-static std::pair<UInt64, bool> getLimitAbsAndSign(const Field & field)
+std::pair<UInt64, bool> getLimitAbsAndSign(const Field & field)
 {
     // First check if it is nonnegative limit since they are more common
     const Field converted_value_uint = convertFieldToType(field, DataTypeUInt64());
