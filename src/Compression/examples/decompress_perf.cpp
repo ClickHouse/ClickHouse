@@ -184,13 +184,9 @@ try
     ssize_t variant = argc < 2 ? -1 : parse<ssize_t>(argv[1]);
 
     MMapReadBufferFromFileDescriptor in(STDIN_FILENO, 0);
-//    ReadBufferFromFileDescriptor in(STDIN_FILENO);
     FasterCompressedReadBuffer decompressing_in(in, variant);
-//    WriteBufferFromFileDescriptor out(STDOUT_FILENO);
-//    HashingWriteBuffer hashing_out(out);
 
     Stopwatch watch;
-//    copyData(decompressing_in, /*hashing_*/out);
     while (!decompressing_in.eof())
     {
         decompressing_in.position() = decompressing_in.buffer().end();
@@ -199,55 +195,8 @@ try
     watch.stop();
 
     std::cout << std::fixed << std::setprecision(3)
-        << watch.elapsed() * 1000 / decompressing_in.count()
+        << (decompressing_in.count() ? (watch.elapsed() * 1000 / decompressing_in.count()) : 0)
         << '\n';
-
-/*
-//    auto hash = hashing_out.getHash();
-
-    double seconds = watch.elapsedSeconds();
-    std::cerr << std::fixed << std::setprecision(3)
-        << "Elapsed: " << seconds
-        << ", " << formatReadableSizeWithBinarySuffix(in.count()) << " compressed"
-        << ", " << formatReadableSizeWithBinarySuffix(decompressing_in.count()) << " decompressed"
-        << ", ratio: " << static_cast<double>(decompressing_in.count()) / in.count()
-        << ", " << formatReadableSizeWithBinarySuffix(in.count() / seconds) << "/sec. compressed"
-        << ", " << formatReadableSizeWithBinarySuffix(decompressing_in.count() / seconds) << "/sec. decompressed"
-//        << ", checksum: " << hash.first << "_" << hash.second
-        << "\n";
-
-//    decompressing_in.getStatistics().print();
-
-    LZ4::PerformanceStatistics perf_stat = decompressing_in.getPerformanceStatistics();
-
-    std::optional<size_t> best_variant;
-    double best_variant_mean = 0;
-
-    for (size_t i = 0; i < LZ4::PerformanceStatistics::NUM_ELEMENTS; ++i)
-    {
-        const LZ4::PerformanceStatistics::Element & elem = perf_stat.data[i];
-
-        if (elem.count)
-        {
-            double mean = elem.mean();
-
-            std::cerr << "Variant " << i << ": "
-                << "count: " << elem.count
-                << ", mean ns/b: " << 1000000000.0 * mean << " (" << formatReadableSizeWithBinarySuffix(1 / mean) << "/sec.)"
-                << ", sigma ns/b: " << 1000000000.0 * elem.sigma()
-                << "\n";
-
-            if (!best_variant || mean < best_variant_mean)
-            {
-                best_variant_mean = mean;
-                best_variant = i;
-            }
-        }
-    }
-
-    if (best_variant)
-        std::cerr << "Best variant: " << *best_variant << "\n";
-*/
 
     return 0;
 }

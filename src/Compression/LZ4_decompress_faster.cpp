@@ -15,10 +15,6 @@
 #include <arm_neon.h>
 #endif
 
-#if defined(MEMORY_SANITIZER)
-    #include <sanitizer/msan_interface.h>
-#endif
-
 namespace LZ4
 {
 
