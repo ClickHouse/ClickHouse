@@ -175,7 +175,8 @@ IsStorageTouched isStorageTouchedByMutations(
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
     const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MutationCommand> & commands,
-    ContextPtr context)
+    ContextPtr context,
+    std::function<void(const Progress & value)> check_operation_is_not_cancelled)
 {
     static constexpr IsStorageTouched no_rows = {.any_rows_affected = false, .all_rows_affected = false};
     static constexpr IsStorageTouched all_rows = {.any_rows_affected = true, .all_rows_affected = true};
@@ -245,6 +246,8 @@ IsStorageTouched isStorageTouchedByMutations(
 
     PullingAsyncPipelineExecutor executor(io.pipeline);
     io.pipeline.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
+    /// It's actually not a progress callback, but a cancellation check.
+    io.pipeline.setProgressCallback(check_operation_is_not_cancelled);
 
     Block block;
     while (block.rows() == 0 && executor.pull(block));
@@ -1038,6 +1041,15 @@ void MutationsInterpreter::prepare(bool dry_run)
                 /// But we still have to read at least one column.
                 dependencies.emplace(all_columns.front().name, ColumnDependency::TTL_EXPRESSION);
             }
+        }
+        else if (command.type == MutationCommand::REWRITE_PARTS)
+        {
+            mutation_kind.set(MutationKind::MUTATE_OTHER);
+            addStageIfNeeded(command.mutation_version, true);
+            stages.back().affects_all_columns = true;
+
+            need_rebuild_indexes = true;
+            need_rebuild_projections = true;
         }
         else if (command.type == MutationCommand::READ_COLUMN)
         {

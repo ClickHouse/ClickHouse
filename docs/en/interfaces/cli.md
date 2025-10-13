@@ -820,6 +820,10 @@ The hostname of the ClickHouse server to connect to. Can either be a hostname or
 
 Default value: localhost
 
+**`--login`**
+
+Invokes the device grant OAuth flow in order to authenticate via an IDP. For ClickHouse Cloud hosts, the OAuth variables are inferred otherwise they must be provided with `--oauth-url`, `--oauth-client-id` and `--oauth-audience`.
+
 **`--jwt <value>`**
 
 Use JSON Web Token (JWT) for authentication.

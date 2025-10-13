@@ -124,6 +124,7 @@ namespace
             local_settings[Setting::s3_slow_all_threads_after_retryable_error],
             local_settings[Setting::enable_s3_requests_logging],
             /* for_disk_s3 = */ false,
+            /* opt_disk_name = */ {},
             request_settings.get_request_throttler,
             request_settings.put_request_throttler,
             s3_uri.uri.getScheme());

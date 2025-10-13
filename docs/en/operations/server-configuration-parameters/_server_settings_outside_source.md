@@ -1658,7 +1658,7 @@ Settings for the [asynchronous_insert_log](/operations/system-tables/asynchronou
 
 ## crash_log {#crash_log}
 
-Settings for the [crash_log](../../operations/system-tables/crash-log.md) system table operation.
+Settings for the [crash_log](../../operations/system-tables/crash_log.md) system table operation.
 
 <SystemLogParameters/>
 
@@ -2215,7 +2215,7 @@ Accepted values are:
 Section of the configuration file that contains settings:
 - Path to configuration file with predefined users.
 - Path to folder where users created by SQL commands are stored.
-- ZooKeeper node path where users created by SQL commands are stored and replicated (experimental).
+- ZooKeeper node path where users created by SQL commands are stored and replicated.
 
 If this section is specified, the path from [users_config](/operations/server-configuration-parameters/settings#users_config) and [access_control_path](../../operations/server-configuration-parameters/settings.md#access_control_path) won't be used.
 

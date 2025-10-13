@@ -10,6 +10,8 @@ namespace DB
 class BloomFilter;
 using BloomFilterConstPtr = std::shared_ptr<const BloomFilter>;
 
+/// Store and find per-query runtime filters that are used for optimizing some kinds of JOINs
+/// by early pre-filtering of the left side of the JOIN.
 struct IRuntimeFilterLookup : boost::noncopyable
 {
     virtual ~IRuntimeFilterLookup() = default;
