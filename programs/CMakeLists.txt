@@ -113,6 +113,7 @@ add_subdirectory (static-files-disk-uploader)
 add_subdirectory (su)
 add_subdirectory (zookeeper-dump-tree)
 add_subdirectory (zookeeper-remove-by-list)
+add_subdirectory (restore-parts-serialization)
 
 if (ENABLE_CLICKHOUSE_KEEPER_CONVERTER)
     add_subdirectory (keeper-converter)

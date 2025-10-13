@@ -137,15 +137,26 @@ void tryReadColumnInCompactPart(
     const NameAndTypePair & name_and_type,
     const ISerialization & serialization,
     const MergeTreeIndexGranularity & index_granularity,
+    const ColumnsSubstreams & columns_substreams,
     size_t column_position,
     size_t num_columns)
 {
+    auto get_stream_position = [&](size_t column_idx)
+    {
+        return columns_substreams.empty() ? column_idx : columns_substreams.getFirstSubstreamPosition(column_idx);
+    };
+
+    auto get_current_mark = [&](size_t row_idx)
+    {
+        return marks_getter.getMark(row_idx, get_stream_position(column_position));
+    };
+
     auto get_next_mark = [&](size_t row_idx)
     {
         if (column_position + 1 == num_columns)
             return marks_getter.getMark(row_idx + 1, 0);
 
-        return marks_getter.getMark(row_idx, column_position + 1);
+        return marks_getter.getMark(row_idx, get_stream_position(column_position + 1));
     };
 
     size_t marks_count = index_granularity.getMarksCountWithoutFinal();
@@ -154,8 +165,8 @@ void tryReadColumnInCompactPart(
         size_t rows_to_read = index_granularity.getMarkRows(i);
         ColumnPtr column = name_and_type.type->createColumn(serialization);
 
-        size_t bytes_in_granule = getBytesBetweenMarksInCompactPart(part_storage, marks_getter.getMark(i, column_position), get_next_mark(i));
-        stream.seekToMarkAndColumn(i, column_position);
+        size_t bytes_in_granule = getBytesBetweenMarksInCompactPart(part_storage, get_current_mark(i), get_next_mark(i));
+        stream.seekToMarkAndColumn(i, get_stream_position(column_position));
         String granule_data;
 
         {
@@ -188,6 +199,7 @@ RepareEntry checkColumnCompactPart(
     const IDataPartStorage & part_storage,
     const MergeTreeMarksGetter & marks_getter,
     const NameAndTypePair & column,
+    const ColumnsSubstreams & columns_substreams,
     size_t column_position,
     size_t num_columns,
     const SerializationInfoByName & infos,
@@ -199,7 +211,7 @@ RepareEntry checkColumnCompactPart(
     try
     {
         auto default_serialization = column.type->getDefaultSerialization();
-        tryReadColumnInCompactPart(stream, part_storage, marks_getter, column, *default_serialization, index_granularity, column_position, num_columns);
+        tryReadColumnInCompactPart(stream, part_storage, marks_getter, column, *default_serialization, index_granularity, columns_substreams, column_position, num_columns);
         can_read_as_default = true;
     }
     catch (...)
@@ -212,7 +224,7 @@ RepareEntry checkColumnCompactPart(
         try
         {
             auto sparse_serialization = column.type->getSparseSerialization();
-            tryReadColumnInCompactPart(stream, part_storage, marks_getter, column, *sparse_serialization, index_granularity, column_position, num_columns);
+            tryReadColumnInCompactPart(stream, part_storage, marks_getter, column, *sparse_serialization, index_granularity, columns_substreams, column_position, num_columns);
             can_read_as_sparse = true;
         }
         catch (...)
@@ -283,10 +295,9 @@ try
 
     std::cerr << "Mark type: (" << mark_type->describe() << ")" << std::endl;
 
-    if (mark_type->with_substreams)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Repairing parts with substreams is not supported");
-
     NamesAndTypesList columns;
+    ColumnsSubstreams columns_substreams;
+
     SerializationInfoByName infos({});
     MergeTreeIndexGranularityPtr index_granularity = std::make_shared<MergeTreeIndexGranularityAdaptive>();
 
@@ -294,6 +305,14 @@ try
         columns.readText(*columns_in);
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Columns file not found in the input directory '{}'", part_dir);
+
+    if (mark_type->with_substreams)
+    {
+        if (auto substreams_in = part_storage->readFileIfExists("columns_substreams.txt", {}, {}))
+            columns_substreams.readText(*substreams_in);
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Columns substreams file not found in the input directory '{}'", part_dir);
+    }
 
     if (auto in = part_storage->readFileIfExists("serialization.json", {}, {}))
         infos = SerializationInfoByName::readJSON(columns, *in);
@@ -336,7 +355,8 @@ try
     }
     else
     {
-        MergeTreeDataPartCompact::loadIndexGranularityImpl(index_granularity, index_granularity_info, columns.size(), *part_storage, MergeTreeSettings{});
+        size_t num_streams = mark_type->with_substreams ? columns_substreams.getTotalSubstreams() : columns.size();
+        MergeTreeDataPartCompact::loadIndexGranularityImpl(index_granularity, index_granularity_info, num_streams, *part_storage, MergeTreeSettings{});
 
         auto marks_loader = std::make_shared<MergeTreeMarksLoader>(
             part_storage,
@@ -347,7 +367,7 @@ try
             false,
             ReadSettings{},
             nullptr,
-            columns.size());
+            num_streams);
 
         MergeTreeReaderSettings reader_settings;
         reader_settings.allow_different_codecs = true;
@@ -370,7 +390,7 @@ try
 
         for (const auto & column : columns)
         {
-            auto repare_entry = checkColumnCompactPart(*stream, *part_storage, *marks_getter, column, column_position, columns.size(), infos, *index_granularity);
+            auto repare_entry = checkColumnCompactPart(*stream, *part_storage, *marks_getter, column, columns_substreams, column_position, columns.size(), infos, *index_granularity);
 
             if (repare_entry.status == RepareEntry::Status::Broken)
             {
