@@ -25,7 +25,7 @@ INSERT INTO t_text_index_pr SELECT 3, arrayStringConcat(arrayMap(x -> toString(n
 
 SELECT count(), sum(id) FROM t_text_index_pr WHERE hasAnyTokens(str, ['34567', '134567', '234567']);
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT
     sum(ProfileEvents['ParallelReplicasUsedCount']) > 0,
