@@ -288,6 +288,12 @@ void registerAzureObjectStorage(ObjectStorageFactory & factory)
     {
         auto azure_settings = AzureBlobStorage::getRequestSettings(config, config_prefix, context->getSettingsRef());
 
+        /// AzureObjectStorage::getCommonKeyPrefix() was not implemented previousely by mistake and was always returning an empty string.
+        /// However, we use this string as ZooKeeper path for disk with metadata in Keeper.
+        /// So, all instances of azure-with-keeper were using the same (empty, or root) path.
+        /// We keep using empty prefix by default for compatibility, but allow to configure another one
+        const String & common_key_prefix = config.getString(config_prefix + ".common_key_prefix_for_azure", "");
+
         AzureBlobStorage::ConnectionParams params
         {
             .endpoint = AzureBlobStorage::processEndpoint(config, config_prefix),
