@@ -443,6 +443,11 @@ bool SparseGramTokenExtractor::nextInStringLike(const char * data, size_t length
                 match_substring = false;
                 break;
             }
+            else if (!escaped && data[i] == '\\')
+            {
+                escaped = true;
+                ++i;
+            }
             else
             {
                 const size_t sz = UTF8::seqLength(static_cast<UInt8>(data[i]));

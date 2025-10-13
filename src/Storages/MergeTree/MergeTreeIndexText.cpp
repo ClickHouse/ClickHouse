@@ -1010,8 +1010,7 @@ std::pair<String, std::optional<Field>> extractTokenizer(std::unordered_map<Stri
                 ARGUMENT_TOKENIZER,
                 function_name.getTypeName());
 
-        /// Only a single parameter is supported.
-        if (tokenizer_tuple->size() > 2)
+        if (tokenizer_tuple->size() > 4)
             throw Exception(
                 ErrorCodes::INCORRECT_QUERY,
                 "Text index argument '{}': function accepts at most one parameter, but got {}",
@@ -1100,7 +1099,7 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
     {
         throw Exception(
             ErrorCodes::INCORRECT_QUERY,
-            "Text index argument '{}' supports only 'splitByNonAlpha', 'ngrams', 'splitByString', 'sparse_gram', and 'array', but got {}",
+            "Text index argument '{}' supports only 'splitByNonAlpha', 'ngrams', 'splitByString', 'sparseGrams', and 'array', but got {}",
             ARGUMENT_TOKENIZER,
             tokenizer);
     }

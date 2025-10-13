@@ -165,11 +165,11 @@ SELECT read_rows==2 from system.query_log
     LIMIT 1;
 
 ----------------------------------------------------
-SELECT 'Test text(tokenizer = "sparse_gram", min_length = 2,max_length = 100) on UTF-8 data';
+SELECT 'Test text(tokenizer = sparseGrams(2, 100)) on UTF-8 data';
 
 DROP TABLE IF EXISTS tab;
 
-CREATE TABLE tab(k UInt64, s String, INDEX af(s) TYPE text(tokenizer = 'sparse_gram', min_length = 2, max_length = 100) GRANULARITY 1)
+CREATE TABLE tab(k UInt64, s String, INDEX af(s) TYPE text(tokenizer = sparseGrams(2, 100)) GRANULARITY 1)
     ENGINE = MergeTree()
     ORDER BY k
     SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';
@@ -193,11 +193,11 @@ SELECT read_rows==2 from system.query_log
     LIMIT 1;
 
 ----------------------------------------------------
-SELECT 'Test text(tokenizer = "sparse_gram", min_length = 2,max_length = 100, min_cutoff_length=3) on UTF-8 data';
+SELECT 'Test text(tokenizer = sparseGrams(2, 100, 3)) on UTF-8 data';
 
 DROP TABLE IF EXISTS tab;
 
-CREATE TABLE tab(k UInt64, s String, INDEX af(s) TYPE text(tokenizer = 'sparse_gram', min_length = 2, max_length = 100, min_cutoff_length=3) GRANULARITY 1)
+CREATE TABLE tab(k UInt64, s String, INDEX af(s) TYPE text(tokenizer = sparseGrams(2, 100, 3)) GRANULARITY 1)
     ENGINE = MergeTree()
     ORDER BY k
     SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';

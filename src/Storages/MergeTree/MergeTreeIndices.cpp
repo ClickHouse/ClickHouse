@@ -143,8 +143,8 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
     registerCreator("tokenbf_v1", bloomFilterIndexTextCreator);
     registerValidator("tokenbf_v1", bloomFilterIndexTextValidator);
 
-    registerCreator("sparse_gram", bloomFilterIndexTextCreator);
-    registerValidator("sparse_gram", bloomFilterIndexTextValidator);
+    registerCreator("sparseGrams", bloomFilterIndexTextCreator);
+    registerValidator("sparseGrams", bloomFilterIndexTextValidator);
 
     registerCreator("bloom_filter", bloomFilterIndexCreator);
     registerValidator("bloom_filter", bloomFilterIndexValidator);
