@@ -2011,7 +2011,7 @@ ClassifierPtr Context::getWorkloadClassifier() const
     return classifier;
 }
 
-void Context::releaseQuerySlot()
+void Context::releaseQuerySlot() const
 {
     if (auto elem = getProcessListElementSafe())
         elem->releaseQuerySlot();
