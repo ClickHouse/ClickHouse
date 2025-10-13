@@ -150,9 +150,7 @@ LRUFileCachePriority::remove(LRUQueue::iterator it, const CachePriorityGuard::Wr
     /// If size is 0, entry is invalidated, current_elements_num was already updated.
     auto & entry = **it;
     if (entry.size)
-    {
         state->sub(entry.size, 1);
-    }
 
     entry.setRemoved(lock);
 
@@ -565,7 +563,8 @@ void LRUFileCachePriority::LRUIterator::invalidate()
     assertValid();
 
     const auto & entry = *iterator;
-    cache_priority->state->sub(entry->size, 1);
+    if (entry->size)
+        cache_priority->state->sub(entry->size, 1);
     entry->size = 0;
     entry->invalidated = true;
 

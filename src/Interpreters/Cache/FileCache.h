@@ -334,6 +334,25 @@ private:
         const SizeLimits & desired_limits,
         SizeLimits & result_limits,
         CacheStateGuard::Lock &);
+
+    bool doTryReserve(
+        FileSegment & file_segment,
+        size_t size,
+        FileCacheReserveStat & stat,
+        const UserInfo & user,
+        size_t lock_wait_timeout_milliseconds,
+        std::string & failure_reason);
+
+    bool doEviction(
+        const IFileCachePriority::EvictionInfo & main_eviction_info,
+        const IFileCachePriority::EvictionInfo & query_eviction_info,
+        FileSegment & file_segment,
+        const UserInfo & user,
+        const IFileCachePriority::IteratorPtr & main_priority_iterator,
+        FileCacheReserveStat & reserve_stat,
+        EvictionCandidates & eviction_candidates,
+        Priority * query_priority,
+        std::string & failure_reason);
 };
 
 }
