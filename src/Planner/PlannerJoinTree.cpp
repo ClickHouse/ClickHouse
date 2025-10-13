@@ -1220,7 +1220,11 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     const auto & data_header = query_plan.getCurrentHeader();
                     if (!data_header->findByName(static_cast<std::string_view>("_table")))
                     {
-                        const auto & table_name = storage->getStorageID().getTableName();
+                        String table_name;
+                        if (table_node && !(table_node->getTemporaryTableName().empty()))
+                            table_name = table_node->getTemporaryTableName();
+                        else
+                            table_name = storage->getStorageID().getTableName();
                         ColumnWithTypeAndName column;
                         column.name = "_table";
                         column.type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());

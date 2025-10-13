@@ -37,7 +37,7 @@ def test_writes_schema_evolution(started_cluster_iceberg_with_spark, format_vers
 
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '4.5600000000000005\n\\N\n'
 
-    if storage_type != "local":
+    if storage_type == "azure":
         return
 
     default_download_directory(
