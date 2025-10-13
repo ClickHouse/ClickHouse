@@ -92,7 +92,7 @@ struct MutationCommand
     bool affectsAllColumns() const;
 };
 
-/// Multiple mutation commands, possible from different ALTER queries
+/// Multiple mutation commands, possibly from different ALTER queries
 class MutationCommands : public std::vector<MutationCommand>
 {
 public:
