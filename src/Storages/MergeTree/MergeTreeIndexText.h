@@ -10,6 +10,8 @@
 #include <Interpreters/BloomFilter.h>
 #include <Interpreters/ITokenExtractor.h>
 #include <absl/container/flat_hash_map.h>
+#include <Parsers/ExpressionListParsers.h>
+
 
 #include <roaring.hh>
 
@@ -73,6 +75,7 @@ struct MergeTreeIndexTextParams
     size_t max_cardinality_for_embedded_postings = 0;
     size_t bloom_filter_bits_per_row = 0;
     size_t bloom_filter_num_hashes = 0;
+    String preprocessor;
 };
 
 using PostingList = roaring::Roaring;
@@ -281,6 +284,7 @@ class MergeTreeIndexText final : public IMergeTreeIndex
     static Tuple parseNamedArgumentFromAST(const ASTFunction * ast_equal_function);
     static ASTPtr tryGetPreprocessorFromAST(const ASTFunction * ast_equal_function);
     static std::pair<FieldVector,ASTPtr> parseArgumentsListFromAST(const ASTPtr & arguments);
+    static ASTPtr parseExpression(const String & expression);
 
 public:
     MergeTreeIndexText(
@@ -297,12 +301,23 @@ public:
     MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const override;
 
-    MergeTreeIndexTextParams params;
-    std::unique_ptr<ITokenExtractor> token_extractor;
-
+    /// This function performs text index specific initialization actions in the IndexDescription.
+    /// This will be called during IndexDescription construction/initialization and expects the "result" argument to be partially
+    /// initialized with some generic values common to all the indices.
+    /// The "result" argument is intended to be an "inout" because it is expected to be partially initialized.
+    /// Unlike other indices, text index has a special syntax and more complex arguments.
+    /// 1. It expects only named arguments like: argument = value
+    /// 2. The tokenizer argument can be strings (like other indices), but also function names (literals) or a function-like
+    /// expression (i.e: ngram(5))
+    /// 3. The preprocessor argument is intended to be a generic expression (i.e: lower(extractTextFromHTML(str))) where str is the indexed
+    /// column name
     static void updateIndexDescriptionTextFromAST(
         const ASTIndexDeclaration * index_definition, const ColumnsDescription & columns, ContextPtr context,
         IndexDescription & result);
+
+    MergeTreeIndexTextParams params;
+    std::unique_ptr<ITokenExtractor> token_extractor;
+    ASTPtr preprocessor {nullptr};
 };
 
 }

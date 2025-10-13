@@ -833,6 +833,7 @@ MergeTreeIndexText::MergeTreeIndexText(
     : IMergeTreeIndex(index_)
     , params(std::move(params_))
     , token_extractor(std::move(token_extractor_))
+    , preprocessor(parseExpression(params.preprocessor))
 {
 }
 
@@ -869,6 +870,7 @@ MergeTreeIndexConditionPtr MergeTreeIndexText::createIndexCondition(const Action
 }
 
 static const String ARGUMENT_TOKENIZER = "tokenizer";
+static const String ARGUMENT_PREPROCESSOR = "preprocessor";
 static const String ARGUMENT_DICTIONARY_BLOCK_SIZE = "dictionary_block_size";
 static const String ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION = "dictionary_block_frontcoding_compression";
 static const String ARGUMENT_MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS = "max_cardinality_for_embedded_postings";
@@ -1028,8 +1030,16 @@ MergeTreeIndexPtr textIndexCreator(const IndexDescription & index)
     UInt64 max_cardinality_for_embedded_postings = extractOption<UInt64>(options, ARGUMENT_MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS).value_or(DEFAULT_MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS);
     double bloom_filter_false_positive_rate = extractOption<double>(options, ARGUMENT_BLOOM_FILTER_FALSE_POSITIVE_RATE).value_or(DEFAULT_BLOOM_FILTER_FALSE_POSITIVE_RATE);
 
+    String preprocessor = extractOption<String>(options, ARGUMENT_PREPROCESSOR).value_or("");
+
     const auto [bits_per_rows, num_hashes] = BloomFilterHash::calculationBestPractices(bloom_filter_false_positive_rate);
-    MergeTreeIndexTextParams params{dictionary_block_size, dictionary_block_frontcoding_compression, max_cardinality_for_embedded_postings, bits_per_rows, num_hashes};
+    MergeTreeIndexTextParams params{
+        dictionary_block_size,
+        dictionary_block_frontcoding_compression,
+        max_cardinality_for_embedded_postings,
+        bits_per_rows,
+        num_hashes,
+        preprocessor};
 
     if (!options.empty())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Unexpected text index arguments: {}", fmt::join(std::views::keys(options), ", "));
@@ -1086,6 +1096,11 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
         }
     }
 
+    if (auto preprocessor_str = extractOption<String>(options, ARGUMENT_PREPROCESSOR, false); preprocessor_str)
+    {
+        // TODO(JAM): Validation here
+    }
+
     double bloom_filter_false_positive_rate = extractOption<double>(options, ARGUMENT_BLOOM_FILTER_FALSE_POSITIVE_RATE).value_or(DEFAULT_BLOOM_FILTER_FALSE_POSITIVE_RATE);
 
     if (!std::isfinite(bloom_filter_false_positive_rate) || bloom_filter_false_positive_rate <= 0.0 || bloom_filter_false_positive_rate >= 1.0)
@@ -1139,10 +1154,13 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
 
 Tuple MergeTreeIndexText::parseNamedArgumentFromAST(const ASTFunction * ast_equal_function)
 {
-    chassert(ast_equal_function != nullptr);
-    chassert(ast_equal_function->name == "equals");
-    chassert(ast_equal_function->arguments->children.size() == 2);
-    Tuple parameter;
+    if (ast_equal_function == nullptr)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Text index arguments: '{}' is not a key-value pair", ast_equal_function->formatForLogging());
+
+    if (ast_equal_function->name != "equals" || ast_equal_function->arguments->children.size() != 2)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot mix key-value pair and single argument as text index arguments");
+
+    Tuple result;
 
     ASTPtr arguments = ast_equal_function->arguments;
     /// Parse parameter name. It can be Identifier.
@@ -1151,31 +1169,41 @@ Tuple MergeTreeIndexText::parseNamedArgumentFromAST(const ASTFunction * ast_equa
         if (identifier == nullptr)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Text index parameter name: Expected identifier");
 
-        parameter.emplace_back(identifier->name());
+        result.emplace_back(identifier->name());
     }
 
-    /// Parse parameter value. It can be Literal, Identifier or Function.
+    if (result.back() == "preprocessor")
     {
-        if (const auto * literal = arguments->children[1]->as<ASTLiteral>(); literal != nullptr)
+        const auto * preprocessor_function = arguments->children[1]->as<ASTFunction>();
+        if (preprocessor_function == nullptr)
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Text index preprocessor parameter value expects a function");
+
+        result.emplace_back(preprocessor_function->getColumnName());
+    }
+    else
+    {
+        /// Parse parameter value. It can be Literal, Identifier or Function.
+        if (const auto * literal_arg = arguments->children[1]->as<ASTLiteral>(); literal_arg != nullptr)
         {
-            parameter.emplace_back(literal->value);
+            result.emplace_back(literal_arg->value);
         }
-        else if (const auto * identifier = arguments->children[1]->as<ASTIdentifier>(); identifier != nullptr)
+        else if (const auto * identifier_arg = arguments->children[1]->as<ASTIdentifier>(); identifier_arg != nullptr)
         {
-            parameter.emplace_back(identifier->name());
+            result.emplace_back(identifier_arg->name());
         }
-        else if (const auto * function = arguments->children[1]->as<ASTFunction>(); function != nullptr)
+        else if (const auto * function_arg = arguments->children[1]->as<ASTFunction>(); function_arg != nullptr)
         {
             Tuple tuple;
-            tuple.emplace_back(function->name);
-            for (const auto & argument : function->arguments->children)
+            tuple.emplace_back(function_arg->name);
+            for (const auto & subargument : function_arg->arguments->children)
             {
-                if (const auto * arg_literal = argument->as<ASTLiteral>(); arg_literal != nullptr)
-                    tuple.emplace_back(arg_literal->value);
-                else
+                const auto * arg_literal = subargument->as<ASTLiteral>();
+                if (arg_literal == nullptr)
                     throw Exception(ErrorCodes::INCORRECT_QUERY, "Text index function argument: Expected literal");
+
+                tuple.emplace_back(arg_literal->value);
             }
-            parameter.emplace_back(tuple);
+            result.emplace_back(tuple);
         }
         else
         {
@@ -1183,7 +1211,7 @@ Tuple MergeTreeIndexText::parseNamedArgumentFromAST(const ASTFunction * ast_equa
         }
     }
 
-    return parameter;
+    return result;
 }
 
 ASTPtr MergeTreeIndexText::tryGetPreprocessorFromAST(const ASTFunction * ast_equal_function)
@@ -1194,13 +1222,13 @@ ASTPtr MergeTreeIndexText::tryGetPreprocessorFromAST(const ASTFunction * ast_equ
 
     ASTPtr arguments = ast_equal_function->arguments;
 
-    const auto * identifier = arguments->children[0]->as<ASTIdentifier>();
+    const ASTIdentifier * identifier = arguments->children[0]->as<ASTIdentifier>();
 
     if (identifier == nullptr || identifier->name() != "preprocessor")
         return nullptr;
 
     /// Parse parameter value. It can be a Literal, Identifier or Function.
-    const auto * function = arguments->children[1]->as<ASTFunction>();
+    const ASTFunction * function = arguments->children[1]->as<ASTFunction>();
     if (function == nullptr)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "The preprocessor argument must be a function");
 
@@ -1211,6 +1239,9 @@ ASTPtr MergeTreeIndexText::tryGetPreprocessorFromAST(const ASTFunction * ast_equ
 
         /// TODO(JAM) : Extend checks here for the right column
         if (argument->as<ASTIdentifier>())
+            continue;
+
+        if (argument->as<ASTFunction>())
             continue;
 
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Text preprocessor function expect a literal or identifier as argument");
@@ -1228,21 +1259,12 @@ std::pair<FieldVector,ASTPtr> MergeTreeIndexText::parseArgumentsListFromAST(cons
 
     for (const auto & argument : arguments->children)
     {
-        const auto * ast_function = argument->as<ASTFunction>();
+        const auto * ast_equal_function = argument->as<ASTFunction>();
 
-        if (ast_function == nullptr)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Text index arguments: '{}' is not a key-value pair", argument->formatForLogging());
+        result.emplace_back(MergeTreeIndexText::parseNamedArgumentFromAST(ast_equal_function));
 
-        if (ast_function->name != "equals" || ast_function->arguments->children.size() != 2)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot mix key-value pair and single argument as text index arguments");
-
-        if (ASTPtr preprocessor_tmp = MergeTreeIndexText::tryGetPreprocessorFromAST(ast_function))
-        {
+        if (ASTPtr preprocessor_tmp = MergeTreeIndexText::tryGetPreprocessorFromAST(ast_equal_function))
             preprocessor_expression = preprocessor_tmp;
-            continue;
-        }
-
-        result.emplace_back(MergeTreeIndexText::parseNamedArgumentFromAST(ast_function));
     }
 
     return {result, preprocessor_expression};
@@ -1265,6 +1287,28 @@ void MergeTreeIndexText::updateIndexDescriptionTextFromAST(
     if (preprocessor_expression)
         result.initExpressionInfo(preprocessor_expression, columns, context);
 
+}
+
+
+ASTPtr MergeTreeIndexText::parseExpression(const String & expression)
+{
+    if (expression.empty())
+        return nullptr;
+
+    const char * expression_begin = &*expression.begin();
+    const char * expression_end = &*expression.end();
+
+    Tokens tokens(expression_begin, expression_end);
+    IParser::Pos token_iterator(tokens, 1000, 1000000);
+
+    Expected expected;
+    ASTPtr res;
+
+    const bool parse_res = ParserExpression().parse(token_iterator, res, expected);
+    if (!parse_res)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Error parsing preprocessor expression");
+
+    return res;
 }
 
 
