@@ -339,7 +339,7 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     LOG_TEST(log, "Format header: {}", info.format_header.dumpStructure());
     LOG_TEST(log, "Source header: {}", info.source_header.dumpStructure());
     LOG_TEST(log, "Requested columns: {}", info.requested_columns.toString());
-    LOG_TEST(log, "Columns description: {}", info.columns_description.toString());
+    LOG_TEST(log, "Columns description: {}", info.columns_description.toString(true));
     return info;
 }
 
