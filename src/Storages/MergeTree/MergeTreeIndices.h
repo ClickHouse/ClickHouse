@@ -3,6 +3,8 @@
 
 #include <Storages/IndicesDescription.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
+#include <Storages/MergeTree/VectorSearchUtils.h>
 
 #include <memory>
 #include <string>
@@ -74,9 +76,6 @@ class IDataPartStorage;
 struct MergeTreeWriterSettings;
 struct SelectQueryInfo;
 
-class GinIndexStore;
-using GinIndexStorePtr = std::shared_ptr<GinIndexStore>;
-
 struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
@@ -86,28 +85,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-using MergeTreeIndexVersion = uint8_t;
-struct MergeTreeIndexFormat
-{
-    MergeTreeIndexVersion version;
-    const char* extension;
-
-    explicit operator bool() const { return version != 0; }
-};
-
-/// A vehicle which transports elements of the SELECT query to the vector similarity index.
-struct VectorSearchParameters
-{
-    /// Elements of the SELECT query
-    String column;
-    String distance_function;
-    size_t limit;
-    std::vector<Float64> reference_vector;
-
-    /// Other metadata
-    bool additional_filters_present; /// SELECT contains a WHERE or PREWHERE clause
-};
-
 /// Stores some info about a single block of data.
 struct IMergeTreeIndexGranule
 {
@@ -115,6 +92,10 @@ struct IMergeTreeIndexGranule
 
     /// Serialize always last version.
     virtual void serializeBinary(WriteBuffer & ostr) const = 0;
+
+    /// Serialize with multiple streams.
+    /// By analogy with ISerialization::serializeBinaryBulkWithMultipleStreams.
+    virtual void serializeBinaryWithMultipleStreams(MergeTreeIndexOutputStreams & streams) const;
 
     /// Version of the index to deserialize:
     ///
@@ -125,11 +106,15 @@ struct IMergeTreeIndexGranule
     /// and throws LOGICAL_ERROR in case of unsupported version.
     ///
     /// See also:
-    /// - IMergeTreeIndex::getSerializedFileExtension()
+    /// - IMergeTreeIndex::getSubstreams()
     /// - IMergeTreeIndex::getDeserializedFormat()
     /// - MergeTreeDataMergerMutator::collectFilesToSkip()
     /// - MergeTreeDataMergerMutator::collectFilesForRenames()
     virtual void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) = 0;
+
+    /// Deserialize with multiple streams.
+    /// By analogy with ISerialization::deserializeBinaryBulkWithMultipleStreams.
+    virtual void deserializeBinaryWithMultipleStreams(MergeTreeIndexInputStreams & streams, MergeTreeIndexDeserializationState & state);
 
     virtual bool empty() const = 0;
 
@@ -186,9 +171,10 @@ public:
     }
 
     /// Special method for vector similarity indexes:
-    /// Returns the row positions of the N nearest neighbors in the index granule
-    /// The returned row numbers are guaranteed to be sorted and unique.
-    virtual std::vector<UInt64> calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr /*granule*/) const
+    /// Returns the N nearest neighbors of a reference vector in the index granule.
+    /// The nearest neighbors are returned as row positions.
+    /// If VectorSearchParameters::return_distances = true, then the distances are returned as well.
+    virtual NearestNeighbours calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr /*granule*/) const
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "calculateApproximateNearestNeighbors is not implemented for non-vector-similarity indexes");
     }
@@ -292,20 +278,19 @@ struct IMergeTreeIndex
 
     virtual bool isMergeable() const { return false; }
 
-    /// Returns extension for serialization.
+    /// Returns substreams for serialization.
     /// Reimplement if you want new index format.
     ///
-    /// NOTE: In case getSerializedFileExtension() is reimplemented,
+    /// NOTE: In case getSubstreams() is reimplemented,
     /// getDeserializedFormat() should be reimplemented too,
-    /// and check all previous extensions too
+    /// and check all previous extensions for substreams too
     /// (to avoid breaking backward compatibility).
-    virtual const char* getSerializedFileExtension() const { return ".idx"; }
+    virtual MergeTreeIndexSubstreams getSubstreams() const { return {{MergeTreeIndexSubstream::Type::Regular, "", ".idx"}}; }
 
     /// Returns extension for deserialization.
     ///
     /// Return pair<extension, version>.
-    virtual MergeTreeIndexFormat
-    getDeserializedFormat(const IDataPartStorage & data_part_storage, const std::string & relative_path_prefix) const;
+    virtual MergeTreeIndexFormat getDeserializedFormat(const IDataPartStorage & data_part_storage, const std::string & relative_path_prefix) const;
 
     virtual MergeTreeIndexGranulePtr createIndexGranule() const = 0;
 
@@ -321,11 +306,6 @@ struct IMergeTreeIndex
     }
 
     virtual MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const = 0;
-
-    virtual MergeTreeIndexAggregatorPtr createIndexAggregatorForPart(const GinIndexStorePtr & /*store*/, const MergeTreeWriterSettings & settings) const
-    {
-        return createIndexAggregator(settings);
-    }
 
     virtual MergeTreeIndexConditionPtr createIndexCondition(
         const ActionsDAG::Node * predicate, ContextPtr context) const = 0;
@@ -356,6 +336,18 @@ struct IMergeTreeIndex
 using MergeTreeIndexPtr = std::shared_ptr<const IMergeTreeIndex>;
 using MergeTreeIndices = std::vector<MergeTreeIndexPtr>;
 
+struct MergeTreeIndexWithCondition
+{
+    MergeTreeIndexPtr index;
+    MergeTreeIndexConditionPtr condition;
+
+    MergeTreeIndexWithCondition(MergeTreeIndexPtr index_, MergeTreeIndexConditionPtr condition_)
+        : index(std::move(index_)), condition(std::move(condition_))
+    {
+    }
+
+    MergeTreeIndexWithCondition() = default;
+};
 
 class MergeTreeIndexFactory : private boost::noncopyable
 {
@@ -407,5 +399,8 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool attach)
 
 MergeTreeIndexPtr ginIndexCreator(const IndexDescription & index);
 void ginIndexValidator(const IndexDescription & index, bool attach);
+
+MergeTreeIndexPtr textIndexCreator(const IndexDescription & index);
+void textIndexValidator(const IndexDescription & index, bool attach);
 
 }

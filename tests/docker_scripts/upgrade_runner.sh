@@ -25,9 +25,13 @@ azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --debug /azurite_log &
 cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_minio stateless || ( echo "Failed to start minio" && exit 1 ) # to have a proper environment
 
 echo "Get previous release tag"
-PACKAGES_DIR=/repo/tests/ci/tmp/packages
+PACKAGES_DIR=/repo/ci/tmp
 # shellcheck disable=SC2016
 previous_release_tag=$(dpkg-deb --showformat='${Version}' --show $PACKAGES_DIR/clickhouse-client*.deb | get_previous_release_tag)
+if [ $? -ne 0 ]; then
+    echo "Failed to get previous release tag"
+    exit 1
+fi
 echo $previous_release_tag
 
 echo "Clone previous release repository"
@@ -97,6 +101,8 @@ mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/c
 # Start server from previous release
 # Let's enable S3 storage by default
 export USE_S3_STORAGE_FOR_MERGE_TREE=1
+export USE_ENCRYPTED_STORAGE=$((RANDOM % 2))
+
 # Previous version may not be ready for fault injections
 export ZOOKEEPER_FAULT_INJECTION=0
 configure

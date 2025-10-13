@@ -168,6 +168,9 @@ public:
 
     String getName() const override { return "ProjectionDataSink"; }
 
+    /// Accumulated data can be empty if DELETE query deleted all the rows from block
+    bool isAccumulatedSomething() const { return accumulated_chunk && accumulated_chunk.getNumRows() > 0; }
+
     Columns detachAccumulatedColumns() { return accumulated_chunk.detachColumns(); }
 
 protected:
@@ -451,7 +454,7 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context, 
 
         select_row_exists->setExpression(
             ASTSelectQuery::Expression::WHERE,
-            makeASTFunction("equals", std::make_shared<ASTIdentifier>(RowExistsColumn::name), std::make_shared<ASTLiteral>(1)));
+            makeASTOperator("equals", std::make_shared<ASTIdentifier>(RowExistsColumn::name), std::make_shared<ASTLiteral>(1)));
     }
 
     /// Create "_part_offset" column when needed for projection with parent part offsets
@@ -500,9 +503,10 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context, 
     pipeline.complete(sink);
     CompletedPipelineExecutor executor(pipeline);
     executor.execute();
-    auto projection_block = sink->getPort().getHeader().cloneWithColumns(sink->detachAccumulatedColumns());
-    chassert(projection_block.rows() > 0);
 
+    /// Always return the proper header, even if nothing was accumulated, in case the caller needs to use it
+    Block projection_block = sink->isAccumulatedSomething() ? sink->getPort().getHeader().cloneWithColumns(sink->detachAccumulatedColumns())
+                                                            : sink->getPort().getHeader().cloneEmpty();
     /// Rename parent _part_offset to _parent_part_offset column
     if (with_parent_part_offset)
     {

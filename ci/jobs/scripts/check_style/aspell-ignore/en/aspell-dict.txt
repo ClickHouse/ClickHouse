@@ -1,4 +1,4 @@
-personal_ws-1.1 en 3285 
+personal_ws-1.1 en 3452
 AArch
 ACLs
 ALTERs
@@ -27,12 +27,13 @@ AggregatorThreadsActive
 Akka
 AlertManager
 Alexey
-AnyEvent
 Anthropic
+AnyEvent
 AppleClang
 Approximative
 ArrayJoin
 ArrowCompression
+ArrowFlight
 ArrowStream
 AsyncInsertCacheSize
 AsynchronousHeavyMetricsCalculationTimeSpent
@@ -234,10 +235,11 @@ DESC
 DIEs
 DOGEFI
 Damerau
-Databricks
 DataGrip
+DataLakeCatalog
 DataLens
 DataPacket
+DataPup
 DataTypes
 DataTypesMatching
 DatabaseCatalog
@@ -248,7 +250,8 @@ DatabaseOnDiskThreads
 DatabaseOnDiskThreadsActive
 DatabaseOrdinaryThreads
 DatabaseOrdinaryThreadsActive
-DataLakeCatalog
+DatabaseReplicated
+Databricks
 DateTime
 DateTimeInputFormat
 DateTimeOutputFormat
@@ -278,6 +281,7 @@ DiskSpaceReservedForMerge
 DiskTotal
 DiskUnreserved
 DiskUsed
+DistanceTransposed
 DistributedCacheLogMode
 DistributedCachePoolBehaviourOnLimit
 DistributedDDLOutputMode
@@ -311,6 +315,7 @@ ExactEdgeLengthM
 ExactEdgeLengthRads
 Excel's
 ExecutablePool
+ExecutingGraph
 ExperimentalBadge
 ExtType
 ExternalDistributed
@@ -438,6 +443,7 @@ InJodaSyntax
 InJodaSyntaxOrNull
 InJodaSyntaxOrZero
 Incrementing
+IndexType
 IndexesAreNeighbors
 InfluxDB
 Instana
@@ -491,15 +497,26 @@ JSONEachRow
 JSONEachRowWithProgress
 JSONExtract
 JSONExtractArrayRaw
+JSONExtractArrayRawCaseInsensitive
 JSONExtractBool
+JSONExtractBoolCaseInsensitive
+JSONExtractCaseInsensitive
 JSONExtractFloat
+JSONExtractFloatCaseInsensitive
 JSONExtractInt
+JSONExtractIntCaseInsensitive
 JSONExtractKeys
 JSONExtractKeysAndValues
+JSONExtractKeysAndValuesCaseInsensitive
 JSONExtractKeysAndValuesRaw
+JSONExtractKeysAndValuesRawCaseInsensitive
+JSONExtractKeysCaseInsensitive
 JSONExtractRaw
+JSONExtractRawCaseInsensitive
 JSONExtractString
+JSONExtractStringCaseInsensitive
 JSONExtractUInt
+JSONExtractUIntCaseInsensitive
 JSONHas
 JSONLength
 JSONLines
@@ -518,6 +535,7 @@ JavaHash
 Jemalloc
 Jepsen
 JetBrains
+JetStream
 Jitter
 Joda
 JoinAlgorithm
@@ -548,11 +566,14 @@ Kolmogorov
 Konstantin
 Korzeniewski
 Kubernetes
+Kusto
 LDAP
 LGPL
 LIMITs
 LINEITEM
 LLDB
+LLM
+LLMs
 LLVM's
 LOCALTIME
 LOCALTIMESTAMP
@@ -586,7 +607,6 @@ LogsLevel
 Logstash
 LookML
 LoongArch
-Lossy
 LowCardinality
 LpDistance
 LpNorm
@@ -625,7 +645,6 @@ MaxThreads
 Mbps
 McNeal
 Memcheck
-memcheck
 MemoryCode
 MemoryDataAndStack
 MemoryResident
@@ -652,6 +671,7 @@ MergeTreePartsLoaderThreads
 MergeTreePartsLoaderThreadsActive
 MergeTreeReadTaskRequestsSent
 MergeTreeSettings
+MergerMutator
 MessagePack
 Metastore
 MetroHash
@@ -669,6 +689,7 @@ MsgPack
 MsgPackUUIDRepresentation
 MultiLineString
 MultiPolygon
+MultiRead
 Multiline
 Multiqueries
 Multithreading
@@ -710,6 +731,7 @@ NetworkSendBytes
 NetworkSendDrop
 NetworkSendErrors
 NetworkSendPackets
+NewSetting
 Noaa
 NodeJs
 NonMonotonic
@@ -728,11 +750,13 @@ NumericIndexedVectors
 OAuth
 ODBCDriver
 OFNS
-OKLab
 OKLCH
+OKLab
 OLAP
 OLTP
 ORCCompression
+OSCPUVirtualTimeMicroseconds
+OSCPUWaitMicroseconds
 OSContextSwitches
 OSGuestNiceTime
 OSGuestNiceTimeCPU
@@ -787,14 +811,15 @@ Observability
 Octonica
 Ok
 OnTime
+OpenAI
 OpenCelliD
 OpenFileForRead
 OpenFileForWrite
+OpenRouter
 OpenSSL
 OpenSUSE
 OpenSky
 OpenStack
-OpenAI
 OpenTelemetry
 OrDefault
 OrNull
@@ -808,6 +833,7 @@ PRCP
 PREWHERE
 PROCESSLIST
 PROXYv
+PRQL
 PSUN
 PagerDuty
 ParallelFormattingOutputFormatThreads
@@ -843,6 +869,7 @@ PointDistRads
 PostHistory
 PostLink
 PostLinks
+Postfiltering
 PostgreSQLConnection
 PostgreSQLThreads
 PostgreSQLWire
@@ -883,6 +910,7 @@ Punycode
 PyArrow
 PyCharm
 QATlib
+QBit
 QEMU
 QTCreator
 Quantile
@@ -892,6 +920,7 @@ QueryCacheHits
 QueryCacheMisses
 QueryConditionCacheHits
 QueryConditionCacheMisses
+QueryPlan
 QueryPreempted
 QueryResultCacheNondeterministicFunctionHandling
 QueryResultCacheSystemTableHandling
@@ -955,6 +984,7 @@ ReplicatedSend
 ReplicatedSummingMergeTree
 ReplicatedVersionedCollapsingMergeTree
 Resample
+Rescoring
 RestartReplicaThreads
 RestartReplicaThreadsActive
 RestoreThreads
@@ -1014,6 +1044,7 @@ ShareAlike
 ShareSet
 SharedJoin
 SharedMergeTree
+SharedSet
 ShortCircuitFunctionEvaluation
 Shortkeys
 Signup
@@ -1036,6 +1067,7 @@ StartupSystemTables
 StartupSystemTablesThreads
 StartupSystemTablesThreadsActive
 Stateful
+StochasticSimple
 StorageBufferBytes
 StorageBufferRows
 StorageDistributed
@@ -1046,6 +1078,7 @@ StorageHiveThreads
 StorageHiveThreadsActive
 StorageODBC
 StorageS
+StorageSnapshot
 StringToNum
 StringToNumOrDefault
 StringToNumOrNull
@@ -1119,8 +1152,10 @@ ThreadPoolRemoteFSReaderThreads
 ThreadPoolRemoteFSReaderThreadsActive
 ThreadsActive
 ThreadsInOvercommitTracker
+Tiering
 TimeSeries
 TimescaleDB's
+TimestampType
 Timeunit
 TinyLog
 Tkachenko
@@ -1191,8 +1226,10 @@ VARCHAR
 VIEWs
 Vadim
 Valgrind
+ValueType
 Vectorized
 VersionBadge
+VersionHistory
 VersionInteger
 VersionedCollapsingMergeTree
 VideoContainer
@@ -1223,6 +1260,8 @@ XORs
 Xeon
 YAML
 YAMLRegExpTree
+YTsaurus
+YTsaurus
 YYYY
 YYYYMMDD
 YYYYMMDDToDate
@@ -1247,6 +1286,7 @@ acos
 acosh
 activecube
 activerecord
+adaptively
 addDate
 addDays
 addHours
@@ -1265,6 +1305,7 @@ addr
 addressToLine
 addressToLineWithInlines
 addressToSymbol
+adpatively
 adviced
 agg
 aggThrow
@@ -1275,12 +1316,15 @@ aggretate
 aggthrow
 aiochclient
 alloc
+allocatio
 allocator
 allowlist
 alphaTokens
 amplab
+ampling
 analysisOfVariance
 analytics
+anlyzer
 annindexes
 anonymize
 anonymized
@@ -1372,6 +1416,7 @@ arrayUniq
 arrayWithConstant
 arrayZip
 arrayZipUnaligned
+arrowFlight
 ascii
 asin
 asinh
@@ -1393,6 +1438,7 @@ autogen
 autogenerate
 autogenerated
 autogeneration
+autoincrement
 autoscaling
 autostart
 avgWeighted
@@ -1404,12 +1450,15 @@ azureBlobStorage
 azureBlobStorageCluster
 backend
 backoff
+backoffs
+backported
 backtick
 backticks
 backupview
 balancer
 basename
 bcrypt
+bcrypt's
 bech
 benchmarked
 benchmarking
@@ -1454,6 +1503,7 @@ bitmask
 bitmaskToArray
 bitmaskToList
 bitov
+bitwise
 blake
 blobpath
 blockNumber
@@ -1565,6 +1615,7 @@ codespell
 collapsingmergetree
 colorOKLCHToSRGB
 colorSRGBToOKLCH
+colum
 combinator
 combinators
 compareSubstrings
@@ -1578,13 +1629,18 @@ concatWithSeparatorAssumeInjective
 cond
 conf
 config
+config's
 configs
 conformant
 congruential
 conjuctive
 connectionId
 const
+constexpr
+consumptio
 contrib
+conv
+conversio
 convertCharset
 cooldown
 coroutines
@@ -1595,6 +1651,7 @@ corrstable
 cors
 cosineDistance
 countDigits
+countDistinctIf
 countEqual
 countIf
 countMatches
@@ -1676,6 +1733,8 @@ dateName
 dateTime
 dateTimeToSnowflake
 dateTimeToSnowflakeID
+dateTimeToUUIDv
+dateTrunc
 datetime
 datetimes
 dayofyear
@@ -1810,6 +1869,8 @@ estimateCompressionRatio
 etag
 evalMLMethod
 exFAT
+exceptio
+executio
 expiryMsec
 exponentialMovingAverage
 exponentialTimeDecayedAvg
@@ -1833,6 +1894,7 @@ extractURLParameter
 extractURLParameterNames
 extractURLParameters
 failover
+fallbacks
 farmFingerprint
 farmHash
 fastops
@@ -1852,6 +1914,7 @@ financialInternalRateOfReturn
 financialInternalRateOfReturnExtended
 financialNetPresentValue
 financialNetPresentValueExtended
+finiteness
 fips
 firstLine
 firstSignficantSubdomain
@@ -1893,6 +1956,7 @@ fromUnixTimestamp
 fromUnixTimestampInJodaSyntax
 fsync
 func
+functio
 fuzzBits
 fuzzJSON
 fuzzQuery
@@ -1902,8 +1966,10 @@ gRPC
 gaugehistogram
 gccMurmurHash
 gcem
+gdb's
 generateRandom
 generateRandomStructure
+generateSerialID
 generateSeries
 generateSnowflakeID
 generateULID
@@ -1922,7 +1988,10 @@ geohashes
 geohashesInBox
 geoip
 geolocation
+geometadata
+geoparquet
 geospatial
+geotoh
 getClientHTTPHeader
 getMacro
 getMaxTableNameLengthForDatabase
@@ -1948,6 +2017,7 @@ glushkovds
 golang
 googletest
 grafana
+grapheme
 graphitemergetree
 graphouse
 graphql
@@ -2000,14 +2070,18 @@ gtid
 gunzip
 gzip
 gzipped
+hackernews
 hadoop
 halfMD
 halfday
 hardlink
 hardlinked
+hardlinking
 hardlinks
 hasAll
+hasAllTokens
 hasAny
+hasAnyTokens
 hasColumnInTable
 hasSubsequence
 hasSubsequenceCaseInsensitive
@@ -2045,6 +2119,7 @@ hsts
 html
 http
 https
+hubbed
 hudi
 hudiCluster
 hyperparameter
@@ -2069,6 +2144,7 @@ indexOf
 indexOfAssumeSorted
 inequal
 infi
+infiniteness
 inflight
 infty
 initcap
@@ -2079,6 +2155,7 @@ initializeAggregation
 injective
 innogames
 inodes
+insertio
 instantiation
 instantiations
 intDiv
@@ -2106,6 +2183,7 @@ isNotDistinctFrom
 isNotNull
 isNull
 isNullable
+isValidASCII
 isValidJSON
 isValidUTF
 isZeroOrNull
@@ -2170,6 +2248,7 @@ kurtSamp
 kurtosis
 kurtpop
 kurtsamp
+kusto
 lagInFrame
 laion
 lang
@@ -2230,9 +2309,9 @@ logTrace
 logagent
 loghouse
 london
+lookahead
 lookups
 loongarch
-lossy
 lowCardinalityIndices
 lowCardinalityKeys
 lowcardinality
@@ -2273,7 +2352,9 @@ mapValues
 mappedfile
 mariadb
 matcher
+materiaized
 materializedview
+materizlied
 maxIntersections
 maxIntersectionsPosition
 maxMap
@@ -2285,6 +2366,8 @@ mdadm
 meanZTest
 meanztest
 mebibytes
+memcheck
+memoization
 memtable
 memtables
 mergeTreeIndex
@@ -2361,15 +2444,18 @@ multiline
 multilinestring
 multiplyDecimal
 multipolygon
+multiquery
 multiread
 multisearchany
 multisets
 multithread
+multithreaded
 multithreading
 multiword
 munmap
 murmurHash
 murmurhash
+musl
 musqldump
 mutex
 mydb
@@ -2468,6 +2554,7 @@ observability
 odbc
 ok
 omclickhouse
+oneof
 onstraints
 ontime
 onwards
@@ -2477,7 +2564,9 @@ openldap
 opensky
 openssl
 opentelemetry
+optimizatio
 outfile
+outstreams
 overcommit
 overcommitted
 overfitting
@@ -2537,10 +2626,10 @@ polygonPerimeterSpherical
 polygonsDistanceCartesian
 polygonsDistanceSpherical
 polygonsEqualsCartesian
-polygonsIntersectionCartesian
-polygonsIntersectionSpherical
 polygonsIntersectCartesian
 polygonsIntersectSpherical
+polygonsIntersectionCartesian
+polygonsIntersectionSpherical
 polygonsSymDifferenceCartesian
 polygonsSymDifferenceSpherical
 polygonsUnionCartesian
@@ -2566,6 +2655,7 @@ preallocate
 prebuild
 prebuilt
 preconfigured
+pred
 preemptable
 preferServerCiphers
 prefetch
@@ -2599,6 +2689,8 @@ prettyspace
 prettyspacemonoblock
 prettyspacenoescapes
 prettyspacenoescapesmonoblock
+prewarm
+prewarmed
 prewhere
 printf
 privateKeyFile
@@ -2606,8 +2698,11 @@ privateKeyPassphraseHandler
 prlimit
 procfs
 profiler
+projectio
 proleptic
 prometheus
+prometheusQuery
+prometheusQueryRange
 proportionsZTest
 proto
 protobuf
@@ -2616,6 +2711,7 @@ protobufsingle
 protocol
 protos
 proxied
+prql
 pseudorandom
 pseudorandomize
 pseudoterminal
@@ -2626,6 +2722,7 @@ punycodeEncode
 pushdown
 pwrite
 py
+qbit
 qryn
 quantile
 quantileBFloat
@@ -2640,6 +2737,7 @@ quantileExactWeighted
 quantileExactWeightedInterpolated
 quantileGK
 quantileInterpolatedWeighted
+quantilePrometheusHistogram
 quantileTDigest
 quantileTDigestWeighted
 quantileTiming
@@ -2659,6 +2757,7 @@ quantiletdigest
 quantiletdigestweighted
 quantiletiming
 quantiletimingweighted
+quantizations
 quantized
 quartile
 queryID
@@ -2709,6 +2808,7 @@ recompressed
 recompressing
 recompression
 reconnection
+reconnections
 recurse
 redash
 reddit
@@ -2756,6 +2856,7 @@ representable
 requestor
 requireTLSv
 rerange
+rescoring
 resharding
 reshards
 resolvers
@@ -2764,6 +2865,7 @@ retentions
 rethrow
 retransmit
 retriable
+retryable
 reverseUTF
 rewritable
 rightPad
@@ -2802,13 +2904,13 @@ rustc
 rustup
 rw
 sRGB
+sapce
 sasl
 satisfiable
 scala
 sccache
 schemas
-searchAny
-searchAll
+sectio
 seekable
 seektable
 sequenceCount
@@ -2861,6 +2963,7 @@ skewpop
 skewsamp
 skippingerrors
 sleepEachRow
+slowpath
 snowflakeIDToDateTime
 snowflakeToDateTime
 socketcache
@@ -2935,7 +3038,9 @@ structs
 structureToCapnProtoSchema
 structureToProtobufSchema
 studentTTest
+studentTTestOneSample
 studentttest
+studentttestonesample
 subBitmap
 subDate
 subarray
@@ -2965,6 +3070,7 @@ subranges
 subreddits
 subseconds
 subsequence
+substream
 substreams
 substring
 substringIndex
@@ -3039,20 +3145,31 @@ threadpool
 throwIf
 throwif
 timeDiff
+timeSeries
+timeSeriesChangesToGrid
 timeSeriesData
 timeSeriesDeltaToGrid
-timeSeriesMetrics
+timeSeriesDerivToGrid
+timeSeriesFromGrid
+timeSeriesGroupArray
 timeSeriesInstantDeltaToGrid
 timeSeriesInstantRateToGrid
+timeSeriesLastToGrid
 timeSeriesLastTwoSamples
+timeSeriesMetrics
+timeSeriesPredictLinearToGrid
+timeSeriesRange
 timeSeriesRateToGrid
 timeSeriesResampleToGridWithStaleness
+timeSeriesResetsToGrid
+timeSeriesSelector
 timeSeriesTags
 timeSlot
 timeSlots
 timeZone
 timeZoneOf
 timeZoneOffset
+timeseries
 timezones
 tinylog
 tmp
@@ -3151,11 +3268,15 @@ toYYYYMMDD
 toYYYYMMDDhhmmss
 toYear
 toYearWeek
+togeo
 tokenbf
 tokenization
 tokenize
 tokenized
 tokenizer
+tokenizers
+tokenizes
+tokenizing
 toml
 toolchain
 toolset
@@ -3167,6 +3288,7 @@ topk
 topkweighted
 tpcds
 tpch
+transactio
 transactionID
 transactionLatestSnapshot
 transactionOldestSnapshot
@@ -3258,9 +3380,12 @@ unshuffled
 untracked
 untrusted
 untuple
+updateNode
 uploader
 uploaders
 upperUTF
+upsert
+upserts
 uptime
 uptrace
 uring
@@ -3346,6 +3471,7 @@ xz
 yaml
 yandex
 youtube
+ytsaurus
 zLib
 zLinux
 zabbix

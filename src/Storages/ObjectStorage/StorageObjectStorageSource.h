@@ -8,9 +8,8 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
-#include <Formats/FormatParserGroup.h>
-
-
+#include <Formats/FormatParserSharedResources.h>
+#include <Formats/FormatFilterInfo.h>
 namespace DB
 {
 
@@ -31,12 +30,14 @@ public:
         String name_,
         ObjectStoragePtr object_storage_,
         StorageObjectStorageConfigurationPtr configuration,
+        StorageSnapshotPtr storage_snapshot_,
         const ReadFromFormatInfo & info,
         const std::optional<FormatSettings> & format_settings_,
         ContextPtr context_,
         UInt64 max_block_size_,
         std::shared_ptr<IObjectIterator> file_iterator_,
-        FormatParserGroupPtr parser_group_,
+        FormatParserSharedResourcesPtr parser_shared_resources_,
+        FormatFilterInfoPtr format_filter_info_,
         bool need_only_count_);
 
     ~StorageObjectStorageSource() override;
@@ -45,17 +46,19 @@ public:
 
     Chunk generate() override;
 
-    void onFinish() override { parser_group->finishStream(); }
+    void onFinish() override { parser_shared_resources->finishStream(); }
 
     static std::shared_ptr<IObjectIterator> createFileIterator(
         StorageObjectStorageConfigurationPtr configuration,
         const StorageObjectStorageQuerySettings & query_settings,
         ObjectStoragePtr object_storage,
+        StorageMetadataPtr storage_metadata,
         bool distributed_processing,
         const ContextPtr & local_context,
         const ActionsDAG::Node * predicate,
         const ActionsDAG * filter_actions_dag,
         const NamesAndTypesList & virtual_columns,
+        const NamesAndTypesList & hive_columns,
         ObjectInfos * read_keys,
         std::function<void(FileProgress)> file_progress_callback = {},
         bool ignore_archive_globs = false,
@@ -66,22 +69,18 @@ public:
         const ObjectInfo & object_info,
         bool include_connection_info = true);
 
-    static std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
-        ObjectInfo & object_info,
-        const ObjectStoragePtr & object_storage,
-        const ContextPtr & context_,
-        const LoggerPtr & log,
-        const std::optional<ReadSettings> & read_settings = std::nullopt);
-
 protected:
     const String name;
     ObjectStoragePtr object_storage;
     const StorageObjectStorageConfigurationPtr configuration;
+    StorageSnapshotPtr storage_snapshot;
     const ContextPtr read_context;
     const std::optional<FormatSettings> format_settings;
     const UInt64 max_block_size;
     const bool need_only_count;
-    FormatParserGroupPtr parser_group;
+    FormatParserSharedResourcesPtr parser_shared_resources;
+    FormatFilterInfoPtr format_filter_info;
+
     ReadFromFormatInfo read_from_format_info;
     const std::shared_ptr<ThreadPool> create_reader_pool;
 
@@ -136,7 +135,8 @@ protected:
         SchemaCache * schema_cache,
         const LoggerPtr & log,
         size_t max_block_size,
-        FormatParserGroupPtr parser_group,
+        FormatParserSharedResourcesPtr parser_shared_resources,
+        FormatFilterInfoPtr format_filter_info,
         bool need_only_count);
 
     ReaderHolder createReader();
@@ -183,6 +183,7 @@ public:
         StorageObjectStorageConfigurationPtr configuration_,
         const ActionsDAG::Node * predicate,
         const NamesAndTypesList & virtual_columns_,
+        const NamesAndTypesList & hive_columns_,
         ContextPtr context_,
         ObjectInfos * read_keys_,
         size_t list_object_keys_size,
@@ -203,6 +204,7 @@ private:
     const ObjectStoragePtr object_storage;
     const StorageObjectStorageConfigurationPtr configuration;
     const NamesAndTypesList virtual_columns;
+    const NamesAndTypesList hive_columns;
     const bool throw_on_zero_files_match;
     const LoggerPtr log;
 

@@ -17,7 +17,7 @@ class StorageObjectStorageStableTaskDistributor
 public:
     StorageObjectStorageStableTaskDistributor(
         std::shared_ptr<IObjectIterator> iterator_,
-        size_t number_of_replicas_,
+        std::vector<std::string> && ids_of_nodes_,
         bool send_over_whole_archive_);
 
     ObjectInfoPtr getNextTask(size_t number_of_current_replica);
@@ -33,6 +33,8 @@ private:
 
     std::vector<std::vector<ObjectInfoPtr>> connection_to_files;
     std::unordered_map<std::string, ObjectInfoPtr> unprocessed_files;
+
+    std::vector<std::string> ids_of_nodes;
 
     std::mutex mutex;
     bool iterator_exhausted = false;

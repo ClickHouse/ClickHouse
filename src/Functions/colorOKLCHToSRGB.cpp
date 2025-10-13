@@ -58,11 +58,11 @@ public:
         const auto * tuple_type = checkAndGetDataType<DataTypeTuple>(first_arg);
         const auto & tuple_inner_types  = tuple_type->getElements();
 
-        if (tuple_inner_types.size() != channels)
+        if (tuple_inner_types.size() != ColorConversion::channels)
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "First argument of function {} must be a tuple of size {}, a tuple of size {} was provided",
-                getName(), channels, tuple_inner_types.size());
+                getName(), ColorConversion::channels, tuple_inner_types.size());
 
         for (const auto & tuple_inner_type : tuple_inner_types)
         {
@@ -80,24 +80,28 @@ public:
                     getName());
 
         auto float64_type = std::make_shared<DataTypeFloat64>();
-        return std::make_shared<DataTypeTuple>(DataTypes(channels, float64_type));
+        return std::make_shared<DataTypeTuple>(DataTypes(ColorConversion::channels, float64_type));
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto float64_type = std::make_shared<DataTypeFloat64>();
-        auto tuple_f64_type = std::make_shared<DataTypeTuple>(DataTypes(channels, float64_type));
+        auto tuple_f64_type = std::make_shared<DataTypeTuple>(DataTypes(ColorConversion::channels, float64_type));
 
         auto tuple_f64_arg = castColumn(arguments[0], tuple_f64_type);
         auto rgb_cols = getTupleElements(*tuple_f64_arg);
 
         ColumnPtr gamma;
         if (arguments.size() == 2)
-            gamma = castColumn(arguments[1], float64_type);
+            gamma = castColumn(arguments[1], float64_type)->convertToFullColumnIfConst();
 
-        const auto & lightness_data = assert_cast<const ColumnFloat64 &>(*rgb_cols[0]).getData();
-        const auto & chroma_data = assert_cast<const ColumnFloat64 &>(*rgb_cols[1]).getData();
-        const auto & hue_data = assert_cast<const ColumnFloat64 &>(*rgb_cols[2]).getData();
+        ColumnPtr lightness_column = rgb_cols[0]->convertToFullColumnIfConst();
+        ColumnPtr chroma_column = rgb_cols[1]->convertToFullColumnIfConst();
+        ColumnPtr hue_column = rgb_cols[2]->convertToFullColumnIfConst();
+
+        const auto & lightness_data = assert_cast<const ColumnFloat64 &>(*lightness_column).getData();
+        const auto & chroma_data = assert_cast<const ColumnFloat64 &>(*chroma_column).getData();
+        const auto & hue_data = assert_cast<const ColumnFloat64 &>(*hue_column).getData();
         const auto * gamma_data = gamma ? &assert_cast<const ColumnFloat64 &>(*gamma).getData() : nullptr;
 
         auto col_red = ColumnFloat64::create();
@@ -114,9 +118,9 @@ public:
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            Color lch_data{lightness_data[row], chroma_data[row], hue_data[row]};
-            Float64 gamma_cur = gamma_data ? (*gamma_data)[row] : default_gamma;
-            Color res = convertOklchToSrgb(lch_data, gamma_cur);
+            ColorConversion::Color lch_data{lightness_data[row], chroma_data[row], hue_data[row]};
+            Float64 gamma_cur = gamma_data ? (*gamma_data)[row] : ColorConversion::default_gamma;
+            ColorConversion::Color res = convertOklchToSrgb(lch_data, gamma_cur);
             red_data.push_back(res[0]);
             green_data.push_back(res[1]);
             blue_data.push_back(res[2]);
@@ -127,36 +131,36 @@ public:
 
 private:
     /// OKLCH -> sRGB. Follows the step-by-step pipeline described in Ottosson’s article. See ColorConversion.h
-    Color convertOklchToSrgb(const Color & oklch, Float64 gamma) const
+    ColorConversion::Color convertOklchToSrgb(const ColorConversion::Color & oklch, Float64 gamma) const
     {
         Float64 chroma = oklch[1];
-        Float64 hue_rad = oklch[2] * deg2rad;
+        Float64 hue_rad = oklch[2] * ColorConversion::deg2rad;
 
-        Color oklab = oklch;
+        ColorConversion::Color oklab = oklch;
 
         oklab[1] = chroma * std::cos(hue_rad);
         oklab[2] = chroma * std::sin(hue_rad);
 
-        Color lms{};
-        for (size_t i = 0; i < channels; ++i)
+        ColorConversion::Color lms{};
+        for (size_t i = 0; i < ColorConversion::channels; ++i)
         {
-            for (size_t channel = 0; channel < channels; ++channel)
-                lms[i] = std::fma(oklab[channel], oklab_to_lms_base[(3 * i) + channel], lms[i]);
+            for (size_t channel = 0; channel < ColorConversion::channels; ++channel)
+                lms[i] = std::fma(oklab[channel], ColorConversion::oklab_to_lms_base[(3 * i) + channel], lms[i]);
             lms[i] = lms[i] * lms[i] * lms[i];
         }
 
-        Color rgb{};
-        for (size_t i = 0; i < channels; ++i)
+        ColorConversion::Color rgb{};
+        for (size_t i = 0; i < ColorConversion::channels; ++i)
         {
-            for (size_t channel = 0; channel < channels; ++channel)
-                rgb[i] = std::fma(lms[channel], lms_to_linear_base[(3 * i) + channel], rgb[i]);
+            for (size_t channel = 0; channel < ColorConversion::channels; ++channel)
+                rgb[i] = std::fma(lms[channel], ColorConversion::lms_to_linear_base[(3 * i) + channel], rgb[i]);
         }
 
         if (gamma == 0)
-            gamma = gamma_fallback;
+            gamma = ColorConversion::gamma_fallback;
 
         Float64 power = 1 / gamma;
-        for (size_t i = 0; i < channels; ++i)
+        for (size_t i = 0; i < ColorConversion::channels; ++i)
         {
             rgb[i] = std::clamp(rgb[i], 0.0, 1.0);
             rgb[i] = std::pow(rgb[i], power) * 255.0;
@@ -169,18 +173,54 @@ private:
 
 REGISTER_FUNCTION(FunctionColorOKLCHToSRGB)
 {
-    const FunctionDocumentation description = {
-        .description=R"(Converts color from OKLCH perceptual color space to sRGB color space.
-Takes an optional parameter gamma, that is defaulted at 2.2 in case it is not provided. Dual of colorSRGBToOKLCH)",
-        .arguments={
-            {"OKLCH_tuple", R"(A 3-element tuple of numeric values representing OKLCH coordinates: L (lightness in [0...1]),
-C (chroma >= 0), and H (hue in degrees [0...360]))"},
-            {"gamma", "Optional gamma exponent for sRGB transfer function. Defaults to 2.2 if omitted."},
-        },
-        .returned_value{"Returns a 3-element tuple of sRGB values", {"Tuple(Float64, Float64, Float64)"}},
-        .introduced_in = {25, 7},
-        .category = FunctionDocumentation::Category::Other
+    FunctionDocumentation::Description description = R"(
+Converts a colour from the **OKLCH** perceptual colour space to the familiar **sRGB** colour space.
+
+If `L` is outside the range `[0...1]`, `C` is negative, or `H` is outside the range `[0...360]`, the result is implementation-defined.
+
+:::note
+**OKLCH** is a cylindrical version of the OKLab colour space.
+It's three coordinates are `L` (the lightness in the range `[0...1]`), `C` (chroma `>= 0`) and `H` (hue in degrees  from `[0...360]`)**.
+OKLab/OKLCH is designed to be perceptually uniform while remaining cheap to compute.
+:::
+
+The conversion is the inverse of [`colorSRGBToOKLCH`](#colorSRGBToOKLCH):
+
+1) OKLCH to OKLab.
+2) OKLab to Linear sRGB
+3) Linear sRGB to sRGB
+
+The second argument gamma is used at the last stage.
+
+For references of colors in OKLCH space, and how they correspond to sRGB colors please see [https://oklch.com/](https://oklch.com/).
+    )";
+    FunctionDocumentation::Syntax syntax = "colorOKLCHToSRGB(tuple [, gamma])";
+    FunctionDocumentation::Arguments arguments = {
+        {"tuple", "A tuple of three numeric values `L`, `C`, `H`, where `L` is in the range `[0...1]`, `C >= 0` and `H` is in the range `[0...360]`.", {"Tuple(Float64, Float64, Float64)"}},
+        {"gamma", "Optional. The exponent that is used to transform linear sRGB back to sRGB by applying `(x ^ (1 / gamma)) * 255` for each channel `x`. Defaults to `2.2`.", {"Float64"}}
     };
-    factory.registerFunction<FunctionColorOKLCHToSRGB>(description);
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a tuple (R, G, B) representing sRGB color values.", {"Tuple(Float64, Float64, Float64)"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Convert OKLCH to sRGB",
+        R"(
+SELECT colorOKLCHToSRGB((0.4466, 0.0991, 45.44), 2.2) AS rgb
+WITH colorOKLCHToSRGB((0.7, 0.1, 54)) as t SELECT tuple(toUInt8(t.1), toUInt8(t.2), toUInt8(t.3)) AS RGB
+        )",
+        R"(
+┌─rgb──────────────────────────────────────────────────────┐
+│ (127.03349738778945,66.06672044472008,37.11802592155851) │
+└──────────────────────────────────────────────────────────┘
+┌─RGB──────────┐
+│ (205,139,97) │
+└──────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 7};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionColorOKLCHToSRGB>(documentation);
 }
 }

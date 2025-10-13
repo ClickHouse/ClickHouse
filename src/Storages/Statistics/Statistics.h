@@ -22,6 +22,9 @@ struct StatisticsUtils
     static std::optional<Float64> tryConvertToFloat64(const Field & value, const DataTypePtr & data_type);
 };
 
+class IStatistics;
+using StatisticsPtr = std::shared_ptr<IStatistics>;
+
 /// Interface for a single statistics object for a column within a part.
 ///
 /// Statistics describe properties of the values in the column, e.g. how many unique values exist, what are
@@ -33,6 +36,7 @@ public:
     virtual ~IStatistics() = default;
 
     virtual void build(const ColumnPtr & column) = 0;
+    virtual void merge(const StatisticsPtr & other_stats) = 0;
 
     virtual void serialize(WriteBuffer & buf) = 0;
     virtual void deserialize(ReadBuffer & buf) = 0;
@@ -46,18 +50,21 @@ public:
     virtual Float64 estimateEqual(const Field & val) const; /// cardinality of val in the column
     virtual Float64 estimateLess(const Field & val) const;  /// summarized cardinality of values < val in the column
     virtual Float64 estimateRange(const Range & range) const;
+    virtual String getNameForLogs() const = 0;
 
 protected:
     SingleStatisticsDescription stat;
 };
 
-using StatisticsPtr = std::shared_ptr<IStatistics>;
+class ColumnStatistics;
+using ColumnStatisticsPtr = std::shared_ptr<ColumnStatistics>;
+using ColumnsStatistics = std::vector<ColumnStatisticsPtr>;
 
 /// All statistics objects for a column in a part
-class ColumnPartStatistics
+class ColumnStatistics
 {
 public:
-    explicit ColumnPartStatistics(const ColumnStatisticsDescription & stats_desc_, const String & column_name_);
+    explicit ColumnStatistics(const ColumnStatisticsDescription & stats_desc_, const String & column_name_);
 
     void serialize(WriteBuffer & buf);
     void deserialize(ReadBuffer & buf);
@@ -68,11 +75,15 @@ public:
     UInt64 rowCount() const;
 
     void build(const ColumnPtr & column);
+    void merge(const ColumnStatisticsPtr & other);
 
     Float64 estimateLess(const Field & val) const;
     Float64 estimateGreater(const Field & val) const;
     Float64 estimateEqual(const Field & val) const;
     Float64 estimateRange(const Range & range) const;
+    UInt64 estimateCardinality() const;
+
+    String getNameForLogs() const;
 
 private:
     friend class MergeTreeStatisticsFactory;
@@ -81,9 +92,6 @@ private:
     std::map<StatisticsType, StatisticsPtr> stats;
     UInt64 rows = 0; /// the number of rows in the column
 };
-
-using ColumnStatisticsPartPtr = std::shared_ptr<ColumnPartStatistics>;
-using ColumnsStatistics = std::vector<ColumnStatisticsPartPtr>;
 
 struct ColumnDescription;
 class ColumnsDescription;
@@ -98,7 +106,7 @@ public:
     using Validator = std::function<void(const SingleStatisticsDescription & stats, const DataTypePtr & data_type)>;
     using Creator = std::function<StatisticsPtr(const SingleStatisticsDescription & stats, const DataTypePtr & data_type)>;
 
-    ColumnStatisticsPartPtr get(const ColumnDescription & column_desc) const;
+    ColumnStatisticsPtr get(const ColumnDescription & column_desc) const;
     ColumnsStatistics getMany(const ColumnsDescription & columns) const;
 
     void registerValidator(StatisticsType type, Validator validator);
