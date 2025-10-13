@@ -175,6 +175,7 @@ namespace DB::ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int UNKNOWN_TABLE;
     extern const int TCP_CONNECTION_LIMIT_REACHED;
+    extern const int MEMORY_LIMIT_EXCEEDED;
 
     // We have to distinguish the case when query is killed by `KILL QUERY` statement
     // and when it is killed by `Protocol::Client::Cancel` packet.
@@ -898,23 +899,55 @@ void TCPHandler::runImpl()
                 /// Try to send logs to client, but it could be risky too
                 /// Assume that we can't break output here
                 sendLogs(query_state.value());
+            }
+            catch (const Exception & e)
+            {
+                if (e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED)
+                {
+                    tryLogCurrentException(log, "Can't send logs to client. But we will try to send the exception.");
+                }
+                else
+                {
+                    query_state->cancelOut(out);
+                    return;
+                }
+            }
+            catch (...)
+            {
+                query_state->cancelOut(out);
+                tryLogCurrentException(log, "Can't send logs to client. Close connection.");
+                return;
+            }
+
+            try
+            {
+                std::lock_guard lock(callback_mutex);
 
                 if (exception_code == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT)
                     sendEndOfStream(query_state.value());
                 else
                     sendException(*exception, send_exception_with_stack_trace);
+            }
+            catch (...)
+            {
+                query_state->cancelOut(out);
+                tryLogCurrentException(log, "Can't send exception to client. Close connection.");
+                return;
+            }
+
+            try
+            {
+                std::lock_guard lock(callback_mutex);
 
                 /// A query packet is always followed by one or more data packets.
                 /// If some of those data packets are left, try to skip them.
                 if (!query_state->read_all_data)
                     skipData(query_state.value());
-
-                LOG_TRACE(log, "Logs and exception has been sent. The connection is preserved.");
             }
             catch (...)
             {
                 query_state->cancelOut(out);
-                tryLogCurrentException(log, "Can't send logs or exception to client. Close connection.");
+                tryLogCurrentException(log, "Can't skip excessive input packets after the exception. Close connection.");
                 return;
             }
 
@@ -924,6 +957,10 @@ void TCPHandler::runImpl()
                 LOG_DEBUG(log, "Going to close connection due to exception: {}", exception->message());
                 query_state->finalizeOut(out);
                 return;
+            }
+            else
+            {
+                LOG_TRACE(log, "Logs and exception has been sent. The connection is preserved.");
             }
         }
 
