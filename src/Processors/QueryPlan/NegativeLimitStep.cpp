@@ -31,7 +31,7 @@ static ITransformingStep::Traits getTraits()
     };
 }
 
-NegativeLimitStep::NegativeLimitStep(const SharedHeader & input_header_, size_t limit_, size_t offset_)
+NegativeLimitStep::NegativeLimitStep(const SharedHeader & input_header_, UInt64 limit_, UInt64 offset_)
     : ITransformingStep(input_header_, input_header_, getTraits())
     , limit(limit_)
     , offset(offset_)
