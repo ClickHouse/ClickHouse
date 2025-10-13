@@ -1,37 +1,49 @@
-#!/usr/bin/env python
-
-# here
 import argparse
+import atexit
 import json
 import logging
-import sys
-import time
-from os import makedirs
-from os import path as p
+import os
+import tempfile
+import traceback
 from pathlib import Path
 from typing import Dict, List
 
-from build_download_helper import read_build_urls
-from ci_utils import Utils
-from docker_images_helper import DockerImageData, docker_login
-from env_helper import (
-    GITHUB_RUN_URL,
-    GITHUB_SERVER_URL,
-    REPORT_PATH,
-    S3_BUILDS_BUCKET,
-    S3_DOWNLOAD,
-    TEMP_PATH,
-)
-from git_helper import GIT_PREFIX, Git, git_runner
-from pr_info import PRInfo
-from report import FAIL, FAILURE, OK, SUCCESS, JobReport, TestResult, TestResults
-from stopwatch import Stopwatch
-from tee_popen import TeePopen
-from version_helper import ClickHouseVersion, get_version_from_repo, version_arg
-
-git = Git(ignore_no_tags=True)
+from ci.jobs.scripts.clickhouse_version import CHVersion
+from ci.praktika import Secret
+from ci.praktika.info import Info
+from ci.praktika.result import Result
+from ci.praktika.utils import Shell, Utils
 
 ARCH = ("amd64", "arm64")
+
+temp_path = Path(f"{Utils.cwd()}/ci/tmp")
+
+GITHUB_SERVER_URL = os.getenv("GITHUB_SERVER_URL", "https://github.com")
+with tempfile.NamedTemporaryFile("w", delete=False) as f:
+    GIT_KNOWN_HOSTS_FILE = f.name
+    GIT_PREFIX = (  # All commits to remote are done as robot-clickhouse
+        "git -c user.email=robot-clickhouse@users.noreply.github.com "
+        "-c user.name=robot-clickhouse -c commit.gpgsign=false "
+        "-c core.sshCommand="
+        f"'ssh -o UserKnownHostsFile={GIT_KNOWN_HOSTS_FILE} "
+        "-o StrictHostKeyChecking=accept-new'"
+    )
+    atexit.register(os.remove, f.name)
+
+
+def read_build_urls(build_name: str):
+    artifact_report = temp_path / f"artifact_report_build_{build_name}.json"
+    if artifact_report.is_file():
+        with open(artifact_report, "r", encoding="utf-8") as f:
+            return json.load(f)["build_urls"]
+    return []
+
+
+class DockerImageData:
+    def __init__(self, name: str, path: str):
+        self.name = name
+        assert not path.startswith("/")
+        self.path = path
 
 
 class DelOS(argparse.Action):
@@ -41,30 +53,40 @@ class DelOS(argparse.Action):
             namespace.os.remove(no_build)
 
 
+def docker_login(relogin: bool = True) -> None:
+    if relogin or not Shell.check(
+        "docker system info | grep --quiet -E 'Username|Registry'"
+    ):
+        Shell.check(
+            "docker login --username 'robotclickhouse' --password-stdin",
+            strict=True,
+            stdin_str=Secret.Config(
+                "dockerhub_robot_password", type=Secret.Type.AWS_SSM_PARAMETER
+            ).get_value(),
+            encoding="utf-8",
+        )
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         description="A program to build clickhouse-server image, both alpine and "
         "ubuntu versions",
     )
-    parser.add_argument(
-        "--check-name",
-        required=False,
-        default="",
-    )
-    parser.add_argument(
-        "--version",
-        type=version_arg,
-        default=get_version_from_repo(git=git).string,
-        help="a version to build, automaticaly got from version_helper, accepts either "
-        "tag ('refs/tags/' is removed automatically) or a normal 22.2.2.2 format",
-    )
-    parser.add_argument(
-        "--sha",
-        type=str,
-        default="",
-        help="sha of the commit to use packages from",
-    )
+    # TODO: Not supported. remove?
+    # parser.add_argument(
+    #     "--version",
+    #     type=version_arg,
+    #     default=get_version_from_repo(git=git).string,
+    #     help="a version to build, automaticaly got from version_helper, accepts either "
+    #     "tag ('refs/tags/' is removed automatically) or a normal 22.2.2.2 format",
+    # )
+    # parser.add_argument(
+    #     "--sha",
+    #     type=str,
+    #     default="",
+    #     help="sha of the commit to use packages from",
+    # )
     parser.add_argument(
         "--tag-type",
         type=str,
@@ -92,13 +114,6 @@ def parse_args() -> argparse.Namespace:
         help="if set, then is used as source for deb and tgz files",
     )
     parser.add_argument("--reports", default=True, help=argparse.SUPPRESS)
-    parser.add_argument(
-        "--no-reports",
-        action="store_false",
-        dest="reports",
-        default=argparse.SUPPRESS,
-        help="don't push reports to S3 and github",
-    )
     parser.add_argument("--push", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--os", default=["ubuntu", "alpine"], help=argparse.SUPPRESS)
     parser.add_argument(
@@ -124,29 +139,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def retry_popen(cmd: str, log_file: Path) -> int:
-    max_retries = 2
-    sleep_seconds = 10
-    retcode = -1
-    for _retry in range(max_retries):
-        with TeePopen(
-            cmd,
-            log_file=log_file,
-        ) as process:
-            retcode = process.wait()
-            if retcode == 0:
-                return 0
-            # From time to time docker build may failed. Curl issues, or even push
-            logging.error(
-                "The following command failed, sleep %s before retry: %s",
-                sleep_seconds,
-                cmd,
-            )
-            time.sleep(sleep_seconds)
-    return retcode
-
-
-def gen_tags(version: ClickHouseVersion, tag_type: str) -> List[str]:
+def gen_tags(version_str: str, tag_type: str) -> List[str]:
     """
     @tag_type release-latest, @version 22.2.2.2:
     - latest
@@ -162,7 +155,7 @@ def gen_tags(version: ClickHouseVersion, tag_type: str) -> List[str]:
     @tag_type head:
     - head
     """
-    parts = version.string.split(".")
+    parts = version_str.split(".")
     tags = []
     if tag_type == "release-latest":
         tags.append("latest")
@@ -179,12 +172,17 @@ def gen_tags(version: ClickHouseVersion, tag_type: str) -> List[str]:
 
 
 def buildx_args(
-    urls: Dict[str, str], arch: str, direct_urls: List[str], version: str
+    urls: Dict[str, str],
+    arch: str,
+    direct_urls: List[str],
+    version: str,
+    sha: str,
+    action_url: str,
 ) -> List[str]:
     args = [
         f"--platform=linux/{arch}",
-        f"--label=build-url={GITHUB_RUN_URL}",
-        f"--label=com.clickhouse.build.githash={git.sha}",
+        f"--label=build-url={action_url}",
+        f"--label=com.clickhouse.build.githash={sha}",
         f"--label=com.clickhouse.build.version={version}",
     ]
     if direct_urls:
@@ -202,101 +200,87 @@ def build_and_push_image(
     repo_urls: dict[str, str],
     os: str,
     tag: str,
-    version: ClickHouseVersion,
+    version: str,
     direct_urls: Dict[str, List[str]],
-) -> TestResults:
-    result = []  # type: TestResults
+    run_url: str,
+    sha: str,
+) -> List[Result]:
+    result = []
     if os != "ubuntu":
         tag += f"-{os}"
     init_args = ["docker", "buildx", "build"]
     if push:
         init_args.append("--push")
         init_args.append("--output=type=image,push-by-digest=true")
-        init_args.append(f"--tag={image.repo}")
+        init_args.append(f"--tag={image.name}")
     else:
         init_args.append("--output=type=docker")
 
     # `docker buildx build --load` does not support multiple images currently
     # images must be built separately and merged together with `docker manifest`
     digests = []
-    multiplatform_sw = Stopwatch()
-    temp_path = Path(TEMP_PATH)
+
     for arch in ARCH:
-        single_sw = Stopwatch()
         arch_tag = f"{tag}-{arch}"
         metadata_path = temp_path / arch_tag
-        dockerfile = p.join(image.path, f"Dockerfile.{os}")
+        dockerfile = f"{image.path}/Dockerfile.{os}"
         cmd_args = list(init_args)
         urls = []
         if direct_urls:
-            if os == "ubuntu" and "clickhouse-server" in image.repo:
+            if os == "ubuntu" and "clickhouse-server" in image.name:
                 urls = [url for url in direct_urls[arch] if ".deb" in url]
             else:
                 urls = [url for url in direct_urls[arch] if ".tgz" in url]
         cmd_args.extend(
-            buildx_args(repo_urls, arch, direct_urls=urls, version=version.describe)
+            buildx_args(
+                repo_urls,
+                arch,
+                direct_urls=urls,
+                version=version,
+                action_url=run_url,
+                sha=sha,
+            )
         )
         if not push:
-            cmd_args.append(f"--tag={image.repo}:{arch_tag}")
+            cmd_args.append(f"--tag={image.name}:{arch_tag}")
         cmd_args.extend(
             [
                 f"--metadata-file={metadata_path}",
-                f"--build-arg=VERSION='{version.string}'",
+                f"--build-arg=VERSION='{version}'",
                 "--progress=plain",
                 f"--file={dockerfile}",
-                image.path.as_posix(),
+                Path(image.path).as_posix(),
             ]
         )
         cmd = " ".join(cmd_args)
-        logging.info("Building image %s:%s for arch %s: %s", image.repo, tag, arch, cmd)
-        log_file = temp_path / Utils.normalize_string(f"{image.repo}:{tag}-{arch}.log")
-        if retry_popen(cmd, log_file) != 0:
-            result.append(
-                TestResult(
-                    f"{image.repo}:{tag}-{arch}",
-                    FAIL,
-                    single_sw.duration_seconds,
-                    [log_file],
-                )
-            )
-            return result
+        logging.info("Building image %s:%s for arch %s: %s", image.name, tag, arch, cmd)
         result.append(
-            TestResult(
-                f"{image.repo}:{tag}-{arch}",
-                OK,
-                single_sw.duration_seconds,
-                [log_file],
-            )
+            Result.from_commands_run(name=f"{image.name}:{tag}-{arch}", command=cmd)
         )
+        if result[-1].is_ok():
+            return result
         with open(metadata_path, "rb") as m:
             metadata = json.load(m)
             digests.append(metadata["containerimage.digest"])
     if push:
         cmd = (
             "docker buildx imagetools create "
-            f"--tag {image.repo}:{tag} {' '.join(digests)}"
+            f"--tag {image.name}:{tag} {' '.join(digests)}"
         )
-        logging.info("Pushing merged %s:%s image: %s", image.repo, tag, cmd)
-        if retry_popen(cmd, Path("/dev/null")) != 0:
-            result.append(
-                TestResult(
-                    f"{image.repo}:{tag}", FAIL, multiplatform_sw.duration_seconds
-                )
-            )
+        logging.info("Pushing merged %s:%s image: %s", image.name, tag, cmd)
+        result.append(Result.from_commands_run(name=f"{image.name}:{tag}", command=cmd))
+        if result[-1].is_ok():
             return result
-        result.append(
-            TestResult(f"{image.repo}:{tag}", OK, multiplatform_sw.duration_seconds)
-        )
     else:
         logging.info(
             "Merging is available only on push, separate %s images are created",
-            f"{image.repo}:{tag}-$arch",
+            f"{image.name}:{tag}-$arch",
         )
 
     return result
 
 
-def test_docker_library(test_results: TestResults) -> None:
+def test_docker_library(test_results) -> None:
     """we test our images vs the official docker library repository to track integrity"""
     check_images = [
         tr.name
@@ -309,65 +293,66 @@ def test_docker_library(test_results: TestResults) -> None:
     if not check_images:
         return
     test_name = "docker library image test"
-    temp_path = Path(TEMP_PATH)
-    stopwatch = Stopwatch()
     try:
         repo = "docker-library/official-images"
         logging.info("Cloning %s repository to run tests for 'clickhouse' image", repo)
         repo_path = temp_path / repo
-        git_runner(f"{GIT_PREFIX} clone {GITHUB_SERVER_URL}/{repo} {repo_path}")
+        Shell.check(f"{GIT_PREFIX} clone {GITHUB_SERVER_URL}/{repo} {repo_path}")
         logging.info(
             "Patching tests config to run clickhouse tests for clickhouse/clickhouse-server"
         )
-        git_runner(
+        Shell.check(
             "sed -i '/testAlias+=(/ a[clickhouse/clickhouse-server]=clickhouse' "
             f"{repo_path/'test/config.sh'}"
         )
         run_sh = (repo_path / "test/run.sh").absolute()
         for image in check_images:
-            test_sw = Stopwatch()
             cmd = f"{run_sh} {image}"
-            tag = image.rsplit(":", 1)[-1]
-            log_file = (
-                temp_path / f"docker-library-test-{Utils.normalize_string(image)}.log"
-            )
-            with TeePopen(cmd, log_file) as process:
-                retcode = process.wait()
-            status = OK if retcode == 0 else FAIL
-            test_results.append(
-                TestResult(
-                    f"{test_name} ({tag})",
-                    status,
-                    test_sw.duration_seconds,
-                    [log_file],
-                )
-            )
+            test_results.append(Result.from_commands_run(name=test_name, command=cmd))
+
     except Exception as e:
         logging.error("Failed while testing the docker library image: %s", e)
         test_results.append(
-            TestResult(test_name, FAIL, stopwatch.duration_seconds, raw_logs=str(e))
+            Result(
+                name=test_name,
+                status=Result.Status.FAILED,
+                info=f"Exception while testing docker library: {traceback.format_exc()}",
+            )
         )
 
 
 def main():
     logging.basicConfig(level=logging.INFO)
-    stopwatch = Stopwatch()
-    makedirs(TEMP_PATH, exist_ok=True)
+    sw = Utils.Stopwatch()
+    os.makedirs(temp_path, exist_ok=True)
 
     args = parse_args()
+    info = Info()
 
-    pr_info = PRInfo()
+    version_dict = None
+    if not info.is_local_run:
+        version_dict = info.get_kv_data("version")
+    if not version_dict:
+        version_dict = CHVersion.get_current_version_as_dict()
+        if not info.is_local_run:
+            print(
+                "WARNING: ClickHouse version has not been found in workflow kv storage - read from repo"
+            )
+            info.add_workflow_report_message(
+                "WARNING: ClickHouse version has not been found in workflow kv storage"
+            )
+    assert version_dict
 
-    if args.check_name:
+    if not info.is_local_run:
         assert not args.image_path and not args.image_repo
-        if "server image" in args.check_name:
+        if "server image" in info.job_name:
             image_path = "docker/server"
             image_repo = "clickhouse/clickhouse-server"
-        elif "keeper image" in args.check_name:
+        elif "keeper image" in info.job_name:
             image_path = "docker/keeper"
             image_repo = "clickhouse/clickhouse-keeper"
         else:
-            assert False, "Invalid --check-name"
+            assert False, f"Unexpected job name [{info.job_name}]"
     else:
         assert args.image_path and args.image_repo
         image_path = args.image_path
@@ -378,15 +363,21 @@ def main():
     del args.image_repo
     del args.push
 
-    if pr_info.is_master:
+    if (
+        info.is_push_event
+        and info.git_branch == "master"
+        and info.pr_number == 0
+        and not info.is_local_run
+    ):
+        print("Set push flag for Master CI run")
         push = True
 
-    image = DockerImageData(image_path, image_repo, False)
-    tags = gen_tags(args.version, args.tag_type)
+    image = DockerImageData(image_repo, image_path)
+    tags = gen_tags(version_dict["string"], args.tag_type)
     repo_urls = {}
     direct_urls: Dict[str, List[str]] = {}
 
-    for arch, build_name in zip(ARCH, ("package_release", "package_aarch64")):
+    for arch, build_name in zip(ARCH, ("amd_release", "arm_release")):
         if args.allow_build_reuse:
             # read s3 urls from pre-downloaded build reports
             if "clickhouse-server" in image_repo:
@@ -399,10 +390,8 @@ def main():
                 PACKAGES = ["clickhouse-keeper"]
             else:
                 assert False, "BUG"
-            urls = read_build_urls(build_name, Path(REPORT_PATH))
-            assert (
-                urls
-            ), f"URLS has not been read from build report, report path[{REPORT_PATH}], build [{build_name}]"
+            urls = read_build_urls(build_name)
+            assert urls, f"URLS has not been read from build report"
             direct_urls[arch] = [
                 url
                 for url in urls
@@ -412,13 +401,14 @@ def main():
             assert not args.allow_build_reuse
             repo_urls[arch] = f"{args.bucket_prefix}/{build_name}"
             print(f"Bucket prefix is set: Fetching packages from [{repo_urls}]")
-        elif args.sha:
-            version = args.version
-            repo_urls[arch] = (
-                f"{S3_DOWNLOAD}/{S3_BUILDS_BUCKET}/"
-                f"{version.major}.{version.minor}/{args.sha}/{build_name}"
-            )
-            print(f"Fetching packages from [{repo_urls}]")
+        # TODO: not supported, remove?
+        # elif args.sha:
+        #     version = args.version
+        #     repo_urls[arch] = (
+        #         f"{S3_DOWNLOAD}/{S3_BUILDS_BUCKET}/"
+        #         f"{version.major}.{version.minor}/{args.sha}/{build_name}"
+        #     )
+        #     print(f"Fetching packages from [{repo_urls}]")
         else:
             assert (
                 False
@@ -428,12 +418,20 @@ def main():
         docker_login()
 
     logging.info("Following tags will be created: %s", ", ".join(tags))
-    test_results = []  # type: TestResults
-    for os in args.os:
+    test_results = []
+    for os_ in args.os:
         for tag in tags:
             test_results.extend(
                 build_and_push_image(
-                    image, push, repo_urls, os, tag, args.version, direct_urls
+                    image,
+                    push,
+                    repo_urls,
+                    os_,
+                    tag,
+                    version_dict["describe"],
+                    direct_urls,
+                    run_url=info.run_url,
+                    sha=info.sha,
                 )
             )
 
@@ -442,20 +440,7 @@ def main():
         # See `--output=type=docker`
         test_docker_library(test_results)
 
-    status = SUCCESS if all(tr.status == OK for tr in test_results) else FAILURE
-
-    description = f"Processed tags: {', '.join(tags)}"
-    JobReport(
-        description=description,
-        test_results=test_results,
-        status=status,
-        start_time=stopwatch.start_time_str,
-        duration=stopwatch.duration_seconds,
-        additional_files=[],
-    ).dump()
-
-    if status != SUCCESS:
-        sys.exit(1)
+    Result.create_from(results=test_results, stopwatch=sw).complete_job()
 
 
 if __name__ == "__main__":
