@@ -7,7 +7,7 @@
 
 #include "config.h"
 
-#ifdef USE_XRAY
+#if USE_XRAY
 #include <xray/xray_interface.h>
 #include <variant>
 #endif
@@ -184,7 +184,7 @@ public:
 
     ServerType server_type;
 
-#ifdef USE_XRAY
+#if USE_XRAY
     /// For SYSTEM INSTRUMENT ADD/REMOVE
     using InstrumentParameter = std::variant<String, Int64, Float64>;
     String instrumentation_function_name;

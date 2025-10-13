@@ -774,7 +774,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             else
                 return false;
 
-            String handler_name;
             if (ParserIdentifier{}.parse(pos, temporary_identifier, expected))
                 res->instrumentation_handler_name = temporary_identifier->as<ASTIdentifier &>().name();
             else
