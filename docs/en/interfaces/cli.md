@@ -870,12 +870,11 @@ Default value: default
 
 Instead of the `--host`, `--port`, `--user` and `--password` options, the client also supports [connection strings](#connection_string).
 
+**`--proto-caps <value>`**  
 
-**`--proto-caps <value>`** 
+Enable/disable chunking in data transfer.  
 
-Enable/disable chunking in data transfer. 
-
-choices: `chunked_optional`, `notchunked,` `notchunked_optional,` `send_chunked,` `send_chunked_optional`, `send_notchunked`, `send_notchunked_optional`, `recv_chunked`, `recv_chunked_optional`, `recv_notchunked`, `recv_notchunked_optional`. 
+choices: `chunked_optional`, `notchunked`, `notchunked_optional`, `send_chunked`, `send_chunked_optional`, `send_notchunked`, `send_notchunked_optional`, `recv_chunked`, `recv_chunked_optional`, `recv_notchunked`, `recv_notchunked_optional`.  
 
 To have different options for send and receive, choices can be comma-separated:
 ```bash

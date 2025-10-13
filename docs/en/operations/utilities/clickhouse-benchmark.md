@@ -69,7 +69,7 @@ clickhouse-benchmark [keys] < queries_file;
 - `--max-consecutive-errors=N` — Number of allowed consecutive errors. Default value: 0.
 - `--ignore-error`,`--continue_on_errors` — Continue testing even if queries failed.
 - `--client-side-time` — Display the time including network communication instead of server-side time; Note that for server versions before 22.8 we always display client-side time.
-- `--proto-caps` — Enable/disable chunking in data transfer. choices (can be comma-separated): `chunked_optional`, `notchunked,` `notchunked_optional,` `send_chunked,` `send_chunked_optional`, `send_notchunked`, `send_notchunked_optional`, `recv_chunked`, `recv_chunked_optional`, `recv_notchunked`, `recv_notchunked_optional`. Default value: `notchunked`.
+- `--proto-caps` — Enable/disable chunking in data transfer. choices (can be comma-separated): `chunked_optional`, `notchunked`, `notchunked_optional`, `send_chunked`, `send_chunked_optional`, `send_notchunked`, `send_notchunked_optional`, `recv_chunked`, `recv_chunked_optional`, `recv_notchunked`, `recv_notchunked_optional`. Default value: `notchunked`.
 - `--help` — Shows the help message.
 - `--verbose` — Increase help message verbosity.
 
