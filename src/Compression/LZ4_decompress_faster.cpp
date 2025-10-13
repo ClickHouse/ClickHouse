@@ -29,36 +29,21 @@ inline UInt16 LZ4_readLE16(const void* mem_ptr)
 
 template <size_t N> [[maybe_unused]] inline void copy(UInt8 * dst, const UInt8 * src);
 template <size_t N> [[maybe_unused]] inline void wildCopy(UInt8 * __restrict dst, const UInt8 * __restrict src, size_t size);
-template <size_t N> [[maybe_unused]] inline void wildCopyFree(UInt8 * __restrict dst, const UInt8 * __restrict src, size_t size);
 template <size_t N> [[maybe_unused]] inline void copyOverlap(UInt8 * op, const UInt8 *& match, size_t offset);
 
-inline void copy8(UInt8 *   dst, const UInt8 *   src)
+ALWAYS_INLINE inline void copy8(UInt8 * dst, const UInt8 * src)
 {
     memcpy(dst, src, 8);
 }
 
-inline void wildCopy8(UInt8 * dst, const UInt8 * src, size_t size)
+ALWAYS_INLINE inline void wildCopy8(UInt8 * dst, const UInt8 * src, size_t size)
 {
-    size_t i = 0;
-    do
+    for (size_t i = 0; i < size; i += 8)
     {
-        copy8(dst, src);
-        dst += 8;
-        src += 8;
-        i += 8;
-    } while (i < size);
-}
-
-inline void wildCopyFree8(UInt8 * __restrict dst, const UInt8 * __restrict src, size_t size)
-{
-    size_t i = 0;
-    do
-    {
-        memcpy(dst, src, 8);
-        dst += 8;
-        src += 8;
-        i += 8;
-    } while (i < size);
+        copy8(dst + i, src + i);
+        /// Avoid clang loop-idiom optimization which transforms this to built-in memcpy
+        __asm__ __volatile__("" : : : "memory");
+    }
 }
 
 void copyOverlap8(UInt8 * op, const UInt8 *& match, size_t offset)
@@ -204,7 +189,6 @@ void copyOverlap8(UInt8 * op, const UInt8 *& match, size_t offset)
 
 template <> void inline copy<8>(UInt8 * dst, const UInt8 * src) { copy8(dst, src); }
 template <> void inline wildCopy<8>(UInt8 * dst, const UInt8 * src, size_t size) { wildCopy8(dst, src, size); }
-template <> void inline wildCopyFree<8>(UInt8 * __restrict dst, const UInt8 * __restrict src, size_t size) { wildCopyFree8(dst, src, size); }
 template <> void inline copyOverlap<8>(UInt8 * op, const UInt8 *& match, const size_t offset) { copyOverlap8(op, match, offset); }
 
 template <size_t copy_amount>
@@ -290,7 +274,7 @@ bool decompressImpl(const char * const source, char * const dest, size_t source_
         if (unlikely(ip + real_length >= input_end + ADDITIONAL_BYTES_AT_END_OF_BUFFER))
             return false;
 
-        wildCopyFree<copy_amount>(op, ip, copy_end - op); /// Here we can write up to copy_amount - 1 bytes after buffer.
+        wildCopy<copy_amount>(op, ip, copy_end - op); /// Here we can write up to copy_amount - 1 bytes after buffer.
 
         if (copy_end == output_end)
             return true;

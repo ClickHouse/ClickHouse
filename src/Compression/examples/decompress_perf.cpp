@@ -1,23 +1,19 @@
-#include <cstring>
 #include <iomanip>
 #include <iostream>
+
 #include <base/types.h>
 #include <lz4.h>
 
 #include <IO/ReadBuffer.h>
-#include <IO/ReadBufferFromFileDescriptor.h>
-#include <IO/WriteBufferFromFileDescriptor.h>
-#include <IO/MMapReadBufferFromFileDescriptor.h>
+#include <IO/MMapReadBufferFromFile.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <Compression/CompressionInfo.h>
 #include <IO/WriteHelpers.h>
 #include <Compression/LZ4_decompress_faster.h>
-#include <IO/copyData.h>
 #include <Common/PODArray.h>
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
-#include <Common/memcpySmall.h>
 #include <base/unaligned.h>
 
 
@@ -176,27 +172,36 @@ try
 {
     using namespace DB;
 
-    /** -3 - use reference implementation of LZ4
-      * -2 - run all algorithms in round robin fashion
-      * -1 - automatically detect best algorithm based on statistics
-      * 0..3 - run specified algorithm
-      */
-    ssize_t variant = argc < 2 ? -1 : parse<ssize_t>(argv[1]);
-
-    MMapReadBufferFromFileDescriptor in(STDIN_FILENO, 0);
-    FasterCompressedReadBuffer decompressing_in(in, variant);
-
-    Stopwatch watch;
-    while (!decompressing_in.eof())
+    if (argc < 2 || argc > 4)
     {
-        decompressing_in.position() = decompressing_in.buffer().end();
-        decompressing_in.next();
+        std::cerr << "Usage: " << argv[0] << " <file> [times] [variant]\n";
+        return 1;
     }
-    watch.stop();
+    size_t times = argc < 3 ? 1 : parse<size_t>(argv[2]);
+    ssize_t variant = argc < 4 ? -1 : parse<ssize_t>(argv[3]);
 
-    std::cout << std::fixed << std::setprecision(3)
-        << (decompressing_in.count() ? (watch.elapsed() * 1000 / decompressing_in.count()) : 0)
-        << '\n';
+    std::vector<UInt64> runs;
+
+    for (size_t i = 0; i < times; i++)
+    {
+        MMapReadBufferFromFile in(argv[1], 0);
+        FasterCompressedReadBuffer decompressing_in(in, variant);
+
+        Stopwatch watch;
+        while (!decompressing_in.eof())
+        {
+            decompressing_in.position() = decompressing_in.buffer().end();
+            decompressing_in.next();
+        }
+        watch.stop();
+        runs.push_back(watch.elapsed());
+    }
+
+    /// MIN / MAX / AVG
+    UInt64 min = *std::min_element(runs.begin(), runs.end());
+    UInt64 max = *std::max_element(runs.begin(), runs.end());
+    UInt64 avg = std::accumulate(runs.begin(), runs.end(), UInt64(0)) / runs.size();
+    std::cout << min << " " << max << " " << avg << '\n';
 
     return 0;
 }
