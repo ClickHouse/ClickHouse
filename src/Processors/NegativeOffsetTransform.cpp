@@ -176,6 +176,15 @@ NegativeOffsetTransform::Status NegativeOffsetTransform::advancePort(PortsData &
 
 IProcessor::Status NegativeOffsetTransform::tryPushWholeFrontChunk()
 {
+    /// Output port is closed, nothing can be done with the chunks; so, we keep discarding them.
+    while (!queue.empty() && queue.front().output_port->isFinished())
+    {
+        auto & front = queue.front();
+        const UInt64 front_chunk_rows = front.chunk.getNumRows();
+        queue.pop();
+        queued_row_count -= front_chunk_rows;
+    }
+
     /// Need to keep at least 'offset' rows queued.
     if (queued_row_count <= offset)
         return Status::Finished;
@@ -191,14 +200,6 @@ IProcessor::Status NegativeOffsetTransform::tryPushWholeFrontChunk()
     /// going into the offset area.
     if (queued_row_count - front_chunk_rows < offset)
         return Status::Finished;
-
-    /// Output port is closed, nothing can be done with the chunk; so, we discard it.
-    if (output.isFinished())
-    {
-        queue.pop();
-        queued_row_count -= front_chunk_rows;
-        return Status::Finished;
-    }
 
     if (!output.canPush())
         return Status::PortFull;
