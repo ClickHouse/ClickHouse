@@ -2,8 +2,8 @@
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Processors/ISimpleTransform.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
-#include "Common/Logger.h"
-#include "Common/Macros.h"
+#include <Common/Logger.h>
+#include <Common/Macros.h>
 
 namespace DB
 {
