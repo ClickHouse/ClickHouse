@@ -166,7 +166,24 @@ public:
         return ColumnWithTypeAndName(std::move(columns[i]), type_name[i].type, type_name[i].qualified_name);
     }
 
-    void appendFromBlock(const RowRefList * row_ref_list, bool has_default);
+    void appendFromBlock(const RowRefList * row_ref_list, bool)
+    {
+        if constexpr (lazy)
+        {
+#ifndef NDEBUG
+            checkColumns(*row_ref_list->columns);
+#endif
+            if (has_columns_to_add)
+            {
+                lazy_output.addRowRefList(row_ref_list);
+            }
+        }
+        else
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "AddedColumns are not implemented for RowRefList in non-lazy mode");
+        }
+    }
+
     void appendFromBlock(const RowRef * row_ref, bool has_default);
 
     void appendDefaultRow();

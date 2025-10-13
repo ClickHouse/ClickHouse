@@ -175,13 +175,6 @@ void AddedColumns<false>::appendFromBlock(const RowRef * row_ref, const bool has
 }
 
 template <>
-__attribute__((noreturn)) void AddedColumns<false>::appendFromBlock(const RowRefList *, bool)
-{
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "AddedColumns are not implemented for RowRefList in non-lazy mode");
-}
-
-
-template <>
 void AddedColumns<true>::appendFromBlock(const RowRef * row_ref, bool)
 {
 #ifndef NDEBUG
@@ -192,19 +185,6 @@ void AddedColumns<true>::appendFromBlock(const RowRef * row_ref, bool)
         lazy_output.addRowRef(row_ref);
     }
 }
-
-template <>
-void AddedColumns<true>::appendFromBlock(const RowRefList * row_ref_list, bool)
-{
-#ifndef NDEBUG
-    checkColumns(*row_ref_list->columns);
-#endif
-    if (has_columns_to_add)
-    {
-        lazy_output.addRowRefList(row_ref_list);
-    }
-}
-
 
 template<>
 void AddedColumns<false>::appendDefaultRow()
