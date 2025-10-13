@@ -877,6 +877,11 @@ Enable/disable chunking in data transfer.
 
 choices: `chunked_optional`, `notchunked,` `notchunked_optional,` `send_chunked,` `send_chunked_optional`, `send_notchunked`, `send_notchunked_optional`, `recv_chunked`, `recv_chunked_optional`, `recv_notchunked`, `recv_notchunked_optional`. 
 
+To have different options for send and receive, choices can be comma-separated:
+```bash
+$ clickhouse-client --proto-caps send_chunked_optional,recv_notchunked --query "SELECT 1"
+```
+
 ### Query options {#command-line-options-query}
 
 **`--param_<name>=<value>`**
