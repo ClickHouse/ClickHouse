@@ -200,3 +200,7 @@ AS SELECT number FROM
 (SELECT number FROM num_tab ORDER BY number LIMIT -10 OFFSET -100000);
 
 SELECT number FROM modified_tab;
+
+SELECT DISTINCT number
+FROM (SELECT number FROM numbers_mt(1000000) LIMIT -214748)
+WHERE 0;
