@@ -1,3 +1,7 @@
+#include <fmt/format.h>
+#include "Core/ColumnsWithTypeAndName.h"
+#include "Core/SortDescription.h"
+#include "Storages/SelectQueryInfo.h"
 #include "config.h"
 #if USE_AVRO
 
@@ -1053,7 +1057,19 @@ ColumnMapperPtr IcebergMetadata::getColumnMapperForCurrentSchema(StorageMetadata
     return persistent_components.schema_processor->getColumnMapperById(iceberg_table_state->schema_id);
 }
 
-bool IcebergMetadata::requestReadingInOrder(InputOrderInfoPtr order_info_)
+InputOrderInfoPtr IcebergMetadata::getInputOrder() const
+{
+
+    auto key_description = getSortingKey();
+    SortDescription sort_description_for_merging;
+    for (size_t i = 0; i < key_description.column_names.size(); ++i)
+    {
+        sort_description_for_merging.push_back(SortColumnDescription(key_description.column_names[i], key_description.reverse_flags[i] ? -1 : 1));   
+    }
+    return std::make_shared<const InputOrderInfo>(sort_description_for_merging, sort_description_for_merging.size(), 1, 0);
+}
+
+KeyDescription IcebergMetadata::getSortingKey() const
 {
     auto local_context = CurrentThread::getQueryContext();
     auto configuration_ptr = getConfiguration();
@@ -1081,6 +1097,14 @@ bool IcebergMetadata::requestReadingInOrder(InputOrderInfoPtr order_info_)
         source_id_to_column_name[source_id] = col_name;
     }
 
+    KeyDescription key_description;
+    auto ch_schema = persistent_components.schema_processor->getClickhouseTableSchemaById(current_schema_id);
+    ColumnsDescription column_description;
+    for (size_t i = 0; i < ch_schema->size(); ++i)
+        column_description.add(ColumnDescription(ch_schema->getNames()[i], ch_schema->getTypes()[i]));
+
+    String order_by_str;
+
     for (UInt32 i = 0; i < sort_orders->size(); ++i)
     {
         auto sort_order = sort_orders->getObject(i);
@@ -1094,11 +1118,36 @@ bool IcebergMetadata::requestReadingInOrder(InputOrderInfoPtr order_info_)
             auto column_name = source_id_to_column_name[source_id];
             int direction = field->getValue<String>(f_direction) == "asc" ? 1 : -1;
 
-            if (order_info_->sort_description_for_merging.at(field_index).column_name != column_name)
-                return false;
-            if (order_info_->sort_description_for_merging.at(field_index).direction != direction)
-                return false;
+            if (direction == 1)
+            {
+                order_by_str += fmt::format("{} ASC,", column_name);   
+            }
+            else
+            {
+                order_by_str += fmt::format("{} DESC,", column_name);
+            }
         }
+    }
+    order_by_str.pop_back();
+    return KeyDescription::parse(order_by_str, column_description, local_context, true);
+}
+
+bool IcebergMetadata::requestReadingInOrder(InputOrderInfoPtr order_info_)
+{
+    auto input_order = getInputOrder();
+    if (input_order->sort_description_for_merging.size() < order_info_->sort_description_for_merging.size())
+    {
+        return false;
+    }
+
+    for (size_t i = 0; i < order_info_->sort_description_for_merging.size(); ++i)
+    {
+        if (!order_info_->sort_description_for_merging.at(i).column_name.ends_with(input_order->sort_description_for_merging.at(i).column_name))
+            return false;
+
+        int direction = input_order->sort_description_for_merging.at(i).direction;
+        if (order_info_->sort_description_for_merging.at(i).direction != direction)
+            return false;
     }
     return true;
 }

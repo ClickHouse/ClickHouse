@@ -39,6 +39,16 @@ public:
         return configuration->requestReadingInOrder(order_info_);
     }
 
+    InputOrderInfoPtr getInputOrder() const
+    {
+        return configuration->getInputOrder();
+    }
+
+    KeyDescription getSortingKey() const
+    {
+        return configuration->getSortingKey();
+    }
+
 private:
     ObjectStoragePtr object_storage;
     StorageObjectStorageConfigurationPtr configuration;

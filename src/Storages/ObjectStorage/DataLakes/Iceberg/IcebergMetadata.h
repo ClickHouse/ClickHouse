@@ -126,6 +126,9 @@ public:
     void drop(ContextPtr context) override;
     bool requestReadingInOrder(InputOrderInfoPtr order_info_) override;
 
+    InputOrderInfoPtr getInputOrder() const override;
+    KeyDescription getSortingKey() const override;
+
 private:
     Iceberg::PersistentTableComponents initializePersistentTableComponents(
         IcebergMetadataFilesCachePtr cache_ptr,

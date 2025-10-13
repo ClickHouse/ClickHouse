@@ -130,6 +130,16 @@ public:
         return false;
     }
 
+    virtual InputOrderInfoPtr getInputOrder() const
+    {
+        return nullptr;
+    }
+
+    virtual KeyDescription getSortingKey() const
+    {
+        return {};
+    }
+
 protected:
     virtual ObjectIterator
     createKeysIterator(Strings && data_files_, ObjectStoragePtr object_storage_, IDataLakeMetadata::FileProgressCallback callback_) const;

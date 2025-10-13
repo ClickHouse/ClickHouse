@@ -363,6 +363,18 @@ public:
         return current_metadata->requestReadingInOrder(order_info_);
     }
 
+    InputOrderInfoPtr getInputOrder() const override
+    {
+        assertInitialized();
+        return current_metadata->getInputOrder();
+    }
+
+    KeyDescription getSortingKey() const override
+    {
+        assertInitialized();
+        return current_metadata->getSortingKey();
+    }
+
 private:
     DataLakeMetadataPtr current_metadata;
     LoggerPtr log = getLogger("DataLakeConfiguration");

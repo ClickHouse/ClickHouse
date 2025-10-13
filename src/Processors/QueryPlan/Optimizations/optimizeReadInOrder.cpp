@@ -90,12 +90,15 @@ ISourceStep * checkSupportedReadingStep(IQueryPlanStep * step, bool allow_existi
     {
         /// Already read-in-order, skip.
         if (!allow_existing_order && reading->getQueryInfo().input_order_info)
+        {
             return nullptr;
+        }
 
-        const auto & sorting_key = reading->getStorageSnapshot()->metadata->getSortingKey();
+        const auto & sorting_key = reading->getSortingKey();
         if (sorting_key.column_names.empty())
+        {
             return nullptr;
-
+        }
         return reading;
     }
 
@@ -835,9 +838,10 @@ SortingInputOrder buildInputOrderFromSortDescription(
     const SortDescription & description,
     size_t limit)
 {
-    const auto & sorting_key = reading->getStorageSnapshot()->metadata->getSortingKey();
-    const auto & pk_column_names = reading->getStorageSnapshot()->metadata->getPrimaryKeyColumns();
+    const auto & sorting_key = reading->getSortingKey();
+    const auto & pk_column_names = sorting_key.column_names;
 
+    std::cerr << "sorting_key " << pk_column_names.size() << '\n';
     return buildInputOrderFromSortDescription(
         fixed_columns,
         dag, description,
@@ -942,7 +946,7 @@ InputOrder buildInputOrderFromUnorderedKeys(
     const std::optional<ActionsDAG> & dag,
     const Names & unordered_keys)
 {
-    const auto & sorting_key = object_storage_step->getStorageSnapshot()->metadata->getSortingKey();
+    const auto & sorting_key = object_storage_step->getSortingKey();
     const auto & sorting_key_columns = sorting_key.column_names;
 
     return buildInputOrderFromUnorderedKeys(
@@ -1021,9 +1025,10 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtua
         {
             bool can_read = object_storage_step->requestReadingInOrder(order_info.input_order);
             if (!can_read)
+            {
                 return nullptr;
+            }
         }
-
         return order_info.input_order;
     }
 
@@ -1185,7 +1190,7 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node)
 
         return order_info;
     }
-#if 0
+
     if (auto * object_storage_step = typeid_cast<ReadFromObjectStorageStep *>(reading_node->step.get()))
     {
         auto order_info = buildInputOrderFromUnorderedKeys(
@@ -1201,7 +1206,7 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node)
 
         return order_info;
     }
-#endif
+
     return {};
 }
 

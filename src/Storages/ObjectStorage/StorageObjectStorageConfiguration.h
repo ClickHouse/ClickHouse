@@ -257,6 +257,16 @@ public:
         return false;
     }
 
+    virtual InputOrderInfoPtr getInputOrder() const
+    {
+        return nullptr;
+    }
+
+    virtual KeyDescription getSortingKey() const
+    {
+        return {};
+    }
+
     String format = "auto";
     String compression_method = "auto";
     String structure = "auto";

@@ -24,14 +24,12 @@ def test_read_in_order(started_cluster_iceberg_with_spark,  storage_type):
             data STRING
         )
         USING iceberg
-        TBLPROPERTIES (
-            'format-version'='2',
-            'write.order-by' = 'id ASC, data ASC',
-            'write.update.mode'='merge-on-read',
-            'write.delete.mode'='merge-on-read'
-        )
     """)
-    #spark.sql(f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range(100, 150)")
+    spark.sql(f"""
+        ALTER TABLE {TABLE_NAME} 
+        WRITE ORDERED BY id
+    """)
+
     spark.sql(f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range(10, 100)")
     spark.sql(f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range(100, 150)")
 
@@ -42,7 +40,7 @@ def test_read_in_order(started_cluster_iceberg_with_spark,  storage_type):
         f"/iceberg_data/default/{TABLE_NAME}/",
     )
 
-    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark, order_by="ORDER BY id")
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
 
     query_id = get_uuid_str()
 
