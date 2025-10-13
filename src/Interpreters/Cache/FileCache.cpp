@@ -35,7 +35,6 @@ namespace ProfileEvents
     extern const Event FilesystemCacheReserveAttempts;
     extern const Event FilesystemCacheGetOrSetMicroseconds;
     extern const Event FilesystemCacheGetMicroseconds;
-    extern const Event FilesystemCacheFailToReserveSpaceBecauseOfLockContention;
     extern const Event FilesystemCacheFreeSpaceKeepingThreadRun;
     extern const Event FilesystemCacheFreeSpaceKeepingThreadWorkMilliseconds;
     extern const Event FilesystemCacheFailToReserveSpaceBecauseOfCacheResize;
