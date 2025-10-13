@@ -350,7 +350,7 @@ private:
     void setRandomShardKey(RandomGenerator & rg, const std::optional<SQLTable> & t, Expr * expr);
     void getNextPeerTableDatabase(RandomGenerator & rg, SQLBase & b);
 
-    void generateNextRefreshableView(RandomGenerator & rg, RefreshableView * cv);
+    void generateNextRefreshableView(RandomGenerator & rg, RefreshableView * rv);
     void generateNextCreateView(RandomGenerator & rg, CreateView * cv);
     void generateNextCreateDictionary(RandomGenerator & rg, CreateDictionary * cd);
     void generateNextDrop(RandomGenerator & rg, Drop * dp);
