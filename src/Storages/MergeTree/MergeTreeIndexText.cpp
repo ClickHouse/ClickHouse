@@ -1013,7 +1013,7 @@ std::pair<String, std::optional<Field>> extractTokenizer(std::unordered_map<Stri
         if (tokenizer_tuple->size() > 4)
             throw Exception(
                 ErrorCodes::INCORRECT_QUERY,
-                "Text index argument '{}': function accepts at most one parameter, but got {}",
+                "Text index argument '{}': function accepts at most 3 parameters, but got {}",
                 ARGUMENT_TOKENIZER,
                 tokenizer_tuple->size() - 1);
 
