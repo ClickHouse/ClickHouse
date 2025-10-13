@@ -330,7 +330,7 @@ def main():
         for failed_suit in failed_suits:
             files.extend(
                 Shell.get_output(
-                    f"find ./tests/integration/{failed_suit} -name '*.log'"
+                    f"find ./tests/integration/{failed_suit} -name '*.log*'"
                 ).splitlines()
             )
 
