@@ -26,8 +26,6 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
     if (!optimization_settings.optimize_plan)
         return;
 
-    const auto & optimizations = getOptimizations();
-
     struct Frame
     {
         QueryPlan::Node * node = nullptr;
@@ -81,7 +79,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
         size_t max_update_depth = 0;
 
         /// Apply all optimizations.
-        for (const auto & optimization : optimizations)
+        for (const auto & optimization : getOptimizations())
         {
             if (!(optimization_settings.*(optimization.is_enabled)))
                 continue;
@@ -189,11 +187,6 @@ void optimizeTreeSecondPass(
         if (optimization_settings.direct_read_from_text_index)
             optimizeDirectReadFromTextIndex(stack, nodes);
 
-        /// NOTE: optimizePrewhere can modify the stack.
-        /// Prewhere optimization relies on PK optimization (getConditionSelectivityEstimatorByPredicate)
-        if (optimization_settings.optimize_prewhere)
-            optimizePrewhere(stack, nodes);
-
         auto & frame = stack.back();
 
         /// Traverse all children first.
@@ -204,6 +197,10 @@ void optimizeTreeSecondPass(
             stack.push_back(next_frame);
             continue;
         }
+
+        /// Prewhere optimization relies on PK optimization (getConditionSelectivityEstimatorByPredicate)
+        if (optimization_settings.optimize_prewhere)
+            optimizePrewhere(*frame.node);
 
         stack.pop_back();
     }
@@ -222,38 +219,22 @@ void optimizeTreeSecondPass(
             convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings);
         });
 
-
     /// If join runtime filters were added re-run optimizePrewhere and filter push down optimizations
     /// to move newly added runtime filter as deep in the tree as possible
     if (join_runtime_filters_were_added)
     {
-        stack.push_back({.node = &root});
-        while (!stack.empty())
-        {
-            if (optimization_settings.optimize_prewhere)
-                optimizePrewhere(stack, nodes);
-
-            /// NOTE: optimizePrewhere can modify the stack.
-            auto & frame = stack.back();
-
-            if (frame.next_child == 0)
+        traverseQueryPlan(stack, root,
+            [&](auto & frame_node)
             {
-                tryMergeExpressions(frame.node, nodes, {});
-                tryMergeFilters(frame.node, nodes, {});
-                tryPushDownFilter(frame.node, nodes, {});
-            }
-
-            /// Traverse all children first.
-            if (frame.next_child < frame.node->children.size())
+                tryMergeExpressions(&frame_node, nodes, {});
+                tryMergeFilters(&frame_node, nodes, {});
+                tryPushDownFilter(&frame_node, nodes, {});
+            },
+            [&](auto & frame_node)
             {
-                auto next_frame = Frame{.node = frame.node->children[frame.next_child]};
-                ++frame.next_child;
-                stack.push_back(next_frame);
-                continue;
-            }
-
-            stack.pop_back();
-        }
+                if (optimization_settings.optimize_prewhere)
+                    optimizePrewhere(frame_node);
+            });
     }
 
     traverseQueryPlan(stack, root,
