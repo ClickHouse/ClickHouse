@@ -286,6 +286,7 @@ IProcessor::Status NegativeLimitTransform::tryPushWholeFrontChunk()
             "In NegativeLimitTransform::tryPushWholeFrontChunk, queued rows should be less than or equal to limit + offset");
     }
 
+    /// Output port is closed, nothing can be done with the chunks; so, we keep discarding them.
     while (!queue.empty() && queue.front().output_port->isFinished())
     {
         auto & front = queue.front();
