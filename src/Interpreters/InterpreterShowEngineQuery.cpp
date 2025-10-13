@@ -17,9 +17,7 @@ BlockIO InterpreterShowEnginesQuery::execute()
     query_context->makeQueryContext();
     query_context->setCurrentQueryId("");
 
-    BlockIO io = executeQuery("SELECT * FROM system.table_engines ORDER BY name", query_context, QueryFlags{ .internal = true }).second;
-    io.context_holder = std::move(query_context);
-    return io;
+    return executeQuery("SELECT * FROM system.table_engines ORDER BY name", query_context, QueryFlags{ .internal = true }).second;
 }
 
 void registerInterpreterShowEnginesQuery(InterpreterFactory & factory)

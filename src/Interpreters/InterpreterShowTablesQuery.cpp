@@ -234,9 +234,7 @@ BlockIO InterpreterShowTablesQuery::execute()
     query_context->makeQueryContext();
     query_context->setCurrentQueryId("");
 
-    BlockIO io = executeQuery(getRewrittenQuery(), query_context, QueryFlags{ .internal = true }).second;
-    io.context_holder = std::move(query_context);
-    return io;
+    return executeQuery(getRewrittenQuery(), query_context, QueryFlags{ .internal = true }).second;
 }
 
 /// (*) Sorting is strictly speaking not necessary but 1. it is convenient for users, 2. SQL currently does not allow to

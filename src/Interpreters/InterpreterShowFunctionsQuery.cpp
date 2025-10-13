@@ -20,9 +20,7 @@ BlockIO InterpreterShowFunctionsQuery::execute()
     query_context->makeQueryContext();
     query_context->setCurrentQueryId({});
 
-    BlockIO io = executeQuery(getRewrittenQuery(), query_context, QueryFlags{ .internal = true }).second;
-    io.context_holder = std::move(query_context);
-    return io;
+    return executeQuery(getRewrittenQuery(), query_context, QueryFlags{ .internal = true }).second;
 }
 
 String InterpreterShowFunctionsQuery::getRewrittenQuery()

@@ -6,7 +6,7 @@ namespace DB
 
 void BlockIO::reset()
 {
-    /** process_list_entry should be destroyed after in, after out and after pipeline,
+    /** process_list_entries should be destroyed after in, after out and after pipeline,
       *  since in, out and pipeline contain pointer to objects inside process_list_entry (query-level MemoryTracker for example),
       *  which could be used before destroying of in and out.
       *
@@ -17,7 +17,7 @@ void BlockIO::reset()
     /// TODO simplify it all
 
     pipeline.reset();
-    process_list_entry.reset();
+    process_list_entries.clear();
 
     /// TODO Do we need also reset callbacks? In which order?
 }
@@ -30,11 +30,12 @@ BlockIO & BlockIO::operator= (BlockIO && rhs) noexcept
     /// Explicitly reset fields, so everything is destructed in right order
     reset();
 
-    process_list_entry      = std::move(rhs.process_list_entry);
+    process_list_entries    = std::move(rhs.process_list_entries);
     pipeline                = std::move(rhs.pipeline);
 
-    finish_callback         = std::move(rhs.finish_callback);
-    exception_callback      = std::move(rhs.exception_callback);
+    finalize_query_pipeline = std::move(rhs.finalize_query_pipeline);
+    finish_callbacks        = std::move(rhs.finish_callbacks);
+    exception_callbacks     = std::move(rhs.exception_callbacks);
 
     null_format             = rhs.null_format;
 
@@ -46,20 +47,24 @@ BlockIO::~BlockIO()
     reset();
 }
 
-void BlockIO::onFinish(std::chrono::system_clock::time_point finish_time)
+void BlockIO::onFinish(std::chrono::system_clock::time_point /* finish_time */)
 {
-    if (finish_callback)
-        finish_callback(std::move(pipeline), finish_time);
-    else
-        pipeline.reset();
+    if (finalize_query_pipeline)
+    {
+        const QueryFinishInfo finish_info = finalize_query_pipeline(std::move(pipeline));
+        for (const auto & callback : finish_callbacks)
+        {
+            callback(finish_info);
+        }
+    }
 }
 
 void BlockIO::onException(bool log_as_error)
 {
     setAllDataSent();
 
-    if (exception_callback)
-        exception_callback(log_as_error);
+    for (const auto & callback : exception_callbacks)
+        callback(log_as_error);
 
     pipeline.cancel();
     pipeline.reset();
@@ -74,10 +79,12 @@ void BlockIO::onCancelOrConnectionLoss()
 void BlockIO::setAllDataSent() const
 {
     /// The following queries does not have process_list_entry:
-    /// - internal
     /// - SHOW PROCESSLIST
-    if (process_list_entry)
-        process_list_entry->getQueryStatus()->setAllDataSent();
+    for (const auto & entry : process_list_entries)
+    {
+        if (entry)
+            entry->getQueryStatus()->setAllDataSent();
+    }
 }
 
 }

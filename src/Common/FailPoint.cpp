@@ -118,6 +118,7 @@ static struct InitFiu
     REGULAR(sleep_in_logs_flush) \
     ONCE(smt_commit_exception_before_op) \
     ONCE(disk_object_storage_fail_commit_metadata_transaction) \
+    REGULAR(direct_dictionary_exception_while_processing) \
 
 
 namespace FailPoints

@@ -143,6 +143,11 @@ BlockIO ClickHouseDictionarySource::loadKeys(const Columns & key_columns, const 
     return createStreamForQuery(query);
 }
 
+BlockIO ClickHouseDictionarySource::loadAllWithExceptionWhileProcessing()
+{
+    return createStreamForQuery("SELECT number FROM numbers(1) WHERE throwIf(number = 0, 'error')");
+}
+
 bool ClickHouseDictionarySource::isModified() const
 {
     if (!configuration.invalidate_query.empty())
@@ -199,7 +204,6 @@ BlockIO ClickHouseDictionarySource::createStreamForQuery(const String & query)
         io = executeQuery(query, context_copy, QueryFlags{ .internal = true }).second;
 
         io.pipeline.convertStructureTo(empty_sample_block->getColumnsWithTypeAndName());
-        io.context_holder = std::move(context_copy);
         io.query_scope_holder = std::move(query_scope);
     }
     else

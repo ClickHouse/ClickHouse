@@ -3,6 +3,7 @@
 #include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <Common/HashTable/HashMap.h>
+#include <Common/FailPoint.h>
 #include <Interpreters/Context.h>
 #include <Functions/FunctionHelpers.h>
 
@@ -30,6 +31,11 @@ namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
     extern const int BAD_ARGUMENTS;
+}
+
+namespace FailPoints
+{
+    extern const char direct_dictionary_exception_while_processing[];
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -427,7 +433,14 @@ BlockIO DirectDictionary<dictionary_key_type>::loadKeys(const PaddedPODArray<Key
 template <DictionaryKeyType dictionary_key_type>
 Pipe DirectDictionary<dictionary_key_type>::read(const Names & /* column_names */, size_t /* max_block_size */, size_t /* num_streams */) const
 {
-    BlockIO io = source_ptr->loadAll();
+    BlockIO io;
+    io = source_ptr->loadAll();
+
+    fiu_do_on(FailPoints::direct_dictionary_exception_while_processing,
+    {
+        io = source_ptr->loadAllWithExceptionWhileProcessing();
+    });
+
     return Pipe(std::make_shared<SourceFromQueryPipeline<>>(std::move(io)));
 }
 

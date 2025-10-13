@@ -70,6 +70,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/ProfileEvents.h>
+#include <IO/Progress.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -1677,7 +1678,7 @@ static BlockIO executeQueryImpl(
         }
 
         /// Hold element of process list till end of query execution.
-        res.process_list_entry = process_list_entry;
+        res.process_list_entries.push_back(process_list_entry);
 
         if (query_plan)
         {
@@ -1728,7 +1729,44 @@ static BlockIO executeQueryImpl(
                 query_database,
                 query_table,
                 async_insert);
+
             /// Also make possible for caller to log successful query finish and exception during execution.
+
+            /// The prepare callback flushes pipeline progress and resets the pipeline
+            auto finish_callback_finalize_pipeline = [context,
+                                     query_result_cache_usage,
+                                     // Need to be cached, since will be changed after complete()
+                                     pulling_pipeline = pipeline.pulling()](QueryPipeline && query_pipeline) mutable -> QueryFinishInfo
+            {
+                const std::chrono::system_clock::time_point finish_time = std::chrono::system_clock::now();
+
+                if (query_result_cache_usage == QueryResultCacheUsage::Write)
+                    /// Trigger the actual write of the buffered query result into the query result cache. This is done explicitly to
+                    /// prevent partial/garbage results in case of exceptions during query execution.
+                    query_pipeline.finalizeWriteInQueryResultCache();
+
+                if (!query_pipeline.getProcessors().empty())
+                    logProcessorProfile(context, query_pipeline.getProcessors());
+
+                std::optional<ResultProgress> result_progress;
+                if (pulling_pipeline)
+                {
+                    UInt64 result_rows;
+                    UInt64 result_bytes;
+                    query_pipeline.tryGetResultRowsAndBytes(result_rows, result_bytes);
+                    result_progress = std::make_optional<ResultProgress>(result_rows, result_bytes);
+                }
+
+                /// Reset pipeline before fetching profile counters
+                query_pipeline.reset();
+
+                /// Update performance counters before logging to query_log
+                CurrentThread::finalizePerformanceCounters();
+
+                return QueryFinishInfo{.finish_time = finish_time, .result_progress = std::move(result_progress)};
+            };
+
+            /// The finish callback logs the query result
             auto finish_callback = [elem,
                                     context,
                                     out_ast,
@@ -1737,29 +1775,92 @@ static BlockIO executeQueryImpl(
                                     implicit_tcl_executor,
                                     // Need to be cached, since will be changed after complete()
                                     pulling_pipeline = pipeline.pulling(),
-                                    query_span](QueryPipeline && query_pipeline, std::chrono::system_clock::time_point finish_time) mutable
+                                    query_span,
+                                    &settings](const QueryFinishInfo & finish_info) mutable
             {
-                if (query_result_cache_usage == QueryResultCacheUsage::Write)
-                    /// Trigger the actual write of the buffered query result into the query result cache. This is done explicitly to
-                    /// prevent partial/garbage results in case of exceptions during query execution.
-                    query_pipeline.finalizeWriteInQueryResultCache();
+                {
+                    ResultProgress result_progress(0, 0);
 
-                logQueryFinishImpl(
-                    elem,
-                    context,
-                    out_ast,
-                    std::move(query_pipeline),
-                    pulling_pipeline,
-                    query_span,
-                    query_result_cache_usage,
-                    internal,
-                    finish_time);
+                    chassert((finish_info.result_progress != std::nullopt) == pulling_pipeline);
+
+                    if (finish_info.result_progress)
+                    {
+                        result_progress = *finish_info.result_progress;
+                    }
+                    else if (QueryStatusPtr process_list_elem = context->getProcessListElement(); process_list_elem && !pulling_pipeline)
+                    {
+                        auto progress_out = process_list_elem->getProgressOut();
+                        result_progress.result_rows = progress_out.written_rows;
+                        result_progress.result_bytes = progress_out.written_bytes;
+                    }
+
+                    if (auto progress_callback = context->getProgressCallback())
+                    {
+                        Progress p;
+                        p.incrementPiecewiseAtomically(Progress{result_progress});
+                        progress_callback(p);
+                    }
+
+                    elem.result_rows = result_progress.result_rows;
+                    elem.result_bytes = result_progress.result_bytes;
+                }
+
+                if (QueryStatusPtr process_list_elem = context->getProcessListElement())
+                {
+                    QueryStatusInfo info = process_list_elem->getInfo(true, settings[Setting::log_profile_events]);
+                    logQueryMetricLogFinish(context, internal, elem.client_info.current_query_id, finish_info.finish_time, std::make_shared<QueryStatusInfo>(info));
+
+                    elem.type = QueryLogElementType::QUERY_FINISH;
+
+                    addStatusInfoToQueryLogElement(elem, info, out_ast, context, finish_info.finish_time);
+
+                    if (elem.read_rows != 0)
+                    {
+                        double elapsed_seconds = static_cast<double>(info.elapsed_microseconds) / 1000000.0;
+                        double rows_per_second = static_cast<double>(elem.read_rows) / elapsed_seconds;
+                        LOG_DEBUG(
+                            getLogger("executeQuery"),
+                            "Read {} rows, {} in {} sec., {} rows/sec., {}/sec.",
+                            elem.read_rows,
+                            ReadableSize(elem.read_bytes),
+                            elapsed_seconds,
+                            rows_per_second,
+                            ReadableSize(elem.read_bytes / elapsed_seconds));
+                    }
+
+                    elem.query_result_cache_usage = query_result_cache_usage;
+                    elem.is_internal = internal;
+
+                    const auto log_queries = settings[Setting::log_queries];
+                    if (log_queries && elem.type >= settings[Setting::log_queries_min_type]
+                        && static_cast<Int64>(elem.query_duration_ms) >= settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
+                    {
+                        if (auto query_log = context->getQueryLog())
+                            query_log->add(elem);
+                    }
+
+                    if (auto opentelemetry_span_log = context->getOpenTelemetrySpanLog();
+                        opentelemetry_span_log && query_span && query_span->isTraceEnabled())
+                    {
+                        query_span->addAttribute("db.statement", elem.query);
+                        query_span->addAttributeIfNotZero("clickhouse.read_rows", elem.read_rows);
+                        query_span->addAttributeIfNotZero("clickhouse.read_bytes", elem.read_bytes);
+                        query_span->addAttributeIfNotZero("clickhouse.written_rows", elem.written_rows);
+                        query_span->addAttributeIfNotZero("clickhouse.written_bytes", elem.written_bytes);
+                        query_span->addAttributeIfNotZero("clickhouse.result_rows", elem.result_rows);
+                        query_span->addAttributeIfNotZero("clickhouse.result_bytes", elem.result_bytes);
+                        query_span->finish(finish_info.finish_time);
+                    }
+                }
 
                 if (implicit_tcl_executor->transactionRunning())
                 {
                     implicit_tcl_executor->commit(context);
                 }
             };
+
+            res.finalize_query_pipeline = std::move(finish_callback_finalize_pipeline);
+            res.finish_callbacks.push_back(std::move(finish_callback));
 
             auto exception_callback =
                 [start_watch, elem, context, out_ast, internal, my_quota(quota), implicit_tcl_executor, query_span](bool log_error) mutable
@@ -1773,13 +1874,16 @@ static BlockIO executeQueryImpl(
                     txn->onException();
                 }
 
-                if (my_quota)
-                    my_quota->used(QuotaType::ERRORS, 1, /* check_exceeded = */ false);
+                /// If a query with internal query fails, only add one error to the quota.
+                if (!internal)
+                {
+                    if (my_quota)
+                        my_quota->used(QuotaType::ERRORS, 1, /* check_exceeded = */ false);
+                }
 
                 logQueryException(elem, context, start_watch, out_ast, query_span, internal, log_error);
             };
-            res.finish_callback = std::move(finish_callback);
-            res.exception_callback = std::move(exception_callback);
+            res.exception_callbacks.push_back(std::move(exception_callback));
         }
     }
     catch (...)

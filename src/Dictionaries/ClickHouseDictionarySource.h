@@ -57,6 +57,9 @@ public:
 
     BlockIO loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
+    /// For testing purposes only.
+    BlockIO loadAllWithExceptionWhileProcessing() override;
+
     bool isModified() const override;
     bool supportsSelectiveLoad() const override { return true; }
 
