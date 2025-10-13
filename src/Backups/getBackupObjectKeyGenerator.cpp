@@ -1,4 +1,5 @@
 #include <Backups/getBackupObjectKeyGenerator.h>
+
 #include <Common/MatchGenerator.h>
 #include <Common/SipHash.h>
 
@@ -52,10 +53,17 @@ namespace DB
 {
 
 ObjectStorageKeysGeneratorPtr
-getBackupObjectKeyGenerator(const Poco::Util::AbstractConfiguration & config)
+getBackupObjectKeyGenerator(const Poco::Util::AbstractConfiguration & config, const BackupSettings & backup_settings)
 {
-    String config_prefix = "backups";
-    String prefix_template = config.getString(config_prefix + ".key_prefix_template", String());
+    String prefix_template;
+    if (!backup_settings.key_prefix_template.empty())
+        prefix_template = backup_settings.key_prefix_template;
+
+    if (prefix_template.empty())
+    {
+        String config_prefix = "backups";
+        prefix_template = config.getString(config_prefix + ".key_prefix_template", String());
+    }
     if (prefix_template.empty())
         return std::make_shared<DefaultKeysGenerator>();
     else

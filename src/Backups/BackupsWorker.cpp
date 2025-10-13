@@ -1091,7 +1091,7 @@ void BackupsWorker::sendQueryToOtherHosts(const ASTBackupQuery & backup_or_resto
 std::shared_ptr<IBackupCoordination>
 BackupsWorker::makeBackupCoordination(bool on_cluster, const BackupSettings & backup_settings, const ContextPtr & context) const
 {
-    auto keys_gen = getBackupObjectKeyGenerator(context->getConfigRef());
+    auto keys_gen = getBackupObjectKeyGenerator(context->getConfigRef(), backup_settings);
     if (!on_cluster)
     {
         return std::make_shared<BackupCoordinationLocal>(

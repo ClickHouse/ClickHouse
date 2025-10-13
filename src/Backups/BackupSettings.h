@@ -90,6 +90,9 @@ struct BackupSettings
     /// Is it allowed to use blob paths to calculate checksums of backup entries?
     bool allow_checksums_from_remote_paths = true;
 
+    /// A template for the backup key prefix in the form of a regular expression.
+    std::string key_prefix_template;
+
     /// Internal, should not be specified by user.
     /// Whether this backup is a part of a distributed backup created by BACKUP ON CLUSTER.
     bool internal = false;
