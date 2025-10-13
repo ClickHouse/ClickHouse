@@ -3635,6 +3635,11 @@ message RefreshInterval {
     required RefreshUnit unit = 2;
 }
 
+message DependsList {
+    required ExprSchemaTable est = 1;
+    repeated ExprSchemaTable other_est = 2;
+}
+
 message RefreshableView {
     enum RefreshPolicy {
         EVERY = 1;
@@ -3644,7 +3649,9 @@ message RefreshableView {
     required RefreshInterval interval = 2;
     optional RefreshInterval offset = 3;
     required RefreshInterval randomize = 4;
-    optional bool append = 5;
+    optional DependsList depends = 5;
+    optional SettingValues setting_values = 6;
+    optional bool append = 7;
 }
 
 message CreateMatViewTo {
