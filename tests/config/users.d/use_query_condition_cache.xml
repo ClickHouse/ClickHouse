@@ -1,0 +1,7 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <use_query_condition_cache>0</use_query_condition_cache>
+        </default>
+    </profiles>
+</clickhouse>
