@@ -135,11 +135,18 @@ def run_fuzzer(fuzzer: str, timeout: int):
                 f"FAIL\n{stopwatch.start_time_str}\n{stopwatch.duration_seconds}\n"
             )
     except subprocess.TimeoutExpired:
-        logging.info("Successful running %s", fuzzer)
-        with open(status_path, "w", encoding="utf-8") as status:
-            status.write(
-                f"OK\n{stopwatch.start_time_str}\n{stopwatch.duration_seconds}\n"
-            )
+        if Path(exact_artifact_path).exists():
+            logging.info("Successful running %s, but artifact was produced - registering as FAIL", fuzzer)
+            with open(status_path, "w", encoding="utf-8") as status:
+                status.write(
+                    f"FAIL\n{stopwatch.start_time_str}\n{stopwatch.duration_seconds}\n"
+                )
+        else:
+            logging.info("Successful running %s", fuzzer)
+            with open(status_path, "w", encoding="utf-8") as status:
+                status.write(
+                    f"OK\n{stopwatch.start_time_str}\n{stopwatch.duration_seconds}\n"
+                )
     except Exception as e:
         logging.info("Unexpected exception running %s: %s", fuzzer, e)
         with open(status_path, "w", encoding="utf-8") as status:
