@@ -1,5 +1,6 @@
 #include <cstring>
 #include <iomanip>
+#include <iostream>
 #include <base/types.h>
 #include <lz4.h>
 
@@ -47,9 +48,6 @@ protected:
 
     /// Variant for reference implementation of LZ4.
     static constexpr ssize_t LZ4_REFERENCE = -3;
-
-    LZ4::StreamStatistics stream_stat;
-    LZ4::PerformanceStatistics perf_stat;
 
     size_t readCompressedData(size_t & size_decompressed, size_t & size_compressed_without_checksum)
     {
@@ -115,7 +113,7 @@ protected:
                 }
             }
             else
-                LZ4::decompress(compressed_buffer + COMPRESSED_BLOCK_HEADER_SIZE, to, size_compressed_without_checksum, size_decompressed, perf_stat);
+                LZ4::decompress(compressed_buffer + COMPRESSED_BLOCK_HEADER_SIZE, to, size_compressed_without_checksum, size_decompressed);
         }
         else
             throw Exception(ErrorCodes::UNKNOWN_COMPRESSION_METHOD, "Unknown compression method: {}", toString(method));
@@ -124,12 +122,10 @@ protected:
 public:
     /// 'compressed_in' could be initialized lazily, but before first call of 'readCompressedData'.
     FasterCompressedReadBufferBase(ReadBuffer * in, ssize_t variant_)
-        : compressed_in(in), own_compressed_buffer(COMPRESSED_BLOCK_HEADER_SIZE), variant(variant_), perf_stat(variant)
+        : compressed_in(in), own_compressed_buffer(COMPRESSED_BLOCK_HEADER_SIZE), variant(variant_)
     {
     }
 
-    LZ4::StreamStatistics getStreamStatistics() const { return stream_stat; }
-    LZ4::PerformanceStatistics getPerformanceStatistics() const { return perf_stat; }
 };
 
 

@@ -1,10 +1,6 @@
 #pragma once
 
-#include <cmath>
-#include <random>
-#include <pcg_random.hpp>
-
-#include <absl/container/inlined_vector.h>
+#include <cstddef>
 
 namespace LZ4
 {
