@@ -10,7 +10,6 @@ namespace DB
 {
 template <class> struct Decimal;
 class DateTime64;
-class Time64;
 
 #define FOR_EACH_UNDERLYING_DECIMAL_TYPE(M) \
     M(Int32) \
@@ -119,15 +118,13 @@ template <typename T> Decimal<T> operator- (const Decimal<T> & x, const Decimal<
 template <typename T> Decimal<T> operator* (const Decimal<T> & x, const Decimal<T> & y);
 template <typename T> Decimal<T> operator/ (const Decimal<T> & x, const Decimal<T> & y);
 template <typename T> Decimal<T> operator- (const Decimal<T> & x);
-template <typename T> Decimal<T> NO_SANITIZE_UNDEFINED negateOverflow (const Decimal<T> & x);
 
 #define DISPATCH(TYPE) \
 extern template Decimal<TYPE> operator+ (const Decimal<TYPE> & x, const Decimal<TYPE> & y); \
 extern template Decimal<TYPE> operator- (const Decimal<TYPE> & x, const Decimal<TYPE> & y); \
 extern template Decimal<TYPE> operator* (const Decimal<TYPE> & x, const Decimal<TYPE> & y); \
 extern template Decimal<TYPE> operator/ (const Decimal<TYPE> & x, const Decimal<TYPE> & y); \
-extern template Decimal<TYPE> operator- (const Decimal<TYPE> & x); \
-extern template Decimal<TYPE> NO_SANITIZE_UNDEFINED negateOverflow (const Decimal<TYPE> & x);
+extern template Decimal<TYPE> operator- (const Decimal<TYPE> & x);
 FOR_EACH_UNDERLYING_DECIMAL_TYPE(DISPATCH)
 #undef DISPATCH
 
@@ -144,16 +141,6 @@ public:
     using NativeType = Base::NativeType;
 
     constexpr DateTime64(const Base & v): Base(v) {} // NOLINT(google-explicit-constructor)
-};
-
-class Time64 : public Decimal64
-{
-public:
-    using Base = Decimal64;
-    using Base::Base;
-    using NativeType = Base::NativeType;
-
-    constexpr Time64(const Base & v): Base(v) {} // NOLINT(google-explicit-constructor)
 };
 }
 
@@ -183,15 +170,6 @@ namespace std
         size_t operator()(const DB::DateTime64 & x) const
         {
             return std::hash<DB::DateTime64::NativeType>()(x);
-        }
-    };
-
-    template <>
-    struct hash<DB::Time64>
-    {
-        size_t operator()(const DB::Time64 & x) const
-        {
-            return std::hash<DB::Time64::NativeType>()(x);
         }
     };
 

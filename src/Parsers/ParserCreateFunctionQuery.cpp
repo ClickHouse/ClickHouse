@@ -1,6 +1,8 @@
 #include <Parsers/ParserCreateFunctionQuery.h>
 
 #include <Parsers/ASTCreateFunctionQuery.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>

@@ -4,7 +4,6 @@ description: 'Computes quantile of a numeric data sequence using linear interpol
 sidebar_position: 176
 slug: /sql-reference/aggregate-functions/reference/quantileExactWeightedInterpolated
 title: 'quantileExactWeightedInterpolated'
-doc_type: 'reference'
 ---
 
 # quantileExactWeightedInterpolated
@@ -17,12 +16,14 @@ When using multiple `quantile*` functions with different levels in a query, the 
 
 We strongly recommend using `quantileExactWeightedInterpolated` instead of `quantileInterpolatedWeighted` because `quantileExactWeightedInterpolated` is more accurate than `quantileInterpolatedWeighted`. Here is an example:
 
-```sql
+``` sql
 SELECT
     quantileExactWeightedInterpolated(0.99)(number, 1),
     quantile(0.99)(number),
     quantileInterpolatedWeighted(0.99)(number, 1)
 FROM numbers(9)
+
+
 ┌─quantileExactWeightedInterpolated(0.99)(number, 1)─┬─quantile(0.99)(number)─┬─quantileInterpolatedWeighted(0.99)(number, 1)─┐
 │                                               7.92 │                   7.92 │                                             8 │
 └────────────────────────────────────────────────────┴────────────────────────┴───────────────────────────────────────────────┘
@@ -30,7 +31,7 @@ FROM numbers(9)
 
 **Syntax**
 
-```sql
+``` sql
 quantileExactWeightedInterpolated(level)(expr, weight)
 ```
 
@@ -56,7 +57,7 @@ Type:
 
 Input table:
 
-```text
+``` text
 ┌─n─┬─val─┐
 │ 0 │   3 │
 │ 1 │   2 │
@@ -67,7 +68,7 @@ Input table:
 
 Result:
 
-```text
+``` text
 ┌─quantileExactWeightedInterpolated(n, val)─┐
 │                                       1.5 │
 └───────────────────────────────────────────┘

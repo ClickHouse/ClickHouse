@@ -11,8 +11,6 @@
 #include <Coordination/KeeperStorage_fwd.h>
 #include <Coordination/KeeperCommon.h>
 
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
-
 #include <Disks/DiskLocal.h>
 
 #include <Poco/Logger.h>
@@ -26,7 +24,7 @@
 namespace DB::CoordinationSetting
 {
     extern const CoordinationSettingsBool experimental_use_rocksdb;
-    extern const CoordinationSettingsNonZeroUInt64 rotate_log_storage_interval;
+    extern const CoordinationSettingsUInt64 rotate_log_storage_interval;
     extern const CoordinationSettingsUInt64 reserved_log_items;
     extern const CoordinationSettingsUInt64 snapshot_distance;
 }
@@ -120,9 +118,9 @@ void addNode(Storage & storage, const std::string & path, const std::string & da
     node.acl_id = acl_id;
     storage.container.insertOrReplace(path, node);
     auto child_it = storage.container.find(path);
-    auto child_path = Coordination::getBaseNodeName(child_it->key);
+    auto child_path = DB::getBaseNodeName(child_it->key);
     storage.container.updateValue(
-        Coordination::parentNodePath(path),
+        DB::parentNodePath(StringRef{path}),
         [&](auto & parent)
         {
             parent.addChild(child_path);

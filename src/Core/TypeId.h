@@ -28,8 +28,6 @@ enum class TypeIndex : uint8_t
     Date32,
     DateTime,
     DateTime64,
-    Time,
-    Time64,
     String,
     FixedString,
     Enum8,
@@ -41,7 +39,6 @@ enum class TypeIndex : uint8_t
     UUID,
     Array,
     Tuple,
-    QBit,
     Set,
     Interval,
     Nullable,
@@ -110,7 +107,6 @@ TYPEID_MAP(Decimal64)
 TYPEID_MAP(Decimal128)
 TYPEID_MAP(Decimal256)
 TYPEID_MAP(DateTime64)
-TYPEID_MAP(Time64)
 
 TYPEID_MAP(String)
 

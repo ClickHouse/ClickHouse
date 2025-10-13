@@ -26,8 +26,6 @@ public:
 
     bool canContainDistributedTables() const override { return false; }
 
-    bool canContainRocksDBTables() const override { return false; }
-
     void loadStoredObjects(ContextMutablePtr context, LoadingStrictnessLevel /*mode*/) override;
 
     void createTable(
@@ -52,8 +50,7 @@ public:
     void alterTable(
         ContextPtr context,
         const StorageID & table_id,
-        const StorageInMemoryMetadata & metadata,
-        bool validate_new_create_query) override;
+        const StorageInMemoryMetadata & metadata) override;
 
     time_t getObjectMetadataModificationTime(const String & table_name) const override;
 

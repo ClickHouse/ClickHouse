@@ -1,3 +1,0 @@
-<clickhouse>
-  <include_from>I hope such path will never exists, since it does not even contain a single slash</include_from>
-</clickhouse>

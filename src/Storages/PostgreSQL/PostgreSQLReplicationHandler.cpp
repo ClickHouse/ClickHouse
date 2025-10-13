@@ -19,7 +19,6 @@
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
 #include <Databases/DatabaseOnDisk.h>
 
@@ -501,7 +500,7 @@ StorageInfo PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection 
     auto block_io = interpreter.execute();
 
     const StorageInMemoryMetadata & storage_metadata = nested_storage->getInMemoryMetadata();
-    auto sample_block = std::make_shared<const Block>(storage_metadata.getSampleBlockNonMaterialized());
+    auto sample_block = storage_metadata.getSampleBlockNonMaterialized();
 
     auto input = std::make_unique<PostgreSQLTransactionSource<pqxx::ReplicationTransaction>>(tx, query_str, sample_block, DEFAULT_BLOCK_SIZE);
     assertBlocksHaveEqualStructure(input->getPort().getHeader(), block_io.pipeline.getHeader(), "postgresql replica load from snapshot");

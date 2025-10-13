@@ -28,7 +28,7 @@ class ColumnLowCardinality final : public COWHelper<IColumnHelper<ColumnLowCardi
 {
     friend class COWHelper<IColumnHelper<ColumnLowCardinality>, ColumnLowCardinality>;
 
-    ColumnLowCardinality(MutableColumnPtr && column_unique, MutableColumnPtr && indexes, bool is_shared);
+    ColumnLowCardinality(MutableColumnPtr && column_unique, MutableColumnPtr && indexes, bool is_shared = false);
     ColumnLowCardinality(const ColumnLowCardinality & other) = default;
 
 public:
@@ -36,12 +36,12 @@ public:
       * Use IColumn::mutate in order to make mutable column and mutate shared nested columns.
       */
     using Base = COWHelper<IColumnHelper<ColumnLowCardinality>, ColumnLowCardinality>;
-    static Ptr create(const ColumnPtr & column_unique_, const ColumnPtr & indexes_, bool is_shared)
+    static Ptr create(const ColumnPtr & column_unique_, const ColumnPtr & indexes_, bool is_shared = false)
     {
         return ColumnLowCardinality::create(column_unique_->assumeMutable(), indexes_->assumeMutable(), is_shared);
     }
 
-    static MutablePtr create(MutableColumnPtr && column_unique, MutableColumnPtr && indexes, bool is_shared)
+    static MutablePtr create(MutableColumnPtr && column_unique, MutableColumnPtr && indexes, bool is_shared = false)
     {
         return Base::create(std::move(column_unique), std::move(indexes), is_shared);
     }
@@ -75,7 +75,7 @@ public:
     bool isNullAt(size_t n) const override { return getDictionary().isNullAt(getIndexes().getUInt(n)); }
     ColumnPtr cut(size_t start, size_t length) const override
     {
-        return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().cut(start, length), isSharedDictionary());
+        return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().cut(start, length));
     }
 
     void insert(const Field & x) override;
@@ -102,13 +102,11 @@ public:
     void popBack(size_t n) override { idx.popBack(n); }
 
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
-    StringRef serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     char * serializeValueIntoMemory(size_t n, char * memory) const override;
 
     void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const override;
 
     const char * deserializeAndInsertFromArena(const char * pos) override;
-    const char * deserializeAndInsertAggregationStateValueFromArena(const char * pos) override;
 
     const char * skipSerializedInArena(const char * pos) const override;
 
@@ -123,8 +121,7 @@ public:
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override
     {
-        return ColumnLowCardinality::create(
-            dictionary.getColumnUniquePtr(), getIndexes().filter(filt, result_size_hint), isSharedDictionary());
+        return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().filter(filt, result_size_hint));
     }
 
     void expand(const Filter & mask, bool inverted) override
@@ -134,12 +131,12 @@ public:
 
     ColumnPtr permute(const Permutation & perm, size_t limit) const override
     {
-        return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().permute(perm, limit), isSharedDictionary());
+        return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().permute(perm, limit));
     }
 
     ColumnPtr index(const IColumn & indexes_, size_t limit) const override
     {
-        return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().index(indexes_, limit), isSharedDictionary());
+        return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().index(indexes_, limit));
     }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -168,7 +165,7 @@ public:
 
     ColumnPtr replicate(const Offsets & offsets) const override
     {
-        return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().replicate(offsets), isSharedDictionary());
+        return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().replicate(offsets));
     }
 
     std::vector<MutableColumnPtr> scatter(ColumnIndex num_columns, const Selector & selector) const override;

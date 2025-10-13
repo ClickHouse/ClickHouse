@@ -41,7 +41,7 @@ class TableFunctionHive : public ITableFunction
 {
 public:
     static constexpr auto name = "hive";
-    static constexpr auto storage_engine_name = "Hive";
+    static constexpr auto storage_type_name = "Hive";
     std::string getName() const override { return name; }
 
     bool hasStaticStructure() const override { return true; }
@@ -49,9 +49,7 @@ public:
     StoragePtr executeImpl(
         const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
 
-    const char * getStorageEngineName() const override { return storage_engine_name; }
-    const String & getFunctionURI() const override { return hive_metastore_url; }
-
+    const char * getStorageTypeName() const override { return storage_type_name; }
     ColumnsDescription getActualTableStructure(ContextPtr, bool is_insert_query) const override;
     void parseArguments(const ASTPtr & ast_function_, ContextPtr context_) override;
 

@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-openssl-fips
+-- Tags: no-fasttest
 
 SELECT HEX(RIPEMD160('The quick brown fox jumps over the lazy dog'));
 

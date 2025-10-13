@@ -3,14 +3,13 @@ description: 'Computes the skewness of a sequence.'
 sidebar_position: 185
 slug: /sql-reference/aggregate-functions/reference/skewpop
 title: 'skewPop'
-doc_type: 'reference'
 ---
 
 # skewPop
 
 Computes the [skewness](https://en.wikipedia.org/wiki/Skewness) of a sequence.
 
-```sql
+``` sql
 skewPop(expr)
 ```
 
@@ -24,6 +23,6 @@ The skewness of the given distribution. Type — [Float64](../../../sql-referenc
 
 **Example**
 
-```sql
+``` sql
 SELECT skewPop(value) FROM series_with_value_column;
 ```

@@ -1,4 +1,3 @@
-import datetime
 import pymongo
 import pytest
 import urllib
@@ -6,7 +5,6 @@ import urllib
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import mongo_pass
-from helpers.test_tools import TSV
 
 
 @pytest.fixture(scope="module")
@@ -16,7 +14,10 @@ def started_cluster(request):
         cluster.add_instance(
             "node",
             with_mongo=True,
-            main_configs=["configs/named_collections.xml"],
+            main_configs=[
+                "configs/named_collections.xml",
+                "configs/feature_flag.xml",
+            ],
             user_configs=["configs/users.xml"],
         )
         cluster.start()
@@ -42,11 +43,8 @@ def get_mongo_connection(started_cluster, secure=False, with_credentials=True):
 
 def test_simple_select(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
-    db = mongo_connection["test_simple_select"]
-    try:
-        db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
-    except pymongo.errors.OperationFailure:
-        pass
+    db = mongo_connection["test"]
+    db.add_user("root", mongo_pass)
     simple_mongo_table = db["simple_table"]
     data = []
     for i in range(0, 100):
@@ -56,26 +54,26 @@ def test_simple_select(started_cluster):
     node = started_cluster.instances["node"]
     assert (
         node.query(
-            f"SELECT COUNT() FROM mongodb('mongo1:27017', 'test_simple_select', 'simple_table', 'root', '{mongo_pass}', structure='key UInt64, data String')"
+            f"SELECT COUNT() FROM mongodb('mongo1:27017', 'test', 'simple_table', 'root', '{mongo_pass}', structure='key UInt64, data String')"
         )
         == "100\n"
     )
     assert (
         node.query(
-            f"SELECT sum(key) FROM mongodb('mongo1:27017', 'test_simple_select', 'simple_table', 'root', '{mongo_pass}', structure='key UInt64, data String')"
+            f"SELECT sum(key) FROM mongodb('mongo1:27017', 'test', 'simple_table', 'root', '{mongo_pass}', structure='key UInt64, data String')"
         )
         == str(sum(range(0, 100))) + "\n"
     )
     assert (
         node.query(
-            f"SELECT sum(key) FROM mongodb('mongo1:27017', 'test_simple_select', 'simple_table', 'root', '{mongo_pass}', 'key UInt64, data String')"
+            f"SELECT sum(key) FROM mongodb('mongo1:27017', 'test', 'simple_table', 'root', '{mongo_pass}', 'key UInt64, data String')"
         )
         == str(sum(range(0, 100))) + "\n"
     )
 
     assert (
         node.query(
-            f"SELECT data FROM mongodb('mongo1:27017', 'test_simple_select', 'simple_table', 'root', '{mongo_pass}', structure='key UInt64, data String') WHERE key = 42"
+            f"SELECT data FROM mongodb('mongo1:27017', 'test', 'simple_table', 'root', '{mongo_pass}', structure='key UInt64, data String') WHERE key = 42"
         )
         == hex(42 * 42) + "\n"
     )
@@ -84,11 +82,8 @@ def test_simple_select(started_cluster):
 
 def test_simple_select_uri(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
-    db = mongo_connection["test_simple_select_uri"]
-    try:
-        db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
-    except pymongo.errors.OperationFailure:
-        pass
+    db = mongo_connection["test"]
+    db.add_user("root", mongo_pass)
     simple_mongo_table = db["simple_table"]
     data = []
     for i in range(0, 100):
@@ -98,26 +93,26 @@ def test_simple_select_uri(started_cluster):
     node = started_cluster.instances["node"]
     assert (
         node.query(
-            f"SELECT COUNT() FROM mongodb('mongodb://root:{urllib.parse.quote_plus(mongo_pass)}@mongo1:27017/test_simple_select_uri', 'simple_table', structure='key UInt64, data String')"
+            f"SELECT COUNT() FROM mongodb('mongodb://root:{urllib.parse.quote_plus(mongo_pass)}@mongo1:27017/test', 'simple_table', structure='key UInt64, data String')"
         )
         == "100\n"
     )
     assert (
         node.query(
-            f"SELECT sum(key) FROM mongodb('mongodb://root:{urllib.parse.quote_plus(mongo_pass)}@mongo1:27017/test_simple_select_uri', 'simple_table', structure='key UInt64, data String')"
+            f"SELECT sum(key) FROM mongodb('mongodb://root:{urllib.parse.quote_plus(mongo_pass)}@mongo1:27017/test', 'simple_table', structure='key UInt64, data String')"
         )
         == str(sum(range(0, 100))) + "\n"
     )
     assert (
         node.query(
-            f"SELECT sum(key) FROM mongodb('mongodb://root:{urllib.parse.quote_plus(mongo_pass)}@mongo1:27017/test_simple_select_uri', 'simple_table', 'key UInt64, data String')"
+            f"SELECT sum(key) FROM mongodb('mongodb://root:{urllib.parse.quote_plus(mongo_pass)}@mongo1:27017/test', 'simple_table', 'key UInt64, data String')"
         )
         == str(sum(range(0, 100))) + "\n"
     )
 
     assert (
         node.query(
-            f"SELECT data FROM mongodb('mongodb://root:{urllib.parse.quote_plus(mongo_pass)}@mongo1:27017/test_simple_select_uri', 'simple_table', structure='key UInt64, data String') WHERE key = 42"
+            f"SELECT data FROM mongodb('mongodb://root:{urllib.parse.quote_plus(mongo_pass)}@mongo1:27017/test', 'simple_table', structure='key UInt64, data String') WHERE key = 42"
         )
         == hex(42 * 42) + "\n"
     )
@@ -126,11 +121,8 @@ def test_simple_select_uri(started_cluster):
 
 def test_complex_data_type(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
-    db = mongo_connection["test_complex_data_type"]
-    try:
-        db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
-    except pymongo.errors.OperationFailure:
-        pass
+    db = mongo_connection["test"]
+    db.add_user("root", mongo_pass)
     incomplete_mongo_table = db["complex_table"]
     data = []
     for i in range(0, 100):
@@ -144,7 +136,7 @@ def test_complex_data_type(started_cluster):
             f"""
             SELECT COUNT()
             FROM mongodb('mongo1:27017',
-                         'test_complex_data_type',
+                         'test',
                          'complex_table',
                          'root',
                          '{mongo_pass}',
@@ -157,7 +149,7 @@ def test_complex_data_type(started_cluster):
             f"""
             SELECT sum(key)
             FROM mongodb('mongo1:27017',
-                         'test_complex_data_type',
+                         'test',
                          'complex_table',
                          'root',
                          '{mongo_pass}',
@@ -171,7 +163,7 @@ def test_complex_data_type(started_cluster):
             f"""
             SELECT data
             FROM mongodb('mongo1:27017',
-                         'test_complex_data_type',
+                         'test',
                          'complex_table',
                          'root',
                          '{mongo_pass}',
@@ -186,11 +178,8 @@ def test_complex_data_type(started_cluster):
 
 def test_incorrect_data_type(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
-    db = mongo_connection["test_incorrect_data_type"]
-    try:
-        db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
-    except pymongo.errors.OperationFailure:
-        pass
+    db = mongo_connection["test"]
+    db.add_user("root", mongo_pass)
     strange_mongo_table = db["strange_table"]
     data = []
     for i in range(0, 100):
@@ -201,7 +190,7 @@ def test_incorrect_data_type(started_cluster):
 
     with pytest.raises(QueryRuntimeException):
         node.query(
-            f"SELECT aaaa FROM mongodb('mongo1:27017', 'test_incorrect_data_type', 'strange_table', 'root', '{mongo_pass}', structure='key UInt64, data String')"
+            f"SELECT aaaa FROM mongodb('mongo1:27017', 'test', 'strange_table', 'root', '{mongo_pass}', structure='key UInt64, data String')"
         )
 
     strange_mongo_table.drop()
@@ -209,11 +198,8 @@ def test_incorrect_data_type(started_cluster):
 
 def test_secure_connection(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster, secure=True)
-    db = mongo_connection["test_secure_connection"]
-    try:
-        db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
-    except pymongo.errors.OperationFailure:
-        pass
+    db = mongo_connection["test"]
+    db.add_user("root", mongo_pass)
     simple_mongo_table = db["simple_table"]
     data = []
     for i in range(0, 100):
@@ -226,7 +212,7 @@ def test_secure_connection(started_cluster):
         node.query(
             f"""SELECT COUNT()
                FROM mongodb('mongo_secure:27017',
-                            'test_secure_connection',
+                            'test',
                             'simple_table',
                             'root',
                             '{mongo_pass}',
@@ -239,7 +225,7 @@ def test_secure_connection(started_cluster):
         node.query(
             f"""SELECT sum(key)
                FROM mongodb('mongo_secure:27017',
-                            'test_secure_connection',
+                            'test',
                             'simple_table',
                             'root',
                             '{mongo_pass}',
@@ -252,7 +238,7 @@ def test_secure_connection(started_cluster):
         node.query(
             f"""SELECT sum(key)
                FROM mongodb('mongo_secure:27017',
-                            'test_secure_connection',
+                            'test',
                             'simple_table',
                             'root',
                             '{mongo_pass}',
@@ -266,7 +252,7 @@ def test_secure_connection(started_cluster):
         node.query(
             f"""SELECT data
                FROM mongodb('mongo_secure:27017',
-                            'test_secure_connection',
+                            'test',
                             'simple_table',
                             'root',
                             '{mongo_pass}',
@@ -281,11 +267,8 @@ def test_secure_connection(started_cluster):
 
 def test_secure_connection_with_validation(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster, secure=True)
-    db = mongo_connection["test_secure_connection_with_validation"]
-    try:
-        db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
-    except pymongo.errors.OperationFailure:
-        pass
+    db = mongo_connection["test"]
+    db.add_user("root", mongo_pass)
     simple_mongo_table = db["simple_table"]
     data = []
     for i in range(0, 100):
@@ -296,7 +279,7 @@ def test_secure_connection_with_validation(started_cluster):
     with pytest.raises(QueryRuntimeException):
         node.query(
             f"""SELECT COUNT() FROM mongodb('mongo_secure:27017',
-                   'test_secure_connection_with_validation',
+                   'test',
                    'simple_table',
                    'root',
                    '{mongo_pass}',
@@ -309,11 +292,8 @@ def test_secure_connection_with_validation(started_cluster):
 
 def test_secure_connection_uri(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster, secure=True)
-    db = mongo_connection["test_secure_connection_uri"]
-    try:
-        db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
-    except pymongo.errors.OperationFailure:
-        pass
+    db = mongo_connection["test"]
+    db.add_user("root", mongo_pass)
     simple_mongo_table = db["simple_table"]
     data = []
     for i in range(0, 100):
@@ -325,7 +305,7 @@ def test_secure_connection_uri(started_cluster):
     assert (
         node.query(
             f"""SELECT COUNT()
-               FROM mongodb('mongodb://root:{urllib.parse.quote_plus(mongo_pass)}@mongo_secure:27017/test_secure_connection_uri?tls=true&tlsAllowInvalidCertificates=true&tlsAllowInvalidHostnames=true',
+               FROM mongodb('mongodb://root:{urllib.parse.quote_plus(mongo_pass)}@mongo_secure:27017/test?tls=true&tlsAllowInvalidCertificates=true&tlsAllowInvalidHostnames=true',
                             'simple_table',
                             'key UInt64, data String')"""
         )
@@ -334,7 +314,7 @@ def test_secure_connection_uri(started_cluster):
     assert (
         node.query(
             f"""SELECT sum(key)
-               FROM mongodb('mongodb://root:{urllib.parse.quote_plus(mongo_pass)}@mongo_secure:27017/test_secure_connection_uri?tls=true&tlsAllowInvalidCertificates=true&tlsAllowInvalidHostnames=true',
+               FROM mongodb('mongodb://root:{urllib.parse.quote_plus(mongo_pass)}@mongo_secure:27017/test?tls=true&tlsAllowInvalidCertificates=true&tlsAllowInvalidHostnames=true',
                             'simple_table',
                             'key UInt64, data String')"""
         )
@@ -343,7 +323,7 @@ def test_secure_connection_uri(started_cluster):
     assert (
         node.query(
             f"""SELECT sum(key)
-               FROM mongodb('mongodb://root:{urllib.parse.quote_plus(mongo_pass)}@mongo_secure:27017/test_secure_connection_uri?tls=true&tlsAllowInvalidCertificates=true&tlsAllowInvalidHostnames=true',
+               FROM mongodb('mongodb://root:{urllib.parse.quote_plus(mongo_pass)}@mongo_secure:27017/test?tls=true&tlsAllowInvalidCertificates=true&tlsAllowInvalidHostnames=true',
                             'simple_table',
                             'key UInt64, data String')"""
         )
@@ -353,7 +333,7 @@ def test_secure_connection_uri(started_cluster):
     assert (
         node.query(
             f"""SELECT data
-               FROM mongodb('mongodb://root:{urllib.parse.quote_plus(mongo_pass)}@mongo_secure:27017/test_secure_connection_uri?tls=true&tlsAllowInvalidCertificates=true&tlsAllowInvalidHostnames=true',
+               FROM mongodb('mongodb://root:{urllib.parse.quote_plus(mongo_pass)}@mongo_secure:27017/test?tls=true&tlsAllowInvalidCertificates=true&tlsAllowInvalidHostnames=true',
                             'simple_table',
                             'key UInt64, data String')
                WHERE key = 42"""
@@ -365,7 +345,7 @@ def test_secure_connection_uri(started_cluster):
 
 def test_no_credentials(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster, with_credentials=False)
-    db = mongo_connection["test_no_credentials"]
+    db = mongo_connection["test"]
     simple_mongo_table = db["simple_table"]
     data = []
     for i in range(0, 100):
@@ -375,7 +355,7 @@ def test_no_credentials(started_cluster):
     node = started_cluster.instances["node"]
     assert (
         node.query(
-            "SELECT count() FROM mongodb('mongo_no_cred:27017', 'test_no_credentials', 'simple_table', '', '', structure='key UInt64, data String')"
+            "SELECT count() FROM mongodb('mongo_no_cred:27017', 'test', 'simple_table', '', '', structure='key UInt64, data String')"
         )
         == "100\n"
     )
@@ -385,21 +365,17 @@ def test_no_credentials(started_cluster):
 def test_auth_source(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster, with_credentials=False)
     admin_db = mongo_connection["admin"]
-    try:
-        admin_db.command(
-            "createUser",
-            "root",
-            pwd=mongo_pass,
-            roles=[{"role": "userAdminAnyDatabase", "db": "admin"}, "readWriteAnyDatabase"],
-        )
-    except pymongo.errors.OperationFailure:
-        pass
+    admin_db.add_user(
+        "root",
+        mongo_pass,
+        roles=[{"role": "userAdminAnyDatabase", "db": "admin"}, "readWriteAnyDatabase"],
+    )
     simple_mongo_table = admin_db["simple_table"]
     data = []
     for i in range(0, 50):
         data.append({"key": i, "data": hex(i * i)})
     simple_mongo_table.insert_many(data)
-    db = mongo_connection["test_auth_source"]
+    db = mongo_connection["test"]
     simple_mongo_table = db["simple_table"]
     data = []
     for i in range(0, 100):
@@ -409,12 +385,12 @@ def test_auth_source(started_cluster):
     node = started_cluster.instances["node"]
     with pytest.raises(QueryRuntimeException):
         node.query(
-            f"SELECT count() FROM mongodb('mongo_no_cred:27017', 'test_auth_source', 'simple_table', 'root', '{mongo_pass}', structure='key UInt64, data String')"
+            f"SELECT count() FROM mongodb('mongo_no_cred:27017', 'test', 'simple_table', 'root', '{mongo_pass}', structure='key UInt64, data String')"
         )
 
     assert (
         node.query(
-            f"SELECT count() FROM mongodb('mongo_no_cred:27017', 'test_auth_source', 'simple_table', 'root', '{mongo_pass}', structure='key UInt64, data String', options='authSource=admin')"
+            f"SELECT count() FROM mongodb('mongo_no_cred:27017', 'test', 'simple_table', 'root', '{mongo_pass}', structure='key UInt64, data String', options='authSource=admin')"
         )
         == "100\n"
     )
@@ -424,11 +400,8 @@ def test_auth_source(started_cluster):
 
 def test_missing_columns(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
-    db = mongo_connection["test_missing_columns"]
-    try:
-        db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
-    except pymongo.errors.OperationFailure:
-        pass
+    db = mongo_connection["test"]
+    db.add_user("root", mongo_pass)
     simple_mongo_table = db["simple_table"]
     data = []
     for i in range(0, 10):
@@ -439,7 +412,7 @@ def test_missing_columns(started_cluster):
 
     node = started_cluster.instances["node"]
     result = node.query(
-        f"SELECT count() FROM mongodb('mongo1:27017', 'test_missing_columns', 'simple_table', 'root', '{mongo_pass}', structure='key UInt64, data Nullable(String)') WHERE isNull(data)"
+        f"SELECT count() FROM mongodb('mongo1:27017', 'test', 'simple_table', 'root', '{mongo_pass}', structure='key UInt64, data Nullable(String)') WHERE isNull(data)"
     )
     assert result == "10\n"
     simple_mongo_table.drop()
@@ -447,7 +420,7 @@ def test_missing_columns(started_cluster):
 
 def test_oid(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
-    db = mongo_connection["test_oid"]
+    db = mongo_connection["test"]
     db.command("dropAllUsersFromDatabase")
     db.command("createUser", "root", pwd="clickhouse", roles=["readWrite"])
     oid_mongo_table = db["oid_table"]
@@ -462,8 +435,8 @@ def test_oid(started_cluster):
 
     node = started_cluster.instances["node"]
     table_definitions = [
-        "mongodb('mongo1:27017', 'test_oid', 'oid_table', 'root', 'clickhouse', '_id String, key String')",
-        "mongodb('mongodb://root:clickhouse@mongo1:27017/test_oid', 'oid_table', '_id String, key String')",
+        "mongodb('mongo1:27017', 'test', 'oid_table', 'root', 'clickhouse', '_id String, key String')",
+        "mongodb('mongodb://root:clickhouse@mongo1:27017/test', 'oid_table', '_id String, key String')",
     ]
 
     for table_definition in table_definitions:
@@ -495,77 +468,15 @@ def test_oid(started_cluster):
         with pytest.raises(QueryRuntimeException):
             node.query(f"SELECT key FROM {table_definition} WHERE _id not in ['nope', 'not-oid']")
 
-    table_definition = ("mongodb('mongo1:27017', 'test_oid', 'oid_table', 'root', 'clickhouse', '_id String, key String', "
+    table_definition = ("mongodb('mongo1:27017', 'test', 'oid_table', 'root', 'clickhouse', '_id String, key String', "
                         "'', 'key)")
     with pytest.raises(QueryRuntimeException):
         node.query(f"SELECT * FROM {table_definition} WHERE key = 'not-oid'")
 
-    table_definition = ("mongodb('mongodb://root:clickhouse@mongo1:27017/test_oid', 'oid_table', '_id String, key String', "
+    table_definition = ("mongodb('mongodb://root:clickhouse@mongo1:27017/test', 'oid_table', '_id String, key String', "
                         "'key')")
     with pytest.raises(QueryRuntimeException):
         node.query(f"SELECT * FROM {table_definition} WHERE key = 'not-oid'")
 
 
     oid_mongo_table.drop()
-
-def test_datetime_condition(started_cluster):
-    mongo_connection = get_mongo_connection(started_cluster, with_credentials=False)
-    db = mongo_connection["test_datetime_condition"]
-    datetime_mongo_table = db["datetime_mongo_table"]
-    data = []
-
-    data.append({"key": 0, "timestamp": datetime.datetime(2025, 1, 11, 0, 0, 0)})
-    data.append({"key": 1, "timestamp": datetime.datetime(2025, 1, 15, 0, 0, 0)})
-    data.append({"key": 2, "timestamp": datetime.datetime(2025, 1, 20, 0, 0, 0)})
-
-    datetime_mongo_table.insert_many(data)
-
-    node = started_cluster.instances["node"]
-    table_func = "mongodb('mongo_no_cred:27017', 'test_datetime_condition', 'datetime_mongo_table', '', '', structure='key UInt64, timestamp DateTime')"
-
-    assert TSV(node.query(f"SELECT count(), any(toTypeName(timestamp)) FROM {table_func}")) == TSV("3\tDateTime\n")
-
-    assert TSV(node.query(f"SELECT count() FROM {table_func} WHERE timestamp = '2025-01-11 00:00:00'")) == TSV("1\n")
-    assert TSV(node.query(f"SELECT count() FROM {table_func} WHERE timestamp = toDateTime('2025-01-11 00:00:00')" )) == TSV("1\n")
-
-    assert TSV(node.query(f"SELECT count() FROM {table_func} WHERE timestamp > '2025-01-11 00:00:00'")) == TSV("2\n")
-    assert TSV(node.query(f"SELECT count() FROM {table_func} WHERE timestamp > toDateTime('2025-01-11 00:00:00')")) == TSV("2\n")
-
-    assert TSV(node.query(f"SELECT count() FROM {table_func} WHERE timestamp > '2025-01-11 00:00:00' AND key = 2")) == TSV("1\n")
-    assert TSV(node.query(f"SELECT count() FROM {table_func} WHERE timestamp > toDateTime('2025-01-11 00:00:00') AND key = 2")) == TSV("1\n")
-
-    assert TSV(node.query(f"SELECT count() FROM {table_func} WHERE timestamp > '2025-01-11 00:00:00' OR key = 0")) == TSV("3\n")
-    assert TSV(node.query(f"SELECT count() FROM {table_func} WHERE timestamp > toDateTime('2025-01-11 00:00:00') OR key = 0")) == TSV("3\n")
-
-    assert TSV(node.query(f"SELECT count() FROM {table_func} WHERE timestamp IN '2025-01-11 00:00:00'")) == TSV("1\n")
-    assert TSV(node.query(f"SELECT count() FROM {table_func} WHERE timestamp IN ('2025-01-11 00:00:00', '2025-01-15 00:00:00', '2025-01-30 00:00:00')")) == TSV("2\n")
-    assert TSV(node.query(f"SELECT count() FROM {table_func} WHERE timestamp IN ['2025-01-11 00:00:00', '2025-01-15 00:00:00', '2025-01-30 00:00:00']")) == TSV("2\n")
-
-    assert TSV(node.query(f"SELECT count() FROM {table_func} WHERE '2025-01-11 00:00:00' = timestamp")) == TSV("1\n")
-    assert TSV(node.query(f"SELECT count() FROM {table_func} WHERE toDateTime('2025-01-11 00:00:00') = timestamp" )) == TSV("1\n")
-
-    assert TSV(node.query(f"SELECT count() FROM {table_func} WHERE '2025-01-11 00:00:00' < timestamp")) == TSV("2\n")
-    assert TSV(node.query(f"SELECT count() FROM {table_func} WHERE toDateTime('2025-01-11 00:00:00') < timestamp")) == TSV("2\n")
-
-    datetime_mongo_table.drop()
-
-
-def test_limit(started_cluster):
-    mongo_connection = get_mongo_connection(started_cluster, with_credentials=False)
-    db = mongo_connection["test_limit"]
-    group_by_limit_mongo_table = db["group_by_limit_mongo_table"]
-    data = []
-
-    for i in range(0, 100):
-        data.append({"key": i % 10, "value": i})
-
-    group_by_limit_mongo_table.insert_many(data)
-
-    node = started_cluster.instances["node"]
-    table_func = "mongodb('mongo_no_cred:27017', 'test_limit', 'group_by_limit_mongo_table', '', '', structure='key UInt64, value UInt64')"
-
-    assert TSV(node.query(f"SELECT sum(value) FROM {table_func} GROUP BY key ORDER BY key LIMIT 1 SETTINGS mongodb_throw_on_unsupported_query = 0")) == TSV("450\n")
-    assert TSV(node.query(f"SELECT value FROM {table_func} ORDER BY value LIMIT 5 SETTINGS mongodb_throw_on_unsupported_query = 1")) == TSV("0\n1\n2\n3\n4\n")
-    assert TSV(node.query(f"SELECT value FROM {table_func} ORDER BY value LIMIT 5 OFFSET 5 SETTINGS mongodb_throw_on_unsupported_query = 1")) == TSV("5\n6\n7\n8\n9\n")
-
-    group_by_limit_mongo_table.drop()

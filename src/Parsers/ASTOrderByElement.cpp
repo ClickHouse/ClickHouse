@@ -18,45 +18,45 @@ void ASTOrderByElement::updateTreeHashImpl(SipHash & hash_state, bool ignore_ali
 void ASTOrderByElement::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     children.front()->format(ostr, settings, state, frame);
-    ostr
+    ostr << (settings.hilite ? hilite_keyword : "")
         << (direction == -1 ? " DESC" : " ASC")
-       ;
+        << (settings.hilite ? hilite_none : "");
 
     if (nulls_direction_was_explicitly_specified)
     {
-        ostr
+        ostr << (settings.hilite ? hilite_keyword : "")
             << " NULLS "
             << (nulls_direction == direction ? "LAST" : "FIRST")
-           ;
+            << (settings.hilite ? hilite_none : "");
     }
 
     if (auto collation = getCollation())
     {
-        ostr << " COLLATE ";
+        ostr << (settings.hilite ? hilite_keyword : "") << " COLLATE " << (settings.hilite ? hilite_none : "");
         collation->format(ostr, settings, state, frame);
     }
 
     if (with_fill)
     {
-        ostr << " WITH FILL";
+        ostr << (settings.hilite ? hilite_keyword : "") << " WITH FILL" << (settings.hilite ? hilite_none : "");
         if (auto fill_from = getFillFrom())
         {
-            ostr << " FROM ";
+            ostr << (settings.hilite ? hilite_keyword : "") << " FROM " << (settings.hilite ? hilite_none : "");
             fill_from->format(ostr, settings, state, frame);
         }
         if (auto fill_to = getFillTo())
         {
-            ostr << " TO ";
+            ostr << (settings.hilite ? hilite_keyword : "") << " TO " << (settings.hilite ? hilite_none : "");
             fill_to->format(ostr, settings, state, frame);
         }
         if (auto fill_step = getFillStep())
         {
-            ostr << " STEP ";
+            ostr << (settings.hilite ? hilite_keyword : "") << " STEP " << (settings.hilite ? hilite_none : "");
             fill_step->format(ostr, settings, state, frame);
         }
         if (auto fill_staleness = getFillStaleness())
         {
-            ostr << " STALENESS ";
+            ostr << (settings.hilite ? hilite_keyword : "") << " STALENESS " << (settings.hilite ? hilite_none : "");
             fill_staleness->format(ostr, settings, state, frame);
         }
     }
@@ -73,7 +73,7 @@ void ASTStorageOrderByElement::formatImpl(WriteBuffer & ostr, const FormatSettin
     children.front()->format(ostr, settings, state, frame);
 
     if (direction == -1)
-        ostr << " DESC";
+        ostr << (settings.hilite ? hilite_keyword : "") << " DESC" << (settings.hilite ? hilite_none : "");
 }
 
 }

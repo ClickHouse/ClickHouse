@@ -5,7 +5,6 @@
 #include <Dictionaries/ClickHouseDictionarySource.h>
 #include <Dictionaries/DictionarySourceHelpers.h>
 #include <Dictionaries/DictionaryFactory.h>
-#include <Interpreters/Context.h>
 
 namespace DB
 {

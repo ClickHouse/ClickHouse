@@ -1,7 +1,6 @@
 #include <iomanip>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTShowTablesQuery.h>
-#include <Parsers/ASTLiteral.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 
@@ -26,21 +25,22 @@ String ASTShowTablesQuery::getFrom() const
     return name;
 }
 
-void ASTShowTablesQuery::formatLike(WriteBuffer & ostr, const FormatSettings &) const
+void ASTShowTablesQuery::formatLike(WriteBuffer & ostr, const FormatSettings & settings) const
 {
     if (!like.empty())
-    {
-        ostr << (not_like ? " NOT" : "")
+        ostr
+            << (settings.hilite ? hilite_keyword : "")
+            << (not_like ? " NOT" : "")
             << (case_insensitive_like ? " ILIKE " : " LIKE ")
-            << quoteString(like);
-    }
+            << (settings.hilite ? hilite_none : "")
+            << DB::quote << like;
 }
 
 void ASTShowTablesQuery::formatLimit(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     if (limit_length)
     {
-        ostr << " LIMIT ";
+        ostr << (settings.hilite ? hilite_keyword : "") << " LIMIT " << (settings.hilite ? hilite_none : "");
         limit_length->format(ostr, settings, state, frame);
     }
 }
@@ -49,48 +49,49 @@ void ASTShowTablesQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSetting
 {
     if (databases)
     {
-        ostr << "SHOW DATABASES";
+        ostr << (settings.hilite ? hilite_keyword : "") << "SHOW DATABASES" << (settings.hilite ? hilite_none : "");
         formatLike(ostr, settings);
         formatLimit(ostr, settings, state, frame);
 
     }
     else if (clusters)
     {
-        ostr << "SHOW CLUSTERS";
+        ostr << (settings.hilite ? hilite_keyword : "") << "SHOW CLUSTERS" << (settings.hilite ? hilite_none : "");
         formatLike(ostr, settings);
         formatLimit(ostr, settings, state, frame);
 
     }
     else if (cluster)
     {
-        ostr << "SHOW CLUSTER";
+        ostr << (settings.hilite ? hilite_keyword : "") << "SHOW CLUSTER" << (settings.hilite ? hilite_none : "");
         ostr << " " << backQuoteIfNeed(cluster_str);
     }
     else if (caches)
     {
-        ostr << "SHOW FILESYSTEM CACHES";
+        ostr << (settings.hilite ? hilite_keyword : "") << "SHOW FILESYSTEM CACHES" << (settings.hilite ? hilite_none : "");
         formatLike(ostr, settings);
         formatLimit(ostr, settings, state, frame);
     }
     else if (m_settings)
     {
-        ostr << "SHOW " << (changed ? "CHANGED " : "") << "SETTINGS";
+        ostr << (settings.hilite ? hilite_keyword : "") << "SHOW " << (changed ? "CHANGED " : "") << "SETTINGS" <<
+            (settings.hilite ? hilite_none : "");
         formatLike(ostr, settings);
     }
     else if (merges)
     {
-        ostr << "SHOW MERGES";
+        ostr << (settings.hilite ? hilite_keyword : "") << "SHOW MERGES" << (settings.hilite ? hilite_none : "");
         formatLike(ostr, settings);
         formatLimit(ostr, settings, state, frame);
     }
     else
     {
-        ostr << "SHOW " << (temporary ? "TEMPORARY " : "") <<
-             (dictionaries ? "DICTIONARIES" : "TABLES");
+        ostr << (settings.hilite ? hilite_keyword : "") << "SHOW " << (temporary ? "TEMPORARY " : "") <<
+             (dictionaries ? "DICTIONARIES" : "TABLES") << (settings.hilite ? hilite_none : "");
 
         if (from)
         {
-            ostr << " FROM ";
+            ostr << (settings.hilite ? hilite_keyword : "") << " FROM " << (settings.hilite ? hilite_none : "");
             from->format(ostr, settings, state, frame);
         }
 
@@ -98,7 +99,7 @@ void ASTShowTablesQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSetting
 
         if (where_expression)
         {
-            ostr << " WHERE ";
+            ostr << (settings.hilite ? hilite_keyword : "") << " WHERE " << (settings.hilite ? hilite_none : "");
             where_expression->format(ostr, settings, state, frame);
         }
 
