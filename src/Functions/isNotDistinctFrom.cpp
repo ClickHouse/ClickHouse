@@ -5,8 +5,6 @@
 namespace DB
 {
 
-template class FunctionComparison<IsNotDistinctFromOp, NameEquals>;
-
 template <>
 ColumnPtr FunctionComparison<IsNotDistinctFromOp, NameFunctionIsNotDistinctFrom>::executeTupleImpl(
     const ColumnsWithTypeAndName & x, const ColumnsWithTypeAndName & y, size_t tuple_size, size_t input_rows_count) const
