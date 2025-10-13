@@ -14,6 +14,7 @@
 #include <Storages/MutationCommands.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/prepareReadingFromFormat.h>
+#include <Storages/SelectQueryInfo.h>
 
 
 namespace DataLake
@@ -54,7 +55,7 @@ public:
 
     /// Table schema from data lake metadata.
     virtual NamesAndTypesList getTableSchema(ContextPtr local_context) const = 0;
-    virtual StorageInMemoryMetadata getStorageSnapshotMetadata(ContextPtr) const { throwNotImplemented("getStorageSnapshotMetadata"); }
+    virtual StorageInMemoryMetadata getStorageSnapshotMetadata(ContextPtr, ASTPtr) const { throwNotImplemented("getStorageSnapshotMetadata"); }
 
     /// Read schema is the schema of actual data files,
     /// which can differ from table schema from data lake metadata.
@@ -124,6 +125,10 @@ public:
     virtual void checkAlterIsPossible(const AlterCommands & /*commands*/) { throwNotImplemented("alter"); }
     virtual void alter(const AlterCommands & /*params*/, ContextPtr /*context*/) { throwNotImplemented("alter"); }
     virtual void drop(ContextPtr) { }
+    virtual bool requestReadingInOrder(InputOrderInfoPtr /*order_info_*/)
+    {
+        return false;
+    }
 
 protected:
     virtual ObjectIterator

@@ -107,7 +107,7 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
 
     if (configuration->needsUpdateForSchemaConsistency())
     {
-        auto metadata_snapshot = configuration->getStorageSnapshotMetadata(context_);
+        auto metadata_snapshot = configuration->getStorageSnapshotMetadata(context_, nullptr);
         setInMemoryMetadata(metadata_snapshot);
     }
 }
@@ -203,7 +203,7 @@ void StorageObjectStorageCluster::updateExternalDynamicMetadataIfExists(ContextP
         /* if_not_updated_before */ true);
     if (configuration->needsUpdateForSchemaConsistency())
     {
-        auto metadata_snapshot = configuration->getStorageSnapshotMetadata(query_context);
+        auto metadata_snapshot = configuration->getStorageSnapshotMetadata(query_context, nullptr);
         setInMemoryMetadata(metadata_snapshot);
     }
 }

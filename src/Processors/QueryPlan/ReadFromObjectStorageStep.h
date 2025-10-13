@@ -34,6 +34,11 @@ public:
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
+    bool requestReadingInOrder(InputOrderInfoPtr order_info_)
+    {
+        return configuration->requestReadingInOrder(order_info_);
+    }
+
 private:
     ObjectStoragePtr object_storage;
     StorageObjectStorageConfigurationPtr configuration;

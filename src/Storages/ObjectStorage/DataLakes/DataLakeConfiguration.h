@@ -201,10 +201,10 @@ public:
         return current_metadata->getSchemaTransformer(local_context, object_info);
     }
 
-    StorageInMemoryMetadata getStorageSnapshotMetadata(ContextPtr context) const override
+    StorageInMemoryMetadata getStorageSnapshotMetadata(ContextPtr context, ASTPtr order_by) const override
     {
         assertInitialized();
-        return current_metadata->getStorageSnapshotMetadata(context);
+        return current_metadata->getStorageSnapshotMetadata(context, order_by);
     }
 
     /// This method should work even if metadata is not initialized
@@ -355,6 +355,12 @@ public:
         BaseStorageConfiguration::fromDisk(disk_name, args, context, with_structure);
         auto disk = context->getDisk(disk_name);
         ready_object_storage = disk->getObjectStorage();
+    }
+
+    bool requestReadingInOrder(InputOrderInfoPtr order_info_) override
+    {
+        assertInitialized();
+        return current_metadata->requestReadingInOrder(order_info_);
     }
 
 private:

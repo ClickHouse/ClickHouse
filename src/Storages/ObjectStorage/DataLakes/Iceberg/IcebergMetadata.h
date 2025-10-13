@@ -50,7 +50,7 @@ public:
     /// Get table schema parsed from metadata.
     NamesAndTypesList getTableSchema(ContextPtr local_context) const override;
 
-    StorageInMemoryMetadata getStorageSnapshotMetadata(ContextPtr local_context) const override;
+    StorageInMemoryMetadata getStorageSnapshotMetadata(ContextPtr local_context, ASTPtr order_by) const override;
 
     bool operator==(const IDataLakeMetadata & /*other*/) const override { return false; }
 
@@ -124,6 +124,7 @@ public:
         ContextPtr local_context) const override;
 
     void drop(ContextPtr context) override;
+    bool requestReadingInOrder(InputOrderInfoPtr order_info_) override;
 
 private:
     Iceberg::PersistentTableComponents initializePersistentTableComponents(

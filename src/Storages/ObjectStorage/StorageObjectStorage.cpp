@@ -107,6 +107,7 @@ StorageObjectStorage::StorageObjectStorage(
     bool is_datalake_query,
     bool distributed_processing_,
     ASTPtr partition_by_,
+    ASTPtr order_by_,
     bool is_table_function,
     bool lazy_init)
     : IStorage(table_id_)
@@ -117,6 +118,7 @@ StorageObjectStorage::StorageObjectStorage(
     , log(getLogger(fmt::format("Storage{}({})", configuration->getEngineName(), table_id_.getFullTableName())))
     , catalog(catalog_)
     , storage_id(table_id_)
+    , order_by(order_by_)
 {
     configuration->initPartitionStrategy(partition_by_, columns_in_table_or_function_definition, context);
 
@@ -215,7 +217,11 @@ StorageObjectStorage::StorageObjectStorage(
     metadata.setColumns(columns);
     metadata.setConstraints(constraints_);
     metadata.setComment(comment);
-
+    if (order_by)
+    {
+        metadata.sorting_key = KeyDescription::getSortingKeyFromAST(
+            order_by->ptr(), metadata.columns, context, std::nullopt);
+    }
     /// I am not sure this is actually required, but just in case
     if (configuration->partition_strategy)
     {
@@ -230,7 +236,7 @@ StorageObjectStorage::StorageObjectStorage(
     /// in a different way and clickhouse can execute without calling updateExternalDynamicMetadataIfExists.
     if (!do_lazy_init && is_table_function && configuration->needsUpdateForSchemaConsistency())
     {
-        auto metadata_snapshot = configuration->getStorageSnapshotMetadata(context);
+        auto metadata_snapshot = configuration->getStorageSnapshotMetadata(context, order_by);
         setInMemoryMetadata(metadata_snapshot);
     }
 }
@@ -293,7 +299,7 @@ void StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr quer
         /* if_not_updated_before */ true);
     if (configuration->needsUpdateForSchemaConsistency())
     {
-        auto metadata_snapshot = configuration->getStorageSnapshotMetadata(query_context);
+        auto metadata_snapshot = configuration->getStorageSnapshotMetadata(query_context, order_by);
         setInMemoryMetadata(metadata_snapshot);
     }
 }

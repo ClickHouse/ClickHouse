@@ -15,6 +15,7 @@
 #include <Storages/IStorage.h>
 #include <Common/Exception.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/SelectQueryInfo.h>
 
 namespace DB
 {
@@ -166,7 +167,7 @@ public:
 
     void initPartitionStrategy(ASTPtr partition_by, const ColumnsDescription & columns, ContextPtr context);
 
-    virtual StorageInMemoryMetadata getStorageSnapshotMetadata(ContextPtr local_context) const;
+    virtual StorageInMemoryMetadata getStorageSnapshotMetadata(ContextPtr local_context, ASTPtr order_by) const;
     virtual std::optional<ColumnsDescription> tryGetTableStructureFromMetadata(ContextPtr local_context) const;
 
     virtual bool supportsFileIterator() const { return false; }
@@ -250,6 +251,11 @@ public:
     }
 
     virtual void drop(ContextPtr) {}
+
+    virtual bool requestReadingInOrder(InputOrderInfoPtr /*order_info_*/)
+    {
+        return false;
+    }
 
     String format = "auto";
     String compression_method = "auto";

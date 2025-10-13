@@ -6,6 +6,7 @@
 #include <optional>
 #include <sstream>
 #include <Columns/ColumnSet.h>
+#include <Common/CurrentThread.h>
 #include <DataTypes/DataTypeSet.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
@@ -853,7 +854,7 @@ NamesAndTypesList IcebergMetadata::getTableSchema(ContextPtr local_context) cons
     return *persistent_components.schema_processor->getClickhouseTableSchemaById(actual_table_state_snapshot.schema_id);
 }
 
-StorageInMemoryMetadata IcebergMetadata::getStorageSnapshotMetadata(ContextPtr local_context) const
+StorageInMemoryMetadata IcebergMetadata::getStorageSnapshotMetadata(ContextPtr local_context, ASTPtr order_by) const
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergMetadataUpdateMicroseconds);
     auto [actual_data_snapshot, actual_table_state_snapshot] = getRelevantState(local_context);
@@ -861,6 +862,9 @@ StorageInMemoryMetadata IcebergMetadata::getStorageSnapshotMetadata(ContextPtr l
     result.setColumns(
         ColumnsDescription{*persistent_components.schema_processor->getClickhouseTableSchemaById(actual_table_state_snapshot.schema_id)});
     result.setDataLakeTableState(actual_table_state_snapshot);
+    if (order_by)
+        result.sorting_key = KeyDescription::getSortingKeyFromAST(
+            order_by->ptr(), result.columns, local_context, std::nullopt);
     return result;
 }
 
@@ -1048,6 +1052,57 @@ ColumnMapperPtr IcebergMetadata::getColumnMapperForCurrentSchema(StorageMetadata
     }
     return persistent_components.schema_processor->getColumnMapperById(iceberg_table_state->schema_id);
 }
+
+bool IcebergMetadata::requestReadingInOrder(InputOrderInfoPtr order_info_)
+{
+    auto local_context = CurrentThread::getQueryContext();
+    auto configuration_ptr = getConfiguration();
+
+    const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
+        object_storage, configuration_ptr, persistent_components.metadata_cache, local_context, log.get());
+
+    auto metadata_object = getMetadataJSONObject(
+        metadata_file_path,
+        object_storage,
+        configuration_ptr,
+        persistent_components.metadata_cache,
+        local_context,
+        log,
+        compression_method);
+
+    auto sort_order_id = metadata_object->getValue<Int64>(f_default_sort_order_id);
+    Poco::JSON::Array::Ptr sort_orders = metadata_object->getArray(f_sort_orders);
+    std::unordered_map<Int64, String> source_id_to_column_name;
+    auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
+
+    auto mapper = createColumnMapper(schema)->getStorageColumnEncoding();
+    for (const auto & [col_name, source_id] : mapper)
+    {
+        source_id_to_column_name[source_id] = col_name;
+    }
+
+    for (UInt32 i = 0; i < sort_orders->size(); ++i)
+    {
+        auto sort_order = sort_orders->getObject(i);
+        if (sort_order->getValue<Int64>(f_order_id) != sort_order_id)
+            continue;
+        auto fields = sort_order->getArray(f_fields);
+        for (UInt32 field_index = 0; field_index < fields->size(); ++field_index)
+        {
+            auto field = fields->getObject(field_index);
+            auto source_id = field->getValue<Int64>(f_source_id);
+            auto column_name = source_id_to_column_name[source_id];
+            int direction = field->getValue<String>(f_direction) == "asc" ? 1 : -1;
+
+            if (order_info_->sort_description_for_merging.at(field_index).column_name != column_name)
+                return false;
+            if (order_info_->sort_description_for_merging.at(field_index).direction != direction)
+                return false;
+        }
+    }
+    return true;
+}
+
 }
 
 #endif
