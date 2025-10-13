@@ -2370,7 +2370,7 @@ void Context::addSkipIndexAccessInfo(const String & full_table_name, const Strin
         return;
 
     std::lock_guard lock(query_access_info->mutex);
-    query_access_info->skip_indexes.emplace(full_table_name + "." + skip_index_name);
+    query_access_info->skip_indices.emplace(full_table_name + "." + skip_index_name);
 }
 
 Context::QueryFactoriesInfo Context::getQueryFactoriesInfo() const
