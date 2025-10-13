@@ -120,18 +120,12 @@ public:
             priority.holdImpl(size, elements, lock);
         }
 
-        void release()
-        {
-            if (released)
-                return;
-            released = true;
-            priority.releaseImpl(size, elements);
-        }
+        void release(const CacheStateGuard::Lock &) { releaseUnlocked(); }
 
         ~HoldSpace()
         {
             if (!released)
-                release();
+                releaseUnlocked();
         }
 
         const size_t size;
@@ -139,6 +133,14 @@ public:
     private:
         IFileCachePriority & priority;
         bool released = false;
+
+        void releaseUnlocked()
+        {
+            if (released)
+                return;
+            released = true;
+            priority.releaseImpl(size, elements);
+        }
     };
     using HoldSpacePtr = std::unique_ptr<HoldSpace>;
 
@@ -178,8 +180,10 @@ public:
         HoldSpacePtr hold_space;
 
         std::string formatForLog() const;
+        bool requiresEviction() const { return size_to_evict || elements_to_evict; }
+        void releaseHoldSpace(const CacheStateGuard::Lock & lock) const;
     };
-    virtual EvictionInfo checkEvictionInfo(
+    virtual EvictionInfo collectEvictionState(
         size_t size,
         size_t elements,
         IFileCachePriority::Iterator * reservee,

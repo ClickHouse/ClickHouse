@@ -45,16 +45,10 @@ IFileCachePriority::Entry::Entry(const Entry & other)
 {
 }
 
-void IFileCachePriority::check(const CacheStateGuard::Lock & lock) const
+void IFileCachePriority::EvictionInfo::releaseHoldSpace(const CacheStateGuard::Lock & lock) const
 {
-    if (getSize(lock) > max_size || getElementsCount(lock) > max_elements)
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache limits violated. "
-                        "{}", getStateInfoForLog(lock));
-    }
-
-    if (getSize(lock) > (1ull << 63) || getElementsCount(lock) > (1ull << 63))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache became inconsistent. There must be a bug");
+    if (hold_space)
+        hold_space->release(lock);
 }
 
 std::string IFileCachePriority::EvictionInfo::formatForLog() const
@@ -68,6 +62,18 @@ std::string IFileCachePriority::EvictionInfo::formatForLog() const
         wb << "hold space elements: " << elements_to_evict;
     }
     return wb.str();
+}
+
+void IFileCachePriority::check(const CacheStateGuard::Lock & lock) const
+{
+    if (getSize(lock) > max_size || getElementsCount(lock) > max_elements)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache limits violated. "
+                        "{}", getStateInfoForLog(lock));
+    }
+
+    if (getSize(lock) > (1ull << 63) || getElementsCount(lock) > (1ull << 63))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache became inconsistent. There must be a bug");
 }
 
 std::unordered_map<std::string, IFileCachePriority::UsageStat> IFileCachePriority::getUsageStatPerClient()

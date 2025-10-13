@@ -272,8 +272,8 @@ void EvictionCandidates::finalize(
     /// Release the hold space. It was hold only for the duration of evict() phase,
     /// now we can release. It might also be needed for on_finalize func,
     /// so release the space it firtst.
-    if (hold_space)
-        hold_space->release();
+    //if (hold_space)
+    //    hold_space->release();
 
     //invalidateQueueEntries();
 

@@ -53,7 +53,7 @@ public:
 
     std::string getStateInfoForLog(const CacheStateGuard::Lock & lock) const override;
 
-    EvictionInfo checkEvictionInfo(
+    EvictionInfo collectEvictionState(
         size_t size,
         size_t elements,
         IFileCachePriority::Iterator * reservee,

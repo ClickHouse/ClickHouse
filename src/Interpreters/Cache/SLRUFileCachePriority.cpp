@@ -180,7 +180,7 @@ void SLRUFileCachePriority::resetEvictionPos(const CachePriorityGuard::ReadLock 
     probationary_queue.resetEvictionPos(lock);
 }
 
-IFileCachePriority::EvictionInfo SLRUFileCachePriority::checkEvictionInfo(
+IFileCachePriority::EvictionInfo SLRUFileCachePriority::collectEvictionState(
     size_t size,
     size_t elements,
     IFileCachePriority::Iterator * reservee,
@@ -188,7 +188,7 @@ IFileCachePriority::EvictionInfo SLRUFileCachePriority::checkEvictionInfo(
 {
     if (!reservee)
     {
-        return probationary_queue.checkEvictionInfo(size, elements, reservee, lock);
+        return probationary_queue.collectEvictionState(size, elements, reservee, lock);
     }
 
     auto * slru_iterator = assert_cast<SLRUIterator *>(reservee->getNestedOrThis());
@@ -197,13 +197,13 @@ IFileCachePriority::EvictionInfo SLRUFileCachePriority::checkEvictionInfo(
     if (slru_iterator->is_protected)
     {
         chassert(slru_iterator->lru_iterator.cache_priority == &protected_queue);
-        info = protected_queue.checkEvictionInfo(size, elements, reservee, lock);
+        info = protected_queue.collectEvictionState(size, elements, reservee, lock);
         /// For now we will not do downgrade but eviction immediately.
     }
     else
     {
         chassert(slru_iterator->lru_iterator.cache_priority == &probationary_queue);
-        info = probationary_queue.checkEvictionInfo(size, elements, reservee, lock);
+        info = probationary_queue.collectEvictionState(size, elements, reservee, lock);
     }
 
     slru_iterator->movable = false;
@@ -405,7 +405,7 @@ bool SLRUFileCachePriority::tryIncreasePriority(
             return probationary_queue.tryIncreasePriority(iterator.lru_iterator, queue_guard, state_guard);
         }
 
-        info = protected_queue.checkEvictionInfo(entry->size, 1, nullptr, lock);
+        info = protected_queue.collectEvictionState(entry->size, 1, nullptr, lock);
     }
     //if (entry->size > protected_queue.getSizeLimit(lock))
     //{
