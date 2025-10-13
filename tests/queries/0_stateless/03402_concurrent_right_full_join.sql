@@ -1,4 +1,5 @@
 SET join_use_nulls = 1;
+SET enable_analyzer = 1;
 SET join_algorithm = 'parallel_hash';
 SET query_plan_join_swap_table = 0;
 

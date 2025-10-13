@@ -742,6 +742,8 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
 
         /// rebuild per-slot right-side nullmaps into slot 0 so that
         /// non-joined rows saved due to NULL keys or ON-filtered rows are emitted only once
+        if (std::any_of(hash_joins.begin(), hash_joins.end(),
+                        [&](const auto &hj){ return !getData(hj)->nullmaps.empty(); }))
         {
             /// Keep the pointers in NullMapHolder to original ScatteredColumns, which remain valid
             /// in their respective slots
@@ -799,6 +801,7 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
                     }
                 }
                 combined.emplace_back(sc, std::move(filtered));
+                combined.back().selector_rows = sc->selector.size();
                 combined_allocated += combined.back().allocatedBytes();
             };
 
@@ -807,6 +810,10 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
                 auto src = getData(hash_joins[i]);
                 for (const auto & holder : src->nullmaps)
                     filter_holder_by_selector(holder);
+                // Clear per-slot nullmaps after consolidation to prevent duplicates and free memory held by masks
+                // we do not free ScatteredColumns here; they are owned by the join and needed during probing/emission
+                src->nullmaps.clear();
+                src->nullmaps_allocated_size = 0;
             }
 
             auto dst = getData(hash_joins[0]);
