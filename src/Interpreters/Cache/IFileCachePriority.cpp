@@ -45,13 +45,13 @@ IFileCachePriority::Entry::Entry(const Entry & other)
 {
 }
 
-void IFileCachePriority::EvictionInfo::releaseHoldSpace(const CacheStateGuard::Lock & lock) const
+void IFileCachePriority::QueueEvictionState::releaseHoldSpace(const CacheStateGuard::Lock & lock) const
 {
     if (hold_space)
         hold_space->release(lock);
 }
 
-std::string IFileCachePriority::EvictionInfo::formatForLog() const
+std::string IFileCachePriority::QueueEvictionState::formatForLog() const
 {
     WriteBufferFromOwnString wb;
     wb << "size to evict: " << size_to_evict << ", ";
@@ -61,6 +61,15 @@ std::string IFileCachePriority::EvictionInfo::formatForLog() const
         wb << ", " << "hold space size: " << size_to_evict << ", ";
         wb << "hold space elements: " << elements_to_evict;
     }
+    return wb.str();
+}
+
+std::string IFileCachePriority::EvictionState::formatForLog() const
+{
+    ///FIXME
+    WriteBufferFromOwnString wb;
+    wb << "size to evict: " << size_to_evict << ", ";
+    wb << "elements to evict: " << elements_to_evict;
     return wb.str();
 }
 

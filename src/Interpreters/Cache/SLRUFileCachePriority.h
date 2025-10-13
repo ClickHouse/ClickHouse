@@ -37,7 +37,7 @@ public:
 
     double getSLRUSizeRatio() const override { return size_ratio; }
 
-    EvictionInfo collectEvictionState(
+    EvictionState collectEvictionState(
         size_t size,
         size_t elements,
         IFileCachePriority::Iterator * reservee,
@@ -60,8 +60,7 @@ public:
         bool is_startup = false) override;
 
     bool collectCandidatesForEviction(
-        size_t size,
-        size_t elements,
+        const EvictionState & eviction_info,
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
         IFileCachePriority::IteratorPtr reservee,
@@ -105,11 +104,8 @@ private:
 
     void increasePriority(SLRUIterator & iterator, const CachePriorityGuard::WriteLock & lock);
 
-    void downgrade(IteratorPtr iterator, const CachePriorityGuard::WriteLock &, const CacheStateGuard::Lock &);
-
     bool collectCandidatesForEvictionInProtected(
-        size_t size,
-        size_t elements,
+        const EvictionState & eviction_info,
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
         IFileCachePriority::IteratorPtr reservee,
