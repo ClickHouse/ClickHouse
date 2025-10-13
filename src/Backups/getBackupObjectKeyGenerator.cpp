@@ -8,10 +8,24 @@
 namespace
 {
 
-class HashBasedTemplatePrefixGenerator : public DB::IObjectStorageKeysGenerator
+class DefaultKeysGenerator : public DB::IObjectStorageKeysGenerator
 {
 public:
-    explicit HashBasedTemplatePrefixGenerator(String prefix_template_)
+    DefaultKeysGenerator() = default;
+    DB::ObjectStorageKey
+    generate(const String & path, bool /* is_directory */, const std::optional<String> & /* key_prefix */) const override
+    {
+        return DB::ObjectStorageKey::createAsRelative(/*key_prefix*/ "", path);
+    }
+
+    bool isRandom() const override { return false; }
+
+};
+
+class HashBasedPrefixTemplateKeysGenerator : public DB::IObjectStorageKeysGenerator
+{
+public:
+    explicit HashBasedPrefixTemplateKeysGenerator(String prefix_template_)
         : prefix_template(std::move(prefix_template_))
         , re_gen(prefix_template)
     {
@@ -38,9 +52,14 @@ namespace DB
 {
 
 ObjectStorageKeysGeneratorPtr
-getBackupObjectKeyGenerator(const Poco::Util::AbstractConfiguration & /*config*/)
+getBackupObjectKeyGenerator(const Poco::Util::AbstractConfiguration & config)
 {
-    return std::make_shared<HashBasedTemplatePrefixGenerator>("{a-z}[0-3]");
+    String config_prefix = "backups";
+    String prefix_template = config.getString(config_prefix + ".key_prefix_template", String());
+    if (prefix_template.empty())
+        return std::make_shared<DefaultKeysGenerator>();
+    else
+        return std::make_shared<HashBasedPrefixTemplateKeysGenerator>(prefix_template);
 }
 
 }
