@@ -1,4 +1,4 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-parallel-replicas
 
 SET allow_experimental_full_text_index = 1;
 SET use_skip_indexes_on_data_read = 1;

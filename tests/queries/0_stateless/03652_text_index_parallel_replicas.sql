@@ -7,6 +7,7 @@ SET use_skip_indexes_on_data_read = 1;
 SET query_plan_direct_read_from_text_index = 1;
 SET parallel_replicas_mark_segment_size = 128;
 SET parallel_replicas_min_number_of_rows_per_replica = 1000;
+SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t_text_index_pr;
 
