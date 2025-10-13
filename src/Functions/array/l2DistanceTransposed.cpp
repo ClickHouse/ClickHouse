@@ -386,11 +386,7 @@ private:
                 auto * dst = block_row(r);
 
                 if constexpr (std::is_same_v<CalcT, BFloat16>)
-                    l2Distance(
-                        reinterpret_cast<const simsimd_bf16_t *>(dst),
-                        reinterpret_cast<const simsimd_bf16_t *>(data_ptr->data()),
-                        qbit_size,
-                        &result_data[base_row + r]);
+                    l2Distance(dst, data_ptr->data(), qbit_size, &result_data[base_row + r]);
                 else if constexpr (std::is_same_v<CalcT, Float32>)
                     l2Distance(dst, data_ptr->data(), qbit_size, &result_data[base_row + r]);
                 else if constexpr (std::is_same_v<CalcT, Float64>)
