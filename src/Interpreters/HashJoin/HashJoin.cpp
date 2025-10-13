@@ -1296,10 +1296,17 @@ void HashJoin::updateNonJoinedRowsStatus() const
         return;
 
     bool found_non_joined = false;
-
-    if (!empty() && used_flags)
+    if (!empty())
     {
-        found_non_joined = true;
+        // 1) There are masks for NULL-keys/ON? -> we have nonJoined rows
+        if (!data->nullmaps.empty())
+            found_non_joined = true;
+        // 2) One disjunct and all offset-flags are set? -> we have no nonJoined rows
+        else if (used_flags && table_join->oneDisjunct())
+            found_non_joined = !used_flags->allOffsetFlagsSet();
+        // 3) Otherwise (many disjuncts or no flags) -> we assume that we have nonJoined rows
+        else if (used_flags)
+            found_non_joined = true;
     }
 
     has_non_joined_rows.store(found_non_joined, std::memory_order_release);

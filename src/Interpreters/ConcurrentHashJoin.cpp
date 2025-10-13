@@ -742,6 +742,8 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
 
         /// rebuild per-slot right-side nullmaps into slot 0 so that
         /// non-joined rows saved due to NULL keys or ON-filtered rows are emitted only once
+        if (std::any_of(hash_joins.begin(), hash_joins.end(),
+                        [&](const auto &hj){ return !getData(hj)->nullmaps.empty(); }))
         {
             /// Keep the pointers in NullMapHolder to original ScatteredColumns, which remain valid
             /// in their respective slots
