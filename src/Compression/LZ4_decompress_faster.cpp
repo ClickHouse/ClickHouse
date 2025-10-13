@@ -7,6 +7,8 @@
 
 #include <cstring>
 
+#include <memcpy.h>
+
 #ifdef __SSSE3__
 #include <tmmintrin.h>
 #endif
@@ -33,16 +35,23 @@ template <size_t N> [[maybe_unused]] inline void copyOverlap(UInt8 * op, const U
 
 ALWAYS_INLINE inline void copy8(UInt8 * dst, const UInt8 * src)
 {
-    memcpy(dst, src, 8);
+    __builtin_memcpy(dst, src, 8);
 }
 
 ALWAYS_INLINE inline void wildCopy8(UInt8 * dst, const UInt8 * src, size_t size)
 {
-    for (size_t i = 0; i < size; i += 8)
+    if (size > 256)
     {
-        copy8(dst + i, src + i);
-        /// Avoid clang loop-idiom optimization which transforms this to built-in memcpy
-        __asm__ __volatile__("" : : : "memory");
+        inline_memcpy(dst, src, size);
+    }
+    else
+    {
+        size_t i = 0;
+        do
+        {
+            __builtin_memcpy(dst + i, src + i, 8);
+            i += 8;
+        } while (i < size);
     }
 }
 
