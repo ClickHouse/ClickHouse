@@ -724,7 +724,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
 
     QueryPipeline pipeline = QueryPipeline(std::move(chain));
 
-    pipeline.setNumThreads(max_insert_threads);
+    pipeline.setNumThreads(max_threads);
     pipeline.setConcurrencyControl(settings[Setting::use_concurrency_control]);
 
     if (query.hasInlinedData() && !async_insert)

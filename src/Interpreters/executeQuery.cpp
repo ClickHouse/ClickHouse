@@ -16,7 +16,6 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/LimitReadBuffer.h>
-#include <IO/EmptyReadBuffer.h>
 #include <IO/ReadBuffer.h>
 #include <IO/copyData.h>
 
@@ -1111,6 +1110,7 @@ static BlockIO executeQueryImpl(
             {
                 /// Verify that AST formatting is consistent:
                 /// If you format AST, parse it back, and format it again, you get the same string.
+                std::string_view original_query{begin, static_cast<size_t>(end - begin)};
 
                 String formatted1 = out_ast->formatWithPossiblyHidingSensitiveData(
                     /*max_length=*/0,
@@ -1140,7 +1140,7 @@ static BlockIO executeQueryImpl(
                     if (e.code() == ErrorCodes::SYNTAX_ERROR)
                         throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "Inconsistent AST formatting: the query:\n{}\ncannot parse query back from {}",
-                            formatted1, std::string_view(begin, end-begin));
+                            formatted1, original_query);
                     else
                         throw;
                 }
@@ -1157,10 +1157,10 @@ static BlockIO executeQueryImpl(
 
                 if (formatted1 != formatted2)
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Inconsistent AST formatting: the query:\n{}\nWas parsed and formatted back as:\n{}",
-                        formatted1, formatted2);
+                        "Inconsistent AST formatting: the query:\n{}\nFormatted as:\n{}\nWas parsed and formatted back as:\n{}",
+                        original_query, formatted1, formatted2);
             }
-            catch (Exception & e)
+            catch (const Exception & e)
             {
                 /// Method formatImpl is not supported by MySQLParser::ASTCreateQuery. That code would fail inder debug build.
                 if (e.code() != ErrorCodes::NOT_IMPLEMENTED)
