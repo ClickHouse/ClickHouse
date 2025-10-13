@@ -100,9 +100,7 @@ ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, co
     auto select = std::make_shared<ASTSelectQuery>();
 
     select->setExpression(ASTSelectQuery::Expression::SELECT, std::make_shared<ASTExpressionList>());
-    auto count_func = std::make_shared<ASTFunction>();
-    count_func->name = "count";
-    count_func->arguments = std::make_shared<ASTExpressionList>();
+    auto count_func = makeASTFunction("count");
     select->select()->children.push_back(count_func);
 
     ASTs conditions;
@@ -114,7 +112,7 @@ ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, co
 
     if (conditions.size() > 1)
     {
-        auto coalesced_predicates = makeASTFunction("or");
+        auto coalesced_predicates = makeASTOperator("or");
         coalesced_predicates->arguments->children = std::move(conditions);
         select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(coalesced_predicates));
     }
@@ -175,7 +173,8 @@ IsStorageTouched isStorageTouchedByMutations(
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
     const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MutationCommand> & commands,
-    ContextPtr context)
+    ContextPtr context,
+    std::function<void(const Progress & value)> check_operation_is_not_cancelled)
 {
     static constexpr IsStorageTouched no_rows = {.any_rows_affected = false, .all_rows_affected = false};
     static constexpr IsStorageTouched all_rows = {.any_rows_affected = true, .all_rows_affected = true};
@@ -245,6 +244,8 @@ IsStorageTouched isStorageTouchedByMutations(
 
     PullingAsyncPipelineExecutor executor(io.pipeline);
     io.pipeline.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
+    /// It's actually not a progress callback, but a cancellation check.
+    io.pipeline.setProgressCallback(check_operation_is_not_cancelled);
 
     Block block;
     while (block.rows() == 0 && executor.pull(block));
@@ -286,14 +287,14 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ALTER UPDATE/DELETE ... IN PARTITION is not supported for non-MergeTree tables");
 
-        partition_predicate_as_ast_func = makeASTFunction("equals",
+        partition_predicate_as_ast_func = makeASTOperator("equals",
                     std::make_shared<ASTIdentifier>("_partition_id"),
                     std::make_shared<ASTLiteral>(partition_id)
         );
     }
 
     if (command.predicate && command.partition)
-        return makeASTFunction("and", command.predicate->clone(), std::move(partition_predicate_as_ast_func));
+        return makeASTOperator("and", command.predicate->clone(), std::move(partition_predicate_as_ast_func));
     return command.predicate ? command.predicate->clone() : partition_predicate_as_ast_func;
 }
 
@@ -822,18 +823,14 @@ void MutationsInterpreter::prepare(bool dry_run)
                             condition,
                             update_expr->clone(),
                             std::make_shared<ASTIdentifier>(column_name));
-                        condition = makeASTFunction("and", condition, function);
+                        condition = makeASTOperator("and", condition, function);
                     }
                     else if (nested_update_exprs->size() > 1)
                     {
-                        function = std::make_shared<ASTFunction>();
-                        function->name = "validateNestedArraySizes";
-                        function->arguments = std::make_shared<ASTExpressionList>();
-                        function->children.push_back(function->arguments);
-                        function->arguments->children.push_back(condition);
+                        function = makeASTFunction("validateNestedArraySizes", condition);
                         for (const auto & it : *nested_update_exprs)
                             function->arguments->children.push_back(it->clone());
-                        condition = makeASTFunction("and", condition, function);
+                        condition = makeASTOperator("and", condition, function);
                     }
                 }
 

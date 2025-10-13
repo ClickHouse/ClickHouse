@@ -40,7 +40,7 @@ def test_writes(started_cluster_iceberg_with_spark, format_version, storage_type
     instance.query(f"INSERT INTO {TABLE_NAME} VALUES (456);", settings={"allow_experimental_insert_into_iceberg": 1})
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '42\n123\n456\n'
 
-    if storage_type != "local":
+    if storage_type == "azure":
         return
 
     initial_files = default_download_directory(
@@ -86,7 +86,7 @@ def test_writes_orc_format(started_cluster_iceberg_with_spark, format_version, s
     instance.query(f"INSERT INTO {TABLE_NAME} VALUES ('Pavel Ivanov');", settings={"allow_experimental_insert_into_iceberg": 1})
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == 'Pavel Ivanov\n'
 
-    if storage_type != "local" or format != "ORC":
+    if storage_type == "azure" or format != "ORC":
         return
 
     files = default_download_directory(
