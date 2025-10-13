@@ -179,6 +179,7 @@ ln -sf $SRC_PATH/users.d/remote_queries.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/session_log_test.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/memory_profiler.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/no_fsync_metadata.xml $DEST_SERVER_PATH/users.d/
+ln -sf $SRC_PATH/users.d/inject_random_order.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/filelog.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/enable_blobs_check.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/marks.xml $DEST_SERVER_PATH/users.d/

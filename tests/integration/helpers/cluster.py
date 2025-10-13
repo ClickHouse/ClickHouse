@@ -5284,6 +5284,7 @@ class ClickHouseInstance:
 
         if not self.with_dolor:
             write_embedded_config("0_common_instance_users.xml", users_d_dir)
+            write_embedded_config("0_inject_random_order.xml", users_d_dir)
             if self.with_installed_binary:
                 # Ignore CPU overload in this case
                 write_embedded_config(
