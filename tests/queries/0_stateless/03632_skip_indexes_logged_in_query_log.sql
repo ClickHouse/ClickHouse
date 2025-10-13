@@ -43,7 +43,7 @@ FORMAT Null SETTINGS log_comment='5'; -- age_i and name_i used
 
 SYSTEM FLUSH LOGS system.query_log;
 
-SELECT formatQuerySingleLine(query), skip_indexes
+SELECT formatQuerySingleLine(query), skip_indices
 FROM system.query_log
 WHERE
     event_date >= yesterday()
