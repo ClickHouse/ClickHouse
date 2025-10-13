@@ -24,6 +24,9 @@ for i in {1..30}; do
     fi
 done
 
+# Make sure the directory for the default database is created:
+$CLICKHOUSE_CLIENT --query "CREATE TABLE test (x UInt8) ORDER BY ()"
+
 kill $PID
 wait
 
