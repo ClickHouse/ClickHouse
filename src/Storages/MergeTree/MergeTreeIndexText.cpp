@@ -10,6 +10,7 @@
 #include <Interpreters/BloomFilterHash.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/HashTable/HashSet.h>
+#include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <base/range.h>
 #include <fmt/ranges.h>
@@ -130,8 +131,9 @@ DictionaryBlock::DictionaryBlock(ColumnPtr tokens_, std::vector<TokenPostingsInf
 {
 }
 
-void PostingsSerialization::serialize(UInt64 header, PostingListBuilder && postings, WriteBuffer & ostr)
+UInt64 PostingsSerialization::serialize(UInt64 header, PostingListBuilder && postings, WriteBuffer & ostr)
 {
+    UInt64 written_bytes = 0;
     if (header & Flags::RawPostings)
     {
         if (postings.isSmall())
@@ -139,13 +141,19 @@ void PostingsSerialization::serialize(UInt64 header, PostingListBuilder && posti
             size_t size = postings.size();
             const auto & array = postings.getSmall();
             for (size_t i = 0; i < size; ++i)
+            {
                 writeVarUInt(array[i], ostr);
+                written_bytes += getLengthOfVarUInt(array[i]);
+            }
         }
         else
         {
             const auto & posting_list = postings.getLarge();
             for (const auto row_id : posting_list)
+            {
                 writeVarUInt(row_id, ostr);
+                written_bytes += getLengthOfVarUInt(row_id);
+            }
         }
     }
     else
@@ -156,11 +164,14 @@ void PostingsSerialization::serialize(UInt64 header, PostingListBuilder && posti
         posting_list.runOptimize();
         size_t num_bytes = posting_list.getSizeInBytes();
         writeVarUInt(num_bytes, ostr);
+        written_bytes += getLengthOfVarUInt(num_bytes);
 
         std::vector<char> memory(num_bytes);
         posting_list.write(memory.data());
         ostr.write(memory.data(), num_bytes);
+        written_bytes += num_bytes;
     }
+    return written_bytes;
 }
 
 PostingList PostingsSerialization::deserialize(UInt64 header, UInt32 cardinality, ReadBuffer & istr)
@@ -507,11 +518,31 @@ MergeTreeIndexGranuleTextWritable::MergeTreeIndexGranuleTextWritable(
     , tokens_map(std::move(tokens_map_))
     , posting_lists(std::move(posting_lists_))
     , arena(std::move(arena_))
+    , logger(getLogger("TextIndexGranuleWriter"))
 {
 }
 
 namespace
 {
+struct SerializationStats
+{
+    UInt64 front_coded_strings_size = 0;
+    UInt64 raw_strings_size = 0;
+    UInt64 posting_lists_size = 0;
+
+    [[nodiscard]] std::string toString() const
+    {
+        if (front_coded_strings_size != 0)
+            return fmt::format("FrontCoded strings size = {} | Raw strings size = {} | Posting lists size = {}",
+                               ReadableSize(front_coded_strings_size),
+                               ReadableSize(raw_strings_size),
+                               ReadableSize(posting_lists_size));
+
+        return fmt::format("Raw strings size = {} | Posting lists size = {}",
+                           ReadableSize(raw_strings_size), ReadableSize(posting_lists_size));
+    }
+};
+
 size_t computeCommonPrefixLength(const StringRef & lhs, const StringRef & rhs)
 {
     size_t common_prefix_length = 0;
@@ -523,15 +554,23 @@ size_t computeCommonPrefixLength(const StringRef & lhs, const StringRef & rhs)
 }
 
 void serializeTokensRaw(
-    WriteBuffer & write_buffer, const SortedTokensAndPostings & tokens_and_postings, size_t block_begin, size_t block_end)
+    SerializationStats & stats,
+    WriteBuffer & write_buffer,
+    const SortedTokensAndPostings & tokens_and_postings,
+    size_t block_begin,
+    size_t block_end)
 {
     /// Write tokens the same as in SerializationString::serializeBinaryBulk
     /// to be able to read them later with SerializationString::deserializeBinaryBulk.
+
     for (size_t i = block_begin; i < block_end; ++i)
     {
         auto current_token = tokens_and_postings[i].first;
         writeVarUInt(current_token.size, write_buffer);
         write_buffer.write(current_token.data, current_token.size);
+
+        stats.raw_strings_size += getLengthOfVarUInt(current_token.size);
+        stats.raw_strings_size += (current_token.size);
     }
 }
 
@@ -541,7 +580,11 @@ void serializeTokensRaw(
  * 2. https://doi.org/10.1145/3448016.345279
  */
 void serializeTokensFrontCoding(
-    WriteBuffer & write_buffer, const SortedTokensAndPostings & tokens_and_postings, size_t block_begin, size_t block_end)
+    SerializationStats & stats,
+    WriteBuffer & write_buffer,
+    const SortedTokensAndPostings & tokens_and_postings,
+    size_t block_begin,
+    size_t block_end)
 {
     const auto & first_token = tokens_and_postings[block_begin].first;
     writeVarUInt(first_token.size, write_buffer);
@@ -556,6 +599,12 @@ void serializeTokensFrontCoding(
         writeVarUInt(current_token.size - lcp, write_buffer);
         write_buffer.write(current_token.data + lcp, current_token.size - lcp);
         previous_token = current_token;
+
+        stats.raw_strings_size += getLengthOfVarUInt(current_token.size);
+        stats.raw_strings_size += (current_token.size);
+        stats.front_coded_strings_size += getLengthOfVarUInt(lcp);
+        stats.front_coded_strings_size += getLengthOfVarUInt(current_token.size - lcp);
+        stats.front_coded_strings_size += (current_token.size - lcp);
     }
 }
 }
@@ -565,12 +614,11 @@ DictionarySparseIndex serializeTokensAndPostings(
     const SortedTokensAndPostings & tokens_and_postings,
     Stream & dictionary_stream,
     Stream & postings_stream,
-    size_t block_size,
-    size_t max_cardinality_for_embedded_postings,
-    bool dictionary_block_frontcoding_compression)
+    const MergeTreeIndexTextParams & params,
+    LoggerPtr logger)
 {
     size_t num_tokens = tokens_and_postings.size();
-    size_t num_blocks = (num_tokens + block_size - 1) / block_size;
+    size_t num_blocks = (num_tokens + params.dictionary_block_size - 1) / params.dictionary_block_size;
 
     auto sparse_index_tokens = ColumnString::create();
     auto & sparse_index_str = assert_cast<ColumnString &>(*sparse_index_tokens);
@@ -581,12 +629,13 @@ DictionarySparseIndex serializeTokensAndPostings(
     sparse_index_offsets_data.reserve(num_blocks);
 
     TokensSerializationFormat tokens_format
-        = dictionary_block_frontcoding_compression ? TokensSerializationFormat::FrontCodedStrings : TokensSerializationFormat::RawStrings;
+        = params.dictionary_block_frontcoding_compression ? TokensSerializationFormat::FrontCodedStrings : TokensSerializationFormat::RawStrings;
 
+    SerializationStats stats;
     for (size_t block_idx = 0; block_idx < num_blocks; ++block_idx)
     {
-        size_t block_begin = block_idx * block_size;
-        size_t block_end = std::min(block_begin + block_size, num_tokens);
+        size_t block_begin = block_idx * params.dictionary_block_size;
+        size_t block_end = std::min(block_begin + params.dictionary_block_size, num_tokens);
 
         /// Start a new compressed block because the dictionary blocks
         /// are usually read with random reads and it is more efficient
@@ -606,10 +655,10 @@ DictionarySparseIndex serializeTokensAndPostings(
         switch (tokens_format)
         {
             case TokensSerializationFormat::RawStrings:
-                serializeTokensRaw(dictionary_stream.compressed_hashing, tokens_and_postings, block_begin, block_end);
+                serializeTokensRaw(stats, dictionary_stream.compressed_hashing, tokens_and_postings, block_begin, block_end);
                 break;
             case TokensSerializationFormat::FrontCodedStrings:
-                serializeTokensFrontCoding(dictionary_stream.compressed_hashing, tokens_and_postings, block_begin, block_end);
+                serializeTokensFrontCoding(stats, dictionary_stream.compressed_hashing, tokens_and_postings, block_begin, block_end);
                 break;
         }
 
@@ -620,7 +669,7 @@ DictionarySparseIndex serializeTokensAndPostings(
 
             UInt64 header = 0;
             bool raw_postings = cardinality <= MAX_CARDINALITY_FOR_RAW_POSTINGS;
-            bool embedded_postings = cardinality <= max_cardinality_for_embedded_postings;
+            bool embedded_postings = cardinality <= params.max_cardinality_for_embedded_postings;
 
             if (raw_postings)
                 header |= PostingsSerialization::RawPostings;
@@ -630,10 +679,12 @@ DictionarySparseIndex serializeTokensAndPostings(
 
             writeVarUInt(header, dictionary_stream.compressed_hashing);
             writeVarUInt(cardinality, dictionary_stream.compressed_hashing);
+            stats.posting_lists_size += getLengthOfVarUInt(header);
+            stats.posting_lists_size += getLengthOfVarUInt(cardinality);
 
             if (embedded_postings)
             {
-                PostingsSerialization::serialize(header, std::move(postings), dictionary_stream.compressed_hashing);
+                stats.posting_lists_size += PostingsSerialization::serialize(header, std::move(postings), dictionary_stream.compressed_hashing);
             }
             else
             {
@@ -644,10 +695,12 @@ DictionarySparseIndex serializeTokensAndPostings(
                 UInt64 offset_in_file = postings_mark.offset_in_compressed_file;
 
                 writeVarUInt(offset_in_file, dictionary_stream.compressed_hashing);
-                PostingsSerialization::serialize(header, std::move(postings), postings_stream.compressed_hashing);
+                stats.posting_lists_size += getLengthOfVarUInt(offset_in_file);
+                stats.posting_lists_size += PostingsSerialization::serialize(header, std::move(postings), postings_stream.compressed_hashing);
             }
         }
     }
+    LOG_TRACE(logger, "Dictionary stats: {}", stats.toString());
 
     return DictionarySparseIndex(std::move(sparse_index_tokens), std::move(sparse_index_offsets));
 }
@@ -691,9 +744,8 @@ void MergeTreeIndexGranuleTextWritable::serializeBinaryWithMultipleStreams(Merge
         tokens_and_postings,
         *dictionary_stream,
         *postings_stream,
-        params.dictionary_block_size,
-        params.max_cardinality_for_embedded_postings,
-        params.dictionary_block_frontcoding_compression);
+        params,
+        logger);
 
     serializeBloomFilter(tokens_and_postings.size(), bloom_filter, *index_stream);
     serializeSparseIndex(sparse_index_block, *index_stream);
