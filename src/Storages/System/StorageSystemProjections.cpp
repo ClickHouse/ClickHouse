@@ -253,7 +253,7 @@ void ReadFromSystemProjections::initializePipeline(QueryPipelineBuilder & pipeli
     {
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
             continue;
-        if (!database->canContainMergeTreeTables())
+        if (database->isExternal())
             continue;
 
         /// Lazy database can contain only very primitive tables, it cannot contain tables with projections.
