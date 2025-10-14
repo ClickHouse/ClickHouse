@@ -51,7 +51,6 @@
 #include <Interpreters/convertFieldToType.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/IStorage.h>
-#include <Storages/extractTableFunctionFromSelectQuery.h>
 
 #include <boost/algorithm/string/predicate.hpp>
 #include <ranges>
@@ -4565,7 +4564,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     TableFunctionsWithClusterAlternativesVisitor table_function_visitor;
     table_function_visitor.visit(query_node);
-    if (table_function_visitor.shouldReplaceWithClusterAlternatives() && scope.context->hasQueryContext())
+    if (!table_function_visitor.shouldReplaceWithClusterAlternatives() && scope.context->hasQueryContext())
         scope.context->getQueryContext()->setSetting("parallel_replicas_for_cluster_engines", false);
 
     initializeQueryJoinTreeNode(query_node_typed.getJoinTree(), scope);

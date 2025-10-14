@@ -142,7 +142,6 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
     const ContextPtr & context)
 {
     auto * table_function = extractTableFunctionFromSelectQuery(query);
-
     if (!table_function)
         return;
     auto * expression_list = table_function->arguments->as<ASTExpressionList>();
