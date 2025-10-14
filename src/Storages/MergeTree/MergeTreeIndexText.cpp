@@ -19,6 +19,8 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIndexDeclaration.h>
 
+#include <Interpreters/ExpressionActions.h>
+
 namespace ProfileEvents
 {
     extern const Event TextIndexReadDictionaryBlocks;
@@ -866,7 +868,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexText::createIndexAggregator(const Merg
 
 MergeTreeIndexConditionPtr MergeTreeIndexText::createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeIndexConditionText>(predicate, context, index.sample_block, token_extractor.get());
+    return std::make_shared<MergeTreeIndexConditionText>(predicate, context, index.sample_block, token_extractor.get(), preprocessor);
 }
 
 static const String ARGUMENT_TOKENIZER = "tokenizer";

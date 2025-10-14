@@ -41,11 +41,13 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     const ActionsDAG::Node * predicate,
     ContextPtr context_,
     const Block & index_sample_block,
-    TokenExtractorPtr token_extactor_)
+    TokenExtractorPtr token_extactor_,
+    ASTPtr preprocessor_)
     : WithContext(context_)
     , header(index_sample_block)
     , token_extractor(token_extactor_)
     , use_bloom_filter(context_->getSettingsRef()[Setting::text_index_use_bloom_filter])
+    , preprocessor(preprocessor_)
 {
     if (!predicate)
     {
