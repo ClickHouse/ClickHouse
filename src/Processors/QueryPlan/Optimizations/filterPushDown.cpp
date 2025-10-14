@@ -289,6 +289,12 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     if (logical_join && logical_join->getJoinOperator().kind == JoinKind::Full)
         return 0;
 
+    /// PASTE JOIN aligns rows from both sides by position, and pushing filters
+    /// to either side may change relative alignment
+    if ((table_join_ptr && table_join_ptr->kind() == JoinKind::Paste)
+        || (logical_join && logical_join->getJoinOperator().kind == JoinKind::Paste))
+        return 0;
+
     std::unordered_map<std::string, ColumnWithTypeAndName> equivalent_left_stream_column_to_right_stream_column;
     std::unordered_map<std::string, ColumnWithTypeAndName> equivalent_right_stream_column_to_left_stream_column;
     std::vector<std::pair<JoinActionRef, JoinActionRef>> equivalent_expressions;
