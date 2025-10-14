@@ -3,7 +3,6 @@ description: 'Aggregate function that calculates the minimum across a group of v
 sidebar_position: 168
 slug: /sql-reference/aggregate-functions/reference/min
 title: 'min'
-doc_type: 'reference'
 ---
 
 Aggregate function that calculates the minimum across a group of values.

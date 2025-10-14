@@ -4,7 +4,6 @@ description: 'System table containing information about settings of AzureQueue t
 keywords: ['system table', 'azure_queue_settings']
 slug: /operations/system-tables/azure_queue_settings
 title: 'system.azure_queue_settings'
-doc_type: 'reference'
 ---
 
 Contains information about settings of [AzureQueue](../../engines/table-engines/integrations/azure-queue.md) tables.

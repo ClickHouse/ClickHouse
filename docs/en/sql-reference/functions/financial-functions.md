@@ -4,7 +4,6 @@ sidebar_label: 'Financial'
 slug: /sql-reference/functions/financial-functions
 title: 'Financial functions'
 keywords: ['Financial', 'rate of return', 'net present value']
-doc_type: 'reference'
 ---
 
 # Financial functions

@@ -12,8 +12,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 
-#include <iostream>
-
 namespace DB
 {
 namespace Setting
@@ -1411,13 +1409,9 @@ private:
         else
             return;
 
-        const auto & replacement_function = is_lhs_const ? rhs : lhs;
-
-        const FunctionNode * child_function = replacement_function->as<FunctionNode>();
+        const FunctionNode * child_function = is_lhs_const ? rhs->as<FunctionNode>() : lhs->as<FunctionNode>();
         if (!child_function || !isBooleanFunction(child_function->getFunctionName()))
             return;
-
-        auto function_node_type = function_node.getResultType();
 
         // if we have something like `function = 0`, we need to add a `NOT` when dropping the `= 0`
         if (constant_value == 0)
@@ -1426,21 +1420,12 @@ private:
             const auto not_node = std::make_shared<FunctionNode>("not");
             auto & arguments = not_node->getArguments().getNodes();
             arguments.reserve(1);
-            arguments.push_back(replacement_function);
+            arguments.push_back(is_lhs_const ? rhs : lhs);
             not_node->resolveAsFunction(not_resolver->build(not_node->getArgumentColumns()));
             node = not_node;
         }
         else
-            node = replacement_function;
-
-        if (!function_node_type->equals(*node->getResultType()))
-        {
-            /// Result of replacement_function can be low cardinality, while redundant equal
-            /// returns UInt8, and this equal can be an argument of external function -
-            /// so we want to convert replacement_function to the expected UInt8
-            chassert(function_node_type->equals(*removeLowCardinality(node->getResultType())));
-            node = createCastFunction(node, function_node_type, getContext());
-        }
+            node = is_lhs_const ? rhs : lhs;
     }
 };
 

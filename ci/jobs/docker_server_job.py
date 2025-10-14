@@ -42,7 +42,7 @@ def docker_login(relogin: bool = True) -> None:
             "docker login --username 'robotclickhouse' --password-stdin",
             strict=True,
             stdin_str=Secret.Config(
-                "dockerhub_robot_password", type=Secret.Type.AWS_SSM_PARAMETER
+                "dockerhub_robot_password", type=Secret.Type.AWS_SSM_VAR
             ).get_value(),
             encoding="utf-8",
         )

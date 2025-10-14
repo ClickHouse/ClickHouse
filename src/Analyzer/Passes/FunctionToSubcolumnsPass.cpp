@@ -5,8 +5,6 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeVariant.h>
-#include <DataTypes/DataTypeFixedString.h>
-#include <DataTypes/DataTypeQBit.h>
 
 #include <Storages/IStorage.h>
 
@@ -47,33 +45,6 @@ struct ColumnContext
 };
 
 using NodeToSubcolumnTransformer = std::function<void(QueryTreeNodePtr &, FunctionNode &, ColumnContext &)>;
-
-void optimizeFunctionStringLength(QueryTreeNodePtr & node, FunctionNode &, ColumnContext & ctx)
-{
-    /// Replace `length(argument)` with `argument.size`.
-    /// `argument` is String.
-
-    NameAndTypePair column{ctx.column.name + ".size", std::make_shared<DataTypeUInt64>()};
-    node = std::make_shared<ColumnNode>(column, ctx.column_source);
-}
-
-template <bool positive>
-void optimizeFunctionStringEmpty(QueryTreeNodePtr &, FunctionNode & function_node, ColumnContext & ctx)
-{
-    /// Replace `empty(argument)` with `equals(argument.size, 0)` if positive.
-    /// Replace `notEmpty(argument)` with `notEquals(argument.size, 0)` if not positive.
-    /// `argument` is String.
-
-    NameAndTypePair column{ctx.column.name + ".size", std::make_shared<DataTypeUInt64>()};
-    auto & function_arguments_nodes = function_node.getArguments().getNodes();
-
-    function_arguments_nodes.clear();
-    function_arguments_nodes.push_back(std::make_shared<ColumnNode>(column, ctx.column_source));
-    function_arguments_nodes.push_back(std::make_shared<ConstantNode>(static_cast<UInt64>(0)));
-
-    const auto * function_name = positive ? "equals" : "notEquals";
-    resolveOrdinaryFunctionNodeByName(function_node, function_name, ctx.context);
-}
 
 void optimizeFunctionLength(QueryTreeNodePtr & node, FunctionNode &, ColumnContext & ctx)
 {
@@ -145,21 +116,6 @@ std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const
     return NameAndTypePair{name, data_type_variant.getVariant(*discr)};
 }
 
-std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const DataTypeQBit & data_type_qbit)
-{
-    size_t index;
-
-    if (value.getType() == Field::Types::UInt64)
-        index = value.safeGet<UInt64>();
-    else
-        return {};
-
-    if (index == 0 || index > data_type_qbit.getElementSize())
-        return {};
-
-    return NameAndTypePair{toString(index), std::make_shared<const DataTypeFixedString>((data_type_qbit.getDimension() + 7) / 8)};
-}
-
 template <typename DataType>
 void optimizeTupleOrVariantElement(QueryTreeNodePtr & node, FunctionNode & function_node, ColumnContext & ctx)
 {
@@ -186,15 +142,6 @@ void optimizeTupleOrVariantElement(QueryTreeNodePtr & node, FunctionNode & funct
 
 std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transformers =
 {
-    {
-        {TypeIndex::String, "length"}, optimizeFunctionStringLength,
-    },
-    {
-        {TypeIndex::String, "empty"}, optimizeFunctionStringEmpty<true>,
-    },
-    {
-        {TypeIndex::String, "notEmpty"}, optimizeFunctionStringEmpty<false>,
-    },
     {
         {TypeIndex::Array, "length"}, optimizeFunctionLength,
     },
@@ -297,9 +244,6 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
     },
     {
         {TypeIndex::Variant, "variantElement"}, optimizeTupleOrVariantElement<DataTypeVariant>,
-    },
-    {
-        {TypeIndex::QBit, "tupleElement"}, optimizeTupleOrVariantElement<DataTypeQBit>, /// QBit uses tupleElement for subcolumns
     },
 };
 
@@ -404,7 +348,6 @@ public:
             return {};
         }
 
-        /// TODO(ab): need to optimize for prewhere anyway
         /// Do not optimize if full column is requested in other context.
         /// It doesn't make sense because it doesn't reduce amount of read data
         /// and optimized functions are not computation heavy. But introducing

@@ -54,7 +54,6 @@ CREATE TABLE times (t DateTime) ENGINE MergeTree ORDER BY t
     min_rows_for_wide_part = 1000000,
     min_bytes_for_wide_part = 1000000,
     ratio_of_defaults_for_sparse_serialization=1.0,
-    serialization_info_version='default',
     write_marks_for_substreams_in_compact_parts=1;
 "
 

@@ -172,7 +172,7 @@ private:
 // AutoCanceledWriteBuffer cancel the buffer in d-tor when it has not been finalized before d-tor
 // AutoCanceledWriteBuffer could not be inherited.
 // Otherwise cancel method could not call proper cancelImpl ьуерщв because inheritor is destroyed already.
-// But the usage of final inheritance is avoided in favor to keep the possibility to use std::make_shared.
+// But the ussage of final inheritance is avoided in favor to keep the possibility to use std::make_shared.
 template<class Base>
 class AutoCanceledWriteBuffer final : public Base
 {

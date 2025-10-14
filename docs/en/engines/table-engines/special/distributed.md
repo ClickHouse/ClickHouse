@@ -7,7 +7,6 @@ sidebar_label: 'Distributed'
 sidebar_position: 10
 slug: /engines/table-engines/special/distributed
 title: 'Distributed Table Engine'
-doc_type: 'reference'
 ---
 
 # Distributed table engine

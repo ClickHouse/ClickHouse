@@ -26,8 +26,6 @@ public:
         const ContextPtr & context,
         bool skip_access_check) const;
 
-    void clearRegistry();
-
 private:
     using Registry = std::unordered_map<String, Creator>;
     Registry registry;

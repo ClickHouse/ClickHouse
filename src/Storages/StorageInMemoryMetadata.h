@@ -3,13 +3,12 @@
 #include <Access/Common/SQLSecurityDefs.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/ColumnDependency.h>
-#include <Storages/ColumnSize.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/ColumnSize.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/IndicesDescription.h>
-#include <Storages/KeyDescription.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeTableStateSnapshot.h>
 #include <Storages/ProjectionsDescription.h>
+#include <Storages/KeyDescription.h>
 #include <Storages/SelectQueryDescription.h>
 #include <Storages/TTLDescription.h>
 
@@ -70,9 +69,6 @@ struct StorageInMemoryMetadata
     /// (zero-initialization is important)
     int32_t metadata_version = 0;
 
-    ///  Current state of a datalake table.
-    std::optional<DataLakeTableStateSnapshot> datalake_table_state;
-
     StorageInMemoryMetadata() = default;
 
     StorageInMemoryMetadata(const StorageInMemoryMetadata & other);
@@ -123,8 +119,6 @@ struct StorageInMemoryMetadata
 
     /// Sets SQL security for the storage.
     void setSQLSecurity(const ASTSQLSecurity & sql_security);
-
-    void setDataLakeTableState(const DataLakeTableStateSnapshot & datalake_table_state_);
     UUID getDefinerID(ContextPtr context) const;
 
     /// Returns a copy of the context with the correct user from SQL security options.

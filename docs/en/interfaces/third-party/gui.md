@@ -4,7 +4,6 @@ sidebar_label: 'Visual Interfaces'
 sidebar_position: 28
 slug: /interfaces/third-party/gui
 title: 'Visual Interfaces from Third-party Developers'
-doc_type: 'reference'
 ---
 
 # Visual interfaces from third-party developers

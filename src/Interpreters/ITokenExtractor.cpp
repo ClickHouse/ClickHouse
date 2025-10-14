@@ -280,20 +280,20 @@ void DefaultTokenExtractor::substringToBloomFilter(const char * data, size_t len
             bloom_filter.add(data + token_start, token_len);
 }
 
-void DefaultTokenExtractor::substringToTokens(const char * data, size_t length, std::vector<String> & tokens, bool is_prefix, bool is_suffix) const
+void DefaultTokenExtractor::substringToGinFilter(const char * data, size_t length, GinQueryString & gin_query_string, bool is_prefix, bool is_suffix) const
 {
+    gin_query_string.setQueryString({data, length});
+
     size_t cur = 0;
     size_t token_start = 0;
     size_t token_len = 0;
 
     while (cur < length && nextInString(data, length, &cur, &token_start, &token_len))
-    {
         // In order to avoid filter updates with incomplete tokens,
         // first token is ignored, unless substring is prefix and
         // last token is ignored, unless substring is suffix
         if ((token_start > 0 || is_prefix) && (token_start + token_len < length || is_suffix))
-            tokens.push_back({data + token_start, token_len});
-    }
+            gin_query_string.addTerm({data + token_start, token_len});
 }
 
 SplitTokenExtractor::SplitTokenExtractor(const std::vector<String> & separators_)
