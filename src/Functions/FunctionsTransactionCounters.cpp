@@ -114,8 +114,8 @@ ROLLBACK;
     FunctionDocumentation documentation_transactionID = {description_transactionID, syntax_transactionID, arguments_transactionID, returned_value_transactionID, examples_transactionID, introduced_in_transactionID, category_transactionID};
 
     factory.registerFunction<FunctionTransactionID>(documentation_transactionID);
-   
-    /// transactionLatestSnapshot 
+
+    /// transactionLatestSnapshot
     FunctionDocumentation::Description description_transactionLatestSnapshot = R"(
 <ExperimentalBadge/>
 <CloudNotSupportedBadge/>

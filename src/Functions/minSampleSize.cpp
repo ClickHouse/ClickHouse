@@ -342,7 +342,7 @@ Uses the formula described in [this article](https://towardsdatascience.com/requ
     FunctionDocumentation::Category category_conversion = FunctionDocumentation::Category::Other;
     FunctionDocumentation documentation_conversion = {description_conversion, syntax_conversion, arguments_conversion, returned_value_conversion, examples_conversion, introduced_in_conversion, category_conversion};
 
-    factory.registerFunction<FunctionMinSampleSize<ConversionImpl>>(documentation_conversion);    
+    factory.registerFunction<FunctionMinSampleSize<ConversionImpl>>(documentation_conversion);
 }
 
 }
