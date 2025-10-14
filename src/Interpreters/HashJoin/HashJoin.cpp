@@ -139,6 +139,7 @@ HashJoin::HashJoin(
     , right_sample_block(*right_sample_block_)
     , max_joined_block_rows(table_join->maxJoinedBlockRows())
     , max_joined_block_bytes(table_join->maxJoinedBlockBytes())
+    , joined_block_split_single_row(table_join->joinedBlockAllowSplitSingleRow())
     , instance_log_id(!instance_id_.empty() ? "(" + instance_id_ + ") " : "")
     , log(getLogger("HashJoin"))
 {

@@ -63,6 +63,7 @@ list (APPEND PRIVATE_LIBS
         boost::filesystem
         divide_impl
         ch_contrib::xxHash
+        ch_contrib::stringzilla
 )
 
 if (TARGET OpenSSL::Crypto)

@@ -420,20 +420,47 @@ void StatementGenerator::generateNextCodecs(RandomGenerator & rg, CodecList * cl
     }
 }
 
-void StatementGenerator::generateTableExpression(RandomGenerator & rg, const bool use_global_agg, Expr * expr)
+void StatementGenerator::generateTableExpression(
+    RandomGenerator & rg, std::optional<SQLRelation> & rel, const bool use_global_agg, Expr * expr)
 {
+    std::unordered_map<uint32_t, QueryLevel> levels_backup;
+    std::unordered_map<uint32_t, std::unordered_map<String, SQLRelation>> ctes_backup;
     const bool prev_allow_in_expression_alias = this->allow_in_expression_alias;
     const bool prev_allow_subqueries = this->allow_subqueries;
 
+    for (const auto & [key, val] : this->levels)
+    {
+        levels_backup[key] = val;
+    }
+    for (const auto & [key, val] : this->ctes)
+    {
+        ctes_backup[key] = val;
+    }
+    this->levels.clear();
+    this->ctes.clear();
+    this->levels[this->current_level] = QueryLevel(this->current_level);
     this->levels[this->current_level].global_aggregate = use_global_agg && rg.nextSmallNumber() < 9;
     this->levels[this->current_level].allow_aggregates = rg.nextMediumNumber() < 11;
     this->levels[this->current_level].allow_window_funcs = rg.nextMediumNumber() < 11;
     this->allow_in_expression_alias = rg.nextMediumNumber() < 11;
     this->allow_subqueries = rg.nextMediumNumber() < 11;
+    if (rel.has_value() && !rel.value().cols.empty())
+    {
+        this->levels[this->current_level].rels.push_back(rel.value());
+    }
     generateExpression(rg, expr);
     this->allow_in_expression_alias = prev_allow_in_expression_alias;
     this->allow_subqueries = prev_allow_subqueries;
     this->levels.clear();
+    this->ctes.clear();
+    for (const auto & [key, val] : levels_backup)
+    {
+        this->levels[key] = val;
+    }
+    for (const auto & [key, val] : ctes_backup)
+    {
+        this->ctes[key] = val;
+    }
 }
 
 void StatementGenerator::generateTTLExpression(RandomGenerator & rg, const std::optional<SQLTable> & t, Expr * ttl_expr)
@@ -455,7 +482,7 @@ void StatementGenerator::generateTTLExpression(RandomGenerator & rg, const std::
         IntLiteral * il = ie->mutable_expr()->mutable_lit_val()->mutable_int_lit();
         std::uniform_int_distribution<int64_t> next_dist(-15, 15);
 
-        bexpr->set_op(rg.nextBool() ? BinaryOperator::BINOP_PLUS : BinaryOperator::BINOP_MINUS);
+        bexpr->set_op(rg.nextMediumNumber() < 76 ? BinaryOperator::BINOP_PLUS : BinaryOperator::BINOP_MINUS);
         columnPathRef(rg.pickRandomly(filtered_entries).get(), bexpr->mutable_lhs());
         ie->set_interval(
             static_cast<IntervalExpr_Interval>((rg.nextRandomUInt32() % static_cast<uint32_t>(IntervalExpr_Interval_MINUTE)) + 1));
@@ -465,11 +492,10 @@ void StatementGenerator::generateTTLExpression(RandomGenerator & rg, const std::
     else
     {
         filtered_entries.clear();
-        if (t.has_value() && !t.value().cols.empty())
-        {
-            addTableRelation(rg, true, "", t.value());
-        }
-        generateTableExpression(rg, false, ttl_expr);
+        std::optional<SQLRelation> rel
+            = t.has_value() ? std::make_optional<SQLRelation>(createTableRelation(rg, true, "", t.value())) : std::nullopt;
+
+        generateTableExpression(rg, rel, false, ttl_expr);
     }
 }
 
@@ -546,12 +572,10 @@ void StatementGenerator::generateNextTTL(
                 TTLSet * tset = j == 0 ? gb->mutable_ttl_set() : gb->add_other_ttl_set();
 
                 columnPathRef(entries[j], tset->mutable_col());
-                if (t.has_value() && !t.value().cols.empty())
-                {
-                    addTableRelation(rg, true, "", t.value());
-                }
+                std::optional<SQLRelation> rel
+                    = t.has_value() ? std::make_optional<SQLRelation>(createTableRelation(rg, true, "", t.value())) : std::nullopt;
                 /// Use global aggregate most of the time
-                generateTableExpression(rg, true, tset->mutable_expr());
+                generateTableExpression(rg, rel, true, tset->mutable_expr());
             }
         }
     }
@@ -744,35 +768,9 @@ void StatementGenerator::colRefOrExpression(
     else if (rand_expr && nopt < (datetime_func + modulo_func + one_arg_func + hash_func + rand_expr + 1))
     {
         /// Use a random expression
-        std::unordered_map<uint32_t, QueryLevel> levels_backup;
-        std::unordered_map<uint32_t, std::unordered_map<String, SQLRelation>> ctes_backup;
+        std::optional<SQLRelation> opt_rel = std::make_optional<SQLRelation>(rel);
 
-        for (const auto & [key, val] : this->levels)
-        {
-            levels_backup[key] = val;
-        }
-        for (const auto & [key, val] : this->ctes)
-        {
-            ctes_backup[key] = val;
-        }
-        this->levels.clear();
-        this->ctes.clear();
-        this->levels[this->current_level] = QueryLevel(this->current_level);
-        if (!rel.cols.empty())
-        {
-            this->levels[this->current_level].rels.push_back(rel);
-        }
-        generateTableExpression(rg, false, expr);
-        this->levels.clear();
-        this->ctes.clear();
-        for (const auto & [key, val] : levels_backup)
-        {
-            this->levels[key] = val;
-        }
-        for (const auto & [key, val] : ctes_backup)
-        {
-            this->ctes[key] = val;
-        }
+        generateTableExpression(rg, opt_rel, false, expr);
     }
     else if (rand_func && nopt < (datetime_func + modulo_func + one_arg_func + hash_func + rand_expr + rand_func + 1))
     {
@@ -815,12 +813,9 @@ void StatementGenerator::generateTableKey(
             for (uint32_t i = 0; i < nkeys; i++)
             {
                 TableKeyExpr * tke = tkey->add_exprs();
+                std::optional<SQLRelation> opt_rel = std::make_optional<SQLRelation>(rel);
 
-                if (!rel.cols.empty())
-                {
-                    this->levels[this->current_level].rels.push_back(rel);
-                }
-                generateTableExpression(rg, false, tke->mutable_expr());
+                generateTableExpression(rg, opt_rel, false, tke->mutable_expr());
                 if (allow_asc_desc && rg.nextSmallNumber() < 3)
                 {
                     tke->set_asc_desc(rg.nextBool() ? AscDesc::ASC : AscDesc::DESC);
@@ -933,6 +928,20 @@ String StatementGenerator::setMergeTableParameter(RandomGenerator & rg, const St
     }
 }
 
+template <typename T>
+void StatementGenerator::randomEngineParams(RandomGenerator & rg, std::optional<SQLRelation> & rel, T * te)
+{
+    const uint32_t nparams = std::min(this->fc.max_width - this->width, rg.nextSmallNumber() - 1);
+
+    te->clear_params();
+    for (uint32_t i = 0; i < nparams; i++)
+    {
+        generateTableExpression(rg, rel, false, te->add_params()->mutable_expr());
+        this->width++;
+    }
+    this->width -= nparams;
+}
+
 void StatementGenerator::generateMergeTreeEngineDetails(
     RandomGenerator & rg, const SQLRelation & rel, const SQLBase & b, const bool add_pkey, TableEngine * te)
 {
@@ -1019,33 +1028,42 @@ void StatementGenerator::generateMergeTreeEngineDetails(
             this->filtered_entries.clear();
         }
     }
-    if (te->has_engine() && b.isReplicatedOrSharedMergeTree() && rg.nextSmallNumber() < 8)
+    if (te->has_engine() && b.random_engine)
     {
-        /// Replicated table params must come first when set
-        std::vector<TableEngineParam> temp_params;
+        std::optional<SQLRelation> opt_rel = std::make_optional<SQLRelation>(rel);
 
-        for (const auto & item : te->params())
-        {
-            temp_params.emplace_back(item);
-        }
-        te->clear_params();
-        te->add_params()->set_svalue("/clickhouse/tables/{shard}/{database}/{table}");
-        te->add_params()->set_svalue("{replica}");
-        for (const auto & item : temp_params)
-        {
-            *te->add_params() = item;
-        }
+        randomEngineParams<TableEngine>(rg, opt_rel, te);
     }
-    if (te->has_engine() && (b.teng == SummingMergeTree || b.teng == CoalescingMergeTree) && rg.nextSmallNumber() < 4)
+    else
     {
-        /// Optional list of columns to be summed
-        ColumnPathList * clist = te->add_params()->mutable_col_list();
-        const size_t ncols = (rg.nextMediumNumber() % std::min<uint32_t>(static_cast<uint32_t>(entries.size()), UINT32_C(4))) + 1;
-
-        std::shuffle(entries.begin(), entries.end(), rg.generator);
-        for (size_t i = 0; i < ncols; i++)
+        if (te->has_engine() && b.isReplicatedOrSharedMergeTree() && rg.nextSmallNumber() < 8)
         {
-            columnPathRef(entries[i], i == 0 ? clist->mutable_col() : clist->add_other_cols());
+            /// Replicated table params must come first when set
+            std::vector<TableEngineParam> temp_params;
+
+            for (const auto & item : te->params())
+            {
+                temp_params.emplace_back(item);
+            }
+            te->clear_params();
+            te->add_params()->set_svalue("/clickhouse/tables/{shard}/{database}/{table}");
+            te->add_params()->set_svalue("{replica}");
+            for (const auto & item : temp_params)
+            {
+                *te->add_params() = item;
+            }
+        }
+        if (te->has_engine() && (b.teng == SummingMergeTree || b.teng == CoalescingMergeTree) && rg.nextSmallNumber() < 4)
+        {
+            /// Optional list of columns to be summed
+            ColumnPathList * clist = te->add_params()->mutable_col_list();
+            const size_t ncols = (rg.nextMediumNumber() % std::min<uint32_t>(static_cast<uint32_t>(entries.size()), UINT32_C(4))) + 1;
+
+            std::shuffle(entries.begin(), entries.end(), rg.generator);
+            for (size_t i = 0; i < ncols; i++)
+            {
+                columnPathRef(entries[i], i == 0 ? clist->mutable_col() : clist->add_other_cols());
+            }
         }
     }
 }
@@ -1138,6 +1156,12 @@ void StatementGenerator::generateEngineDetails(
             this->ids.clear();
         }
         generateMergeTreeEngineDetails(rg, rel, b, add_pkey, te);
+    }
+    else if (te->has_engine() && b.random_engine)
+    {
+        std::optional<SQLRelation> opt_rel = std::make_optional<SQLRelation>(rel);
+
+        randomEngineParams<TableEngine>(rg, opt_rel, te);
     }
     else if (te->has_engine() && b.isFileEngine())
     {
@@ -1329,8 +1353,6 @@ void StatementGenerator::generateEngineDetails(
     }
     else if (te->has_engine() && (b.isAnyIcebergEngine() || b.isAnyDeltaLakeEngine() || b.isAnyS3Engine() || b.isAnyAzureEngine()))
     {
-        const bool prev_allow_not_deterministic = this->allow_not_deterministic;
-
         if (b.integration != IntegrationCall::None)
         {
             if (SQLTable * t = dynamic_cast<SQLTable *>(&b))
@@ -1343,9 +1365,14 @@ void StatementGenerator::generateEngineDetails(
             chassert(b.isOnLocal());
             te->add_params()->set_rvalue("local");
         }
-        this->allow_not_deterministic = false;
-        setObjectStoreParams<SQLBase, TableEngine>(rg, b, te);
-        this->allow_not_deterministic = prev_allow_not_deterministic;
+        if (b.getLakeCatalog() == LakeCatalog::None)
+        {
+            const bool prev_allow_not_deterministic = this->allow_not_deterministic;
+
+            this->allow_not_deterministic = false;
+            setObjectStoreParams<SQLBase, TableEngine>(rg, b, te);
+            this->allow_not_deterministic = prev_allow_not_deterministic;
+        }
     }
     else if (te->has_engine() && b.isArrowFlightEngine())
     {
@@ -1488,7 +1515,7 @@ void StatementGenerator::addTableColumnInternal(
     {
         generateNextStatistics(rg, cd->mutable_stats());
     }
-    if (col.special == ColumnSpecial::NONE && rg.nextSmallNumber() < 2)
+    if (col.special == ColumnSpecial::NONE && rg.nextMediumNumber() < 6)
     {
         DefaultModifier * def_value = cd->mutable_defaultv();
         std::uniform_int_distribution<uint32_t> dmod_range(1, static_cast<uint32_t>(DModifier_MAX));
@@ -1502,11 +1529,9 @@ void StatementGenerator::addTableColumnInternal(
         col.dmod = std::optional<DModifier>(dmod);
         if (dmod != DModifier::DEF_EPHEMERAL || rg.nextMediumNumber() < 21)
         {
-            if (!t.cols.empty())
-            {
-                addTableRelation(rg, true, "", t);
-            }
-            generateTableExpression(rg, false, def_value->mutable_expr());
+            std::optional<SQLRelation> rel = std::make_optional<SQLRelation>(createTableRelation(rg, true, "", t));
+
+            generateTableExpression(rg, rel, false, def_value->mutable_expr());
         }
     }
     if (t.isMergeTreeFamily() || rg.nextLargeNumber() < 4)
@@ -2274,12 +2299,14 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
     {
         ct->mutable_cluster()->set_cluster(next.cluster.value());
     }
-    if (((next.isAnyIcebergEngine() && next.integration == IntegrationCall::Dolor) || next.isAliasEngine()
-         || (next.projs.empty() && next.idxs.empty() && next.constrs.empty() && rg.nextMediumNumber() < 11)))
+    if ((next.isAnyIcebergEngine() && next.integration == IntegrationCall::Dolor && next.getLakeCatalog() == LakeCatalog::None)
+        || next.isAliasEngine() || (next.projs.empty() && next.idxs.empty() && next.constrs.empty() && rg.nextMediumNumber() < 11))
     {
         /// For Iceberg tables created from Spark, don't give table schema
         ct->clear_table_def();
     }
+    /// For catalog tables, they are already created in the catalog
+    ct->set_if_not_exists(next.getLakeCatalog() != LakeCatalog::None);
     if (next.hasDatabasePeer())
     {
         flatTableColumnPath(0, next.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
@@ -2610,6 +2637,7 @@ void StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, Create
     const uint32_t dname = this->database_counter++;
     DatabaseEngine * deng = cd->mutable_dengine();
 
+    SQLDatabase::setRandomDatabase(rg, next);
     next.deng = this->getNextDatabaseEngine(rg);
     deng->set_engine(next.deng);
     if (!next.isSharedDatabase() && !fc.clusters.empty() && rg.nextSmallNumber() < 4)
@@ -2619,7 +2647,15 @@ void StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, Create
     }
     next.dname = dname;
     next.setDatabasePath(rg, fc);
-    next.finishDatabaseSpecification(deng);
+    if (next.random_engine)
+    {
+        std::optional<SQLRelation> rel = std::nullopt;
+        this->randomEngineParams<DatabaseEngine>(rg, rel, deng);
+    }
+    else
+    {
+        next.finishDatabaseSpecification(deng);
+    }
     next.setName(cd->mutable_database());
     if (rg.nextSmallNumber() < 3)
     {
@@ -2639,7 +2675,7 @@ void StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, Create
         sv->set_property("disk");
         sv->set_value("'" + rg.pickRandomly(fc.disks) + "'");
     }
-    else if (next.isDataLakeCatalogDatabase())
+    else if (!next.random_engine && next.isDataLakeCatalogDatabase())
     {
         svs = svs ? svs : cd->mutable_setting_values();
         connections.createExternalDatabase(rg, next, deng, svs);

@@ -937,11 +937,10 @@ class JobConfigs:
     docker_sever = Job.Config(
         name=JobNames.DOCKER_SERVER,
         runs_on=RunnerLabels.STYLE_CHECK_AMD,
-        command="cd ./tests/ci && python3 ci.py --run-from-praktika",
+        command="python3 ./ci/jobs/docker_server.py --tag-type head --allow-build-reuse",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
-                "tests/ci/docker_server.py",
-                "tests/ci/docker_images_helper.py",
+                "./ci/jobs/docker_server.py",
                 "./docker/server",
                 "./docker/keeper",
             ],
@@ -952,11 +951,10 @@ class JobConfigs:
     docker_keeper = Job.Config(
         name=JobNames.DOCKER_KEEPER,
         runs_on=RunnerLabels.STYLE_CHECK_AMD,
-        command="cd ./tests/ci && python3 ci.py --run-from-praktika",
+        command="python3 ./ci/jobs/docker_server.py --tag-type head --allow-build-reuse",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
-                "tests/ci/docker_server.py",
-                "tests/ci/docker_images_helper.py",
+                "./ci/jobs/docker_server.py",
                 "./docker/server",
                 "./docker/keeper",
             ],

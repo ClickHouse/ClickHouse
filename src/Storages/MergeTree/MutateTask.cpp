@@ -2361,7 +2361,14 @@ bool MutateTask::prepare()
         });
     }
 
-    auto is_storage_touched = isStorageTouchedByMutations(ctx->source_part, mutations_snapshot, ctx->metadata_snapshot, ctx->commands_for_part, context_for_reading);
+    auto is_storage_touched = isStorageTouchedByMutations(
+        ctx->source_part,
+        mutations_snapshot,
+        ctx->metadata_snapshot,
+        ctx->commands_for_part,
+        context_for_reading,
+        [&my_ctx = *ctx](const Progress &) { my_ctx.checkOperationIsNotCanceled(); }
+    );
 
     if (!is_storage_touched.any_rows_affected)
     {
