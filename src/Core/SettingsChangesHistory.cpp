@@ -905,6 +905,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "25.10",
         {
+            {"escape_variant_subcolumn_filenames", false, true, "Escape special symbols for filenames created for Variant type subcolumns in Wide parts"},
             {"exclude_materialize_skip_indexes_on_merge", "", "", "New setting."},
             {"serialization_info_version", "default", "default", "New setting"},
             {"string_serialization_version", "default", "default", "New setting"},

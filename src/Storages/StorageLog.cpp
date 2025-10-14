@@ -247,7 +247,7 @@ void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & colu
             if (cache.contains(ISerialization::getSubcolumnNameForStream(path)))
                 return nullptr;
 
-            String data_file_name = ISerialization::getFileNameForStream(name_and_type, path);
+            String data_file_name = ISerialization::getFileNameForStream(name_and_type, path, {});
 
             const auto & data_file_it = storage.data_files_by_names.find(data_file_name);
             if (data_file_it == storage.data_files_by_names.end())
@@ -470,7 +470,7 @@ ISerialization::OutputStreamGetter LogSink::createStreamGetter(const NameAndType
 {
     return [&] (const ISerialization::SubstreamPath & path) -> WriteBuffer *
     {
-        String data_file_name = ISerialization::getFileNameForStream(name_and_type, path);
+        String data_file_name = ISerialization::getFileNameForStream(name_and_type, path, {});
         auto it = streams.find(data_file_name);
         if (it == streams.end())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Stream was not created when writing data in LogSink");
@@ -518,7 +518,7 @@ void LogSink::writeData(const NameAndTypePair & name_and_type, const IColumn & c
 
     serialization->enumerateStreams([&] (const ISerialization::SubstreamPath & path)
     {
-        String data_file_name = ISerialization::getFileNameForStream(name_and_type, path);
+        String data_file_name = ISerialization::getFileNameForStream(name_and_type, path, {});
         auto it = streams.find(data_file_name);
         if (it == streams.end())
         {
@@ -548,7 +548,7 @@ void LogSink::writeData(const NameAndTypePair & name_and_type, const IColumn & c
     {
         serialization->enumerateStreams([&] (const ISerialization::SubstreamPath & path)
         {
-            String data_file_name = ISerialization::getFileNameForStream(name_and_type, path);
+            String data_file_name = ISerialization::getFileNameForStream(name_and_type, path, {});
             const auto & stream = streams.at(data_file_name);
             if (stream.written)
                 return;
@@ -566,7 +566,7 @@ void LogSink::writeData(const NameAndTypePair & name_and_type, const IColumn & c
 
     serialization->enumerateStreams([&] (const ISerialization::SubstreamPath & path)
     {
-        String data_file_name = ISerialization::getFileNameForStream(name_and_type, path);
+        String data_file_name = ISerialization::getFileNameForStream(name_and_type, path, {});
         auto & stream = streams.at(data_file_name);
         if (stream.written)
             return;
@@ -696,7 +696,7 @@ void StorageLog::addDataFiles(const NameAndTypePair & column)
 
     ISerialization::StreamCallback stream_callback = [&] (const ISerialization::SubstreamPath & substream_path)
     {
-        String data_file_name = ISerialization::getFileNameForStream(column, substream_path);
+        String data_file_name = ISerialization::getFileNameForStream(column, substream_path, {});
         if (!data_files_by_names.contains(data_file_name))
         {
             DataFile & data_file = data_files.emplace_back();
@@ -1002,7 +1002,7 @@ IStorage::ColumnSizeByName StorageLog::getColumnSizes() const
     {
         ISerialization::StreamCallback stream_callback = [&, this] (const ISerialization::SubstreamPath & substream_path)
         {
-            String data_file_name = ISerialization::getFileNameForStream(column, substream_path);
+            String data_file_name = ISerialization::getFileNameForStream(column, substream_path, {});
             auto it = data_files_by_names.find(data_file_name);
             if (it != data_files_by_names.end())
             {
