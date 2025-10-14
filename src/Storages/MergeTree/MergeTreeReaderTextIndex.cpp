@@ -369,12 +369,12 @@ void MergeTreeReaderTextIndex::fillColumn(IColumn & column, Granule & granule, c
     if (granule.postings.empty() || search_query->tokens.empty())
         return;
 
-    if (search_query->mode == TextSearchMode::Any || granule.postings.size() == 1)
+    if (search_query->search_mode == TextSearchMode::Any || granule.postings.size() == 1)
         applyPostingsAny(column, granule.postings, indices_buffer, search_query->tokens, old_size, granule_offset, num_rows);
-    else if (search_query->mode == TextSearchMode::All)
+    else if (search_query->search_mode == TextSearchMode::All)
         applyPostingsAll(column, granule.postings, indices_buffer, search_query->tokens, old_size, granule_offset, num_rows);
     else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid search mode: {}", search_query->mode);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid search mode: {}", search_query->search_mode);
 }
 
 void MergeTreeReaderTextIndex::RemainingMarks::increment()

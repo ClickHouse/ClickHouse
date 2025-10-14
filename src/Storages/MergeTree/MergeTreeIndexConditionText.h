@@ -15,17 +15,21 @@ enum class TextSearchMode : uint8_t
     All,
 };
 
+enum class TextIndexDirectReadMode : uint8_t
+{
+    None,
+    Exact,
+    Hint,
+};
+
 /// Represents a single text-search function
 struct TextSearchQuery
 {
-    TextSearchQuery(String function_name_, TextSearchMode mode_, std::vector<String> tokens_)
-        : function_name(std::move(function_name_)), mode(std::move(mode_)), tokens(std::move(tokens_))
-    {
-        std::sort(tokens.begin(), tokens.end());
-    }
+    TextSearchQuery(String function_name_, TextSearchMode mode_, std::vector<String> tokens_);
 
     String function_name;
-    TextSearchMode mode;
+    TextSearchMode search_mode;
+    TextIndexDirectReadMode read_mode;
     std::vector<String> tokens;
 
     UInt128 getHash() const;
@@ -47,7 +51,7 @@ public:
         TokenExtractorPtr token_extactor_);
 
     ~MergeTreeIndexConditionText() override = default;
-    static bool isSupportedFunctionForDirectRead(const String & function_name);
+    static TextIndexDirectReadMode getDirectReadMode(const String & function_name);
     static bool isSupportedFunction(const String & function_name);
 
     bool alwaysUnknownOrTrue() const override;

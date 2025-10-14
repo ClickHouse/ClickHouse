@@ -24,11 +24,21 @@ namespace Setting
     extern const SettingsBool text_index_use_bloom_filter;
 }
 
+TextSearchQuery::TextSearchQuery(String function_name_, TextSearchMode mode_, std::vector<String> tokens_)
+    : function_name(std::move(function_name_))
+    , search_mode(std::move(mode_))
+    , read_mode(MergeTreeIndexConditionText::getDirectReadMode(function_name))
+    , tokens(std::move(tokens_))
+{
+    std::sort(tokens.begin(), tokens.end());
+}
+
 UInt128 TextSearchQuery::getHash() const
 {
     SipHash hash;
     hash.update(function_name);
-    hash.update(mode);
+    hash.update(search_mode);
+    hash.update(read_mode);
     hash.update(tokens.size());
 
     for (const auto & token : tokens)
@@ -90,21 +100,26 @@ TextSearchMode MergeTreeIndexConditionText::getTextSearchMode(const RPNElement &
     return TextSearchMode::Any;
 }
 
-bool MergeTreeIndexConditionText::isSupportedFunctionForDirectRead(const String & function_name)
+TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const String & function_name)
 {
-    return function_name == "hasToken"
+    if (function_name == "hasToken"
         || function_name == "hasAnyTokens"
-        || function_name == "hasAllTokens";
+        || function_name == "hasAllTokens")
+        return TextIndexDirectReadMode::Exact;
+
+    if (function_name == "equals"
+        || function_name == "like")
+        return TextIndexDirectReadMode::Hint;
+
+    return TextIndexDirectReadMode::None;
 }
 
 bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_name)
 {
-    return isSupportedFunctionForDirectRead(function_name)
-        || function_name == "equals"
+    return getDirectReadMode(function_name) != TextIndexDirectReadMode::None
         || function_name == "notEquals"
         || function_name == "mapContainsKey"
         || function_name == "has"
-        || function_name == "like"
         || function_name == "notLike"
         || function_name == "hasTokenOrNull"
         || function_name == "startsWith"
@@ -465,6 +480,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         auto tokens = stringToTokens(const_value, *token_extractor);
         if (tokens.empty())
             tokens.push_back("");
+
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, std::move(tokens)));
         return true;
