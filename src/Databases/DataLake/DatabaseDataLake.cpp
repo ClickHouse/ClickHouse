@@ -448,7 +448,6 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         /* is_datalake_query*/true,
         /* distributed_processing */false,
         /* partition_by */nullptr,
-        /* order_by */nullptr,
         /* is_table_function */false,
         /* lazy_init */true);
 }

@@ -858,7 +858,7 @@ NamesAndTypesList IcebergMetadata::getTableSchema(ContextPtr local_context) cons
     return *persistent_components.schema_processor->getClickhouseTableSchemaById(actual_table_state_snapshot.schema_id);
 }
 
-StorageInMemoryMetadata IcebergMetadata::getStorageSnapshotMetadata(ContextPtr local_context, ASTPtr order_by) const
+StorageInMemoryMetadata IcebergMetadata::getStorageSnapshotMetadata(ContextPtr local_context) const
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergMetadataUpdateMicroseconds);
     auto [actual_data_snapshot, actual_table_state_snapshot] = getRelevantState(local_context);
@@ -866,9 +866,6 @@ StorageInMemoryMetadata IcebergMetadata::getStorageSnapshotMetadata(ContextPtr l
     result.setColumns(
         ColumnsDescription{*persistent_components.schema_processor->getClickhouseTableSchemaById(actual_table_state_snapshot.schema_id)});
     result.setDataLakeTableState(actual_table_state_snapshot);
-    if (order_by)
-        result.sorting_key = KeyDescription::getSortingKeyFromAST(
-            order_by->ptr(), result.columns, local_context, std::nullopt);
     return result;
 }
 

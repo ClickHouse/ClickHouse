@@ -50,3 +50,32 @@ def test_read_in_order(started_cluster_iceberg_with_spark,  storage_type):
             f"EXPLAIN PIPELINE SELECT * FROM {TABLE_NAME} ORDER BY id;"
         )
     )
+
+    assert get_array(instance.query(f"SELECT distinct(id) FROM {TABLE_NAME}", query_id=query_id)) == list(range(10, 150))
+    assert 'PartialSortingTransform' not in (
+        instance.query(
+            f"EXPLAIN PIPELINE SELECT distinct(id) FROM {TABLE_NAME};"
+        )
+    )
+
+    assert get_array(instance.query(f"SELECT id FROM {TABLE_NAME} ORDER BY (id, data)", query_id=query_id)) == list(range(10, 150))
+    assert 'PartialSortingTransform' in (
+        instance.query(
+            f"EXPLAIN PIPELINE SELECT * FROM {TABLE_NAME} ORDER BY (id, data);"
+        )
+    )
+
+    assert get_array(instance.query(f"SELECT id FROM {TABLE_NAME}", query_id=query_id)) == list(range(10, 150))
+    assert 'PartialSortingTransform' not in (
+        instance.query(
+            f"EXPLAIN PIPELINE SELECT * FROM {TABLE_NAME};"
+        )
+    )
+
+    assert get_array(instance.query(f"SELECT id FROM {TABLE_NAME} ORDER BY (data, id)", query_id=query_id)) == list(range(10, 150))
+    assert 'PartialSortingTransform' in (
+        instance.query(
+            f"EXPLAIN PIPELINE SELECT * FROM {TABLE_NAME} ORDER BY (data, id);"
+        )
+    )
+

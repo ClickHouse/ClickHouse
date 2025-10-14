@@ -201,10 +201,10 @@ public:
         return current_metadata->getSchemaTransformer(local_context, object_info);
     }
 
-    StorageInMemoryMetadata getStorageSnapshotMetadata(ContextPtr context, ASTPtr order_by) const override
+    StorageInMemoryMetadata getStorageSnapshotMetadata(ContextPtr context) const override
     {
         assertInitialized();
-        return current_metadata->getStorageSnapshotMetadata(context, order_by);
+        return current_metadata->getStorageSnapshotMetadata(context);
     }
 
     /// This method should work even if metadata is not initialized

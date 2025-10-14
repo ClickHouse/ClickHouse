@@ -187,7 +187,6 @@ def get_creation_expression(
     schema="",
     format_version=2,
     partition_by="",
-    order_by="",
     if_not_exists=False,
     compression_method=None,
     format="Parquet",
@@ -240,7 +239,6 @@ def get_creation_expression(
                     DROP TABLE IF EXISTS {table_name};
                     CREATE TABLE {if_not_exists_prefix} {table_name} {schema}
                     ENGINE=IcebergS3(s3, filename = 'var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')
-                    {order_by}
                     {partition_by}
                     {settings_expression}
                     """
@@ -263,7 +261,6 @@ def get_creation_expression(
                     DROP TABLE IF EXISTS {table_name};
                     CREATE TABLE {if_not_exists_prefix} {table_name} {schema}
                     ENGINE=IcebergAzure(azure, container = {cluster.azure_container_name}, storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/', format={format})
-                    {order_by}
                     {partition_by}
                     {settings_expression}
                     """
@@ -282,7 +279,6 @@ def get_creation_expression(
                 DROP TABLE IF EXISTS {table_name};
                 CREATE TABLE {if_not_exists_prefix} {table_name} {schema}
                 ENGINE=IcebergLocal(local, path = '/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}', format={format})
-                {order_by}
                 {partition_by}
                 {settings_expression}
                 """
@@ -367,7 +363,6 @@ def create_iceberg_table(
     schema="",
     format_version=2,
     partition_by="",
-    order_by="",
     if_not_exists=False,
     compression_method=None,
     format="Parquet",
@@ -375,12 +370,12 @@ def create_iceberg_table(
 ):
     if 'output_format_parquet_use_custom_encoder' in kwargs:
         node.query(
-            get_creation_expression(storage_type, table_name, cluster, schema, format_version, partition_by, order_by, if_not_exists, compression_method, format, **kwargs),
+            get_creation_expression(storage_type, table_name, cluster, schema, format_version, partition_by, if_not_exists, compression_method, format, **kwargs),
             settings={"output_format_parquet_use_custom_encoder" : 0, "output_format_parquet_parallel_encoding" : 0}
         )
     else:
         node.query(
-            get_creation_expression(storage_type, table_name, cluster, schema, format_version, partition_by, order_by, if_not_exists, compression_method, format, **kwargs),
+            get_creation_expression(storage_type, table_name, cluster, schema, format_version, partition_by, if_not_exists, compression_method, format, **kwargs),
         )
 
 

@@ -55,7 +55,7 @@ public:
 
     /// Table schema from data lake metadata.
     virtual NamesAndTypesList getTableSchema(ContextPtr local_context) const = 0;
-    virtual StorageInMemoryMetadata getStorageSnapshotMetadata(ContextPtr, ASTPtr) const { throwNotImplemented("getStorageSnapshotMetadata"); }
+    virtual StorageInMemoryMetadata getStorageSnapshotMetadata(ContextPtr) const { throwNotImplemented("getStorageSnapshotMetadata"); }
 
     /// Read schema is the schema of actual data files,
     /// which can differ from table schema from data lake metadata.

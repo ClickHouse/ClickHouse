@@ -167,7 +167,7 @@ public:
 
     void initPartitionStrategy(ASTPtr partition_by, const ColumnsDescription & columns, ContextPtr context);
 
-    virtual StorageInMemoryMetadata getStorageSnapshotMetadata(ContextPtr local_context, ASTPtr order_by) const;
+    virtual StorageInMemoryMetadata getStorageSnapshotMetadata(ContextPtr local_context) const;
     virtual std::optional<ColumnsDescription> tryGetTableStructureFromMetadata(ContextPtr local_context) const;
 
     virtual bool supportsFileIterator() const { return false; }
