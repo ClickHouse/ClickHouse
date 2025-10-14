@@ -14,6 +14,7 @@
 #include <Poco/RandomStream.h>
 #include <Poco/SHA1Engine.h>
 #include <Access/Credentials.h>
+#include <algorithm>
 #include <unordered_map>
 #include <utility>
 
@@ -1247,7 +1248,8 @@ public:
 class CommandComplete : BackendMessage
 {
 public:
-    enum Command {
+    enum Command
+    {
         BEGIN = 0,
         COMMIT = 1,
         INSERT = 2,
@@ -1268,7 +1270,8 @@ public:
         SET = 17
     };
 private:
-    String enum_to_string[18] = {
+    String enum_to_string[18] =
+    {
         "BEGIN", "COMMIT", "INSERT", "DELETE", "UPDATE", "SELECT", "MOVE", "FETCH", "COPY", "PREPARE",
         "CREATE TABLE", "CREATE DATABASE", "DROP TABLE", "DROP DATABASE", "ALTER TABLE",
         "TRUNCATE", "USE", "SET"
@@ -1367,11 +1370,11 @@ public:
         };
 
         // Calculate max pattern length from query_patterns
-        static const size_t MAX_PATTERN_LEN = []() {
+        static const size_t MAX_PATTERN_LEN = []()
+        {
             size_t max_len = 0;
             for (const auto & [pattern, _] : query_patterns)
-                if (pattern.size() > max_len)
-                    max_len = pattern.size();
+                max_len = std::max(pattern.size(), max_len);
             return max_len;
         }();
 

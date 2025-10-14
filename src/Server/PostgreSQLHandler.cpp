@@ -351,7 +351,8 @@ void PostgreSQLHandler::makeSecureConnectionSSL()
             ctx = Poco::Net::SSLManager::instance().setCustomServerContext(prefix, ctx);
         }
     }
-    ss = std::make_shared<Poco::Net::SecureStreamSocket>(Poco::Net::SecureStreamSocket::attach(socket(), ctx));    changeIO(*ss);
+    ss = std::make_shared<Poco::Net::SecureStreamSocket>(Poco::Net::SecureStreamSocket::attach(socket(), ctx));
+    changeIO(*ss);
 }
 #else
 void PostgreSQLHandler::makeSecureConnectionSSL() {}
