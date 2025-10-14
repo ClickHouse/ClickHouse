@@ -1778,35 +1778,35 @@ static BlockIO executeQueryImpl(
                                     query_span,
                                     &settings](const QueryFinishInfo & finish_info) mutable
             {
-                {
-                    ResultProgress result_progress(0, 0);
-
-                    chassert((finish_info.result_progress != std::nullopt) == pulling_pipeline);
-
-                    if (finish_info.result_progress)
-                    {
-                        result_progress = *finish_info.result_progress;
-                    }
-                    else if (QueryStatusPtr process_list_elem = context->getProcessListElement(); process_list_elem && !pulling_pipeline)
-                    {
-                        auto progress_out = process_list_elem->getProgressOut();
-                        result_progress.result_rows = progress_out.written_rows;
-                        result_progress.result_bytes = progress_out.written_bytes;
-                    }
-
-                    if (auto progress_callback = context->getProgressCallback())
-                    {
-                        Progress p;
-                        p.incrementPiecewiseAtomically(Progress{result_progress});
-                        progress_callback(p);
-                    }
-
-                    elem.result_rows = result_progress.result_rows;
-                    elem.result_bytes = result_progress.result_bytes;
-                }
-
                 if (QueryStatusPtr process_list_elem = context->getProcessListElement())
                 {
+                    {
+                        ResultProgress result_progress(0, 0);
+
+                        chassert((finish_info.result_progress != std::nullopt) == pulling_pipeline);
+
+                        if (finish_info.result_progress)
+                        {
+                            result_progress = *finish_info.result_progress;
+                        }
+                        else if (!pulling_pipeline)
+                        {
+                            auto progress_out = process_list_elem->getProgressOut();
+                            result_progress.result_rows = progress_out.written_rows;
+                            result_progress.result_bytes = progress_out.written_bytes;
+                        }
+
+                        if (auto progress_callback = context->getProgressCallback())
+                        {
+                            Progress p;
+                            p.incrementPiecewiseAtomically(Progress{result_progress});
+                            progress_callback(p);
+                        }
+
+                        elem.result_rows = result_progress.result_rows;
+                        elem.result_bytes = result_progress.result_bytes;
+                    }
+
                     QueryStatusInfo info = process_list_elem->getInfo(true, settings[Setting::log_profile_events]);
                     logQueryMetricLogFinish(context, internal, elem.client_info.current_query_id, finish_info.finish_time, std::make_shared<QueryStatusInfo>(info));
 
