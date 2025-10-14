@@ -12,6 +12,9 @@
 
 #include <absl/container/flat_hash_map.h>
 
+#include <Common/logger_useful.h>
+auto glogger = getLogger("GEORGES LOGGER");
+
 namespace DB
 {
 
@@ -70,15 +73,19 @@ void FunctionHasAnyAllTokens<HasTokensTraits>::setSearchTokens(const std::vector
 namespace
 {
 
+/// Functions accept string as input (will be tokenized) or array of strings (used as-is)
 /// Also accepts Array(Nothing) which is the type of Array([])
-bool isArrayOfStringType(const IDataType & type)
+bool isStringOrArrayOfStringType(const IDataType & type)
 {
     const auto * array_type = checkAndGetDataType<DataTypeArray>(&type);
-    if (!array_type)
-        return false;
+    if (array_type)
+    {
+        const DataTypePtr & nested_type = array_type->getNestedType();
+        return isString(nested_type) || isFixedString(nested_type) || isNothing(nested_type);
+    }
 
-    const DataTypePtr & nested_type = array_type->getNestedType();
-    return isString(nested_type) || isFixedString(nested_type) || isNothing(nested_type);
+    const auto * string_type = checkAndGetDataType<DataTypeString>(&type);
+    return string_type;
 }
 
 }
@@ -93,7 +100,7 @@ DataTypePtr FunctionHasAnyAllTokens<HasTokensTraits>::getReturnTypeImpl(const Co
 
     FunctionArgumentDescriptors mandatory_args{
         {"input", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"},
-        {"needles", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArrayOfStringType), isColumnConst, "const Array(String)"}};
+        {"needles", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrArrayOfStringType), isColumnConst, "const String or Array(String)"}};
 
     validateFunctionArguments(*this, arguments, mandatory_args);
 
