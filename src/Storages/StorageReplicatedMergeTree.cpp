@@ -3185,11 +3185,14 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
         Transaction transaction(*this, NO_TRANSACTION_RAW);
 
         Coordination::Requests ops;
-        for (PartDescriptionPtr & part_desc : final_parts)
         {
-            renameTempPartAndReplace(part_desc->res_part, transaction, /*rename_in_transaction=*/ true);
-            getCommitPartOps(ops, part_desc->res_part);
-            lockSharedData(*part_desc->res_part, /*replace_existing_lock=*/ true, part_desc->hardlinked_files);
+            auto lock = lockParts();
+            for (PartDescriptionPtr & part_desc : final_parts)
+            {
+                renameTempPartAndReplaceUnlocked(part_desc->res_part, lock, transaction, /*rename_in_transaction=*/ true);
+                getCommitPartOps(ops, part_desc->res_part);
+                lockSharedData(*part_desc->res_part, /*replace_existing_lock=*/ true, part_desc->hardlinked_files);
+            }
         }
         transaction.renameParts();
 
@@ -8951,7 +8954,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
 
         {
             /// NOTE: Some covered parts may be missing in src_all_parts if corresponding log entries are not executed yet.
-            auto parts_lock = src_data.lockParts();
+            auto parts_lock = src_data.readLockParts();
             src_all_parts = src_data.getActivePartsToReplace(drop_range, drop_range_fake_part_name, covering_part, parts_lock);
             src_patch_parts = src_data.getPatchPartsVectorForPartition(partition_id, parts_lock);
         }
@@ -10760,7 +10763,7 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
 
     MergeTreePartition partition;
     {
-        auto lock = lockParts();
+        auto lock = readLockParts();
 
         auto parts_in_partition = getDataPartsPartitionRange(new_part_info.getPartitionId());
         if (!parts_in_partition.empty())

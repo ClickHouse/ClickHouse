@@ -2012,17 +2012,20 @@ void StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVector & new_pa
 {
     DataPartsVector covered_parts;
 
-    for (auto & part: new_parts)
     {
-        DataPartsVector covered_parts_by_one_part = renameTempPartAndReplace(part, transaction, /*rename_in_transaction=*/ true);
+        auto part_lock = lockParts();
+        for (auto & part : new_parts)
+        {
+            DataPartsVector covered_parts_by_one_part = renameTempPartAndReplaceUnlocked(part, part_lock, transaction, /*rename_in_transaction=*/ true);
 
-        if (covered_parts_by_one_part.size() > 1)
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                            "Part {} expected to cover not more then 1 part. "
-                            "{} covered parts have been found. This is a bug.",
-                            part->name, covered_parts_by_one_part.size());
+            if (covered_parts_by_one_part.size() > 1)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                "Part {} expected to cover not more then 1 part. "
+                                "{} covered parts have been found. This is a bug.",
+                                part->name, covered_parts_by_one_part.size());
 
-        std::move(covered_parts_by_one_part.begin(), covered_parts_by_one_part.end(), std::back_inserter(covered_parts));
+            std::move(covered_parts_by_one_part.begin(), covered_parts_by_one_part.end(), std::back_inserter(covered_parts));
+        }
     }
     LOG_INFO(log, "Remove {} parts by covering them with empty {} parts. With txn {}.",
              covered_parts.size(), new_parts.size(), transaction.getTID());

@@ -375,17 +375,7 @@ public:
         size_t size() const { return precommitted_parts.size(); }
         bool isEmpty() const { return precommitted_parts.empty(); }
 
-        ~Transaction()
-        {
-            try
-            {
-                rollback();
-            }
-            catch (...)
-            {
-                tryLogCurrentException("~MergeTreeData::Transaction");
-            }
-        }
+        ~Transaction();
         void clear();
 
         TransactionID getTID() const;
@@ -804,6 +794,11 @@ public:
     /// Returns all parts covered by the added part (in ascending order).
     DataPartsVector renameTempPartAndReplace(
         MutableDataPartPtr & part,
+        Transaction & out_transaction,
+        bool rename_in_transaction);
+    DataPartsVector renameTempPartAndReplaceUnlocked(
+        MutableDataPartPtr & part,
+        DataPartsLock & lock,
         Transaction & out_transaction,
         bool rename_in_transaction);
 
@@ -1611,7 +1606,7 @@ protected:
         const MergeTreePartInfo & new_part_info,
         const String & new_part_name,
         DataPartPtr & out_covering_part,
-        DataPartsLock & data_parts_lock) const;
+        const DataPartsAnyLock & data_parts_lock) const;
 
     DataPartsVector getCoveredOutdatedParts(
         const DataPartPtr & part,
@@ -1628,7 +1623,7 @@ protected:
     PartHierarchy getPartHierarchy(
         const MergeTreePartInfo & part_info,
         DataPartState state,
-        DataPartsLock & /* data_parts_lock */) const;
+        const DataPartsAnyLock & /* data_parts_lock */) const;
 
     /// Checks whether the column is in the primary key, possibly wrapped in a chain of functions with single argument.
     bool isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node, const StorageMetadataPtr & metadata_snapshot) const;
@@ -1832,16 +1827,16 @@ protected:
 
 private:
     /// Checking that candidate part doesn't break invariants: correct partition
-    void checkPartPartition(MutableDataPartPtr & part, DataPartsLock & lock) const;
-    void checkPartDuplicate(MutableDataPartPtr & part, Transaction & transaction, DataPartsLock & lock) const;
-    void checkPartDynamicColumns(MutableDataPartPtr & part, DataPartsLock & lock) const;
+    void checkPartPartition(MutableDataPartPtr & part, const DataPartsAnyLock & lock) const;
+    void checkPartDuplicate(MutableDataPartPtr & part, Transaction & transaction, const DataPartsAnyLock & lock) const;
+    void checkPartDynamicColumns(MutableDataPartPtr & part, const DataPartsAnyLock & lock) const;
 
     /// Preparing itself to be committed in memory: fill some fields inside part, add it to data_parts_indexes
     /// in precommitted state and to transaction
     ///
     /// @param need_rename - rename the part
     /// @param rename_in_transaction - if set, the rename will be done as part of transaction (without holding DataPartsLock), otherwise inplace (when it does not make sense).
-    void preparePartForCommit(MutableDataPartPtr & part, Transaction & out_transaction, bool need_rename, bool rename_in_transaction = false);
+    void preparePartForCommit(MutableDataPartPtr & part, DataPartsLock & lock, Transaction & out_transaction, bool need_rename, bool rename_in_transaction = false);
 
     /// Low-level method for preparing parts for commit (in-memory).
     /// FIXME Merge MergeTreeTransaction and Transaction

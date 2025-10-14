@@ -2466,8 +2466,14 @@ try
 
     PartLoadingTreeNodes parts_to_add;
 
+    bool have_non_adaptive_parts = false;
+    bool have_lightweight_in_parts = false;
+    bool have_parts_with_version_metadata = false;
+
     {
-        auto part_lock = lockParts();
+        auto lock = lockParts();
+        /// Dummy lock for loadDataPartWithRetries() (since we already hold @data_parts_mutex)
+        DB::SharedMutex part_loading_mutex;
 
         /// Collect only "the most covering" parts from the top level of the tree.
         loading_tree.traverse(/*recursive=*/ false, [&, this](const auto & node)
@@ -2475,33 +2481,29 @@ try
             if (auto it = data_parts_by_info.find(node->info); it == data_parts_by_info.end())
                 parts_to_add.emplace_back(node);
         });
-    }
 
-    bool have_non_adaptive_parts = false;
-    bool have_lightweight_in_parts = false;
-    bool have_parts_with_version_metadata = false;
-
-    for (const auto & my_part : parts_to_add)
-    {
-        auto res = loadDataPartWithRetries(
-            my_part->info, my_part->name, my_part->disk,
-            DataPartState::PreActive, data_parts_mutex, loading_parts_initial_backoff_ms,
-            loading_parts_max_backoff_ms, loading_parts_max_tries);
-
-        if (res.is_broken)
+        for (const auto & my_part : parts_to_add)
         {
-            LOG_ERROR(log, "The new data part {} appears broken - skip loading", res.part->name);
-        }
-        else
-        {
-            Transaction transaction(*this, nullptr);
-            preparePartForCommit(res.part, transaction, false, false);
-            transaction.commit();
+            auto res = loadDataPartWithRetries(
+                my_part->info, my_part->name, my_part->disk,
+                DataPartState::PreActive, part_loading_mutex, loading_parts_initial_backoff_ms,
+                loading_parts_max_backoff_ms, loading_parts_max_tries);
 
-            bool is_adaptive = res.part->index_granularity_info.mark_type.adaptive;
-            have_non_adaptive_parts |= !is_adaptive;
-            have_lightweight_in_parts |= res.part->hasLightweightDelete();
-            have_parts_with_version_metadata |= res.part->wasInvolvedInTransaction();
+            if (res.is_broken)
+            {
+                LOG_ERROR(log, "The new data part {} appears broken - skip loading", res.part->name);
+            }
+            else
+            {
+                Transaction transaction(*this, nullptr);
+                preparePartForCommit(res.part, lock, transaction, false, false);
+                transaction.commit(lock);
+
+                bool is_adaptive = res.part->index_granularity_info.mark_type.adaptive;
+                have_non_adaptive_parts |= !is_adaptive;
+                have_lightweight_in_parts |= res.part->hasLightweightDelete();
+                have_parts_with_version_metadata |= res.part->wasInvolvedInTransaction();
+            }
         }
     }
 
@@ -2648,9 +2650,9 @@ try
             auto blocker_for_runner_thread = CannotAllocateThreadFaultInjector::blockFaultInjections();
 
             auto res = loadDataPartWithRetries(
-            my_part->info, my_part->name, my_part->disk,
-            DataPartState::Outdated, data_parts_mutex, loading_parts_initial_backoff_ms,
-            loading_parts_max_backoff_ms, loading_parts_max_tries);
+                my_part->info, my_part->name, my_part->disk,
+                DataPartState::Outdated, data_parts_mutex, loading_parts_initial_backoff_ms,
+                loading_parts_max_backoff_ms, loading_parts_max_tries);
 
             ++num_loaded_parts;
             if (res.is_broken)
@@ -4627,7 +4629,7 @@ MergeTreeData::PartsTemporaryRename::~PartsTemporaryRename()
 MergeTreeData::PartHierarchy MergeTreeData::getPartHierarchy(
     const MergeTreePartInfo & part_info,
     DataPartState state,
-    DataPartsLock & /* data_parts_lock */) const
+    const DataPartsAnyLock & /* data_parts_lock */) const
 {
     PartHierarchy result;
 
@@ -4712,7 +4714,7 @@ MergeTreeData::DataPartsVector MergeTreeData::getActivePartsToReplace(
     const MergeTreePartInfo & new_part_info,
     const String & new_part_name,
     DataPartPtr & out_covering_part,
-    DataPartsLock & data_parts_lock) const
+    const DataPartsAnyLock & data_parts_lock) const
 {
     PartHierarchy hierarchy = getPartHierarchy(new_part_info, DataPartState::Active, data_parts_lock);
 
@@ -4729,7 +4731,7 @@ MergeTreeData::DataPartsVector MergeTreeData::getActivePartsToReplace(
     return std::move(hierarchy.covered_parts);
 }
 
-void MergeTreeData::checkPartPartition(MutableDataPartPtr & part, DataPartsLock & lock) const
+void MergeTreeData::checkPartPartition(MutableDataPartPtr & part, const DataPartsAnyLock & lock) const
 {
     if (DataPartPtr existing_part_in_partition = getAnyPartInPartition(part->info.getPartitionId(), lock))
     {
@@ -4739,7 +4741,7 @@ void MergeTreeData::checkPartPartition(MutableDataPartPtr & part, DataPartsLock 
     }
 }
 
-void MergeTreeData::checkPartDuplicate(MutableDataPartPtr & part, Transaction & transaction, DataPartsLock & /*lock*/) const
+void MergeTreeData::checkPartDuplicate(MutableDataPartPtr & part, Transaction & transaction, const DataPartsAnyLock & /*lock*/) const
 {
     auto it_duplicate = data_parts_by_info.find(part->info);
 
@@ -4756,7 +4758,7 @@ void MergeTreeData::checkPartDuplicate(MutableDataPartPtr & part, Transaction & 
     }
 }
 
-void MergeTreeData::checkPartDynamicColumns(MutableDataPartPtr & part, DataPartsLock & /*lock*/) const
+void MergeTreeData::checkPartDynamicColumns(MutableDataPartPtr & part, const DataPartsAnyLock & /*lock*/) const
 {
     auto metadata_snapshot = getInMemoryMetadataPtr();
     const auto & columns = metadata_snapshot->getColumns();
@@ -4782,7 +4784,7 @@ void MergeTreeData::checkPartDynamicColumns(MutableDataPartPtr & part, DataParts
     }
 }
 
-void MergeTreeData::preparePartForCommit(MutableDataPartPtr & part, Transaction & out_transaction, bool need_rename, bool rename_in_transaction)
+void MergeTreeData::preparePartForCommit(MutableDataPartPtr & part, DataPartsLock &, Transaction & out_transaction, bool need_rename, bool rename_in_transaction)
 {
     part->is_temp = false;
     part->setState(DataPartState::PreActive);
@@ -4834,7 +4836,7 @@ bool MergeTreeData::addTempPart(
 
     /// All checks are passed. Now we can rename the part on disk.
     /// So, we maintain invariant: if a non-temporary part in filesystem then it is in data_parts
-    preparePartForCommit(part, out_transaction, /* need_rename = */false);
+    preparePartForCommit(part, lock, out_transaction, /* need_rename = */false);
 
     if (out_covered_parts)
     {
@@ -4892,7 +4894,7 @@ bool MergeTreeData::renameTempPartAndReplaceImpl(
 
     /// All checks are passed. Now we can rename the part on disk.
     /// So, we maintain invariant: if a non-temporary part in filesystem then it is in data_parts
-    preparePartForCommit(part, out_transaction, /* need_rename= */ true, rename_in_transaction);
+    preparePartForCommit(part, lock, out_transaction, /* need_rename= */ true, rename_in_transaction);
 
     if (out_covered_parts)
     {
@@ -4917,9 +4919,18 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
     Transaction & out_transaction,
     bool rename_in_transaction)
 {
-    auto part_lock = lockParts();
+    auto lock = lockParts();
+    return renameTempPartAndReplaceUnlocked(part, lock, out_transaction, rename_in_transaction);
+}
+
+MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplaceUnlocked(
+    MutableDataPartPtr & part,
+    DataPartsLock & lock,
+    Transaction & out_transaction,
+    bool rename_in_transaction)
+{
     DataPartsVector covered_parts;
-    renameTempPartAndReplaceImpl(part, out_transaction, part_lock, &covered_parts, rename_in_transaction);
+    renameTempPartAndReplaceImpl(part, out_transaction, lock, &covered_parts, rename_in_transaction);
     return covered_parts;
 }
 
@@ -7797,6 +7808,18 @@ void MergeTreeData::Transaction::rollback()
     }
 }
 
+MergeTreeData::Transaction::~Transaction()
+{
+    try
+    {
+        rollback();
+    }
+    catch (...)
+    {
+        tryLogCurrentException("~MergeTreeData::Transaction");
+    }
+}
+
 void MergeTreeData::Transaction::rollback(DataPartsLock & lock)
 {
     if (!isEmpty())
@@ -9597,7 +9620,7 @@ ReservationPtr MergeTreeData::balancedReservation(
             }
 
             {
-                auto lock_parts = lockParts();
+                auto lock_parts = readLockParts();
                 if (covered_parts.empty())
                 {
                     // It's a part fetch. Calculate `covered_parts` here.
@@ -10159,7 +10182,7 @@ size_t MergeTreeData::unloadPrimaryKeysAndClearCachesOfOutdatedParts()
     DataPartsVector parts_in_use;
 
     {
-        auto parts_lock = lockParts();
+        auto parts_lock = readLockParts();
         auto parts_range = getDataPartsStateRange(DataPartState::Outdated);
 
         for (const auto & part : parts_range)
