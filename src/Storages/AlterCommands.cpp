@@ -1319,7 +1319,7 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
     {
         try
         {
-            index = IndexDescription::getIndexFromAST(index.definition_ast, metadata_copy.columns, context);
+            index = IndexDescription::getIndexFromAST(index.definition_ast, metadata_copy.columns, context, index.isImplicitlyCreated());
         }
         catch (Exception & exception)
         {

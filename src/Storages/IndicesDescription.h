@@ -50,8 +50,11 @@ struct IndexDescription
     /// Index granularity, make sense for skip indices
     size_t granularity;
 
+    /// This is set when index is created using add_minmax_index_for_numeric_columns and add_minmax_index_for_string_columns
+    bool is_implicitly_created = false;
+
     /// Parse index from definition AST
-    static IndexDescription getIndexFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr context);
+    static IndexDescription getIndexFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr context, bool is_implicitly_created = false);
 
     IndexDescription() = default;
 
