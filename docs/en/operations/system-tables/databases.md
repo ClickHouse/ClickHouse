@@ -4,7 +4,6 @@ description: 'System table containing information about the databases that are a
 keywords: ['system table', 'databases']
 slug: /operations/system-tables/databases
 title: 'system.databases'
-doc_type: 'reference'
 ---
 
 Contains information about the databases that are available to the current user.

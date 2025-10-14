@@ -5,7 +5,6 @@ sidebar_label: 'Architecture Overview'
 sidebar_position: 50
 slug: /development/architecture
 title: 'Architecture Overview'
-doc_type: 'reference'
 ---
 
 # Architecture Overview

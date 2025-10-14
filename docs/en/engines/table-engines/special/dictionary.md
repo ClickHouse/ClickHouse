@@ -5,7 +5,6 @@ sidebar_label: 'Dictionary'
 sidebar_position: 20
 slug: /engines/table-engines/special/dictionary
 title: 'Dictionary Table Engine'
-doc_type: 'reference'
 ---
 
 # Dictionary table engine

@@ -9,6 +9,7 @@
 #include <azure/storage/blobs.hpp>
 #include <azure/core/http/curl_transport.hpp>
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
+#include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorageConnectionInfo.h>
 
 namespace Poco
 {
@@ -57,7 +58,8 @@ public:
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
         const ReadSettings & read_settings,
-        std::optional<size_t> read_hint = {}) const override;
+        std::optional<size_t> read_hint = {},
+        std::optional<size_t> file_size = {}) const override;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
     std::unique_ptr<WriteBufferFromFileBase> writeObject( /// NOLINT
@@ -73,7 +75,7 @@ public:
 
     ObjectMetadata getObjectMetadata(const std::string & path) const override;
 
-    std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path) const override;
+    ObjectStorageConnectionInfoPtr getConnectionInfo() const override;
 
     void copyObject( /// NOLINT
         const StoredObject & object_from,
@@ -106,11 +108,6 @@ public:
     bool isReadOnly() const override { return settings.get()->read_only; }
 
     bool supportParallelWrite() const override { return true; }
-
-    const AzureBlobStorage::ConnectionParams & getConnectionParameters() const
-    {
-        return connection_params;
-    }
 
 private:
     void removeObjectImpl(

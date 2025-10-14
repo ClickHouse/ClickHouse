@@ -1158,7 +1158,7 @@ Chunk ParquetBlockInputFormat::read()
                               [](size_t sum, const RowGroupBatchState & batch) { return sum + batch.total_rows; });
 
         row_group_batches_completed++;
-        chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumbers>(total_rows_before));
+        chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumOffset>(total_rows_before));
         return chunk;
     }
 
@@ -1206,7 +1206,7 @@ Chunk ParquetBlockInputFormat::read()
                 + std::accumulate(row_group.chunk_sizes.begin(), row_group.chunk_sizes.begin() + chunk.chunk_idx, 0ull);
 
 
-            chunk.chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumbers>(total_rows_before));
+            chunk.chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumOffset>(total_rows_before));
 
             return std::move(chunk.chunk);
         }

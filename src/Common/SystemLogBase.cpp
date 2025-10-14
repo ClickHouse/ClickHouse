@@ -2,7 +2,6 @@
 #include <Interpreters/CrashLog.h>
 #include <Interpreters/ErrorLog.h>
 #include <Interpreters/MetricLog.h>
-#include <Interpreters/AggregatedZooKeeperLog.h>
 #include <Interpreters/TransposedMetricLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/PartLog.h>
@@ -16,8 +15,6 @@
 #include <Interpreters/FilesystemCacheLog.h>
 #include <Interpreters/ObjectStorageQueueLog.h>
 #include <Interpreters/IcebergMetadataLog.h>
-#include <Interpreters/DeltaMetadataLog.h>
-#include <Common/MemoryTrackerDebugBlockerInThread.h>
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/DistributedCacheLog.h>
 #include <Interpreters/DistributedCacheServerLog.h>
@@ -68,7 +65,7 @@ SystemLogQueue<LogElement>::SystemLogQueue(const SystemLogQueueSettings & settin
 static thread_local bool recursive_push_call = false;
 
 template <typename LogElement>
-void SystemLogQueue<LogElement>::push(LogElement && element)
+void SystemLogQueue<LogElement>::push(LogElement&& element)
 {
     /// It is possible that the method will be called recursively.
     /// Better to drop these events to avoid complications.
@@ -77,11 +74,10 @@ void SystemLogQueue<LogElement>::push(LogElement && element)
     recursive_push_call = true;
     SCOPE_EXIT({ recursive_push_call = false; });
 
-
-    /// Queue resize can allocate memory
-    /// - MemoryTrackerDebugBlockerInThread here due to the allocation can hit the limit for MemoryAllocatedWithoutCheck, let's suppress it.
-    /// - MemoryTrackerBlockerInThread here because this allocation should not be take into account in the query scope (since it will be freed outside of it)
-    [[maybe_unused]] MemoryTrackerDebugBlockerInThread blocker;
+    /// Memory can be allocated while resizing on queue.push_back.
+    /// The size of allocation can be in order of a few megabytes.
+    /// But this should not be accounted for query memory usage.
+    /// Otherwise the tests like 01017_uniqCombined_memory_usage.sql will be flaky.
     MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
 
     /// Should not log messages under mutex.
@@ -204,8 +200,6 @@ void SystemLogQueue<LogElement>::confirm(SystemLogQueue<LogElement>::Index last_
 template <typename LogElement>
 typename SystemLogQueue<LogElement>::PopResult SystemLogQueue<LogElement>::pop()
 {
-    [[maybe_unused]] MemoryTrackerDebugBlockerInThread blocker;
-
     PopResult result;
     size_t prev_ignored_logs = 0;
 

@@ -4,7 +4,6 @@ sidebar_label: 'PARTITION'
 sidebar_position: 38
 slug: /sql-reference/statements/alter/partition
 title: 'Manipulating Partitions and Parts'
-doc_type: 'reference'
 ---
 
 The following operations with [partitions](/engines/table-engines/mergetree-family/custom-partitioning-key.md) are available:

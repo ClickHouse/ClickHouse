@@ -119,6 +119,37 @@ CREATE TABLE tab
 ENGINE = MergeTree
 ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
 
+SELECT 'Test segment_digestion_threshold_bytes argument.';
+
+SELECT '-- segment_digestion_threshold_bytes must be an integer.';
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'default', segment_digestion_threshold_bytes = '1024')
+)
+ENGINE = MergeTree
+ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'default', segment_digestion_threshold_bytes = 1024)
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+DROP TABLE tab;
+
+SELECT '-- segment_digestion_threshold_bytes can be 0 (zero).';
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'default', segment_digestion_threshold_bytes = 0)
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+DROP TABLE tab;
+
 SELECT 'Test bloom_filter_false_positive_rate argument.';
 
 SELECT '-- bloom_filter_false_positive_rate must be a double.';
@@ -165,138 +196,6 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree
 ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
-
-SELECT 'Test dictionary_block_size argument.';
-
-SELECT '-- dictionary_block_size must be an integer.';
-
-CREATE TABLE tab
-(
-    str String,
-    INDEX idx str TYPE text(tokenizer = 'default', dictionary_block_size = 1024.0)
-)
-ENGINE = MergeTree
-ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
-
-CREATE TABLE tab
-(
-    str String,
-    INDEX idx str TYPE text(tokenizer = 'default', dictionary_block_size = '1024')
-)
-ENGINE = MergeTree
-ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
-
-CREATE TABLE tab
-(
-    str String,
-    INDEX idx str TYPE text(tokenizer = 'default', dictionary_block_size = 1024)
-)
-ENGINE = MergeTree
-ORDER BY tuple();
-DROP TABLE tab;
-
-SELECT '-- dictionary_block_size must be bigger than 0.';
-
-CREATE TABLE tab
-(
-    str String,
-    INDEX idx str TYPE text(tokenizer = 'default', dictionary_block_size = 0)
-)
-ENGINE = MergeTree
-ORDER BY tuple();  -- { serverError INCORRECT_QUERY }
-
-CREATE TABLE tab
-(
-    str String,
-    INDEX idx str TYPE text(tokenizer = 'default', dictionary_block_size = -1)
-)
-ENGINE = MergeTree
-ORDER BY tuple();  -- { serverError INCORRECT_QUERY }
-
-SELECT 'Test dictionary_block_frontcoding_compression argument.';
-
-SELECT '-- dictionary_block_frontcoding_compression must be an integer.';
-
-CREATE TABLE tab
-(
-    str String,
-    INDEX idx str TYPE text(tokenizer = 'default', dictionary_block_frontcoding_compression = 1024.0)
-)
-ENGINE = MergeTree
-ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
-
-CREATE TABLE tab
-(
-    str String,
-    INDEX idx str TYPE text(tokenizer = 'default', dictionary_block_frontcoding_compression = '1024')
-)
-ENGINE = MergeTree
-ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
-
-CREATE TABLE tab
-(
-    str String,
-    INDEX idx str TYPE text(tokenizer = 'default', dictionary_block_frontcoding_compression = 1)
-)
-ENGINE = MergeTree
-ORDER BY tuple();
-DROP TABLE tab;
-
-SELECT '-- dictionary_block_frontcoding_compression must be 0 or 1.';
-
-CREATE TABLE tab
-(
-    str String,
-    INDEX idx str TYPE text(tokenizer = 'default', dictionary_block_frontcoding_compression = 2)
-)
-ENGINE = MergeTree
-ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
-
-CREATE TABLE tab
-(
-    str String,
-    INDEX idx str TYPE text(tokenizer = 'default', dictionary_block_frontcoding_compression = -1)
-)
-ENGINE = MergeTree
-ORDER BY tuple();  -- { serverError INCORRECT_QUERY }
-
-CREATE TABLE tab
-(
-    str String,
-    INDEX idx str TYPE text(tokenizer = 'default', dictionary_block_frontcoding_compression = 0)
-)
-ENGINE = MergeTree
-ORDER BY tuple();
-DROP TABLE tab;
-
-SELECT 'Test max_cardinality_for_embedded_postings argument.';
-
-SELECT '-- max_cardinality_for_embedded_postings must be an integer.';
-
-CREATE TABLE tab
-(
-    str String,
-    INDEX idx str TYPE text(tokenizer = 'default', max_cardinality_for_embedded_postings = 1024.0)
-)
-ENGINE = MergeTree
-ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
-
-CREATE TABLE tab
-(
-    str String,
-    INDEX idx str TYPE text(tokenizer = 'default', max_cardinality_for_embedded_postings = '1024')
-)
-ENGINE = MergeTree
-ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
-
-CREATE TABLE tab
-(
-    str String,
-    INDEX idx str TYPE text(tokenizer = 'default', max_cardinality_for_embedded_postings = 1024)
-)
-ENGINE = MergeTree
-ORDER BY tuple();
-DROP TABLE tab;
 
 SELECT 'Parameters are shuffled.';
 
@@ -369,12 +268,10 @@ CREATE TABLE tab
 ENGINE = MergeTree
 ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
 
-SELECT 'Non-existing argument.';
-
 CREATE TABLE tab
 (
     str String,
-    INDEX idx str TYPE text(tokenizer = 'default', non_existing_argument = 1024)
+    INDEX idx str TYPE text(tokenizer = 'default', segment_digestion_threshold_bytes = 1024, segment_digestion_threshold_bytes = 2048)
 )
 ENGINE = MergeTree
 ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
@@ -418,15 +315,31 @@ ALTER TABLE tab ADD INDEX idx_3(lower(str)) TYPE text(tokenizer = 'ngram', ngram
 
 DROP TABLE tab;
 
-SELECT 'Must be created on String, FixedString, LowCardinality(String), LowCardinality(FixedString), Array(String) or Array(FixedString) columns.';
-
-SELECT '-- Negative tests';
+SELECT 'Must be created on String or FixedString or LowCardinality(String) or LowCardinality(FixedString) columns.';
 
 CREATE TABLE tab
 (
     key UInt64,
-    u64 UInt64,
-    INDEX idx u64 TYPE text(tokenizer = 'default')
+    str UInt64,
+    INDEX idx str TYPE text(tokenizer = 'default')
+)
+ENGINE = MergeTree
+ORDER BY key; -- { serverError INCORRECT_QUERY }
+
+CREATE TABLE tab
+(
+    key UInt64,
+    str Array(String),
+    INDEX idx str TYPE text(tokenizer = 'default')
+)
+ENGINE = MergeTree
+ORDER BY key; -- { serverError INCORRECT_QUERY }
+
+CREATE TABLE tab
+(
+    key UInt64,
+    str Array(FixedString(2)),
+    INDEX idx str TYPE text(tokenizer = 'default')
 )
 ENGINE = MergeTree
 ORDER BY key; -- { serverError INCORRECT_QUERY }
@@ -443,158 +356,8 @@ ORDER BY key; -- { serverError INCORRECT_QUERY }
 CREATE TABLE tab
 (
     key UInt64,
-    arr Array(UInt64),
-    INDEX idx arr TYPE text(tokenizer = 'default')
-)
-ENGINE = MergeTree
-ORDER BY key; -- { serverError INCORRECT_QUERY }
-
-CREATE TABLE tab
-(
-    key UInt64,
-    arr Array(Float32),
-    INDEX idx arr TYPE text(tokenizer = 'default')
-)
-ENGINE = MergeTree
-ORDER BY key; -- { serverError INCORRECT_QUERY }
-
-CREATE TABLE tab
-(
-    key UInt64,
-    map Map(UInt64, String),
-    INDEX idx mapKeys(map) TYPE text(tokenizer = 'default')
-)
-ENGINE = MergeTree
-ORDER BY key; -- { serverError INCORRECT_QUERY }
-
-CREATE TABLE tab
-(
-    key UInt64,
-    map Map(Float32, String),
-    INDEX idx mapKeys(map) TYPE text(tokenizer = 'default')
-)
-ENGINE = MergeTree
-ORDER BY key; -- { serverError INCORRECT_QUERY }
-
-CREATE TABLE tab
-(
-    key UInt64,
-    map Map(String, UInt64),
-    INDEX idx mapValues(map) TYPE text(tokenizer = 'default')
-)
-ENGINE = MergeTree
-ORDER BY key; -- { serverError INCORRECT_QUERY }
-
-CREATE TABLE tab
-(
-    key UInt64,
-    map Map(String, Float32),
-    INDEX idx mapValues(map) TYPE text(tokenizer = 'default')
-)
-ENGINE = MergeTree
-ORDER BY key; -- { serverError INCORRECT_QUERY }
-
-CREATE TABLE tab
-(
-    key UInt64,
     n_str Nullable(String),
     INDEX idx n_str TYPE text(tokenizer = 'default')
 )
 ENGINE = MergeTree
 ORDER BY key; -- { serverError INCORRECT_QUERY }
-
-SET allow_suspicious_low_cardinality_types = 1;
-
-CREATE TABLE tab
-(
-    key UInt64,
-    lc LowCardinality(UInt64),
-    INDEX idx lc TYPE text(tokenizer = 'default')
-)
-ENGINE = MergeTree
-ORDER BY key; -- { serverError INCORRECT_QUERY }
-
-CREATE TABLE tab
-(
-    key UInt64,
-    lc LowCardinality(Float32),
-    INDEX idx lc TYPE text(tokenizer = 'default')
-)
-ENGINE = MergeTree
-ORDER BY key; -- { serverError INCORRECT_QUERY }
-
-SELECT '-- Positive tests';
-
-DROP TABLE IF EXISTS tab;
-CREATE TABLE tab
-(
-    key UInt64,
-    str String,
-    str_fixed FixedString(3),
-    INDEX idx str TYPE text(tokenizer = 'default'),
-    INDEX idx_fixed str_fixed TYPE text(tokenizer = 'default')
-)
-ENGINE = MergeTree
-ORDER BY key;
-
-INSERT INTO tab VALUES (1, 'foo', toFixedString('foo', 3)), (2, 'bar', toFixedString('bar', 3)), (3, 'baz', toFixedString('baz', 3));
-
-SELECT count() FROM tab WHERE str = 'foo' SETTINGS force_data_skipping_indices='idx';
-SELECT count() FROM tab WHERE str_fixed = toFixedString('foo', 3) SETTINGS force_data_skipping_indices='idx_fixed';
-
-DROP TABLE IF EXISTS tab;
-CREATE TABLE tab
-(
-    key UInt64,
-    lc LowCardinality(String),
-    lc_fixed LowCardinality(FixedString(3)),
-    INDEX idx lc TYPE text(tokenizer = 'default'),
-    INDEX idx_fixed lc_fixed TYPE text(tokenizer = 'default')
-)
-ENGINE = MergeTree
-ORDER BY key;
-
-INSERT INTO tab VALUES (1, 'foo', toFixedString('foo', 3)), (2, 'bar', toFixedString('bar', 3)), (3, 'baz', toFixedString('baz', 3));
-
-SELECT count() FROM tab WHERE lc = 'foo' SETTINGS force_data_skipping_indices='idx';
-SELECT count() FROM tab WHERE lc_fixed = toFixedString('foo', 3) SETTINGS force_data_skipping_indices='idx_fixed';
-
-DROP TABLE IF EXISTS tab;
-CREATE TABLE tab
-(
-    key UInt64,
-    arr Array(String),
-    arr_fixed Array(FixedString(3)),
-    INDEX idx arr TYPE text(tokenizer = 'default'),
-    INDEX idx_fixed arr_fixed TYPE text(tokenizer = 'default')
-)
-ENGINE = MergeTree
-ORDER BY key;
-
-INSERT INTO tab VALUES (1, ['foo'], [toFixedString('foo', 3)]), (2, ['bar'], [toFixedString('bar', 3)]), (3, ['baz'], [toFixedString('baz', 3)]);
-
-SELECT count() FROM tab WHERE has(arr, 'foo') SETTINGS force_data_skipping_indices='idx';
-SELECT count() FROM tab WHERE has(arr_fixed, toFixedString('foo', 3)) SETTINGS force_data_skipping_indices='idx_fixed';
-
-DROP TABLE IF EXISTS tab;
-CREATE TABLE tab
-(
-    key UInt64,
-    map Map(String, String),
-    map_fixed Map(FixedString(3), FixedString(3)),
-    INDEX idx_keys mapKeys(map) TYPE text(tokenizer = 'default'),
-    INDEX idx_keys_fixed mapKeys(map_fixed) TYPE text(tokenizer = 'default'),
-    INDEX idx_values mapValues(map) TYPE text(tokenizer = 'default'),
-    INDEX idx_values_fixed mapValues(map_fixed) TYPE text(tokenizer = 'default')
-)
-ENGINE = MergeTree
-ORDER BY key;
-
-INSERT INTO tab VALUES (1, {'foo' : 'foo'}, {'foo' : 'foo'}), (2, {'bar' : 'bar'}, {'bar' : 'bar'});
-
-SELECT count() FROM tab WHERE mapContainsKey(map, 'foo') SETTINGS force_data_skipping_indices='idx_keys';
-SELECT count() FROM tab WHERE mapContainsKey(map_fixed, toFixedString('foo', 3)) SETTINGS force_data_skipping_indices='idx_keys_fixed';
-SELECT count() FROM tab WHERE has(mapValues(map), 'foo') SETTINGS force_data_skipping_indices='idx_values';
-SELECT count() FROM tab WHERE has(mapValues(map_fixed), toFixedString('foo', 3)) SETTINGS force_data_skipping_indices='idx_values_fixed';
-
-DROP TABLE tab;

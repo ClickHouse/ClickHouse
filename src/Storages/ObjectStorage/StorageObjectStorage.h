@@ -94,10 +94,6 @@ public:
 
     bool supportsSubsetOfColumns(const ContextPtr & context) const;
 
-    bool isDataLake() const override { return configuration->isDataLakeConfiguration(); }
-
-    bool supportsReplication() const override { return configuration->isDataLakeConfiguration(); }
-
     /// Things required for PREWHERE.
     bool supportsPrewhere() const override;
     bool canMoveConditionsToPrewhere() const override;
@@ -133,7 +129,7 @@ public:
 
     void addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const override;
 
-    void updateExternalDynamicMetadataIfExists(ContextPtr query_context) override;
+    bool updateExternalDynamicMetadataIfExists(ContextPtr query_context) override;
 
     IDataLakeMetadata * getExternalMetadata(ContextPtr query_context);
 

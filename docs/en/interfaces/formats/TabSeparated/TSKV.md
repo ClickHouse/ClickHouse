@@ -6,7 +6,6 @@ keywords: ['TSKV']
 output_format: true
 slug: /interfaces/formats/TSKV
 title: 'TSKV'
-doc_type: 'reference'
 ---
 
 | Input | Output | Alias |

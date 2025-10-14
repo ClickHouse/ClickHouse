@@ -6,7 +6,6 @@ sidebar_label: 'S3Queue'
 sidebar_position: 181
 slug: /engines/table-engines/integrations/s3queue
 title: 'S3Queue Table Engine'
-doc_type: 'reference'
 ---
 
 import ScalePlanFeatureBadge from '@theme/badges/ScalePlanFeatureBadge'

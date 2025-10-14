@@ -480,8 +480,8 @@ ColumnPtr ColumnTuple::permute(const Permutation & perm, size_t limit) const
 {
     if (columns.empty())
     {
-        if (limit == 0 && column_length != perm.size())
-            throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of permutation ({}) doesn't match size of column ({})", perm.size(), column_length);
+        if (column_length != perm.size())
+            throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of permutation doesn't match size of column");
 
         return cloneResized(limit ? std::min(column_length, limit) : column_length);
     }
@@ -881,13 +881,6 @@ void ColumnTuple::takeDynamicStructureFromSourceColumns(const Columns & source_c
 
     for (size_t i = 0; i != columns.size(); ++i)
         columns[i]->takeDynamicStructureFromSourceColumns(nested_source_columns[i]);
-}
-
-void ColumnTuple::takeDynamicStructureFromColumn(const ColumnPtr & source_column)
-{
-    const auto & source_elements = assert_cast<const ColumnTuple &>(*source_column).getColumns();
-    for (size_t i = 0; i != columns.size(); ++i)
-        columns[i]->takeDynamicStructureFromColumn(source_elements[i]);
 }
 
 
