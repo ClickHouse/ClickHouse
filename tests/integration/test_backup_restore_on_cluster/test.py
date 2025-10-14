@@ -53,6 +53,16 @@ node3 = cluster.add_instance(
 )
 
 
+def format_settings(settings):
+    if not settings:
+        return ""
+
+    def vstr(v):
+        return "'" + v + "'" if type(v) == str else str(v)
+
+    return "SETTINGS " + ",".join(f"{k}={vstr(v)}" for k, v in settings.items())
+
+
 @pytest.fixture(scope="module", autouse=True)
 def start_cluster():
     try:
@@ -88,7 +98,14 @@ def get_path_to_backup(backup_name):
     return os.path.join(node1.cluster.instances_dir, "backups", name)
 
 
-def test_replicated_table():
+@pytest.mark.parametrize(
+    "key_prefix_template",
+    [
+        pytest.param("", id="no_key_prefix"),
+        pytest.param("[a-z]{3}", id="regex_key_prefix"),
+    ],
+)
+def test_replicated_table(key_prefix_template):
     node1.query(
         "CREATE TABLE tbl ON CLUSTER 'cluster' ("
         "x UInt8, y String"
@@ -105,8 +122,9 @@ def test_replicated_table():
     backup_name = new_backup_name()
 
     # Make backup on node 1.
+    backup_settings = {"replica_num": 1, "key_prefix_template": key_prefix_template}
     node1.query(
-        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} SETTINGS replica_num=1"
+        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} {format_settings(backup_settings)}"
     )
 
     # Drop table on both nodes.
@@ -125,7 +143,14 @@ def test_replicated_table():
     )
 
 
-def test_empty_replicated_table():
+@pytest.mark.parametrize(
+    "key_prefix_template",
+    [
+        pytest.param("", id="no_key_prefix"),
+        pytest.param("[a-z]{3}", id="regex_key_prefix"),
+    ],
+)
+def test_empty_replicated_table(key_prefix_template):
     node1.query(
         "CREATE TABLE tbl ON CLUSTER 'cluster' ("
         "x UInt8, y String"
@@ -136,8 +161,9 @@ def test_empty_replicated_table():
     backup_name = new_backup_name()
 
     # Make backup on node 1.
+    backup_settings = {"replica_num": 1, "key_prefix_template": key_prefix_template}
     node1.query(
-        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} SETTINGS replica_num=1"
+        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} {format_settings(backup_settings)}"
     )
 
     # Drop table on both nodes.
@@ -151,7 +177,14 @@ def test_empty_replicated_table():
     assert node2.query("SELECT * FROM tbl") == ""
 
 
-def test_replicated_database():
+@pytest.mark.parametrize(
+    "key_prefix_template",
+    [
+        pytest.param("", id="no_key_prefix"),
+        pytest.param("[a-z]{3}", id="regex_key_prefix"),
+    ],
+)
+def test_replicated_database(key_prefix_template):
     node1.query(
         "CREATE DATABASE mydb ON CLUSTER 'cluster' ENGINE=Replicated('/clickhouse/path/','{shard}','{replica}')"
     )
@@ -177,8 +210,9 @@ def test_replicated_database():
 
     # Make backup.
     backup_name = new_backup_name()
+    backup_settings = {"replica_num": 2, "key_prefix_template": key_prefix_template}
     node1.query(
-        f"BACKUP DATABASE mydb ON CLUSTER 'cluster' TO {backup_name} SETTINGS replica_num=2"
+        f"BACKUP DATABASE mydb ON CLUSTER 'cluster' TO {backup_name} {format_settings(backup_settings)}"
     )
 
     # Drop table on both nodes.
@@ -192,7 +226,14 @@ def test_replicated_database():
     assert node2.query("SELECT * FROM mydb.tbl ORDER BY x") == expect
 
 
-def test_replicated_database_compare_parts():
+@pytest.mark.parametrize(
+    "key_prefix_template",
+    [
+        pytest.param("", id="no_key_prefix"),
+        pytest.param("[a-z]{3}", id="regex_key_prefix"),
+    ],
+)
+def test_replicated_database_compare_parts(key_prefix_template):
     """
     stop merges and fetches then write data to two nodes and
     compare that parts are restored from single node (second) after backup
@@ -224,8 +265,9 @@ def test_replicated_database_compare_parts():
 
     # Make backup.
     backup_name = new_backup_name()
+    backup_settings = {"replica_num": 2, "key_prefix_template": key_prefix_template}
     node1.query(
-        f"BACKUP DATABASE mydb ON CLUSTER 'cluster' TO {backup_name} SETTINGS replica_num=2"
+        f"BACKUP DATABASE mydb ON CLUSTER 'cluster' TO {backup_name} {format_settings(backup_settings)}"
     )
 
     # Drop table on both nodes.
