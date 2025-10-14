@@ -24,7 +24,12 @@ for i in {1..30}; do
     fi
 done
 
+# Make sure the directory for the default database is created:
+$CLICKHOUSE_CLIENT --query "CREATE TABLE test (x UInt8) ORDER BY ()"
+
 kill $PID
 wait
 
-$CLICKHOUSE_LOCAL --path "${CLICKHOUSE_TMP}/" --query "SELECT uuid = '$(basename $(readlink ${CLICKHOUSE_TMP}/metadata/default))' FROM system.databases WHERE name = 'default'"
+$CLICKHOUSE_LOCAL --path "${CLICKHOUSE_TMP}/" --query "
+    SELECT uuid = '$(basename $(readlink ${CLICKHOUSE_TMP}/metadata/default))' FROM system.databases WHERE name = 'default'
+" || cat "${CLICKHOUSE_TMP}/server.log"
