@@ -3476,15 +3476,7 @@ void ClientBase::runInteractive()
         if (getClientConfiguration().has("history_file"))
             history_file = getClientConfiguration().getString("history_file");
         else
-        {
-            auto * history_file_from_env = getenv("CLICKHOUSE_HISTORY_FILE"); // NOLINT(concurrency-mt-unsafe)
-            if (history_file_from_env)
-                history_file = history_file_from_env;
-            else if (!XDGBaseDirectories::getConfigurationHome().empty())
-                history_file = fs::path(XDGBaseDirectories::getConfigurationHome()) / "query-history";
-            else if (!home_path.empty())
-                history_file = home_path + "/.clickhouse-client-history";
-        }
+            history_file = getHistoryFilePath();
 
         if (!history_file.empty() && !fs::exists(history_file))
         {
@@ -3731,6 +3723,24 @@ void ClientBase::runNonInteractive()
         else
             processQueryText(text);
     }
+}
+
+std::string ClientBase::getHistoryFilePath()
+{
+    auto * history_file_from_env = getenv("CLICKHOUSE_HISTORY_FILE"); // NOLINT(concurrency-mt-unsafe)
+    if (history_file_from_env)
+        return history_file_from_env;
+
+    auto * home_path = getenv("HOME"); // NOLINT(concurrency-mt-unsafe)
+    if (home_path)
+    {
+        auto path_in_home_dir = fs::path(home_path) / ".clickhouse-client-history";
+
+        if (fs::exists(path_in_home_dir))
+            return path_in_home_dir;
+    }
+
+    return fs::path(XDGBaseDirectories::getDataHome()) / "query-history";
 }
 
 
