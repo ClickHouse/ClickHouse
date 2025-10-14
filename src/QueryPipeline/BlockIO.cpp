@@ -57,6 +57,10 @@ void BlockIO::onFinish(std::chrono::system_clock::time_point finish_time)
             callback(query_pipeline_finalized_info, finish_time);
         }
     }
+    else
+    {
+        pipeline.reset();
+    }
 }
 
 void BlockIO::onException(bool log_as_error)
