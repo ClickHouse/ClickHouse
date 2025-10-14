@@ -173,11 +173,12 @@ public:
     /// Get name of database engine.
     virtual String getEngineName() const = 0;
 
-    virtual bool canContainMergeTreeTables() const { return true; }
-
-    virtual bool canContainDistributedTables() const { return true; }
-
-    virtual bool canContainRocksDBTables() const { return true; }
+    /// External database (i.e. PostgreSQL/Datalake/...) does not support any of ClickHouse internal tables:
+    /// - *MergeTree
+    /// - Distributed
+    /// - RocksDB
+    /// - ...
+    virtual bool isExternal() const { return true; }
 
     /// Load a set of existing tables.
     /// You can call only once, right after the object is created.

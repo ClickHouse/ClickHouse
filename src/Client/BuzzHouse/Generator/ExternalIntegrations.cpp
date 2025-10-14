@@ -1021,7 +1021,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
     }
     else if ((dttp = dynamic_cast<DateTimeType *>(tp)))
     {
-        String buf = dttp->extended ? rg.nextDateTime64(rg.nextBool()) : rg.nextDateTime(rg.nextBool());
+        String buf = dttp->extended ? rg.nextDateTime64("", false, rg.nextBool()) : rg.nextDateTime("", false, rg.nextBool());
 
         if constexpr (is_document<T>)
         {
@@ -1543,21 +1543,17 @@ void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabas
     }
     sv2->set_property("warehouse");
     sv2->set_value("'" + d.getName() + "'");
-    if (d.storage == LakeStorage::S3)
+    chassert(d.storage == LakeStorage::S3);
+    if (d.format == LakeFormat::Iceberg)
     {
         const ServerCredentials & minio = fc.minio_server.value();
 
         de->add_params()->set_svalue(minio.user);
-        de->add_params()->set_svalue(minio.password);
+        de->add_params()->set_svalue(minio.secret);
 
         SetValue * sv3 = svs->add_other_values();
         sv3->set_property("storage_endpoint");
         sv3->set_value(fmt::format("'http://{}:{}/{}'", minio.server_hostname, minio.port, cat->warehouse));
-    }
-    else
-    {
-        /// I don't know how to set for other storages
-        chassert(0);
     }
     if (!cat->region.empty())
     {
@@ -1566,12 +1562,12 @@ void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabas
         sv4->set_property("region");
         sv4->set_value("'" + cat->region + "'");
     }
-    if (rg.nextSmallNumber() < 4)
+    if (d.catalog == LakeCatalog::Unity || rg.nextSmallNumber() < 4)
     {
         SetValue * sv5 = svs->add_other_values();
 
         sv5->set_property("vended_credentials");
-        sv5->set_value(rg.nextBool() ? "1" : "0");
+        sv5->set_value(d.catalog == LakeCatalog::Unity || rg.nextBool() ? "1" : "0");
     }
 }
 
@@ -1621,9 +1617,12 @@ void DolorIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable &
 {
     const LakeCatalog catalog = t.getLakeCatalog();
 
-    te->add_params()->set_rvalue(
-        t.isOnS3() ? fc.minio_server.value().named_collection : (t.isOnAzure() ? fc.azurite_server.value().named_collection : "local"));
-    if (catalog != LakeCatalog::None && catalog != LakeCatalog::Hive)
+    if (catalog == LakeCatalog::None)
+    {
+        te->add_params()->set_rvalue(
+            t.isOnS3() ? fc.minio_server.value().named_collection : (t.isOnAzure() ? fc.azurite_server.value().named_collection : "local"));
+    }
+    else
     {
         const Catalog * cat = nullptr;
         SettingValues * svs = te->mutable_setting_values();
@@ -1649,6 +1648,11 @@ void DolorIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable &
                 sv1->set_value("'rest'");
                 sv4->set_value(fmt::format("'http://{}:{}{}'", cat->server_hostname, cat->port, cat->path));
                 break;
+            case LakeCatalog::Hive:
+                cat = &sc.hive_catalog.value();
+                sv1->set_value("'hive'");
+                sv4->set_value(fmt::format("thrift://{}:{}", cat->server_hostname, cat->port));
+                break;
             case LakeCatalog::Unity:
                 cat = &sc.unity_catalog.value();
                 sv1->set_value(fmt::format("'{}'", t.getPossibleLakeFormat() == LakeFormat::Iceberg ? "rest" : "unity"));
@@ -1663,16 +1667,23 @@ void DolorIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable &
             default:
                 chassert(0);
         }
-        if (t.isOnS3())
+        /// The key-value format is not well supported for catalogs at the moment
+        const ServerCredentials & minio = fc.minio_server.value();
+
+        /// I don't know how to set for other storages
+        chassert(t.isOnS3());
+        te->add_params()->set_svalue(t.getTablePath(fc));
+        te->add_params()->set_svalue(minio.password);
+        te->add_params()->set_svalue(minio.secret);
+        if (t.isAnyIcebergEngine() && t.file_format.has_value())
         {
-            const ServerCredentials & minio = fc.minio_server.value();
-            sv3->set_value(fmt::format("'http://{}:{}/{}'", minio.server_hostname, minio.port, cat->warehouse));
+            te->add_params()->set_svalue(InOutFormat_Name(t.file_format.value()).substr(6));
+            if (t.file_comp.has_value())
+            {
+                te->add_params()->set_svalue(t.file_comp.value());
+            }
         }
-        else
-        {
-            /// I don't know how to set for other storages
-            chassert(0);
-        }
+        sv3->set_value(fmt::format("'http://{}:{}/{}'", minio.server_hostname, minio.port, cat->warehouse));
         if (!cat->region.empty())
         {
             SetValue * sv5 = svs->add_other_values();

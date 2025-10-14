@@ -231,6 +231,7 @@ if (TARGET ch_contrib::azure_sdk)
 endif()
 
 target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::sparsehash ch_contrib::incbin)
+target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::stringzilla)
 if (TARGET ch_contrib::consistent_hashing)
     target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::consistent_hashing)
 endif()
@@ -471,10 +472,6 @@ target_link_libraries(
         Poco::Redis
 )
 
-if (TARGET ch_contrib::jwt-cpp)
-    target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::jwt-cpp)
-endif()
-
 if (TARGET ch_contrib::mongocxx)
     target_link_libraries(
         dbms
@@ -696,6 +693,12 @@ if (TARGET ch_contrib::google_cloud_cpp)
 endif()
 
 if (TARGET ch_rust::delta_kernel_rs)
+    # FIXME: This is a temporary hack to force cmake put delta_kernel_rs at the
+    # end of the dependencies list, so that the linker will use symbols from it
+    # only if there were no such symbols before.
+    #
+    # Without it some symbols for lz4/zstd can be used from crates instead of our contrib.
+    target_link_libraries(clickhouse_common_io PRIVATE ch_rust::delta_kernel_rs)
     target_link_libraries(dbms PRIVATE ch_rust::delta_kernel_rs)
 endif ()
 
@@ -758,7 +761,3 @@ if (ENABLE_TESTS)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::parquet)
     endif()
 endif ()
-
-if (TARGET ch_contrib::jwt-cpp)
-    add_object_library(clickhouse_client_jwt Client/jwt)
-endif()
