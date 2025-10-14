@@ -9,15 +9,15 @@ Updater::~Updater()
         return;
     LOG_DEBUG(
         &Poco::Logger::get("debug"),
-        "statistics.input_bytes={}, statistics.input_bytes_sample={}, statistics.input_bytes_compressed={}, statistics.output_bytes={}",
+        "statistics.input_bytes={}, input_bytes_sample={}, input_bytes_compressed={}, statistics.output_bytes={}",
         statistics.input_bytes,
-        statistics.input_bytes_sample,
-        statistics.input_bytes_compressed,
+        input_bytes_sample,
+        input_bytes_compressed,
         statistics.output_bytes);
-    if (statistics.input_bytes_compressed)
-        statistics.input_bytes
-            = static_cast<size_t>(statistics.input_bytes / (statistics.input_bytes_sample / statistics.input_bytes_compressed));
-    statistics.output_bytes = static_cast<size_t>(statistics.output_bytes / output_compression_ratio);
+    if (input_bytes_compressed && (input_bytes_sample / input_bytes_compressed))
+        statistics.input_bytes = static_cast<size_t>(statistics.input_bytes / (input_bytes_sample / input_bytes_compressed));
+    if (output_bytes_compressed && (output_bytes_sample / output_bytes_compressed))
+        statistics.output_bytes = static_cast<size_t>(statistics.output_bytes / (output_bytes_sample / output_bytes_compressed));
     auto & dataflow_cache = getRuntimeDataflowStatisticsCache();
     dataflow_cache.update(*cache_key, statistics);
 }
@@ -26,10 +26,11 @@ void Updater::addOutputBytes(const Chunk & chunk)
 {
     if (!cache_key)
         return;
+
     std::lock_guard lock(mutex);
     const auto source_bytes = chunk.bytes();
     statistics.output_bytes += source_bytes;
-    if (first_output && chunk.hasRows())
+    if (cnt++ % 10 == 0 && chunk.hasRows())
     {
         if (chunk.getNumColumns() != header.columns())
         {
@@ -40,12 +41,26 @@ void Updater::addOutputBytes(const Chunk & chunk)
                 header.columns());
         }
 
-        size_t compressed_bytes = 0;
+        output_bytes_sample += source_bytes;
         for (size_t i = 0; i < chunk.getNumColumns(); ++i)
-            compressed_bytes += compressedColumnSize({chunk.getColumns()[i], header.getByPosition(i).type, ""});
-        output_compression_ratio = static_cast<double>(source_bytes) / static_cast<double>(compressed_bytes);
-        first_output = false;
+            output_bytes_compressed += compressedColumnSize({chunk.getColumns()[i], header.getByPosition(i).type, ""});
     }
+}
+
+void Updater::addOutputBytes(const Aggregator &, const ManyAggregatedDataVariants & variants)
+{
+    WriteBufferFromOwnString wbuf;
+    for (const auto & variant : variants)
+    {
+        if (!variant || !variant->aggregator)
+            continue;
+        variant->aggregator->applyToAllStates(*variant, wbuf);
+    }
+    std::lock_guard lock(mutex);
+    statistics.output_bytes += wbuf.count();
+    output_bytes_sample += wbuf.count();
+    output_bytes_compressed += wbuf.count();
+    LOG_DEBUG(&Poco::Logger::get("debug"), "wbuf.count()={}", wbuf.count());
 }
 
 void Updater::addInputBytes(const IMergeTreeDataPart::ColumnSizeByName & column_sizes, const Block & block, size_t bytes)
@@ -61,8 +76,8 @@ void Updater::addInputBytes(const IMergeTreeDataPart::ColumnSizeByName & column_
         {
             if (!column_sizes.contains(column.name))
                 continue;
-            statistics.input_bytes_sample += column_sizes.at(column.name).data_uncompressed;
-            statistics.input_bytes_compressed += column_sizes.at(column.name).data_compressed;
+            input_bytes_sample += column_sizes.at(column.name).data_uncompressed;
+            input_bytes_compressed += column_sizes.at(column.name).data_compressed;
         }
     }
 }
@@ -78,8 +93,8 @@ void Updater::addInputBytes(const IMergeTreeDataPart::ColumnSizeByName & column_
     {
         if (!column_sizes.contains(column.name))
             return;
-        statistics.input_bytes_sample += column_sizes.at(column.name).data_uncompressed;
-        statistics.input_bytes_compressed += column_sizes.at(column.name).data_compressed;
+        input_bytes_sample += column_sizes.at(column.name).data_uncompressed;
+        input_bytes_compressed += column_sizes.at(column.name).data_compressed;
     }
 }
 

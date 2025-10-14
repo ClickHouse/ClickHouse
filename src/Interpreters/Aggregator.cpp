@@ -185,6 +185,52 @@ UInt64 & getInlineCountState(DB::AggregateDataPtr & ptr)
 namespace DB
 {
 
+void Aggregator::applyToAllStates(AggregatedDataVariants & result, WriteBuffer & wb) const
+{
+    if (is_simple_count)
+        // return size * sizeof(UInt64)
+        return;
+
+    auto f = [&](auto & table)
+    {
+        if constexpr (requires { table.forEachMapped([](AggregateDataPtr) {}); })
+        {
+            for (size_t j = 0; j < params.aggregates_size; ++j)
+            {
+                table.forEachMapped(
+                    [&](AggregateDataPtr place)
+                    {
+                        if (!place)
+                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty place in Aggregator::applyToAllStates");
+                        aggregate_functions[j]->serialize(place + offsets_of_aggregate_states[j], wb);
+                    });
+            }
+        }
+    };
+
+    // clang-format off
+#define M(NAME, IS_TWO_LEVEL) \
+    else if (result.type == AggregatedDataVariants::Type::NAME) \
+        f(result.NAME->data);
+
+    if (result.type == AggregatedDataVariants::Type::EMPTY)
+    {
+    } // NOLINT
+    else if (result.type == AggregatedDataVariants::Type::without_key)
+    {
+        // if (result.without_key == nullptr)
+        //     throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "Empty data passed to Aggregator::applyToAllStates");
+        // for (size_t j = 0; j < params.aggregates_size; ++j)
+        // {
+        //     aggregate_functions[j]->serialize(result.without_key + offsets_of_aggregate_states[j], wb);
+        // }
+    } // NOLINT
+    APPLY_FOR_AGGREGATED_VARIANTS(M)
+#undef M
+
+    UNREACHABLE();
+}
+
 Block Aggregator::getHeader(bool final) const
 {
     return params.getHeader(header, final);

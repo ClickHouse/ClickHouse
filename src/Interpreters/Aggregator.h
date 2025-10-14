@@ -12,6 +12,7 @@
 #include <Core/ColumnNumbers.h>
 #include <Common/ThreadPool.h>
 #include <Common/filesystemHelpers.h>
+#include "IO/WriteBuffer.h"
 
 #include <QueryPipeline/SizeLimits.h>
 
@@ -281,6 +282,8 @@ public:
 
     /// Get data structure of the result.
     Block getHeader(bool final) const;
+
+    void applyToAllStates(AggregatedDataVariants & result, WriteBuffer & wb) const;
 
 private:
 

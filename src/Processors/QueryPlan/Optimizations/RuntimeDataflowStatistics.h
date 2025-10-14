@@ -12,6 +12,7 @@
 
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
+#include "Interpreters/Aggregator.h"
 
 #include <cstddef>
 #include <memory>
@@ -39,8 +40,6 @@ extern const int LOGICAL_ERROR;
 struct RuntimeDataflowStatistics
 {
     size_t input_bytes = 0;
-    size_t input_bytes_sample = 0;
-    size_t input_bytes_compressed = 0;
     size_t output_bytes = 0;
 };
 
@@ -109,6 +108,8 @@ public:
 
     void addOutputBytes(const Chunk & chunk);
 
+    void addOutputBytes(const Aggregator & aggregator, const ManyAggregatedDataVariants & variants);
+
     void addInputBytes(const IMergeTreeDataPart::ColumnSizeByName & column_sizes, const Block & block, size_t bytes);
 
     void addInputBytes(const IMergeTreeDataPart::ColumnSizeByName & column_sizes, const ColumnWithTypeAndName & column);
@@ -121,12 +122,20 @@ private:
         return blob.size();
     }
 
-    std::mutex mutex;
-    RuntimeDataflowStatistics statistics{};
+    const std::optional<size_t> cache_key;
     Block header;
-    bool first_output = true;
-    double output_compression_ratio = 1.0;
-    std::optional<size_t> cache_key;
+
+    std::mutex mutex;
+
+    size_t input_bytes_sample = 0;
+    size_t input_bytes_compressed = 0;
+
+    size_t output_bytes_sample = 0;
+    size_t output_bytes_compressed = 0;
+
+    RuntimeDataflowStatistics statistics{};
+
+    size_t cnt = 0;
 };
 
 using UpdaterPtr = std::shared_ptr<Updater>;
