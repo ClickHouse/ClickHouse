@@ -1427,23 +1427,10 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
     for (const auto & node : bucket_lock_paths)
     {
         get_batch.push_back(node);
-        try
-        {
-            if (get_batch.size() == keeper_multiread_batch_size)
-                get_paths();
-        }
-        catch (const zkutil::KeeperException & e)
-        {
-            if (!Coordination::isHardwareError(e.code))
-            {
-                LOG_WARNING(log, "Unexpected exception: {}", getCurrentExceptionMessage(true));
-                chassert(false);
-            }
-
-            /// Will retry with a new zk connection.
-            throw;
-        }
+        if (get_batch.size() == keeper_multiread_batch_size)
+            get_paths();
     }
+
     if (!get_batch.empty())
         get_paths();
 
