@@ -18,7 +18,6 @@ class ProcessListEntry;
 struct QueryPipelineFinalizedInfo
 {
     std::optional<ResultProgress> result_progress;
-    Processors processors;
 };
 
 struct BlockIO

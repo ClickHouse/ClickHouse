@@ -1743,7 +1743,12 @@ static BlockIO executeQueryImpl(
                     /// prevent partial/garbage results in case of exceptions during query execution.
                     query_pipeline.finalizeWriteInQueryResultCache();
 
-                Processors processors = query_pipeline.getProcessors();
+                /// We can't just hold the processors in QueryPipelineFinalizedInfo because then not all the
+                /// profile events will be recorded.
+                /// TODO(mstetsyuk): save all the info of the processors to a new struct, save it to QueryPipelineFinalizedInfo,
+                /// and use in finish_callback.
+                if (const auto & processors = query_pipeline.getProcessors(); !processors.empty())
+                        logProcessorProfile(context, processors);
 
                 std::optional<ResultProgress> result_progress;
                 if (pulling_pipeline)
@@ -1761,8 +1766,7 @@ static BlockIO executeQueryImpl(
                 CurrentThread::finalizePerformanceCounters();
 
                 return QueryPipelineFinalizedInfo{
-                    .result_progress = std::move(result_progress),
-                    .processors = std::move(processors)};
+                    .result_progress = std::move(result_progress)};
             };
 
             /// The finish callback logs the query result
@@ -1779,9 +1783,6 @@ static BlockIO executeQueryImpl(
             {
                 if (QueryStatusPtr process_list_elem = context->getProcessListElement())
                 {
-                    if (const auto & processors = query_pipeline_finalized_info.processors; !processors.empty())
-                        logProcessorProfile(context, processors);
-
                     {
                         ResultProgress result_progress(0, 0);
 
