@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 DROP TABLE IF EXISTS t_auto_statistics_validation;
 
 CREATE TABLE t_auto_statistics_validation (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS auto_statistics_types = 'nonexisting'; -- { serverError INCORRECT_QUERY }
