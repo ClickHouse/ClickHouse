@@ -260,9 +260,13 @@ SQLType * DateType::typeDeepCopy() const
     return new DateType(extended);
 }
 
-String DateType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &) const
+String DateType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen) const
 {
-    return extended ? rg.nextDate32("'", true) : rg.nextDate("'", true);
+    const bool allow_func = gen.getAllowNotDetermistic();
+    String ret = extended ? rg.nextDate32("'", allow_func) : rg.nextDate("'", allow_func);
+
+    ret += allow_func ? fmt::format("::{}", typeName(false, false)) : "";
+    return ret;
 }
 
 String DateType::insertNumberEntry(RandomGenerator & rg, StatementGenerator & gen, const uint32_t, const uint32_t) const
@@ -308,9 +312,13 @@ SQLType * TimeType::typeDeepCopy() const
     return new TimeType(extended, precision);
 }
 
-String TimeType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &) const
+String TimeType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen) const
 {
-    return extended ? rg.nextTime64("'", true, precision.has_value()) : rg.nextTime("'", true);
+    const bool allow_func = gen.getAllowNotDetermistic();
+    String ret = extended ? rg.nextTime64("'", allow_func, precision.has_value()) : rg.nextTime("'", allow_func);
+
+    ret += allow_func ? fmt::format("::{}", typeName(false, false)) : "";
+    return ret;
 }
 
 String TimeType::insertNumberEntry(RandomGenerator & rg, StatementGenerator & gen, const uint32_t, const uint32_t) const
@@ -377,9 +385,14 @@ SQLType * DateTimeType::typeDeepCopy() const
     return new DateTimeType(extended, precision, timezone);
 }
 
-String DateTimeType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &) const
+String DateTimeType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen) const
 {
-    return extended ? rg.nextDateTime64("'", true, rg.nextSmallNumber() < 8) : rg.nextDateTime("'", true, precision.has_value());
+    const bool allow_func = gen.getAllowNotDetermistic();
+    String ret
+        = extended ? rg.nextDateTime64("'", allow_func, rg.nextSmallNumber() < 8) : rg.nextDateTime("'", allow_func, precision.has_value());
+
+    ret += allow_func ? fmt::format("::{}", typeName(false, false)) : "";
+    return ret;
 }
 
 String DateTimeType::insertNumberEntry(RandomGenerator & rg, StatementGenerator & gen, const uint32_t, const uint32_t) const
@@ -773,8 +786,8 @@ String DynamicType::appendRandomRawValue(RandomGenerator & rg, StatementGenerato
     gen.next_type_mask = gen.fc.type_mask & ~(allow_dynamic | allow_nested);
     auto next = std::unique_ptr<SQLType>(gen.randomNextType(rg, gen.next_type_mask, col_counter, nullptr));
     gen.next_type_mask = type_mask_backup;
-    String ret = next->appendRandomRawValue(rg, gen);
 
+    String ret = next->appendRandomRawValue(rg, gen);
     if (rg.nextMediumNumber() < 4)
     {
         ret += "::";
