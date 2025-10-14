@@ -282,7 +282,7 @@ class MergeTreeIndexText final : public IMergeTreeIndex
 {
 
     static Tuple parseNamedArgumentFromAST(const ASTFunction * ast_equal_function);
-    static ASTPtr tryGetPreprocessorFromAST(const ASTFunction * ast_equal_function);
+    static const ASTFunction * tryGetPreprocessorFromAST(const ASTPtr ast_preprocessor_argument);
     static ASTPtr parseExpression(const String & expression);
 
 public:

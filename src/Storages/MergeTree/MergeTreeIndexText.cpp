@@ -1176,10 +1176,7 @@ Tuple MergeTreeIndexText::parseNamedArgumentFromAST(const ASTFunction * ast_equa
 
     if (result.back() == "preprocessor")
     {
-        const auto * preprocessor_function = arguments->children[1]->as<ASTFunction>();
-        if (preprocessor_function == nullptr)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Text index preprocessor parameter value expects a function");
-
+        const ASTFunction * preprocessor_function = tryGetPreprocessorFromAST(arguments->children[1]);
         result.emplace_back(preprocessor_function->getColumnName());
     }
     else
@@ -1216,23 +1213,12 @@ Tuple MergeTreeIndexText::parseNamedArgumentFromAST(const ASTFunction * ast_equa
     return result;
 }
 
-ASTPtr MergeTreeIndexText::tryGetPreprocessorFromAST(const ASTFunction * ast_equal_function)
+const ASTFunction * MergeTreeIndexText::tryGetPreprocessorFromAST(const ASTPtr ast_preprocessor_argument)
 {
-    chassert(ast_equal_function != nullptr);
-    chassert(ast_equal_function->name == "equals");
-    chassert(ast_equal_function->arguments->children.size() == 2);
-
-    ASTPtr arguments = ast_equal_function->arguments;
-
-    const ASTIdentifier * identifier = arguments->children[0]->as<ASTIdentifier>();
-
-    if (identifier == nullptr || identifier->name() != "preprocessor")
-        return nullptr;
-
     /// Parse parameter value. It can be a Literal, Identifier or Function.
-    const ASTFunction * function = arguments->children[1]->as<ASTFunction>();
-    if (function == nullptr)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "The preprocessor argument must be a function");
+    const ASTFunction * function = ast_preprocessor_argument->as<ASTFunction>();
+    if (function == nullptr || function->arguments == nullptr)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Text index preprocessor argument expects a function with arguments");
 
     for (const auto & argument : function->arguments->children)
     {
@@ -1249,7 +1235,7 @@ ASTPtr MergeTreeIndexText::tryGetPreprocessorFromAST(const ASTFunction * ast_equ
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Text preprocessor function expect a literal or identifier as argument");
     }
 
-    return arguments->children[1];
+    return function;
 }
 
 FieldVector MergeTreeIndexText::parseArgumentsListFromAST(const ASTPtr & arguments)
