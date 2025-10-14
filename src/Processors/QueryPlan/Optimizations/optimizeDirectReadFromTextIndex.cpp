@@ -153,7 +153,7 @@ public:
 
             if (replaced.has_value())
             {
-                result.added_columns[replaced->index_name].emplace_back(replaced->column_name, node.result_type);
+                result.added_columns[replaced->index_name].emplace_back(replaced->column_name, std::make_shared<DataTypeUInt8>());
                 replacements[&node] = replaced->node;
             }
         }
@@ -274,13 +274,13 @@ private:
             }
             case TextIndexDirectReadMode::Exact:
             {
-                replacement.node = &actions_dag.addInput(virtual_column_name.value(), function_node.result_type);
+                replacement.node = &actions_dag.addInput(virtual_column_name.value(), std::make_shared<DataTypeUInt8>());
                 return replacement;
             }
             case TextIndexDirectReadMode::Hint:
             {
                 auto function_builder = FunctionFactory::instance().get("and", context);
-                const auto & input_virtual_column = actions_dag.addInput(virtual_column_name.value(), function_node.result_type);
+                const auto & input_virtual_column = actions_dag.addInput(virtual_column_name.value(), std::make_shared<DataTypeUInt8>());
                 replacement.node = &actions_dag.addFunction(function_builder, {&input_virtual_column, &function_node}, "");
                 return replacement;
             }
