@@ -4,7 +4,7 @@
 namespace DB
 {
 
-void throttleImpl(const ThrottlerPtr & throttler, ProfileEvents::Event amount_event, ProfileEvents::Event sleep_event)
+void HTTPRequestThrottler::throttleImpl(const ThrottlerPtr & throttler, ProfileEvents::Event amount_event, ProfileEvents::Event sleep_event) const
 {
     if (throttler)
     {

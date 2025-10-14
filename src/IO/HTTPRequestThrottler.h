@@ -28,18 +28,18 @@ struct HTTPRequestThrottler
     /// Event to increment when put throttler sleeps for disk
     ProfileEvents::Event disk_put_sleep_us{ProfileEvents::end()};
 
-    void throttleHTTPGet()
+    void throttleHTTPGet() const
     {
         throttleImpl(get_throttler, disk_get_amount, disk_get_sleep_us);
     }
 
-    void throttleHTTPPut()
+    void throttleHTTPPut() const
     {
         throttleImpl(put_throttler, disk_put_amount, disk_put_sleep_us);
     }
 
 private:
-    void throttleImpl(const ThrottlerPtr & throttler, ProfileEvents::Event amount_event, ProfileEvents::Event sleep_event);
+    void throttleImpl(const ThrottlerPtr & throttler, ProfileEvents::Event amount_event, ProfileEvents::Event sleep_event) const;
 };
 
 }
