@@ -122,7 +122,7 @@ private:
     [[clang::xray_never_instrument]] void profile(XRayEntryType entry_type, const InstrumentedPointInfo & instrumented_point);
 
     FunctionsContainer functions_container;
-    std::unordered_map<String, XRayHandlerFunction> handler_name_to_function;
+    std::vector<std::pair<String, XRayHandlerFunction>> handler_name_to_function;
 
     SharedMutex shared_mutex;
     std::atomic<UInt64> instrumentation_point_ids;

@@ -22,7 +22,7 @@ query_id="${CLICKHOUSE_DATABASE}_log"
 $CLICKHOUSE_CLIENT --query-id=$query_id -q "SELECT 1 FORMAT Null;"
 
 $CLICKHOUSE_CLIENT -q """
+    SYSTEM INSTRUMENT REMOVE ALL;
     SYSTEM FLUSH LOGS system.text_log;
     SELECT count() FROM system.text_log WHERE event_date >= yesterday() AND query_id = '$query_id' AND message ILIKE '%this is an instrumentation log%Stack trace:%';
-    SYSTEM INSTRUMENT REMOVE ALL;
 """

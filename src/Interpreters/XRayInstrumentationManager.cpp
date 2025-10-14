@@ -58,14 +58,16 @@ auto logger = getLogger("XRayInstrumentationManager");
 
 void XRayInstrumentationManager::registerHandler(const String & name, XRayHandlerFunction handler)
 {
-    handler_name_to_function[name] = handler;
+    handler_name_to_function.emplace_back(std::make_pair(name, handler));
 }
 
 XRayInstrumentationManager::XRayInstrumentationManager()
 {
-    registerHandler(SLEEP_HANDLER, [this](XRayEntryType entry_type, const InstrumentedPointInfo & ip) { sleep(entry_type, ip); });
+    /// The order in which handlers are registered is important because they will be executed in that same order.
     registerHandler(LOG_HANDLER, [this](XRayEntryType entry_type, const InstrumentedPointInfo & ip) { log(entry_type, ip); });
+    registerHandler(SLEEP_HANDLER, [this](XRayEntryType entry_type, const InstrumentedPointInfo & ip) { sleep(entry_type, ip); });
     registerHandler(PROFILE_HANDLER, [this](XRayEntryType entry_type, const InstrumentedPointInfo & ip) { profile(entry_type, ip); });
+
     parseXRayInstrumentationMap();
 }
 
@@ -79,8 +81,18 @@ XRayInstrumentationManager & XRayInstrumentationManager::instance()
 void XRayInstrumentationManager::setHandlerAndPatch(ContextPtr context, const String & function_name, const String & handler_name, std::optional<XRayEntryType> entry_type, std::optional<std::vector<InstrumentedParameter>> &parameters)
 {
     auto handler_name_lower = Poco::toLower(handler_name);
-    auto handler_it = handler_name_to_function.find(handler_name_lower);
-    if (handler_it == handler_name_to_function.end())
+
+    bool found = false;
+    for (const auto & [name, _] : handler_name_to_function)
+    {
+        if (handler_name_lower == name)
+        {
+            found = true;
+            break;
+        }
+    }
+
+    if (!found)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown XRay handler: ({})", handler_name);
 
     int32_t function_id;
@@ -161,10 +173,9 @@ void XRayInstrumentationManager::dispatchHandler(int32_t func_id, XRayEntryType 
 
 void XRayInstrumentationManager::dispatchHandlerImpl(int32_t func_id, XRayEntryType entry_type)
 {
-    SharedLockGuard lock(shared_mutex);
-
     for (const auto & [handler_name, handler_function] : handler_name_to_function)
     {
+        SharedLockGuard lock(shared_mutex);
         auto ip = instrumented_points.find(InstrumentedPointKey{func_id, entry_type, handler_name});
 
         /// If the key couldn't be found for entry/exit type, let's try without any entry type for those handlers that don't need it.
@@ -183,7 +194,6 @@ void XRayInstrumentationManager::dispatchHandlerImpl(int32_t func_id, XRayEntryT
             {
                 LOG_ERROR(logger, "Exception in handler '{}': {}", info.handler_name, e.what());
             }
-            break;
         }
     }
 }
@@ -312,6 +322,7 @@ void XRayInstrumentationManager::sleep([[maybe_unused]] XRayEntryType entry_type
         {
             throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Sleep duration must be non-negative");
         }
+        LOG_TRACE(logger, "Sleeping for {}s", seconds);
         std::this_thread::sleep_for(std::chrono::seconds(seconds));
     }
     else if (std::holds_alternative<Float64>(param))
@@ -322,7 +333,7 @@ void XRayInstrumentationManager::sleep([[maybe_unused]] XRayEntryType entry_type
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sleep duration must be non-negative");
         }
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::duration<double>(seconds));
-        LOG_TRACE(logger, "Sleeping for {} ms", duration.count());
+        LOG_TRACE(logger, "Sleeping for {}ms", duration.count());
         std::this_thread::sleep_for(duration);
     }
     else
