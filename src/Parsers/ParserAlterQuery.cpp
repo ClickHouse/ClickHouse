@@ -40,8 +40,10 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
     ParserKeyword s_modify_order_by(Keyword::MODIFY_ORDER_BY);
     ParserKeyword s_modify_sample_by(Keyword::MODIFY_SAMPLE_BY);
+    ParserKeyword s_materialize(Keyword::MATERIALIZE);
     ParserKeyword s_modify_ttl(Keyword::MODIFY_TTL);
     ParserKeyword s_materialize_ttl(Keyword::MATERIALIZE_TTL);
+    ParserKeyword s_rewrite_parts(Keyword::REWRITE_PARTS);
     ParserKeyword s_modify_setting(Keyword::MODIFY_SETTING);
     ParserKeyword s_reset_setting(Keyword::RESET_SETTING);
     ParserKeyword s_modify_query(Keyword::MODIFY_QUERY);
@@ -202,8 +204,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 return false;
             break;
         }
-        default:
-            break;
         case ASTAlterQuery::AlterObjectType::TABLE:
         {
             if (s_add_column.ignore(pos, expected))
@@ -890,8 +890,16 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             }
             else if (s_modify_ttl.ignore(pos, expected))
             {
+                /// MODIFY TTL MATERIALIZE|REMOVE|MODIFY is illegal
+                /// because MATERIALIZE|REMOVE|MODIFY TTL is used instead.
+                if (s_materialize.checkWithoutMoving(pos, expected) ||
+                    s_remove.checkWithoutMoving(pos, expected) ||
+                    s_modify.checkWithoutMoving(pos, expected))
+                    return false;
+
                 if (!parser_ttl_list.parse(pos, command_ttl, expected))
                     return false;
+
                 command->type = ASTAlterCommand::MODIFY_TTL;
             }
             else if (s_remove_ttl.ignore(pos, expected))
@@ -901,6 +909,16 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             else if (s_materialize_ttl.ignore(pos, expected))
             {
                 command->type = ASTAlterCommand::MATERIALIZE_TTL;
+
+                if (s_in_partition.ignore(pos, expected))
+                {
+                    if (!parser_partition.parse(pos, command_partition, expected))
+                        return false;
+                }
+            }
+            else if (s_rewrite_parts.ignore(pos, expected))
+            {
+                command->type = ASTAlterCommand::REWRITE_PARTS;
 
                 if (s_in_partition.ignore(pos, expected))
                 {
@@ -975,7 +993,10 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             }
             else
                 return false;
+            break;
         }
+        default:
+            break;
     }
 
     if (with_round_bracket)

@@ -494,7 +494,7 @@ public:
 
     bool supportsPrewhere() const override { return true; }
 
-    ConditionSelectivityEstimatorPtr getConditionSelectivityEstimatorByPredicate(const StorageSnapshotPtr &, const ActionsDAG *, ContextPtr) const override;
+    ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const RangesInDataParts & parts, ContextPtr local_context) const override;
 
     bool supportsFinal() const override;
 
@@ -1431,7 +1431,7 @@ protected:
     /// Serialization info accumulated among all active parts.
     /// It changes only when set of parts is changed and is
     /// protected by @data_parts_mutex.
-    SerializationInfoByName serialization_hints;
+    SerializationInfoByName serialization_hints{{}};
 
     /// A cache for metadata snapshots for patch parts.
     /// The key is a partition id of patch part.

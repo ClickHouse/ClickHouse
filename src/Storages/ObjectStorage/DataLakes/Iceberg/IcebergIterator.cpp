@@ -1,4 +1,3 @@
-
 #include "config.h"
 #if USE_AVRO
 
@@ -45,13 +44,21 @@
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
 
+#include <Common/ProfileEvents.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/logger_useful.h>
+
+#include <Interpreters/IcebergMetadataLog.h>
+#include <base/wide_integer_to_string.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
+
 
 namespace ProfileEvents
 {
 extern const Event IcebergPartitionPrunedFiles;
 extern const Event IcebergMinMaxIndexPrunedFiles;
+extern const Event IcebergMetadataReadWaitTimeMicroseconds;
+extern const Event IcebergMetadataReturnedObjectInfos;
 };
 
 
@@ -158,6 +165,14 @@ std::optional<ManifestFileEntry> SingleThreadIcebergKeysIterator::next()
                     local_context);
             }
             auto pruning_status = current_pruner ? current_pruner->canBePruned(manifest_file_entry) : PruningReturnStatus::NOT_PRUNED;
+            insertRowToLogTable(
+                local_context,
+                "",
+                DB::IcebergMetadataLogLevel::ManifestFileEntry,
+                configuration.lock()->getRawPath().path,
+                current_manifest_file_content->getPathToManifestFile(),
+                manifest_file_entry.row_number,
+                pruning_status);
             switch (pruning_status)
             {
                 case PruningReturnStatus::NOT_PRUNED:
@@ -322,6 +337,7 @@ IcebergIterator::IcebergIterator(
 
 ObjectInfoPtr IcebergIterator::next(size_t)
 {
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergMetadataReadWaitTimeMicroseconds);
     Iceberg::ManifestFileEntry manifest_file_entry;
     if (blocking_queue.pop(manifest_file_entry))
     {
@@ -336,6 +352,7 @@ ObjectInfoPtr IcebergIterator::next(size_t)
         }
         object_info->schema_id_relevant_to_iterator = table_state_snapshot->schema_id;
 
+        ProfileEvents::increment(ProfileEvents::IcebergMetadataReturnedObjectInfos);
         return object_info;
     }
     {
