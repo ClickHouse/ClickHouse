@@ -281,6 +281,11 @@ void KeeperConfigurationAndSettings::dump(WriteBufferFromOwnString & buf) const
     write_int(coordination_settings[CoordinationSetting::log_slow_cpu_threshold_ms]);
     writeText("log_slow_connection_operation_threshold_ms=", buf);
     write_int(coordination_settings[CoordinationSetting::log_slow_connection_operation_threshold_ms]);
+
+    writeText("use_xid_64=", buf);
+    write_bool(coordination_settings[CoordinationSetting::use_xid_64]);
+    writeText("check_node_acl_on_remove=", buf);
+    write_bool(coordination_settings[CoordinationSetting::check_node_acl_on_remove]);
 }
 
 KeeperConfigurationAndSettingsPtr
