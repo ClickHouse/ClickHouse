@@ -921,9 +921,13 @@ class SharedCatalogPropertiesGroup(PropertiesGroup):
 
 class LogTablePropertiesGroup(PropertiesGroup):
 
-    def __init__(self, _log_table: str):
+    def __init__(
+        self, _log_table: str, _def_max_size_rows: int, _def_reserved_size_rows: int
+    ):
         super().__init__()
         self.log_table: str = _log_table
+        self.def_max_size_rows: int = _def_max_size_rows
+        self.def_reserved_size_rows: int = _def_reserved_size_rows
 
     def apply_properties(
         self,
@@ -962,12 +966,12 @@ class LogTablePropertiesGroup(PropertiesGroup):
         reserved_size_rows_xml = property_element.find("reserved_size_rows")
         if max_size_rows_xml is not None or reserved_size_rows_xml is not None:
             max_size_rows_value = (
-                1048576
+                self.def_max_size_rows
                 if (max_size_rows_xml is None or max_size_rows_xml.text is None)
                 else int(max_size_rows_xml.text)
             )
             reserved_size_rows_value = (
-                8192
+                self.def_reserved_size_rows
                 if (
                     reserved_size_rows_xml is None
                     or reserved_size_rows_xml.text is None
@@ -1148,28 +1152,28 @@ def modify_server_settings(
     # Add log tables
     if args.add_log_tables:
         all_log_entries = [
-            "asynchronous_insert_log",
-            "asynchronous_metric_log",
-            "backup_log",
-            "blob_storage_log",
-            "crash_log",
-            "dead_letter_queue",
-            "error_log",
-            "iceberg_metadata_log",
-            "metric_log",
-            "opentelemetry_span_log",
-            "part_log",
-            "processors_profile_log",
-            "query_log",
-            "query_metric_log",
-            "query_thread_log",
-            "query_views_log",
-            "session_log",
-            "s3queue_log",
-            "text_log",
-            "trace_log",
-            "zookeeper_connection_log",
-            "zookeeper_log",
+            ("asynchronous_insert_log", 1048576, 8192),
+            ("asynchronous_metric_log", 1048576, 8192),
+            ("backup_log", 1048576, 8192),
+            ("blob_storage_log", 1048576, 8192),
+            ("crash_log", 1024, 1024),
+            ("dead_letter_queue", 1048576, 8192),
+            ("error_log", 1048576, 8192),
+            ("iceberg_metadata_log", 1048576, 8192),
+            ("metric_log", 1048576, 8192),
+            ("opentelemetry_span_log", 1048576, 8192),
+            ("part_log", 1048576, 8192),
+            ("processors_profile_log", 1048576, 8192),
+            ("query_log", 1048576, 8192),
+            ("query_metric_log", 1048576, 8192),
+            ("query_thread_log", 1048576, 8192),
+            ("query_views_log", 1048576, 8192),
+            ("session_log", 1048576, 8192),
+            ("s3queue_log", 1048576, 8192),
+            ("text_log", 1048576, 8192),
+            ("trace_log", 1048576, 8192),
+            ("zookeeper_connection_log", 1048576, 8192),
+            ("zookeeper_log", 1048576, 8192),
         ]
         if random.randint(1, 100) <= 70:
             all_log_entries = random.sample(
@@ -1177,8 +1181,10 @@ def modify_server_settings(
             )
         random.shuffle(all_log_entries)
         for entry in all_log_entries:
-            if root.find(entry) is None:
-                selected_properties[entry] = LogTablePropertiesGroup(entry)
+            if root.find(entry[0]) is None:
+                selected_properties[entry[0]] = LogTablePropertiesGroup(
+                    entry[0], entry[1], entry[2]
+                )
 
     # Add shared_database_catalog settings, required for shared catalog to work
     if (
