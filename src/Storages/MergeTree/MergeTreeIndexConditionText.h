@@ -25,7 +25,7 @@ enum class TextIndexDirectReadMode : uint8_t
 /// Represents a single text-search function
 struct TextSearchQuery
 {
-    TextSearchQuery(String function_name_, TextSearchMode mode_, std::vector<String> tokens_);
+    TextSearchQuery(String function_name_, TextSearchMode search_mode_, TextIndexDirectReadMode read_mode_, std::vector<String> tokens_);
 
     String function_name;
     TextSearchMode search_mode;
@@ -37,7 +37,6 @@ struct TextSearchQuery
 
 using TextSearchQueryPtr = std::shared_ptr<TextSearchQuery>;
 
-
 /// Condition for text index.
 /// Unlike conditions for other indexes, it can be used after analysis
 /// of granules on reading from text index step (see MergeTreeReaderTextIndex)
@@ -46,13 +45,13 @@ class MergeTreeIndexConditionText final : public IMergeTreeIndexCondition, WithC
 public:
     MergeTreeIndexConditionText(
         const ActionsDAG::Node * predicate,
-        ContextPtr context,
+        ContextPtr context_,
         const Block & index_sample_block,
         TokenExtractorPtr token_extactor_);
 
     ~MergeTreeIndexConditionText() override = default;
-    static TextIndexDirectReadMode getDirectReadMode(const String & function_name);
     static bool isSupportedFunction(const String & function_name);
+    TextIndexDirectReadMode getDirectReadMode(const String & function_name) const;
 
     bool alwaysUnknownOrTrue() const override;
     bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const override;

@@ -7050,6 +7050,9 @@ If set to true, allow using the experimental text index.
     DECLARE(Bool, query_plan_direct_read_from_text_index, true, R"(
 Allow to perform full text search filtering using only the inverted index in query plan.
 )", 0) \
+    DECLARE(Bool, query_plan_text_index_add_hint, true, R"(
+Allow to add hint (additional predicate) for filtering from the inverted index in query plan.
+    )", 0) \
     DECLARE(Bool, allow_experimental_live_view, false, R"(
 Allows creation of a deprecated LIVE VIEW.
 

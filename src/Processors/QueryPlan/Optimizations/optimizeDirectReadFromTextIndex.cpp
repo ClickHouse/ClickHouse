@@ -1,5 +1,6 @@
 #include <Functions/IFunction.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/Context.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -13,7 +14,7 @@
 namespace DB::QueryPlanOptimizations
 {
 
-using IndexToConditionMap = std::unordered_map<String, MergeTreeIndexConditionText *>;
+using IndexConditionsMap = std::unordered_map<String, const MergeTreeIndexWithCondition *>;
 using NodesReplacementMap = std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *>;
 
 String getNameWithoutAliases(const ActionsDAG::Node * node)
@@ -123,7 +124,7 @@ String optimizationInfoToString(const IndexReadColumns & added_columns, const Na
 class FullTextMatchingFunctionDAGReplacer
 {
 public:
-    FullTextMatchingFunctionDAGReplacer(ActionsDAG & actions_dag_, const IndexToConditionMap & index_conditions_)
+    FullTextMatchingFunctionDAGReplacer(ActionsDAG & actions_dag_, const IndexConditionsMap & index_conditions_)
         : actions_dag(actions_dag_)
         , index_conditions(index_conditions_)
     {
@@ -195,12 +196,13 @@ private:
     };
 
     ActionsDAG & actions_dag;
-    std::unordered_map<String, MergeTreeIndexConditionText *> index_conditions;
+    IndexConditionsMap index_conditions;
 
-    bool isSupportedCondition(const ActionsDAG::Node & lhs_arg, const ActionsDAG::Node & rhs_arg, const MergeTreeIndexConditionText & condition) const
+    bool isSupportedCondition(const ActionsDAG::Node & lhs_arg, const ActionsDAG::Node & rhs_arg, const IMergeTreeIndexCondition & condition) const
     {
         using enum ActionsDAG::ActionType;
-        const auto & header = condition.getHeader();
+        const auto & text_index_condition = typeid_cast<const MergeTreeIndexConditionText &>(condition);
+        const auto & header = text_index_condition.getHeader();
 
         if ((lhs_arg.type == INPUT || lhs_arg.type == FUNCTION) && rhs_arg.type == COLUMN)
         {
@@ -227,13 +229,9 @@ private:
         if (function_node.children.size() != 2)
             return std::nullopt;
 
-        auto direct_read_mode = MergeTreeIndexConditionText::getDirectReadMode(function_node.function->getName());
-        if (direct_read_mode == TextIndexDirectReadMode::None)
-            return std::nullopt;
-
         auto selected_it = std::ranges::find_if(index_conditions, [&](const auto & index_with_condition)
         {
-            return isSupportedCondition(*function_node.children[0], *function_node.children[1], *index_with_condition.second);
+            return isSupportedCondition(*function_node.children[0], *function_node.children[1], *index_with_condition.second->condition);
         });
 
         if (selected_it == index_conditions.end())
@@ -241,7 +239,7 @@ private:
 
         size_t num_supported_conditions = std::ranges::count_if(index_conditions, [&](const auto & index_with_condition)
         {
-            return isSupportedCondition(*function_node.children[0], *function_node.children[1], *index_with_condition.second);
+            return isSupportedCondition(*function_node.children[0], *function_node.children[1], *index_with_condition.second->condition);
         });
 
         /// Do not optimize if there are multiple text indexes set for the column.
@@ -250,12 +248,17 @@ private:
             return std::nullopt;
 
         const auto & [index_name, condition] = *selected_it;
-        auto search_query = condition->createTextSearchQuery(function_node);
+        auto & text_index_condition = typeid_cast<MergeTreeIndexConditionText &>(*condition->condition);
 
+        auto direct_read_mode = text_index_condition.getDirectReadMode(function_node.function->getName());
+        if (direct_read_mode == TextIndexDirectReadMode::None)
+            return std::nullopt;
+
+        auto search_query = text_index_condition.createTextSearchQuery(function_node);
         if (!search_query)
             return std::nullopt;
 
-        auto virtual_column_name = condition->replaceToVirtualColumn(*search_query, index_name);
+        auto virtual_column_name = text_index_condition.replaceToVirtualColumn(*search_query, index_name);
         if (!virtual_column_name)
             return std::nullopt;
 
@@ -324,10 +327,10 @@ void optimizeDirectReadFromTextIndex(const Stack & stack, QueryPlan::Nodes & /*n
     for (const auto & part : parts_with_ranges)
         unique_parts.insert(part.data_part);
 
-    IndexToConditionMap index_conditions;
+    IndexConditionsMap index_conditions;
     for (const auto & index : indexes->skip_indexes.useful_indices)
     {
-        if (auto * text_index_condition = typeid_cast<MergeTreeIndexConditionText *>(index.condition.get()))
+        if (typeid_cast<MergeTreeIndexConditionText *>(index.condition.get()))
         {
             /// Index may be not materialized in some parts, e.g. after ALTER ADD INDEX query.
             /// TODO: support partial read from text index with fallback to the brute-force
@@ -338,7 +341,7 @@ void optimizeDirectReadFromTextIndex(const Stack & stack, QueryPlan::Nodes & /*n
             });
 
             if (has_index_in_all_parts)
-                index_conditions[index.index->index.name] = text_index_condition;
+                index_conditions[index.index->index.name] = &index;
         }
     }
 
