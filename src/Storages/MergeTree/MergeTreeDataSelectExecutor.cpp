@@ -917,10 +917,12 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                             log);
                     }
 
-                    context->getQueryContext()->addSkipIndexAccessInfo(
+                    for (const auto & index : indices_and_condition.indices) {
+                        context->getQueryContext()->addSkipIndexAccessInfo(
                         ranges.data_part->storage.getStorageID().getFullTableName(),
-                        indices_and_condition.indices[idx]->index.name
-                    );
+                        index->index.name
+                        );
+                    }
 
                     stat.total_granules.fetch_add(total_granules, std::memory_order_relaxed);
                     stat.granules_dropped.fetch_add(total_granules - ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
