@@ -76,6 +76,7 @@ namespace ServerSetting
 {
     extern const ServerSettingsBool database_replicated_allow_detach_permanently;
     extern const ServerSettingsUInt32 max_database_replicated_create_table_thread_pool_size;
+    extern const ServerSettingsBool database_replicated_drop_broken_tables;
 }
 
 namespace DatabaseReplicatedSetting
@@ -104,11 +105,13 @@ namespace ErrorCodes
     extern const int QUERY_IS_PROHIBITED;
     extern const int SUPPORT_IS_DISABLED;
     extern const int ASYNC_LOAD_CANCELED;
-}
-
+    extern const int KEEPER_EXCEPTION;
+    }
 namespace FailPoints
 {
     extern const char database_replicated_startup_pause[];
+    extern const char database_replicated_drop_before_removing_keeper_failed[];
+    extern const char database_replicated_drop_after_removing_keeper_failed[];
 }
 
 static constexpr const char * REPLICATED_DATABASE_MARK = "DatabaseReplicated";
@@ -1466,7 +1469,9 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     String to_db_name_replicated = getDatabaseName() + BROKEN_REPLICATED_TABLES_SUFFIX;
     if (total_tables * db_settings[DatabaseReplicatedSetting::max_broken_tables_ratio] < tables_to_detach.size())
         throw Exception(ErrorCodes::DATABASE_REPLICATION_FAILED, "Too many tables to recreate: {} of {}", tables_to_detach.size(), total_tables);
-    if (!tables_to_detach.empty())
+
+    bool drop_broken_tables = getContext()->getServerSettings()[ServerSetting::database_replicated_drop_broken_tables];
+    if (!drop_broken_tables && !tables_to_detach.empty())
     {
         LOG_WARNING(log, "Will recreate {} broken tables to recover replica", tables_to_detach.size());
         /// It's too dangerous to automatically drop tables, so we will move them to special database.
@@ -1522,7 +1527,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             ++moved_tables;
         };
 
-        if (!table->storesDataOnDisk())
+        if (drop_broken_tables || !table->storesDataOnDisk())
         {
             LOG_DEBUG(log, "Will DROP TABLE {}, because it does not store data on disk and can be safely dropped", backQuoteIfNeed(table_name));
             dropped_tables.push_back(tryGetTableUUID(table_name));
@@ -1920,6 +1925,11 @@ void DatabaseReplicated::drop(ContextPtr context_)
 
     DatabaseAtomic::drop(context_);
 
+    fiu_do_on(FailPoints::database_replicated_drop_before_removing_keeper_failed,
+    {
+        throw Exception(ErrorCodes::KEEPER_EXCEPTION, "Injecting fault when before removing keeper path from '{}'", replica_path);
+    });
+
     current_zookeeper->tryRemoveRecursive(replica_path);
     /// TODO it may leave garbage in ZooKeeper if the last node lost connection here
     if (current_zookeeper->tryRemove(zookeeper_path + "/replicas") == Coordination::Error::ZOK)
@@ -1927,6 +1937,11 @@ void DatabaseReplicated::drop(ContextPtr context_)
         /// It was the last replica, remove all metadata
         current_zookeeper->tryRemoveRecursive(zookeeper_path);
     }
+
+    fiu_do_on(FailPoints::database_replicated_drop_after_removing_keeper_failed,
+    {
+        throw Exception(ErrorCodes::KEEPER_EXCEPTION, "Injecting fault when after removing keeper path from '{}'", replica_path);
+    });
 }
 
 void DatabaseReplicated::renameDatabase(ContextPtr query_context, const String & new_name)

@@ -21,6 +21,8 @@
 #include <Common/threadPoolCallbackRunner.h>
 #include <Core/Settings.h>
 #include <IO/S3/BlobStorageLogWriter.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/copyData.h>
 
 #include <Disks/ObjectStorages/S3/diskSettings.h>
 
@@ -190,6 +192,22 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObject( /// NOLINT
         /* read_until_position */0,
         read_settings.remote_read_buffer_restrict_seek,
         object.bytes_size ? std::optional<size_t>(object.bytes_size) : std::nullopt);
+}
+
+SmallObjectDataWithMetadata S3ObjectStorage::readSmallObjectAndGetObjectMetadata( /// NOLINT
+    const StoredObject & object,
+    const ReadSettings & read_settings,
+    size_t max_size_bytes,
+    std::optional<size_t> read_hint) const
+{
+    auto buffer = readObject(object, read_settings, read_hint);
+    SmallObjectDataWithMetadata result;
+    WriteBufferFromString out(result.data);
+    copyDataMaxBytes(*buffer, out, max_size_bytes);
+    out.finalize();
+
+    result.metadata = dynamic_cast<ReadBufferFromS3 *>(buffer.get())->getObjectMetadataFromTheLastRequest();
+    return result;
 }
 
 std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLINT
@@ -506,7 +524,7 @@ void S3ObjectStorage::applyNewSettings(
     if (options.allow_client_change
         && (current_settings->auth_settings.hasUpdates(modified_settings->auth_settings) || for_disk_s3))
     {
-        auto new_client = getClient(uri, *modified_settings, context, for_disk_s3);
+        auto new_client = getClient(uri, *modified_settings, context, for_disk_s3, disk_name);
         client.set(std::move(new_client));
     }
     s3_settings.set(std::move(modified_settings));

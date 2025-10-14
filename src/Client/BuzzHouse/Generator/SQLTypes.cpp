@@ -179,9 +179,12 @@ String IntType::insertNumberEntry(RandomGenerator & rg, StatementGenerator & gen
 {
     if (size > 8 && rg.nextSmallNumber() < 8)
     {
-        String buf = (!is_unsigned && rg.nextBool()) ? "-" : "";
+        String buf = "CAST(";
 
-        buf += "number";
+        buf += (!is_unsigned && rg.nextBool()) ? "-" : "";
+        buf += "number AS ";
+        buf += typeName(false, false);
+        buf += ")";
         return buf;
     }
     return appendRandomRawValue(rg, gen);
@@ -221,9 +224,12 @@ String FloatType::insertNumberEntry(RandomGenerator & rg, StatementGenerator & g
 {
     if (rg.nextSmallNumber() < 8)
     {
-        String buf = rg.nextBool() ? "-" : "";
+        String buf = "CAST(";
 
-        buf += "number";
+        buf += rg.nextBool() ? "-" : "";
+        buf += "number AS ";
+        buf += typeName(false, false);
+        buf += ")";
         return buf;
     }
     return appendRandomRawValue(rg, gen);
@@ -256,7 +262,7 @@ SQLType * DateType::typeDeepCopy() const
 
 String DateType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &) const
 {
-    return "'" + (extended ? rg.nextDate32() : rg.nextDate()) + "'";
+    return extended ? rg.nextDate32("'", true) : rg.nextDate("'", true);
 }
 
 String DateType::insertNumberEntry(RandomGenerator & rg, StatementGenerator & gen, const uint32_t, const uint32_t) const
@@ -304,7 +310,7 @@ SQLType * TimeType::typeDeepCopy() const
 
 String TimeType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &) const
 {
-    return "'" + (extended ? rg.nextTime64(precision.has_value()) : rg.nextTime()) + "'";
+    return extended ? rg.nextTime64("'", true, precision.has_value()) : rg.nextTime("'", true);
 }
 
 String TimeType::insertNumberEntry(RandomGenerator & rg, StatementGenerator & gen, const uint32_t, const uint32_t) const
@@ -373,7 +379,7 @@ SQLType * DateTimeType::typeDeepCopy() const
 
 String DateTimeType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &) const
 {
-    return "'" + (extended ? rg.nextDateTime64(rg.nextSmallNumber() < 8) : rg.nextDateTime(precision.has_value())) + "'";
+    return extended ? rg.nextDateTime64("'", true, rg.nextSmallNumber() < 8) : rg.nextDateTime("'", true, precision.has_value());
 }
 
 String DateTimeType::insertNumberEntry(RandomGenerator & rg, StatementGenerator & gen, const uint32_t, const uint32_t) const
@@ -456,9 +462,12 @@ String DecimalType::insertNumberEntry(RandomGenerator & rg, StatementGenerator &
 {
     if (rg.nextSmallNumber() < 8)
     {
-        String buf = rg.nextBool() ? "-" : "";
+        String buf = "CAST(";
 
-        buf += "number";
+        buf += rg.nextBool() ? "-" : "";
+        buf += "number AS ";
+        buf += typeName(false, false);
+        buf += ")";
         return buf;
     }
     return appendRandomRawValue(rg, gen);
@@ -1676,8 +1685,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t al
     const uint32_t j_type = 20 * static_cast<uint32_t>(!low_card && (allowed_types & allow_JSON) != 0);
     const uint32_t dynamic_type = 30 * static_cast<uint32_t>(!low_card && (allowed_types & allow_dynamic) != 0);
     const uint32_t time_type = 15 * static_cast<uint32_t>((allowed_types & allow_time) != 0);
-    const uint32_t qbit_type
-        = 15 * static_cast<uint32_t>(!low_card && (allowed_types & allow_qbit) != 0 && allow_floats && supports_cloud_features);
+    const uint32_t qbit_type = 15 * static_cast<uint32_t>(!low_card && (allowed_types & allow_qbit) != 0 && allow_floats);
     const uint32_t prob_space = int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + bool_type
         + enum_type + uuid_type + ipv4_type + ipv6_type + j_type + dynamic_type + time_type + qbit_type;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
@@ -2385,27 +2393,27 @@ String strBuildJSONElement(RandomGenerator & rg)
             break;
         case 14:
             /// Date
-            ret = '"' + rg.nextDate() + '"';
+            ret = rg.nextDate("\"", false);
             break;
         case 15:
             /// Date32
-            ret = '"' + rg.nextDate32() + '"';
+            ret = rg.nextDate32("\"", false);
             break;
         case 16:
             /// Time
-            ret = '"' + rg.nextTime() + '"';
+            ret = rg.nextTime("\"", false);
             break;
         case 17:
             /// Time64
-            ret = '"' + rg.nextTime64(rg.nextSmallNumber() < 8) + '"';
+            ret = rg.nextTime64("\"", false, rg.nextSmallNumber() < 8);
             break;
         case 18:
             /// Datetime
-            ret = '"' + rg.nextDateTime(rg.nextSmallNumber() < 8) + '"';
+            ret = rg.nextDateTime("\"", false, rg.nextSmallNumber() < 8);
             break;
         case 19:
             /// Datetime64
-            ret = '"' + rg.nextDateTime64(rg.nextSmallNumber() < 8) + '"';
+            ret = rg.nextDateTime64("\"", false, rg.nextSmallNumber() < 8);
             break;
         case 20:
             /// UUID
