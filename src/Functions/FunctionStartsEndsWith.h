@@ -1,7 +1,8 @@
 #pragma once
-#include <base/map.h>
 
+#include <Common/StringSearcher.h>
 #include <Common/TargetSpecific.h>
+#include <Common/UTF8Helpers.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/GatherUtils/GatherUtils.h>
 #include <Functions/GatherUtils/Sources.h>
@@ -12,6 +13,10 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <Columns/ColumnString.h>
 #include <Interpreters/castColumn.h>
+#include <Poco/String.h>
+#include <Poco/Unicode.h>
+
+#include <ranges>
 
 namespace DB
 {
@@ -29,23 +34,51 @@ struct NameStartsWith
 {
     static constexpr auto name = "startsWith";
     static constexpr auto is_utf8 = false;
+    static constexpr auto is_case_insensitive = false;
+};
+struct NameStartsWithCaseInsensitive
+{
+    static constexpr auto name = "startsWithCaseInsensitive";
+    static constexpr auto is_utf8 = false;
+    static constexpr auto is_case_insensitive = true;
 };
 struct NameEndsWith
 {
     static constexpr auto name = "endsWith";
     static constexpr auto is_utf8 = false;
+    static constexpr auto is_case_insensitive = false;
+};
+struct NameEndsWithCaseInsensitive
+{
+    static constexpr auto name = "endsWithCaseInsensitive";
+    static constexpr auto is_utf8 = false;
+    static constexpr auto is_case_insensitive = true;
 };
 
 struct NameStartsWithUTF8
 {
     static constexpr auto name = "startsWithUTF8";
     static constexpr auto is_utf8 = true;
+    static constexpr auto is_case_insensitive = false;
+};
+struct NameStartsWithUTF8CaseInsensitive
+{
+    static constexpr auto name = "startsWithUTF8CaseInsensitive";
+    static constexpr auto is_utf8 = true;
+    static constexpr auto is_case_insensitive = true;
 };
 
 struct NameEndsWithUTF8
 {
     static constexpr auto name = "endsWithUTF8";
     static constexpr auto is_utf8 = true;
+    static constexpr auto is_case_insensitive = false;
+};
+struct NameEndsWithUTF8CaseInsensitive
+{
+    static constexpr auto name = "endsWithUTF8CaseInsensitive";
+    static constexpr auto is_utf8 = true;
+    static constexpr auto is_case_insensitive = true;
 };
 
 DECLARE_MULTITARGET_CODE(
@@ -56,6 +89,9 @@ class FunctionStartsEndsWith : public IFunction
 public:
     static constexpr auto name = Name::name;
     static constexpr auto is_utf8 = Name::is_utf8;
+    static constexpr bool is_case_insensitive = Name::is_case_insensitive;
+    static constexpr bool is_case_insensitive_prefix = std::is_same_v<Name, NameStartsWithCaseInsensitive> || std::is_same_v<Name, NameStartsWithUTF8CaseInsensitive>;
+    static constexpr bool is_case_insensitive_sufffix = std::is_same_v<Name, NameEndsWithCaseInsensitive> || std::is_same_v<Name, NameEndsWithUTF8CaseInsensitive>;
 
     String getName() const override
     {
@@ -112,7 +148,8 @@ public:
 private:
     ColumnPtr executeImplArray(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
     {
-        DataTypePtr common_type = getLeastSupertype(collections::map(arguments, [](auto & arg) { return arg.type; }));
+        DataTypePtr common_type
+            = getLeastSupertype(DataTypes{std::from_range_t{}, arguments | std::views::transform([](auto & arg) { return arg.type; })});
 
         Columns preprocessed_columns(2);
         for (size_t i = 0; i < 2; ++i)
@@ -218,6 +255,16 @@ private:
     template <typename HaystackSource, typename NeedleSource>
     static void execute(HaystackSource haystack_source, NeedleSource needle_source, PaddedPODArray<UInt8> & res_data)
     {
+        if constexpr (is_case_insensitive)
+            executeCaseInsensitive(haystack_source, needle_source, res_data);
+        else
+            executeCaseSensitive(haystack_source, needle_source, res_data);
+    }
+
+    template <typename HaystackSource, typename NeedleSource>
+    requires (!is_case_insensitive)
+    static void executeCaseSensitive(HaystackSource haystack_source, NeedleSource needle_source, PaddedPODArray<UInt8> & res_data)
+    {
         size_t row_num = 0;
 
         while (!haystack_source.isEnd())
@@ -247,6 +294,81 @@ private:
                         auto slice = haystack_source.getSliceFromRight(length);
                         res_data[row_num] = StringRef(slice.data, slice.size) == StringRef(needle.data, needle.size);
                     }
+                }
+            }
+
+            haystack_source.next();
+            needle_source.next();
+            ++row_num;
+        }
+    }
+
+    using CaseInsensitiveComparator = std::variant<
+        std::unique_ptr<ASCIICaseInsensitiveStringSearcher>,
+        std::unique_ptr<UTF8CaseInsensitiveStringSearcher>>;
+
+    template <typename NeedleSource>
+    static CaseInsensitiveComparator constCaseInsensitiveComparatorOf(NeedleSource needle_source)
+    {
+        if constexpr (std::is_same_v<NeedleSource, ConstSource<StringSource>> || std::is_same_v<NeedleSource, ConstSource<FixedStringSource>>)
+        {
+            auto needle = needle_source.getWhole();
+            return std::make_unique<ASCIICaseInsensitiveStringSearcher>(needle.data, needle.size);
+        }
+        else if constexpr (std::is_same_v<NeedleSource, ConstSource<UTF8StringSource>>)
+        {
+            auto needle = needle_source.getWhole();
+            return std::make_unique<UTF8CaseInsensitiveStringSearcher>(needle.data, needle.size);
+        }
+        return std::unique_ptr<UTF8CaseInsensitiveStringSearcher>{};
+    }
+
+    template <typename HaystackSource, typename NeedleSource>
+    requires is_case_insensitive
+    static void executeCaseInsensitive(HaystackSource haystack_source, NeedleSource needle_source, PaddedPODArray<UInt8> & res_data)
+    {
+        /// Pull constant needle processing out of the loop over haystack comparisons
+        const CaseInsensitiveComparator const_comparator = constCaseInsensitiveComparatorOf<NeedleSource>(needle_source);
+
+        size_t row_num = 0;
+
+        while (!haystack_source.isEnd())
+        {
+            auto haystack = haystack_source.getWhole();
+            auto needle = needle_source.getWhole();
+
+            if (needle.size > haystack.size)
+                res_data[row_num] = false;
+            else
+            {
+                /// Constant needle comparison
+                if constexpr (std::is_same_v<NeedleSource, ConstSource<StringSource>>
+                    || std::is_same_v<NeedleSource, ConstSource<FixedStringSource>>
+                    || std::is_same_v<NeedleSource, ConstSource<UTF8StringSource>>)
+                {
+                    if constexpr (std::is_same_v<Name, NameStartsWithCaseInsensitive>)
+                        res_data[row_num] = std::get<std::unique_ptr<ASCIICaseInsensitiveStringSearcher>>(const_comparator)->compare(haystack.data, haystack.data + haystack.size, haystack.data);
+                    else if constexpr (std::is_same_v<Name, NameStartsWithUTF8CaseInsensitive>)
+                        res_data[row_num] = std::get<std::unique_ptr<UTF8CaseInsensitiveStringSearcher>>(const_comparator)->compare(haystack.data, haystack.data + haystack.size, haystack.data);
+                    else if constexpr (std::is_same_v<Name, NameEndsWithCaseInsensitive>)
+                        res_data[row_num] = std::get<std::unique_ptr<ASCIICaseInsensitiveStringSearcher>>(const_comparator)->compare(haystack.data + haystack.size - needle.size, haystack.data + haystack.size, haystack.data + haystack.size - needle.size);
+                    else if constexpr (std::is_same_v<Name, NameEndsWithUTF8CaseInsensitive>)
+                        res_data[row_num] = std::get<std::unique_ptr<UTF8CaseInsensitiveStringSearcher>>(const_comparator)->compare(haystack.data + haystack.size - needle.size, haystack.data + haystack.size, haystack.data + haystack.size - needle.size);
+                    else
+                        chassert(false, "Unexpected function");
+                }
+                else /// Non-constant needle comparison
+                {
+                    if constexpr (std::is_same_v<Name, NameStartsWithCaseInsensitive>)
+                        res_data[row_num] = ASCIICaseInsensitiveStringSearcher(needle.data, needle.size).compare(haystack.data, haystack.data + haystack.size, haystack.data);
+                    else if constexpr (std::is_same_v<Name, NameStartsWithUTF8CaseInsensitive>)
+                        res_data[row_num] = UTF8CaseInsensitiveStringSearcher(needle.data, needle.size).compare(haystack.data, haystack.data + haystack.size, haystack.data);
+                    else if constexpr (std::is_same_v<Name, NameEndsWithCaseInsensitive>)
+                        res_data[row_num] = ASCIICaseInsensitiveStringSearcher(needle.data, needle.size).compare(haystack.data + haystack.size - needle.size, haystack.data + haystack.size, haystack.data + haystack.size - needle.size);
+                    else if constexpr (std::is_same_v<Name, NameEndsWithUTF8CaseInsensitive>)
+                        res_data[row_num] = UTF8CaseInsensitiveStringSearcher(needle.data, needle.size).compare(haystack.data + haystack.size - needle.size, haystack.data + haystack.size, haystack.data + haystack.size - needle.size);
+                    else
+                        chassert(false, "Unexpected function");
                 }
             }
 

@@ -181,7 +181,8 @@ const ColumnIdentifier * PlannerContext::getColumnNodeIdentifierOrNull(const Que
 
 PlannerContext::SetKey PlannerContext::createSetKey(const DataTypePtr & left_operand_type, const QueryTreeNodePtr & set_source_node)
 {
-    const auto set_source_hash = set_source_node->getTreeHash({ .compare_aliases = false });
+    /// Here and in other places, ignore the CTE name to make the distributed header compatible (we substitute CTE with a subquery).
+    const auto set_source_hash = set_source_node->getTreeHash({ .compare_aliases = false, .ignore_cte = true });
     if (set_source_node->as<ConstantNode>())
     {
         /* We need to hash the type of the left operand because we can build different sets for different types.
@@ -190,7 +191,7 @@ PlannerContext::SetKey PlannerContext::createSetKey(const DataTypePtr & left_ope
          * For example in expression `(a :: Decimal(9, 1) IN (1.0, 2.5)) AND (b :: Decimal(9, 0) IN (1, 2.5))`
          * we need to build two different sets:
          *   - `{1, 2.5} :: Set(Decimal(9, 1))` for a
-         *   - `{1} :: Set(Decimal(9, 0))` for b (2.5 omitted because bercause it's not representable as Decimal(9, 0)).
+         *   - `{1} :: Set(Decimal(9, 0))` for b (2.5 omitted because it's not representable as Decimal(9, 0)).
          */
         return "__set_" + left_operand_type->getName() + '_' + toString(set_source_hash);
     }

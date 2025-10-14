@@ -4,6 +4,7 @@ description: 'System database providing an almost standardized DBMS-agnostic vie
 keywords: ['system database', 'information_schema']
 slug: /operations/system-tables/information_schema
 title: 'INFORMATION_SCHEMA'
+doc_type: 'reference'
 ---
 
 `INFORMATION_SCHEMA` (or: `information_schema`) is a system database which provides a (somewhat) standardized, [DBMS-agnostic view](https://en.wikipedia.org/wiki/Information_schema) on metadata of database objects. The views in `INFORMATION_SCHEMA` are generally inferior to normal system tables but tools can use them to obtain basic information in a cross-DBMS manner. The structure and content of views in `INFORMATION_SCHEMA` is supposed to evolves in a backwards-compatible way, i.e. only new functionality is added but existing functionality is not changed or removed. In terms of internal implementation, views in `INFORMATION_SCHEMA` usually map to to normal system tables like [system.columns](../../operations/system-tables/columns.md), [system.databases](../../operations/system-tables/databases.md) and [system.tables](../../operations/system-tables/tables.md).
@@ -171,7 +172,7 @@ SELECT catalog_name,
        default_character_set_name,
        sql_path
 FROM information_schema.schemata
-WHERE schema_name ilike 'information_schema' 
+WHERE schema_name ILIKE 'information_schema' 
 LIMIT 1 
 FORMAT Vertical;
 ```
@@ -200,11 +201,11 @@ Columns:
 - `table_schema` ([String](../../sql-reference/data-types/string.md)) — The name of the database in which the table is located.
 - `table_name` ([String](../../sql-reference/data-types/string.md)) — Table name.
 - `table_type` ([String](../../sql-reference/data-types/string.md)) — Table type. Possible values:
-    - `BASE TABLE`
-    - `VIEW`
-    - `FOREIGN TABLE`
-    - `LOCAL TEMPORARY`
-    - `SYSTEM VIEW`
+  - `BASE TABLE`
+  - `VIEW`
+  - `FOREIGN TABLE`
+  - `LOCAL TEMPORARY`
+  - `SYSTEM VIEW`
 - `table_rows` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — The total number of rows. NULL if it could not be determined.
 - `data_length` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — The size of the data on-disk. NULL if it could not be determined.
 - `index_length` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — The total size of the primary key, secondary indexes, and all marks.
@@ -255,8 +256,8 @@ Columns:
 - `check_option` ([String](../../sql-reference/data-types/string.md)) — `NONE`, no checking.
 - `is_updatable` ([Enum8](../../sql-reference/data-types/enum.md)) — `NO`, the view is not updated.
 - `is_insertable_into` ([Enum8](../../sql-reference/data-types/enum.md)) — Shows whether the created view is [materialized](/sql-reference/statements/create/view#materialized-view). Possible values:
-    - `NO` — The created view is not materialized.
-    - `YES` — The created view is materialized.
+  - `NO` — The created view is not materialized.
+  - `YES` — The created view is materialized.
 - `is_trigger_updatable` ([Enum8](../../sql-reference/data-types/enum.md)) — `NO`, the trigger is not updated.
 - `is_trigger_deletable` ([Enum8](../../sql-reference/data-types/enum.md)) — `NO`, the trigger is not deleted.
 - `is_trigger_insertable_into` ([Enum8](../../sql-reference/data-types/enum.md)) — `NO`, no data is inserted into the trigger.

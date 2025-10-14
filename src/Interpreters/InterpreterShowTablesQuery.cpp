@@ -224,7 +224,7 @@ BlockIO InterpreterShowTablesQuery::execute()
             res_columns[0]->insert(name);
         BlockIO res;
         size_t num_rows = res_columns[0]->size();
-        auto source = std::make_shared<SourceFromSingleChunk>(sample_block, Chunk(std::move(res_columns), num_rows));
+        auto source = std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(sample_block)), Chunk(std::move(res_columns), num_rows));
         res.pipeline = QueryPipeline(std::move(source));
 
         return res;

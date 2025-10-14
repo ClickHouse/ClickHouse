@@ -1,9 +1,11 @@
-#include "PostgreSQLHandler.h"
+#include <memory>
+#include <Server/PostgreSQLHandler.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/WriteBuffer.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/parseQuery.h>
@@ -11,11 +13,25 @@
 #include <Server/TCPServer.h>
 #include <base/scope_guard.h>
 #include <pcg_random.hpp>
+#include <Common/Exception.h>
 #include <Common/CurrentThread.h>
 #include <Common/config_version.h>
 #include <Common/randomSeed.h>
 #include <Common/setThreadName.h>
+#include <Core/PostgreSQLProtocol.h>
+#include <Parsers/ASTCopyQuery.h>
+#include <Parsers/ParserCopyQuery.h>
 #include <Core/Settings.h>
+
+#include <Interpreters/InterpreterInsertQuery.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ParserQuery.h>
+#include <fmt/format.h>
+#include <Formats/FormatFactory.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Executors/PushingPipelineExecutor.h>
+#include <Processors/Formats/IInputFormat.h>
+#include <Processors/Formats/IOutputFormat.h>
 
 #if USE_SSL
 #    include <Server/CertificateReloader.h>
@@ -34,11 +50,14 @@ namespace Setting
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
     extern const SettingsBool implicit_select;
+    extern const SettingsNonZeroUInt64 max_insert_block_size;
 }
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int SYNTAX_ERROR;
+    extern const int OPENSSL_ERROR;
 }
 
 PostgreSQLHandler::PostgreSQLHandler(
@@ -49,6 +68,7 @@ PostgreSQLHandler::PostgreSQLHandler(
     IServer & server_,
     TCPServer & tcp_server_,
     bool ssl_enabled_,
+    bool secure_required_,
     Int32 connection_id_,
     std::vector<std::shared_ptr<PostgreSQLProtocol::PGAuthentication::AuthenticationMethod>> & auth_methods_,
     const ProfileEvents::Event & read_event_,
@@ -61,6 +81,7 @@ PostgreSQLHandler::PostgreSQLHandler(
     , server(server_)
     , tcp_server(tcp_server_)
     , ssl_enabled(ssl_enabled_)
+    , secure_required(secure_required_)
     , connection_id(connection_id_)
     , read_event(read_event_)
     , write_event(write_event_)
@@ -271,6 +292,7 @@ bool PostgreSQLHandler::startup()
 
 void PostgreSQLHandler::establishSecureConnection(Int32 & payload_size, Int32 & info)
 {
+    bool was_secure_connection = false;
     bool was_encryption_req = true;
     readBinaryBigEndian(payload_size, *in);
     readBinaryBigEndian(info, *in);
@@ -280,7 +302,10 @@ void PostgreSQLHandler::establishSecureConnection(Int32 & payload_size, Int32 & 
         case PostgreSQLProtocol::Messaging::FrontMessageType::SSL_REQUEST:
             LOG_DEBUG(log, "Client requested SSL");
             if (ssl_enabled)
+            {
+                was_secure_connection = true;
                 makeSecureConnectionSSL();
+            }
             else
                 message_transport->send('N', true);
             break;
@@ -295,6 +320,15 @@ void PostgreSQLHandler::establishSecureConnection(Int32 & payload_size, Int32 & 
     {
         readBinaryBigEndian(payload_size, *in);
         readBinaryBigEndian(info, *in);
+    }
+
+    if (secure_required && !was_secure_connection)
+    {
+        message_transport->send(
+            PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
+                PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "XX000", "SSL connection required."),
+            true);
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "SSL connection required.");
     }
 }
 
@@ -346,11 +380,11 @@ void PostgreSQLHandler::cancelRequest()
         message_transport->receiveWithPayloadSize<PostgreSQLProtocol::Messaging::CancelRequest>(8);
 
     String query = fmt::format("KILL QUERY WHERE query_id = 'postgres:{:d}:{:d}'", msg->process_id, msg->secret_key);
-    ReadBufferFromString replacement(query);
+    auto replacement = std::make_unique<ReadBufferFromOwnString>(std::move(query));
 
     auto query_context = session->makeQueryContext();
     query_context->setCurrentQueryId("");
-    executeQuery(replacement, *out, true, query_context, {});
+    executeQuery(std::move(replacement), *out, true, query_context, {});
 }
 
 inline std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> PostgreSQLHandler::receiveStartupMessage(int payload_size)
@@ -371,6 +405,150 @@ inline std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> PostgreSQL
 
     LOG_DEBUG(log, "Successfully received Startup message");
     return message;
+}
+
+bool PostgreSQLHandler::processCopyQuery(const String & query)
+{
+    ParserCopyQuery parser_copy;
+    ASTPtr copy_query_parsed;
+
+    try
+    {
+        copy_query_parsed = parseQuery(parser_copy, query, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    }
+    catch (const Exception &)
+    {
+        copy_query_parsed.reset();
+    }
+
+
+    /* The Postgres protocol for a copy query is different from simple queries such as SELECT.
+     * In the case of a COPY FROM request, the server sends CopyInResponse - a sign of readiness to receive data from the client.
+     * The client then sends CopyInData until all data has been sent.
+     * After this, the server sends a CommandComplete response.
+     * For more detailes see https://www.dolthub.com/blog/2024-09-17-tabular-data-imports/
+     */
+    if (copy_query_parsed && copy_query_parsed->as<ASTCopyQuery>()->type == ASTCopyQuery::QueryType::COPY_FROM)
+    {
+        auto * copy_query = copy_query_parsed->as<ASTCopyQuery>();
+        auto query_context = session->makeQueryContext();
+        query_context->setCurrentQueryId(fmt::format("postgres:{:d}:{:d}", connection_id, secret_key));
+        CurrentThread::QueryScope query_scope{query_context};
+
+        String columns_to_insert;
+        if (!copy_query->column_names.empty())
+        {
+            for (const auto & column_name : copy_query->column_names)
+                columns_to_insert += fmt::format("{}, ", column_name);
+            columns_to_insert.pop_back();
+            columns_to_insert.pop_back();
+            columns_to_insert = "(" + columns_to_insert + ")";
+        }
+
+        auto [ast, io] = executeQuery(fmt::format("INSERT INTO `{}` {} FROM INFILE 'psql_copy'", copy_query->table_name, columns_to_insert), query_context, {}, QueryProcessingStage::Enum::Complete);
+        chassert(io.pipeline.pushing());
+        auto executor = std::make_unique<PushingPipelineExecutor>(io.pipeline);
+
+        auto max_insert_block_size = query_context->getSettingsRef()[Setting::max_insert_block_size];
+        String format;
+        switch (copy_query->format)
+        {
+        case ASTCopyQuery::Formats::TSV:
+            format = "TSV";
+            break;
+        case ASTCopyQuery::Formats::CSV:
+            format = "CSV";
+            break;
+        case ASTCopyQuery::Formats::Binary:
+            format = "RowBinary";
+            break;
+        }
+
+        message_transport->send(PostgreSQLProtocol::Messaging::CopyInResponse(), true);
+        executor->start();
+        while (true)
+        {
+            message_transport->flush();
+            PostgreSQLProtocol::Messaging::FrontMessageType message_type = message_transport->receiveMessageType();
+            if (message_type == PostgreSQLProtocol::Messaging::FrontMessageType::COPY_DATA)
+            {
+                std::unique_ptr<PostgreSQLProtocol::Messaging::CopyInData> data_query =
+                    message_transport->receive<PostgreSQLProtocol::Messaging::CopyInData>();
+
+                ReadBufferFromString buf(data_query->query);
+                auto format_ptr = FormatFactory::instance().getInput(format, buf, io.pipeline.getHeader(), query_context, max_insert_block_size);
+                while (true)
+                {
+                    auto chunk = format_ptr->generate();
+                    if (chunk.empty())
+                        break;
+
+                    executor->push(std::move(chunk));
+                }
+            }
+            else if (message_type == PostgreSQLProtocol::Messaging::FrontMessageType::COPY_COMPLETION)
+            {
+                message_transport->receive<PostgreSQLProtocol::Messaging::CopyDone>();
+                executor->finish();
+                break;
+            }
+            else
+            {
+                executor->cancel();
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Received incorrect message type - expected {} or {}, got {}", PostgreSQLProtocol::Messaging::FrontMessageType::COPY_DATA, PostgreSQLProtocol::Messaging::FrontMessageType::COPY_COMPLETION, message_type);
+            }
+        }
+
+        auto command = PostgreSQLProtocol::Messaging::CommandComplete::Command::COPY;
+        message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, 0), true);
+        return true;
+    }
+
+    /* In the case of a COPY TO request, the server calculates the number of columns and then sends it to the client in CopyOutResponse.
+     * After this, the server sends the data in a CopyOutData message, and when the data runs out, it sends a CopyCompletionResponse.
+     * For more detailes see https://www.dolthub.com/blog/2024-09-17-tabular-data-imports/
+     */
+    if (copy_query_parsed && copy_query_parsed->as<ASTCopyQuery>()->type == ASTCopyQuery::QueryType::COPY_TO)
+    {
+        auto * copy_query = copy_query_parsed->as<ASTCopyQuery>();
+        auto query_context = session->makeQueryContext();
+        query_context->setCurrentQueryId(fmt::format("postgres:{:d}:{:d}", connection_id, secret_key));
+
+        CurrentThread::QueryScope query_scope{query_context};
+
+        String columns_to_select = "*";
+        if (!copy_query->column_names.empty())
+        {
+            columns_to_select.clear();
+            for (const auto & column_name : copy_query->column_names)
+                columns_to_select += fmt::format("{}, ", column_name);
+            columns_to_select.pop_back();
+            columns_to_select.pop_back();
+        }
+
+        auto select_query = fmt::format("SELECT {} FROM {};", columns_to_select, copy_query->table_name);
+        auto [ast, io] = executeQuery(select_query, query_context, {}, QueryProcessingStage::Enum::Complete);
+        chassert(io.pipeline.pulling());
+        message_transport->send(PostgreSQLProtocol::Messaging::CopyOutResponse(static_cast<Int32>(io.pipeline.getHeader().columns())));
+        std::vector<char> result_buf;
+        WriteBufferFromVectorImpl<decltype(result_buf)> output_buffer(result_buf);
+        auto format_ptr = FormatFactory::instance().getOutputFormat(toString(copy_query->format), output_buffer, io.pipeline.getHeader(), query_context);
+        auto executor = std::make_unique<PullingPipelineExecutor>(io.pipeline);
+        Block block;
+        while (executor->pull(block))
+        {
+            output_buffer.restart(DBMS_DEFAULT_BUFFER_SIZE); // This will recreate moved vector
+            format_ptr->write(materializeBlock(block));
+            format_ptr->flush();
+            output_buffer.finalize();
+            message_transport->send(PostgreSQLProtocol::Messaging::CopyOutData(result_buf));
+            result_buf.clear();
+        }
+        message_transport->send(PostgreSQLProtocol::Messaging::CopyCompletionResponse(), true);
+        return true;
+    }
+
+    return false;
 }
 
 void PostgreSQLHandler::processQuery()
@@ -405,6 +583,9 @@ void PostgreSQLHandler::processQuery()
         if (processDeallocate(query->query))
             return;
 
+        if (processCopyQuery(query->query))
+            return;
+
         pcg64_fast gen{randomSeed()};
         std::uniform_int_distribution<Int32> dis(0, INT32_MAX);
 
@@ -432,8 +613,8 @@ void PostgreSQLHandler::processQuery()
             query_context->setCurrentQueryId(fmt::format("postgres:{:d}:{:d}", connection_id, secret_key));
 
             CurrentThread::QueryScope query_scope{query_context};
-            ReadBufferFromString read_buf(spl_query);
-            executeQuery(read_buf, *out, false, query_context, {});
+            auto read_buf = std::make_unique<ReadBufferFromString>(spl_query);
+            executeQuery(std::move(read_buf), *out, false, query_context, {});
 
             PostgreSQLProtocol::Messaging::CommandComplete::Command command =
                 PostgreSQLProtocol::Messaging::CommandComplete::classifyQuery(spl_query);
@@ -487,12 +668,13 @@ bool PostgreSQLHandler::processExecute(const String & query, ContextMutablePtr q
 
     auto result_query = prepared_statements_manager.getStatement(prepare->as<ASTExecute>());
 
-    CurrentThread::QueryScope query_scope{query_context};
-    ReadBufferFromString read_buf(result_query);
-    executeQuery(read_buf, *out, false, query_context, {});
-
     PostgreSQLProtocol::Messaging::CommandComplete::Command command =
         PostgreSQLProtocol::Messaging::CommandComplete::classifyQuery(result_query);
+
+    CurrentThread::QueryScope query_scope{query_context};
+    auto read_buf = std::make_unique<ReadBufferFromOwnString>(std::move(result_query));
+    executeQuery(std::move(read_buf), *out, false, query_context, {});
+
     message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, 0), true);
 
     return true;
@@ -593,10 +775,10 @@ void PostgreSQLHandler::processExecuteQuery()
         auto query_context = session->makeQueryContext();
         query_context->setCurrentQueryId(fmt::format("postgres:{:d}:{:d}", connection_id, secret_key));
 
-        auto sql_query = prepared_statements_manager.getStatmentFromBind();
         CurrentThread::QueryScope query_scope{query_context};
-        ReadBufferFromString read_buf(sql_query);
-        executeQuery(read_buf, *out, false, query_context, {});
+        auto sql_query = prepared_statements_manager.getStatmentFromBind();
+        auto read_buf = std::make_unique<ReadBufferFromString>(std::move(sql_query));
+        executeQuery(std::move(read_buf), *out, false, query_context, {});
 
         PostgreSQLProtocol::Messaging::CommandComplete::Command command = PostgreSQLProtocol::Messaging::CommandComplete::Command::SELECT;
         message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, 0), true);
@@ -657,6 +839,19 @@ bool PostgreSQLHandler::isEmptyQuery(const String & query)
 
     Poco::RegularExpression regex(R"(\A\s*\z)");
     return regex.match(query);
+}
+
+Int32 PostgreSQLHandler::parseNumberColumns(const std::vector<char> & output)
+{
+    Int32 result = 0;
+    for (const auto elem : output)
+    {
+        if (elem == '\n')
+            return result;
+        if (elem == '\t')
+            result++;
+    }
+    return result;
 }
 
 }

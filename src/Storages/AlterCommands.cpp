@@ -15,11 +15,11 @@
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/RenameColumnVisitor.h>
-#include <Interpreters/GinFilter.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
+#include <Interpreters/Context.h>
 #include <Storages/StorageView.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
@@ -495,6 +495,11 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
 void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context) const
 {
+    /// Helper function for column existence check with IF EXISTS
+    auto should_skip_column_operation = [&]() -> bool {
+        return if_exists && !metadata.columns.has(column_name);
+    };
+
     if (type == ADD_COLUMN)
     {
         ColumnDescription column(column_name, data_type);
@@ -558,10 +563,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
 
             if (!minmax_index_exists)
             {
-                auto index_type = makeASTFunction("minmax");
-                auto index_ast = std::make_shared<ASTIndexDeclaration>(std::make_shared<ASTIdentifier>(column.name), index_type, IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column.name);
-                index_ast->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
-                auto new_index = IndexDescription::getIndexFromAST(index_ast, metadata.columns, context);
+                auto new_index = createImplicitMinMaxIndexDescription(column.name, metadata.columns, context);
                 metadata.secondary_indices.push_back(new_index);
             }
         }
@@ -588,10 +590,16 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
 
         /// Otherwise just clear data on disk
         if (!clear && !partition)
+        {
+            if (should_skip_column_operation())
+                return;
             metadata.columns.remove(column_name);
+        }
     }
     else if (type == MODIFY_COLUMN)
     {
+        if (should_skip_column_operation())
+            return;
         metadata.columns.modify(column_name, after_column, first, [&](ColumnDescription & column)
         {
             if (to_remove == RemoveProperty::DEFAULT
@@ -682,8 +690,14 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     }
     else if (type == COMMENT_COLUMN)
     {
+        if (should_skip_column_operation())
+            return;
+
         metadata.columns.modify(column_name,
-            [&](ColumnDescription & column) { column.comment = *comment; });
+            [&](ColumnDescription & column)
+            {
+                column.comment = *comment;
+            });
     }
     else if (type == COMMENT_TABLE)
     {
@@ -878,7 +892,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     else if (type == MODIFY_QUERY)
     {
         metadata.select = SelectQueryDescription::getSelectQueryFromASTForMatView(select, metadata.refresh != nullptr, context);
-        Block as_select_sample;
+        SharedHeader as_select_sample;
 
         if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
         {
@@ -892,7 +906,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
                 false);
         }
 
-        metadata.columns = ColumnsDescription(as_select_sample.getNamesAndTypesList());
+        metadata.columns = ColumnsDescription(as_select_sample->getNamesAndTypesList());
     }
     else if (type == MODIFY_REFRESH)
     {
@@ -943,6 +957,8 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     }
     else if (type == RENAME_COLUMN)
     {
+        if (should_skip_column_operation())
+            return;
         metadata.columns.rename(column_name, rename_to);
         RenameColumnData rename_data{column_name, rename_to};
         RenameColumnVisitor rename_visitor(rename_data);
@@ -983,13 +999,12 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
                 && (metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("add_minmax_index_for_numeric_columns")
                     ||  metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("add_minmax_index_for_string_columns")))
             {
-                auto index_type = makeASTFunction("minmax");
-                index.definition_ast = std::make_shared<ASTIndexDeclaration>(std::make_shared<ASTIdentifier>(rename_to), index_type,
-                                                                             IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + rename_to);
-                index.definition_ast->as<ASTIndexDeclaration>()->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
+                index.definition_ast = createImplicitMinMaxIndexAST(rename_to);
             }
             else
+            {
                 rename_visitor.visit(index.definition_ast);
+            }
         }
     }
     else if (type == MODIFY_SQL_SECURITY)
@@ -1152,10 +1167,14 @@ bool AlterCommand::isRemovingProperty() const
     return to_remove != RemoveProperty::NO_PROPERTY;
 }
 
-bool AlterCommand::isDropSomething() const
+bool AlterCommand::isDropOrRename() const
 {
-    return type == Type::DROP_COLUMN || type == Type::DROP_INDEX || type == Type::DROP_STATISTICS
-        || type == Type::DROP_CONSTRAINT || type == Type::DROP_PROJECTION;
+    return type == Type::DROP_COLUMN
+        || type == Type::DROP_INDEX
+        || type == Type::DROP_STATISTICS
+        || type == Type::DROP_CONSTRAINT
+        || type == Type::DROP_PROJECTION
+        || type == Type::RENAME_COLUMN;
 }
 
 std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context) const
@@ -1228,31 +1247,11 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
     return result;
 }
 
-bool AlterCommands::hasGinIndex(const StorageInMemoryMetadata & metadata)
+bool AlterCommands::hasTextIndex(const StorageInMemoryMetadata & metadata)
 {
     for (const auto & index : metadata.secondary_indices)
     {
-        if (index.type == GIN_INDEX_NAME)
-            return true;
-    }
-    return false;
-}
-
-bool AlterCommands::hasLegacyFullTextIndex(const StorageInMemoryMetadata & metadata)
-{
-    for (const auto & index : metadata.secondary_indices)
-    {
-        if (index.type == FULL_TEXT_INDEX_NAME)
-            return true;
-    }
-    return false;
-}
-
-bool AlterCommands::hasLegacyInvertedIndex(const StorageInMemoryMetadata & metadata)
-{
-    for (const auto & index : metadata.secondary_indices)
-    {
-        if (index.type == INVERTED_INDEX_NAME)
+        if (index.type == TEXT_INDEX_NAME)
             return true;
     }
     return false;

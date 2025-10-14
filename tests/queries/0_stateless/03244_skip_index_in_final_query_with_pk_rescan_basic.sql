@@ -1,6 +1,7 @@
 -- Tags: no-random-settings
 -- Testcase from https://github.com/ClickHouse/ClickHouse/pull/34243
 
+SET use_query_condition_cache = 0;
 DROP TABLE IF EXISTS data_02201;
 
 CREATE TABLE data_02201 (
@@ -21,7 +22,7 @@ SELECT 'Correct result - 1 row by next query';
 SELECT * FROM data_02201 FINAL WHERE value_max = 1 ORDER BY key, value_max SETTINGS use_skip_indexes=0, use_skip_indexes_if_final=0;
 
 SELECT 'Wrong result - 2 rows by next query';
-SELECT * FROM data_02201 FINAL WHERE value_max = 1 ORDER BY key, value_max SETTINGS use_skip_indexes=1, use_skip_indexes_if_final=1;
+SELECT * FROM data_02201 FINAL WHERE value_max = 1 ORDER BY key, value_max SETTINGS use_skip_indexes=1, use_skip_indexes_if_final=1,use_skip_indexes_if_final_exact_mode=0;
 
 SELECT 'Correct result - 1 row by next query';
 SELECT * FROM data_02201 FINAL WHERE value_max = 1 ORDER BY key, value_max SETTINGS use_skip_indexes=1, use_skip_indexes_if_final=1,use_skip_indexes_if_final_exact_mode=1;

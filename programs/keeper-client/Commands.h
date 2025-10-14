@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Parser.h"
+#include <Parser.h>
 
 namespace DB
 {
@@ -292,6 +292,20 @@ class MVCommand : public IKeeperClientCommand
     String getHelpMessage() const override
     {
         return "{} <src> <dest> -- Moves 'src' node to the 'dest' path.";
+    }
+};
+
+class GetAclCommand : public IKeeperClientCommand
+{
+    String getName() const override { return "get_acl"; }
+
+    bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
+
+    void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
+
+    String getHelpMessage() const override
+    {
+        return "{} [path] -- Get ACL for specified path.";
     }
 };
 

@@ -3,6 +3,7 @@ description: 'System table containing information about all cached file schemas.
 keywords: ['system table', 'schema_inference_cache']
 slug: /operations/system-tables/schema_inference_cache
 title: 'system.schema_inference_cache'
+doc_type: 'reference'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
@@ -71,7 +72,6 @@ additional_format_info: schema_inference_hints=, max_rows_to_read_for_schema_inf
 registration_time:      2022-12-29 17:49:52
 schema:                 id Nullable(Float64), age Nullable(Float64), name Nullable(String), hobbies Array(Nullable(String))
 ```
-
 
 **See also**
 - [Automatic schema inference from input data](/interfaces/schema-inference.md)

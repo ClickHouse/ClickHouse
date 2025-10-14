@@ -17,7 +17,7 @@ function test()
     timeout 5 ${CLICKHOUSE_LOCAL} --max_execution_time 10 --max_rows_to_read 0 --query "
         SELECT DISTINCT number % 5 FROM system.numbers" ||:
     echo -e '---'
-    timeout 5 ${CLICKHOUSE_CURL} -sS --no-buffer "${CLICKHOUSE_URL}&max_execution_time=10&max_rows_to_read=0" --data-binary "
+    timeout 5 ${CLICKHOUSE_CURL} -sS --no-buffer "${CLICKHOUSE_URL}&http_wait_end_of_query=0&http_response_buffer_size=0&max_execution_time=10&max_rows_to_read=0" --data-binary "
         SELECT DISTINCT number % 5 FROM system.numbers" ||:
     echo -e '---'
 }

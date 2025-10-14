@@ -2,21 +2,20 @@
 #include <Storages/PartitionedSink.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
 class StorageObjectStorageSink : public SinkToStorage
 {
 public:
-    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
-
     StorageObjectStorageSink(
+        const std::string & path_,
         ObjectStoragePtr object_storage,
-        ConfigurationPtr configuration,
+        StorageObjectStorageConfigurationPtr configuration,
         const std::optional<FormatSettings> & format_settings_,
-        const Block & sample_block_,
-        ContextPtr context,
-        const std::string & blob_path = "");
+        SharedHeader sample_block_,
+        ContextPtr context);
 
     ~StorageObjectStorageSink() override;
 
@@ -26,10 +25,16 @@ public:
 
     void onFinish() override;
 
+    const String & getPath() const { return path; }
+
+    size_t getFileSize() const;
+
 private:
-    const Block sample_block;
+    const String path;
+    SharedHeader sample_block;
     std::unique_ptr<WriteBuffer> write_buf;
     OutputFormatPtr writer;
+    std::optional<size_t> result_file_size;
 
     void finalizeBuffers();
     void releaseBuffers();
@@ -39,28 +44,22 @@ private:
 class PartitionedStorageObjectStorageSink : public PartitionedSink
 {
 public:
-    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
-
     PartitionedStorageObjectStorageSink(
         ObjectStoragePtr object_storage_,
-        ConfigurationPtr configuration_,
+        StorageObjectStorageConfigurationPtr configuration_,
         std::optional<FormatSettings> format_settings_,
-        const Block & sample_block_,
-        ContextPtr context_,
-        const ASTPtr & partition_by);
+        SharedHeader sample_block_,
+        ContextPtr context_);
 
     SinkPtr createSinkForPartition(const String & partition_id) override;
 
 private:
-    void validateKey(const String & str);
-    void validateNamespace(const String & str);
-
     ObjectStoragePtr object_storage;
-    ConfigurationPtr configuration;
+    StorageObjectStorageConfigurationPtr configuration;
 
-    const StorageObjectStorage::QuerySettings query_settings;
+    const StorageObjectStorageQuerySettings query_settings;
     const std::optional<FormatSettings> format_settings;
-    const Block sample_block;
+    SharedHeader sample_block;
     const ContextPtr context;
 };
 

@@ -3,6 +3,7 @@ description: 'System table containing information about configured roles.'
 keywords: ['system table', 'roles']
 slug: /operations/system-tables/roles
 title: 'system.roles'
+doc_type: 'reference'
 ---
 
 # system.roles
