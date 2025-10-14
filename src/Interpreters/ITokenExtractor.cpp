@@ -437,7 +437,7 @@ bool SparseGramTokenExtractor::nextInStringLike(const char * data, size_t length
                 escaped = false;
                 ++i;
             }
-            else if (!escaped && (data[i] == '%' || data[i] == '_' || data[i] == '\\'))
+            else if (!escaped && (data[i] == '%' || data[i] == '_')
             {
                 token.clear();
                 match_substring = false;
