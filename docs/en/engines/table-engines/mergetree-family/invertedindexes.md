@@ -460,7 +460,7 @@ Positions:
 [...]
 ```
 
-whereas the same query with `query_plan_direct_read_from_text_index = 1`
+whereas the same query run with `query_plan_direct_read_from_text_index = 1`
 
 ```sql
 EXPLAIN PLAN actions = 1
@@ -489,7 +489,6 @@ Positions:
 
 The second EXPLAIN PLAN output contains a virtual column `__text_index_<index_name>_<function_name>_<id>`.
 If this column is present, then direct read is used.
-
 
 ## Example: Hackernews dataset {#hacker-news-dataset}
 
