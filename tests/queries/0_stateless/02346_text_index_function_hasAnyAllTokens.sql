@@ -38,11 +38,17 @@ SELECT id FROM tab WHERE hasAnyTokens(message, materialize(['b'])); -- { serverE
 SELECT id FROM tab WHERE hasAllTokens(message, 'b'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT id FROM tab WHERE hasAllTokens(message, materialize('b')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT id FROM tab WHERE hasAllTokens(message, materialize(['b'])); -- { serverError ILLEGAL_COLUMN }
--- search function supports a max of 64 needles
+-- Supports a max of 64 needles
 SELECT id FROM tab WHERE hasAnyTokens(message, ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', 'aa', 'bb', 'cc', 'dd', 'ee', 'ff', 'gg', 'hh', 'ii', 'jj', 'kk', 'll', 'mm', 'nn', 'oo', 'pp', 'qq', 'rr', 'ss', 'tt', 'uu', 'vv', 'ww', 'xx', 'yy', 'zz', 'aaa', 'bbb', 'ccc', 'ddd', 'eee', 'fff', 'ggg', 'hhh', 'iii', 'jjj', 'kkk', 'lll', 'mmm']); -- { serverError BAD_ARGUMENTS }
 
-SELECT 'Test what happens hasAnyTokens/All are called on columns without index';
--- It is expected that the default tokenizer is used
+SELECT 'Test singular aliases';
+
+SELECT hasAnyToken('a b', ['b']) FORMAT Null;
+SELECT hasAllToken('a b', ['b']) FORMAT Null;
+
+SELECT 'Test what happens when hasAnyTokens/All is called on a column without index';
+
+-- We expected that the default tokenizer is used
 -- { echoOn }
 SELECT hasAnyTokens('a b', ['b']);
 SELECT hasAnyTokens('a b', ['c']);
@@ -53,13 +59,6 @@ SELECT hasAllTokens('a b', ['a', 'b']);
 SELECT hasAllTokens('a b', ['a', 'c']);
 SELECT hasAllTokens(materialize('a b'), ['a', 'b']);
 SELECT hasAllTokens(materialize('a b'), ['a', 'c']);
-
-SELECT 'Test singular aliases';
-SELECT hasAnyToken('a b', ['b']);
-SELECT hasAnyToken('a b', ['c']);
-SELECT hasAllToken('a b', ['b']);
-SELECT hasAllToken('a b', ['c']);
--- { echoOff }
 
 -- These are equivalent to the lines above, but using Search{Any,All} in the filter step.
 -- We keep this test because the direct read optimization substituted Search{Any,All} only
@@ -74,10 +73,34 @@ SELECT id FROM tab WHERE hasAllTokens('a b', ['a c']);
 SELECT id FROM tab WHERE hasAllTokens(col_str, ['a b']);
 SELECT id FROM tab WHERE hasAllTokens(col_str, ['a c']);
 
-SELECT 'Testing edge cases on non-indexed column';
+-- Test search without needle on non-empty columns (all are expected to match)
 SELECT count() FROM tab WHERE hasAnyTokens(col_str, []);
 SELECT count() FROM tab WHERE hasAllTokens(col_str, []);
-SELECT id FROM tab WHERE hasAnyTokens(col_str, ['']);
+-- { echoOff }
+
+DROP TABLE tab;
+
+-- Test specifically FixedString columns without text index
+CREATE TABLE tab
+(
+    id UInt8,
+    s FixedString(11)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO tab VALUES (1, 'hello world'), (2, 'goodbye'), (3, 'hello moon');
+
+-- { echoOn }
+SELECT id FROM tab WHERE hasAnyTokens(s, ['hello']) ORDER BY id;
+SELECT id FROM tab WHERE hasAnyTokens(s, ['moon', 'goodbye']) ORDER BY id;
+SELECT id FROM tab WHERE hasAnyTokens(s, ['unknown', 'goodbye']) ORDER BY id;
+
+SELECT id FROM tab WHERE hasAllTokens(s, ['hello', 'world']) ORDER BY id;
+SELECT id FROM tab WHERE hasAllTokens(s, ['goodbye']) ORDER BY id;
+SELECT id FROM tab WHERE hasAllTokens(s, ['hello', 'moon']) ORDER BY id;
+SELECT id FROM tab WHERE hasAllTokens(s, ['hello', 'unknown']) ORDER BY id;
+-- { echoOff }
 
 DROP TABLE tab;
 
@@ -618,26 +641,3 @@ WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '
 LIMIT 2, 3;
 
 DROP TABLE tab;
-
-CREATE TABLE tab
-(
-    id UInt8,
-    s FixedString(11)
-)
-ENGINE = MergeTree
-ORDER BY id;
-
-INSERT INTO tab VALUES (1, 'hello world'), (2, 'goodbye'), (3, 'hello moon');
-
-SELECT 'Test hasAnyTokens and hasAllTokens on a non-indexed FixedString column';
-
-SELECT id FROM tab WHERE hasAnyTokens(s, ['hello']) ORDER BY id;
-SELECT id FROM tab WHERE hasAnyTokens(s, ['moon', 'goodbye']) ORDER BY id;
-SELECT id FROM tab WHERE hasAnyTokens(s, ['unknown', 'goodbye']) ORDER BY id;
-
-SELECT id FROM tab WHERE hasAllTokens(s, ['hello', 'world']) ORDER BY id;
-SELECT id FROM tab WHERE hasAllTokens(s, ['goodbye']) ORDER BY id;
-SELECT id FROM tab WHERE hasAllTokens(s, ['hello', 'moon']) ORDER BY id;
-SELECT id FROM tab WHERE hasAllTokens(s, ['hello', 'unknown']) ORDER BY id;
-
-DROP TABLE IF EXISTS tab;

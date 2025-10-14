@@ -228,8 +228,11 @@ void StatementGenerator::generateHotTableSettingsValues(RandomGenerator & rg, co
 
         sv->set_property(next);
         sv->set_value(
-            ((create && (startsWith(next, "add_") || startsWith(next, "allow_") || startsWith(next, "enable_"))) || rg.nextBool()) ? "1"
-                                                                                                                                   : "0");
+            ((create
+              && (startsWith(next, "add_") || startsWith(next, "allow_") || startsWith(next, "index_") || startsWith(next, "enable_")))
+             || rg.nextBool())
+                ? "1"
+                : "0");
     }
     this->ids.clear();
 }
@@ -334,19 +337,61 @@ static void SetViewInterval(RandomGenerator & rg, RefreshInterval * ri)
     ri->set_unit(RefreshInterval_RefreshUnit::RefreshInterval_RefreshUnit_SECOND);
 }
 
-void StatementGenerator::generateNextRefreshableView(RandomGenerator & rg, RefreshableView * cv)
+void StatementGenerator::generateNextRefreshableView(RandomGenerator & rg, RefreshableView * rv)
 {
+    const bool has_tables = collectionHas<SQLTable>(attached_tables);
+    const bool has_views = collectionHas<SQLView>(attached_views);
+    const bool has_dictionaries = collectionHas<SQLDictionary>(attached_dictionaries);
     const RefreshableView_RefreshPolicy pol = rg.nextBool() ? RefreshableView_RefreshPolicy::RefreshableView_RefreshPolicy_EVERY
                                                             : RefreshableView_RefreshPolicy::RefreshableView_RefreshPolicy_AFTER;
 
-    cv->set_policy(pol);
-    SetViewInterval(rg, cv->mutable_interval());
+    rv->set_policy(pol);
+    SetViewInterval(rg, rv->mutable_interval());
     if (pol == RefreshableView_RefreshPolicy::RefreshableView_RefreshPolicy_EVERY && rg.nextBool())
     {
-        SetViewInterval(rg, cv->mutable_offset());
+        SetViewInterval(rg, rv->mutable_offset());
     }
-    SetViewInterval(rg, cv->mutable_randomize());
-    cv->set_append(rg.nextBool());
+    SetViewInterval(rg, rv->mutable_randomize());
+    if ((has_tables || !systemTables.empty() || has_views || has_dictionaries) && rg.nextBool())
+    {
+        const uint32_t depend_table = 10 * static_cast<uint32_t>(has_tables);
+        const uint32_t depend_system_table = 3 * static_cast<uint32_t>(!systemTables.empty());
+        const uint32_t depend_view = 10 * static_cast<uint32_t>(has_views);
+        const uint32_t depend_dictionary = 10 * static_cast<uint32_t>(has_dictionaries);
+        const uint32_t prob_space = depend_table + depend_system_table + depend_view + depend_dictionary;
+        std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
+        const uint32_t nopt = next_dist(rg.generator);
+
+        if (depend_table && nopt < (depend_table + 1))
+        {
+            const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
+
+            t.setName(rv->mutable_depends()->mutable_est(), false);
+        }
+        else if (depend_system_table && nopt < (depend_table + depend_system_table + 1))
+        {
+            const auto & ntable = rg.pickRandomly(systemTables);
+
+            ntable.setName(rv->mutable_depends()->mutable_est());
+        }
+        else if (depend_view && nopt < (depend_table + depend_system_table + depend_view + 1))
+        {
+            const SQLView & v = rg.pickRandomly(filterCollection<SQLView>(attached_views));
+
+            v.setName(rv->mutable_depends()->mutable_est(), false);
+        }
+        else if (depend_dictionary && nopt < (depend_table + depend_system_table + depend_view + depend_dictionary + 1))
+        {
+            const SQLDictionary & d = rg.pickRandomly(filterCollection<SQLDictionary>(attached_dictionaries));
+
+            d.setName(rv->mutable_depends()->mutable_est(), false);
+        }
+        else
+        {
+            chassert(0);
+        }
+    }
+    rv->set_append(rg.nextBool());
 }
 
 static void matchQueryAliases(const SQLView & v, Select * osel, Select * nsel)
@@ -4740,7 +4785,10 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
             {
                 dropTable(false, true, tname);
             }
-            this->tables[tname] = std::move(this->staged_tables[tname]);
+            if (!this->staged_tables[tname].random_engine)
+            {
+                this->tables[tname] = std::move(this->staged_tables[tname]);
+            }
         }
         dropTable(true, !success, tname);
     }
@@ -4754,7 +4802,10 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
             {
                 this->views.erase(tname);
             }
-            this->views[tname] = std::move(this->staged_views[tname]);
+            if (!this->staged_views[tname].random_engine)
+            {
+                this->views[tname] = std::move(this->staged_views[tname]);
+            }
         }
         this->staged_views.erase(tname);
     }
@@ -4768,7 +4819,10 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
             {
                 this->dictionaries.erase(dname);
             }
-            this->dictionaries[dname] = std::move(this->staged_dictionaries[dname]);
+            if (!this->staged_dictionaries[dname].random_engine)
+            {
+                this->dictionaries[dname] = std::move(this->staged_dictionaries[dname]);
+            }
         }
         this->staged_dictionaries.erase(dname);
     }
@@ -5131,7 +5185,7 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
     {
         const uint32_t dname = getIdentifierFromString(query.create_database().database().database());
 
-        if (!ssq.explain().is_explain() && success)
+        if (!ssq.explain().is_explain() && success && !this->staged_databases[dname]->random_engine)
         {
             this->databases[dname] = std::move(this->staged_databases[dname]);
         }
