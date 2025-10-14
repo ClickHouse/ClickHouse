@@ -645,7 +645,6 @@ void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id,
     const auto drop_lock_path = zookeeper_path / "drop";
 
     auto zk_retries = getKeeperRetriesControl(log);
-    bool supports_remove_recursive = getZooKeeper(log)->isFeatureEnabled(DB::KeeperFeatureFlag::REMOVE_RECURSIVE);
 
     Coordination::Error code;
     const size_t max_tries = 1000;
@@ -694,7 +693,7 @@ void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id,
                     self.serialize(),
                     zkutil::CreateMode::Persistent));
 
-                if (!supports_remove_recursive)
+                if (!zk_client->isFeatureEnabled(DB::KeeperFeatureFlag::REMOVE_RECURSIVE))
                     zkutil::addCheckNotExistsRequest(requests, *getZooKeeper(log), drop_lock_path);
             }
 

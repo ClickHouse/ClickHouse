@@ -286,8 +286,6 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
     auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
     auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
 
-    bool is_multi_read_enabled = zk_client->isFeatureEnabled(DB::KeeperFeatureFlag::MULTI_READ);
-
     processor_info = getProcessorInfo(generateProcessingID());
 
     const size_t max_num_tries = 100;
@@ -296,73 +294,73 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
     {
         std::optional<NodeMetadata> processed_node;
         Coordination::Stat processed_node_stat;
-        if (is_multi_read_enabled)
+        std::optional<std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State>> result;
+        zk_retry.retryLoop([&]
         {
-            Coordination::Requests requests;
-            std::vector<std::string> paths{processed_node_path, failed_node_path};
-            zkutil::ZooKeeper::MultiTryGetResponse responses;
-            zk_retry.retryLoop([&]
+            bool is_multi_read_enabled = zk_client->isFeatureEnabled(DB::KeeperFeatureFlag::MULTI_READ);
+            if (is_multi_read_enabled)
             {
-                responses = ObjectStorageQueueMetadata::getZooKeeper(log)->tryGet(paths);
-            });
+                Coordination::Requests requests;
+                std::vector<std::string> paths{processed_node_path, failed_node_path};
+                zkutil::ZooKeeper::MultiTryGetResponse responses = ObjectStorageQueueMetadata::getZooKeeper(log)->tryGet(paths);
 
-            auto check_code = [this](auto code_)
-            {
-                if (!(code_ == Coordination::Error::ZOK || code_ == Coordination::Error::ZNONODE))
-                    throw zkutil::KeeperException::fromPath(code_, path);
-            };
-            check_code(responses[0].error);
-            check_code(responses[1].error);
-
-            if (responses[1].error == Coordination::Error::ZOK)
-            {
-                LOG_TEST(log, "File {} is Failed", path);
-                return {false, FileStatus::State::Failed};
-            }
-
-            if (responses[0].error == Coordination::Error::ZOK)
-            {
-                if (!responses[0].data.empty())
+                auto check_code = [this](auto code_)
                 {
-                    processed_node.emplace(NodeMetadata::fromString(responses[0].data));
-                    processed_node_stat = responses[0].stat;
+                    if (!(code_ == Coordination::Error::ZOK || code_ == Coordination::Error::ZNONODE))
+                        throw zkutil::KeeperException::fromPath(code_, path);
+                };
+                check_code(responses[0].error);
+                check_code(responses[1].error);
 
-                    LOG_TEST(log, "Current max processed file {} from path: {}",
-                             processed_node->file_path, processed_node_path);
+                if (responses[1].error == Coordination::Error::ZOK)
+                {
+                    LOG_TEST(log, "File {} is Failed", path);
+                    result = {false, FileStatus::State::Failed};
+                }
 
-                    if (!processed_node->file_path.empty() && path <= processed_node->file_path)
+                if (responses[0].error == Coordination::Error::ZOK)
+                {
+                    if (!responses[0].data.empty())
                     {
-                        return {false, FileStatus::State::Processed};
+                        processed_node.emplace(NodeMetadata::fromString(responses[0].data));
+                        processed_node_stat = responses[0].stat;
+
+                        LOG_TEST(log, "Current max processed file {} from path: {}",
+                                processed_node->file_path, processed_node_path);
+
+                        if (!processed_node->file_path.empty() && path <= processed_node->file_path)
+                        {
+                            result = {false, FileStatus::State::Processed};
+                        }
                     }
                 }
             }
-        }
-        else
-        {
-            NodeMetadata node_metadata;
-            if (getMaxProcessedFile(node_metadata, &processed_node_stat, log))
+            else
             {
-                bool failed_node_exists = false;
-                zk_retry.retryLoop([&]
+                NodeMetadata node_metadata;
+                if (getMaxProcessedFile(node_metadata, &processed_node_stat, log))
                 {
-                    failed_node_exists = ObjectStorageQueueMetadata::getZooKeeper(log)->exists(failed_node_path);
-                });
-                if (failed_node_exists)
-                {
-                    LOG_TEST(log, "File {} is Failed", path);
-                    return {false, FileStatus::State::Failed};
-                }
+                    bool failed_node_exists = ObjectStorageQueueMetadata::getZooKeeper(log)->exists(failed_node_path);
+                    if (failed_node_exists)
+                    {
+                        LOG_TEST(log, "File {} is Failed", path);
+                        result = {false, FileStatus::State::Failed};
+                    }
 
-                processed_node.emplace(node_metadata);
-                LOG_TEST(log, "Current max processed file {} from path: {}",
-                         processed_node->file_path, processed_node_path);
+                    processed_node.emplace(node_metadata);
+                    LOG_TEST(log, "Current max processed file {} from path: {}",
+                            processed_node->file_path, processed_node_path);
 
-                if (!processed_node->file_path.empty() && path <= processed_node->file_path)
-                {
-                    return {false, FileStatus::State::Processed};
+                    if (!processed_node->file_path.empty() && path <= processed_node->file_path)
+                    {
+                        result = {false, FileStatus::State::Processed};
+                    }
                 }
             }
-        }
+        });
+
+        if (result.has_value())
+            return result.value();
 
         Coordination::Requests requests;
 
