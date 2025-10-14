@@ -657,7 +657,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     const std::optional<KeyCondition> & part_offset_condition,
     const std::optional<KeyCondition> & total_offset_condition,
     const UsefulSkipIndexes & skip_indexes,
-    const IndexReadTasks & index_read_tasks,
     const MergeTreeReaderSettings & reader_settings,
     LoggerPtr log,
     size_t num_streams,
@@ -743,7 +742,17 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         num_threads = std::min<size_t>(num_streams, settings[Setting::max_threads_for_indexes]);
     }
 
-    const bool use_skip_indexes_on_data_read = settings[Setting::use_skip_indexes_on_data_read] && !is_parallel_reading_from_replicas;
+    auto is_index_supported_on_data_read = [&](const MergeTreeIndexPtr & index) -> bool
+    {
+        /// Vector similarity indexes are not applicable on data reads.
+        if (index->isVectorSimilarityIndex())
+            return false;
+
+        if (is_parallel_reading_from_replicas && !index->supportsReadingOnParallelReplicas())
+            return false;
+
+        return settings[Setting::use_skip_indexes_on_data_read];
+    };
 
     /// Let's find what range to read from each part.
     {
@@ -837,7 +846,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithSecondaryKeysMicroseconds);
 
-
                     const auto index_idx = skip_indexes.per_part_index_orders[part_index][idx];
                     const auto & index_and_condition = skip_indexes.useful_indices[index_idx];
 
@@ -857,11 +865,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                         continue;
                     }
 
-                    /// Vector similarity indexes are not applicable on data reads.
-                    bool analyze_index = index_and_condition.index->isVectorSimilarityIndex() ||
-                        (!use_skip_indexes_on_data_read && !index_read_tasks.contains(index_and_condition.index->index.name));
-
-                    if (analyze_index)
+                    if (!is_index_supported_on_data_read(index_and_condition.index))
                     {
                         std::tie(ranges.ranges, ranges.read_hints) = filterMarksUsingIndex(
                             index_and_condition.index,
@@ -901,7 +905,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     }
 
                     size_t total_granules = ranges.ranges.getNumberOfMarks();
-                    if (!use_skip_indexes_on_data_read)
+                    bool use_skip_indexes_on_data_read = settings[Setting::use_skip_indexes_on_data_read] && !is_parallel_reading_from_replicas;
+
+                    if (use_skip_indexes_on_data_read)
                     {
                         ranges.ranges = filterMarksUsingMergedIndex(
                             indices_and_condition.indices,
@@ -1274,7 +1280,6 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
         column_names_to_return,
         log,
         indexes,
-        /*index_read_tasks*/{},
         /*find_exact_ranges*/false,
         /*is_parallel_reading_from_replicas*/false);
 }

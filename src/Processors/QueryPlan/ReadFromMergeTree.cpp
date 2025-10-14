@@ -36,6 +36,7 @@
 #include <Storages/LazilyReadInfo.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
+#include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeIndexVectorSimilarity.h>
 #include <Storages/MergeTree/MergeTreePrefetchedReadPool.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
@@ -1760,7 +1761,6 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool 
         all_column_names,
         log,
         indexes,
-        index_read_tasks,
         find_exact_ranges,
         is_parallel_reading_from_replicas);
 
@@ -1974,7 +1974,6 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     const Names & all_column_names,
     LoggerPtr log,
     std::optional<Indexes> & indexes,
-    const IndexReadTasks & index_read_tasks_,
     bool find_exact_ranges,
     bool is_parallel_reading_from_replicas_)
 {
@@ -2078,7 +2077,6 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             indexes->part_offset_condition,
             indexes->total_offset_condition,
             indexes->skip_indexes,
-            index_read_tasks_,
             reader_settings,
             log,
             num_streams,
@@ -3104,8 +3102,10 @@ std::shared_ptr<ParallelReadingExtension> ReadFromMergeTree::getParallelReadingE
         context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount());
 }
 
-void ReadFromMergeTree::replaceColumnsForTextSearch(const IndexReadColumns & added_columns, const Names & removed_columns)
+void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & skip_indexes, const IndexReadColumns & added_columns, const Names & removed_columns)
 {
+    index_read_tasks.clear();
+
     if (added_columns.empty())
         return;
 
@@ -3146,6 +3146,17 @@ void ReadFromMergeTree::replaceColumnsForTextSearch(const IndexReadColumns & add
             all_column_names.push_back(column_name);
             new_virtual_columns->addEphemeral(column_name, column_type, "");
             index_task.columns.emplace_back(column_name, column_type);
+        }
+    }
+
+    for (const auto & index : skip_indexes.useful_indices)
+    {
+        if (dynamic_cast<const MergeTreeIndexText *>(index.index.get()))
+        {
+            /// Create tasks for text indexes which don't read virtual columns.
+            /// It's required to always read text indexes on separate step on data read.
+            if (!index_read_tasks.contains(index.index->index.name))
+                index_read_tasks.emplace(index.index->index.name, IndexReadTask{.columns = {}, .index = index});
         }
     }
 

@@ -282,6 +282,7 @@ public:
 
     ~MergeTreeIndexText() override = default;
 
+    bool supportsReadingOnParallelReplicas() const override { return true; }
     MergeTreeIndexSubstreams getSubstreams() const override;
     MergeTreeIndexFormat getDeserializedFormat(const IDataPartStorage & data_part_storage, const std::string & path_prefix) const override;
 

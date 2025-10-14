@@ -212,7 +212,6 @@ public:
         const Names & all_column_names,
         LoggerPtr log,
         std::optional<Indexes> & indexes,
-        const IndexReadTasks & index_read_tasks,
         bool find_exact_ranges,
         bool is_parallel_reading_from_replicas_);
 
@@ -264,7 +263,8 @@ public:
 
     /// Adds virtual columns for reading from text index.
     /// Removes physical text columns that were eliminated by direct read from text index.
-    void replaceColumnsForTextSearch(const IndexReadColumns & added_columns, const Names & removed_columns);
+    void createReadTasksForTextIndex(const UsefulSkipIndexes & skip_indexes, const IndexReadColumns & added_columns, const Names & removed_columns);
+
     const std::optional<Indexes> & getIndexes() const { return indexes; }
     ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator() const;
 

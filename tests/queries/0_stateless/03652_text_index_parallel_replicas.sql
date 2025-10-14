@@ -24,6 +24,7 @@ INSERT INTO t_text_index_pr SELECT 2, arrayStringConcat(arrayMap(x -> toString(n
 INSERT INTO t_text_index_pr SELECT 3, arrayStringConcat(arrayMap(x -> toString(number + x * 2), range(5)), ' ') FROM numbers(200000, 100000);
 
 SELECT count(), sum(id) FROM t_text_index_pr WHERE hasAnyTokens(str, ['34567', '134567', '234567']);
+SELECT count(), sum(id) FROM t_text_index_pr WHERE str LIKE '% 34567 %';
 
 SYSTEM FLUSH LOGS query_log;
 
