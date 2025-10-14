@@ -118,3 +118,41 @@ SELECT count() FROM alias_part;
 SELECT 'Test INSERT SELECT';
 INSERT INTO alias_4 SELECT id + 100, value, status FROM source_table WHERE id <= 10;
 SELECT count() FROM source_table WHERE id > 100;
+
+-- Test: EXCHANGE TABLES
+DROP TABLE IF EXISTS table_a_exchange;
+DROP TABLE IF EXISTS table_b_exchange;
+DROP TABLE IF EXISTS alias_a_exchange;
+DROP TABLE IF EXISTS alias_b_exchange;
+
+CREATE TABLE table_a_exchange (value String) ENGINE = MergeTree() ORDER BY value;
+CREATE TABLE table_b_exchange (value String) ENGINE = MergeTree() ORDER BY value;
+
+INSERT INTO table_a_exchange VALUES ('from_a');
+INSERT INTO table_b_exchange VALUES ('from_b');
+
+CREATE TABLE alias_a_exchange ENGINE = Alias(table_a_exchange);
+CREATE TABLE alias_b_exchange ENGINE = Alias(table_b_exchange);
+
+SELECT 'Before EXCHANGE:';
+SELECT * FROM alias_a_exchange ORDER BY value;
+SELECT * FROM alias_b_exchange ORDER BY value;
+
+-- EXCHANGE the alias tables
+EXCHANGE TABLES alias_a_exchange AND alias_b_exchange;
+
+SELECT 'After EXCHANGE alias tables:';
+SELECT * FROM alias_a_exchange ORDER BY value;  -- Should show 'from_b'
+SELECT * FROM alias_b_exchange ORDER BY value;  -- Should show 'from_a'
+
+-- EXCHANGE the source tables
+EXCHANGE TABLES table_a_exchange AND table_b_exchange;
+
+SELECT 'After EXCHANGE source tables:';
+SELECT * FROM alias_a_exchange ORDER BY value;  -- Should show 'from_a'
+SELECT * FROM alias_b_exchange ORDER BY value;  -- Should show 'from_b'
+
+DROP TABLE alias_a_exchange;
+DROP TABLE alias_b_exchange;
+DROP TABLE table_a_exchange;
+DROP TABLE table_b_exchange;

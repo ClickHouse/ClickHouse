@@ -9455,7 +9455,7 @@ QueryPipeline MergeTreeData::updateLightweightImpl(const MutationCommands & comm
     if (it != commands.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Got unexpected command with type {} in lightweight update", it->type);
 
-    LOG_DEBUG(log, "Executing lightweight update with commands: {}", commands.toString());
+    LOG_DEBUG(log, "Executing lightweight update with commands: {}", commands.toString(false));
 
     MutationCommands commands_to_run;
     const auto & system_columns = getPatchPartSystemColumns();
