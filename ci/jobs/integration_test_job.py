@@ -118,6 +118,8 @@ def main():
             is_parallel = True
         elif to == "sequential":
             is_sequential = True
+        elif "bugfix" in to.lower() or "validation" in to.lower():
+            is_bugfix_validation = True
         else:
             assert False, f"Unknown job option [{to}]"
 
@@ -328,7 +330,12 @@ def main():
                 failed_suits.append(test_result.name.split("/")[0])
         failed_suits = list(set(failed_suits))
         for failed_suit in failed_suits:
-            files.extend(f"tests/integration/{failed_suit}")
+            files.extend(
+                Shell.get_output(
+                    f"find ./tests/integration/{failed_suit} -name '*.log*'"
+                ).splitlines()
+            )
+
         files = [Utils.compress_files_gz(files, f"{temp_path}/logs.tar.gz")]
 
     R = Result.create_from(results=test_results, stopwatch=sw, files=files)

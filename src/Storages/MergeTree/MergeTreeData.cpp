@@ -267,6 +267,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsSearchOrphanedPartsDisks search_orphaned_parts_disks;
     extern const MergeTreeSettingsBool allow_part_offset_column_in_projections;
     extern const MergeTreeSettingsUInt64 max_uncompressed_bytes_in_patches;
+    extern const MergeTreeSettingsString auto_statistics_types;
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
 }
@@ -783,13 +784,11 @@ std::map<std::string, DiskPtr> MergeTreeData::getDistinctDisksForParts(const Dat
     return results;
 }
 
-ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimatorByPredicate(
-    const StorageSnapshotPtr & storage_snapshot, const ActionsDAG * filter_dag, ContextPtr local_context) const
+ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator(
+    const RangesInDataParts & parts, ContextPtr local_context) const
 {
     if (!local_context->getSettingsRef()[Setting::allow_statistics_optimize])
         return nullptr;
-
-    const auto & parts = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data).parts;
 
     if (parts.empty())
         return {};
@@ -798,49 +797,14 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
 
     ConditionSelectivityEstimatorBuilder estimator_builder(local_context);
 
-    auto build_estimator_all_partitions = [&]()
+    for (const auto & part : parts)
     {
-        /// Read all partitions.
-        for (const auto & part : parts)
         try
         {
             auto stats = part.data_part->loadStatistics();
-            /// TODO: We only have one stats file for every part.
             estimator_builder.incrementRowCount(part.data_part->rows_count);
             for (const auto & stat : stats)
                 estimator_builder.addStatistics(stat);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, fmt::format("while loading statistics on part {}", part.data_part->info.getPartNameV1()));
-        }
-    };
-
-    if (filter_dag == nullptr)
-    {
-        build_estimator_all_partitions();
-        return estimator_builder.getEstimator();
-    }
-
-    ActionsDAGWithInversionPushDown inverted_dag(filter_dag->getOutputs().front(), local_context);
-    PartitionPruner partition_pruner(storage_snapshot->metadata, inverted_dag, local_context);
-
-    if (partition_pruner.isUseless())
-    {
-        build_estimator_all_partitions();
-    }
-    else
-    {
-        for (const auto & part : parts)
-        try
-        {
-            if (!partition_pruner.canBePruned(*part.data_part))
-            {
-                auto stats = part.data_part->loadStatistics();
-                estimator_builder.incrementRowCount(part.data_part->rows_count);
-                for (const auto & stat : stats)
-                    estimator_builder.addStatistics(stat);
-            }
         }
         catch (...)
         {
@@ -4005,7 +3969,11 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 getName());
     }
 
+    removeImplicitStatistics(new_metadata.columns);
     commands.apply(new_metadata, local_context);
+
+    auto [auto_statistics_types, statistics_changed] = MergeTreeData::getNewImplicitStatisticsTypes(new_metadata, *settings_from_storage);
+    addImplicitStatistics(new_metadata.columns, auto_statistics_types);
 
     if (AlterCommands::hasTextIndex(new_metadata) && !settings[Setting::allow_experimental_full_text_index])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
@@ -4343,19 +4311,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
                 if (old_metadata.getColumns().has(command.column_name))
                 {
-                    columns_to_check_conversion.push_back(
-                        new_metadata.getColumns().getPhysical(command.column_name));
-
-                    const auto & old_column = old_metadata.getColumns().get(command.column_name);
-                    if (!old_column.statistics.empty())
-                    {
-                        const auto & new_column = new_metadata.getColumns().get(command.column_name);
-                        if (!old_column.type->equals(*new_column.type))
-                            throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                                            "ALTER types of column {} with statistics is not safe "
-                                            "because it can change the representation of statistics",
-                                            backQuoteIfNeed(command.column_name));
-                    }
+                    columns_to_check_conversion.push_back(new_metadata.getColumns().getPhysical(command.column_name));
                 }
             }
         }
@@ -4504,8 +4460,8 @@ MergeTreeDataPartBuilder MergeTreeData::getDataPartBuilder(
 }
 
 void MergeTreeData::changeSettings(
-        const ASTPtr & new_settings,
-        AlterLockHolder & /* table_lock_holder */)
+    const ASTPtr & new_settings,
+    AlterLockHolder & /* table_lock_holder */)
 {
     if (new_settings)
     {
@@ -4571,6 +4527,16 @@ void MergeTreeData::changeSettings(
         if (has_storage_policy_changed)
             startBackgroundMovesIfNeeded();
     }
+}
+
+std::pair<String, bool> MergeTreeData::getNewImplicitStatisticsTypes(const StorageInMemoryMetadata & new_metadata, const MergeTreeSettings & old_settings)
+{
+    Field new_statistics_types = new_metadata.getSettingChange("auto_statistics_types");
+
+    if (new_statistics_types.isNull())
+        return std::make_pair(old_settings[MergeTreeSetting::auto_statistics_types], false);
+
+    return std::make_pair(new_statistics_types.safeGet<String>(), true);
 }
 
 void MergeTreeData::PartsTemporaryRename::addPart(const String & old_name, const String & new_name, const DiskPtr & disk)
