@@ -156,14 +156,21 @@ def main():
         if args.path:
             clickhouse_path = args.path
         else:
-            if Path(clickhouse_path).is_file():
-                pass
-            elif Path(f"{Utils.cwd()}/build/programs/clickhouse").is_file():
-                clickhouse_path = f"{Utils.cwd()}/build/programs/clickhouse"
-            elif Path(f"{Utils.cwd()}/clickhouse").is_file():
-                clickhouse_path = f"{Utils.cwd()}/clickhouse"
+            paths_to_check = [
+                clickhouse_path,  # it's set for CI runs, but we need to check it
+                f"{Utils.cwd()}/build/programs/clickhouse",
+                f"{Utils.cwd()}/clickhouse",
+            ]
+            for path in paths_to_check:
+                if Path(path).is_file():
+                    clickhouse_path = path
+                    break
             else:
-                raise FileNotFoundError(f"Clickhouse binary not found")
+                raise FileNotFoundError(
+                    "Clickhouse binary not found in any of the paths: "
+                    + ", ".join(paths_to_check)
+                    + ". You can also specify path to binary via --path argument"
+                )
         if args.path_1:
             clickhouse_server_config_dir = args.path_1
     assert Path(
