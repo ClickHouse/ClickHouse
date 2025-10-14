@@ -682,7 +682,7 @@ std::vector<TagNamesAndValuesPtr> ContextTimeSeriesTagsCollector::getTagsByGroup
 
 
 template <typename IDType>
-Group ContextTimeSeriesTagsCollector::insert(const IDType & id, const TagNamesAndValuesPtr & tags)
+void ContextTimeSeriesTagsCollector::addIDForTags(const IDType & id, const TagNamesAndValuesPtr & tags)
 {
     auto & groups_by_id = getIDMap<IDType>().groups_by_id;
 
@@ -694,7 +694,7 @@ Group ContextTimeSeriesTagsCollector::insert(const IDType & id, const TagNamesAn
             Group existing_group = it->second;
             if (*tags != *groups.at(existing_group))
                 throwIDWasAddedWithOtherTags(id, tags, groups.at(existing_group));
-            return existing_group;
+            return;
         }
     }
 
@@ -710,21 +710,19 @@ Group ContextTimeSeriesTagsCollector::insert(const IDType & id, const TagNamesAn
 
         if (group != it2->second)
             throwIDWasAddedWithOtherTags(id, tags, groups.at(it2->second));
-
-        return group;
     }
 }
 
 
 template <typename IDType>
-std::vector<Group> ContextTimeSeriesTagsCollector::insert(const std::vector<IDType> & ids, const std::vector<TagNamesAndValuesPtr> & tags_vector)
+void ContextTimeSeriesTagsCollector::addIDForTags(const std::vector<IDType> & ids, const std::vector<TagNamesAndValuesPtr> & tags_vector)
 {
     chassert(ids.size() == tags_vector.size());
     auto & groups_by_id = getIDMap<IDType>().groups_by_id;
 
-    std::vector<Group> res;
-    res.resize(tags_vector.size(), INVALID_GROUP);
-    size_t num_found = 0;
+    std::vector<Group> found_groups;
+    found_groups.resize(tags_vector.size(), INVALID_GROUP);
+    size_t num_found_groups = 0;
 
     {
         SharedLockGuard lock{mutex};
@@ -738,18 +736,20 @@ std::vector<Group> ContextTimeSeriesTagsCollector::insert(const std::vector<IDTy
                 Group existing_group = it->second;
                 if (*tags != *groups.at(existing_group))
                     throwIDWasAddedWithOtherTags(id, tags, groups.at(existing_group));
-                res[i] = existing_group;
-                ++num_found;
+                found_groups[i] = existing_group;
+                ++num_found_groups;
             }
         }
     }
 
-    if (num_found != tags_vector.size())
+    if (num_found_groups == tags_vector.size())
+        return;
+
     {
         std::unique_lock lock{mutex};
         for (size_t i = 0; i != tags_vector.size(); ++i)
         {
-            if (res[i] != INVALID_GROUP)
+            if (found_groups[i] != INVALID_GROUP)
                 continue;
             const auto & id = ids[i];
             const auto & tags = tags_vector[i];
@@ -765,13 +765,11 @@ std::vector<Group> ContextTimeSeriesTagsCollector::insert(const std::vector<IDTy
             if (group != it2->second)
                 throwIDWasAddedWithOtherTags(id, tags, groups.at(it2->second));
 
-            res[i] = group;
-            if (++num_found == tags_vector.size())
+            found_groups[i] = group;
+            if (++num_found_groups == tags_vector.size())
                 break;
         }
     }
-
-    return res;
 }
 
 
@@ -1081,8 +1079,8 @@ const ContextTimeSeriesTagsCollector::IDMap<IDType> & ContextTimeSeriesTagsColle
 
 
 #define TIME_SERIES_ID_TO_TAGS_MAP_INSTANTIATE(IDType) \
-    template Group ContextTimeSeriesTagsCollector::insert<IDType>(const IDType & id, const TagNamesAndValuesPtr & tags); \
-    template std::vector<Group> ContextTimeSeriesTagsCollector::insert<IDType>(const std::vector<IDType> & ids, const std::vector<TagNamesAndValuesPtr> & tags_vector); \
+    template void ContextTimeSeriesTagsCollector::addIDForTags<IDType>(const IDType & id, const TagNamesAndValuesPtr & tags); \
+    template void ContextTimeSeriesTagsCollector::addIDForTags<IDType>(const std::vector<IDType> & ids, const std::vector<TagNamesAndValuesPtr> & tags_vector); \
     template Group ContextTimeSeriesTagsCollector::getGroupByID<IDType>(const IDType & id) const; \
     template std::vector<Group> ContextTimeSeriesTagsCollector::getGroupByID<IDType>(const std::vector<IDType> & ids) const; \
     template ContextTimeSeriesTagsCollector::TagNamesAndValuesPtr ContextTimeSeriesTagsCollector::getTagsByID<IDType>(const IDType & id) const; \

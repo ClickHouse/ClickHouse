@@ -46,10 +46,10 @@ public:
     /// Adds mapping between a specified identifier and a set of tags to the collector.
     /// The function assigns a group to that set of tags and returns it.
     template <typename IDType>
-    Group insert(const IDType & id, const TagNamesAndValuesPtr & tags);
+    void addIDForTags(const IDType & id, const TagNamesAndValuesPtr & tags);
 
     template <typename IDType>
-    std::vector<Group> insert(const std::vector<IDType> & ids, const std::vector<TagNamesAndValuesPtr> & tags_vector);
+    void addIDForTags(const std::vector<IDType> & ids, const std::vector<TagNamesAndValuesPtr> & tags_vector);
 
     /// Returns the group assigned to a specified set of tags.
     /// If that set of tags hasn't been added to the collector yet then this functions adds it.

@@ -1,6 +1,7 @@
 #include <Functions/TimeSeries/TimeSeriesTagsFunctionHelpers.h>
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNothing.h>
 #include <Columns/ColumnNullable.h>
@@ -10,6 +11,8 @@
 #include <Common/quoteString.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -284,6 +287,65 @@ namespace
             "Illegal column {} of argument #{} of function {}, it must be {}",
             column.getName(), argument_index + 1, function_name, "UInt64");
     }
+
+    /// Extracts an identifier of time series from a column.
+    template <typename IDType>
+    void extractIDFromColumn(std::string_view function_name, size_t argument_index, const IColumn & column, std::vector<IDType> & out_ids)
+    {
+        size_t num_rows = out_ids.size();
+
+        /// Identifier can be UInt64.
+        if (checkColumn<ColumnUInt64>(&column))
+        {
+            std::string_view data = column.getRawData();
+            chassert(data.size() == num_rows * sizeof(UInt64));
+            const UInt64 * begin = reinterpret_cast<const UInt64 *>(data.data());
+            out_ids.assign(begin, begin + num_rows);
+            return;
+        }
+
+        /// Identifier can be UInt128 or UUID or FixedString(16).
+        const auto * fixed_string_column = checkAndGetColumn<ColumnFixedString>(&column);
+        if (checkColumn<ColumnUInt128>(&column) || checkColumn<ColumnUUID>(&column) || (fixed_string_column && (fixed_string_column->getN() == 16)))
+        {
+            /// We can handle UUID and FixedString(16) as UInt128 as they have the same size.
+            std::string_view data = column.getRawData();
+            chassert(data.size() == num_rows * sizeof(UInt128));
+            const UInt128 * begin = reinterpret_cast<const UInt128 *>(data.data());
+            out_ids.assign(begin, begin + num_rows);
+            return;
+        }
+
+        /// The argument can be nullable.
+        if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(&column))
+        {
+            const auto & null_map = nullable_column->getNullMapData();
+            const auto & nested_column = nullable_column->getNestedColumn();
+            extractIDFromColumn(function_name, argument_index, nested_column, out_ids);
+            for (size_t i = 0; i != num_rows; ++i)
+            {
+                if (!null_map[i])
+                    out_ids[i] = IDType{};
+            }
+            return;
+        }
+
+        /// The argument can be literal NULL.
+        if (checkColumn<ColumnNothing>(&column))
+            return;
+
+        /// The argument can be wrapped in ColumnConst or ColumnLowCardinality.
+        if (auto full_column = column.convertToFullIfNeeded(); full_column.get() != &column)
+        {
+            extractIDFromColumn(function_name, argument_index, *full_column, out_ids);
+            return;
+        }
+
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN,
+            "Illegal column {} of argument #{} of function {}, it must be {}",
+            column.getName(), argument_index + 1, function_name, "UInt64 or UInt128 or UUID");
+    }
 }
 
 
@@ -440,18 +502,16 @@ const std::type_info & checkArgumentTypeForID(std::string_view function_name, co
 
     if (allow_nullable)
     {
-        is_nullable = isNullable(type);
-        type = removeNullable(type);
+        is_nullable = type->isNullable();
+        type = removeLowCardinalityAndNullable(type);
     }
 
     if (isUInt64(type))
         return is_nullable ? typeid(std::optional<UInt64>) : typeid(UInt64);
 
-    if (isUInt128(type) || isUUID(type))
-        return is_nullable ? typeid(std::optional<UInt128>) : typeid(UInt128);
+    const auto * fixed_string_type = typeid_cast<const DataTypeFixedString *>(type.get());
 
-    if (const auto * fixed_string_type = typeid_cast<const DataTypeFixedString *>(type.get());
-        fixed_string_type && (fixed_string_type->getN() == 16))
+    if (isUInt128(type) || isUUID(type) || (fixed_string_type && (fixed_string_type->getN() == 16)))
         return is_nullable ? typeid(std::optional<UInt128>) : typeid(UInt128);
 
     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument #{} of function {} has wrong type {}, it must be {}",
@@ -464,16 +524,20 @@ std::vector<IDType> extractIDFromArgument(std::string_view function_name, const 
 {
     chassert(argument_index < arguments.size());
     const auto & column = *arguments[argument_index].column;
-    size_t num_rows = column.size();
 
+    size_t num_rows = column.size();
     std::vector<IDType> ids;
     ids.reserve(num_rows);
 
-    std::string_view data = column.RawData();
-    chassert(data.size() == num_rows * sizeof(IDType));
-    const IDType * begin = reinterpret_cast<const IDType *>(data.data());
-    return std::vector<IDType>(begin, begin + num_rows);
+    extractIDFromColumn(function_name, argument_index, column, ids);
+    return ids;
 }
+
+
+template std::vector<UInt64> extractIDFromArgument<UInt64>(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index);
+template std::vector<std::optional<UInt64>> extractIDFromArgument<std::optional<UInt64>>(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index);
+template std::vector<UInt128> extractIDFromArgument<UInt128>(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index);
+template std::vector<std::optional<UInt128>> extractIDFromArgument<std::optional<UInt128>>(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index);
 
 
 ColumnPtr makeColumnForGroup(const std::vector<Group> & groups)

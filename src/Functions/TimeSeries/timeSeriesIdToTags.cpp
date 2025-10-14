@@ -1,13 +1,9 @@
 #include <Functions/FunctionFactory.h>
+
+#include <Functions/TimeSeries/TimeSeriesTagsFunctionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnTuple.h>
-#include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ContextTimeSeriesTagsCollector.h>
 
@@ -17,8 +13,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -45,124 +39,38 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.size() != 1)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} must be called with one argument", name);
-
-
-        checkArgumentTypeForID(a
-
-        checkDataTypeOfID(arguments[0].type, 0);
-
+        checkArgumentTypes(arguments);
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()}));
     }
 
-    static void checkDataTypeOfID(const DataTypePtr & data_type, size_t argument_index)
+    static void checkArgumentTypes(const ColumnsWithTypeAndName & arguments)
     {
-        if (isUInt64(data_type) || isUInt128(data_type) || isUUID(data_type))
-            return;
-        if (const auto * fixed_string_data_type = typeid_cast<const DataTypeFixedString *>(data_type.get());
-            fixed_string_data_type && (fixed_string_data_type->getN() == 16))
-            return;
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument #{} of function {} has wrong type {}, it must be {}",
-                        argument_index + 1, name, data_type, "UInt64 or UInt128 or UUID");
+        if (arguments.size() != 1)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} must be called with two arguments", name);
+
+        TimeSeriesTagsFunctionHelpers::checkArgumentTypeForID(name, arguments, 0);
     }
 
-    using TagNamesAndValuesPtr = ContextTimeSeriesTagsCollector::TagNamesAndValuesPtr;
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        chassert(arguments.size() == 1);
-        const auto & column_ids = arguments[0].column;
-
-        auto tags_vector = getTags(*column_ids, 0);
-        chassert(tags_vector.size() == input_rows_count);
-
-        return makeResultColumn(tags_vector);
-    }
-
-    /// Converts a vector of tags to a result column.
-    static ColumnPtr makeResultColumn(const std::vector<TagNamesAndValuesPtr> & tags_vector)
-    {
-        size_t total_tags = 0;
-        for (const auto & tags : tags_vector)
-            total_tags += tags->size();
-
-        auto tag_names = ColumnString::create();
-        auto tag_values = ColumnString::create();
-        auto offsets = ColumnArray::ColumnOffsets::create();
-
-        tag_names->reserve(total_tags);
-        tag_values->reserve(total_tags);
-        offsets->reserve(tags_vector.size());
-
-        for (const auto & tags : tags_vector)
-        {
-            for (const auto & [tag_name, tag_value] : *tags)
-            {
-                tag_names->insertData(tag_name.data(), tag_name.length());
-                tag_values->insertData(tag_value.data(), tag_value.length());
-            }
-            offsets->insertValue(tag_names->size());
-        }
-
-        MutableColumns tuple_columns;
-        tuple_columns.reserve(2);
-        tuple_columns.push_back(std::move(tag_names));
-        tuple_columns.push_back(std::move(tag_values));
-        return ColumnArray::create(ColumnTuple::create(std::move(tuple_columns)), std::move(offsets));
-    }
-
-    /// Gets the names and values of the tags associated with specified identifiers.
-    std::vector<TagNamesAndValuesPtr> getTags(const IColumn & column_ids, size_t argument_index) const
-    {
-        /// Identifier can be UInt64.
-        if (checkColumn<ColumnUInt64>(&column_ids))
-        {
-            return getTagsImpl<UInt64>(column_ids);
-        }
-
-        /// Identifier can be UInt128 or UUID.
-        if (checkColumn<ColumnUInt128>(&column_ids) || checkColumn<ColumnUUID>(&column_ids))
-        {
-            /// We can handle UUID as UInt128 as they have the same size.
-            return getTagsImpl<UInt128>(column_ids);
-        }
-
-        /// Identifier can be FixedString(16).
-        if (const auto * fixed_string_column = checkAndGetColumn<ColumnFixedString>(&column_ids);
-                 fixed_string_column && (fixed_string_column->getN() == 16))
-        {
-            /// We can handle FixedString(16) as UInt128 as they have the same size.
-            return getTagsImpl<UInt128>(column_ids);
-        }
-
-        /// The argument can be wrapped in ColumnConst or ColumnLowCardinality.
-        if (auto full_column = column_ids.convertToFullIfNeeded(); full_column.get() != &column_ids)
-        {
-            return getTags(*full_column, argument_index);
-        }
-
-        throw Exception(
-            ErrorCodes::ILLEGAL_COLUMN,
-            "Illegal column {} of argument #{} of function {}, it must be {}",
-            column_ids.getName(), argument_index + 1, name, "UInt64 or UInt128 or UUID");
+        const auto & id_type = TimeSeriesTagsFunctionHelpers::checkArgumentTypeForID(name, arguments, 0);
+        if (id_type == typeid(UInt64))
+            return executeForIDType<UInt64>(arguments, result_type, input_rows_count);
+        if (id_type == typeid(UInt128))
+            return executeForIDType<UInt128>(arguments, result_type, input_rows_count);
+        UNREACHABLE();
     }
 
     template <typename IDType>
-    std::vector<TagNamesAndValuesPtr> getTagsImpl(const IColumn & column_ids) const
+    ColumnPtr executeForIDType(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const
     {
-        auto ids = extractIDs<IDType>(column_ids);
-        return getContext()->getQueryContext()->getTimeSeriesTagsCollector().getTagsByID(ids);
-    }
+        auto ids = TimeSeriesTagsFunctionHelpers::extractIDFromArgument<IDType>(name, arguments, 0);
+        
+        auto & tags_collector = getContext()->getQueryContext()->getTimeSeriesTagsCollector();
+        auto tags = tags_collector.getTagsByID(ids);
 
-    /// Extracts identifiers from the column.
-    template <typename IDType>
-    static std::vector<IDType> extractIDs(const IColumn & column_ids)
-    {
-        std::string_view data = column_ids.getRawData();
-        chassert(data.size() == column_ids.size() * sizeof(IDType));
-        const IDType * begin = reinterpret_cast<const IDType *>(data.data());
-        return std::vector<IDType>(begin, begin + column_ids.size());
+        chassert(tags.size() == input_rows_count);
+        return TimeSeriesTagsFunctionHelpers::makeColumnForTagNamesAndValues(tags);
     }
 };
 

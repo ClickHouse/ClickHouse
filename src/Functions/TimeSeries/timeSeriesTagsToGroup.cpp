@@ -56,7 +56,6 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {
-        chassert(arguments.size() >= 1);
         auto tags_vector = TimeSeriesTagsFunctionHelpers::extractTagNamesAndValuesFromArguments(name, arguments, 0);
 
         auto & tags_collector = getContext()->getQueryContext()->getTimeSeriesTagsCollector();

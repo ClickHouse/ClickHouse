@@ -56,8 +56,6 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {
-        chassert(arguments.size() == 3);
-
         auto dest_groups = TimeSeriesTagsFunctionHelpers::extractGroupFromArgument(name, arguments, 0, /* return_single_element_if_const_column = */ true);
         auto src_groups = TimeSeriesTagsFunctionHelpers::extractGroupFromArgument(name, arguments, 1, /* return_single_element_if_const_column = */ true);
         chassert((dest_groups.size() == input_rows_count) || (src_groups.size() == input_rows_count));
