@@ -1660,7 +1660,7 @@ bool ColumnObject::dynamicStructureEquals(const IColumn & rhs) const
     return true;
 }
 
-void ColumnObject::takeDynamicStructureFromSourceColumns(const DB::Columns & source_columns)
+void ColumnObject::takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
     if (!empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "takeDynamicStructureFromSourceColumns should be called only on empty Object column");
@@ -1718,7 +1718,8 @@ void ColumnObject::takeDynamicStructureFromSourceColumns(const DB::Columns & sou
     dynamic_paths.clear();
     dynamic_paths_ptrs.clear();
     sorted_dynamic_paths.clear();
-    max_dynamic_paths = global_max_dynamic_paths;
+    /// If max_dynamic_subcolumns is set, use it as max number of paths.
+    max_dynamic_paths = max_dynamic_subcolumns ? std::min(*max_dynamic_subcolumns, global_max_dynamic_paths) : global_max_dynamic_paths;
     Statistics new_statistics(Statistics::Source::MERGE);
 
     /// Check if the number of all dynamic paths exceeds the limit.
@@ -1782,7 +1783,7 @@ void ColumnObject::takeDynamicStructureFromSourceColumns(const DB::Columns & sou
             if (it != source_object.dynamic_paths.end())
                 dynamic_path_source_columns.push_back(it->second);
         }
-        column->takeDynamicStructureFromSourceColumns(dynamic_path_source_columns);
+        column->takeDynamicStructureFromSourceColumns(dynamic_path_source_columns, max_dynamic_subcolumns);
     }
 
     /// Typed paths also can contain types with dynamic structure.
@@ -1792,7 +1793,7 @@ void ColumnObject::takeDynamicStructureFromSourceColumns(const DB::Columns & sou
         typed_path_source_columns.reserve(source_columns.size());
         for (const auto & source_column : source_columns)
             typed_path_source_columns.push_back(assert_cast<const ColumnObject &>(*source_column).typed_paths.at(path));
-        column->takeDynamicStructureFromSourceColumns(typed_path_source_columns);
+        column->takeDynamicStructureFromSourceColumns(typed_path_source_columns, max_dynamic_subcolumns);
     }
 }
 
