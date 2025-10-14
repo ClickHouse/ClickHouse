@@ -118,6 +118,8 @@ def main():
             is_parallel = True
         elif to == "sequential":
             is_sequential = True
+        elif "bugfix" in to.lower() or "validation" in to.lower():
+            is_bugfix_validation = True
         else:
             assert False, f"Unknown job option [{to}]"
 
