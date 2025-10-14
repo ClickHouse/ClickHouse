@@ -1919,6 +1919,8 @@ class ClickHouseCluster:
                 f"Can't add instance '{name}': there is already an instance with the same name in [{self.instances.keys()}]"
             )
 
+        tag_explicit = tag is not None
+
         if tag is None:
             tag = DOCKER_BASE_TAG
         else:
@@ -2038,6 +2040,7 @@ class ClickHouseCluster:
             use_docker_init_flag=use_docker_init_flag,
             with_dolor=with_dolor,
             extra_parameters=extra_parameters,
+            tag_explicit=tag_explicit,
         )
 
         docker_compose_yml_dir = get_docker_compose_path()
@@ -4063,6 +4066,7 @@ class ClickHouseInstance:
         use_docker_init_flag=False,
         with_dolor=False,
         extra_parameters=None,
+        tag_explicit=False,
     ):
         self.name = name
         self.base_cmd = cluster.base_cmd
@@ -4201,6 +4205,7 @@ class ClickHouseInstance:
         self.client = None
         self.image = image
         self.tag = tag
+        self.tag_explicit = tag_explicit
         self.stay_alive = stay_alive
         self.ipv4_address = ipv4_address
         self.ipv6_address = ipv6_address
@@ -5284,7 +5289,8 @@ class ClickHouseInstance:
 
         if not self.with_dolor:
             write_embedded_config("0_common_instance_users.xml", users_d_dir)
-            write_embedded_config("0_use_query_condition_cache.xml", users_d_dir)
+            if not self.tag_explicit:
+                write_embedded_config("0_use_query_condition_cache.xml", users_d_dir)
             if self.with_installed_binary:
                 # Ignore CPU overload in this case
                 write_embedded_config(
