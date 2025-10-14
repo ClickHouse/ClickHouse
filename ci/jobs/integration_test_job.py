@@ -113,7 +113,7 @@ def main():
             use_distributed_plan = True
         elif to == "flaky":
             is_flaky_check = True
-            repeat_option = f"--count {FLAKY_CHECK_TEST_REPEAT_COUNT} --random-order"
+            args.count = FLAKY_CHECK_TEST_REPEAT_COUNT
         elif to == "parallel":
             is_parallel = True
         elif to == "sequential":
@@ -124,7 +124,7 @@ def main():
             assert False, f"Unknown job option [{to}]"
 
     if args.count:
-        repeat_option = f"--count {args.count}"
+        repeat_option = f"--count {args.count} --random-order"
 
     changed_test_modules = []
     if is_bugfix_validation or is_flaky_check:
