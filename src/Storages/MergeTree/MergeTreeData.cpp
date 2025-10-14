@@ -783,13 +783,11 @@ std::map<std::string, DiskPtr> MergeTreeData::getDistinctDisksForParts(const Dat
     return results;
 }
 
-ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimatorByPredicate(
-    const StorageSnapshotPtr & storage_snapshot, const ActionsDAG * filter_dag, ContextPtr local_context) const
+ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator(
+    const RangesInDataParts & parts, ContextPtr local_context) const
 {
     if (!local_context->getSettingsRef()[Setting::allow_statistics_optimize])
         return nullptr;
-
-    const auto & parts = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data).parts;
 
     if (parts.empty())
         return {};
@@ -798,49 +796,14 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
 
     ConditionSelectivityEstimatorBuilder estimator_builder(local_context);
 
-    auto build_estimator_all_partitions = [&]()
+    for (const auto & part : parts)
     {
-        /// Read all partitions.
-        for (const auto & part : parts)
         try
         {
             auto stats = part.data_part->loadStatistics();
-            /// TODO: We only have one stats file for every part.
             estimator_builder.incrementRowCount(part.data_part->rows_count);
             for (const auto & stat : stats)
                 estimator_builder.addStatistics(stat);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, fmt::format("while loading statistics on part {}", part.data_part->info.getPartNameV1()));
-        }
-    };
-
-    if (filter_dag == nullptr)
-    {
-        build_estimator_all_partitions();
-        return estimator_builder.getEstimator();
-    }
-
-    ActionsDAGWithInversionPushDown inverted_dag(filter_dag->getOutputs().front(), local_context);
-    PartitionPruner partition_pruner(storage_snapshot->metadata, inverted_dag, local_context);
-
-    if (partition_pruner.isUseless())
-    {
-        build_estimator_all_partitions();
-    }
-    else
-    {
-        for (const auto & part : parts)
-        try
-        {
-            if (!partition_pruner.canBePruned(*part.data_part))
-            {
-                auto stats = part.data_part->loadStatistics();
-                estimator_builder.incrementRowCount(part.data_part->rows_count);
-                for (const auto & stat : stats)
-                    estimator_builder.addStatistics(stat);
-            }
         }
         catch (...)
         {
