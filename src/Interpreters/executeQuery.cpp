@@ -585,11 +585,44 @@ static ResultProgress flushQueryProgress(const QueryPipeline & pipeline, bool pu
     return res;
 }
 
+QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(ContextPtr context, QueryPipeline && query_pipeline, QueryResultCacheUsage query_result_cache_usage, bool pulling_pipeline)
+{
+    if (query_result_cache_usage == QueryResultCacheUsage::Write)
+        /// Trigger the actual write of the buffered query result into the query result cache. This is done explicitly to
+        /// prevent partial/garbage results in case of exceptions during query execution.
+        query_pipeline.finalizeWriteInQueryResultCache();
+
+    /// We can't just hold the processors in QueryPipelineFinalizedInfo because then not all the
+    /// profile events will be recorded.
+    /// TODO(mstetsyuk): save all the info of the processors to a new struct, save it to QueryPipelineFinalizedInfo,
+    /// and use in finish_callback.
+    if (const auto & processors = query_pipeline.getProcessors(); !processors.empty())
+            logProcessorProfile(context, processors);
+
+    std::optional<ResultProgress> result_progress;
+    if (pulling_pipeline)
+    {
+        UInt64 result_rows;
+        UInt64 result_bytes;
+        query_pipeline.tryGetResultRowsAndBytes(result_rows, result_bytes);
+        result_progress = std::make_optional<ResultProgress>(result_rows, result_bytes);
+    }
+
+    /// Reset pipeline before fetching profile counters
+    query_pipeline.reset();
+
+    /// Update performance counters before logging to query_log
+    CurrentThread::finalizePerformanceCounters();
+
+    return QueryPipelineFinalizedInfo{
+        .result_progress = std::move(result_progress)};
+}
+
 void logQueryFinishImpl(
     QueryLogElement & elem,
     const ContextMutablePtr & context,
     const ASTPtr & query_ast,
-    QueryPipeline && query_pipeline,
+    const QueryPipelineFinalizedInfo & query_pipeline_finalized_info,
     bool pulling_pipeline,
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span,
     QueryResultCacheUsage query_result_cache_usage,
@@ -599,20 +632,34 @@ void logQueryFinishImpl(
     const Settings & settings = context->getSettingsRef();
     auto log_queries = settings[Setting::log_queries];
 
-    QueryStatusPtr process_list_elem = context->getProcessListElement();
-    if (process_list_elem)
+    if (QueryStatusPtr process_list_elem = context->getProcessListElement())
     {
+        {
+            ResultProgress result_progress(0, 0);
 
-        if (!query_pipeline.getProcessors().empty())
-            logProcessorProfile(context, query_pipeline.getProcessors());
+            chassert((query_pipeline_finalized_info.result_progress != std::nullopt) == pulling_pipeline);
 
-        auto result_progress = flushQueryProgress(query_pipeline, pulling_pipeline, context->getProgressCallback(), process_list_elem);
+            if (query_pipeline_finalized_info.result_progress)
+            {
+                result_progress = *query_pipeline_finalized_info.result_progress;
+            }
+            else if (!pulling_pipeline)
+            {
+                auto progress_out = process_list_elem->getProgressOut();
+                result_progress.result_rows = progress_out.written_rows;
+                result_progress.result_bytes = progress_out.written_bytes;
+            }
 
-        /// Reset pipeline before fetching profile counters
-        query_pipeline.reset();
+            if (auto progress_callback = context->getProgressCallback())
+            {
+                Progress p;
+                p.incrementPiecewiseAtomically(Progress{result_progress});
+                progress_callback(p);
+            }
 
-        /// Update performance counters before logging to query_log
-        CurrentThread::finalizePerformanceCounters();
+            elem.result_rows = result_progress.result_rows;
+            elem.result_bytes = result_progress.result_bytes;
+        }
 
         QueryStatusInfo info = process_list_elem->getInfo(true, settings[Setting::log_profile_events]);
         logQueryMetricLogFinish(context, internal, elem.client_info.current_query_id, time, std::make_shared<QueryStatusInfo>(info));
@@ -620,9 +667,6 @@ void logQueryFinishImpl(
         elem.type = QueryLogElementType::QUERY_FINISH;
 
         addStatusInfoToQueryLogElement(elem, info, query_ast, context, time);
-
-        elem.result_rows = result_progress.result_rows;
-        elem.result_bytes = result_progress.result_bytes;
 
         if (elem.read_rows != 0)
         {
@@ -692,7 +736,8 @@ void logQueryFinish(
     bool internal)
 {
     const auto time_now = std::chrono::system_clock::now();
-    logQueryFinishImpl(elem, context, query_ast, std::move(query_pipeline), pulling_pipeline, query_span, query_result_cache_usage, internal, time_now);
+    auto query_pipeline_finalized_info = finalizeQueryPipelineBeforeLogging(context, std::move(query_pipeline), query_result_cache_usage, pulling_pipeline);
+    logQueryFinishImpl(elem, context, query_ast, std::move(query_pipeline_finalized_info), pulling_pipeline, query_span, query_result_cache_usage, internal, time_now);
 }
 
 void logQueryException(
@@ -1738,35 +1783,7 @@ static BlockIO executeQueryImpl(
                                      // Need to be cached, since will be changed after complete()
                                      pulling_pipeline = pipeline.pulling()](QueryPipeline && query_pipeline) mutable -> QueryPipelineFinalizedInfo
             {
-                if (query_result_cache_usage == QueryResultCacheUsage::Write)
-                    /// Trigger the actual write of the buffered query result into the query result cache. This is done explicitly to
-                    /// prevent partial/garbage results in case of exceptions during query execution.
-                    query_pipeline.finalizeWriteInQueryResultCache();
-
-                /// We can't just hold the processors in QueryPipelineFinalizedInfo because then not all the
-                /// profile events will be recorded.
-                /// TODO(mstetsyuk): save all the info of the processors to a new struct, save it to QueryPipelineFinalizedInfo,
-                /// and use in finish_callback.
-                if (const auto & processors = query_pipeline.getProcessors(); !processors.empty())
-                        logProcessorProfile(context, processors);
-
-                std::optional<ResultProgress> result_progress;
-                if (pulling_pipeline)
-                {
-                    UInt64 result_rows;
-                    UInt64 result_bytes;
-                    query_pipeline.tryGetResultRowsAndBytes(result_rows, result_bytes);
-                    result_progress = std::make_optional<ResultProgress>(result_rows, result_bytes);
-                }
-
-                /// Reset pipeline before fetching profile counters
-                query_pipeline.reset();
-
-                /// Update performance counters before logging to query_log
-                CurrentThread::finalizePerformanceCounters();
-
-                return QueryPipelineFinalizedInfo{
-                    .result_progress = std::move(result_progress)};
+                return finalizeQueryPipelineBeforeLogging(context, std::move(query_pipeline), query_result_cache_usage, pulling_pipeline);
             };
 
             /// The finish callback logs the query result
@@ -1778,108 +1795,15 @@ static BlockIO executeQueryImpl(
                                     implicit_tcl_executor,
                                     // Need to be cached, since will be changed after complete()
                                     pulling_pipeline = pipeline.pulling(),
-                                    query_span,
-                                    &settings](const QueryPipelineFinalizedInfo & query_pipeline_finalized_info, std::chrono::system_clock::time_point finish_time) mutable
+                                    query_span](const QueryPipelineFinalizedInfo & query_pipeline_finalized_info, std::chrono::system_clock::time_point finish_time) mutable
             {
-                if (QueryStatusPtr process_list_elem = context->getProcessListElement())
-                {
-                    {
-                        ResultProgress result_progress(0, 0);
-
-                        chassert((query_pipeline_finalized_info.result_progress != std::nullopt) == pulling_pipeline);
-
-                        if (query_pipeline_finalized_info.result_progress)
-                        {
-                            result_progress = *query_pipeline_finalized_info.result_progress;
-                        }
-                        else if (!pulling_pipeline)
-                        {
-                            auto progress_out = process_list_elem->getProgressOut();
-                            result_progress.result_rows = progress_out.written_rows;
-                            result_progress.result_bytes = progress_out.written_bytes;
-                        }
-
-                        if (auto progress_callback = context->getProgressCallback())
-                        {
-                            Progress p;
-                            p.incrementPiecewiseAtomically(Progress{result_progress});
-                            progress_callback(p);
-                        }
-
-                        elem.result_rows = result_progress.result_rows;
-                        elem.result_bytes = result_progress.result_bytes;
-                    }
-
-                    QueryStatusInfo info = process_list_elem->getInfo(true, settings[Setting::log_profile_events]);
-                    logQueryMetricLogFinish(context, internal, elem.client_info.current_query_id, finish_time, std::make_shared<QueryStatusInfo>(info));
-
-                    elem.type = QueryLogElementType::QUERY_FINISH;
-
-                    addStatusInfoToQueryLogElement(elem, info, out_ast, context, finish_time);
-
-                    if (elem.read_rows != 0)
-                    {
-                        double elapsed_seconds = static_cast<double>(info.elapsed_microseconds) / 1000000.0;
-                        double rows_per_second = static_cast<double>(elem.read_rows) / elapsed_seconds;
-                        LOG_DEBUG(
-                            getLogger("executeQuery"),
-                            "Read {} rows, {} in {} sec., {} rows/sec., {}/sec.",
-                            elem.read_rows,
-                            ReadableSize(elem.read_bytes),
-                            elapsed_seconds,
-                            rows_per_second,
-                            ReadableSize(elem.read_bytes / elapsed_seconds));
-                    }
-
-                    elem.query_result_cache_usage = query_result_cache_usage;
-                    elem.is_internal = internal;
-
-                    const auto log_queries = settings[Setting::log_queries];
-                    if (log_queries && elem.type >= settings[Setting::log_queries_min_type]
-                        && static_cast<Int64>(elem.query_duration_ms) >= settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
-                    {
-                        if (auto query_log = context->getQueryLog())
-                            query_log->add(elem);
-                    }
-                }
-
-                if (query_span && query_span->isTraceEnabled())
-                {
-                    query_span->addAttribute("db.statement", elem.query);
-                    query_span->addAttribute("clickhouse.query_id", elem.client_info.current_query_id);
-                    query_span->addAttribute("clickhouse.query_status", "QueryFinish");
-                    query_span->addAttributeIfNotEmpty("clickhouse.tracestate", OpenTelemetry::CurrentContext().tracestate);
-                    query_span->addAttributeIfNotZero("clickhouse.read_rows", elem.read_rows);
-                    query_span->addAttributeIfNotZero("clickhouse.read_bytes", elem.read_bytes);
-                    query_span->addAttributeIfNotZero("clickhouse.written_rows", elem.written_rows);
-                    query_span->addAttributeIfNotZero("clickhouse.written_bytes", elem.written_bytes);
-                    query_span->addAttributeIfNotZero("clickhouse.memory_usage", elem.memory_usage);
-
-                    if (context)
-                    {
-                        std::string user_name = context->getUserName();
-                        query_span->addAttribute("clickhouse.user", user_name);
-                    }
-
-                    if (settings[Setting::log_query_settings])
-                    {
-                        auto changes = settings.changes();
-                        for (const auto & change : changes)
-                        {
-                            query_span->addAttribute(fmt::format("clickhouse.setting.{}", change.name), convertFieldToString(change.value));
-                        }
-                    }
-                    query_span->finish(finish_time);
-                }
+                logQueryFinishImpl(elem, context, out_ast, query_pipeline_finalized_info, pulling_pipeline, query_span, query_result_cache_usage, internal, finish_time);
 
                 if (implicit_tcl_executor->transactionRunning())
                 {
                     implicit_tcl_executor->commit(context);
                 }
             };
-
-            res.finalize_query_pipeline = std::move(finish_callback_finalize_pipeline);
-            res.finish_callbacks.push_back(std::move(finish_callback));
 
             auto exception_callback =
                 [start_watch, elem, context, out_ast, internal, my_quota(quota), implicit_tcl_executor, query_span](bool log_error) mutable
@@ -1902,6 +1826,9 @@ static BlockIO executeQueryImpl(
 
                 logQueryException(elem, context, start_watch, out_ast, query_span, internal, log_error);
             };
+
+            res.finalize_query_pipeline = std::move(finish_callback_finalize_pipeline);
+            res.finish_callbacks.push_back(std::move(finish_callback));
             res.exception_callbacks.push_back(std::move(exception_callback));
         }
     }
