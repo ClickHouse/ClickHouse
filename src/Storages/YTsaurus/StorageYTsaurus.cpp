@@ -112,9 +112,11 @@ void registerStorageYTsaurus(StorageFactory & factory)
         if (args.mode <= LoadingStrictnessLevel::CREATE && !args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_ytsaurus_table_engine])
             throw Exception(ErrorCodes::UNKNOWN_STORAGE, "Table engine YTsaurus is experimental. "
                 "Set `allow_experimental_ytsaurus_table_engine` setting to enable it");
+        YTsaurusSettings settings;
+        settings.loadFromQuery(*args.storage_def);
         return std::make_shared<StorageYTsaurus>(
             args.table_id,
-            StorageYTsaurus::getConfiguration(args.engine_args, YTsaurusSettings::createFromQuery(*args.storage_def), args.getLocalContext()),
+            StorageYTsaurus::getConfiguration(args.engine_args, settings, args.getLocalContext()),
             args.columns,
             args.constraints,
             args.comment);

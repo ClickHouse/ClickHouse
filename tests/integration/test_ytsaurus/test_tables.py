@@ -328,6 +328,10 @@ def test_disable_schema_check(started_cluster):
     )
     instance.query("SELECT * FROM t0")
     instance.query("DROP TABLE t0")
+    instance.query(
+        f"SELECT * FROM ytsaurus('{yt_uri_helper.uri}', '//tmp/table', '{yt_uri_helper.token}', 'a String, b String') SETTINGS ytsaurus_check_table_schema = 0"
+    )
+
     yt.remove_table(table_path)
 
 
@@ -450,7 +454,6 @@ def test_yt_multiple_endpoints(started_cluster):
     instance.query("DROP TABLE yt_test SYNC")
 
     yt.remove_table("//tmp/table")
-
 
 
 def test_ytsaurus_cyrillic_strings(started_cluster):
