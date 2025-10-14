@@ -242,6 +242,11 @@ public:
 
     bool isReplicatedOrSharedMergeTree() const { return isReplicatedMergeTree() || isSharedMergeTree(); }
 
+    bool isShared() const
+    {
+        return toption.has_value() && toption.value() == TableEngineOption::TShared;
+    }
+
     bool isFileEngine() const { return teng == TableEngineValues::File; }
 
     bool isJoinEngine() const { return teng == TableEngineValues::Join; }
