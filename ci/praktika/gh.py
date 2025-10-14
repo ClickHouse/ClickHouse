@@ -382,15 +382,39 @@ class GH:
         failed_results: List["ResultSummaryForGH"] = dataclasses.field(
             default_factory=list
         )
+        info: str = ""
+        comment: str = ""
 
         @classmethod
         def from_result(cls, result: Result):
+            MAX_TEST_CASES_PER_JOB = 10
+            MAX_JOBS_PER_SUMMARY = 10
+
             def flatten_results(results):
                 for r in results:
                     if not r.results:
                         yield r
                     else:
                         yield from flatten_results(r.results)
+
+            def extract_hlabels_info(res: Result) -> str:
+                try:
+                    hlabels = (
+                        res.ext.get("hlabels", [])
+                        if hasattr(res, "ext") and isinstance(res.ext, dict)
+                        else []
+                    )
+                    links = []
+                    for item in hlabels:
+                        text = None
+                        href = None
+                        if isinstance(item, (list, tuple)) and len(item) >= 2:
+                            text, href = item[0], item[1]
+                        if text and href:
+                            links.append(f"[{text}]({href})")
+                    return ", ".join(links)
+                except Exception:
+                    return ""
 
             info = Info()
             summary = cls(
@@ -400,16 +424,41 @@ class GH:
                 start_time=result.start_time,
                 duration=result.duration,
                 failed_results=[],
+                info=extract_hlabels_info(result),
+                comment="",
             )
             for sub_result in result.results:
                 if sub_result.is_completed() and not sub_result.is_ok():
-                    failed_result = cls(name=sub_result.name, status=sub_result.status)
+                    failed_result = cls(
+                        name=sub_result.name,
+                        status=sub_result.status,
+                        info=extract_hlabels_info(sub_result),
+                        comment="",
+                    )
                     failed_result.failed_results = [
-                        cls(r.name, r.status)
+                        cls(
+                            name=r.name,
+                            status=r.status,
+                            info=extract_hlabels_info(r),
+                            comment="",
+                        )
                         for r in flatten_results(sub_result.results)
                         if r.is_completed() and not r.is_ok()
                     ]
+                    if len(failed_result.failed_results) > MAX_TEST_CASES_PER_JOB:
+                        remaining = (
+                            len(failed_result.failed_results) - MAX_TEST_CASES_PER_JOB
+                        )
+                        note = f"{remaining} more test cases not shown"
+                        failed_result.failed_results = failed_result.failed_results[
+                            :MAX_TEST_CASES_PER_JOB
+                        ]
+                        failed_result.failed_results.append(cls(name=note, status=""))
                     summary.failed_results.append(failed_result)
+            if len(summary.failed_results) > MAX_JOBS_PER_SUMMARY:
+                remaining = len(summary.failed_results) - MAX_JOBS_PER_SUMMARY
+                summary.failed_results = summary.failed_results[:MAX_JOBS_PER_SUMMARY]
+                print(f"NOTE: {remaining} more jobs not shown in PR comment", status="")
             return summary
 
         def to_markdown(self):
@@ -444,8 +493,8 @@ class GH:
                         job_report_url,
                         "",
                         failed_result.status,
-                        "",
-                        "",
+                        failed_result.info or "",
+                        failed_result.comment or "",
                     )
                     if failed_result.failed_results:
                         for sub_failed_result in failed_result.failed_results:
@@ -453,8 +502,8 @@ class GH:
                                 "",
                                 sub_failed_result.name,
                                 sub_failed_result.status,
-                                "",
-                                "",
+                                sub_failed_result.info or "",
+                                sub_failed_result.comment or "",
                             )
             return body
 
