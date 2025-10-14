@@ -53,3 +53,35 @@ WHERE
 ORDER BY log_comment ASC, event_time DESC 
 LIMIT 1 BY log_comment;
 
+DROP TABLE IF EXISTS merged_indices;
+CREATE TABLE merged_indices (
+    `uid` Int16,
+    first_num_val Int16,
+    second_num_val Int16,
+    third_num_val Int16,
+    extra String,
+    INDEX fnv (first_num_val < second_num_val) TYPE hypothesis GRANULARITY 1,
+    INDEX snv (second_num_val < third_num_val) TYPE hypothesis GRANULARITY 1,
+    INDEX extra_i extra TYPE tokenbf_v1(8192, 1, 0) GRANULARITY 1
+    )
+ENGINE = MergeTree()
+ORDER BY `uid`
+SETTINGS index_granularity = 1;
+
+INSERT INTO merged_indices VALUES (1, 1, 2, 3, 'Spots'), (2, 2, 1, 0, 'Dots'), (3, 5, 5, 10, 'Elipses');
+
+SELECT count() FROM merged_indices FORMAT Null SETTINGS log_comment='6'; -- no skip index used
+SELECT count() FROM merged_indices WHERE first_num_val > second_num_val FORMAT Null SETTINGS log_comment='7'; -- fnv, snv indices merged
+SELECT count() FROM merged_indices WHERE second_num_val < 10 and extra like '%s%' FORMAT Null SETTINGS log_comment='8'; -- all three indices merged
+
+SYSTEM FLUSH LOGS system.query_log;
+
+SELECT formatQuerySingleLine(query), skip_indices
+FROM system.query_log
+WHERE
+    event_date >= yesterday()
+    AND type = 'QueryFinish'
+    AND current_database = currentDatabase()
+    AND log_comment in ('6', '7', '8')
+ORDER BY log_comment ASC, event_time DESC
+LIMIT 1 BY log_comment;
