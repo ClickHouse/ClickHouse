@@ -47,14 +47,14 @@ BlockIO::~BlockIO()
     reset();
 }
 
-void BlockIO::onFinish(std::chrono::system_clock::time_point /* finish_time */)
+void BlockIO::onFinish(std::chrono::system_clock::time_point finish_time)
 {
     if (finalize_query_pipeline)
     {
-        const QueryFinishInfo finish_info = finalize_query_pipeline(std::move(pipeline));
+        const QueryPipelineFinalizedInfo query_pipeline_finalized_info = finalize_query_pipeline(std::move(pipeline));
         for (const auto & callback : finish_callbacks)
         {
-            callback(finish_info);
+            callback(query_pipeline_finalized_info, finish_time);
         }
     }
 }

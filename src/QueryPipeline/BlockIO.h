@@ -15,10 +15,10 @@ namespace DB
 class ProcessListEntry;
 
 /// Information prepared by BlockIO::finalize_query_pipeline before calling finish callbacks.
-struct QueryFinishInfo
+struct QueryPipelineFinalizedInfo
 {
-    std::chrono::system_clock::time_point finish_time;
     std::optional<ResultProgress> result_progress;
+    Processors processors;
 };
 
 struct BlockIO
@@ -39,9 +39,9 @@ struct BlockIO
     QueryPipeline pipeline;
 
     /// The finalize_query_pipeline function is called once to flush the pipeline progress and reset it.
-    /// Then all finish callbacks are called with the resulting QueryFinishInfo.
-    std::function<QueryFinishInfo(QueryPipeline &&)> finalize_query_pipeline;
-    std::vector<std::function<void(const QueryFinishInfo &)>> finish_callbacks;
+    /// Then all finish callbacks are called with the resulting QueryPipelineFinalizedInfo.
+    std::function<QueryPipelineFinalizedInfo(QueryPipeline &&)> finalize_query_pipeline;
+    std::vector<std::function<void(const QueryPipelineFinalizedInfo &, std::chrono::system_clock::time_point)>> finish_callbacks;
 
     std::vector<std::function<void(bool)>> exception_callbacks;
 

@@ -1736,17 +1736,14 @@ static BlockIO executeQueryImpl(
             auto finish_callback_finalize_pipeline = [context,
                                      query_result_cache_usage,
                                      // Need to be cached, since will be changed after complete()
-                                     pulling_pipeline = pipeline.pulling()](QueryPipeline && query_pipeline) mutable -> QueryFinishInfo
+                                     pulling_pipeline = pipeline.pulling()](QueryPipeline && query_pipeline) mutable -> QueryPipelineFinalizedInfo
             {
-                const std::chrono::system_clock::time_point finish_time = std::chrono::system_clock::now();
-
                 if (query_result_cache_usage == QueryResultCacheUsage::Write)
                     /// Trigger the actual write of the buffered query result into the query result cache. This is done explicitly to
                     /// prevent partial/garbage results in case of exceptions during query execution.
                     query_pipeline.finalizeWriteInQueryResultCache();
 
-                if (!query_pipeline.getProcessors().empty())
-                    logProcessorProfile(context, query_pipeline.getProcessors());
+                Processors processors = query_pipeline.getProcessors();
 
                 std::optional<ResultProgress> result_progress;
                 if (pulling_pipeline)
@@ -1763,7 +1760,9 @@ static BlockIO executeQueryImpl(
                 /// Update performance counters before logging to query_log
                 CurrentThread::finalizePerformanceCounters();
 
-                return QueryFinishInfo{.finish_time = finish_time, .result_progress = std::move(result_progress)};
+                return QueryPipelineFinalizedInfo{
+                    .result_progress = std::move(result_progress),
+                    .processors = std::move(processors)};
             };
 
             /// The finish callback logs the query result
@@ -1776,18 +1775,21 @@ static BlockIO executeQueryImpl(
                                     // Need to be cached, since will be changed after complete()
                                     pulling_pipeline = pipeline.pulling(),
                                     query_span,
-                                    &settings](const QueryFinishInfo & finish_info) mutable
+                                    &settings](const QueryPipelineFinalizedInfo & query_pipeline_finalized_info, std::chrono::system_clock::time_point finish_time) mutable
             {
                 if (QueryStatusPtr process_list_elem = context->getProcessListElement())
                 {
+                    if (const auto & processors = query_pipeline_finalized_info.processors; !processors.empty())
+                        logProcessorProfile(context, processors);
+
                     {
                         ResultProgress result_progress(0, 0);
 
-                        chassert((finish_info.result_progress != std::nullopt) == pulling_pipeline);
+                        chassert((query_pipeline_finalized_info.result_progress != std::nullopt) == pulling_pipeline);
 
-                        if (finish_info.result_progress)
+                        if (query_pipeline_finalized_info.result_progress)
                         {
-                            result_progress = *finish_info.result_progress;
+                            result_progress = *query_pipeline_finalized_info.result_progress;
                         }
                         else if (!pulling_pipeline)
                         {
@@ -1808,11 +1810,11 @@ static BlockIO executeQueryImpl(
                     }
 
                     QueryStatusInfo info = process_list_elem->getInfo(true, settings[Setting::log_profile_events]);
-                    logQueryMetricLogFinish(context, internal, elem.client_info.current_query_id, finish_info.finish_time, std::make_shared<QueryStatusInfo>(info));
+                    logQueryMetricLogFinish(context, internal, elem.client_info.current_query_id, finish_time, std::make_shared<QueryStatusInfo>(info));
 
                     elem.type = QueryLogElementType::QUERY_FINISH;
 
-                    addStatusInfoToQueryLogElement(elem, info, out_ast, context, finish_info.finish_time);
+                    addStatusInfoToQueryLogElement(elem, info, out_ast, context, finish_time);
 
                     if (elem.read_rows != 0)
                     {
@@ -1838,19 +1840,35 @@ static BlockIO executeQueryImpl(
                         if (auto query_log = context->getQueryLog())
                             query_log->add(elem);
                     }
+                }
 
-                    if (auto opentelemetry_span_log = context->getOpenTelemetrySpanLog();
-                        opentelemetry_span_log && query_span && query_span->isTraceEnabled())
+                if (query_span && query_span->isTraceEnabled())
+                {
+                    query_span->addAttribute("db.statement", elem.query);
+                    query_span->addAttribute("clickhouse.query_id", elem.client_info.current_query_id);
+                    query_span->addAttribute("clickhouse.query_status", "QueryFinish");
+                    query_span->addAttributeIfNotEmpty("clickhouse.tracestate", OpenTelemetry::CurrentContext().tracestate);
+                    query_span->addAttributeIfNotZero("clickhouse.read_rows", elem.read_rows);
+                    query_span->addAttributeIfNotZero("clickhouse.read_bytes", elem.read_bytes);
+                    query_span->addAttributeIfNotZero("clickhouse.written_rows", elem.written_rows);
+                    query_span->addAttributeIfNotZero("clickhouse.written_bytes", elem.written_bytes);
+                    query_span->addAttributeIfNotZero("clickhouse.memory_usage", elem.memory_usage);
+
+                    if (context)
                     {
-                        query_span->addAttribute("db.statement", elem.query);
-                        query_span->addAttributeIfNotZero("clickhouse.read_rows", elem.read_rows);
-                        query_span->addAttributeIfNotZero("clickhouse.read_bytes", elem.read_bytes);
-                        query_span->addAttributeIfNotZero("clickhouse.written_rows", elem.written_rows);
-                        query_span->addAttributeIfNotZero("clickhouse.written_bytes", elem.written_bytes);
-                        query_span->addAttributeIfNotZero("clickhouse.result_rows", elem.result_rows);
-                        query_span->addAttributeIfNotZero("clickhouse.result_bytes", elem.result_bytes);
-                        query_span->finish(finish_info.finish_time);
+                        std::string user_name = context->getUserName();
+                        query_span->addAttribute("clickhouse.user", user_name);
                     }
+
+                    if (settings[Setting::log_query_settings])
+                    {
+                        auto changes = settings.changes();
+                        for (const auto & change : changes)
+                        {
+                            query_span->addAttribute(fmt::format("clickhouse.setting.{}", change.name), convertFieldToString(change.value));
+                        }
+                    }
+                    query_span->finish(finish_time);
                 }
 
                 if (implicit_tcl_executor->transactionRunning())
