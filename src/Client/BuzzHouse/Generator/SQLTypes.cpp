@@ -180,9 +180,18 @@ String IntType::insertNumberEntry(RandomGenerator & rg, StatementGenerator & gen
     if (size > 8 && rg.nextSmallNumber() < 8)
     {
         String buf = "CAST(";
+        const bool negative = (!is_unsigned && rg.nextBool());
 
-        buf += (!is_unsigned && rg.nextBool()) ? "-" : "";
-        buf += "number AS ";
+        buf += negative ? "(-" : "";
+        buf += "number";
+        buf += negative ? ")" : "";
+        if (rg.nextSmallNumber() < 4)
+        {
+            /// Generate identical numbers
+            buf += " % ";
+            buf += std::to_string(rg.randomInt<uint32_t>(2, 100));
+        }
+        buf += " AS ";
         buf += typeName(false, false);
         buf += ")";
         return buf;
@@ -225,9 +234,17 @@ String FloatType::insertNumberEntry(RandomGenerator & rg, StatementGenerator & g
     if (rg.nextSmallNumber() < 8)
     {
         String buf = "CAST(";
+        const bool negative = rg.nextBool();
 
-        buf += rg.nextBool() ? "-" : "";
-        buf += "number AS ";
+        buf += negative ? "(-" : "";
+        buf += "number";
+        buf += negative ? ")" : "";
+        if (rg.nextSmallNumber() < 4)
+        {
+            buf += " % ";
+            buf += std::to_string(rg.randomInt<uint32_t>(2, 100));
+        }
+        buf += " AS ";
         buf += typeName(false, false);
         buf += ")";
         return buf;
@@ -476,9 +493,17 @@ String DecimalType::insertNumberEntry(RandomGenerator & rg, StatementGenerator &
     if (rg.nextSmallNumber() < 8)
     {
         String buf = "CAST(";
+        const bool negative = rg.nextBool();
 
-        buf += rg.nextBool() ? "-" : "";
-        buf += "number AS ";
+        buf += negative ? "(-" : "";
+        buf += "number";
+        buf += negative ? ")" : "";
+        if (rg.nextSmallNumber() < 4)
+        {
+            buf += " % ";
+            buf += std::to_string(rg.randomInt<uint32_t>(2, 100));
+        }
+        buf += " AS ";
         buf += typeName(false, false);
         buf += ")";
         return buf;
