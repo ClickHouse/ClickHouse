@@ -14,7 +14,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-/// Function timeSeriesIdToGroup(<id>) converts the specified identifier of a time series to its group index.
+/// Function timeSeriesIdToGroup(id) converts the specified identifier of a time series to its group index.
 /// Group indices are numbers 0, 1, 2, 3 associated with each unique set of tags in the context of the currently executed query.
 class FunctionTimeSeriesIdToGroup : public IFunction, private WithContext
 {
@@ -28,8 +28,7 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
-    /// Function timeSeriesIdToGroup(<id>) returns the information stored in the query context by function timeSeriesStoreTags(),
-    /// so it's deterministic in the scope of the current query.
+    /// Function timeSeriesIdToGroup returns information stored in the query context, it's deterministic in the scope of the current query.
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return true; }
 
@@ -44,8 +43,11 @@ public:
     static void checkArgumentTypes(const ColumnsWithTypeAndName & arguments)
     {
         if (arguments.size() != 1)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} must be called with two arguments", name);
-
+        {
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                            "Function {} must be called with one arguments: {}(id)",
+                            name, name);
+        }
         TimeSeriesTagsFunctionHelpers::checkArgumentTypeForID(name, arguments, 0);
     }
 

@@ -14,7 +14,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-/// Function FunctionTimeSeriesRemoveTagFromGroup(<group>, '<tag_name>') removes a specified tag from a tags group,
+/// Function timeSeriesRemoveTagFromGroup(group, 'tag_name') removes a specified tag from a tags group,
 /// and returns the new tags group.
 class FunctionTimeSeriesRemoveTagFromGroup : public IFunction, private WithContext
 {
@@ -29,8 +29,7 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    /// Function timeSeriesRemoveTagFromGroup() uses the information stored in the query context by function timeSeriesStoreTags(),
-    /// so it's deterministic in the scope of the current query.
+    /// Function timeSeriesRemoveTagFromGroup uses information stored in the query context, it's deterministic in the scope of the current query.
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return true; }
 
@@ -45,16 +44,19 @@ public:
     static void checkArgumentTypes(const ColumnsWithTypeAndName & arguments)
     {
         if (arguments.size() != 2)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} must be called with two arguments", name);
-        
+        {
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                            "Function {} must be called with two arguments: {}(group, tag_to_remove)",
+                            name, name);
+        }
         TimeSeriesTagsFunctionHelpers::checkArgumentTypeForGroup(name, arguments, 0);
-        TimeSeriesTagsFunctionHelpers::checkArgumentTypeForConstTagName(name, arguments, 1);
+        TimeSeriesTagsFunctionHelpers::checkArgumentTypeForConstString(name, arguments, 1);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {
         auto old_groups = TimeSeriesTagsFunctionHelpers::extractGroupFromArgument(name, arguments, 0);
-        auto tag_to_remove = TimeSeriesTagsFunctionHelpers::extractConstTagNameFromArgument(name, arguments, 1);
+        auto tag_to_remove = TimeSeriesTagsFunctionHelpers::extractConstStringFromArgument(name, arguments, 1);
         
         auto & tags_collector = getContext()->getQueryContext()->getTimeSeriesTagsCollector();
         auto new_groups = tags_collector.removeTagFromGroup(old_groups, tag_to_remove);

@@ -14,7 +14,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-/// Function timeSeriesTagsToGroup([('tag1_name', 'tag1_value'), ...], 'tag2_name', 'tag2_value', ...)
+/// Function timeSeriesTagsToGroup([('tag_name_1', 'tag_value_1'), ...], 'tag_name_2', 'tag_value_2', ...)
 /// returns a group assigned to the specified set of tags.
 class FunctionTimeSeriesTagsToGroup : public IFunction, private WithContext
 {
@@ -30,8 +30,7 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
-    /// Function timeSeriesTagsToGroup uses the information stored in the query context,
-    /// it's deterministic in the scope of the current query.
+    /// Function timeSeriesRemoveTagFromGroup uses information stored in the query context, it's deterministic in the scope of the current query.
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return true; }
 
@@ -49,8 +48,11 @@ public:
     static void checkArgumentTypes(const ColumnsWithTypeAndName & arguments)
     {
         if (arguments.size() < 1)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} must be called with at least 1 arguments", name);
-
+        {
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                            "Function {} must be called with at least 1 arguments: {}([('tag_name_1', 'tag_value_1), ...], 'tag_name_2', 'tag_value_2', ...)",
+                            name, name);
+        }
         TimeSeriesTagsFunctionHelpers::checkArgumentTypesForTagNamesAndValues(name, arguments, 0);
     }
 

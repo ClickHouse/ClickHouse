@@ -101,7 +101,7 @@ public:
     std::vector<Group> copyTagsToGroup(const std::vector<Group> & dest_groups, Group src_group, const Strings & tags_to_copy);
     std::vector<Group> copyTagsToGroup(const std::vector<Group> & dest_groups, const std::vector<Group> & src_groups, const Strings & tags_to_copy);
 
-    /// Joins all the values of all the `src_tags` using `separator` and returns the group with the tag `dest_tag` containing the joined value.
+    /// Joins all the values of all the `src_tags` using `separator` and returns a new group with the tag `dest_tag` set to the joined value.
     /// This function implements the logic of promql function label_join().
     Group labelJoin(Group group, const String & dest_tag, const String & separator, const Strings & src_tags);
     std::vector<Group> labelJoin(const std::vector<Group> & groups, const String & dest_tag, const String & separator, const Strings & src_tags);

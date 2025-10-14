@@ -13,7 +13,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-/// Function timeSeriesStoreTags(<id>, [('tag1_name', 'tag1_value'), ...], 'tag2_name', 'tag2_value', ...) returns <id>
+/// Function timeSeriesStoreTags(id, [('tag_name_1', 'tag_value_1'), ...], 'tag_name_2', 'tag_value_2', ...) returns `id`
 /// and stores the mapping between the identifier of a time series and its tags in the query context so that
 /// they can later be extracted by function timeSeriesIdToTags().
 class FunctionTimeSeriesStoreTags : public IFunction, private WithContext
@@ -30,7 +30,7 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
-    /// Function timeSeriesStoreTags(<id>, ...) always returns <id>, so it's deterministic.
+    /// Function timeSeriesStoreTags(id, ...) always returns `id`, so it's deterministic.
     bool isDeterministic() const override { return true; }
 
     /// This function allows NULLs as a way to specify that some tags don't have values.
@@ -47,8 +47,11 @@ public:
     static void checkArgumentTypes(const ColumnsWithTypeAndName & arguments)
     {
         if (arguments.size() < 2)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} must be called with at least 2 arguments", name);
-
+        {
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                            "Function {} must be called with at least 2 arguments: {}(id, [('tag_name_1', 'tag_value_1), ...], 'tag_name_2', 'tag_value_2', ...)",
+                            name, name);
+        }
         TimeSeriesTagsFunctionHelpers::checkArgumentTypeForID(name, arguments, 0, /* allow_nullable = */ true);
         TimeSeriesTagsFunctionHelpers::checkArgumentTypesForTagNamesAndValues(name, arguments, 1);
     }

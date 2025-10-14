@@ -14,7 +14,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-/// Function FunctionTimeSeriesCopyTagsToGroup(<dest_group>, <src_group>, ['<tag_name1>', '<tag_name2>', ...])
+/// Function timeSeriesCopyTagsToGroup(dest_group, src_group, ['tag_name_1', 'tag_name_2', ...])
 /// copies specified tags from the `src` group to the `dest` group, and returns the new tags group.
 class FunctionTimeSeriesCopyTagsToGroup : public IFunction, private WithContext
 {
@@ -29,8 +29,7 @@ public:
     size_t getNumberOfArguments() const override { return 3; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {2}; }
 
-    /// Function timeSeriesCopyTagsToGroup() uses the information stored in the query context by function timeSeriesStoreTags(),
-    /// so it's deterministic in the scope of the current query.
+    /// Function timeSeriesCopyTagsToGroup uses information stored in the query context, it's deterministic in the scope of the current query.
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return true; }
 
@@ -45,11 +44,14 @@ public:
     static void checkArgumentTypes(const ColumnsWithTypeAndName & arguments)
     {
         if (arguments.size() != 3)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} must be called with two arguments", name);
-
+        {
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                            "Function {} must be called with three arguments: {}(dest_group, src_group, tags_to_copy)",
+                            name, name);
+        }
         TimeSeriesTagsFunctionHelpers::checkArgumentTypeForGroup(name, arguments, 0);
         TimeSeriesTagsFunctionHelpers::checkArgumentTypeForGroup(name, arguments, 1);
-        TimeSeriesTagsFunctionHelpers::checkArgumentTypeForConstTagNames(name, arguments, 2);
+        TimeSeriesTagsFunctionHelpers::checkArgumentTypeForConstStrings(name, arguments, 2);
     }
 
     using Group = ContextTimeSeriesTagsCollector::Group;
@@ -60,7 +62,7 @@ public:
         auto src_groups = TimeSeriesTagsFunctionHelpers::extractGroupFromArgument(name, arguments, 1, /* return_single_element_if_const_column = */ true);
         chassert((dest_groups.size() == input_rows_count) || (src_groups.size() == input_rows_count));
 
-        auto tags_to_copy = TimeSeriesTagsFunctionHelpers::extractConstTagNamesFromArgument(name, arguments, 2);
+        auto tags_to_copy = TimeSeriesTagsFunctionHelpers::extractConstStringsFromArgument(name, arguments, 2);
         
         auto & tags_collector = getContext()->getQueryContext()->getTimeSeriesTagsCollector();
         std::vector<Group> new_groups;

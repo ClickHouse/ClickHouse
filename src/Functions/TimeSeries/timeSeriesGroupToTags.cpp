@@ -16,8 +16,8 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-/// Function timeSeriesGroupToTags(<group>) returns Array(Tuple(String, String)) containing the names and values of tags associated with
-/// a specified group.
+/// Function timeSeriesGroupToTags(group) returns Array(Tuple(String, String))
+/// containing the names and values of tags associated with a specified group.
 class FunctionTimeSeriesGroupToTags : public IFunction, private WithContext
 {
 public:
@@ -30,8 +30,7 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
-    /// Function timeSeriesGroupToTags(<group>) returns the information stored in the query context by function timeSeriesStoreTags(),
-    /// so it's deterministic in the scope of the current query.
+    /// Function timeSeriesGroupToTags returns information stored in the query context, it's deterministic in the scope of the current query.
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return true; }
 
@@ -46,8 +45,11 @@ public:
     static void checkArgumentTypes(const ColumnsWithTypeAndName & arguments)
     {
         if (arguments.size() != 1)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} must be called with one argument", name);
-        
+        {
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                            "Function {} must be called with one argument: {}(group)",
+                            name, name);
+        }
         TimeSeriesTagsFunctionHelpers::checkArgumentTypeForGroup(name, arguments, 0);
     }
 

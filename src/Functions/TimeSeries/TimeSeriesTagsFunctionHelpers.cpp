@@ -429,7 +429,7 @@ std::vector<Group> extractGroupFromArgument(std::string_view function_name, cons
 }
 
 
-void checkArgumentTypeForConstTagName(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index)
+void checkArgumentTypeForConstString(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index)
 {
     if (argument_index >= arguments.size())
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} can't be called with {} arguments", function_name, arguments.size());
@@ -443,7 +443,7 @@ void checkArgumentTypeForConstTagName(std::string_view function_name, const Colu
 }
 
 
-String extractConstTagNameFromArgument(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index)
+String extractConstStringFromArgument(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index)
 {
     chassert(argument_index < arguments.size());
     const auto & column = *arguments[argument_index].column;
@@ -455,7 +455,7 @@ String extractConstTagNameFromArgument(std::string_view function_name, const Col
 }
 
 
-void checkArgumentTypeForConstTagNames(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index)
+void checkArgumentTypeForConstStrings(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index)
 {
     if (argument_index >= arguments.size())
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} can't be called with {} arguments", function_name, arguments.size());
@@ -469,7 +469,7 @@ void checkArgumentTypeForConstTagNames(std::string_view function_name, const Col
 }
 
 
-std::vector<String> extractConstTagNamesFromArgument(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index)
+std::vector<String> extractConstStringsFromArgument(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index)
 {
     chassert(argument_index < arguments.size());
     const auto & column = *arguments[argument_index].column;
@@ -483,12 +483,12 @@ std::vector<String> extractConstTagNamesFromArgument(std::string_view function_n
     if (!string_column)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Argument #{} of function {} must be a constant Array(String)", argument_index + 1, function_name);
 
-    Strings tag_names;
-    tag_names.reserve(count);
+    Strings res;
+    res.reserve(count);
     for (size_t i = 0; i != count; ++i)
-        tag_names.emplace_back(String{string_column->getDataAt(i)});
+        res.emplace_back(String{string_column->getDataAt(i)});
 
-    return tag_names;
+    return res;
 }
 
 
