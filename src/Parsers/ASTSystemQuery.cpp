@@ -468,6 +468,8 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             }
             break;
         }
+
+#if USE_XRAY
         case Type::INSTRUMENT_ADD:
         {
             if (!instrumentation_function_name.empty())
@@ -527,6 +529,8 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             }
             break;
         }
+#endif
+
         case Type::KILL:
         case Type::SHUTDOWN:
         case Type::DROP_DNS_CACHE:

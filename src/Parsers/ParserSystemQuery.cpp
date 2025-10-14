@@ -748,6 +748,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             break;
         }
 
+#if USE_XRAY
         case Type::INSTRUMENT_REMOVE:
         {
             ASTPtr temporary_identifier;
@@ -822,6 +823,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
             break;
         }
+#endif
 
 #if USE_JEMALLOC
         case Type::JEMALLOC_FLUSH_PROFILE:
