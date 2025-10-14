@@ -421,6 +421,10 @@ WHERE string_search_function(column_with_text_index)
 The direct read optimization in ClickHouse answers the query exclusively using the text index (i.e., text index lookups) without accessing the underlying text column.
 Text index lookups read relatively little data and are therefore much faster than usual skip indexes in ClickHouse (which do a skip index lookup, followed by loading and filtering surviving granules).
 
+Direct read is controlled by two settings:
+- Setting [query_plan_direct_read_from_text_index](../../../operations/settings/settings#query_plan_direct_read_from_text_index) (default: 1) which controls if direct read is generally enabled.
+- Setting [use_skip_indexes_on_data_read](../../../operations/settings/settings#use_skip_indexes_on_data_read) (default: 1) which is another prerequisite for direct read. Note that on ClickHouse databases with [compatibility](../../../operations/settings/settings#compatibility) < 25.10, `use_skip_indexes_on_data_read` is disabled, so you either need to raise the compatibility setting value or `SET use_skip_indexes_on_data_read = 1` explicitly.
+
 **Supported functions**
 The direct read optimization supports functions `hasToken`, `searchAll`, and `searchAny`.
 These functions can also be combined by AND, OR, and NOT operators.
