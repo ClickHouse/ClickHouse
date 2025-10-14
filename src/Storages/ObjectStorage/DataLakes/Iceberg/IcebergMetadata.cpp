@@ -1,7 +1,4 @@
 #include <fmt/format.h>
-#include "Core/ColumnsWithTypeAndName.h"
-#include "Core/SortDescription.h"
-#include "Storages/SelectQueryInfo.h"
 #include "config.h"
 #if USE_AVRO
 
@@ -73,6 +70,10 @@
 #include <Common/ProfileEvents.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/logger_useful.h>
+
+#include <Core/ColumnsWithTypeAndName.h>
+#include <Core/SortDescription.h>
+#include <Storages/SelectQueryInfo.h>
 
 namespace ProfileEvents
 {
@@ -1060,9 +1061,7 @@ InputOrderInfoPtr IcebergMetadata::getInputOrder() const
     auto key_description = getSortingKey();
     SortDescription sort_description_for_merging;
     for (size_t i = 0; i < key_description.column_names.size(); ++i)
-    {
-        sort_description_for_merging.push_back(SortColumnDescription(key_description.column_names[i], key_description.reverse_flags[i] ? -1 : 1));   
-    }
+        sort_description_for_merging.push_back(SortColumnDescription(key_description.column_names[i], key_description.reverse_flags[i] ? -1 : 1));
     return std::make_shared<const InputOrderInfo>(sort_description_for_merging, sort_description_for_merging.size(), 1, 0);
 }
 
@@ -1116,13 +1115,9 @@ KeyDescription IcebergMetadata::getSortingKey() const
             int direction = field->getValue<String>(f_direction) == "asc" ? 1 : -1;
 
             if (direction == 1)
-            {
-                order_by_str += fmt::format("{} ASC,", column_name);   
-            }
+                order_by_str += fmt::format("{} ASC,", column_name);
             else
-            {
                 order_by_str += fmt::format("{} DESC,", column_name);
-            }
         }
     }
     order_by_str.pop_back();

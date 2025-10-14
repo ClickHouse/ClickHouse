@@ -841,7 +841,6 @@ SortingInputOrder buildInputOrderFromSortDescription(
     const auto & sorting_key = reading->getSortingKey();
     const auto & pk_column_names = sorting_key.column_names;
 
-    std::cerr << "sorting_key " << pk_column_names.size() << '\n';
     return buildInputOrderFromSortDescription(
         fixed_columns,
         dag, description,
@@ -1197,7 +1196,7 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node)
             object_storage_step,
             fixed_columns,
             dag, keys);
-        
+
         if (!canImproveOrderForDistinct(order_info, object_storage_step->getInputOrder()))
             return {};
 
