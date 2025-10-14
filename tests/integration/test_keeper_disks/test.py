@@ -8,8 +8,8 @@ import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster, is_arm
 
 import time
+
 import logging
-import re
 
 if is_arm():
     pytestmark = pytest.mark.skip
@@ -37,6 +37,7 @@ def started_cluster():
     try:
         cluster.start()
         yield cluster
+
     finally:
         cluster.shutdown()
 
@@ -121,44 +122,17 @@ def list_s3_objects(cluster, prefix=""):
 
 
 def get_local_files(path, node):
-    # Be robust to empty directories and multi-column ls defaults.
-    out = node.exec_in_container(["ls", "-1", path]).strip()
-    files = [] if not out else out.split("\n")
+    files = node.exec_in_container(["ls", path]).strip().split("\n")
     files.sort()
     return files
 
 
-LOG_FILE_RE = re.compile(r"^changelog_(\d+)_(\d+)\.bin$")
-
-
-def _parse_log_range(name):
-    m = LOG_FILE_RE.match(name)
-    assert m, f"Unexpected log filename: {name}"
-    a, b = int(m.group(1)), int(m.group(2))
-    assert a <= b, f"Bad range in {name}"
-    return a, b
-
-
-def _last_log_filename(names):
-    # Choose the file with the highest end zxid
-    return max(names, key=lambda n: _parse_log_range(n)[1])
-
-
 def get_local_logs(node):
-    files = get_local_files("/var/lib/clickhouse/coordination/logs", node)
-    files = [f for f in files if LOG_FILE_RE.match(f)]
-    # Sort by end zxid to ensure "last" is truly the most recent by range end.
-    files.sort(key=lambda n: _parse_log_range(n)[1])
-    return files
+    return get_local_files("/var/lib/clickhouse/coordination/logs", node)
 
 
 def get_local_snapshots(node):
     return get_local_files("/var/lib/clickhouse/coordination/snapshots", node)
-
-
-def list_s3_log_bins(cluster):
-    # Only the changelog .bin files under logs/
-    return [name for name in list_s3_objects(cluster, "logs/") if LOG_FILE_RE.match(name)]
 
 
 def test_logs_with_disks(started_cluster):
@@ -170,10 +144,7 @@ def test_logs_with_disks(started_cluster):
         for _ in range(30):
             node_zk.create("/test/somenode", b"somedata", sequence=True)
 
-        # Compaction removes some old changelogs; exact numbers vary between runs.
-        node_logs.wait_for_log_line(
-            r"Removed changelog changelog_[0-9]+_[0-9]+\.bin because of compaction"
-        )
+        node_logs.wait_for_log_line("Removed changelog changelog_25_27.bin because of compaction")
 
         stop_zk(node_zk)
 
@@ -188,11 +159,7 @@ def test_logs_with_disks(started_cluster):
             cleanup_disks=False,
         )
 
-        # After restart we should continue writing into the same last local file.
-        last_local_before = _last_log_filename(previous_log_files)
-        node_logs.wait_for_log_line(
-            rf"KeeperLogStore: Continue to write into {re.escape(last_local_before)}"
-        )
+        node_logs.wait_for_log_line("KeeperLogStore: Continue to write into changelog_34_36.bin")
 
         def get_single_local_log_file():
             local_log_files = get_local_logs(node_logs)
@@ -209,7 +176,7 @@ def test_logs_with_disks(started_cluster):
         # all but the latest log should be on S3
         local_log_files = get_single_local_log_file()
         assert local_log_files[0] == previous_log_files[-1]
-        s3_log_files = list_s3_log_bins(started_cluster)
+        s3_log_files = list_s3_objects(started_cluster, "logs/")
         assert set(s3_log_files) == set(previous_log_files[:-1])
 
         previous_log_files = s3_log_files + local_log_files
@@ -222,10 +189,10 @@ def test_logs_with_disks(started_cluster):
         stop_zk(node_zk)
 
         local_log_files = get_single_local_log_file()
-        log_files = list_s3_log_bins(started_cluster)
+        log_files = list_s3_objects(started_cluster, "logs/")
 
         log_files.extend(local_log_files)
-        assert set(log_files) != set(previous_log_files)
+        assert set(log_files) != previous_log_files
 
         previous_log_files = log_files
 
@@ -239,68 +206,7 @@ def test_logs_with_disks(started_cluster):
         )
 
         local_log_files = get_local_logs(node_logs)
-
-        # Accept either exact equality OR a pure-merge; anything else fails.
-        if set(local_log_files) != set(previous_log_files):
-            prev = [_parse_log_range(x) for x in previous_log_files]
-            now = [_parse_log_range(x) for x in local_log_files]
-
-            # 1) No data loss: every previous range must be covered by exactly one current range.
-            coverage = []
-            for (a, b) in prev:
-                covers = [i for i, (c, d) in enumerate(now) if c <= a and d >= b]
-                coverage.append(covers)
-
-            missing = [prev[i] for i, covers in enumerate(coverage) if not covers]
-            assert not missing, (
-                "Missing coverage for previous log ranges: "
-                f"{missing}; now={now}; prev={prev}"
-            )
-
-            # 2) Forbid splits: each previous range must map to exactly ONE current range.
-            split = [prev[i] for i, covers in enumerate(coverage) if len(covers) > 1]
-            assert not split, (
-                "Unexpected split of previous ranges into multiple files: "
-                f"{split}; now={now}; prev={prev}"
-            )
-
-            # 3) Only pure merges are allowed: number of files must not increase (no new writes here).
-            assert len(now) <= len(prev), (
-                "Unexpected increase in number of changelog files without new writes "
-                f"(expected pure-merge or equality). prev={len(prev)}, now={len(now)}; "
-                f"now={now}; prev={prev}"
-            )
-
-            # 4) Each current file must equal a contiguous union of its previous parts with exact bounds.
-            now_parts = [[] for _ in range(len(now))]
-            for i_prev, covers in enumerate(coverage):
-                idx = covers[0]  # len==1 asserted above
-                now_parts[idx].append(prev[i_prev])
-
-            for (c, d), parts in zip(now, now_parts):
-                assert parts, (
-                    f"Current range {(c, d)} does not correspond to any previous ranges; "
-                    f"unexpected shape change. now={now}; prev={prev}"
-                )
-                parts.sort(key=lambda x: x[0])
-                # Must start at c
-                assert parts[0][0] == c, (
-                    "Merged range does not start at expected boundary: "
-                    f"now={(c, d)}, parts={parts}"
-                )
-                # No gaps; allow adjacency or overlap
-                cur_end = parts[0][1]
-                for a, b in parts[1:]:
-                    assert a <= cur_end + 1, (
-                        "Gap inside merged range: "
-                        f"prev_part={(a, b)}, accumulated_end={cur_end}, now={(c, d)}, parts={parts}"
-                    )
-                    cur_end = max(cur_end, b)
-                # Must end at d
-                assert cur_end == d, (
-                    "Merged range does not end at expected boundary: "
-                    f"now={(c, d)}, parts={parts}, accumulated_end={cur_end}"
-                )
+        assert set(local_log_files) == set(previous_log_files)
 
         node_zk = get_fake_zk("node_logs")
 
