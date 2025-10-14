@@ -4,11 +4,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 JoinOnKeyColumns::JoinOnKeyColumns(
     const ScatteredBlock & block, const Names & key_names_, const String & cond_column_name, const Sizes & key_sizes_)
     : key_names(key_names_)
