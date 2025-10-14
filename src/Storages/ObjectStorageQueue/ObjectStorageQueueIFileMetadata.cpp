@@ -165,11 +165,11 @@ ObjectStorageQueueIFileMetadata::~ObjectStorageQueueIFileMetadata()
         try
         {
             Coordination::Error code;
-            bool is_retry = false;
-            ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
+            auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
+            zk_retry.retryLoop([&]
             {
                 auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
-                if (is_retry)
+                if (zk_retry.isRetry())
                 {
                     /// It is possible that we fail "after operation",
                     /// e.g. we successfully removed the node, but did not get confirmation,
@@ -187,9 +187,7 @@ ObjectStorageQueueIFileMetadata::~ObjectStorageQueueIFileMetadata()
                     chassert(checkProcessingOwnership(zk_client));
                 }
                 code = zk_client->tryRemove(processing_node_path);
-            },
-            /* iteration_cleanup */[&]{},
-            /* on_error */[&] { is_retry = true; });
+            });
 
             if (code == Coordination::Error::ZOK)
                 return;
@@ -384,11 +382,11 @@ void ObjectStorageQueueIFileMetadata::resetProcessing()
 
     Coordination::Responses responses;
     Coordination::Error code;
-    bool is_retry = false;
-    ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
+    auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
+    zk_retry.retryLoop([&]
     {
         auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
-        if (is_retry)
+        if (zk_retry.isRetry())
         {
             /// It is possible that we fail "after operation",
             /// e.g. we successfully removed the node, but did not get confirmation,
@@ -406,9 +404,7 @@ void ObjectStorageQueueIFileMetadata::resetProcessing()
             chassert(checkProcessingOwnership(zk_client));
         }
         code = zk_client->tryMulti(requests, responses);
-    },
-    /* iteration_cleanup */[]{},
-    /* on_error */[&] { is_retry = true; });
+    });
 
     if (code == Coordination::Error::ZOK)
         return;

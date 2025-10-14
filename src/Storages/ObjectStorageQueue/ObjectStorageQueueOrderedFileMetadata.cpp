@@ -91,11 +91,11 @@ void ObjectStorageQueueOrderedFileMetadata::BucketHolder::release()
     LOG_TEST(log, "Releasing bucket {}", bucket_info->bucket);
 
     Coordination::Error code;
-    bool is_retry = false;
-    ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
+    auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
+    zk_retry.retryLoop([&]
     {
         auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
-        if (is_retry)
+        if (zk_retry.isRetry())
         {
             /// It is possible that we fail "after operation",
             /// e.g. we successfully removed the node, but did not get confirmation,
@@ -113,16 +113,14 @@ void ObjectStorageQueueOrderedFileMetadata::BucketHolder::release()
             chassert(checkBucketOwnership(zk_client));
         }
         code = zk_client->tryRemove(bucket_info->bucket_lock_path);
-    },
-    /* iteration_cleanup */[&]{},
-    /* on_error */[&] { is_retry = true; });
+    });
 
     if (code == Coordination::Error::ZOK)
     {
         LOG_TEST(log, "Released bucket {}", bucket_info->bucket);
         return;
     }
-    else if (is_retry && code == Coordination::Error::ZNONODE)
+    else if (zk_retry.isRetry() && code == Coordination::Error::ZNONODE)
     {
         LOG_TEST(log, "Released bucket {} (has zk session loss)", bucket_info->bucket);
         return;
@@ -231,12 +229,12 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrdered
     bool /*use_persistent_processing_nodes_*/,
     LoggerPtr log_)
 {
-    auto zk_retries = ObjectStorageQueueMetadata::getKeeperRetriesControl(log_);
+    auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log_);
     const auto bucket_path = zk_path / "buckets" / toString(bucket);
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
     bool bucket_exists = false;
-    zk_retries.retryLoop([&]
+    zk_retry.retryLoop([&]
     {
         bucket_exists = ObjectStorageQueueMetadata::getZooKeeper(log_)->exists(bucket_path);
     });
@@ -247,14 +245,13 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrdered
     const auto processor_info = getProcessorInfo(generateProcessingID());
 
     Coordination::Error code;
-    bool is_retry = false;
-    zk_retries.retryLoop([&]
+    zk_retry.retryLoop([&]
     {
         auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log_);
         std::string data;
         /// If it is a retry, we could have failed after actually successfully executing the request.
         /// So here we check if we succeeded by checking `processor_info` of the processing node.
-        if (is_retry && zk_client->tryGet(bucket_lock_path, data))
+        if (zk_retry.isRetry() && zk_client->tryGet(bucket_lock_path, data))
         {
             chassert(!data.empty());
             if (data == processor_info)
@@ -265,9 +262,7 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrdered
             }
         }
         code = zk_client->tryCreate(bucket_lock_path, processor_info, zkutil::CreateMode::Persistent);
-    },
-    /* iteration_cleanup */[&]{},
-    /* on_error */[&] { is_retry = true; });
+    });
 
     if (code == Coordination::Error::ZOK)
     {
@@ -289,7 +284,7 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrdered
 std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorageQueueOrderedFileMetadata::setProcessingImpl()
 {
     auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
-    auto zk_retries = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
+    auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
 
     bool is_multi_read_enabled = zk_client->isFeatureEnabled(DB::KeeperFeatureFlag::MULTI_READ);
 
@@ -306,7 +301,7 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
             Coordination::Requests requests;
             std::vector<std::string> paths{processed_node_path, failed_node_path};
             zkutil::ZooKeeper::MultiTryGetResponse responses;
-            zk_retries.retryLoop([&]
+            zk_retry.retryLoop([&]
             {
                 responses = ObjectStorageQueueMetadata::getZooKeeper(log)->tryGet(paths);
             });
@@ -348,7 +343,7 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
             if (getMaxProcessedFile(node_metadata, &processed_node_stat, log))
             {
                 bool failed_node_exists = false;
-                zk_retries.retryLoop([&]
+                zk_retry.retryLoop([&]
                 {
                     failed_node_exists = ObjectStorageQueueMetadata::getZooKeeper(log)->exists(failed_node_path);
                 });
@@ -392,13 +387,12 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
             zkutil::addCheckNotExistsRequest(requests, *zk_client, processed_node_path);
 
         Coordination::Responses responses;
-        bool is_retry = false;
-        zk_retries.retryLoop([&]
+        zk_retry.retryLoop([&]
         {
             auto zk = ObjectStorageQueueMetadata::getZooKeeper(log);
             /// If it is a retry, we could have failed after actually successfully executing the request.
             /// So here we check if we succeeded by checking `processor_info` of the processing node.
-            if (is_retry)
+            if (zk_retry.isRetry())
             {
                 std::string data;
                 if (zk->tryGet(processing_node_path, data))
@@ -414,9 +408,7 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
                 }
             }
             code = zk->tryMulti(requests, responses);
-        },
-        /* iteration_cleanup */[]{},
-        /* on_error */[&] { is_retry = true; });
+        });
 
         if (code == Coordination::Error::ZOK)
         {

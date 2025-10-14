@@ -852,6 +852,12 @@ void StorageObjectStorageQueue::commit(
     size_t try_num = 0;
     zk_retry.retryLoop([&]
     {
+        if (zk_retry.isRetry())
+        {
+            LOG_TRACE(
+                log, "Failed to commit processed files at try {}/{}, will retry",
+                try_num, toString(settings[Setting::keeper_max_retries].value));
+        }
         ++try_num;
         fiu_do_on(FailPoints::object_storage_queue_fail_commit, {
             throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Failed to commit processed files");
@@ -862,11 +868,6 @@ void StorageObjectStorageQueue::commit(
 
         auto zk_client = getZooKeeper();
         code = zk_client->tryMulti(requests, responses);
-    }, []{}, [&]
-    {
-        LOG_TRACE(
-            log, "Failed to commit processed files at try {}/{}",
-            try_num, toString(settings[Setting::keeper_max_retries].value));
     });
 
     if (!code.has_value())

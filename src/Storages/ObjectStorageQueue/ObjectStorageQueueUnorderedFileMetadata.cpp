@@ -67,16 +67,16 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
     auto result = prepareProcessingRequestsImpl(requests, generateProcessingID());
 
     Coordination::Responses responses;
-    bool is_retry = false;
     Coordination::Error code;
 
-    ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
+    auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
+    zk_retry.retryLoop([&]
     {
         auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
         std::string data;
         /// If it is a retry, we could have failed after actually successfully executing the requests.
         /// So here we check if we succeeded by checking `processor_info` of the processing node.
-        if (is_retry && zk_client->tryGet(processing_node_path, data))
+        if (zk_retry.isRetry() && zk_client->tryGet(processing_node_path, data))
         {
             chassert(!data.empty());
             if (data == processor_info)
@@ -87,9 +87,7 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
             }
         }
         code = zk_client->tryMulti(requests, responses);
-    },
-    /* iteration_cleanup */[&]{},
-    /* on_error */[&]{ is_retry = true; });
+    });
 
     if (code == Coordination::Error::ZOK)
     {

@@ -166,7 +166,7 @@ ObjectStorageQueueSource::FileIterator::next()
         return {};
     }
 
-    auto zk_retries = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
+    auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
     if (current_batch_processed)
     {
         file_metadatas.clear();
@@ -260,11 +260,10 @@ ObjectStorageQueueSource::FileIterator::next()
 
                 Coordination::Responses responses;
                 Coordination::Error code;
-                bool is_retry = false;
-                zk_retries.retryLoop([&]
+                zk_retry.retryLoop([&]
                 {
                     auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
-                    if (is_retry)
+                    if (zk_retry.isRetry())
                     {
                         LOG_TEST(log, "Retrying set processing requests batch ({})", processing_paths.size());
 
@@ -314,9 +313,7 @@ ObjectStorageQueueSource::FileIterator::next()
                         }
                     }
                     code = zk_client->tryMulti(requests, responses);
-                },
-                /* iteration_cleanup */[]{},
-                /* on_error */[&] { is_retry = true; });
+                });
 
                 if (code == Coordination::Error::ZOK)
                 {
@@ -1317,19 +1314,20 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
     auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
     Coordination::Responses responses;
 
-    auto zk_retries = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
+    auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
     const auto & settings = getContext()->getSettingsRef();
     Coordination::Error code;
     size_t try_num = 0;
-    zk_retries.retryLoop([&]
+    zk_retry.retryLoop([&]
     {
+        if (zk_retry.isRetry())
+        {
+            LOG_TRACE(
+                log, "Failed to commit processed files at try {}/{}, will retry",
+                try_num, toString(settings[Setting::keeper_max_retries].value));
+        }
         ++try_num;
         code = zk_client->tryMulti(requests, responses);
-    }, []{}, [&]
-    {
-        LOG_TRACE(
-            log, "Failed to commit processed files at try {}/{}",
-            try_num, toString(settings[Setting::keeper_max_retries].value));
     });
 
     if (code != Coordination::Error::ZOK)
