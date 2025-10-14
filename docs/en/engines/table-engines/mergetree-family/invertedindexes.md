@@ -437,26 +437,19 @@ As an example, a query with disabled direct read
 EXPLAIN PLAN actions = 1
 SELECT count()
 FROM tab
-WHERE hasAllTokens(col, ['some_token'])
+WHERE hasToken(col, ['some_token'])
 SETTINGS query_plan_direct_read_from_text_index = 0;
 ```
 
 returns
 
-```
+```text
 [...]
-Expression (Before GROUP BY)
-Positions:
-  Filter ((WHERE + Change column names to column identifiers))
-  Filter column: hasAllTokens(__table1.text, _CAST(['Alick']_Array(String), 'Array(String)'_String)) (removed)
-  Actions: INPUT : 0 -> text String : 0
-           COLUMN Const(Array(String)) -> _CAST(['Alick']_Array(String), 'Array(String)'_String) Array(String) : 1
-           FUNCTION hasAllTokens(text :: 0, _CAST(['Alick']_Array(String), 'Array(String)'_String) :: 1) -> hasAllTokens(__table1.text, _CAST(['Alick']_Array(String), 'Array(String)'_String)) UInt8 : 2
-  Positions: 2
-    ReadFromMergeTree (default.tab)
-    ReadType: Default
-    Parts: 1
-    Granules: 1
+Filter ((WHERE + Change column names to column identifiers))
+Filter column: hasToken(__table1.col, 'some_token'_String) (removed)
+Actions: INPUT : 0 -> col String : 0
+         COLUMN Const(String) -> 'some_token'_String String : 1
+         FUNCTION hasToken(col :: 0, 'some_token'_String :: 1) -> hasToken(__table1.col, 'some_token'_String) UInt8 : 2
 [...]
 ```
 
@@ -466,24 +459,19 @@ whereas the same query run with `query_plan_direct_read_from_text_index = 1`
 EXPLAIN PLAN actions = 1
 SELECT count()
 FROM tab
-WHERE hasAllTokens(col, ['some_token'])
+WHERE hasToken(col, ['some_token'])
 SETTINGS query_plan_direct_read_from_text_index = 1;
 ```
 
 returns
 
-```
+```text
 [...]
 Expression (Before GROUP BY)
 Positions:
   Filter
-  Filter column: __text_index_idx_hasAllTokens_0 (removed)
-  Actions: INPUT :: 0 -> __text_index_idx_hasAllTokens_0 UInt8 : 0
-  Positions: 0
-    ReadFromMergeTree (default.tab)
-    ReadType: Default
-    Parts: 1
-    Granules: 1
+  Filter column: __text_index_idx_hasToken_0 (removed)
+  Actions: INPUT :: 0 -> __text_index_idx_hasToken_0 UInt8 : 0
 [...]
 ```
 
