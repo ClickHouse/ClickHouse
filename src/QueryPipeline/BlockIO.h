@@ -18,7 +18,7 @@ class ProcessListEntry;
 struct QueryPipelineFinalizedInfo
 {
     std::optional<ResultProgress> result_progress;
-    std::vector<IProcessor::ProfileInfo> processors_profile_infos;
+    std::vector<IProcessor::ProcessorsProfileLogInfo> processors_profile_infos;
     String pipeline_dump;
 };
 

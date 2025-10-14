@@ -93,20 +93,20 @@ void ProcessorProfileLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(step_uniq_id);
 }
 
-std::vector<IProcessor::ProfileInfo> getProfileInfos(const Processors & processors)
+std::vector<IProcessor::ProcessorsProfileLogInfo> getProcessorsProfileLogInfo(const Processors & processors)
 {
-    std::vector<IProcessor::ProfileInfo> infos;
+    std::vector<IProcessor::ProcessorsProfileLogInfo> infos;
     infos.reserve(processors.size());
 
     for (const auto & processor : processors)
     {
-        infos.push_back(processor->getProfileInfo());
+        infos.push_back(processor->getProcessorsProfileLogInfo());
     }
 
     return infos;
 }
 
-void logProcessorProfile(ContextPtr context, const std::vector<IProcessor::ProfileInfo> & profile_infos, String pipeline_dump)
+void logProcessorProfile(ContextPtr context, const std::vector<IProcessor::ProcessorsProfileLogInfo> & profile_infos, String pipeline_dump)
 {
     const Settings & settings = context->getSettingsRef();
     if (settings[Setting::log_processors_profiles])
@@ -160,7 +160,7 @@ void logProcessorProfile(ContextPtr context, const Processors & processors)
         printPipeline(processors, out, true);
     }
 
-    auto profile_infos = getProfileInfos(processors);
+    auto profile_infos = getProcessorsProfileLogInfo(processors);
     logProcessorProfile(context, profile_infos, pipeline_dump);
 }
 }

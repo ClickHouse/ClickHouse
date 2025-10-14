@@ -120,9 +120,9 @@ IProcessor::ProcessorDataStats IProcessor::getProcessorDataStats() const
     return stats;
 }
 
-IProcessor::ProfileInfo IProcessor::getProfileInfo() const
+IProcessor::ProcessorsProfileLogInfo IProcessor::getProcessorsProfileLogInfo() const
 {
-    ProfileInfo info;
+    ProcessorsProfileLogInfo info;
 
     auto get_proc_id = [](const IProcessor & proc) -> UInt64 { return reinterpret_cast<std::uintptr_t>(&proc); };
 

@@ -593,7 +593,7 @@ QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeline && q
         /// prevent partial/garbage results in case of exceptions during query execution.
         query_pipeline.finalizeWriteInQueryResultCache();
 
-    std::vector<IProcessor::ProfileInfo> processors_profile_infos = getProfileInfos(query_pipeline.getProcessors());
+    std::vector<IProcessor::ProcessorsProfileLogInfo> processors_profile_infos = getProcessorsProfileLogInfo(query_pipeline.getProcessors());
 
     String pipeline_dump;
     {

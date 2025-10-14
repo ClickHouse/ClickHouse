@@ -294,7 +294,8 @@ public:
 
     ProcessorDataStats getProcessorDataStats() const;
 
-    struct ProfileInfo
+    /// Information for system.processors_profile_log
+    struct ProcessorsProfileLogInfo
     {
         UInt64 id = 0;
         std::vector<UInt64> parent_ids;
@@ -313,7 +314,7 @@ public:
         UInt64 output_rows = 0;
         UInt64 output_bytes = 0;
     };
-    ProfileInfo getProfileInfo() const;
+    ProcessorsProfileLogInfo getProcessorsProfileLogInfo() const;
 
     struct ReadProgressCounters
     {
