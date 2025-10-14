@@ -422,13 +422,74 @@ The direct read optimization in ClickHouse answers the query exclusively using t
 Text index lookups read relatively little data and are therefore much faster than usual skip indexes in ClickHouse (which do a skip index lookup, followed by loading and filtering surviving granules).
 
 Direct read is controlled by two settings:
-- Setting [query_plan_direct_read_from_text_index](../../../operations/settings/settings#query_plan_direct_read_from_text_index) (default: 1) which controls if direct read is generally enabled.
+- Setting [query_plan_direct_read_from_text_index](../../../operations/settings/settings#query_plan_direct_read_from_text_index) (default: 1) which specifies if direct read is generally enabled.
 - Setting [use_skip_indexes_on_data_read](../../../operations/settings/settings#use_skip_indexes_on_data_read) (default: 1) which is another prerequisite for direct read. Note that on ClickHouse databases with [compatibility](../../../operations/settings/settings#compatibility) < 25.10, `use_skip_indexes_on_data_read` is disabled, so you either need to raise the compatibility setting value or `SET use_skip_indexes_on_data_read = 1` explicitly.
 
 **Supported functions**
 The direct read optimization supports functions `hasToken`, `searchAll`, and `searchAny`.
 These functions can also be combined by AND, OR, and NOT operators.
 The WHERE clause can also contain additional non-text-search-functions filters (for text columns or other columns) - in that case, the direct read optimization will still be used but less effective (it only applies to the supported text search functions).
+
+To understand a query utilizes direct read, run the query with `EXPLAIN PLAN actions = 1`.
+As an example, a query with disabled direct read
+
+```sql
+EXPLAIN PLAN actions = 1
+SELECT count()
+FROM tab
+WHERE hasAllTokens(col, ['some_token'])
+SETTINGS query_plan_direct_read_from_text_index = 0;
+```
+
+returns
+
+```
+[...]
+Expression (Before GROUP BY)
+Positions:
+  Filter ((WHERE + Change column names to column identifiers))
+  Filter column: hasAllTokens(__table1.text, _CAST(['Alick']_Array(String), 'Array(String)'_String)) (removed)
+  Actions: INPUT : 0 -> text String : 0
+           COLUMN Const(Array(String)) -> _CAST(['Alick']_Array(String), 'Array(String)'_String) Array(String) : 1
+           FUNCTION hasAllTokens(text :: 0, _CAST(['Alick']_Array(String), 'Array(String)'_String) :: 1) -> hasAllTokens(__table1.text, _CAST(['Alick']_Array(String), 'Array(String)'_String)) UInt8 : 2
+  Positions: 2
+    ReadFromMergeTree (default.tab)
+    ReadType: Default
+    Parts: 1
+    Granules: 1
+[...]
+```
+
+whereas the same query with `query_plan_direct_read_from_text_index = 1`
+
+```sql
+EXPLAIN PLAN actions = 1
+SELECT count()
+FROM tab
+WHERE hasAllTokens(col, ['some_token'])
+SETTINGS query_plan_direct_read_from_text_index = 1;
+```
+
+returns
+
+```
+[...]
+Expression (Before GROUP BY)
+Positions:
+  Filter
+  Filter column: __text_index_idx_hasAllTokens_0 (removed)
+  Actions: INPUT :: 0 -> __text_index_idx_hasAllTokens_0 UInt8 : 0
+  Positions: 0
+    ReadFromMergeTree (default.tab)
+    ReadType: Default
+    Parts: 1
+    Granules: 1
+[...]
+```
+
+The second EXPLAIN PLAN output contains a virtual column `__text_index_<index_name>_<function_name>_<id>`.
+If this column is present, then direct read is used.
+
 
 ## Example: Hackernews dataset {#hacker-news-dataset}
 
