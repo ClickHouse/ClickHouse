@@ -791,7 +791,7 @@ MergeTreeIndexPtr bloomFilterIndexTextCreator(
 
         return std::make_shared<MergeTreeIndexBloomFilterText>(index, params, std::move(tokenizer));
     }
-    if (index.type == SparseGramTokenExtractor::getName())
+    if (index.type == SparseGramTokenExtractor::getBloomFilterIndexName())
     {
         if (index.arguments.size() == 5)
         {
@@ -860,7 +860,7 @@ void bloomFilterIndexTextValidator(const IndexDescription & index, bool /*attach
         if (index.arguments.size() != 3)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "`tokenbf` index must have exactly 3 arguments.");
     }
-    else if (index.type == SparseGramTokenExtractor::getName())
+    else if (index.type == SparseGramTokenExtractor::getBloomFilterIndexName())
     {
         if (index.arguments.size() != 5 && index.arguments.size() != 6)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "`sparseGrams` index must have exactly 5 or 6 arguments.");

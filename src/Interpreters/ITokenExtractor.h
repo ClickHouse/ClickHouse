@@ -210,6 +210,7 @@ struct SparseGramTokenExtractor final : public ITokenExtractorHelper<SparseGramT
 {
     explicit SparseGramTokenExtractor(size_t min_length = 3, size_t max_length = 100, std::optional<size_t> min_cutoff_length_ = std::nullopt);
 
+    static const char * getBloomFilterIndexName() { return "sparse_grams"; }
     static const char * getName() { return "sparseGrams"; }
     static const char * getExternalName() { return getName(); }
 
