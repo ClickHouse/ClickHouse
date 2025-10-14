@@ -4,10 +4,9 @@
 #include <base/MemorySanitizer.h>
 #include <base/types.h>
 #include <base/unaligned.h>
+#include <Common/Stopwatch.h>
 
 #include <cstring>
-
-#include <memcpy.h>
 
 #ifdef __SSSE3__
 #include <tmmintrin.h>
@@ -29,24 +28,48 @@ inline UInt16 LZ4_readLE16(const void* mem_ptr)
     return static_cast<UInt16>(p[0]) + (p[1] << 8);
 }
 
-template <size_t N> [[maybe_unused]] inline void copy(UInt8 * dst, const UInt8 * src);
-template <size_t N> [[maybe_unused]] inline void wildCopy(UInt8 * __restrict dst, const UInt8 * __restrict src, size_t size);
-template <size_t N> [[maybe_unused]] inline void copyOverlap(UInt8 * op, const UInt8 *& match, size_t offset);
-
-ALWAYS_INLINE inline void copy8(UInt8 * dst, const UInt8 * src)
+template <size_t N>
+ALWAYS_INLINE void copyFromOutput(UInt8 * dst, UInt8 * src)
 {
-    __builtin_memcpy(dst, src, 8);
+    __builtin_memcpy(dst, src, N);
 }
 
-ALWAYS_INLINE inline void wildCopy8(UInt8 * dst, const UInt8 * src, size_t size)
+template <size_t N>
+ALWAYS_INLINE void wildCopyFromInput(UInt8 * __restrict dst, const UInt8 * __restrict src, size_t size)
 {
-    for (size_t i = 0; i < size; i += 8)
+    /// Unrolling with clang is doing >10% performance degrade.
+    size_t i = 0;
+    #pragma nounroll
+    do
     {
-        __builtin_memcpy(dst + i, src + i, 8);
-    }
+        memcpy(dst, src, N);
+        dst += N;
+        src += N;
+        i += N;
+    } while (i < size);
 }
 
-void copyOverlap8(UInt8 * op, const UInt8 *& match, size_t offset)
+
+template <size_t N>
+ALWAYS_INLINE void wildCopyFromOutput(UInt8 * dst, const UInt8 * src, size_t size)
+{
+    /// Unrolling with clang is doing >10% performance degrade.
+    size_t i = 0;
+    #pragma nounroll
+    do
+    {
+        memcpy(dst, src, N);
+        dst += N;
+        src += N;
+        i += N;
+    } while (i < size);
+}
+
+template <size_t N>
+void ALWAYS_INLINE copyOverlap(UInt8 * op, UInt8 *& match, size_t offset);
+
+template <>
+[[maybe_unused]] void ALWAYS_INLINE copyOverlap<8>(UInt8 * op, UInt8 *& match, size_t offset)
 {
 #if defined(__SSSE3__)
 
@@ -186,16 +209,135 @@ void copyOverlap8(UInt8 * op, const UInt8 *& match, size_t offset)
 #endif
 }
 
+template <>
+[[maybe_unused]] void ALWAYS_INLINE copyOverlap<16>(UInt8 * op, UInt8 *& match, size_t offset)
+{
+#if defined(__SSSE3__)
 
-template <> void inline copy<8>(UInt8 * dst, const UInt8 * src) { copy8(dst, src); }
-template <> void inline wildCopy<8>(UInt8 * dst, const UInt8 * src, size_t size) { wildCopy8(dst, src, size); }
-template <> void inline copyOverlap<8>(UInt8 * op, const UInt8 *& match, const size_t offset) { copyOverlap8(op, match, offset); }
+    static constexpr UInt8 __attribute__((__aligned__(16))) masks[] =
+    {
+        0,  1,  2,  1,  4,  1,  4,  2,  8,  7,  6,  5,  4,  3,  2,  1, /* offset = 0, not used as mask, but for shift amount instead */
+        0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, /* offset = 1 */
+        0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,
+        0,  1,  2,  0,  1,  2,  0,  1,  2,  0,  1,  2,  0,  1,  2,  0,
+        0,  1,  2,  3,  0,  1,  2,  3,  0,  1,  2,  3,  0,  1,  2,  3,
+        0,  1,  2,  3,  4,  0,  1,  2,  3,  4,  0,  1,  2,  3,  4,  0,
+        0,  1,  2,  3,  4,  5,  0,  1,  2,  3,  4,  5,  0,  1,  2,  3,
+        0,  1,  2,  3,  4,  5,  6,  0,  1,  2,  3,  4,  5,  6,  0,  1,
+        0,  1,  2,  3,  4,  5,  6,  7,  0,  1,  2,  3,  4,  5,  6,  7,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  0,  1,  2,  3,  4,  5,  6,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9,  0,  1,  2,  3,  4,  5,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10,  0,  1,  2,  3,  4,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11,  0,  1,  2,  3,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12,  0,  1,  2,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13,  0,  1,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14,  0,
+    };
+
+    _mm_storeu_si128(reinterpret_cast<__m128i *>(op),
+        _mm_shuffle_epi8(
+            _mm_loadu_si128(reinterpret_cast<const __m128i *>(match)),
+            _mm_load_si128(reinterpret_cast<const __m128i *>(masks) + offset)));
+
+    match += masks[offset];
+
+    /// MSAN does not recognize the store as initializing the memory
+    __msan_unpoison(op, 16);
+
+#elifdef __aarch64__
+
+    static constexpr UInt8 __attribute__((__aligned__(16))) masks[] =
+    {
+        0,  1,  2,  1,  4,  1,  4,  2,  8,  7,  6,  5,  4,  3,  2,  1, /* offset = 0, not used as mask, but for shift amount instead */
+        0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, /* offset = 1 */
+        0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,
+        0,  1,  2,  0,  1,  2,  0,  1,  2,  0,  1,  2,  0,  1,  2,  0,
+        0,  1,  2,  3,  0,  1,  2,  3,  0,  1,  2,  3,  0,  1,  2,  3,
+        0,  1,  2,  3,  4,  0,  1,  2,  3,  4,  0,  1,  2,  3,  4,  0,
+        0,  1,  2,  3,  4,  5,  0,  1,  2,  3,  4,  5,  0,  1,  2,  3,
+        0,  1,  2,  3,  4,  5,  6,  0,  1,  2,  3,  4,  5,  6,  0,  1,
+        0,  1,  2,  3,  4,  5,  6,  7,  0,  1,  2,  3,  4,  5,  6,  7,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  0,  1,  2,  3,  4,  5,  6,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9,  0,  1,  2,  3,  4,  5,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10,  0,  1,  2,  3,  4,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11,  0,  1,  2,  3,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12,  0,  1,  2,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13,  0,  1,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14,  0,
+    };
+
+    unalignedStore<uint8x8_t>(op,
+        vtbl2_u8(unalignedLoad<uint8x8x2_t>(match), unalignedLoad<uint8x8_t>(masks + 16 * offset)));
+
+    unalignedStore<uint8x8_t>(op + 8,
+        vtbl2_u8(unalignedLoad<uint8x8x2_t>(match), unalignedLoad<uint8x8_t>(masks + 16 * offset + 8)));
+
+    match += masks[offset];
+
+#else
+    /// 4 % n.
+    static constexpr int shift1[]
+        = { 0,  1,  2,  1,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4 };
+
+    /// 8 % n - 4 % n
+    static constexpr int shift2[]
+        = { 0,  0,  0,  1,  0, -1, -2, -3, -4,  4,  4,  4,  4,  4,  4,  4 };
+
+    /// 16 % n - 8 % n
+    static constexpr int shift3[]
+        = { 0,  0,  0, -1,  0, -2,  2,  1,  8, -1, -2, -3, -4, -5, -6, -7 };
+
+    op[0] = match[0];
+    op[1] = match[1];
+    op[2] = match[2];
+    op[3] = match[3];
+
+    match += shift1[offset];
+    memcpy(op + 4, match, 4);
+    match += shift2[offset];
+    memcpy(op + 8, match, 8);
+    match += shift3[offset];
+#endif
+}
+
+
+template <>
+[[maybe_unused]] void ALWAYS_INLINE copyOverlap<32>(UInt8 * op, UInt8 *& match, size_t offset)
+{
+    /// 4 % n.
+    static constexpr int shift1[]
+        = { 0,  1,  2,  1,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4 };
+
+    /// 8 % n - 4 % n
+    static constexpr int shift2[]
+        = { 0,  0,  0,  1,  0, -1, -2, -3, -4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4 };
+
+    /// 16 % n - 8 % n
+    static constexpr int shift3[]
+        = { 0,  0,  0, -1,  0, -2,  2,  1,  8, -1, -2, -3, -4, -5, -6, -7,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8 };
+
+    /// 32 % n - 16 % n
+    static constexpr int shift4[]
+        = { 0,  0,  0,  1,  0,  1, -2,  2,  0, -2, -4,  5,  4,  3,  2,  1,  0, -1, -2, -3, -4, -5, -6, -7, -8, -9,-10,-11,-12,-13,-14,-15 };
+
+    op[0] = match[0];
+    op[1] = match[1];
+    op[2] = match[2];
+    op[3] = match[3];
+
+    match += shift1[offset];
+    memcpy(op + 4, match, 4);
+    match += shift2[offset];
+    memcpy(op + 8, match, 8);
+    match += shift3[offset];
+    memcpy(op + 16, match, 16);
+    match += shift4[offset];
+}
+
 
 template <size_t copy_amount>
-bool decompressImpl(const char * const source, char * const dest, size_t source_size, size_t dest_size)
+bool NO_INLINE decompressImpl(const char * const source, char * const dest, size_t source_size, size_t dest_size)
 {
-    /// TODO: Clean up and leave 8 only
-    static_assert(copy_amount == 8);
     const UInt8 * ip = reinterpret_cast<const UInt8 *>(source);
     UInt8 * op = reinterpret_cast<UInt8 *>(dest);
     const UInt8 * const input_end = ip + source_size;
@@ -274,7 +416,7 @@ bool decompressImpl(const char * const source, char * const dest, size_t source_
         if (unlikely(ip + real_length >= input_end + ADDITIONAL_BYTES_AT_END_OF_BUFFER))
             return false;
 
-        wildCopy<copy_amount>(op, ip, copy_end - op); /// Here we can write up to copy_amount - 1 bytes after buffer.
+        wildCopyFromInput<copy_amount>(op, ip, copy_end - op); /// Here we can write up to copy_amount - 1 bytes after buffer.
 
         if (copy_end == output_end)
             return true;
@@ -291,7 +433,7 @@ bool decompressImpl(const char * const source, char * const dest, size_t source_
 
         size_t offset = LZ4_readLE16(ip);
         ip += 2;
-        const UInt8 * match = op - offset;
+        UInt8 * match = op - offset;
 
         if (unlikely(match < output_begin))
             return false;
@@ -335,18 +477,18 @@ bool decompressImpl(const char * const source, char * const dest, size_t source_
         }
         else
         {
-            copy<copy_amount>(op, match);
+            copyFromOutput<copy_amount>(op, match);
             match += copy_amount;
         }
 
         op += copy_amount;
 
-        copy<copy_amount>(op, match);   /// copy_amount + copy_amount - 1 - 4 * 2 bytes after buffer.
+        copyFromOutput<copy_amount>(op, match);   /// copy_amount + copy_amount - 1 - 4 * 2 bytes after buffer.
         if (length > copy_amount * 2)
         {
             if (unlikely(copy_end > output_end))
                 return false;
-            wildCopy<copy_amount>(op + copy_amount, match + copy_amount, copy_end - (op + copy_amount));
+            wildCopyFromOutput<copy_amount>(op + copy_amount, match + copy_amount, copy_end - (op + copy_amount));
         }
 
         op = copy_end;
@@ -359,10 +501,32 @@ bool decompress(
     const char * const source,
     char * const dest,
     size_t source_size,
-    size_t dest_size)
+    size_t dest_size,
+    [[maybe_unused]] PerformanceStatistics & statistics)
 {
     if (source_size == 0 || dest_size == 0)
         return true;
+
+    /// Don't run timer if the block is too small.
+    if (dest_size >= 32768)
+    {
+        size_t variant_size = 3;
+        size_t best_variant = statistics.select(variant_size);
+
+        Stopwatch watch;
+        bool success;
+        if (best_variant == 0)
+            success = decompressImpl<8>(source, dest, source_size, dest_size);
+        else if (best_variant == 1)
+            success = decompressImpl<16>(source, dest, source_size, dest_size);
+        else
+            success = decompressImpl<32>(source, dest, source_size, dest_size);
+
+        watch.stop();
+        statistics.data[best_variant].update(watch.elapsedSeconds(), dest_size);
+
+        return success;
+    }
 
     return decompressImpl<8>(source, dest, source_size, dest_size);
 }

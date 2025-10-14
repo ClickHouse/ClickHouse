@@ -45,6 +45,8 @@ protected:
     /// Variant for reference implementation of LZ4.
     static constexpr ssize_t LZ4_REFERENCE = -3;
 
+    LZ4::PerformanceStatistics perf_stat;
+
     size_t readCompressedData(size_t & size_decompressed, size_t & size_compressed_without_checksum)
     {
         if (compressed_in->eof())
@@ -95,6 +97,10 @@ protected:
     {
         UInt8 method = compressed_buffer[0];    /// See CompressedWriteBuffer.h
 
+        // std::cout << "Compressed " << size_compressed_without_checksum;
+        // std::cout << " Decompressed " << size_decompressed;
+        // std::cout << " Ratio " << static_cast<Float64>(size_compressed_without_checksum) / size_decompressed << std::endl;
+
         if (method == static_cast<UInt8>(CompressionMethodByte::LZ4))
         {
             //LZ4::statistics(compressed_buffer + COMPRESSED_BLOCK_HEADER_SIZE, to, size_decompressed, stat);
@@ -109,7 +115,7 @@ protected:
                 }
             }
             else
-                LZ4::decompress(compressed_buffer + COMPRESSED_BLOCK_HEADER_SIZE, to, size_compressed_without_checksum, size_decompressed);
+                LZ4::decompress(compressed_buffer + COMPRESSED_BLOCK_HEADER_SIZE, to, size_compressed_without_checksum, size_decompressed, perf_stat);
         }
         else
             throw Exception(ErrorCodes::UNKNOWN_COMPRESSION_METHOD, "Unknown compression method: {}", toString(method));
@@ -120,6 +126,7 @@ public:
     FasterCompressedReadBufferBase(ReadBuffer * in, ssize_t variant_)
         : compressed_in(in), own_compressed_buffer(COMPRESSED_BLOCK_HEADER_SIZE), variant(variant_)
     {
+        perf_stat.choose_method = variant;
     }
 
 };
