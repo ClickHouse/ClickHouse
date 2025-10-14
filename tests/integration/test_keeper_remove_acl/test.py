@@ -46,9 +46,19 @@ def test_server_restart(started_cluster):
     try:
         wait_nodes()
 
+        node.stop_clickhouse()
+        node.replace_in_config(
+            "/etc/clickhouse-server/config.d/check_node_acl_on_remove.xml", "1", "0"
+        )
+        node.start_clickhouse()
+
         def create_node_with_acl():
             node_zk = get_fake_zk("node")
             node_zk.add_auth("digest", "clickhouse:password")
+
+            if node_zk.exists("/test_acl_node"):
+                node_zk.delete("/test_acl_node")
+
             acl = make_digest_acl("clickhouse", "password", all=True)
             node_zk.create("/test_acl_node", b"test_data", acl=[acl])
             stop_zk_connection(node_zk)
