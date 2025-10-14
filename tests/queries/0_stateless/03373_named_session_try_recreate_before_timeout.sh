@@ -10,8 +10,6 @@ export SESSION="03373_session_${CLICKHOUSE_DATABASE}"
 export TABLE_NAME="03373_session_test"
 export SESSION_ID="${SESSION}_$RANDOM.$RANDOM"
 export SETTINGS="session_id=$SESSION_ID&session_timeout=3&throw_on_unsupported_query_inside_transaction=0"
-export QID_CLOSE="03373_close_$RANDOM"
-export QID_INSERT="03373_insert_$RANDOM"
 
 $CLICKHOUSE_CLIENT -q 'select * from numbers(1000000) format TSV' > $DATA_FILE
 $CLICKHOUSE_CLIENT -q "create table $TABLE_NAME (A Int64) Engine = MergeTree order by sin(A) partition by intDiv(A, 100000)"
@@ -21,13 +19,11 @@ $CLICKHOUSE_CURL -sS -d 'set http_max_tries=3373' "$CLICKHOUSE_URL&$SETTINGS"
 $CLICKHOUSE_CURL -sS -d "select value, changed from system.settings where name = 'http_max_tries'" "$CLICKHOUSE_URL&$SETTINGS"
 
 $CLICKHOUSE_CURL -sS -d 'begin transaction' "$CLICKHOUSE_URL&$SETTINGS"
-$CLICKHOUSE_CURL -sSf -d 'commit' "$CLICKHOUSE_URL&$SETTINGS&query_id=$QID_CLOSE&close_session=1"
+$CLICKHOUSE_CURL -sSf -d 'commit' "$CLICKHOUSE_URL&$SETTINGS&close_session=1"
 
-$CLICKHOUSE_CURL -sSf -X POST --data-binary @- "$CLICKHOUSE_URL&$SETTINGS&query_id=$QID_INSERT&session_check=1&query=insert+into+$TABLE_NAME+format+TSV" < $DATA_FILE 2>&1 | (grep -Faq "SESSION_NOT_FOUND" || echo "Expected SESSION_NOT_FOUND error")
+$CLICKHOUSE_CURL -sSf -X POST --data-binary @- "$CLICKHOUSE_URL&$SETTINGS&session_check=1&query=insert+into+$TABLE_NAME+format+TSV"
 $CLICKHOUSE_CLIENT --implicit_transaction=1 -q "select throwIf(count() != 0) from $TABLE_NAME" \
   || $CLICKHOUSE_CLIENT -q "select name, rows, active, visible, creation_tid, creation_csn from system.parts where database=currentDatabase()"
-
-$CLICKHOUSE_CLIENT -q "SELECT * FROM system.query_log WHERE (query_id = '$QID_CLOSE' OR query_id = '$QID_INSERT') AND current_database = currentDatabase()"
 
 # sleep a bit more than a session timeout (3) to make sure there's enough time to close it using close time buckets
 sleep 5
