@@ -45,6 +45,7 @@ namespace Setting
     extern const SettingsUInt64 max_size_to_preallocate_for_joins;
     extern const SettingsUInt64 parallel_hash_join_threshold;
 
+    extern const SettingsBool joined_block_split_single_row;
     extern const SettingsUInt64 max_joined_block_size_rows;
     extern const SettingsUInt64 max_joined_block_size_bytes;
     extern const SettingsString temporary_files_codec;
@@ -85,6 +86,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsUInt64 max_size_to_preallocate_for_joins;
     extern const QueryPlanSerializationSettingsUInt64 parallel_hash_join_threshold;
 
+    extern const QueryPlanSerializationSettingsBool joined_block_split_single_row;
     extern const QueryPlanSerializationSettingsUInt64 max_joined_block_size_rows;
     extern const QueryPlanSerializationSettingsUInt64 max_joined_block_size_bytes;
     extern const QueryPlanSerializationSettingsString temporary_files_codec;
@@ -111,6 +113,7 @@ JoinSettings::JoinSettings(const Settings & query_settings)
     max_bytes_in_join = query_settings[Setting::max_bytes_in_join];
     default_max_bytes_in_join = query_settings[Setting::default_max_bytes_in_join];
 
+    joined_block_split_single_row = query_settings[Setting::joined_block_split_single_row];
     max_joined_block_size_rows = query_settings[Setting::max_joined_block_size_rows];
     max_joined_block_size_bytes = query_settings[Setting::max_joined_block_size_bytes];
     min_joined_block_size_rows = query_settings[Setting::min_joined_block_size_rows];
@@ -172,6 +175,7 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
     max_size_to_preallocate_for_joins = settings[QueryPlanSerializationSetting::max_size_to_preallocate_for_joins];
     parallel_hash_join_threshold = settings[QueryPlanSerializationSetting::parallel_hash_join_threshold];
 
+    joined_block_split_single_row = settings[QueryPlanSerializationSetting::joined_block_split_single_row];
     max_joined_block_size_rows = settings[QueryPlanSerializationSetting::max_joined_block_size_rows];
     max_joined_block_size_bytes = settings[QueryPlanSerializationSetting::max_joined_block_size_bytes];
     temporary_files_codec = settings[QueryPlanSerializationSetting::temporary_files_codec];
@@ -215,6 +219,7 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings)
     settings[QueryPlanSerializationSetting::max_size_to_preallocate_for_joins] = max_size_to_preallocate_for_joins;
     settings[QueryPlanSerializationSetting::parallel_hash_join_threshold] = parallel_hash_join_threshold;
 
+    settings[QueryPlanSerializationSetting::joined_block_split_single_row] = joined_block_split_single_row;
     settings[QueryPlanSerializationSetting::max_joined_block_size_rows] = max_joined_block_size_rows;
     settings[QueryPlanSerializationSetting::max_joined_block_size_bytes] = max_joined_block_size_bytes;
     settings[QueryPlanSerializationSetting::temporary_files_codec] = temporary_files_codec;
