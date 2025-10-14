@@ -3,6 +3,7 @@
 -- Tests that text indexes can be build on and used with Map columns.
 
 SET enable_analyzer = 1;
+SET use_query_condition_cache = 0;
 SET allow_experimental_full_text_index = 1;
 SET use_skip_indexes_on_data_read = 0; --- for EXPLAIN indexes = 1 <query>
 
@@ -15,8 +16,8 @@ CREATE TABLE tab
     id UInt32,
     map Map(String, String),
     map_fixed Map(FixedString(2), String),
-    INDEX map_keys_idx mapKeys(map) TYPE text(tokenizer = 'default'),
-    INDEX map_fixed_keys_idx mapKeys(map_fixed) TYPE text(tokenizer = 'default'),
+    INDEX map_keys_idx mapKeys(map) TYPE text(tokenizer = 'splitByNonAlpha'),
+    INDEX map_fixed_keys_idx mapKeys(map_fixed) TYPE text(tokenizer = 'splitByNonAlpha'),
 )
 ENGINE = MergeTree
 ORDER BY (id);
@@ -210,8 +211,8 @@ CREATE TABLE tab
     id UInt32,
     map Map(String, String),
     map_fixed Map(String, FixedString(2)),
-    INDEX map_values_idx mapValues(map) TYPE text(tokenizer = 'default'),
-    INDEX map_fixed_values_idx mapValues(map_fixed) TYPE text(tokenizer = 'default'),
+    INDEX map_values_idx mapValues(map) TYPE text(tokenizer = 'splitByNonAlpha'),
+    INDEX map_fixed_values_idx mapValues(map_fixed) TYPE text(tokenizer = 'splitByNonAlpha'),
 )
 ENGINE = MergeTree
 ORDER BY (id);

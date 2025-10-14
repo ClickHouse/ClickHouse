@@ -294,20 +294,20 @@ ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, con
 SerializationInfoByName getSerializationHintsForFileLikeStorage(const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context)
 {
     if (!context->getSettingsRef()[Setting::enable_parsing_to_custom_serialization])
-        return {};
+        return SerializationInfoByName{{}};
 
     auto insertion_table = context->getInsertionTable();
     if (!insertion_table)
-        return {};
+        return SerializationInfoByName{{}};
 
     auto storage_ptr = DatabaseCatalog::instance().tryGetTable(insertion_table, context);
     if (!storage_ptr)
-        return {};
+        return SerializationInfoByName{{}};
 
     const auto & our_columns = metadata_snapshot->getColumns();
     const auto & storage_columns = storage_ptr->getInMemoryMetadataPtr()->getColumns();
     auto storage_hints = storage_ptr->getSerializationHints();
-    SerializationInfoByName res;
+    SerializationInfoByName res({});
 
     for (const auto & hint : storage_hints)
     {
@@ -364,7 +364,7 @@ ReadFromFormatInfo ReadFromFormatInfo::deserialize(IQueryPlanStep::Deserializati
     result.requested_virtual_columns.readTextWithNamesInStorage(ctx.in);
     std::string json;
     readString(json, ctx.in);
-    result.serialization_hints = SerializationInfoByName::readJSONFromString(result.columns_description.getAll(), SerializationInfoSettings{}, json);
+    result.serialization_hints = SerializationInfoByName::readJSONFromString(result.columns_description.getAll(), json);
 
     ctx.in >> "\n";
 

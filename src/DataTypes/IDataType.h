@@ -106,13 +106,13 @@ public:
     void updateHash(SipHash & hash) const;
     virtual void updateHashImpl(SipHash & hash) const = 0;
 
-    bool hasSubcolumn(std::string_view subcolumn_name) const;
+    bool hasSubcolumn(std::string_view subcolumn_name, SerializationPtr override_default = nullptr) const;
 
-    DataTypePtr tryGetSubcolumnType(std::string_view subcolumn_name) const;
-    DataTypePtr getSubcolumnType(std::string_view subcolumn_name) const;
+    DataTypePtr tryGetSubcolumnType(std::string_view subcolumn_name, SerializationPtr override_default = nullptr) const;
+    DataTypePtr getSubcolumnType(std::string_view subcolumn_name, SerializationPtr override_default = nullptr) const;
 
-    ColumnPtr tryGetSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column) const;
-    ColumnPtr getSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column) const;
+    ColumnPtr tryGetSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column, SerializationPtr override_default = nullptr) const;
+    ColumnPtr getSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column, SerializationPtr override_default = nullptr) const;
 
     SerializationPtr getSubcolumnSerialization(std::string_view subcolumn_name, const SerializationPtr & serialization) const;
 
@@ -141,18 +141,22 @@ public:
     virtual bool supportsSparseSerialization() const { return !haveSubtypes(); }
     virtual bool canBeInsideSparseColumns() const { return supportsSparseSerialization(); }
 
-    SerializationPtr getDefaultSerialization() const;
-    SerializationPtr getSparseSerialization() const;
+    SerializationPtr getDefaultSerialization(SerializationPtr override_default = {}) const;
+    SerializationPtr getSparseSerialization(SerializationPtr override_default = {}) const;
 
     /// Chooses serialization according to serialization kind.
-    SerializationPtr getSerialization(ISerialization::Kind kind) const;
+    SerializationPtr getSerialization(ISerialization::Kind kind, SerializationPtr override_default = {}) const;
 
     /// Chooses serialization according to collected information about content of column.
     virtual SerializationPtr getSerialization(const SerializationInfo & info) const;
 
+    SerializationPtr getSerialization(const SerializationInfoSettings & settings) const;
+
     /// Chooses between subcolumn serialization and regular serialization according to @column.
     /// This method typically should be used to get serialization for reading column or subcolumn.
     static SerializationPtr getSerialization(const NameAndTypePair & column, const SerializationInfo & info);
+
+    static SerializationPtr getSerialization(const NameAndTypePair & column, const SerializationInfoSettings & settings);
 
     static SerializationPtr getSerialization(const NameAndTypePair & column);
 
