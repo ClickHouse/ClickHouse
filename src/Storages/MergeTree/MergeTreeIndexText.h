@@ -283,7 +283,6 @@ class MergeTreeIndexText final : public IMergeTreeIndex
 
     static Tuple parseNamedArgumentFromAST(const ASTFunction * ast_equal_function);
     static ASTPtr tryGetPreprocessorFromAST(const ASTFunction * ast_equal_function);
-    static std::pair<FieldVector,ASTPtr> parseArgumentsListFromAST(const ASTPtr & arguments);
     static ASTPtr parseExpression(const String & expression);
 
 public:
@@ -301,19 +300,13 @@ public:
     MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const override;
 
-    /// This function performs text index specific initialization actions in the IndexDescription.
-    /// This will be called during IndexDescription construction/initialization and expects the "result" argument to be partially
-    /// initialized with some generic values common to all the indices.
-    /// The "result" argument is intended to be an "inout" because it is expected to be partially initialized.
-    /// Unlike other indices, text index has a special syntax and more complex arguments.
+    /// This function performs text index specific arguments parsing because text index has a special syntax and more complex arguments.
     /// 1. It expects only named arguments like: argument = value
     /// 2. The tokenizer argument can be strings (like other indices), but also function names (literals) or a function-like
     /// expression (i.e: ngram(5))
     /// 3. The preprocessor argument is intended to be a generic expression (i.e: lower(extractTextFromHTML(str))) where str is the indexed
     /// column name
-    static void updateIndexDescriptionTextFromAST(
-        const ASTIndexDeclaration * index_definition, const ColumnsDescription & columns, ContextPtr context,
-        IndexDescription & result);
+    static FieldVector parseArgumentsListFromAST(const ASTPtr & arguments);
 
     MergeTreeIndexTextParams params;
     std::unique_ptr<ITokenExtractor> token_extractor;

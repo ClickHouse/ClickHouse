@@ -1250,10 +1250,9 @@ ASTPtr MergeTreeIndexText::tryGetPreprocessorFromAST(const ASTFunction * ast_equ
     return arguments->children[1];
 }
 
-std::pair<FieldVector,ASTPtr> MergeTreeIndexText::parseArgumentsListFromAST(const ASTPtr & arguments)
+FieldVector MergeTreeIndexText::parseArgumentsListFromAST(const ASTPtr & arguments)
 {
     FieldVector result;
-    ASTPtr preprocessor_expression;
 
     result.reserve(arguments->children.size());
 
@@ -1262,31 +1261,9 @@ std::pair<FieldVector,ASTPtr> MergeTreeIndexText::parseArgumentsListFromAST(cons
         const auto * ast_equal_function = argument->as<ASTFunction>();
 
         result.emplace_back(MergeTreeIndexText::parseNamedArgumentFromAST(ast_equal_function));
-
-        if (ASTPtr preprocessor_tmp = MergeTreeIndexText::tryGetPreprocessorFromAST(ast_equal_function))
-            preprocessor_expression = preprocessor_tmp;
     }
 
-    return {result, preprocessor_expression};
-}
-
-
-void MergeTreeIndexText::updateIndexDescriptionTextFromAST(
-    const ASTIndexDeclaration * index_definition, const ColumnsDescription & columns, ContextPtr context,
-    IndexDescription & result)
-{
-    auto index_type = index_definition->getType();
-
-    chassert(index_type != nullptr);
-    chassert(index_type->name == TEXT_INDEX_NAME);
-    chassert(index_type->arguments);
-
-    ASTPtr preprocessor_expression;
-    std::tie(result.arguments, preprocessor_expression) = MergeTreeIndexText::parseArgumentsListFromAST(index_type->arguments);
-
-    if (preprocessor_expression)
-        result.initExpressionInfo(preprocessor_expression, columns, context);
-
+    return result;
 }
 
 

@@ -108,10 +108,9 @@ IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast
 
     if (index_type && index_type->arguments)
     {
-        if (index_type->name == TEXT_INDEX_NAME)
-            MergeTreeIndexText::updateIndexDescriptionTextFromAST(index_definition, columns, context, result);
-        else
-            result.arguments = IndexDescription::parsePositionalArgumentsFromAST(index_type->arguments);
+        result.arguments = (index_type->name == TEXT_INDEX_NAME)
+            ? MergeTreeIndexText::parseArgumentsListFromAST(index_type->arguments)
+            : IndexDescription::parsePositionalArgumentsFromAST(index_type->arguments);
     }
 
     return result;
