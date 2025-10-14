@@ -48,6 +48,9 @@ public:
         if (arguments.size() != 1)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} must be called with one argument", name);
 
+
+        checkArgumentTypeForID(a
+
         checkDataTypeOfID(arguments[0].type, 0);
 
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()}));

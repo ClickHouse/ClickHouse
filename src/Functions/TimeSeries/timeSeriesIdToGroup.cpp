@@ -43,33 +43,33 @@ public:
         if (arguments.size() != 1)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} must be called with one argument", name);
 
-        checkDataTypeOfID(arguments[0].type, 0);
-
+        checkArgumentTypes(arguments);
         return std::make_shared<DataTypeUInt64>();
     }
 
-    static void checkDataTypeOfID(const DataTypePtr & data_type, size_t argument_index)
+    static void checkArgumentTypes(const ColumnsWithTypeAndName & arguments)
     {
-        if (isUInt64(data_type) || isUInt128(data_type) || isUUID(data_type))
-            return;
-        if (const auto * fixed_string_data_type = typeid_cast<const DataTypeFixedString *>(data_type.get());
-            fixed_string_data_type && (fixed_string_data_type->getN() == 16))
-            return;
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument #{} of function {} has wrong type {}, it must be {}",
-                        argument_index + 1, name, data_type, "UInt64 or UInt128 or UUID");
-    }
+        if (arguments.size() != 1)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} must be called with two arguments", name);
 
-    using TagNamesAndValuesPtr = ContextTimeSeriesTagsCollector::TagNamesAndValuesPtr;
+        TimeSeriesTagsFunctionHelpers::checkArgumentTypeForID(name, arguments, 0);
+    }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {
         chassert(arguments.size() == 1);
-        const auto & column_ids = arguments[0].column;
+        const auto & column = arguments[0].column;
 
         auto groups = getGroups(*column_ids, 0);
         chassert(groups.size() == input_rows_count);
 
         return makeResultColumn(groups);
+    }
+
+    template <typename IDType>
+    ColumnPtr executeForIDType(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const
+    {
+        
     }
 
     /// Converts a vector of tags to a result column.

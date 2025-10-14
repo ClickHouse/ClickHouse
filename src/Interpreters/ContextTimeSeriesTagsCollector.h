@@ -41,7 +41,7 @@ public:
     static String toString(const TagNamesAndValues & tags);
 
     /// A group is just an integer.
-    using Group = size_t;
+    using Group = UInt64;
 
     /// Adds mapping between a specified identifier and a set of tags to the collector.
     /// The function assigns a group to that set of tags and returns it.
