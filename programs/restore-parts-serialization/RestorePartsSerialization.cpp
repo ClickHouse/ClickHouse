@@ -23,7 +23,6 @@ namespace DB::ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int CORRUPTED_DATA;
-    extern const int NOT_IMPLEMENTED;
 }
 
 struct RepareEntry
