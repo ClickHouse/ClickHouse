@@ -14,6 +14,8 @@
 #include <IO/WriteHelpers.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 
+#include <iostream>
+
 namespace DB
 {
 
@@ -281,7 +283,15 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
             bool is_agg_func = WhichDataType(column.type).isAggregateFunction();
 
             /// There are special const columns for example after prewhere sections.
-            if (!aggregate_all_columns && ((!column.type->isSummable() && !is_agg_func && !simple) || isColumnConst(*column.column)))
+            if (!aggregate_all_columns)
+            {
+                if ((!column.type->isSummable() && !is_agg_func && !simple) || isColumnConst(*column.column))
+                {
+                    def.column_numbers_not_to_aggregate.push_back(i);
+                    continue;
+                }
+            }
+            else if (column.type->getTypeId() == TypeIndex::Tuple)
             {
                 def.column_numbers_not_to_aggregate.push_back(i);
                 continue;
