@@ -619,6 +619,9 @@ bool isTextIndexVirtualColumn(const String & column_name)
 
 size_t getApproximateSizeOfTextIndexVirtualColumn(size_t num_rows)
 {
+    /// Return approximate size of the virtual column for better tasks assignment and PREWHERE optimization.
+    /// The size doesn't relate to actual size of the column or data read from disk.
+    /// It is used to make this column 'heavier' than UInt8, UInt16, UInt32 columns and "lighter" that String columns.
     return num_rows * 4;
 }
 
