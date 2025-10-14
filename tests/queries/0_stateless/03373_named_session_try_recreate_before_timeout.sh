@@ -27,7 +27,7 @@ $CLICKHOUSE_CURL -sSf -X POST --data-binary @- "$CLICKHOUSE_URL&$SETTINGS&query_
 $CLICKHOUSE_CLIENT --implicit_transaction=1 -q "select throwIf(count() != 0) from $TABLE_NAME" \
   || $CLICKHOUSE_CLIENT -q "select name, rows, active, visible, creation_tid, creation_csn from system.parts where database=currentDatabase()"
 
-$CLICKHOUSE_CLIENT -sS -d 'SELECT event_time_microseconds, type, query_id, exception_code, exception, stack_trace, address, port, transaction_id, query_cache_usage, query FROM system.query_log;' "$CLICKHOUSE_URL&$SETTINGS"
+$CLICKHOUSE_CLIENT -q 'SELECT event_time_microseconds, type, query_id, exception_code, exception, stack_trace, address, port, transaction_id, query_cache_usage, query FROM system.query_log where query_id IN ('$QID_CLOSE', '$QID_INSERT') AND current_database = currentDatabase();'
 
 # sleep a bit more than a session timeout (3) to make sure there's enough time to close it using close time buckets
 sleep 5
