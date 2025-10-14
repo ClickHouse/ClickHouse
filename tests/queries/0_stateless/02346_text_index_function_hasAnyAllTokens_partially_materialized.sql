@@ -4,7 +4,7 @@ SET use_skip_indexes_on_data_read = 0;
 SET mutations_sync = 2; -- want synchronous materialize
 
 -- In this test we make sure that text search functions hasAny/AllTokens work correctly for
--- tables in which only some parts have a materialized index. The expected behavior is that 
+-- tables in which only some parts have a materialized index. The expected behavior is that
 -- the search acts the same as if the whole column was indexed, but of course an inefficient
 -- brute force search is used for the un-indexed rows. Furthermore we test that the same
 -- tokenizer used to create the index is used for the un-indexed parts as is specified in
