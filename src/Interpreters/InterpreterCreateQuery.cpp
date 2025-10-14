@@ -529,7 +529,7 @@ ASTPtr InterpreterCreateQuery::formatIndices(const IndicesDescription & indices)
     auto res = std::make_shared<ASTExpressionList>();
 
     for (const auto & index : indices)
-        if (!index.isImplicitlyCreated())
+        if (!index.is_implicitly_created)
             res->children.push_back(index.definition_ast->clone());
 
     return res;
@@ -828,7 +828,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             /// not be copied.
             const auto & indices = as_storage_metadata->getSecondaryIndices();
             for (const auto & index : indices)
-                if (!index.isImplicitlyCreated())
+                if (!index.is_implicitly_created)
                     properties.indices.push_back(index);
 
             /// Copy projections.
