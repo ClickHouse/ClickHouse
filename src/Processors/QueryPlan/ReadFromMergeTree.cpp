@@ -3300,7 +3300,7 @@ void ReadFromMergeTree::replaceColumnsForTextSearch(const IndexReadColumns & add
 
 ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstimator() const
 {
-    return data.getConditionSelectivityEstimatorByPredicate(storage_snapshot, nullptr, getContext());
+    return data.getConditionSelectivityEstimator(getParts(), getContext());
 }
 
 }
