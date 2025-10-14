@@ -19,9 +19,9 @@ $CLICKHOUSE_CURL -sS -d 'set http_max_tries=3373' "$CLICKHOUSE_URL&$SETTINGS"
 $CLICKHOUSE_CURL -sS -d "select value, changed from system.settings where name = 'http_max_tries'" "$CLICKHOUSE_URL&$SETTINGS"
 
 $CLICKHOUSE_CURL -sS -d 'begin transaction' "$CLICKHOUSE_URL&$SETTINGS"
-$CLICKHOUSE_CURL -sSf -d 'commit' "$CLICKHOUSE_URL&$SETTINGS&close_session=1"
+$CLICKHOUSE_CURL -sS -d 'commit' "$CLICKHOUSE_URL&$SETTINGS&close_session=1"
 
-$CLICKHOUSE_CURL -sSf -X POST --data-binary @- "$CLICKHOUSE_URL&$SETTINGS&session_check=1&query=insert+into+$TABLE_NAME+format+TSV" < $DATA_FILE
+$CLICKHOUSE_CURL -sS -X POST --data-binary @- "$CLICKHOUSE_URL&$SETTINGS&session_check=1&query=insert+into+$TABLE_NAME+format+TSV" < $DATA_FILE
 $CLICKHOUSE_CLIENT --implicit_transaction=1 -q "select throwIf(count() != 0) from $TABLE_NAME" \
   || $CLICKHOUSE_CLIENT -q "select name, rows, active, visible, creation_tid, creation_csn from system.parts where database=currentDatabase()"
 
