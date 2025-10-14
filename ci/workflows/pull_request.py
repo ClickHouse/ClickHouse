@@ -57,7 +57,7 @@ workflow = Workflow.Config(
             )
             for j in JobConfigs.functional_tests_jobs
         ],
-        JobConfigs.bugfix_validation_it_job.set_dependency(STYLE_AND_FAST_TESTS),
+        JobConfigs.bugfix_validation_it_job,
         JobConfigs.bugfix_validation_ft_pr_job,
         *JobConfigs.stateless_tests_flaky_pr_jobs,
         *[
