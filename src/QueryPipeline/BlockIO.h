@@ -7,6 +7,7 @@
 #include <Common/CurrentThread.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <IO/Progress.h>
+#include <Processors/IProcessor.h>
 
 
 namespace DB
@@ -14,10 +15,11 @@ namespace DB
 
 class ProcessListEntry;
 
-/// Information prepared by BlockIO::finalize_query_pipeline before calling finish callbacks.
 struct QueryPipelineFinalizedInfo
 {
     std::optional<ResultProgress> result_progress;
+    std::vector<IProcessor::ProfileInfo> processors_profile_infos;
+    String pipeline_dump;
 };
 
 struct BlockIO

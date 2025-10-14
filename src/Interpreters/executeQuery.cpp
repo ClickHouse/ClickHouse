@@ -69,6 +69,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/ProfileEvents.h>
+#include <QueryPipeline/printPipeline.h>
 #include <IO/Progress.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Core/ServerSettings.h>
@@ -585,19 +586,20 @@ static ResultProgress flushQueryProgress(const QueryPipeline & pipeline, bool pu
     return res;
 }
 
-QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(ContextPtr context, QueryPipeline && query_pipeline, QueryResultCacheUsage query_result_cache_usage, bool pulling_pipeline)
+QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeline && query_pipeline, QueryResultCacheUsage query_result_cache_usage, bool pulling_pipeline)
 {
     if (query_result_cache_usage == QueryResultCacheUsage::Write)
         /// Trigger the actual write of the buffered query result into the query result cache. This is done explicitly to
         /// prevent partial/garbage results in case of exceptions during query execution.
         query_pipeline.finalizeWriteInQueryResultCache();
 
-    /// We can't just hold the processors in QueryPipelineFinalizedInfo because then not all the
-    /// profile events will be recorded.
-    /// TODO(mstetsyuk): save all the info of the processors to a new struct, save it to QueryPipelineFinalizedInfo,
-    /// and use in finish_callback.
-    if (const auto & processors = query_pipeline.getProcessors(); !processors.empty())
-            logProcessorProfile(context, processors);
+    std::vector<IProcessor::ProfileInfo> processors_profile_infos = getProfileInfos(query_pipeline.getProcessors());
+
+    String pipeline_dump;
+    {
+        WriteBufferFromString out(pipeline_dump);
+        printPipeline(query_pipeline.getProcessors(), out, true);
+    }
 
     std::optional<ResultProgress> result_progress;
     if (pulling_pipeline)
@@ -615,7 +617,9 @@ QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(ContextPtr context
     CurrentThread::finalizePerformanceCounters();
 
     return QueryPipelineFinalizedInfo{
-        .result_progress = std::move(result_progress)};
+        .result_progress = std::move(result_progress),
+        .processors_profile_infos = std::move(processors_profile_infos),
+        .pipeline_dump = std::move(pipeline_dump)};
 }
 
 void logQueryFinishImpl(
@@ -723,6 +727,9 @@ void logQueryFinishImpl(
         }
         query_span->finish(time);
     }
+
+    if (!query_pipeline_finalized_info.processors_profile_infos.empty())
+        logProcessorProfile(context, query_pipeline_finalized_info.processors_profile_infos, query_pipeline_finalized_info.pipeline_dump);
 }
 
 void logQueryFinish(
@@ -736,7 +743,7 @@ void logQueryFinish(
     bool internal)
 {
     const auto time_now = std::chrono::system_clock::now();
-    auto query_pipeline_finalized_info = finalizeQueryPipelineBeforeLogging(context, std::move(query_pipeline), query_result_cache_usage, pulling_pipeline);
+    auto query_pipeline_finalized_info = finalizeQueryPipelineBeforeLogging(std::move(query_pipeline), query_result_cache_usage, pulling_pipeline);
     logQueryFinishImpl(elem, context, query_ast, std::move(query_pipeline_finalized_info), pulling_pipeline, query_span, query_result_cache_usage, internal, time_now);
 }
 
@@ -1778,12 +1785,12 @@ static BlockIO executeQueryImpl(
             /// Also make possible for caller to log successful query finish and exception during execution.
 
             /// The prepare callback flushes pipeline progress and resets the pipeline
-            auto finish_callback_finalize_pipeline = [context,
+            auto finish_callback_finalize_pipeline = [
                                      query_result_cache_usage,
                                      // Need to be cached, since will be changed after complete()
                                      pulling_pipeline = pipeline.pulling()](QueryPipeline && query_pipeline) mutable -> QueryPipelineFinalizedInfo
             {
-                return finalizeQueryPipelineBeforeLogging(context, std::move(query_pipeline), query_result_cache_usage, pulling_pipeline);
+                return finalizeQueryPipelineBeforeLogging(std::move(query_pipeline), query_result_cache_usage, pulling_pipeline);
             };
 
             /// The finish callback logs the query result
