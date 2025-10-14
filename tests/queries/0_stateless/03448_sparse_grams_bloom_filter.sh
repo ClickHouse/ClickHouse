@@ -16,7 +16,7 @@ CREATE TABLE bloom_filter_idx
 (
     k UInt64,
     s String,
-    INDEX bf (s, lower(s)) TYPE sparseGrams(3, 100, 512, 2, 0) GRANULARITY 1
+    INDEX bf (s, lower(s)) TYPE sparse_grams(3, 100, 512, 2, 0) GRANULARITY 1
 ) ENGINE = MergeTree()
 ORDER BY k
 SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';"
@@ -26,7 +26,7 @@ CREATE TABLE bloom_filter_idx2
 (
     k UInt64,
     s FixedString(15),
-    INDEX bf (s, lower(s)) TYPE sparseGrams(3, 100, 5, 512, 2, 0) GRANULARITY 1
+    INDEX bf (s, lower(s)) TYPE sparse_grams(3, 100, 5, 512, 2, 0) GRANULARITY 1
 ) ENGINE = MergeTree()
 ORDER BY k
 SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';"
