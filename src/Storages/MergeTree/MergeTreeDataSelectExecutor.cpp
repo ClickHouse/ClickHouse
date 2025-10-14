@@ -917,7 +917,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                             log);
                     }
 
-                    for (const auto & index : indices_and_condition.indices) {
+                    for (const auto & index : indices_and_condition.indices) 
+                    {
                         context->getQueryContext()->addSkipIndexAccessInfo(
                         ranges.data_part->storage.getStorageID().getFullTableName(),
                         index->index.name
