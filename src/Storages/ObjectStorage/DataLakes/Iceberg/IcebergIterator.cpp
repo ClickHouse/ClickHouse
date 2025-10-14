@@ -173,6 +173,12 @@ std::optional<ManifestFileEntry> SingleThreadIcebergKeysIterator::next()
                 current_manifest_file_content->getPathToManifestFile(),
                 manifest_file_entry.row_number,
                 pruning_status);
+            LOG_DEBUG(
+                log,
+                "Iceberg Iterator, Manifest entry: {}, pruning status: {}, we have pruner: {}",
+                manifest_file_entry.file_path_key,
+                toString(pruning_status),
+                current_pruner.has_value());
             switch (pruning_status)
             {
                 case PruningReturnStatus::NOT_PRUNED:

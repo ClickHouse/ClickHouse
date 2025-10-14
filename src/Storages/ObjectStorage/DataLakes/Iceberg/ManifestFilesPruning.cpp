@@ -116,8 +116,18 @@ ManifestFilesPruner::ManifestFilesPruner(
         partition_key = &manifest_file.getPartitionKeyDescription();
         if (transformed_dag != nullptr)
         {
+            LOG_DEBUG(&Poco::Logger::get("ManifestFilesPruner"), "Iceberg Iterator, transformed DAG: {}", transformed_dag->dumpDAG());
             ActionsDAGWithInversionPushDown inverted_dag(transformed_dag->getOutputs().front(), context);
             partition_key_condition.emplace(inverted_dag, context, partition_key->column_names, partition_key->expression, true /* single_point */);
+            LOG_DEBUG(
+                &Poco::Logger::get("ManifestFilesPruner"),
+                "Iceberg Iterator, partition key columns: {}, condition: {}",
+                fmt::join(partition_key->column_names, ", "),
+                partition_key_condition->toString());
+            LOG_DEBUG(
+                &Poco::Logger::get("ManifestFilesPruner"),
+                "Iceberg Iterator, inverted DAG: {}",
+                inverted_dag.dag.has_value() ? inverted_dag.dag->dumpDAG() : "empty");
         }
     }
 
@@ -159,8 +169,14 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(const ManifestFileEntry & e
                 field = POSITIVE_INFINITY;
         }
 
+
         bool can_be_true = partition_key_condition->mayBeTrueInRange(
             partition_value.size(), index_value.data(), index_value.data(), partition_key->data_types);
+        LOG_DEBUG(
+            &Poco::Logger::get("ManifestFilesPruner"),
+            "Iceberg Iterator, checking partition pruning for partition spec: {}, can be true: {}",
+            fmt::join(partition_key->column_names, ", "),
+            can_be_true);
 
         if (!can_be_true)
         {
