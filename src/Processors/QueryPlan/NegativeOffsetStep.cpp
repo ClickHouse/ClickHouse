@@ -63,7 +63,7 @@ std::unique_ptr<IQueryPlanStep> NegativeOffsetStep::deserialize(Deserialization 
 
 void registerNegativeOffsetStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("Negative Offset", NegativeOffsetStep::deserialize);
+    registry.registerStep("NegativeOffset", NegativeOffsetStep::deserialize);
 }
 
 }
