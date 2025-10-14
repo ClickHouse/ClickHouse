@@ -1928,12 +1928,9 @@ class TestCase:
                 description,
             )
 
-        if self.name == "03373_named_session_try_recreate_before_timeout":
-            result_is_different = 0
-        else:
-            result_is_different = subprocess.call(
-                ["diff", "-q", self.reference_file, self.stdout_file], stdout=PIPE
-            )
+        result_is_different = subprocess.call(
+            ["diff", "-q", self.reference_file, self.stdout_file], stdout=PIPE
+        )
 
         if result_is_different:
             with Popen(
