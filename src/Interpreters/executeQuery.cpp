@@ -1095,10 +1095,8 @@ static BlockIO executeQueryImpl(
 
     if (client_info.initial_query_start_time == 0)
     {
-        // If it's not an internal query and we don't see an initial_query_start_time yet, initialize it
-        // to current time. Internal queries are those executed without an independent client context,
-        // thus should not set initial_query_start_time, because it might introduce data race. It's also
-        // possible to have unset initial_query_start_time for non-internal and non-initial queries. For
+        // If we don't see an initial_query_start_time yet, initialize it to current time.
+        // It's possible to have unset initial_query_start_time for non-initial queries. For
         // example, the query is from an initiator that is running an old version of clickhouse.
         // On the other hand, if it's initialized then take it as the start of the query
         context->setInitialQueryStartTime(query_start_time);
