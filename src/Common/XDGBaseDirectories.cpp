@@ -34,4 +34,17 @@ std::string XDGBaseDirectories::getDataHome()
     return "";
 }
 
+std::string XDGBaseDirectories::getStateHome()
+{
+    auto * xdg_data_home = getenv(ENV_XDG_STATE_HOME); // NOLINT(concurrency-mt-unsafe)
+    if (xdg_data_home)
+        return fs::path(xdg_data_home) / APP_NAME;
+
+    auto * home_path = getenv(ENV_HOME); // NOLINT(concurrency-mt-unsafe)
+    if (home_path)
+        return fs::path(home_path) / STATE_PATH_PREFIX / APP_NAME;
+
+    return "";
+}
+
 }

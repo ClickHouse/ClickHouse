@@ -3740,7 +3740,7 @@ std::string ClientBase::getHistoryFilePath()
             return path_in_home_dir;
     }
 
-    return fs::path(XDGBaseDirectories::getDataHome()) / "query-history";
+    return fs::path(XDGBaseDirectories::getStateHome()) / "query-history";
 }
 
 
