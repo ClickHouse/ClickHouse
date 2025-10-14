@@ -658,12 +658,6 @@ void Client::addExtraOptions(OptionsDescription & options_description)
         ("ssh-key-passphrase", po::value<std::string>(), "Passphrase for the SSH private key specified by --ssh-key-file.")
         ("quota_key", po::value<std::string>(), "A string to differentiate quotas when the user have keyed quotas configured on server")
         ("jwt", po::value<std::string>(), "Use JWT for authentication")
-#if USE_JWT_CPP && USE_SSL
-        ("login", po::bool_switch(), "Use OAuth 2.0 to login")
-        ("oauth-url", po::value<std::string>(), "The base URL for the OAuth 2.0 authorization server")
-        ("oauth-client-id", po::value<std::string>(), "The client ID for the OAuth 2.0 application")
-        ("oauth-audience", po::value<std::string>(), "The audience for the OAuth 2.0 token")
-#endif
         ("max_client_network_bandwidth",
             po::value<int>(),
             "the maximum speed of data exchange over the network for the client in bytes per second.")
