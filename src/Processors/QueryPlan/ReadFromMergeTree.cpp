@@ -1760,6 +1760,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool 
         all_column_names,
         log,
         indexes,
+        index_read_tasks,
         find_exact_ranges,
         is_parallel_reading_from_replicas);
 
@@ -1973,6 +1974,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     const Names & all_column_names,
     LoggerPtr log,
     std::optional<Indexes> & indexes,
+    const IndexReadTasks & index_read_tasks_,
     bool find_exact_ranges,
     bool is_parallel_reading_from_replicas_)
 {
@@ -2076,6 +2078,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             indexes->part_offset_condition,
             indexes->total_offset_condition,
             indexes->skip_indexes,
+            index_read_tasks_,
             reader_settings,
             log,
             num_streams,

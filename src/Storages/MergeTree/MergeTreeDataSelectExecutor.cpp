@@ -657,6 +657,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     const std::optional<KeyCondition> & part_offset_condition,
     const std::optional<KeyCondition> & total_offset_condition,
     const UsefulSkipIndexes & skip_indexes,
+    const IndexReadTasks & index_read_tasks,
     const MergeTreeReaderSettings & reader_settings,
     LoggerPtr log,
     size_t num_streams,
@@ -857,7 +858,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     }
 
                     /// Vector similarity indexes are not applicable on data reads.
-                    if (!use_skip_indexes_on_data_read || index_and_condition.index->isVectorSimilarityIndex())
+                    bool analyze_index = index_and_condition.index->isVectorSimilarityIndex() ||
+                        (!use_skip_indexes_on_data_read && !index_read_tasks.contains(index_and_condition.index->index.name));
+
+                    if (analyze_index)
                     {
                         std::tie(ranges.ranges, ranges.read_hints) = filterMarksUsingIndex(
                             index_and_condition.index,
@@ -1270,6 +1274,7 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
         column_names_to_return,
         log,
         indexes,
+        /*index_read_tasks*/{},
         /*find_exact_ranges*/false,
         /*is_parallel_reading_from_replicas*/false);
 }
