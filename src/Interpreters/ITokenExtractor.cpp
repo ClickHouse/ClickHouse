@@ -427,26 +427,17 @@ bool SparseGramTokenExtractor::nextInStringLike(const char * data, size_t length
             previous_len = 0;
             return false;
         }
-        bool escaped = false;
         bool match_substring = true;
         for (size_t i = next_begin - data; i < static_cast<size_t>(next_end - data);)
         {
-            if (escaped && (data[i] == '%' || data[i] == '_' || data[i] == '\\'))
-            {
-                token.push_back(data[i]);
-                escaped = false;
-                ++i;
-            }
-            else if (!escaped && (data[i] == '%' || data[i] == '_'))
+            /// Escaped sequences are not supported by sparse grams tokenizers.
+            /// It requires pushing down this logic into sparse grams implementation,
+            /// because it changes the split into sparse grams. We don't want to do that now.
+            if (data[i] == '%' || data[i] == '_' || data[i] == '\\')
             {
                 token.clear();
                 match_substring = false;
                 break;
-            }
-            else if (!escaped && data[i] == '\\')
-            {
-                escaped = true;
-                ++i;
             }
             else
             {
@@ -454,7 +445,6 @@ bool SparseGramTokenExtractor::nextInStringLike(const char * data, size_t length
                 for (size_t j = 0; j < sz; ++j)
                     token.push_back(data[i + j]);
                 i += sz;
-                escaped = false;
             }
         }
         if (match_substring)
