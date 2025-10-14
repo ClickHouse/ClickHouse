@@ -18,8 +18,10 @@
 namespace ProfileEvents
 {
     extern const Event S3GetRequestThrottlerCount;
+    extern const Event S3GetRequestThrottlerBlocked;
     extern const Event S3GetRequestThrottlerSleepMicroseconds;
     extern const Event S3PutRequestThrottlerCount;
+    extern const Event S3PutRequestThrottlerBlocked;
     extern const Event S3PutRequestThrottlerSleepMicroseconds;
 }
 
@@ -303,6 +305,7 @@ void S3RequestSettings::finishInit(const DB::Settings & settings, bool validate_
             max_get_burst,
             ProfileEvents::S3GetRequestThrottlerCount,
             ProfileEvents::S3GetRequestThrottlerSleepMicroseconds);
+        request_throttler.get_blocked = ProfileEvents::S3GetRequestThrottlerBlocked;
     }
 
     if (UInt64 max_put_rps = (*this)[S3RequestSetting::max_put_rps].changed
@@ -322,6 +325,7 @@ void S3RequestSettings::finishInit(const DB::Settings & settings, bool validate_
             max_put_burst,
             ProfileEvents::S3PutRequestThrottlerCount,
             ProfileEvents::S3PutRequestThrottlerSleepMicroseconds);
+        request_throttler.put_blocked = ProfileEvents::S3PutRequestThrottlerBlocked;
     }
 }
 

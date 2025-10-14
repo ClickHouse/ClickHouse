@@ -136,13 +136,17 @@
     M(LocalThreadPoolBusyMicroseconds, "Total time threads have spent executing the actual work.", ValueType::Microseconds) \
     M(LocalThreadPoolJobWaitTimeMicroseconds, "Measures the elapsed time from when a job is scheduled in the thread pool to when it is picked up for execution by a worker thread. This metric helps identify delays in job processing, indicating the responsiveness of the thread pool to new tasks.", ValueType::Microseconds) \
     \
-    M(DiskS3GetRequestThrottlerCount, "Number of DiskS3 GET and SELECT requests passed through throttler (includes not blocked requests).", ValueType::Number) \
+    M(DiskS3GetRequestThrottlerCount, "Number of DiskS3 GET and SELECT requests passed through throttler: blocked and not blocked.", ValueType::Number) \
+    M(DiskS3GetRequestThrottlerBlocked, "Number of DiskS3 GET and SELECT requests blocked by throttler.", ValueType::Number) \
     M(DiskS3GetRequestThrottlerSleepMicroseconds, "Total time a query was sleeping to conform DiskS3 GET and SELECT request throttling.", ValueType::Microseconds) \
-    M(DiskS3PutRequestThrottlerCount, "Number of DiskS3 PUT, COPY, POST and LIST requests passed through throttler (includes not blocked requests).", ValueType::Number) \
+    M(DiskS3PutRequestThrottlerCount, "Number of DiskS3 PUT, COPY, POST and LIST requests passed through throttler: blocked and not blocked.", ValueType::Number) \
+    M(DiskS3PutRequestThrottlerBlocked, "Number of DiskS3 PUT, COPY, POST and LIST requests blocked by throttler.", ValueType::Number) \
     M(DiskS3PutRequestThrottlerSleepMicroseconds, "Total time a query was sleeping to conform DiskS3 PUT, COPY, POST and LIST request throttling.", ValueType::Microseconds) \
-    M(S3GetRequestThrottlerCount, "Number of S3 GET and SELECT requests passed through throttler (includes not blocked requests).", ValueType::Number) \
+    M(S3GetRequestThrottlerCount, "Number of S3 GET and SELECT requests passed through throttler: blocked and not blocked.", ValueType::Number) \
+    M(S3GetRequestThrottlerBlocked, "Number of S3 GET and SELECT requests blocked by throttler.", ValueType::Number) \
     M(S3GetRequestThrottlerSleepMicroseconds, "Total time a query was sleeping to conform S3 GET and SELECT request throttling.", ValueType::Microseconds) \
-    M(S3PutRequestThrottlerCount, "Number of S3 PUT, COPY, POST and LIST requests passed through throttler (includes not blocked requests).", ValueType::Number) \
+    M(S3PutRequestThrottlerCount, "Number of S3 PUT, COPY, POST and LIST requests passed through throttler: blocked and not blocked.", ValueType::Number) \
+    M(S3PutRequestThrottlerBlocked, "Number of S3 PUT, COPY, POST and LIST requests blocked by throttler.", ValueType::Number) \
     M(S3PutRequestThrottlerSleepMicroseconds, "Total time a query was sleeping to conform S3 PUT, COPY, POST and LIST request throttling.", ValueType::Microseconds) \
     /* Azure profile events */ \
     M(DiskAzureReadMicroseconds, "Total time spent waiting for Azure disk read requests.", ValueType::Microseconds) \

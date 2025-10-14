@@ -68,8 +68,10 @@ namespace ProfileEvents
     extern const Event DiskS3WriteRequestsRedirects;
 
     extern const Event DiskS3GetRequestThrottlerCount;
+    extern const Event DiskS3GetRequestThrottlerBlocked;
     extern const Event DiskS3GetRequestThrottlerSleepMicroseconds;
     extern const Event DiskS3PutRequestThrottlerCount;
+    extern const Event DiskS3PutRequestThrottlerBlocked;
     extern const Event DiskS3PutRequestThrottlerSleepMicroseconds;
 }
 
@@ -148,8 +150,10 @@ PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
     if (for_disk_s3)
     {
         request_throttler.disk_get_amount = ProfileEvents::DiskS3GetRequestThrottlerCount;
+        request_throttler.disk_get_blocked = ProfileEvents::DiskS3GetRequestThrottlerBlocked;
         request_throttler.disk_get_sleep_us = ProfileEvents::DiskS3GetRequestThrottlerSleepMicroseconds;
         request_throttler.disk_put_amount = ProfileEvents::DiskS3PutRequestThrottlerCount;
+        request_throttler.disk_put_blocked = ProfileEvents::DiskS3PutRequestThrottlerBlocked;
         request_throttler.disk_put_sleep_us = ProfileEvents::DiskS3PutRequestThrottlerSleepMicroseconds;
     }
 }

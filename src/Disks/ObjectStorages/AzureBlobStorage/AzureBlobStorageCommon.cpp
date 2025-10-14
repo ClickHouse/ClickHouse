@@ -32,13 +32,17 @@ namespace ProfileEvents
     extern const Event DiskAzureCreateContainer;
 
     extern const Event AzureGetRequestThrottlerCount;
+    extern const Event AzureGetRequestThrottlerBlocked;
     extern const Event AzureGetRequestThrottlerSleepMicroseconds;
     extern const Event AzurePutRequestThrottlerCount;
+    extern const Event AzurePutRequestThrottlerBlocked;
     extern const Event AzurePutRequestThrottlerSleepMicroseconds;
 
     extern const Event DiskAzureGetRequestThrottlerCount;
+    extern const Event DiskAzureGetRequestThrottlerBlocked;
     extern const Event DiskAzureGetRequestThrottlerSleepMicroseconds;
     extern const Event DiskAzurePutRequestThrottlerCount;
+    extern const Event DiskAzurePutRequestThrottlerBlocked;
     extern const Event DiskAzurePutRequestThrottlerSleepMicroseconds;
 }
 
@@ -357,11 +361,13 @@ BlobClientOptions getClientOptions(
                 settings[Setting::azure_max_get_burst],
                 ProfileEvents::AzureGetRequestThrottlerCount,
                 ProfileEvents::AzureGetRequestThrottlerSleepMicroseconds);
+            request_throttler.get_blocked = ProfileEvents::AzureGetRequestThrottlerBlocked;
 
             // Update additional profile events for DiskAzure
             if (for_disk)
             {
                 request_throttler.disk_get_amount = ProfileEvents::DiskAzureGetRequestThrottlerCount;
+                request_throttler.disk_get_blocked = ProfileEvents::DiskAzureGetRequestThrottlerBlocked;
                 request_throttler.disk_get_sleep_us = ProfileEvents::DiskAzureGetRequestThrottlerSleepMicroseconds;
             }
         }
@@ -373,11 +379,13 @@ BlobClientOptions getClientOptions(
                 settings[Setting::azure_max_put_burst],
                 ProfileEvents::AzurePutRequestThrottlerCount,
                 ProfileEvents::AzurePutRequestThrottlerSleepMicroseconds);
+            request_throttler.put_blocked = ProfileEvents::AzurePutRequestThrottlerBlocked;
 
             // Update additional profile events for DiskAzure
             if (for_disk)
             {
                 request_throttler.disk_put_amount = ProfileEvents::DiskAzurePutRequestThrottlerCount;
+                request_throttler.disk_put_blocked = ProfileEvents::DiskAzurePutRequestThrottlerBlocked;
                 request_throttler.disk_put_sleep_us = ProfileEvents::DiskAzurePutRequestThrottlerSleepMicroseconds;
             }
         }
