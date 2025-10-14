@@ -1,4 +1,3 @@
-#include <fmt/format.h>
 #include "config.h"
 #if USE_AVRO
 
@@ -6,8 +5,8 @@
 #include <memory>
 #include <optional>
 #include <sstream>
+#include <fmt/format.h>
 #include <Columns/ColumnSet.h>
-#include <Common/CurrentThread.h>
 #include <DataTypes/DataTypeSet.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
@@ -30,6 +29,7 @@
 
 #include <Databases/DataLake/Common.h>
 #include <Disks/DiskType.h>
+#include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Settings.h>
 #include <Core/NamesAndTypes.h>
 #include <Databases/DataLake/ICatalog.h>
@@ -70,10 +70,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/logger_useful.h>
-
-#include <Core/ColumnsWithTypeAndName.h>
-#include <Core/SortDescription.h>
-#include <Storages/SelectQueryInfo.h>
 
 namespace ProfileEvents
 {
@@ -1055,32 +1051,22 @@ ColumnMapperPtr IcebergMetadata::getColumnMapperForCurrentSchema(StorageMetadata
     return persistent_components.schema_processor->getColumnMapperById(iceberg_table_state->schema_id);
 }
 
-InputOrderInfoPtr IcebergMetadata::getInputOrder() const
-{
-
-    auto key_description = getSortingKey();
-    SortDescription sort_description_for_merging;
-    for (size_t i = 0; i < key_description.column_names.size(); ++i)
-        sort_description_for_merging.push_back(SortColumnDescription(key_description.column_names[i], key_description.reverse_flags[i] ? -1 : 1));
-    return std::make_shared<const InputOrderInfo>(sort_description_for_merging, sort_description_for_merging.size(), 1, 0);
-}
-
-KeyDescription IcebergMetadata::getSortingKey() const
+KeyDescription IcebergMetadata::getSortingKey(StorageMetadataPtr metadata_snapshot) const
 {
     auto local_context = CurrentThread::getQueryContext();
     auto configuration_ptr = getConfiguration();
 
-    const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
-        object_storage, configuration_ptr, persistent_components.metadata_cache, local_context, log.get());
+    auto iceberg_table_state = extractIcebergSnapshotIdFromMetadataObject(metadata_snapshot);
 
     auto metadata_object = getMetadataJSONObject(
-        metadata_file_path,
+        iceberg_table_state->metadata_file_path,
         object_storage,
         configuration_ptr,
         persistent_components.metadata_cache,
         local_context,
         log,
-        compression_method);
+        persistent_components.metadata_compression_method);
+
 
     auto sort_order_id = metadata_object->getValue<Int64>(f_default_sort_order_id);
     Poco::JSON::Array::Ptr sort_orders = metadata_object->getArray(f_sort_orders);
@@ -1120,28 +1106,9 @@ KeyDescription IcebergMetadata::getSortingKey() const
                 order_by_str += fmt::format("{} DESC,", column_name);
         }
     }
+    
     order_by_str.pop_back();
     return KeyDescription::parse(order_by_str, column_description, local_context, true);
-}
-
-bool IcebergMetadata::requestReadingInOrder(InputOrderInfoPtr order_info_)
-{
-    auto input_order = getInputOrder();
-    if (input_order->sort_description_for_merging.size() < order_info_->sort_description_for_merging.size())
-    {
-        return false;
-    }
-
-    for (size_t i = 0; i < order_info_->sort_description_for_merging.size(); ++i)
-    {
-        if (!order_info_->sort_description_for_merging.at(i).column_name.ends_with(input_order->sort_description_for_merging.at(i).column_name))
-            return false;
-
-        int direction = input_order->sort_description_for_merging.at(i).direction;
-        if (order_info_->sort_description_for_merging.at(i).direction != direction)
-            return false;
-    }
-    return true;
 }
 
 }

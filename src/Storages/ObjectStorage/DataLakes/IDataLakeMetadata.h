@@ -14,7 +14,6 @@
 #include <Storages/MutationCommands.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/prepareReadingFromFormat.h>
-#include <Storages/SelectQueryInfo.h>
 
 
 namespace DataLake
@@ -125,17 +124,7 @@ public:
     virtual void checkAlterIsPossible(const AlterCommands & /*commands*/) { throwNotImplemented("alter"); }
     virtual void alter(const AlterCommands & /*params*/, ContextPtr /*context*/) { throwNotImplemented("alter"); }
     virtual void drop(ContextPtr) { }
-    virtual bool requestReadingInOrder(InputOrderInfoPtr /*order_info_*/)
-    {
-        return false;
-    }
-
-    virtual InputOrderInfoPtr getInputOrder() const
-    {
-        return nullptr;
-    }
-
-    virtual KeyDescription getSortingKey() const
+    virtual KeyDescription getSortingKey(StorageMetadataPtr /*metadata_snapshot*/) const
     {
         return {};
     }

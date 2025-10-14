@@ -124,10 +124,8 @@ public:
         ContextPtr local_context) const override;
 
     void drop(ContextPtr context) override;
-    bool requestReadingInOrder(InputOrderInfoPtr order_info_) override;
 
-    InputOrderInfoPtr getInputOrder() const override;
-    KeyDescription getSortingKey() const override;
+    KeyDescription getSortingKey(StorageMetadataPtr metadata_snapshot) const override;
 
 private:
     Iceberg::PersistentTableComponents initializePersistentTableComponents(

@@ -34,20 +34,11 @@ public:
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
-    bool requestReadingInOrder(InputOrderInfoPtr order_info_)
-    {
-        return configuration->requestReadingInOrder(order_info_);
-    }
+    bool requestReadingInOrder(InputOrderInfoPtr order_info_) const;
 
-    InputOrderInfoPtr getInputOrder() const
-    {
-        return configuration->getInputOrder();
-    }
+    InputOrderInfoPtr getInputOrder() const;
 
-    KeyDescription getSortingKey() const
-    {
-        return configuration->getSortingKey();
-    }
+    KeyDescription getSortingKey() const;
 
 private:
     ObjectStoragePtr object_storage;

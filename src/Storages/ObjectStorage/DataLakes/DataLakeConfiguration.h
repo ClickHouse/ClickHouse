@@ -357,22 +357,10 @@ public:
         ready_object_storage = disk->getObjectStorage();
     }
 
-    bool requestReadingInOrder(InputOrderInfoPtr order_info_) override
+    KeyDescription getSortingKey(StorageMetadataPtr metadata_snapshot) const override
     {
         assertInitialized();
-        return current_metadata->requestReadingInOrder(order_info_);
-    }
-
-    InputOrderInfoPtr getInputOrder() const override
-    {
-        assertInitialized();
-        return current_metadata->getInputOrder();
-    }
-
-    KeyDescription getSortingKey() const override
-    {
-        assertInitialized();
-        return current_metadata->getSortingKey();
+        return current_metadata->getSortingKey(metadata_snapshot);
     }
 
 private:

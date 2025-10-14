@@ -252,17 +252,7 @@ public:
 
     virtual void drop(ContextPtr) {}
 
-    virtual bool requestReadingInOrder(InputOrderInfoPtr /*order_info_*/)
-    {
-        return false;
-    }
-
-    virtual InputOrderInfoPtr getInputOrder() const
-    {
-        return nullptr;
-    }
-
-    virtual KeyDescription getSortingKey() const
+    virtual KeyDescription getSortingKey(StorageMetadataPtr /*metadata_snapshot*/) const
     {
         return {};
     }

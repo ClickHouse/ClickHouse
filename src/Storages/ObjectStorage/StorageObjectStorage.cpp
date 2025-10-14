@@ -215,6 +215,7 @@ StorageObjectStorage::StorageObjectStorage(
     metadata.setColumns(columns);
     metadata.setConstraints(constraints_);
     metadata.setComment(comment);
+
     /// I am not sure this is actually required, but just in case
     if (configuration->partition_strategy)
     {
