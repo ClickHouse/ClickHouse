@@ -1025,7 +1025,7 @@ void addPreliminaryLimitStep(QueryPlan & query_plan,
     bool is_limit_length_negative = query_analysis_result.is_limit_length_negative;
     bool is_limit_offset_negative = query_analysis_result.is_limit_offset_negative;
 
-    if (do_not_skip_offset && !is_limit_length_negative && !is_limit_offset_negative)
+    if (do_not_skip_offset)
     {
         if (limit_length > std::numeric_limits<UInt64>::max() - limit_offset)
             return;

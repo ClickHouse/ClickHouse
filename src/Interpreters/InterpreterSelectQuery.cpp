@@ -3193,7 +3193,7 @@ void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
     {
         LimitInfo lim_info = getLimitLengthAndOffset(query, context);
 
-        if (do_not_skip_offset && !lim_info.is_limit_length_negative)
+        if (do_not_skip_offset)
         {
             if (lim_info.limit_length > std::numeric_limits<UInt64>::max() - lim_info.limit_offset)
                 return;
