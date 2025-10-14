@@ -196,20 +196,29 @@ def process_results(result_path: Path):
             oks += 1
         elif status[0] == "ERROR":
             errors += 1
-            if file_path_out.exists():
-                result.set_log_files(f"['{file_path_out}']")
-            elif file_path_stdout.exists():
-                result.set_log_files(f"['{file_path_stdout}']")
+            #if file_path_out.exists():
+            #    result.set_log_files(f"['{file_path_out}']")
+            #elif file_path_stdout.exists():
+            #    result.set_log_files(f"['{file_path_stdout}']")
         else:
             fails += 1
             if file_path_out.exists():
                 result.set_raw_logs("\n".join(process_error(file_path_out)))
-            if file_path_unit.exists():
-                result.set_log_files(f"['{file_path_unit}','{file_path_out}']")
-            elif file_path_out.exists():
-                result.set_log_files(f"['{file_path_out}']")
-            elif file_path_stdout.exists():
-                result.set_log_files(f"['{file_path_stdout}']")
+            #if file_path_unit.exists():
+            #    result.set_log_files(f"['{file_path_unit}','{file_path_out}']")
+            #elif file_path_out.exists():
+            #    result.set_log_files(f"['{file_path_out}']")
+            #elif file_path_stdout.exists():
+            #    result.set_log_files(f"['{file_path_stdout}']")
+
+        log_files = []
+        if file_path_unit.exists():
+            log_files.append(str(file_path_unit))
+        if file_path_out.exists():
+            log_files.append(str(file_path_out))
+        if file_path_stdout.exists():
+            log_files.append(str(file_path_stdout))
+        result.set_log_files("['" + "','".join(log_files) + "']")
         test_results.append(result)
 
     return [oks, errors, fails, test_results]
