@@ -14,8 +14,6 @@
 #include <IO/WriteHelpers.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 
-#include <iostream>
-
 namespace DB
 {
 
