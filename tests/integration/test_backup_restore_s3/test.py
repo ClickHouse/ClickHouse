@@ -621,11 +621,21 @@ def broken_s3(init_broken_s3):
     yield init_broken_s3
 
 
-def test_backup_to_s3_copy_multipart_check_error_message(broken_s3):
+@pytest.mark.parametrize(
+    "key_prefix_template",
+    [
+        pytest.param("", id="no_key_prefix"),
+        pytest.param("[a-z]{3}", id="regex_key_prefix"),
+    ],
+)
+def test_backup_to_s3_copy_multipart_check_error_message(
+    broken_s3, key_prefix_template
+):
     storage_policy = "policy_s3"
     size = 10000000
     backup_name = new_backup_name()
     backup_destination = f"S3('http://resolver:8083/root/data/backups/multipart/{backup_name}', 'minio', '{minio_secret_key}')"
+    backup_settings = {"key_prefix_template": key_prefix_template}
     node = cluster.instances["node"]
 
     node.query(
@@ -639,9 +649,9 @@ def test_backup_to_s3_copy_multipart_check_error_message(broken_s3):
 
     try:
         backup_query_id = uuid.uuid4().hex
-        broken_s3.setup_at_part_upload(after=20, count=1)
+        broken_s3.setup_at_part_upload()
         error = node.query_and_get_error(
-            f"BACKUP TABLE data TO {backup_destination} {format_settings(None)}",
+            f"BACKUP TABLE data TO {backup_destination} {format_settings(backup_settings)}",
             query_id=backup_query_id,
         )
 
@@ -1014,16 +1024,24 @@ def test_backup_to_s3_different_credentials(allow_s3_native_copy, use_multipart_
         assert ("S3CreateMultipartUpload" in events) == use_multipart_copy
 
 
-def test_backup_restore_system_tables_with_plain_rewritable_disk():
+@pytest.mark.parametrize(
+    "key_prefix_template",
+    [
+        pytest.param("", id="no_key_prefix"),
+        pytest.param("[a-z]{3}", id="regex_key_prefix"),
+    ],
+)
+def test_backup_restore_system_tables_with_plain_rewritable_disk(key_prefix_template):
     instance = cluster.instances["node"]
     backup_name = new_backup_name()
     backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', '{minio_secret_key}')"
+    backup_settings = {"key_prefix_template": key_prefix_template}
 
     instance.query("SYSTEM FLUSH LOGS")
 
     backup_query_id = uuid.uuid4().hex
     instance.query(
-        f"BACKUP TABLE system.query_log TO {backup_destination}",
+        f"BACKUP TABLE system.query_log TO {backup_destination} {format_settings(backup_settings)}",
         query_id=backup_query_id,
     )
     restore_query_id = uuid.uuid4().hex
