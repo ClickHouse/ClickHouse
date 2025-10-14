@@ -1,6 +1,3 @@
--- Force using skip indexes in planning to make test deterministic with max_rows_to_read.
-SET use_skip_indexes_on_data_read = 0;
-
 DROP TABLE IF EXISTS bloom_filter;
 
 CREATE TABLE bloom_filter
@@ -35,6 +32,7 @@ insert into bloom_filter2 select number+2000, 'ABC,def,zzz' from numbers(8);
 insert into bloom_filter2 select number+3000, 'yyy,uuu' from numbers(1024);
 insert into bloom_filter2 select number+3000, 'abcdefzzz' from numbers(1024);
 
+set read_overflow_mode = 'break';
 set max_rows_to_read = 16;
 
 SELECT max(id) FROM bloom_filter WHERE hasToken(s, 'abc');
@@ -51,6 +49,7 @@ select max(id) from bloom_filter2 where hasToken(s, 'abc');
 select max(id) from bloom_filter2 where hasTokenCaseInsensitive(s, 'abc');
 select max(id) from bloom_filter2 where hasTokenCaseInsensitive(s, 'ABC');
 
+set read_overflow_mode = 'throw';
 -- invert result
 -- this does not work as expected, reading more rows that it should
 -- SELECT max(id) FROM bloom_filter WHERE NOT hasToken(s, 'yyy');

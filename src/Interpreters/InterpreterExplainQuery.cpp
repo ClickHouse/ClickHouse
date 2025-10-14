@@ -485,6 +485,13 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
     options.setExplain();
     options.max_step_description_length = query_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
 
+    /// EXPLAIN is to get a good picture of how the query will execute after *static* planning.
+    /// Hence disable any optimizations that stagger the planning or introduce variablility due to caches.
+    auto explain_query_context = Context::createCopy(query_context);
+    explain_query_context->setSetting("use_skip_indexes_on_data_read", false);
+    explain_query_context->setSetting("use_query_condition_cache", false);
+    query_context = std::move(explain_query_context);
+
     switch (ast.getKind())
     {
         case ASTExplainQuery::ParsedAST:

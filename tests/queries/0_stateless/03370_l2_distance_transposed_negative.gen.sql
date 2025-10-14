@@ -157,3 +157,4 @@ SELECT L2DistanceTransposed([1.0, 2.0, 3.0]::QBit(Float32, 3), range(rand() % 5 
 
 -- Do not allow non-constant size
 SELECT L2DistanceTransposed(''::FixedString(1), materialize(3), [1,2,3]::Array(Float32)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+

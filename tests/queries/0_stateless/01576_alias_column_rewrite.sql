@@ -1,6 +1,4 @@
--- Force using skip indexes in planning to make test deterministic with max_rows_to_read.
-SET use_skip_indexes_on_data_read = 0;
-
+SET read_overflow_mode = 'break';
 DROP TABLE IF EXISTS test_table;
 CREATE TABLE test_table
 (

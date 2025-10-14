@@ -1,8 +1,5 @@
 -- Tags: no-random-merge-tree-settings
 
--- Force using skip indexes in planning to make test deterministic with max_rows_to_read.
-SET use_skip_indexes_on_data_read = 0;
-
 -- Prevent remote replicas from skipping index analysis in Parallel Replicas. Otherwise, they may return full ranges and trigger max_rows_to_read validation failures.
 SET parallel_replicas_index_analysis_only_on_coordinator = 0;
 
@@ -26,6 +23,7 @@ limit 1000000;
 OPTIMIZE TABLE set_array FINAL;
 
 SET max_rows_to_read = 8192;
+SET read_overflow_mode = 'break';
 
 select count() from set_array where has(index_array, 333);
 
