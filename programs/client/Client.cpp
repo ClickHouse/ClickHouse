@@ -6,6 +6,7 @@
 #include <boost/program_options.hpp>
 #include <Common/Config/parseConnectionCredentials.h>
 #include <Common/ThreadStatus.h>
+#include <Common/XDGBaseDirectories.h>
 
 #include <Access/AccessControl.h>
 
@@ -920,6 +921,8 @@ void Client::processConfig()
             auto * history_file_from_env = getenv("CLICKHOUSE_HISTORY_FILE"); // NOLINT(concurrency-mt-unsafe)
             if (history_file_from_env)
                 history_file = history_file_from_env;
+            else if (!XDGBaseDirectories::getConfigurationHome().empty())
+                history_file = fs::path(XDGBaseDirectories::getConfigurationHome()) / "query-history";
             else if (!home_path.empty())
                 history_file = home_path + "/.clickhouse-client-history";
         }
