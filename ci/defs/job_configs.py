@@ -573,7 +573,6 @@ class JobConfigs:
         digest_config=Job.CacheDigestConfig(
             include_paths=["./ci/jobs/unit_tests_job.py"],
         ),
-        timeout=30, #REMOVEME
     ).parametrize(
         Job.ParamSet(
             parameter="asan",
