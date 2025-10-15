@@ -41,8 +41,6 @@ class MetaClasses:
                 return [cls.to_dict(i) for i in obj]
             elif isinstance(obj, dict):
                 return {k: cls.to_dict(v) for k, v in obj.items()}
-            elif isinstance(obj, Path):
-                return str(obj)
             else:
                 return obj
 
@@ -304,14 +302,8 @@ class Shell:
         stdin_str=None,
         timeout=None,
         retries=1,
-        retry_errors: Union[List[str], str] = "",
         **kwargs,
     ):
-        if retry_errors and retries < 2:
-            retries = 2
-            if isinstance(retry_errors, str):
-                retry_errors = [retry_errors]
-
         # Dry-run
         if dry_run:
             print(f"Dry-run. Would run command [{command}]")
@@ -380,22 +372,8 @@ class Shell:
                     else:
                         if verbose:
                             print(
-                                f"ERROR: command failed, exit code: {proc.returncode}, retry: {retry+1}/{retries}"
+                                f"ERROR: command failed, exit code: {proc.returncode}, retry: {retry}/{retries}"
                             )
-                        if retry_errors:
-                            should_retry = False
-                            for err in retry_errors:
-                                if any(err in err_line for err_line in err_output):
-                                    print(
-                                        f"Retryable error occurred: [{err}], [{retry+1}/{retries}]"
-                                    )
-                                    should_retry = True
-                                    break
-                            if not should_retry:
-                                print(
-                                    f"No retryable errors found, stopping retry attempts"
-                                )
-                                break
             except Exception as e:
                 if verbose:
                     print(
@@ -406,11 +384,11 @@ class Shell:
                 if strict and retry == retries - 1:
                     raise e
 
-        if strict and (not proc or proc.returncode != 0):
-            err = "\n   ".join(err_output).strip()
-            raise RuntimeError(
-                f"command failed, exit code {proc.returncode},\nstderr:\n>>>\n{err}\n<<<"
-            )
+            if strict and (not proc or proc.returncode != 0):
+                err = "\n   ".join(err_output).strip()
+                raise RuntimeError(
+                    f"command failed, exit code {proc.returncode},\nstderr:\n>>>\n{err}\n<<<"
+                )
 
         return proc.returncode if proc else 1  # Return 1 if the process never started
 
@@ -490,18 +468,6 @@ class Utils:
     @staticmethod
     def set_env(key, val):
         os.environ[key] = val
-
-    @staticmethod
-    def physical_memory() -> int:
-        """
-        Returns the total physical memory in bytes.
-        """
-        try:
-            # for linux
-            return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
-        except ValueError:
-            # for MacOS
-            return int(subprocess.check_output(["sysctl", "-n", "hw.memsize"]).strip())
 
     @staticmethod
     def print_formatted_error(error_message, stdout="", stderr=""):

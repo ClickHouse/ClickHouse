@@ -25,7 +25,3 @@ odbc_psql_user = "postgres"
 # KAFKA CREDENTIALS
 kafka_sasl_user = "admin"
 kafka_sasl_pass = "ClickHouse_Kafka_P@ssw0rd"
-
-# NATS CREDENTIALS
-nats_user = "clickhouse"
-nats_pass = "ClickHouse_NATS_P@ssw0rd"

@@ -116,6 +116,7 @@ with the `readonly` constraint type:
 - `readonly=2`: Only read queries are allowed, but settings can be changed, 
   except for `readonly` setting itself.
 
+
 ### Example {#example-read-only}
 
 Let `users.xml` include the following lines:

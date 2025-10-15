@@ -28,14 +28,13 @@ public:
     explicit TableSnapshot(
         KernelHelperPtr helper_,
         DB::ObjectStoragePtr object_storage_,
-        DB::ContextPtr context_,
         LoggerPtr log_);
 
     /// Get snapshot version.
     size_t getVersion() const;
 
     /// Update snapshot to latest version.
-    bool update(const DB::ContextPtr & context);
+    bool update();
 
     /// Iterate over DeltaLake data files.
     DB::ObjectIterator iterate(
@@ -65,14 +64,9 @@ private:
     const DB::ObjectStoragePtr object_storage;
     const LoggerPtr log;
 
-    bool enable_expression_visitor_logging;
-    bool throw_on_engine_visitor_error;
-    bool enable_engine_predicate;
-    std::optional<size_t> snapshot_version_to_read;
-
     struct KernelSnapshotState : private boost::noncopyable
     {
-        KernelSnapshotState(const IKernelHelper & helper_, std::optional<size_t> snapshot_version_);
+        explicit KernelSnapshotState(const IKernelHelper & helper_);
 
         KernelExternEngine engine;
         KernelSnapshot snapshot;
@@ -91,7 +85,6 @@ private:
 
     void initSnapshot() const;
     void initSnapshotImpl() const;
-    void updateSettings(const DB::ContextPtr & context);
 };
 
 /// TODO; Enable event tracing in DeltaKernel.

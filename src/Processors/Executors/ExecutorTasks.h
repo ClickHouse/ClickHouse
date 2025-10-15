@@ -40,14 +40,11 @@ class ExecutorTasks
     /// Maximum amount of threads. Constant after initialization, based on `max_threads` setting.
     size_t num_threads = 0;
 
-    /// Maximum slot_id of currently active slots + 1. Can change during execution in range from 1 to `num_threads`.
+    /// Started thread count (allocated by `ConcurrencyControl`). Can increase during execution up to `num_threads`.
     size_t use_threads = 0;
 
-    /// Reference counters for thread CPU slots to handle race conditions between upscale/downscale.
-    std::vector<size_t> slot_count;
-
-    /// Total number of slots (sum of all slot_count).
-    size_t total_slots = 0;
+    /// Number of idle threads, changed with threads_queue.size().
+    size_t idle_threads = 0;
 
     /// A set of currently waiting threads.
     ThreadsQueue threads_queue;
@@ -96,19 +93,11 @@ public:
 
     void init(size_t num_threads_, size_t use_threads_, bool profile_processors, bool trace_processors, ReadProgressCallback * callback);
     void fill(Queue & queue, Queue & async_queue);
-
-    /// Upscale to include slot_id. Updates use_threads to max(use_threads, slot_id + 1)
-    /// Returns spawn status indicating if more threads should be spawned
-    SpawnStatus upscale(size_t slot_id);
+    SpawnStatus upscale(size_t use_threads_);
 
     void processAsyncTasks();
 
-    /// Downscale by removing slot_id from active slots. Updates use_threads to highest active slot + 1
-    void downscale(size_t slot_id);
-
     ExecutionThreadContext & getThreadContext(size_t thread_num) { return *executor_contexts[thread_num]; }
-
-    String dump();
 };
 
 }

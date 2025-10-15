@@ -202,7 +202,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     {
         const auto & date_time64_type = static_cast<const DataTypeDateTime64 &>(type);
         const auto value = date_time64_type.getTimeZone().fromDayNum(DayNum(src.safeGet<UInt16>()));
-        return DecimalField<DateTime64>(
+        return DecimalField(
             DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(value, 0, date_time64_type.getScaleMultiplier()),
             date_time64_type.getScale());
     }
@@ -210,7 +210,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     {
         const auto & date_time64_type = static_cast<const DataTypeDateTime64 &>(type);
         const auto value = date_time64_type.getTimeZone().fromDayNum(ExtendedDayNum(static_cast<Int32>(src.safeGet<Int32>())));
-        return DecimalField<DateTime64>(
+        return DecimalField(
             DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(value, 0, date_time64_type.getScaleMultiplier()),
             date_time64_type.getScale());
     }
@@ -235,7 +235,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     {
         const auto & time64_type = static_cast<const DataTypeTime64 &>(type);
         const auto value = time64_type.getTimeZone().fromDayNum(DayNum(src.safeGet<UInt16>()));
-        return DecimalField<Time64>(
+        return DecimalField(
             DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(value, 0, time64_type.getScaleMultiplier()),
             time64_type.getScale());
     }
@@ -243,7 +243,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     {
         const auto & time64_type = static_cast<const DataTypeTime64 &>(type);
         const auto value = time64_type.getTimeZone().fromDayNum(ExtendedDayNum(static_cast<Int32>(src.safeGet<Int32>())));
-        return DecimalField<Time64>(
+        return DecimalField(
             DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(value, 0, time64_type.getScaleMultiplier()),
             time64_type.getScale());
     }
@@ -338,7 +338,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             /// in case if we need to make DateTime64(a) from DateTime64(b), a != b, we need to convert datetime value to the right scale
             const UInt64 value = scale_from > scale_to ? from_type.getValue().value / scale_multiplier_diff
                                                        : from_type.getValue().value * scale_multiplier_diff;
-            return DecimalField<DateTime64>(DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(value, 0, 1), scale_to);
+            return DecimalField(DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(value, 0, 1), scale_to);
         }
 
         if (which_type.isTime64() && src.getType() == Field::Types::Decimal64)
@@ -357,7 +357,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             /// in case if we need to make Time64(a) from Time64(b), a != b, we need to convert time value to the right scale
             const UInt64 value = scale_from > scale_to ? from_type.getValue().value / scale_multiplier_diff
                                                        : from_type.getValue().value * scale_multiplier_diff;
-            return DecimalField<Time64>(DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(value, 0, 1), scale_to);
+            return DecimalField(DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(value, 0, 1), scale_to);
         }
 
         /// For toDate('xxx') in 1::Int64, we CAST `src` to UInt64, which may

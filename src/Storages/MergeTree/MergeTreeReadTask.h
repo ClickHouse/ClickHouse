@@ -29,9 +29,6 @@ using DeserializationPrefixesCachePtr = std::shared_ptr<DeserializationPrefixesC
 class MergedPartOffsets;
 using MergedPartOffsetsPtr = std::shared_ptr<MergedPartOffsets>;
 
-struct MergeTreeIndexReadResult;
-using MergeTreeIndexReadResultPtr = std::shared_ptr<MergeTreeIndexReadResult>;
-
 enum class MergeTreeReadType : uint8_t
 {
     /// By default, read will use MergeTreeReadPool and return pipe with num_streams outputs.
@@ -93,9 +90,7 @@ struct MergeTreeReadTaskInfo
     size_t min_marks_per_task = 0;
     size_t approx_size_of_mark = 0;
     /// Cache of the columns prefixes for this part.
-    DeserializationPrefixesCachePtr deserialization_prefixes_cache;
-    /// Extra info for optimizations - exact row processing, calculated virtual columns.
-    RangesInDataPartReadHints read_hints;
+    DeserializationPrefixesCachePtr deserialization_prefixes_cache{};
 };
 
 using MergeTreeReadTaskInfoPtr = std::shared_ptr<const MergeTreeReadTaskInfo>;
@@ -109,7 +104,7 @@ public:
     {
         UncompressedCache * uncompressed_cache = nullptr;
         MarkCache * mark_cache = nullptr;
-        PatchJoinCache * patch_join_cache = nullptr;
+        PatchReadResultCache * patch_read_result_cache = nullptr;
         MergeTreeReaderSettings reader_settings{};
         StorageSnapshotPtr storage_snapshot{};
         ValueSizeMap value_size_map{};
@@ -121,7 +116,6 @@ public:
         MergeTreeReaderPtr main;
         std::vector<MergeTreeReaderPtr> prewhere;
         MergeTreePatchReaders patches;
-        MergeTreeReaderPtr index;
     };
 
     struct BlockSizeParams
@@ -150,10 +144,7 @@ public:
         const BlockSizeParams & block_size_params_,
         MergeTreeBlockSizePredictorPtr size_predictor_);
 
-    void initializeReadersChain(
-        const PrewhereExprInfo & prewhere_actions,
-        ReadStepsPerformanceCounters & read_steps_performance_counters,
-        MergeTreeIndexReadResultPtr index_read_result);
+    void initializeReadersChain(const PrewhereExprInfo & prewhere_actions, ReadStepsPerformanceCounters & read_steps_performance_counters);
 
     BlockAndProgress read();
     bool isFinished() const { return mark_ranges.empty() && readers_chain.isCurrentRangeFinished(); }
@@ -167,16 +158,8 @@ public:
 
     Readers releaseReaders() { return std::move(readers); }
 
-    size_t getNumMarksToRead() const { return mark_ranges.getNumberOfMarks(); }
-
-    static Readers createReaders(
-        const MergeTreeReadTaskInfoPtr & read_info,
-        const Extras & extras,
-        const MarkRanges & ranges,
-        const std::vector<MarkRanges> & patches_ranges);
-
-    static MergeTreeReadersChain createReadersChain(
-        const Readers & readers, const PrewhereExprInfo & prewhere_actions, ReadStepsPerformanceCounters & read_steps_performance_counters);
+    static Readers createReaders(const MergeTreeReadTaskInfoPtr & read_info, const Extras & extras, const MarkRanges & ranges, const std::vector<MarkRanges> & patches_ranges);
+    static MergeTreeReadersChain createReadersChain(const Readers & readers, const PrewhereExprInfo & prewhere_actions, ReadStepsPerformanceCounters & read_steps_performance_counters);
 
 private:
     UInt64 estimateNumRows() const;

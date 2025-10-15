@@ -67,7 +67,6 @@ public:
     size_t getMaxDynamicPaths() const { return max_dynamic_paths; }
 
     DataTypePtr getTypeOfNestedObjects() const;
-    DataTypePtr getDynamicType() const;
 
     /// Shared data has type Array(Tuple(String, String)).
     static const DataTypePtr & getTypeOfSharedData();

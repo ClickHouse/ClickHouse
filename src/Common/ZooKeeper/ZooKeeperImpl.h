@@ -195,8 +195,6 @@ public:
         const Requests & requests,
         MultiCallback callback) override;
 
-    void getACL(const String & path, GetACLCallback callback) override;
-
     bool isFeatureEnabled(KeeperFeatureFlag feature_flag) const override;
 
     /// Without forcefully invalidating (finalizing) ZooKeeper session before
@@ -221,7 +219,7 @@ public:
 
 private:
     ACLs default_acls;
-    zkutil::ZooKeeperArgs::PathAclMap path_acls;
+    std::unordered_map<std::string, Coordination::ACL> path_acls;
 
     zkutil::ZooKeeperArgs args;
     std::atomic<int8_t> original_index{-1};

@@ -58,6 +58,7 @@ public:
     FailedCandidates getFailedCandidates() const { return failed_candidates; }
 
     size_t size() const { return candidates_size; }
+    size_t bytes() const { return candidates_bytes; }
 
     auto begin() const { return candidates.begin(); }
 
@@ -73,6 +74,7 @@ private:
 
     std::unordered_map<FileCacheKey, KeyCandidates> candidates;
     size_t candidates_size = 0;
+    size_t candidates_bytes = 0;
     FailedCandidates failed_candidates;
 
     std::vector<FinalizeEvictionFunc> on_finalize;

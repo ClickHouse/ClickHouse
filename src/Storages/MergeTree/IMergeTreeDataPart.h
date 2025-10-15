@@ -133,7 +133,7 @@ public:
     /// We could have separate method like setMetadata, but it's much more convenient to set it up with columns
     void setColumns(const NamesAndTypesList & new_columns, const SerializationInfoByName & new_infos, int32_t new_metadata_version);
 
-    void setColumnsSubstreams(const ColumnsSubstreams & columns_substreams_);
+    void setColumnsSubstreams(const ColumnsSubstreams & columns_substreams_) { columns_substreams = columns_substreams_; }
 
     /// Version of metadata for part (columns, pk and so on)
     int32_t getMetadataVersion() const { return metadata_version; }
@@ -216,9 +216,6 @@ public:
     /// If token is not empty, block id is calculated based on it instead of block data
     UInt128 getPartBlockIDHash() const;
     String getNewPartBlockID(std::string_view token) const;
-
-    /// Returns true if it's a zero level part.
-    bool isZeroLevel() const { return info.min_block == info.max_block; }
 
     void setName(const String & new_name);
 
@@ -444,7 +441,7 @@ public:
     bool shallParticipateInMerges(const StoragePolicyPtr & storage_policy) const;
 
     /// Calculate column and secondary indices sizes on disk.
-    void calculateColumnsAndSecondaryIndicesSizesOnDisk() const;
+    void calculateColumnsAndSecondaryIndicesSizesOnDisk(std::optional<Block> columns_sample = std::nullopt) const;
 
     std::optional<String> getRelativePathForPrefix(const String & prefix, bool detached = false, bool broken = false) const;
 
@@ -527,9 +524,6 @@ public:
     /// really don't need to remove data from remote FS and need only decrement
     /// reference counter locally.
     static constexpr auto FILE_FOR_REFERENCES_CHECK = "checksums.txt";
-
-    /// File that contains list of substreams in order of serialization/deserialization for each column.
-    static constexpr auto COLUMNS_SUBSTREAMS_FILE_NAME = "columns_substreams.txt";
 
     /// Checks that all TTLs (table min/max, column ttls, so on) for part
     /// calculated. Part without calculated TTL may exist if TTL was added after
@@ -660,6 +654,7 @@ protected:
     NamesAndTypesList columns;
 
     /// List of substreams in order of serialization/deserialization for each column.
+    /// Used only in Compact parts.
     ColumnsSubstreams columns_substreams;
 
     const Type part_type;
@@ -675,7 +670,7 @@ protected:
 
     /// Fill each_columns_size and total_size with sizes from columns files on
     /// disk using columns and checksums.
-    virtual void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const = 0;
+    virtual void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size, std::optional<Block> columns_sample) const = 0;
 
     std::optional<String> getRelativePathForDetachedPart(const String & prefix, bool broken) const;
 
@@ -722,7 +717,7 @@ private:
     /// Reads columns names and types from columns.txt
     void loadColumns(bool require, bool load_metadata_version);
 
-    /// Reads columns substreams from columns_substreams.txt.
+    /// Reads columns substreams from columns_substreams.txt (only in Compact parts).
     void loadColumnsSubstreams();
 
     /// Loads marks index granularity into memory
@@ -748,7 +743,7 @@ private:
 
     void loadPartitionAndMinMaxIndex();
 
-    void calculateColumnsSizesOnDisk() const;
+    void calculateColumnsSizesOnDisk(std::optional<Block> columns_sample = std::nullopt) const;
 
     void calculateSecondaryIndicesSizesOnDisk() const;
 

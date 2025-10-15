@@ -2,7 +2,6 @@
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
-#include <Compression/CachedCompressedReadBuffer.h>
 
 namespace
 {
@@ -67,8 +66,6 @@ MergeTreeIndexReader::MergeTreeIndexReader(
     , settings(std::move(settings_))
 {
 }
-
-MergeTreeIndexReader::~MergeTreeIndexReader() = default;
 
 void MergeTreeIndexReader::initStreamIfNeeded()
 {
@@ -137,6 +134,7 @@ void MergeTreeIndexReader::read(size_t mark, size_t current_granule_num, MergeTr
         stream->seekToMark(mark);
 
     granules->deserializeBinary(current_granule_num, *stream->getDataBuffer(), version);
+    stream_mark = mark + 1;
 }
 
 }

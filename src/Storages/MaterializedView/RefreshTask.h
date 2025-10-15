@@ -68,7 +68,6 @@ public:
     void alterRefreshParams(const DB::ASTRefreshStrategy & new_strategy);
 
     Info getInfo() const;
-    String getCoordinationPath() const { return coordination.path; }
 
     bool canCreateOrDropOtherTables() const;
 

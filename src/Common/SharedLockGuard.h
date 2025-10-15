@@ -50,6 +50,5 @@ private:
     std::shared_lock<Mutex> shared_lock;
     bool locked = true;
 };
-_LIBCPP_CTAD_SUPPORTED_FOR_TYPE(SharedLockGuard);
 
 }

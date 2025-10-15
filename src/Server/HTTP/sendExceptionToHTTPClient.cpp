@@ -11,8 +11,7 @@ namespace DB
 
 void drainRequestIfNeeded(HTTPServerRequest & request, HTTPServerResponse & response) noexcept
 {
-    auto input_stream = request.getStream();
-    if (input_stream->isCanceled())
+    if (request.getStream().isCanceled())
     {
         response.setKeepAlive(false);
         LOG_WARNING(getLogger("sendExceptionToHTTPClient"), "Cannot read remaining request body during exception handling. The request read buffer is canceled. Set keep alive to false on the response.");
@@ -28,8 +27,8 @@ void drainRequestIfNeeded(HTTPServerRequest & request, HTTPServerResponse & resp
     {
         try
         {
-            if (!input_stream->eof())
-                input_stream->ignoreAll();
+            if (!request.getStream().eof())
+                request.getStream().ignoreAll();
         }
         catch (...)
         {

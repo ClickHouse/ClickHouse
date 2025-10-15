@@ -12,6 +12,7 @@ title: 'JSONAsString'
 |-------|---------|-------|
 | ✔     | ✗       |       |
 
+
 ## Description {#description}
 
 In this format, a single JSON object is interpreted as a single value. 

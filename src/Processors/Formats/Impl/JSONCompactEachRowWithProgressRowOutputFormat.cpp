@@ -110,8 +110,7 @@ void registerOutputFormatJSONCompactEachRowWithProgress(FormatFactory & factory)
     factory.registerOutputFormat("JSONCompactEachRowWithProgress", [](
             WriteBuffer & buf,
             const Block & sample,
-            const FormatSettings & _format_settings,
-            FormatFilterInfoPtr /*format_filter_info*/)
+            const FormatSettings & _format_settings)
     {
         FormatSettings settings = _format_settings;
         settings.json.serialize_as_strings = false;
@@ -123,8 +122,7 @@ void registerOutputFormatJSONCompactEachRowWithProgress(FormatFactory & factory)
     factory.registerOutputFormat("JSONCompactStringsEachRowWithProgress", [](
             WriteBuffer & buf,
             const Block & sample,
-            const FormatSettings & _format_settings,
-            FormatFilterInfoPtr /*format_filter_info*/)
+            const FormatSettings & _format_settings)
     {
         FormatSettings settings = _format_settings;
         settings.json.serialize_as_strings = true;

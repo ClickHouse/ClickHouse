@@ -370,8 +370,6 @@ void LocalServer::tryInitPath()
         LOG_DEBUG(log, "Working directory will be created as needed: {}", path);
     }
 
-    fs::create_directories(path);
-
     global_context->setPath(fs::path(path) / "");
 
     global_context->setTemporaryStoragePath(fs::path(path) / "tmp" / "", 0);

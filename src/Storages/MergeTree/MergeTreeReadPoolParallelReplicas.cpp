@@ -72,13 +72,9 @@ size_t chooseSegmentSize(
 
 size_t getMinMarksPerTask(size_t min_marks_per_task, const std::vector<DB::MergeTreeReadTaskInfoPtr> & per_part_infos)
 {
-    /// For each part the value of `min_marks_per_task` is capped by `sum_marks / (threads * total_query_nodes) / 2` (see calculateMinMarksPerTask()),
-    /// unless `merge_tree_min_read_task_size` or `min_*_for_concurrent_read` settings are set too high. So, we can safely take the maximum of all parts.
-    /// On the flip side, it is not safe to take the minimum, because e.g. for compact parts we don't know individual column sizes, so we use whole part size as approximation,
-    /// and as the result we might end up with a very small `min_marks_per_task` that will cause too many requests to the coordinator.
-    const auto max_across_parts = std::ranges::max(
+    const auto min_across_parts = std::ranges::min(
         per_part_infos, [](const auto & lhs, const auto & rhs) { return lhs->min_marks_per_task < rhs->min_marks_per_task; });
-    min_marks_per_task = std::max(min_marks_per_task, max_across_parts->min_marks_per_task);
+    min_marks_per_task = std::max(min_marks_per_task, min_across_parts->min_marks_per_task);
 
     if (min_marks_per_task == 0)
         throw DB::Exception(
@@ -183,16 +179,7 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicas::getTask(size_t /*task_id
     auto & current_task = buffered_ranges.front();
 
     auto part_it
-        = std::ranges::find_if(
-            per_part_infos,
-            [&current_task](const auto & part)
-            {
-                if (!part->data_part->isProjectionPart())
-                    return part->data_part->info == current_task.info;
-
-                chassert(part->parent_part && !current_task.projection_name.empty());
-                return part->parent_part->info == current_task.info && current_task.projection_name == part->data_part->name;
-            });
+        = std::ranges::find_if(per_part_infos, [&current_task](const auto & part) { return part->data_part->info == current_task.info; });
     if (part_it == per_part_infos.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Assignment contains an unknown part (current_task: {})", current_task.describe());
     const size_t part_idx = std::distance(per_part_infos.begin(), part_it);

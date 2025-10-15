@@ -4,40 +4,22 @@
 
 #include <Core/Field.h>
 #include <Core/PlainRanges.h>
-#include <Interpreters/ActionsDAG.h>
 
 namespace DB
 {
 
 class RPNBuilderTreeNode;
 
-struct ColumnStats
+/// Estimates the selectivity of a condition.
+class ConditionSelectivityEstimator
 {
-    /// TODO: Support min max
-    /// Field min_value, max_value;
-    UInt64 num_distinct_values = 0;
-};
-
-struct RelationProfile
-{
-    UInt64 rows = 0;
-    std::unordered_map<String, ColumnStats> column_stats = {};
-};
-
-/// Estimates the selectivity of a condition and cardinality of columns.
-class ConditionSelectivityEstimator : public WithContext
-{
-    struct ColumnEstimator;
-    using ColumnEstimators = std::unordered_map<String, ColumnEstimator>;
-
-    friend class ConditionSelectivityEstimatorBuilder;
+    struct ColumnSelectivityEstimator;
+    using ColumnEstimators = std::unordered_map<String, ColumnSelectivityEstimator>;
 public:
-    explicit ConditionSelectivityEstimator(ContextPtr context_) : WithContext(context_) {}
+    Float64 estimateRowCount(const RPNBuilderTreeNode & node) const;
 
-    RelationProfile estimateRelationProfile(const ActionsDAG::Node * filter, const ActionsDAG::Node * prewhere) const;
-    RelationProfile estimateRelationProfile(const ActionsDAG::Node * node) const;
-    RelationProfile estimateRelationProfile(const RPNBuilderTreeNode & node) const;
-    RelationProfile estimateRelationProfile() const;
+    void addStatistics(String part_name, ColumnStatisticsPartPtr column_stat);
+    void incrementRowCount(UInt64 rows);
 
     struct RPNElement
     {
@@ -71,43 +53,28 @@ public:
     using AtomMap = std::unordered_map<std::string, void(*)(RPNElement & out, const String & column, const Field & value)>;
     static const AtomMap atom_map;
 private:
-    friend class ColumnStatistics;
+    friend class ColumnPartStatistics;
 
-    struct ColumnEstimator
+    struct ColumnSelectivityEstimator
     {
-        ColumnStatisticsPtr stats;
+        /// We store the part_name and part_statistics.
+        /// then simply get selectivity for every part_statistics and combine them.
+        std::map<String, ColumnStatisticsPartPtr> part_statistics;
+
+        void addStatistics(String part_name, ColumnStatisticsPartPtr stats);
 
         Float64 estimateRanges(const PlainRanges & ranges) const;
-        UInt64 estimateCardinality() const;
     };
 
-    RelationProfile estimateRelationProfileImpl(std::vector<RPNElement> & rpn) const;
     bool extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out) const;
-    UInt64 estimateSelectivity(const RPNBuilderTreeNode & node) const;
 
     /// Magic constants for estimating the selectivity of a condition no statistics exists.
-    static constexpr Float64 default_cond_range_factor = 0.5;
-    static constexpr Float64 default_cond_equal_factor = 0.01;
-    static constexpr Float64 default_unknown_cond_factor = 1;
-    static constexpr Float64 default_cardinality_ratio = 0.1;
+    static constexpr auto default_cond_range_factor = 0.5;
+    static constexpr auto default_cond_equal_factor = 0.01;
+    static constexpr auto default_unknown_cond_factor = 1;
 
     UInt64 total_rows = 0;
     ColumnEstimators column_estimators;
-};
-
-using ConditionSelectivityEstimatorPtr = std::shared_ptr<ConditionSelectivityEstimator>;
-
-class ConditionSelectivityEstimatorBuilder
-{
-public:
-    explicit ConditionSelectivityEstimatorBuilder(ContextPtr context_);
-    void addStatistics(ColumnStatisticsPtr column_stats);
-    void incrementRowCount(UInt64 rows);
-    ConditionSelectivityEstimatorPtr getEstimator() const;
-
-private:
-    bool has_data = false;
-    ConditionSelectivityEstimatorPtr estimator;
 };
 
 }

@@ -374,7 +374,7 @@ bool WorkloadEntityStorageBase::storeEntity(
             io_validator.initFromChanges(CostUnit::IOByte, workload->changes);
 
             WorkloadSettings cpu_validator;
-            cpu_validator.initFromChanges(CostUnit::CPUNanosecond, workload->changes);
+            cpu_validator.initFromChanges(CostUnit::CPUSlot, workload->changes);
         }
 
         // Validate resource

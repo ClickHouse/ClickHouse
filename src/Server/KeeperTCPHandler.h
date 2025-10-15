@@ -72,6 +72,7 @@ private:
     LoggerPtr log;
     std::shared_ptr<KeeperDispatcher> keeper_dispatcher;
     KeeperContextPtr keeper_context;
+    Poco::Timespan operation_timeout;
     Poco::Timespan min_session_timeout;
     Poco::Timespan max_session_timeout;
     Poco::Timespan session_timeout;

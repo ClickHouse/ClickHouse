@@ -13,7 +13,7 @@ ClickHouse can run arbitrary SQL queries from the server configuration during st
 ```xml
 <clickhouse>
     <startup_scripts>
-        <throw_on_error>false</throw_on_error>
+        <throw_on_error>false<throw_on_error>
         <scripts>
             <query>CREATE ROLE OR REPLACE test_role</query>
         </scripts>

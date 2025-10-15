@@ -28,7 +28,7 @@ class ColumnLowCardinality final : public COWHelper<IColumnHelper<ColumnLowCardi
 {
     friend class COWHelper<IColumnHelper<ColumnLowCardinality>, ColumnLowCardinality>;
 
-    ColumnLowCardinality(MutableColumnPtr && column_unique, MutableColumnPtr && indexes, bool is_shared = false);
+    ColumnLowCardinality(MutableColumnPtr && column_unique, MutableColumnPtr && indexes, bool is_shared);
     ColumnLowCardinality(const ColumnLowCardinality & other) = default;
 
 public:
@@ -36,12 +36,12 @@ public:
       * Use IColumn::mutate in order to make mutable column and mutate shared nested columns.
       */
     using Base = COWHelper<IColumnHelper<ColumnLowCardinality>, ColumnLowCardinality>;
-    static Ptr create(const ColumnPtr & column_unique_, const ColumnPtr & indexes_, bool is_shared = false)
+    static Ptr create(const ColumnPtr & column_unique_, const ColumnPtr & indexes_, bool is_shared)
     {
         return ColumnLowCardinality::create(column_unique_->assumeMutable(), indexes_->assumeMutable(), is_shared);
     }
 
-    static MutablePtr create(MutableColumnPtr && column_unique, MutableColumnPtr && indexes, bool is_shared = false)
+    static MutablePtr create(MutableColumnPtr && column_unique, MutableColumnPtr && indexes, bool is_shared)
     {
         return Base::create(std::move(column_unique), std::move(indexes), is_shared);
     }
@@ -75,7 +75,7 @@ public:
     bool isNullAt(size_t n) const override { return getDictionary().isNullAt(getIndexes().getUInt(n)); }
     ColumnPtr cut(size_t start, size_t length) const override
     {
-        return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().cut(start, length));
+        return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().cut(start, length), isSharedDictionary());
     }
 
     void insert(const Field & x) override;
@@ -121,7 +121,8 @@ public:
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override
     {
-        return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().filter(filt, result_size_hint));
+        return ColumnLowCardinality::create(
+            dictionary.getColumnUniquePtr(), getIndexes().filter(filt, result_size_hint), isSharedDictionary());
     }
 
     void expand(const Filter & mask, bool inverted) override
@@ -131,12 +132,12 @@ public:
 
     ColumnPtr permute(const Permutation & perm, size_t limit) const override
     {
-        return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().permute(perm, limit));
+        return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().permute(perm, limit), isSharedDictionary());
     }
 
     ColumnPtr index(const IColumn & indexes_, size_t limit) const override
     {
-        return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().index(indexes_, limit));
+        return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().index(indexes_, limit), isSharedDictionary());
     }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -165,7 +166,7 @@ public:
 
     ColumnPtr replicate(const Offsets & offsets) const override
     {
-        return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().replicate(offsets));
+        return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().replicate(offsets), isSharedDictionary());
     }
 
     std::vector<MutableColumnPtr> scatter(ColumnIndex num_columns, const Selector & selector) const override;

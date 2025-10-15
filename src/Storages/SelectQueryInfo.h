@@ -5,7 +5,6 @@
 #include <Core/SortDescription.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
-#include <Processors/QueryPlan/Serialization.h>
 #include <QueryPipeline/StreamLocalLimits.h>
 
 #include <memory>
@@ -59,10 +58,23 @@ struct PrewhereInfo
 
     std::string dump() const;
 
-    PrewhereInfoPtr clone() const;
+    PrewhereInfoPtr clone() const
+    {
+        PrewhereInfoPtr prewhere_info = std::make_shared<PrewhereInfo>();
 
-    void serialize(IQueryPlanStep::Serialization & ctx) const;
-    static PrewhereInfoPtr deserialize(IQueryPlanStep::Deserialization & ctx);
+        if (row_level_filter)
+            prewhere_info->row_level_filter = row_level_filter->clone();
+
+        prewhere_info->prewhere_actions = prewhere_actions.clone();
+
+        prewhere_info->row_level_column_name = row_level_column_name;
+        prewhere_info->prewhere_column_name = prewhere_column_name;
+        prewhere_info->remove_prewhere_column = remove_prewhere_column;
+        prewhere_info->need_filter = need_filter;
+        prewhere_info->generated_by_optimizer = generated_by_optimizer;
+
+        return prewhere_info;
+    }
 };
 
 /// Same as FilterInfo, but with ActionsDAG.

@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="UTF-8" ?>
-<desc xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../_scripts/desc.xsd">
-   <antlr-version>^4.10</antlr-version>
-   <targets>CSharp;Cpp;Dart;Go;Java;JavaScript;PHP;Python3;TypeScript;Antlr4ng</targets>
-</desc>

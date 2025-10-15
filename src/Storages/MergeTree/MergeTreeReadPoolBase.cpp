@@ -14,9 +14,8 @@ namespace Setting
 {
     extern const SettingsBool merge_tree_determine_task_size_by_prewhere_columns;
     extern const SettingsUInt64 merge_tree_min_bytes_per_task_for_remote_reading;
-    extern const SettingsNonZeroUInt64 merge_tree_min_read_task_size;
+    extern const SettingsUInt64 merge_tree_min_read_task_size;
     extern const SettingsBool apply_deleted_mask;
-    extern const SettingsNonZeroUInt64 apply_patch_parts_join_cache_buckets;
 }
 
 namespace ErrorCodes
@@ -49,7 +48,7 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     , block_size_params(block_size_params_)
     , owned_mark_cache(context_->getGlobalContext()->getMarkCache())
     , owned_uncompressed_cache(pool_settings_.use_uncompressed_cache ? context_->getGlobalContext()->getUncompressedCache() : nullptr)
-    , patch_join_cache(std::make_shared<PatchJoinCache>(context_->getSettingsRef()[Setting::apply_patch_parts_join_cache_buckets]))
+    , patch_read_result_cache(std::make_shared<PatchReadResultCache>())
     , header(storage_snapshot->getSampleBlockForColumns(column_names))
     , ranges_in_patch_parts(context_->getSettingsRef()[Setting::merge_tree_min_read_task_size])
     , profile_callback([this](ReadBufferFromFileBase::ProfileInfo info_) { profileFeedback(info_); })
@@ -160,7 +159,6 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
         read_task_info.part_index_in_query = part_with_ranges.part_index_in_query;
         read_task_info.part_starting_offset_in_query = part_with_ranges.part_starting_offset_in_query;
         read_task_info.alter_conversions = MergeTreeData::getAlterConversionsForPart(read_task_info.data_part, mutations_snapshot, getContext());
-        read_task_info.read_hints = part_with_ranges.read_hints;
 
         auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
             .withExtendedObjects()
@@ -241,7 +239,6 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
     }
 
     ranges_in_patch_parts.optimize();
-    patch_join_cache->init(ranges_in_patch_parts);
 }
 
 std::vector<size_t> MergeTreeReadPoolBase::getPerPartSumMarks() const
@@ -342,7 +339,7 @@ MergeTreeReadTask::Extras MergeTreeReadPoolBase::getExtras() const
     {
         .uncompressed_cache = owned_uncompressed_cache.get(),
         .mark_cache = owned_mark_cache.get(),
-        .patch_join_cache = patch_join_cache.get(),
+        .patch_read_result_cache = patch_read_result_cache.get(),
         .reader_settings = reader_settings,
         .storage_snapshot = storage_snapshot,
         .profile_callback = profile_callback,

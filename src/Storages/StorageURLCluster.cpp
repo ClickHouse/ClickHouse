@@ -23,7 +23,6 @@
 #include <Storages/StorageURLCluster.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/extractTableFunctionFromSelectQuery.h>
-#include <Storages/HivePartitioningUtils.h>
 
 #include <TableFunctions/TableFunctionURLCluster.h>
 
@@ -41,7 +40,6 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsUInt64 glob_expansion_max_elements;
-    extern const SettingsBool use_hive_partitioning;
 }
 
 StorageURLCluster::StorageURLCluster(
@@ -57,8 +55,9 @@ StorageURLCluster::StorageURLCluster(
     : IStorageCluster(cluster_name_, table_id_, getLogger("StorageURLCluster (" + table_id_.getFullTableName() + ")"))
     , uri(uri_), format_name(format_)
 {
+    auto headers = configuration_.headers;
     context->getRemoteHostFilter().checkURL(Poco::URI(uri));
-    context->getHTTPHeaderFilter().checkHeaders(configuration_.headers);
+    context->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers);
 
     StorageInMemoryMetadata storage_metadata;
 
@@ -67,10 +66,10 @@ StorageURLCluster::StorageURLCluster(
         ColumnsDescription columns;
         if (format_name == "auto")
             std::tie(columns, format_name) = StorageURL::getTableStructureAndFormatFromData(
-                uri, chooseCompressionMethod(Poco::URI(uri).getPath(), compression_method), configuration_.headers, std::nullopt, context);
+                uri, chooseCompressionMethod(Poco::URI(uri).getPath(), compression_method), headers, std::nullopt, context);
         else
             columns = StorageURL::getTableStructureFromData(
-                format_, uri, chooseCompressionMethod(Poco::URI(uri).getPath(), compression_method), configuration_.headers, std::nullopt, context);
+                format_, uri, chooseCompressionMethod(Poco::URI(uri).getPath(), compression_method), headers, std::nullopt, context);
 
         storage_metadata.setColumns(columns);
     }
@@ -78,22 +77,12 @@ StorageURLCluster::StorageURLCluster(
     {
         if (format_name == "auto")
             format_name = StorageURL::getTableStructureAndFormatFromData(
-                uri, chooseCompressionMethod(Poco::URI(uri).getPath(), compression_method), configuration_.headers, std::nullopt, context).second;
+                uri, chooseCompressionMethod(Poco::URI(uri).getPath(), compression_method), headers, std::nullopt, context).second;
 
         storage_metadata.setColumns(columns_);
     }
 
-    auto & storage_columns = storage_metadata.columns;
-
-    /// Not grabbing the file_columns because it is not necessary to do it here.
-    std::tie(hive_partition_columns_to_read_from_file_path, std::ignore) = HivePartitioningUtils::setupHivePartitioningForFileURLLikeStorage(
-        storage_columns,
-        getSampleURI(uri, context),
-        columns_.empty(),
-        std::nullopt,
-        context);
-
-    auto virtual_columns_desc = VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns);
+    auto virtual_columns_desc = VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context, getSampleURI(uri, context));
     if (!storage_metadata.getColumns().has("_headers"))
     {
         virtual_columns_desc.addEphemeral(
@@ -131,10 +120,10 @@ RemoteQueryExecutor::Extension StorageURLCluster::getTaskIteratorExtension(
     const ActionsDAG::Node * predicate,
     const ActionsDAG * /* filter */,
     const ContextPtr & context,
-    ClusterPtr) const
+    size_t) const
 {
     auto iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(
-        uri, context->getSettingsRef()[Setting::glob_expansion_max_elements], predicate, getVirtualsList(), hive_partition_columns_to_read_from_file_path, context);
+        uri, context->getSettingsRef()[Setting::glob_expansion_max_elements], predicate, getVirtualsList(), context);
 
     auto next_callback = [iter = std::move(iterator)](size_t) mutable -> ClusterFunctionReadTaskResponsePtr
     {

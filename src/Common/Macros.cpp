@@ -167,12 +167,6 @@ String Macros::getValue(const String & key) const
     throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "No macro {} in config", key);
 }
 
-std::optional<String> Macros::tryGetValue(const String & key) const
-{
-    if (auto it = macros.find(key); it != macros.end())
-        return it->second;
-    return {};
-}
 
 String Macros::expand(const String & s) const
 {

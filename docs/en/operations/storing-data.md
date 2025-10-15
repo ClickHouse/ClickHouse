@@ -345,7 +345,7 @@ where `web` is from the server configuration file:
 | `write_resource`                                | Resource name for [scheduling](/operations/workload-scheduling.md) write requests.                                                                                                                                                            | Empty string (disabled)                  |
 | `key_template`                                  | Defines object key generation format using [re2](https://github.com/google/re2/wiki/Syntax) syntax. Requires `storage_metadata_write_full_object_key` flag. Incompatible with `root path` in `endpoint`. Requires `key_compatibility_prefix`. | -                                        |
 | `key_compatibility_prefix`                      | Required with `key_template`. Specifies the previous `root path` from `endpoint` for reading older metadata versions.                                                                                                                         | -                                        |
-| `read_only`                                      | Only allowing reading from the disk.                                                                                                                                                                                                          | -                                        |
+
 :::note
 Google Cloud Storage (GCS) is also supported using the type `s3`. See [GCS backed MergeTree](/integrations/gcs).
 :::
@@ -1046,6 +1046,7 @@ When loading files by `endpoint`, they must be loaded into `<endpoint>/store/` p
 If URL is not reachable on disk load when the server is starting up tables, then all errors are caught. If in this case there were errors, tables can be reloaded (become visible) via `DETACH TABLE table_name` -> `ATTACH TABLE table_name`. If metadata was successfully loaded at server startup, then tables are available straight away.
 
 Use [http_max_single_read_retries](/operations/storing-data#web-storage) setting to limit the maximum number of retries during a single HTTP read.
+
 
 ### Zero-copy Replication (not ready for production) {#zero-copy}
 

@@ -1,7 +1,6 @@
 import logging
 import time
 import uuid
-import random
 from multiprocessing.dummy import Pool
 
 import pytest
@@ -323,7 +322,6 @@ def test_alter_settings(started_cluster):
         ).strip()
     )
 
-    use_persistent_nodes = random.choice(["true", "false"])
     node1.query(
         f"""
         ALTER TABLE r.{table_name}
@@ -340,13 +338,7 @@ def test_alter_settings(started_cluster):
         max_processed_bytes_before_commit=666,
         max_processing_time_sec_before_commit=777,
         enable_hash_ring_filtering=false,
-        list_objects_batch_size=1234,
-        min_insert_block_size_rows_for_materialized_views=123,
-        min_insert_block_size_bytes_for_materialized_views=321,
-        cleanup_interval_min_ms=34500,
-        cleanup_interval_max_ms=45600,
-        use_persistent_processing_nodes={use_persistent_nodes},
-        persistent_processing_node_ttl_seconds=89
+        list_objects_batch_size=1234
     """
     )
 
@@ -364,12 +356,6 @@ def test_alter_settings(started_cluster):
         "max_processing_time_sec_before_commit": 777,
         "enable_hash_ring_filtering": "false",
         "list_objects_batch_size": 1234,
-        "min_insert_block_size_rows_for_materialized_views": 123,
-        "min_insert_block_size_bytes_for_materialized_views": 321,
-        "cleanup_interval_min_ms": 34500,
-        "cleanup_interval_max_ms": 45600,
-        "use_persistent_processing_nodes": use_persistent_nodes,
-        "persistent_processing_node_ttl_seconds": 89
     }
     string_settings = {"after_processing": "delete"}
 

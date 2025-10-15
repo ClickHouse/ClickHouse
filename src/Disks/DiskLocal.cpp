@@ -53,6 +53,22 @@ std::mutex DiskLocal::reservation_mutex;
 
 using DiskLocalPtr = std::shared_ptr<DiskLocal>;
 
+std::optional<size_t> fileSizeSafe(const fs::path & path)
+{
+    std::error_code ec;
+
+    size_t size = fs::file_size(path, ec);
+    if (!ec)
+        return size;
+
+    if (ec == std::errc::no_such_file_or_directory)
+        return std::nullopt;
+    if (ec == std::errc::operation_not_supported)
+        return std::nullopt;
+
+    throw fs::filesystem_error("DiskLocal", path, ec);
+}
+
 class DiskLocalReservation : public IReservation
 {
 public:
@@ -320,9 +336,11 @@ bool DiskLocal::renameExchangeIfSupported(const std::string & old_path, const st
     return DB::renameExchangeIfSupported(fs::path(disk_path) / old_path, fs::path(disk_path) / new_path);
 }
 
-std::unique_ptr<ReadBufferFromFileBase> DiskLocal::readFile(const String & path, const ReadSettings & settings, std::optional<size_t> read_hint) const
+std::unique_ptr<ReadBufferFromFileBase> DiskLocal::readFile(const String & path, const ReadSettings & settings, std::optional<size_t> read_hint, std::optional<size_t> file_size) const
 {
-    return createReadBufferFromFileBase(fs::path(disk_path) / path, settings, read_hint);
+    if (!file_size.has_value())
+        file_size = fileSizeSafe(fs::path(disk_path) / path);
+    return createReadBufferFromFileBase(fs::path(disk_path) / path, settings, read_hint, file_size);
 }
 
 std::unique_ptr<WriteBufferFromFileBase>
@@ -573,7 +591,7 @@ try
     ReadSettings read_settings;
     /// Proper disk read checking requires direct io
     read_settings.direct_io_threshold = 1;
-    auto buf = readFile(disk_checker_path, read_settings, {});
+    auto buf = readFile(disk_checker_path, read_settings, {}, {});
     UInt32 magic_number;
     readIntBinary(magic_number, *buf);
     if (buf->eof())

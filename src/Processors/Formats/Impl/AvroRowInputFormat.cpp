@@ -1023,7 +1023,7 @@ void AvroRowInputFormat::readPrefix()
     file_reader_ptr->init();
 }
 
-bool AvroRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext)
+bool AvroRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &ext)
 {
     if (file_reader_ptr->hasMore())
     {
@@ -1083,10 +1083,7 @@ private:
                     .withReceiveTimeout(1);
 
                 Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, url.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
-                if (url.getPort())
-                    request.setHost(url.getHost(), url.getPort());
-                else
-                    request.setHost(url.getHost());
+                request.setHost(url.getHost());
 
                 if (!url.getUserInfo().empty())
                 {

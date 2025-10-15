@@ -87,7 +87,7 @@ namespace
         }
         else
         {
-            []<bool flag = false>() {static_assert(flag, "Such gradient computer is not implemented yet");}(); // delay static_assert in constexpr if until template instantiation
+            []<bool flag = false>() {static_assert(flag, "Such gradient computer is not implemented yet");}(); // delay static_asssert in constexpr if until template instantiation
         }
 
         return std::make_shared<Method>(

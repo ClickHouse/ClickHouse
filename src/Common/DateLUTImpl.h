@@ -62,7 +62,7 @@ class DateLUTImpl
 {
 private:
     friend class DateLUT;
-    explicit DateLUTImpl(std::string_view time_zone);
+    explicit DateLUTImpl(const std::string & time_zone);
 
     DateLUTImpl(const DateLUTImpl &) = delete; /// NOLINT
     DateLUTImpl & operator=(const DateLUTImpl &) = delete; /// NOLINT

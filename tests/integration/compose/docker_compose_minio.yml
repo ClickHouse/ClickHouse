@@ -15,13 +15,12 @@ services:
       - proxy1
       - proxy2
     networks:
-      default:
-        aliases:
-          - warehouse.minio
-    stop_grace_period: 5s
+        default:
+            aliases:
+                - warehouse.minio
+
   # HTTP proxies for Minio.
   proxy1:
-    stop_grace_period: 5s
     image: clickhouse/s3-proxy
     expose:
       - "8080" # Redirect proxy port
@@ -29,7 +28,6 @@ services:
       - "443"  # Reverse proxy port (secure)
 
   proxy2:
-    stop_grace_period: 5s
     image: clickhouse/s3-proxy
     expose:
       - "8080"
@@ -38,7 +36,6 @@ services:
 
   # Empty container to run proxy resolver.
   resolver:
-    stop_grace_period: 5s
     image: clickhouse/python-bottle:${DOCKER_PYTHON_BOTTLE_TAG:-latest}
     expose:
       - "8080"

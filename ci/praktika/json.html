@@ -1697,7 +1697,7 @@
     let openedInfoCnt = 0;
     let closedInfoCnt = 0;
     
-    async function renderResultsAuto(PR, REF, sha, nameParams) {
+    function renderResultsAuto(PR, REF, sha, nameParams) {
 
         function clearPage() {
             // Clear the main content areas
@@ -1727,7 +1727,7 @@
             }
         }
 
-        await checkForUpdatesAndRender(true)
+        checkForUpdatesAndRender(true)
         console.log("Auto-reload started");
         setInterval(checkForUpdatesAndRender, 30000);
     }
@@ -1762,7 +1762,8 @@
             }
         });
 
-        await renderResultsAuto(PR, REF, sha, nameParams);
+        await fetchData(PR, REF, sha, nameParams);
+        renderResultsAuto(PR, REF, sha, nameParams);
         renderFooter(nameParams)
         updatePageTitle(PR, REF, sha, nameParams)
         fetchStatistics(nameParams[0])
