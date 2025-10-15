@@ -944,7 +944,7 @@ def test_projection(key_prefix_template):
     backup_name = new_backup_name()
     backup_settings = {"key_prefix_template": key_prefix_template}
     node1.query(
-        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} {format_settings(key_prefix_template)}"
+        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} {format_settings(backup_settings)}"
     )
 
     node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
