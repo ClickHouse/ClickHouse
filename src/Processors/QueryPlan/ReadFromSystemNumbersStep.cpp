@@ -11,6 +11,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/System/StorageSystemNumbers.h>
+#include <base/types.h>
 #include <fmt/format.h>
 #include <Common/iota.h>
 #include <Common/typeid_cast.h>
@@ -405,11 +406,14 @@ std::optional<size_t> getLimitFromQueryInfo(const SelectQueryInfo & query_info, 
     if (!query_info.query)
         return {};
 
-    auto limit_length_and_offset = InterpreterSelectQuery::getLimitLengthAndOffset(query_info.query->as<ASTSelectQuery &>(), context);
-    if (!shouldPushdownLimit(query_info, limit_length_and_offset.first))
+    UInt64 limit = 0;
+    UInt64 offset = 0;
+    std::tie(limit, std::ignore, offset, std::ignore) = InterpreterSelectQuery::getLimitLengthAndOffset(query_info.query->as<ASTSelectQuery &>(), context);
+
+    if (!shouldPushdownLimit(query_info, limit))
         return {};
 
-    return limit_length_and_offset.first + limit_length_and_offset.second;
+    return limit + offset;
 }
 
 }
