@@ -7,7 +7,7 @@
 namespace DB
 {
 
-/// Executes LIMIT 0.1 - 0.9, See FractionalLimitTransform.
+/// Executes Fractional LIMIT, See FractionalLimitTransform.
 class FractionalLimitStep : public ITransformingStep
 {
 public:
