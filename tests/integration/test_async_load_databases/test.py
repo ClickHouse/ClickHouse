@@ -335,7 +335,10 @@ def test_materialized_views_cascaded_multiple(started_cluster):
     query("insert into to_join values(42, 4200)")
 
     node1.restart_clickhouse()
-    query("insert into test_mv.t values(42)")
+    query("insert into test_mv.t values(42)", settings={
+        # Make sure that pushing to MVs are not reordered
+        "max_threads": 1
+    })
     assert query("select * from test_mv.a Format CSV") == "42\n"
     assert query("select * from test_mv.x Format CSV") == '"42"\n'
     assert query("select * from test_mv.z Format CSV") == "42,2\n"
