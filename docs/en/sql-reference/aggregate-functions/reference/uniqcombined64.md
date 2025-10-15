@@ -11,7 +11,7 @@ title: 'uniqCombined64'
 
 Calculates the approximate number of different argument values. It is the same as [uniqCombined](/sql-reference/aggregate-functions/reference/uniqcombined), but uses a 64-bit hash for all data types rather than just for the String data type.
 
-```sql
+``` sql
 uniqCombined64(HLL_precision)(x[, ...])
 ```
 
@@ -29,9 +29,9 @@ uniqCombined64(HLL_precision)(x[, ...])
 The `uniqCombined64` function:
 - Calculates a hash (64-bit hash for all data types) for all parameters in the aggregate, then uses it in calculations.
 - Uses a combination of three algorithms: array, hash table, and HyperLogLog with an error correction table.
-  - For a small number of distinct elements, an array is used. 
-  - When the set size is larger, a hash table is used. 
-  - For a larger number of elements, HyperLogLog is used, which will occupy a fixed amount of memory.
+    - For a small number of distinct elements, an array is used. 
+    - When the set size is larger, a hash table is used. 
+    - For a larger number of elements, HyperLogLog is used, which will occupy a fixed amount of memory.
 - Provides the result deterministically (it does not depend on the query processing order).
 
 :::note
@@ -84,3 +84,4 @@ Result:
 - [uniqHLL12](/sql-reference/aggregate-functions/reference/uniqhll12)
 - [uniqExact](/sql-reference/aggregate-functions/reference/uniqexact)
 - [uniqTheta](/sql-reference/aggregate-functions/reference/uniqthetasketch)
+

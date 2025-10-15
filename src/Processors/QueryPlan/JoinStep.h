@@ -15,11 +15,10 @@ class JoinStep : public IQueryPlanStep
 {
 public:
     JoinStep(
-        const SharedHeader & left_header_,
-        const SharedHeader & right_header_,
+        const Header & left_header_,
+        const Header & right_header_,
         JoinPtr join_,
         size_t max_block_size_,
-        size_t min_block_size_rows_,
         size_t min_block_size_bytes_,
         size_t max_streams_,
         NameSet required_output_,
@@ -42,32 +41,14 @@ public:
     /// Swap automatically if not set, otherwise always or never, depending on the value
     std::optional<bool> swap_join_tables = false;
 
-    struct PrimaryKeyNamesPair
-    {
-        std::string lhs_name;
-        std::string rhs_name;
-    };
-
-    using PrimaryKeySharding = std::vector<PrimaryKeyNamesPair>;
-
-    /// Set names of PK columns for optimized for JOIN sharder by PK ranges.
-    /// Names are required for EXPLAIN only.
-    void enableJoinByLayers(PrimaryKeySharding sharding) { primary_key_sharding = std::move(sharding); }
-    void keepLeftPipelineInOrder() { keep_left_read_in_order = true; }
-
-    bool isOptimized() const { return optimized; }
-    void setOptimized() { optimized = true; }
-
 private:
-    bool optimized = false;
     void updateOutputHeader() override;
 
     /// Header that expected to be returned from IJoin
-    SharedHeader join_algorithm_header;
+    Block join_algorithm_header;
 
     JoinPtr join;
     size_t max_block_size;
-    size_t min_block_size_rows;
     size_t min_block_size_bytes;
     size_t max_streams;
 
@@ -76,7 +57,6 @@ private:
     bool keep_left_read_in_order;
     bool use_new_analyzer = false;
     bool swap_streams = false;
-    PrimaryKeySharding primary_key_sharding;
 };
 
 /// Special step for the case when Join is already filled.
@@ -84,7 +64,7 @@ private:
 class FilledJoinStep : public ITransformingStep
 {
 public:
-    FilledJoinStep(const SharedHeader & input_header_, JoinPtr join_, size_t max_block_size_);
+    FilledJoinStep(const Header & input_header_, JoinPtr join_, size_t max_block_size_);
 
     String getName() const override { return "FilledJoin"; }
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;

@@ -174,15 +174,6 @@ def started_cluster():
             [
                 "sqlite3",
                 sqlite_db,
-                "CREATE TABLE t5(id INTEGER PRIMARY KEY ASC, X INTEGER, Y, Z);",
-            ],
-            privileged=True,
-            user="root",
-        )
-        node1.exec_in_container(
-            [
-                "sqlite3",
-                sqlite_db,
                 "CREATE TABLE tf1(id INTEGER PRIMARY KEY ASC, x INTEGER, y, z);",
             ],
             privileged=True,
@@ -331,37 +322,6 @@ CREATE TABLE {table_name}(id UInt32, name String, age UInt32, money UInt32, colu
     assert node1.query("select 1") == "1\n"
 
     node1.query(f"DROP TABLE {table_name}")
-    drop_mysql_table(conn, table_name)
-    conn.close()
-
-
-def test_table_function_odbc_with_named_collection(started_cluster):
-    skip_test_sanitizers(node1)
-
-    mysql_setup = node1.odbc_drivers["MySQL"]
-
-    table_name = "test_mysql_with_named_collection"
-    conn = get_mysql_conn()
-    create_mysql_table(conn, table_name)
-
-    # Check that NULL-values are handled correctly by the ODBC-bridge
-    with conn.cursor() as cursor:
-        cursor.execute(
-            "INSERT INTO clickhouse.{} VALUES(50, 'name1', 127, 255, 512), (100, 'name2', 127, 255, 511);".format(
-                table_name
-            )
-        )
-        conn.commit()
-
-    node1.query(f"""
-    DROP NAMED COLLECTION IF EXISTS odbc_collection;
-    CREATE NAMED COLLECTION odbc_collection AS
-    connection_settings = 'DSN={mysql_setup["DSN"]}',
-    external_table = '{table_name}';
-    """)
-    assert node1.query("SELECT name FROM odbc(odbc_collection)") == "name1\nname2\n"
-
-    node1.query(f"DROP TABLE IF EXISTS {table_name}")
     drop_mysql_table(conn, table_name)
     conn.close()
 
@@ -533,37 +493,6 @@ def test_sqlite_simple_select_storage_works(started_cluster):
 
     node1.exec_in_container(
         ["sqlite3", sqlite_db, "DELETE FROM t4;"],
-        privileged=True,
-        user="root",
-    )
-
-
-def test_table_engine_odbc_named_collection(started_cluster):
-    skip_test_sanitizers(node1)
-
-    sqlite_setup = node1.odbc_drivers["SQLite3"]
-    sqlite_db = sqlite_setup["Database"]
-
-    node1.exec_in_container(
-        ["sqlite3", sqlite_db, "INSERT INTO t5 values(1, 1, 2, 3);"],
-        privileged=True,
-        user="root",
-    )
-
-    node1.query(f"""
-    DROP NAMED COLLECTION IF EXISTS engine_odbc_collection;
-    CREATE NAMED COLLECTION engine_odbc_collection AS
-    connection_settings = 'DSN={sqlite_setup["DSN"]}',
-    external_database = '',
-    external_table = 't5';
-    """)
-    node1.query("CREATE TABLE SqliteODBCNamedCol (x Int32, y String, z String) ENGINE = ODBC(engine_odbc_collection)")
-
-    assert node1.query("SELECT * FROM SqliteODBCNamedCol") == "1\t2\t3\n"
-    node1.query("DROP TABLE IF EXISTS SqliteODBCNamedCol")
-
-    node1.exec_in_container(
-        ["sqlite3", sqlite_db, "DELETE FROM t5;"],
         privileged=True,
         user="root",
     )

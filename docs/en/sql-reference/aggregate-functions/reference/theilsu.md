@@ -10,9 +10,10 @@ title: 'theilsU'
 
 The `theilsU` function calculates the [Theil's U uncertainty coefficient](https://en.wikipedia.org/wiki/Contingency_table#Uncertainty_coefficient), a value that measures the association between two columns in a table. Its values range from −1.0 (100% negative association, or perfect inversion) to +1.0 (100% positive association, or perfect agreement). A value of 0.0 indicates the absence of association.
 
+
 **Syntax**
 
-```sql
+``` sql
 theilsU(column1, column2)
 ```
 
@@ -30,7 +31,7 @@ theilsU(column1, column2)
 
 The following two columns being compared below have a small association with each other, so the value of `theilsU` is negative:
 
-```sql
+``` sql
 SELECT
     theilsU(a ,b)
 FROM

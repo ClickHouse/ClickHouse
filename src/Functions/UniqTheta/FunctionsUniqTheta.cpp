@@ -1,6 +1,6 @@
 #include <Functions/FunctionFactory.h>
 
-#include <Functions/UniqTheta/FunctionsUniqTheta.h>
+#include "FunctionsUniqTheta.h"
 
 #if USE_DATASKETCHES
 
@@ -23,7 +23,7 @@ Typical usage:
 )",
                     .examples{
                             {"typical", "select finalizeAggregation(uniqThetaIntersect(arrayReduce('uniqThetaState',[1,2]), arrayReduce('uniqThetaState',[2,3,4])));", ""}},
-                    .category = FunctionDocumentation::Category::Other
+                    .category{"Other"}
             });
 
     factory.registerFunction<FunctionUniqThetaUnion>(
@@ -40,7 +40,7 @@ Typical usage:
 )",
                     .examples{
                             {"typical", "select finalizeAggregation(uniqThetaUnion(arrayReduce('uniqThetaState',[1,2]), arrayReduce('uniqThetaState',[2,3,4])));", ""}},
-                    .category = FunctionDocumentation::Category::Other
+                    .category{"Other"}
             });
     factory.registerFunction<FunctionUniqThetaNot>(
             FunctionDocumentation{.description = R"(
@@ -56,7 +56,7 @@ Typical usage:
 )",
                     .examples{
                             {"typical", "select finalizeAggregation(uniqThetaNot(arrayReduce('uniqThetaState',[1,2]), arrayReduce('uniqThetaState',[2,3,4])));", ""}},
-                    .category = FunctionDocumentation::Category::Other
+                    .category{"Other"}
             });
 }
 

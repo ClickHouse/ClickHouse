@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from ci_utils import Shell, Utils
+from ci_utils import Shell
 from env_helper import DOCKER_TAG, ROOT_DIR
 from get_robot_token import get_parameter_from_ssm
 
@@ -60,8 +60,7 @@ def get_docker_image(image_name: str) -> DockerImage:
         assert (
             image_name in tags_map
         ), f"Image name [{image_name}] does not exist in provided DOCKER_TAG json string"
-        arch_suffix = "_arm" if Utils.is_arm() else "_amd"
-        return DockerImage(image_name, tags_map[image_name] + arch_suffix)
+        return DockerImage(image_name, tags_map[image_name])
     # DOCKER_TAG is a tag itself
     return DockerImage(image_name, DOCKER_TAG)
 

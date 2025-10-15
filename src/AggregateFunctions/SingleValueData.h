@@ -268,25 +268,22 @@ FOR_SINGLE_VALUE_NUMERIC_TYPES(DISPATCH)
 //  */
 struct SingleValueDataString final : public SingleValueDataBase
 {
-private:
+    static constexpr bool is_compilable = false;
     using Self = SingleValueDataString;
 
-    /// Size of the string plus one. Zero indicates that there is no value.
+    /// 0 size indicates that there is no value. Empty string must have terminating '\0' and, therefore, size of empty string is 1
     UInt32 size = 0;
     UInt32 capacity = 0; /// power of two or zero
+    char * large_data; /// Always allocated in an arena
 
     //// TODO: Maybe instead of a virtual class we need to go with a std::variant of the 3 to avoid reserving space for the vtable
     static constexpr UInt32 MAX_SMALL_STRING_SIZE
-        = SingleValueDataBase::MAX_STORAGE_SIZE - sizeof(size) - sizeof(capacity) - sizeof(SingleValueDataBase);
+        = SingleValueDataBase::MAX_STORAGE_SIZE - sizeof(size) - sizeof(capacity) - sizeof(large_data) - sizeof(SingleValueDataBase);
     static constexpr UInt32 MAX_STRING_SIZE = std::numeric_limits<Int32>::max();
 
-    union
-    {
-        char * large_data; /// Always allocated in arena
-        char small_data[MAX_SMALL_STRING_SIZE];
-    };
+private:
+    char small_data[MAX_SMALL_STRING_SIZE]; /// Including the terminating zero.
 
-    bool isSmall() const { return capacity == 0; }
     char * getDataMutable();
     const char * getData() const;
     StringRef getStringRef() const;
@@ -294,8 +291,6 @@ private:
     void changeImpl(StringRef value, Arena * arena);
 
 public:
-    static constexpr bool is_compilable = false;
-
     bool has() const override { return size != 0; }
     void insertResultInto(IColumn & to, const DataTypePtr & type) const override;
     void write(WriteBuffer & buf, const ISerialization & /*serialization*/) const override;

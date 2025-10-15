@@ -12,7 +12,7 @@ Applies the Mann-Whitney rank test to samples from two populations.
 
 **Syntax**
 
-```sql
+``` sql
 mannWhitneyUTest[(alternative[, continuity_correction])](sample_data, sample_index)
 ```
 
@@ -27,9 +27,9 @@ The null hypothesis is that two populations are stochastically equal. Also one-s
 **Parameters**
 
 - `alternative` — alternative hypothesis. (Optional, default: `'two-sided'`.) [String](../../../sql-reference/data-types/string.md).
-  - `'two-sided'`;
-  - `'greater'`;
-  - `'less'`.
+    - `'two-sided'`;
+    - `'greater'`;
+    - `'less'`.
 - `continuity_correction` — if not 0 then continuity correction in the normal approximation for the p-value is applied. (Optional, default: 1.) [UInt64](../../../sql-reference/data-types/int-uint.md).
 
 **Returned values**
@@ -39,11 +39,12 @@ The null hypothesis is that two populations are stochastically equal. Also one-s
 - calculated U-statistic. [Float64](../../../sql-reference/data-types/float.md).
 - calculated p-value. [Float64](../../../sql-reference/data-types/float.md).
 
+
 **Example**
 
 Input table:
 
-```text
+``` text
 ┌─sample_data─┬─sample_index─┐
 │          10 │            0 │
 │          11 │            0 │
@@ -56,13 +57,13 @@ Input table:
 
 Query:
 
-```sql
+``` sql
 SELECT mannWhitneyUTest('greater')(sample_data, sample_index) FROM mww_ttest;
 ```
 
 Result:
 
-```text
+``` text
 ┌─mannWhitneyUTest('greater')(sample_data, sample_index)─┐
 │ (9,0.04042779918503192)                                │
 └────────────────────────────────────────────────────────┘

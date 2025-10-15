@@ -1,4 +1,4 @@
-#include <Client/ConnectionParameters.h>
+#include "ConnectionParameters.h"
 
 #include <Core/Defines.h>
 #include <Core/Protocol.h>
@@ -70,18 +70,12 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
 {
     security = enableSecureConnection(config, host_) ? Protocol::Secure::Enable : Protocol::Secure::Disable;
 
-    bind_host = config.getString("bind_host", "");
-
     /// changed the default value to "default" to fix the issue when the user in the prompt is blank
     user = config.getString("user", "default");
 
     if (config.has("jwt"))
     {
-#if USE_JWT_CPP && USE_SSL
         jwt = config.getString("jwt");
-#else
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JWT is disabled, because ClickHouse is built without JWT or SSL support");
-#endif
     }
     else if (config.has("ssh-key-file"))
     {

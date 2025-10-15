@@ -7,5 +7,4 @@ ExpressionTransform × 8
         Resize 1 → 8
           GroupingAggregatedTransform
             (ReadFromCluster)
-            UnmarshallBlocksTransform
-              Remote 0 → 1
+            Remote 0 → 1

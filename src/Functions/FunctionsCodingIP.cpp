@@ -8,8 +8,10 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -24,9 +26,11 @@
 #include <IO/WriteHelpers.h>
 #include <Common/IPv6ToBinary.h>
 #include <Common/formatIPv6.h>
+#include <base/hex.h>
 #include <Common/typeid_cast.h>
 
 #include <arpa/inet.h>
+#include <type_traits>
 #include <array>
 
 
@@ -97,7 +101,7 @@ public:
         auto col_res = ColumnString::create();
         ColumnString::Chars & vec_res = col_res->getChars();
         ColumnString::Offsets & offsets_res = col_res->getOffsets();
-        vec_res.resize(input_rows_count * IPV6_MAX_TEXT_LENGTH);
+        vec_res.resize(input_rows_count * (IPV6_MAX_TEXT_LENGTH + 1));
         offsets_res.resize(input_rows_count);
 
         auto * begin = reinterpret_cast<char *>(vec_res.data());
@@ -218,7 +222,7 @@ public:
         auto col_res = ColumnString::create();
         ColumnString::Chars & vec_res = col_res->getChars();
         ColumnString::Offsets & offsets_res = col_res->getOffsets();
-        vec_res.resize(input_rows_count * IPV6_MAX_TEXT_LENGTH);
+        vec_res.resize(input_rows_count * (IPV6_MAX_TEXT_LENGTH + 1));
         offsets_res.resize(input_rows_count);
 
         auto * begin = reinterpret_cast<char *>(vec_res.data());
@@ -367,14 +371,14 @@ private:
             ColumnString::Chars & vec_res = col_res->getChars();
             ColumnString::Offsets & offsets_res = col_res->getOffsets();
 
-            vec_res.resize(input_rows_count * IPV4_MAX_TEXT_LENGTH); /// the longest value is: 255.255.255.255
+            vec_res.resize(input_rows_count * (IPV4_MAX_TEXT_LENGTH + 1)); /// the longest value is: 255.255.255.255\0
             offsets_res.resize(input_rows_count);
             char * begin = reinterpret_cast<char *>(vec_res.data());
             char * pos = begin;
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                formatIPv4(reinterpret_cast<const unsigned char*>(&vec_in[i]), sizeof(ArgType), pos, mask_tail_octets, "xxx");
+                DB::formatIPv4(reinterpret_cast<const unsigned char*>(&vec_in[i]), sizeof(ArgType), pos, mask_tail_octets, "xxx");
                 offsets_res[i] = pos - begin;
             }
 
@@ -645,6 +649,7 @@ public:
         writeHexByteUppercase(mac >> 8, &out[12]);
         out[14] = ':';
         writeHexByteUppercase(mac, &out[15]);
+        out[17] = '\0';
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -662,14 +667,14 @@ public:
             ColumnString::Chars & vec_res = col_res->getChars();
             ColumnString::Offsets & offsets_res = col_res->getOffsets();
 
-            vec_res.resize(vec_in.size() * 17); /// the value is: xx:xx:xx:xx:xx:xx
+            vec_res.resize(vec_in.size() * 18); /// the value is: xx:xx:xx:xx:xx:xx\0
             offsets_res.resize(vec_in.size());
 
             size_t current_offset = 0;
             for (size_t i = 0; i < vec_in.size(); ++i)
             {
                 formatMAC(vec_in[i], &vec_res[current_offset]);
-                current_offset += 17;
+                current_offset += 18;
                 offsets_res[i] = current_offset;
             }
 
@@ -782,7 +787,7 @@ public:
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 size_t current_offset = offsets_src[i];
-                size_t string_size = current_offset - prev_offset;
+                size_t string_size = current_offset - prev_offset - 1; /// mind the terminating zero byte
 
                 if (string_size >= Impl::min_string_size && string_size <= Impl::max_string_size)
                     vec_res[i] = Impl::parse(reinterpret_cast<const char *>(&vec_src[prev_offset]));
@@ -1100,7 +1105,7 @@ public:
             ColumnString::Offset new_offset = offsets_src[i];
             vec_res[i] = parseIPv4whole(
                 reinterpret_cast<const char *>(&vec_src[prev_offset]),
-                reinterpret_cast<const char *>(&vec_src[new_offset]),
+                reinterpret_cast<const char *>(&vec_src[new_offset - 1]),
                 reinterpret_cast<unsigned char *>(&result));
             prev_offset = new_offset;
         }
@@ -1162,9 +1167,9 @@ public:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             ColumnString::Offset new_offset = offsets_src[i];
-            vec_res[i] = parseIPv6Whole(reinterpret_cast<const char *>(&vec_src[prev_offset]),
-                                        reinterpret_cast<const char *>(&vec_src[new_offset]),
-                                        reinterpret_cast<unsigned char *>(buffer));
+            vec_res[i] = DB::parseIPv6whole(reinterpret_cast<const char *>(&vec_src[prev_offset]),
+                                            reinterpret_cast<const char *>(&vec_src[new_offset - 1]),
+                                            reinterpret_cast<unsigned char *>(buffer));
             prev_offset = new_offset;
         }
 
@@ -1179,85 +1184,9 @@ REGISTER_FUNCTION(Coding)
 {
     factory.registerFunction<FunctionCutIPv6>();
     factory.registerFunction<FunctionIPv4ToIPv6>();
-    FunctionDocumentation::Description description_MACNumToString = R"(
-Interprets a 64-bit unsigned integer as a MAC address in big endian format and returns the corresponding MAC address as a string with format `AA:BB:CC:DD:EE:FF` (colon-separated numbers in hexadecimal form).
-)";
-    FunctionDocumentation::Syntax syntax_MACNumToString = "MACNumToString(num)";
-    FunctionDocumentation::Arguments arguments_MACNumToString = {
-        {"num", "A 64-bit unsigned integer representing a MAC address.", {"UInt64"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value_MACNumToString = {"Returns the MAC address in format `AA:BB:CC:DD:EE:FF`.", {"String"}};
-    FunctionDocumentation::Examples examples_MACNumToString = {
-    {
-        "Usage example",
-        R"(
-SELECT MACNumToString(123456789012345) AS mac_address;
-        )",
-        R"(
-┌─mac_address───────┐
-│ 70:3A:51:A3:FE:39 │
-└───────────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in_MACNumToString = {1, 1};
-    FunctionDocumentation::Category category_MACNumToString = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_MACNumToString = {description_MACNumToString, syntax_MACNumToString, arguments_MACNumToString, returned_value_MACNumToString, examples_MACNumToString, introduced_in_MACNumToString, category_MACNumToString};
-
-    factory.registerFunction<FunctionMACNumToString>(documentation_MACNumToString);
-    FunctionDocumentation::Description description_MACStringToNum = R"(
-The inverse function of [`MACNumToString`](#MACNumToString).
-Takes an address in the format `AA:BB:CC:DD:EE:FF` and returns a 640bit unsigned integer from it.
-)";
-    FunctionDocumentation::Syntax syntax_MACStringToNum = "MACStringToNum(s)";
-    FunctionDocumentation::Arguments arguments_MACStringToNum = {
-        {"s", "String representation of a MAC address in format `AA:BB:CC:DD:EE:FF`.", {"String"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value_MACStringToNum = {"Returns a number representing the MAC address, or `0` if the format is invalid.", {"UInt64"}};
-    FunctionDocumentation::Examples examples_MACStringToNum = {
-    {
-        "Usage example",
-        R"(
-SELECT MACStringToNum('70:3A:51:A3:FE:39') AS mac_number;
-        )",
-        R"(
-┌─mac_number──────┐
-│ 123456789012345 │
-└─────────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in_MACStringToNum = {1, 1};
-    FunctionDocumentation::Category category_MACStringToNum = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_MACStringToNum = {description_MACStringToNum, syntax_MACStringToNum, arguments_MACStringToNum, returned_value_MACStringToNum, examples_MACStringToNum, introduced_in_MACStringToNum, category_MACStringToNum};
-
-    factory.registerFunction<FunctionMACStringTo<ParseMACImpl>>(documentation_MACStringToNum);
-    FunctionDocumentation::Description description_MACStringToOUI = R"(
-Given a MAC address in format `AA:BB:CC:DD:EE:FF` (colon-separated numbers in hexadecimal form), returns the first three octets as a 64-bit unsigned integer.
-)";
-    FunctionDocumentation::Syntax syntax_MACStringToOUI = "MACStringToOUI(s)";
-    FunctionDocumentation::Arguments arguments_MACStringToOUI = {
-        {"s", "String representation of a MAC address in `AA:BB:CC:DD:EE:FF` format.", {"String"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value_MACStringToOUI = {"Returns the first three octets of the MAC address as a number, or `0` if the format is invalid.", {"UInt64"}};
-    FunctionDocumentation::Examples examples_MACStringToOUI = {
-    {
-        "Usage example",
-        R"(
-SELECT MACStringToOUI('70:3A:51:A3:FE:39') AS mac_oui;
-        )",
-        R"(
-┌─mac_oui─┐
-│ 7358801 │
-└─────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in_MACStringToOUI = {1, 1};
-    FunctionDocumentation::Category category_MACStringToOUI = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_MACStringToOUI = {description_MACStringToOUI, syntax_MACStringToOUI, arguments_MACStringToOUI, returned_value_MACStringToOUI, examples_MACStringToOUI, introduced_in_MACStringToOUI, category_MACStringToOUI};
-
-    factory.registerFunction<FunctionMACStringTo<ParseOUIImpl>>(documentation_MACStringToOUI);
+    factory.registerFunction<FunctionMACNumToString>();
+    factory.registerFunction<FunctionMACStringTo<ParseMACImpl>>();
+    factory.registerFunction<FunctionMACStringTo<ParseOUIImpl>>();
     factory.registerFunction<FunctionIPv6CIDRToRange>();
     factory.registerFunction<FunctionIPv4CIDRToRange>();
     factory.registerFunction<FunctionIsIPv4String>();

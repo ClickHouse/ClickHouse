@@ -1,16 +1,22 @@
-#include <Storages/ObjectStorage/HDFS/ReadBufferFromHDFS.h>
+#include "ReadBufferFromHDFS.h"
 
 #if USE_HDFS
-#include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
-#include <Storages/ObjectStorage/HDFS/HDFSErrorWrapper.h>
+#include "HDFSCommon.h"
+#include "HDFSErrorWrapper.h"
 #include <Common/Scheduler/ResourceGuard.h>
 #include <IO/Progress.h>
 #include <Common/Throttler.h>
 #include <Common/safe_cast.h>
 #include <Common/logger_useful.h>
-#include <IO/ReadSettings.h>
 #include <hdfs/hdfs.h>
+#include <mutex>
 
+
+namespace ProfileEvents
+{
+    extern const Event RemoteReadThrottlerBytes;
+    extern const Event RemoteReadThrottlerSleepMicroseconds;
+}
 
 namespace DB
 {
@@ -38,7 +44,6 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
     off_t file_offset = 0;
     off_t read_until_position = 0;
     off_t file_size;
-    bool enable_pread = true;
 
     explicit ReadBufferFromHDFSImpl(
         const std::string & hdfs_uri_,
@@ -54,7 +59,6 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         , hdfs_file_path(hdfs_file_path_)
         , read_settings(read_settings_)
         , read_until_position(read_until_position_)
-        , enable_pread(read_settings_.enable_hdfs_pread)
     {
         fs = createHDFSFS(builder.get());
         fin = wrapErr<hdfsFile>(hdfsOpenFile, fs.get(), hdfs_file_path.c_str(), O_RDONLY, 0, 0, 0);
@@ -135,7 +139,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
             working_buffer.resize(bytes_read);
             file_offset += bytes_read;
             if (read_settings.remote_throttler)
-                read_settings.remote_throttler->throttle(bytes_read);
+                read_settings.remote_throttler->add(bytes_read, ProfileEvents::RemoteReadThrottlerBytes, ProfileEvents::RemoteReadThrottlerSleepMicroseconds);
 
             return true;
         }
@@ -178,12 +182,12 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         }
         if (bytes_read && read_settings.remote_throttler)
         {
-            read_settings.remote_throttler->throttle(bytes_read);
+            read_settings.remote_throttler->add(
+                bytes_read, ProfileEvents::RemoteReadThrottlerBytes, ProfileEvents::RemoteReadThrottlerSleepMicroseconds);
         }
         return bytes_read;
     }
 };
-
 
 ReadBufferFromHDFS::ReadBufferFromHDFS(
         const String & hdfs_uri_,
@@ -277,7 +281,7 @@ size_t ReadBufferFromHDFS::readBigAt(char * buffer, size_t size, size_t offset, 
 
 bool ReadBufferFromHDFS::supportsReadAt()
 {
-    return impl->enable_pread;
+    return true;
 }
 
 }

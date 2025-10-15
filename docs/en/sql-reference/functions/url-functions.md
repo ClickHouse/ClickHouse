@@ -1,6 +1,7 @@
 ---
 description: 'Documentation for Functions for Working with URLs'
 sidebar_label: 'URLs'
+sidebar_position: 200
 slug: /sql-reference/functions/url-functions
 title: 'Functions for Working with URLs'
 ---
@@ -35,7 +36,7 @@ The table below details which symbols in a URL can (`✔`) or cannot (`✗`) be 
 
 symbols marked `*` are sub-delimiters in RFC 3986 and allowed for user info following the `@` symbol.
 
-## Functions that extract parts of a URL {#functions-that-extract-parts-of-a-url}
+## Functions that Extract Parts of a URL {#functions-that-extract-parts-of-a-url}
 
 If the relevant part isn't present in a URL, an empty string is returned.
 
@@ -51,7 +52,7 @@ Extracts the hostname from a URL.
 
 **Syntax**
 
-```sql
+``` sql
 domain(url)
 ```
 
@@ -61,7 +62,7 @@ domain(url)
 
 The URL can be specified with or without a protocol. Examples:
 
-```text
+``` text
 svn+ssh://some.svn-hosting.com:80/repo/trunk
 some.svn-hosting.com:80/repo/trunk
 https://clickhouse.com/time/
@@ -69,7 +70,7 @@ https://clickhouse.com/time/
 
 For these examples, the `domain` function returns the following results:
 
-```text
+``` text
 some.svn-hosting.com
 some.svn-hosting.com
 clickhouse.com
@@ -81,11 +82,11 @@ clickhouse.com
 
 **Example**
 
-```sql
+``` sql
 SELECT domain('svn+ssh://some.svn-hosting.com:80/repo/trunk');
 ```
 
-```text
+``` text
 ┌─domain('svn+ssh://some.svn-hosting.com:80/repo/trunk')─┐
 │ some.svn-hosting.com                                   │
 └────────────────────────────────────────────────────────┘
@@ -97,7 +98,7 @@ Extracts the hostname from a URL. Similar to [domain](#domain), but RFC 3986 con
 
 **Syntax**
 
-```sql
+``` sql
 domainRFC(url)
 ```
 
@@ -111,13 +112,13 @@ domainRFC(url)
 
 **Example**
 
-```sql
+``` sql
 SELECT
     domain('http://user:password@example.com:8080/path?query=value#fragment'),
     domainRFC('http://user:password@example.com:8080/path?query=value#fragment');
 ```
 
-```text
+``` text
 ┌─domain('http://user:password@example.com:8080/path?query=value#fragment')─┬─domainRFC('http://user:password@example.com:8080/path?query=value#fragment')─┐
 │                                                                           │ example.com                                                                  │
 └───────────────────────────────────────────────────────────────────────────┴──────────────────────────────────────────────────────────────────────────────┘
@@ -143,11 +144,11 @@ domainWithoutWWW(url)
 
 **Example**
 
-```sql
+``` sql
 SELECT domainWithoutWWW('http://paul@www.example.com:80/');
 ```
 
-```text
+``` text
 ┌─domainWithoutWWW('http://paul@www.example.com:80/')─┐
 │ example.com                                         │
 └─────────────────────────────────────────────────────┘
@@ -193,7 +194,7 @@ Result:
 
 Extracts the the top-level domain from a URL.
 
-```sql
+``` sql
 topLevelDomain(url)
 ```
 
@@ -204,7 +205,7 @@ topLevelDomain(url)
 :::note
 The URL can be specified with or without a protocol. Examples:
 
-```text
+``` text
 svn+ssh://some.svn-hosting.com:80/repo/trunk
 some.svn-hosting.com:80/repo/trunk
 https://clickhouse.com/time/
@@ -219,13 +220,13 @@ https://clickhouse.com/time/
 
 Query:
 
-```sql
+``` sql
 SELECT topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk');
 ```
 
 Result:
 
-```text
+``` text
 ┌─topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk')─┐
 │ com                                                                │
 └────────────────────────────────────────────────────────────────────┘
@@ -236,7 +237,7 @@ Result:
 Extracts the the top-level domain from a URL.
 Similar to [topLevelDomain](#topleveldomain), but conforms to RFC 3986.
 
-```sql
+``` sql
 topLevelDomainRFC(url)
 ```
 
@@ -247,7 +248,7 @@ topLevelDomainRFC(url)
 :::note
 The URL can be specified with or without a protocol. Examples:
 
-```text
+``` text
 svn+ssh://some.svn-hosting.com:80/repo/trunk
 some.svn-hosting.com:80/repo/trunk
 https://clickhouse.com/time/
@@ -262,13 +263,13 @@ https://clickhouse.com/time/
 
 Query:
 
-```sql
+``` sql
 SELECT topLevelDomain('http://foo:foo%41bar@foo.com'), topLevelDomainRFC('http://foo:foo%41bar@foo.com');
 ```
 
 Result:
 
-```text
+``` text
 ┌─topLevelDomain('http://foo:foo%41bar@foo.com')─┬─topLevelDomainRFC('http://foo:foo%41bar@foo.com')─┐
 │                                                │ com                                               │
 └────────────────────────────────────────────────┴───────────────────────────────────────────────────┘
@@ -425,6 +426,7 @@ Result:
 └─────────────────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────────────────────┘
 ```
 
+
 ### cutToFirstSignificantSubdomainWithWWW {#cuttofirstsignificantsubdomainwithwww}
 
 Returns the part of the domain that includes top-level subdomains up to the "first significant subdomain", without stripping `www`.
@@ -518,7 +520,7 @@ This function can be useful if you need a fresh TLD list or if you have a custom
 
 **Syntax**
 
-```sql
+``` sql
 cutToFirstSignificantSubdomain(url, tld)
 ```
 
@@ -560,7 +562,7 @@ Similar to [cutToFirstSignificantSubdomainCustom](#cuttofirstsignificantsubdomai
 
 **Syntax**
 
-```sql
+``` sql
 cutToFirstSignificantSubdomainRFC(url, tld)
 ```
 
@@ -898,7 +900,7 @@ The cut is made in the position after all the consecutive separator characters.
 
 The same as above, but without the protocol and host in the result. The / element (root) is not included.
 
-```text
+``` text
 URLPathHierarchy('https://example.com/browse/CONV-6788') =
 [
     '/browse/',
@@ -912,11 +914,11 @@ Returns the encoded URL.
 
 Example:
 
-```sql
+``` sql
 SELECT encodeURLComponent('http://127.0.0.1:8123/?query=SELECT 1;') AS EncodedURL;
 ```
 
-```text
+``` text
 ┌─EncodedURL───────────────────────────────────────────────┐
 │ http%3A%2F%2F127.0.0.1%3A8123%2F%3Fquery%3DSELECT%201%3B │
 └──────────────────────────────────────────────────────────┘
@@ -928,11 +930,11 @@ Returns the decoded URL.
 
 Example:
 
-```sql
+``` sql
 SELECT decodeURLComponent('http://127.0.0.1:8123/?query=SELECT%201%3B') AS DecodedURL;
 ```
 
-```text
+``` text
 ┌─DecodedURL─────────────────────────────┐
 │ http://127.0.0.1:8123/?query=SELECT 1; │
 └────────────────────────────────────────┘
@@ -944,11 +946,11 @@ Returns the encoded URL. Follows rfc-1866, space(` `) is encoded as plus(`+`).
 
 Example:
 
-```sql
+``` sql
 SELECT encodeURLFormComponent('http://127.0.0.1:8123/?query=SELECT 1 2+3') AS EncodedURL;
 ```
 
-```text
+``` text
 ┌─EncodedURL────────────────────────────────────────────────┐
 │ http%3A%2F%2F127.0.0.1%3A8123%2F%3Fquery%3DSELECT+1+2%2B3 │
 └───────────────────────────────────────────────────────────┘
@@ -960,11 +962,11 @@ Returns the decoded URL. Follows rfc-1866, plain plus(`+`) is decoded as space(`
 
 Example:
 
-```sql
+``` sql
 SELECT decodeURLFormComponent('http://127.0.0.1:8123/?query=SELECT%201+2%2B3') AS DecodedURL;
 ```
 
-```text
+``` text
 ┌─DecodedURL────────────────────────────────┐
 │ http://127.0.0.1:8123/?query=SELECT 1 2+3 │
 └───────────────────────────────────────────┘
@@ -976,7 +978,7 @@ Extracts network locality (`username:password@host:port`) from a URL.
 
 **Syntax**
 
-```sql
+``` sql
 netloc(url)
 ```
 
@@ -992,13 +994,13 @@ netloc(url)
 
 Query:
 
-```sql
+``` sql
 SELECT netloc('http://paul@www.example.com:80/');
 ```
 
 Result:
 
-```text
+``` text
 ┌─netloc('http://paul@www.example.com:80/')─┐
 │ paul@www.example.com:80                   │
 └───────────────────────────────────────────┘
@@ -1031,7 +1033,7 @@ This function does not encode or decode characters in parameter names, e.g. `Cli
 
 **Syntax**
 
-```sql
+``` sql
 cutURLParameter(url, name)
 ```
 
@@ -1048,25 +1050,16 @@ cutURLParameter(url, name)
 
 Query:
 
-```sql
+``` sql
 SELECT
-    cutURLParameter('http://bigmir.net/?a=b&c=d&e=f#g', 'a') AS url_without_a,
-    cutURLParameter('http://bigmir.net/?a=b&c=d&e=f#g', ['c', 'e']) AS url_without_c_and_e;
+    cutURLParameter('http://bigmir.net/?a=b&c=d&e=f#g', 'a') as url_without_a,
+    cutURLParameter('http://bigmir.net/?a=b&c=d&e=f#g', ['c', 'e']) as url_without_c_and_e;
 ```
 
 Result:
 
-```text
+``` text
 ┌─url_without_a────────────────┬─url_without_c_and_e──────┐
 │ http://bigmir.net/?c=d&e=f#g │ http://bigmir.net/?a=b#g │
 └──────────────────────────────┴──────────────────────────┘
 ```
-
-<!-- 
-The inner content of the tags below are replaced at doc framework build time with 
-docs generated from system.functions. Please do not modify or remove the tags.
-See: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
--->
-
-<!--AUTOGENERATED_START-->
-<!--AUTOGENERATED_END-->

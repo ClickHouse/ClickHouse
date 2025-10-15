@@ -13,6 +13,7 @@
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <boost/range/algorithm/copy.hpp>
 #include <boost/range/algorithm/set_algorithm.hpp>
+#include <boost/range/algorithm_ext/erase.hpp>
 
 namespace DB
 {

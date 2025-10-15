@@ -9,8 +9,6 @@
 namespace DB
 {
 
-struct PartitionCommand;
-
 class MetadataStorageFromStaticFilesWebServer final : public IMetadataStorage
 {
 private:
@@ -58,9 +56,6 @@ public:
 
     bool supportsChmod() const override { return false; }
     bool supportsStat() const override { return false; }
-    bool supportsPartitionCommand(const PartitionCommand & command) const override;
-
-    bool isReadOnly() const override { return true; }
 };
 
 class MetadataStorageFromStaticFilesWebServerTransaction final : public IMetadataTransaction
@@ -91,19 +86,12 @@ public:
 
     void createDirectoryRecursive(const std::string & path) override;
 
-    void commit(const TransactionCommitOptionsVariant &) override
+    void commit() override
     {
         /// Nothing to commit.
     }
 
     bool supportsChmod() const override { return false; }
-
-    std::optional<StoredObjects> tryGetBlobsFromTransactionIfExists(const std::string & path) const override
-    {
-        if (metadata_storage.existsFileOrDirectory(path))
-            return metadata_storage.getStorageObjects(path);
-        return std::nullopt;
-    }
 };
 
 }

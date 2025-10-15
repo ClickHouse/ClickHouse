@@ -51,10 +51,10 @@ public:
     bool supportsReadAt() override { return true; }
 
 private:
-    void initialize(size_t attempt);
+
+    void initialize();
 
     std::unique_ptr<Azure::Core::IO::BodyStream> data_stream;
-    Azure::Core::Context azure_context;
     ContainerClientPtr blob_container_client;
     BlobClientPtr blob_client;
 
@@ -69,6 +69,7 @@ private:
     /// There is different seek policy for disk seek and for non-disk seek
     /// (non-disk seek is applied for seekable input formats: orc, arrow, parquet).
     bool restricted_seek;
+
 
     off_t read_until_position = 0;
 

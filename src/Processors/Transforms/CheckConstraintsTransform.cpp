@@ -9,7 +9,6 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
-#include <Parsers/ASTConstraintDeclaration.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/ConstraintsDescription.h>
 
@@ -26,13 +25,13 @@ namespace ErrorCodes
 
 CheckConstraintsTransform::CheckConstraintsTransform(
     const StorageID & table_id_,
-    SharedHeader header,
+    const Block & header,
     const ConstraintsDescription & constraints_,
     ContextPtr context_)
     : ExceptionKeepingTransform(header, header)
     , table_id(table_id_)
     , constraints_to_check(constraints_.filterConstraints(ConstraintsDescription::ConstraintType::CHECK))
-    , expressions(constraints_.getExpressions(context_, header->getNamesAndTypesList()))
+    , expressions(constraints_.getExpressions(context_, header.getNamesAndTypesList()))
     , context(std::move(context_))
 {
 }

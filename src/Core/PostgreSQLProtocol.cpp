@@ -1,4 +1,4 @@
-#include <Core/PostgreSQLProtocol.h>
+#include "PostgreSQLProtocol.h"
 
 namespace DB::PostgreSQLProtocol::Messaging
 {

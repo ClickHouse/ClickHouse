@@ -138,15 +138,17 @@ public:
     virtual std::unique_ptr<ReadBufferFromFileBase> readFile(
         const std::string & name,
         const ReadSettings & settings,
-        std::optional<size_t> read_hint) const = 0;
+        std::optional<size_t> read_hint,
+        std::optional<size_t> file_size) const = 0;
 
     virtual std::unique_ptr<ReadBufferFromFileBase> readFileIfExists(
         const std::string & name,
         const ReadSettings & settings,
-        std::optional<size_t> read_hint) const
+        std::optional<size_t> read_hint,
+        std::optional<size_t> file_size) const
     {
         if (existsFile(name))
-            return readFile(name, settings, read_hint);
+            return readFile(name, settings, read_hint, file_size);
         return {};
     }
 
@@ -184,6 +186,10 @@ public:
     virtual bool supportParallelWrite() const = 0;
     virtual bool isBroken() const = 0;
     virtual bool isReadonly() const = 0;
+
+    /// TODO: remove or at least remove const.
+    virtual void syncRevision(UInt64 revision) const = 0;
+    virtual UInt64 getRevision() const = 0;
 
     /// Get a path for internal disk if relevant. It is used mainly for logging.
     virtual std::string getDiskPath() const = 0;

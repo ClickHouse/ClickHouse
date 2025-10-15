@@ -1,6 +1,5 @@
 #pragma once
 #include <Storages/TableLockHolder.h>
-#include <memory>
 
 namespace DB
 {
@@ -12,9 +11,8 @@ using StoragePtr = std::shared_ptr<IStorage>;
 
 class QueryPlan;
 class Context;
+
 struct QueryIdHolder;
-class InsertDependenciesBuilder;
-using InsertDependenciesBuilderConstPtr = std::shared_ptr<const InsertDependenciesBuilder>;
 
 struct QueryPlanResourceHolder
 {
@@ -35,7 +33,6 @@ struct QueryPlanResourceHolder
     std::vector<StoragePtr> storage_holders;
     std::vector<TableLockHolder> table_locks;
     std::vector<std::shared_ptr<QueryIdHolder>> query_id_holders;
-    std::vector<InsertDependenciesBuilderConstPtr> insert_dependencies_holders;
 };
 
 }

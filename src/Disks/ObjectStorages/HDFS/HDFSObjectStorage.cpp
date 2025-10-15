@@ -75,6 +75,7 @@ bool HDFSObjectStorage::exists(const StoredObject & object) const
 std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObject( /// NOLINT
     const StoredObject & object,
     const ReadSettings & read_settings,
+    std::optional<size_t>,
     std::optional<size_t>) const
 {
     initializeHDFSFS();
@@ -235,6 +236,14 @@ void HDFSObjectStorage::copyObject( /// NOLINT
     out->finalize();
 }
 
+
+std::unique_ptr<IObjectStorage> HDFSObjectStorage::cloneObjectStorage(
+    const std::string &,
+    const Poco::Util::AbstractConfiguration &,
+    const std::string &, ContextPtr)
+{
+    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "HDFS object storage doesn't support cloning");
+}
 
 }
 

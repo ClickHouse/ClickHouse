@@ -1,6 +1,7 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
@@ -16,6 +17,8 @@
 #include <Common/assert_cast.h>
 #include <Common/WeakHash.h>
 #include <Common/HashTable/Hash.h>
+#include <base/unaligned.h>
+#include <base/sort.h>
 #include <cstring> // memcpy
 
 
@@ -201,11 +204,13 @@ bool ColumnArray::isDefaultAt(size_t n) const
 
 void ColumnArray::insertData(const char * pos, size_t length)
 {
-    /// Similarly - only for arrays of fixed length values.
+    /** Similarly - only for arrays of fixed length values.
+      */
     if (!data->isFixedAndContiguous())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertData is not supported for {}", getName());
 
     size_t field_size = data->sizeOfValueIfFixed();
+
     size_t elems = 0;
 
     if (length)
@@ -253,25 +258,6 @@ char * ColumnArray::serializeValueIntoMemory(size_t n, char * memory) const
     for (size_t i = 0; i < array_size; ++i)
         memory = getData().serializeValueIntoMemory(offset + i, memory);
     return memory;
-}
-
-std::optional<size_t> ColumnArray::getSerializedValueSize(size_t n) const
-{
-    const auto & offsets_data = getOffsets();
-
-    size_t pos = offsets_data[n - 1];
-    size_t end = offsets_data[n];
-
-    size_t res = sizeof(offsets_data[0]);
-    for (; pos < end; ++pos)
-    {
-        auto element_size = getData().getSerializedValueSize(pos);
-        if (!element_size)
-            return std::nullopt;
-        res += *element_size;
-    }
-
-    return res;
 }
 
 
@@ -511,7 +497,7 @@ size_t ColumnArray::capacity() const
     return getOffsets().capacity();
 }
 
-void ColumnArray::prepareForSquashing(const Columns & source_columns, size_t factor)
+void ColumnArray::prepareForSquashing(const Columns & source_columns)
 {
     size_t new_size = size();
     Columns source_data_columns;
@@ -523,8 +509,8 @@ void ColumnArray::prepareForSquashing(const Columns & source_columns, size_t fac
         source_data_columns.push_back(source_array_column.getDataPtr());
     }
 
-    getOffsets().reserve_exact(new_size * factor);
-    data->prepareForSquashing(source_data_columns, factor);
+    getOffsets().reserve_exact(new_size);
+    data->prepareForSquashing(source_data_columns);
 }
 
 void ColumnArray::shrinkToFit()
@@ -1224,7 +1210,7 @@ ColumnPtr ColumnArray::replicateString(const Offsets & replicate_offsets) const
         size_t size_to_replicate = replicate_offsets[i] - prev_replicate_offset;
         /// The number of strings in the array.
         size_t value_size = src_offsets[i] - prev_src_offset;
-        /// Number of characters in strings of the array.
+        /// Number of characters in strings of the array, including zero bytes.
         size_t sum_chars_size = src_string_offsets[prev_src_offset + value_size - 1] - prev_src_string_offset;  /// -1th index is Ok, see PaddedPODArray.
 
         for (size_t j = 0; j < size_to_replicate; ++j)
@@ -1235,7 +1221,7 @@ ColumnPtr ColumnArray::replicateString(const Offsets & replicate_offsets) const
             size_t prev_src_string_offset_local = prev_src_string_offset;
             for (size_t k = 0; k < value_size; ++k)
             {
-                /// Size of a single string.
+                /// Size of single string.
                 size_t chars_size = src_string_offsets[k + prev_src_offset] - prev_src_string_offset_local;
 
                 current_res_string_offset += chars_size;

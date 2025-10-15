@@ -19,7 +19,6 @@ enum class TraceType : uint8_t
     MemorySample,
     MemoryPeak,
     ProfileEvent,
-    JemallocSample,
 };
 
 /// This is the second part of TraceCollector, that sends stacktrace to the pipe.

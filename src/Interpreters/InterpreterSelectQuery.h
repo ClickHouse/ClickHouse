@@ -4,7 +4,6 @@
 #include <optional>
 
 #include <Access/EnabledRowPolicies.h>
-#include <Core/Block.h>
 #include <Core/QueryProcessingStage.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/IInterpreterUnionOrSelectQuery.h>
@@ -176,6 +175,7 @@ private:
     void executeMergeAggregated(QueryPlan & query_plan, bool overflow_row, bool final, bool has_grouping_sets);
     void executeTotalsAndHaving(QueryPlan & query_plan, bool has_having, const ActionsAndProjectInputsFlagPtr & expression, bool remove_filter, bool overflow_row, bool final);
     void executeHaving(QueryPlan & query_plan, const ActionsAndProjectInputsFlagPtr & expression, bool remove_filter);
+    static void executeExpression(QueryPlan & query_plan, const ActionsAndProjectInputsFlagPtr & expression, const std::string & description);
     /// FIXME should go through ActionsDAG to behave as a proper function
     void executeWindow(QueryPlan & query_plan);
     void executeOrder(QueryPlan & query_plan, InputOrderInfoPtr sorting_info);
@@ -232,7 +232,7 @@ private:
     /// List of columns to read to execute the query.
     Names required_columns;
     /// Structure of query source (table, subquery, etc).
-    SharedHeader source_header;
+    Block source_header;
 
     /// Actions to calculate ALIAS if required.
     std::optional<ActionsDAG> alias_actions;

@@ -21,7 +21,7 @@ Each `value` corresponds to the determinate `timeunit`. The half-life `x` is the
 **Arguments**
 
 - `value` — Value. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) or [Decimal](../../../sql-reference/data-types/decimal.md).
-- `timeunit` — Timeunit. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) or [Decimal](../../../sql-reference/data-types/decimal.md). Timeunit is not timestamp (seconds), it's -- an index of the time interval. Can be calculated using [intDiv](/sql-reference/functions/arithmetic-functions#intDiv).
+- `timeunit` — Timeunit. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) or [Decimal](../../../sql-reference/data-types/decimal.md). Timeunit is not timestamp (seconds), it's -- an index of the time interval. Can be calculated using [intDiv](/sql-reference/functions/arithmetic-functions#intdiv).
 
 **Parameters**
 
@@ -37,7 +37,7 @@ Type: [Float64](/sql-reference/data-types/float).
 
 Input table:
 
-```text
+``` text
 ┌──temperature─┬─timestamp──┐
 │          95  │         1  │
 │          95  │         2  │
@@ -70,7 +70,7 @@ SELECT exponentialMovingAverage(5)(temperature, timestamp);
 
 Result:
 
-```text
+``` text
 ┌──exponentialMovingAverage(5)(temperature, timestamp)──┐
 │                                    92.25779635374204  │
 └───────────────────────────────────────────────────────┘
@@ -96,7 +96,7 @@ FROM
 
 Result:
 
-```text
+``` text
 ┌─value─┬─time─┬─round(exp_smooth, 3)─┬─bar────────────────────────────────────────┐
 │     1 │    0 │                0.067 │ ███▎                                       │
 │     0 │    1 │                0.062 │ ███                                        │
