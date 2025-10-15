@@ -1,3 +1,5 @@
+#include <Core/DecimalFunctions.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Planner/PlannerJoinTree.h>
 
 #include <Core/Settings.h>
@@ -78,6 +80,8 @@
 #include <Planner/Utils.h>
 #include <Planner/CollectSets.h>
 #include <Planner/CollectTableExpressionData.h>
+#include <base/BFloat16.h>
+#include <base/types.h>
 
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
@@ -633,16 +637,30 @@ UInt64 mainQueryNodeBlockSizeByLimit(const SelectQueryInfo & select_query_info)
     auto const & main_query_node = select_query_info.query_tree->as<QueryNode const &>();
 
     /// Constness of limit and offset is validated during query analysis stage
-    size_t limit_length = 0;
+    UInt64 limit_length = 0;
     if (main_query_node.hasLimit())
-        limit_length = main_query_node.getLimit()->as<ConstantNode &>().getValue().safeGet<UInt64>();
+    {
+        Field limit_value = main_query_node.getLimit()->as<ConstantNode &>().getValue();
+        Field converted_value_uint = convertFieldToType(limit_value, DataTypeUInt64());
+        if (!converted_value_uint.isNull()) 
+        {
+            limit_length = converted_value_uint.safeGet<UInt64>();
+        }
+    }
 
-    size_t limit_offset = 0;
+    UInt64 limit_offset = 0;
     if (main_query_node.hasOffset())
-        limit_offset = main_query_node.getOffset()->as<ConstantNode &>().getValue().safeGet<UInt64>();
+    {
+        Field offset_value = main_query_node.getOffset()->as<ConstantNode &>().getValue();
+        Field converted_value_uint = convertFieldToType(offset_value, DataTypeUInt64());
+        if (!converted_value_uint.isNull()) 
+        {
+            limit_offset = converted_value_uint.safeGet<UInt64>();
+        }
+    }
 
     /** If not specified DISTINCT, WHERE, GROUP BY, HAVING, ORDER BY, JOIN, LIMIT BY, LIMIT WITH TIES
-      * but LIMIT is specified, and limit + offset < max_block_size,
+      * but LIMIT is specified with UInt64 value, and limit + offset < max_block_size,
       * then as the block size we will use limit + offset (not to read more from the table than requested),
       * and also set the number of threads to 1.
       */
