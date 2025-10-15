@@ -1116,10 +1116,6 @@ quit
         if self.system_db_uuid is None:
             return
 
-        if self.is_valid_uuid(self.system_db_uuid):
-            print(f"system_db_uuid is not valid: '{self.system_db_uuid}'")
-            return
-
         # Ensure no remote database disk config
         if os.path.exists("/etc/clickhouse-server/config.d/remote_database_disk.xml"):
             os.remove("/etc/clickhouse-server/config.d/remote_database_disk.xml")
