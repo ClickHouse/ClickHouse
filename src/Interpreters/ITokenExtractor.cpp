@@ -36,12 +36,6 @@ std::vector<std::string_view> ITokenExtractor::getTokensView(const char * data, 
 
 std::vector<std::string_view> NgramTokenExtractor::getTokensView(const char * data, size_t length) const
 {
-    if (length == 0)
-        return {};
-
-    if (length < n)
-        return std::vector<std::string_view>{{data, length}};
-
     return ITokenExtractor::getTokensView(data, length);
 }
 
