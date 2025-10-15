@@ -443,6 +443,9 @@ def main():
             )
             force_ok_exit = True
 
+    if test_result:
+        test_result.sort()
+
     Result.create_from(
         results=results,
         stopwatch=stop_watch,

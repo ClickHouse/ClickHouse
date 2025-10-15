@@ -1,10 +1,4 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>praktika report</title>
-    <style>
+<!DOCTYPE html><html lang=en><head><meta charset=UTF-8><meta name=viewport content="width=device-width, initial-scale=1.0"><title>praktika report</title><style>
 
         /* Default (Day Theme) */
         :root {
@@ -341,23 +335,7 @@
             color: grey;
             font-weight: bold;
         }
-    </style>
-</head>
-<body>
-<div id="status-container"></div>
-<div id="result-container"></div>
-<button id="toggle-status-bar" onclick="toggleStatusBar()">‖</button>
-
-<footer id="footer">
-    <div class="left"></div>
-    <div class="right"></div>
-    <div class="settings">
-        <span id="status-filter-toggle"></span>
-        <span id="theme-toggle">🔆️</span>
-    </div>
-</footer>
-
-<script>
+    </style></head><body><div id=status-container></div><div id=result-container></div><button id=toggle-status-bar onclick=toggleStatusBar()>‖</button><footer id=footer><div class=left></div><div class=right></div><div class=settings><span id=status-filter-toggle></span><span id=theme-toggle>🔆️</span></div></footer><script>
     // Track all interval timers for cleanup
     const activeTimers = {
         intervals: [],
@@ -1250,6 +1228,7 @@
         results.forEach((result, _index) => {
             const row = document.createElement('tr');
             const labels = result?.ext?.labels;
+            const linklabels = result?.ext?.hlabels;
 
             columns.forEach(column => {
                 const td = document.createElement('td');
@@ -1305,6 +1284,59 @@
                             label.style.display = 'inline-block';
                             label.style.verticalAlign = 'middle';
                             td.appendChild(label);
+                        });
+                    }
+
+                    // Add hyperlink labels (hlabels) with the same visual style as plain labels
+                    if (Array.isArray(linklabels)) {
+                        linklabels.forEach(item => {
+                            // Expect [text, href]; tolerate objects or malformed entries
+                            let text, href;
+                            if (Array.isArray(item)) {
+                                [text, href] = item;
+                            } else if (item && typeof item === 'object') {
+                                text = item.text || item.label || '';
+                                href = item.href || item.url || '';
+                            } else if (typeof item === 'string') {
+                                // If only a string is provided, show it as a non-clickable label for robustness
+                                text = item;
+                                href = '';
+                            }
+
+                            if (!text) return;
+
+                            if (href) {
+                                const a = document.createElement('a');
+                                a.textContent = text;
+                                a.href = href;
+                                a.target = '_blank';
+                                a.rel = 'noopener noreferrer';
+                                a.style.marginLeft = '6px';
+                                a.style.padding = '2px 8px';
+                                a.style.backgroundColor = stringToColor(text, true);
+                                a.style.color = 'white';
+                                a.style.fontSize = '12px';
+                                a.style.borderRadius = '8px';
+                                a.style.fontWeight = 'bold';
+                                a.style.display = 'inline-block';
+                                a.style.verticalAlign = 'middle';
+                                a.style.textDecoration = 'none';
+                                td.appendChild(a);
+                            } else {
+                                // Fallback to plain label if no href
+                                const label = document.createElement('span');
+                                label.textContent = text;
+                                label.style.marginLeft = '6px';
+                                label.style.padding = '2px 8px';
+                                label.style.backgroundColor = stringToColor(text, true);
+                                label.style.color = 'white';
+                                label.style.fontSize = '12px';
+                                label.style.borderRadius = '8px';
+                                label.style.fontWeight = 'bold';
+                                label.style.display = 'inline-block';
+                                label.style.verticalAlign = 'middle';
+                                td.appendChild(label);
+                            }
                         });
                     }
 
@@ -1897,6 +1929,4 @@
         link.href = faviconURL;
     }
     createFavicon();
-</script>
-</body>
-</html>
+</script></body></html>
