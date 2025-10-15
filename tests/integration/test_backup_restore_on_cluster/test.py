@@ -288,7 +288,14 @@ def test_replicated_database_compare_parts(key_prefix_template):
     assert p2 == node2.query("SELECT * FROM mydb.tbl ORDER BY x")
 
 
-def test_different_tables_on_nodes():
+@pytest.mark.parametrize(
+    "key_prefix_template",
+    [
+        pytest.param("", id="no_key_prefix"),
+        pytest.param("[a-z]{3}", id="regex_key_prefix"),
+    ],
+)
+def test_different_tables_on_nodes(key_prefix_template):
     node1.query(
         "CREATE TABLE tbl (`x` UInt8, `y` String) ENGINE = MergeTree ORDER BY x"
     )
@@ -300,7 +307,10 @@ def test_different_tables_on_nodes():
     node2.query("INSERT INTO tbl VALUES (-333), (-222), (-111), (0), (111)")
 
     backup_name = new_backup_name()
-    node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
+    backup_settings = {"key_prefix_template": key_prefix_template}
+    node1.query(
+        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} {format_settings(backup_settings)}"
+    )
 
     node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
@@ -312,7 +322,14 @@ def test_different_tables_on_nodes():
     assert node2.query("SELECT * FROM tbl") == TSV([-333, -222, -111, 0, 111])
 
 
-def test_backup_restore_on_single_replica():
+@pytest.mark.parametrize(
+    "key_prefix_template",
+    [
+        pytest.param("", id="no_key_prefix"),
+        pytest.param("[a-z]{3}", id="regex_key_prefix"),
+    ],
+)
+def test_backup_restore_on_single_replica(key_prefix_template):
     node1.query(
         "CREATE DATABASE mydb ON CLUSTER 'cluster' ENGINE=Replicated('/clickhouse/path/','{shard}','{replica}')"
     )
@@ -323,7 +340,10 @@ def test_backup_restore_on_single_replica():
     node1.query("INSERT INTO mydb.test VALUES ('ghi', 3)")
 
     backup_name = new_backup_name()
-    node1.query(f"BACKUP DATABASE mydb TO {backup_name}")
+    backup_settings = {"key_prefix_template": key_prefix_template}
+    node1.query(
+        f"BACKUP DATABASE mydb TO {backup_name} {format_settings(backup_settings)}"
+    )
 
     node1.query("DROP DATABASE mydb SYNC")
 
@@ -355,7 +375,14 @@ def test_backup_restore_on_single_replica():
     )
 
 
-def test_table_with_parts_in_queue_considered_non_empty():
+@pytest.mark.parametrize(
+    "key_prefix_template",
+    [
+        pytest.param("", id="no_key_prefix"),
+        pytest.param("[a-z]{3}", id="regex_key_prefix"),
+    ],
+)
+def test_table_with_parts_in_queue_considered_non_empty(key_prefix_template):
     node1.query(
         "CREATE DATABASE mydb ON CLUSTER 'cluster' ENGINE=Replicated('/clickhouse/path/','{shard}','{replica}')"
     )
@@ -365,7 +392,10 @@ def test_table_with_parts_in_queue_considered_non_empty():
     node1.query("INSERT INTO mydb.test SELECT number AS x FROM numbers(10000000)")
 
     backup_name = new_backup_name()
-    node1.query(f"BACKUP DATABASE mydb TO {backup_name}")
+    backup_settings = {"key_prefix_template": key_prefix_template}
+    node1.query(
+        f"BACKUP DATABASE mydb TO {backup_name} {format_settings(backup_settings)}"
+    )
 
     node1.query("DROP DATABASE mydb SYNC")
 
@@ -376,7 +406,14 @@ def test_table_with_parts_in_queue_considered_non_empty():
     )
 
 
-def test_replicated_table_with_uuid_in_zkpath():
+@pytest.mark.parametrize(
+    "key_prefix_template",
+    [
+        pytest.param("", id="no_key_prefix"),
+        pytest.param("[a-z]{3}", id="regex_key_prefix"),
+    ],
+)
+def test_replicated_table_with_uuid_in_zkpath(key_prefix_template):
     node1.query(
         "CREATE TABLE tbl ON CLUSTER 'cluster' ("
         "x UInt8, y String"
@@ -388,7 +425,10 @@ def test_replicated_table_with_uuid_in_zkpath():
     node2.query("INSERT INTO tbl VALUES (2, 'BB')")
 
     backup_name = new_backup_name()
-    node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
+    backup_settings = {"key_prefix_template": key_prefix_template}
+    node1.query(
+        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} {format_settings(backup_settings)}"
+    )
 
     # The table `tbl2` is expected to have a different UUID so it's ok to have both `tbl` and `tbl2` at the same time.
     node2.query(f"RESTORE TABLE tbl AS tbl2 ON CLUSTER 'cluster' FROM {backup_name}")
@@ -407,7 +447,14 @@ def test_replicated_table_with_uuid_in_zkpath():
         )
 
 
-def test_replicated_table_with_not_synced_insert():
+@pytest.mark.parametrize(
+    "key_prefix_template",
+    [
+        pytest.param("", id="no_key_prefix"),
+        pytest.param("[a-z]{3}", id="regex_key_prefix"),
+    ],
+)
+def test_replicated_table_with_not_synced_insert(key_prefix_template):
     node1.query(
         "CREATE TABLE tbl ON CLUSTER 'cluster' ("
         "x UInt32"
@@ -425,7 +472,10 @@ def test_replicated_table_with_not_synced_insert():
     node2.query("INSERT INTO tbl VALUES (444)")
 
     backup_name = new_backup_name()
-    node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
+    backup_settings = {"key_prefix_template": key_prefix_template}
+    node1.query(
+        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} {format_settings(backup_settings)}"
+    )
 
     node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
@@ -867,7 +917,14 @@ def test_system_functions():
     node1.query("DROP FUNCTION parity_str")
 
 
-def test_projection():
+@pytest.mark.parametrize(
+    "key_prefix_template",
+    [
+        pytest.param("", id="no_key_prefix"),
+        pytest.param("[a-z]{3}", id="regex_key_prefix"),
+    ],
+)
+def test_projection(key_prefix_template):
     node1.query(
         "CREATE TABLE tbl ON CLUSTER 'cluster' (x UInt32, y String) ENGINE=ReplicatedMergeTree('/clickhouse/tables/tbl/', '{replica}') "
         "ORDER BY y PARTITION BY x%10"
@@ -885,7 +942,10 @@ def test_projection():
     )
 
     backup_name = new_backup_name()
-    node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
+    backup_settings = {"key_prefix_template": key_prefix_template}
+    node1.query(
+        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} {format_settings(key_prefix_template)}"
+    )
 
     node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
