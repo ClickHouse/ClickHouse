@@ -6,10 +6,12 @@ import logging
 import os
 import subprocess
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 DEBUGGER = os.getenv("DEBUGGER", "")
 TIMEOUT = int(os.getenv("TIMEOUT", "0"))
 OUTPUT = "/test_output"
+RUNNERS = int(os.getenv("RUNNERS", "4"))
 
 
 class Stopwatch:
@@ -163,10 +165,20 @@ def main():
 
     timeout = 30 if TIMEOUT == 0 else TIMEOUT
 
-    with Path() as current:
+    current = Path(".")
+    with ThreadPoolExecutor(max_workers=RUNNERS) as executor:
+        futures = {}
         for fuzzer in current.iterdir():
-            if (current / fuzzer).is_file() and os.access(current / fuzzer, os.X_OK):
-                run_fuzzer(fuzzer.name, timeout)
+            if fuzzer.is_file() and os.access(fuzzer, os.X_OK):
+                futures[executor.submit(run_fuzzer, fuzzer.name, timeout)] = fuzzer.name
+
+        for future in as_completed(futures):
+            fuzzer = futures[future]
+            try:
+                result = future.result()
+                logging.info("Thread for %s finished", fuzzer)
+            except Exception as exc:
+                logging.info("Thread for %s generated an exception: %s", fuzzer, exc)
 
     subprocess.check_call(f"ls -al {OUTPUT}", shell=True)
 
