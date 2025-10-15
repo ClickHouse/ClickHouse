@@ -264,7 +264,6 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"allow_archive_path_syntax", trueOrFalseSettingNoOracle},
     {"allow_asynchronous_read_from_io_pool_for_merge_tree", trueOrFalseSetting},
     {"allow_changing_replica_until_first_data_packet", trueOrFalseSettingNoOracle},
-    {"allow_dynamic_metadata_for_data_lakes", trueOrFalseSettingNoOracle},
     {"allow_dynamic_type_in_join_keys", trueOrFalseSettingNoOracle},
     {"allow_experimental_delta_kernel_rs", trueOrFalseSettingNoOracle},
     {"allow_get_client_http_header", trueOrFalseSettingNoOracle},
