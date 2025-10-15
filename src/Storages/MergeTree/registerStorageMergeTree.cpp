@@ -723,7 +723,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         {
             for (const auto & index : args.query.columns_list->indices->children)
             {
-                metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, columns, context));
+                metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, columns, /* is_implicitly_created */ false, context));
                 auto index_name = index->as<ASTIndexDeclaration>()->name;
 
                 if (args.mode <= LoadingStrictnessLevel::CREATE &&
