@@ -39,6 +39,7 @@ namespace DB
 namespace ServerSetting
 {
     extern const ServerSettingsUInt64 os_cpu_busy_time_threshold;
+    extern const ServerSettingsBool os_collect_psi_metrics;
 }
 
 namespace ErrorCodes
@@ -175,9 +176,12 @@ AsynchronousMetrics::AsynchronousMetrics(
 
     openFileIfExists("/proc/meminfo", meminfo);
 
-    openFileIfExists("/proc/pressure/memory", memory_pressure);
-    openFileIfExists("/proc/pressure/cpu", cpu_pressure);
-    openFileIfExists("/proc/pressure/io", io_pressure);
+    if (context->getServerSettings()[ServerSetting::os_collect_psi_metrics])
+    {
+        openFileIfExists("/proc/pressure/memory", memory_pressure);
+        openFileIfExists("/proc/pressure/cpu", cpu_pressure);
+        openFileIfExists("/proc/pressure/io", io_pressure);
+    }
 
     openFileIfExists("/proc/sys/vm/max_map_count", vm_max_map_count);
     openFileIfExists("/proc/self/maps", vm_maps);
