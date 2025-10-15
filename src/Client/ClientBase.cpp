@@ -3725,12 +3725,15 @@ void ClientBase::runNonInteractive()
     }
 }
 
-std::string ClientBase::getHistoryFilePath()
+fs::path ClientBase::getHistoryFilePath()
 {
     auto * history_file_from_env = getenv("CLICKHOUSE_HISTORY_FILE"); // NOLINT(concurrency-mt-unsafe)
     if (history_file_from_env)
         return history_file_from_env;
 
+    /// Client query history was stored in ~/.clickhouse-client-history
+    /// before moving to $XDG_STATE_HOME/clickhouse/client-query-history.
+    /// We'll pick up the old file and use it if it is already present.
     auto * home_path = getenv("HOME"); // NOLINT(concurrency-mt-unsafe)
     if (home_path)
     {
@@ -3740,7 +3743,7 @@ std::string ClientBase::getHistoryFilePath()
             return path_in_home_dir;
     }
 
-    return fs::path(XDGBaseDirectories::getStateHome()) / "query-history";
+    return fs::path(XDGBaseDirectories::getStateHome()) / "client-query-history";
 }
 
 
