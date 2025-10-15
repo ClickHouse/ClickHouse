@@ -97,13 +97,13 @@ void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, Cr
             }
         }
     }
+    if (te.has_partition_by() && rg.nextSmallNumber() < 5)
+    {
+        /// Remove partition by
+        te.clear_partition_by();
+    }
     if (teng >= TableEngineValues::MergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree)
     {
-        if (te.has_partition_by() && rg.nextSmallNumber() < 5)
-        {
-            /// Remove partition by
-            te.clear_partition_by();
-        }
         if (te.has_primary_key() && te.has_order() && rg.nextSmallNumber() < 5)
         {
             /// Remove primary key or order by clause
@@ -364,7 +364,7 @@ String MySQLIntegration::truncateStatement()
 bool MySQLIntegration::optimizeTableForOracle(const PeerTableDatabase pt, const SQLTable & t)
 {
     chassert(t.hasDatabasePeer());
-    if (is_clickhouse)
+    if (is_clickhouse && t.isMergeTreeFamily())
     {
         /// Sometimes the optimize step doesn't have to do anything, then throws error. Ignore it
         const auto u = performQueryOnServerOrRemote(pt, fmt::format("ALTER TABLE {} APPLY DELETED MASK;", getTableName(t.db, t.tname)));

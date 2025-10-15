@@ -1854,19 +1854,20 @@ void StatementGenerator::getNextPeerTableDatabase(RandomGenerator & rg, SQLBase 
     chassert(this->ids.empty());
     if (b.is_deterministic && b.teng != Set && b.teng != ExternalDistributed)
     {
-        if (b.teng != MySQL && connections.hasMySQLConnection())
+        if (!b.isMySQLEngine() && connections.hasMySQLConnection())
         {
             this->ids.emplace_back(static_cast<uint32_t>(PeerTableDatabase::MySQL));
         }
-        if (b.teng != PostgreSQL && b.teng != MaterializedPostgreSQL && connections.hasPostgreSQLConnection())
+        if (!b.isPostgreSQLEngine() && connections.hasPostgreSQLConnection())
         {
             this->ids.emplace_back(static_cast<uint32_t>(PeerTableDatabase::PostgreSQL));
         }
-        if (b.teng != SQLite && connections.hasSQLiteConnection())
+        if (!b.isSQLiteEngine() && connections.hasSQLiteConnection())
         {
             this->ids.emplace_back(static_cast<uint32_t>(PeerTableDatabase::SQLite));
         }
-        if (b.teng >= MergeTree && b.teng <= VersionedCollapsingMergeTree && connections.hasClickHouseExtraServerConnection())
+        if ((b.isMergeTreeFamily() || b.isLogFamily() || b.isRocksEngine() || b.isKeeperMapEngine() || b.isJoinEngine() || b.isSetEngine())
+            && connections.hasClickHouseExtraServerConnection())
         {
             this->ids.emplace_back(static_cast<uint32_t>(PeerTableDatabase::ClickHouse));
             this->ids.emplace_back(static_cast<uint32_t>(PeerTableDatabase::ClickHouse)); // give more probability
