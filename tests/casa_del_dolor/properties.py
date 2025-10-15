@@ -1215,7 +1215,7 @@ def modify_server_settings(
         selected_properties["shared_database_catalog"] = SharedCatalogPropertiesGroup()
 
     # Add Replicated databases settings
-    if args.database_replicated and root.find("database_replicated") is None:
+    if args.add_database_replicated and root.find("database_replicated") is None:
         selected_properties["database_replicated"] = DatabaseReplicatedGroup()
 
     # Shuffle selected properties and apply

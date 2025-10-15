@@ -2980,6 +2980,12 @@ CONV_FN(CreateDatabase, create_database)
         ret += "IF NOT EXISTS ";
     }
     DatabaseToString(ret, create_database.database());
+    if (create_database.has_uuid())
+    {
+        ret += " UUID '";
+        ret += create_database.uuid();
+        ret += "'";
+    }
     if (create_database.has_cluster())
     {
         ClusterToString(ret, true, create_database.cluster());
@@ -3449,6 +3455,12 @@ CONV_FN(CreateTable, create_table)
         ret += "IF NOT EXISTS ";
     }
     ExprSchemaTableToString(ret, create_table.est());
+    if (create_table.has_uuid())
+    {
+        ret += " UUID '";
+        ret += create_table.uuid();
+        ret += "'";
+    }
     if (create_table.has_cluster())
     {
         ClusterToString(ret, true, create_table.cluster());
@@ -3837,7 +3849,8 @@ CONV_FN(OptimizeTable, ot)
     }
     if (ot.final())
     {
-        ret += " FINAL";
+        ret += " ";
+        ret += ot.use_force() ? "FORCE" : "FINAL";
     }
     if (ot.has_dedup())
     {
@@ -3966,6 +3979,12 @@ CONV_FN(CreateView, create_view)
         ret += "IF NOT EXISTS ";
     }
     ExprSchemaTableToString(ret, create_view.est());
+    if (create_view.has_uuid())
+    {
+        ret += " UUID '";
+        ret += create_view.uuid();
+        ret += "'";
+    }
     if (create_view.has_cluster())
     {
         ClusterToString(ret, true, create_view.cluster());
@@ -4193,6 +4212,12 @@ CONV_FN(CreateDictionary, create_dictionary)
     if (create_dictionary.has_cluster())
     {
         ClusterToString(ret, true, create_dictionary.cluster());
+    }
+    if (create_dictionary.has_uuid())
+    {
+        ret += " UUID '";
+        ret += create_dictionary.uuid();
+        ret += "'";
     }
     ret += " (";
     DictionaryColumnToString(ret, create_dictionary.col());

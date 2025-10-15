@@ -2920,10 +2920,11 @@ message DatabaseEngine {
 message CreateDatabase {
     optional bool if_not_exists = 1;
     required Database database = 2;
-    optional Cluster cluster = 3;
-    required DatabaseEngine dengine = 4;
-    optional SettingValues setting_values = 5;
-    optional string comment = 6;
+    optional string uuid = 3;
+    optional Cluster cluster = 4;
+    required DatabaseEngine dengine = 5;
+    optional SettingValues setting_values = 6;
+    optional string comment = 7;
 }
 
 message CreateFunction {
@@ -3357,15 +3358,16 @@ message CreateTable {
     optional bool is_temp = 2;
     optional bool if_not_exists = 3;
     required ExprSchemaTable est = 4;
-    optional Cluster cluster = 5;
+    optional string uuid = 5;
+    optional Cluster cluster = 6;
     oneof create_table_oneof {
-        TableDef table_def = 6;
-        CreateTableAs table_as = 7;
+        TableDef table_def = 7;
+        CreateTableAs table_as = 8;
     }
-    required TableEngine engine = 8;
-    optional TTLExpr ttl_expr = 9;
-    optional CreateTableSelect as_select_stmt = 10;
-    optional string comment = 11;
+    required TableEngine engine = 9;
+    optional TTLExpr ttl_expr = 10;
+    optional CreateTableSelect as_select_stmt = 11;
+    optional string comment = 12;
 }
 
 enum SQLObject {
@@ -3523,10 +3525,11 @@ message OptimizeTable {
     required ExprSchemaTable est = 1;
     optional Cluster cluster = 2;
     optional SinglePartitionExpr single_partition = 3;
-    optional bool final = 4;
-    optional DeduplicateExpr dedup = 5;
-    optional bool cleanup = 6;
-    optional SettingValues setting_values = 7;
+    optional bool use_force = 4;
+    optional bool final = 5;
+    optional DeduplicateExpr dedup = 6;
+    optional bool cleanup = 7;
+    optional SettingValues setting_values = 8;
 }
 
 message Exchange {
@@ -3665,14 +3668,15 @@ message CreateView {
     optional bool if_not_exists = 3;
     optional bool materialized = 4;
     required ExprSchemaTable est = 5;
-    optional Cluster cluster = 6;
-    optional RefreshableView refresh = 7;
-    optional CreateMatViewTo to = 8;
-    optional TableEngine engine = 9;
-    optional bool populate = 10;
-    optional bool empty = 11;
-    required SelectParen select = 12;
-    optional string comment = 13;
+    optional string uuid = 6;
+    optional Cluster cluster = 7;
+    optional RefreshableView refresh = 8;
+    optional CreateMatViewTo to = 9;
+    optional TableEngine engine = 10;
+    optional bool populate = 11;
+    optional bool empty = 12;
+    required SelectParen select = 13;
+    optional string comment = 14;
 }
 
 message DictionaryColumn {
@@ -3750,16 +3754,17 @@ message CreateDictionary {
     required CreateReplaceOption create_opt = 1;
     optional bool if_not_exists = 2;
     required ExprSchemaTable est = 3;
-    optional Cluster cluster = 4;
-    required DictionaryColumn col = 5;
-    repeated DictionaryColumn other_cols = 6;
-    required TableKey primary_key = 7;
-    optional DictionarySource source = 8;
-    required DictionaryLayout layout = 9;
-    optional DictionaryRange range = 10;
-    optional DictionaryLifetime lifetime = 11;
-    optional SettingValues setting_values = 12;
-    optional string comment = 13;
+    optional string uuid = 4;
+    optional Cluster cluster = 5;
+    required DictionaryColumn col = 6;
+    repeated DictionaryColumn other_cols = 7;
+    required TableKey primary_key = 8;
+    optional DictionarySource source = 9;
+    required DictionaryLayout layout = 10;
+    optional DictionaryRange range = 11;
+    optional DictionaryLifetime lifetime = 12;
+    optional SettingValues setting_values = 13;
+    optional string comment = 14;
 }
 
 message OptionalPartitionExpr {
@@ -3863,9 +3868,10 @@ message Alter {
 message Attach {
     required SQLObject sobject = 1;
     required SQLObjectName object = 2;
-    optional Cluster cluster = 3;
-    optional bool as_replicated = 4;
-    optional SettingValues setting_values = 5;
+    optional string uuid = 3;
+    optional Cluster cluster = 4;
+    optional bool as_replicated = 5;
+    optional SettingValues setting_values = 6;
 }
 
 message Detach {

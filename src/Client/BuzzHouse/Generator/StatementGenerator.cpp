@@ -548,6 +548,10 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
             next.cols.insert(i);
         }
     }
+    if (rg.nextSmallNumber() < 4)
+    {
+        cv->set_uuid(rg.nextUUID());
+    }
     setClusterInfo(rg, next);
     if (next.cluster.has_value())
     {
@@ -717,6 +721,7 @@ void StatementGenerator::generateNextOptimizeTableInternal(RandomGenerator & rg,
         ot->mutable_cluster()->set_cluster(cluster.value());
     }
     ot->set_final((t.supportsFinal() || t.isMergeTreeFamily() || rg.nextMediumNumber() < 21) && (strict || rg.nextSmallNumber() < 4));
+    ot->set_use_force(rg.nextBool());
     if (rg.nextSmallNumber() < 3)
     {
         generateSettingValues(rg, serverSettings, ot->mutable_setting_values());
@@ -734,6 +739,7 @@ void StatementGenerator::generateNextOptimizeTable(RandomGenerator & rg, Optimiz
         /// Optimize system table
         rg.pickRandomly(systemTables).setName(ot->mutable_est());
         ot->set_final(rg.nextBool());
+        ot->set_use_force(rg.nextBool());
         if (rg.nextBool())
         {
             DeduplicateExpr * dde = ot->mutable_dedup();
@@ -2490,6 +2496,10 @@ void StatementGenerator::generateAttach(RandomGenerator & rg, Attach * att)
     else
     {
         chassert(0);
+    }
+    if (rg.nextSmallNumber() < 4)
+    {
+        att->set_uuid(rg.nextUUID());
     }
     if (cluster.has_value())
     {

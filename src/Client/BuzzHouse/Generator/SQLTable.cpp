@@ -2301,6 +2301,10 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
     generateEngineDetails(rg, createTableRelation(rg, true, "", next), next, !added_pkey, te);
     this->entries.clear();
 
+    if (rg.nextSmallNumber() < 4)
+    {
+        ct->set_uuid(rg.nextUUID());
+    }
     if (next.cluster.has_value())
     {
         ct->mutable_cluster()->set_cluster(next.cluster.value());
@@ -2529,6 +2533,11 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
         }
         dc->set_is_object_id(rg.nextMediumNumber() < 3);
     }
+    if (rg.nextSmallNumber() < 4)
+    {
+        cd->set_uuid(rg.nextUUID());
+    }
+
     setClusterInfo(rg, next);
     if (next.cluster.has_value())
     {
@@ -2646,6 +2655,10 @@ void StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, Create
     SQLDatabase::setRandomDatabase(rg, next);
     next.deng = this->getNextDatabaseEngine(rg);
     deng->set_engine(next.deng);
+    if (rg.nextBool())
+    {
+        cd->set_uuid(rg.nextUUID());
+    }
     if (!next.isSharedDatabase() && !fc.clusters.empty() && rg.nextSmallNumber() < 4)
     {
         next.cluster = rg.pickRandomly(fc.clusters);
