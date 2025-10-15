@@ -11,6 +11,7 @@ CreatingSets (Create sets before main query execution)
       ReadFromObjectStorage
 4
 4
+4
 Expression ((Project names + (Projection + Change column names to column identifiers)))
   ReadFromURL
 Expression ((Project names + (Projection + Change column names to column identifiers)))
