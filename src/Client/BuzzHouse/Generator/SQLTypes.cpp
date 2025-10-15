@@ -262,7 +262,7 @@ SQLType * DateType::typeDeepCopy() const
 
 String DateType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &) const
 {
-    return "'" + (extended ? rg.nextDate32() : rg.nextDate()) + "'";
+    return extended ? rg.nextDate32("'", true) : rg.nextDate("'", true);
 }
 
 String DateType::insertNumberEntry(RandomGenerator & rg, StatementGenerator & gen, const uint32_t, const uint32_t) const
@@ -310,7 +310,7 @@ SQLType * TimeType::typeDeepCopy() const
 
 String TimeType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &) const
 {
-    return "'" + (extended ? rg.nextTime64(precision.has_value()) : rg.nextTime()) + "'";
+    return extended ? rg.nextTime64("'", true, precision.has_value()) : rg.nextTime("'", true);
 }
 
 String TimeType::insertNumberEntry(RandomGenerator & rg, StatementGenerator & gen, const uint32_t, const uint32_t) const
@@ -379,7 +379,7 @@ SQLType * DateTimeType::typeDeepCopy() const
 
 String DateTimeType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &) const
 {
-    return "'" + (extended ? rg.nextDateTime64(rg.nextSmallNumber() < 8) : rg.nextDateTime(precision.has_value())) + "'";
+    return extended ? rg.nextDateTime64("'", true, rg.nextSmallNumber() < 8) : rg.nextDateTime("'", true, precision.has_value());
 }
 
 String DateTimeType::insertNumberEntry(RandomGenerator & rg, StatementGenerator & gen, const uint32_t, const uint32_t) const
@@ -2393,27 +2393,27 @@ String strBuildJSONElement(RandomGenerator & rg)
             break;
         case 14:
             /// Date
-            ret = '"' + rg.nextDate() + '"';
+            ret = rg.nextDate("\"", false);
             break;
         case 15:
             /// Date32
-            ret = '"' + rg.nextDate32() + '"';
+            ret = rg.nextDate32("\"", false);
             break;
         case 16:
             /// Time
-            ret = '"' + rg.nextTime() + '"';
+            ret = rg.nextTime("\"", false);
             break;
         case 17:
             /// Time64
-            ret = '"' + rg.nextTime64(rg.nextSmallNumber() < 8) + '"';
+            ret = rg.nextTime64("\"", false, rg.nextSmallNumber() < 8);
             break;
         case 18:
             /// Datetime
-            ret = '"' + rg.nextDateTime(rg.nextSmallNumber() < 8) + '"';
+            ret = rg.nextDateTime("\"", false, rg.nextSmallNumber() < 8);
             break;
         case 19:
             /// Datetime64
-            ret = '"' + rg.nextDateTime64(rg.nextSmallNumber() < 8) + '"';
+            ret = rg.nextDateTime64("\"", false, rg.nextSmallNumber() < 8);
             break;
         case 20:
             /// UUID

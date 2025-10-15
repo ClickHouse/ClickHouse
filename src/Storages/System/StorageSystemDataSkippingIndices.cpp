@@ -266,7 +266,7 @@ void ReadFromSystemDataSkippingIndices::initializePipeline(QueryPipelineBuilder 
     {
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
             continue;
-        if (!database->canContainMergeTreeTables())
+        if (database->isExternal())
             continue;
 
         /// Lazy database can contain only very primitive tables,
