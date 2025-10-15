@@ -1,3 +1,5 @@
+#include <IO/ReadBuffer.h>
+#include <IO/VarInt.h>
 #include <IO/WriteHelpers.h>
 #include <IO/readFloatText.h>
 #include <Processors/FractionalLimitTransform.h>
@@ -63,8 +65,8 @@ void FractionalLimitStep::transformPipeline(QueryPipelineBuilder & pipeline, con
 void FractionalLimitStep::describeActions(FormatSettings & settings) const
 {
     String prefix(settings.offset, ' ');
-    settings.out << prefix << "Limit " << Float32(limit_fraction) << '\n';
-    settings.out << prefix << "Offset " << Float32(offset_fraction) << '\n';
+    settings.out << prefix << "Fractional Limit " << Float32(limit_fraction) << '\n';
+    settings.out << prefix << "Fractional Offset " << Float32(offset_fraction) << '\n';
 
     if (with_ties)
     {
@@ -74,8 +76,8 @@ void FractionalLimitStep::describeActions(FormatSettings & settings) const
 
 void FractionalLimitStep::describeActions(JSONBuilder::JSONMap & map) const
 {
-    map.add("Limit", Float32(limit_fraction));
-    map.add("Offset", Float32(offset_fraction));
+    map.add("Fractional Limit", Float32(limit_fraction));
+    map.add("Fractional Offset", Float32(offset_fraction));
     map.add("With Ties", with_ties);
 }
 
@@ -89,6 +91,7 @@ void FractionalLimitStep::serialize(Serialization & ctx) const
 
     writeFloatText(limit_fraction, ctx.out);
     writeFloatText(offset_fraction, ctx.out);
+    writeVarUInt(offset, ctx.out);
 
     if (with_ties)
         serializeSortDescription(description, ctx.out);
@@ -102,11 +105,11 @@ std::unique_ptr<IQueryPlanStep> FractionalLimitStep::deserialize(Deserialization
 
     BFloat16 limit_fraction;
     BFloat16 offset_fraction;
-
-    UInt64 offset = 0;
+    UInt64 offset;
 
     readFloatText(limit_fraction, ctx.in);
     readFloatText(offset_fraction, ctx.in);
+    readVarUInt(offset, ctx.in);
 
     SortDescription description;
     if (with_ties)
