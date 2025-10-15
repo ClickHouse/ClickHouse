@@ -1,18 +1,21 @@
 #include <Functions/IFunction.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/Context.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Common/logger_useful.h>
+#include <Functions/FunctionFactory.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <base/defines.h>
 
 namespace DB::QueryPlanOptimizations
 {
 
-using IndexToConditionMap = std::unordered_map<String, MergeTreeIndexConditionText *>;
+using IndexConditionsMap = std::unordered_map<String, const MergeTreeIndexWithCondition *>;
+using NodesReplacementMap = std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *>;
 
 String getNameWithoutAliases(const ActionsDAG::Node * node)
 {
@@ -35,6 +38,35 @@ String getNameWithoutAliases(const ActionsDAG::Node * node)
     }
 
     return node->result_name;
+}
+
+const ActionsDAG::Node * replaceNodes(ActionsDAG & dag, const ActionsDAG::Node * node, const NodesReplacementMap & replacements)
+{
+    if (auto it = replacements.find(node); it != replacements.end())
+    {
+        return it->second;
+    }
+    else if (node->type == ActionsDAG::ActionType::ALIAS)
+    {
+        const auto * old_child = node->children[0];
+        const auto * new_child = replaceNodes(dag, old_child, replacements);
+
+        if (old_child != new_child)
+            return &dag.addAlias(*new_child, node->result_name);
+    }
+    else if (node->type == ActionsDAG::ActionType::FUNCTION)
+    {
+        auto old_children = node->children;
+        std::vector<const ActionsDAG::Node *> new_children;
+
+        for (const auto & child : old_children)
+            new_children.push_back(replaceNodes(dag, child, replacements));
+
+        if (new_children != old_children)
+            return &dag.addFunction(node->function_base, new_children, "");
+    }
+
+    return node;
 }
 
 String optimizationInfoToString(const IndexReadColumns & added_columns, const Names & removed_columns)
@@ -92,57 +124,85 @@ String optimizationInfoToString(const IndexReadColumns & added_columns, const Na
 class FullTextMatchingFunctionDAGReplacer
 {
 public:
-    FullTextMatchingFunctionDAGReplacer(ActionsDAG & actions_dag_, const IndexToConditionMap & index_conditions_)
+    FullTextMatchingFunctionDAGReplacer(ActionsDAG & actions_dag_, const IndexConditionsMap & index_conditions_)
         : actions_dag(actions_dag_)
         , index_conditions(index_conditions_)
     {
     }
 
+    struct ResultReplacement
+    {
+        IndexReadColumns added_columns;
+        Names removed_columns;
+        const ActionsDAG::Node * filter_node = nullptr;
+    };
+
     /// Replaces text-search functions by virtual columns.
     /// Example: hasToken(text_col, 'token') -> __text_index_text_col_idx_hasToken_0
     /// Returns a pair of (added columns by index name, removed columns)
-    std::pair<IndexReadColumns, Names> replace()
+    ResultReplacement replace(const ContextPtr & context, const String & filter_column_name)
     {
-        IndexReadColumns added_columns;
+        ResultReplacement result;
+        NodesReplacementMap replacements;
         Names original_inputs = actions_dag.getRequiredColumnsNames();
+        const auto * filter_node = &actions_dag.findInOutputs(filter_column_name);
 
         for (ActionsDAG::Node & node : actions_dag.nodes)
         {
-            auto replaced = tryReplaceFunctionNodeInplace(node);
+            auto replaced = tryReplaceFunctionNode(node, context);
 
             if (replaced.has_value())
             {
-                const auto & [index_name, column_name] = replaced.value();
-                added_columns[index_name].emplace_back(column_name, node.result_type);
+                result.added_columns[replaced->index_name].emplace_back(replaced->column_name, std::make_shared<DataTypeUInt8>());
+                replacements[&node] = replaced->node;
             }
         }
 
-        if (added_columns.empty())
-            return {{}, {}};
+        if (result.added_columns.empty())
+        {
+            return result;
+        }
 
+        for (auto & output : actions_dag.outputs)
+        {
+            bool is_filter_node = output == filter_node;
+            output = replaceNodes(actions_dag, output, replacements);
+
+            if (is_filter_node)
+                filter_node = output;
+        }
+
+        result.filter_node = filter_node;
         actions_dag.removeUnusedActions();
 
-        Names removed_columns;
         Names replaced_columns = actions_dag.getRequiredColumnsNames();
         NameSet replaced_columns_set(replaced_columns.begin(), replaced_columns.end());
 
         for (const auto & column : original_inputs)
         {
             if (!replaced_columns_set.contains(column))
-                removed_columns.push_back(column);
+                result.removed_columns.push_back(column);
         }
 
-        return std::make_pair(added_columns, removed_columns);
+        return result;
     }
 
 private:
-    ActionsDAG & actions_dag;
-    std::unordered_map<String, MergeTreeIndexConditionText *> index_conditions;
+    struct NodeReplacement
+    {
+        String index_name;
+        String column_name;
+        const ActionsDAG::Node * node;
+    };
 
-    bool isSupportedCondition(const ActionsDAG::Node & lhs_arg, const ActionsDAG::Node & rhs_arg, const MergeTreeIndexConditionText & condition) const
+    ActionsDAG & actions_dag;
+    IndexConditionsMap index_conditions;
+
+    bool isSupportedCondition(const ActionsDAG::Node & lhs_arg, const ActionsDAG::Node & rhs_arg, const IMergeTreeIndexCondition & condition) const
     {
         using enum ActionsDAG::ActionType;
-        const auto & header = condition.getHeader();
+        const auto & text_index_condition = typeid_cast<const MergeTreeIndexConditionText &>(condition);
+        const auto & header = text_index_condition.getHeader();
 
         if ((lhs_arg.type == INPUT || lhs_arg.type == FUNCTION) && rhs_arg.type == COLUMN)
         {
@@ -161,7 +221,7 @@ private:
 
     /// Attempts to add a new node with the replacement virtual column.
     /// Returns the pair of (index name, virtual column name) if the replacement is successful.
-    std::optional<std::pair<String, String>> tryReplaceFunctionNodeInplace(ActionsDAG::Node & function_node)
+    std::optional<NodeReplacement> tryReplaceFunctionNode(ActionsDAG::Node & function_node, const ContextPtr & context)
     {
         if (function_node.type != ActionsDAG::ActionType::FUNCTION || !function_node.function)
             return std::nullopt;
@@ -169,12 +229,9 @@ private:
         if (function_node.children.size() != 2)
             return std::nullopt;
 
-        if (!MergeTreeIndexConditionText::isSupportedFunctionForDirectRead(function_node.function->getName()))
-            return std::nullopt;
-
         auto selected_it = std::ranges::find_if(index_conditions, [&](const auto & index_with_condition)
         {
-            return isSupportedCondition(*function_node.children[0], *function_node.children[1], *index_with_condition.second);
+            return isSupportedCondition(*function_node.children[0], *function_node.children[1], *index_with_condition.second->condition);
         });
 
         if (selected_it == index_conditions.end())
@@ -182,7 +239,7 @@ private:
 
         size_t num_supported_conditions = std::ranges::count_if(index_conditions, [&](const auto & index_with_condition)
         {
-            return isSupportedCondition(*function_node.children[0], *function_node.children[1], *index_with_condition.second);
+            return isSupportedCondition(*function_node.children[0], *function_node.children[1], *index_with_condition.second->condition);
         });
 
         /// Do not optimize if there are multiple text indexes set for the column.
@@ -191,23 +248,43 @@ private:
             return std::nullopt;
 
         const auto & [index_name, condition] = *selected_it;
-        auto search_query = condition->createTextSearchQuery(function_node);
+        auto & text_index_condition = typeid_cast<MergeTreeIndexConditionText &>(*condition->condition);
 
+        auto direct_read_mode = text_index_condition.getDirectReadMode(function_node.function->getName());
+        if (direct_read_mode == TextIndexDirectReadMode::None)
+            return std::nullopt;
+
+        auto search_query = text_index_condition.createTextSearchQuery(function_node);
         if (!search_query)
             return std::nullopt;
 
-        auto virtual_column_name = condition->replaceToVirtualColumn(*search_query, index_name);
+        auto virtual_column_name = text_index_condition.replaceToVirtualColumn(*search_query, index_name);
         if (!virtual_column_name)
             return std::nullopt;
 
-        function_node.type = ActionsDAG::ActionType::INPUT;
-        function_node.result_name = virtual_column_name.value();
-        function_node.function.reset();
-        function_node.function_base.reset();
-        function_node.children.clear();
-        actions_dag.inputs.push_back(&function_node);
+        NodeReplacement replacement;
+        replacement.index_name = index_name;
+        replacement.column_name = virtual_column_name.value();
 
-        return std::make_pair(index_name, virtual_column_name.value());
+        switch (direct_read_mode)
+        {
+            case TextIndexDirectReadMode::None:
+            {
+                return std::nullopt;
+            }
+            case TextIndexDirectReadMode::Exact:
+            {
+                replacement.node = &actions_dag.addInput(virtual_column_name.value(), std::make_shared<DataTypeUInt8>());
+                return replacement;
+            }
+            case TextIndexDirectReadMode::Hint:
+            {
+                auto function_builder = FunctionFactory::instance().get("and", context);
+                const auto & input_virtual_column = actions_dag.addInput(virtual_column_name.value(), std::make_shared<DataTypeUInt8>());
+                replacement.node = &actions_dag.addFunction(function_builder, {&input_virtual_column, &function_node}, "");
+                return replacement;
+            }
+        }
     }
 };
 
@@ -250,10 +327,10 @@ void optimizeDirectReadFromTextIndex(const Stack & stack, QueryPlan::Nodes & /*n
     for (const auto & part : parts_with_ranges)
         unique_parts.insert(part.data_part);
 
-    IndexToConditionMap index_conditions;
+    IndexConditionsMap index_conditions;
     for (const auto & index : indexes->skip_indexes.useful_indices)
     {
-        if (auto * text_index_condition = typeid_cast<MergeTreeIndexConditionText *>(index.condition.get()))
+        if (typeid_cast<MergeTreeIndexConditionText *>(index.condition.get()))
         {
             /// Index may be not materialized in some parts, e.g. after ALTER ADD INDEX query.
             /// TODO: support partial read from text index with fallback to the brute-force
@@ -264,7 +341,7 @@ void optimizeDirectReadFromTextIndex(const Stack & stack, QueryPlan::Nodes & /*n
             });
 
             if (has_index_in_all_parts)
-                index_conditions[index.index->index.name] = text_index_condition;
+                index_conditions[index.index->index.name] = &index;
         }
     }
 
@@ -277,26 +354,19 @@ void optimizeDirectReadFromTextIndex(const Stack & stack, QueryPlan::Nodes & /*n
         return;
 
     ActionsDAG & filter_dag = filter_step->getExpression();
-    const ActionsDAG::Node & filter_column_node = filter_dag.findInOutputs(filter_step->getFilterColumnName());
-
     FullTextMatchingFunctionDAGReplacer replacer(filter_dag, index_conditions);
-    auto [added_columns, removed_columns] = replacer.replace();
+    auto result = replacer.replace(read_from_merge_tree_step->getContext(), filter_step->getFilterColumnName());
 
-    if (added_columns.empty())
+    if (result.added_columns.empty())
         return;
 
     auto logger = getLogger("optimizeDirectReadFromTextIndex");
-    LOG_DEBUG(logger, "{}", optimizationInfoToString(added_columns, removed_columns));
-
-    read_from_merge_tree_step->replaceColumnsForTextSearch(added_columns, removed_columns);
+    LOG_DEBUG(logger, "{}", optimizationInfoToString(result.added_columns, result.removed_columns));
 
     bool removes_filter_column = filter_step->removesFilterColumn();
+    read_from_merge_tree_step->replaceColumnsForTextSearch(result.added_columns, result.removed_columns);
 
-    /// The original node (pointer address) should be preserved in the DAG outputs because we replace in-place.
-    /// However, the `result_name` could be different if the output column was replaced.
-    chassert(std::ranges::contains(filter_dag.getOutputs(), &filter_column_node));
-
-    const String new_filter_column_name = filter_column_node.result_name;
+    auto new_filter_column_name = result.filter_node->result_name;
     filter_node->step = std::make_unique<FilterStep>(read_from_merge_tree_step->getOutputHeader(), filter_dag.clone(), new_filter_column_name, removes_filter_column);
 }
 
