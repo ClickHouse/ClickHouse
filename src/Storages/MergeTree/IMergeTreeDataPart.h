@@ -163,6 +163,7 @@ public:
     void remove();
 
     ColumnsStatistics loadStatistics() const;
+    Estimates getEstimates() const;
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load various metadata into memory: checksums from checksums.txt, index if required, etc.
@@ -594,6 +595,7 @@ public:
 
     static std::optional<String> getStreamNameOrHash(
         const String & name,
+        const String & extension,
         const IMergeTreeDataPart::Checksums & checksums);
 
     static std::optional<String> getStreamNameOrHash(
@@ -604,11 +606,13 @@ public:
     static std::optional<String> getStreamNameForColumn(
         const String & column_name,
         const ISerialization::SubstreamPath & substream_path,
+        const String & extension,
         const Checksums & checksums_);
 
     static std::optional<String> getStreamNameForColumn(
         const NameAndTypePair & column,
         const ISerialization::SubstreamPath & substream_path,
+        const String & extension,
         const Checksums & checksums_);
 
     static std::optional<String> getStreamNameForColumn(
@@ -715,6 +719,11 @@ private:
     /// The same as above but after call of Nested::collect().
     /// It is used while reading from wide parts.
     ColumnsDescription columns_description_with_collected_nested;
+
+    /// Small state of finalized statistics for suitable statistics types.
+    /// Lazily initialized on a first access.
+    mutable std::mutex estimates_mutex;
+    mutable std::optional<Estimates> estimates;
 
     /// Reads part unique identifier (if exists) from uuid.txt
     void loadUUID();
