@@ -3197,6 +3197,15 @@ void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
 
         if (limit_length || fractional_limit == 0) [[likely]]
         {
+            if (fractional_offset > 0)
+            {
+                auto fractional_offset_step = std::make_unique<FractionalOffsetStep>(
+                    query_plan.getCurrentHeader(), 
+                    fractional_offset
+                );
+                query_plan.addStep(std::move(fractional_offset_step));
+            }
+
             auto limit = std::make_unique<LimitStep>(
                     query_plan.getCurrentHeader(), 
                     limit_length,
@@ -3307,6 +3316,15 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
 
         if (limit_length || fractional_limit == 0) [[likely]]
         {
+            if (fractional_offset > 0)
+            {
+                auto fractional_offset_step = std::make_unique<FractionalOffsetStep>(
+                    query_plan.getCurrentHeader(), 
+                    fractional_offset
+                );
+                query_plan.addStep(std::move(fractional_offset_step));
+            }
+
             auto limit = std::make_unique<LimitStep>(
                 query_plan.getCurrentHeader(),
                 limit_length,
