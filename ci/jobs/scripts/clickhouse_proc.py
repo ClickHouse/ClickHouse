@@ -1082,12 +1082,12 @@ quit
             print(f"invalid system_db_uuid: '{system_db_uuid}'")
             return
 
-        if self.system_db_sql != None and self.system_db_sql != system_db_uuid:
+        if self.system_db_uuid != None and self.system_db_uuid != system_db_uuid:
             print(
-                f"system_db_uuid changed: '{self.system_db_sql}' -> '{system_db_uuid}'"
+                f"system_db_uuid changed: '{self.system_db_uuid}' -> '{system_db_uuid}'"
             )
 
-        self.system_db_sql = system_db_uuid
+        self.system_db_uuid = system_db_uuid
         self.system_db_sql = Shell.get_output(
             "clickhouse disks -C /etc/clickhouse-server/config.xml --disk disk_db_remote -q 'read metadata/system.sql'",
             verbose=True,
