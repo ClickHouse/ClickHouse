@@ -7,6 +7,9 @@ Engine=MergeTree()
 ORDER BY key
 PARTITION BY key;
 
+set use_query_condition_cache = false;
+set use_skip_indexes_on_data_read = false;
+
 INSERT INTO data_02200 SELECT number, number FROM numbers(10);
 
 -- Prevent remote replicas from skipping index analysis in Parallel Replicas. Otherwise, they may return full ranges and trigger max_rows_to_read validation failures.
