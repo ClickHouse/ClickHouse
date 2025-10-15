@@ -855,11 +855,18 @@ class TeePopen:
         time_wait = 0
         self.terminated_by_sigterm = True
         self.timeout_exceeded = True
-        while self.process.poll() is None and time_wait < 100:
+        while self.process.poll() is None and time_wait < 30:
             print("wait...")
             wait = 5
             time.sleep(wait)
             time_wait += wait
+
+        # Force rm docker
+        Shell.check(
+            "docker ps -a --format '{{.Names}}' | grep -q praktika && docker rm -f praktika",
+            verbose=True,
+        )
+
         while self.process.poll() is None:
             print(f"WARNING: Still running, send SIGKILL to [{self.process.pid}]")
             self.send_signal(signal.SIGKILL)
