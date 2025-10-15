@@ -1,0 +1,18 @@
+CREATE TABLE default.t_implicit\n(\n    `a` UInt64,\n    `s` String\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS add_minmax_index_for_numeric_columns = 1, index_granularity = 8192
+default	t_implicit	auto_minmax_index_a	minmax	minmax()	a	1	0	0	0
+CREATE TABLE default.t_implicit\n(\n    `a` UInt64\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS add_minmax_index_for_numeric_columns = 1, index_granularity = 8192
+default	t_implicit	auto_minmax_index_a	minmax	minmax()	a	1	0	0	0
+CREATE TABLE default.t_implicit\n(\n    `a` UInt64,\n    `s2` String\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS add_minmax_index_for_numeric_columns = 1, index_granularity = 8192
+default	t_implicit	auto_minmax_index_a	minmax	minmax()	a	1	0	0	0
+CREATE TABLE default.t_implicit\n(\n    `a` UInt64,\n    `s2` String,\n    `a2` UInt64\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS add_minmax_index_for_numeric_columns = 1, index_granularity = 8192
+default	t_implicit	auto_minmax_index_a	minmax	minmax()	a	1	0	0	0
+default	t_implicit	auto_minmax_index_a2	minmax	minmax()	a2	1	0	0	0
+CREATE TABLE default.t_implicit\n(\n    `a` UInt64,\n    `s2` String,\n    `a_renamed` UInt64\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS add_minmax_index_for_numeric_columns = 1, index_granularity = 8192
+default	t_implicit	auto_minmax_index_a	minmax	minmax()	a	1	0	0	0
+default	t_implicit	auto_minmax_index_a_renamed	minmax	minmax()	a_renamed	1	0	0	0
+CREATE TABLE default.t_implicit\n(\n    `a` UInt64,\n    `s2` String,\n    `a_renamed` String\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS add_minmax_index_for_numeric_columns = 1, index_granularity = 8192
+default	t_implicit	auto_minmax_index_a	minmax	minmax()	a	1	0	0	0
+default	t_implicit	auto_minmax_index_a_renamed	minmax	minmax()	a_renamed	1	0	0	0
+CREATE TABLE default.t_implicit\n(\n    `a` UInt64,\n    `s2` String,\n    `a_renamed` String\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS add_minmax_index_for_numeric_columns = 1, index_granularity = 8192
+default	t_implicit	auto_minmax_index_a	minmax	minmax()	a	1	0	0	0
+default	t_implicit	auto_minmax_index_a_renamed	minmax	minmax()	a_renamed	1	0	0	0
