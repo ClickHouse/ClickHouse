@@ -25,13 +25,13 @@ WHERE __table1.col_fixedstring LIKE \'%ther\\0\'
 -- Test NOT LIKE with perfect prefix on String column - should be rewritten
 SELECT count() AS `count()`
 FROM default.tab AS __table1
-WHERE NOT startsWith(__table1.col_string, \'app\')
+WHERE not(startsWith(__table1.col_string, \'app\'))
 4
 4
-Test NOT LIKE with perfect suffix on String column - should be rewritten
+-- Test NOT LIKE with perfect suffix on String column - should be rewritten
 SELECT count() AS `count()`
 FROM default.tab AS __table1
-WHERE NOT endsWith(__table1.col_string, \'Test\')
+WHERE not(endsWith(__table1.col_string, \'Test\'))
 5
 5
 -- Test ILIKE with perfect prefix on String column - should NOT be rewritten
@@ -40,7 +40,7 @@ FROM default.tab AS __table1
 WHERE __table1.col_string ILIKE \'APP%\'
 3
 3
-Test ILIKE with perfect suffix on String column - should NOT be rewritten
+-- Test ILIKE with perfect suffix on String column - should NOT be rewritten
 SELECT count() AS `count()`
 FROM default.tab AS __table1
 WHERE __table1.col_string ILIKE \'%TeST\'
@@ -49,13 +49,13 @@ WHERE __table1.col_string ILIKE \'%TeST\'
 -- Test NOT ILIKE with perfect prefix on String column - should NOT be rewritten
 SELECT count() AS `count()`
 FROM default.tab AS __table1
-WHERE __table1.col_string ILIKE \'APP%\'
+WHERE __table1.col_string NOT ILIKE \'APP%\'
 4
 4
-Test NOT ILIKE with perfect suffix on String column - should NOT be rewritten
+-- Test NOT ILIKE with perfect suffix on String column - should NOT be rewritten
 SELECT count() AS `count()`
 FROM default.tab AS __table1
-WHERE __table1.col_string ILIKE \'%TeST\'
+WHERE __table1.col_string NOT ILIKE \'%TeST\'
 5
 5
 -- Test multiple LIKE conditions - all eligible ones should be rewritten
@@ -110,7 +110,7 @@ FROM default.tab AS __table1
 WHERE __table1.col_string NOT LIKE \'app_ication%\'
 6
 6
-Test low cardinality string column - should be rewritten
+-- Test low cardinality string column - should be rewritten
 SELECT count() AS `count()`
 FROM default.tab AS __table1
 WHERE startsWith(__table1.col_lowcardinality_string, \'a\')
@@ -121,7 +121,7 @@ FROM default.tab AS __table1
 WHERE endsWith(__table1.col_lowcardinality_string, \'a\')
 3
 3
-Test nullable string column - should be rewritten
+-- Test nullable string column - should be rewritten
 SELECT count() AS `count()`
 FROM default.tab AS __table1
 WHERE startsWith(__table1.col_nullable_string, \'a\')
@@ -132,7 +132,7 @@ FROM default.tab AS __table1
 WHERE endsWith(__table1.col_nullable_string, \'a\')
 3
 3
-Test low cardinality nullable string column - should be rewritten
+-- Test low cardinality nullable string column - should be rewritten
 SELECT count() AS `count()`
 FROM default.tab AS __table1
 WHERE startsWith(__table1.col_lowcardinality_nullable_string, \'a\')
@@ -143,37 +143,37 @@ FROM default.tab AS __table1
 WHERE endsWith(__table1.col_lowcardinality_nullable_string, \'a\')
 3
 3
-Test low cardinality fixedstring with prefix - should be rewritten
+-- Test low cardinality fixedstring with prefix - should be rewritten
 SELECT count() AS `count()`
 FROM default.tab AS __table1
 WHERE startsWith(__table1.col_lowcardinality_fixedstring, \'a\')
 3
 3
-Test low cardinality fixedstring with suffix - should NOT be rewritten
+-- Test low cardinality fixedstring with suffix - should NOT be rewritten
 SELECT count() AS `count()`
 FROM default.tab AS __table1
 WHERE __table1.col_lowcardinality_fixedstring LIKE \'%a\\0\'
 3
 3
-Test nullable fixedstring with prefix - should be rewritten
+-- Test nullable fixedstring with prefix - should be rewritten
 SELECT count() AS `count()`
 FROM default.tab AS __table1
 WHERE startsWith(__table1.col_nullable_fixedstring, \'a\')
 3
 3
-Test nullable fixedstring with suffix - should NOT be rewritten
+-- Test nullable fixedstring with suffix - should NOT be rewritten
 SELECT count() AS `count()`
 FROM default.tab AS __table1
 WHERE __table1.col_nullable_fixedstring LIKE \'%a\\0\'
 3
 3
-Test low cardinality nullable fixedstring with prefix - should be rewritten
+-- Test low cardinality nullable fixedstring with prefix - should be rewritten
 SELECT count() AS `count()`
 FROM default.tab AS __table1
 WHERE startsWith(__table1.col_lowcardinality_nullable_fixedstring, \'a\')
 3
 3
-Test low cardinality nullable fixedstring with suffix - should NOT be rewritten
+-- Test low cardinality nullable fixedstring with suffix - should NOT be rewritten
 SELECT count() AS `count()`
 FROM default.tab AS __table1
 WHERE __table1.col_lowcardinality_nullable_fixedstring LIKE \'%a\\0\'

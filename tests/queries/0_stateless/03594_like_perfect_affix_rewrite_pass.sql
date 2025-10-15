@@ -49,7 +49,7 @@ SELECT '-- Test NOT LIKE with perfect prefix on String column - should be rewrit
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM tab WHERE col_string NOT LIKE 'app%';
 SELECT count() FROM tab WHERE col_string NOT LIKE 'app%';
 SELECT count() FROM tab WHERE col_string NOT LIKE 'app%' SETTINGS optimize_rewrite_like_perfect_affix = 0;
-SELECT 'Test NOT LIKE with perfect suffix on String column - should be rewritten';
+SELECT '-- Test NOT LIKE with perfect suffix on String column - should be rewritten';
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM tab WHERE col_string NOT LIKE '%Test';
 SELECT count() FROM tab WHERE col_string NOT LIKE '%Test';
 SELECT count() FROM tab WHERE col_string NOT LIKE '%Test' SETTINGS optimize_rewrite_like_perfect_affix = 0;
@@ -58,17 +58,17 @@ SELECT '-- Test ILIKE with perfect prefix on String column - should NOT be rewri
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM tab WHERE col_string ILIKE 'APP%';
 SELECT count() FROM tab WHERE col_string ILIKE 'APP%';
 SELECT count() FROM tab WHERE col_string ILIKE 'APP%' SETTINGS optimize_rewrite_like_perfect_affix = 0;
-SELECT 'Test ILIKE with perfect suffix on String column - should NOT be rewritten';
+SELECT '-- Test ILIKE with perfect suffix on String column - should NOT be rewritten';
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM tab WHERE col_string ILIKE '%TeST';
 SELECT count() FROM tab WHERE col_string ILIKE '%TeST';
 SELECT count() FROM tab WHERE col_string ILIKE '%TeST' SETTINGS optimize_rewrite_like_perfect_affix = 0;
 
 SELECT '-- Test NOT ILIKE with perfect prefix on String column - should NOT be rewritten';
-EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM tab WHERE col_string ILIKE 'APP%';
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM tab WHERE col_string NOT ILIKE 'APP%';
 SELECT count() FROM tab WHERE col_string NOT ILIKE 'APP%';
 SELECT count() FROM tab WHERE col_string NOT ILIKE 'APP%' SETTINGS optimize_rewrite_like_perfect_affix = 0;
-SELECT 'Test NOT ILIKE with perfect suffix on String column - should NOT be rewritten';
-EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM tab WHERE col_string ILIKE '%TeST';
+SELECT '-- Test NOT ILIKE with perfect suffix on String column - should NOT be rewritten';
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM tab WHERE col_string NOT ILIKE '%TeST';
 SELECT count() FROM tab WHERE col_string NOT ILIKE '%TeST';
 SELECT count() FROM tab WHERE col_string NOT ILIKE '%TeST' SETTINGS optimize_rewrite_like_perfect_affix = 0;
 
@@ -114,7 +114,7 @@ EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM tab WHERE col_strin
 SELECT count() FROM tab WHERE col_string NOT ILIKE '%app_ication';
 SELECT count() FROM tab WHERE col_string NOT ILIKE '%app_ication' SETTINGS optimize_rewrite_like_perfect_affix = 0;
 
-SELECT 'Test low cardinality string column - should be rewritten';
+SELECT '-- Test low cardinality string column - should be rewritten';
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM tab WHERE col_lowcardinality_string LIKE 'a%';
 SELECT count() from tab WHERE col_lowcardinality_string LIKE 'a%';
 SELECT count() from tab WHERE col_lowcardinality_string LIKE 'a%' SETTINGS optimize_rewrite_like_perfect_affix = 0;
@@ -122,7 +122,7 @@ EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM tab WHERE col_lowca
 SELECT count() from tab WHERE col_lowcardinality_string LIKE '%a';
 SELECT count() from tab WHERE col_lowcardinality_string LIKE '%a' SETTINGS optimize_rewrite_like_perfect_affix = 0;
 
-SELECT 'Test nullable string column - should be rewritten';
+SELECT '-- Test nullable string column - should be rewritten';
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM tab WHERE col_nullable_string LIKE 'a%';
 SELECT count() from tab WHERE col_nullable_string LIKE 'a%';
 SELECT count() from tab WHERE col_nullable_string LIKE 'a%' SETTINGS optimize_rewrite_like_perfect_affix = 0;
@@ -130,7 +130,7 @@ EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM tab WHERE col_nulla
 SELECT count() from tab WHERE col_nullable_string LIKE '%a';
 SELECT count() from tab WHERE col_nullable_string LIKE '%a' SETTINGS optimize_rewrite_like_perfect_affix = 0;
 
-SELECT 'Test low cardinality nullable string column - should be rewritten';
+SELECT '-- Test low cardinality nullable string column - should be rewritten';
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM tab WHERE col_lowcardinality_nullable_string LIKE 'a%';
 SELECT count() from tab WHERE col_lowcardinality_nullable_string LIKE 'a%';
 SELECT count() from tab WHERE col_lowcardinality_nullable_string LIKE 'a%' SETTINGS optimize_rewrite_like_perfect_affix = 0;
@@ -138,29 +138,29 @@ EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM tab WHERE col_lowca
 SELECT count() from tab WHERE col_lowcardinality_nullable_string LIKE '%a';
 SELECT count() from tab WHERE col_lowcardinality_nullable_string LIKE '%a' SETTINGS optimize_rewrite_like_perfect_affix = 0;
 
-SELECT 'Test low cardinality fixedstring with prefix - should be rewritten';
+SELECT '-- Test low cardinality fixedstring with prefix - should be rewritten';
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM tab WHERE col_lowcardinality_fixedstring LIKE 'a%';
 SELECT count() from tab WHERE col_lowcardinality_fixedstring LIKE 'a%';
 SELECT count() from tab WHERE col_lowcardinality_fixedstring LIKE 'a%' SETTINGS optimize_rewrite_like_perfect_affix = 0;
-SELECT 'Test low cardinality fixedstring with suffix - should NOT be rewritten';
+SELECT '-- Test low cardinality fixedstring with suffix - should NOT be rewritten';
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM tab WHERE col_lowcardinality_fixedstring LIKE '%a\0';
 SELECT count() from tab WHERE col_lowcardinality_fixedstring LIKE '%a\0';
 SELECT count() from tab WHERE col_lowcardinality_fixedstring LIKE '%a\0' SETTINGS optimize_rewrite_like_perfect_affix = 0;
 
-SELECT 'Test nullable fixedstring with prefix - should be rewritten';
+SELECT '-- Test nullable fixedstring with prefix - should be rewritten';
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM tab WHERE col_nullable_fixedstring LIKE 'a%';
 SELECT count() from tab WHERE col_nullable_fixedstring LIKE 'a%';
 SELECT count() from tab WHERE col_nullable_fixedstring LIKE 'a%' SETTINGS optimize_rewrite_like_perfect_affix = 0;
-SELECT 'Test nullable fixedstring with suffix - should NOT be rewritten';
+SELECT '-- Test nullable fixedstring with suffix - should NOT be rewritten';
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM tab WHERE col_nullable_fixedstring LIKE '%a\0';
 SELECT count() from tab WHERE col_nullable_fixedstring LIKE '%a\0';
 SELECT count() from tab WHERE col_nullable_fixedstring LIKE '%a\0' SETTINGS optimize_rewrite_like_perfect_affix = 0;
 
-SELECT 'Test low cardinality nullable fixedstring with prefix - should be rewritten';
+SELECT '-- Test low cardinality nullable fixedstring with prefix - should be rewritten';
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM tab WHERE col_lowcardinality_nullable_fixedstring LIKE 'a%';
 SELECT count() from tab WHERE col_lowcardinality_nullable_fixedstring LIKE 'a%';
 SELECT count() from tab WHERE col_lowcardinality_nullable_fixedstring LIKE 'a%' SETTINGS optimize_rewrite_like_perfect_affix = 0;
-SELECT 'Test low cardinality nullable fixedstring with suffix - should NOT be rewritten';
+SELECT '-- Test low cardinality nullable fixedstring with suffix - should NOT be rewritten';
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM tab WHERE col_lowcardinality_nullable_fixedstring LIKE '%a\0';
 SELECT count() from tab WHERE col_lowcardinality_nullable_fixedstring LIKE '%a\0';
 SELECT count() from tab WHERE col_lowcardinality_nullable_fixedstring LIKE '%a\0' SETTINGS optimize_rewrite_like_perfect_affix = 0;
