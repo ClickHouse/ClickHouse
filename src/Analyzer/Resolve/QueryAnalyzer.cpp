@@ -37,6 +37,7 @@
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
 
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
@@ -52,6 +53,9 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/IStorage.h>
 
+#include <base/BFloat16.h>
+#include <base/Decimal_fwd.h>
+#include <base/types.h>
 #include <boost/algorithm/string/predicate.hpp>
 #include <ranges>
 
@@ -630,16 +634,31 @@ void QueryAnalyzer::convertLimitOffsetExpression(QueryTreeNodePtr & expression_n
             expression_node->formatASTForErrorMessage(),
             scope.scope_node->formatASTForErrorMessage());
 
-    Field converted_value = convertFieldToType(limit_offset_constant_node->getValue(), DataTypeUInt64());
-    if (converted_value.isNull())
-        throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION,
-            "{} numeric constant expression is not representable as UInt64",
-            expression_description);
+    Field converted_value_uint = convertFieldToType(limit_offset_constant_node->getValue(), DataTypeUInt64());
+    if (!converted_value_uint.isNull())
+    {
+        auto result_constant_node = std::make_shared<ConstantNode>(std::move(converted_value_uint), std::make_shared<DataTypeUInt64>());
+        result_constant_node->getSourceExpression() = limit_offset_constant_node->getSourceExpression();
+        expression_node = std::move(result_constant_node);
+        return;
+    }
 
-    auto result_constant_node = std::make_shared<ConstantNode>(std::move(converted_value), std::make_shared<DataTypeUInt64>());
-    result_constant_node->getSourceExpression() = limit_offset_constant_node->getSourceExpression();
+    Field converted_value_decimal = convertFieldToType(limit_offset_constant_node->getValue(), DataTypeDecimal32(2, 1));
+    if (!converted_value_decimal.isNull())
+    {
+        auto value = converted_value_decimal.safeGet<Decimal32>().getValue() / 10.0;
+        if (value < 1 && value > 0)
+        {
+            auto result_constant_node = std::make_shared<ConstantNode>(Field(BFloat16(value)), std::make_shared<DataTypeBFloat16>());
+            result_constant_node->getSourceExpression() = limit_offset_constant_node->getSourceExpression();
+            expression_node = std::move(result_constant_node);
+            return;
+        }
+    }
 
-    expression_node = std::move(result_constant_node);
+    throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION,
+        "The value {} of {} expression is not representable as UInt64 nor Decimal32(2, 1) [0.1 to 0.9]",
+        applyVisitor(FieldVisitorToString(), limit_offset_constant_node->getValue()) , expression_description);
 }
 
 void QueryAnalyzer::validateTableExpressionModifiers(const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope)
