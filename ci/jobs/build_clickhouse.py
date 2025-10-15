@@ -140,7 +140,7 @@ def main():
                 f"mkdir -p {build_dir} && git submodule sync && git submodule init"
             )
             res = res and Shell.check(
-                f"git config --file .gitmodules --null --get-regexp path | sed -z 's|.*\\n||' | xargs --max-procs=10 --null --no-run-if-empty --max-args=1 git submodule update --depth=1 --single-branch",
+                "./contrib/update-submodules.sh",
                 retries=3,
             )
             return res
