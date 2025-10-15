@@ -514,9 +514,9 @@ SELECT '{}'::JSON AS json1, '{"a" : null}'::JSON AS json2, json1 = json2
 ```
 
 ```text title="Response"
-┌─json1─┬─json2────────┬─equals(json1, json2)─┐
-│ {}    │ {"a" : null} │                    1 │
-└───────┴──────────────┴──────────────────────┘
+┌─json1─┬─json2─┬─equals(json1, json2)─┐
+│ {}    │ {}    │                    1 │
+└───────┴───────┴──────────────────────┘
 ```
 
 It means that it's impossible to determine whether the originsl JSON data contained some path with the NULL value or didn't contain it at all.
