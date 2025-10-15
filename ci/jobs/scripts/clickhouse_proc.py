@@ -250,6 +250,7 @@ class ClickHouseProc:
         else:
             print(f"ClickHouse server NOT ready")
 
+        self._flush_system_logs()
         self.save_system_metadata_files_from_remote_database_disk()
         return res
 
@@ -485,6 +486,7 @@ profiles:
         if self.is_db_replicated and replica_num == 0:
             res = self.start(replica_num=1) and self.start(replica_num=2)
 
+        self._flush_system_logs()
         self.save_system_metadata_files_from_remote_database_disk()
 
         return res
