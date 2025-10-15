@@ -225,7 +225,7 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
             newd.set_if_not_exists(true);
             deng->set_engine(t.db->deng);
             t.db->setName(newd.mutable_database());
-            t.db->finishDatabaseSpecification(deng);
+            t.db->finishDatabaseSpecification(deng, t.db->nparams > 0);
             CreateDatabaseToString(buf, newd);
             res &= !performQuery(buf + ";");
         }

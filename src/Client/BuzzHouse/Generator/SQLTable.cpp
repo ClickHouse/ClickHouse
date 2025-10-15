@@ -2660,7 +2660,7 @@ void StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, Create
     }
     else
     {
-        next.finishDatabaseSpecification(deng);
+        next.finishDatabaseSpecification(deng, rg.nextBool());
     }
     next.setName(cd->mutable_database());
     if (rg.nextSmallNumber() < 3)

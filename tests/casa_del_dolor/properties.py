@@ -919,6 +919,26 @@ class SharedCatalogPropertiesGroup(PropertiesGroup):
         apply_properties_recursively(property_element, shared_settings, 0)
 
 
+class DatabaseReplicatedGroup(PropertiesGroup):
+
+    def apply_properties(
+        self,
+        top_root: ET.Element,
+        property_element: ET.Element,
+        args,
+        cluster: ClickHouseCluster,
+        is_private_binary: bool,
+    ):
+        replicated_settings = {
+            "allow_skipping_old_temporary_tables_ddls_of_refreshable_materialized_views": true_false_lambda,
+            "check_consistency": true_false_lambda,
+            "logs_to_keep": threshold_generator(0.2, 0.2, 0, 3000),
+            "max_broken_tables_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
+            "max_replication_lag_to_enqueue": threshold_generator(0.2, 0.2, 0, 200),
+        }
+        apply_properties_recursively(property_element, replicated_settings, 0)
+
+
 class LogTablePropertiesGroup(PropertiesGroup):
 
     def __init__(
@@ -1193,6 +1213,10 @@ def modify_server_settings(
         and root.find("shared_database_catalog") is None
     ):
         selected_properties["shared_database_catalog"] = SharedCatalogPropertiesGroup()
+
+    # Add Replicated databases settings
+    if args.database_replicated and root.find("database_replicated") is None:
+        selected_properties["database_replicated"] = DatabaseReplicatedGroup()
 
     # Shuffle selected properties and apply
     selected_properties = dict(
