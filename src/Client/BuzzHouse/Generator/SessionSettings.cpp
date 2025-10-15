@@ -85,7 +85,7 @@ std::unordered_map<String, CHSetting> performanceSettings
                 }
                 else
                 {
-                    const uint32_t nalgo = (rg.nextMediumNumber() % static_cast<uint32_t>(choices.size())) + 1;
+                    const uint32_t nalgo = rg.randomInt<uint32_t>(0, static_cast<uint32_t>(choices.size()));
 
                     std::shuffle(choices.begin(), choices.end(), rg.generator);
                     for (uint32_t i = 0; i < nalgo; i++)
@@ -469,7 +469,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
          {
              String res;
              std::vector<uint32_t> choices = {0, 1, 2, 3, 4};
-             const uint32_t nchoices = (rg.nextMediumNumber() % static_cast<uint32_t>(choices.size())) + 1;
+             const uint32_t nchoices = rg.randomInt<uint32_t>(0, static_cast<uint32_t>(choices.size()));
 
              std::shuffle(choices.begin(), choices.end(), rg.generator);
              for (uint32_t i = 0; i < nchoices; i++)

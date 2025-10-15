@@ -1701,7 +1701,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
         case IndexType::IDX_text: {
             String buf;
             bool has_paren = rg.nextSmallNumber() < 8;
-            static const DB::Strings & tokenizerVals = {"splitByNonAlpha", "splitByString", "ngrams", "array"};
+            static const DB::Strings & tokenizerVals = {"splitByNonAlpha", "splitByString", "ngrams", "array", "sparseGrams"};
             const String & next_tokenizer = rg.pickRandomly(tokenizerVals);
 
             buf += fmt::format("tokenizer = {}", next_tokenizer);
@@ -1732,6 +1732,14 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
                 }
                 buf2 += "]";
                 buf += buf2;
+            }
+            else if (has_paren && next_tokenizer == "sparseGrams" && rg.nextBool())
+            {
+                std::uniform_int_distribution<uint32_t> next_dist(0, rg.nextBool() ? 10 : 100);
+
+                buf += std::to_string(next_dist(rg.generator));
+                buf += ", ";
+                buf += std::to_string(next_dist(rg.generator));
             }
             buf += has_paren ? ")" : "";
             idef->add_params()->set_unescaped_sval(std::move(buf));
