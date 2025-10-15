@@ -5,7 +5,6 @@
 #include <Columns/IColumn.h>
 #include <Processors/Port.h>
 #include <base/types.h>
-#include "iostream"
 
 namespace DB
 {
@@ -113,9 +112,13 @@ IProcessor::Status FractionalLimitTransform::prepare(
     if (has_finished_output)
     {
         for (auto & chunk : chunks_cache)
-        {
             chunk.clear();
-        }
+
+        chunks_cache.clear();
+
+        for (auto & output : outputs)
+            output.finish();
+
         return Status::Finished;
     }
 
@@ -181,7 +184,14 @@ FractionalLimitTransform::Status FractionalLimitTransform::preparePair(PortsData
                 chunks_cache[0].clear();
                 chunks_cache.pop_front();
             }
-        } while (rows_read <= offset);
+        } while (rows_read <= offset && !chunks_cache.empty());
+
+        if (chunks_cache.empty())
+        {
+            output.finish();
+            return Status::Finished;
+        }
+
 
         if (rows <= std::numeric_limits<UInt64>::max() - offset && rows_read >= offset + rows && rows_read <= offset + limit)
         {
