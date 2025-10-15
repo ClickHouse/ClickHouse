@@ -83,7 +83,15 @@ void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, Cr
                     }
                     else
                     {
-                        sv.set_value(rg.pickRandomly(chs.oracle_values));
+                        const String ovalue = sv.value();
+                        String nvalue = rg.pickRandomly(chs.oracle_values);
+
+                        for (uint32_t j = 0; j < 4 && ovalue == nvalue; j++)
+                        {
+                            /// Pick another value until they are different
+                            nvalue = rg.pickRandomly(chs.oracle_values);
+                        }
+                        sv.set_value(nvalue);
                     }
                 }
             }
@@ -194,6 +202,7 @@ void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, Cr
     }
     if (newt.has_cluster() && rg.nextSmallNumber() < 4)
     {
+        /// Remove cluster
         newt.clear_cluster();
     }
     else if (!fc.clusters.empty() && rg.nextSmallNumber() < 4)
