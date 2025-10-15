@@ -278,7 +278,7 @@ def main():
         "JAVA_PATH": java_path,
     }
     test_results = []
-    files = []
+    failed_tests_files = []
 
     has_error = False
     error_info = []
@@ -299,7 +299,7 @@ def main():
                 break
         test_results.extend(test_result_parallel.results)
         if test_result_parallel.files:
-            files.extend(test_result_parallel.files)
+            failed_tests_files.extend(test_result_parallel.files)
         if test_result_parallel.is_error():
             has_error = True
             error_info.append(test_result_parallel.info)
@@ -320,7 +320,7 @@ def main():
                 break
         test_results.extend(test_result_sequential.results)
         if test_result_sequential.files:
-            files.extend(test_result_sequential.files)
+            failed_tests_files.extend(test_result_sequential.files)
         if test_result_sequential.is_error():
             has_error = True
             error_info.append(test_result_sequential.info)
@@ -331,7 +331,7 @@ def main():
     if not info.is_local_run:
         print("Dumping dmesg")
         Shell.check("dmesg -T > dmesg.log", verbose=True, strict=True)
-        files.append("dmesg.log")
+        failed_tests_files.append("dmesg.log")
         with open("dmesg.log", "rb") as dmesg:
             dmesg = dmesg.read()
             if (
@@ -345,16 +345,27 @@ def main():
                     )
                 )
 
+    files = []
     if not info.is_local_run:
         failed_suits = []
+        # Collect docker compose configs used in tests
+        config_files = [
+            str(p)
+            for p in Path("./tests/integration/").glob("test_*/_instances*/*/configs/")
+        ]
         for test_result in test_results:
             if not test_result.is_ok() and ".py" in test_result.name:
                 failed_suits.append(test_result.name.split("/")[0])
         failed_suits = list(set(failed_suits))
         for failed_suit in failed_suits:
-            files.append(f"tests/integration/{failed_suit}")
+            failed_tests_files.append(f"tests/integration/{failed_suit}")
 
-        files = [Utils.compress_files_gz(files, f"{temp_path}/logs.tar.gz")]
+        files.append(
+            Utils.compress_files_gz(failed_tests_files, f"{temp_path}/logs.tar.gz")
+        )
+        files.append(
+            Utils.compress_files_gz(config_files, f"{temp_path}/configs.tar.gz")
+        )
 
     R = Result.create_from(results=test_results, stopwatch=sw, files=files)
 
