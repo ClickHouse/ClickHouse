@@ -871,6 +871,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ("ignore-error,continue_on_errors", "continue testing even if a query fails")
             ("reconnect", value<size_t>()->default_value(0), "control reconnection behaviour: 0 (never reconnect), 1 (reconnect for every query), or N (reconnect after every N queries)")
             ("client-side-time", "display the time including network communication instead of server-side time; note that for server versions before 22.8 we always display client-side time")
+            ("proto_caps", value<std::string>(), "Enable/disable chunked protocol (comma-separated): chunked_optional, notchunked, notchunked_optional, send_chunked, send_chunked_optional, send_notchunked, send_notchunked_optional, recv_chunked, recv_chunked_optional, recv_notchunked, recv_notchunked_optional")
         ;
 
         Settings settings;
