@@ -116,9 +116,24 @@ void DeltaLakePartitionedSink::consume(Chunk & chunk)
         if (it == name_to_pos.end())
             throw Exception(ErrorCodes::INCORRECT_DATA, "Writer column '{}' not found in table header", writer_col.name);
 
-        if (const size_t pos_in_table = it->second; pos_in_table < chunk.getNumColumns())
+        /// Build the columns the writer expects ("format header") from the current chunk.
+        /// By this stage the pipeline should have already aligned data to the sink's input
+        /// header (correct order, defaults for omitted columns).
+        /// For each writer column:
+        /// - if it exists in the chunk, take it by position;
+        /// - otherwise, create a full default column of the correct type/size.
+        ///
+        /// Example:
+        ///   Table header  : (a Int32, b String, c Int32, d String)
+        ///   User INSERT   : INSERT INTO t (c, b) VALUES ...
+        ///   Chunk at sink : (a, b, c, d)      // a,d default-filled upstream
+        ///   Format header : (b, c, d)         // non-partition columns only
+        /// We do the following mapping {a→0, b→1, c→2, d→3} and pick chunk[1], chunk[2], chunk[3]
+        /// in the `if` branch. If the writer also expected 'e' (say added by ALTER) but the current
+        /// chunk doesn't carry it yet, materialize a default column for 'e' in the `else` branch.
+        if (const size_t pos_in_chunk = it->second; pos_in_chunk < chunk.getNumColumns())
         {
-            columns_to_consume.emplace_back(chunk.getColumns()[pos_in_table].get());
+            columns_to_consume.emplace_back(chunk.getColumns()[pos_in_chunk].get());
         }
         else
         {
