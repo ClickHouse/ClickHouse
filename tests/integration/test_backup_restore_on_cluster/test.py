@@ -1117,30 +1117,45 @@ def test_table_in_replicated_database_with_not_synced_def():
     ) == TSV([["x", "String"], ["y", "String"]])
 
 
-def has_mutation_in_backup(mutation_id, backup_name, database, table):
-    return (
-        os.path.exists(
-            os.path.join(
-                get_path_to_backup(backup_name),
-                f"shards/1/replicas/1/data/{database}/{table}/mutations/{mutation_id}.txt",
-            )
-        )
-        or os.path.exists(
-            os.path.join(
-                get_path_to_backup(backup_name),
-                f"shards/1/replicas/2/data/{database}/{table}/mutations/{mutation_id}.txt",
-            )
-        )
-        or os.path.exists(
-            os.path.join(
-                get_path_to_backup(backup_name),
-                f"shards/1/replicas/3/data/{database}/{table}/mutations/{mutation_id}.txt",
-            )
-        )
-    )
+def has_mutation_in_backup(
+    mutation_id, backup_name, database, table, key_prefix_template=""
+):
+    if key_prefix_template:
+        replica = "[1-3]"
+        pattern = f"{key_prefix_template}/shards/1/replicas/{replica}/data/{database}/{table}/mutations/{mutation_id}.txt"
+        regex = re.compile(pattern)
+        for dirpath, dirnames, filenames in os.walk(get_path_to_backup(backup_name)):
+            for d in dirnames:
+                full_path = os.path.join(dirpath, d)
+                if regex.search(full_path):
+                    return True
+            for f in filenames:
+                full_path = os.path.join(dirpath, f)
+                print(full_path)
+                print(pattern)
+                if regex.search(full_path):
+                    return True
+        return False
+    else:
+        for replica in [1, 2, 3]:
+            if os.path.exists(
+                os.path.join(
+                    get_path_to_backup(backup_name),
+                    f"shards/1/replicas/{replica}/data/{database}/{table}/mutations/{mutation_id}.txt",
+                )
+            ):
+                return True
+            return False
 
 
-def test_mutation():
+@pytest.mark.parametrize(
+    "key_prefix_template",
+    [
+        pytest.param("", id="no_key_prefix"),
+        pytest.param("[a-z]{3}", id="regex_key_prefix"),
+    ],
+)
+def test_mutation(key_prefix_template):
     node1.query(
         "CREATE TABLE tbl ON CLUSTER 'cluster' ("
         "x UInt8, y String"
@@ -1159,15 +1174,36 @@ def test_mutation():
     node1.query("ALTER TABLE tbl UPDATE x=x+1+sleep(3) WHERE 1")
 
     backup_name = new_backup_name()
-    node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
+    backup_settings = {"key_prefix_template": key_prefix_template}
+    node1.query(
+        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} {format_settings(backup_settings)}"
+    )
 
     # mutation #0000000000: "UPDATE x=x+1 WHERE 1" could already finish before starting the backup
     # mutation #0000000001: "UPDATE x=x+1+sleep(3) WHERE 1"
-    assert has_mutation_in_backup("0000000001", backup_name, "default", "tbl")
+    assert has_mutation_in_backup(
+        "0000000001",
+        backup_name,
+        "default",
+        "tbl",
+        key_prefix_template=key_prefix_template,
+    )
     # mutation #0000000002: "UPDATE x=x+1+sleep(3) WHERE 1"
-    assert has_mutation_in_backup("0000000002", backup_name, "default", "tbl")
+    assert has_mutation_in_backup(
+        "0000000002",
+        backup_name,
+        "default",
+        "tbl",
+        key_prefix_template=key_prefix_template,
+    )
     # mutation #0000000003: not expected
-    assert not has_mutation_in_backup("0000000003", backup_name, "default", "tbl")
+    assert not has_mutation_in_backup(
+        "0000000003",
+        backup_name,
+        "default",
+        "tbl",
+        key_prefix_template=key_prefix_template,
+    )
 
     node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
