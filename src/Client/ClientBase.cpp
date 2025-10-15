@@ -3746,7 +3746,7 @@ fs::path ClientBase::getHistoryFilePath()
             return path_in_home_dir;
     }
 
-    return fs::path(XDGBaseDirectories::getStateHome()) / "client-query-history";
+    return XDGBaseDirectories::getStateHome() / "client-query-history";
 }
 
 
