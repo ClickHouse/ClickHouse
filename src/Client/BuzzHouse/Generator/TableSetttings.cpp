@@ -246,16 +246,20 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"min_compressed_bytes_to_fsync_after_fetch", bytesRangeSetting},
     {"min_compressed_bytes_to_fsync_after_merge", bytesRangeSetting},
     {"min_index_granularity_bytes", bytesRangeSetting},
+    /// ClickHouse cloud setting
+    {"min_level_for_full_part_storage",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 10)); }, {}, false)},
+    {"min_level_for_wide_part",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 10)); }, {}, false)},
     {"min_marks_to_honor_max_concurrent_queries", highRangeSetting},
-    {"min_rows_for_compact_part", rowsRangeSetting},
     {"min_merge_bytes_to_use_direct_io", bytesRangeSetting},
     {"min_parts_to_merge_at_once",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 128)); }, {}, false)},
+    {"min_rows_for_compact_part", rowsRangeSetting},
     {"min_rows_for_full_part_storage",
-     CHSetting(
-         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 1000)); }, {}, false)},
-    {"min_rows_to_fsync_after_merge",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 1000)); }, {}, false)},
     {"min_rows_for_wide_part",
@@ -263,6 +267,9 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.4, 0.2, 0, UINT32_C(8192))); },
          {},
          false)},
+    {"min_rows_to_fsync_after_merge",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 1000)); }, {}, false)},
     {"non_replicated_deduplication_window", rowsRangeSetting},
     /// ClickHouse cloud setting
     {"notify_newest_block_number", trueOrFalseSetting},
