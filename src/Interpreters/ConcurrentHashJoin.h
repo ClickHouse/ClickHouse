@@ -67,8 +67,6 @@ public:
     IBlocksStreamPtr
     getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
 
-    bool hasNonJoinedRows() const;
-
     static bool canProcessNonJoinedBlocks(const TableJoin & table_join_)
     {
         return isRight(table_join_.kind());
@@ -128,10 +126,6 @@ private:
 
     ScatteredBlocks dispatchBlock(const Strings & key_columns_names, Block && from_block);
     ScatteredBlocks dispatchBlockTwoLevel(const Strings & key_columns_names, Block && from_block);
-
-    bool isUsedByAnotherAlgorithm() const;
-    bool canRemoveColumnsFromLeftBlock() const;
-    bool needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJoin> table_join_) const;
 };
 
 // The following two methods are deprecated and hopefully will be removed in the future.

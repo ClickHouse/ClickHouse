@@ -427,50 +427,6 @@ bool ConcurrentHashJoin::alwaysReturnsEmptySet() const
     return true;
 }
 
-bool ConcurrentHashJoin::hasNonJoinedRows() const
-{
-    if (has_non_joined_rows_checked.load(std::memory_order_acquire))
-        return has_non_joined_rows.load(std::memory_order_acquire);
-
-    if (!isRightOrFull(table_join->kind()))
-        return false;
-
-    bool found_non_joined = false;
-    for (const auto & hash_join_ptr : hash_joins)
-    {
-        std::lock_guard lock(hash_join_ptr->mutex);
-        if (hash_join_ptr->data->hasNonJoinedRows() || hash_join_ptr->has_non_joined_rows.load(std::memory_order_relaxed))
-        {
-            found_non_joined = true;
-            break;
-        }
-    }
-
-    has_non_joined_rows.store(found_non_joined, std::memory_order_release);
-    has_non_joined_rows_checked.store(true, std::memory_order_release);
-    return found_non_joined;
-}
-
-bool ConcurrentHashJoin::isUsedByAnotherAlgorithm() const
-{
-    return table_join->isEnabledAlgorithm(JoinAlgorithm::AUTO) || table_join->isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH);
-}
-
-bool ConcurrentHashJoin::canRemoveColumnsFromLeftBlock() const
-{
-    return table_join->enableAnalyzer() && !table_join->hasUsing() && !isUsedByAnotherAlgorithm() && table_join->strictness() != JoinStrictness::RightAny;
-}
-
-bool ConcurrentHashJoin::needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJoin> table_join_) const
-{
-    if (!table_join_->oneDisjunct())
-        return true;
-    /// For example, if it's an all right join with inequal conditions, we need to mark each row
-    if (table_join_->getMixedJoinExpression() && isRightOrFull(table_join_->kind()))
-        return true;
-    return false;
-}
-
 IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
         const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const
 {
