@@ -220,6 +220,7 @@ else ()
 endif ()
 
 # Optionally split binaries and debug symbols.
+option(DISABLE_ALL_DEBUG_SYMBOLS "Force disable debug symbols, independently of the build" OFF)
 option(SPLIT_DEBUG_SYMBOLS "Split binaries and debug symbols" OFF)
 if (SPLIT_DEBUG_SYMBOLS)
     message(STATUS "Will split binaries and debug symbols")
@@ -310,6 +311,9 @@ endif()
 set (COMPILER_FLAGS "${COMPILER_FLAGS} -ffp-contract=off")
 
 set (DEBUG_INFO_FLAGS "-g")
+if (DISABLE_ALL_DEBUG_SYMBOLS)
+    set (DEBUG_INFO_FLAGS "-g0")
+endif()
 
 # Disable omit frame pointer compiler optimization using -fno-omit-frame-pointer
 option(DISABLE_OMIT_FRAME_POINTER "Disable omit frame pointer compiler optimization" OFF)
