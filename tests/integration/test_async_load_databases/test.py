@@ -142,6 +142,8 @@ def dependent_tables_assert():
 
 def test_dependent_tables(started_cluster):
     query = node1.query
+    query("drop database if exists a")
+    query("drop database if exists lazy")
     query("create database lazy engine=Lazy(10)")
     query("create database a")
     query("create table lazy.src (n int, m int) engine=Log")
@@ -257,6 +259,7 @@ def test_async_load_system_database(started_cluster):
 
 def test_materialized_views(started_cluster):
     query = node1.query
+    query("drop database if exists test_mv")
     query("create database test_mv")
     query("create table test_mv.t (Id UInt64) engine=MergeTree order by Id")
     query("create table test_mv.a (Id UInt64) engine=MergeTree order by Id")
@@ -279,6 +282,7 @@ def test_materialized_views(started_cluster):
 
 def test_materialized_views_cascaded(started_cluster):
     query = node1.query
+    query("drop database if exists test_mv")
     query("create database test_mv")
     query("create table test_mv.t (Id UInt64) engine=MergeTree order by Id")
     query("create table test_mv.a (Id UInt64) engine=MergeTree order by Id")
@@ -301,6 +305,7 @@ def test_materialized_views_cascaded(started_cluster):
 
 def test_materialized_views_cascaded_multiple(started_cluster):
     query = node1.query
+    query("drop database if exists test_mv")
     query("create database test_mv")
     query("create table test_mv.t (Id UInt64) engine=MergeTree order by Id")
     query("create table test_mv.a (Id UInt64) engine=MergeTree order by Id")
@@ -354,6 +359,7 @@ def test_materialized_views_replicated(started_cluster):
     for node in [node1, node2]:
         node.query(
             f"""
+            DROP DATABASE IF EXISTS test_mv;
             CREATE DATABASE test_mv;
             CREATE TABLE test_mv.test_table_H(id UInt32)
             ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_table_H', '{nodenum}')
