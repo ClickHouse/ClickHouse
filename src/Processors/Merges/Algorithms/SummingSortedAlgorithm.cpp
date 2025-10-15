@@ -278,7 +278,7 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
                 desc.nested_type = recursiveRemoveLowCardinality(desc.real_type);
                 if (desc.real_type.get() == desc.nested_type.get())
                     desc.nested_type = nullptr;
-                
+
                 if (simple)
                 {
                     // simple aggregate function
@@ -590,12 +590,23 @@ void SummingSortedAlgorithm::SummingMergedData::initialize(const DB::Block & hea
         // Wrap aggregated columns in a tuple to match function signature
         if (!desc.is_agg_func_type && !desc.is_simple_agg_func_type && isTuple(desc.function->getResultType()))
         {
-            size_t tuple_size = assert_cast<const ColumnTuple &>(*desc.real_type->createColumn()).tupleSize();
-            MutableColumns tuple_columns(tuple_size);
-            for (size_t i = 0; i < tuple_size; ++i)
-                tuple_columns[i] = assert_cast<const ColumnTuple &>(*desc.real_type->createColumn()).getColumnPtr(i)->cloneEmpty();
+            if (desc.aggregate_all_columns)
+            {
+                size_t tuple_size = assert_cast<const ColumnTuple &>(*desc.real_type->createColumn()).tupleSize();
+                MutableColumns tuple_columns(tuple_size);
+                for (size_t i = 0; i < tuple_size; ++i)
+                    tuple_columns[i] = assert_cast<const ColumnTuple &>(*desc.real_type->createColumn()).getColumnPtr(i)->cloneEmpty();
+                new_columns.emplace_back(ColumnTuple::create(std::move(tuple_columns)));
+            }
+            else
+            {
+                size_t tuple_size = desc.column_numbers.size();
+                MutableColumns tuple_columns(tuple_size);
+                for (size_t i = 0; i < tuple_size; ++i)
+                    tuple_columns[i] = std::move(columns[desc.column_numbers[i]]);
 
-            new_columns.emplace_back(ColumnTuple::create(std::move(tuple_columns)));
+                new_columns.emplace_back(ColumnTuple::create(std::move(tuple_columns)));
+            }
         }
         else
         {
