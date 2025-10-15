@@ -1,3 +1,8 @@
+#include <memory>
+#include <Core/DecimalFunctions.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/IDataType.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Planner/Planner.h>
 
 #include <Columns/ColumnConst.h>
@@ -7,6 +12,9 @@
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Processors/QueryPlan/BlocksMarshallingStep.h>
+#include <Common/Exception.h>
+#include <Common/FieldVisitorToString.h>
+#include <Common/FieldVisitors.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 
@@ -15,6 +23,8 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/CastOverloadResolver.h>
 
+#include <Processors/QueryPlan/FractionalLimitStep.h>
+#include <Processors/QueryPlan/FractionalOffsetStep.h>
 #include <QueryPipeline/Pipe.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -89,6 +99,9 @@
 #include <Planner/PlannerSorting.h>
 #include <Planner/PlannerWindowFunctions.h>
 #include <Planner/Utils.h>
+#include <base/BFloat16.h>
+#include <base/Decimal_fwd.h>
+#include <base/types.h>
 
 
 namespace ProfileEvents
@@ -160,6 +173,7 @@ namespace ErrorCodes
     extern const int TOO_DEEP_SUBQUERIES;
     extern const int NOT_IMPLEMENTED;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int INVALID_LIMIT_EXPRESSION;
 }
 
 namespace
@@ -345,6 +359,25 @@ void extendQueryContextAndStoragesLifetime(QueryPlan & query_plan, const Planner
     }
 }
 
+std::pair<UInt64, double> getLimitUintandBFloatValues(const Field & field) 
+{
+    Field converted_value_uint = convertFieldToType(field, DataTypeUInt64());
+    if (!converted_value_uint.isNull()) 
+    {
+        return {converted_value_uint.safeGet<UInt64>(), 0};
+    }
+
+    Field converted_value_bfloat = convertFieldToType(field, DataTypeBFloat16());
+    if (!converted_value_bfloat.isNull()) 
+    {
+        return {0, converted_value_bfloat.safeGet<BFloat16>()};
+    }
+
+    throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION,
+        "The value {} is not representable as UInt64 or BFloat16 (0.1 to 0.9)",
+        applyVisitor(FieldVisitorToString(), field));
+}
+
 class QueryAnalysisResult
 {
 public:
@@ -374,18 +407,21 @@ public:
         if (query_node.hasLimit())
         {
             /// Constness of limit is validated during query analysis stage
-            limit_length = query_node.getLimit()->as<ConstantNode &>().getValue().safeGet<UInt64>();
+            Field limit_value = query_node.getLimit()->as<ConstantNode &>().getValue();
+            std::tie(limit_length, fractional_limit) = getLimitUintandBFloatValues(limit_value);
 
-            if (query_node.hasOffset() && limit_length)
+            if (query_node.hasOffset() && (limit_length || fractional_limit > 0))
             {
                 /// Constness of offset is validated during query analysis stage
-                limit_offset = query_node.getOffset()->as<ConstantNode &>().getValue().safeGet<UInt64>();
+                Field offset_value = query_node.getOffset()->as<ConstantNode &>().getValue();
+                std::tie(limit_offset, fractional_offset) = getLimitUintandBFloatValues(offset_value);
             }
         }
         else if (query_node.hasOffset())
         {
             /// Constness of offset is validated during query analysis stage
-            limit_offset = query_node.getOffset()->as<ConstantNode &>().getValue().safeGet<UInt64>();
+            Field offset_value = query_node.getOffset()->as<ConstantNode &>().getValue();
+            std::tie(limit_offset, fractional_offset) = getLimitUintandBFloatValues(offset_value);
         }
 
         /// Partial sort can be done if there is LIMIT, but no DISTINCT, LIMIT WITH TIES, LIMIT BY, ARRAY JOIN
@@ -409,6 +445,8 @@ public:
     SortDescription sort_description;
     UInt64 limit_length = 0;
     UInt64 limit_offset = 0;
+    BFloat16 fractional_limit;
+    BFloat16 fractional_offset;
     UInt64 partial_sorting_limit = 0;
 };
 
