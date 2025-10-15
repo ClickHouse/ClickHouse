@@ -1446,10 +1446,7 @@ void StatementGenerator::generateEngineDetails(
         {
             svs = svs ? svs : te->mutable_setting_values();
             SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
-            const String & pick
-                = (fc.storage_policies.empty() || ((b.isJoinEngine() || b.isSetEngine()) && b.isShared()) || rg.nextSmallNumber() < 8)
-                ? "disk"
-                : "storage_policy";
+            const String & pick = (fc.keeper_disks.empty() || rg.nextSmallNumber() < 3) ? "storage_policy" : "disk";
 
             sv->set_property(pick);
             sv->set_value("'" + rg.pickRandomly(pick == "storage_policy" ? fc.storage_policies : fc.keeper_disks) + "'");
