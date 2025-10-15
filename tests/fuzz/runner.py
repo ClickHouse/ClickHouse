@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 DEBUGGER = os.getenv("DEBUGGER", "")
 TIMEOUT = int(os.getenv("TIMEOUT", "0"))
 OUTPUT = "/test_output"
-RUNNERS = int(os.getenv("RUNNERS", "4"))
+RUNNERS = int(os.getenv("RUNNERS", "8"))
 
 
 class Stopwatch:
