@@ -790,7 +790,7 @@ class CPMVROperation
 
             Coordination::Stat stat;
             std::string data = client->zookeeper->get(next_path, &stat);
-            subtree_nodes.emplace_back(subpath, data, stat.version);
+            subtree_nodes.emplace_back(std::move(subpath), std::move(data), stat.version);
         }
 
         return subtree_nodes;
@@ -811,32 +811,42 @@ public:
         auto subtree_nodes = collectSubtree();
         Coordination::Requests ops;
 
-        /// Copy tree
         for (const auto & [subpath, data, version] : subtree_nodes)
         {
-            ops.push_back(zkutil::makeCheckRequest(src + subpath, version));
+            if (remove_src)
+                ops.push_back(zkutil::makeRemoveRequest(src + subpath, version));
+            else
+                ops.push_back(zkutil::makeCheckRequest(src + subpath, version));
+
             ops.push_back(zkutil::makeCreateRequest(dest + subpath, data, zkutil::CreateMode::Persistent));
         }
-
-        /// If needed remove source tree
-        if (remove_src)
-            for (const auto & [subpath, _, version] : subtree_nodes | std::views::reverse)
-                ops.push_back(zkutil::makeRemoveRequest(src + subpath, version));
 
         Coordination::Responses responses;
         auto code = client->zookeeper->tryMulti(ops, responses);
 
         switch (code)
         {
-            case Coordination::Error::ZOK: {
+            case Coordination::Error::ZOK:
+            {
                 is_completed = true;
                 return;
             }
-            case Coordination::Error::ZBADVERSION: {
+            case Coordination::Error::ZBADVERSION:
+            {
                 ++failed_tries_count;
 
                 if (isTryLimitReached())
                     zkutil::KeeperMultiException::check(code, ops, responses);
+
+                return;
+            }
+            case Coordination::Error::ZNONODE:
+            {
+                ++failed_tries_count;
+
+                zkutil::KeeperMultiException error(code, ops, responses);
+                if (isTryLimitReached() || error.getPathForFirstFailedOp() == src)
+                    error.rethrow();
 
                 return;
             }
