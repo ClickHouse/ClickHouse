@@ -24,7 +24,7 @@ def drop_after_test():
         yield
     finally:
         node.query("DROP TABLE IF EXISTS tbl SYNC")
-        node.exec_in_container(["bash", "-c", f"rm -r /var/lib/clickhouse/shadow/"])
+        node.exec_in_container(["bash", "-c", f"rm -fr /var/lib/clickhouse/shadow/"])
 
 
 # Test that FREEZE operation can be cancelled with KILL QUERY.
