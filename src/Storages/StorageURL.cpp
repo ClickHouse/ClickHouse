@@ -7,10 +7,14 @@
 
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/interpretSubquery.h>
+
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTSubquery.h>
 
 #include <IO/ConnectionTimeouts.h>
 #include <IO/WriteBufferFromHTTP.h>
@@ -19,6 +23,7 @@
 #include <Formats/ReadSchemaUtils.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
@@ -31,7 +36,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ClusterFunctionReadTask.h>
 
-#include "Common/LoggingFormatStringHelpers.h"
+#include <Common/LoggingFormatStringHelpers.h>
 #include <Common/HTTPHeaderFilter.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ThreadStatus.h>
@@ -57,10 +62,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Poco/Net/HTTPRequest.h>
-
-#include "Interpreters/interpretSubquery.h"
-#include "Parsers/ASTSubquery.h"
-#include "Processors/Executors/CompletedPipelineExecutor.h"
 
 
 namespace ProfileEvents
@@ -1613,8 +1614,7 @@ std::string evaluateBodySubqueryToString(ASTPtr body_ptr, const std::optional<St
     auto out = context->getOutputFormat(format.value_or("JSONLines"), write_buffer, materializeBlock(block.pipeline.getHeader()));
     out->setAutoFlush();
     block.pipeline.complete(std::move(out));
-    CompletedPipelineExecutor executor(block.pipeline);
-    executor.execute();
+    CompletedPipelineExecutor(block.pipeline).execute();
 
     auto result = write_buffer.str();
     LOG_DEBUG(getLogger("StorageURLDistributed"), "Interpreted body subquery, result size is:\t\t{}", result);
@@ -1705,7 +1705,7 @@ size_t StorageURL::evalArgsAndCollectHeaders(
                 std::optional<String> format;
                 if (body_function_args.size() == 2)
                 {
-                    auto format_argument = body_function_args[1];
+                    const auto& format_argument = body_function_args[1];
                     auto ast_literal = evaluateConstantExpressionOrIdentifierAsLiteral(format_argument, context);
                     auto arg_name_value = ast_literal->as<ASTLiteral>()->value;
                     if (arg_name_value.getType() != Field::Types::Which::String)
