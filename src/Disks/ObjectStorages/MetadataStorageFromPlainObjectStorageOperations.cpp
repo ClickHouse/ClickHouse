@@ -24,6 +24,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int FILE_DOESNT_EXIST;
+extern const int DIRECTORY_DOESNT_EXIST;
 extern const int FILE_ALREADY_EXISTS;
 extern const int INCORRECT_DATA;
 extern const int FAULT_INJECTED;
@@ -70,6 +71,10 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute()
     const auto base_path = path.parent_path();
     if (path_map.existsLocalPath(base_path))
         return;
+
+    const auto parent_path = base_path.parent_path();
+    if (!parent_path.empty() && !path_map.existsLocalPath(base_path.parent_path()))
+        throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Parent directory '{}' does not exist", parent_path);
 
     auto metadata_object_key = createMetadataObjectKey(object_key_prefix, metadata_key_prefix);
 
