@@ -22,11 +22,7 @@ public:
 
     String getEngineName() const override { return "Lazy"; }
 
-    bool canContainMergeTreeTables() const override { return false; }
-
-    bool canContainDistributedTables() const override { return false; }
-
-    bool canContainRocksDBTables() const override { return false; }
+    bool isExternal() const override { return false; }
 
     void loadStoredObjects(ContextMutablePtr context, LoadingStrictnessLevel /*mode*/) override;
 

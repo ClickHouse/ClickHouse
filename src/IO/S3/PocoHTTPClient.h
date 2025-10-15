@@ -7,7 +7,7 @@
 
 #if USE_AWS_S3
 
-#include <Common/Histogram.h>
+#include <Common/HistogramMetrics.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/IThrottler.h>
 #include <Common/ProxyConfiguration.h>
@@ -208,7 +208,7 @@ protected:
 
     static S3MetricKind getMetricKind(const Aws::Http::HttpRequest & request);
     void addMetric(const Aws::Http::HttpRequest & request, S3MetricType type, ProfileEvents::Count amount = 1) const;
-    void observeLatency(const Aws::Http::HttpRequest & request, S3LatencyType type, Histogram::Value latency = 1) const;
+    void observeLatency(const Aws::Http::HttpRequest & request, S3LatencyType type, HistogramMetrics::Value latency = 1) const;
 
     std::function<ProxyConfiguration()> per_request_configuration;
     std::function<void(const ProxyConfiguration &)> error_report;

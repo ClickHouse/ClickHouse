@@ -451,8 +451,7 @@ namespace DB
         /// Convert dictionary values to arrow array.
         auto value_type = assert_cast<arrow::DictionaryType *>(builder->type().get())->value_type();
         std::unique_ptr<arrow::ArrayBuilder> values_builder;
-        arrow::MemoryPool* pool = ArrowMemoryPool::instance();
-        arrow::Status status = MakeBuilder(pool, value_type, &values_builder);
+        arrow::Status status = MakeBuilder(arrow::default_memory_pool(), value_type, &values_builder);
         checkStatus(status, column->getName(), format_name);
 
         auto dict_column = dynamic_cast<IColumnUnique &>(*dict_values).getNestedNotNullableColumn();
@@ -1122,9 +1121,8 @@ namespace DB
                         arrow_fields.emplace_back(std::make_shared<arrow::Field>(header_column.name, arrow_type, is_column_nullable));
                 }
 
-                arrow::MemoryPool * pool = ArrowMemoryPool::instance();
                 std::unique_ptr<arrow::ArrayBuilder> array_builder;
-                arrow::Status status = MakeBuilder(pool, arrow_fields[column_i]->type(), &array_builder);
+                arrow::Status status = MakeBuilder(arrow::default_memory_pool(), arrow_fields[column_i]->type(), &array_builder);
                 checkStatus(status, column->getName(), format_name);
 
                 fillArrowArray(

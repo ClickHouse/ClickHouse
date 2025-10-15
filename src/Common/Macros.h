@@ -38,6 +38,7 @@ public:
         StorageID table_id = StorageID::createEmpty();
         bool ignore_unknown = false;
         bool expand_special_macros_only = false;
+        bool expand_for_database = false;
         std::optional<String> shard = {};
         std::optional<String> replica = {};
 
