@@ -1033,6 +1033,7 @@ try
 #if defined(OS_LINUX)
     std::string executable_path = getExecutablePath();
     /// Remap before creating other threads (like TraceCollector or anything that might collect traces) to prevent crashing when
+    /// the code section of the executable is moved while they collect traces
     if (config().getBool("remap_executable", false))
     {
         LOG_DEBUG(log, "Will remap executable in memory.");
