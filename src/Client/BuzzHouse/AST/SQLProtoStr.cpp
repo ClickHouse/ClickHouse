@@ -2946,6 +2946,9 @@ CONV_FN(DatabaseEngineParam, dep)
             DatabaseToString(ret, dep.disk().database());
             ret += "')";
             break;
+        case DatabaseEngineParamType::kExpr:
+            ExprToString(ret, dep.expr());
+            break;
         default:
             ret += "d0";
     }
@@ -3912,6 +3915,21 @@ CONV_FN(RefreshableView, rv)
     }
     ret += " RANDOMIZE FOR ";
     RefreshIntervalToString(ret, rv.randomize());
+    if (rv.has_depends())
+    {
+        ret += " DEPENDS ON ";
+        ExprSchemaTableToString(ret, rv.depends().est());
+        for (int i = 0; i < rv.depends().other_est_size(); i++)
+        {
+            ret += ", ";
+            ExprSchemaTableToString(ret, rv.depends().other_est(i));
+        }
+    }
+    if (rv.has_setting_values())
+    {
+        ret += " SETTINGS ";
+        SettingValuesToString(ret, rv.setting_values());
+    }
     if (rv.append())
     {
         ret += " APPEND";

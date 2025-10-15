@@ -95,3 +95,5 @@ find $ROOT_PATH/{base,src,programs,utils,docs} -name '*.md' -or -name '*.h' -or 
 # Check for misuse of timeout in .sh tests
 find $ROOT_PATH/tests/queries -name '*.sh' | grep -vP '02835_drop_user_during_session|02922_deduplication_with_zero_copy|00738_lock_for_inner_table|shared_merge_tree|_sc_' |
     xargs grep -l -P 'export -f' | xargs grep -l -F 'timeout' && echo ".sh tests cannot use the 'timeout' command, because it leads to race conditions, when the timeout is expired, and waiting for the command is done, but the server still runs some queries"
+
+find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' | xargs grep --with-filename -i -E -e 'system\s*flush\s*logs\s*(;|$|")' && echo "Please use SYSTEM FLUSH LOGS log_name over global SYSTEM FLUSH LOGS"
