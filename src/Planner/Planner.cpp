@@ -374,7 +374,7 @@ std::pair<UInt64, double> getLimitUintandBFloatValues(const Field & field)
     }
 
     throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION,
-        "The value {} is not representable as UInt64 or BFloat16 (0.1 to 0.9)",
+        "The value {} is not representable as UInt64 nor BFloat16",
         applyVisitor(FieldVisitorToString(), field));
 }
 
