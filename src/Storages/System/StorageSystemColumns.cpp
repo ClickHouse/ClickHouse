@@ -444,7 +444,7 @@ void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, 
 
         const auto & context = getContext();
         const auto & settings = context->getSettingsRef();
-        const auto databases = DatabaseCatalog::instance().getDatabases(settings[Setting::show_data_lake_catalogs_in_system_tables]);
+        const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = settings[Setting::show_data_lake_catalogs_in_system_tables]});
         for (const auto & [database_name, database] : databases)
         {
             if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)

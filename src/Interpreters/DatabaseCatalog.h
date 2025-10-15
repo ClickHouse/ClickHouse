@@ -121,6 +121,11 @@ using TemporaryTablesMapping = std::map<String, TemporaryTableHolderPtr>;
 
 class BackgroundSchedulePoolTaskHolder;
 
+struct GetDatabasesOptions
+{
+    bool with_datalake_catalogs{false};
+};
+
 /// For some reason Context is required to get Storage from Database object
 class DatabaseCatalog : boost::noncopyable, WithMutableContext
 {
@@ -177,7 +182,7 @@ public:
     /// to not accidentally query external non-free service for some trivial things like
     /// autocompletion hints or system.tables query. We have a setting which allow to show
     /// these databases everywhere, but user must explicitly specify it.
-    Databases getDatabases(bool skip_datalake_catalogs) const;
+    Databases getDatabases(GetDatabasesOptions options) const;
 
     /// Same as getDatabase(const String & database_name), but if database_name is empty, current database of local_context is used
     DatabasePtr getDatabase(const String & database_name, ContextPtr local_context) const;

@@ -115,7 +115,7 @@ public:
         const bool need_to_check_access_for_databases = !access->isGranted(AccessType::SHOW_DATABASES);
 
         Names result;
-        auto databases_list = database_catalog.getDatabases(false);
+        auto databases_list = database_catalog.getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true});
         for (const auto & database_name : databases_list | boost::adaptors::map_keys)
         {
             if (need_to_check_access_for_databases && !access->isGranted(AccessType::SHOW_DATABASES, database_name))
@@ -813,10 +813,10 @@ bool DatabaseCatalog::isDatabaseExist(const String & database_name) const
     return databases.end() != databases.find(database_name);
 }
 
-Databases DatabaseCatalog::getDatabases(bool skip_datalake_catalogs) const
+Databases DatabaseCatalog::getDatabases(GetDatabasesOptions options) const
 {
     std::lock_guard lock{databases_mutex};
-    if (skip_datalake_catalogs)
+    if (options.with_datalake_catalogs)
         return databases;
 
     Databases filtered_databases;
@@ -1091,7 +1091,7 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
     std::map<String, std::pair<StorageID, DiskPtr>> dropped_metadata;
     String path = fs::path("metadata_dropped") / "";
 
-    auto db_map = getDatabases(true);
+    auto db_map = getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true});
     std::set<DiskPtr> metadata_disk_list;
     for (const auto & [_, db] : db_map)
     {
@@ -1980,7 +1980,7 @@ void DatabaseCatalog::reloadDisksTask()
         disks.swap(disks_to_reload);
     }
 
-    for (auto & database : getDatabases(false))
+    for (auto & database : getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
     {
         // WARNING: In case of `async_load_databases = true` getTablesIterator() call wait for all table in the database to be loaded.
         // WARNING: It means that no database will be able to update configuration until all databases are fully loaded.
@@ -2135,7 +2135,8 @@ std::pair<String, String> TableNameHints::getExtendedHintForTable(const String &
 {
     /// load all available databases from the DatabaseCatalog instance
     auto & database_catalog = DatabaseCatalog::instance();
-    auto all_databases = database_catalog.getDatabases(false);
+    /// NOTE Skip datalake catalogs to avoid unnecessary access to remote catalogs (can be expensive)
+    auto all_databases = database_catalog.getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
 
     for (const auto & [db_name, db] : all_databases)
     {
