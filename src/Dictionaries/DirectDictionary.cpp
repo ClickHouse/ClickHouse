@@ -33,11 +33,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-namespace FailPoints
-{
-    extern const char direct_dictionary_exception_while_processing[];
-}
-
 template <DictionaryKeyType dictionary_key_type>
 DirectDictionary<dictionary_key_type>::DirectDictionary(
     const StorageID & dict_id_,
@@ -435,11 +430,6 @@ Pipe DirectDictionary<dictionary_key_type>::read(const Names & /* column_names *
 {
     BlockIO io;
     io = source_ptr->loadAll();
-
-    fiu_do_on(FailPoints::direct_dictionary_exception_while_processing,
-    {
-        io = source_ptr->loadAllWithExceptionWhileProcessing();
-    });
 
     return Pipe(std::make_shared<SourceFromQueryPipeline<>>(std::move(io)));
 }

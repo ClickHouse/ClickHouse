@@ -48,8 +48,6 @@ public:
       */
     virtual BlockIO loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) = 0;
 
-    virtual BlockIO loadAllWithExceptionWhileProcessing() { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "loadAllWithExceptionWhileProcessing is only implemented for ClickHouseDictionarySource."); }
-
     /// indicates whether the source has been modified since last load* operation
     virtual bool isModified() const = 0;
 

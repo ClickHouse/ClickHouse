@@ -143,11 +143,6 @@ BlockIO ClickHouseDictionarySource::loadKeys(const Columns & key_columns, const 
     return createStreamForQuery(query);
 }
 
-BlockIO ClickHouseDictionarySource::loadAllWithExceptionWhileProcessing()
-{
-    return createStreamForQuery("SELECT number FROM numbers(1) WHERE throwIf(number = 0, 'error')");
-}
-
 bool ClickHouseDictionarySource::isModified() const
 {
     if (!configuration.invalidate_query.empty())

@@ -121,7 +121,6 @@ static struct InitFiu
     ONCE(disk_object_storage_fail_commit_metadata_transaction) \
     ONCE(database_replicated_drop_before_removing_keeper_failed) \
     ONCE(database_replicated_drop_after_removing_keeper_failed) \
-    REGULAR(direct_dictionary_exception_while_processing) \
 
 
 namespace FailPoints
