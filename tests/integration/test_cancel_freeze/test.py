@@ -29,6 +29,9 @@ def drop_after_test():
 
 # Test that FREEZE operation can be cancelled with KILL QUERY.
 def test_cancel_backup():
+    if node.is_built_with_sanitizer():
+        pytest.skip("Creating 20K parts under sanitizers can be slow.")
+
     # Freezing so much parts should take at least 2 seconds
     parts = 20_000
     node.query(
