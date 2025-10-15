@@ -77,6 +77,10 @@ namespace
 /// Also accepts Array(Nothing) which is the type of Array([])
 bool isStringOrArrayOfStringType(const IDataType & type)
 {
+    const auto * string_type = checkAndGetDataType<DataTypeString>(&type);
+    if (string_type)
+        return true;
+
     const auto * array_type = checkAndGetDataType<DataTypeArray>(&type);
     if (array_type)
     {
@@ -84,8 +88,7 @@ bool isStringOrArrayOfStringType(const IDataType & type)
         return isString(nested_type) || isFixedString(nested_type) || isNothing(nested_type);
     }
 
-    const auto * string_type = checkAndGetDataType<DataTypeString>(&type);
-    return string_type;
+    return false;
 }
 
 }
@@ -100,7 +103,7 @@ DataTypePtr FunctionHasAnyAllTokens<HasTokensTraits>::getReturnTypeImpl(const Co
 
     FunctionArgumentDescriptors mandatory_args{
         {"input", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"},
-        {"needles", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrArrayOfStringType), isColumnConst, "const String or Array(String)"}};
+        {"needles", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrArrayOfStringType), isColumnConst, "const String or const Array(String)"}};
 
     validateFunctionArguments(*this, arguments, mandatory_args);
 
@@ -226,7 +229,6 @@ ColumnPtr FunctionHasAnyAllTokens<HasTokensTraits>::executeImpl(
 
             for (size_t i = 0; i < array.size(); ++i)
                 needles_tmp.emplace(array.at(i).safeGet<String>(), i);
-
         }
         else if (const ColumnArray * col_needles_vector = checkAndGetColumn<ColumnArray>(col_needles.get()))
         {
@@ -238,6 +240,13 @@ ColumnPtr FunctionHasAnyAllTokens<HasTokensTraits>::executeImpl(
             for (size_t i = 0; i < needles_offsets[0]; ++i)
                 needles_tmp.emplace(needles_data_string.getDataAt(i).toView(), i);
         }
+        else if (checkAndGetColumnConst<ColumnString>(col_needles.get()) || checkAndGetColumn<ColumnString>(col_needles.get()))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Needles argument for function '{}' has type String but column {} has no text index. Please pre-tokenize the input with "
+                "the tokens() function or provide a column with a text index.",
+                getName(),
+                arguments[arg_input].name);
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Needles argument for function '{}' has unsupported type", getName());
 
@@ -247,18 +256,10 @@ ColumnPtr FunctionHasAnyAllTokens<HasTokensTraits>::executeImpl(
             execute<HasTokensTraits>(&default_token_extractor, *column_string, input_rows_count, needles_tmp, col_result->getData());
         else if (const auto * column_fixed_string = checkAndGetColumn<ColumnFixedString>(col_input.get()))
             execute<HasTokensTraits>(&default_token_extractor, *column_fixed_string, input_rows_count, needles_tmp, col_result->getData());
-
     }
     else
     {
         /// If token_extractor != nullptr, we are doing text index lookups
-        if (!needles.has_value())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Function '{}' must be used with the index column, but got column '{}'",
-                getName(),
-                arguments[arg_input].name);
-
         if (const auto * column_string = checkAndGetColumn<ColumnString>(col_input.get()))
             execute<HasTokensTraits>(token_extractor.get(), *column_string, input_rows_count, needles.value(), col_result->getData());
         else if (const auto * column_fixed_string = checkAndGetColumn<ColumnFixedString>(col_input.get()))
