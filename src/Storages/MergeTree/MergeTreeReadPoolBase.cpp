@@ -64,20 +64,25 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
 
 static size_t getSizeOfColumns(const IMergeTreeDataPart & part, const Names & columns_to_read)
 {
-    if (columns_to_read.empty())
-        return 0;
+    /// For compact parts we don't know individual column sizes, let's use whole part size as approximation
+    if (part.getType() == MergeTreeDataPartType::Compact)
+        return part.getBytesOnDisk();
 
     size_t data_compressed_size = 0;
     for (const auto & col_name : columns_to_read)
+        data_compressed_size += part.getColumnSize(col_name).data_compressed;
+
+    if (!data_compressed_size)
     {
-        /// TODO: better interface for this.
-        if (isTextIndexVirtualColumn(col_name))
-            data_compressed_size += getApproximateSizeOfTextIndexVirtualColumn(part.rows_count);
-        else
-            data_compressed_size += part.getColumnSize(col_name).data_compressed;
+        auto all_columns_sizes = part.getColumnSizes();
+
+        for (const auto & [_, size] : all_columns_sizes)
+        {
+            if (size.data_compressed && (!data_compressed_size || size.data_compressed < data_compressed_size))
+                data_compressed_size = size.data_compressed;
+        }
     }
 
-    /// For compact parts we don't know individual column sizes, let's use whole part size as approximation
     return data_compressed_size ? data_compressed_size : part.getBytesOnDisk();
 }
 

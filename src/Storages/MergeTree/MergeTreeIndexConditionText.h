@@ -126,8 +126,6 @@ private:
 };
 
 static constexpr std::string_view TEXT_INDEX_VIRTUAL_COLUMN_PREFIX = "__text_index_";
-
 bool isTextIndexVirtualColumn(const String & column_name);
-size_t getApproximateSizeOfTextIndexVirtualColumn(size_t num_rows);
 
 }
