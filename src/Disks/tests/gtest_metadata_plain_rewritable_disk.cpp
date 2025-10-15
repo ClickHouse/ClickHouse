@@ -348,3 +348,20 @@ TEST_F(MetadataPlainRewritableDiskTest, MoveFileUndo)
 
     EXPECT_EQ(path_1, path_2);
 }
+
+TEST_F(MetadataPlainRewritableDiskTest, CreateDirectoryRecursive)
+{
+    auto metadata = getMetadataStorage("CreateDirectoryRecursive");
+    auto object_storage = getObjectStorage("CreateDirectoryRecursive");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectoryRecursive("A/B/C/D");
+        tx->commit();
+    }
+
+    EXPECT_TRUE(metadata->existsDirectory("A"));
+    EXPECT_TRUE(metadata->existsDirectory("A/B"));
+    EXPECT_TRUE(metadata->existsDirectory("A/B/C"));
+    EXPECT_TRUE(metadata->existsDirectory("A/B/C/D"));
+}
