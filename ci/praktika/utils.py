@@ -866,7 +866,7 @@ class TeePopen:
         print(f"Send SIGTERM to [{self.process.pid}]")
         time_wait = 0
 
-        while self.process.poll() is None and time_wait < 30:
+        while self.process.poll() is None and time_wait < 100:
             print("wait...")
             wait = 5
             time.sleep(wait)
