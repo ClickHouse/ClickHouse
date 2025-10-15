@@ -468,7 +468,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
             next.teng = MergeTree;
         }
         const auto & table_to_lambda = [&view_ncols, &next](const SQLTable & t)
-        { return t.isAttached() && t.numberOfInsertableColumns() >= view_ncols && (t.is_deterministic || !next.is_deterministic); };
+        { return t.isAttached() && t.cols.size() >= view_ncols && (t.is_deterministic || !next.is_deterministic); };
         next.has_with_cols = collectionHas<SQLTable>(table_to_lambda);
         const bool has_tables = next.has_with_cols || !tables.empty();
         const bool has_to
@@ -505,10 +505,12 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
             if (next.has_with_cols)
             {
                 std::vector<uint32_t> nids;
+                const bool allCols = rg.nextBool();
+                const bool newdef = rg.nextSmallNumber() < 4;
 
                 for (const auto & [key, val] : t.cols)
                 {
-                    if (val.canBeInserted())
+                    if (allCols || val.canBeInserted())
                     {
                         nids.push_back(key);
                     }
@@ -521,7 +523,10 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
                 {
                     SQLColumn col = t.cols.at(nids[i]);
 
-                    addTableColumnInternal(rg, t, col.cname, false, false, ColumnSpecial::NONE, col, cmvt->add_col_list());
+                    if (newdef)
+                    {
+                        addTableColumnInternal(rg, t, col.cname, false, false, ColumnSpecial::NONE, col, cmvt->add_col_list());
+                    }
                     next.cols.insert(col.cname);
                 }
             }
@@ -556,7 +561,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
         false,
         false,
         view_ncols,
-        next.is_materialized ? (~allow_prewhere) : std::numeric_limits<uint32_t>::max(),
+        next.is_materialized && rg.nextBool() ? (~allow_prewhere) : std::numeric_limits<uint32_t>::max(),
         std::nullopt,
         sparen->mutable_select());
     this->levels.clear();
@@ -1472,7 +1477,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                     false,
                     false,
                     v.staged_ncols,
-                    v.is_materialized ? (~allow_prewhere) : std::numeric_limits<uint32_t>::max(),
+                    v.is_materialized && rg.nextBool() ? (~allow_prewhere) : std::numeric_limits<uint32_t>::max(),
                     std::nullopt,
                     sparen->mutable_select());
                 this->levels.clear();
