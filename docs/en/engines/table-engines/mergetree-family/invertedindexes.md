@@ -61,6 +61,9 @@ The `tokenizer` argument specifies the tokenizer:
   The ngram length can be specified using an optional integer parameter between 2 and 8, for example, `tokenizer = ngrams(3)`.
   The default ngram size, if not specified explicitly (for example, `tokenizer = ngrams`), is 3.
 - `array` performs no tokenization, i.e. every row value is a token (also see function [array](/sql-reference/functions/array-functions.md/#array)).
+- `sparseGrams(MIN_N, MAX_N)` — splits a string into all possible N-grams with lengths ranging from `min_length` to `max_length`, inclusive.  
+  Unlike `ngrams(N)`, which generates only fixed-length N-grams, `sparseGrams` produces a set of variable-length N-grams within the specified range, allowing for a more flexible representation of text context.  
+  For example, `tokenizer = sparseGrams(2, 4)` will create all 2-, 3-, and 4-grams from the input string.  
 
 :::note
 The `splitByString` tokenizer applies the split separators left-to-right.

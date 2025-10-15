@@ -218,9 +218,8 @@ TEST_F(MetadataPlainRewritableDiskTest, MoveUndo)
         EXPECT_ANY_THROW(tx->commit());
     }
 
-    /// Completely broken, undo is not working at all!
-    EXPECT_EQ(readObject(object_storage, a_path), "MOVED/");
-    EXPECT_EQ(readObject(object_storage, ab_path), "MOVED/B/");
+    EXPECT_EQ(readObject(object_storage, a_path), "A/");
+    EXPECT_EQ(readObject(object_storage, ab_path), "A/B/");
     EXPECT_EQ(readObject(object_storage, abc_path), "A/B/C/");
 }
 
