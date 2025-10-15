@@ -1388,10 +1388,23 @@ void DDLWorker::markReplicasActive(bool /*reinitialized*/)
             zookeeper->deleteEphemeralNodeIfContentMatches(active_path, active_id);
         }
         Coordination::Requests ops;
+        Coordination::Responses res;
         ops.emplace_back(zkutil::makeCreateRequest(active_path, active_id, zkutil::CreateMode::Ephemeral));
         /// To bump node mtime
         ops.emplace_back(zkutil::makeSetRequest(fs::path(replicas_dir) / host_id, "", -1));
-        zookeeper->multi(ops);
+        auto code = zookeeper->tryMulti(ops, res);
+
+        /// We have this tryMulti for a very weird edge case when it's related to localhost.
+        /// Each replica may have a localhost as hostid and if we configured multiple replicas to add their
+        /// localhosts to some clusters multiple of them may think that they must mark it as active.
+        if (code != Coordination::Error::ZOK)
+        {
+            LOG_WARNING(log, "Cannot mark a replica active: active_path={}, active_id={}, code={}", active_path, active_id, Coordination::errorMessage(code));
+        }
+        else
+        {
+            LOG_DEBUG(log, "Marked a replica active: active_path={}, active_id={}", active_path, active_id);
+        }
 
         auto active_node_holder_zookeeper = zookeeper;
         auto active_node_holder = zkutil::EphemeralNodeHolder::existing(active_path, *active_node_holder_zookeeper);

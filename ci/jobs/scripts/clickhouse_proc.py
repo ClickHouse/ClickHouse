@@ -692,27 +692,35 @@ clickhouse-client --query "SELECT count() FROM test.visits"
 
         return self
 
-    def prepare_logs(self, all=False):
-        res = self._get_logs_archives_server()
-        res += self._get_jemalloc_profiles()
-        if Path(self.GDB_LOG).exists():
-            res.append(self.GDB_LOG)
-        if all:
-            res += self.debug_artifacts
-            res += self.dump_system_tables()
-            res += self._collect_core_dumps()
-            res += self._get_logs_archive_coordination()
-            if Path(self.MINIO_LOG).exists():
-                res.append(self.MINIO_LOG)
-            if Path(self.AZURITE_LOG).exists():
-                res.append(self.AZURITE_LOG)
-            if Path(self.DMESG_LOG).exists():
-                res.append(self.DMESG_LOG)
-            if Path(self.CH_LOCAL_ERR_LOG).exists():
-                res.append(self.CH_LOCAL_ERR_LOG)
-            if Path(self.CH_LOCAL_LOG).exists():
-                res.append(self.CH_LOCAL_LOG)
-        self.logs = res
+    def prepare_logs(self, info, all=False):
+        res = []
+        try:
+            res = self._get_logs_archives_server()
+            res += self._get_jemalloc_profiles()
+            if Path(self.GDB_LOG).exists():
+                res.append(self.GDB_LOG)
+            if all:
+                res += self.debug_artifacts
+                res += self.dump_system_tables()
+                res += self._collect_core_dumps()
+                res += self._get_logs_archive_coordination()
+                if Path(self.MINIO_LOG).exists():
+                    res.append(self.MINIO_LOG)
+                if Path(self.AZURITE_LOG).exists():
+                    res.append(self.AZURITE_LOG)
+                if Path(self.DMESG_LOG).exists():
+                    res.append(self.DMESG_LOG)
+                if Path(self.CH_LOCAL_ERR_LOG).exists():
+                    res.append(self.CH_LOCAL_ERR_LOG)
+                if Path(self.CH_LOCAL_LOG).exists():
+                    res.append(self.CH_LOCAL_LOG)
+            self.logs = res
+        except Exception as e:
+            print(f"WARNING: Failed to collect logs: {e}")
+            traceback.print_exc()
+            info.add_workflow_report_message(
+                f"Failed to collect all logs in job [{info.job_name}], ex [{e}], see job.log"
+            )
         return res
 
     def _collect_core_dumps(self):

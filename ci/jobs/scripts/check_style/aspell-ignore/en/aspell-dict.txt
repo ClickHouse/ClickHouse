@@ -836,6 +836,7 @@ PROXYv
 PRQL
 PSUN
 PagerDuty
+Paimon
 ParallelFormattingOutputFormatThreads
 ParallelFormattingOutputFormatThreadsActive
 ParallelParsingInputFormat
@@ -1222,6 +1223,7 @@ Uptime
 Uptrace
 UserID
 Util
+VARBINARY
 VARCHAR
 VIEWs
 Vadim
@@ -2575,6 +2577,8 @@ overparallelization
 packetpool
 packetsize
 pageviews
+paimon
+paimonCluster
 parallelization
 parallelize
 parallelized

@@ -458,7 +458,7 @@ class GH:
             if len(summary.failed_results) > MAX_JOBS_PER_SUMMARY:
                 remaining = len(summary.failed_results) - MAX_JOBS_PER_SUMMARY
                 summary.failed_results = summary.failed_results[:MAX_JOBS_PER_SUMMARY]
-                print(f"NOTE: {remaining} more jobs not shown in PR comment", status="")
+                print(f"NOTE: {remaining} more jobs not shown in PR comment")
             return summary
 
         def to_markdown(self):
