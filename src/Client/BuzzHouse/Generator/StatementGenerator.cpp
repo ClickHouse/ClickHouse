@@ -515,11 +515,15 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
                         nids.push_back(key);
                     }
                 }
-                if (rg.nextBool())
+                if (nids.empty())
+                {
+                    nids.emplace_back(rg.pickRandomly(t.cols));
+                }
+                else if (rg.nextBool())
                 {
                     std::shuffle(nids.begin(), nids.end(), rg.generator);
                 }
-                for (uint32_t i = 0; i < view_ncols; i++)
+                for (uint32_t i = 0; i < std::min(view_ncols, static_cast<uint32_t>(nids.size())); i++)
                 {
                     SQLColumn col = t.cols.at(nids[i]);
 
