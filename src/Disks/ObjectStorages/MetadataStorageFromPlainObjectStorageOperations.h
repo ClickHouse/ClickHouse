@@ -23,7 +23,7 @@ private:
 public:
     MetadataStorageFromPlainObjectStorageCreateDirectoryOperation(
         /// path_ must end with a trailing '/'.
-        std::filesystem::path && path_,
+        std::filesystem::path path_,
         InMemoryDirectoryPathMap & path_map_,
         ObjectStoragePtr object_storage_,
         const std::string & metadata_key_prefix_);
@@ -32,6 +32,27 @@ public:
     void undo() override;
 };
 
+class MetadataStorageFromPlainObjectStorageCreateDirectoryRecursiveOperation final : public IMetadataOperation
+{
+private:
+    std::filesystem::path path;
+    InMemoryDirectoryPathMap & path_map;
+    ObjectStoragePtr object_storage;
+    const std::string metadata_key_prefix;
+
+    std::vector<std::unique_ptr<MetadataStorageFromPlainObjectStorageCreateDirectoryOperation>> subdirectories_creators;
+
+public:
+    MetadataStorageFromPlainObjectStorageCreateDirectoryRecursiveOperation(
+        /// path_ must end with a trailing '/'.
+        std::filesystem::path path_,
+        InMemoryDirectoryPathMap & path_map_,
+        ObjectStoragePtr object_storage_,
+        const std::string & metadata_key_prefix_);
+
+    void execute() override;
+    void undo() override;
+};
 
 class MetadataStorageFromPlainObjectStorageMoveDirectoryOperation final : public IMetadataOperation
 {
@@ -48,8 +69,8 @@ private:
 public:
     MetadataStorageFromPlainObjectStorageMoveDirectoryOperation(
         /// Both path_from_ and path_to_ must end with a trailing '/'.
-        std::filesystem::path && path_from_,
-        std::filesystem::path && path_to_,
+        std::filesystem::path path_from_,
+        std::filesystem::path path_to_,
         InMemoryDirectoryPathMap & path_map_,
         ObjectStoragePtr object_storage_,
         const std::string & metadata_key_prefix_);
@@ -74,7 +95,7 @@ private:
 public:
     MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation(
         /// path_ must end with a trailing '/'.
-        std::filesystem::path && path_,
+        std::filesystem::path path_,
         InMemoryDirectoryPathMap & path_map_,
         ObjectStoragePtr object_storage_,
         const std::string & metadata_key_prefix_);
@@ -114,7 +135,7 @@ private:
 
 public:
     MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation(
-        std::filesystem::path && path_, InMemoryDirectoryPathMap & path_map_, ObjectStoragePtr object_storage_);
+        std::filesystem::path path_, InMemoryDirectoryPathMap & path_map_, ObjectStoragePtr object_storage_);
 
     void execute() override;
     void undo() override;

@@ -5,8 +5,6 @@
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
 
-#include <filesystem>
-#include <mutex>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/Timestamp.h>
@@ -17,6 +15,9 @@
 #include <Common/SharedLockGuard.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
+
+#include <memory>
+#include <ranges>
 
 namespace DB
 {
@@ -52,7 +53,7 @@ ObjectStorageKey createMetadataObjectKey(const std::string & object_key_prefix, 
 }
 
 MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::MetadataStorageFromPlainObjectStorageCreateDirectoryOperation(
-    std::filesystem::path && path_,
+    std::filesystem::path path_,
     InMemoryDirectoryPathMap & path_map_,
     ObjectStoragePtr object_storage_,
     const std::string & metadata_key_prefix_)
@@ -115,9 +116,44 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::undo()
     object_storage->removeObjectIfExists(StoredObject(metadata_object_key.serialize(), path / PREFIX_PATH_FILE_NAME));
 }
 
+MetadataStorageFromPlainObjectStorageCreateDirectoryRecursiveOperation::MetadataStorageFromPlainObjectStorageCreateDirectoryRecursiveOperation(
+    std::filesystem::path path_,
+    InMemoryDirectoryPathMap & path_map_,
+    ObjectStoragePtr object_storage_,
+    const std::string & metadata_key_prefix_)
+    : path(std::move(path_))
+    , path_map(path_map_)
+    , object_storage(object_storage_)
+    , metadata_key_prefix(metadata_key_prefix_)
+{
+    chassert(path.empty() || path.string().ends_with('/'));
+
+    /// parent_path() removes the trailing '/'
+    auto path_prefix = path.parent_path();
+
+    while (!path_prefix.empty())
+    {
+        auto create_subdirectory_op = std::make_unique<MetadataStorageFromPlainObjectStorageCreateDirectoryOperation>(path_prefix / "", path_map, object_storage, metadata_key_prefix);
+        subdirectories_creators.push_back(std::move(create_subdirectory_op));
+        path_prefix = path_prefix.parent_path();
+    }
+}
+
+void MetadataStorageFromPlainObjectStorageCreateDirectoryRecursiveOperation::execute()
+{
+    for (auto & creator : subdirectories_creators | std::views::reverse)
+        creator->execute();
+}
+
+void MetadataStorageFromPlainObjectStorageCreateDirectoryRecursiveOperation::undo()
+{
+    for (auto & creator : subdirectories_creators)
+        creator->undo();
+}
+
 MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::MetadataStorageFromPlainObjectStorageMoveDirectoryOperation(
-    std::filesystem::path && path_from_,
-    std::filesystem::path && path_to_,
+    std::filesystem::path path_from_,
+    std::filesystem::path path_to_,
     InMemoryDirectoryPathMap & path_map_,
     ObjectStoragePtr object_storage_,
     const std::string & metadata_key_prefix_)
@@ -231,7 +267,7 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::undo()
 }
 
 MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation(
-    std::filesystem::path && path_,
+    std::filesystem::path path_,
     InMemoryDirectoryPathMap & path_map_,
     ObjectStoragePtr object_storage_,
     const std::string & metadata_key_prefix_)
@@ -319,7 +355,7 @@ void MetadataStorageFromPlainObjectStorageWriteFileOperation::undo()
 }
 
 MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation(
-    std::filesystem::path && path_, InMemoryDirectoryPathMap & path_map_, ObjectStoragePtr object_storage_)
+    std::filesystem::path path_, InMemoryDirectoryPathMap & path_map_, ObjectStoragePtr object_storage_)
     : path(path_)
     , remote_path(std::filesystem::path(object_storage_->generateObjectKeyForPath(path_, std::nullopt).serialize()))
     , path_map(path_map_)
