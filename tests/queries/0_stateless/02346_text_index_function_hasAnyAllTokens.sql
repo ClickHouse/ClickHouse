@@ -32,11 +32,11 @@ SELECT id FROM tab WHERE hasAllTokens('a', 'b', 'c'); -- { serverError NUMBER_OF
 SELECT id FROM tab WHERE hasAnyTokens(1, ['a']); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT id FROM tab WHERE hasAllTokens(1, ['a']); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 -- 2nd arg must be const Array(String)
-SELECT id FROM tab WHERE hasAnyTokens(message, 'b'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT id FROM tab WHERE hasAnyTokens(message, materialize('b')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT id FROM tab WHERE hasAnyTokens(message, 'b');
+SELECT id FROM tab WHERE hasAnyTokens(message, materialize('b')); -- { serverError ILLEGAL_COLUMN }
 SELECT id FROM tab WHERE hasAnyTokens(message, materialize(['b'])); -- { serverError ILLEGAL_COLUMN }
-SELECT id FROM tab WHERE hasAllTokens(message, 'b'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT id FROM tab WHERE hasAllTokens(message, materialize('b')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT id FROM tab WHERE hasAllTokens(message, 'b');
+SELECT id FROM tab WHERE hasAllTokens(message, materialize('b')); -- { serverError ILLEGAL_COLUMN }
 SELECT id FROM tab WHERE hasAllTokens(message, materialize(['b'])); -- { serverError ILLEGAL_COLUMN }
 -- search function supports a max of 64 needles
 SELECT id FROM tab WHERE hasAnyTokens(message, ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', 'aa', 'bb', 'cc', 'dd', 'ee', 'ff', 'gg', 'hh', 'ii', 'jj', 'kk', 'll', 'mm', 'nn', 'oo', 'pp', 'qq', 'rr', 'ss', 'tt', 'uu', 'vv', 'ww', 'xx', 'yy', 'zz', 'aaa', 'bbb', 'ccc', 'ddd', 'eee', 'fff', 'ggg', 'hhh', 'iii', 'jjj', 'kkk', 'lll', 'mmm']); -- { serverError BAD_ARGUMENTS }

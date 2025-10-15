@@ -1,4 +1,6 @@
 Negative tests
+1
+1
 Test what happens hasAnyTokens/All are called on columns without index
 -- It is expected that the default tokenizer is used
 -- { echoOn }
