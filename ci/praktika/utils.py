@@ -700,7 +700,7 @@ class Utils:
             os.path.relpath(file) if os.path.isabs(file) else file for file in files
         ]
         for file in files:
-            assert Path(file).is_file(), f"File does not exist [{file}]"
+            assert Path(file).exists(), f"Path does not exist [{file}]"
 
         with tempfile.NamedTemporaryFile() as f:
             f.write("\n".join(files).encode())
