@@ -174,7 +174,7 @@ void StorageSystemReplicas::read(
     for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
     {
         /// Check if database can contain replicated tables
-        if (!db.second->canContainMergeTreeTables())
+        if (db.second->isExternal())
             continue;
         const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, db.first);
         for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())

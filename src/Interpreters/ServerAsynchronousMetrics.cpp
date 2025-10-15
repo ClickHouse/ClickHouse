@@ -244,7 +244,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
         for (const auto & db : databases)
         {
             /// Check if database can contain MergeTree tables
-            if (!db.second->canContainMergeTreeTables())
+            if (db.second->isExternal())
                 continue;
 
             bool is_system = db.first == DatabaseCatalog::SYSTEM_DATABASE;
@@ -394,7 +394,7 @@ void ServerAsynchronousMetrics::updateMutationAndDetachedPartsStats()
 
     for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
     {
-        if (!db.second->canContainMergeTreeTables())
+        if (db.second->isExternal())
             continue;
 
         for (auto iterator = db.second->getTablesIterator(getContext(), {}, true); iterator->isValid(); iterator->next())
