@@ -176,6 +176,7 @@ static String formattedAST(const ASTPtr & ast)
     WriteBufferFromOwnString buf;
     IAST::FormatSettings ast_format_settings(
         /*one_line=*/true, /*identifier_quoting_rule=*/IdentifierQuotingRule::Always);
+    ast_format_settings.collapse_identical_nodes_to_aliases = true;
     ast->format(buf, ast_format_settings);
     return buf.str();
 }

@@ -202,6 +202,8 @@ public:
         LiteralEscapingStyle literal_escaping_style;
         bool print_pretty_type_names;
         bool enforce_strict_identifier_format;
+        /// This is needed for distributed queries with the old analyzer. Remove it after removing the old analyzer.
+        bool collapse_identical_nodes_to_aliases;
 
         explicit FormatSettings(
             bool one_line_,
@@ -210,7 +212,8 @@ public:
             bool show_secrets_ = true,
             LiteralEscapingStyle literal_escaping_style_ = LiteralEscapingStyle::Regular,
             bool print_pretty_type_names_ = false,
-            bool enforce_strict_identifier_format_ = false)
+            bool enforce_strict_identifier_format_ = false,
+            bool collapse_identical_nodes_to_aliases_ = false)
             : one_line(one_line_)
             , identifier_quoting_rule(identifier_quoting_rule_)
             , identifier_quoting_style(identifier_quoting_style_)
@@ -219,6 +222,7 @@ public:
             , literal_escaping_style(literal_escaping_style_)
             , print_pretty_type_names(print_pretty_type_names_)
             , enforce_strict_identifier_format(enforce_strict_identifier_format_)
+            , collapse_identical_nodes_to_aliases(collapse_identical_nodes_to_aliases_)
         {
         }
 
@@ -231,10 +235,12 @@ public:
     {
         /** The SELECT query in which the alias was found; identifier of a node with such an alias.
           * It is necessary that when the node has met again, output only the alias.
+          * This is only needed for the old analyzer. Remove it after removing the old analyzer.
           */
         std::set<std::tuple<
-            const IAST * /* node */,
-            std::string /* alias */>> printed_asts_with_alias;
+            const IAST * /* SELECT query node */,
+            std::string /* alias */,
+            IASTHash /* printed content */>> printed_asts_with_alias;
     };
 
     /// The state that is copied when each node is formatted. For example, nesting level.
@@ -248,6 +254,7 @@ public:
         bool allow_operators = true; /// Format some functions, such as "plus", "in", etc. as operators.
         size_t list_element_index = 0;
         std::string create_engine_name;
+        const IAST * current_select = nullptr;
     };
 
     void format(WriteBuffer & ostr, const FormatSettings & settings) const

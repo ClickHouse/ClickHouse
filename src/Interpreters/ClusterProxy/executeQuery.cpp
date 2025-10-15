@@ -13,7 +13,6 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <Parsers/ASTWithAlias.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -420,28 +419,6 @@ void executeQuery(
                 OptimizeShardingKeyRewriteInVisitor visitor(visitor_data);
                 visitor.visit(query_ast_for_shard);
             }
-
-            /// The old analyzer requires the query to be "collapsed", so that identical nodes with aliases will be replaced to those aliases,
-            /// because it expect certain names for columns:
-            /// SELECT 1 AS a, 1 AS a will become SELECT 1 AS a, a
-            /// Do the transformation that will glue the AST together so it will be formatted this way.
-            std::map<IASTHash, ASTPtr> known_nodes;
-            auto traverse = [&known_nodes](auto & self, ASTPtr & node)
-            {
-                if (auto * node_with_alias = dynamic_cast<ASTWithAlias *>(node.get()); node_with_alias && !node_with_alias->alias.empty())
-                {
-                    IASTHash hash = node_with_alias->getTreeHash(false);
-                    if (auto [it, inserted] = known_nodes.emplace(hash, node.get()); !inserted)
-                    {
-                        node = it->second;
-                        return;
-                    }
-                }
-
-                for (auto & child : node->children)
-                    self(self, child);
-            };
-            traverse(traverse, query_ast_for_shard);
 
             // decide for each shard if parallel reading from replicas should be enabled
             // according to settings and number of replicas declared per shard
