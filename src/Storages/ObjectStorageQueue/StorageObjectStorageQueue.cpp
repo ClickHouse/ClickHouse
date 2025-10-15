@@ -351,6 +351,15 @@ void StorageObjectStorageQueue::shutdown(bool is_drop)
             streaming_tasks.size(), watch.elapsedMilliseconds());
     }
 
+    try
+    {
+        streaming_file_iterator.reset();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log);
+    }
+
     if (files_metadata)
     {
         try
