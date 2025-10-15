@@ -61,6 +61,9 @@ The `tokenizer` argument specifies the tokenizer:
   The ngram length can be specified using an optional integer parameter between 2 and 8, for example, `tokenizer = ngrams(3)`.
   The default ngram size, if not specified explicitly (for example, `tokenizer = ngrams`), is 3.
 - `array` performs no tokenization, i.e. every row value is a token (also see function [array](/sql-reference/functions/array-functions.md/#array)).
+- `sparseGrams(MIN_N, MAX_N)` — splits a string into all possible N-grams with lengths ranging from `min_length` to `max_length`, inclusive.  
+  Unlike `ngrams(N)`, which generates only fixed-length N-grams, `sparseGrams` produces a set of variable-length N-grams within the specified range, allowing for a more flexible representation of text context.  
+  For example, `tokenizer = sparseGrams(2, 4)` will create all 2-, 3-, and 4-grams from the input string.  
 
 :::note
 The `splitByString` tokenizer applies the split separators left-to-right.
@@ -218,18 +221,18 @@ SELECT count() FROM tab WHERE hasToken(comment, 'clickhouse');
 
 Functions `hasToken` and `hasTokenOrNull` are the most performant functions to use with the `text` index.
 
-#### `searchAny` and `searchAll` {#functions-example-searchany-searchall}
+#### `hasAnyTokens` and `hasAllTokens` {#functions-example-hasanytokens-hasalltokens}
 
-Functions [searchAny](/sql-reference/functions/string-search-functions.md/#searchany) and [searchAll](/sql-reference/functions/string-search-functions.md/#searchall) match against one or all of the given tokens.
+Functions [hasAnyTokens](/sql-reference/functions/string-search-functions.md/#hasanytokens) and [hasAllTokens](/sql-reference/functions/string-search-functions.md/#hasalltokens) match against one or all of the given tokens.
 
 Like `hasToken`, no tokenization of the search terms takes place.
 
 Example:
 
 ```sql
-SELECT count() FROM tab WHERE searchAny(comment, ['clickhouse', 'olap']);
+SELECT count() FROM tab WHERE hasAnyTokens(comment, ['clickhouse', 'olap']);
 
-SELECT count() FROM tab WHERE searchAll(comment, ['clickhouse', 'olap']);
+SELECT count() FROM tab WHERE hasAllTokens(comment, ['clickhouse', 'olap']);
 ```
 
 #### `has` {#functions-example-has}
@@ -421,10 +424,62 @@ WHERE string_search_function(column_with_text_index)
 The direct read optimization in ClickHouse answers the query exclusively using the text index (i.e., text index lookups) without accessing the underlying text column.
 Text index lookups read relatively little data and are therefore much faster than usual skip indexes in ClickHouse (which do a skip index lookup, followed by loading and filtering surviving granules).
 
+Direct read is controlled by two settings:
+- Setting [query_plan_direct_read_from_text_index](../../../operations/settings/settings#query_plan_direct_read_from_text_index) (default: 1) which specifies if direct read is generally enabled.
+- Setting [use_skip_indexes_on_data_read](../../../operations/settings/settings#use_skip_indexes_on_data_read) (default: 1) which is another prerequisite for direct read. Note that on ClickHouse databases with [compatibility](../../../operations/settings/settings#compatibility) < 25.10, `use_skip_indexes_on_data_read` is disabled, so you either need to raise the compatibility setting value or `SET use_skip_indexes_on_data_read = 1` explicitly.
+
 **Supported functions**
 The direct read optimization supports functions `hasToken`, `searchAll`, and `searchAny`.
 These functions can also be combined by AND, OR, and NOT operators.
 The WHERE clause can also contain additional non-text-search-functions filters (for text columns or other columns) - in that case, the direct read optimization will still be used but less effective (it only applies to the supported text search functions).
+
+To understand a query utilizes direct read, run the query with `EXPLAIN PLAN actions = 1`.
+As an example, a query with disabled direct read
+
+```sql
+EXPLAIN PLAN actions = 1
+SELECT count()
+FROM tab
+WHERE hasToken(col, ['some_token'])
+SETTINGS query_plan_direct_read_from_text_index = 0;
+```
+
+returns
+
+```text
+[...]
+Filter ((WHERE + Change column names to column identifiers))
+Filter column: hasToken(__table1.col, 'some_token'_String) (removed)
+Actions: INPUT : 0 -> col String : 0
+         COLUMN Const(String) -> 'some_token'_String String : 1
+         FUNCTION hasToken(col :: 0, 'some_token'_String :: 1) -> hasToken(__table1.col, 'some_token'_String) UInt8 : 2
+[...]
+```
+
+whereas the same query run with `query_plan_direct_read_from_text_index = 1`
+
+```sql
+EXPLAIN PLAN actions = 1
+SELECT count()
+FROM tab
+WHERE hasToken(col, ['some_token'])
+SETTINGS query_plan_direct_read_from_text_index = 1;
+```
+
+returns
+
+```text
+[...]
+Expression (Before GROUP BY)
+Positions:
+  Filter
+  Filter column: __text_index_idx_hasToken_0 (removed)
+  Actions: INPUT :: 0 -> __text_index_idx_hasToken_0 UInt8 : 0
+[...]
+```
+
+The second EXPLAIN PLAN output contains a virtual column `__text_index_<index_name>_<function_name>_<id>`.
+If this column is present, then direct read is used.
 
 ## Example: Hackernews dataset {#hacker-news-dataset}
 

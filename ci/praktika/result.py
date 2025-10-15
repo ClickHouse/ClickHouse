@@ -9,7 +9,7 @@ import sys
 import time
 import traceback
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Union
 
 from ._environment import _Environment
 from .s3 import S3
@@ -182,10 +182,10 @@ class Result(MetaClasses.Serializable):
         )
 
     def is_failure(self):
-        return self.status in (Result.Status.FAILED)
+        return self.status in (Result.Status.FAILED, Result.StatusExtended.FAIL)
 
     def is_error(self):
-        return self.status in (Result.Status.ERROR,)
+        return self.status in (Result.Status.ERROR, Result.StatusExtended.ERROR)
 
     def set_status(self, status) -> "Result":
         self.status = status
@@ -250,7 +250,7 @@ class Result(MetaClasses.Serializable):
         if not self.is_ok():
             # Suggest local command to rerun
             command_info = f'To run locally: python -m ci.praktika run "{self.name}"'
-            command_info += f" [ --test TEST_NAME (if supported by the job)]"
+            command_info += f" --test TEST_NAME_1..TEST_NAME_N"
             self.set_info(command_info)
 
         return self
@@ -307,6 +307,11 @@ class Result(MetaClasses.Serializable):
         if not self.ext.get("labels", None):
             self.ext["labels"] = []
         self.ext["labels"].append(label)
+
+    def set_clickable_label(self, label, link):
+        if not self.ext.get("hlabels", None):
+            self.ext["hlabels"] = []
+        self.ext["hlabels"].append((label, link))
 
     def set_required_label(self):
         self.set_label(self.Label.REQUIRED)
@@ -380,23 +385,37 @@ class Result(MetaClasses.Serializable):
         return result_copy
 
     @classmethod
-    def _flat_failed_leaves(cls, result_obj):
+    def _flat_failed_leaves(cls, result_obj, path=None):
         """
         Recursively flattens the result tree, returning a list of all failed leaf Result objects.
         A leaf is a Result with no sub-results or with only ok sub-results.
+        Also tracks the path to each result and adds it to result.ext['path'] as a list of names.
         """
+        if path is None:
+            path = [result_obj.name]
+        else:
+            path = path + [result_obj.name]
+
         # If this result is OK, skip it
         if result_obj.is_ok():
             return []
+
         # Otherwise, collect failed leaves from children
         leaves = []
         for r in result_obj.results:
             if r.is_ok():
                 continue
             elif not r.results:
+                # This is a leaf - add the path to its ext
+                if not hasattr(r, "ext") or r.ext is None:
+                    r.ext = {}
+                r.ext["result_tree_path"] = path + [
+                    r.name
+                ]  # store hierarchical path to the leaf so that report can build a navigation link to it
                 leaves.append(r)
             else:
-                leaves.extend(cls._flat_failed_leaves(r))
+                # Recursively process children with updated path
+                leaves.extend(cls._flat_failed_leaves(r, path=path))
         return leaves
 
     def update_sub_result(self, result: "Result", drop_nested_results=False):
@@ -414,7 +433,9 @@ class Result(MetaClasses.Serializable):
                 if drop_nested_results:
                     # self.results[i] = self._filter_out_ok_results(result)
                     self.results[i] = copy.deepcopy(result)
-                    self.results[i].results = self._flat_failed_leaves(result)
+                    self.results[i].results = self._flat_failed_leaves(
+                        result, path=[self.name]
+                    )
                 else:
                     self.results[i] = result
         self._update_status()
@@ -668,6 +689,32 @@ class Result(MetaClasses.Serializable):
         if add_frame:
             res += "+" * 80 + "\n"
         return res
+
+    def get_sub_result_by_name(self, name, recursive=False) -> Optional["Result"]:
+        if not name:
+            return self
+        for r in self.results:
+            if r.name == name:
+                return r
+        if recursive:
+            for r in self.results:
+                res = r.get_sub_result_by_name(name, recursive=True)
+                if res:
+                    return res
+        return None
+
+    def sort(self, sub_result_name="", failed_first=True):
+        if not self.results:
+            return self
+        sub_result_to_sort = self.get_sub_result_by_name(sub_result_name)
+        if failed_first and sub_result_to_sort:
+            # Stable partition: move all not-ok results to beginning, preserve order within groups
+            not_ok_results = [r for r in sub_result_to_sort.results if not r.is_ok()]
+            ok_results = [r for r in sub_result_to_sort.results if r.is_ok()]
+            sub_result_to_sort.results = not_ok_results + ok_results
+        else:
+            raise RuntimeError("Not implemented")
+        return self
 
 
 class ResultInfo:

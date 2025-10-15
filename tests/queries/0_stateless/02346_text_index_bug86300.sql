@@ -16,7 +16,7 @@ ORDER BY (id);
 INSERT INTO tab VALUES(1, 'bar'), (2, 'foo');
 
 -- No needles means no filtering --> match every row
-SELECT count() FROM tab WHERE searchAny(text, []);
-SELECT count() FROM tab WHERE searchAll(text, []);
+SELECT count() FROM tab WHERE hasAnyTokens(text, []);
+SELECT count() FROM tab WHERE hasAllTokens(text, []);
 
 DROP TABLE tab;

@@ -227,7 +227,19 @@ class Runner:
 
         return 0
 
-    def _run(self, workflow, job, docker="", no_docker=False, param=None, test=""):
+    def _run(
+        self,
+        workflow,
+        job,
+        docker="",
+        no_docker=False,
+        param=None,
+        test="",
+        count=None,
+        debug=False,
+        path="",
+        path_1="",
+    ):
         # re-set envs for local run
         env = _Environment.get()
         env.JOB_NAME = job.name
@@ -295,7 +307,13 @@ class Runner:
             tty = ""
             if preserve_stdio:
                 tty = "-it"
-            cmd = f"docker run {tty} --rm --name praktika {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONPATH='.:./ci' --volume ./:{current_dir} --workdir={current_dir} {' '.join(settings)} {docker} {job.command}"
+
+            # mount extra paths provided via --path_X  if they are outside current directory
+            extra_mounts = ""
+            for p_ in [path, path_1]:
+                if p_ and Path(p_).exists() and p_.startswith("/"):
+                    extra_mounts += f" --volume {p_}:{p_}"
+            cmd = f"docker run {tty} --rm --name praktika {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONPATH='.:./ci' --volume ./:{current_dir} {extra_mounts} --workdir={current_dir} {' '.join(settings)} {docker} {job.command}"
         else:
             cmd = job.command
             python_path = os.getenv("PYTHONPATH", ":")
@@ -307,6 +325,18 @@ class Runner:
         if test:
             print(f"Custom --test [{test}] will be passed to job's script")
             cmd += f" --test {test}"
+        if count is not None:
+            print(f"Custom --count [{count}] will be passed to job's script")
+            cmd += f" --count {count}"
+        if debug:
+            print(f"Custom --debug will be passed to job's script")
+            cmd += f" --debug"
+        if path:
+            print(f"Custom --path [{path}] will be passed to job's script")
+            cmd += f" --path {path}"
+        if path_1:
+            print(f"Custom --path_1 [{path_1}] will be passed to job's script")
+            cmd += f" --path_1 {path_1}"
         print(f"--- Run command [{cmd}]")
 
         with TeePopen(
@@ -526,6 +556,27 @@ class Runner:
                 print(error)
                 info_errors.append(error)
 
+            try:
+                test_cases_result = result.get_sub_result_by_name(
+                    name=job.result_name_for_cidb
+                )
+                if test_cases_result and not test_cases_result.is_ok() and ci_db:
+                    for test_case_result in test_cases_result.results:
+                        if not test_case_result.is_ok():
+                            test_case_result.set_clickable_label(
+                                "cidb",
+                                ci_db.get_link_to_test_case_statistics(
+                                    test_case_result.name, user=Settings.CI_DB_READ_USER
+                                ),
+                            )
+                    result.dump()
+            except Exception as ex:
+                if not info_errors:
+                    traceback.print_exc()
+                    error = f"ERROR: Failed to set clickable label for test cases, exception [{ex}]"
+                    print(error)
+                    info_errors.append(error)
+
         if env.TRACEBACKS:
             result.set_info("===\n" + "---\n".join(env.TRACEBACKS))
         result.dump()
@@ -644,6 +695,10 @@ class Runner:
         pr=None,
         sha=None,
         branch=None,
+        count=None,
+        debug=False,
+        path="",
+        path_1="",
     ):
         res = True
         setup_env_code = -10
@@ -697,6 +752,10 @@ class Runner:
                     no_docker=no_docker,
                     param=param,
                     test=test,
+                    count=count,
+                    debug=debug,
+                    path=path,
+                    path_1=path_1,
                 )
                 res = run_code == 0
                 if not res:
