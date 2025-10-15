@@ -77,7 +77,17 @@ IProcessor::Status FractionalOffsetTransform::prepare(const PortNumbers & update
 
     /// All ports are finished. It may happen even before we reached the limit (has less data then limit).
     if (has_finished_output_port)
+    {
+        for (auto & chunk : chunks_cache)
+            chunk.clear();
+
+        chunks_cache.clear();
+
+        for (auto & output : outputs)
+            output.finish();
+
         return Status::Finished;
+    }
 
     if (has_full_port)
         return Status::PortFull;
@@ -134,7 +144,7 @@ FractionalOffsetTransform::Status FractionalOffsetTransform::preparePair(PortsDa
                 chunks_cache[0].clear();
                 chunks_cache.pop_front();
             }
-        } while (rows_read <= offset);
+        } while (rows_read <= offset && !chunks_cache.empty());
 
         if (chunks_cache.empty())
         {
