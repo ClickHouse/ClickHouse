@@ -48,12 +48,12 @@ void FractionalOffsetStep::transformPipeline(QueryPipelineBuilder & pipeline, co
 
 void FractionalOffsetStep::describeActions(FormatSettings & settings) const
 {
-    settings.out << String(settings.offset, ' ') << "Offset " << Float32(fractional_offset) << '\n';
+    settings.out << String(settings.offset, ' ') << "Fractional Offset " << Float32(fractional_offset) << '\n';
 }
 
 void FractionalOffsetStep::describeActions(JSONBuilder::JSONMap & map) const
 {
-    map.add("Offset", Float32(fractional_offset));
+    map.add("Fractional Offset", Float32(fractional_offset));
 }
 
 void FractionalOffsetStep::serialize(Serialization & ctx) const
