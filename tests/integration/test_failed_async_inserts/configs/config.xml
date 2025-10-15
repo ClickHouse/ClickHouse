@@ -1,4 +1,5 @@
 <clickhouse>
     <max_server_memory_usage>1000</max_server_memory_usage>
     <page_cache_size>0</page_cache_size>
+		<async_insert_parse_threads>5</async_insert_parse_threads>
 </clickhouse>

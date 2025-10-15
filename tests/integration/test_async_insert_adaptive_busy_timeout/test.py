@@ -15,7 +15,7 @@ cluster = ClickHouseCluster(__file__)
 
 node = cluster.add_instance(
     "node",
-    main_configs=["configs/zookeeper_config.xml"],
+    main_configs=["configs/zookeeper_config.xml", "configs/config.xml"],
     user_configs=[
         "configs/users.xml",
     ],

@@ -276,7 +276,8 @@ private:
         InsertQuery key, InsertDataPtr data, ContextPtr global_context, QueueShardFlushTimeHistory & queue_shard_flush_time_history);
 
     template <typename LogFunc>
-    Chunk processEntriesWithParsing(
+    void processEntriesWithParsing(
+        Chunks & chunks,
         const InsertQuery & key,
         const InsertDataPtr & data,
         const Block & header,
@@ -294,8 +295,19 @@ private:
         LoggerPtr logger,
         LogFunc && add_to_async_insert_log);
 
+    template <typename LogFunc, bool IS_PARALLEL>
+    void processEntriesWithAsyncParsingImpl(
+        Chunks & chunks,
+        const InsertQuery & key,
+        const InsertDataPtr & data,
+        const Block & header,
+        const ContextPtr & insert_context,
+        LoggerPtr logger,
+        LogFunc && add_to_async_insert_log);
+
     template <typename LogFunc>
-    static Chunk processPreprocessedEntries(
+    static void processPreprocessedEntries(
+        Chunks & chunks,
         const InsertDataPtr & data,
         const Block & header,
         LogFunc && add_to_async_insert_log);
