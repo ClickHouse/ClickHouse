@@ -59,9 +59,9 @@ DROP TABLE alias_2;
 DROP TABLE alias_3;
 SELECT count() FROM source_table;
 
--- Test: Explicit columns
-SELECT 'Test Alias with explicit columns';
-CREATE TABLE alias_4 (id UInt32, value String, status String) ENGINE = Alias('source_table');
+-- Test: Create alias
+SELECT 'Test Create alias';
+CREATE TABLE alias_4 ENGINE = Alias('source_table');
 SELECT * FROM alias_4 ORDER BY id;
 
 -- Test: OPTIMIZE through alias
@@ -156,3 +156,34 @@ DROP TABLE alias_a_exchange;
 DROP TABLE alias_b_exchange;
 DROP TABLE table_a_exchange;
 DROP TABLE table_b_exchange;
+
+-- Test: DETACH and ATTACH TABLE
+SELECT 'Test DETACH and ATTACH TABLE';
+DROP TABLE IF EXISTS source_attach;
+DROP TABLE IF EXISTS alias_attach;
+
+CREATE TABLE source_attach (id UInt32, data String) ENGINE = MergeTree ORDER BY id;
+INSERT INTO source_attach VALUES (1, 'data1'), (2, 'data2');
+
+CREATE TABLE alias_attach ENGINE = Alias('source_attach');
+SELECT * FROM alias_attach ORDER BY id;
+SELECT * FROM source_attach ORDER BY id;
+
+-- DETACH the alias table
+DETACH TABLE alias_attach;
+
+-- ATTACH the table back
+ATTACH TABLE alias_attach;
+
+-- Verify it works after ATTACH
+SELECT 'After ATTACH';
+SELECT * FROM alias_attach ORDER BY id;
+SELECT * FROM source_attach ORDER BY id;
+
+-- Insert through alias after ATTACH
+INSERT INTO alias_attach VALUES (3, 'data3');
+SELECT * FROM alias_attach ORDER BY id;
+SELECT * FROM source_attach ORDER BY id;
+
+DROP TABLE alias_attach;
+DROP TABLE source_attach;

@@ -26,6 +26,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int BAD_ARGUMENTS;
 }
 
 StorageAlias::StorageAlias(
@@ -250,14 +251,19 @@ void registerStorageAlias(StorageFactory & factory)
                 "Storage Alias requires at most 2 arguments: database name and table name");
         }
 
-        // Get columns from target table if not specified
-        ColumnsDescription columns = args.columns;
-        if (columns.empty())
+        // Storage Alias does not support explicit column definitions
+        // Columns are always inherited from the target table
+        // Only check for CREATE, not for ATTACH/RESTORE
+        if (!args.columns.empty() && args.mode < LoadingStrictnessLevel::ATTACH)
         {
-            auto target_storage = DatabaseCatalog::instance().getTable(
-                StorageID(target_database, target_table), local_context);
-            columns = target_storage->getInMemoryMetadataPtr()->getColumns();
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Storage Alias does not support explicit column definitions");
         }
+
+        // Get columns from target table
+        auto target_storage = DatabaseCatalog::instance().getTable(
+            StorageID(target_database, target_table), local_context);
+        ColumnsDescription columns = target_storage->getInMemoryMetadataPtr()->getColumns();
 
         return std::make_shared<StorageAlias>(
             args.table_id,
