@@ -44,7 +44,7 @@ void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_ch
         auto metadata_storage = MetadataStorageFactory::instance().create(
             name, config, config_prefix, object_storage, compatibility_metadata_type_hint);
 
-        bool use_fake_transaction = config.getBool(config_prefix + ".use_fake_transaction", metadata_storage->getType() != MetadataStorageType::Keeper);
+        bool use_fake_transaction = metadata_storage->getType() != MetadataStorageType::Keeper;
 
         DiskPtr disk = std::make_shared<DiskObjectStorage>(
             name,

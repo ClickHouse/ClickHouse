@@ -1,6 +1,5 @@
 import pytest
 import logging
-logging.getLogger("py4j").setLevel(logging.ERROR) # before import pyspark; prevents lots of log spam
 import pyspark
 
 

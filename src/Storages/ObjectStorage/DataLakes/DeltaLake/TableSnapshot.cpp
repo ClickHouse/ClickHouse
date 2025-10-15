@@ -457,16 +457,17 @@ void TableSnapshot::updateSettings(const DB::ContextPtr & context)
     }
 }
 
-void TableSnapshot::update(const DB::ContextPtr & context)
+bool TableSnapshot::update(const DB::ContextPtr & context)
 {
     updateSettings(context);
     if (!kernel_snapshot_state)
     {
         /// Snapshot is not yet created,
         /// so next attempt to create it would return the latest snapshot.
-        return;
+        return false;
     }
     initSnapshotImpl();
+    return true;
 }
 
 void TableSnapshot::initSnapshot() const

@@ -14,7 +14,6 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Common/Exception.h>
-#include <Storages/StorageFactory.h>
 
 namespace DB
 {
@@ -136,10 +135,7 @@ public:
     virtual std::optional<size_t> totalRows(ContextPtr) { return {}; }
     virtual std::optional<size_t> totalBytes(ContextPtr) { return {}; }
 
-    // This function is used primarily for datalake storages to check if we need to update metadata
-    // snapshot before executing operation (SELECT, INSERT, etc) to enforce that schema in operation metadata snapshot
-    // is consistent with schema in metadata snapshot which was used by analyser during query analysis.
-    virtual bool needsUpdateForSchemaConsistency() const { return false; }
+    virtual bool hasExternalDynamicMetadata() { return false; }
 
     virtual IDataLakeMetadata * getExternalMetadata() { return nullptr; }
 
@@ -147,7 +143,7 @@ public:
 
     virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr, ObjectInfoPtr) const { return {}; }
 
-    virtual void modifyFormatSettings(FormatSettings &, const Context &) const {}
+    virtual void modifyFormatSettings(FormatSettings &) const {}
 
     virtual void addDeleteTransformers(
         ObjectInfoPtr object_info,
@@ -166,8 +162,7 @@ public:
 
     void initPartitionStrategy(ASTPtr partition_by, const ColumnsDescription & columns, ContextPtr context);
 
-    virtual StorageInMemoryMetadata getStorageSnapshotMetadata(ContextPtr local_context) const;
-    virtual std::optional<ColumnsDescription> tryGetTableStructureFromMetadata(ContextPtr local_context) const;
+    virtual std::optional<ColumnsDescription> tryGetTableStructureFromMetadata() const;
 
     virtual bool supportsFileIterator() const { return false; }
     virtual bool supportsWrites() const { return true; }
@@ -178,14 +173,17 @@ public:
         const ActionsDAG * /* filter_dag */,
         std::function<void(FileProgress)> /* callback */,
         size_t /* list_batch_size */,
-        StorageMetadataPtr /*storage_metadata*/,
         ContextPtr /*context*/)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method iterate() is not implemented for configuration type {}", getTypeName());
     }
 
     /// Returns true, if metadata is of the latest version, false if unknown.
-    virtual void update(ObjectStoragePtr object_storage, ContextPtr local_context, bool if_not_updated_before);
+    virtual bool update(
+        ObjectStoragePtr object_storage,
+        ContextPtr local_context,
+        bool if_not_updated_before,
+        bool check_consistent_with_previous_metadata);
 
     virtual void create(
         ObjectStoragePtr object_storage,
@@ -216,19 +214,7 @@ public:
         const std::optional<FormatSettings> & /*format_settings*/) {}
     virtual void checkMutationIsPossible(const MutationCommands & /*commands*/) {}
 
-    virtual void checkAlterIsPossible(const AlterCommands & commands)
-    {
-        /// Check if any of the alter commands is ADD_INDEX and throw immediately
-        const bool alter_adds_index
-            = std::ranges::any_of(commands, [](const AlterCommand & c) { return c.type == AlterCommand::ADD_INDEX; });
-        if (alter_adds_index)
-        {
-            const auto & features = StorageFactory::instance().getStorageFeatures(getEngineName());
-            if (!features.supports_skipping_indices)
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Engine {} doesn't support skipping indices.", getEngineName());
-        }
-    }
-
+    virtual void checkAlterIsPossible(const AlterCommands & /*commands*/) {}
     virtual void alter(const AlterCommands & /*params*/, ContextPtr /*context*/) {}
 
     virtual const DataLakeStorageSettings & getDataLakeSettings() const
@@ -238,7 +224,7 @@ public:
 
     virtual ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr /**/) const { return nullptr; }
 
-    virtual ColumnMapperPtr getColumnMapperForCurrentSchema(StorageMetadataPtr /**/, ContextPtr /**/) const { return nullptr; }
+    virtual ColumnMapperPtr getColumnMapperForCurrentSchema() const { return nullptr; }
 
 
     virtual std::shared_ptr<DataLake::ICatalog> getCatalog(ContextPtr /*context*/, bool /*is_attach*/) const { return nullptr; }

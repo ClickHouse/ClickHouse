@@ -772,49 +772,31 @@ ReturnType parseDateTimeBestEffortImpl(
         }
     };
 
-    if constexpr (std::is_same_v<ReturnType, void>)
+    if constexpr (strict)
     {
-        if (has_time_zone_offset)
+        if constexpr (is_64)
         {
-            res = utc_time_zone.makeDateTime(year, month, day_of_month, hour, minute, second);
-            adjust_time_zone();
+            if (year < 1900)
+                return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime64: year {} is less than minimum supported year 1900", year);
         }
         else
         {
-            res = local_time_zone.makeDateTime(year, month, day_of_month, hour, minute, second);
+            if (year < 1970)
+                return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: year {} is less than minimum supported year 1970", year);
         }
+    }
+
+    if (has_time_zone_offset)
+    {
+        res = utc_time_zone.makeDateTime(year, month, day_of_month, hour, minute, second);
+        adjust_time_zone();
     }
     else
     {
-
-        if (has_time_zone_offset)
-        {
-            auto res_maybe = utc_time_zone.tryToMakeDateTime(year, month, day_of_month, hour, minute, second);
-            if (!res_maybe)
-                return false;
-
-            /// For usual DateTime check if value is within supported range
-            if (!is_64 && (*res_maybe < 0 || *res_maybe > UINT32_MAX))
-                return false;
-
-            res = *res_maybe;
-            adjust_time_zone();
-        }
-        else
-        {
-            auto res_maybe = local_time_zone.tryToMakeDateTime(year, month, day_of_month, hour, minute, second);
-            if (!res_maybe)
-                return false;
-
-            /// For usual DateTime check if value is within supported range
-            if (!is_64 && (*res_maybe < 0 || *res_maybe > UINT32_MAX))
-                return false;
-
-            res = *res_maybe;
-        }
-
-        return true;
+        res = local_time_zone.makeDateTime(year, month, day_of_month, hour, minute, second);
     }
+
+    return ReturnType(true);
 }
 
 template <typename ReturnType, bool is_us_style, bool strict = false>

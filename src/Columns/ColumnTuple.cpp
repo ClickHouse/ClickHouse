@@ -883,13 +883,6 @@ void ColumnTuple::takeDynamicStructureFromSourceColumns(const Columns & source_c
         columns[i]->takeDynamicStructureFromSourceColumns(nested_source_columns[i]);
 }
 
-void ColumnTuple::takeDynamicStructureFromColumn(const ColumnPtr & source_column)
-{
-    const auto & source_elements = assert_cast<const ColumnTuple &>(*source_column).getColumns();
-    for (size_t i = 0; i != columns.size(); ++i)
-        columns[i]->takeDynamicStructureFromColumn(source_elements[i]);
-}
-
 
 ColumnPtr ColumnTuple::compress(bool force_compression) const
 {

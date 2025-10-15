@@ -136,7 +136,6 @@ enum class MessageType : Int32
 //// Column 'typelem' from 'pg_type' table. NB: not all types are compatible with PostgreSQL's ones
 enum class ColumnType : Int32
 {
-    BOOL = 16,
     CHAR = 18,
     INT8 = 20,
     INT2 = 21,
@@ -158,7 +157,7 @@ public:
     ColumnTypeSpec(ColumnType type_, Int16 len_) : type(type_), len(len_) {}
 };
 
-ColumnTypeSpec convertDataTypeToPostgresColumnTypeSpec(const DataTypePtr & data_type);
+ColumnTypeSpec convertTypeIndexToPostgresColumnTypeSpec(TypeIndex type_index);
 
 class MessageTransport
 {
@@ -939,9 +938,9 @@ private:
     FormatCode format_code;
 
 public:
-    FieldDescription(const String & name_, const DataTypePtr & data_type, FormatCode format_code_ = FormatCode::TEXT)
+    FieldDescription(const String & name_, TypeIndex type_index, FormatCode format_code_ = FormatCode::TEXT)
     : name(name_)
-    , type_spec(convertDataTypeToPostgresColumnTypeSpec(data_type))
+    , type_spec(convertTypeIndexToPostgresColumnTypeSpec(type_index))
     , format_code(format_code_)
     {}
 

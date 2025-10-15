@@ -10,7 +10,7 @@ import logging
 
 
 class DolorRequestHandler(BaseHTTPRequestHandler):
-    def __init__(self, *args, callback=None, attachment=None, config=None, **kwargs):
+    def __init__(self, *args, callback=None, config=None, **kwargs):
         """
         Custom initializer for the request handler
 
@@ -19,7 +19,6 @@ class DolorRequestHandler(BaseHTTPRequestHandler):
             config: Configuration dictionary for the handler
         """
         self.callback = callback
-        self.attachment = attachment
         self.config = config if config is not None else {}
         self.logger = logging.getLogger(__name__)
 
@@ -52,9 +51,7 @@ class DolorRequestHandler(BaseHTTPRequestHandler):
             # Call the callback if provided
             response_ok = True
             if self.callback:
-                response_ok = self.callback(
-                    self.path, data, self.headers, self.attachment
-                )
+                response_ok = self.callback(self.path, data, self.headers)
 
             # Default response
             self.send_response(200 if response_ok else 400)
@@ -92,7 +89,7 @@ class DolorRequestHandler(BaseHTTPRequestHandler):
 
 
 class DolorHTTPServer:
-    def __init__(self, host="localhost", port=8080, attachment=None, handler_kwargs={}):
+    def __init__(self, host="localhost", port=8080, handler_kwargs=None):
         """
         Initialize the threaded HTTP server
 
@@ -104,13 +101,11 @@ class DolorHTTPServer:
         """
         self.host = host
         self.port = port
-        self.handler_kwargs = handler_kwargs
+        self.handler_kwargs = handler_kwargs if handler_kwargs else {}
         self.server = None
         self.thread = None
         self.is_running = False
         self.logger = logging.getLogger(__name__)
-        self.attachment = attachment
-        self.handler_kwargs["attachment"] = self.attachment
 
     def start(self):
         """Start the server in a separate thread"""

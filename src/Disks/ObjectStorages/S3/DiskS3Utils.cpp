@@ -18,6 +18,8 @@ ObjectStorageKeysGeneratorPtr getKeyGenerator(
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix)
 {
+    bool storage_metadata_write_full_object_key = DiskObjectStorageMetadata::getWriteFullObjectKeySetting();
+
     String object_key_compatibility_prefix = config.getString(config_prefix + ".key_compatibility_prefix", String());
     String object_key_template = config.getString(config_prefix + ".key_template", String());
 
@@ -39,6 +41,12 @@ ObjectStorageKeysGeneratorPtr getKeyGenerator(
 
         return createObjectStorageKeysGeneratorByPrefix(uri.key);
     }
+
+    if (!storage_metadata_write_full_object_key)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Wrong configuration in {}. "
+                        "Feature 'storage_metadata_write_full_object_key' has to be enabled in order to use setting 'key_template'.",
+                        config_prefix);
 
     if (!uri.key.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,

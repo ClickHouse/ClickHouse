@@ -172,7 +172,6 @@ public:
 
     bool hasDynamicStructure() const override { return values->hasDynamicStructure(); }
     void takeDynamicStructureFromSourceColumns(const Columns & source_columns) override;
-    void takeDynamicStructureFromColumn(const ColumnPtr & source_column) override;
 
     size_t getNumberOfTrailingDefaults() const
     {

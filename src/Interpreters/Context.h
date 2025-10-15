@@ -125,7 +125,6 @@ class OpenTelemetrySpanLog;
 class ZooKeeperLog;
 class ZooKeeperConnectionLog;
 class IcebergMetadataLog;
-class DeltaMetadataLog;
 class SessionLog;
 class BackupsWorker;
 class TransactionsInfoLog;
@@ -272,13 +271,6 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 struct StorageSnapshot;
 using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
-
-/// IRuntimeFilterLookup allows to store and find per-query runtime filters under unique names.
-/// Runtime filters are used to optimize JOINs in some cases by building a bloom filter from the right side
-/// of the JOIN and use it to do early pre-filtering on the left side of the JOIN.
-struct IRuntimeFilterLookup;
-using RuntimeFilterLookupPtr = std::shared_ptr<IRuntimeFilterLookup>;
-RuntimeFilterLookupPtr createRuntimeFilterLookup();
 
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.
@@ -541,9 +533,6 @@ protected:
     /// if we already use a different mode of parallel replicas we want to disable this mode
     bool offset_parallel_replicas_enabled = true;
 
-    /// Used at query runtime to save per-query runtime filters and find them by names
-    RuntimeFilterLookupPtr runtime_filter_lookup;
-
 public:
     /// Some counters for current query execution.
     /// Most of them are workarounds and should be removed in the future.
@@ -683,7 +672,6 @@ public:
         MAX_ATTACHED_DICTIONARIES,
         MAX_ATTACHED_TABLES,
         MAX_ATTACHED_VIEWS,
-        MAX_NAMED_COLLECTIONS,
         MAX_NUM_THREADS_LOWER_THAN_LIMIT,
         MAX_PENDING_MUTATIONS_EXCEEDS_LIMIT,
         MAX_PENDING_MUTATIONS_OVER_THRESHOLD,
@@ -1091,7 +1079,6 @@ public:
     void setHTTPHeaderFilter(const Poco::Util::AbstractConfiguration & config);
     const HTTPHeaderFilter & getHTTPHeaderFilter() const;
 
-    size_t getMaxNamedCollectionNumToWarn() const;
     size_t getMaxTableNumToWarn() const;
     size_t getMaxViewNumToWarn() const;
     size_t getMaxDictionaryNumToWarn() const;
@@ -1100,7 +1087,6 @@ public:
     size_t getMaxPendingMutationsToWarn() const;
     size_t getMaxPendingMutationsExecutionTimeToWarn() const;
 
-    void setMaxNamedCollectionNumToWarn(size_t max_named_collection_to_warn);
     void setMaxTableNumToWarn(size_t max_table_to_warn);
     void setMaxViewNumToWarn(size_t max_view_to_warn);
     void setMaxDictionaryNumToWarn(size_t max_dictionary_to_warn);
@@ -1389,7 +1375,6 @@ public:
     std::shared_ptr<ZooKeeperConnectionLog> getZooKeeperConnectionLog() const;
     std::shared_ptr<AggregatedZooKeeperLog> getAggregatedZooKeeperLog() const;
     std::shared_ptr<IcebergMetadataLog> getIcebergMetadataLog() const;
-    std::shared_ptr<DeltaMetadataLog> getDeltaMetadataLog() const;
 
     SystemLogs getSystemLogs() const;
 
@@ -1602,11 +1587,6 @@ public:
 
     void setPreparedSetsCache(const PreparedSetsCachePtr & cache);
     PreparedSetsCachePtr getPreparedSetsCache() const;
-
-    /// IRuntimeFilterLookup allows to store and find per-query runtime filters under unique names. Those are used
-    /// to optimize some JOINs by early pre-filtering left side of the JOIN by a filter built form the right side.
-    void setRuntimeFilterLookup(const RuntimeFilterLookupPtr & filter_lookup);
-    RuntimeFilterLookupPtr getRuntimeFilterLookup() const;
 
     void setPartitionIdToMaxBlock(const UUID & table_uuid, PartitionIdToMaxBlockPtr partitions);
     PartitionIdToMaxBlockPtr getPartitionIdToMaxBlock(const UUID & table_uuid) const;

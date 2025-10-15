@@ -1,5 +1,4 @@
 #include <Interpreters/DatabaseCatalog.h>
-
 #include <Access/ContextAccess.h>
 
 #include <Common/assert_cast.h>
@@ -23,10 +22,12 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/loadMetadata.h>
 #include <Interpreters/TableNameHints.h>
 #include <IO/ReadHelpers.h>
 #include <IO/SharedThreadPools.h>
 #include <Poco/DirectoryIterator.h>
+#include <Poco/Util/AbstractConfiguration.h>
 #include <Storages/IStorage.h>
 #include <Storages/MemorySettings.h>
 #include <Storages/MergeTree/MergeTreeData.h>

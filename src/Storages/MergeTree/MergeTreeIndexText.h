@@ -69,7 +69,6 @@ namespace DB
 struct MergeTreeIndexTextParams
 {
     size_t dictionary_block_size = 0;
-    size_t dictionary_block_frontcoding_compression = 1; /// enabled by default
     size_t max_cardinality_for_embedded_postings = 0;
     size_t bloom_filter_bits_per_row = 0;
     size_t bloom_filter_num_hashes = 0;
@@ -240,7 +239,7 @@ struct MergeTreeIndexTextGranuleBuilder
     MergeTreeIndexTextGranuleBuilder(MergeTreeIndexTextParams params_, TokenExtractorPtr token_extractor_);
 
     /// Extracts tokens from the document and adds them to the granule.
-    void addDocument(StringRef document, bool increment_current_row = true);
+    void addDocument(StringRef document);
     std::unique_ptr<MergeTreeIndexGranuleTextWritable> build();
     bool empty() const { return current_row == 0; }
     void reset();

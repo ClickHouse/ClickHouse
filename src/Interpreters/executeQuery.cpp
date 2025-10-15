@@ -601,8 +601,7 @@ void logQueryFinishImpl(
     if (process_list_elem)
     {
 
-        if (!query_pipeline.getProcessors().empty())
-            logProcessorProfile(context, query_pipeline.getProcessors());
+        logProcessorProfile(context, query_pipeline.getProcessors());
 
         auto result_progress = flushQueryProgress(query_pipeline, pulling_pipeline, context->getProgressCallback(), process_list_elem);
 
@@ -1007,8 +1006,7 @@ static BlockIO executeQueryImpl(
     QueryProcessingStage::Enum stage,
     ReadBufferUniquePtr & istr,
     ASTPtr & out_ast,
-    ImplicitTransactionControlExecutorPtr implicit_tcl_executor,
-    HTTPContinueCallback http_continue_callback = {})
+    ImplicitTransactionControlExecutorPtr implicit_tcl_executor)
 {
     const bool internal = flags.internal;
 
@@ -1421,10 +1419,6 @@ static BlockIO executeQueryImpl(
                 quota->checkExceeded(QuotaType::ERRORS);
             }
 
-            /// Invoke HTTP 100-Continue callback after async insert quota checks are completed
-            if (http_continue_callback && !internal)
-                http_continue_callback();
-
             auto result = queue->pushQueryWithInlinedData(out_ast, context);
 
             if (result.status == AsynchronousInsertQueue::PushResult::OK)
@@ -1565,10 +1559,6 @@ static BlockIO executeQueryImpl(
                         quota->checkExceeded(QuotaType::ERRORS);
                     }
                 }
-
-                /// Invoke HTTP 100-Continue callback after quota checks are completed
-                if (http_continue_callback && !internal)
-                    http_continue_callback();
 
                 if (interpreter)
                 {
@@ -1832,12 +1822,11 @@ void executeQuery(
     QueryFlags flags,
     const std::optional<FormatSettings> & output_format_settings,
     HandleExceptionInOutputFormatFunc handle_exception_in_output_format,
-    QueryFinishCallback query_finish_callback,
-    HTTPContinueCallback http_continue_callback)
+    QueryFinishCallback query_finish_callback)
 {
     executeQuery(
         wrapReadBufferReference(istr), ostr, allow_into_outfile, context, std::move(set_result_details), flags,
-        output_format_settings, std::move(handle_exception_in_output_format), std::move(query_finish_callback), std::move(http_continue_callback));
+        output_format_settings, std::move(handle_exception_in_output_format), std::move(query_finish_callback));
 }
 
 void executeQuery(
@@ -1849,8 +1838,7 @@ void executeQuery(
     QueryFlags flags,
     const std::optional<FormatSettings> & output_format_settings,
     HandleExceptionInOutputFormatFunc handle_exception_in_output_format,
-    QueryFinishCallback query_finish_callback,
-    HTTPContinueCallback http_continue_callback)
+    QueryFinishCallback query_finish_callback)
 {
     PODArray<char> parse_buf;
     const char * begin;
@@ -1874,12 +1862,9 @@ void executeQuery(
             context->getSettingsRef()[Setting::max_os_cpu_wait_time_ratio_to_throw],
             /*should_throw*/ true);
 
-    if (istr->available() > max_query_size || http_continue_callback)
+    if (istr->available() > max_query_size)
     {
         /// If remaining buffer space in 'istr' is enough to parse query up to 'max_query_size' bytes, then parse inplace.
-        /// Also, if the HTTP 100 Continue response is deferred (which is the case if http_continue_callback is set),
-        /// we should not attempt to read anything from the body. We expect the query (without insert data) to be present
-        /// in the buffer already because it should have been extracted from the query parameter.
         begin = istr->position();
         end = istr->buffer().end();
         istr->position() += end - begin;
@@ -1972,7 +1957,7 @@ void executeQuery(
     auto implicit_tcl_executor = std::make_shared<ImplicitTransactionControlExecutor>();
     try
     {
-        streams = executeQueryImpl(begin, end, context, flags, QueryProcessingStage::Complete, istr, ast, implicit_tcl_executor, http_continue_callback);
+        streams = executeQueryImpl(begin, end, context, flags, QueryProcessingStage::Complete, istr, ast, implicit_tcl_executor);
     }
     catch (...)
     {

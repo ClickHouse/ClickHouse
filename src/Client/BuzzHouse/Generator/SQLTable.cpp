@@ -12,26 +12,15 @@ String StatementGenerator::nextComment(RandomGenerator & rg) const
     return rg.nextSmallNumber() < 4 ? "''" : rg.nextString("'", true, rg.nextStrlen());
 }
 
-static void collectNullable(SQLType * tp, const uint32_t flags, ColumnPathChain & next, std::vector<ColumnPathChain> & paths)
-{
-    /// Skip LowCardinality type
-    if (tp && tp->getTypeClass() == SQLTypeClass::LOWCARDINALITY)
-    {
-        LowCardinality * lc = dynamic_cast<LowCardinality *>(tp);
-
-        tp = lc->subtype;
-    }
-    if (tp && (flags & collect_generated) != 0 && tp->getTypeClass() == SQLTypeClass::NULLABLE)
-    {
-        next.path.emplace_back(ColumnPathChainEntry("null", &(*null_tp)));
-        paths.push_back(next);
-        next.path.pop_back();
-    }
-}
-
 void collectColumnPaths(
     const String cname, SQLType * tp, const uint32_t flags, ColumnPathChain & next, std::vector<ColumnPathChain> & paths)
 {
+    ArrayType * at = nullptr;
+    MapType * mt = nullptr;
+    TupleType * ttp = nullptr;
+    NestedType * ntp = nullptr;
+    JSONType * jt = nullptr;
+
     checkStackSize();
     /// Append this node to the path
     next.path.emplace_back(ColumnPathChainEntry(cname, tp));
@@ -40,66 +29,39 @@ void collectColumnPaths(
     {
         paths.push_back(next);
     }
-    collectNullable(tp, flags, next, paths);
-    if (tp && tp->getTypeClass() == SQLTypeClass::LOWCARDINALITY)
+    if ((flags & collect_generated) != 0 && tp->getTypeClass() == SQLTypeClass::NULLABLE)
     {
-        LowCardinality * lc = dynamic_cast<LowCardinality *>(tp);
-
-        tp = lc->subtype;
+        next.path.emplace_back(ColumnPathChainEntry("null", &(*null_tp)));
+        paths.push_back(next);
+        next.path.pop_back();
     }
-    if (tp && tp->getTypeClass() == SQLTypeClass::NULLABLE)
+    else if ((flags & collect_generated) != 0 && ((at = dynamic_cast<ArrayType *>(tp)) || (mt = dynamic_cast<MapType *>(tp))))
     {
-        /// JSON type can be inside nullable
-        Nullable * nl = dynamic_cast<Nullable *>(tp);
+        uint32_t i = 1;
 
-        tp = nl->subtype;
-    }
-    if (tp && (flags & collect_generated) != 0 && (tp->getTypeClass() == SQLTypeClass::ARRAY || tp->getTypeClass() == SQLTypeClass::MAP))
-    {
         next.path.emplace_back(ColumnPathChainEntry("size0", &(*size_tp)));
         paths.push_back(next);
         next.path.pop_back();
-        if (tp->getTypeClass() == SQLTypeClass::ARRAY)
+        while (at && (at = dynamic_cast<ArrayType *>(at->subtype)))
         {
-            uint32_t i = 1;
-            ArrayType * at = dynamic_cast<ArrayType *>(tp);
-            ArrayType * at2 = at;
-            ArrayType * at3 = nullptr;
-
-            while (at && (at = dynamic_cast<ArrayType *>(at->subtype)))
-            {
-                next.path.emplace_back(ColumnPathChainEntry("size" + std::to_string(i), &(*size_tp)));
-                paths.push_back(next);
-                next.path.pop_back();
-                i++;
-            }
-            /// Array null values
-            while (at2 && (at3 = dynamic_cast<ArrayType *>(at2->subtype)))
-            {
-                at2 = at3;
-            }
-            if (at2)
-            {
-                collectNullable(at2->subtype, flags, next, paths);
-            }
+            next.path.emplace_back(ColumnPathChainEntry("size" + std::to_string(i), &(*size_tp)));
+            paths.push_back(next);
+            next.path.pop_back();
+            i++;
         }
-        else
+        if (mt)
         {
-            MapType * mt = dynamic_cast<MapType *>(tp);
-
             next.path.emplace_back(ColumnPathChainEntry("keys", mt->key));
             paths.push_back(next);
             next.path.pop_back();
             next.path.emplace_back(ColumnPathChainEntry("values", mt->value));
             paths.push_back(next);
-            collectNullable(mt->value, flags, next, paths);
             next.path.pop_back();
         }
     }
-    else if (tp && (flags & flat_tuple) != 0 && tp->getTypeClass() == SQLTypeClass::TUPLE)
+    else if ((flags & flat_tuple) != 0 && (ttp = dynamic_cast<TupleType *>(tp)))
     {
         uint32_t i = 1;
-        TupleType * ttp = dynamic_cast<TupleType *>(tp);
 
         for (const auto & entry : ttp->subtypes)
         {
@@ -112,11 +74,9 @@ void collectColumnPaths(
             i++;
         }
     }
-    else if (tp && (flags & flat_nested) != 0 && tp->getTypeClass() == SQLTypeClass::NESTED)
+    else if ((flags & flat_nested) != 0 && (ntp = dynamic_cast<NestedType *>(tp)))
     {
-        NestedType * nt = dynamic_cast<NestedType *>(tp);
-
-        for (const auto & entry : nt->subtypes)
+        for (const auto & entry : ntp->subtypes)
         {
             const String nsub = "c" + std::to_string(entry.cname);
 
@@ -132,28 +92,11 @@ void collectColumnPaths(
             }
         }
     }
-    else if (tp && (flags & flat_json) != 0 && tp->getTypeClass() == SQLTypeClass::JSON)
+    else if ((flags & flat_json) != 0 && (jt = dynamic_cast<JSONType *>(tp)))
     {
-        JSONType * jt = dynamic_cast<JSONType *>(tp);
-
         for (const auto & entry : jt->subcols)
         {
             next.path.emplace_back(ColumnPathChainEntry(entry.cname, entry.subtype));
-            paths.push_back(next);
-            next.path.pop_back();
-        }
-    }
-    else if (tp && tp->getTypeClass() == SQLTypeClass::QBIT)
-    {
-        QBitType * qbit = dynamic_cast<QBitType *>(tp);
-        FloatType * fp = dynamic_cast<FloatType *>(qbit->subtype);
-        static const std::unordered_map<uint32_t, DB::Strings> & qentries
-            = {{16, {"1", "8", "16"}}, {32, {"1", "16", "32"}}, {64, {"1", "16", "32", "64"}}};
-
-        /// Only setring a subset of the values to not add too many entries
-        for (const auto & entry : qentries.at(fp->size))
-        {
-            next.path.emplace_back(ColumnPathChainEntry(entry, &(*string_tp)));
             paths.push_back(next);
             next.path.pop_back();
         }
@@ -240,7 +183,6 @@ StatementGenerator::createTableRelation(RandomGenerator & rg, const bool allow_i
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_file"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_size"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_time"}));
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_row_number"}));
             if (t.isAnyDeltaLakeEngine() || t.isAnyIcebergEngine())
             {
                 rel.cols.emplace_back(SQLRelationCol(rel_name, {"_data_lake_snapshot_version"}));
@@ -1093,6 +1035,9 @@ void StatementGenerator::generateEngineDetails(
     RandomGenerator & rg, const SQLRelation & rel, SQLBase & b, const bool add_pkey, TableEngine * te)
 {
     SettingValues * svs = nullptr;
+    const bool has_tables = collectionHas<SQLTable>(hasTableOrView<SQLTable>(b));
+    const bool has_views = collectionHas<SQLView>(hasTableOrView<SQLView>(b));
+    const bool has_dictionaries = collectionHas<SQLDictionary>(hasTableOrView<SQLDictionary>(b));
     const bool allow_shared_tbl = supports_cloud_features && (fc.engine_mask & allow_shared) != 0;
 
     /// Set what the filename is going to be first
@@ -1172,14 +1117,10 @@ void StatementGenerator::generateEngineDetails(
     }
     else if (te->has_engine() && (b.isDistributedEngine() || b.isBufferEngine() || b.isAliasEngine()))
     {
-        const bool has_tables = collectionHas<SQLTable>(hasTableOrView<SQLTable>(b));
-        const bool has_views = collectionHas<SQLView>(hasTableOrView<SQLView>(b));
-        const bool has_dictionaries = collectionHas<SQLDictionary>(hasTableOrView<SQLDictionary>(b));
         const uint32_t dist_table = 15 * static_cast<uint32_t>(has_tables);
         const uint32_t dist_view = 5 * static_cast<uint32_t>(has_views);
         const uint32_t dist_dictionary = 5 * static_cast<uint32_t>(has_dictionaries);
-        const uint32_t dist_system_table = 3 * static_cast<uint32_t>(!systemTables.empty());
-        const uint32_t prob_space = dist_table + dist_view + dist_dictionary + dist_system_table;
+        const uint32_t prob_space = dist_table + dist_view + dist_dictionary;
         std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
         const uint32_t nopt = next_dist(rg.generator);
 
@@ -1208,15 +1149,6 @@ void StatementGenerator::generateEngineDetails(
 
             d.setName(te);
             b.sub = d.teng;
-        }
-        else if (dist_system_table && nopt < (dist_table + dist_view + dist_dictionary + dist_system_table + 1))
-        {
-            const auto & ntable = rg.pickRandomly(systemTables);
-
-            te->add_params()->mutable_database()->set_database(ntable.schema_name);
-            te->add_params()->mutable_table()->set_table(ntable.table_name);
-            /// Something as a placeholder
-            b.sub = MergeTree;
         }
         else
         {
@@ -1363,10 +1295,34 @@ void StatementGenerator::generateEngineDetails(
             svs = svs ? svs : te->mutable_setting_values();
             generateSettingValues(rg, serverSettings, svs);
         }
-        if (b.isMergeTreeFamily() && !fc.hot_table_settings.empty() && rg.nextBool())
+        if (b.isMergeTreeFamily() && rg.nextMediumNumber() < 26)
         {
+            /// Use wide and vertical merge settings more often
+            static const DB::Strings & behaviorSettings
+                = {"min_rows_for_wide_part",
+                   "min_bytes_for_wide_part",
+                   "vertical_merge_algorithm_min_rows_to_activate",
+                   "vertical_merge_algorithm_min_bytes_to_activate",
+                   "vertical_merge_algorithm_min_columns_to_activate",
+                   "min_bytes_for_full_part_storage",
+                   "min_rows_for_full_part_storage"};
+            const size_t nsets = (rg.nextLargeNumber() % behaviorSettings.size()) + 1;
+
+            chassert(this->ids.empty());
+            for (size_t i = 0; i < behaviorSettings.size(); i++)
+            {
+                this->ids.emplace_back(i);
+            }
+            std::shuffle(this->ids.begin(), this->ids.end(), rg.generator);
             svs = svs ? svs : te->mutable_setting_values();
-            generateHotTableSettingsValues(rg, true, svs);
+            for (size_t i = 0; i < nsets; i++)
+            {
+                SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
+
+                sv->set_property(behaviorSettings[this->ids[i]]);
+                sv->set_value(rg.nextBool() ? "1" : "0");
+            }
+            this->ids.clear();
         }
         if (b.isAnyS3Engine() && rg.nextBool())
         {
@@ -1500,12 +1456,12 @@ void StatementGenerator::addTableColumnInternal(
         }
         if ((!col.dmod.has_value() || col.dmod.value() != DModifier::DEF_EPHEMERAL) && !t.is_deterministic && rg.nextMediumNumber() < 16)
         {
-            flatTableColumnPath(flat_tuple | flat_nested, t.cols, [](const SQLColumn &) { return true; });
+            flatTableColumnPath(0, t.cols, [](const SQLColumn & c) { return c.tp->getTypeClass() != SQLTypeClass::NESTED; });
             generateTTLExpression(rg, std::make_optional<SQLTable>(t), cd->mutable_ttl_expr());
             this->entries.clear();
         }
+        cd->set_is_pkey(is_pk);
     }
-    cd->set_is_pkey(is_pk);
     if (rg.nextSmallNumber() < 3)
     {
         cd->set_comment(nextComment(rg));
@@ -1530,13 +1486,13 @@ void StatementGenerator::addTableColumn(
     {
         this->next_type_mask &= ~(
             allow_int128 | allow_dynamic | allow_JSON | allow_array | allow_map | allow_tuple | allow_variant | allow_nested | allow_geo
-            | set_no_decimal_limit | allow_qbit);
+            | set_no_decimal_limit);
     }
     if ((t.isPostgreSQLEngine() && (t.is_deterministic || rg.nextSmallNumber() < 4)) || t.hasPostgreSQLPeer())
     {
         this->next_type_mask &= ~(
             allow_int128 | allow_unsigned_int | allow_dynamic | allow_JSON | allow_map | allow_tuple | allow_variant | allow_nested
-            | allow_geo | allow_qbit);
+            | allow_geo);
         if (t.hasPostgreSQLPeer())
         {
             /// Datetime must have 6 digits precision
@@ -1547,7 +1503,7 @@ void StatementGenerator::addTableColumn(
     {
         this->next_type_mask &= ~(
             allow_int128 | allow_unsigned_int | allow_dynamic | allow_JSON | allow_array | allow_map | allow_tuple | allow_variant
-            | allow_nested | allow_geo | allow_qbit);
+            | allow_nested | allow_geo);
         if (t.hasSQLitePeer())
         {
             /// For bool it maps to int type, then it outputs 0 as default instead of false
@@ -1557,7 +1513,7 @@ void StatementGenerator::addTableColumn(
     }
     if ((t.isMongoDBEngine() && (t.is_deterministic || rg.nextSmallNumber() < 4)))
     {
-        this->next_type_mask &= ~(allow_dynamic | allow_map | allow_tuple | allow_variant | allow_nested | allow_qbit);
+        this->next_type_mask &= ~(allow_dynamic | allow_map | allow_tuple | allow_variant | allow_nested);
     }
     if (t.hasDatabasePeer())
     {
@@ -1684,30 +1640,6 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
                 }
                 buf += "]";
                 idef->add_params()->set_unescaped_sval(std::move(buf));
-            }
-            if (rg.nextBool())
-            {
-                std::uniform_int_distribution<uint32_t> next_dist(1, 512);
-
-                idef->add_params()->set_unescaped_sval("dictionary_block_size = " + std::to_string(next_dist(rg.generator)));
-            }
-            if (rg.nextBool())
-            {
-                idef->add_params()->set_unescaped_sval(
-                    "dictionary_block_frontcoding_compression = " + std::to_string(rg.nextBool() ? 1 : 0));
-            }
-            if (rg.nextBool())
-            {
-                std::uniform_int_distribution<uint32_t> next_dist(0, 8192);
-
-                idef->add_params()->set_unescaped_sval(
-                    "max_cardinality_for_embedded_postings = " + std::to_string(next_dist(rg.generator)));
-            }
-            if (rg.nextBool())
-            {
-                std::uniform_int_distribution<uint32_t> next_dist(1, 9);
-
-                idef->add_params()->set_unescaped_sval("bloom_filter_false_positive_rate = 0." + std::to_string(next_dist(rg.generator)));
             }
         }
         break;
@@ -1925,7 +1857,7 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
     {
         this->ids.emplace_back(ArrowFlight);
     }
-    if (has_tables || has_views || has_dictionaries || !systemTables.empty())
+    if (has_tables || has_views || has_dictionaries)
     {
         if ((fc.engine_mask & allow_buffer) != 0)
         {
@@ -1990,7 +1922,7 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
             {
                 this->ids.emplace_back(S3);
             }
-            if (!b.is_deterministic && (fc.engine_mask & allow_S3queue) != 0)
+            if ((fc.engine_mask & allow_S3queue) != 0)
             {
                 this->ids.emplace_back(S3Queue);
             }
@@ -2012,7 +1944,7 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
             {
                 this->ids.emplace_back(AzureBlobStorage);
             }
-            if (!b.is_deterministic && (fc.engine_mask & allow_AzureQueue) != 0)
+            if ((fc.engine_mask & allow_AzureQueue) != 0)
             {
                 this->ids.emplace_back(AzureQueue);
             }
@@ -2261,7 +2193,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
     }
     else if (!next.is_deterministic && (next.isMergeTreeFamily() || rg.nextLargeNumber() < 8) && rg.nextBool())
     {
-        flatTableColumnPath(flat_tuple | flat_nested, next.cols, [](const SQLColumn &) { return true; });
+        flatTableColumnPath(0, next.cols, [](const SQLColumn & c) { return c.tp->getTypeClass() != SQLTypeClass::NESTED; });
         generateNextTTL(rg, std::make_optional<SQLTable>(next), te, te->mutable_ttl_expr());
         entries.clear();
     }
