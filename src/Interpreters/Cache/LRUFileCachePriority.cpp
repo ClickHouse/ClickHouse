@@ -340,13 +340,13 @@ bool LRUFileCachePriority::canFit(
             || current_elements_num + elements - released_elements_assumption <= (max_elements_ ? *max_elements_ : max_elements.load()));
 }
 
-IFileCachePriority::EvictionState LRUFileCachePriority::collectEvictionState(
+IFileCachePriority::EvictionInfoPtr LRUFileCachePriority::collectEvictionInfo(
     size_t size,
     size_t elements,
     IFileCachePriority::Iterator *,
     const CacheStateGuard::Lock & lock)
 {
-    QueueEvictionState info;
+    QueueEvictionInfo info;
 
     const size_t available_size = max_size.load() - state->getSize(lock);
     if (available_size < size)
@@ -377,11 +377,11 @@ IFileCachePriority::EvictionState LRUFileCachePriority::collectEvictionState(
             *this,
             lock);
     }
-    return EvictionState(queue_id, std::move(info));
+    return std::make_unique<EvictionInfo>(queue_id, std::move(info));
 }
 
 bool LRUFileCachePriority::collectCandidatesForEviction(
-    const EvictionState & eviction_info,
+    const EvictionInfo & eviction_info,
     FileCacheReserveStat & stat,
     EvictionCandidates & res,
     IFileCachePriority::IteratorPtr /* reservee */,
@@ -551,9 +551,14 @@ IFileCachePriority::EntryPtr LRUFileCachePriority::LRUIterator::getEntry() const
     return *iterator;
 }
 
+bool LRUFileCachePriority::LRUIterator::isValid(const CachePriorityGuard::WriteLock &)
+{
+    return iterator != LRUQueue::iterator{};
+}
+
 void LRUFileCachePriority::LRUIterator::remove(const CachePriorityGuard::WriteLock & lock)
 {
-    if (iterator == LRUQueue::iterator{})
+    if (!isValid(lock))
         return;
     //assertValid();
     cache_priority->remove(iterator, lock);
@@ -581,8 +586,9 @@ void LRUFileCachePriority::LRUIterator::incrementSize(size_t size, const CacheSt
     assertValid();
 
     const auto & entry = *iterator;
+    bool elements = entry->size > 0 ? 0 : 1;
 
-    if (!cache_priority->canFit(size, /* elements */0, lock))
+    if (!cache_priority->canFit(size, elements, lock))
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Cannot increment size by {} for entry {}. Current state: {}",
@@ -594,7 +600,7 @@ void LRUFileCachePriority::LRUIterator::incrementSize(size_t size, const CacheSt
         "Incrementing size with {} in LRU queue for entry {}",
         size, entry->toString());
 
-    cache_priority->state->add(size, entry->size > 0 ? 0 : 1, lock);
+    cache_priority->state->add(size, elements, lock);
     entry->size += size;
 
     cache_priority->check(lock);

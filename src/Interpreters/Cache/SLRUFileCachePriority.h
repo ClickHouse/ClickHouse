@@ -37,7 +37,7 @@ public:
 
     double getSLRUSizeRatio() const override { return size_ratio; }
 
-    EvictionState collectEvictionState(
+    EvictionInfoPtr collectEvictionInfo(
         size_t size,
         size_t elements,
         IFileCachePriority::Iterator * reservee,
@@ -60,7 +60,7 @@ public:
         bool is_startup = false) override;
 
     bool collectCandidatesForEviction(
-        const EvictionState & eviction_info,
+        const EvictionInfo & eviction_info,
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
         IFileCachePriority::IteratorPtr reservee,
@@ -105,7 +105,7 @@ private:
     void increasePriority(SLRUIterator & iterator, const CachePriorityGuard::WriteLock & lock);
 
     bool collectCandidatesForEvictionInProtected(
-        const EvictionState & eviction_info,
+        const EvictionInfo & eviction_info,
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
         IFileCachePriority::IteratorPtr reservee,
@@ -131,6 +131,8 @@ public:
 
     EntryPtr getEntry() const override;
 
+    bool isValid(const CachePriorityGuard::WriteLock &) override;
+
     void remove(const CachePriorityGuard::WriteLock &) override;
 
     void invalidate() override;
@@ -141,6 +143,15 @@ public:
 
     QueueEntryType getType() const override { return is_protected ? QueueEntryType::SLRU_Protected : QueueEntryType::SLRU_Probationary; }
 
+    bool isMovable(const CacheStateGuard::Lock &) { return movable; }
+    void disableMoving(const CacheStateGuard::Lock &) { chassert(movable); movable = false; }
+    /// No lock required for re-enable the moving.
+    void enableMoving() { chassert(!movable); movable = true; }
+
+    /// Can be called only once,
+    /// and only if iterator was previously created with an empty entry.
+    void setEntry(EntryPtr && entry_, const CacheStateGuard::Lock &);
+
 private:
     void assertValid() const;
 
@@ -149,7 +160,8 @@ private:
     /// Entry itself is stored by lru_iterator.entry.
     /// We have it as a separate field to use entry without requiring any lock
     /// (which will be required if we wanted to get entry from lru_iterator.getEntry()).
-    std::weak_ptr<Entry> entry;
+    std::weak_ptr<Entry> entry TSA_GUARDED_BY(entry_mutex);
+    mutable std::mutex entry_mutex;
     /// Atomic,
     /// but needed only in order to do FileSegment::getInfo() without any lock,
     /// which is done for system tables and logging.

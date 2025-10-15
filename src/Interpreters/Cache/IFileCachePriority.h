@@ -88,6 +88,8 @@ public:
 
         virtual void decrementSize(size_t size) = 0;
 
+        virtual bool isValid(const CachePriorityGuard::WriteLock &) = 0;
+
         virtual void remove(const CachePriorityGuard::WriteLock &) = 0;
 
         virtual void invalidate() = 0;
@@ -174,7 +176,7 @@ public:
     virtual std::string getStateInfoForLog(const CacheStateGuard::Lock &) const = 0;
     virtual void check(const CacheStateGuard::Lock &) const;
 
-    struct QueueEvictionState
+    struct QueueEvictionInfo
     {
         size_t size_to_evict = 0;
         size_t elements_to_evict = 0;
@@ -185,15 +187,23 @@ public:
         void releaseHoldSpace(const CacheStateGuard::Lock & lock) const;
     };
     using QueueID = size_t;
-    struct EvictionState : public std::map<QueueID, QueueEvictionState>
+    struct EvictionInfo : public std::map<QueueID, QueueEvictionInfo>, private boost::noncopyable
     {
-        EvictionState() = default;
-        explicit EvictionState(QueueID queue_id, QueueEvictionState && info)
+        EvictionInfo() = default;
+        explicit EvictionInfo(QueueID queue_id, QueueEvictionInfo && info)
         {
             add(queue_id, std::move(info));
         }
 
-        void add(QueueID queue_id, QueueEvictionState && info)
+        ~EvictionInfo()
+        {
+            if (on_finish_func)
+                on_finish_func();
+        }
+
+        void setOnFinishFunc(std::function<void()> func) { on_finish_func = func; }
+
+        void add(QueueID queue_id, QueueEvictionInfo && info)
         {
             size_to_evict += info.size_to_evict;
             elements_to_evict += info.elements_to_evict;
@@ -211,9 +221,12 @@ public:
             for (const auto & [_, elem] : *this)
                 elem.releaseHoldSpace(lock);
         }
-    };
 
-    virtual EvictionState collectEvictionState(
+        std::function<void()> on_finish_func;
+    };
+    using EvictionInfoPtr = std::unique_ptr<EvictionInfo>;
+
+    virtual EvictionInfoPtr collectEvictionInfo(
         size_t size,
         size_t elements,
         IFileCachePriority::Iterator * reservee,
@@ -270,7 +283,7 @@ public:
     /// Collect eviction candidates sufficient to free `size` bytes
     /// and `elements` elements from cache.
     virtual bool collectCandidatesForEviction(
-        const EvictionState & eviction_info,
+        const EvictionInfo & eviction_info,
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
         IteratorPtr reservee,
@@ -296,6 +309,8 @@ public:
         const CacheStateGuard::Lock &) = 0;
 
     virtual void resetEvictionPos(const CachePriorityGuard::ReadLock &) = 0;
+
+    static void removeEntries(const std::vector<IteratorPtr> & entries, const CachePriorityGuard::WriteLock &);
 
 protected:
     IFileCachePriority(size_t max_size_, size_t max_elements_);

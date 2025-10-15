@@ -45,13 +45,13 @@ IFileCachePriority::Entry::Entry(const Entry & other)
 {
 }
 
-void IFileCachePriority::QueueEvictionState::releaseHoldSpace(const CacheStateGuard::Lock & lock) const
+void IFileCachePriority::QueueEvictionInfo::releaseHoldSpace(const CacheStateGuard::Lock & lock) const
 {
     if (hold_space)
         hold_space->release(lock);
 }
 
-std::string IFileCachePriority::QueueEvictionState::formatForLog() const
+std::string IFileCachePriority::QueueEvictionInfo::formatForLog() const
 {
     WriteBufferFromOwnString wb;
     wb << "size to evict: " << size_to_evict << ", ";
@@ -64,7 +64,7 @@ std::string IFileCachePriority::QueueEvictionState::formatForLog() const
     return wb.str();
 }
 
-std::string IFileCachePriority::EvictionState::formatForLog() const
+std::string IFileCachePriority::EvictionInfo::formatForLog() const
 {
     ///FIXME
     WriteBufferFromOwnString wb;
@@ -91,6 +91,20 @@ std::unordered_map<std::string, IFileCachePriority::UsageStat> IFileCachePriorit
         ErrorCodes::NOT_IMPLEMENTED,
         "getUsageStatPerClient() is not implemented for {} policy",
         magic_enum::enum_name(getType()));
+}
+
+void IFileCachePriority::removeEntries(
+    const std::vector<IteratorPtr> & entries,
+    const CachePriorityGuard::WriteLock & lock)
+{
+    if (entries.empty())
+        return;
+
+    for (const auto & it : entries)
+    {
+        if (it->isValid(lock))
+            it->remove(lock);
+    }
 }
 
 }

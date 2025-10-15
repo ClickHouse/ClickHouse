@@ -53,7 +53,7 @@ public:
 
     std::string getStateInfoForLog(const CacheStateGuard::Lock & lock) const override;
 
-    EvictionState collectEvictionState(
+    EvictionInfoPtr collectEvictionInfo(
         size_t size,
         size_t elements,
         IFileCachePriority::Iterator * reservee,
@@ -76,7 +76,7 @@ public:
         bool best_effort = false) override;
 
     bool collectCandidatesForEviction(
-        const EvictionState & eviction_info,
+        const EvictionInfo & eviction_info,
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
         IFileCachePriority::IteratorPtr reservee,
@@ -133,6 +133,9 @@ private:
     StatePtr state;
     LRUQueue::iterator eviction_pos TSA_GUARDED_BY(eviction_pos_mutex);
     std::mutex eviction_pos_mutex;
+    /// Id of the current priority queue.
+    /// Used to find its eviction info in collected eviction info map
+    /// (which contains eviction info for several priority queues).
     const size_t queue_id;
 
     bool canFit(
@@ -191,6 +194,8 @@ public:
     bool operator ==(const LRUIterator & other) const;
 
     EntryPtr getEntry() const override;
+
+    bool isValid(const CachePriorityGuard::WriteLock &) override;
 
     void remove(const CachePriorityGuard::WriteLock &) override;
 

@@ -126,7 +126,7 @@ void FileCacheReserveStat::update(size_t size, FileSegmentKind kind, State state
             ++total_stat.invalidated_count;
             ++local_stat.invalidated_count;
             if (iterator)
-                total_stat.invalidated_entries.emplace_back(iterator->getEntry(), iterator);
+                total_stat.invalidated_entries.emplace_back(iterator);
             break;
         }
     }
@@ -976,8 +976,8 @@ bool FileCache::doTryReserve(
     Priority * query_priority = nullptr;
     FileCacheQueryLimit::QueryContextPtr query_context;
 
-    IFileCachePriority::EvictionState main_eviction_info; /// Server scoped cache limits eviction info.
-    IFileCachePriority::EvictionState query_eviction_info; /// Query scoped cache limits eviction info.
+    std::unique_ptr<IFileCachePriority::EvictionInfo> main_eviction_info; /// Server scoped cache limits eviction info.
+    std::unique_ptr<IFileCachePriority::EvictionInfo> query_eviction_info; /// Query scoped cache limits eviction info.
 
     /// First collect "eviction info" under cache state lock, which will tell us
     /// how much do we need to evict in order to make sure we have enough space in cache.
@@ -1007,17 +1007,17 @@ bool FileCache::doTryReserve(
                     failure_reason = "query limit exceeded";
                     return false;
                 }
-                query_eviction_info = query_priority->collectEvictionState(size, required_elements_num, main_priority_iterator.get(), lock);
+                query_eviction_info = query_priority->collectEvictionInfo(size, required_elements_num, main_priority_iterator.get(), lock);
             }
         }
 
         /// Check server-wide cache limits.
-        main_eviction_info = main_priority->collectEvictionState(size, required_elements_num, main_priority_iterator.get(), lock);
+        main_eviction_info = main_priority->collectEvictionInfo(size, required_elements_num, main_priority_iterator.get(), lock);
 
         /// Can we already just increment size for the queue entry and quit?
-        if (main_priority_iterator && !main_eviction_info.requiresEviction() && !query_context)
+        if (main_priority_iterator && !main_eviction_info->requiresEviction() && !query_context)
         {
-            main_eviction_info.releaseHoldSpace(lock);
+            main_eviction_info->releaseHoldSpace(lock);
             main_priority_iterator->incrementSize(size, lock);
 
             file_segment.reserved_size += size;
@@ -1031,7 +1031,7 @@ bool FileCache::doTryReserve(
     /// Collect candidates for eviction and
     /// evict them from in-memory state and from filesystem.
     if (!doEviction(
-        main_eviction_info, query_eviction_info, file_segment, user,
+        *main_eviction_info, query_eviction_info.get(), file_segment, user,
         main_priority_iterator, reserve_stat, eviction_candidates, query_priority, failure_reason))
     {
         chassert(!failure_reason.empty());
@@ -1044,17 +1044,8 @@ bool FileCache::doTryReserve(
     if (!main_priority_iterator || eviction_candidates.needFinalize())
     {
         auto lock = cache_guard.writeLock();
-
-        if (!reserve_stat.total_stat.invalidated_entries.empty())
-        {
-            for (const auto & [entry, iterator] : reserve_stat.total_stat.invalidated_entries)
-            {
-                if (!entry->isRemoved(lock))
-                    iterator->remove(lock);
-            }
-        }
-
         eviction_candidates.afterEvictWrite(lock);
+        IFileCachePriority::removeEntries(reserve_stat.total_stat.invalidated_entries, lock);
 
         if (!main_priority_iterator)
         {
@@ -1080,14 +1071,7 @@ bool FileCache::doTryReserve(
         auto lock = cache_guard.tryWriteLock();
         if (lock.owns_lock())
         {
-            if (!reserve_stat.total_stat.invalidated_entries.empty())
-            {
-                for (const auto & [entry, iterator] : reserve_stat.total_stat.invalidated_entries)
-                {
-                    if (!entry->isRemoved(lock))
-                        iterator->remove(lock);
-                }
-            }
+            IFileCachePriority::removeEntries(reserve_stat.total_stat.invalidated_entries, lock);
         }
         else
         {
@@ -1099,8 +1083,10 @@ bool FileCache::doTryReserve(
     {
         auto lock = cache_state_guard.lock();
 
-        main_eviction_info.releaseHoldSpace(lock);
-        query_eviction_info.releaseHoldSpace(lock);
+        main_eviction_info->releaseHoldSpace(lock);
+        if (query_eviction_info)
+            query_eviction_info->releaseHoldSpace(lock);
+
         eviction_candidates.afterEvictState(lock);
 
         chassert(main_priority_iterator);
@@ -1134,16 +1120,33 @@ bool FileCache::doTryReserve(
         failure_reason = "not enough space on device";
         return false;
     }
-
-//#ifdef DEBUG_OR_SANITIZER_BUILD
-//    assertCacheCorrectness();
-//#endif
+Code: 49. DB::Exception: Having zero bytes, but range is not finished:
+    result: false,
+    file offset: 40635573,
+    read bytes: 0, object size: 40638866,
+    initial read offset: 40573330,
+    nextimpl working buffer offset: 0,
+    reading until: 40638866,
+    read type: REMOTE_FS_READ_AND_PUT_IN_CACHE,
+    impl read stop reason: Connection was released (read offset: 40635573/40638866),
+    impl working buffer size: 0,
+    impl internal buffer size: 1048576,
+    impl available: 0,
+    impl offset: 40635573,
+    impl last position: 40638866,
+    impl eof: true,
+    finished download time: None,
+    cache file size: 40638866,
+    cache file path: production-event-warehouse-fact/summary_event_flag_counter/date=2025-10-15/hour=08/minute=53/176051839_0002_345zmbBYHxD0WmWfjhxwPHicZTN.parquet, remaining file segments: 1, current file segment: File segment: [40573330, 40638865], key: 337c987ab2b48b14d0ffee720c4bbf87, state: DOWNLOADING, downloaded size: 62243, reserved size: 62243, downloader id: 14824682-7d00-4dbb-9184-812f598772bc:256947, current write offset: 40635573, caller id: 14824682-7d00-4dbb-9184-812f598772bc:256947, kind: Regular, unbound: 0: Cache info: Buffer path: summary_event_flag_counter/date=2025-10-15/hour=08/minute=53/176051839_0002_345zmbBYHxD0WmWfjhxwPHicZTN.parquet, hash key: 337c987ab2b48b14d0ffee720c4bbf87, file_offset_of_buffer_end: 40635573, read_until_position: 40638866, internal buffer end: 40635573, read_type: REMOTE_FS_READ_AND_PUT_IN_CACHE, last caller: 14824682-7d00-4dbb-9184-812f598772bc:256947, file segment info: File segment: [40573330, 40638865], key: 337c987ab2b48b14d0ffee720c4bbf87, state: DOWNLOADING, downloaded size: 62243, reserved size: 62243, downloader id: 14824682-7d00-4dbb-9184-812f598772bc:256947, current write offset: 40635573, caller id: 14824682-7d00-4dbb-9184-812f598772bc:256947, kind: Regular, unbound: 0. (LOGICAL_ERROR), Stack trace (when copying this message, always include the lines below):
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    assertCacheCorrectness();
+#endif
     return true;
 }
 
 bool FileCache::doEviction(
-    const IFileCachePriority::EvictionState & main_eviction_info,
-    const IFileCachePriority::EvictionState & query_eviction_info,
+    const IFileCachePriority::EvictionInfo & main_eviction_info,
+    const IFileCachePriority::EvictionInfo * query_eviction_info,
     FileSegment & file_segment,
     const UserInfo & user,
     const IFileCachePriority::IteratorPtr & main_priority_iterator,
@@ -1179,10 +1182,11 @@ bool FileCache::doEviction(
                 CurrentMetrics::get(CurrentMetrics::FilesystemCacheDownloadQueueElements));
         };
 
-        if (query_priority && (query_eviction_info.size_to_evict || query_eviction_info.elements_to_evict))
+        if (query_eviction_info && (query_eviction_info->size_to_evict || query_eviction_info->elements_to_evict))
         {
+            chassert(query_priority);
             if (!query_priority->collectCandidatesForEviction(
-                    query_eviction_info,
+                    *query_eviction_info,
                     reserve_stat,
                     eviction_candidates,
                     {},
@@ -1299,8 +1303,8 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
         return;
     }
 
-    auto state = main_priority->collectEvictionState(size_to_evict, elements_to_evict, nullptr, lock);
-    state.releaseHoldSpace(lock);
+    auto eviction_info = main_priority->collectEvictionInfo(size_to_evict, elements_to_evict, nullptr, lock);
+    eviction_info->releaseHoldSpace(lock);
 
     lock.unlock();
 
@@ -1318,7 +1322,7 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
 
     /// TODO: support batch size
     if (main_priority->collectCandidatesForEviction(
-            state,
+            *eviction_info,
             stat,
             eviction_candidates,
             nullptr,
@@ -2034,8 +2038,8 @@ bool FileCache::doDynamicResizeImpl(
         ? current_elements_count - desired_limits.max_elements
         : 0;
 
-    auto state = main_priority->collectEvictionState(size_to_evict, elements_to_evict, nullptr, lock);
-    state.releaseHoldSpace(lock);
+    auto eviction_info = main_priority->collectEvictionInfo(size_to_evict, elements_to_evict, nullptr, lock);
+    eviction_info->releaseHoldSpace(lock);
 
     if (size_to_evict || elements_to_evict)
     {
@@ -2043,7 +2047,7 @@ bool FileCache::doDynamicResizeImpl(
 
         FileCacheReserveStat stat;
         if (!main_priority->collectCandidatesForEviction(
-                state,
+                *eviction_info,
                 stat,
                 eviction_candidates,
                 nullptr,
