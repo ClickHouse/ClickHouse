@@ -88,7 +88,7 @@ StorageObjectStorageSink::StorageObjectStorageSink(
     writer = FormatFactory::instance().getOutputFormatParallelIfPossible(
         configuration->format, *write_buf, *sample_block, context, format_settings_);
 
-    /// build format header from sample_block (input header) by finding it's position in the sample block.
+    // build format header from sample_block (input header) by finding its columns' positions in the sample block.
     input_to_format_pos.clear();
     input_to_format_pos.reserve(sample_block->columns());
     for (size_t i = 0; i < sample_block->columns(); ++i)
@@ -223,14 +223,13 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
     /// and the input header, ignoring columns dropped due to schema changes (e.g., ALTER DROP).
     const Block strategy_format = partition_strategy->getFormatHeader();
     auto final_format_header = std::make_shared<Block>();
+
     for (size_t i = 0; i < strategy_format.columns(); ++i)
     {
         const auto & name = strategy_format.getByPosition(i).name;
-        if (sample_block->has(name))
-        {
-            const size_t pos_in = sample_block->getPositionByName(name);
-            final_format_header->insert(sample_block->getByPosition(pos_in));
-        }
+        if (const auto * const column = sample_block->findByName(name); column != nullptr)
+            final_format_header->insert(*column);
+
         /// if we are here, column suggested by the strategy is absent in the current input
         /// header (e.g. just dropped); skip it so the writer schema matches the actual data.
     }

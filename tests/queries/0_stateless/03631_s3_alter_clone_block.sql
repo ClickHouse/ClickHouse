@@ -1,5 +1,5 @@
 -- Tags: no-parallel, no-fasttest, no-random-settings
--- Issue: https://github.com/ClickHouse/ClickHouse/issues/87517
+    -- Issue: https://github.com/ClickHouse/ClickHouse/issues/87517
 
 DROP TABLE IF EXISTS test_03631_0;
 DROP TABLE IF EXISTS test_03631_1;
@@ -24,8 +24,7 @@ INSERT INTO TABLE test_03631_1 (c0) VALUES (1);
 INSERT INTO TABLE test_03631_1 (c1) VALUES (1);
 INSERT INTO TABLE test_03631_1 (c2) VALUES ('test');
 ALTER TABLE test_03631_1 DROP COLUMN c1;
-INSERT INTO TABLE test_03631_1 (c2) VALUES ('test');
-INSERT INTO TABLE test_03631_1 (c0) VALUES (1);
+INSERT INTO TABLE test_03631_1 (c0, c2) VALUES (1, 'test');
 
 
 CREATE TABLE test_03631_2(c0 Int, c1 Nullable(Int)) ENGINE = S3(s3_conn, filename='test_03631_2_{_partition_id}', format='CSV') PARTITION BY (c0);
