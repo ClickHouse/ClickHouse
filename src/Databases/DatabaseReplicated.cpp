@@ -85,6 +85,9 @@ namespace DatabaseReplicatedSetting
     extern const DatabaseReplicatedSettingsFloat max_broken_tables_ratio;
     extern const DatabaseReplicatedSettingsUInt64 max_replication_lag_to_enqueue;
     extern const DatabaseReplicatedSettingsNonZeroUInt64 logs_to_keep;
+    extern const DatabaseReplicatedSettingsString default_replica_path;
+    extern const DatabaseReplicatedSettingsString default_replica_shard_name;
+    extern const DatabaseReplicatedSettingsString default_replica_name;
 }
 
 namespace ErrorCodes
@@ -2331,8 +2334,13 @@ bool DatabaseReplicated::shouldReplicateQuery(const ContextPtr & query_context, 
     /// Some ALTERs are not replicated on database level
     if (const auto * alter = query_ptr->as<const ASTAlterQuery>())
     {
-        if (alter->isAttachAlter() || alter->isFetchAlter() || alter->isDropPartitionAlter()
-            || is_keeper_map_table(query_ptr) || alter->isFreezeAlter() || alter->isUnlockSnapshot())
+        if (alter->isAttachAlter() || alter->isFetchAlter() || alter->isDropPartitionAlter() || alter->isFreezeAlter()
+            || alter->isUnlockSnapshot())
+            return false;
+
+        // Allowed ALTER operation on KeeperMap still should be replicated
+        // to update metadata on all nodes and commit it to database metadata
+        if (is_keeper_map_table(query_ptr) && !alter->isCommentAlter())
             return false;
 
         if (has_many_shards() || !is_replicated_table(query_ptr))
@@ -2381,7 +2389,25 @@ void registerDatabaseReplicated(DatabaseFactory & factory)
     auto create_fn = [](const DatabaseFactory::Arguments & args)
     {
         auto * engine_define = args.create_query.storage;
-        const ASTFunction * engine = engine_define->engine;
+        ASTFunction * engine = engine_define->engine;
+
+        /// Fill in default parameters
+        if (!args.create_query.attach)
+        {
+            if (!engine->arguments)
+            {
+                engine->arguments = std::make_shared<ASTExpressionList>();
+                engine->children.push_back(engine->arguments);
+            }
+
+            auto settings = args.context->getDatabaseReplicatedSettings();
+            if (engine->arguments->children.empty())
+                engine->arguments->children.emplace_back(std::make_shared<ASTLiteral>(settings[DatabaseReplicatedSetting::default_replica_path].value));
+            if (engine->arguments->children.size() == 1)
+                engine->arguments->children.emplace_back(std::make_shared<ASTLiteral>(settings[DatabaseReplicatedSetting::default_replica_shard_name].value));
+            if (engine->arguments->children.size() == 2)
+                engine->arguments->children.emplace_back(std::make_shared<ASTLiteral>(settings[DatabaseReplicatedSetting::default_replica_name].value));
+        }
 
         if (!engine->arguments || engine->arguments->children.size() != 3)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replicated database requires 3 arguments: zookeeper path, shard name and replica name");
@@ -2396,8 +2422,15 @@ void registerDatabaseReplicated(DatabaseFactory & factory)
 
         /// Expand macros.
         Macros::MacroExpansionInfo info;
+        info.expand_for_database = true;
         info.table_id.database_name = args.database_name;
-        info.table_id.uuid = args.uuid;
+
+        const bool is_on_cluster = args.context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+        /// Allow implicit {uuid} macros only for zookeeper_path in ON CLUSTER queries
+        /// and if UUID was explicitly passed in CREATE DATABASE (like for ATTACH)
+        bool allow_uuid_macro = is_on_cluster || args.create_query.attach || args.create_query.has_uuid;
+        if (allow_uuid_macro)
+            info.table_id.uuid = args.uuid;
         zookeeper_path = args.context->getMacros()->expand(zookeeper_path, info);
 
         info.level = 0;
