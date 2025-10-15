@@ -517,7 +517,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
                 }
                 if (nids.empty())
                 {
-                    nids.emplace_back(rg.pickRandomly(t.cols));
+                    nids.push_back(rg.pickRandomly(t.cols));
                 }
                 else if (rg.nextBool())
                 {

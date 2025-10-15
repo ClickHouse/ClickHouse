@@ -1852,7 +1852,7 @@ void StatementGenerator::addTableConstraint(RandomGenerator & rg, SQLTable & t, 
 void StatementGenerator::getNextPeerTableDatabase(RandomGenerator & rg, SQLBase & b)
 {
     chassert(this->ids.empty());
-    if (b.is_deterministic && b.teng != Set && b.teng != ExternalDistributed)
+    if (b.is_deterministic && !b.is_temp && !b.isExternalDistributedEngine())
     {
         if (!b.isMySQLEngine() && connections.hasMySQLConnection())
         {
