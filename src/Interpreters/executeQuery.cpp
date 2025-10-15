@@ -744,7 +744,7 @@ void logQueryFinish(
 {
     const auto time_now = std::chrono::system_clock::now();
     auto query_pipeline_finalized_info = finalizeQueryPipelineBeforeLogging(std::move(query_pipeline), query_result_cache_usage, pulling_pipeline);
-    logQueryFinishImpl(elem, context, query_ast, std::move(query_pipeline_finalized_info), pulling_pipeline, query_span, query_result_cache_usage, internal, time_now);
+    logQueryFinishImpl(elem, context, query_ast, query_pipeline_finalized_info, pulling_pipeline, query_span, query_result_cache_usage, internal, time_now);
 }
 
 void logQueryException(
