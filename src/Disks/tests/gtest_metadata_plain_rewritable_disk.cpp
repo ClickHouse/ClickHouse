@@ -349,3 +349,35 @@ TEST_F(MetadataPlainRewritableDiskTest, MoveFileUndo)
 
     EXPECT_EQ(path_1, path_2);
 }
+
+TEST_F(MetadataPlainRewritableDiskTest, DirectoryFileNameCollision)
+{
+    auto metadata = getMetadataStorage("DirectoryFileNameCollision");
+    auto object_storage = getObjectStorage("DirectoryFileNameCollision");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("A");
+        tx->commit();
+    }
+
+    {
+        auto tx = metadata->createTransaction();
+        writeObject(object_storage, object_storage->generateObjectKeyForPath("A/B", std::nullopt).serialize(), "Hello world!");
+        tx->createMetadataFile("A/B", {StoredObject("A/B")});
+        tx->commit();
+    }
+
+    EXPECT_FALSE(metadata->existsDirectory("A/B"));
+    EXPECT_TRUE(metadata->existsFile("A/B"));
+
+    /// This is a bug. Directory should not be created in this case.
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("A/B");
+        tx->commit();
+    }
+
+    EXPECT_TRUE(metadata->existsDirectory("A/B"));
+    EXPECT_FALSE(metadata->existsFile("A/B"));
+}
