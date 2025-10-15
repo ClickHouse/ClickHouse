@@ -276,6 +276,12 @@ When searching, the `input` string is tokenized according to the tokenizer speci
 If the column lacks a text index, the `splitByNonAlpha` tokenizer is used instead.
 Each element in the `needle` array is treated as a complete, individual token — no additional tokenization is performed on the needle elements themselves.
 
+Duplicate tokens in the needle array are automatically ignored.
+For example, ['ClickHouse', 'ClickHouse'] is treated the same as ['ClickHouse'].
+
+An empty needle array (no array element) means that no filtering takes place and all input values match.
+If the ngrams(N) tokenizer is used and a needle has a length < N, then the needle is ignored.
+
 **Example**
 
 To search for "ClickHouse" in a column with an ngram tokenizer (`tokenizer = ngrams(5)`), you would provide an array of all the 5-character ngrams:
@@ -283,11 +289,6 @@ To search for "ClickHouse" in a column with an ngram tokenizer (`tokenizer = ngr
 ```sql
 ['Click', 'lickH', 'ickHo', 'ckHou', 'kHous', 'House']
 ```
-
-:::note
-Duplicate tokens in the needle array are automatically ignored.
-For example, ['ClickHouse', 'ClickHouse'] is treated the same as ['ClickHouse'].
-:::
     )";
     FunctionDocumentation::Syntax syntax_hasAnyTokens = "hasAnyTokens(input, ['needle1', 'needle2', ..., 'needleN'])";
     FunctionDocumentation::Arguments arguments_hasAnyTokens = {
@@ -349,6 +350,11 @@ When searching, the `input` string is tokenized according to the tokenizer speci
 If the column lacks a text index, the `splitByNonAlpha` tokenizer is used instead.
 Each element in the `needle` array is treated as a complete, individual token — no additional tokenization is performed on the needle elements themselves.
 
+Duplicate tokens in the needle array are automatically ignored.
+For example, ['ClickHouse', 'ClickHouse'] is treated the same as ['ClickHouse'].
+
+An empty needle array (no array element) means that no filtering takes place and all input values match.
+If the ngrams(N) tokenizer is used and a needle has a length < N, then the needle is ignored.
 **Example**
 
 To search for "ClickHouse" in a column with an ngram tokenizer (`tokenizer = ngrams(5)`), you would provide an array of all the 5-character ngrams:
@@ -356,11 +362,6 @@ To search for "ClickHouse" in a column with an ngram tokenizer (`tokenizer = ngr
 ```sql
 ['Click', 'lickH', 'ickHo', 'ckHou', 'kHous', 'House']
 ```
-
-:::note
-Duplicate tokens in the needle array are automatically ignored.
-For example, ['ClickHouse', 'ClickHouse'] is treated the same as ['ClickHouse'].
-:::
     )";
     FunctionDocumentation::Syntax syntax_hasAllTokens = "hasAllTokens(input, ['needle1', 'needle2', ..., 'needleN'])";
     FunctionDocumentation::Arguments arguments_hasAllTokens = {
