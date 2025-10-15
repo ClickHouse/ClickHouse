@@ -341,7 +341,10 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
         auto it = std::find_if(elem.map.begin(), elem.map.end(), not_empty_mapping);
         return it != elem.map.end();
     }) == uuid_map.end());
+
     databases.clear();
+    databases_without_datalake_catalogs.clear();
+
     referential_dependencies.clear();
     loading_dependencies.clear();
     view_dependencies.clear();
@@ -576,6 +579,18 @@ void DatabaseCatalog::assertDatabaseExists(const String & database_name) const
     }
 }
 
+bool DatabaseCatalog::hasDatalakeCatalogs() const
+{
+    std::lock_guard lock{databases_mutex};
+    return databases.size() != databases_without_datalake_catalogs.size();
+}
+
+bool DatabaseCatalog::isDatalakeCatalog(const String & database_name) const
+{
+    std::lock_guard lock{databases_mutex};
+    return databases.contains(database_name) && !databases_without_datalake_catalogs.contains(database_name);
+}
+
 void DatabaseCatalog::assertDatabaseDoesntExist(const String & database_name) const
 {
     std::lock_guard lock{databases_mutex};
@@ -594,6 +609,9 @@ void DatabaseCatalog::attachDatabase(const String & database_name, const Databas
     std::lock_guard lock{databases_mutex};
     assertDatabaseDoesntExistUnlocked(database_name);
     databases.emplace(database_name, database);
+    if (!database->isDatalakeCatalog())
+        databases_without_datalake_catalogs.emplace(database_name, database);
+
     NOEXCEPT_SCOPE({
         UUID db_uuid = database->getUUID();
         if (db_uuid != UUIDHelpers::Nil)
@@ -618,8 +636,9 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
             if (db_uuid != UUIDHelpers::Nil)
                 removeUUIDMapping(db_uuid);
             databases.erase(database_name);
-
         }
+        if (auto it = databases_without_datalake_catalogs.find(database_name); it != databases_without_datalake_catalogs.end())
+            databases_without_datalake_catalogs.erase(it);
     }
     if (!db)
     {
@@ -692,7 +711,13 @@ void DatabaseCatalog::updateDatabaseName(const String & old_name, const String &
     databases.erase(it);
     databases.emplace(new_name, db);
 
-    /// Update dependencies.
+    auto no_catalogs_it = databases_without_datalake_catalogs.find(old_name);
+    if (no_catalogs_it != databases_without_datalake_catalogs.end())
+    {
+        databases_without_datalake_catalogs.erase(no_catalogs_it);
+        databases_without_datalake_catalogs.emplace(new_name, db);
+    }
+
     for (const auto & table_name : tables_in_database)
     {
         auto removed_ref_deps = referential_dependencies.removeDependencies(StorageID{old_name, table_name}, /* remove_isolated_tables= */ true);
@@ -819,13 +844,7 @@ Databases DatabaseCatalog::getDatabases(GetDatabasesOptions options) const
     if (options.with_datalake_catalogs)
         return databases;
 
-    Databases filtered_databases;
-    for (const auto & [name, db] : databases)
-    {
-        if (!db->isDatalakeCatalog())
-            filtered_databases.emplace(name, db);
-    }
-    return filtered_databases;
+    return databases_without_datalake_catalogs;
 }
 
 bool DatabaseCatalog::isTableExist(const DB::StorageID & table_id, ContextPtr context_) const

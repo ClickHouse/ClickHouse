@@ -283,6 +283,8 @@ public:
     bool canPerformReplicatedDDLQueries() const;
 
     void updateMetadataFile(const DatabasePtr & database);
+    bool hasDatalakeCatalogs() const;
+    bool isDatalakeCatalog(const String & database_name) const;
 
 private:
     // The global instance of database catalog. unique_ptr is to allow
@@ -330,6 +332,7 @@ private:
     mutable std::mutex databases_mutex;
 
     Databases databases TSA_GUARDED_BY(databases_mutex);
+    Databases databases_without_datalake_catalogs TSA_GUARDED_BY(databases_mutex);
     UUIDToStorageMap uuid_map;
 
     /// Referential dependencies between tables: table "A" depends on table "B"
