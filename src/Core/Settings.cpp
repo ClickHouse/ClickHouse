@@ -183,6 +183,10 @@ Minimum block size in rows for JOIN input and output blocks (if join algorithm s
     DECLARE(UInt64, min_joined_block_size_bytes, 512 * 1024, R"(
 Minimum block size in bytes for JOIN input and output blocks (if join algorithm supports it). Small blocks will be squashed. 0 means unlimited.
 )", 0) \
+    DECLARE(Bool, joined_block_split_single_row, false, R"(
+Allow to chunk hash join result by rows corresponding to single row from left table.
+This may reduce memory usage in case of row with many matches in right table, but may increase CPU usage.
+)", 0) \
     DECLARE(UInt64, max_insert_threads, 0, R"(
 The maximum number of threads to execute the `INSERT SELECT` query.
 
@@ -469,11 +473,11 @@ When set to `true`, all threads executing S3 requests to the same backup endpoin
 after any single s3 request encounters a retryable network error, such as socket timeout.
 When set to `false`, each thread handles S3 request backoff independently of the others.
 )", 0) \
-    DECLARE_WITH_ALIAS(Bool, s3_slow_all_threads_after_retryable_error, false, R"(
-When set to `true`, all threads executing S3 requests to the same endpoint are slowed down
+    DECLARE(Bool, backup_slow_all_threads_after_retryable_s3_error, false, R"(
+When set to `true`, all threads executing S3 requests to the same backup endpoint are slowed down
 after any single S3 request encounters a retryable S3 error, such as 'Slow Down'.
 When set to `false`, each thread handles s3 request backoff independently of the others.
-)", 0, backup_slow_all_threads_after_retryable_s3_error) \
+)", 0) \
     DECLARE(UInt64, azure_list_object_keys_size, 1000, R"(
 Maximum number of files that could be returned in batch by ListObject request
 )", 0) \
@@ -1513,7 +1517,40 @@ Possible values:
 - 1 — Enabled.
 )", 0) \
     DECLARE(Bool, materialize_skip_indexes_on_insert, true, R"(
-If INSERTs build and store skip indexes. If disabled, skip indexes will be build and stored during merges or by explicit MATERIALIZE INDEX
+If INSERTs build and store skip indexes. If disabled, skip indexes will only be built and stored [during merges](merge-tree-settings.md/#materialize_skip_indexes_on_merge) or by explicit [MATERIALIZE INDEX](/sql-reference/statements/alter/skipping-index.md/#materialize-index).
+
+See also [exclude_materialize_skip_indexes_on_insert](#exclude_materialize_skip_indexes_on_insert).
+)", 0) \
+    DECLARE(String, exclude_materialize_skip_indexes_on_insert, "", R"(
+Excludes specified skip indexes from being built and stored during INSERTs. The excluded skip indexes will still be built and stored [during merges](merge-tree-settings.md/#materialize_skip_indexes_on_merge) or by an explicit
+[MATERIALIZE INDEX](/sql-reference/statements/alter/skipping-index.md/#materialize-index) query.
+
+Has no effect if [materialize_skip_indexes_on_insert](#materialize_skip_indexes_on_insert) is false.
+
+Example:
+
+```sql
+CREATE TABLE tab
+(
+    a UInt64,
+    b UInt64,
+    INDEX idx_a a TYPE minmax,
+    INDEX idx_b b TYPE set(3)
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+SET exclude_materialize_skip_indexes_on_insert='idx_a'; -- idx_a will be not be updated upon insert
+--SET exclude_materialize_skip_indexes_on_insert='idx_a, idx_b'; -- neither index would be updated on insert
+
+INSERT INTO tab SELECT number, number / 50 FROM numbers(100); -- only idx_b is updated
+
+-- since it is a session setting it can be set on a per-query level
+INSERT INTO tab SELECT number, number / 50 FROM numbers(100, 100) SETTINGS exclude_materialize_skip_indexes_on_insert='idx_b';
+
+ALTER TABLE tab MATERIALIZE INDEX idx_a; -- this query can be used to explicitly materialize the index
+
+SET exclude_materialize_skip_indexes_on_insert = DEFAULT; -- reset setting to default
+```
 )", 0) \
     DECLARE(Bool, text_index_use_bloom_filter, true, R"(
 For testing purposes, enables or disables usage of bloom filter in text index.
@@ -1938,7 +1975,7 @@ For testing of `exception safety` - throw an exception every time you allocate m
 For testing of `PartsSplitter` - split read ranges into intersecting and non intersecting every time you read from MergeTree with the specified probability.
 )", 0) \
     \
-    DECLARE(Bool, enable_http_compression, false, R"(
+    DECLARE(Bool, enable_http_compression, true, R"(
 Enables or disables data compression in the response to an HTTP request.
 
 For more information, read the [HTTP interface description](../../interfaces/http.md).
@@ -6104,6 +6141,9 @@ Only has an effect in ClickHouse Cloud. Maximum backoff milliseconds for distrib
     DECLARE(Bool, distributed_cache_prefer_bigger_buffer_size, false, R"(
 Only has an effect in ClickHouse Cloud. Same as filesystem_cache_prefer_bigger_buffer_size, but for distributed cache.
 )", 0) \
+    DECLARE(Bool, read_from_distributed_cache_if_exists_otherwise_bypass_cache, false, R"(
+Only has an effect in ClickHouse Cloud. Same as read_from_filesystem_cache_if_exists_otherwise_bypass_cache, but for distributed cache.
+)", 0) \
     DECLARE(Bool, filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage, true, R"(
 Only has an effect in ClickHouse Cloud. Wait time to lock cache for space reservation in filesystem cache
 )", 0) \
@@ -6938,6 +6978,12 @@ Possible values: -20 to 19.
     DECLARE(Bool, use_roaring_bitmap_iceberg_positional_deletes, false, R"(
 Use roaring bitmap for iceberg positional deletes.
 )", 0) \
+    DECLARE(Bool, inject_random_order_for_select_without_order_by, false, R"(
+If enabled, injects 'ORDER BY rand()' into SELECT queries without ORDER BY clause.
+Applied only for subquery depth = 0. Subqueries and INSERT INTO ... SELECT are not affected.
+If the top-level construct is UNION, 'ORDER BY rand()' is injected into all children independently.
+Only useful for testing and development (missing ORDER BY is a source of non-deterministic query results).
+    )", 0) \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \
     /* ## ADD PRODUCTION / BETA FEATURES BEFORE THIS BLOCK  ## */ \
@@ -7192,6 +7238,7 @@ Sets the evaluation time to be used with promql dialect. 'auto' means the curren
     MAKE_OBSOLETE(M, Bool, enable_variant_type, true) \
     MAKE_OBSOLETE(M, Bool, enable_dynamic_type, true) \
     MAKE_OBSOLETE(M, Bool, enable_json_type, true) \
+    MAKE_OBSOLETE(M, Bool, s3_slow_all_threads_after_retryable_error, false) \
     \
     /* moved to config.xml: see also src/Core/ServerSettings.h */ \
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_buffer_flush_schedule_pool_size, 16) \

@@ -43,21 +43,56 @@ This setting should be used with extra caution since forwarded addresses can be 
 
 ## backups {#backups}
 
-Settings for backups, used when writing `BACKUP TO File()`.
+Settings for backups, used when executing the [`BACKUP` and `RESTORE`](../backup.md) statements.
 
 The following settings can be configured by sub-tags:
 
-| Setting                             | Description                                                                                                                                                                    | Default |
-|-------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
-| `allowed_path`                      | Path to backup to when using `File()`. This setting must be set in order to use `File`. The path can be relative to the instance directory or it can be absolute.              | `true`  |
-| `remove_backup_files_after_failure` | If the `BACKUP` command fails, ClickHouse will try to remove the files already copied to the backup before the failure,  otherwise it will leave the copied files as they are. | `true`  |
+<!-- SQL
+WITH settings AS (
+  SELECT arrayJoin([
+    ('allow_concurrent_backups', 'Bool','Determines whether multiple backup operations can run concurrently on the same host.', 'true'),
+    ('allow_concurrent_restores', 'Bool', 'Determines whether multiple restore operations can run concurrently on the same host.', 'true'),
+    ('allowed_disk', 'String', 'Disk to backup to when using `File()`. This setting must be set in order to use `File`.', ''),
+    ('allowed_path', 'String', 'Path to backup to when using `File()`. This setting must be set in order to use `File`.', ''),
+    ('attempts_to_collect_metadata_before_sleep', 'UInt', 'Number of attempts to collect metadata before sleeping in case of inconsistency after comparing collected metadata.', '2'),
+    ('collect_metadata_timeout', 'UInt64', 'Timeout in milliseconds for collecting metadata during backup.', '600000'),
+    ('compare_collected_metadata', 'Bool', 'If true, compares the collected metadata with the existing metadata to ensure they are not changed during backup .', 'true'),
+    ('create_table_timeout', 'UInt64', 'Timeout in milliseconds for creating tables during restore.', '300000'),
+    ('max_attempts_after_bad_version', 'UInt64', 'Maximum number of attempts to retry after encountering a bad version error during coordinated backup/restore.', '3'),
+    ('max_sleep_before_next_attempt_to_collect_metadata', 'UInt64', 'Maximum sleep time in milliseconds before the next attempt to collect metadata.', '100'),
+    ('min_sleep_before_next_attempt_to_collect_metadata', 'UInt64', 'Minimum sleep time in milliseconds before the next attempt to collect metadata.', '5000'),
+    ('remove_backup_files_after_failure', 'Bool', 'If the `BACKUP` command fails, ClickHouse will try to remove the files already copied to the backup before the failure,  otherwise it will leave the copied files as they are.', 'true'),
+    ('sync_period_ms', 'UInt64', 'Synchronization period in milliseconds for coordinated backup/restore.', '5000'),
+    ('test_inject_sleep', 'Bool', 'Testing related sleep', 'false'),
+    ('test_randomize_order', 'Bool', 'If true, randomizes the order of certain operations for testing purposes.', 'false'),
+    ('zookeeper_path', 'String', 'Path in ZooKeeper where backup and restore metadata is stored when using `ON CLUSTER` clause.', '/clickhouse/backups')
+  ]) AS t )
+SELECT concat('`', t.1, '`') AS Setting, t.2 AS Type, t.3 AS Description, concat('`', t.4, '`') AS Default FROM settings FORMAT Markdown
+-->
+| Setting | Type | Description | Default |
+|:-|:-|:-|:-|
+| `allow_concurrent_backups` | Bool | Determines whether multiple backup operations can run concurrently on the same host. | `true` |
+| `allow_concurrent_restores` | Bool | Determines whether multiple restore operations can run concurrently on the same host. | `true` |
+| `allowed_disk` | String | Disk to backup to when using `File()`. This setting must be set in order to use `File`. | `` |
+| `allowed_path` | String | Path to backup to when using `File()`. This setting must be set in order to use `File`. | `` |
+| `attempts_to_collect_metadata_before_sleep` | UInt | Number of attempts to collect metadata before sleeping in case of inconsistency after comparing collected metadata. | `2` |
+| `collect_metadata_timeout` | UInt64 | Timeout in milliseconds for collecting metadata during backup. | `600000` |
+| `compare_collected_metadata` | Bool | If true, compares the collected metadata with the existing metadata to ensure they are not changed during backup . | `true` |
+| `create_table_timeout` | UInt64 | Timeout in milliseconds for creating tables during restore. | `300000` |
+| `max_attempts_after_bad_version` | UInt64 | Maximum number of attempts to retry after encountering a bad version error during coordinated backup/restore. | `3` |
+| `max_sleep_before_next_attempt_to_collect_metadata` | UInt64 | Maximum sleep time in milliseconds before the next attempt to collect metadata. | `100` |
+| `min_sleep_before_next_attempt_to_collect_metadata` | UInt64 | Minimum sleep time in milliseconds before the next attempt to collect metadata. | `5000` |
+| `remove_backup_files_after_failure` | Bool | If the `BACKUP` command fails, ClickHouse will try to remove the files already copied to the backup before the failure,  otherwise it will leave the copied files as they are. | `true` |
+| `sync_period_ms` | UInt64 | Synchronization period in milliseconds for coordinated backup/restore. | `5000` |
+| `test_inject_sleep` | Bool | Testing related sleep | `false` |
+| `test_randomize_order` | Bool | If true, randomizes the order of certain operations for testing purposes. | `false` |
+| `zookeeper_path` | String | Path in ZooKeeper where backup and restore metadata is stored when using `ON CLUSTER` clause. | `/clickhouse/backups` |
 
 This setting is configured by default as:
 
 ```xml
 <backups>
-    <allowed_path>backups</allowed_path>
-    <remove_backup_files_after_failure>true</remove_backup_files_after_failure>
+    ....
 </backups>
 ```
 
@@ -1658,7 +1693,7 @@ Settings for the [asynchronous_insert_log](/operations/system-tables/asynchronou
 
 ## crash_log {#crash_log}
 
-Settings for the [crash_log](../../operations/system-tables/crash-log.md) system table operation.
+Settings for the [crash_log](../../operations/system-tables/crash_log.md) system table operation.
 
 <SystemLogParameters/>
 
@@ -2215,7 +2250,7 @@ Accepted values are:
 Section of the configuration file that contains settings:
 - Path to configuration file with predefined users.
 - Path to folder where users created by SQL commands are stored.
-- ZooKeeper node path where users created by SQL commands are stored and replicated (experimental).
+- ZooKeeper node path where users created by SQL commands are stored and replicated.
 
 If this section is specified, the path from [users_config](/operations/server-configuration-parameters/settings#users_config) and [access_control_path](../../operations/server-configuration-parameters/settings.md#access_control_path) won't be used.
 

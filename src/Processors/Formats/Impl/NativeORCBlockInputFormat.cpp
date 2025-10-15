@@ -34,7 +34,6 @@
 #include <Interpreters/Set.h>
 #include <Interpreters/castColumn.h>
 #include <Storages/MergeTree/KeyCondition.h>
-#include <orc/MemoryPool.hh>
 #include <orc/Vector.hh>
 #include <Common/Allocator.h>
 #include <Common/logger_useful.h>
@@ -45,38 +44,6 @@
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 
 #include <boost/algorithm/string.hpp>
-
-
-namespace
-{
-
-/// FIXME: Remove this since we have proper interceptors
-class MemoryPool : public orc::MemoryPool
-{
-public:
-    char * malloc(uint64_t size) override
-    {
-        void * ptr = __real_malloc(size);
-        if (ptr)
-        {
-            AllocationTrace trace;
-            size_t actual_size = Memory::trackMemory(size, trace);
-            trace.onAlloc(ptr, actual_size);
-        }
-
-        return static_cast<char *>(ptr);
-    }
-
-    void free(char * ptr) override
-    {
-        AllocationTrace trace;
-        size_t actual_size = Memory::untrackMemory(ptr, trace);
-        trace.onFree(ptr, actual_size);
-        __real_free(ptr);
-    }
-};
-
-}
 
 namespace DB
 {
@@ -809,7 +776,6 @@ std::unique_ptr<orc::SearchArgument> buildORCSearchArgument(
 static void getFileReader(
     ReadBuffer & in,
     std::unique_ptr<orc::Reader> & file_reader,
-    orc::MemoryPool & pool,
     const FormatSettings & format_settings,
     bool use_prefetch,
     size_t min_bytes_for_seek,
@@ -819,7 +785,6 @@ static void getFileReader(
         return;
 
     orc::ReaderOptions options;
-    options.setMemoryPool(pool);
     options.setCacheOptions(orc::CacheOptions{.holeSizeLimit = min_bytes_for_seek, .rangeSizeLimit = 10 * 1024 * 1024UL});
 
     auto input_stream = asORCInputStream(in, format_settings, use_prefetch, is_stopped);
@@ -968,7 +933,6 @@ NativeORCBlockInputFormat::NativeORCBlockInputFormat(
     size_t min_bytes_for_seek_,
     FormatFilterInfoPtr format_filter_info_)
     : IInputFormat(std::move(header_), &in_)
-    , memory_pool(std::make_unique<MemoryPool>())
     , block_missing_values(getPort().getHeader().columns())
     , format_settings(format_settings_)
     , skip_stripes(format_settings.orc.skip_stripes)
@@ -980,7 +944,7 @@ NativeORCBlockInputFormat::NativeORCBlockInputFormat(
 
 void NativeORCBlockInputFormat::prepareFileReader()
 {
-    getFileReader(*in, file_reader, *memory_pool, format_settings, use_prefetch, min_bytes_for_seek, is_stopped);
+    getFileReader(*in, file_reader, format_settings, use_prefetch, min_bytes_for_seek, is_stopped);
     if (is_stopped)
         return;
 
@@ -1178,8 +1142,7 @@ NamesAndTypesList NativeORCSchemaReader::readSchema()
 {
     std::unique_ptr<orc::Reader> file_reader;
     std::atomic<int> is_stopped = 0;
-    MemoryPool memory_pool;
-    getFileReader(in, file_reader, memory_pool, format_settings, false, 0, is_stopped);
+    getFileReader(in, file_reader, format_settings, false, 0, is_stopped);
 
     const auto & schema = file_reader->getType();
     Block header;
@@ -1423,7 +1386,7 @@ static ColumnWithTypeAndName readColumnWithEncodedStringOrFixedStringData(
             }
         }
 
-        return ColumnLowCardinality::create(std::move(dictionary_column), std::move(new_index_column));
+        return ColumnLowCardinality::create(std::move(dictionary_column), std::move(new_index_column), /*is_shared=*/false);
     };
 
     MutableColumnPtr internal_column;
