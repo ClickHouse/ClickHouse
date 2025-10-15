@@ -4290,9 +4290,9 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, const bool in_p
     const bool has_views = collectionHas<SQLView>(attached_views);
     const bool has_dictionaries = collectionHas<SQLDictionary>(attached_dictionaries);
 
-    const uint32_t create_table = 6 * static_cast<uint32_t>(static_cast<uint32_t>(tables.size()) < this->fc.max_tables);
-    const uint32_t create_view = 10 * static_cast<uint32_t>(static_cast<uint32_t>(views.size()) < this->fc.max_views);
-    const uint32_t drop = 2
+    const uint32_t create_table = 12 * static_cast<uint32_t>(static_cast<uint32_t>(tables.size()) < this->fc.max_tables);
+    const uint32_t create_view = 12 * static_cast<uint32_t>(static_cast<uint32_t>(views.size()) < this->fc.max_views);
+    const uint32_t drop = 1
         * static_cast<uint32_t>(
                               !in_parallel
                               && (collectionCount<SQLTable>(attached_tables) > 3 || collectionCount<SQLView>(attached_views) > 3
@@ -4315,7 +4315,7 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, const bool in_p
                                 && (collectionHas<SQLTable>(detached_tables) || collectionHas<SQLView>(detached_views)
                                     || collectionHas<SQLDictionary>(detached_dictionaries)
                                     || collectionHas<std::shared_ptr<SQLDatabase>>(detached_databases)));
-    const uint32_t detach = 2
+    const uint32_t detach = 1
         * static_cast<uint32_t>(!in_parallel
                                 && (collectionCount<SQLTable>(attached_tables) > 3 || collectionCount<SQLView>(attached_views) > 3
                                     || collectionCount<SQLDictionary>(attached_dictionaries) > 3
