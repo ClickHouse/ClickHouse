@@ -137,17 +137,19 @@ MetadataStorageFromPlainObjectStorageCreateDirectoryRecursiveOperation::Metadata
         subdirectories_creators.push_back(std::move(create_subdirectory_op));
         path_prefix = path_prefix.parent_path();
     }
+
+    std::reverse(subdirectories_creators.begin(), subdirectories_creators.end());
 }
 
 void MetadataStorageFromPlainObjectStorageCreateDirectoryRecursiveOperation::execute()
 {
-    for (auto & creator : subdirectories_creators | std::views::reverse)
+    for (auto & creator : subdirectories_creators)
         creator->execute();
 }
 
 void MetadataStorageFromPlainObjectStorageCreateDirectoryRecursiveOperation::undo()
 {
-    for (auto & creator : subdirectories_creators)
+    for (auto & creator : subdirectories_creators | std::views::reverse)
         creator->undo();
 }
 
