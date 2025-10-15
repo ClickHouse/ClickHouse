@@ -114,7 +114,6 @@ class JobConfigs:
         command="python3 ./ci/jobs/check_style.py",
         run_in_docker="clickhouse/style-test",
         enable_commit_status=True,
-        timeout=15, #REMOVEME
     )
     fast_test = Job.Config(
         name=JobNames.FAST_TEST,
