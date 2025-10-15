@@ -29,6 +29,7 @@ class Job:
         provides: Optional[List[str]] = None
         requires: Optional[List[str]] = None
         timeout: Optional[int] = None
+        timeout_shell_cleanup: Optional[str] = None
 
     @dataclass
     class Config:
@@ -52,6 +53,8 @@ class Job:
         job_requirements: Optional["Job.Requirements"] = None
 
         timeout: int = 5 * 3600
+
+        timeout_shell_cleanup: Optional[str] = None
 
         digest_config: Optional["Job.CacheDigestConfig"] = None
 
@@ -251,3 +254,8 @@ class Job:
                     print(f"Warning: failed to check git submodules: {e}")
 
             return False
+
+        def __post_init__(self):
+            if self.timeout_shell_cleanup: return
+            if self.run_in_docker:
+                self.timeout_shell_cleanup = f"docker rm -f praktika" # praktika is the container name, not the image name

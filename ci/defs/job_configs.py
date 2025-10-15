@@ -114,6 +114,7 @@ class JobConfigs:
         command="python3 ./ci/jobs/check_style.py",
         run_in_docker="clickhouse/style-test",
         enable_commit_status=True,
+        timeout=15, #REMOVEME
     )
     fast_test = Job.Config(
         name=JobNames.FAST_TEST,
@@ -573,6 +574,7 @@ class JobConfigs:
         digest_config=Job.CacheDigestConfig(
             include_paths=["./ci/jobs/unit_tests_job.py"],
         ),
+        timeout=30, #REMOVEME
     ).parametrize(
         Job.ParamSet(
             parameter="asan",
