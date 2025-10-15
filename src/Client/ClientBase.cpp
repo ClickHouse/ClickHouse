@@ -3483,6 +3483,9 @@ void ClientBase::runInteractive()
             /// Avoid TOCTOU issue.
             try
             {
+                if (history_file.has_parent_path())
+                    fs::create_directories(history_file.parent_path());
+
                 FS::createFile(history_file);
             }
             catch (const ErrnoException & e)

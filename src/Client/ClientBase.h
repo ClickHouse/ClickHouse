@@ -385,8 +385,8 @@ protected:
     std::unique_ptr<WriteBufferFromFileDescriptor> tty_buf;
     std::mutex tty_mutex;
 
-    String home_path;
-    String history_file; /// Path to a file containing command history.
+    fs::path home_path;
+    fs::path history_file; /// Path to a file containing command history.
     UInt32 history_max_entries; /// Maximum number of entries in the history file.
 
     UInt64 server_revision = 0;
