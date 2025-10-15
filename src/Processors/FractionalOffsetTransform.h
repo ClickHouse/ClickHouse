@@ -1,0 +1,60 @@
+#pragma once
+
+#include <deque>
+#include <Core/SortDescription.h>
+#include <Processors/Chunk.h>
+#include <Processors/IProcessor.h>
+#include <Processors/RowsBeforeStepCounter.h>
+#include <base/BFloat16.h>
+
+namespace DB
+{
+
+/// Implementation for OFFSET N (without limit) 
+//  where N is a fraction from 0.1 to 0.9 representing a Percentage.
+//
+/// This processor supports multiple inputs and outputs (the same number).
+/// Each pair of input and output port works independently.
+class FractionalOffsetTransform final : public IProcessor
+{
+private:
+    BFloat16 fractional_offset;
+
+    UInt64 offset = 0;
+    UInt64 rows_read = 0; /// including the last read block
+
+    RowsBeforeStepCounterPtr rows_before_limit_at_least;
+
+    /// State of port's pair.
+    /// Chunks from different port pairs are not mixed for better cache locality.
+    struct PortsData
+    {
+        Chunk current_chunk;
+
+        InputPort * input_port = nullptr;
+        OutputPort * output_port = nullptr;
+    };
+
+    std::vector<PortsData> ports_data;
+    size_t num_finished_input_ports = 0;
+
+    UInt64 rows_cnt = 0;
+    std::deque<Chunk> chunks_cache;
+
+public:
+    FractionalOffsetTransform(const Block & header_, BFloat16 fractional_offset_, size_t num_streams = 1);
+
+    String getName() const override { return "FractionalOffset"; }
+
+    Status prepare(const PortNumbers & /*updated_input_ports*/, const PortNumbers & /*updated_output_ports*/) override;
+    Status prepare() override; /// Compatibility for TreeExecutor.
+    Status preparePair(PortsData & data);
+    void splitChunk(Chunk & current_chunk) const;
+
+    InputPort & getInputPort() { return inputs.front(); }
+    OutputPort & getOutputPort() { return outputs.front(); }
+
+    void setRowsBeforeLimitCounter(RowsBeforeStepCounterPtr counter) override { rows_before_limit_at_least.swap(counter); }
+};
+
+}
