@@ -862,8 +862,8 @@ class TeePopen:
             Shell.check(self.timeout_shell_cleanup)
             return
 
-        print(f"Send SIGTERM to [{self.process.pid}]")
         self.send_signal(signal.SIGTERM)
+        print(f"Send SIGTERM to [{self.process.pid}]")
         time_wait = 0
 
         while self.process.poll() is None and time_wait < 30:
@@ -874,6 +874,7 @@ class TeePopen:
 
         self.terminated_by_sigterm = True
 
+        print(f"Graceful termination timeout, send SIGKILL to [{self.process.pid}]")
         while self.process.poll() is None:
             print(f"WARNING: Still running, send SIGKILL to [{self.process.pid}]")
             self.send_signal(signal.SIGKILL)
