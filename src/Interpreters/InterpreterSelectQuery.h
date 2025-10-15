@@ -14,6 +14,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/TableLockHolder.h>
 #include <QueryPipeline/Pipe.h>
+#include <base/BFloat16.h>
 
 namespace Poco
 {
@@ -131,7 +132,7 @@ public:
     static bool isQueryWithFinal(const SelectQueryInfo & info);
 
 
-    static std::pair<UInt64, UInt64> getLimitLengthAndOffset(const ASTSelectQuery & query, const ContextPtr & context);
+    static std::tuple<UInt64, BFloat16, UInt64, BFloat16> getLimitLengthAndOffset(const ASTSelectQuery & query, const ContextPtr & context);
 
     /// Adjust the parallel replicas settings (enabled, disabled) based on the query analysis
     bool adjustParallelReplicasAfterAnalysis();

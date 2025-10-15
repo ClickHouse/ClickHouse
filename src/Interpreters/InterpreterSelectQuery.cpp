@@ -1,9 +1,14 @@
 #include <ranges>
+#include <utility>
 #include <Access/AccessControl.h>
 
+#include <Core/Block.h>
+#include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeInterval.h>
 
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -47,6 +52,8 @@
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
 #include <Interpreters/Context.h>
 
+#include <Processors/QueryPlan/FractionalLimitStep.h>
+#include <Processors/QueryPlan/FractionalOffsetStep.h>
 #include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
@@ -97,6 +104,10 @@
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/IJoin.h>
 #include <QueryPipeline/SizeLimits.h>
+#include <base/BFloat16.h>
+#include <base/Decimal.h>
+#include <base/types.h>
+#include <Common/Exception.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/NaNUtils.h>
@@ -204,7 +215,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_entries_for_hash_table_stats;
 }
 
-static UInt64 getLimitUIntValue(const ASTPtr & node, const ContextPtr & context, const std::string & expr);
+static std::pair<UInt64, double> getLimitUintAndBfloatValue(const ASTPtr & node, const ContextPtr & context, const std::string & expr);
 
 namespace ErrorCodes
 {
@@ -1471,37 +1482,44 @@ static SortDescription getSortDescriptionFromGroupBy(const ASTSelectQuery & quer
     return order_descr;
 }
 
-static UInt64 getLimitUIntValue(const ASTPtr & node, const ContextPtr & context, const std::string & expr)
+static std::pair<UInt64, double> getLimitUintAndBfloatValue(const ASTPtr & node, const ContextPtr & context, const std::string & expr)
 {
     const auto & [field, type] = evaluateConstantExpression(node, context);
 
-    if (!isNativeNumber(type))
-        throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION, "Illegal type {} of {} expression, must be numeric type",
-            type->getName(), expr);
+    Field converted_value_uint = convertFieldToType(field, DataTypeUInt64());
+    if (!converted_value_uint.isNull())
+    {
+        return {converted_value_uint.safeGet<UInt64>(), 0};
+    }
 
-    Field converted = convertFieldToType(field, DataTypeUInt64());
-    if (converted.isNull())
-        throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION, "The value {} of {} expression is not representable as UInt64",
-            applyVisitor(FieldVisitorToString(), field), expr);
+    Field converted_value_bfloat = convertFieldToType(field, DataTypeBFloat16());
+    auto value = converted_value_bfloat.safeGet<BFloat16>();
+    if (!converted_value_bfloat.isNull() && value < 1 && value > 0)
+    {
+        return {0, converted_value_bfloat.safeGet<BFloat16>()};
+    }
 
-    return converted.safeGet<UInt64>();
+    throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION, "The value {} of {} expression is not representable as UInt64 nor BFloat16 (0.1 to 0.9)",
+        applyVisitor(FieldVisitorToString(), field), expr);
 }
 
 
-std::pair<UInt64, UInt64> InterpreterSelectQuery::getLimitLengthAndOffset(const ASTSelectQuery & query, const ContextPtr & context_)
+std::tuple<UInt64, BFloat16, UInt64, BFloat16> InterpreterSelectQuery::getLimitLengthAndOffset(const ASTSelectQuery & query, const ContextPtr & context_)
 {
-    UInt64 length = 0;
-    UInt64 offset = 0;
+    UInt64 limit_length = 0;
+    UInt64 limit_offset = 0;
+    BFloat16 fractional_limit;
+    BFloat16 fractional_offset;
 
     if (query.limitLength())
     {
-        length = getLimitUIntValue(query.limitLength(), context_, "LIMIT");
-        if (query.limitOffset() && length)
-            offset = getLimitUIntValue(query.limitOffset(), context_, "OFFSET");
+        std::tie(limit_length, fractional_limit) = getLimitUintAndBfloatValue(query.limitLength(), context_, "LIMIT");
+        if (query.limitOffset() && (limit_length || fractional_limit > 0))
+            std::tie(limit_offset, fractional_offset) = getLimitUintAndBfloatValue(query.limitOffset(), context_, "OFFSET");
     }
     else if (query.limitOffset())
-        offset = getLimitUIntValue(query.limitOffset(), context_, "OFFSET");
-    return {length, offset};
+        std::tie(limit_offset, fractional_offset) = getLimitUintAndBfloatValue(query.limitOffset(), context_, "OFFSET");
+    return {limit_length, fractional_limit, limit_offset, fractional_offset};
 }
 
 
