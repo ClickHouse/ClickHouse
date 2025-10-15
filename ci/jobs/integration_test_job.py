@@ -118,6 +118,8 @@ def main():
             is_parallel = True
         elif to == "sequential":
             is_sequential = True
+        elif "bugfix" in to.lower() or "validation" in to.lower():
+            is_bugfix_validation = True
         else:
             assert False, f"Unknown job option [{to}]"
 
@@ -330,7 +332,7 @@ def main():
         for failed_suit in failed_suits:
             files.extend(
                 Shell.get_output(
-                    f"find ./tests/integration/{failed_suit} -name '*.log'"
+                    f"find ./tests/integration/{failed_suit} -name '*.log*'"
                 ).splitlines()
             )
 
@@ -358,7 +360,7 @@ def main():
         else:
             R.set_success()
 
-    R.complete_job()
+    R.sort().complete_job()
 
 
 if __name__ == "__main__":
