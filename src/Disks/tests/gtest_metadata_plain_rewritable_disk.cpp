@@ -181,7 +181,6 @@ TEST_F(MetadataPlainRewritableDiskTest, MoveTree)
         tx->commit();
     }
 
-    /// This is a bug. Should be MOVED everywhere
     EXPECT_EQ(readObject(object_storage, a_path), "MOVED/");
     EXPECT_EQ(readObject(object_storage, ab_path), "MOVED/B/");
     EXPECT_EQ(readObject(object_storage, abc_path), "MOVED/B/C/");
