@@ -612,4 +612,9 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
     return true;
 }
 
+bool isTextIndexVirtualColumn(const String & column_name)
+{
+    return column_name.starts_with(TEXT_INDEX_VIRTUAL_COLUMN_PREFIX);
+}
+
 }
