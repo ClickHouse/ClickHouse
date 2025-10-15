@@ -53,23 +53,25 @@ def run_fuzzer(fuzzer: str, timeout: int):
     fuzzer_arguments = ""
     use_fuzzer_args = False
 
+    env = {}
+
     with Path(options_file) as path:
         if path.exists() and path.is_file():
             parser = configparser.ConfigParser()
             parser.read(path)
 
             if parser.has_section("asan"):
-                os.environ["ASAN_OPTIONS"] = (
+                env["ASAN_OPTIONS"] = (
                     f"{os.environ['ASAN_OPTIONS']}:{':'.join(f'{key}={value}' for key, value in parser['asan'].items())}"
                 )
 
             if parser.has_section("msan"):
-                os.environ["MSAN_OPTIONS"] = (
+                env["MSAN_OPTIONS"] = (
                     f"{os.environ['MSAN_OPTIONS']}:{':'.join(f'{key}={value}' for key, value in parser['msan'].items())}"
                 )
 
             if parser.has_section("ubsan"):
-                os.environ["UBSAN_OPTIONS"] = (
+                env["UBSAN_OPTIONS"] = (
                     f"{os.environ['UBSAN_OPTIONS']}:{':'.join(f'{key}={value}' for key, value in parser['ubsan'].items())}"
                 )
 
@@ -106,7 +108,7 @@ def run_fuzzer(fuzzer: str, timeout: int):
     env = None
     with_fuzzer_args = ""
     if use_fuzzer_args:
-        env = {"FUZZER_ARGS": f"{custom_libfuzzer_options} {libfuzzer_corpora}".strip()}
+        env["FUZZER_ARGS"] = f"{custom_libfuzzer_options} {libfuzzer_corpora}".strip()
         with_fuzzer_args = f" with FUZZER_ARGS '{env['FUZZER_ARGS']}'"
     else:
         cmd_line += f" {custom_libfuzzer_options} {libfuzzer_corpora}"
