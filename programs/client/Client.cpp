@@ -6,7 +6,6 @@
 #include <boost/program_options.hpp>
 #include <Common/Config/parseConnectionCredentials.h>
 #include <Common/ThreadStatus.h>
-#include <Common/XDGBaseDirectories.h>
 
 #include <Access/AccessControl.h>
 
