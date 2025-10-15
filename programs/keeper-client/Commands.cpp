@@ -811,15 +811,16 @@ public:
         auto subtree_nodes = collectSubtree();
         Coordination::Requests ops;
 
-        for (const auto & [subpath, data, version] : subtree_nodes)
+        for (const auto & [subpath, _, version] : subtree_nodes | std::views::reverse)
         {
             if (remove_src)
                 ops.push_back(zkutil::makeRemoveRequest(src + subpath, version));
             else
                 ops.push_back(zkutil::makeCheckRequest(src + subpath, version));
-
-            ops.push_back(zkutil::makeCreateRequest(dest + subpath, data, zkutil::CreateMode::Persistent));
         }
+
+        for (const auto & [subpath, data, version] : subtree_nodes)
+            ops.push_back(zkutil::makeCreateRequest(dest + subpath, data, zkutil::CreateMode::Persistent));
 
         Coordination::Responses responses;
         auto code = client->zookeeper->tryMulti(ops, responses);
