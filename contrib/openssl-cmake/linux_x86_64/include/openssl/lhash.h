@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2023 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2024 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -34,9 +34,13 @@ extern "C" {
 
 typedef struct lhash_node_st OPENSSL_LH_NODE;
 typedef int (*OPENSSL_LH_COMPFUNC) (const void *, const void *);
+typedef int (*OPENSSL_LH_COMPFUNCTHUNK) (const void *, const void *, OPENSSL_LH_COMPFUNC cfn);
 typedef unsigned long (*OPENSSL_LH_HASHFUNC) (const void *);
+typedef unsigned long (*OPENSSL_LH_HASHFUNCTHUNK) (const void *, OPENSSL_LH_HASHFUNC hfn);
 typedef void (*OPENSSL_LH_DOALL_FUNC) (void *);
+typedef void (*OPENSSL_LH_DOALL_FUNC_THUNK) (void *, OPENSSL_LH_DOALL_FUNC doall);
 typedef void (*OPENSSL_LH_DOALL_FUNCARG) (void *, void *);
+typedef void (*OPENSSL_LH_DOALL_FUNCARG_THUNK) (void *, void *, OPENSSL_LH_DOALL_FUNCARG doall);
 typedef struct lhash_st OPENSSL_LHASH;
 
 /*
@@ -82,13 +86,23 @@ typedef struct lhash_st OPENSSL_LHASH;
 
 int OPENSSL_LH_error(OPENSSL_LHASH *lh);
 OPENSSL_LHASH *OPENSSL_LH_new(OPENSSL_LH_HASHFUNC h, OPENSSL_LH_COMPFUNC c);
+OPENSSL_LHASH *OPENSSL_LH_set_thunks(OPENSSL_LHASH *lh,
+                                     OPENSSL_LH_HASHFUNCTHUNK hw,
+                                     OPENSSL_LH_COMPFUNCTHUNK cw,
+                                     OPENSSL_LH_DOALL_FUNC_THUNK daw,
+                                     OPENSSL_LH_DOALL_FUNCARG_THUNK daaw);
 void OPENSSL_LH_free(OPENSSL_LHASH *lh);
 void OPENSSL_LH_flush(OPENSSL_LHASH *lh);
 void *OPENSSL_LH_insert(OPENSSL_LHASH *lh, void *data);
 void *OPENSSL_LH_delete(OPENSSL_LHASH *lh, const void *data);
 void *OPENSSL_LH_retrieve(OPENSSL_LHASH *lh, const void *data);
 void OPENSSL_LH_doall(OPENSSL_LHASH *lh, OPENSSL_LH_DOALL_FUNC func);
-void OPENSSL_LH_doall_arg(OPENSSL_LHASH *lh, OPENSSL_LH_DOALL_FUNCARG func, void *arg);
+void OPENSSL_LH_doall_arg(OPENSSL_LHASH *lh,
+                          OPENSSL_LH_DOALL_FUNCARG func, void *arg);
+void OPENSSL_LH_doall_arg_thunk(OPENSSL_LHASH *lh,
+                          OPENSSL_LH_DOALL_FUNCARG_THUNK daaw,
+                          OPENSSL_LH_DOALL_FUNCARG fn, void *arg);
+
 unsigned long OPENSSL_LH_strhash(const char *c);
 unsigned long OPENSSL_LH_num_items(const OPENSSL_LHASH *lh);
 unsigned long OPENSSL_LH_get_down_load(const OPENSSL_LHASH *lh);
@@ -142,6 +156,26 @@ OSSL_DEPRECATEDIN_3_1 void OPENSSL_LH_node_usage_stats_bio(const OPENSSL_LHASH *
     typedef int (*lh_##type##_compfunc)(const type *a, const type *b); \
     typedef unsigned long (*lh_##type##_hashfunc)(const type *a); \
     typedef void (*lh_##type##_doallfunc)(type *a); \
+    static ossl_inline unsigned long lh_##type##_hash_thunk(const void *data, OPENSSL_LH_HASHFUNC hfn) \
+    { \
+        unsigned long (*hfn_conv)(const type *) = (unsigned long (*)(const type *))hfn; \
+        return hfn_conv((const type *)data); \
+    } \
+    static ossl_inline int lh_##type##_comp_thunk(const void *da, const void *db, OPENSSL_LH_COMPFUNC cfn) \
+    { \
+        int (*cfn_conv)(const type *, const type *) = (int (*)(const type *, const type *))cfn; \
+        return cfn_conv((const type *)da, (const type *)db); \
+    } \
+    static ossl_inline void lh_##type##_doall_thunk(void *node, OPENSSL_LH_DOALL_FUNC doall) \
+    { \
+        void (*doall_conv)(type *) = (void (*)(type *))doall; \
+        doall_conv((type *)node); \
+    } \
+    static ossl_inline void lh_##type##_doall_arg_thunk(void *node, void *arg, OPENSSL_LH_DOALL_FUNCARG doall) \
+    { \
+        void (*doall_conv)(type *, void *) = (void (*)(type *, void *))doall; \
+        doall_conv((type *)node, arg); \
+    } \
     static ossl_unused ossl_inline type *\
     ossl_check_##type##_lh_plain_type(type *ptr) \
     { \
@@ -204,12 +238,16 @@ OSSL_DEPRECATEDIN_3_1 void OPENSSL_LH_node_usage_stats_bio(const OPENSSL_LHASH *
     LHASH_OF(type) { \
         union lh_##type##_dummy { void* d1; unsigned long d2; int d3; } dummy; \
     }; \
-    static ossl_unused ossl_inline LHASH_OF(type) * \
-    lh_##type##_new(unsigned long (*hfn)(const type *), \
-                    int (*cfn)(const type *, const type *)) \
+    static unsigned long \
+    lh_##type##_hfn_thunk(const void *data, OPENSSL_LH_HASHFUNC hfn) \
     { \
-        return (LHASH_OF(type) *) \
-            OPENSSL_LH_new((OPENSSL_LH_HASHFUNC)hfn, (OPENSSL_LH_COMPFUNC)cfn); \
+        unsigned long (*hfn_conv)(const type *) = (unsigned long (*)(const type *))hfn; \
+        return hfn_conv((const type *)data); \
+    } \
+    static int lh_##type##_cfn_thunk(const void *da, const void *db, OPENSSL_LH_COMPFUNC cfn) \
+    { \
+        int (*cfn_conv)(const type *, const type *) = (int (*)(const type *, const type *))cfn; \
+        return cfn_conv((const type *)da, (const type *)db); \
     } \
     static ossl_unused ossl_inline void \
     lh_##type##_free(LHASH_OF(type) *lh) \
@@ -257,9 +295,30 @@ OSSL_DEPRECATEDIN_3_1 void OPENSSL_LH_node_usage_stats_bio(const OPENSSL_LHASH *
         OPENSSL_LH_set_down_load((OPENSSL_LHASH *)lh, dl); \
     } \
     static ossl_unused ossl_inline void \
+    lh_##type##_doall_thunk(void *node, OPENSSL_LH_DOALL_FUNC doall) \
+    { \
+        void (*doall_conv)(type *) = (void (*)(type *))doall; \
+        doall_conv((type *)node); \
+    } \
+    static ossl_unused ossl_inline void \
+    lh_##type##_doall_arg_thunk(void *node, void *arg, OPENSSL_LH_DOALL_FUNCARG doall) \
+    { \
+        void (*doall_conv)(type *, void *) = (void (*)(type *, void *))doall; \
+        doall_conv((type *)node, arg); \
+    } \
+    static ossl_unused ossl_inline void \
     lh_##type##_doall(LHASH_OF(type) *lh, void (*doall)(type *)) \
     { \
         OPENSSL_LH_doall((OPENSSL_LHASH *)lh, (OPENSSL_LH_DOALL_FUNC)doall); \
+    } \
+    static ossl_unused ossl_inline LHASH_OF(type) * \
+    lh_##type##_new(unsigned long (*hfn)(const type *), \
+                    int (*cfn)(const type *, const type *)) \
+    { \
+        return (LHASH_OF(type) *)OPENSSL_LH_set_thunks(OPENSSL_LH_new((OPENSSL_LH_HASHFUNC)hfn, (OPENSSL_LH_COMPFUNC)cfn), \
+                                lh_##type##_hfn_thunk, lh_##type##_cfn_thunk, \
+                                lh_##type##_doall_thunk, \
+                                lh_##type##_doall_arg_thunk); \
     } \
     static ossl_unused ossl_inline void \
     lh_##type##_doall_arg(LHASH_OF(type) *lh, \
@@ -283,17 +342,25 @@ OSSL_DEPRECATEDIN_3_1 void OPENSSL_LH_node_usage_stats_bio(const OPENSSL_LHASH *
 
 #define int_implement_lhash_doall(type, argtype, cbargtype) \
     static ossl_unused ossl_inline void \
+    lh_##type##_doall_##argtype##_thunk(void *node, void *arg, OPENSSL_LH_DOALL_FUNCARG fn) \
+    { \
+        void (*fn_conv)(cbargtype *, argtype *) = (void (*)(cbargtype *, argtype *))fn; \
+        fn_conv((cbargtype *)node, (argtype *)arg); \
+    } \
+    static ossl_unused ossl_inline void \
         lh_##type##_doall_##argtype(LHASH_OF(type) *lh, \
                                    void (*fn)(cbargtype *, argtype *), \
                                    argtype *arg) \
     { \
-        OPENSSL_LH_doall_arg((OPENSSL_LHASH *)lh, \
-                             (OPENSSL_LH_DOALL_FUNCARG)fn, (void *)arg); \
+        OPENSSL_LH_doall_arg_thunk((OPENSSL_LHASH *)lh, \
+                             lh_##type##_doall_##argtype##_thunk, \
+                             (OPENSSL_LH_DOALL_FUNCARG)fn, \
+                             (void *)arg); \
     } \
     LHASH_OF(type)
 
 DEFINE_LHASH_OF_INTERNAL(OPENSSL_STRING);
-#define lh_OPENSSL_STRING_new(hfn, cmp) ((LHASH_OF(OPENSSL_STRING) *)OPENSSL_LH_new(ossl_check_OPENSSL_STRING_lh_hashfunc_type(hfn), ossl_check_OPENSSL_STRING_lh_compfunc_type(cmp)))
+#define lh_OPENSSL_STRING_new(hfn, cmp) ((LHASH_OF(OPENSSL_STRING) *)OPENSSL_LH_set_thunks(OPENSSL_LH_new(ossl_check_OPENSSL_STRING_lh_hashfunc_type(hfn), ossl_check_OPENSSL_STRING_lh_compfunc_type(cmp)), lh_OPENSSL_STRING_hash_thunk, lh_OPENSSL_STRING_comp_thunk, lh_OPENSSL_STRING_doall_thunk, lh_OPENSSL_STRING_doall_arg_thunk))
 #define lh_OPENSSL_STRING_free(lh) OPENSSL_LH_free(ossl_check_OPENSSL_STRING_lh_type(lh))
 #define lh_OPENSSL_STRING_flush(lh) OPENSSL_LH_flush(ossl_check_OPENSSL_STRING_lh_type(lh))
 #define lh_OPENSSL_STRING_insert(lh, ptr) ((OPENSSL_STRING *)OPENSSL_LH_insert(ossl_check_OPENSSL_STRING_lh_type(lh), ossl_check_OPENSSL_STRING_lh_plain_type(ptr)))
@@ -308,7 +375,7 @@ DEFINE_LHASH_OF_INTERNAL(OPENSSL_STRING);
 #define lh_OPENSSL_STRING_set_down_load(lh, dl) OPENSSL_LH_set_down_load(ossl_check_OPENSSL_STRING_lh_type(lh), dl)
 #define lh_OPENSSL_STRING_doall(lh, dfn) OPENSSL_LH_doall(ossl_check_OPENSSL_STRING_lh_type(lh), ossl_check_OPENSSL_STRING_lh_doallfunc_type(dfn))
 DEFINE_LHASH_OF_INTERNAL(OPENSSL_CSTRING);
-#define lh_OPENSSL_CSTRING_new(hfn, cmp) ((LHASH_OF(OPENSSL_CSTRING) *)OPENSSL_LH_new(ossl_check_OPENSSL_CSTRING_lh_hashfunc_type(hfn), ossl_check_OPENSSL_CSTRING_lh_compfunc_type(cmp)))
+#define lh_OPENSSL_CSTRING_new(hfn, cmp) ((LHASH_OF(OPENSSL_CSTRING) *)OPENSSL_LH_set_thunks(OPENSSL_LH_new(ossl_check_OPENSSL_CSTRING_lh_hashfunc_type(hfn), ossl_check_OPENSSL_CSTRING_lh_compfunc_type(cmp)), lh_OPENSSL_CSTRING_hash_thunk, lh_OPENSSL_CSTRING_comp_thunk, lh_OPENSSL_CSTRING_doall_thunk, lh_OPENSSL_CSTRING_doall_arg_thunk))
 #define lh_OPENSSL_CSTRING_free(lh) OPENSSL_LH_free(ossl_check_OPENSSL_CSTRING_lh_type(lh))
 #define lh_OPENSSL_CSTRING_flush(lh) OPENSSL_LH_flush(ossl_check_OPENSSL_CSTRING_lh_type(lh))
 #define lh_OPENSSL_CSTRING_insert(lh, ptr) ((OPENSSL_CSTRING *)OPENSSL_LH_insert(ossl_check_OPENSSL_CSTRING_lh_type(lh), ossl_check_OPENSSL_CSTRING_lh_plain_type(ptr)))
