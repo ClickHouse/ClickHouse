@@ -1951,7 +1951,7 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
     {
         if ((*it)->checksums.getTotalChecksumHex() == res.part->checksums.getTotalChecksumHex())
         {
-            LOG_ERROR(log, "Remove duplicate part {}", data_part_storage->getFullPath());
+            LOG_ERROR(log, "Duplicate part {}", data_part_storage->getFullPath());
             res.part->is_duplicate = true;
             return res;
         }
@@ -2283,7 +2283,10 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
             else if (res.part->is_duplicate)
             {
                 if (!is_static_storage)
+                {
+                    LOG_ERROR(log, "Removing duplicate part {}", res.part->getDataPartStorage().getFullPath());
                     res.part->remove();
+                }
             }
             else
             {
