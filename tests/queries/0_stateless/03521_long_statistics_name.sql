@@ -12,9 +12,9 @@ INSERT INTO t_long_statistics_name VALUES (10) (100);
 SELECT
     rows,
     statistics,
-    estimated_cardinality,
-    estimated_min,
-    estimated_max
+    estimates.cardinality,
+    estimates.min,
+    estimates.max,
 FROM system.parts_columns
 WHERE table = 't_long_statistics_name'
     AND database = currentDatabase()

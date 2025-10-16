@@ -101,6 +101,7 @@ public:
     /// NOTE: Returns zeros if column files are not found in checksums.
     /// Otherwise return information about column size on disk.
     ColumnSize getColumnSize(const String & column_name) const;
+    ColumnSizeByName getColumnSizes() const;
 
     virtual std::optional<time_t> getColumnModificationTime(const String & column_name) const = 0;
 
@@ -721,7 +722,8 @@ private:
     /// It is used while reading from wide parts.
     ColumnsDescription columns_description_with_collected_nested;
 
-    /// TODO: comment.
+    /// Small state of finalized statistics for suitable statistics types.
+    /// Lazily initialized on a first access.
     mutable std::mutex estimates_mutex;
     mutable std::optional<Estimates> estimates;
 

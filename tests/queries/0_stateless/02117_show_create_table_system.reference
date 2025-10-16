@@ -142,6 +142,7 @@ CREATE TABLE system.databases
     `uuid` UUID,
     `engine_full` String,
     `comment` String,
+    `is_external` UInt8,
     `database` String ALIAS name
 )
 ENGINE = SystemDatabases
@@ -599,9 +600,9 @@ CREATE TABLE system.parts_columns
     `column_ttl_min` Nullable(DateTime),
     `column_ttl_max` Nullable(DateTime),
     `statistics` Array(String),
-    `estimated_cardinality` Nullable(UInt64),
-    `estimated_min` Nullable(Float64),
-    `estimated_max` Nullable(Float64),
+    `estimates.min` Nullable(Float64),
+    `estimates.max` Nullable(Float64),
+    `estimates.cardinality` Nullable(UInt64),
     `serialization_kind` String,
     `substreams` Array(String),
     `filenames` Array(String),
@@ -926,7 +927,7 @@ CREATE TABLE system.replicas
     `last_queue_update_exception` String,
     `zookeeper_exception` String,
     `replica_is_active` Map(String, UInt8),
-    `readonly_duration` Nullable(UInt64) ALIAS if(readonly_start_time IS NULL, NULL, now() - readonly_start_time)
+    `readonly_duration` Nullable(UInt64) ALIAS if(isNull(readonly_start_time), NULL, now() - readonly_start_time)
 )
 ENGINE = SystemReplicas
 COMMENT 'Contains information and status of all table replicas on current server. Each replica is represented by a single row.'

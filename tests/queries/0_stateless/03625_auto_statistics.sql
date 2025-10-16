@@ -20,7 +20,7 @@ SYSTEM STOP MERGES test_table;
 INSERT INTO test_table SELECT number, if (rand() % 100 = 0, 'foo', ''), rand() % 2, rand() % 2 FROM numbers(100000);
 INSERT INTO test_table SELECT number, if (rand() % 100 = 0, 'bar', ''), rand() % 2 + 5, rand() % 2 + 5 FROM numbers(100000);
 
-SELECT name, column, type, statistics, estimated_cardinality, estimated_min, estimated_max
+SELECT name, column, type, statistics, estimates.cardinality, estimates.min, estimates.max
 FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 'test_table' AND active
 ORDER BY name, column;
@@ -31,7 +31,7 @@ SELECT uniqExact(v1), uniqExact(v2), uniqExact(v3) FROM test_table WHERE NOT ign
 SYSTEM START MERGES test_table;
 OPTIMIZE TABLE test_table FINAL;
 
-SELECT name, column, type, statistics, estimated_cardinality, estimated_min, estimated_max
+SELECT name, column, type, statistics, estimates.cardinality, estimates.min, estimates.max
 FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 'test_table' AND active
 ORDER BY name, column;
@@ -42,7 +42,7 @@ SELECT uniqExact(v1), uniqExact(v2), uniqExact(v3) FROM test_table WHERE NOT ign
 DETACH TABLE test_table;
 ATTACH TABLE test_table;
 
-SELECT name, column, type, statistics, estimated_cardinality, estimated_min, estimated_max
+SELECT name, column, type, statistics, estimates.cardinality, estimates.min, estimates.max
 FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 'test_table' AND active
 ORDER BY name, column;

@@ -581,6 +581,7 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const
     serialization_infos = new_infos;
     metadata_version = new_metadata_version;
 
+    serializations.clear();
     column_name_to_position.clear();
     column_name_to_position.reserve(new_columns.size());
     size_t pos = 0;
@@ -2483,6 +2484,14 @@ ColumnSize IMergeTreeDataPart::getColumnSize(const String & column_name) const
         return it->second;
 
     return ColumnSize{};
+}
+
+IMergeTreeDataPart::ColumnSizeByName IMergeTreeDataPart::getColumnSizes() const
+{
+    std::unique_lock lock(columns_and_secondary_indices_sizes_mutex);
+    if (!are_columns_and_secondary_indices_sizes_calculated && areChecksumsLoaded())
+        calculateColumnsAndSecondaryIndicesSizesOnDisk();
+    return columns_sizes;
 }
 
 ColumnSize IMergeTreeDataPart::getTotalColumnsSize() const

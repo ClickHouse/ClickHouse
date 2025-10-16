@@ -71,8 +71,11 @@ namespace ErrorCodes
     Minimum number of bytes/rows in a data part that can be stored in `Wide`
     format. You can set one, both or none of these settings.
     )", 0) \
+    DECLARE(UInt32, min_level_for_wide_part, 0, R"(
+    Minimal part level to create a data part in `Wide` format instead of `Compact`.
+    )", 0) \
     DECLARE(UInt64, min_rows_for_wide_part, 0, R"(
-    Minimal number of rows to create part in wide format instead of compact
+    Minimal number of rows to create a data part in `Wide` format instead of `Compact`.
     )", 0) \
     DECLARE(UInt64, max_merge_delayed_streams_for_parallel_write, 40, R"(
     The maximum number of streams (columns) that can be flushed in parallel
@@ -203,6 +206,10 @@ namespace ErrorCodes
     )", 0) \
     DECLARE(UInt64, min_bytes_for_full_part_storage, 0, R"(
     Only available in ClickHouse Cloud. Minimal uncompressed size in bytes to
+    use full type of storage for data part instead of packed
+    )", 0) \
+    DECLARE(UInt32, min_level_for_full_part_storage, 0, R"(
+    Only available in ClickHouse Cloud. Minimal part level to
     use full type of storage for data part instead of packed
     )", 0) \
     DECLARE(UInt64, min_rows_for_full_part_storage, 0, R"(
@@ -521,7 +528,42 @@ namespace ErrorCodes
     )", 0) \
     DECLARE(Bool, materialize_skip_indexes_on_merge, true, R"(
     When enabled, merges build and store skip indices for new parts.
-    Otherwise they can be created/stored by explicit MATERIALIZE INDEX
+    Otherwise they can be created/stored by explicit [MATERIALIZE INDEX](/sql-reference/statements/alter/skipping-index.md/#materialize-index)
+    or [during INSERTs](/operations/settings/settings.md/#materialize_skip_indexes_on_insert).
+
+    See also [exclude_materialize_skip_indexes_on_merge](#exclude_materialize_skip_indexes_on_merge) for more fine-grained control.
+    )", 0) \
+    DECLARE(String, exclude_materialize_skip_indexes_on_merge, "", R"(
+    Excludes provided comma delimited list of skip indexes from being built and stored during merges. Has no effect if
+    [materialize_skip_indexes_on_merge](#materialize_skip_indexes_on_merge) is false.
+
+    The excluded skip indexes will still be built and stored by an explicit
+    [MATERIALIZE INDEX](/sql-reference/statements/alter/skipping-index.md/#materialize-index) query or during INSERTs depending on
+    the [materialize_skip_indexes_on_insert](/operations/settings/settings.md/#materialize_skip_indexes_on_insert)
+    session setting.
+
+    Example:
+
+    ```sql
+    CREATE TABLE tab
+    (
+        a UInt64,
+        b UInt64,
+        INDEX idx_a a TYPE minmax,
+        INDEX idx_b b TYPE set(3)
+    )
+    ENGINE = MergeTree ORDER BY tuple() SETTINGS exclude_materialize_skip_indexes_on_merge = 'idx_a';
+
+    INSERT INTO tab SELECT number, number / 50 FROM numbers(100); -- setting has no effect on INSERTs
+
+    -- idx_a will be excluded from update during background or explicit merge via OPTIMIZE TABLE FINAL
+
+    -- can exclude multiple indexes by providing a list
+    ALTER TABLE tab MODIFY SETTING exclude_materialize_skip_indexes_on_merge = 'idx_a, idx_b';
+
+    -- default setting, no indexes excluded from being updated during merge
+    ALTER TABLE tab MODIFY SETTING exclude_materialize_skip_indexes_on_merge = '';
+    ```
     )", 0) \
     DECLARE(UInt64, merge_selecting_sleep_ms, 5000, R"(
     Minimum time to wait before trying to select parts to merge again after no
@@ -1684,7 +1726,8 @@ namespace ErrorCodes
     When enabled, min-max (skipping) indices are added for all string columns of the table.
     )", 0) \
     DECLARE(String, auto_statistics_types, "", R"(
-    Comma-separated list of statistics types to use for auto-statistics.
+    Comma-separated list of statistics types to calculate automatically on all suitable columns.
+    Supported statistics types: tdigest, countmin, minmax, uniq.
     )", 0) \
     DECLARE(Bool, allow_summing_columns_in_partition_or_order_key, false, R"(
     When enabled, allows summing columns in a SummingMergeTree table to be used in
@@ -1798,6 +1841,11 @@ namespace ErrorCodes
     DECLARE(Bool, shared_merge_tree_enable_keeper_parts_extra_data, false, R"(
     Enables writing attributes into virtual parts and committing blocks in keeper
     )", EXPERIMENTAL) \
+    DECLARE(Bool, shared_merge_tree_activate_coordinated_merges_tasks, false, R"(
+    Activates rescheduling of coordinated merges tasks. It can be useful even when
+    shared_merge_tree_enable_coordinated_merges=0 because this will populate merge coordinator
+    statistics and help with cold start.
+    )", EXPERIMENTAL) \
     DECLARE(Bool, shared_merge_tree_enable_coordinated_merges, false, R"(
     Enables coordinated merges strategy
     )", EXPERIMENTAL) \
@@ -1819,7 +1867,7 @@ namespace ErrorCodes
     DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_max_period_ms, 10000, R"(
     Maximum time between runs of merge coordinator thread
     )", EXPERIMENTAL) \
-    DECLARE(UInt64, shared_merge_tree_merge_coordinator_factor, 2, R"(
+    DECLARE(Float, shared_merge_tree_merge_coordinator_factor, 1.1f, R"(
     Time changing factor for delay of coordinator thread
     )", EXPERIMENTAL) \
     DECLARE(Milliseconds, shared_merge_tree_merge_worker_fast_timeout_ms, 100, R"(
@@ -2552,6 +2600,6 @@ void MergeTreeSettings::checkCanSet(std::string_view name, const Field & value)
 
 bool MergeTreeSettings::isPartFormatSetting(const String & name)
 {
-    return name == "min_bytes_for_wide_part" || name == "min_rows_for_wide_part";
+    return name == "min_bytes_for_wide_part" || name == "min_rows_for_wide_part" || name == "min_level_for_wide_part";
 }
 }

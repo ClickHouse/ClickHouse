@@ -510,7 +510,8 @@ void removeImplicitStatistics(ColumnsDescription & columns)
 {
     for (const auto & column : columns)
     {
-        if (column.default_desc.kind == ColumnDefaultKind::Alias)
+        auto default_kind = column.default_desc.kind;
+        if (default_kind == ColumnDefaultKind::Alias || default_kind == ColumnDefaultKind::Ephemeral)
             continue;
 
         columns.modify(column.name, [&](ColumnDescription & column_desc)
