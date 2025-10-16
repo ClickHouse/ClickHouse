@@ -6,6 +6,7 @@
 #include <Core/SortDescription.h>
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
+#include <Processors/Port.h>
 #include <Processors/RowsBeforeStepCounter.h>
 #include <base/BFloat16.h>
 #include <base/types.h>
@@ -13,11 +14,13 @@
 namespace DB
 {
 
-/// Implementation for LIMIT N OFFSET M where N and M are fractions from 0.1 to 0.9 representing Percentages.
+/// Implementation for LIMIT N OFFSET M 
+/// where N and M are fractions from 0.1 to 0.9 representing Percentages.
+///
 /// This processor support multiple inputs and outputs (the same number).
 /// Each pair of input and output port works independently.
 /// The reason to have multiple ports is to be able to stop all sources when limit is reached, in a query like:
-///     SELECT * FROM system.numbers_mt WHERE number = 1000000 LIMIT 0.1
+///     SELECT * FROM numbers_mt(100) LIMIT 0.1
 ///
 /// with_ties - implementation of LIMIT WITH TIES. It works only for single port.
 class FractionalLimitTransform final : public IProcessor
@@ -53,7 +56,11 @@ private:
     size_t num_finished_input_ports = 0;
 
     size_t rows_cnt = 0;
-    std::deque<Chunk> chunks_cache;
+    struct CacheEntry {
+        OutputPort* output_port = nullptr;
+        Chunk chunk;
+    };
+    std::deque<CacheEntry> chunks_cache;
 
     Chunk makeChunkWithPreviousRow(const Chunk & current_chunk, UInt64 row_num) const;
     ColumnRawPtrs extractSortColumns(const Columns & columns) const;
@@ -74,7 +81,8 @@ public:
 
     Status prepare(const PortNumbers & /*updated_input_ports*/, const PortNumbers & /*updated_output_ports*/) override;
     Status prepare() override; /// Compatibility for TreeExecutor.
-    Status preparePair(PortsData & data);
+    Status pullData(PortsData & data);
+    Status pushData();
     void splitChunk(Chunk & current_chunk);
 
     InputPort & getInputPort() { return inputs.front(); }
