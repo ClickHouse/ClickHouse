@@ -61,6 +61,7 @@
 
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/HashJoin/HashJoin.h>
@@ -630,16 +631,37 @@ std::optional<FilterDAGInfo> buildAdditionalFiltersIfNeeded(const StoragePtr & s
 
 UInt64 mainQueryNodeBlockSizeByLimit(const SelectQueryInfo & select_query_info)
 {
+    // Since we support negative limit, query node field could potentially be Int64 implying negative value.
+    // So, we have to handle to separately
     auto const & main_query_node = select_query_info.query_tree->as<QueryNode const &>();
 
     /// Constness of limit and offset is validated during query analysis stage
-    size_t limit_length = 0;
+    UInt64 limit_length = 0;
     if (main_query_node.hasLimit())
-        limit_length = main_query_node.getLimit()->as<ConstantNode &>().getValue().safeGet<UInt64>();
+    {
+        const auto & field = main_query_node.getLimit()->as<ConstantNode &>().getValue();
 
-    size_t limit_offset = 0;
+        const bool is_uint64 = !convertFieldToType(field, DataTypeUInt64()).isNull();
+
+        // Negative LIMIT, skip optimization
+        if (!is_uint64)
+            return 0;
+
+        limit_length = field.safeGet<UInt64>();
+    }
+
+    UInt64 limit_offset = 0;
     if (main_query_node.hasOffset())
-        limit_offset = main_query_node.getOffset()->as<ConstantNode &>().getValue().safeGet<UInt64>();
+    {
+        const auto & field = main_query_node.getOffset()->as<ConstantNode &>().getValue();
+        const bool is_uint64 = !convertFieldToType(field, DataTypeUInt64()).isNull();
+
+        // Negative OFFSET, skip optimization
+        if (!is_uint64)
+            return 0;
+
+        limit_offset = field.safeGet<UInt64>();
+    }
 
     /** If not specified DISTINCT, WHERE, GROUP BY, HAVING, ORDER BY, JOIN, LIMIT BY, LIMIT WITH TIES
       * but LIMIT is specified, and limit + offset < max_block_size,
