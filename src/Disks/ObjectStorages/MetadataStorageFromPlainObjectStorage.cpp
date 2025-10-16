@@ -302,7 +302,25 @@ void MetadataStorageFromPlainObjectStorageTransaction::createDirectory(const std
 
 void MetadataStorageFromPlainObjectStorageTransaction::createDirectoryRecursive(const std::string & path)
 {
-    createDirectory(path);
+    if (metadata_storage.object_storage->isWriteOnce())
+        return;
+
+    auto normalized_path = normalizeDirectoryPath(path);
+    if (normalized_path.empty())
+    {
+        LOG_TRACE(
+            getLogger("MetadataStorageFromPlainObjectStorageTransaction"),
+            "Skipping creation of a directory '{}' with an empty normalized path",
+            path);
+        return;
+    }
+
+    auto op = std::make_unique<MetadataStorageFromPlainObjectStorageCreateDirectoryRecursiveOperation>(
+        std::move(normalized_path),
+        *metadata_storage.getPathMap(),
+        object_storage,
+        metadata_storage.getMetadataKeyPrefix());
+    operations.addOperation(std::move(op));
 }
 
 void MetadataStorageFromPlainObjectStorageTransaction::moveDirectory(const std::string & path_from, const std::string & path_to)

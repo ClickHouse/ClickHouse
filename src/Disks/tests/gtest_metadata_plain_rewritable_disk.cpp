@@ -231,13 +231,12 @@ TEST_F(MetadataPlainRewritableDiskTest, CreateNotFromRoot)
     {
         auto tx = metadata->createTransaction();
         tx->createDirectory("A/B/C");
-        tx->commit();
+        EXPECT_ANY_THROW(tx->commit());
     }
 
-    /// It is a bug. It should not be possible to create folder unlinked from root.
-    EXPECT_TRUE(metadata->existsDirectory("A/B/C"));
     EXPECT_FALSE(metadata->existsDirectory("A"));
     EXPECT_FALSE(metadata->existsDirectory("A/B"));
+    EXPECT_FALSE(metadata->existsDirectory("A/B/C"));
 }
 
 TEST_F(MetadataPlainRewritableDiskTest, RemoveDirectory)
@@ -348,4 +347,21 @@ TEST_F(MetadataPlainRewritableDiskTest, MoveFileUndo)
     EXPECT_EQ(readObject(object_storage, path_2), "Hello world!");
 
     EXPECT_EQ(path_1, path_2);
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, CreateDirectoryRecursive)
+{
+    auto metadata = getMetadataStorage("CreateDirectoryRecursive");
+    auto object_storage = getObjectStorage("CreateDirectoryRecursive");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectoryRecursive("A/B/C/D");
+        tx->commit();
+    }
+
+    EXPECT_TRUE(metadata->existsDirectory("A"));
+    EXPECT_TRUE(metadata->existsDirectory("A/B"));
+    EXPECT_TRUE(metadata->existsDirectory("A/B/C"));
+    EXPECT_TRUE(metadata->existsDirectory("A/B/C/D"));
 }
