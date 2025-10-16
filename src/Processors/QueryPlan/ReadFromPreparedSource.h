@@ -1,15 +1,12 @@
 #pragma once
 
-#include <Interpreters/Context_fwd.h>
+#include <Interpreters/Context.h>
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/SelectQueryInfo.h>
 
 namespace DB
 {
-
-class IStorage;
-using StoragePtr = std::shared_ptr<IStorage>;
 
 /// Create source from prepared pipe.
 class ReadFromPreparedSource : public ISourceStep

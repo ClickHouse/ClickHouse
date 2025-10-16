@@ -35,15 +35,10 @@ namespace QueryProcessingStage
         WithMergeableStateAfterAggregationAndLimit = 4,
 
         MAX = 5,
-
-        /// QueryPlan is used
-        QueryPlan = 7,
     };
 
     inline const char * toString(UInt64 stage)
     {
-        if (stage == QueryPlan)
-            return "QueryPlan";
         static const char * data[] =
         {
             "FetchColumns",

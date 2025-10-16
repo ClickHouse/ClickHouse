@@ -10,6 +10,7 @@ if(NOT ENABLE_HDFS)
 endif()
 
 if (TARGET ch_contrib::krb5)
+    message(STATUS "Enable kerberos for HDFS")
     SET(WITH_KERBEROS 1)
 else()
     SET(WITH_KERBEROS 0)
@@ -157,9 +158,6 @@ set_source_files_properties("${HDFS3_SOURCE_DIR}/rpc/RpcClient.cpp" PROPERTIES C
 add_library(_hdfs3 ${SRCS})
 
 add_dependencies(_hdfs3 protoc)
-target_compile_options(_hdfs3 PRIVATE
-    -include "${ClickHouse_SOURCE_DIR}/contrib/google-protobuf/src/google/protobuf/stubs/port.h"
-)
 
 if (ENABLE_CLICKHOUSE_BENCHMARK)
     message(STATUS "enable perf checksum")

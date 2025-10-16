@@ -255,7 +255,7 @@ StoragePtr StorageTimeSeries::tryGetTargetTable(ViewTarget::Kind target_kind, co
 }
 
 
-std::optional<UInt64> StorageTimeSeries::totalRows(ContextPtr query_context) const
+std::optional<UInt64> StorageTimeSeries::totalRows(const Settings & settings) const
 {
     UInt64 total_rows = 0;
     if (has_inner_tables)
@@ -268,7 +268,7 @@ std::optional<UInt64> StorageTimeSeries::totalRows(ContextPtr query_context) con
                 if (!inner_table)
                     return std::nullopt;
 
-                auto total_rows_in_inner_table = inner_table->totalRows(query_context);
+                auto total_rows_in_inner_table = inner_table->totalRows(settings);
                 if (!total_rows_in_inner_table)
                     return std::nullopt;
 
@@ -279,7 +279,7 @@ std::optional<UInt64> StorageTimeSeries::totalRows(ContextPtr query_context) con
     return total_rows;
 }
 
-std::optional<UInt64> StorageTimeSeries::totalBytes(ContextPtr query_context) const
+std::optional<UInt64> StorageTimeSeries::totalBytes(const Settings & settings) const
 {
     UInt64 total_bytes = 0;
     if (has_inner_tables)
@@ -292,7 +292,7 @@ std::optional<UInt64> StorageTimeSeries::totalBytes(ContextPtr query_context) co
                 if (!inner_table)
                     return std::nullopt;
 
-                auto total_bytes_in_inner_table = inner_table->totalBytes(query_context);
+                auto total_bytes_in_inner_table = inner_table->totalBytes(settings);
                 if (!total_bytes_in_inner_table)
                     return std::nullopt;
 

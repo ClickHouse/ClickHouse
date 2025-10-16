@@ -11,15 +11,14 @@
 
 #include <Parsers/ASTCheckQuery.h>
 
-#include <Compression/CompressedReadBuffer.h>
-#include <Compression/CompressedWriteBuffer.h>
-#include <Compression/CompressionFactory.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
+#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
 
 #include <DataTypes/NestedUtils.h>
 
@@ -36,9 +35,7 @@
 #include <Backups/BackupEntryWrappedWith.h>
 #include <Backups/IBackup.h>
 #include <Backups/RestorerFromBackup.h>
-
 #include <Disks/TemporaryFileOnDisk.h>
-#include <Disks/IDiskTransaction.h>
 
 #include <cassert>
 #include <chrono>
@@ -96,7 +93,7 @@ public:
         const std::vector<size_t> & file_sizes_,
         bool limited_by_file_sizes_,
         ReadSettings read_settings_)
-        : ISource(std::make_shared<const Block>(getHeader(columns_)))
+        : ISource(getHeader(columns_))
         , block_size(block_size_)
         , columns(columns_)
         , storage(storage_)
@@ -214,10 +211,10 @@ Chunk LogSource::generate()
             res.insert(ColumnWithTypeAndName(column, name_type_on_disk.type, name_type_on_disk.name));
     }
 
-    if (!res.empty())
+    if (res)
         rows_read += res.rows();
 
-    if (res.empty())
+    if (!res)
         is_finished = true;
 
     if (isFinished())
@@ -269,7 +266,7 @@ void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & colu
     }
 
     settings.getter = create_stream_getter(false);
-    serialization->deserializeBinaryBulkWithMultipleStreams(column, 0, max_rows_to_read, settings, deserialize_states[name], &cache);
+    serialization->deserializeBinaryBulkWithMultipleStreams(column, max_rows_to_read, settings, deserialize_states[name], &cache);
 }
 
 bool LogSource::isFinished()
@@ -306,7 +303,7 @@ public:
 
     explicit LogSink(
         StorageLog & storage_, const StorageMetadataPtr & metadata_snapshot_, WriteLock && lock_)
-        : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
+        : SinkToStorage(metadata_snapshot_->getSampleBlock())
         , storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
         , storage_snapshot(std::make_shared<StorageSnapshot>(storage, metadata_snapshot))
@@ -405,9 +402,6 @@ private:
 
     ISerialization::OutputStreamGetter createStreamGetter(const NameAndTypePair & name_and_type);
 
-    CompressionCodecPtr getCodecOrDefault(const String & column_name, CompressionCodecPtr default_codec) const;
-    CompressionCodecPtr getCodecOrDefault(const String & column_name) const;
-
     void writeData(const NameAndTypePair & name_and_type, const IColumn & column);
 };
 
@@ -484,32 +478,6 @@ ISerialization::OutputStreamGetter LogSink::createStreamGetter(const NameAndType
 }
 
 
-CompressionCodecPtr LogSink::getCodecOrDefault(const String & column_name, CompressionCodecPtr default_codec) const
-{
-    auto get_codec_or_default = [&default_codec](const auto & column_desc)
-    {
-        return column_desc.codec
-            ? CompressionCodecFactory::instance().get(column_desc.codec, column_desc.type, default_codec)
-            : default_codec;
-    };
-
-    const auto & columns = metadata_snapshot->getColumns();
-    if (const auto * column_desc = columns.tryGet(column_name))
-        return get_codec_or_default(*column_desc);
-
-    const auto & virtual_columns = storage.getVirtualsPtr();
-    if (const auto * virtual_desc = virtual_columns->tryGetDescription(column_name))
-        return get_codec_or_default(*virtual_desc);
-
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column name: {}", column_name);
-}
-
-CompressionCodecPtr LogSink::getCodecOrDefault(const String & column_name) const
-{
-    return getCodecOrDefault(column_name, CompressionCodecFactory::instance().getDefaultCodec());
-}
-
-
 void LogSink::writeData(const NameAndTypePair & name_and_type, const IColumn & column)
 {
     ISerialization::SerializeBinaryBulkSettings settings;
@@ -527,7 +495,7 @@ void LogSink::writeData(const NameAndTypePair & name_and_type, const IColumn & c
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "No information about file {} in StorageLog", data_file_name);
 
             const auto & data_file = *data_file_it->second;
-            auto compression = getCodecOrDefault(name_and_type.name);
+            auto compression = storage_snapshot->getCodecOrDefault(name_and_type.name);
 
             it = streams.try_emplace(data_file.name, storage.disk, data_file.path,
                                      storage.file_checker.getFileSize(data_file.path),
@@ -857,17 +825,7 @@ void StorageLog::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr
     if (!lock)
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
 
-    /// We need to remove files here instead of doing truncate because truncate can break hardlinks used by concurrent backups
-    auto clear_tx = disk->createTransaction();
-
-    for (auto & data_file : data_files)
-        clear_tx->removeFileIfExists(data_file.path);
-
-    if (use_marks_file)
-        clear_tx->removeFileIfExists(marks_file_path);
-
-    clear_tx->removeFileIfExists(file_checker.getPath());
-    clear_tx->commit();
+    disk->clearDirectory(table_path);
 
     for (auto & data_file : data_files)
     {
@@ -905,7 +863,7 @@ Pipe StorageLog::read(
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
 
     if (!num_data_files || !file_checker.getFileSize(data_files[INDEX_WITH_REAL_ROW_COUNT].path))
-        return Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names))));
+        return Pipe(std::make_shared<NullSource>(storage_snapshot->getSampleBlockForColumns(column_names)));
 
     const Marks & marks_with_real_row_count = data_files[INDEX_WITH_REAL_ROW_COUNT].marks;
     size_t num_marks = marks_with_real_row_count.size();
@@ -1029,7 +987,7 @@ void StorageLog::updateTotalRows(const WriteLock &)
         total_rows = 0;
 }
 
-std::optional<UInt64> StorageLog::totalRows(ContextPtr) const
+std::optional<UInt64> StorageLog::totalRows(const Settings &) const
 {
     if (use_marks_file && marks_loaded)
         return total_rows;
@@ -1040,7 +998,7 @@ std::optional<UInt64> StorageLog::totalRows(ContextPtr) const
     return {};
 }
 
-std::optional<UInt64> StorageLog::totalBytes(ContextPtr) const
+std::optional<UInt64> StorageLog::totalBytes(const Settings &) const
 {
     return total_bytes;
 }

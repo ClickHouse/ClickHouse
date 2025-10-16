@@ -117,12 +117,15 @@ private:
         if (match_index < matches.size() && matches[match_index].offset != std::string::npos)
         {
             const auto & match = matches[match_index];
-            res_data.resize(res_offset + match.length);
+            res_data.resize(res_offset + match.length + 1);
             memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], &data[data_offset + match.offset], match.length);
             res_offset += match.length;
         }
         else
-            res_data.resize(res_offset);
+            res_data.resize(res_offset + 1);
+
+        res_data[res_offset] = 0;
+        ++res_offset;
         res_offsets.push_back(res_offset);
     }
 
@@ -156,7 +159,7 @@ private:
         {
             regexp.match(
                 reinterpret_cast<const char *>(&data[prev_offset]),
-                cur_offset - prev_offset,
+                cur_offset - prev_offset - 1,
                 matches,
                 static_cast<unsigned>(index + 1));
 
@@ -199,7 +202,7 @@ private:
 
             regexp.match(
                 reinterpret_cast<const char *>(&data[prev_offset]),
-                cur_offset - prev_offset,
+                cur_offset - prev_offset - 1,
                 matches,
                 static_cast<unsigned>(index + 1));
 
@@ -252,7 +255,7 @@ private:
 REGISTER_FUNCTION(RegexpExtract)
 {
     factory.registerFunction<FunctionRegexpExtract>(
-        FunctionDocumentation{.description="Extracts the first string in haystack that matches the regexp pattern and corresponds to the regex group index.", .category = FunctionDocumentation::Category::StringSearch});
+        FunctionDocumentation{.description="Extracts the first string in haystack that matches the regexp pattern and corresponds to the regex group index."});
 
     /// For Spark compatibility.
     factory.registerAlias("REGEXP_EXTRACT", "regexpExtract", FunctionFactory::Case::Insensitive);

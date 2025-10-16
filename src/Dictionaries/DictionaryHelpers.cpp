@@ -1,4 +1,4 @@
-#include <Dictionaries/DictionaryHelpers.h>
+#include "DictionaryHelpers.h"
 
 namespace DB
 {

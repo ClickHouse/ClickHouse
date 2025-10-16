@@ -4,7 +4,6 @@ description: 'System table containing information for workloads residing on the 
 keywords: ['system table', 'workloads']
 slug: /operations/system-tables/workloads
 title: 'system.workloads'
-doc_type: 'reference'
 ---
 
 # system.workloads
@@ -13,13 +12,13 @@ Contains information for [workloads](/operations/workload-scheduling.md#workload
 
 Example:
 
-```sql
+``` sql
 SELECT *
 FROM system.workloads
 FORMAT Vertical
 ```
 
-```text
+``` text
 Row 1:
 ──────
 name:         production

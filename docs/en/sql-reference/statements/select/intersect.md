@@ -3,7 +3,6 @@ description: 'Documentation for INTERSECT Clause'
 sidebar_label: 'INTERSECT'
 slug: /sql-reference/statements/select/intersect
 title: 'INTERSECT Clause'
-doc_type: 'reference'
 ---
 
 # INTERSECT Clause
@@ -12,7 +11,8 @@ The `INTERSECT` clause returns only those rows that result from both the first a
 
 Multiple `INTERSECT` statements are executed left to right if parentheses are not specified. The `INTERSECT` operator has a higher priority than the `UNION` and `EXCEPT` clauses.
 
-```sql
+
+``` sql
 SELECT column1 [, column2 ]
 FROM table1
 [WHERE condition]
@@ -151,6 +151,7 @@ Result:
 │ Ethereum    │
 └─────────────┘
 ```
+
 
 **See Also**
 

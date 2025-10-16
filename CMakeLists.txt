@@ -34,6 +34,8 @@ endmacro ()
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1) # Write compile_commands.json
 set(CMAKE_LINK_DEPENDS_NO_SHARED 1) # Do not relink all depended targets on .so
+set(CMAKE_CONFIGURATION_TYPES "RelWithDebInfo;Debug;Release;MinSizeRel" CACHE STRING "" FORCE)
+set(CMAKE_DEBUG_POSTFIX "d" CACHE STRING "Generate debug library name with a postfix.")    # To be consistent with CMakeLists from contrib libs.
 
 # Enable the ability to organize targets into hierarchies of "folders" for capable GUI-based IDEs.
 # For more info see https://cmake.org/cmake/help/latest/prop_gbl/USE_FOLDERS.html
@@ -94,6 +96,9 @@ option (ENABLE_BUZZHOUSE "Enable BuzzHouse fuzzer on the client" OFF)
 option (ENABLE_FUZZER_TEST "Build testing fuzzers in order to test libFuzzer functionality" OFF)
 
 if (ENABLE_FUZZING)
+    # Also set WITH_COVERAGE=1 for better fuzzing process
+    # By default this is disabled, because fuzzers are built in CI with the clickhouse itself.
+    # And we don't want to enable coverage for it.
     message (STATUS "Fuzzing instrumentation enabled")
     set (FUZZER "libfuzzer")
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -nostdlib++")
@@ -201,6 +206,11 @@ option(OMIT_HEAVY_DEBUG_SYMBOLS
     ${OMIT_HEAVY_DEBUG_SYMBOLS_DEFAULT})
 
 option(BUILD_STANDALONE_KEEPER "Build keeper as small standalone binary" OFF)
+if (NOT BUILD_STANDALONE_KEEPER)
+    option(CREATE_KEEPER_SYMLINK "Create symlink for clickhouse-keeper to main server binary" ON)
+else ()
+    option(CREATE_KEEPER_SYMLINK "Create symlink for clickhouse-keeper to main server binary" OFF)
+endif ()
 
 # Create BuildID when using lld. For other linkers it is created by default.
 # (NOTE: LINKER_NAME can be either path or name, and in different variants)
@@ -225,8 +235,6 @@ if (SPLIT_DEBUG_SYMBOLS)
     message(STATUS "Will split binaries and debug symbols")
     set(SPLIT_DEBUG_SYMBOLS_DIR "stripped" CACHE STRING "A separate directory for stripped information")
 endif()
-
-option(BUILD_STRIPPED_BINARY "Build stripped binary (clickhouse-stripped)" OFF)
 
 cmake_host_system_information(RESULT AVAILABLE_PHYSICAL_MEMORY QUERY AVAILABLE_PHYSICAL_MEMORY) # Not available under freebsd
 
@@ -296,8 +304,9 @@ set (CMAKE_C_STANDARD_REQUIRED ON)
 # See https://reviews.llvm.org/D112921
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsized-deallocation")
 
-# falign-functions=64 prevents from random performance regressions with the code change. Thus, providing more stable benchmarks.
-set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=64")
+# falign-functions=32 prevents from random performance regressions with the code change. Thus, providing more stable
+# benchmarks.
+set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=32")
 
 if (ARCH_AMD64)
     # align branches within a 32-Byte boundary to avoid the potential performance loss when code layout change,
@@ -366,15 +375,6 @@ elseif (ENABLE_THINLTO)
     message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot enable ThinLTO")
 endif ()
 
-if(COMPILER_PIPE)
-    set(MAX_COMPILER_MEMORY 2500)
-else()
-    set(MAX_COMPILER_MEMORY 1500)
-endif()
-set(MAX_LINKER_MEMORY 5000)
-include(cmake/limit_jobs.cmake)
-
-
 # Turns on all external libs like s3, kafka, ODBC, ...
 option(ENABLE_LIBRARIES "Enable all external libraries by default" ON)
 
@@ -392,9 +392,18 @@ elseif (OS_DARWIN)
     include(cmake/darwin/default_libs.cmake)
 elseif (OS_FREEBSD)
     include(cmake/freebsd/default_libs.cmake)
+else()
+    link_libraries(global-group)
 endif ()
-link_libraries(global-group)
-target_link_libraries(global-group INTERFACE $<TARGET_PROPERTY:global-libs,INTERFACE_LINK_LIBRARIES>)
+
+option (ENABLE_GWP_ASAN "Enable Gwp-Asan" ON)
+# We use mmap for allocations more heavily in debug builds,
+# but GWP-ASan also wants to use mmap frequently,
+# and due to a large number of memory mappings,
+# it does not work together well.
+if ((NOT OS_LINUX AND NOT OS_ANDROID) OR (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG") OR SANITIZE)
+    set(ENABLE_GWP_ASAN OFF)
+endif ()
 
 option (ENABLE_LIBFIU "Enable libfiu" ON)
 
@@ -451,6 +460,8 @@ if (NOT OS_ANDROID AND OS_LINUX AND NOT ARCH_S390X AND NOT SANITIZE AND NOT ENAB
     set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -fno-pie")
     set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -fno-pie")
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -no-pie -Wl,-no-pie")
+else ()
+    message (WARNING "ClickHouse is built as PIE, system.trace_log will contain invalid addresses after server restart.")
 endif ()
 
 if (ENABLE_TESTS)
@@ -496,32 +507,13 @@ macro (clickhouse_add_executable target)
         add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc>)
     endif ()
 
-    # Wrap the malloc/free and other C-style functions with our own ones
-    # to inject memory tracking mechanism into them.
-    # Sanitizers have their own way of intercepting the
-    # allocations and deallocations, so we skip this step for them.
-    if (NOT (SANITIZE OR SANITIZE_COVERAGE OR OS_DARWIN OR OS_FREEBSD))
-        target_link_options(${target} PRIVATE
-            "LINKER:--wrap=malloc"
-            "LINKER:--wrap=free"
-            "LINKER:--wrap=calloc"
-            "LINKER:--wrap=realloc"
-            "LINKER:--wrap=aligned_alloc"
-            "LINKER:--wrap=posix_memalign"
-            "LINKER:--wrap=valloc"
-            "LINKER:--wrap=memalign"
-            "LINKER:--wrap=reallocarray"
-        )
-        if (NOT USE_MUSL)
-            target_link_options(${target} PRIVATE
-                "LINKER:--wrap=pvalloc"
-            )
-        endif()
-    endif()
-
     get_target_property (type ${target} TYPE)
     if (${type} STREQUAL EXECUTABLE)
-        target_link_libraries (${target} PUBLIC clickhouse_new_delete)
+        # Disabled if memory tracking is disabled
+        if (TARGET clickhouse_new_delete)
+            # operator::new/delete for executables (MemoryTracker stuff)
+            target_link_libraries (${target} PRIVATE clickhouse_new_delete)
+        endif()
 
         # In case of static jemalloc, because zone_register() is located in zone.c and
         # is never used outside (it is declared as constructor) it is omitted
@@ -593,9 +585,6 @@ option(CHECK_LARGE_OBJECT_SIZES "Check that there are no large object files afte
 
 add_subdirectory (base)
 add_subdirectory (src)
-if (LEXER_STANDALONE_BUILD)
-    add_subdirectory(tests/lexer)
-endif ()
 add_subdirectory (programs)
 add_subdirectory (utils)
 
@@ -633,11 +622,9 @@ endif()
 
 include (cmake/sanitize_targets.cmake)
 
-if (COMPILER_CACHE STREQUAL "chcache" AND CHCACHE_EXECUTABLE_PATH STREQUAL "")
-    message(STATUS "Adding chcache as dependency to all other targets")
+if (COMPILER_CACHE STREQUAL "chcache")
     get_all_targets(all_targets)
-    set(chcache_targets _cargo-build_chcache cargo-build_chcache cargo-prebuild_chcache)
-
+    set (chcache_targets _cargo-build_chcache cargo-build_chcache cargo-prebuild_chcache)
     foreach(target ${all_targets})
         if (target IN_LIST chcache_targets)
             continue()

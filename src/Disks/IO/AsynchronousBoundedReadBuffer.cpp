@@ -1,4 +1,4 @@
-#include <Disks/IO/AsynchronousBoundedReadBuffer.h>
+#include "AsynchronousBoundedReadBuffer.h"
 
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
@@ -162,7 +162,7 @@ void AsynchronousBoundedReadBuffer::setReadUntilPosition(size_t position)
                 /// new read until position is before the current position in the working buffer
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
-                    "Attempt to set read until position before already read data ({} < {}, info: {})",
+                    "Attempt to set read until position before already read data ({} > {}, info: {})",
                     position,
                     getPosition(),
                     impl->getInfoForLog());
@@ -333,7 +333,9 @@ off_t AsynchronousBoundedReadBuffer::seek(off_t offset, int whence)
         {
             ProfileEvents::increment(ProfileEvents::RemoteFSCancelledPrefetches);
             if (read_settings.enable_filesystem_read_prefetches_log)
+            {
                 appendToPrefetchLog(FilesystemPrefetchState::CANCELLED_WITH_SEEK, -1, nullptr);
+            }
         }
 
         break;

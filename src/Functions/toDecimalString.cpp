@@ -118,6 +118,7 @@ private:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             writeText(vec_from[i], from_scale, buf_to, true, true, precision);
+            writeChar(0, buf_to);
             result_offsets[i] = buf_to.count();
         }
         buf_to.finalize();
@@ -140,6 +141,7 @@ private:
                 throw DB::Exception(DB::ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER,
                                     "Too many fractional digits requested for Decimal, must not be more than {}", max_digits);
             writeText(vec_from[i], from_scale, buf_to, true, true, vec_precision[i]);
+            writeChar(0, buf_to);
             result_offsets[i] = buf_to.count();
         }
         buf_to.finalize();
@@ -163,6 +165,7 @@ private:
             throw DB::Exception(DB::ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER, "Error processing number: {}", value);
 
         out.write(buffer, builder.position());
+        writeChar(0, out);
     }
 
     template <is_integer T>
@@ -179,6 +182,7 @@ private:
             writeChar('.', out);
             for (int i = 0; i < precision; ++i)
                 writeChar('0', out);
+            writeChar(0, out);
         }
     }
 
@@ -273,7 +277,7 @@ second argument is the desired number of digits in fractional part. Returns Stri
 
         )",
             .examples{{"toDecimalString", "SELECT toDecimalString(2.1456,2)", ""}},
-            .category = FunctionDocumentation::Category::TypeConversion
+            .category{"Type Conversion"}
         }, FunctionFactory::Case::Insensitive);
 }
 

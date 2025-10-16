@@ -13,17 +13,8 @@ class SortingStep : public ITransformingStep
 public:
     enum class Type : uint8_t
     {
-        /// Performs a complete sorting operation and returns a single fully ordered data stream
         Full,
-
-        /// Completes the sorting process for partially sorted data.
         FinishSorting,
-
-        /// Applies FinishSorting for partitioned partially sorted data.
-        /// The sorting is applied within each partition separately without merging them.
-        PartitionedFinishSorting,
-
-        /// Merges multiple sorted streams into a single sorted output.
         MergingSorted,
     };
 
@@ -47,13 +38,11 @@ public:
         explicit Settings(const QueryPlanSerializationSettings & settings);
 
         void updatePlanSettings(QueryPlanSerializationSettings & settings) const;
-
-        bool operator==(const Settings & other) const = default;
     };
 
     /// Full
     SortingStep(
-        const SharedHeader & input_header,
+        const Header & input_header,
         SortDescription description_,
         UInt64 limit_,
         const Settings & settings_,
@@ -61,7 +50,7 @@ public:
 
     /// Full with partitioning
     SortingStep(
-        const SharedHeader & input_header,
+        const Header & input_header,
         const SortDescription & description_,
         const SortDescription & partition_by_description_,
         UInt64 limit_,
@@ -69,7 +58,7 @@ public:
 
     /// FinishSorting
     SortingStep(
-        const SharedHeader & input_header,
+        const Header & input_header,
         SortDescription prefix_description_,
         SortDescription result_description_,
         size_t max_block_size_,
@@ -77,7 +66,7 @@ public:
 
     /// MergingSorted
     SortingStep(
-        const SharedHeader & input_header,
+        const Header & input_header,
         SortDescription sort_description_,
         size_t max_block_size_,
         UInt64 limit_ = 0,
@@ -105,8 +94,6 @@ public:
 
     Type getType() const { return type; }
     const Settings & getSettings() const { return sort_settings; }
-
-    void convertToPartitionedFinishSorting() { type = Type::PartitionedFinishSorting; }
 
     static void fullSortStreams(
         QueryPipelineBuilder & pipeline,
