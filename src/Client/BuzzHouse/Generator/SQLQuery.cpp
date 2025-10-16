@@ -474,6 +474,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
         const RemoteFunc_RName fname = (isPeer || rg.nextSmallNumber() < 8) ? RemoteFunc::remote : RemoteFunc::remoteSecure;
 
         rfunc->set_rname(fname);
+        t.setName(rfunc->mutable_tof()->mutable_est(), true);
         if (isPeer)
         {
             const ServerCredentials & sc = fc.clickhouse_server.value();
@@ -487,12 +488,11 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
             rfunc->set_address(fc.getConnectionHostAndPort(fname == RemoteFunc::remoteSecure));
             rfunc->set_user("default");
             rfunc->set_password("");
-        }
-        t.setName(rfunc->mutable_tof()->mutable_est(), true);
-        if (rg.nextSmallNumber() < 4)
-        {
-            /// Optional sharding key
-            setRandomShardKey(rg, std::make_optional<SQLTable>(t), rfunc->mutable_sharding_key());
+            if (rg.nextSmallNumber() < 4)
+            {
+                /// Optional sharding key
+                setRandomShardKey(rg, std::make_optional<SQLTable>(t), rfunc->mutable_sharding_key());
+            }
         }
     }
     else
