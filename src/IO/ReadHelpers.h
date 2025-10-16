@@ -813,7 +813,7 @@ inline ReturnType readMacAddressTextImpl(MacAddress & mac, ReadBuffer & buf)
     {
         // Convert 6-byte array to UInt64 in big-endian order
         UInt64 value = 0;
-        for (unsigned char byte : bytes)
+        for (const auto byte : bytes)
         {
             value = (value << 8) | byte;
         }

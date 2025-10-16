@@ -116,7 +116,7 @@ bool SerializationMacAddress::tryDeserializeTextCSV(IColumn & column, ReadBuffer
 
 void SerializationMacAddress::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const
 {
-    MacAddress x = field.safeGet<MacAddress>();
+    const auto x = field.safeGet<MacAddress>();
     writeBinaryLittleEndian(x, ostr);
 }
 
@@ -141,9 +141,9 @@ void SerializationMacAddress::deserializeBinary(IColumn & column, ReadBuffer & i
 
 void SerializationMacAddress::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
 {
-    const typename ColumnVector<MacAddress>::Container & x = typeid_cast<const ColumnVector<MacAddress> &>(column).getData();
+    const auto & x = typeid_cast<const ColumnVector<MacAddress> &>(column).getData();
 
-    size_t size = x.size();
+    const auto size = x.size();
 
     if (limit == 0 || offset + limit > size)
         limit = size - offset;
@@ -156,10 +156,10 @@ void SerializationMacAddress::serializeBinaryBulk(const IColumn & column, WriteB
 
 void SerializationMacAddress::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t /*rows_offset*/, size_t limit, double /*avg_value_size_hint*/) const
 {
-    typename ColumnVector<MacAddress>::Container & x = typeid_cast<ColumnVector<MacAddress> &>(column).getData();
-    size_t initial_size = x.size();
+    auto & x = typeid_cast<ColumnVector<MacAddress> &>(column).getData();
+    const auto initial_size = x.size();
     x.resize(initial_size + limit);
-    size_t size = istr.readBig(reinterpret_cast<char*>(&x[initial_size]), sizeof(MacAddress) * limit);
+    const auto size = istr.readBig(reinterpret_cast<char*>(&x[initial_size]), sizeof(MacAddress) * limit);
     x.resize(initial_size + size / sizeof(MacAddress));
 }
 

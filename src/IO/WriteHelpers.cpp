@@ -84,7 +84,7 @@ void writeMacAddressText(const MacAddress & mac, WriteBuffer & buf)
     char * paddr = addr;
 
     // Convert UInt64 to 6-byte array in big-endian order
-    UInt64 value = mac.toUInt64();
+    auto value = mac.toUInt64();
     unsigned char bytes[MAC_ADDRESS_BINARY_LENGTH];
 
     // Extract bytes from most significant to least significant
