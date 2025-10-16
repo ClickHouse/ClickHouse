@@ -35,7 +35,7 @@
 
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 
-#include <Parsers/ASTCreateSQLMacroFunctionQuery.h>
+#include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
 
 #include <Analyzer/Utils.h>
@@ -544,7 +544,7 @@ ProjectionName QueryAnalyzer::calculateSortColumnProjectionName(
   */
 QueryTreeNodePtr QueryAnalyzer::tryGetLambdaFromSQLUserDefinedMacroFunctions(const ASTPtr & create_function_ast, ContextPtr context)
 {
-    const auto * create_function_query = typeid_cast<const ASTCreateSQLMacroFunctionQuery *>(create_function_ast.get());
+    const auto * create_function_query = typeid_cast<const ASTCreateSQLFunctionQuery *>(create_function_ast.get());
     if (!create_function_query)
         return nullptr;
 

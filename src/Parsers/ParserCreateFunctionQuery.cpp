@@ -1,6 +1,6 @@
 #include <Parsers/ParserCreateFunctionQuery.h>
 
-#include <Parsers/ASTCreateSQLMacroFunctionQuery.h>
+#include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
 
 #include <Parsers/ASTIdentifier.h>
@@ -62,7 +62,7 @@ bool ParserCreateFunctionQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
         if (!lambda_p.parse(pos, function_expression_body, expected))
             return false;
 
-        auto create_function_query = std::make_shared<ASTCreateSQLMacroFunctionQuery>();
+        auto create_function_query = std::make_shared<ASTCreateSQLFunctionQuery>();
 
         create_function_query->function_name = function_name;
         create_function_query->children.push_back(function_name);

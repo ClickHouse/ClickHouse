@@ -6,7 +6,7 @@
 #include <Core/Settings.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
 #include <Interpreters/Context.h>
-#include <Parsers/ASTCreateSQLMacroFunctionQuery.h>
+#include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
 #include <Parsers/ASTDropFunctionQuery.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
@@ -34,7 +34,7 @@ namespace Setting
 
 static bool isUserDefinedFunctionQuery(const ASTPtr & query)
 {
-    return query->as<ASTCreateSQLMacroFunctionQuery>()
+    return query->as<ASTCreateSQLFunctionQuery>()
         || query->as<ASTCreateWasmFunctionQuery>()
         || query->as<ASTDropFunctionQuery>();
 }

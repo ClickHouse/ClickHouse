@@ -7,7 +7,7 @@
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
-#include <Parsers/ASTCreateSQLMacroFunctionQuery.h>
+#include <Parsers/ASTCreateSQLFunctionQuery.h>
 
 namespace DB
 {

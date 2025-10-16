@@ -12,7 +12,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
-#include <Parsers/ASTCreateSQLMacroFunctionQuery.h>
+#include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -94,7 +94,7 @@ ASTPtr normalizeCreateFunctionQuery(const IAST & create_function_query, const Co
 {
     auto ptr = create_function_query.clone();
 
-    if (auto * query = typeid_cast<ASTCreateSQLMacroFunctionQuery *>(ptr.get()))
+    if (auto * query = typeid_cast<ASTCreateSQLFunctionQuery *>(ptr.get()))
     {
         query->if_not_exists = false;
         query->or_replace = false;
@@ -138,7 +138,7 @@ static void checkCanBeRegistered(const ContextPtr & context, const String & func
     if (throw_if_exists && UserDefinedWebAssemblyFunctionFactory::instance().has(function_name)) /// NOLINT(readability-static-accessed-through-instance)
         throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "User defined wasm function '{}' already exists", function_name);
 
-    if (const auto * create_sql_function_query = typeid_cast<const ASTCreateSQLMacroFunctionQuery *>(&create_function_query))
+    if (const auto * create_sql_function_query = typeid_cast<const ASTCreateSQLFunctionQuery *>(&create_function_query))
         validateSQLFunction(create_sql_function_query->function_core, function_name);
 }
 

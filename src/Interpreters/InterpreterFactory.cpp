@@ -4,7 +4,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTCreateWorkloadQuery.h>
 #include <Parsers/ASTCreateResourceQuery.h>
-#include <Parsers/ASTCreateSQLMacroFunctionQuery.h>
+#include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
 #include <Parsers/ASTCreateIndexQuery.h>
 #include <Parsers/ASTDeleteQuery.h>
@@ -332,7 +332,7 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     {
         interpreter_name = "InterpreterTransactionControlQuery";
     }
-    else if (query->as<ASTCreateSQLMacroFunctionQuery>() || query->as<ASTCreateWasmFunctionQuery>())
+    else if (query->as<ASTCreateSQLFunctionQuery>() || query->as<ASTCreateWasmFunctionQuery>())
     {
         interpreter_name = "InterpreterCreateFunctionQuery";
     }

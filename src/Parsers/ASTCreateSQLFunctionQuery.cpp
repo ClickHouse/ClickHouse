@@ -1,6 +1,6 @@
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
-#include <Parsers/ASTCreateSQLMacroFunctionQuery.h>
+#include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 
@@ -12,9 +12,9 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 }
 
-ASTPtr ASTCreateSQLMacroFunctionQuery::clone() const
+ASTPtr ASTCreateSQLFunctionQuery::clone() const
 {
-    auto res = std::make_shared<ASTCreateSQLMacroFunctionQuery>(*this);
+    auto res = std::make_shared<ASTCreateSQLFunctionQuery>(*this);
     res->children.clear();
 
     res->function_name = function_name->clone();
@@ -25,7 +25,7 @@ ASTPtr ASTCreateSQLMacroFunctionQuery::clone() const
     return res;
 }
 
-void ASTCreateSQLMacroFunctionQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSettings & settings, IAST::FormatState & state, IAST::FormatStateStacked frame) const
+void ASTCreateSQLFunctionQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSettings & settings, IAST::FormatState & state, IAST::FormatStateStacked frame) const
 {
     ostr << "CREATE ";
 
@@ -45,7 +45,7 @@ void ASTCreateSQLMacroFunctionQuery::formatImpl(WriteBuffer & ostr, const IAST::
     function_core->format(ostr, settings, state, frame);
 }
 
-String ASTCreateSQLMacroFunctionQuery::getFunctionName() const
+String ASTCreateSQLFunctionQuery::getFunctionName() const
 {
     String name;
     bool is_ok = tryGetIdentifierNameInto(function_name, name);

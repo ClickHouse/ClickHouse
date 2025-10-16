@@ -8,7 +8,7 @@
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/removeOnClusterClauseIfNeeded.h>
 #include <Interpreters/FunctionNameNormalizer.h>
-#include <Parsers/ASTCreateSQLMacroFunctionQuery.h>
+#include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
 
 
@@ -23,7 +23,7 @@ namespace ErrorCodes
 template <typename T>
 std::optional<BlockIO> tryExecute(const ASTPtr & query_ptr, ContextMutablePtr current_context)
 {
-    if (std::is_same_v<ASTCreateSQLMacroFunctionQuery, T>)
+    if (std::is_same_v<ASTCreateSQLFunctionQuery, T>)
     {
         /// Normalize function names in substituted SQL expression
         FunctionNameNormalizer::visit(query_ptr.get());
@@ -64,7 +64,7 @@ std::optional<BlockIO> tryExecute(const ASTPtr & query_ptr, ContextMutablePtr cu
 
 BlockIO InterpreterCreateFunctionQuery::execute()
 {
-    if (auto res = tryExecute<ASTCreateSQLMacroFunctionQuery>(query_ptr, getContext()))
+    if (auto res = tryExecute<ASTCreateSQLFunctionQuery>(query_ptr, getContext()))
         return std::move(res.value());
 
     if (auto res = tryExecute<ASTCreateWasmFunctionQuery>(query_ptr, getContext()))

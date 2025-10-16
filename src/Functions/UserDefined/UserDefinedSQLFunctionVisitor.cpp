@@ -8,7 +8,7 @@
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTCreateSQLMacroFunctionQuery.h>
+#include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -102,7 +102,7 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
     const auto & function_arguments_list = function.children.at(0)->as<ASTExpressionList>();
     auto & function_arguments = function_arguments_list->children;
 
-    auto * create_function_query = user_defined_function->as<ASTCreateSQLMacroFunctionQuery>();
+    auto * create_function_query = user_defined_function->as<ASTCreateSQLFunctionQuery>();
 
     if (!create_function_query)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,

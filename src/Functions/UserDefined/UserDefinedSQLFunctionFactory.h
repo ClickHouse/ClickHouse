@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Common/NamePrompter.h>
-#include <Parsers/ASTCreateSQLMacroFunctionQuery.h>
+#include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Interpreters/Context_fwd.h>
 
 
