@@ -924,6 +924,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         addSettingsChanges(merge_tree_settings_changes_history, "25.11",
         {
             {"refresh_statistics_interval", 0, 0, "New setting"},
+            {"alter_column_secondary_index_mode", "compatibility", "rebuild", "Change the behaviour to allow ALTER `column` when they have dependent secondary indices"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.10",
         {
