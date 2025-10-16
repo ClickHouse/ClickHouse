@@ -88,6 +88,22 @@ bool isStringOrArrayOfStringType(const IDataType & type)
     return false;
 }
 
+
+void fillNeedlesFromString(Needles & needles_tmp, const StringRef & needle_str)
+{
+    auto token_extractor_ = DefaultTokenExtractor();
+
+    size_t cur = 0;
+    size_t token_start = 0;
+    size_t token_len = 0;
+    size_t length = needle_str.size;
+    size_t pos = 0;
+
+    while (cur < length && token_extractor_.nextInStringPadded(needle_str.data, length, &cur, &token_start, &token_len))
+    {
+        needles_tmp.emplace(StringRef(needle_str.data + token_start, token_len), pos++);
+    }
+}
 }
 
 template <class HasTokensTraits>
@@ -220,7 +236,16 @@ ColumnPtr FunctionHasAnyAllTokens<HasTokensTraits>::executeImpl(
         Needles needles_tmp;
         const ColumnPtr col_needles = arguments[arg_needles].column;
 
-        if (const ColumnConst * col_needles_const = checkAndGetColumnConst<ColumnArray>(col_needles.get()))
+
+        if (const ColumnConst * col_needles_str_const = checkAndGetColumnConst<ColumnString>(col_needles.get()))
+        {
+            fillNeedlesFromString(needles_tmp, col_needles_str_const->getDataAt(0));
+        }
+        else if (const ColumnString * col_needles_str = checkAndGetColumn<ColumnString>(col_needles.get()))
+        {
+            fillNeedlesFromString(needles_tmp, col_needles_str->getDataAt(0));
+        }
+        else if (const ColumnConst * col_needles_const = checkAndGetColumnConst<ColumnArray>(col_needles.get()))
         {
             const Array & array = col_needles_const->getValue<Array>();
 
@@ -237,13 +262,6 @@ ColumnPtr FunctionHasAnyAllTokens<HasTokensTraits>::executeImpl(
             for (size_t i = 0; i < needles_offsets[0]; ++i)
                 needles_tmp.emplace(needles_data_string.getDataAt(i).toView(), i);
         }
-        else if (checkAndGetColumnConst<ColumnString>(col_needles.get()) || checkAndGetColumn<ColumnString>(col_needles.get()))
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Needles argument for function '{}' has type String but column {} has no text index. Please pre-tokenize the input with "
-                "the tokens() function or provide a column with a text index.",
-                getName(),
-                arguments[arg_input].name);
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Needles argument for function '{}' has unsupported type", getName());
 
@@ -272,14 +290,14 @@ template class FunctionHasAnyAllTokens<traits::HasAllTokensTraits>;
 REGISTER_FUNCTION(HasAnyTokens)
 {
     FunctionDocumentation::Description description_hasAnyTokens = R"(
-Returns 1, if at least one string needle_i matches the `input` column and 0 otherwise.
+Returns 1, if at least one token in the input string or array `needles` matches the `input` column and 0 otherwise.
 
 The `input` column should have a text index defined for optimal performance.
 Otherwise, the function will perform a brute-force column scan which is expected to be orders of magnitude slower.
 
-When searching, the `input` string is tokenized according to the tokenizer specified in the index definition.
+When searching, the `input` and `needle` strings are tokenized according to the tokenizer specified in the index definition.
 If the column lacks a text index, the `splitByNonAlpha` tokenizer is used instead.
-Each element in the `needle` array is treated as a complete, individual token — no additional tokenization is performed on the needle elements themselves.
+If the `needle` argument is an array, each element is treated as a complete, individual token — no additional tokenization is performed on the needle elements themselves.
 
 **Example**
 
@@ -294,10 +312,13 @@ Duplicate tokens in the needle array are automatically ignored.
 For example, ['ClickHouse', 'ClickHouse'] is treated the same as ['ClickHouse'].
 :::
     )";
-    FunctionDocumentation::Syntax syntax_hasAnyTokens = "hasAnyTokens(input, ['needle1', 'needle2', ..., 'needleN'])";
+    FunctionDocumentation::Syntax syntax_hasAnyTokens = R"(
+hasAnyTokens(input, 'needle1 needle2 ... needleN')
+hasAnyTokens(input, ['needle1', 'needle2', ..., 'needleN'])
+)";
     FunctionDocumentation::Arguments arguments_hasAnyTokens = {
         {"input", "The input column.", {"String", "FixedString"}},
-        {"needles", "Tokens to be searched. Supports at most 64 tokens.", {"Array"}}
+        {"needles", "Tokens to be searched. Supports at most 64 tokens.", {"String", "Array"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_hasAnyTokens = {"Returns `1`, if there was at least one match. `0`, otherwise.", {"UInt8"}};
     FunctionDocumentation::Examples examples_hasAnyTokens = {
@@ -314,7 +335,18 @@ ORDER BY id;
 
 INSERT INTO table VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
 
-SELECT count() FROM table WHERE hasAnyTokens(msg, ['a', 'd']
+SELECT count() FROM table WHERE hasAnyTokens(msg, 'a\\d()'
+        )",
+        R"(
+┌─count()─┐
+│       3 │
+└─────────┘
+        )"
+    },
+    {
+        "Specify needles to be searched for AS-IS (no tokenization) in an array",
+        R"(
+SELECT count() FROM table WHERE hasAnyTokens(msg, ['a', 'd']);
         )",
         R"(
 ┌─count()─┐
@@ -345,14 +377,14 @@ SELECT count() FROM table WHERE hasAnyTokens(msg, tokens('a()d', 'splitByString'
 REGISTER_FUNCTION(HasAllTokens)
 {
     FunctionDocumentation::Description description_hasAllTokens = R"(
-Like [`hasAnyTokens`](#hasanytokens), but returns 1 only if all strings `needle_i` matche the `input` column and 0 otherwise.
+Like [`hasAnyTokens`](#hasanytokens), but returns 1 only if all strings in the input string or array `needles` matches the `input` column and 0 otherwise.
 
 The `input` column should have a text index defined for optimal performance.
 Otherwise the function will perform a brute-force column scan which is expected to be orders of magnitude slower.
 
-When searching, the `input` string is tokenized according to the tokenizer specified in the index definition.
+When searching, the `input` and `needle` strings are tokenized according to the tokenizer specified in the index definition.
 If the column lacks a text index, the `splitByNonAlpha` tokenizer is used instead.
-Each element in the `needle` array is treated as a complete, individual token — no additional tokenization is performed on the needle elements themselves.
+If the `needle` argument is an array, each element is treated as a complete, individual token — no additional tokenization is performed on the needle elements themselves.
 
 **Example**
 
@@ -367,10 +399,13 @@ Duplicate tokens in the needle array are automatically ignored.
 For example, ['ClickHouse', 'ClickHouse'] is treated the same as ['ClickHouse'].
 :::
     )";
-    FunctionDocumentation::Syntax syntax_hasAllTokens = "hasAllTokens(input, ['needle1', 'needle2', ..., 'needleN'])";
+    FunctionDocumentation::Syntax syntax_hasAllTokens = R"(
+hasAllTokens(input, 'needle1 needle2 ... needleN')
+hasAllTokens(input, ['needle1', 'needle2', ..., 'needleN'])
+)";
     FunctionDocumentation::Arguments arguments_hasAllTokens = {
         {"input", "The input column.", {"String", "FixedString"}},
-        {"needles", "Tokens to be searched. Supports at most 64 tokens.", {"Array"}}
+        {"needles", "Tokens to be searched. Supports at most 64 tokens.", {"String", "Array"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_hasAllTokens = {"Returns 1, if all needles match. 0, otherwise.", {"UInt8"}};
     FunctionDocumentation::Examples examples_hasAllTokens = {
@@ -387,6 +422,17 @@ ORDER BY id;
 
 INSERT INTO table VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
 
+SELECT count() FROM table WHERE hasAllTokens(msg, 'a\\d()');
+        )",
+        R"(
+┌─count()─┐
+│       1 │
+└─────────┘
+        )"
+    },
+    {
+        "Specify needles to be searched for AS-IS (no tokenization) in an array",
+        R"(
 SELECT count() FROM table WHERE hasAllTokens(msg, ['a', 'd']);
         )",
         R"(

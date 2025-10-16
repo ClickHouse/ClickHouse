@@ -41,24 +41,27 @@ SELECT id FROM tab WHERE hasAllTokens(message, materialize(['b'])); -- { serverE
 -- search function supports a max of 64 needles
 SELECT id FROM tab WHERE hasAnyTokens(message, ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', 'aa', 'bb', 'cc', 'dd', 'ee', 'ff', 'gg', 'hh', 'ii', 'jj', 'kk', 'll', 'mm', 'nn', 'oo', 'pp', 'qq', 'rr', 'ss', 'tt', 'uu', 'vv', 'ww', 'xx', 'yy', 'zz', 'aaa', 'bbb', 'ccc', 'ddd', 'eee', 'fff', 'ggg', 'hhh', 'iii', 'jjj', 'kkk', 'lll', 'mmm']); -- { serverError BAD_ARGUMENTS }
 SELECT id FROM tab WHERE hasAnyTokens(message, 'a b c d e f g h i j k l m n o p q r s t u v w x y z aa bb cc dd ee ff gg hh ii jj kk ll mm nn oo pp qq rr ss tt uu vv ww xx yy zz aaa bbb ccc ddd eee fff ggg hhh iii jjj kkk lll mmm'); -- { serverError BAD_ARGUMENTS }
--- overload 2 does not support brute force search
-SELECT hasAnyTokens('a b', 'b'); -- { serverError BAD_ARGUMENTS }
-SELECT hasAnyTokens(materialize('a b'), 'b'); -- { serverError BAD_ARGUMENTS }
-SELECT hasAllTokens('a b', 'a b');  -- { serverError BAD_ARGUMENTS }
-SELECT hasAllTokens(materialize('a b'), 'a b'); -- { serverError BAD_ARGUMENTS }
 
 SELECT 'Test what happens hasAnyTokens/All are called on columns without index';
 -- It is expected that the default tokenizer is used
 -- { echoOn }
 SELECT hasAnyTokens('a b', ['b']);
 SELECT hasAnyTokens('a b', ['c']);
+SELECT hasAnyTokens('a b', 'b');
+SELECT hasAnyTokens('a b', 'c');
 SELECT hasAnyTokens(materialize('a b'), ['b']);
 SELECT hasAnyTokens(materialize('a b'), ['c']);
+SELECT hasAnyTokens(materialize('a b'), 'b');
+SELECT hasAnyTokens(materialize('a b'), 'c');
 --
 SELECT hasAllTokens('a b', ['a', 'b']);
 SELECT hasAllTokens('a b', ['a', 'c']);
+SELECT hasAllTokens('a b', 'a b');
+SELECT hasAllTokens('a b', 'a c');
 SELECT hasAllTokens(materialize('a b'), ['a', 'b']);
 SELECT hasAllTokens(materialize('a b'), ['a', 'c']);
+SELECT hasAllTokens(materialize('a b'), 'a b');
+SELECT hasAllTokens(materialize('a b'), 'a c');
 
 -- Test singular aliases
 SELECT hasAnyToken('a b', ['b']);
@@ -74,27 +77,27 @@ SELECT id FROM tab WHERE hasAnyTokens('a b', ['c']);
 SELECT id FROM tab WHERE hasAnyTokens(col_str, ['b']);
 SELECT id FROM tab WHERE hasAnyTokens(col_str, ['c']);
 
-SELECT id FROM tab WHERE hasAnyTokens('a b', 'b'); -- { serverError BAD_ARGUMENTS }
-SELECT id FROM tab WHERE hasAnyTokens('a b', 'c'); -- { serverError BAD_ARGUMENTS }
-SELECT id FROM tab WHERE hasAnyTokens(col_str, 'b'); -- { serverError BAD_ARGUMENTS }
-SELECT id FROM tab WHERE hasAnyTokens(col_str, 'c'); -- { serverError BAD_ARGUMENTS }
+SELECT id FROM tab WHERE hasAnyTokens('a b', 'b');
+SELECT id FROM tab WHERE hasAnyTokens('a b', 'c');
+SELECT id FROM tab WHERE hasAnyTokens(col_str, 'b');
+SELECT id FROM tab WHERE hasAnyTokens(col_str, 'c');
 
 SELECT id FROM tab WHERE hasAllTokens('a b', ['a b']);
 SELECT id FROM tab WHERE hasAllTokens('a b', ['a c']);
 SELECT id FROM tab WHERE hasAllTokens(col_str, ['a b']);
 SELECT id FROM tab WHERE hasAllTokens(col_str, ['a c']);
 
-SELECT id FROM tab WHERE hasAllTokens('a b', 'a b'); -- { serverError BAD_ARGUMENTS }
-SELECT id FROM tab WHERE hasAllTokens('a b', 'a c'); -- { serverError BAD_ARGUMENTS }
-SELECT id FROM tab WHERE hasAllTokens(col_str, 'a a'); -- { serverError BAD_ARGUMENTS }
-SELECT id FROM tab WHERE hasAllTokens(col_str, 'b c'); -- { serverError BAD_ARGUMENTS }
+SELECT id FROM tab WHERE hasAllTokens('a b', 'a b');
+SELECT id FROM tab WHERE hasAllTokens('a b', 'a c');
+SELECT id FROM tab WHERE hasAllTokens(col_str, 'a a');
+SELECT id FROM tab WHERE hasAllTokens(col_str, 'b c');
 -- { echoOff }
 
 SELECT 'Testing edge cases on non-indexed column';
 SELECT count() FROM tab WHERE hasAnyTokens(col_str, []);
 SELECT count() FROM tab WHERE hasAllTokens(col_str, []);
-SELECT id FROM tab WHERE hasAnyTokens(col_str, ['']);
-SELECT id FROM tab WHERE hasAnyTokens(col_str, ''); -- { serverError BAD_ARGUMENTS }
+SELECT count() FROM tab WHERE hasAnyTokens(col_str, ['']); -- matches nothing
+SELECT count() FROM tab WHERE hasAnyTokens(col_str, ''); -- TODO currently this goes through the default tokenizer and matches everything
 
 DROP TABLE tab;
 
@@ -755,22 +758,24 @@ INSERT INTO tab VALUES (1, 'hello world'), (2, 'goodbye'), (3, 'hello moon');
 
 SELECT 'Test hasAnyTokens and hasAllTokens on a non-indexed FixedString column';
 
+-- { echoOn }
 SELECT id FROM tab WHERE hasAnyTokens(s, ['hello']) ORDER BY id;
 SELECT id FROM tab WHERE hasAnyTokens(s, ['moon', 'goodbye']) ORDER BY id;
 SELECT id FROM tab WHERE hasAnyTokens(s, ['unknown', 'goodbye']) ORDER BY id;
 
-SELECT id FROM tab WHERE hasAnyTokens(s, 'hello') ORDER BY id; -- { serverError BAD_ARGUMENTS }
-SELECT id FROM tab WHERE hasAnyTokens(s, 'moon goodbye') ORDER BY id; -- { serverError BAD_ARGUMENTS }
-SELECT id FROM tab WHERE hasAnyTokens(s, 'unknown goodbye') ORDER BY id; -- { serverError BAD_ARGUMENTS }
+SELECT id FROM tab WHERE hasAnyTokens(s, 'hello') ORDER BY id;
+SELECT id FROM tab WHERE hasAnyTokens(s, 'moon goodbye') ORDER BY id;
+SELECT id FROM tab WHERE hasAnyTokens(s, 'unknown goodbye') ORDER BY id;
 
 SELECT id FROM tab WHERE hasAllTokens(s, ['hello', 'world']) ORDER BY id;
 SELECT id FROM tab WHERE hasAllTokens(s, ['goodbye']) ORDER BY id;
 SELECT id FROM tab WHERE hasAllTokens(s, ['hello', 'moon']) ORDER BY id;
 SELECT id FROM tab WHERE hasAllTokens(s, ['hello', 'unknown']) ORDER BY id;
 
-SELECT id FROM tab WHERE hasAllTokens(s, 'hello world') ORDER BY id; -- { serverError BAD_ARGUMENTS }
-SELECT id FROM tab WHERE hasAllTokens(s, 'goodbye') ORDER BY id; -- { serverError BAD_ARGUMENTS }
-SELECT id FROM tab WHERE hasAllTokens(s, 'hello moon') ORDER BY id; -- { serverError BAD_ARGUMENTS }
-SELECT id FROM tab WHERE hasAllTokens(s, 'hello unknown') ORDER BY id; -- { serverError BAD_ARGUMENTS }
+SELECT id FROM tab WHERE hasAllTokens(s, 'hello world') ORDER BY id;
+SELECT id FROM tab WHERE hasAllTokens(s, 'goodbye') ORDER BY id;
+SELECT id FROM tab WHERE hasAllTokens(s, 'hello moon') ORDER BY id;
+SELECT id FROM tab WHERE hasAllTokens(s, 'hello unknown') ORDER BY id;
+-- { echoOff }
 
 DROP TABLE IF EXISTS tab;
