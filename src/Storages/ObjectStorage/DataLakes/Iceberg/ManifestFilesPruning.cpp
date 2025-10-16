@@ -154,6 +154,12 @@ ManifestFilesPruner::ManifestFilesPruner(
     , current_schema_id(current_schema_id_)
     , manifest_schema_id(manifest_file.getSchemaId())
 {
+    LOG_DEBUG(
+        &Poco::Logger::get("Iceberg ManifestFilesPruner"),
+        "Creating pruner for manifest with schema ID {} to filter with schema ID {}, filter_dag is {}",
+        manifest_schema_id,
+        current_schema_id,
+        filter_dag->dumpDAG());
     std::unique_ptr<ActionsDAG> transformed_dag;
     std::vector<Int32> used_columns_in_filter;
     if (manifest_file.hasPartitionKey() || manifest_file.hasBoundsInfoInManifests())
@@ -166,8 +172,11 @@ ManifestFilesPruner::ManifestFilesPruner(
         {
             ActionsDAGWithInversionPushDown inverted_dag(transformed_dag->getOutputs().front(), context);
             partition_key_condition.emplace(inverted_dag, context, partition_key->column_names, partition_key->expression, true /* single_point */);
+            LOG_DEBUG(
+                &Poco::Logger::get("Iceberg ManifestFilesPruner"), "Creating pruner, inverted_dag is {}", inverted_dag.dag->dumpDAG());
         }
     }
+
 
     if (manifest_file.hasBoundsInfoInManifests() && transformed_dag != nullptr)
     {
@@ -193,6 +202,10 @@ ManifestFilesPruner::ManifestFilesPruner(
 
 bool ManifestFilesPruner::canBePruned(const ManifestFileEntry & entry) const
 {
+    std::stringstream ss;
+    for (const auto & field : entry.partition_key_value)
+        ss << (ss.str().empty() ? "" : ", ") << applyVisitor(FieldVisitorToString(), field);
+    LOG_DEBUG(&Poco::Logger::get("Iceberg ManifestFilesPruner"), "Checking canBePruned for entry: {}", ss.str());
     if (partition_key_condition.has_value())
     {
         const auto & partition_value = entry.partition_key_value;
@@ -214,21 +227,21 @@ bool ManifestFilesPruner::canBePruned(const ManifestFileEntry & entry) const
         }
     }
 
-    for (const auto & [column_id, key_condition] : min_max_key_conditions)
-    {
-        std::optional<NameAndTypePair> name_and_type = schema_processor.tryGetFieldCharacteristics(manifest_schema_id, column_id);
+    // for (const auto & [column_id, key_condition] : min_max_key_conditions)
+    // {
+    //     std::optional<NameAndTypePair> name_and_type = schema_processor.tryGetFieldCharacteristics(manifest_schema_id, column_id);
 
-        /// There is no such column in this manifest file
-        if (!name_and_type.has_value())
-            continue;
+    //     /// There is no such column in this manifest file
+    //     if (!name_and_type.has_value())
+    //         continue;
 
-        auto hyperrectangle = entry.columns_infos.at(column_id).hyperrectangle;
-        if (hyperrectangle.has_value() && !key_condition.mayBeTrueInRange(1, &hyperrectangle->left, &hyperrectangle->right, {name_and_type->type}))
-        {
-            ProfileEvents::increment(ProfileEvents::IcebergMinMaxIndexPrunedFiles);
-            return true;
-        }
-    }
+    //     auto hyperrectangle = entry.columns_infos.at(column_id).hyperrectangle;
+    //     if (hyperrectangle.has_value() && !key_condition.mayBeTrueInRange(1, &hyperrectangle->left, &hyperrectangle->right, {name_and_type->type}))
+    //     {
+    //         ProfileEvents::increment(ProfileEvents::IcebergMinMaxIndexPrunedFiles);
+    //         return true;
+    //     }
+    // }
 
     return false;
 }

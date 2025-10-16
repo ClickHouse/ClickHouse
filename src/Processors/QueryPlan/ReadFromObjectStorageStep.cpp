@@ -16,6 +16,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/Context.h>
 
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -57,11 +58,15 @@ ReadFromObjectStorageStep::ReadFromObjectStorageStep(
 
 void ReadFromObjectStorageStep::applyFilters(ActionDAGNodes added_filter_nodes)
 {
+    LOG_DEBUG(&Poco::Logger::get("ApplyFilters"), "Applying filters to ReadFromObjectStorageStep");
     SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
+    createIterator();
 }
 
 void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
+    LOG_DEBUG(&Poco::Logger::get("InitializePipeline"), "Initializing pipeline for ReadFromObjectStorageStep");
+
     createIterator();
 
     Pipes pipes;

@@ -1,41 +1,42 @@
-#include <Storages/MergeTree/KeyCondition.h>
-#include <Storages/MergeTree/BoolMask.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnSet.h>
 #include <Core/PlainRanges.h>
-#include <DataTypes/DataTypesNumber.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/FieldToDataType.h>
-#include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/Utils.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/TreeRewriter.h>
-#include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Interpreters/castColumn.h>
-#include <Interpreters/misc.h>
-#include <Functions/FunctionFactory.h>
-#include <Functions/indexHint.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <Functions/CastOverloadResolver.h>
+#include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/IFunctionDateOrDateTime.h>
 #include <Functions/geometryConverters.h>
-#include <Common/FieldVisitorToString.h>
-#include <Common/HilbertUtils.h>
-#include <Common/FieldVisitorConvertToNumber.h>
-#include <Common/MortonUtils.h>
-#include <Common/typeid_cast.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <Columns/ColumnSet.h>
-#include <Columns/ColumnConst.h>
-#include <Core/Settings.h>
-#include <Interpreters/convertFieldToType.h>
+#include <Functions/indexHint.h>
+#include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/Set.h>
+#include <Interpreters/TreeRewriter.h>
+#include <Interpreters/castColumn.h>
+#include <Interpreters/convertFieldToType.h>
+#include <Interpreters/misc.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
+#include <Storages/MergeTree/BoolMask.h>
+#include <Storages/MergeTree/KeyCondition.h>
+#include <Common/FieldVisitorConvertToNumber.h>
+#include <Common/FieldVisitorToString.h>
+#include <Common/HilbertUtils.h>
+#include <Common/MortonUtils.h>
+#include <Common/logger_useful.h>
+#include <Common/typeid_cast.h>
 
 #include <algorithm>
 #include <cassert>
@@ -933,6 +934,7 @@ KeyCondition::KeyCondition(
     if (context->getSettingsRef()[Setting::analyze_index_with_space_filling_curves])
         getAllSpaceFillingCurves();
 
+    LOG_DEBUG(&Poco::Logger::get("KeyCondition"), "KeyCondition has predicates: {}", filter_dag.predicate != nullptr);
     if (!filter_dag.predicate)
     {
         has_filter = false;
@@ -949,6 +951,11 @@ KeyCondition::KeyCondition(
     });
 
     rpn = std::move(builder).extractRPN();
+
+    for (const auto & elem : rpn)
+    {
+        LOG_DEBUG(&Poco::Logger::get("KeyCondition"), "x {}", elem.toString());
+    }
 
     findHyperrectanglesForArgumentsOfSpaceFillingCurves();
 
@@ -2823,24 +2830,31 @@ BoolMask KeyCondition::checkInRange(
             key_ranges.push_back(Range::createWholeUniverseWithoutNull());
     }
 
-    // std::cerr << "Checking for: [";
-    // for (size_t i = 0; i != used_key_size; ++i)
-    //     std::cerr << (i != 0 ? ", " : "") << applyVisitor(FieldVisitorToString(), left_keys[i]);
-    // std::cerr << " ... ";
+    std::stringstream ss;
 
-    // for (size_t i = 0; i != used_key_size; ++i)
-    //     std::cerr << (i != 0 ? ", " : "") << applyVisitor(FieldVisitorToString(), right_keys[i]);
-    // std::cerr << "]" << ": " << initial_mask.can_be_true << " : " << initial_mask.can_be_false << "\n";
+    ss << "Checking for: [";
+    for (size_t i = 0; i != used_key_size; ++i)
+        ss << (i != 0 ? ", " : "") << applyVisitor(FieldVisitorToString(), left_keys[i]);
+    ss << " ... ";
+
+    for (size_t i = 0; i != used_key_size; ++i)
+        ss << (i != 0 ? ", " : "") << applyVisitor(FieldVisitorToString(), right_keys[i]);
+    ss << "]" << ": " << initial_mask.can_be_true << " : " << initial_mask.can_be_false << "\n";
+
+    LOG_DEBUG(&Poco::Logger::get("KeyCondition, checkInRange"), "{}", ss.str());
 
     return forAnyHyperrectangle(used_key_size, left_keys, right_keys, true, true, key_ranges, data_types, 0, initial_mask,
         [&] (const Hyperrectangle & key_ranges_hyperrectangle)
     {
         auto res = checkInHyperrectangle(key_ranges_hyperrectangle, data_types);
+        std::stringstream ss_local;
 
-        // std::cerr << "Hyperrectangle: ";
-        // for (size_t i = 0, size = key_ranges.size(); i != size; ++i)
-        //     std::cerr << (i != 0 ? " × " : "") << key_ranges[i].toString();
-        // std::cerr << ": " << res.can_be_true << " : " << res.can_be_false << "\n";
+        ss_local << "Hyperrectangle: ";
+        for (size_t i = 0, size = key_ranges_hyperrectangle.size(); i != size; ++i)
+            ss_local << (i != 0 ? " × " : "") << key_ranges_hyperrectangle[i].toString();
+        ss_local << ": " << res.can_be_true << " : " << res.can_be_false << "\n";
+
+        LOG_DEBUG(&Poco::Logger::get("KeyCondition, forAnyHyperrectangle"), "{}", ss_local.str());
 
         return res;
     });
@@ -3182,6 +3196,47 @@ BoolMask KeyCondition::checkInHyperrectangle(
     const DataTypes & data_types,
     const ColumnIndexToBloomFilter & column_index_to_column_bf) const
 {
+    std::stringstream ss_hyperrectangle;
+    ss_hyperrectangle << "Hyperrectangle: ";
+    for (size_t i = 0, size = hyperrectangle.size(); i != size; ++i)
+        ss_hyperrectangle << (i != 0 ? ", " : "") << hyperrectangle[i].toString();
+    ss_hyperrectangle << "\n";
+
+    std::stringstream ss_data_types;
+    ss_data_types << "Data types: ";
+    for (size_t i = 0, size = data_types.size(); i != size; ++i)
+        ss_data_types << (i != 0 ? ", " : "") << data_types[i]->getName();
+    ss_data_types << "\n";
+
+    assert(column_index_to_column_bf.size() == 0);
+    LOG_DEBUG(&Poco::Logger::get("KeyCondition, checkInHyperrectangle"), "{}{}", ss_hyperrectangle.str(), ss_data_types.str());
+
+    std::stringstream ss_rpn;
+    ss_rpn << "RPN: SIZE: " << rpn.size() << "\n";
+    for (const auto & element : rpn)
+        ss_rpn << element.toString() << " ";
+    ss_rpn << "\n";
+
+    std::stringstream ss_key_space_filling_curves;
+    ss_key_space_filling_curves << "Key space filling curves: SIZE: " << key_space_filling_curves.size() << "\n";
+    for (const auto & curve : key_space_filling_curves)
+    {
+        ss_key_space_filling_curves << "(type: " << static_cast<int>(curve.type) << ", key_column_pos: " << curve.key_column_pos
+                                    << ", function_name: " << curve.function_name << "), arguments: [";
+        for (size_t i = 0; i < curve.arguments.size(); ++i)
+            ss_key_space_filling_curves << (i != 0 ? ", " : "") << curve.arguments[i];
+        ss_key_space_filling_curves << "] ";
+        ss_key_space_filling_curves << "\n";
+    }
+    ss_key_space_filling_curves << "\n";
+
+    LOG_DEBUG(
+        &Poco::Logger::get("KeyCondition, checkInHyperrectangle"),
+        "{}, ss_key_space_filling_curves: {}, single_point: {}",
+        ss_rpn.str(),
+        ss_key_space_filling_curves.str(),
+        single_point);
+
     std::vector<BoolMask> rpn_stack;
 
     auto curve_type = [&](size_t key_column_pos)
