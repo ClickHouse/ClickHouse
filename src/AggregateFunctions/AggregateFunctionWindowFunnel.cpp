@@ -290,6 +290,10 @@ private:
     /// Applies conditions only to events with strictly increasing timestamps
     bool strict_increase;
 
+    /// Allow reentry to previously completed steps while maintaining strict order
+    /// Only works with strict_order. E.g. 'A->B->A->C' reaches level 3 instead of stopping at 2.
+    bool allow_reentry;
+
     /// Loop through the entire events_list, update the event timestamp value
     /// The level path must be 1---2---3---...---check_events_size, find the max event level that satisfied the path in the sliding window.
     /// If found, returns the max event level, else return 0.
@@ -311,6 +315,28 @@ private:
             }
             if (event_idx == 0)
             {
+                if (strict_order && first_event && !allow_reentry)
+                {
+                    /// Check if this is a reentry (not just a duplicate)
+                    bool is_reentry = false;
+                    for (size_t j = 1; j < events_timestamp.size(); ++j)
+                    {
+                        if (events_timestamp[j].has_value())
+                        {
+                            is_reentry = true;
+                            break;
+                        }
+                    }
+
+                    if (is_reentry)
+                    {
+                        for (size_t event = 0; event < events_timestamp.size(); ++event)
+                        {
+                            if (!events_timestamp[event].has_value())
+                                return event;
+                        }
+                    }
+                }
                 events_timestamp[0] = std::make_pair(timestamp, timestamp);
                 first_event = true;
             }
@@ -318,12 +344,35 @@ private:
             {
                 return events_list[i - 1].second;
             }
-            else if (strict_order && first_event && !events_timestamp[event_idx - 1].has_value())
+            else if (strict_order && first_event && event_idx > 0 && !events_timestamp[event_idx - 1].has_value())
             {
-                for (size_t event = 0; event < events_timestamp.size(); ++event)
+                if (!allow_reentry)
                 {
-                    if (!events_timestamp[event].has_value())
-                        return event;
+                    for (size_t event = 0; event < events_timestamp.size(); ++event)
+                    {
+                        if (!events_timestamp[event].has_value())
+                            return event;
+                    }
+                }
+                else
+                {
+                    /// Allow reentry to previously completed step
+                    if (events_timestamp[event_idx].has_value())
+                    {
+                        /// Reset subsequent steps
+                        for (size_t j = event_idx + 1; j < events_timestamp.size(); ++j)
+                            events_timestamp[j].reset();
+
+                        events_timestamp[event_idx] = std::make_pair(timestamp, timestamp);
+                    }
+                    else
+                    {
+                        for (size_t event = 0; event < events_timestamp.size(); ++event)
+                        {
+                            if (!events_timestamp[event].has_value())
+                                return event;
+                        }
+                    }
                 }
             }
             else if (events_timestamp[event_idx - 1].has_value())
@@ -387,6 +436,28 @@ private:
             }
             else if (event_idx == 0)
             {
+                if (strict_order && has_first_event && !allow_reentry)
+                {
+                    /// Check if this is a reentry (not just a duplicate)
+                    bool is_reentry = false;
+                    for (size_t j = 1; j < event_sequences.size(); ++j)
+                    {
+                        if (!event_sequences[j].empty())
+                        {
+                            is_reentry = true;
+                            break;
+                        }
+                    }
+
+                    if (is_reentry)
+                    {
+                        for (size_t event = 0; event < event_sequences.size(); ++event)
+                        {
+                            if (event_sequences[event].empty())
+                                return event;
+                        }
+                    }
+                }
                 auto & event_seq = event_sequences[0].emplace_back(timestamp, timestamp);
                 event_seq.event_path[0] = unique_id;
                 has_first_event = true;
@@ -395,12 +466,36 @@ private:
             {
                 return events_list[i - 1].event_type;
             }
-            else if (strict_order && has_first_event && event_sequences[event_idx - 1].empty())
+            else if (strict_order && has_first_event && event_idx > 0 && event_sequences[event_idx - 1].empty())
             {
-                for (size_t event = 0; event < event_sequences.size(); ++event)
+                if (!allow_reentry)
                 {
-                    if (event_sequences[event].empty())
-                        return event;
+                    for (size_t event = 0; event < event_sequences.size(); ++event)
+                    {
+                        if (event_sequences[event].empty())
+                            return event;
+                    }
+                }
+                else
+                {
+                    /// Allow reentry to previously completed step
+                    if (!event_sequences[event_idx].empty())
+                    {
+                        /// Reset subsequent steps
+                        for (size_t j = event_idx + 1; j < event_sequences.size(); ++j)
+                            event_sequences[j].clear();
+
+                        auto & event_seq = event_sequences[event_idx].emplace_back(timestamp, timestamp);
+                        event_seq.event_path[event_idx] = unique_id;
+                    }
+                    else
+                    {
+                        for (size_t event = 0; event < event_sequences.size(); ++event)
+                        {
+                            if (event_sequences[event].empty())
+                                return event;
+                        }
+                    }
                 }
             }
             else if (!event_sequences[event_idx - 1].empty())
@@ -484,6 +579,7 @@ public:
         strict_deduplication = false;
         strict_order = false;
         strict_increase = false;
+        allow_reentry = false;
         for (size_t i = 1; i < params.size(); ++i)
         {
             String option = params.at(i).safeGet<String>();
@@ -493,6 +589,8 @@ public:
                 strict_order = true;
             else if (option == "strict_increase")
                 strict_increase = true;
+            else if (option == "allow_reentry")
+                allow_reentry = true;
             else if (option == "strict_once")
                 /// Checked in factory
                 chassert(Data::strict_once_enabled);
@@ -500,6 +598,12 @@ public:
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "strict is replaced with strict_deduplication in Aggregate function {}", getName());
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} doesn't support a parameter: {}", getName(), option);
+        }
+
+        /// Validate option combinations
+        if (allow_reentry && !strict_order)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "allow_reentry option requires strict_order to be enabled in Aggregate function {}", getName());
         }
     }
 
