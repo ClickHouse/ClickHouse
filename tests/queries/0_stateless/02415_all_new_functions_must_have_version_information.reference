@@ -1,8 +1,5 @@
 DATE
 JSONKey
-MACNumToString
-MACStringToNum
-MACStringToOUI
 URLHierarchy
 URLPathHierarchy
 _CAST
@@ -13,9 +10,7 @@ __bitSwapLastTwo
 __bitWrapperFunc
 __getScalar
 __scalarSubqueryResult
-asin
 caseWithExpression
-catboostEvaluate
 countSubstrings
 countSubstringsCaseInsensitive
 countSubstringsCaseInsensitiveUTF8
@@ -76,7 +71,6 @@ dynamicType
 evalMLMethod
 extractKeyValuePairs
 extractKeyValuePairsWithEscaping
-factorial
 firstSignificantSubdomain
 firstSignificantSubdomainCustom
 firstSignificantSubdomainCustomRFC
@@ -85,11 +79,9 @@ formatQuery
 formatQueryOrNull
 formatQuerySingleLine
 formatQuerySingleLineOrNull
-generateRandomStructure
 generateSerialID
 getMaxTableNameLengthForDatabase
 getSubcolumn
-getTypeSerializationStreams
 globalIn
 globalInIgnoreSet
 globalNotIn
@@ -98,7 +90,6 @@ globalNotNullIn
 globalNotNullInIgnoreSet
 globalNullIn
 globalNullInIgnoreSet
-globalVariable
 hasSubsequenceCaseInsensitive
 hasSubsequenceCaseInsensitiveUTF8
 hasSubsequenceUTF8
@@ -109,16 +100,12 @@ in
 inIgnoreSet
 isDynamicElementInSharedData
 like
-lowCardinalityIndices
-lowCardinalityKeys
 map
 mapAdd
 mapFromArrays
 mapPopulateSeries
 mapSubtract
 mapUpdate
-minSampleSizeContinuous
-minSampleSizeConversion
 moduloLegacy
 multiFuzzyMatchAllIndices
 multiFuzzyMatchAny
@@ -219,13 +206,8 @@ toUInt32OrDefault
 toUInt64OrDefault
 toUInt8OrDefault
 toUUIDOrDefault
-transactionLatestSnapshot
-transactionOldestSnapshot
 tuple
 tupleNames
 validateNestedArraySizes
-variantElement
-variantType
-widthBucket
 windowID
 wkt

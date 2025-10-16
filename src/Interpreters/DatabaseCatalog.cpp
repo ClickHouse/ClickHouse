@@ -2,17 +2,6 @@
 
 #include <Access/ContextAccess.h>
 
-#include <Common/assert_cast.h>
-#include <Common/checkStackSize.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/Exception.h>
-#include <Common/filesystemHelpers.h>
-#include <Common/logger_useful.h>
-#include <Common/noexcept_scope.h>
-#include <Common/quoteString.h>
-#include <Common/ThreadPool.h>
-#include <Common/threadPoolCallbackRunner.h>
-#include <Common/UniqueLock.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -20,21 +9,30 @@
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/IDatabase.h>
 #include <Disks/IDisk.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/executeQuery.h>
-#include <Interpreters/InterpreterCreateQuery.h>
-#include <Interpreters/loadMetadata.h>
-#include <Interpreters/TableNameHints.h>
 #include <IO/ReadHelpers.h>
 #include <IO/SharedThreadPools.h>
-#include <Poco/DirectoryIterator.h>
-#include <Poco/Util/AbstractConfiguration.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/TableNameHints.h>
+#include <Interpreters/executeQuery.h>
 #include <Storages/IStorage.h>
 #include <Storages/MemorySettings.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/StorageAlias.h>
 #include <Storages/StorageMemory.h>
+#include <Poco/DirectoryIterator.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/Exception.h>
+#include <Common/ThreadPool.h>
+#include <Common/UniqueLock.h>
+#include <Common/assert_cast.h>
+#include <Common/checkStackSize.h>
+#include <Common/filesystemHelpers.h>
+#include <Common/getRandomASCIIString.h>
+#include <Common/logger_useful.h>
+#include <Common/noexcept_scope.h>
+#include <Common/quoteString.h>
+#include <Common/threadPoolCallbackRunner.h>
 
 #include <algorithm>
 #include <mutex>
@@ -83,7 +81,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int HAVE_DEPENDENT_OBJECTS;
     extern const int UNFINISHED;
-    extern const int UNSUPPORTED_METHOD;
     extern const int INFINITE_LOOP;
     extern const int THERE_IS_NO_QUERY;
     extern const int TIMEOUT_EXCEEDED;
@@ -368,33 +365,6 @@ DatabaseAndTable DatabaseCatalog::tryGetByUUID(const UUID & uuid) const
     return it->second;
 }
 
-DatabaseAndTable DatabaseCatalog::getByUUID(const UUID & uuid) const
-{
-    auto res = tryGetByUUID(uuid);
-    if (!res.first || !res.second)
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table with UUID {} does not exist", toString(uuid));
-    return res;
-}
-
-DatabaseAndTable DatabaseCatalog::getTableAndCheckAlias(
-    const StorageID & table_id,
-    ContextPtr context_,
-    std::optional<Exception> * exception) const
-{
-    auto database_and_table = getTableImpl(table_id, context_, exception);
-    auto & table = database_and_table.second;
-    if (table)
-    {
-        if (auto * alias_storage = dynamic_cast<StorageAlias *>(table.get()))
-        {
-            if (context_->getStorageAliasBehaviour() == static_cast<uint8_t>(StorageAliasBehaviourKind::USE_ORIGINAL_TABLE))
-                database_and_table.second = alias_storage->getReferenceTable(context_);
-            else if (context_->getStorageAliasBehaviour() == static_cast<uint8_t>(StorageAliasBehaviourKind::EXCEPTION))
-                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Storage Alias is unsupported in this query");
-        }
-    }
-    return database_and_table;
-}
 
 DatabaseAndTable DatabaseCatalog::getTableImpl(
     const StorageID & table_id,
@@ -681,17 +651,24 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
             throw;
         }
     }
-
     db->shutdown();
 
     if (drop)
     {
         UUID db_uuid = db->getUUID();
-
-        /// Delete the database.
-        db->drop(local_context);
-
         auto default_db_disk = getContext()->getDatabaseDisk();
+
+        try
+        {
+            /// Delete the database.
+            db->drop(local_context);
+        }
+        catch (...)
+        {
+            attachDatabase(database_name, db);
+            throw;
+        }
+
         /// Old ClickHouse versions did not store database.sql files
         /// Remove metadata dir (if exists) to avoid recreation of .sql file on server startup
         fs::path database_metadata_dir = fs::path("metadata") / escapeForFileName(database_name);
@@ -1071,7 +1048,7 @@ bool DatabaseCatalog::isDictionaryExist(const StorageID & table_id) const
 StoragePtr DatabaseCatalog::getTable(const StorageID & table_id, ContextPtr local_context) const
 {
     std::optional<Exception> exc;
-    auto res = getTableAndCheckAlias(table_id, local_context, &exc);
+    auto res = getTableImpl(table_id, local_context, &exc);
     if (!res.second)
         throw Exception(*exc);
     return res.second;
@@ -1079,13 +1056,13 @@ StoragePtr DatabaseCatalog::getTable(const StorageID & table_id, ContextPtr loca
 
 StoragePtr DatabaseCatalog::tryGetTable(const StorageID & table_id, ContextPtr local_context) const
 {
-    return getTableAndCheckAlias(table_id, local_context, nullptr).second;
+    return getTableImpl(table_id, local_context, nullptr).second;
 }
 
 DatabaseAndTable DatabaseCatalog::getDatabaseAndTable(const StorageID & table_id, ContextPtr local_context) const
 {
     std::optional<Exception> exc;
-    auto res = getTableAndCheckAlias(table_id, local_context, &exc);
+    auto res = getTableImpl(table_id, local_context, &exc);
     if (!res.second)
         throw Exception(*exc);
     return res;
@@ -1093,7 +1070,7 @@ DatabaseAndTable DatabaseCatalog::getDatabaseAndTable(const StorageID & table_id
 
 DatabaseAndTable DatabaseCatalog::tryGetDatabaseAndTable(const StorageID & table_id, ContextPtr local_context) const
 {
-    return getTableAndCheckAlias(table_id, local_context, nullptr);
+    return getTableImpl(table_id, local_context, nullptr);
 }
 
 void DatabaseCatalog::loadMarkedAsDroppedTables()
