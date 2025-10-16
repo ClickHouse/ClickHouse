@@ -16,11 +16,11 @@ void StatementGenerator::addFieldAccess(RandomGenerator & rg, Expr * expr, const
         this->depth++;
         if (noption < 41)
         {
-            fa->set_array_index(rg.randomInt<uint32_t>(1, 4));
+            fa->set_array_index(rg.randomInt<uint32_t>(0, 4));
         }
         else if (noption < 71)
         {
-            fa->set_tuple_index(rg.randomInt<uint32_t>(1, 4));
+            fa->set_tuple_index(rg.randomInt<uint32_t>(0, 4));
         }
         else if (this->depth >= this->fc.max_depth || noption < 81)
         {
@@ -51,7 +51,7 @@ void StatementGenerator::addColNestedAccess(RandomGenerator & rg, ExprColumn * e
             TypeName * tpn = nullptr;
             JSONColumns * subcols = expr->mutable_subcols();
             const uint32_t noption = rg.nextMediumNumber();
-            const uint32_t nvalues = std::max(std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(1, 3)), UINT32_C(1));
+            const uint32_t nvalues = std::max(std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(0, 3)), UINT32_C(1));
 
             for (uint32_t i = 0; i < nvalues; i++)
             {
@@ -774,7 +774,7 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
         const uint32_t agg_max_args = std::min(agg.max_args, UINT32_C(5));
         const uint32_t max_args = std::min(this->fc.max_width - this->width, agg_max_args);
         const uint32_t ncombinators
-            = rg.nextSmallNumber() < 4 ? std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(0, 2) + 1) : 0;
+            = rg.nextSmallNumber() < 4 ? std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(1, 3)) : 0;
         const bool prev_inside_aggregate = this->levels[this->current_level].inside_aggregate;
         const bool prev_allow_window_funcs = this->levels[this->current_level].allow_window_funcs;
         std::uniform_int_distribution<uint32_t> comb_range(
