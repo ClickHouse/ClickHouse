@@ -1,23 +1,25 @@
 #pragma once
-#include <cstdint>
+#include <DataTypes/IDataType.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionsComparison.h>
 #include <Columns/ColumnNullable.h>
 #include <Common/quoteString.h>
+#include <Columns/ColumnVariant.h>
+#include <Columns/ColumnDynamic.h>
 namespace DB
 {
-
-enum class NullSafeCmpMode : uint8_t
-{
-    NullSafeEqual,
-    NullSafeNotEqual
-};
 
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
 }
+
+enum class NullSafeCmpMode : uint8_t
+{
+    NullSafeEqual,
+    NullSafeNotEqual
+};
 
 template <
     typename Name,                                              // Function Name
@@ -62,14 +64,47 @@ public:
                             backQuote(name),
                             arguments.size());
 
+        const DataTypePtr & left_ele_type = arguments[0];
+        const DataTypePtr & right_ele_type = arguments[1];
+
+        if ((isMap(left_ele_type) && right_ele_type->onlyNull())
+                || (left_ele_type->onlyNull() && isMap(right_ele_type))
+                || (isArray(left_ele_type) && right_ele_type->onlyNull())
+                || (left_ele_type->onlyNull() && isArray(right_ele_type)))
+        {
+            return std::make_shared<DataTypeUInt8>();
+        }
+
+        if (!tryGetLeastSupertype(arguments))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types of arguments ({}, {})"
+                " of function {}", backQuote(arguments[0]->getName()), backQuote(arguments[1]->getName()), backQuote(getName()));
+
         return std::make_shared<DataTypeUInt8>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr ALWAYS_INLINE executeForVatintOrDynamicAndNull(const ColumnWithTypeAndName & variant_or_dynamic_col) const
+    {
+        const auto & column_variant_or_dynamic =
+            isVariant(variant_or_dynamic_col.type) ?
+                checkAndGetColumn<ColumnVariant>(*variant_or_dynamic_col.column) :
+                checkAndGetColumn<ColumnDynamic>(*variant_or_dynamic_col.column).getVariantColumn();
+        auto res = DataTypeUInt8().createColumn();
+        auto & data = typeid_cast<ColumnUInt8 &>(*res).getData();
+        data.resize(column_variant_or_dynamic.size());
+        for (size_t i = 0; i < column_variant_or_dynamic.size(); ++i)
+        {
+            bool ele_is_null = column_variant_or_dynamic.isNullAt(i);
+            data[i] = is_equal_mode ? ele_is_null && true : ele_is_null && false;
+        }
+        return res;
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         ColumnPtr left_col = arguments[0].column;
         ColumnPtr right_col = arguments[1].column;
-
+        const ColumnWithTypeAndName & type_and_name_left_col = arguments[0];
+        const ColumnWithTypeAndName & type_and_name_right_col = arguments[1];
         if (!left_col || !right_col)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -80,13 +115,49 @@ public:
                             right_col ? "NOT NULL" : "NULL");
         }
 
+        // for self null-safe cmp
+        if (type_and_name_left_col.name == type_and_name_right_col.name
+            && type_and_name_left_col.type->equals(*type_and_name_right_col.type)
+            && !isTuple(type_and_name_left_col.type)
+            && left_col.get() == right_col.get())
+        {
+            return is_equal_mode ? result_type->createColumnConst(input_rows_count, UInt8(1)) :
+                                    result_type->createColumnConst(input_rows_count, UInt8(0));
+        }
+
+        // To address:
+        //   1. Map vs null or
+        //   2. Array vs null
+        // The results will be always set to 0
+        if (((isMap(type_and_name_left_col.type) || isArray(type_and_name_left_col.type))
+                && type_and_name_right_col.type->onlyNull())
+            || ((isMap(type_and_name_right_col.type) || isArray(type_and_name_right_col.type))
+                && type_and_name_left_col.type->onlyNull()))
+        {
+            return result_type->createColumnConst(input_rows_count, UInt8(0));
+        }
+
+        // To address:
+        //   1. Variant vs null
+        //   2. Dynamic vs null
+        if (((isVariant(type_and_name_left_col.type) || isDynamic(type_and_name_left_col.type))
+                && type_and_name_right_col.type->onlyNull())
+            || ((isVariant(type_and_name_right_col.type) || isDynamic(type_and_name_right_col.type))
+                && type_and_name_left_col.type->onlyNull()))
+        {
+            return executeForVatintOrDynamicAndNull(
+                isVariant(type_and_name_left_col.type) || isDynamic(type_and_name_left_col.type)
+                    ? type_and_name_left_col
+                    : type_and_name_right_col);
+        }
+
         // get common type for null-safe comparison
         DataTypePtr common_type = getLeastSupertype(DataTypes{arguments[0].type, arguments[1].type});
 
         ColumnPtr c0_converted = castColumn(arguments[0], common_type);
         ColumnPtr c1_converted = castColumn(arguments[1], common_type);
 
-        //1. address null
+        // To address: Nullable vs Nullable
         if (c0_converted->isNullable() && c1_converted->isNullable())
         {
             auto c_res = ColumnUInt8::create();
@@ -101,11 +172,10 @@ public:
             return c_res;
         }
 
-        //2. address normal
+        // To address normal
         ColumnPtr res;
-
         FunctionOverloadResolverPtr comparator
-            = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionComparison<CompareOp, CompareName, true>>(params));
+            = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionComparison<CompareOp, CompareName, true /*is null safe cmp mode*/>>(params));
 
         auto executable_func = comparator->build(arguments);
         auto data_type = executable_func->getResultType();

@@ -15,63 +15,105 @@ Insert rows containing:
 • NaN
 • edge numeric boundaries
 1.1 Basic NULL-safe equality and distinctness
-Compare same column to itself and cross type
-1	0	1	0	1	0	0	1
-1	0	1	0	1	0	1	0
-1	0	1	0	0	1	1	0
-1	0	0	1	0	1	0	1
+Compare same column to itself
+1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0
+1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0
+1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0
+1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0
 1.2 NaN behavior
 NaN <=> NaN = 0, NaN <=> number = 0
 NaN is distinct from NaN = 1, NaN is distinct from number = 1
--1	0	1	0	1
-0	0	1	0	1
 1	0	1	1	0
-nan	0	1	0	1
+\N	0	1	0	1
+nan	1	0	0	1
+-1	0	1	0	1
 1.3 String, FixedString, Enum
-0	1	0	1	1	0	1	0
-0	1	0	1	0	1	0	1
-1	0	1	0	1	0	1	0
-0	1	0	1	0	1	0	1
+1	0	0	1	1	0	0	1	1	0	0	1	1	0	0	1
+0	1	1	0	0	1	1	0	0	1	1	0	0	1	1	0
+0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1
+0	1	0	1	0	1	0	1	1	0	0	1	1	0	0	1
 1.4 Date and time
-0	1	0	1	0	1
-0	1	0	1	0	1
-1	0	1	0	1	0
-0	1	0	1	0	1
-1.5 Complex types: Array / Tuple / Map / JSON
-0	1	0	1	0	1	0	1
-0	1	0	1	0	1	0	1
-1	0	1	0	1	0	1	0
-0	1	0	1	0	1	0	1
+1	0	0	0	1	1	1	0	0	0	1	1	1	0	0	0	1	1
+0	1	1	1	0	0	0	1	1	1	0	0	0	1	1	1	0	0
+0	1	0	0	1	1	0	1	0	0	1	1	0	1	0	0	1	1
+0	1	0	0	1	1	0	1	0	0	1	1	0	1	0	0	1	1
+1.5 Complex types: Array / Tuple / Map / Variant / Dynamic / JSON
+1	0	0	1	0	1	0	0	0	0	1	0	0	1	1	0	0	1	0	1	0	0	0	0	1	0	0	0	1	1	1	0	0	1	0	1	0	0	1	1	0	1	1	0	0	1	0	0	0	0	0	1	1	0	0	1	0	0	0	0
+0	1	0	1	1	0	0	0	0	0	0	1	1	0	0	1	0	1	1	0	0	0	0	0	0	1	1	1	0	0	0	1	0	1	0	1	1	1	0	0	0	1	0	1	0	1	1	1	0	0	0	1	0	1	0	1	1	1	0	0
+0	1	0	1	0	1	0	0	0	0	0	1	0	1	0	1	0	1	0	1	0	0	0	0	0	1	0	0	1	1	0	1	1	0	0	1	0	0	1	1	0	1	0	1	0	1	0	0	0	0	0	1	0	1	0	1	0	0	0	0
+0	1	0	1	1	0	0	0	0	0	0	1	0	1	0	1	0	1	0	1	0	0	0	0	0	1	1	1	0	0	0	1	0	1	1	0	0	0	1	1	0	1	0	1	1	0	0	0	0	0	0	1	0	1	0	1	0	0	0	0
 1.6 UUID / IPv4 / IPv6 comparisons
 NULL-safe comparisons with type-correct literals
-1	0	0	1	0	1
-1	0	0	1	0	1
-1	0	1	0	1	0
-1	0	0	1	0	1
-prepare table
-1.7 WHERE Clause
+1	0	0	0	1	1	1	0	0	0	1	1	1	0	0	0	1	1
+1	0	1	1	0	0	0	1	1	1	0	0	0	1	1	1	0	0
+1	0	0	0	1	1	0	1	0	0	1	1	0	1	0	0	1	1
+1	0	0	0	1	1	0	1	0	0	1	1	0	1	0	0	1	1
+1.7 Cross-type test cases
+0	1
+1	0
+0	1
+0	1
+0
+1
+0
+0
+1
+0
+1
+1
+0
+1
+0
+0
+1
+0
+1
+1
+0	0
+1	1
+0	0
+0	0
+1	1
+0	0
+1	1
+1	1
+0	1
+0	1
+0	1
+0	1
+0	1
+0	1
+0	1
+0	1
+0	0
+0	0
+0	0
+0	0
+0	1
+0	1
+0	1
+0	1
+1.8 Some ILLEGAL_TYPE_OF_ARGUMENT case
+Array vs Map cross-type test cases
+Map vs Variant cross-type test cases
+1.9 WHERE Clause
 1	1	1	1	0
 2	1	\N	0	1
 3	\N	\N	1	0
 4	2	2	1	0
-1.8 WHERE Clause + Union All
-<=> 1	1	1	1	x
-<=> 1	2	1	\N	x
-IS DISTINCT FROM 1	3	\N	\N	y
-IS DISTINCT FROM 1	4	2	2	z
-1.9 ORDER BY Clause
-1	1	1	1	0
-3	\N	\N	1	0
-4	2	2	1	0
-2	1	\N	0	1
-1.10 GROUP BY Clause
-0	1	1	[2]
+1.10 ORDER BY Clause
+1	1	1	0
+3	\N	\N	0
+4	2	2	0
+2	1	\N	1
+1.11 GROUP BY Clause
 1	0	3	[1,3,4]
-1.11 Aggregate Func
+0	1	1	[2]
+1.12 Aggregate Func
 2	2	4
 1.12 HAVING Clause
-x	1	1	1	0
 y	\N	\N	1	0
+x	1	1	1	0
 z	2	2	1	0
 1.13 JOIN Clause
 <=> JOIN	1	1	1	1
@@ -101,8 +143,8 @@ IS DISTINCT FROM JOIN	4	3	2	\N
 3	\N	\N	safe-equal	same
 4	2	2	safe-equal	same
 1.16 Window Func
-1	1	1	1	0	3	3	3
 2	1	\N	0	1	1	1	1
+1	1	1	1	0	3	3	3
 3	\N	\N	1	0	3	3	3
 4	2	2	1	0	3	3	3
 1.17 Subquery filter
@@ -122,4 +164,13 @@ IS DISTINCT FROM JOIN	4	3	2	\N
 0
 1
 
+0
+1.20 Alias function testing
+1
+0
+0
+1
+0
+1
+1
 0
