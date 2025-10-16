@@ -1,5 +1,5 @@
 -- Tags: no-parallel-replicas
-
+SET use_query_condition_cache = 0;
 SET enable_analyzer = 1;
 SET allow_experimental_full_text_index = 1;
 
