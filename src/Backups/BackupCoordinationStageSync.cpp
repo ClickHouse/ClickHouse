@@ -114,7 +114,8 @@ BackupCoordinationStageSync::BackupCoordinationStageSync(
     , failure_after_host_disconnected_for_seconds(with_retries.getKeeperSettings().failure_after_host_disconnected_for_seconds)
     , finish_timeout_after_error(with_retries.getKeeperSettings().finish_timeout_after_error)
     , sync_period_ms(with_retries.getKeeperSettings().sync_period_ms)
-    , max_attempts_after_bad_version(with_retries.getKeeperSettings().max_attempts_after_bad_version)
+    // all_hosts.size() is added to max_attempts_after_bad_version since each host change the num_hosts node once, and it's a valid case
+    , max_attempts_after_bad_version(with_retries.getKeeperSettings().max_attempts_after_bad_version + all_hosts.size())
     , zookeeper_path(zookeeper_path_)
     , root_zookeeper_path(zookeeper_path.parent_path().parent_path())
     , operation_zookeeper_path(zookeeper_path.parent_path())
