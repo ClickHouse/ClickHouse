@@ -3746,7 +3746,11 @@ fs::path ClientBase::getHistoryFilePath()
             return path_in_home_dir;
     }
 
-    return XDGBaseDirectories::getStateHome() / "client-query-history";
+    auto xdg_state_home = XDGBaseDirectories::getStateHome();
+    if (!xdg_state_home.empty())
+        return xdg_state_home / "client-query-history";
+
+    throw Exception(ErrorCodes::CANNOT_OPEN_FILE, "Neither $CLICKHOUSE_HISTORY_FILE, $HOME nor $XDG_STATE_HOME is set; cannot place history file.");
 }
 
 
