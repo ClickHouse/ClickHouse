@@ -169,7 +169,7 @@ SELECT 'Test text(tokenizer = sparseGrams(2, 100)) on UTF-8 data';
 
 DROP TABLE IF EXISTS tab;
 
-CREATE TABLE tab(k UInt64, s String, INDEX af(s) TYPE text(tokenizer = sparseGrams(2, 100)) GRANULARITY 1)
+CREATE TABLE tab(k UInt64, s String, INDEX af(s) TYPE text(tokenizer = sparseGrams(3, 100)) GRANULARITY 1)
     ENGINE = MergeTree()
     ORDER BY k
     SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';
@@ -197,7 +197,7 @@ SELECT 'Test text(tokenizer = sparseGrams(2, 100, 3)) on UTF-8 data';
 
 DROP TABLE IF EXISTS tab;
 
-CREATE TABLE tab(k UInt64, s String, INDEX af(s) TYPE text(tokenizer = sparseGrams(2, 100, 3)) GRANULARITY 1)
+CREATE TABLE tab(k UInt64, s String, INDEX af(s) TYPE text(tokenizer = sparseGrams(3, 100, 4)) GRANULARITY 1)
     ENGINE = MergeTree()
     ORDER BY k
     SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';
