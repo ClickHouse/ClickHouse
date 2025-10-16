@@ -1739,9 +1739,13 @@ message SpecialVal {
         MAX_DATETIME = 44;
         MIN_DATETIME64 = 45;
         MAX_DATETIME64 = 46;
-        VAL_NULL_CHAR = 47;
-        VAL_DEFAULT = 48;
-        VAL_STAR = 49;
+        MIN_DOUBLE = 47;
+        MAX_DOUBLE = 48;
+        DENORM_MIN_DOUBLE = 49;
+        LOWEST_DOUBLE = 50;
+        VAL_NULL_CHAR = 51;
+        VAL_DEFAULT = 52;
+        VAL_STAR = 53;
     }
     required SpecialValEnum val = 1;
     optional bool paren = 2;

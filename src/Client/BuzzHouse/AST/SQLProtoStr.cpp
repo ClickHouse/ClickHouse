@@ -660,6 +660,34 @@ CONV_FN(SpecialVal, val)
                 ret += "::DateTime64";
             }
             break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_DOUBLE:
+            ret += std::to_string(std::numeric_limits<double>::min());
+            if (val.paren())
+            {
+                ret += "::Float64";
+            }
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_DOUBLE:
+            ret += std::to_string(std::numeric_limits<double>::max());
+            if (val.paren())
+            {
+                ret += "::Float64";
+            }
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_DENORM_MIN_DOUBLE:
+            ret += std::to_string(std::numeric_limits<double>::denorm_min());
+            if (val.paren())
+            {
+                ret += "::Float64";
+            }
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_LOWEST_DOUBLE:
+            ret += std::to_string(std::numeric_limits<double>::lowest());
+            if (val.paren())
+            {
+                ret += "::Float64";
+            }
+            break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_NULL_CHAR:
             ret += "'\\0'";
             break;
