@@ -41,9 +41,11 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.10",
         {
+            {"optimize_rewrite_like_perfect_affix", false, true, "New setting"},
             {"allow_dynamic_type_in_join_keys", true, false, "Disallow using Dynamic type in JOIN keys by default"},
             {"use_skip_indexes_on_data_read", false, true, "Enabled skip index usage in read phase by default"},
             {"enable_join_runtime_filters", false, false, "New setting"},
+            {"s3queue_keeper_fault_injection_probablility", 0, 0, "New setting."},
             {"join_runtime_bloom_filter_bytes", 512_KiB, 512_KiB, "New setting"},
             {"use_join_disjunctions_push_down", false, false, "New setting."},
             {"joined_block_split_single_row", false, false, "New setting"},
@@ -905,12 +907,15 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "25.10",
         {
+            {"auto_statistics_types", "", "", "New setting"},
             {"exclude_materialize_skip_indexes_on_merge", "", "", "New setting."},
             {"serialization_info_version", "default", "default", "New setting"},
             {"string_serialization_version", "default", "default", "New setting"},
             {"replicated_deduplication_window_seconds", 7 * 24 * 60 * 60, 60*60, "decrease default value"},
             {"shared_merge_tree_activate_coordinated_merges_tasks", false, false, "New settings"},
             {"shared_merge_tree_merge_coordinator_factor", 1.1f, 1.1f, "Lower coordinator sleep time after load"},
+            {"min_level_for_wide_part", 0, 0, "New setting"},
+            {"min_level_for_full_part_storage", 0, 0, "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.9",
         {

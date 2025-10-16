@@ -313,7 +313,7 @@ void StatementGenerator::generateNextCreateFunction(RandomGenerator & rg, Create
     const bool prev_allow_not_deterministic = this->allow_not_deterministic;
 
     next.fname = fname;
-    next.nargs = std::min(this->fc.max_width - this->width, (rg.nextLargeNumber() % fc.max_columns) + UINT32_C(1));
+    next.nargs = std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(1, fc.max_columns));
     next.is_deterministic = rg.nextBool();
     /// If this function is later called by an oracle, then don't call it
     this->allow_not_deterministic = !next.is_deterministic;
@@ -422,7 +422,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
 {
     SQLView next;
     uint32_t tname = 0;
-    const uint32_t view_ncols = (rg.nextLargeNumber() % fc.max_columns) + UINT32_C(1);
+    const uint32_t view_ncols = rg.randomInt<uint32_t>(1, fc.max_columns);
     const bool prev_enforce_final = this->enforce_final;
     const bool prev_allow_not_deterministic = this->allow_not_deterministic;
     SelectParen * sparen = cv->mutable_select();
@@ -468,7 +468,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
             next.teng = MergeTree;
         }
         const auto & table_to_lambda = [&view_ncols, &next](const SQLTable & t)
-        { return t.isAttached() && t.numberOfInsertableColumns() >= view_ncols && (t.is_deterministic || !next.is_deterministic); };
+        { return t.isAttached() && t.cols.size() >= view_ncols && (t.is_deterministic || !next.is_deterministic); };
         next.has_with_cols = collectionHas<SQLTable>(table_to_lambda);
         const bool has_tables = next.has_with_cols || !tables.empty();
         const bool has_to
@@ -505,23 +505,35 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
             if (next.has_with_cols)
             {
                 std::vector<uint32_t> nids;
+                const bool allCols = rg.nextBool();
+                const bool newdef = rg.nextSmallNumber() < 4;
 
                 for (const auto & [key, val] : t.cols)
                 {
-                    if (val.canBeInserted())
+                    if (allCols || val.canBeInserted())
                     {
                         nids.push_back(key);
                     }
                 }
-                if (rg.nextBool())
+                if (nids.empty())
+                {
+                    nids.push_back(rg.pickRandomly(t.cols));
+                }
+                else if (rg.nextBool())
                 {
                     std::shuffle(nids.begin(), nids.end(), rg.generator);
                 }
-                for (uint32_t i = 0; i < view_ncols; i++)
+                const uint32_t limit = std::min(view_ncols, static_cast<uint32_t>(nids.size()));
+
+                chassert(limit > 0);
+                for (uint32_t i = 0; i < limit; i++)
                 {
                     SQLColumn col = t.cols.at(nids[i]);
 
-                    addTableColumnInternal(rg, t, col.cname, false, false, ColumnSpecial::NONE, col, cmvt->add_col_list());
+                    if (newdef)
+                    {
+                        addTableColumnInternal(rg, t, col.cname, false, false, ColumnSpecial::NONE, col, cmvt->add_col_list());
+                    }
                     next.cols.insert(col.cname);
                 }
             }
@@ -543,6 +555,10 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
             next.cols.insert(i);
         }
     }
+    if (rg.nextSmallNumber() < 4)
+    {
+        cv->set_uuid(rg.nextUUID());
+    }
     setClusterInfo(rg, next);
     if (next.cluster.has_value())
     {
@@ -556,7 +572,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
         false,
         false,
         view_ncols,
-        next.is_materialized ? (~allow_prewhere) : std::numeric_limits<uint32_t>::max(),
+        next.is_materialized && rg.nextBool() ? (~allow_prewhere) : std::numeric_limits<uint32_t>::max(),
         std::nullopt,
         sparen->mutable_select());
     this->levels.clear();
@@ -712,6 +728,7 @@ void StatementGenerator::generateNextOptimizeTableInternal(RandomGenerator & rg,
         ot->mutable_cluster()->set_cluster(cluster.value());
     }
     ot->set_final((t.supportsFinal() || t.isMergeTreeFamily() || rg.nextMediumNumber() < 21) && (strict || rg.nextSmallNumber() < 4));
+    ot->set_use_force(rg.nextBool());
     if (rg.nextSmallNumber() < 3)
     {
         generateSettingValues(rg, serverSettings, ot->mutable_setting_values());
@@ -729,6 +746,7 @@ void StatementGenerator::generateNextOptimizeTable(RandomGenerator & rg, Optimiz
         /// Optimize system table
         rg.pickRandomly(systemTables).setName(ot->mutable_est());
         ot->set_final(rg.nextBool());
+        ot->set_use_force(rg.nextBool());
         if (rg.nextBool())
         {
             DeduplicateExpr * dde = ot->mutable_dedup();
@@ -913,7 +931,7 @@ void StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescribeSta
                 rg,
                 false,
                 false,
-                (rg.nextLargeNumber() % 5) + 1,
+                rg.randomInt<uint32_t>(1, 5),
                 std::numeric_limits<uint32_t>::max(),
                 std::nullopt,
                 eq->mutable_inner_query()->mutable_select()->mutable_sel());
@@ -1025,7 +1043,7 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
     }
     else if (random_values && nopt < (hardcoded_insert + random_values + 1))
     {
-        const uint32_t nrows = (rg.nextSmallNumber() % 3) + 1;
+        const uint32_t nrows = rg.randomInt<uint32_t>(1, 3);
         ValuesStatement * vs = ins->mutable_values();
 
         for (uint32_t i = 0; i < nrows; i++)
@@ -1462,8 +1480,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
             {
                 SelectParen * sparen = ati->mutable_modify_query();
 
-                v.staged_ncols
-                    = v.has_with_cols ? static_cast<uint32_t>(v.cols.size()) : ((rg.nextLargeNumber() % fc.max_columns) + UINT32_C(1));
+                v.staged_ncols = v.has_with_cols ? static_cast<uint32_t>(v.cols.size()) : rg.randomInt<uint32_t>(1, fc.max_columns);
                 sparen->set_paren(rg.nextSmallNumber() < 9);
                 this->levels[this->current_level] = QueryLevel(this->current_level);
                 this->allow_in_expression_alias = rg.nextSmallNumber() < 3;
@@ -1472,7 +1489,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                     false,
                     false,
                     v.staged_ncols,
-                    v.is_materialized ? (~allow_prewhere) : std::numeric_limits<uint32_t>::max(),
+                    v.is_materialized && rg.nextBool() ? (~allow_prewhere) : std::numeric_limits<uint32_t>::max(),
                     std::nullopt,
                     sparen->mutable_select());
                 this->levels.clear();
@@ -2485,6 +2502,10 @@ void StatementGenerator::generateAttach(RandomGenerator & rg, Attach * att)
     else
     {
         chassert(0);
+    }
+    if (rg.nextSmallNumber() < 4)
+    {
+        att->set_uuid(rg.nextUUID());
     }
     if (cluster.has_value())
     {
@@ -4285,9 +4306,9 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, const bool in_p
     const bool has_views = collectionHas<SQLView>(attached_views);
     const bool has_dictionaries = collectionHas<SQLDictionary>(attached_dictionaries);
 
-    const uint32_t create_table = 6 * static_cast<uint32_t>(static_cast<uint32_t>(tables.size()) < this->fc.max_tables);
-    const uint32_t create_view = 10 * static_cast<uint32_t>(static_cast<uint32_t>(views.size()) < this->fc.max_views);
-    const uint32_t drop = 2
+    const uint32_t create_table = 12 * static_cast<uint32_t>(static_cast<uint32_t>(tables.size()) < this->fc.max_tables);
+    const uint32_t create_view = 12 * static_cast<uint32_t>(static_cast<uint32_t>(views.size()) < this->fc.max_views);
+    const uint32_t drop = 1
         * static_cast<uint32_t>(
                               !in_parallel
                               && (collectionCount<SQLTable>(attached_tables) > 3 || collectionCount<SQLView>(attached_views) > 3
@@ -4310,7 +4331,7 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, const bool in_p
                                 && (collectionHas<SQLTable>(detached_tables) || collectionHas<SQLView>(detached_views)
                                     || collectionHas<SQLDictionary>(detached_dictionaries)
                                     || collectionHas<std::shared_ptr<SQLDatabase>>(detached_databases)));
-    const uint32_t detach = 2
+    const uint32_t detach = 1
         * static_cast<uint32_t>(!in_parallel
                                 && (collectionCount<SQLTable>(attached_tables) > 3 || collectionCount<SQLView>(attached_views) > 3
                                     || collectionCount<SQLDictionary>(attached_dictionaries) > 3
@@ -4589,7 +4610,7 @@ void StatementGenerator::generateNextExplain(RandomGenerator & rg, bool in_paral
         }
         if (!this->ids.empty())
         {
-            const size_t noptions = (static_cast<size_t>(rg.nextRandomUInt32()) % this->ids.size()) + 1;
+            const size_t noptions = rg.randomInt<size_t>(1, this->ids.size());
             std::shuffle(ids.begin(), ids.end(), rg.generator);
 
             for (size_t i = 0; i < noptions; i++)
