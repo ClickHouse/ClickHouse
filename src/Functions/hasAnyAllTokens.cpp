@@ -290,35 +290,30 @@ template class FunctionHasAnyAllTokens<traits::HasAllTokensTraits>;
 REGISTER_FUNCTION(HasAnyTokens)
 {
     FunctionDocumentation::Description description_hasAnyTokens = R"(
-Returns 1, if at least one token in the input string or array `needles` matches the `input` column and 0 otherwise.
-
-The `input` column should have a text index defined for optimal performance.
-Otherwise, the function will perform a brute-force column scan which is expected to be orders of magnitude slower.
-
-When searching, the `input` and `needle` strings are tokenized according to the tokenizer specified in the index definition.
-If the column lacks a text index, the `splitByNonAlpha` tokenizer is used instead.
-If the `needle` argument is an array, each element is treated as a complete, individual token — no additional tokenization is performed on the needle elements themselves.
-
-**Example**
-
-To search for "ClickHouse" in a column with an ngram tokenizer (`tokenizer = ngrams(5)`), you would provide an array of all the 5-character ngrams:
-
-```sql
-['Click', 'lickH', 'ickHo', 'ckHou', 'kHous', 'House']
-```
+Returns 1, if at least one token in the `needle` string or array matches the `input` string, and 0 otherwise.
 
 :::note
-Duplicate tokens in the needle array are automatically ignored.
-For example, ['ClickHouse', 'ClickHouse'] is treated the same as ['ClickHouse'].
+Column `input` should have a [text index](../../engines/table-engines/mergetree-family/invertedindexes) defined for optimal performance.
+If no text index is defined, the function performs a brute-force column scan which orders of magnitude slower than an index lookup.
 :::
+
+Prior to searching, the function tokenizes
+- the `input` argument (always), and
+- the `needle` argument (if given as a [String](../../sql-reference/data-types/string.md))
+
+using the tokenizer specified for the text index.
+If the column has no text index defined, the `splitByNonAlpha` tokenizer is used instead.
+If the `needle` argument is of type [Array(String)](../../sql-reference/data-types/array.md), each array element is treated as a token — no additional tokenization takes place.
+
+Duplicate tokens are ignored.
+For example, ['ClickHouse', 'ClickHouse'] is treated the same as ['ClickHouse'].
     )";
     FunctionDocumentation::Syntax syntax_hasAnyTokens = R"(
-hasAnyTokens(input, 'needle1 needle2 ... needleN')
-hasAnyTokens(input, ['needle1', 'needle2', ..., 'needleN'])
+hasAnyTokens(input, needles)
 )";
     FunctionDocumentation::Arguments arguments_hasAnyTokens = {
         {"input", "The input column.", {"String", "FixedString"}},
-        {"needles", "Tokens to be searched. Supports at most 64 tokens.", {"String", "Array"}}
+        {"needles", "Tokens to be searched. Supports at most 64 tokens.", {"String", "Array(String)"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_hasAnyTokens = {"Returns `1`, if there was at least one match. `0`, otherwise.", {"UInt8"}};
     FunctionDocumentation::Examples examples_hasAnyTokens = {
@@ -377,35 +372,30 @@ SELECT count() FROM table WHERE hasAnyTokens(msg, tokens('a()d', 'splitByString'
 REGISTER_FUNCTION(HasAllTokens)
 {
     FunctionDocumentation::Description description_hasAllTokens = R"(
-Like [`hasAnyTokens`](#hasanytokens), but returns 1 only if all strings in the input string or array `needles` matches the `input` column and 0 otherwise.
-
-The `input` column should have a text index defined for optimal performance.
-Otherwise the function will perform a brute-force column scan which is expected to be orders of magnitude slower.
-
-When searching, the `input` and `needle` strings are tokenized according to the tokenizer specified in the index definition.
-If the column lacks a text index, the `splitByNonAlpha` tokenizer is used instead.
-If the `needle` argument is an array, each element is treated as a complete, individual token — no additional tokenization is performed on the needle elements themselves.
-
-**Example**
-
-To search for "ClickHouse" in a column with an ngram tokenizer (`tokenizer = ngrams(5)`), you would provide an array of all the 5-character ngrams:
-
-```sql
-['Click', 'lickH', 'ickHo', 'ckHou', 'kHous', 'House']
-```
+Like [`hasAnyTokens`](#hasanytokens), but returns 1, if all tokens in the `needle` string or array match the `input` string, and 0 otherwise.
 
 :::note
-Duplicate tokens in the needle array are automatically ignored.
-For example, ['ClickHouse', 'ClickHouse'] is treated the same as ['ClickHouse'].
+Column `input` should have a [text index](../../engines/table-engines/mergetree-family/invertedindexes) defined for optimal performance.
+If no text index is defined, the function performs a brute-force column scan which orders of magnitude slower than an index lookup.
 :::
+
+Prior to searching, the function tokenizes
+- the `input` argument (always), and
+- the `needle` argument (if given as a [String](../../sql-reference/data-types/string.md))
+
+using the tokenizer specified for the text index.
+If the column has no text index defined, the `splitByNonAlpha` tokenizer is used instead.
+If the `needle` argument is of type [Array(String)](../../sql-reference/data-types/array.md), each array element is treated as a token — no additional tokenization takes place.
+
+Duplicate tokens are ignored.
+For example, needles = ['ClickHouse', 'ClickHouse'] is treated the same as ['ClickHouse'].
     )";
     FunctionDocumentation::Syntax syntax_hasAllTokens = R"(
-hasAllTokens(input, 'needle1 needle2 ... needleN')
-hasAllTokens(input, ['needle1', 'needle2', ..., 'needleN'])
+hasAllTokens(input, needles)
 )";
     FunctionDocumentation::Arguments arguments_hasAllTokens = {
         {"input", "The input column.", {"String", "FixedString"}},
-        {"needles", "Tokens to be searched. Supports at most 64 tokens.", {"String", "Array"}}
+        {"needles", "Tokens to be searched. Supports at most 64 tokens.", {"String", "Array(String)"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_hasAllTokens = {"Returns 1, if all needles match. 0, otherwise.", {"UInt8"}};
     FunctionDocumentation::Examples examples_hasAllTokens = {
