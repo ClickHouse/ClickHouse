@@ -8,7 +8,6 @@ set (CLICKHOUSE_FORMAT_LINK
         clickhouse_functions
         clickhouse_aggregate_functions
         clickhouse_table_functions
-        dbms
 )
 
 clickhouse_program_add(format)

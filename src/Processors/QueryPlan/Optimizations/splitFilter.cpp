@@ -28,13 +28,13 @@ size_t trySplitJoin(QueryPlan::Node * node, QueryPlan::Nodes & nodes)
 
         auto * new_node = &nodes.emplace_back(std::move(child_node));
         child_node = QueryPlan::Node{std::move(step), {new_node}};
-        num_new_nodes++;
+        num_new_nodes = std::max<size_t>(num_new_nodes, 2);
     }
     return num_new_nodes;
 }
 
 /// Split FilterStep into chain `FilterStep -> ExpressionStep`, where FilterStep contains minimal number of nodes.
-size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & /*settings*/)
+size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
 {
     if (size_t join_split = trySplitJoin(node, nodes))
         return join_split;
@@ -99,10 +99,13 @@ size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes, const Op
             std::move(split_filter_name),
             remove_filter);
 
-    node->step = std::make_unique<ExpressionStep>(filter_node.step->getOutputHeader(), std::move(split.second));
+    auto expression_step = std::make_unique<ExpressionStep>(filter_node.step->getOutputHeader(), std::move(split.second));
 
-    filter_node.step->setStepDescription("(" + description + ")[split]");
-    node->step->setStepDescription(description);
+    if (settings.max_step_description_length)
+        filter_node.step->setStepDescription(fmt::format("({})[split]", description), settings.max_step_description_length);
+
+    expression_step->setStepDescription(*filter_step);
+    node->step = std::move(expression_step);
 
     return 2;
 }

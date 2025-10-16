@@ -3,6 +3,7 @@ description: 'Aggregate function that calculates PromQL-like delta over time ser
 sidebar_position: 221
 slug: /sql-reference/aggregate-functions/reference/timeSeriesDeltaToGrid
 title: 'timeSeriesDeltaToGrid'
+doc_type: 'reference'
 ---
 
 Aggregate function that takes time series data as pairs of timestamps and values and calculates [PromQL-like delta](https://prometheus.io/docs/prometheus/latest/querying/functions/#delta) from this data on a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the samples for calculating `delta` are considered within the specified time window.
