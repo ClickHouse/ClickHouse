@@ -16,7 +16,20 @@
 #include <base/defines.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Logger.h>
+#include <Common/MemoryTracker.h>
+#include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
 #include <Common/ThreadPool_fwd.h>
+#include <Common/noexcept_scope.h>
+
+
+namespace ProfileEvents
+{
+    extern const Event MergeTreeBackgroundExecutorTaskExecuteStepMicroseconds;
+    extern const Event MergeTreeBackgroundExecutorTaskCancelMicroseconds;
+    extern const Event MergeTreeBackgroundExecutorTaskResetMicroseconds;
+    extern const Event MergeTreeBackgroundExecutorWaitMicroseconds;
+}
 
 namespace DB
 {
@@ -44,6 +57,37 @@ struct TaskRuntimeData
     ~TaskRuntimeData()
     {
         CurrentMetrics::values[metric].fetch_sub(1);
+    }
+
+    void cancel()
+    {
+        Stopwatch sw;
+        if (task)
+            task->cancel();
+        ProfileEvents::incrementNoTrace(ProfileEvents::MergeTreeBackgroundExecutorTaskCancelMicroseconds, sw.elapsedMicroseconds());
+    }
+
+    void wait()
+    {
+        Stopwatch sw;
+        is_done.wait();
+        ProfileEvents::incrementNoTrace(ProfileEvents::MergeTreeBackgroundExecutorWaitMicroseconds, sw.elapsedMicroseconds());
+    }
+
+    bool executeStep()
+    {
+        Stopwatch sw;
+        bool res = task->executeStep();
+        ProfileEvents::incrementNoTrace(ProfileEvents::MergeTreeBackgroundExecutorTaskExecuteStepMicroseconds, sw.elapsedMicroseconds());
+        return res;
+    }
+
+    void resetTask()
+    {
+        Stopwatch sw;
+        if (task)
+            task.reset();
+        ProfileEvents::incrementNoTrace(ProfileEvents::MergeTreeBackgroundExecutorTaskResetMicroseconds, sw.elapsedMicroseconds());
     }
 
     ExecutableTaskPtr task;

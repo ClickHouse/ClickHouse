@@ -210,14 +210,14 @@ void MergeTreeBackgroundExecutor<Queue>::removeTasksCorrespondingToStorage(Stora
 
     for (auto & item : tasks_to_cancel)
     {
-        item->task->cancel();
+        item->cancel();
         item.reset();
     }
 
     /// Wait for each task to be executed
     for (auto & item : tasks_to_wait)
     {
-        item->is_done.wait();
+        item->wait();
         item.reset();
     }
 }
@@ -242,22 +242,49 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
         /// we removed the task from both queues, but still have pointer.
         /// The thread that shutdowns storage will scan queues in order to find some tasks to wait for, but will find nothing.
         /// So, the destructor of a task and the destructor of a storage will be executed concurrently.
-        NOEXCEPT_SCOPE({
-            ALLOW_ALLOCATIONS_IN_SCOPE;
-            item_->task.reset();
-        });
-        item_->is_done.set();
+        StorageID captured_storage_id = StorageID::createEmpty(); // default constructor is private
+        String captured_query_id;
+        bool captured_has_info = false;
+        bool captured_was_deleting = item_->is_currently_deleting;
 
         Stopwatch destruction_watch;
-        item_.reset();
 
-        UInt64 elapsed_us = destruction_watch.elapsedMicroseconds();
         NOEXCEPT_SCOPE({
             ALLOW_ALLOCATIONS_IN_SCOPE;
-            ProfileEvents::increment(ProfileEvents::MergeTreeBackgroundExecutorTaskReleaseMicroseconds, elapsed_us);
-            if (elapsed_us > 60ULL * 1000000ULL)
+            if (item_->task)
             {
-                LOG_WARNING(log, "Releasing background task runtime data took {:.3f} seconds (> 60s)", static_cast<double>(elapsed_us) / 1000000.0);
+                captured_storage_id = item_->task->getStorageID();
+                captured_query_id = item_->task->getQueryId();
+                captured_has_info = true;
+            }
+            item_->resetTask();
+        });
+        item_->is_done.set();
+        item_.reset();
+
+        UInt64 elapsed_ms = destruction_watch.elapsedMilliseconds();
+        NOEXCEPT_SCOPE({
+            ALLOW_ALLOCATIONS_IN_SCOPE;
+            if (elapsed_ms > 60ULL * 1000ULL)
+            {
+                if (captured_has_info)
+                {
+                    LOG_WARNING(log,
+                        "Releasing background task runtime data took {:.3f} seconds (> 60s), executor={}, storage={}, query_id={}, deleting={}",
+                        static_cast<double>(elapsed_ms) / 1000.0,
+                        name,
+                        captured_storage_id,
+                        captured_query_id,
+                        captured_was_deleting);
+                }
+                else
+                {
+                    LOG_WARNING(log,
+                        "Releasing background task runtime data took {:.3f} seconds (> 60s), executor={}, deleting={}, task_info=unavailable",
+                        static_cast<double>(elapsed_ms) / 1000.0,
+                        name,
+                        captured_was_deleting);
+                }
             }
         });
     };
@@ -273,7 +300,7 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
             guard.unlock();
             {
                 ALLOW_ALLOCATIONS_IN_SCOPE;
-                item_->task->cancel();
+                item_->cancel();
             }
             guard.lock();
             release_task(std::move(item_));
@@ -314,7 +341,7 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
     {
         ALLOW_ALLOCATIONS_IN_SCOPE;
         query_id = item->task->getQueryId();
-        need_execute_again = item->task->executeStep();
+        need_execute_again = item->executeStep();
 
         if (!need_execute_again)
         {
@@ -333,7 +360,7 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
         try
         {
             ALLOW_ALLOCATIONS_IN_SCOPE;
-            item->task->cancel();
+            item->cancel();
         }
         catch (...)
         {

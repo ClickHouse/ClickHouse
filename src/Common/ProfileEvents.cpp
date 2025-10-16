@@ -402,6 +402,11 @@
     M(MergeTreeDataWriterBlocks, "Number of blocks INSERTed to MergeTree tables. Each block forms a data part of level zero.", ValueType::Number) \
     M(MergeTreeDataWriterBlocksAlreadySorted, "Number of blocks INSERTed to MergeTree tables that appeared to be already sorted.", ValueType::Number) \
     \
+    M(MergeTreeBackgroundExecutorTaskExecuteStepMicroseconds, "Time spent in IExecutableTask::executeStep() for tasks executed by MergeTreeBackgroundExecutor.", ValueType::Microseconds) \
+    M(MergeTreeBackgroundExecutorTaskCancelMicroseconds, "Time spent in IExecutableTask::cancel() for tasks executed by MergeTreeBackgroundExecutor.", ValueType::Microseconds) \
+    M(MergeTreeBackgroundExecutorTaskResetMicroseconds, "Time spent resetting underlying task (shared_ptr reset) in MergeTreeBackgroundExecutor.", ValueType::Microseconds) \
+    M(MergeTreeBackgroundExecutorWaitMicroseconds, "Time spent waiting for task completion (is_done.wait) in MergeTreeBackgroundExecutor.", ValueType::Microseconds) \
+    \
     M(MergeTreeDataWriterSkipIndicesCalculationMicroseconds, "Time spent calculating skip indices", ValueType::Microseconds) \
     M(MergeTreeDataWriterStatisticsCalculationMicroseconds, "Time spent calculating statistics", ValueType::Microseconds) \
     M(MergeTreeDataWriterSortingBlocksMicroseconds, "Time spent sorting blocks", ValueType::Microseconds) \
