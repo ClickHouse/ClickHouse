@@ -708,7 +708,7 @@ String PostgreSQLIntegration::columnTypeAsString(RandomGenerator & rg, const boo
         if (rg.nextSmallNumber() < 3)
         {
             /// Generate array type
-            const uint32_t ndimensions = rg.nextMediumNumber() < 81 ? 1 : (rg.nextMediumNumber() % 4) + 1;
+            const uint32_t ndimensions = rg.nextMediumNumber() < 81 ? 1 : rg.randomInt<uint32_t>(1, 4);
 
             for (uint32_t i = 0; i < ndimensions; i++)
             {
@@ -847,9 +847,9 @@ std::unique_ptr<SQLiteIntegration> SQLiteIntegration::testAndAddSQLiteIntegratio
 void RedisIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTable &, TableEngine * te)
 {
     te->add_params()->set_svalue(sc.server_hostname + ":" + std::to_string(sc.port));
-    te->add_params()->set_num(rg.nextBool() ? 0 : rg.nextLargeNumber() % 16);
+    te->add_params()->set_num(rg.nextBool() ? 0 : rg.randomInt<uint32_t>(0, 15));
     te->add_params()->set_svalue(sc.password);
-    te->add_params()->set_num(rg.nextBool() ? 16 : rg.nextLargeNumber() % 33);
+    te->add_params()->set_num(rg.nextBool() ? 16 : rg.randomInt<uint32_t>(0, 33));
 }
 
 bool RedisIntegration::performTableIntegration(RandomGenerator &, SQLTable &, const bool, std::vector<ColumnPathChain> &)

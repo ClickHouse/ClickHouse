@@ -1671,7 +1671,7 @@ SQLType * StatementGenerator::randomDecimalType(RandomGenerator & rg, const uint
                 precision = std::optional<uint32_t>(76);
                 break;
         }
-        scale = std::optional<uint32_t>(rg.nextRandomUInt32() % (precision.value() + 1));
+        scale = std::optional<uint32_t>(rg.randomInt<uint32_t>(0, precision.value()));
         if (dec)
         {
             DecimalN * dn = dec->mutable_decimaln();
@@ -1693,7 +1693,7 @@ SQLType * StatementGenerator::randomDecimalType(RandomGenerator & rg, const uint
             }
             if (rg.nextBool())
             {
-                scale = std::optional<uint32_t>(rg.nextRandomUInt32() % (precision.value() + 1));
+                scale = std::optional<uint32_t>(rg.randomInt<uint32_t>(0, precision.value()));
                 if (dec)
                 {
                     ds->set_scale(scale.value());
@@ -1883,7 +1883,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t al
         String desc;
         std::vector<JSubType> subcols;
         JSONDef * jdef = tp ? tp->mutable_jdef() : nullptr;
-        const uint32_t nclauses = rg.nextLargeNumber() % 7;
+        const uint32_t nclauses = rg.randomInt<uint32_t>(0, 6);
 
         if (nclauses)
         {
@@ -1924,7 +1924,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t al
             else
             {
                 uint32_t col_counter = 0;
-                const uint32_t ncols = (rg.nextMediumNumber() % 4) + 1;
+                const uint32_t ncols = rg.randomInt<uint32_t>(1, 4);
                 JSONPathType * jpt = tp ? jdi->mutable_path_type() : nullptr;
                 ColumnPath * cp = tp ? jpt->mutable_col() : nullptr;
                 String npath;
@@ -1978,7 +1978,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t al
 
         if (rg.nextBool())
         {
-            ntypes = std::optional<uint32_t>(rg.nextBool() ? rg.nextSmallNumber() : ((rg.nextRandomUInt32() % 100) + 1));
+            ntypes = std::optional<uint32_t>(rg.nextBool() ? rg.nextSmallNumber() : rg.randomInt<uint32_t>(1, 100));
             if (dyn)
             {
                 dyn->set_ntypes(ntypes.value());
@@ -2250,7 +2250,7 @@ String appendDecimal(RandomGenerator & rg, const bool use_func, const uint32_t l
 String strAppendGeoValue(RandomGenerator & rg, const GeoTypes & gt)
 {
     String ret;
-    const uint32_t limit = rg.nextLargeNumber() % 10;
+    const uint32_t limit = rg.randomInt<uint32_t>(0, 10);
 
     switch (gt)
     {
@@ -2275,7 +2275,7 @@ String strAppendGeoValue(RandomGenerator & rg, const GeoTypes & gt)
             ret += "[";
             for (uint32_t i = 0; i < limit; i++)
             {
-                const uint32_t nlines = rg.nextLargeNumber() % 10;
+                const uint32_t nlines = rg.randomInt<uint32_t>(0, 10);
 
                 if (i != 0)
                 {
@@ -2298,7 +2298,7 @@ String strAppendGeoValue(RandomGenerator & rg, const GeoTypes & gt)
             ret += "[";
             for (uint32_t i = 0; i < limit; i++)
             {
-                const uint32_t npoligons = rg.nextLargeNumber() % 10;
+                const uint32_t npoligons = rg.randomInt<uint32_t>(0, 10);
 
                 if (i != 0)
                 {
@@ -2307,7 +2307,7 @@ String strAppendGeoValue(RandomGenerator & rg, const GeoTypes & gt)
                 ret += "[";
                 for (uint32_t j = 0; j < npoligons; j++)
                 {
-                    const uint32_t nlines = rg.nextLargeNumber() % 10;
+                    const uint32_t nlines = rg.randomInt<uint32_t>(0, 10);
 
                     if (j != 0)
                     {

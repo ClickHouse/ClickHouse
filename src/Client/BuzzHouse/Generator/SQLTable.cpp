@@ -369,7 +369,7 @@ void StatementGenerator::generateNextStatistics(RandomGenerator & rg, ColumnStat
 
 void StatementGenerator::generateNextCodecs(RandomGenerator & rg, CodecList * cl)
 {
-    const uint32_t ncodecs = (rg.nextMediumNumber() % UINT32_C(3)) + 1;
+    const uint32_t ncodecs = rg.randomInt<uint32_t>(1, 3);
     std::uniform_int_distribution<uint32_t> codec_range(1, static_cast<uint32_t>(CompressionCodec_MAX));
 
     for (uint32_t i = 0; i < ncodecs; i++)
@@ -500,7 +500,7 @@ void StatementGenerator::generateTTLExpression(RandomGenerator & rg, const std::
 void StatementGenerator::generateNextTTL(
     RandomGenerator & rg, const std::optional<SQLTable> & t, const TableEngine * te, TTLExpr * ttl_expr)
 {
-    const uint32_t nttls = (rg.nextLargeNumber() % 3) + 1;
+    const uint32_t nttls = rg.randomInt<uint32_t>(1, 3);
 
     for (uint32_t i = 0; i < nttls; i++)
     {
@@ -806,7 +806,7 @@ void StatementGenerator::generateTableKey(
         if (rg.nextSmallNumber() < 3)
         {
             /// Generate a random key
-            const uint32_t nkeys = (rg.nextMediumNumber() % UINT32_C(3)) + UINT32_C(1);
+            const uint32_t nkeys = rg.randomInt<uint32_t>(1, 3);
 
             for (uint32_t i = 0; i < nkeys; i++)
             {
@@ -1802,7 +1802,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
         }
         else if (next_opt < 8)
         {
-            granularity = UINT32_C(1) << (rg.nextLargeNumber() % 21);
+            granularity = UINT32_C(1) << rg.randomInt<uint32_t>(0, 20);
         }
         idef->set_granularity(granularity);
     }
@@ -1812,7 +1812,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
 void StatementGenerator::addTableProjection(RandomGenerator & rg, SQLTable & t, const bool staged, ProjectionDef * pdef)
 {
     const uint32_t pname = t.proj_counter++;
-    const uint32_t ncols = std::max(std::min(this->fc.max_width - this->width, (rg.nextMediumNumber() % UINT32_C(3)) + 1), UINT32_C(1));
+    const uint32_t ncols = std::max(std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(1, 3)), UINT32_C(1));
     auto & to_add = staged ? t.staged_projs : t.projs;
 
     pdef->mutable_proj()->set_projection("p" + std::to_string(pname));
@@ -2165,12 +2165,12 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
         uint32_t added_sign = 0;
         uint32_t added_is_deleted = 0;
         uint32_t added_version = 0;
-        const uint32_t to_addcols = (rg.nextLargeNumber() % fc.max_columns) + UINT32_C(1);
+        const uint32_t to_addcols = rg.randomInt<uint32_t>(1, fc.max_columns);
         const uint32_t to_addidxs
-            = ((rg.nextMediumNumber() % 4) + UINT32_C(1)) * static_cast<uint32_t>(next.isMergeTreeFamily() && rg.nextSmallNumber() < 4);
+            = rg.randomInt<uint32_t>(1, 4) * static_cast<uint32_t>(next.isMergeTreeFamily() && rg.nextSmallNumber() < 4);
         const uint32_t to_addprojs
-            = ((rg.nextMediumNumber() % 3) + UINT32_C(1)) * static_cast<uint32_t>(next.isMergeTreeFamily() && rg.nextSmallNumber() < 5);
-        const uint32_t to_addconsts = ((rg.nextMediumNumber() % 3) + UINT32_C(1)) * static_cast<uint32_t>(rg.nextSmallNumber() < 3);
+            = rg.randomInt<uint32_t>(1, 3) * static_cast<uint32_t>(next.isMergeTreeFamily() && rg.nextSmallNumber() < 5);
+        const uint32_t to_addconsts = rg.randomInt<uint32_t>(1, 3) * static_cast<uint32_t>(rg.nextSmallNumber() < 3);
         const uint32_t to_add_sign = static_cast<uint32_t>(next.hasSignColumn());
         const uint32_t to_add_version = static_cast<uint32_t>(next.hasVersionColumn() || add_version_to_replacing);
         const uint32_t to_add_is_deleted = static_cast<uint32_t>(add_version_to_replacing && rg.nextSmallNumber() < 4);
@@ -2345,7 +2345,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
     const DictionaryLayouts & dl = rg.pickRandomly(allDictionaryLayoutSettings);
     const bool isRange = dl == COMPLEX_KEY_RANGE_HASHED || dl == RANGE_HASHED;
     /// Range requires 2 cols for min and max
-    const uint32_t dictionary_ncols = std::max((rg.nextLargeNumber() % fc.max_columns) + UINT32_C(1), isRange ? UINT32_C(2) : UINT32_C(1));
+    const uint32_t dictionary_ncols = std::max(rg.randomInt<uint32_t>(1, fc.max_columns), isRange ? UINT32_C(2) : UINT32_C(1));
     SettingValues * svs = nullptr;
     DictionaryLayout * layout = cd->mutable_layout();
     const uint32_t type_mask_backup = this->next_type_mask;

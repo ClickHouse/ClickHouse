@@ -582,12 +582,12 @@ static std::unordered_map<String, CHSetting> embeddedRocksDBTableSettings = {
     {"bulk_insert_block_size", highRangeSetting},
 };
 
-static std::unordered_map<String, CHSetting> mySQLTableSettings
-    = {{"connection_pool_size",
-        CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 7)); }, {}, false)},
-       {"connection_max_tries",
-        CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(1, 16)); }, {}, false)},
-       {"connection_auto_close", trueOrFalseSettingNoOracle}};
+static std::unordered_map<String, CHSetting> mySQLTableSettings = {
+    {"connection_pool_size",
+     CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(UINT32_C(1) << rg.randomInt<uint32_t>(0, 6)); }, {}, false)},
+    {"connection_max_tries",
+     CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(1, 16)); }, {}, false)},
+    {"connection_auto_close", trueOrFalseSettingNoOracle}};
 
 static std::unordered_map<String, CHSetting> mergeTreeColumnSettings
     = {{"min_compress_block_size", highRangeSetting}, {"max_compress_block_size", highRangeSetting}};

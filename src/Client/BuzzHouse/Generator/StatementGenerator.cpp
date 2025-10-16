@@ -313,7 +313,7 @@ void StatementGenerator::generateNextCreateFunction(RandomGenerator & rg, Create
     const bool prev_allow_not_deterministic = this->allow_not_deterministic;
 
     next.fname = fname;
-    next.nargs = std::min(this->fc.max_width - this->width, (rg.nextLargeNumber() % fc.max_columns) + UINT32_C(1));
+    next.nargs = std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(1, fc.max_columns));
     next.is_deterministic = rg.nextBool();
     /// If this function is later called by an oracle, then don't call it
     this->allow_not_deterministic = !next.is_deterministic;
@@ -422,7 +422,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
 {
     SQLView next;
     uint32_t tname = 0;
-    const uint32_t view_ncols = (rg.nextLargeNumber() % fc.max_columns) + UINT32_C(1);
+    const uint32_t view_ncols = rg.randomInt<uint32_t>(1, fc.max_columns);
     const bool prev_enforce_final = this->enforce_final;
     const bool prev_allow_not_deterministic = this->allow_not_deterministic;
     SelectParen * sparen = cv->mutable_select();
@@ -523,7 +523,10 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
                 {
                     std::shuffle(nids.begin(), nids.end(), rg.generator);
                 }
-                for (uint32_t i = 0; i < std::min(view_ncols, static_cast<uint32_t>(nids.size())); i++)
+                const uint32_t limit = std::min(view_ncols, static_cast<uint32_t>(nids.size()));
+
+                chassert(limit > 0);
+                for (uint32_t i = 0; i < limit; i++)
                 {
                     SQLColumn col = t.cols.at(nids[i]);
 
@@ -928,7 +931,7 @@ void StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescribeSta
                 rg,
                 false,
                 false,
-                (rg.nextLargeNumber() % 5) + 1,
+                rg.randomInt<uint32_t>(1, 5),
                 std::numeric_limits<uint32_t>::max(),
                 std::nullopt,
                 eq->mutable_inner_query()->mutable_select()->mutable_sel());
@@ -1040,7 +1043,7 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
     }
     else if (random_values && nopt < (hardcoded_insert + random_values + 1))
     {
-        const uint32_t nrows = (rg.nextSmallNumber() % 3) + 1;
+        const uint32_t nrows = rg.randomInt<uint32_t>(1, 3);
         ValuesStatement * vs = ins->mutable_values();
 
         for (uint32_t i = 0; i < nrows; i++)
@@ -1477,8 +1480,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
             {
                 SelectParen * sparen = ati->mutable_modify_query();
 
-                v.staged_ncols
-                    = v.has_with_cols ? static_cast<uint32_t>(v.cols.size()) : ((rg.nextLargeNumber() % fc.max_columns) + UINT32_C(1));
+                v.staged_ncols = v.has_with_cols ? static_cast<uint32_t>(v.cols.size()) : rg.randomInt<uint32_t>(1, fc.max_columns);
                 sparen->set_paren(rg.nextSmallNumber() < 9);
                 this->levels[this->current_level] = QueryLevel(this->current_level);
                 this->allow_in_expression_alias = rg.nextSmallNumber() < 3;
@@ -4608,7 +4610,7 @@ void StatementGenerator::generateNextExplain(RandomGenerator & rg, bool in_paral
         }
         if (!this->ids.empty())
         {
-            const size_t noptions = (static_cast<size_t>(rg.nextRandomUInt32()) % this->ids.size()) + 1;
+            const size_t noptions = rg.randomInt<size_t>(1, this->ids.size());
             std::shuffle(ids.begin(), ids.end(), rg.generator);
 
             for (size_t i = 0; i < noptions; i++)
