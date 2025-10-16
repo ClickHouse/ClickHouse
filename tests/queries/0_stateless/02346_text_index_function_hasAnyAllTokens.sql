@@ -40,6 +40,12 @@ SELECT id FROM tab WHERE hasAllTokens(message, materialize('b')); -- { serverErr
 SELECT id FROM tab WHERE hasAllTokens(message, materialize(['b'])); -- { serverError ILLEGAL_COLUMN }
 -- search function supports a max of 64 needles
 SELECT id FROM tab WHERE hasAnyTokens(message, ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', 'aa', 'bb', 'cc', 'dd', 'ee', 'ff', 'gg', 'hh', 'ii', 'jj', 'kk', 'll', 'mm', 'nn', 'oo', 'pp', 'qq', 'rr', 'ss', 'tt', 'uu', 'vv', 'ww', 'xx', 'yy', 'zz', 'aaa', 'bbb', 'ccc', 'ddd', 'eee', 'fff', 'ggg', 'hhh', 'iii', 'jjj', 'kkk', 'lll', 'mmm']); -- { serverError BAD_ARGUMENTS }
+SELECT id FROM tab WHERE hasAnyTokens(message, 'a b c d e f g h i j k l m n o p q r s t u v w x y z aa bb cc dd ee ff gg hh ii jj kk ll mm nn oo pp qq rr ss tt uu vv ww xx yy zz aaa bbb ccc ddd eee fff ggg hhh iii jjj kkk lll mmm'); -- { serverError BAD_ARGUMENTS }
+-- overload 2 does not support brute force search
+SELECT hasAnyTokens('a b', 'b'); -- { serverError BAD_ARGUMENTS }
+SELECT hasAnyTokens(materialize('a b'), 'b'); -- { serverError BAD_ARGUMENTS }
+SELECT hasAllTokens('a b', 'a b');  -- { serverError BAD_ARGUMENTS }
+SELECT hasAllTokens(materialize('a b'), 'a b'); -- { serverError BAD_ARGUMENTS }
 
 SELECT 'Test what happens hasAnyTokens/All are called on columns without index';
 -- It is expected that the default tokenizer is used
@@ -54,12 +60,11 @@ SELECT hasAllTokens('a b', ['a', 'c']);
 SELECT hasAllTokens(materialize('a b'), ['a', 'b']);
 SELECT hasAllTokens(materialize('a b'), ['a', 'c']);
 
-SELECT 'Test singular aliases';
+-- Test singular aliases
 SELECT hasAnyToken('a b', ['b']);
 SELECT hasAnyToken('a b', ['c']);
 SELECT hasAllToken('a b', ['b']);
 SELECT hasAllToken('a b', ['c']);
--- { echoOff }
 
 -- These are equivalent to the lines above, but using Search{Any,All} in the filter step.
 -- We keep this test because the direct read optimization substituted Search{Any,All} only
@@ -69,15 +74,27 @@ SELECT id FROM tab WHERE hasAnyTokens('a b', ['c']);
 SELECT id FROM tab WHERE hasAnyTokens(col_str, ['b']);
 SELECT id FROM tab WHERE hasAnyTokens(col_str, ['c']);
 
+SELECT id FROM tab WHERE hasAnyTokens('a b', 'b'); -- { serverError BAD_ARGUMENTS }
+SELECT id FROM tab WHERE hasAnyTokens('a b', 'c'); -- { serverError BAD_ARGUMENTS }
+SELECT id FROM tab WHERE hasAnyTokens(col_str, 'b'); -- { serverError BAD_ARGUMENTS }
+SELECT id FROM tab WHERE hasAnyTokens(col_str, 'c'); -- { serverError BAD_ARGUMENTS }
+
 SELECT id FROM tab WHERE hasAllTokens('a b', ['a b']);
 SELECT id FROM tab WHERE hasAllTokens('a b', ['a c']);
 SELECT id FROM tab WHERE hasAllTokens(col_str, ['a b']);
 SELECT id FROM tab WHERE hasAllTokens(col_str, ['a c']);
 
+SELECT id FROM tab WHERE hasAllTokens('a b', 'a b'); -- { serverError BAD_ARGUMENTS }
+SELECT id FROM tab WHERE hasAllTokens('a b', 'a c'); -- { serverError BAD_ARGUMENTS }
+SELECT id FROM tab WHERE hasAllTokens(col_str, 'a a'); -- { serverError BAD_ARGUMENTS }
+SELECT id FROM tab WHERE hasAllTokens(col_str, 'b c'); -- { serverError BAD_ARGUMENTS }
+-- { echoOff }
+
 SELECT 'Testing edge cases on non-indexed column';
 SELECT count() FROM tab WHERE hasAnyTokens(col_str, []);
 SELECT count() FROM tab WHERE hasAllTokens(col_str, []);
 SELECT id FROM tab WHERE hasAnyTokens(col_str, ['']);
+SELECT id FROM tab WHERE hasAnyTokens(col_str, ''); -- { serverError BAD_ARGUMENTS }
 
 DROP TABLE tab;
 
@@ -95,6 +112,9 @@ INSERT INTO tab VALUES(1, toFixedString('bar', 3)), (2, toFixedString('foo', 3))
 
 SELECT groupArray(id) FROM tab WHERE hasAnyTokens(text, ['bar']);
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(text, ['bar']);
+
+SELECT groupArray(id) FROM tab WHERE hasAnyTokens(text, 'bar');
+SELECT groupArray(id) FROM tab WHERE hasAllTokens(text, 'bar');
 
 DROP TABLE tab;
 
@@ -128,6 +148,11 @@ SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, ['foo', 'bar']);
 SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, ['foo', 'ba']);
 SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, ['fo', 'ba']);
 
+SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, 'ab+');
+SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, 'foo-');
+SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, 'abc+* foo+');
+SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, 'fo ba');
+
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, ['abc']);
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, ['ab']);
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, ['foo']);
@@ -137,10 +162,18 @@ SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, ['abc', 'bar']);
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, ['foo', 'bar']);
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, ['abc', 'fo']);
 
+SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, 'ab+');
+SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, 'foo-');
+SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, 'abc+* foo+');
+SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, 'abc ba');
+
 --- Test for FixedString needles
 --- Not a systematic test, just to see that FixedString needles work in principle
 SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, [toFixedString('abc', 3)]);
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, [toFixedString('abc', 3)]);
+
+SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, toFixedString('abc', 3)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, toFixedString('abc', 3)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 DROP TABLE tab;
 
@@ -170,12 +203,24 @@ SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, ['defg']);
 SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, ['cdef', 'defg']); -- search cdefg
 SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, ['efgh', 'cdef', 'defg']); --search for either cdefg or defgh
 
+SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, 'efgh');
+SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, 'efg'); -- currently returns all rows in table
+SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, 'efghi');
+SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, 'cdefg');
+SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, 'cdefgh');
+
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, ['efgh']);
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, ['efg']);
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, ['cdef']);
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, ['defg']);
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, ['cdef', 'defg']);
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, ['efgh', 'cdef', 'defg']);
+
+SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, 'efgh');
+SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, 'efg'); -- currently returns all rows in table
+SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, 'efghi');
+SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, 'cdefg');
+SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, 'cdefgh');
 
 DROP TABLE tab;
 
@@ -205,12 +250,26 @@ SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, ['a', 'bc']);
 SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, ['a', 'd']);
 SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, ['bc', 'd']);
 
+SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, 'a*');
+SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, 'bc((');
+SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, 'd()');
+SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, 'a\\bc');
+SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, 'a d');
+SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, '\\,bc,()');
+
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, ['a']);
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, ['bc']);
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, ['d']);
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, ['a', 'bc']);
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, ['a', 'd']);
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, ['bc', 'd']);
+
+SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, 'a*');
+SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, 'bc((');
+SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, 'd()');
+SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, 'a\\bc');
+SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, 'a d');
+SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, 'a\\,bc,()');
 
 DROP TABLE tab;
 
@@ -237,10 +296,17 @@ SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, ['def']);
 SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, ['abc', 'def']);
 SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, ['abcdef']);
 
+SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, 'abc');
+SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, 'abc def');
+
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, ['abc']);
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, ['def']);
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, ['abc', 'def']);
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, ['abcdef']);
+
+SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, 'abc');
+SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, 'abc def');
+SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, 'abcdef ');
 
 DROP TABLE tab;
 
@@ -261,9 +327,11 @@ INSERT INTO tab VALUES
 
 SELECT count() FROM tab WHERE hasAnyTokens(message, ['hello']);
 SELECT count() FROM tab WHERE hasAnyTokens(message, ['hello', 'hello']);
+SELECT count() FROM tab WHERE hasAnyTokens(message, 'hello hello');
 
 SELECT count() FROM tab WHERE hasAllTokens(message, ['hello']);
 SELECT count() FROM tab WHERE hasAllTokens(message, ['hello', 'hello']);
+SELECT count() FROM tab WHERE hasAllTokens(message, 'hello hello');
 
 DROP TABLE tab;
 
@@ -429,7 +497,7 @@ INSERT INTO tab SELECT number, 'ClickHouse is fast, really fast!' FROM numbers(1
 
 SELECT 'hasAnyTokens is used during index analysis';
 
-SELECT 'Text index should choose none for non-existent term';
+SELECT 'Text index overload 1 should choose none for non-existent term';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes=1
     SELECT count() FROM tab WHERE hasAnyTokens(message, ['Click'])
@@ -437,7 +505,15 @@ SELECT trimLeft(explain) AS explain FROM (
 WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
 LIMIT 2, 3; -- Skip the primary index parts and granules.
 
-SELECT 'Text index should choose 1 part and 1024 granules out of 4 parts and 4096 granules';
+SELECT 'Text index overload 2 should choose none for non-existent term';
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes=1
+    SELECT count() FROM tab WHERE hasAnyTokens(message, 'Click')
+)
+WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
+LIMIT 2, 3; -- Skip the primary index parts and granules.
+
+SELECT 'Text index overload 1 should choose 1 part and 1024 granules out of 4 parts and 4096 granules';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes=1
     SELECT count() FROM tab WHERE hasAnyTokens(message, ['Hallo'])
@@ -445,10 +521,26 @@ SELECT trimLeft(explain) AS explain FROM (
 WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
 LIMIT 2, 3;
 
-SELECT 'Text index should choose 1 part and 1024 granules out of 4 parts and 4096 granules';
+SELECT 'Text index overload 2 should choose 1 part and 1024 granules out of 4 parts and 4096 granules';
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes=1
+    SELECT count() FROM tab WHERE hasAnyTokens(message, 'Hallo')
+)
+WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
+LIMIT 2, 3;
+
+SELECT 'Text index overload 1 should choose 1 part and 1024 granules out of 4 parts and 4096 granules';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes=1
     SELECT count() FROM tab WHERE hasAnyTokens(message, ['Hallo', 'Word']) -- Word does not exist in terms
+)
+WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
+LIMIT 2, 3;
+
+SELECT 'Text index overload 2 should choose 1 part and 1024 granules out of 4 parts and 4096 granules';
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes=1
+    SELECT count() FROM tab WHERE hasAnyTokens(message, 'Hallo Word') -- Word does not exist in terms
 )
 WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
 LIMIT 2, 3;
@@ -495,7 +587,7 @@ LIMIT 2, 3;
 
 SELECT 'hasAllTokens is used during index analysis';
 
-SELECT 'Text index should choose none for non-existent term';
+SELECT 'Text index overload 1 should choose none for non-existent term';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes=1
     SELECT count() FROM tab WHERE hasAllTokens(message, ['Click'])
@@ -503,7 +595,15 @@ SELECT trimLeft(explain) AS explain FROM (
 WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
 LIMIT 2, 3;
 
-SELECT 'Text index should choose 1 part and 1024 granules out of 4 parts and 4096 granules';
+SELECT 'Text index overload 2 should choose none for non-existent term';
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes=1
+    SELECT count() FROM tab WHERE hasAllTokens(message, 'Click')
+)
+WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
+LIMIT 2, 3;
+
+SELECT 'Text index overload 1 should choose 1 part and 1024 granules out of 4 parts and 4096 granules';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes=1
     SELECT count() FROM tab WHERE hasAllTokens(message, ['Hallo'])
@@ -511,7 +611,15 @@ SELECT trimLeft(explain) AS explain FROM (
 WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
 LIMIT 2, 3;
 
-SELECT 'Text index should choose 1 part and 1024 granules out of 4 parts and 4096 granules';
+SELECT 'Text index overload 2 should choose 1 part and 1024 granules out of 4 parts and 4096 granules';
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes=1
+    SELECT count() FROM tab WHERE hasAllTokens(message, 'Hallo')
+)
+WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
+LIMIT 2, 3;
+
+SELECT 'Text index overload 1 should choose 1 part and 1024 granules out of 4 parts and 4096 granules';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes=1
     SELECT count() FROM tab WHERE hasAllTokens(message, ['Hello', 'World'])
@@ -519,10 +627,26 @@ SELECT trimLeft(explain) AS explain FROM (
 WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
 LIMIT 2, 3;
 
-SELECT 'Text index should choose none if any term does not exists in dictionary';
+SELECT 'Text index overload 2 should choose 1 part and 1024 granules out of 4 parts and 4096 granules';
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes=1
+    SELECT count() FROM tab WHERE hasAllTokens(message, 'Hello World')
+)
+WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
+LIMIT 2, 3;
+
+SELECT 'Text index overload 1 should choose none if any term does not exists in dictionary';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes=1
     SELECT count() FROM tab WHERE hasAllTokens(message, ['Hallo', 'Word']) -- Word does not exist in terms
+)
+WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
+LIMIT 2, 3;
+
+SELECT 'Text index overload 2 should choose none if any term does not exists in dictionary';
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes=1
+    SELECT count() FROM tab WHERE hasAllTokens(message, 'Hallo Word') -- Word does not exist in terms
 )
 WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
 LIMIT 2, 3;
@@ -635,9 +759,18 @@ SELECT id FROM tab WHERE hasAnyTokens(s, ['hello']) ORDER BY id;
 SELECT id FROM tab WHERE hasAnyTokens(s, ['moon', 'goodbye']) ORDER BY id;
 SELECT id FROM tab WHERE hasAnyTokens(s, ['unknown', 'goodbye']) ORDER BY id;
 
+SELECT id FROM tab WHERE hasAnyTokens(s, 'hello') ORDER BY id; -- { serverError BAD_ARGUMENTS }
+SELECT id FROM tab WHERE hasAnyTokens(s, 'moon goodbye') ORDER BY id; -- { serverError BAD_ARGUMENTS }
+SELECT id FROM tab WHERE hasAnyTokens(s, 'unknown goodbye') ORDER BY id; -- { serverError BAD_ARGUMENTS }
+
 SELECT id FROM tab WHERE hasAllTokens(s, ['hello', 'world']) ORDER BY id;
 SELECT id FROM tab WHERE hasAllTokens(s, ['goodbye']) ORDER BY id;
 SELECT id FROM tab WHERE hasAllTokens(s, ['hello', 'moon']) ORDER BY id;
 SELECT id FROM tab WHERE hasAllTokens(s, ['hello', 'unknown']) ORDER BY id;
+
+SELECT id FROM tab WHERE hasAllTokens(s, 'hello world') ORDER BY id; -- { serverError BAD_ARGUMENTS }
+SELECT id FROM tab WHERE hasAllTokens(s, 'goodbye') ORDER BY id; -- { serverError BAD_ARGUMENTS }
+SELECT id FROM tab WHERE hasAllTokens(s, 'hello moon') ORDER BY id; -- { serverError BAD_ARGUMENTS }
+SELECT id FROM tab WHERE hasAllTokens(s, 'hello unknown') ORDER BY id; -- { serverError BAD_ARGUMENTS }
 
 DROP TABLE IF EXISTS tab;

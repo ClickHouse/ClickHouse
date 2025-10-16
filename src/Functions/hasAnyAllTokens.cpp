@@ -12,9 +12,6 @@
 
 #include <absl/container/flat_hash_map.h>
 
-#include <Common/logger_useful.h>
-auto glogger = getLogger("GEORGES LOGGER");
-
 namespace DB
 {
 
