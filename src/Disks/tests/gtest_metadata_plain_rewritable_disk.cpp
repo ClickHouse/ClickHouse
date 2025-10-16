@@ -181,16 +181,19 @@ TEST_F(MetadataPlainRewritableDiskTest, MoveTree)
         tx->commit();
     }
 
-    /// This is a bug. Should be MOVED everywhere
     EXPECT_EQ(readObject(object_storage, a_path), "MOVED/");
     EXPECT_EQ(readObject(object_storage, ab_path), "MOVED/B/");
-    EXPECT_EQ(readObject(object_storage, abc_path), "A/B/C/");
-    EXPECT_EQ(readObject(object_storage, abcd_path), "A/B/C/D/");
+    EXPECT_EQ(readObject(object_storage, abc_path), "MOVED/B/C/");
+    EXPECT_EQ(readObject(object_storage, abcd_path), "MOVED/B/C/D/");
 
     EXPECT_FALSE(metadata->existsDirectory("A"));
     EXPECT_FALSE(metadata->existsDirectory("A/B"));
-    EXPECT_TRUE(metadata->existsDirectory("A/B/C"));
-    EXPECT_TRUE(metadata->existsDirectory("A/B/C/D"));
+    EXPECT_FALSE(metadata->existsDirectory("A/B/C"));
+    EXPECT_FALSE(metadata->existsDirectory("A/B/C/D"));
+    EXPECT_TRUE(metadata->existsDirectory("MOVED"));
+    EXPECT_TRUE(metadata->existsDirectory("MOVED/B"));
+    EXPECT_TRUE(metadata->existsDirectory("MOVED/B/C"));
+    EXPECT_TRUE(metadata->existsDirectory("MOVED/B/C/D"));
 }
 
 TEST_F(MetadataPlainRewritableDiskTest, MoveUndo)
@@ -348,4 +351,36 @@ TEST_F(MetadataPlainRewritableDiskTest, MoveFileUndo)
     EXPECT_EQ(readObject(object_storage, path_2), "Hello world!");
 
     EXPECT_EQ(path_1, path_2);
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, DirectoryFileNameCollision)
+{
+    auto metadata = getMetadataStorage("DirectoryFileNameCollision");
+    auto object_storage = getObjectStorage("DirectoryFileNameCollision");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("A");
+        tx->commit();
+    }
+
+    {
+        auto tx = metadata->createTransaction();
+        writeObject(object_storage, object_storage->generateObjectKeyForPath("A/B", std::nullopt).serialize(), "Hello world!");
+        tx->createMetadataFile("A/B", {StoredObject("A/B")});
+        tx->commit();
+    }
+
+    EXPECT_FALSE(metadata->existsDirectory("A/B"));
+    EXPECT_TRUE(metadata->existsFile("A/B"));
+
+    /// This is a bug. Directory should not be created in this case.
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("A/B");
+        tx->commit();
+    }
+
+    EXPECT_TRUE(metadata->existsDirectory("A/B"));
+    EXPECT_FALSE(metadata->existsFile("A/B"));
 }
