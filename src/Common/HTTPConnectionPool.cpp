@@ -437,6 +437,7 @@ private:
         }
 
         ~PooledConnection() override
+        try
         {
             if (bool(response_stream))
             {
@@ -470,6 +471,10 @@ private:
                     lock->atConnectionDestroy(*this);
 
             CurrentMetrics::sub(metrics.active_count);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
         }
 
     private:
