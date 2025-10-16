@@ -843,6 +843,40 @@ void QueryAnalyzer::expandOrderByAll(QueryNode & query_tree_node_typed, const Se
     query_tree_node_typed.setIsOrderByAll(false);
 }
 
+void QueryAnalyzer::expandLimitByAll(QueryNode & query_tree_node_typed)
+{
+    if (!query_tree_node_typed.isLimitByAll())
+        return;
+
+    if (!query_tree_node_typed.hasLimitByLimit())
+    {
+        throw Exception(ErrorCodes::SYNTAX_ERROR,
+            "LIMIT BY ALL requires a limit expression. Use LIMIT n BY ALL");
+    }
+
+    auto & limit_by_nodes = query_tree_node_typed.getLimitBy().getNodes();
+    auto & projection_nodes = query_tree_node_typed.getProjection().getNodes();
+
+    limit_by_nodes.clear();
+    limit_by_nodes.reserve(projection_nodes.size());
+
+    for (auto & projection_node : projection_nodes)
+    {
+        if (hasAggregateFunctionNodes(projection_node))
+            continue;
+
+        limit_by_nodes.push_back(projection_node->clone());
+    }
+
+    if (limit_by_nodes.empty())
+    {
+        throw Exception(ErrorCodes::SYNTAX_ERROR,
+            "LIMIT BY ALL requires at least one non-aggregate expression in SELECT");
+    }
+
+    query_tree_node_typed.setIsLimitByAll(false);
+}
+
 std::string QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(
     const std::string & aggregate_function_name, NullsAction action, const ContextPtr & context)
 {
@@ -4803,6 +4837,8 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     if (query_node_typed.hasInterpolate())
         resolveInterpolateColumnsNodeList(query_node_typed.getInterpolate(), scope);
+
+    expandLimitByAll(query_node_typed);
 
     if (query_node_typed.hasLimitByLimit())
     {
