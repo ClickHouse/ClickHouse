@@ -306,6 +306,16 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         metadata_path = metadata_dir_path / database_name_escaped;
     }
 
+    if (create.storage->engine->name == "Replicated" && !internal && !create.attach && create.storage->engine->arguments)
+    {
+        /// Fill in default parameters
+        if (create.storage->engine->arguments->children.size() == 1)
+            create.storage->engine->arguments->children.push_back(std::make_shared<ASTLiteral>("{shard}"));
+
+        if (create.storage->engine->arguments->children.size() == 2)
+            create.storage->engine->arguments->children.push_back(std::make_shared<ASTLiteral>("{replica}"));
+    }
+
     if (create.storage->engine->name == "MaterializedPostgreSQL"
         && !getContext()->getSettingsRef()[Setting::allow_experimental_database_materialized_postgresql] && !internal && !create.attach)
     {
@@ -488,7 +498,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
             column_declaration->children.push_back(column_declaration->codec);
         }
 
-        if (column.statistics.hasExplicitStatistics())
+        if (!column.statistics.empty())
         {
             column_declaration->statistics_desc = column.statistics.getAST();
             column_declaration->children.push_back(column_declaration->statistics_desc);
@@ -699,8 +709,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
             if (!skip_checks && !context_->getSettingsRef()[Setting::allow_experimental_statistics])
                 throw Exception(
                     ErrorCodes::INCORRECT_QUERY, "Create table with statistics is now disabled. Turn on allow_experimental_statistics");
-
-            column.statistics = ColumnStatisticsDescription::fromStatisticsDescriptionAST(col_decl.statistics_desc, column.name, column.type);
+            column.statistics = ColumnStatisticsDescription::fromColumnDeclaration(col_decl, column.type);
         }
 
         if (col_decl.ttl)
@@ -1751,30 +1760,6 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     return fillTableIfNeeded(create);
 }
 
-namespace
-{
-
-void checkForUnsupportedColumns(const IStorage & storage, LoadingStrictnessLevel mode)
-{
-    if (mode <= LoadingStrictnessLevel::CREATE && hasDynamicSubcolumnsDeprecated(storage.getInMemoryMetadataPtr()->getColumns()) && !storage.supportsDynamicSubcolumnsDeprecated())
-    {
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-            "Cannot create table with column of type Object, "
-            "because storage {} doesn't support dynamic subcolumns",
-            storage.getName());
-    }
-
-    if (mode <= LoadingStrictnessLevel::CREATE && hasDynamicSubcolumns(storage.getInMemoryMetadataPtr()->getColumns()) && !storage.supportsDynamicSubcolumns())
-    {
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-            "Cannot create table with column of type Dynamic or JSON, "
-            "because storage {} doesn't support dynamic subcolumns",
-            storage.getName());
-    }
-}
-
-}
-
 bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                                            const InterpreterCreateQuery::TableProperties & properties,
                                            DDLGuardPtr & ddl_guard, LoadingStrictnessLevel mode)
@@ -1789,7 +1774,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         String temporary_table_name = create.getTable();
         auto creator = [&](const StorageID & table_id)
         {
-            auto res = StorageFactory::instance().get(create,
+            return StorageFactory::instance().get(create,
                 database->getTableDataPath(table_id.getTableName()),
                 getContext(),
                 getContext()->getGlobalContext(),
@@ -1797,9 +1782,6 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                 properties.constraints,
                 mode,
                 is_restore_from_backup);
-            validateVirtualColumns(*res);
-            checkForUnsupportedColumns(*res, mode);
-            return res;
         };
         auto temporary_table = TemporaryTableHolder(getContext(), creator, query_ptr);
 
@@ -1988,7 +1970,22 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     }
 
     validateVirtualColumns(*res);
-    checkForUnsupportedColumns(*res, mode);
+
+    if (!res->supportsDynamicSubcolumnsDeprecated() && hasDynamicSubcolumnsDeprecated(res->getInMemoryMetadataPtr()->getColumns()) && mode <= LoadingStrictnessLevel::CREATE)
+    {
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+            "Cannot create table with column of type Object, "
+            "because storage {} doesn't support dynamic subcolumns",
+            res->getName());
+    }
+
+    if (!res->supportsDynamicSubcolumns() && hasDynamicSubcolumns(res->getInMemoryMetadataPtr()->getColumns()) && mode <= LoadingStrictnessLevel::CREATE)
+    {
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+            "Cannot create table with column of type Dynamic or JSON, "
+            "because storage {} doesn't support dynamic subcolumns",
+            res->getName());
+    }
 
     if (!create.attach && getContext()->getSettingsRef()[Setting::database_replicated_allow_only_replicated_engine])
     {

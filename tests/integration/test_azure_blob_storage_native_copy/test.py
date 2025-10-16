@@ -6,7 +6,6 @@ import json
 import logging
 import os
 import random
-import string
 import threading
 import time
 
@@ -112,29 +111,21 @@ def cluster():
             "node1",
             main_configs=[path],
             with_azurite=True,
-            # Breaks assertion for "using native copy" (because it will happen for database metadata not the Azure tests)
-            with_remote_database_disk=False,
         )
         cluster.add_instance(
             "node2",
             main_configs=[path],
             with_azurite=True,
-            # Breaks assertion for "using native copy" (because it will happen for database metadata not the Azure tests)
-            with_remote_database_disk=False,
         )
         cluster.add_instance(
             "node3",
             main_configs=[path],
             with_azurite=True,
-            # Breaks assertion for "using native copy" (because it will happen for database metadata not the Azure tests)
-            with_remote_database_disk=False,
         )
         cluster.add_instance(
             "node4",
             main_configs=[path],
             with_azurite=True,
-            # Breaks assertion for "using native copy" (because it will happen for database metadata not the Azure tests)
-            with_remote_database_disk=False,
         )
         cluster.start()
 
@@ -177,14 +168,9 @@ def azure_query(
             continue
 
 
-
 def test_backup_restore_on_merge_tree_same_container(cluster):
     node1 = cluster.instances["node1"]
     azure_query(node1, f"DROP TABLE IF EXISTS test_simple_merge_tree SYNC")
-    azure_query(
-        node1,
-        "DROP TABLE IF EXISTS test_simple_merge_tree",
-    )
     azure_query(
         node1,
         f"CREATE TABLE test_simple_merge_tree(key UInt64, data String) Engine = MergeTree() ORDER BY tuple() SETTINGS storage_policy='policy_azure_cache'",
@@ -218,10 +204,6 @@ def test_backup_restore_on_merge_tree_same_container(cluster):
 def test_backup_restore_on_merge_tree_different_container(cluster):
     node2 = cluster.instances["node2"]
     azure_query(node2, f"DROP TABLE IF EXISTS test_simple_merge_tree_different_bucket SYNC")
-    azure_query(
-        node2,
-        "DROP TABLE IF EXISTS test_simple_merge_tree_different_bucket",
-    )
     azure_query(
         node2,
         f"CREATE TABLE test_simple_merge_tree_different_bucket(key UInt64, data String) Engine = MergeTree() ORDER BY tuple() SETTINGS storage_policy='policy_azure_other_bucket'",
@@ -262,10 +244,6 @@ def test_backup_restore_on_merge_tree_native_copy_async(cluster):
     azure_query(node3, f"DROP TABLE IF EXISTS test_simple_merge_tree_async SYNC")
     azure_query(
         node3,
-        "DROP TABLE IF EXISTS test_simple_merge_tree_async",
-    )
-    azure_query(
-        node3,
         f"CREATE TABLE test_simple_merge_tree_async(key UInt64, data String) Engine = MergeTree() ORDER BY tuple() SETTINGS storage_policy='policy_azure_cache'",
     )
     azure_query(node3, f"INSERT INTO test_simple_merge_tree_async VALUES (1, 'a')")
@@ -300,10 +278,6 @@ def test_backup_restore_on_merge_tree_native_copy_async(cluster):
 def test_backup_restore_native_copy_disabled_in_query(cluster):
     node4 = cluster.instances["node4"]
     azure_query(node4, f"DROP TABLE IF EXISTS test_simple_merge_tree_native_copy_disabled_in_query SYNC")
-    azure_query(
-        node4,
-        "DROP TABLE IF EXISTS test_simple_merge_tree_native_copy_disabled_in_query",
-    )
     azure_query(
         node4,
         f"CREATE TABLE test_simple_merge_tree_native_copy_disabled_in_query(key UInt64, data String) Engine = MergeTree() ORDER BY tuple() SETTINGS storage_policy='policy_azure'",

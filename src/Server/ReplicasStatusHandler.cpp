@@ -61,7 +61,7 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
         for (const auto & db : databases)
         {
             /// Check if database can contain replicated tables
-            if (db.second->isExternal())
+            if (!db.second->canContainMergeTreeTables())
                 continue;
 
             // Note that in case `async_load_databases = true` we do not want replica status handler to be hanging

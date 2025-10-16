@@ -7,6 +7,8 @@
 namespace DB
 {
 
+static constexpr std::string_view TEXT_INDEX_VIRTUAL_COLUMN_PREFIX = "__text_index_";
+
 enum class TextSearchMode : uint8_t
 {
     Any,
@@ -71,12 +73,11 @@ private:
             /// Atoms
             FUNCTION_EQUALS,
             FUNCTION_NOT_EQUALS,
-            FUNCTION_HAS,
             FUNCTION_IN,
             FUNCTION_NOT_IN,
             FUNCTION_MATCH,
-            FUNCTION_HAS_ANY_TOKENS,
-            FUNCTION_HAS_ALL_TOKENS,
+            FUNCTION_SEARCH_ANY,
+            FUNCTION_SEARCH_ALL,
             /// Can take any value
             FUNCTION_UNKNOWN,
             /// Operators
@@ -124,8 +125,5 @@ private:
     /// If global mode is All, then we can exit analysis earlier if any token is missing in granule.
     TextSearchMode global_search_mode = TextSearchMode::All;
 };
-
-static constexpr std::string_view TEXT_INDEX_VIRTUAL_COLUMN_PREFIX = "__text_index_";
-bool isTextIndexVirtualColumn(const String & column_name);
 
 }

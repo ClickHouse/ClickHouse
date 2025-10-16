@@ -83,6 +83,7 @@
 #include <Storages/StorageValues.h>
 #include <Storages/StorageView.h>
 #include <Storages/ReadInOrderOptimizer.h>
+#include <Storages/Statistics/ConditionSelectivityEstimator.h>
 
 #include <Columns/Collator.h>
 #include <Columns/ColumnAggregateFunction.h>
@@ -575,10 +576,14 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     if (storage)
     {
+        if (storage->updateExternalDynamicMetadataIfExists(context))
+        {
+            metadata_snapshot = storage->getInMemoryMetadataPtr();
+        }
+
         table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
         table_id = storage->getStorageID();
 
-        storage->updateExternalDynamicMetadataIfExists(context);
         if (!metadata_snapshot)
             metadata_snapshot = storage->getInMemoryMetadataPtr();
 
@@ -805,7 +810,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 MergeTreeWhereOptimizer where_optimizer{
                     std::move(column_compressed_sizes),
                     storage_snapshot,
-                    storage->getConditionSelectivityEstimator(assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data).parts, context),
+                    storage->getConditionSelectivityEstimatorByPredicate(storage_snapshot, nullptr, context),
                     queried_columns,
                     supported_prewhere_columns,
                     log};
@@ -818,7 +823,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         {
             /// Filter block in WHERE instead to get better performance
             query.setExpression(
-                ASTSelectQuery::Expression::WHERE, makeASTOperator("and", query.prewhere()->clone(), query.where()->clone()));
+                ASTSelectQuery::Expression::WHERE, makeASTFunction("and", query.prewhere()->clone(), query.where()->clone()));
         }
 
         query_analyzer = std::make_unique<SelectQueryExpressionAnalyzer>(

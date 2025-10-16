@@ -18,11 +18,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Planner/Utils.h>
 
-namespace ProfileEvents
-{
-    extern const Event QueryPlanOptimizeMicroseconds;
-}
-
 namespace DB
 {
 
@@ -494,8 +489,6 @@ void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptio
 
 void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_settings)
 {
-    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::QueryPlanOptimizeMicroseconds);
-
     /// optimization need to be applied before "mergeExpressions" optimization
     /// it removes redundant sorting steps, but keep underlying expressions,
     /// so "mergeExpressions" optimization handles them afterwards

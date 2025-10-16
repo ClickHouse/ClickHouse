@@ -22,26 +22,17 @@ JoinOnKeyColumns::JoinOnKeyColumns(
 {
 }
 
-size_t LazyOutput::buildOutput(size_t size_to_reserve,
-    MutableColumns & columns,
-    const UInt64 * row_refs_begin,
-    const UInt64 * row_refs_end,
-    size_t rows_offset,
-    size_t rows_limit) const
+void LazyOutput::buildOutput(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const
 {
     if (!output_by_row_list)
         buildOutputFromBlocks<false>(size_to_reserve, columns, row_refs_begin, row_refs_end);
     else
     {
-        if (rows_limit)
-            return buildOutputFromBlocksLimitAndOffset(columns, row_refs_begin, row_refs_end, rows_offset, rows_limit);
-        if (!join_data_sorted && join_data_avg_perkey_rows < output_by_row_list_threshold)
+        if (join_data_avg_perkey_rows < output_by_row_list_threshold)
             buildOutputFromBlocks<true>(size_to_reserve, columns, row_refs_begin, row_refs_end);
         else
             buildOutputFromRowRefLists(size_to_reserve, columns, row_refs_begin, row_refs_end);
     }
-    /// Without rows_limit, all possible rows are added and result value is not used.
-    return 0;
 }
 
 void LazyOutput::buildOutputFromRowRefLists(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const
@@ -76,56 +67,6 @@ void LazyOutput::buildJoinGetOutput(size_t size_to_reserve, MutableColumns & col
         }
     }
 }
-
-/// Returns how many rows were added to columns, up to rows_limit
-size_t LazyOutput::buildOutputFromBlocksLimitAndOffset(
-    MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end,
-    size_t rows_offset, size_t rows_limit) const
-{
-    if (columns.empty())
-        return rows_limit;
-    std::vector<const Columns *> many_columns;
-    std::vector<UInt32> row_nums;
-    many_columns.reserve(rows_limit);
-    row_nums.reserve(rows_limit);
-
-    for (const UInt64 * row_ref_i = row_refs_begin; rows_limit > 0 && row_ref_i != row_refs_end; ++row_ref_i)
-    {
-        if (*row_ref_i)
-        {
-            const RowRefList * row_ref_list = reinterpret_cast<const RowRefList *>(*row_ref_i);
-            for (auto it = row_ref_list->begin(); rows_limit > 0 && it.ok(); ++it)
-            {
-                if (rows_offset)
-                {
-                    --rows_offset;
-                    continue;
-                }
-                many_columns.emplace_back(it->columns);
-                row_nums.emplace_back(it->row_num);
-                --rows_limit;
-            }
-        }
-        else
-        {
-            if (rows_offset)
-            {
-                --rows_offset;
-                continue;
-            }
-            many_columns.emplace_back(nullptr);
-            row_nums.emplace_back(0);
-            --rows_limit;
-        }
-    }
-
-    for (size_t i = 0; i < columns.size(); ++i)
-    {
-        columns[i]->fillFromBlocksAndRowNumbers(type_name[i].type, right_indexes[i], many_columns, row_nums);
-    }
-    return row_nums.size();
-}
-
 
 template<bool from_row_list>
 void LazyOutput::buildOutputFromBlocks(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const

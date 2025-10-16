@@ -386,7 +386,6 @@ public:
     bool hasDynamicStructure() const override { return true; }
     bool dynamicStructureEquals(const IColumn & rhs) const override;
     void takeDynamicStructureFromSourceColumns(const Columns & source_columns) override;
-    void takeDynamicStructureFromColumn(const ColumnPtr & source_column) override;
 
     const StatisticsPtr & getStatistics() const { return statistics; }
     void setStatistics(const StatisticsPtr & statistics_) { statistics = statistics_; }

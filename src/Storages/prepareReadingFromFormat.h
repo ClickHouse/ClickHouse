@@ -35,7 +35,7 @@ namespace DB
         NamesAndTypesList requested_virtual_columns;
         /// Hints for the serialization of columns.
         /// For example can be retrieved from the destination table in INSERT SELECT query.
-        SerializationInfoByName serialization_hints{{}};
+        SerializationInfoByName serialization_hints;
 
         void serialize(IQueryPlanStep::Serialization & ctx) const;
         static ReadFromFormatInfo deserialize(IQueryPlanStep::Deserialization & ctx);

@@ -8,7 +8,7 @@ DROP TABLE IF EXISTS tab;
 
 CREATE TABLE tab (
     str String,
-    INDEX idx str TYPE text(tokenizer = 'array') )
+    INDEX idx str TYPE text(tokenizer = 'no_op') )
 ENGINE = MergeTree()
 ORDER BY tuple();
 
@@ -20,7 +20,7 @@ SELECT 'Test ngram tokenizer';
 
 CREATE TABLE tab (
     str String,
-    INDEX idx str TYPE text(tokenizer = 'ngrams') )
+    INDEX idx str TYPE text(tokenizer = 'ngram') )
 ENGINE = MergeTree()
 ORDER BY tuple();
 

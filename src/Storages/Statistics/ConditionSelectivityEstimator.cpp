@@ -256,7 +256,7 @@ void ConditionSelectivityEstimatorBuilder::addStatistics(ColumnStatisticsPtr col
     if (column_stats != nullptr)
     {
         has_data = true;
-        auto & column_estimator = estimator->column_estimators[column_stats->getColumnName()];
+        auto & column_estimator = estimator->column_estimators[column_stats->columnName()];
         if (column_estimator.stats == nullptr)
             column_estimator.stats = column_stats;
         else

@@ -320,61 +320,7 @@ private:
 
 REGISTER_FUNCTION(CastOrDefault)
 {
-    /// accurateCastOrDefault documentation
-    FunctionDocumentation::Description accurateCastOrDefault_description = R"(
-Converts a value to a specified data type.
-Like [`accurateCast`](#accurateCast), but returns a default value instead of throwing an exception if the conversion cannot be performed accurately.
-
-If a default value is provided as the second argument, it must be of the target type.
-If no default value is provided, the default value of the target type is used.
-    )";
-    FunctionDocumentation::Syntax accurateCastOrDefault_syntax = "accurateCastOrDefault(x, T[, default_value])";
-    FunctionDocumentation::Arguments accurateCastOrDefault_arguments = {
-        {"x", "A value to convert.", {"Any"}},
-        {"T", "The target data type name.", {"const String"}},
-        {"default_value", "Optional. Default value to return if conversion fails.", {"Any"}}
-    };
-    FunctionDocumentation::ReturnedValue accurateCastOrDefault_returned_value = {"Returns the converted value with the target data type, or the default value if conversion is not possible.", {"Any"}};
-    FunctionDocumentation::Examples accurateCastOrDefault_examples = {
-    {
-        "Successful conversion",
-        R"(
-SELECT accurateCastOrDefault(42, 'String')
-        )",
-        R"(
-┌─accurateCastOrDefault(42, 'String')─┐
-│ 42                                  │
-└─────────────────────────────────────┘
-        )"
-    },
-    {
-        "Failed conversion with explicit default",
-        R"(
-SELECT accurateCastOrDefault('abc', 'UInt32', 999::UInt32)
-        )",
-        R"(
-┌─accurateCastOrDefault('abc', 'UInt32', 999)─┐
-│                                         999 │
-└─────────────────────────────────────────────┘
-        )"
-    },
-    {
-        "Failed conversion with implicit default",
-        R"(
-SELECT accurateCastOrDefault('abc', 'UInt32')
-        )",
-        R"(
-┌─accurateCastOrDefault('abc', 'UInt32')─┐
-│                                      0 │
-└────────────────────────────────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn accurateCastOrDefault_introduced_in = {21, 1};
-    FunctionDocumentation::Category accurateCastOrDefault_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation accurateCastOrDefault_documentation = {accurateCastOrDefault_description, accurateCastOrDefault_syntax, accurateCastOrDefault_arguments, accurateCastOrDefault_returned_value, accurateCastOrDefault_examples, accurateCastOrDefault_introduced_in, accurateCastOrDefault_category};
-
-    factory.registerFunction<FunctionCastOrDefault>(accurateCastOrDefault_documentation);
+    factory.registerFunction<FunctionCastOrDefault>();
 
     factory.registerFunction("toUInt8OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toUInt8OrDefault", std::make_shared<DataTypeUInt8>()); });

@@ -35,7 +35,6 @@ public:
     bool canSkipMark(size_t mark, size_t current_task_last_mark) override;
     bool canReadIncompleteGranules() const override { return false; }
     void updateAllMarkRanges(const MarkRanges & ranges) override;
-    void prefetchBeginOfRange(Priority priority) override;
 
 private:
     struct Granule

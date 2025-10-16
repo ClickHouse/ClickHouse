@@ -465,7 +465,7 @@ public:
                 const uint64_t hiBytes = DB::UUIDHelpers::getHighBytes(uuids[i]);
                 const uint64_t ms = ((hiBytes & 0xf000) == 0x7000) ? (hiBytes >> 16) : 0;
 
-                vec_res[i] = DecimalUtils::dateTimeFromComponents(ms / intExp10(datetime_scale), ms % intExp10(datetime_scale), datetime_scale);
+                vec_res[i] = DecimalUtils::decimalFromComponents<DateTime64>(ms / intExp10(datetime_scale), ms % intExp10(datetime_scale), datetime_scale);
             }
 
             return col_res;

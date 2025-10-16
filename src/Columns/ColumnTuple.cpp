@@ -193,17 +193,12 @@ void ColumnTuple::insertData(const char *, size_t)
 void ColumnTuple::insert(const Field & x)
 {
     const auto & tuple = x.safeGet<Tuple>();
-    const size_t tuple_size = columns.size();
 
+    const size_t tuple_size = columns.size();
     if (tuple.size() != tuple_size)
-        throw Exception(
-            ErrorCodes::CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE,
-            "Cannot insert value of different size into tuple. Got: {}, expected: {}",
-            tuple.size(),
-            tuple_size);
+        throw Exception(ErrorCodes::CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE, "Cannot insert value of different size into tuple");
 
     ++column_length;
-
     for (size_t i = 0; i < tuple_size; ++i)
         columns[i]->insert(tuple[i]);
 }
@@ -241,17 +236,12 @@ void ColumnTuple::doInsertFrom(const IColumn & src_, size_t n)
 #endif
 {
     const ColumnTuple & src = assert_cast<const ColumnTuple &>(src_);
-    const size_t tuple_size = columns.size();
 
+    const size_t tuple_size = columns.size();
     if (src.columns.size() != tuple_size)
-        throw Exception(
-            ErrorCodes::CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE,
-            "Cannot insert value of different size into tuple. Got: {}, expected: {}",
-            src.columns.size(),
-            tuple_size);
+        throw Exception(ErrorCodes::CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE, "Cannot insert value of different size into tuple");
 
     ++column_length;
-
     for (size_t i = 0; i < tuple_size; ++i)
         columns[i]->insertFrom(*src.columns[i], n);
 }
@@ -266,15 +256,10 @@ void ColumnTuple::doInsertManyFrom(const IColumn & src, size_t position, size_t 
 
     const size_t tuple_size = columns.size();
     if (src_tuple.columns.size() != tuple_size)
-        throw Exception(
-            ErrorCodes::CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE,
-            "Cannot insert value of different size into tuple. Got: {}, expected: {}",
-            src_tuple.columns.size(),
-            tuple_size);
+        throw Exception(ErrorCodes::CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE, "Cannot insert value of different size into tuple");
 
     for (size_t i = 0; i < tuple_size; ++i)
         columns[i]->insertManyFrom(*src_tuple.columns[i], position, length);
-
     column_length += length;
 }
 
@@ -896,13 +881,6 @@ void ColumnTuple::takeDynamicStructureFromSourceColumns(const Columns & source_c
 
     for (size_t i = 0; i != columns.size(); ++i)
         columns[i]->takeDynamicStructureFromSourceColumns(nested_source_columns[i]);
-}
-
-void ColumnTuple::takeDynamicStructureFromColumn(const ColumnPtr & source_column)
-{
-    const auto & source_elements = assert_cast<const ColumnTuple &>(*source_column).getColumns();
-    for (size_t i = 0; i != columns.size(); ++i)
-        columns[i]->takeDynamicStructureFromColumn(source_elements[i]);
 }
 
 

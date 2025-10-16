@@ -18,7 +18,6 @@ enum class DumpOracleStrategy
 class QueryOracle
 {
 private:
-    static const std::vector<std::vector<OutFormat>> oracleFormats;
     const FuzzConfig & fc;
     const std::filesystem::path qcfile, qsfile, qfile_peer;
 

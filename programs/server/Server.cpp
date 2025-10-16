@@ -32,7 +32,6 @@
 #include <Common/DNSResolver.h>
 #include <Common/CgroupsMemoryUsageObserver.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/DimensionalMetrics.h>
 #include <Common/ISlotControl.h>
 #include <Common/Macros.h>
 #include <Common/ShellCommand.h>
@@ -270,7 +269,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_pending_mutations_to_warn;
     extern const ServerSettingsUInt64 max_pending_mutations_execution_time_to_warn;
     extern const ServerSettingsUInt64 max_parts_cleaning_thread_pool_size;
-    extern const ServerSettingsUInt64 max_named_collection_num_to_warn;
     extern const ServerSettingsUInt64 max_remote_read_network_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_remote_write_network_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_local_read_bandwidth_for_server;
@@ -370,11 +368,6 @@ namespace CurrentMetrics
     extern const Metric MaxPushedDDLEntryID;
     extern const Metric StartupScriptsExecutionState;
     extern const Metric IsServerShuttingDown;
-}
-
-namespace DimensionalMetrics
-{
-    extern MetricFamily & StartupScriptsFailureReason;
 }
 
 namespace ProfileEvents
@@ -946,9 +939,12 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
     }
     catch (...)
     {
-        DimensionalMetrics::set(
-            DimensionalMetrics::StartupScriptsFailureReason, {String(ErrorCodes::getName(getCurrentExceptionCode()))}, 1.0);
-
+        static DimensionalMetrics::MetricFamily & startup_scripts_failure_reason = DimensionalMetrics::Factory::instance().registerMetric(
+            "startup_scripts_failure_reason",
+            "Indicates startup scripts failures by error type. Set to 1 when a startup script fails, labelled with the error name.",
+            {"error_name"}
+        );
+        startup_scripts_failure_reason.withLabels({String(ErrorCodes::getName(getCurrentExceptionCode()))}).set(1.0);
         CurrentMetrics::set(CurrentMetrics::StartupScriptsExecutionState, StartupScriptsExecutionState::Failure);
         tryLogCurrentException(log, "Failed to parse startup scripts file");
         if (config.getBool("startup_scripts.throw_on_error", false))
@@ -1028,52 +1024,8 @@ try
 #endif
 
     Stopwatch startup_watch;
+
     Poco::Logger * log = &logger();
-
-#if defined(OS_LINUX)
-    std::string executable_path = getExecutablePath();
-    /// Remap before creating other threads to prevent crashes
-    if (config().getBool("remap_executable", false))
-    {
-        LOG_DEBUG(log, "Will remap executable in memory.");
-        size_t size = remapExecutable();
-        LOG_DEBUG(log, "The code ({}) in memory has been successfully remapped.", ReadableSize(size));
-    }
-
-    if (config().getBool("mlock_executable", false))
-    {
-        if (hasLinuxCapability(CAP_IPC_LOCK))
-        {
-            try
-            {
-                /// Get the memory area with (current) code segment.
-                /// It's better to lock only the code segment instead of calling "mlockall",
-                /// because otherwise debug info will be also locked in memory, and it can be huge.
-                auto [addr, len] = getMappedArea(reinterpret_cast<void *>(mainEntryClickHouseServer));
-
-                LOG_TRACE(log, "Will do mlock to prevent executable memory from being paged out. It may take a few seconds.");
-                if (0 != mlock(addr, len))
-                    LOG_WARNING(log, "Failed mlock: {}", errnoToString());
-                else
-                    LOG_TRACE(log, "The memory map of clickhouse executable has been mlock'ed, total {}", ReadableSize(len));
-            }
-            catch (...)
-            {
-                LOG_WARNING(log, "Cannot mlock: {}", getCurrentExceptionMessage(false));
-            }
-        }
-        else
-        {
-            LOG_INFO(
-                log,
-                "It looks like the process has no CAP_IPC_LOCK capability, binary mlock will be disabled."
-                " It could happen due to incorrect ClickHouse package installation."
-                " You could resolve the problem manually with 'sudo setcap cap_ipc_lock=+ep {}'."
-                " Note that it will not work on 'nosuid' mounted filesystems.",
-                executable_path.empty() ? "/usr/bin/clickhouse" : executable_path);
-        }
-    }
-#endif
 
     // If the startup_level is set in the config, we override the root logger level.
     // Specific loggers can still override it.
@@ -1534,6 +1486,8 @@ try
     server_settings.loadSettingsFromConfig(config());
 
 #if defined(OS_LINUX)
+    std::string executable_path = getExecutablePath();
+
     if (server_settings[ServerSetting::skip_binary_checksum_checks])
     {
         LOG_WARNING(log, "Binary checksum checks disabled due to skip_binary_checksum_checks - not recommended for production deployments");
@@ -1589,6 +1543,49 @@ try
                         stored_binary_hash,
                         executable_path);
                 }
+            }
+        }
+    }
+    else
+        executable_path = "/usr/bin/clickhouse";    /// It is used for information messages.
+
+    /// After full config loaded
+    {
+        if (config().getBool("remap_executable", false))
+        {
+            LOG_DEBUG(log, "Will remap executable in memory.");
+            size_t size = remapExecutable();
+            LOG_DEBUG(log, "The code ({}) in memory has been successfully remapped.", ReadableSize(size));
+        }
+
+        if (config().getBool("mlock_executable", false))
+        {
+            if (hasLinuxCapability(CAP_IPC_LOCK))
+            {
+                try
+                {
+                    /// Get the memory area with (current) code segment.
+                    /// It's better to lock only the code segment instead of calling "mlockall",
+                    /// because otherwise debug info will be also locked in memory, and it can be huge.
+                    auto [addr, len] = getMappedArea(reinterpret_cast<void *>(mainEntryClickHouseServer));
+
+                    LOG_TRACE(log, "Will do mlock to prevent executable memory from being paged out. It may take a few seconds.");
+                    if (0 != mlock(addr, len))
+                        LOG_WARNING(log, "Failed mlock: {}", errnoToString());
+                    else
+                        LOG_TRACE(log, "The memory map of clickhouse executable has been mlock'ed, total {}", ReadableSize(len));
+                }
+                catch (...)
+                {
+                    LOG_WARNING(log, "Cannot mlock: {}", getCurrentExceptionMessage(false));
+                }
+            }
+            else
+            {
+                LOG_INFO(log, "It looks like the process has no CAP_IPC_LOCK capability, binary mlock will be disabled."
+                    " It could happen due to incorrect ClickHouse package installation."
+                    " You could resolve the problem manually with 'sudo setcap cap_ipc_lock=+ep {}'."
+                    " Note that it will not work on 'nosuid' mounted filesystems.", executable_path);
             }
         }
     }
@@ -2041,7 +2038,6 @@ try
 
             global_context->setMaxTableSizeToDrop(new_server_settings[ServerSetting::max_table_size_to_drop]);
             global_context->setMaxPartitionSizeToDrop(new_server_settings[ServerSetting::max_partition_size_to_drop]);
-            global_context->setMaxNamedCollectionNumToWarn(new_server_settings[ServerSetting::max_named_collection_num_to_warn]);
             global_context->setMaxTableNumToWarn(new_server_settings[ServerSetting::max_table_num_to_warn]);
             global_context->setMaxViewNumToWarn(new_server_settings[ServerSetting::max_view_num_to_warn]);
             global_context->setMaxDictionaryNumToWarn(new_server_settings[ServerSetting::max_dictionary_num_to_warn]);
@@ -2184,9 +2180,6 @@ try
             {
                 global_context->getResourceManager()->updateConfiguration(*config);
             }
-
-            /// Load WORKLOADs and RESOURCEs.
-            global_context->getWorkloadEntityStorage().loadEntities(*config);
 
             if (!initial_loading)
             {
@@ -2632,6 +2625,8 @@ try
         database_catalog.assertDatabaseExists(default_database);
         /// Load user-defined SQL functions.
         global_context->getUserDefinedSQLObjectsStorage().loadObjects();
+        /// Load WORKLOADs and RESOURCEs.
+        global_context->getWorkloadEntityStorage().loadEntities();
 
         global_context->getRefreshSet().setRefreshesStopped(false);
     }

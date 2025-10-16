@@ -453,7 +453,7 @@ bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, E
             if (cd->primary_key_specifier)
             {
                 if (!primary_key_from_columns)
-                    primary_key_from_columns = makeASTOperator("tuple");
+                    primary_key_from_columns = makeASTFunction("tuple");
                 auto column_identifier = std::make_shared<ASTIdentifier>(cd->name);
                 primary_key_from_columns->children[0]->as<ASTExpressionList>()->children.push_back(column_identifier);
             }
@@ -1514,7 +1514,6 @@ bool ParserCreateDatabaseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     query->if_not_exists = if_not_exists;
 
     query->uuid = uuid;
-    query->has_uuid = uuid != UUIDHelpers::Nil;
     query->cluster = cluster_str;
     query->database = database;
 
