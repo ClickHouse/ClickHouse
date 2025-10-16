@@ -1073,7 +1073,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             // check if left one is not subquery
                             return left_table_expr->getNodeType() != QueryTreeNodeType::QUERY
                                 && left_table_expr->getNodeType() != QueryTreeNodeType::UNION
-                                && left_table_expr->getNodeType() != QueryTreeNodeType::JOIN;
+                                && left_table_expr->getNodeType() != QueryTreeNodeType::JOIN
+                                && left_table_expr->getNodeType() != QueryTreeNodeType::ARRAY_JOIN
+                                && left_table_expr->getNodeType() != QueryTreeNodeType::CROSS_JOIN;
                         }
 
                         if (join_kind == JoinKind::Right)
@@ -2602,7 +2604,8 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
             for (size_t j = i + 1; j < table_expressions_stack.size(); ++j)
             {
                 const auto & node = table_expressions_stack[j];
-                if (node->getNodeType() == QueryTreeNodeType::JOIN || node->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
+                if (node->getNodeType() == QueryTreeNodeType::JOIN || node->getNodeType() == QueryTreeNodeType::ARRAY_JOIN
+                    || node->getNodeType() == QueryTreeNodeType::CROSS_JOIN)
                 {
                     parent_join_tree = node;
                     break;
@@ -2615,7 +2618,7 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
             bool is_remote = planner_context->getTableExpressionDataOrThrow(table_expression).isRemote();
             query_plans_stack.push_back(buildQueryPlanForTableExpression(
                 table_expression,
-                join_tree_node,
+                parent_join_tree,
                 select_query_info,
                 select_query_options,
                 planner_context,
