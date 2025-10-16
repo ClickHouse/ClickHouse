@@ -289,7 +289,7 @@ Concatenates a string as many times with itself as specified.
         {"s", "The string to repeat.", {"String"}},
         {"n", "The number of times to repeat the string.", {"(U)Int*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"A string containing string `s` repeated `n` times. If `n` \<= 0, the function returns the empty string.", {"String"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"A string containing string `s` repeated `n` times. If `n` is negative, the function returns the empty string.", {"String"}};
     FunctionDocumentation::Examples examples = {
     {
         "Usage example",
