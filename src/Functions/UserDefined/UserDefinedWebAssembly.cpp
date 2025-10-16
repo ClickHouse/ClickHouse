@@ -268,7 +268,6 @@ public:
 
         return {compartment->getMemory(buffer.ptr, buffer.size), buffer.size};
     }
-}
 
 private:
     WasmCompartment * compartment;
@@ -493,11 +492,9 @@ public:
     {
         if (new_size > size)
         {
-            wasm_mem.getMemoryView()
+            wasm_mem.getMemoryView();
         }
     }
-
-
 
     void * data;
     size_t size = 0;
@@ -776,6 +773,7 @@ public:
 
     String getName() const override { return function_name; }
     bool isVariadic() const override { return false; }
+    bool isDeterministic() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /* arguments */) const override { return false; }
     size_t getNumberOfArguments() const override { return user_defined_function->getArguments().size(); }
 
@@ -817,12 +815,11 @@ public:
         return execute(compartment_ptr, arguments, input_rows_count);
     }
 
-    ColumnPtr executeImplDryRun(
-        const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
+    ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
-        auto cfg = getWasmModuleConfigFromFunctionSettings(user_defined_function->getSettings());
-        auto compartment = wasm_module->instantiate(cfg);
-        return execute(compartment.get(), arguments, input_rows_count);
+        MutableColumnPtr result_column = user_defined_function->getResultType()->createColumn();
+        result_column->insertManyDefaults(input_rows_count);
+        return result_column;
     }
 
 private:
@@ -1022,7 +1019,7 @@ struct WebAssemblyFunctionSettingsConstraits : public IHints<>
 
     const std::unordered_map<String, SettingDeffinition> settings_def = {
         /// Fuel limit for a single instance
-        {"max_fuel", SettingUInt64Range{1'000, 100'000'000'000}.withDefault(100'000'000)},
+        {"max_fuel", SettingUInt64Range{1'000, std::numeric_limits<UInt64>::max()}.withDefault(100'000'000)},
         /// Memory limit for a single instance
         {"max_memory", SettingUInt64Range{64_KiB, 4_GiB}.withDefault(100_MiB)},
         /// Serialization format for input/output data for ABI V1

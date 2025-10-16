@@ -103,7 +103,6 @@
 #include <Storages/System/StorageSystemViewRefreshes.h>
 #include <Storages/System/StorageSystemDNSCache.h>
 #include <Storages/System/StorageSystemWasmModules.h>
-#include <Storages/System/StorageSystemLatencyBuckets.h>
 #include <Storages/System/StorageSystemIcebergHistory.h>
 #include <Interpreters/Context.h>
 

@@ -54,22 +54,10 @@ struct WasmEdgeValueTypeTrait;
     template <> \
     struct WasmEdgeValueTypeTrait<WasmValKind::T> \
     { \
-        static WasmEdge_ValType type() \
-        { \
-            return WasmEdge_ValTypeGen##T(); \
-        } \
-        static bool is(WasmEdge_ValType val) \
-        { \
-            return WasmEdge_ValTypeIs##T(val); \
-        } \
-        static WasmEdge_Value to(auto val) \
-        { \
-            return WasmEdge_ValueGen##T(val); \
-        } \
-        static auto from(WasmEdge_Value val) \
-        { \
-            return WasmEdge_ValueGet##T(val); \
-        } \
+        static WasmEdge_ValType type() { return WasmEdge_ValTypeGen##T(); } \
+        static bool is(WasmEdge_ValType val) { return WasmEdge_ValTypeIs##T(val); } \
+        static WasmEdge_Value to(auto val) { return WasmEdge_ValueGen##T(val); } \
+        static auto from(WasmEdge_Value val) { return WasmEdge_ValueGet##T(val); } \
     };
 
 WASM_EDGE_TYPE_TRAIT_SPECIALIZATION(I32);
