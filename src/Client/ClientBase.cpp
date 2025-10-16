@@ -3508,6 +3508,7 @@ void ClientBase::runInteractive()
         .multiline = getClientConfiguration().has("multiline"),
         .ignore_shell_suspend = getClientConfiguration().getBool("ignore_shell_suspend", true),
         .embedded_mode = isEmbeeddedClient(),
+        .interactive_history_legacy_keymap = getClientConfiguration().getBool("interactive_history_legacy_keymap", false),
         .extenders = query_extenders,
         .delimiters = query_delimiters,
         .word_break_characters = word_break_characters,
