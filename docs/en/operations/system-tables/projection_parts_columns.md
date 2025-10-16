@@ -1,8 +1,8 @@
 ---
 description: 'System table containing information about columns in projection parts for tables of the MergeTree family'
-keywords: ['system table', 'projection part columns']
-slug: /operations/system-tables/projections-part-columns
-title: 'system.projection_parts'
+keywords: ['system table', 'projection_parts_columns']
+slug: /operations/system-tables/projection_parts_columns
+title: 'system.projection_parts_columns'
 doc_type: 'reference'
 ---
 

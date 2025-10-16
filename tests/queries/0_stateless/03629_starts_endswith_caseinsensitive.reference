@@ -1,0 +1,27 @@
+-- Test startsWithCaseInsensitive ASCII
+1	0
+-- Test startsWithCaseInsensitive UTF8 Latin
+1	0
+-- Test startsWithCaseInsensitive UTF8 non-Latin
+1	0
+-- Test startsWithUTF8CaseInsensitive ASCII
+1	0
+-- Test startsWithUTF8CaseInsensitive UTF8 Latin
+1	1
+-- Test startsWithUTF8CaseInsensitive UTF8 non-Latin
+1	0
+-- Test endsWithCaseInsensitive ASCII
+1	0
+-- Test endsWithCaseInsensitive UTF8 Latin
+1	0
+-- Test endsWithCaseInsensitive UTF8 non-Latin
+1	0
+-- Test endsWithUTF8CaseInsensitive ASCII
+1	0
+-- Test endsWithUTF8CaseInsensitive UTF8 Latin
+1	1
+-- Test endsWithUTF8CaseInsensitive UTF8 non-Latin
+1	0
+-- Test invalid UTF8
+1	0
+1	0
