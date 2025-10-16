@@ -399,7 +399,7 @@ void shrinkRanges(RangesWithStep & ranges, size_t size)
     ranges.erase(ranges.begin() + (last_range_idx + 1), ranges.end());
 }
 
-/// This is idealogically wrong. We should only get it from the query plan optimization.
+/// This is ideologically wrong. We should only get it from the query plan optimization.
 std::optional<size_t> getLimitFromQueryInfo(const SelectQueryInfo & query_info, const ContextPtr & context)
 {
     if (!query_info.query)
