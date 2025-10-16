@@ -595,7 +595,7 @@ public:
             //     input_data.reserve(total_size + total_size / 2 );
             // }
 
-            if (!string_columns.empty())
+            if (!string_columns.empty() && format_name == "MsgPack")
             {
                 WriteBufferFromString buf(input_data);
                 MsgPackBinStringSerializer serializer(buf);
@@ -634,7 +634,7 @@ public:
         ProfileEventTimeIncrement<Microseconds> timer_deserialize(ProfileEvents::WasmDeserializationMicroseconds);
 
         Block result_header({ColumnWithTypeAndName(nullptr, result_type, "result")});
-        if (result_type->equals(DataTypeString()))
+        if (result_type->equals(DataTypeString()) && format_name == "MsgPack")
         {
             auto res_column = ColumnString::create();
             MsgPackStringDeserializer::deserializeAll(*res_column, result_data);
