@@ -113,7 +113,11 @@ do
     if [[ "$dependency" == *"wast"* ]]; then continue; fi
 
     FOLDER=$(dirname "$dependency")
-    NAME=$(echo "$dependency" | awk -F'/' '{ print $(NF-1) }' | awk -F'-' '{ NF=(NF-1); print $0 }')
+
+    # Crate names follow `some-crate-name-1.0.0` pattern.
+    CRATE=$(basename "$FOLDER")
+    NAME=$(echo "$CRATE" | rev | cut -f2- -d- | rev)
+
     LICENSE_TYPE=$(${GREP_CMD} 'license = "' "$dependency"  | cut -d '"' -f2)
     if echo "${LICENSE_TYPE}" | ${GREP_CMD} -v -P 'MIT|Apache|MPL|ISC|BSD|Unicode|Zlib|CC0-1.0|CDLA-Permissive';
     then
@@ -137,6 +141,9 @@ do
       "LICENSE-MIT.txt"
       "LICENSE-MIT.md"
       "LICENSE.MIT"
+      "LICENSE_A2"
+      "LICENSE_CC0"
+      "LICENSE_A2LLVM"
     )
     for possible_path in "${arr[@]}"
     do

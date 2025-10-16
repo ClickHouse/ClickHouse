@@ -3,6 +3,7 @@
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MaterializedView/RefreshSchedule.h>
 #include <Storages/MaterializedView/RefreshSettings.h>
+#include <Common/ZooKeeper/IKeeper.h>
 #include <Common/StopToken.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <IO/Progress.h>
@@ -68,6 +69,7 @@ public:
     void alterRefreshParams(const DB::ASTRefreshStrategy & new_strategy);
 
     Info getInfo() const;
+    String getCoordinationPath() const { return coordination.path; }
 
     bool canCreateOrDropOtherTables() const;
 
@@ -251,6 +253,7 @@ private:
 
     /// Calls refreshTask() from background thread.
     BackgroundSchedulePoolTaskHolder refresh_task;
+    Coordination::WatchCallbackPtr refresh_task_watch_callback;
 
     CoordinationState coordination;
     ExecutionState execution;

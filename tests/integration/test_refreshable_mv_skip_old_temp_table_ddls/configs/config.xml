@@ -1,0 +1,20 @@
+<clickhouse>
+    <remote_servers>
+        <default>
+            <shard>
+                <replica>
+                    <host>node1</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>node2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </default>
+    </remote_servers>
+    <async_load_databases>true</async_load_databases>
+    <fail_points_active>
+        <database_replicated_startup_pause>false</database_replicated_startup_pause>
+    </fail_points_active>
+</clickhouse>

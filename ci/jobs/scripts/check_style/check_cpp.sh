@@ -37,7 +37,7 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/n
     grep -vP $EXCLUDE_DOCS |
     xargs grep $@ -P '((class|struct|namespace|enum|if|for|while|else|throw|switch).*|\)(\s*const)?(\s*override)?\s*)\{$|\s$|^ {1,3}[^\* ]\S|\t|^\s*(if|else if|if constexpr|else if constexpr|for|while|catch|switch)\(|\( [^\s\\]|\S \)' |
 # a curly brace not in a new line, but not for the case of C++11 init or agg. initialization | trailing whitespace | number of ws not a multiple of 4, but not in the case of comment continuation | missing whitespace after for/if/while... before opening brace | whitespaces inside braces
-    grep -v -P '(//|:\s+\*|\$\(\()| \)"' && echo "{ should be a new line"
+    grep -v -P '//|\s+\*|\$\(\(| \)"' && echo "^ style error on this line"
 # single-line comment | continuation of a multiline comment | a typical piece of embedded shell code | something like ending of raw string literal
 
 # Tabs
@@ -55,9 +55,6 @@ if [ -n "$result" ]; then
     echo "^ Found unnecessary namespace comments"
 fi
 
-# Broken symlinks
-find -L $ROOT_PATH -type l 2>/dev/null | grep -v contrib && echo "^ Broken symlinks found"
-
 # Duplicated or incorrect setting declarations
 bash $ROOT_PATH/ci/jobs/scripts/check_style/check-settings-style
 
@@ -74,6 +71,7 @@ EXTERN_TYPES_EXCLUDES=(
     ProfileEvents::Counters
     ProfileEvents::end
     ProfileEvents::increment
+    ProfileEvents::incrementNoTrace
     ProfileEvents::incrementForLogMessage
     ProfileEvents::incrementLoggerElapsedNanoseconds
     ProfileEvents::getName
@@ -357,6 +355,12 @@ find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' | \
   grep -v -F -e \"config.h\" -e \"config_tools.h\" -e \"SQLGrammar.pb.h\" -e \"out.pb.h\" -e \"clickhouse_grpc.grpc.pb.h\" -e \"delta_kernel_ffi.hpp\" | \
   xargs -i echo "Found include with quotes in '{}'. Please use <> instead"
 
+# Forbid using std::shared_mutex and point to the faster alternative
+find ./{src,programs,utils} -name '*.h' -or -name '*.cpp' | \
+  grep -vP $EXCLUDE |
+  xargs grep 'std::shared_mutex' | \
+  xargs -i echo "Found std::shared_mutex '{}'. Please use DB::SharedMutex instead"
+
 # Context.h (and a few similar headers) is included in many parts of the
 # codebase, so any modifications to it trigger a large-scale recompilation.
 # Therefore, it is crucial to avoid unnecessary inclusion of Context.h in
@@ -375,6 +379,7 @@ CONTEXT_H_EXCLUDES=(
     --exclude "$ROOT_PATH/src/Client/ClientBase.h"
     --exclude "$ROOT_PATH/src/Common/tests/gtest_global_context.h"
     --exclude "$ROOT_PATH/src/Analyzer/InDepthQueryTreeVisitor.h"
+    --exclude "$ROOT_PATH/src/Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h"
 
     # For functions we allow it for regular functions (due to lots of
     # templates), but forbid it in interface (IFunction) part.

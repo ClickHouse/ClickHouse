@@ -647,6 +647,51 @@ def test_simple_write_named_collection_1_table_function(cluster):
     )
 
 
+def test_named_collection_hive_partitioning_partition_columns_in_data_file(cluster):
+    node = cluster.instances["node"]
+    port = cluster.env_variables["AZURITE_PORT"]
+    azure_query(
+        node,
+        f"""INSERT INTO TABLE FUNCTION azureBlobStorage(azure_conf2,
+        storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',
+        container='cont',
+        blob_path='test_hive_partitioning_partition_columns_in_data_file',
+        format=Parquet,
+        partition_strategy = 'hive',
+        partition_columns_in_data_file = 1)
+        PARTITION BY (year, country)
+        SELECT 1 as key, 2020 as year, 'USA' as country"""
+    )
+
+    azure_query(
+        node,
+        f"""INSERT INTO TABLE FUNCTION azureBlobStorage(azure_conf2,
+        storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',
+        container='cont',
+        blob_path='test_hive_partitioning_partition_columns_not_in_data_file',
+        format=Parquet,
+        partition_strategy = 'hive',
+        partition_columns_in_data_file = 0) PARTITION BY (year, country)
+        SELECT 1 as key, 2020 as year, 'USA' as country""",
+    )
+
+    assert azure_query(node,
+        f"""SELECT num_columns FROM azureBlobStorage(
+        azure_conf2,
+        storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',
+        container='cont',
+        blob_path='test_hive_partitioning_partition_columns_in_data_file/**.parquet',
+        format=ParquetMetadata)""") == "3\n"
+
+    assert azure_query(node,
+        f"""SELECT num_columns FROM azureBlobStorage(
+        azure_conf2,
+        storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',
+        container='cont',
+        blob_path='test_hive_partitioning_partition_columns_not_in_data_file/**.parquet',
+        format=ParquetMetadata)""") == "1\n"
+
+
 def test_simple_write_named_collection_2_table_function(cluster):
     node = cluster.instances["node"]
     port = cluster.env_variables["AZURITE_PORT"]
@@ -1442,7 +1487,7 @@ def test_format_detection(cluster):
     )
     assert (
         result
-        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(String),\\n    `y` Nullable(String)\\n)\\nENGINE = AzureBlobStorage(\\'{masked_azure_conn_string}\\', \\'cont\\', \\'test_format_detection1\\', \\'JSON\\')\n"
+        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(Int64),\\n    `y` Nullable(String)\\n)\\nENGINE = AzureBlobStorage(\\'{masked_azure_conn_string}\\', \\'cont\\', \\'test_format_detection1\\', \\'JSON\\')\n"
     )
 
     azure_query(
@@ -1455,7 +1500,7 @@ def test_format_detection(cluster):
     )
     assert (
         result
-        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(String),\\n    `y` Nullable(String)\\n)\\nENGINE = AzureBlobStorage(\\'{masked_azure_conn_string}\\', \\'cont\\', \\'test_format_detection1\\', \\'JSON\\')\n"
+        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(Int64),\\n    `y` Nullable(String)\\n)\\nENGINE = AzureBlobStorage(\\'{masked_azure_conn_string}\\', \\'cont\\', \\'test_format_detection1\\', \\'JSON\\')\n"
     )
 
     azure_query(
@@ -1468,7 +1513,7 @@ def test_format_detection(cluster):
     )
     assert (
         result
-        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(String),\\n    `y` Nullable(String)\\n)\\nENGINE = AzureBlobStorage(\\'{masked_azure_conn_string}\\', \\'cont\\', \\'test_format_detection1\\', \\'JSON\\', \\'none\\')\n"
+        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(Int64),\\n    `y` Nullable(String)\\n)\\nENGINE = AzureBlobStorage(\\'{masked_azure_conn_string}\\', \\'cont\\', \\'test_format_detection1\\', \\'JSON\\', \\'none\\')\n"
     )
 
     azure_query(
@@ -1481,7 +1526,7 @@ def test_format_detection(cluster):
     )
     assert (
         result
-        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(String),\\n    `y` Nullable(String)\\n)\\nENGINE = AzureBlobStorage(\\'{storage_account_url}\\', \\'cont\\', \\'test_format_detection1\\', \\'{account_name}\\', \\'[HIDDEN]\\', \\'JSON\\')\n"
+        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(Int64),\\n    `y` Nullable(String)\\n)\\nENGINE = AzureBlobStorage(\\'{storage_account_url}\\', \\'cont\\', \\'test_format_detection1\\', \\'{account_name}\\', \\'[HIDDEN]\\', \\'JSON\\')\n"
     )
 
     azure_query(
@@ -1494,7 +1539,7 @@ def test_format_detection(cluster):
     )
     assert (
         result
-        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(String),\\n    `y` Nullable(String)\\n)\\nENGINE = AzureBlobStorage(\\'{storage_account_url}\\', \\'cont\\', \\'test_format_detection1\\', \\'{account_name}\\', \\'[HIDDEN]\\', \\'JSON\\')\n"
+        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(Int64),\\n    `y` Nullable(String)\\n)\\nENGINE = AzureBlobStorage(\\'{storage_account_url}\\', \\'cont\\', \\'test_format_detection1\\', \\'{account_name}\\', \\'[HIDDEN]\\', \\'JSON\\')\n"
     )
 
     azure_query(
@@ -1507,7 +1552,7 @@ def test_format_detection(cluster):
     )
     assert (
         result
-        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(String),\\n    `y` Nullable(String)\\n)\\nENGINE = AzureBlobStorage(\\'{storage_account_url}\\', \\'cont\\', \\'test_format_detection1\\', \\'{account_name}\\', \\'[HIDDEN]\\', \\'JSON\\', \\'none\\')\n"
+        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(Int64),\\n    `y` Nullable(String)\\n)\\nENGINE = AzureBlobStorage(\\'{storage_account_url}\\', \\'cont\\', \\'test_format_detection1\\', \\'{account_name}\\', \\'[HIDDEN]\\', \\'JSON\\', \\'none\\')\n"
     )
     azure_query(
         node,

@@ -157,7 +157,7 @@ const ActionsDAG::Node & addCast(
         const ActionsDAG::Node & node_to_cast,
         const DataTypePtr & to_type)
 {
-    if (!node_to_cast.result_type->equals(*to_type))
+    if (node_to_cast.result_type->equals(*to_type))
         return node_to_cast;  /// NOLINT(bugprone-return-const-ref-from-parameter)
 
     const auto & new_node = dag->addCast(node_to_cast, to_type, {});
@@ -281,12 +281,6 @@ bool tryBuildPrewhereSteps(
         else
         {
             result_node = new_condition_nodes.front();
-            /// Check if explicit cast is needed for the condition to serve as a filter.
-            if (!isUInt8(removeNullable(removeLowCardinality(result_node->result_type))))
-            {
-                /// Build "condition AND True" expression to "cast" the condition to UInt8 or Nullable(UInt8) depending on its type.
-                result_node = &addAndTrue(step_dag, *result_node);
-            }
         }
 
         step_dag->getOutputs().insert(step_dag->getOutputs().begin(), result_node);

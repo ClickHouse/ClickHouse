@@ -4,6 +4,7 @@ description: 'System table containing information about all successful and faile
 keywords: ['system table', 'session_log']
 slug: /operations/system-tables/session_log
 title: 'system.session_log'
+doc_type: 'reference'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
