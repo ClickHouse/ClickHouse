@@ -33,18 +33,15 @@ StorageAlias::StorageAlias(
     const StorageID & table_id_,
     ContextPtr context_,
     const String & target_database_,
-    const String & target_table_,
-    const ColumnsDescription & columns_,
-    const String & comment)
+    const String & target_table_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , target_database(target_database_)
     , target_table(target_table_)
 {
-    StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(columns_);
-    storage_metadata.setComment(comment);
-    setInMemoryMetadata(storage_metadata);
+    StorageID target_id(target_database, target_table);
+    if (table_id_ == target_id)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Alias table cannot refer to itself");
 }
 
 void StorageAlias::read(
@@ -110,12 +107,6 @@ void StorageAlias::alter(
 
     auto target_storage = getTargetTable();
     target_storage->alter(params, local_context, table_lock_holder);
-
-    // Update alias metadata to match target
-    auto target_metadata = target_storage->getInMemoryMetadataPtr();
-    StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
-    new_metadata.setColumns(target_metadata->getColumns());
-    setInMemoryMetadata(new_metadata);
 }
 
 void StorageAlias::truncate(
@@ -178,6 +169,61 @@ void StorageAlias::mutate(const MutationCommands & commands, ContextPtr local_co
 
     auto target_storage = getTargetTable();
     target_storage->mutate(commands, local_context);
+}
+
+QueryPipeline StorageAlias::updateLightweight(const MutationCommands & commands, ContextPtr local_context)
+{
+    local_context->checkAccess(AccessType::ALTER, target_database, target_table);
+
+    auto target_storage = getTargetTable();
+    return target_storage->updateLightweight(commands, local_context);
+}
+
+CancellationCode StorageAlias::killMutation(const String & mutation_id)
+{
+    return getTargetTable()->killMutation(mutation_id);
+}
+
+void StorageAlias::waitForMutation(const String & mutation_id, bool wait_for_another_mutation)
+{
+    getTargetTable()->waitForMutation(mutation_id, wait_for_another_mutation);
+}
+
+void StorageAlias::setMutationCSN(const String & mutation_id, UInt64 csn)
+{
+    getTargetTable()->setMutationCSN(mutation_id, csn);
+}
+
+CancellationCode StorageAlias::killPartMoveToShard(const UUID & task_uuid)
+{
+    return getTargetTable()->killPartMoveToShard(task_uuid);
+}
+
+void StorageAlias::updateExternalDynamicMetadataIfExists(ContextPtr local_context)
+{
+    getTargetTable()->updateExternalDynamicMetadataIfExists(local_context);
+}
+
+std::optional<QueryPipeline> StorageAlias::distributedWrite(const ASTInsertQuery & query, ContextPtr local_context)
+{
+    local_context->checkAccess(AccessType::INSERT, target_database, target_table);
+
+    return getTargetTable()->distributedWrite(query, local_context);
+}
+
+StorageSnapshotPtr StorageAlias::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
+{
+    return getTargetTable()->getStorageSnapshot(metadata_snapshot, query_context);
+}
+
+StorageSnapshotPtr StorageAlias::getStorageSnapshotForQuery(const StorageMetadataPtr & metadata_snapshot, const ASTPtr & query, ContextPtr query_context) const
+{
+    return getTargetTable()->getStorageSnapshotForQuery(metadata_snapshot, query, query_context);
+}
+
+StorageSnapshotPtr StorageAlias::getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
+{
+    return getTargetTable()->getStorageSnapshotWithoutData(metadata_snapshot, query_context);
 }
 
 void StorageAlias::rename(const String & /* new_path_to_table_data */, const StorageID & new_table_id)
@@ -252,7 +298,7 @@ void registerStorageAlias(StorageFactory & factory)
         }
 
         // Storage Alias does not support explicit column definitions
-        // Columns are always inherited from the target table
+        // Columns are always dynamically fetched from the target table
         // Only check for CREATE, not for ATTACH/RESTORE
         if (!args.columns.empty() && args.mode < LoadingStrictnessLevel::ATTACH)
         {
@@ -260,18 +306,11 @@ void registerStorageAlias(StorageFactory & factory)
                 "Storage Alias does not support explicit column definitions");
         }
 
-        // Get columns from target table
-        auto target_storage = DatabaseCatalog::instance().getTable(
-            StorageID(target_database, target_table), local_context);
-        ColumnsDescription columns = target_storage->getInMemoryMetadataPtr()->getColumns();
-
         return std::make_shared<StorageAlias>(
             args.table_id,
             local_context,
             target_database,
-            target_table,
-            columns,
-            args.comment);
+            target_table);
     },
     {
         .supports_schema_inference = true

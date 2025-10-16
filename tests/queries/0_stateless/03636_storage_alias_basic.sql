@@ -134,21 +134,21 @@ INSERT INTO table_b_exchange VALUES ('from_b');
 CREATE TABLE alias_a_exchange ENGINE = Alias(table_a_exchange);
 CREATE TABLE alias_b_exchange ENGINE = Alias(table_b_exchange);
 
-SELECT 'Before EXCHANGE:';
+SELECT 'Before EXCHANGE';
 SELECT * FROM alias_a_exchange ORDER BY value;
 SELECT * FROM alias_b_exchange ORDER BY value;
 
--- EXCHANGE the alias tables
+-- EXCHANGE the alias
 EXCHANGE TABLES alias_a_exchange AND alias_b_exchange;
 
-SELECT 'After EXCHANGE alias tables:';
+SELECT 'After EXCHANGE alias tables';
 SELECT * FROM alias_a_exchange ORDER BY value;  -- Should show 'from_b'
 SELECT * FROM alias_b_exchange ORDER BY value;  -- Should show 'from_a'
 
 -- EXCHANGE the source tables
 EXCHANGE TABLES table_a_exchange AND table_b_exchange;
 
-SELECT 'After EXCHANGE source tables:';
+SELECT 'After EXCHANGE source tables';
 SELECT * FROM alias_a_exchange ORDER BY value;  -- Should show 'from_a'
 SELECT * FROM alias_b_exchange ORDER BY value;  -- Should show 'from_b'
 
@@ -187,3 +187,49 @@ SELECT * FROM source_attach ORDER BY id;
 
 DROP TABLE alias_attach;
 DROP TABLE source_attach;
+
+-- Test: Circular reference check
+SELECT 'Test circular reference prevention';
+CREATE TABLE self_ref_test ENGINE = Alias('self_ref_test'); -- { serverError BAD_ARGUMENTS }
+
+SELECT 'Test ALTER target directly';
+CREATE TABLE metadata_target (id UInt32, value String) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE metadata_alias ENGINE = Alias('metadata_target');
+
+INSERT INTO metadata_target VALUES (1, 'one'), (2, 'two');
+SELECT * FROM metadata_alias ORDER BY id;
+
+-- ALTER target table DIRECTLY (not through alias)
+ALTER TABLE metadata_target ADD COLUMN extra String DEFAULT 'data1';
+
+-- Alias should immediately see the new column (dynamic metadata fetch)
+SELECT 'After ALTER target';
+SELECT name FROM system.columns WHERE database = currentDatabase() AND table = 'metadata_alias' ORDER BY name;
+
+-- INSERT through alias with new column should work
+INSERT INTO metadata_alias VALUES (3, 'three', 'data3');
+SELECT * FROM metadata_alias ORDER BY id;
+
+ALTER TABLE metadata_target ADD COLUMN num UInt32 DEFAULT 0;
+ALTER TABLE metadata_target MODIFY COLUMN extra String DEFAULT 'data2';
+
+SELECT 'After multiple ALTERs';
+SELECT name FROM system.columns WHERE database = currentDatabase() AND table = 'metadata_alias' ORDER BY name;
+
+-- Insert with all columns
+INSERT INTO metadata_alias VALUES (4, 'four', DEFAULT, 100);
+SELECT id, value, extra, num FROM metadata_alias WHERE id = 4;
+
+-- DROP COLUMN on target
+ALTER TABLE metadata_target DROP COLUMN num;
+
+-- Alias should not show dropped column
+SELECT 'After DROP';
+SELECT name FROM system.columns WHERE database = currentDatabase() AND table = 'metadata_alias' ORDER BY name;
+
+-- INSERT after DROP should work (without dropped column)
+INSERT INTO metadata_alias VALUES (5, 'five', 'data5');
+SELECT id, value, extra FROM metadata_alias WHERE id = 5;
+
+DROP TABLE metadata_alias;
+DROP TABLE metadata_target;
