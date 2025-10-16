@@ -182,8 +182,22 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::executeMoveImp
 {
     LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageMoveDirectoryOperation"), "Moving directory '{}' to '{}'", from, to);
 
-    std::unordered_set<std::string> subdirs = {""};
-    path_map.iterateSubdirectories(from.parent_path().string() + "/", [&](const auto & elem){ subdirs.emplace(elem); });
+    std::vector<std::string> subdirs = {""};
+    std::queue<std::string> unlisted_nodes;
+    unlisted_nodes.push(from);
+
+    while (!unlisted_nodes.empty())
+    {
+        std::string next_to_list = std::move(unlisted_nodes.front());
+        unlisted_nodes.pop();
+
+        for (const auto & child : path_map.listSubdirectories(next_to_list))
+        {
+            subdirs.push_back((next_to_list + child).substr(from.string().size()));
+            unlisted_nodes.push(next_to_list + child);
+        }
+    }
+
     for (const auto & subdir : subdirs)
     {
         auto sub_path_to = to / subdir;

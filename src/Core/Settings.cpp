@@ -609,6 +609,9 @@ Migrate old metadata structure of S3Queue table to a new one
     DECLARE(Bool, s3queue_enable_logging_to_s3queue_log, false, R"(
 Enable writing to system.s3queue_log. The value can be overwritten per table with table settings
 )", 0) \
+    DECLARE(Float, s3queue_keeper_fault_injection_probablility, 0.0, R"(
+Keeper fault injection probability for S3Queue.
+)", 0) \
     DECLARE(UInt64, hdfs_replication, 0, R"(
 The actual number of replications can be specified when the hdfs file is created.
 )", 0) \
@@ -7165,6 +7168,9 @@ Use Shuffle aggregation strategy instead of PartialAggregation + Merge in distri
 )", EXPERIMENTAL) \
     DECLARE(Bool, enable_join_runtime_filters, false, R"(
 Filter left side by set of JOIN keys collected from the right side at runtime.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, join_runtime_filter_exact_values_limit, 10000, R"(
+Maximum number of elements in runtime filter that are stored as is in a set, when this threshold is exceeded if switches to bloom filter.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, join_runtime_bloom_filter_bytes, 512_KiB, R"(
 Size in bytes of a bloom filter used as JOIN runtime filter (see enable_join_runtime_filters setting).
