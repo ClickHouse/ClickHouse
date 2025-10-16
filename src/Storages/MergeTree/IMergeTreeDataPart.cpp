@@ -71,7 +71,6 @@ namespace ProfileEvents
     extern const Event LoadedPrimaryIndexFiles;
     extern const Event LoadedPrimaryIndexRows;
     extern const Event LoadedPrimaryIndexBytes;
-    extern const Event LoadedStatisticsMicroseconds;
 }
 
 namespace DimensionalMetrics
