@@ -1707,8 +1707,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         if (oldest_node != all_nodes.end())
         {
             UInt32 oldest_entry = DDLTaskBase::getLogEntryNumber(*oldest_node);
-            if (oldest_entry > first_entry_to_mark_finished)
-                first_entry_to_mark_finished = oldest_entry;
+            first_entry_to_mark_finished = std::max(oldest_entry, first_entry_to_mark_finished);
         }
 
         /// If the replica is new and some of the queries applied during recovery
