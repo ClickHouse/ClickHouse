@@ -21,7 +21,31 @@ using FunctionMultiSearchFirstPositionCaseInsensitiveUTF8 = FunctionsMultiString
 
 REGISTER_FUNCTION(MultiSearchFirstPositionCaseInsensitiveUTF8)
 {
-    factory.registerFunction<FunctionMultiSearchFirstPositionCaseInsensitiveUTF8>();
+    FunctionDocumentation::Description description = R"(
+Like [multiSearchFirstPosition](#multiSearchFirstPosition) but assumes `haystack` and `needle` to be UTF-8 strings and ignores case.
+    )";
+    FunctionDocumentation::Syntax syntax = "multiSearchFirstPositionCaseInsensitiveUTF8(haystack, [needle1, needle2, ..., needleN])";
+    FunctionDocumentation::Arguments arguments = {
+        {"haystack", "UTF-8 string in which the search is performed.", {"String"}},
+        {"needle", "Array of UTF-8 substrings to be searched.", {"Array(String)"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Leftmost offset in a `haystack` string which matches any of multiple `needle` strings, ignoring case. Returns `0`, if there was no match.", {"UInt64"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Case insensitive UTF-8 first position",
+        R"(SELECT multiSearchFirstPositionCaseInsensitiveUTF8('\x48\x45\x4c\x4c\x4f\x20\x57\x4f\x52\x4c\x44',['wor', 'ld', 'ello']))",
+        R"(
+┌─multiSearchFirstPositionCaseInsensitiveUTF8('HELLO WORLD', ['wor', 'ld', 'ello'])─┐
+│                                                                                  2 │
+└────────────────────────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionMultiSearchFirstPositionCaseInsensitiveUTF8>(documentation);
 }
 
 }
