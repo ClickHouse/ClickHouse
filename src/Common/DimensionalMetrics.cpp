@@ -1,12 +1,32 @@
 #include <Common/DimensionalMetrics.h>
 #include <Common/SipHash.h>
+#include <IO/WriteBuffer.h>
+#include <IO/WriteHelpers.h>
+#include <IO/Operators.h>
 
 #include <cassert>
 #include <mutex>
+#include <shared_mutex>
 
-namespace DB::DimensionalMetrics
+namespace DimensionalMetrics
 {
-    Metric::Metric() : value(0.0) {}
+    MetricFamily & MergeFailures = Factory::instance().registerMetric(
+        "merge_failures",
+        "Number of all failed merges since startup.",
+        {"error_name"}
+    );
+
+    MetricFamily & StartupScriptsFailureReason = Factory::instance().registerMetric(
+        "startup_scripts_failure_reason",
+        "Indicates startup scripts failures by error type. Set to 1 when a startup script fails, labelled with the error name.",
+        {"error_name"}
+    );
+
+    MetricFamily & MergeTreeParts = Factory::instance().registerMetric(
+        "merge_tree_parts",
+        "Number of merge tree data parts, labelled by part state (e.g. Temporary, PreActive, Active, Outdated, Deleting, DeleteOnDestroy), part type (e.g. Wide, Compact, Unknown) and whether it is a projection part.",
+        {"part_state", "part_type", "part_is_projection"}
+    );
 
     void Metric::set(Value value_)
     {
@@ -39,8 +59,10 @@ namespace DB::DimensionalMetrics
         return hash.get64();
     }
 
-    MetricFamily::MetricFamily(Labels labels_, std::vector<LabelValues> initial_label_values)
-        : labels(std::move(labels_))
+    MetricFamily::MetricFamily(String name_, String documentation_, Labels labels_, std::vector<LabelValues> initial_label_values)
+        : name(std::move(name_))
+        , documentation(std::move(documentation_))
+        , labels(std::move(labels_))
     {
         for (auto & label_values : initial_label_values)
         {
@@ -59,30 +81,29 @@ namespace DB::DimensionalMetrics
                 return *it->second;
             }
         }
+
         std::lock_guard lock(mutex);
-        auto [it, _] = metrics.try_emplace(std::move(label_values), std::make_shared<Metric>());
+        auto [it, _] = metrics.try_emplace(std::move(label_values), std::make_unique<Metric>());
         return *it->second;
     }
 
-    void MetricFamily::unregister(LabelValues label_values) noexcept
-    {
-        std::lock_guard lock(mutex);
-        metrics.erase(label_values);
-    }
-
-    MetricFamily::MetricsMap MetricFamily::getMetrics() const
-    {
-        std::shared_lock lock(mutex);
-        return metrics;
-    }
-
     const Labels & MetricFamily::getLabels() const { return labels; }
+    const String & MetricFamily::getName() const { return name; }
+    const String & MetricFamily::getDocumentation() const { return documentation; }
 
-    MetricRecord::MetricRecord(String name_, String documentation_, Labels labels, std::vector<LabelValues> initial_label_values)
-        : name(std::move(name_))
-        , documentation(std::move(documentation_))
-        , family(std::move(labels), std::move(initial_label_values))
+    void add(MetricFamily & metric, LabelValues labels, Value amount)
     {
+        metric.withLabels(std::move(labels)).increment(amount);
+    }
+
+    void sub(MetricFamily & metric, LabelValues labels, Value amount)
+    {
+        metric.withLabels(std::move(labels)).decrement(amount);
+    }
+
+    void set(MetricFamily & metric, LabelValues labels, Value value)
+    {
+        metric.withLabels(std::move(labels)).set(value);
     }
 
     Factory & Factory::instance()
@@ -99,19 +120,13 @@ namespace DB::DimensionalMetrics
     {
         std::lock_guard lock(mutex);
         registry.push_back(
-            std::make_shared<MetricRecord>(
+            std::make_unique<MetricFamily>(
                 std::move(name),
                 std::move(documentation),
                 std::move(labels),
                 std::move(initial_label_values)
             )
         );
-        return registry.back()->family;
-    }
-
-    MetricRecords Factory::getRecords() const
-    {
-        std::lock_guard lock(mutex);
-        return registry;
+        return *registry.back();
     }
 }

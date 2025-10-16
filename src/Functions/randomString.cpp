@@ -82,19 +82,13 @@ public:
             if (length > (1 << 30))
                 throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size in function {}", getName());
 
-            offset += length + 1;
+            offset += length;
             offsets_to[row_num] = offset;
         }
 
         /// Fill random bytes.
         data_to.resize(offsets_to.back());
         RandImpl::execute(reinterpret_cast<char *>(data_to.data()), data_to.size());
-
-        /// Put zero bytes in between.
-        auto * pos = data_to.data();
-        for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
-            pos[offsets_to[row_num] - 1] = 0;
-
         return col_to;
     }
 };
@@ -138,7 +132,7 @@ The returned characters are not necessarily ASCII characters, i.e. they may not 
     FunctionDocumentation::Syntax syntax = "randomString(length[, x])";
     FunctionDocumentation::Arguments arguments = {
         {"length", "Length of the string in bytes.", {"(U)Int*"}},
-        {"x", "Optional and ignored. The only purpose of the argument is to prevent common subexpression elimination when the same function call is used multiple times in a query.", {"Any"}}
+        {"x", "Optional and ignored. The only purpose of the argument is to prevent [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) when the same function call is used multiple times in a query.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a string filled with random bytes.", {"String"}};
     FunctionDocumentation::Examples examples = {

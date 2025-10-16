@@ -7,6 +7,7 @@
 #include <Common/DNSResolver.h>
 #include <Common/IO.h>
 #include <Common/LockMemoryExceptionInThread.h>
+#include <Common/MemoryTrackerDebugBlockerInThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/setThreadName.h>
@@ -138,7 +139,6 @@ void logToSystemTextLogQueue(
 void OwnSplitChannel::logSplit(
     const ExtendedLogMessage & msg_ext, const std::shared_ptr<InternalTextLogsQueue> & logs_queue, const std::string & msg_thread_name)
 {
-    LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
     const Poco::Message & msg = *msg_ext.base;
 
     try
@@ -393,16 +393,14 @@ void OwnAsyncSplitChannel::log(const Poco::Message & msg)
 
 void OwnAsyncSplitChannel::log(Poco::Message && msg)
 {
-    LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
     try
     {
         /// Based on logger_useful.h this won't be called if the message is not needed
         /// so we can create the AsyncLogMessage as it won't penalize performance by being unused
         auto msg_priority = msg.getPriority();
-        const auto & msg_source = msg.getSource();
         auto notification = std::make_shared<AsyncLogMessage>(std::move(msg));
         if (const auto & logs_queue = CurrentThread::getInternalTextLogsQueue();
-            logs_queue && logs_queue->isNeeded(msg_priority, msg_source))
+            logs_queue && logs_queue->isNeeded(msg_priority, notification->msg.getSource()))
         {
             /// If we need to push to the TCP queue, do it now since it expects to receive all messages synchronously
             pushExtendedMessageToInternalTCPTextLogQueue(notification->msg_ext, logs_queue);

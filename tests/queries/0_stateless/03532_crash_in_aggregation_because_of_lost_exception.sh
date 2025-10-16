@@ -15,7 +15,7 @@ optimize table t1 final;
 """
 
 for _ in {1..100}; do
-  ($CLICKHOUSE_CLIENT -q """
+  ($CLICKHOUSE_CURL -sS "${CLICKHOUSE_URL}" -d """
     SELECT count()
     FROM
     (

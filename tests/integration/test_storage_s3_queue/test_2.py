@@ -58,7 +58,10 @@ def started_cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "instance",
-            user_configs=["configs/users.xml"],
+            user_configs=[
+                "configs/users.xml",
+                "configs/enable_keeper_fault_injection.xml",
+            ],
             with_minio=True,
             with_azurite=True,
             with_zookeeper=True,
@@ -71,7 +74,10 @@ def started_cluster():
         )
         cluster.add_instance(
             "instance2",
-            user_configs=["configs/users.xml"],
+            user_configs=[
+                "configs/users.xml",
+                "configs/enable_keeper_fault_injection.xml",
+            ],
             with_minio=True,
             with_zookeeper=True,
             main_configs=[
@@ -449,7 +455,6 @@ select splitByChar('/', file_name)[-1] as file from system.s3queue where zookeep
         get_count(node, dst_table_name) + get_count(node_2, dst_table_name)
     ) != total_rows:
         print_debug_info()
-
         assert False
 
     get_query = f"SELECT column1, column2, column3 FROM {dst_table_name}"

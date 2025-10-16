@@ -473,11 +473,19 @@ private:
             }
         }
 
-        if (auto chunk = get_ready_out_of_order_bucket(); chunk.hasRows())
+        /// We want to prevent the following situation:
+        /// 1. all inputs are finished and we tried to push all buckets (i.e., current_bucket_num == NUM_BUCKETS)
+        /// 2. the next in order out of order bucket (and there are still some more) is empty, so we won't push it
+        /// 3. if in that case we won't loop and make another `get_ready_out_of_order_bucket()`,
+        ///    but proceed straight to `return NeedData`, we'll get `Pipeline stuck`, because, again, all inputs are finished
+        while (auto chunk = get_ready_out_of_order_bucket())
         {
-            chunk.getChunkInfos().template get<AggregatedChunkInfo>()->out_of_order_buckets = out_of_order_buckets;
-            output.push(std::move(chunk));
-            return Status::PortFull;
+            if (chunk.hasRows())
+            {
+                chunk.getChunkInfos().template get<AggregatedChunkInfo>()->out_of_order_buckets = out_of_order_buckets;
+                output.push(std::move(chunk));
+                return Status::PortFull;
+            }
         }
 
         if (!out_of_order_buckets.empty())
@@ -800,7 +808,17 @@ void AggregatingTransform::initGenerate()
         return;
     }
 
-    if (!params->aggregator.hasTemporaryData())
+    /// In the case of two different aggregators existing simultaneously due to a mixed pipeline of aggregate projections,
+    /// it is necessary to check whether any of the aggregators contains temporary data.
+    auto aggregator_has_temporary_data = [&]()
+    {
+        return params->aggregator.hasTemporaryData()
+            || std::any_of(
+                params->aggregator_list_ptr->begin(),
+                params->aggregator_list_ptr->end(),
+                [](const Aggregator & aggregator) { return aggregator.hasTemporaryData(); });
+    };
+    if (!aggregator_has_temporary_data())
     {
         if (!skip_merging)
         {
@@ -880,16 +898,18 @@ void AggregatingTransform::initGenerate()
         /// Merge external data from all aggregators used in query.
         for (auto & aggregator : *params->aggregator_list_ptr)
         {
-            tmp_files = aggregator.detachTemporaryData();
+            auto new_tmp_files = aggregator.detachTemporaryData();
             num_streams += tmp_files.size();
 
-            for (auto & tmp_stream : tmp_files)
+            for (auto & tmp_stream : new_tmp_files)
             {
                 auto stat = tmp_stream.finishWriting();
                 compressed_size += stat.compressed_size;
                 uncompressed_size += stat.uncompressed_size;
                 pipes.emplace_back(Pipe(std::make_unique<SourceFromNativeStream>(std::make_shared<const Block>(tmp_stream.getHeader()), tmp_stream.getReadStream())));
             }
+
+            tmp_files.splice(tmp_files.end(), new_tmp_files);
         }
 
         LOG_DEBUG(

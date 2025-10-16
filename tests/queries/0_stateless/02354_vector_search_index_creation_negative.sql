@@ -2,8 +2,6 @@
 
 -- Tests that various conditions are checked during creation of vector search indexes.
 
-SET enable_vector_similarity_index = 1;
-
 DROP TABLE IF EXISTS tab;
 
 SELECT 'Three or six index arguments';

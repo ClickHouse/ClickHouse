@@ -9,7 +9,6 @@
 -- The return type of the cosineDistance/L2Distance function will vary
 -- based on the data type of the 2 input arguments.
 
-SET enable_vector_similarity_index = 1;
 SET enable_analyzer = 1;
 SET vector_search_with_rescoring = 0;
 

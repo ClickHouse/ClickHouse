@@ -1,42 +1,46 @@
-#include <algorithm>
-#include <string>
-#include <mutex>
-#include <utility>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/TableNameHints.h>
-#include <Interpreters/loadMetadata.h>
-#include <Interpreters/executeQuery.h>
-#include <Interpreters/InterpreterCreateQuery.h>
-#include <Storages/IStorage.h>
-#include <Databases/IDatabase.h>
-#include <Databases/DatabaseMemory.h>
-#include <Databases/DatabaseOnDisk.h>
-#include <Disks/IDisk.h>
-#include <Storages/MemorySettings.h>
-#include <Storages/StorageMemory.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/MergeTree/MergeTreeData.h>
+
+#include <Access/ContextAccess.h>
+
 #include <Core/BackgroundSchedulePool.h>
-#include <IO/ReadHelpers.h>
-#include <Poco/DirectoryIterator.h>
-#include <Poco/Util/AbstractConfiguration.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <Databases/DatabaseMemory.h>
+#include <Databases/DatabaseOnDisk.h>
+#include <Databases/IDatabase.h>
+#include <Disks/IDisk.h>
+#include <IO/ReadHelpers.h>
 #include <IO/SharedThreadPools.h>
-#include <Common/Exception.h>
-#include <Common/quoteString.h>
-#include <Common/assert_cast.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/TableNameHints.h>
+#include <Interpreters/executeQuery.h>
+#include <Storages/IStorage.h>
+#include <Storages/MemorySettings.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/StorageMemory.h>
+#include <Poco/DirectoryIterator.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/logger_useful.h>
+#include <Common/Exception.h>
 #include <Common/ThreadPool.h>
-#include <Common/filesystemHelpers.h>
-#include <Common/noexcept_scope.h>
+#include <Common/UniqueLock.h>
+#include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
+#include <Common/filesystemHelpers.h>
+#include <Common/getRandomASCIIString.h>
+#include <Common/logger_useful.h>
+#include <Common/noexcept_scope.h>
+#include <Common/quoteString.h>
 #include <Common/threadPoolCallbackRunner.h>
-#include <base/scope_guard.h>
+
+#include <algorithm>
+#include <mutex>
+#include <string>
+#include <utility>
 
 #include <base/isSharedPtrUnique.h>
+#include <base/scope_guard.h>
 #include <boost/range/adaptor/map.hpp>
 #include <fmt/ranges.h>
 
@@ -95,18 +99,31 @@ namespace MergeTreeSetting
 class DatabaseNameHints : public IHints<>
 {
 public:
-    explicit DatabaseNameHints(const DatabaseCatalog & database_catalog_)
+    explicit DatabaseNameHints(
+        const DatabaseCatalog & database_catalog_
+    )
         : database_catalog(database_catalog_)
-    {
-    }
+    {}
+
     Names getAllRegisteredNames() const override
     {
+        auto context = CurrentThread::getQueryContext();
+        if (!context)
+            return {};
+
+        const auto access = context->getAccess();
+        const bool need_to_check_access_for_databases = !access->isGranted(AccessType::SHOW_DATABASES);
+
         Names result;
         auto databases_list = database_catalog.getDatabases();
         for (const auto & database_name : databases_list | boost::adaptors::map_keys)
         {
+            if (need_to_check_access_for_databases && !access->isGranted(AccessType::SHOW_DATABASES, database_name))
+                continue;
+
             if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
                 continue;
+
             result.emplace_back(database_name);
         }
         return result;
@@ -186,7 +203,7 @@ TemporaryTableHolder::~TemporaryTableHolder()
         try
         {
             auto table = getTable();
-            table->flushAndShutdown();
+            table->flushAndShutdown(/*is_drop=*/ true);
             temporary_tables->dropTable(getContext(), "_tmp_" + toString(id));
         }
         catch (...)
@@ -372,7 +389,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
             assert(!db_and_table.first && !db_and_table.second);
             if (exception)
             {
-                TableNameHints hints(this->tryGetDatabase(table_id.getDatabaseName()), getContext());
+                TableNameHints hints(this->tryGetDatabase(table_id.getDatabaseName()), context_);
                 std::vector<String> names = hints.getHints(table_id.getTableName());
                 if (names.empty())
                     exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist", table_id.getNameForLogs()));
@@ -472,7 +489,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
 
     if (!table && exception && !exception->has_value())
     {
-        TableNameHints hints(this->tryGetDatabase(table_id.getDatabaseName()), getContext());
+        TableNameHints hints(this->tryGetDatabase(table_id.getDatabaseName()), context_);
         std::vector<String> names = hints.getHints(table_id.getTableName());
         if (names.empty())
         {
@@ -634,17 +651,24 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
             throw;
         }
     }
-
     db->shutdown();
 
     if (drop)
     {
         UUID db_uuid = db->getUUID();
-
-        /// Delete the database.
-        db->drop(local_context);
-
         auto default_db_disk = getContext()->getDatabaseDisk();
+
+        try
+        {
+            /// Delete the database.
+            db->drop(local_context);
+        }
+        catch (...)
+        {
+            attachDatabase(database_name, db);
+            throw;
+        }
+
         /// Old ClickHouse versions did not store database.sql files
         /// Remove metadata dir (if exists) to avoid recreation of .sql file on server startup
         fs::path database_metadata_dir = fs::path("metadata") / escapeForFileName(database_name);
@@ -1516,14 +1540,13 @@ void DatabaseCatalog::waitTableFinallyDropped(const UUID & uuid)
         return;
 
     LOG_DEBUG(log, "Waiting for table {} to be finally dropped", toString(uuid));
-    std::unique_lock lock{tables_marked_dropped_mutex};
-    wait_table_finally_dropped.wait(lock, [&]() TSA_REQUIRES(tables_marked_dropped_mutex) -> bool
+    UniqueLock lock{tables_marked_dropped_mutex};
+    wait_table_finally_dropped.wait(lock.getUnderlyingLock(), [&]() TSA_REQUIRES(tables_marked_dropped_mutex) -> bool
     {
         return !tables_marked_dropped_ids.contains(uuid) || is_shutting_down;
     });
 
-    /// TSA doesn't support unique_lock
-    const bool has_table = TSA_SUPPRESS_WARNING_FOR_READ(tables_marked_dropped_ids).contains(uuid);
+    const bool has_table = tables_marked_dropped_ids.contains(uuid);
     LOG_DEBUG(log, "Done waiting for the table {} to be dropped. The outcome: {}", toString(uuid), has_table ? "table still exists" : "table dropped successfully");
 
     if (has_table)

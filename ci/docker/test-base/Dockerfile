@@ -21,6 +21,7 @@ RUN apt-get update \
         curl \
         dnsutils \
         gnupg \
+        file \
         iputils-ping \
         lsb-release \
         xxd \
@@ -91,6 +92,13 @@ RUN BRIDGE_VERSION='25.1.5.31' \
     && wget "https://packages.clickhouse.com/deb/pool/main/c/clickhouse/clickhouse-library-bridge_${BRIDGE_VERSION}_${ARCH}.deb" \
     && dpkg -i clickhouse-odbc-bridge_${BRIDGE_VERSION}_${ARCH}.deb clickhouse-library-bridge_${BRIDGE_VERSION}_${ARCH}.deb \
     && rm clickhouse-odbc-bridge_${BRIDGE_VERSION}_${ARCH}.deb clickhouse-library-bridge_${BRIDGE_VERSION}_${ARCH}.deb
+
+COPY jeprof /usr/bin/jeprof
+RUN wget -q -O /usr/bin/jeprof.orig https://raw.githubusercontent.com/jemalloc/jemalloc/41a859ef7325569c6c25f92d294d45123bb81355/bin/jeprof.in &&  \
+    sed -i -e 's/@jemalloc_version@/clickhouse/g' -e 's/@JEMALLOC_PREFIX@//g' /usr/bin/jeprof.orig && chmod +x /usr/bin/jeprof.orig
+
+RUN wget -q -O /usr/bin/flamegraph.pl https://raw.githubusercontent.com/brendangregg/FlameGraph/cd9ee4c4449775a2f867acf31c84b7fe4b132ad5/flamegraph.pl && chmod +x /usr/bin/flamegraph.pl
+RUN wget -q -O /usr/bin/difffolded.pl https://raw.githubusercontent.com/brendangregg/FlameGraph/cd9ee4c4449775a2f867acf31c84b7fe4b132ad5/difffolded.pl && chmod +x /usr/bin/difffolded.pl
 
 RUN echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && locale-gen en_US.UTF-8
 ENV LC_ALL en_US.UTF-8

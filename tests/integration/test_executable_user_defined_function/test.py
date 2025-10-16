@@ -81,19 +81,23 @@ def test_executable_function_python(started_cluster):
 
 def test_executable_function_send_chunk_header_python(started_cluster):
     skip_test_msan(node)
-    assert (
-        node.query("SELECT test_function_send_chunk_header_python(toUInt64(1))")
-        == "Key 1\n"
-    )
-    assert node.query("SELECT test_function_send_chunk_header_python(1)") == "Key 1\n"
 
-    assert (
-        node.query("SELECT test_function_send_chunk_header_pool_python(toUInt64(1))")
-        == "Key 1\n"
-    )
-    assert (
-        node.query("SELECT test_function_send_chunk_header_pool_python(1)") == "Key 1\n"
-    )
+    for function_name in [
+        "test_function_send_chunk_header_python",
+        "test_function_send_chunk_header_pool_python",
+    ]:
+        assert node.query(f"SELECT {function_name}(toUInt64(1))") == "Key 1\n"
+        assert node.query(f"SELECT {function_name}(1)") == "Key 1\n"
+
+        assert node.query(f"SELECT {function_name}(toUInt64(1))") == "Key 1\n"
+        assert node.query(f"SELECT {function_name}(1)") == "Key 1\n"
+
+        # Test specifically HTTP protocol
+        # This ensures that http_write_exception_in_output_format works as expected
+        assert node.http_query(
+            f"SELECT {function_name}(number) FROM numbers(10)",
+            params={"max_block_size": 3, "http_write_exception_in_output_format": True},
+        ) == "".join(f"Key {i}\n" for i in range(10))
 
 
 def test_executable_function_sum_python(started_cluster):
