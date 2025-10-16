@@ -112,13 +112,18 @@ static ReturnType addElementSafe(size_t num_elems, IColumn & column, F && impl)
     return ReturnType(true);
 }
 
-size_t SerializationQBit::validateAndReadQBitSize(ReadBuffer & istr) const
+size_t SerializationQBit::validateAndReadQBitSize(ReadBuffer & istr, const FormatSettings & settings) const
 {
-    size_t size = 0;
+    size_t size;
     readVarUInt(size, istr);
 
-    if (size > DEFAULT_MAX_STRING_SIZE)
-        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large QBit dimension (maximum: {})", DEFAULT_MAX_STRING_SIZE);
+    if (settings.binary.max_binary_string_size && size > settings.binary.max_binary_string_size)
+        throw Exception(
+            ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+            "Too large array size: {}. The maximum is: {}. To increase the maximum, use setting "
+            "format_binary_max_array_size",
+            size,
+            settings.binary.max_binary_string_size);
 
     /// If the dimension % 8 != 0, the buffer will contain padding floats. Thus, `size` can be larger, equal, but never smaller than dimension
     if (size < dimension)
@@ -262,9 +267,9 @@ void SerializationQBit::serializeBinary(const Field & field, WriteBuffer & ostr,
         throw Exception(ErrorCodes::SERIALIZATION_ERROR, "Unsupported QBit element size {}", element_size);
 }
 
-void SerializationQBit::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const
+void SerializationQBit::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    validateAndReadQBitSize(istr);
+    validateAndReadQBitSize(istr, settings);
 
     if (element_size == 16)
         field = deserializeFloatsToQBitTuple<BFloat16>(istr);
@@ -291,9 +296,9 @@ void SerializationQBit::serializeBinary(const IColumn & column, size_t row_num, 
         throw Exception(ErrorCodes::SERIALIZATION_ERROR, "Unsupported QBit size {}. Only 16, 32, and 64 are supported", element_size);
 }
 
-void SerializationQBit::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+void SerializationQBit::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    size_t size = validateAndReadQBitSize(istr);
+    size_t size = validateAndReadQBitSize(istr, settings);
 
     auto run = [&]<class T>()
     {

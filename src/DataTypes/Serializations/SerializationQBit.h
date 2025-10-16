@@ -39,7 +39,7 @@ private:
     void deserializeFloatsToQBit(IColumn & column, ReadFunc read) const;
 
     /// Helper function to validate and read QBit size from buffer for binary deserialization
-    size_t validateAndReadQBitSize(ReadBuffer & istr) const;
+    size_t validateAndReadQBitSize(ReadBuffer & istr, const FormatSettings & settings) const;
 
 
 public:
@@ -52,11 +52,11 @@ public:
 
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const override;
 
-    void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const override;
+    void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const override;
 
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
 
-    void deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+    void deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
 
