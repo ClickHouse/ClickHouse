@@ -280,6 +280,7 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
     AMD_DEBUG = "amd_debug"
     AMD_RELEASE = "amd_release"
     AMD_BINARY = "amd_binary"
+    AMD_FIPS_BINARY = "amd_fips_binary"
     AMD_ASAN = "amd_asan"
     AMD_TSAN = "amd_tsan"
     AMD_MSAN = "amd_msan"
@@ -352,6 +353,7 @@ class ArtifactNames:
     CH_AMD_MSAN = "CH_AMD_MSAN"
     CH_AMD_UBSAN = "CH_AMD_UBSAN"
     CH_AMD_BINARY = "CH_AMD_BINARY"
+    CH_AMD_FIPS_BINARY = "CH_AMD_FIPS_BINARY"
     CH_ARM_RELEASE = "CH_ARM_RELEASE"
     CH_ARM_ASAN = "CH_ARM_ASAN"
 
@@ -409,6 +411,7 @@ class ArtifactConfigs:
             ArtifactNames.CH_AMD_MSAN,
             ArtifactNames.CH_AMD_UBSAN,
             ArtifactNames.CH_AMD_BINARY,
+            ArtifactNames.CH_AMD_FIPS_BINARY,
             ArtifactNames.CH_ARM_RELEASE,
             ArtifactNames.CH_ARM_ASAN,
             ArtifactNames.CH_COV_BIN,
