@@ -131,8 +131,10 @@ add_headers_and_sources(dbms Storages/ObjectStorage/S3)
 add_headers_and_sources(dbms Storages/ObjectStorage/HDFS)
 add_headers_and_sources(dbms Storages/ObjectStorage/Local)
 add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes)
+add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes/Common)
 add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes/Iceberg)
 add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes/DeltaLake)
+add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes/Paimon)
 add_headers_and_sources(dbms Common/NamedCollections)
 add_headers_and_sources(dbms Common/Scheduler/Workload)
 
@@ -473,10 +475,6 @@ target_link_libraries(
         Poco::Redis
 )
 
-if (TARGET ch_contrib::jwt-cpp)
-    target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::jwt-cpp)
-endif()
-
 if (TARGET ch_contrib::mongocxx)
     target_link_libraries(
         dbms
@@ -766,7 +764,3 @@ if (ENABLE_TESTS)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::parquet)
     endif()
 endif ()
-
-if (TARGET ch_contrib::jwt-cpp)
-    add_object_library(clickhouse_client_jwt Client/jwt)
-endif()
