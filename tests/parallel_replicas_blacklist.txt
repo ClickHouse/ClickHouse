@@ -138,7 +138,6 @@
 01010_partial_merge_join
 02789_filesystem_cache_alignment
 03325_sqlite_join_wrong_answer
-03644_join_order_mixed_comma_and_left
 
     https://github.com/ClickHouse/clickhouse-private/issues/17173
 03174_exact_rows_before_aggregation
