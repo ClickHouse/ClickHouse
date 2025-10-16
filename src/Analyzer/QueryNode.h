@@ -170,6 +170,16 @@ public:
         is_distinct = is_distinct_value;
     }
 
+    bool isLimitByAll() const
+    {
+        return is_limit_by_all;
+    }
+
+    void setIsLimitByAll(bool is_limit_by_all_value)
+    {
+        is_limit_by_all = is_limit_by_all_value;
+    }
+
     /// Returns true if query node has LIMIT WITH TIES, false otherwise
     bool isLimitWithTies() const
     {
@@ -702,6 +712,7 @@ private:
     bool is_group_by_all = false;
     bool is_order_by_all = false;
     bool is_shuffle = false;
+    bool is_limit_by_all = false;
 
     std::string cte_name;
     NamesAndTypes projection_columns;
