@@ -39,6 +39,7 @@ MergingShuffledTransform::MergingShuffledTransform(
         use_average_block_sizes,
         apply_virtual_row_conversions)
 {
+    LOG_TRACE(getLogger("MergingShuffledTransform"), "MergingShuffledTransform");
 }
 
 void MergingShuffledTransform::onNewInput()

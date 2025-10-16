@@ -31,12 +31,15 @@
 #include <Processors/Transforms/MergingAggregatedTransform.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
+#include <Processors/Transforms/PartialShufflingTransform.h>
 #include <Processors/Transforms/StreamInQueryResultCacheTransform.h>
 #include <Processors/Transforms/TotalsHavingTransform.h>
 #include <QueryPipeline/Chain.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <QueryPipeline/printPipeline.h>
+
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -154,6 +157,9 @@ static void checkCompleted(Processors & processors)
 
 static void initRowsBeforeLimit(IOutputFormat * output_format)
 {
+    LOG_TRACE(getLogger("QueryPipeline"), "initRowsBeforeLimit");
+
+
     RowsBeforeStepCounterPtr rows_before_limit_at_least;
     std::vector<IProcessor *> processors;
     std::map<LimitTransform *, std::vector<size_t>> limit_candidates;
@@ -210,6 +216,14 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
         {
             /// Case 2.
             if (typeid_cast<PartialSortingTransform *>(processor))
+            {
+                processors.emplace_back(processor);
+                limit_candidates[limit_processor].push_back(limit_input_port);
+                continue;
+            }
+
+            /// Case 2.
+            if (typeid_cast<PartialShufflingTransform *>(processor))
             {
                 processors.emplace_back(processor);
                 limit_candidates[limit_processor].push_back(limit_input_port);
@@ -312,6 +326,8 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
 }
 static void initRowsBeforeAggregation(std::shared_ptr<Processors> processors, IOutputFormat * output_format)
 {
+    LOG_TRACE(getLogger("QueryPipeline"), "initRowsBeforeAggregation");
+
     bool has_aggregation = false;
 
     if (!processors->empty())

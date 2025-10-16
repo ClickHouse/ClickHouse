@@ -1,6 +1,6 @@
 #include <IO/Operators.h>
 #include <Interpreters/Context.h>
-// #include <Processors/Merges/MergingShuffledTransform.h>
+#include <Processors/Merges/MergingShuffledTransform.h>
 #include <Processors/QueryPlan/ShufflingStep.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
@@ -69,6 +69,7 @@ namespace ErrorCodes
 
 size_t getMaxBytesInQueryBeforeExternalShuffle(double max_bytes_ratio_before_external_sort)
 {
+
     if (max_bytes_ratio_before_external_sort == 0.)
         return 0;
 
@@ -100,7 +101,11 @@ size_t getMaxBytesInQueryBeforeExternalShuffle(double max_bytes_ratio_before_ext
 ShufflingStep::Settings::Settings(const DB::Settings & settings)
 {
     max_block_size = settings[Setting::max_block_size];
+
     size_limits = SizeLimits(settings[Setting::max_rows_to_sort], settings[Setting::max_bytes_to_sort], settings[Setting::sort_overflow_mode]);
+    LOG_TRACE(getLogger("ShufflingStep"), "max_block_size {}, size_limits.max_rows: {}", max_block_size, size_limits.max_rows);
+
+
     max_bytes_before_remerge = settings[Setting::max_bytes_before_remerge_sort];
     remerge_lowered_memory_bytes_ratio = settings[Setting::remerge_sort_lowered_memory_bytes_ratio];
 
@@ -116,12 +121,17 @@ ShufflingStep::Settings::Settings(const DB::Settings & settings)
 ShufflingStep::Settings::Settings(size_t max_block_size_)
 {
     max_block_size = max_block_size_;
+    // LOG_TRACE(getLogger("ShufflingStep"), "max_block_size: {}", max_block_size);
+
 }
 
 ShufflingStep::Settings::Settings(const QueryPlanSerializationSettings & settings)
 {
+    LOG_TRACE(getLogger("ShufflingStep"), "Settings::Settings(const QueryPlanSerializationSettings & settings)");
+
     max_block_size = settings[QueryPlanSerializationSetting::max_block_size];
     size_limits = SizeLimits(settings[QueryPlanSerializationSetting::max_rows_to_sort], settings[QueryPlanSerializationSetting::max_bytes_to_sort], settings[QueryPlanSerializationSetting::sort_overflow_mode]);
+    LOG_TRACE(getLogger("ShufflingStep"), "max_block_size {}, size_limits.max_rows: {}", max_block_size, size_limits.max_rows);
     max_bytes_before_remerge = settings[QueryPlanSerializationSetting::max_bytes_before_remerge_sort];
     remerge_lowered_memory_bytes_ratio = settings[QueryPlanSerializationSetting::remerge_sort_lowered_memory_bytes_ratio];
 
@@ -136,6 +146,8 @@ ShufflingStep::Settings::Settings(const QueryPlanSerializationSettings & setting
 
 void ShufflingStep::Settings::updatePlanSettings(QueryPlanSerializationSettings & settings) const
 {
+    LOG_TRACE(getLogger("ShufflingStep"), "updatePlanSettings");
+
     settings[QueryPlanSerializationSetting::max_block_size] = max_block_size;
     settings[QueryPlanSerializationSetting::max_rows_to_sort] = size_limits.max_rows;
     settings[QueryPlanSerializationSetting::max_bytes_to_sort] = size_limits.max_bytes;
@@ -172,23 +184,21 @@ ShufflingStep::ShufflingStep(
     , sort_settings(settings_)
 {
 
-    LOG_TRACE(getLogger("ShufflingStep"), "ShufflingStep::ShufflingStep type(Type::Full)");
+    LOG_TRACE(getLogger("ShufflingStep"), "ShufflingStep type(Type::Full)");
 }
 
 ShufflingStep::ShufflingStep(
     const SharedHeader & input_header,
     size_t max_block_size_,
     UInt64 limit_,
-    bool always_read_till_end_)
+    bool)
     : ITransformingStep(input_header, input_header, getTraits(limit_))
     , type(Type::MergingShuffled)
     , limit(limit_)
-    , always_read_till_end(always_read_till_end_)
+    // , always_read_till_end(always_read_till_end_)
     , sort_settings(max_block_size_)
 {
-    LOG_TRACE(getLogger("ShufflingStep"), "ShufflingStep::ShufflingStep type(Type::MergingShuffled)");
-
-    sort_settings.max_block_size = max_block_size_;
+    LOG_TRACE(getLogger("ShufflingStep"), "ShufflingStep type(Type::MergingShuffled), max_block_size: {}", max_block_size_);
 }
 
 void ShufflingStep::updateOutputHeader()
@@ -196,29 +206,32 @@ void ShufflingStep::updateOutputHeader()
     output_header = input_headers.front();
 }
 
-void ShufflingStep::updateLimit(size_t limit_)
-{
-    if (limit_ && (limit == 0 || limit_ < limit))
-    {
-        limit = limit_;
-        transform_traits.preserves_number_of_rows = false;
-    }
-}
+// void ShufflingStep::updateLimit(size_t limit_)
+// {
+//     LOG_TRACE(getLogger("ShufflingStep"), "updateLimit");
 
-void ShufflingStep::mergingShuffled(QueryPipelineBuilder & pipeline, const UInt64 limit_)
+//     if (limit_ && (limit == 0 || limit_ < limit))
+//     {
+//         limit = limit_;
+//         transform_traits.preserves_number_of_rows = false;
+//     }
+// }
+
+void ShufflingStep::mergingShuffled(QueryPipelineBuilder & pipeline, const UInt64)
 {
-    LOG_TRACE(getLogger("ShufflingStep"), "ShufflingStep::mergingShuffled");
+    LOG_TRACE(getLogger("ShufflingStep"), "mergingShuffled");
 
     /// If there are several streams, then we merge them into one
     if (pipeline.getNumStreams() > 1)
     {
-        if (use_buffering && sort_settings.read_in_order_use_buffering)
-        {
-            pipeline.addSimpleTransform([&](const SharedHeader & header)
-            {
-                return std::make_shared<BufferChunksTransform>(header, sort_settings.max_block_size, sort_settings.max_block_bytes, limit_);
-            });
-        }
+        // TODO
+        // if (use_buffering && sort_settings.read_in_order_use_buffering)
+        // {
+        //     pipeline.addSimpleTransform([&](const SharedHeader & header)
+        //     {
+        //         return std::make_shared<BufferChunksTransform>(header, sort_settings.max_block_size, sort_settings.max_block_bytes, limit_);
+        //     });
+        // }
 
         // TODO: finish MergingShuffledTransform
     //     auto transform = std::make_shared<MergingShuffledTransform>(
@@ -285,7 +298,7 @@ void ShufflingStep::fullShuffleStreams(
     const UInt64 limit_,
     const bool skip_partial_shuffle)
 {
-    LOG_TRACE(getLogger("ShufflingStep"), "ShufflingStep::fullShuffleStreams");
+    LOG_TRACE(getLogger("ShufflingStep"), "ShufflingStep::fullShuffleStreams, {}", sort_settings.max_block_size);
 
     if (!skip_partial_shuffle || limit_)
     {
@@ -318,27 +331,27 @@ void ShufflingStep::fullShuffleStreams(
 void ShufflingStep::fullShuffle(
     QueryPipelineBuilder & pipeline, const UInt64 limit_, const bool skip_partial_shuffle)
 {
-    LOG_TRACE(getLogger("ShufflingStep"), "ShufflingStep::fullShuffle");
+    LOG_TRACE(getLogger("ShufflingStep"), "ShufflingStep::fullShuffle, pipeline.getNumStreams(): {}", pipeline.getNumStreams());
 
     // scatterByPartitionIfNeeded(pipeline);
 
     fullShuffleStreams(pipeline, sort_settings, limit_, skip_partial_shuffle);
 
     // TODO
-    /// If there are several streams, then we merge them into one
-    // if (pipeline.getNumStreams() > 1 )
-    // // && (partition_by_description.empty() || pipeline.getNumThreads() == 1))
-    // {
-    //     auto transform = std::make_shared<MergingShuffledTransform>(
-    //         pipeline.getSharedHeader(),
-    //         pipeline.getNumStreams(),
-    //         sort_settings.max_block_size,
-    //         /*max_block_size_bytes=*/0,
-    //         limit_,
-    //         always_read_till_end);
+    // If there are several streams, then we merge them into one
+    if (pipeline.getNumStreams() > 1 )
+    // && (partition_by_description.empty() || pipeline.getNumThreads() == 1))
+    {
+        auto transform = std::make_shared<MergingShuffledTransform>(
+            pipeline.getSharedHeader(),
+            pipeline.getNumStreams(),
+            sort_settings.max_block_size,
+            /*max_block_size_bytes=*/0,
+            limit_,
+            always_read_till_end);
 
-    //     pipeline.addTransform(std::move(transform));
-    // }
+        pipeline.addTransform(std::move(transform));
+    }
 }
 
 void ShufflingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
@@ -347,7 +360,7 @@ void ShufflingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bui
     /// The type depends on constructor used to create shuffling step.
     /// So we'll try to infer shuffling to use only in case of Full shuffling
 
-    LOG_TRACE(getLogger("ShufflingStep"), "ShufflingStep::transformPipeline");
+    // LOG_TRACE(getLogger("ShufflingStep"), "transformPipeline, mbs: {}", max_block_size);
 
     if (type == Type::MergingShuffled)
     {
@@ -377,7 +390,7 @@ void ShufflingStep::serializeSettings(QueryPlanSerializationSettings & settings)
     sort_settings.updatePlanSettings(settings);
 }
 
-void ShufflingStep::serialize(Serialization & ctx) const
+void ShufflingStep::serialize(Serialization &) const
 {
     if (type != Type::Full)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization of ShufflingStep is implemented only for Full shuffling");
@@ -385,14 +398,6 @@ void ShufflingStep::serialize(Serialization & ctx) const
     /// Do not serialize type here; Later we can use different names if needed.\
 
     /// Do not serialize limit for now; it is expected to be pushed down from plan optimization.
-
-    serializeSortDescription(result_description, ctx.out);
-
-    /// Later
-    if (!partition_by_description.empty())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization of partitioned shuffling is not implemented for ShufflingStep");
-
-    writeVarUInt(partition_by_description.size(), ctx.out);
 }
 
 std::unique_ptr<IQueryPlanStep> ShufflingStep::deserialize(Deserialization & ctx)
@@ -401,12 +406,6 @@ std::unique_ptr<IQueryPlanStep> ShufflingStep::deserialize(Deserialization & ctx
         throw Exception(ErrorCodes::INCORRECT_DATA, "ShufflingStep must have one input stream");
 
     ShufflingStep::Settings sort_settings(ctx.settings);
-
-    UInt64 partition_desc_size;
-    readVarUInt(partition_desc_size, ctx.in);
-
-    if (partition_desc_size)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Deserialization of partitioned shuffling is not implemented for ShufflingStep");
 
     return std::make_unique<ShufflingStep>(
         ctx.input_headers.front(), 0, std::move(sort_settings));
