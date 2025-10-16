@@ -339,4 +339,82 @@ bool NoOpTokenExtractor::nextInStringLike(const char * /*data*/, size_t /*length
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "NoOpTokenExtractor::nextInStringLike is not implemented");
 }
 
+SparseGramTokenExtractor::SparseGramTokenExtractor(size_t min_length, size_t max_length, std::optional<size_t> min_cutoff_length_)
+    : sparse_grams_iterator(min_length, max_length, min_cutoff_length_)
+{
+}
+
+bool SparseGramTokenExtractor::nextInString(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const
+{
+    if (std::tie(data, length) != std::tie(previous_data, previous_len))
+    {
+        previous_data = data;
+        previous_len = length;
+        sparse_grams_iterator.set(data, data + length);
+    }
+
+    Pos next_begin;
+    Pos next_end;
+    if (!sparse_grams_iterator.get(next_begin, next_end))
+    {
+        previous_data = nullptr;
+        previous_len = 0;
+        return false;
+    }
+    *token_start = next_begin - data;
+    *token_length = next_end - next_begin;
+    *pos = *token_start;
+
+    return true;
+}
+
+bool SparseGramTokenExtractor::nextInStringLike(const char * data, size_t length, size_t * pos, String & token) const
+{
+    if (std::tie(data, length) != std::tie(previous_data, previous_len))
+    {
+        previous_data = data;
+        previous_len = length;
+        sparse_grams_iterator.set(data, data + length);
+    }
+
+    token.clear();
+
+    while (true)
+    {
+        Pos next_begin;
+        Pos next_end;
+        if (!sparse_grams_iterator.get(next_begin, next_end))
+        {
+            previous_data = nullptr;
+            previous_len = 0;
+            return false;
+        }
+        bool match_substring = true;
+        for (size_t i = next_begin - data; i < static_cast<size_t>(next_end - data);)
+        {
+            /// Escaped sequences are not supported by sparse grams tokenizers.
+            /// It requires pushing down this logic into sparse grams implementation,
+            /// because it changes the split into sparse grams. We don't want to do that now.
+            if (data[i] == '%' || data[i] == '_' || data[i] == '\\')
+            {
+                token.clear();
+                match_substring = false;
+                break;
+            }
+            else
+            {
+                const size_t sz = UTF8::seqLength(static_cast<UInt8>(data[i]));
+                for (size_t j = 0; j < sz; ++j)
+                    token.push_back(data[i + j]);
+                i += sz;
+            }
+        }
+        if (match_substring)
+        {
+            *pos = next_begin - data;
+            return true;
+        }
+    }
+}
+
 }
