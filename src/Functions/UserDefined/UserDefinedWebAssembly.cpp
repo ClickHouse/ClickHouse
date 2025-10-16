@@ -873,7 +873,7 @@ private:
 };
 
 std::shared_ptr<UserDefinedWebAssemblyFunction>
-UserDefinedWebAssemblyFunctionFactory::addOrReplace(ASTPtr create_function_query, ContextPtr context)
+UserDefinedWebAssemblyFunctionFactory::addOrReplace(ASTPtr create_function_query, WasmModuleManager & module_manager)
 {
     auto * create_query = typeid_cast<ASTCreateWasmFunctionQuery *>(create_function_query.get());
     if (!create_query)
@@ -883,7 +883,7 @@ UserDefinedWebAssemblyFunctionFactory::addOrReplace(ASTPtr create_function_query
             create_function_query ? create_function_query->formatForErrorMessage() : "nullptr");
 
     auto function_def = create_query->validateAndGetDefinition();
-    auto [wasm_module, module_hash] = context->getWasmModuleManager().getModule(function_def.module_name);
+    auto [wasm_module, module_hash] = module_manager.getModule(function_def.module_name);
     transformEndianness<std::endian::big>(module_hash);
     String module_hash_str = getHexUIntLowercase(module_hash);
     if (function_def.module_hash.empty())
@@ -894,7 +894,7 @@ UserDefinedWebAssemblyFunctionFactory::addOrReplace(ASTPtr create_function_query
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Module '{}' has hash '{}', but '{}' expected",
+            "WebAssembly module '{}' digest mismatch, expected {}, got {}",
             function_def.module_name,
             module_hash_str,
             function_def.module_hash);
@@ -943,10 +943,10 @@ FunctionOverloadResolverPtr UserDefinedWebAssemblyFunctionFactory::get(const Str
     return std::make_unique<FunctionToOverloadResolverAdaptor>(std::move(executable_function));
 }
 
-void UserDefinedWebAssemblyFunctionFactory::dropIfExists(const String & function_name)
+bool UserDefinedWebAssemblyFunctionFactory::dropIfExists(const String & function_name)
 {
     std::unique_lock lock(registry_mutex);
-    registry.erase(function_name);
+    return registry.erase(function_name) > 0;
 }
 
 UserDefinedWebAssemblyFunctionFactory & UserDefinedWebAssemblyFunctionFactory::instance()

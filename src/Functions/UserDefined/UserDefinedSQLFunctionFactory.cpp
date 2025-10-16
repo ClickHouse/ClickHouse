@@ -160,7 +160,7 @@ bool UserDefinedSQLFunctionFactory::registerFunction(const ContextMutablePtr & c
     try
     {
         if (create_function_query->as<ASTCreateWasmFunctionQuery>())
-            UserDefinedWebAssemblyFunctionFactory::instance().addOrReplace(create_function_query, context);
+            UserDefinedWebAssemblyFunctionFactory::instance().addOrReplace(create_function_query, context->getWasmModuleManager());
         else if (replace_if_exists && UserDefinedWebAssemblyFunctionFactory::instance().has(function_name))
             UserDefinedWebAssemblyFunctionFactory::instance().dropIfExists(function_name);
 
@@ -189,7 +189,8 @@ bool UserDefinedSQLFunctionFactory::unregisterFunction(const ContextMutablePtr &
 {
     checkCanBeUnregistered(context, function_name);
 
-    UserDefinedWebAssemblyFunctionFactory::instance().dropIfExists(function_name);
+    if (UserDefinedWebAssemblyFunctionFactory::instance().dropIfExists(function_name))
+        return true;
 
     try
     {
@@ -272,6 +273,15 @@ void UserDefinedSQLFunctionFactory::restore(RestorerFromBackup & restorer, const
     auto context = restorer.getContext();
     for (const auto & [function_name, create_function_query] : restored_functions)
         registerFunction(context, function_name, create_function_query, throw_if_exists, replace_if_exists);
+}
+
+void UserDefinedSQLFunctionFactory::loadFunctions(IUserDefinedSQLObjectsStorage & function_storage, WasmModuleManager & wasm_module_manager)
+{
+    for (const auto & [name, create_function_query] : function_storage.getAllObjects())
+    {
+        if (create_function_query->as<ASTCreateWasmFunctionQuery>())
+            UserDefinedWebAssemblyFunctionFactory::instance().addOrReplace(create_function_query, wasm_module_manager);
+    }
 }
 
 }

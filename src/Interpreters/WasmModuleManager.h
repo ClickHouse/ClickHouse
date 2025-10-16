@@ -47,7 +47,6 @@ protected:
     std::string getFilePath(std::string_view module_name) const;
     void registerExistingModules();
 
-
     DiskPtr user_scripts_disk;
     std::filesystem::path user_scripts_path;
 

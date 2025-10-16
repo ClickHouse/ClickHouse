@@ -106,7 +106,7 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
 
     if (!create_function_query)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-            "The function '{}' is not a SQL macro function and is not supported when 'enable_analyzer' is set to false", function.formatForErrorMessage());
+            "The function '{}' is not a SQL defined function and is not supported when 'enable_analyzer' is set to false", function.formatForErrorMessage());
 
     auto & function_core_expression = create_function_query->function_core->children.at(0);
 

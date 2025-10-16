@@ -76,16 +76,18 @@ protected:
     WebAssemblyFunctionSettings settings;
 };
 
+class WasmModuleManager;
 
 class UserDefinedWebAssemblyFunctionFactory
 {
 public:
-    std::shared_ptr<UserDefinedWebAssemblyFunction> addOrReplace(ASTPtr create_function_query, ContextPtr context);
+    std::shared_ptr<UserDefinedWebAssemblyFunction> addOrReplace(ASTPtr create_function_query, WasmModuleManager & module_manager);
 
     bool has(const String & function_name);
     FunctionOverloadResolverPtr get(const String & function_name);
 
-    void dropIfExists(const String & function_name);
+    /// Returns true if function was removed
+    bool dropIfExists(const String & function_name);
 
     static UserDefinedWebAssemblyFunctionFactory & instance();
 private:

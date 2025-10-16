@@ -85,6 +85,7 @@
 #include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
 #include <Functions/UserDefined/createUserDefinedSQLObjectsStorage.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/InterserverCredentials.h>
 #include <Interpreters/Cluster.h>
@@ -1562,7 +1563,11 @@ void Context::setUserScriptsPath(const String & path)
         std::lock_guard lock(shared->mutex);
         shared->user_scripts_path = path;
     }
+
     initWasmModuleManager();
+    auto & function_storage = getUserDefinedSQLObjectsStorage();
+    function_storage.loadObjects();
+    UserDefinedSQLFunctionFactory::instance().loadFunctions(function_storage, getWasmModuleManager());
 }
 
 void Context::addOrUpdateWarningMessage(WarningType warning, const PreformattedMessage & message) const
@@ -3319,12 +3324,6 @@ IUserDefinedSQLObjectsStorage & Context::getUserDefinedSQLObjectsStorage()
 
     std::lock_guard lock(shared->mutex);
     return *shared->user_defined_sql_objects_storage;
-}
-
-void Context::setUserDefinedSQLObjectsStorage(std::unique_ptr<IUserDefinedSQLObjectsStorage> storage)
-{
-    std::lock_guard lock(shared->mutex);
-    shared->user_defined_sql_objects_storage = std::move(storage);
 }
 
 IWorkloadEntityStorage & Context::getWorkloadEntityStorage() const

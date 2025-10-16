@@ -9,6 +9,8 @@ namespace DB
 {
 class BackupEntriesCollector;
 class RestorerFromBackup;
+class IUserDefinedSQLObjectsStorage;
+class WasmModuleManager;
 
 /// Factory for SQLUserDefinedFunctions
 class UserDefinedSQLFunctionFactory : public IHints<>
@@ -42,6 +44,8 @@ public:
 
     /// Restores user-defined SQL functions from the backup.
     void restore(RestorerFromBackup & restorer, const String & data_path_in_backup);
+
+    void loadFunctions(IUserDefinedSQLObjectsStorage & function_storage, WasmModuleManager & wasm_module_manager);
 
 private:
     ContextPtr global_context;
