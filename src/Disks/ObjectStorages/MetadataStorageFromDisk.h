@@ -5,6 +5,7 @@
 #include <Disks/ObjectStorages/MetadataOperationsHolder.h>
 #include <Disks/ObjectStorages/MetadataStorageFromDiskTransactionOperations.h>
 #include <Disks/ObjectStorages/MetadataStorageTransactionState.h>
+#include <Disks/ObjectStorages/StoredObject.h>
 #include <Disks/IDisk.h>
 
 namespace DB
@@ -96,13 +97,11 @@ public:
 
     void writeInlineDataToFile(const std::string & path, const std::string & data) override;
 
-    void createEmptyMetadataFile(const std::string & path) override;
-
-    void createMetadataFile(const std::string & path, ObjectStorageKey key, uint64_t size_in_bytes) override;
+    void createMetadataFile(const std::string & path, const StoredObjects & objects) override;
 
     bool supportAddingBlobToMetadata() override { return true; }
 
-    void addBlobToMetadata(const std::string & path, ObjectStorageKey key, uint64_t size_in_bytes) override;
+    void addBlobToMetadata(const std::string & path, const StoredObject & object) override;
 
     void setLastModified(const std::string & path, const Poco::Timestamp & timestamp) override;
 

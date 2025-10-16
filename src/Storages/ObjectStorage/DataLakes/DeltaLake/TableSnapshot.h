@@ -35,7 +35,7 @@ public:
     size_t getVersion() const;
 
     /// Update snapshot to latest version.
-    bool update(const DB::ContextPtr & context);
+    void update(const DB::ContextPtr & context);
 
     /// Iterate over DeltaLake data files.
     DB::ObjectIterator iterate(

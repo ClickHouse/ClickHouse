@@ -775,6 +775,8 @@ As we can see, ClickHouse kept the most frequent paths `a`, `b` and `c` and move
 As was described in the previous section, when the `max_dynamic_paths` limit is reached all new paths are stored in a single shared data structure.
 In this section we will look into the details of the shared data structure and how we read paths sub-columns from it.
 
+See section ["introspection functions"](/sql-reference/data-types/newjson#introspection-functions) for details of functions used for inspecting the contents of a JSON column.
+
 ### Shared data structure in memory {#shared-data-structure-in-memory}
 
 In memory, shared data structure is just a sub-column with type `Map(String, String)` that stores mapping from a flattened JSON path to a binary encoded value.
@@ -826,6 +828,8 @@ This serialization is quite inefficient for writing data (so it's not recommende
 
 Note: because of storing some additional information inside the data structure, the disk storage size is higher with this serialization compared to 
 `map` and `map_with_buckets` serializations.
+
+For more detailed overview of the new shared data serializations and implementation details read the [blog post](https://clickhouse.com/blog/json-data-type-gets-even-better).
 
 ## Introspection functions {#introspection-functions}
 
