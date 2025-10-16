@@ -984,6 +984,7 @@ void ZooKeeper::receiveEvent()
                 }
 
                 CurrentMetrics::sub(CurrentMetrics::ZooKeeperWatch, it->second.size());
+                watch_infos.erase(watch_response.path);
                 watches.erase(it);
             }
         };
@@ -1069,6 +1070,15 @@ void ZooKeeper::receiveEvent()
                         if (callbacks.size() > 10000)
                             LOG_WARNING(log, "Too many watches for path {}: {} (This is likely an error)", req_path, callbacks.size());
                         CurrentMetrics::add(CurrentMetrics::ZooKeeperWatch);
+                        // Record metadata snapshot for this watch
+                        WatchSnapshot snapshot;
+                        snapshot.path = req_path;
+                        snapshot.session_id = session_id;
+                        snapshot.request_xid = req->xid;
+                        snapshot.op_num = req->getOpNum();
+                        snapshot.create_time = std::time(nullptr);
+                        auto & vec = watch_infos[req_path];
+                        vec.push_back(std::move(snapshot));
                     }
                 }
             }
@@ -1277,6 +1287,7 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
 
             CurrentMetrics::sub(CurrentMetrics::ZooKeeperWatch, watch_callback_count);
             watches.clear();
+            watch_infos.clear();
         }
 
         /// Drain queue
@@ -1930,8 +1941,8 @@ void ZooKeeper::observeOperation(const ZooKeeperRequest * request, const ZooKeep
 {
     chassert(response);
 
-    auto aggregated_zookeeper_log_ = getAggregatedZooKeeperLog();
-    if (!aggregated_zookeeper_log_)
+    auto aggregated_zookeeper_log_ptr = getAggregatedZooKeeperLog();
+    if (!aggregated_zookeeper_log_ptr)
         return;
 
     if (!request)
@@ -1939,12 +1950,12 @@ void ZooKeeper::observeOperation(const ZooKeeperRequest * request, const ZooKeep
         chassert(response->xid == PING_XID || response->xid == WATCH_XID);
         if (const auto * watch_response = dynamic_cast<const ZooKeeperWatchResponse *>(response))
         {
-            aggregated_zookeeper_log_->observe(session_id, watch_response->tryGetOpNum(), watch_response->path, elapsed_microseconds, watch_response->error);
+            aggregated_zookeeper_log_ptr->observe(session_id, watch_response->tryGetOpNum(), watch_response->path, elapsed_microseconds, watch_response->error);
         }
         return;
     }
 
-    aggregated_zookeeper_log_->observe(session_id, response->tryGetOpNum(), request->getPath(), elapsed_microseconds, response->error);
+    aggregated_zookeeper_log_ptr->observe(session_id, response->tryGetOpNum(), request->getPath(), elapsed_microseconds, response->error);
 
     const auto * multi_request = dynamic_cast<const ZooKeeperMultiRequest *>(request);
     const auto * multi_response = dynamic_cast<const ZooKeeperMultiResponse *>(response);
@@ -1966,6 +1977,15 @@ void ZooKeeper::setServerCompletelyStarted()
 {
     if (!args.enable_fault_injections_during_startup)
         setupFaultDistributions();
+}
+
+std::vector<WatchSnapshot> ZooKeeper::getWatchesSnapshot()
+{
+    std::vector<WatchSnapshot> result;
+    std::lock_guard lock(watches_mutex);
+    for (const auto & [path, vec] : watch_infos)
+        result.insert(result.end(), vec.begin(), vec.end());
+    return result;
 }
 
 void ZooKeeper::setupFaultDistributions()
