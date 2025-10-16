@@ -30,6 +30,10 @@
 5	5
 \N	str_6
 \N	[0,1,2,3,4,5,6]
+diag/ipv4_set_ok	1
+diag/ipv6_set_ok	1
+diag/non_ip_to_ipv4_unexpected_count	0
+diag/non_ip_to_ipv6_unexpected_count	0
 -128
 -127
 -1
