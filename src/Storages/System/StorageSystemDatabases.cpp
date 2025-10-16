@@ -2,6 +2,7 @@
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -33,7 +34,8 @@ ColumnsDescription StorageSystemDatabases::getColumnsDescription()
         {"metadata_path", std::make_shared<DataTypeString>(), "Metadata path."},
         {"uuid", std::make_shared<DataTypeUUID>(), "Database UUID."},
         {"engine_full", std::make_shared<DataTypeString>(), "Parameters of the database engine."},
-        {"comment", std::make_shared<DataTypeString>(), "Database comment."}
+        {"comment", std::make_shared<DataTypeString>(), "Database comment."},
+        {"is_external", std::make_shared<DataTypeUInt8>(), "Database is external (i.e. PostgreSQL/DataLakeCatalog)."},
     };
 
     description.setAliases({
@@ -150,6 +152,8 @@ void StorageSystemDatabases::fillData(MutableColumns & res_columns, ContextPtr c
             res_columns[res_index++]->insert(getEngineFull(context, database));
         if (columns_mask[src_index++])
             res_columns[res_index++]->insert(database->getDatabaseComment());
+        if (columns_mask[src_index++])
+            res_columns[res_index++]->insert(database->isExternal());
    }
 }
 
