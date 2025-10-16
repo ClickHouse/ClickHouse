@@ -5,6 +5,7 @@
 #include <Columns/IColumn.h>
 #include <Processors/Port.h>
 #include <base/types.h>
+#include "iostream"
 
 namespace DB
 {
@@ -128,10 +129,8 @@ IProcessor::Status FractionalLimitTransform::prepare(
     if (num_finished_input_ports == ports_data.size())
     {
         limit = static_cast<UInt64>(std::ceil(rows_cnt * limit_fraction));
-        if (!offset)
-            offset = static_cast<UInt64>(std::ceil(rows_cnt * offset_fraction));
-        else 
-            offset = 0; // Already skipped.
+        offset = static_cast<UInt64>(std::ceil(rows_cnt * offset_fraction));
+        std::cerr << std::endl << std::endl << "offset" << offset << std::endl << std::endl;
 
         // Caching done, call one more time to start producing output.
         return prepare(updated_input_ports, updated_output_ports);
@@ -232,6 +231,7 @@ FractionalLimitTransform::Status FractionalLimitTransform::preparePair(PortsData
 
     if (rows_cnt <= offset)
     {
+        // ignore the entire chunk
         data.current_chunk.clear();
 
         if (input.isFinished())
@@ -242,6 +242,22 @@ FractionalLimitTransform::Status FractionalLimitTransform::preparePair(PortsData
         /// Now, we pulled from input, and it must be empty.
         input.setNeeded();
         return Status::NeedData;
+    }
+    else if (rows_cnt - rows < offset)
+    {
+        // ignore subset of the chunk
+
+        UInt64 num_columns = data.current_chunk.getNumColumns();
+        UInt64 num_rows = data.current_chunk.getNumRows();
+
+        UInt64 start = offset - (rows_cnt - rows);
+        UInt64 length = num_rows - start;
+
+        auto columns = data.current_chunk.detachColumns();
+        for (UInt64 i = 0; i < num_columns; ++i)
+            columns[i] = columns[i]->cut(start, length);
+
+        data.current_chunk.setColumns(std::move(columns), length);
     }
 
     chunks_cache.push_back(std::move(data.current_chunk));
