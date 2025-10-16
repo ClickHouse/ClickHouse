@@ -3,6 +3,7 @@ description: 'Aggregate function that calculates PromQL-like changes over time s
 sidebar_position: 229
 slug: /sql-reference/aggregate-functions/reference/timeSeriesChangesToGrid
 title: 'timeSeriesChangesToGrid'
+doc_type: 'reference'
 ---
 
 Aggregate function that takes time series data as pairs of timestamps and values and calculates [PromQL-like changes](https://prometheus.io/docs/prometheus/latest/querying/functions/#changes) from this data on a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the samples for calculating `changes` are considered within the specified time window.

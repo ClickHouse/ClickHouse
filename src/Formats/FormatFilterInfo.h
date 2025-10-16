@@ -12,6 +12,8 @@ struct Settings;
 class KeyCondition;
 struct PrewhereInfo;
 using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
+struct FilterDAGInfo;
+using FilterDAGInfoPtr = std::shared_ptr<FilterDAGInfo>;
 
 /// Some formats needs to custom mapping between columns in file and clickhouse columns.
 class ColumnMapper
@@ -41,12 +43,18 @@ using FormatFilterInfoPtr = std::shared_ptr<FormatFilterInfo>;
 /// because most implementations don't use most of this struct.
 struct FormatFilterInfo
 {
-    FormatFilterInfo(std::shared_ptr<const ActionsDAG> filter_actions_dag_, const ContextPtr & context_, ColumnMapperPtr column_mapper_);
+    FormatFilterInfo(
+        std::shared_ptr<const ActionsDAG> filter_actions_dag_,
+        const ContextPtr & context_,
+        ColumnMapperPtr column_mapper_,
+        FilterDAGInfoPtr row_level_filter_,
+        PrewhereInfoPtr prewhere_info_);
 
     FormatFilterInfo();
 
     std::shared_ptr<const ActionsDAG> filter_actions_dag;
     ContextWeakPtr context; // required only if `filter_actions_dag` is set
+    FilterDAGInfoPtr row_level_filter;
     PrewhereInfoPtr prewhere_info; // assigned only if the format supports prewhere
 
     /// Optionally created from filter_actions_dag, if the format needs it.

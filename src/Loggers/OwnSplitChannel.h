@@ -33,6 +33,8 @@ using TextLogQueue = SystemLogQueue<TextLogElement>;
 using AsyncLogQueueSize = std::pair<std::string, size_t>;
 using AsyncLogQueueSizes = std::vector<AsyncLogQueueSize>;
 
+class ExtendedLogMessage;
+
 class OwnSplitChannelBase : public Poco::Channel
 {
 public:

@@ -5,6 +5,7 @@ sidebar_label: 'Null'
 sidebar_position: 50
 slug: /engines/table-engines/special/null
 title: 'Null Table Engine'
+doc_type: 'reference'
 ---
 
 # `Null` table engine

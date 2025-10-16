@@ -2410,9 +2410,9 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_set(Keyword::SET);
     ParserKeyword s_recompress(Keyword::RECOMPRESS);
     ParserKeyword s_codec(Keyword::CODEC);
-    ParserKeyword s_materialize(Keyword::MATERIALIZE);
-    ParserKeyword s_remove(Keyword::REMOVE);
-    ParserKeyword s_modify(Keyword::MODIFY);
+    ParserKeyword s_materialize_ttl(Keyword::MATERIALIZE_TTL);
+    ParserKeyword s_remove_ttl(Keyword::REMOVE_TTL);
+    ParserKeyword s_modify_ttl(Keyword::MODIFY_TTL);
 
     ParserIdentifier parser_identifier;
     ParserStringLiteral parser_string_literal;
@@ -2420,10 +2420,15 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserExpressionList parser_keys_list(false);
     ParserCodec parser_codec;
 
-    if (s_materialize.checkWithoutMoving(pos, expected) ||
-        s_remove.checkWithoutMoving(pos, expected) ||
-        s_modify.checkWithoutMoving(pos, expected))
-
+    /// Disambiguation for the parser between
+    /// 1: MODIFY TTL timestamp + 123, materialize(c) + 1
+    /// and
+    /// 2: MODIFY TTL timestamp + 123, MATERIALIZE TTL
+    /// In the first case, materialize belongs to the list of TTL expressions, so it is the part of TTLElement.
+    /// In the second case, MATERIALIZE TTL is a separate element of the alter, so it can't be parsed as a TTLElement.
+    if (s_materialize_ttl.checkWithoutMoving(pos, expected)
+        || s_remove_ttl.checkWithoutMoving(pos, expected)
+        || s_modify_ttl.checkWithoutMoving(pos, expected))
         return false;
 
     ASTPtr ttl_expr;
@@ -2454,6 +2459,7 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     else
     {
+        /// DELETE is the default mode.
         s_delete.ignore(pos, expected);
         mode = TTLMode::DELETE;
     }

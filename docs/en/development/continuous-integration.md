@@ -4,6 +4,7 @@ sidebar_label: 'Continuous Integration (CI)'
 sidebar_position: 55
 slug: /development/continuous-integration
 title: 'Continuous Integration (CI)'
+doc_type: 'reference'
 ---
 
 # Continuous Integration (CI)
@@ -159,7 +160,6 @@ python -m ci.praktika run "Build (amd_debug)"
 ```
 
 If the above approach does not work for you, use the cmake options from the build log and follow the [general build process](../development/build.md).
-
 ## Functional stateless tests {#functional-stateless-tests}
 
 Runs [stateless functional tests](tests.md#functional-tests) for ClickHouse binaries built in various configurations -- release, debug, with sanitizers, etc.

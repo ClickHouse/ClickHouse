@@ -4,6 +4,7 @@ sidebar_label: 'ODBC'
 sidebar_position: 150
 slug: /engines/table-engines/integrations/odbc
 title: 'ODBC'
+doc_type: 'reference'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';

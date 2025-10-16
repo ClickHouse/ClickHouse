@@ -193,6 +193,9 @@ enum class SystemQueryTargetType : uint8_t
         }
         else
             return false;
+
+        if (database && ParserKeyword{Keyword::WITH_TABLES}.ignore(pos, expected))
+            res->with_tables = true;
     }
     else
         res->is_drop_whole_replica = true;
@@ -753,14 +756,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 if (!parseQueryWithOnCluster(res, pos, expected))
                     return false;
             }
-
-            if (ParserKeyword{Keyword::TO}.ignore(pos, expected))
-            {
-                ASTPtr ast;
-                if (ParserStringLiteral{}.parse(pos, ast, expected))
-                    res->jemalloc_profile_path = ast->as<ASTLiteral &>().value.safeGet<String>();
-            }
-
             break;
         }
 #endif

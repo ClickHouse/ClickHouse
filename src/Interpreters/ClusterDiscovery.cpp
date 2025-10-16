@@ -28,6 +28,7 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
 
+#include <fmt/format.h>
 #include <fmt/ranges.h>
 
 namespace DB
@@ -252,10 +253,10 @@ Strings ClusterDiscovery::getNodeNames(zkutil::ZooKeeperPtr & zk,
             auto res = get_nodes_callbacks.insert(std::make_pair(cluster_name, watch_dynamic_callback));
             callback = res.first;
         }
-        nodes = zk->getChildrenWatch(getShardsListPath(zk_root), &stat, *(callback->second));
+        nodes = zk->getChildrenWatch(getShardsListPath(zk_root), &stat, callback->second);
     }
     else
-        nodes = zk->getChildrenWatch(getShardsListPath(zk_root), &stat, Coordination::WatchCallback{});
+        nodes = zk->getChildren(getShardsListPath(zk_root), &stat);
 
     if (version)
         *version = stat.cversion;
@@ -483,7 +484,10 @@ void ClusterDiscovery::initialUpdate()
         zk->createAncestors(path->zk_path);
         zk->createIfNotExists(path->zk_path, "");
 
-        auto watch_callback = [path](auto) { path->need_update = true; };
+        auto watch_callback = zk->createWatchFromRawCallback(fmt::format("ClusterDiscovery({})", path->zk_path), [&] -> Coordination::WatchCallback
+        {
+            return [path](auto) { path->need_update = true; };
+        });
         zk->getChildrenWatch(path->zk_path, nullptr, watch_callback);
     }
 

@@ -6,6 +6,7 @@ sidebar_label: 'HDFS'
 sidebar_position: 80
 slug: /engines/table-engines/integrations/hdfs
 title: 'HDFS'
+doc_type: 'reference'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';

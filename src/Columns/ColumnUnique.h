@@ -66,6 +66,7 @@ public:
                                                                      size_t max_dictionary_size) override;
     size_t uniqueInsertData(const char * pos, size_t length) override;
     size_t uniqueDeserializeAndInsertFromArena(const char * pos, const char *& new_pos) override;
+    size_t uniqueDeserializeAndInsertAggregationStateValueFromArena(const char * pos, const char *& new_pos) override;
 
     size_t getDefaultValueIndex() const override { return 0; }
     size_t getNullValueIndex() const override;
@@ -522,6 +523,37 @@ size_t ColumnUnique<ColumnType>::uniqueDeserializeAndInsertFromArena(const char 
     new_pos = pos + string_size;
 
     return uniqueInsertData(pos, string_size);
+}
+
+template <typename ColumnType>
+size_t ColumnUnique<ColumnType>::uniqueDeserializeAndInsertAggregationStateValueFromArena(const char * pos, const char *& new_pos)
+{
+    if (is_nullable)
+    {
+        UInt8 val = unalignedLoad<UInt8>(pos);
+        pos += sizeof(val);
+
+        if (val)
+        {
+            new_pos = pos;
+            return getNullValueIndex();
+        }
+    }
+
+    /// Numbers, FixedString
+    if (size_of_value_if_fixed)
+    {
+        new_pos = pos + size_of_value_if_fixed;
+        return uniqueInsertData(pos, size_of_value_if_fixed);
+    }
+
+    /// String
+    /// For compatibility, serialized string value contains zero byte at the end, we just ignore this byte.
+    const size_t string_size_with_zero_byte = unalignedLoad<size_t>(pos);
+    pos += sizeof(string_size_with_zero_byte);
+    new_pos = pos + string_size_with_zero_byte;
+
+    return uniqueInsertData(pos, string_size_with_zero_byte - 1);
 }
 
 template <typename ColumnType>

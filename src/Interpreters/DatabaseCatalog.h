@@ -185,14 +185,9 @@ public:
     StoragePtr tryGetTable(const StorageID & table_id, ContextPtr context) const;
     DatabaseAndTable getDatabaseAndTable(const StorageID & table_id, ContextPtr context) const;
     DatabaseAndTable tryGetDatabaseAndTable(const StorageID & table_id, ContextPtr context) const;
-    DatabaseAndTable getTableAndCheckAlias(
-        const StorageID & table_id,
-        ContextPtr context,
-        std::optional<Exception> * exception = nullptr) const;
-    DatabaseAndTable getTableImpl(
-        const StorageID & table_id,
-        ContextPtr context,
-        std::optional<Exception> * exception = nullptr) const;
+    DatabaseAndTable getTableImpl(const StorageID & table_id,
+                                  ContextPtr context,
+                                  std::optional<Exception> * exception = nullptr) const;
 
     /// Returns true if a passed table_id refers to one of the predefined tables' names.
     /// All tables in the "system" database with System* table engine are predefined.
@@ -225,7 +220,6 @@ public:
     static String getPathForUUID(const UUID & uuid);
 
     DatabaseAndTable tryGetByUUID(const UUID & uuid) const;
-    DatabaseAndTable getByUUID(const UUID & uuid) const;
 
     String getPathForDroppedMetadata(const StorageID & table_id) const;
     String getPathForMetadata(const StorageID & table_id) const;

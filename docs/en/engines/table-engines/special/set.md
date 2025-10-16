@@ -5,6 +5,7 @@ sidebar_label: 'Set'
 sidebar_position: 60
 slug: /engines/table-engines/special/set
 title: 'Set Table Engine'
+doc_type: 'reference'
 ---
 
 # Set table engine

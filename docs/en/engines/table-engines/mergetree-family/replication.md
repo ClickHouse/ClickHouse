@@ -4,6 +4,7 @@ sidebar_label: 'Data Replication'
 sidebar_position: 20
 slug: /engines/table-engines/mergetree-family/replication
 title: 'Data Replication'
+doc_type: 'reference'
 ---
 
 # Data replication

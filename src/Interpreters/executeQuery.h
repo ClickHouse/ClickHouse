@@ -33,6 +33,7 @@ struct QueryResultDetails
 using SetResultDetailsFunc = std::function<void(const QueryResultDetails &)>;
 using HandleExceptionInOutputFormatFunc = std::function<void(IOutputFormat & output_format, const String & format_name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings)>;
 using QueryFinishCallback = std::function<void()>;
+using HTTPContinueCallback = std::function<void()>;
 
 
 /// Parse and execute a query.
@@ -45,8 +46,9 @@ void executeQuery(
     QueryFlags flags = {},
     const std::optional<FormatSettings> & output_format_settings = std::nullopt, /// Format settings for output format, will be calculated from the context if not set.
     HandleExceptionInOutputFormatFunc handle_exception_in_output_format = {}, /// If a non-empty callback is passed, it will be called on exception with created output format.
-    QueryFinishCallback query_finish_callback = {} /// Use it to do everything you need to before the QueryFinish entry will be dumped to query_log
+    QueryFinishCallback query_finish_callback = {}, /// Use it to do everything you need to before the QueryFinish entry will be dumped to query_log
                                                    /// NOTE: It will not be called in case of exception (i.e. ExceptionWhileProcessing)
+    HTTPContinueCallback http_continue_callback = {} /// If a non-empty callback is passed, it will be called after quota checks to send HTTP 100 Continue.
 );
 
 void executeQuery(
@@ -58,8 +60,9 @@ void executeQuery(
     QueryFlags flags = {},
     const std::optional<FormatSettings> & output_format_settings = std::nullopt, /// Format settings for output format, will be calculated from the context if not set.
     HandleExceptionInOutputFormatFunc handle_exception_in_output_format = {}, /// If a non-empty callback is passed, it will be called on exception with created output format.
-    QueryFinishCallback query_finish_callback = {} /// Use it to do everything you need to before the QueryFinish entry will be dumped to query_log
-                                                   /// NOTE: It will not be called in case of exception (i.e. ExceptionWhileProcessing)
+    QueryFinishCallback query_finish_callback = {}, /// Use it to do everything you need to before the QueryFinish entry will be dumped to query_log
+                                                    /// NOTE: It will not be called in case of exception (i.e. ExceptionWhileProcessing)
+    HTTPContinueCallback http_continue_callback = {} /// If a non-empty callback is passed, it will be called after quota checks to send HTTP 100 Continue.
 );
 
 

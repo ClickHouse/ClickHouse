@@ -240,7 +240,9 @@ void StorageView::alter(
     StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
     params.apply(new_metadata, context);
 
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata);
+    DatabaseCatalog::instance()
+        .getDatabase(table_id.database_name)
+        ->alterTable(context, table_id, new_metadata, /*validate_new_create_query=*/true);
 
     auto & instance = ViewDefinerDependencies::instance();
     if (old_metadata.sql_security_type == SQLSecurityType::DEFINER)

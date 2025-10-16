@@ -41,6 +41,7 @@ enum class TypeIndex : uint8_t
     UUID,
     Array,
     Tuple,
+    QBit,
     Set,
     Interval,
     Nullable,

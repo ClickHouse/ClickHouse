@@ -4,6 +4,7 @@ sidebar_label: 'Arrow Flight Interface'
 sidebar_position: 26
 slug: /interfaces/arrowflight
 title: 'Arrow Flight Interface'
+doc_type: 'reference'
 ---
 
 # Apache Arrow Flight Interface

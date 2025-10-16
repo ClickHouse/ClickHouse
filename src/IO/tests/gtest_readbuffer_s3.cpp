@@ -63,6 +63,7 @@ struct ClientFake : DB::S3::Client
                   false,
                   {},
                   {},
+                  {},
                   "http"),
               Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
               DB::S3::ClientSettings())

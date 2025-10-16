@@ -3,6 +3,7 @@ description: 'Documentation for Functions for Working with Strings'
 sidebar_label: 'String'
 slug: /sql-reference/functions/string-functions
 title: 'Functions for Working with Strings'
+doc_type: 'reference'
 ---
 
 import VersionBadge from '@theme/badges/VersionBadge';
@@ -128,8 +129,6 @@ Result:
 │                    4 │
 └──────────────────────┘
 ```
-
-
 ## lengthUTF8 {#lengthutf8}
 
 Returns the length of a string in Unicode code points rather than in bytes or characters. It assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
@@ -1062,8 +1061,6 @@ Returns the substring of `s` before `count` occurrences of the delimiter `delim`
 substringIndex(s, delim, count)
 ```
 Alias: `SUBSTRING_INDEX`
-
-
 **Arguments**
 
 - s — The string to extract substring from. [String](../data-types/string.md).
@@ -1582,8 +1579,6 @@ SELECT startsWith('Spider-Man', 'Spi');
 <VersionBadge minVersion='23.8' />
 
 Returns whether string `str` starts with `prefix`, the difference between `startsWithUTF8` and `startsWith` is that `startsWithUTF8` match `str` and `suffix` by UTF-8 characters.
-
-
 **Example**
 
 ```sql
@@ -2795,6 +2790,42 @@ Result:
 ┌─stringBytesEntropy('Hello, world!')─┐
 │                         3.07049960  │
 └─────────────────────────────────────┘
+```
+
+## conv
+
+Converts numbers between different number bases, supporting bases from 2 to 36. This function is compatible with MySQL's
+[CONV()](https://dev.mysql.com/doc/refman/8.4/en/mathematical-functions.html#function_conv) function and handles partial
+invalid inputs by processing valid digits until the first invalid character.
+
+**Syntax**
+
+```sql
+conv(number, from_base, to_base)
+```
+
+**Arguments**
+
+- `number` — The number to convert. [String](../data-types/string.md), [FixedString](../data-types/fixedstring.md) or [Integer](../data-types/int-uint)
+- `from_base` — The source base (2-36). [Integer](../data-types/int-uint)
+- `to_base` — The target base (2-36). [Integer](../data-types/int-uint)
+
+**Returned value**
+
+- Returns the string representation of the number in the target base. [String](../data-types/string.md)
+
+**Example**
+
+```sql
+SELECT conv('10', 10, 2);
+```
+
+Result:
+
+```result
+┌─conv('10', 10, 2)─┐
+│ 1010              │
+└───────────────────┘
 ```
 
 <!-- 

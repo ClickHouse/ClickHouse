@@ -8,6 +8,11 @@
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 
 
+namespace CurrentMetrics
+{
+    extern const Metric NamedCollection;
+}
+
 namespace DB
 {
 
@@ -27,6 +32,8 @@ BlockIO InterpreterDropNamedCollectionQuery::execute()
     }
 
     NamedCollectionFactory::instance().removeFromSQL(query);
+    CurrentMetrics::sub(CurrentMetrics::NamedCollection);
+
     return {};
 }
 

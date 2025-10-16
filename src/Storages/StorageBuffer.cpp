@@ -1,5 +1,6 @@
 #include <Storages/StorageBuffer.h>
 
+#include <Access/Common/AccessFlags.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
 #include <Interpreters/Context.h>
@@ -290,6 +291,7 @@ void StorageBuffer::read(
 
     if (auto destination = getDestinationTable())
     {
+        local_context->checkAccess(AccessType::SELECT, destination->getStorageID(), column_names);
         auto destination_lock
             = destination->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
@@ -346,27 +348,35 @@ void StorageBuffer::read(
             else
             {
                 auto src_table_query_info = query_info;
+                ActionsDAG converting_dag;
+                if (src_table_query_info.prewhere_info || src_table_query_info.row_level_filter)
+                {
+                    converting_dag = ActionsDAG::makeConvertingActions(
+                        header_after_adding_defaults.getColumnsWithTypeAndName(),
+                        header.getColumnsWithTypeAndName(),
+                        ActionsDAG::MatchColumnsMode::Name);
+                }
+
+                if (src_table_query_info.row_level_filter)
+                {
+                    auto row_level_filter = std::make_shared<FilterDAGInfo>();
+                    row_level_filter->column_name = src_table_query_info.row_level_filter->column_name;
+                    row_level_filter->do_remove_column = src_table_query_info.row_level_filter->do_remove_column;
+
+                    row_level_filter->actions = ActionsDAG::merge(
+                        converting_dag.clone(),
+                        src_table_query_info.row_level_filter->actions.clone());
+
+                    row_level_filter->actions.removeUnusedActions();
+                    src_table_query_info.row_level_filter = std::move(row_level_filter);
+                }
+
                 if (src_table_query_info.prewhere_info)
                 {
-                    src_table_query_info.prewhere_info = src_table_query_info.prewhere_info->clone();
-
-                    auto actions_dag = ActionsDAG::makeConvertingActions(
-                            header_after_adding_defaults.getColumnsWithTypeAndName(),
-                            header.getColumnsWithTypeAndName(),
-                            ActionsDAG::MatchColumnsMode::Name);
-
-                    if (src_table_query_info.prewhere_info->row_level_filter)
-                    {
-                        src_table_query_info.prewhere_info->row_level_filter = ActionsDAG::merge(
-                            actions_dag.clone(),
-                            std::move(*src_table_query_info.prewhere_info->row_level_filter));
-
-                        src_table_query_info.prewhere_info->row_level_filter->removeUnusedActions();
-                    }
-
+                    src_table_query_info.prewhere_info = std::make_shared<PrewhereInfo>(src_table_query_info.prewhere_info->clone());
                     {
                         src_table_query_info.prewhere_info->prewhere_actions = ActionsDAG::merge(
-                            actions_dag.clone(),
+                            converting_dag.clone(),
                             std::move(src_table_query_info.prewhere_info->prewhere_actions));
 
                         src_table_query_info.prewhere_info->prewhere_actions.removeUnusedActions();
@@ -471,23 +481,23 @@ void StorageBuffer::read(
     }
     else
     {
+        if (query_info.row_level_filter)
+        {
+            ExpressionActionsSettings actions_settings(local_context);
+            auto actions = std::make_shared<ExpressionActions>(query_info.row_level_filter->actions.clone(), actions_settings);
+            pipe_from_buffers.addSimpleTransform([&](const SharedHeader & header)
+            {
+                return std::make_shared<FilterTransform>(
+                        header,
+                        actions,
+                        query_info.row_level_filter->column_name,
+                        query_info.row_level_filter->do_remove_column);
+            });
+        }
+
         if (query_info.prewhere_info)
         {
             ExpressionActionsSettings actions_settings(local_context);
-
-            if (query_info.prewhere_info->row_level_filter)
-            {
-                auto actions = std::make_shared<ExpressionActions>(query_info.prewhere_info->row_level_filter->clone(), actions_settings);
-                pipe_from_buffers.addSimpleTransform([&](const SharedHeader & header)
-                {
-                    return std::make_shared<FilterTransform>(
-                            header,
-                            actions,
-                            query_info.prewhere_info->row_level_column_name,
-                            false);
-                });
-            }
-
             auto actions = std::make_shared<ExpressionActions>(query_info.prewhere_info->prewhere_actions.clone(), actions_settings);
             pipe_from_buffers.addSimpleTransform([&](const SharedHeader & header)
             {
@@ -642,13 +652,14 @@ static void appendBlock(LoggerPtr log, const Block & from, Block & to)
 }
 
 
-class BufferSink : public SinkToStorage
+class BufferSink : public SinkToStorage, WithContext
 {
 public:
     explicit BufferSink(
         StorageBuffer & storage_,
-        const StorageMetadataPtr & metadata_snapshot_)
-        : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
+        const StorageMetadataPtr & metadata_snapshot_,
+        const ContextPtr & context_)
+        : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock())), WithContext(context_)
         , storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
     {
@@ -669,6 +680,7 @@ public:
         StoragePtr destination = storage.getDestinationTable();
         if (destination)
         {
+            getContext()->checkAccess(AccessType::INSERT, destination->getStorageID());
             destination = DatabaseCatalog::instance().tryGetTable(storage.destination_id, storage.getContext());
             if (destination.get() == &storage)
                 throw Exception(ErrorCodes::INFINITE_LOOP, "Destination table is myself. Write will cause infinite loop.");
@@ -766,9 +778,9 @@ private:
 };
 
 
-SinkToStoragePtr StorageBuffer::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/, bool /*async_insert*/)
+SinkToStoragePtr StorageBuffer::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
-    return std::make_shared<BufferSink>(*this, metadata_snapshot);
+    return std::make_shared<BufferSink>(*this, metadata_snapshot, local_context);
 }
 
 
@@ -1193,7 +1205,7 @@ void StorageBuffer::alter(const AlterCommands & params, ContextPtr local_context
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     params.apply(new_metadata, local_context);
     new_metadata.metadata_version += 1;
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, true);
     setInMemoryMetadata(new_metadata);
 }
 

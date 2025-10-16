@@ -189,7 +189,7 @@ void registerS3ObjectStorage(ObjectStorageFactory & factory)
         auto endpoint = getEndpoint(config, config_prefix, context);
         auto settings = std::make_unique<S3Settings>();
         settings->loadFromConfigForObjectStorage(config, config_prefix, context->getSettingsRef(), uri.uri.getScheme(), true);
-        auto client = getClient(endpoint, *settings, context, /* for_disk_s3 */true);
+        auto client = getClient(endpoint, *settings, context, /* for_disk_s3 */ true, name);
         auto key_generator = getKeyGenerator(uri, config, config_prefix);
 
         auto object_storage = createObjectStorage<S3ObjectStorage>(
@@ -217,7 +217,7 @@ void registerS3PlainObjectStorage(ObjectStorageFactory & factory)
         auto endpoint = getEndpoint(config, config_prefix, context);
         auto settings = std::make_unique<S3Settings>();
         settings->loadFromConfigForObjectStorage(config, config_prefix, context->getSettingsRef(), uri.uri.getScheme(), true);
-        auto client = getClient(endpoint, *settings, context, /* for_disk_s3 */true);
+        auto client = getClient(endpoint, *settings, context, /* for_disk_s3 */ true, name);
         auto key_generator = getKeyGenerator(uri, config, config_prefix);
 
         auto object_storage = std::make_shared<PlainObjectStorage<S3ObjectStorage>>(
@@ -244,7 +244,7 @@ void registerS3PlainRewritableObjectStorage(ObjectStorageFactory & factory)
             auto endpoint = getEndpoint(config, config_prefix, context);
             auto settings = std::make_unique<S3Settings>();
             settings->loadFromConfigForObjectStorage(config, config_prefix, context->getSettingsRef(), uri.uri.getScheme(), true);
-            auto client = getClient(endpoint, *settings, context, /* for_disk_s3 */true);
+            auto client = getClient(endpoint, *settings, context, /* for_disk_s3 */ true, name);
             auto key_generator = getKeyGenerator(uri, config, config_prefix);
 
             auto metadata_storage_metrics = DB::MetadataStorageMetrics::create<S3ObjectStorage, MetadataStorageType::PlainRewritable>();
@@ -393,4 +393,8 @@ void registerObjectStorages()
     registerLocalObjectStorage(factory);
 }
 
+void ObjectStorageFactory::clearRegistry()
+{
+    registry.clear();
+}
 }

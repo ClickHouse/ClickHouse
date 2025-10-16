@@ -5,6 +5,7 @@ sidebar_label: 'C++ Client Library'
 sidebar_position: 24
 slug: /interfaces/cpp
 title: 'C++ Client Library'
+doc_type: 'reference'
 ---
 
 # C++ client library

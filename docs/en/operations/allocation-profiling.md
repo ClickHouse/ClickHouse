@@ -3,6 +3,7 @@ description: 'Page detailing allocation profiling in ClickHouse'
 sidebar_label: 'Allocation profiling'
 slug: /operations/allocation-profiling
 title: 'Allocation profiling'
+doc_type: 'guide'
 ---
 
 import Tabs from '@theme/Tabs';
@@ -187,11 +188,6 @@ SYSTEM JEMALLOC FLUSH PROFILE
 ```
 
 It will return the location of the flushed profile.
-
-You can also specify a different prefix for the file in the query:
-```sql
-SYSTEM JEMALLOC FLUSH PROFILE TO '/tmp/my_own_prefix'
-```
 
 </TabItem>
 <TabItem value="keeper" label="Keeper">

@@ -84,6 +84,8 @@ public:
 
     ObjectMetadata getObjectMetadata(const std::string & path) const override;
 
+    std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path) const override;
+
     void copyObject( /// NOLINT
         const StoredObject & object_from,
         const StoredObject & object_to,

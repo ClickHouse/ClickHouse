@@ -23,6 +23,9 @@ extern const int UNKNOWN_SETTING;
     DECLARE(UInt64, max_retries_before_automatic_recovery, 10, "Max number of attempts to execute a queue entry before marking replica as lost recovering it from snapshot (0 means infinite)", 0) \
     DECLARE(Bool, allow_skipping_old_temporary_tables_ddls_of_refreshable_materialized_views, false, "If enabled, when processing DDLs in Replicated databases, it skips creating and exchanging DDLs of the temporary tables of refreshable materialized views if possible", 0) \
     DECLARE(NonZeroUInt64, logs_to_keep, 1000, "Default number of logs to keep in ZooKeeper for Replicated database.", 0) \
+    DECLARE(String, default_replica_path, "/clickhouse/databases/{uuid}", "The path to the database in ZooKeeper. Used during database creation if arguments are omitted.", 0) \
+    DECLARE(String, default_replica_shard_name, "{shard}", "The shard name of the replica in the database. Used during database creation if arguments are omitted.", 0) \
+    DECLARE(String, default_replica_name, "{replica}", "The name of the replica in the database. Used during database creation if arguments are omitted.", 0) \
 
 DECLARE_SETTINGS_TRAITS(DatabaseReplicatedSettingsTraits, LIST_OF_DATABASE_REPLICATED_SETTINGS)
 IMPLEMENT_SETTINGS_TRAITS(DatabaseReplicatedSettingsTraits, LIST_OF_DATABASE_REPLICATED_SETTINGS)

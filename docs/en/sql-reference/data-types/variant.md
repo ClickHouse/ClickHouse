@@ -4,6 +4,7 @@ sidebar_label: 'Variant(T1, T2, ...)'
 sidebar_position: 40
 slug: /sql-reference/data-types/variant
 title: 'Variant(T1, T2, ...)'
+doc_type: 'reference'
 ---
 
 # Variant(T1, T2, ...)

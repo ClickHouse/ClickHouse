@@ -4,6 +4,7 @@ sidebar_position: 145
 sidebar_label: 'numbers'
 title: 'numbers'
 description: 'Returns tables with a single `number` column that contains specifiable integers.'
+doc_type: 'reference'
 ---
 
 # numbers Table Function

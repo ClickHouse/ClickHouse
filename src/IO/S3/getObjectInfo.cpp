@@ -72,42 +72,56 @@ bool isNotFoundError(Aws::S3::S3Errors error)
         || error == Aws::S3::S3Errors::NO_SUCH_BUCKET;
 }
 
+ObjectInfo getObjectInfoIfExists(
+    const S3::Client & client,
+    const String & bucket,
+    const String & key,
+    const String & version_id,
+    bool with_metadata)
+{
+    Expect404ResponseScope scope; // 404 is not an error
+
+    auto [object_info, error] = tryGetObjectInfo(client, bucket, key, version_id, with_metadata);
+    if (object_info)
+        return *object_info;
+
+    if (isNotFoundError(error.GetErrorType()))
+        return {};
+
+    throw S3Exception(
+        error.GetErrorType(),
+        "Failed to get object info: {}. HTTP response code: {}",
+        error.GetMessage(),
+        static_cast<size_t>(error.GetResponseCode()));
+}
+
 ObjectInfo getObjectInfo(
     const S3::Client & client,
     const String & bucket,
     const String & key,
     const String & version_id,
-    bool with_metadata,
-    bool throw_on_error)
+    bool with_metadata)
 {
-    std::optional<Expect404ResponseScope> scope; // 404 is not an error
-    if (!throw_on_error)
-        scope.emplace();
+    Expect404ResponseScope scope; // 404 is not an error
 
     auto [object_info, error] = tryGetObjectInfo(client, bucket, key, version_id, with_metadata);
     if (object_info)
-    {
         return *object_info;
-    }
-    if (throw_on_error)
-    {
-        throw S3Exception(
-            error.GetErrorType(),
-            "Failed to get object info: {}. HTTP response code: {}",
-            error.GetMessage(),
-            static_cast<size_t>(error.GetResponseCode()));
-    }
-    return {};
+
+    throw S3Exception(
+        error.GetErrorType(),
+        "Failed to get object info: {}. HTTP response code: {}",
+        error.GetMessage(),
+        static_cast<size_t>(error.GetResponseCode()));
 }
 
 size_t getObjectSize(
     const S3::Client & client,
     const String & bucket,
     const String & key,
-    const String & version_id,
-    bool throw_on_error)
+    const String & version_id)
 {
-    return getObjectInfo(client, bucket, key, version_id, {}, throw_on_error).size;
+    return getObjectInfo(client, bucket, key, version_id, /*with_metadata=*/ false).size;
 }
 
 bool objectExists(

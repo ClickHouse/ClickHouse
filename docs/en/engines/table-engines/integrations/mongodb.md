@@ -5,6 +5,7 @@ sidebar_label: 'MongoDB'
 sidebar_position: 135
 slug: /engines/table-engines/integrations/mongodb
 title: 'MongoDB'
+doc_type: 'guide'
 ---
 
 # MongoDB

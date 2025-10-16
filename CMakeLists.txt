@@ -94,9 +94,6 @@ option (ENABLE_BUZZHOUSE "Enable BuzzHouse fuzzer on the client" OFF)
 option (ENABLE_FUZZER_TEST "Build testing fuzzers in order to test libFuzzer functionality" OFF)
 
 if (ENABLE_FUZZING)
-    # Also set WITH_COVERAGE=1 for better fuzzing process
-    # By default this is disabled, because fuzzers are built in CI with the clickhouse itself.
-    # And we don't want to enable coverage for it.
     message (STATUS "Fuzzing instrumentation enabled")
     set (FUZZER "libfuzzer")
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -nostdlib++")

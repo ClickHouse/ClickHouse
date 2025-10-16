@@ -14,6 +14,7 @@ struct IcebergDataSnapshot
 {
     DB::ManifestFileCacheKeys manifest_list_entries;
     Int64 snapshot_id;
+    Int32 schema_id_on_snapshot_commit;
     std::optional<size_t> total_rows;
     std::optional<size_t> total_bytes;
     std::optional<size_t> total_position_delete_rows;
@@ -27,16 +28,6 @@ struct IcebergDataSnapshot
 };
 
 using IcebergDataSnapshotPtr = std::shared_ptr<IcebergDataSnapshot>;
-
-struct IcebergTableStateSnapshot
-{
-    Int32 metadata_version;
-    Int32 schema_id;
-    std::optional<Int64> snapshot_id;
-};
-
-using IcebergTableStateSnapshotPtr = std::shared_ptr<IcebergTableStateSnapshot>;
-
 struct IcebergHistoryRecord
 {
     Int64 snapshot_id;

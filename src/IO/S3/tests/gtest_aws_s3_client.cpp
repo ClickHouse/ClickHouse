@@ -141,6 +141,7 @@ void testServerSideEncryption(
         s3_slow_all_threads_after_retryable_error,
         enable_s3_requests_logging,
         /* for_disk_s3 = */ false,
+        /* opt_disk_name = */ {},
         /* get_request_throttler = */ {},
         /* put_request_throttler = */ {},
         uri.uri.getScheme());
@@ -416,6 +417,7 @@ TEST(IOTestAwsS3Client, AssumeRole)
         s3_slow_all_threads_after_retryable_error,
         enable_s3_requests_logging,
         /* for_disk_s3 = */ false,
+        /* opt_disk_name = */ {},
         /* get_request_throttler = */ {},
         /* put_request_throttler = */ {},
         "http");

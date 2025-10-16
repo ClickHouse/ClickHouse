@@ -182,7 +182,8 @@ void IDatabase::renameTable(
 void IDatabase::alterTable(
     ContextPtr /*context*/,
     const StorageID & /*table_id*/,
-    const StorageInMemoryMetadata & /*metadata*/)
+    const StorageInMemoryMetadata & /*metadata*/,
+    const bool /*validate_new_create_query*/)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: alterTable() is not supported", getEngineName());
 }

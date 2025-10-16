@@ -291,7 +291,7 @@ public:
     using OperationDataPartsLock = std::unique_lock<std::mutex>;
     OperationDataPartsLock lockOperationsWithParts() const { return OperationDataPartsLock(operation_with_data_parts_mutex); }
 
-    MergeTreeDataPartFormat choosePartFormat(size_t bytes_uncompressed, size_t rows_count) const;
+    MergeTreeDataPartFormat choosePartFormat(size_t bytes_uncompressed, size_t rows_count, UInt32 part_level) const;
 
     MergeTreeDataPartFormat choosePartFormatOnDisk(size_t bytes_uncompressed, size_t rows_count) const;
 
@@ -494,7 +494,7 @@ public:
 
     bool supportsPrewhere() const override { return true; }
 
-    ConditionSelectivityEstimatorPtr getConditionSelectivityEstimatorByPredicate(const StorageSnapshotPtr &, const ActionsDAG *, ContextPtr) const override;
+    ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const RangesInDataParts & parts, ContextPtr local_context) const override;
 
     bool supportsFinal() const override;
 
@@ -923,6 +923,7 @@ public:
         const ASTPtr & new_settings,
         AlterLockHolder & table_lock_holder);
 
+    static std::pair<String, bool> getNewImplicitStatisticsTypes(const StorageInMemoryMetadata & new_metadata, const MergeTreeSettings & old_settings);
     static void verifySortingKey(const KeyDescription & sorting_key);
 
     /// Should be called if part data is suspected to be corrupted.
@@ -1431,7 +1432,7 @@ protected:
     /// Serialization info accumulated among all active parts.
     /// It changes only when set of parts is changed and is
     /// protected by @data_parts_mutex.
-    SerializationInfoByName serialization_hints;
+    SerializationInfoByName serialization_hints{{}};
 
     /// A cache for metadata snapshots for patch parts.
     /// The key is a partition id of patch part.
@@ -1488,23 +1489,26 @@ protected:
         return [state] (const DataPartPtr & part) { part->setState(state); };
     }
 
-    void modifyPartState(DataPartIteratorByStateAndInfo it, DataPartState state)
+    void modifyPartState(DataPartIteratorByStateAndInfo it, DataPartState state, DataPartsLock & /* parts_lock */)
     {
         if (!data_parts_by_state_and_info.modify(it, getStateModifier(state)))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't modify {}", (*it)->getNameWithState());
     }
 
-    void modifyPartState(DataPartIteratorByInfo it, DataPartState state)
+    void modifyPartState(DataPartIteratorByInfo it, DataPartState state, DataPartsLock & /* parts_lock */)
     {
         if (!data_parts_by_state_and_info.modify(data_parts_indexes.project<TagByStateAndInfo>(it), getStateModifier(state)))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't modify {}", (*it)->getNameWithState());
     }
 
-    void modifyPartState(const DataPartPtr & part, DataPartState state)
+    void modifyPartState(const DataPartPtr & part, DataPartState state, DataPartsLock & /* parts_lock */)
     {
         auto it = data_parts_by_info.find(part->info);
-        if (it == data_parts_by_info.end() || (*it).get() != part.get())
+        if (it == data_parts_by_info.end())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} doesn't exist (info: {})", part->name, part->info.getPartNameForLogs());
+
+        if ((*it).get() != part.get())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot modify part state {} (info: {}) to {}, because there is another copy of the same part in {} state", part->name, part->info.getPartNameForLogs(), state, (*it)->getNameWithState());
 
         if (!data_parts_by_state_and_info.modify(data_parts_indexes.project<TagByStateAndInfo>(it), getStateModifier(state)))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't modify {}", (*it)->getNameWithState());
@@ -1587,6 +1591,7 @@ protected:
 
     // Partition helpers
     bool canReplacePartition(const DataPartPtr & src_part) const;
+    void checkTableCanBeDropped(ContextPtr query_context) const override;
 
     /// Tries to drop part in background without any waits or throwing exceptions in case of errors.
     virtual void dropPartNoWaitNoThrow(const String & part_name) = 0;

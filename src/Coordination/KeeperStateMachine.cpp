@@ -303,6 +303,9 @@ std::shared_ptr<KeeperRequestForSession> IKeeperStateMachine::parseRequest(
 
     int32_t length;
     Coordination::read(length, buffer);
+    /// Request should not exceed max_request_size (this is verified in KeeperTCPHandler)
+    if (length < 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid request length: {}", length);
 
     /// because of backwards compatibility, only 32bit xid could be written
     /// for that reason we serialize XID in 2 parts:

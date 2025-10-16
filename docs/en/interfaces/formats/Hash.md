@@ -6,6 +6,7 @@ keywords: ['hash', 'format']
 output_format: true
 slug: /interfaces/formats/Hash
 title: 'Hash'
+doc_type: 'reference'
 ---
 
 | Input | Output | Alias |

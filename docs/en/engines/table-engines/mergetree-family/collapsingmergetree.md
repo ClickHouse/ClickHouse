@@ -6,6 +6,7 @@ sidebar_label: 'CollapsingMergeTree'
 sidebar_position: 70
 slug: /engines/table-engines/mergetree-family/collapsingmergetree
 title: 'CollapsingMergeTree'
+doc_type: 'guide'
 ---
 
 # CollapsingMergeTree

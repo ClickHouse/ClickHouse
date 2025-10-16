@@ -202,7 +202,10 @@ std::optional<ActionsDAG> createExpressionsAnalyzer(
     auto execution_context = Context::createCopy(context);
     auto expression = buildQueryTree(expr_list, execution_context);
 
-    ColumnsDescription fake_column_descriptions(header.getNamesAndTypesList());
+    ColumnsDescription fake_column_descriptions{};
+    // Add columns from index to ensure names are unique in case of duplicated columns.
+    for (const auto & column : header.getIndexByName())
+        fake_column_descriptions.add(ColumnDescription(column.first, header.getByPosition(column.second).type));
     auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, fake_column_descriptions);
     QueryTreeNodePtr fake_table_expression = std::make_shared<TableNode>(storage, execution_context);
 

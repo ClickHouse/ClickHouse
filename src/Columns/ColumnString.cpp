@@ -3,6 +3,7 @@
 #include <Columns/Collator.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/MaskOperations.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/StringHashSet.h>
@@ -271,6 +272,26 @@ StringRef ColumnString::serializeValueIntoArena(size_t n, Arena & arena, char co
     return res;
 }
 
+StringRef ColumnString::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+{
+    /// Serialize string values with 0 byte at the end for compatibility
+    /// with old versions where we stored 0 byte at the end of each string value.
+    size_t string_size_with_zero_byte = sizeAt(n) + 1;
+    size_t offset = offsetAt(n);
+
+    StringRef res;
+    res.size = sizeof(string_size_with_zero_byte) + string_size_with_zero_byte;
+    char * pos = arena.allocContinue(res.size, begin);
+    memcpy(pos, &string_size_with_zero_byte, sizeof(string_size_with_zero_byte));
+    memcpy(pos + sizeof(string_size_with_zero_byte), &chars[offset], string_size_with_zero_byte - 1);
+    /// Add 0 byte at the end.
+    *(pos + sizeof(string_size_with_zero_byte) + string_size_with_zero_byte - 1) = 0;
+    res.data = pos;
+
+    return res;
+}
+
+
 ALWAYS_INLINE char * ColumnString::serializeValueIntoMemory(size_t n, char * memory) const
 {
     size_t string_size = sizeAt(n);
@@ -309,6 +330,21 @@ const char * ColumnString::deserializeAndInsertFromArena(const char * pos)
 
     offsets.push_back(new_size);
     return pos + string_size;
+}
+
+const char * ColumnString::deserializeAndInsertAggregationStateValueFromArena(const char * pos)
+{
+    /// Serialized value contains string values with 0 byte at the end for compatibility.
+    const size_t string_size_with_zero_byte = unalignedLoad<size_t>(pos);
+    pos += sizeof(string_size_with_zero_byte);
+
+    const size_t old_size = chars.size();
+    const size_t new_size = old_size + string_size_with_zero_byte - 1;
+    chars.resize(new_size);
+    memcpy(chars.data() + old_size, pos, string_size_with_zero_byte - 1);
+
+    offsets.push_back(new_size);
+    return pos + string_size_with_zero_byte;
 }
 
 const char * ColumnString::skipSerializedInArena(const char * pos) const
@@ -711,6 +747,27 @@ void ColumnString::updateHashFast(SipHash & hash) const
 {
     hash.update(reinterpret_cast<const char *>(offsets.data()), offsets.size() * sizeof(offsets[0]));
     hash.update(reinterpret_cast<const char *>(chars.data()), chars.size() * sizeof(chars[0]));
+}
+
+ColumnPtr ColumnString::createSizeSubcolumn() const
+{
+    MutableColumnPtr column_sizes = ColumnUInt64::create();
+    size_t rows = offsets.size();
+    if (rows == 0)
+        return column_sizes;
+
+    auto & sizes_data = assert_cast<ColumnUInt64 &>(*column_sizes).getData();
+    sizes_data.resize(rows);
+
+    IColumn::Offset prev_offset = 0;
+    for (size_t i = 0; i < rows; ++i)
+    {
+        auto current_offset = offsets[i];
+        sizes_data[i] = current_offset - prev_offset;
+        prev_offset = current_offset;
+    }
+
+    return column_sizes;
 }
 
 }

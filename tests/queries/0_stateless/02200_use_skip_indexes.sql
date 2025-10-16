@@ -1,3 +1,4 @@
+SET use_query_condition_cache = 0;
 -- Force using skip indexes in planning to make test deterministic with max_rows_to_read.
 SET use_skip_indexes_on_data_read = 0;
 
@@ -11,6 +12,9 @@ ORDER BY key
 PARTITION BY key;
 
 INSERT INTO data_02200 SELECT number, number FROM numbers(10);
+
+-- Prevent remote replicas from skipping index analysis in Parallel Replicas. Otherwise, they may return full ranges and trigger max_rows_to_read validation failures.
+SET parallel_replicas_index_analysis_only_on_coordinator = 0;
 
 -- { echoOn }
 SELECT * FROM data_02200 WHERE value = 1 SETTINGS use_skip_indexes=1, max_rows_to_read=1;

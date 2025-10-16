@@ -14,6 +14,31 @@ extern const int BUZZHOUSE;
 namespace BuzzHouse
 {
 
+const std::vector<std::vector<OutFormat>> QueryOracle::oracleFormats
+    = {{OutFormat::OUT_CSV, OutFormat::OUT_CSVWithNames, OutFormat::OUT_CSVWithNamesAndTypes},
+       {OutFormat::OUT_JSON,
+        OutFormat::OUT_JSONColumns,
+        OutFormat::OUT_JSONColumnsWithMetadata,
+        OutFormat::OUT_JSONCompact,
+        OutFormat::OUT_JSONCompactColumns,
+        OutFormat::OUT_JSONCompactEachRow,
+        OutFormat::OUT_JSONCompactEachRowWithNames,
+        OutFormat::OUT_JSONCompactEachRowWithNamesAndTypes,
+        OutFormat::OUT_JSONCompactStringsEachRow,
+        OutFormat::OUT_JSONCompactStringsEachRowWithNames,
+        OutFormat::OUT_JSONCompactStringsEachRowWithNamesAndTypes,
+        OutFormat::OUT_JSONEachRow,
+        OutFormat::OUT_JSONLines,
+        OutFormat::OUT_JSONObjectEachRow,
+        OutFormat::OUT_JSONStringsEachRow},
+       {OutFormat::OUT_TabSeparated,
+        OutFormat::OUT_TabSeparatedRaw,
+        OutFormat::OUT_TabSeparatedRawWithNames,
+        OutFormat::OUT_TabSeparatedRawWithNamesAndTypes,
+        OutFormat::OUT_TabSeparatedWithNames,
+        OutFormat::OUT_TabSeparatedWithNamesAndTypes},
+       {OutFormat::OUT_Values}};
+
 /// Correctness query oracle
 /// SELECT COUNT(*) FROM <FROM_CLAUSE> WHERE <PRED>;
 /// or
@@ -209,7 +234,7 @@ void QueryOracle::dumpTableContent(
         sv->set_property("output_format_write_statistics");
         sv->set_value("0");
     }
-    ts->set_format(rg.pickRandomly(rg.pickRandomly(StatementGenerator::outFormats)));
+    ts->set_format(rg.pickRandomly(rg.pickRandomly(QueryOracle::oracleFormats)));
     const auto err = std::filesystem::remove(qcfile);
     UNUSED(err);
     sif->set_path(qcfile.generic_string());
@@ -264,7 +289,8 @@ void QueryOracle::generateExportQuery(
         gen.columnPathRef(entry, sel->add_result_columns()->mutable_etc()->mutable_col()->mutable_path());
     }
     gen.entries.clear();
-    ff->set_outformat(rg.pickRandomly(rg.pickRandomly(StatementGenerator::outFormats)));
+    ff->set_outformat(
+        rg.pickRandomly(rg.pickRandomly(can_test_oracle_result ? QueryOracle::oracleFormats : StatementGenerator::outFormats)));
     if (rg.nextSmallNumber() < 4)
     {
         ff->set_fcomp(rg.pickRandomly(compressionMethods));
@@ -557,7 +583,7 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
     bool explain = false;
     Select * sel = nullptr;
     SelectParen * sparen = nullptr;
-    const uint32_t ncols = (rg.nextMediumNumber() % 5) + UINT32_C(1);
+    const uint32_t ncols = rg.randomInt<uint32_t>(1, 5);
 
     peer_query = pq;
     if (peer_query == PeerQuery::ClickHouseOnly && (fc.measure_performance || fc.compare_explains) && rg.nextBool())
@@ -579,7 +605,7 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
         Insert * ins = sq2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_insert();
         sparen = ins->mutable_select();
         FileFunc * ff = ins->mutable_tof()->mutable_tfunc()->mutable_file();
-        OutFormat outf = rg.pickRandomly(rg.pickRandomly(StatementGenerator::outFormats));
+        OutFormat outf = rg.pickRandomly(rg.pickRandomly(QueryOracle::oracleFormats));
 
         const auto err = std::filesystem::remove(qcfile);
         UNUSED(err);
@@ -951,7 +977,8 @@ void QueryOracle::processSecondOracleQueryResult(const int errcode, ExternalInte
                 || fc.oracle_ignore_error_codes.find(static_cast<uint32_t>(first_errcode ? first_errcode : errcode))
                     == fc.oracle_ignore_error_codes.end()))
         {
-            throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "{}: failed with different success results", oracle_name);
+            throw DB::Exception(
+                DB::ErrorCodes::BUZZHOUSE, "{}: failed with different success results: {} vs {}", oracle_name, first_errcode, errcode);
         }
         if (!first_errcode && !errcode)
         {

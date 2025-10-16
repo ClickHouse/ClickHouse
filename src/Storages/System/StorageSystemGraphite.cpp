@@ -41,7 +41,7 @@ static StorageSystemGraphite::Configs getConfigs(ContextPtr context)
     for (const auto & db : databases)
     {
         /// Check if database can contain MergeTree tables
-        if (!db.second->canContainMergeTreeTables())
+        if (db.second->isExternal())
             continue;
 
         for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
