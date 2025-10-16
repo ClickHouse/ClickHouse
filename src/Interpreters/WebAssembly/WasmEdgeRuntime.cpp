@@ -7,6 +7,7 @@
 
 #include <Interpreters/WebAssembly/HostApi.h>
 #include <Interpreters/WebAssembly/WasmMemory.h>
+#include <Interpreters/WebAssembly/TypeHelper.h>
 
 #include <Common/logger_useful.h>
 
@@ -67,59 +68,25 @@ WASM_EDGE_TYPE_TRAIT_SPECIALIZATION(F64);
 
 #undef WASM_EDGE_TYPE_TRAIT_SPECIALIZATION
 
-/// Functions below is basically compile time switch-case for WasmValKind,
-/// so we don't need to maintain it in sync with enum options manually in in each function.
-template <std::underlying_type_t<WasmValKind> index = 0>
-inline WasmValKind fromWasmEdgeValueType(WasmEdge_ValType val_type)
+
+WasmValKind fromWasmEdgeValueType(WasmEdge_ValType val_type)
 {
-    if constexpr (index < std::variant_size_v<WasmVal>)
-    {
-        constexpr auto kind = static_cast<WasmValKind>(index);
-        if (WasmEdgeValueTypeTrait<kind>::is(val_type))
-            return kind;
-        return fromWasmEdgeValueType<index + 1>(val_type);
-    }
-    throw Exception(ErrorCodes::WASM_ERROR, "Unsupported wasm edge type");
+    return fromImplValueType<WasmEdgeValueTypeTrait>(val_type);
 }
 
-template <std::underlying_type_t<WasmValKind> index = 0>
 WasmVal fromWasmEdgeValue(WasmEdge_Value val)
 {
-    if constexpr (index < std::variant_size_v<WasmVal>)
-    {
-        constexpr auto kind = static_cast<WasmValKind>(index);
-        if (WasmEdgeValueTypeTrait<kind>::is(val.Type))
-        {
-            using WasmType = std::variant_alternative_t<index, WasmVal>;
-            return std::bit_cast<WasmType>(WasmEdgeValueTypeTrait<kind>::from(val));
-        }
-        return fromWasmEdgeValue<index + 1>(val);
-    }
-    throw Exception(ErrorCodes::WASM_ERROR, "Unsupported wasm edge type");
+    return fromWasmImplValue<WasmEdgeValueTypeTrait>(val, val.Type);
 }
 
-template <std::underlying_type_t<WasmValKind> index = 0>
-inline WasmEdge_ValType toWasmEdgeValueType(WasmValKind k)
+WasmEdge_ValType toWasmEdgeValueType(WasmValKind k)
 {
-    if constexpr (index < std::variant_size_v<WasmVal>)
-    {
-        constexpr auto kind = static_cast<WasmValKind>(index);
-        if (kind == k)
-            return WasmEdgeValueTypeTrait<kind>::type();
-        return toWasmEdgeValueType<index + 1>(k);
-    }
-    throw Exception(ErrorCodes::WASM_ERROR, "Unsupported wasm edge type");
+    return toWasmImplValueType<WasmEdgeValueTypeTrait>(k);
 }
 
 WasmEdge_Value toWasmEdgeValue(WasmVal val)
 {
-    return std::visit(
-        [](auto arg)
-        {
-            using T = std::decay_t<decltype(arg)>;
-            return WasmEdgeValueTypeTrait<WasmValTypeToKind<T>::value>::to(arg);
-        },
-        val);
+    return toWasmImplValue<WasmEdgeValueTypeTrait>(val);
 }
 
 /// Mapping of WasmEdge API types to their deleter functions
@@ -215,7 +182,7 @@ struct WasmEdgeFunctionProps
         WasmEdge_FunctionTypeGetParameters(func_ctx, argument_types_list.data(), static_cast<uint32_t>(params_count));
 
         std::vector<WasmValKind> argument_types(params_count);
-        std::transform(argument_types_list.begin(), argument_types_list.end(), argument_types.begin(), fromWasmEdgeValueType<>);
+        std::transform(argument_types_list.begin(), argument_types_list.end(), argument_types.begin(), fromWasmEdgeValueType);
 
         std::optional<WasmValKind> return_type;
         if (returns_count == 1)
@@ -280,7 +247,7 @@ public:
     {
         auto argument_types = host_function_ptr->getArgumentTypes();
         std::vector<WasmEdge_ValType> params(argument_types.size());
-        std::transform(argument_types.begin(), argument_types.end(), params.begin(), toWasmEdgeValueType<>);
+        std::transform(argument_types.begin(), argument_types.end(), params.begin(), toWasmEdgeValueType);
 
         std::vector<WasmEdge_ValType> returns;
         if (auto return_type = host_function_ptr->getReturnType())
@@ -510,7 +477,7 @@ void WasmEdgeCompartment::invoke(std::string_view function_name, const std::vect
     }
 
     returns.clear();
-    std::transform(returns_values.begin(), returns_values.end(), std::back_inserter(returns), fromWasmEdgeValue<>);
+    std::transform(returns_values.begin(), returns_values.end(), std::back_inserter(returns), fromWasmEdgeValue);
     LOG_TRACE(log, "Function {} invocation ended", function_name);
 }
 

@@ -16,6 +16,7 @@
 #include <Interpreters/WebAssembly/HostApi.h>
 #include <Interpreters/WebAssembly/WasmEngine.h>
 #include <Interpreters/WebAssembly/WasmTypes.h>
+#include <Interpreters/WebAssembly/TypeHelper.h>
 
 #include <wasmtime.hh>
 
@@ -33,87 +34,44 @@ namespace DB::ErrorCodes
 namespace DB::WebAssembly
 {
 
-namespace
-{
+template <WasmValKind val_kind>
+struct WasmTimeValueTypeTrait;
 
-WasmValKind fromWasmTimeValKind(wasmtime::ValKind value)
-{
-    switch (value)
-    {
-        case wasmtime::ValKind::I32:
-            return WasmValKind::I32;
-        case wasmtime::ValKind::I64:
-            return WasmValKind::I64;
-        case wasmtime::ValKind::F32:
-            return WasmValKind::F32;
-        case wasmtime::ValKind::F64:
-            return WasmValKind::F64;
-        default:
-            throw Exception(ErrorCodes::WASM_ERROR, "Unsupported wasmtime type");
-    }
-}
+#define WASM_TIME_TYPE_TRAIT_SPECIALIZATION(T, GETTER, CONSTRUCTOR_TYPE) \
+    template <> \
+    struct WasmTimeValueTypeTrait<WasmValKind::T> \
+    { \
+        static wasmtime::ValKind type() { return wasmtime::ValKind::T; } \
+        static bool is(wasmtime::ValKind val) { return val == wasmtime::ValKind::T; } \
+        static wasmtime::Val to(auto val) { return wasmtime::Val(static_cast<CONSTRUCTOR_TYPE>(val)); } \
+        static auto from(wasmtime::Val val) { return val.GETTER(); } \
+    };
+
+WASM_TIME_TYPE_TRAIT_SPECIALIZATION(I32, i32, int32_t);
+WASM_TIME_TYPE_TRAIT_SPECIALIZATION(I64, i64, int64_t);
+WASM_TIME_TYPE_TRAIT_SPECIALIZATION(F32, f32, float);
+WASM_TIME_TYPE_TRAIT_SPECIALIZATION(F64, f64, double);
+
+#undef WASM_TIME_TYPE_TRAIT_SPECIALIZATION
 
 wasmtime::ValKind toWasmTimeValKind(WasmValKind value)
 {
-    switch (value)
-    {
-        case WasmValKind::I32:
-            return wasmtime::ValKind::I32;
-        case WasmValKind::I64:
-            return wasmtime::ValKind::I64;
-        case WasmValKind::F32:
-            return wasmtime::ValKind::F32;
-        case WasmValKind::F64:
-            return wasmtime::ValKind::F64;
-    }
-    UNREACHABLE();
+    return toWasmImplValueType<WasmTimeValueTypeTrait>(value);
+}
+
+WasmValKind fromWasmTimeValKind(wasmtime::ValKind val_type)
+{
+    return fromImplValueType<WasmTimeValueTypeTrait>(val_type);
 }
 
 WasmVal fromWasmTimeValue(const wasmtime::Val & wasm_val)
 {
-    switch (wasm_val.kind())
-    {
-        case wasmtime::ValKind::I32:
-            return static_cast<uint32_t>(wasm_val.i32());
-        case wasmtime::ValKind::I64:
-            return wasm_val.i64();
-        case wasmtime::ValKind::F32:
-            return wasm_val.f32();
-        case wasmtime::ValKind::F64:
-            return wasm_val.f64();
-        default:
-            throw Exception(ErrorCodes::WASM_ERROR, "Unsupported wasmtime type");
-    }
+    return fromWasmImplValue<WasmTimeValueTypeTrait>(wasm_val, wasm_val.kind());
 }
 
 wasmtime::Val toWasmTimeValue(WasmVal val)
 {
-    return std::visit(
-        [](auto && arg) -> wasmtime::Val
-        {
-            using T = std::decay_t<decltype(arg)>;
-            if constexpr (std::is_same_v<uint32_t, T>)
-            {
-                return wasmtime::Val(static_cast<int32_t>(arg));
-            }
-            else if constexpr (std::is_same_v<int64_t, T>)
-            {
-                return wasmtime::Val(arg);
-            }
-            else if constexpr (std::is_same_v<float, T>)
-            {
-                return wasmtime::Val(arg);
-            }
-            else if constexpr (std::is_same_v<double, T>)
-            {
-                return wasmtime::Val(arg);
-            }
-            else
-            {
-                throw Exception(ErrorCodes::WASM_ERROR, "Failed to transform WasmVal to wasmtime::Val: unknown variant underlying type");
-            }
-        },
-        val);
+    return toWasmImplValue<WasmTimeValueTypeTrait>(val);
 }
 
 wasmtime::FuncType toWasmFunctionType(WasmHostFunction * host_function_ptr)
