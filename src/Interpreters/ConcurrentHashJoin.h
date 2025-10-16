@@ -113,19 +113,14 @@ private:
     bool any_take_last_row;
     std::unique_ptr<ThreadPool> pool;
     std::vector<std::shared_ptr<InternalHashJoin>> hash_joins;
-    mutable std::atomic<bool> build_phase_finished{false};
+    bool build_phase_finished = false;
 
     StatsCollectingParams stats_collecting_params;
 
     std::mutex totals_mutex;
     Block totals;
 
-    // Atomically set if non-joined rows are detected in any slot
-    mutable std::atomic<bool> has_non_joined_rows{false};
-    mutable std::atomic<bool> has_non_joined_rows_checked{false};
-
     ScatteredBlocks dispatchBlock(const Strings & key_columns_names, Block && from_block);
-    ScatteredBlocks dispatchBlockTwoLevel(const Strings & key_columns_names, Block && from_block);
 };
 
 // The following two methods are deprecated and hopefully will be removed in the future.

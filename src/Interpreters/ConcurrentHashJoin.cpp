@@ -25,6 +25,7 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadPool.h>
+#include <Common/AllocatorWithMemoryTracking.h>
 #include <Common/WeakHash.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
@@ -38,6 +39,8 @@
 
 #include <algorithm>
 #include <numeric>
+#include <deque>
+#include <iterator>
 
 using namespace DB;
 
@@ -306,8 +309,13 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
 class ConcatStreams final : public IBlocksStream
 {
 public:
+    using Deque = std::deque<IBlocksStreamPtr, AllocatorWithMemoryTracking<IBlocksStreamPtr>>;
+
     explicit ConcatStreams(std::vector<IBlocksStreamPtr> children_)
-        : children(std::move(children_)) {}
+    {
+        children = Deque(std::make_move_iterator(children_.begin()), std::make_move_iterator(children_.end()),
+                         Deque::allocator_type{});
+    }
 
     Block nextImpl() override
     {
@@ -315,16 +323,20 @@ public:
         {
             auto & child = children.front();
             if (!child)
+            {
+                children.pop_front();
                 continue;
+            }
             Block b = child->next();
-            if (!b.empty()) return b;
-              children.erase(children.begin());
+            if (!b.empty())
+                return b;
+            children.pop_front();
         }
         return {};
     }
 
 private:
-    std::vector<IBlocksStreamPtr> children;
+    Deque children;
 };
 
 class ConcurrentHashJoinResult : public IJoinResult
@@ -710,17 +722,16 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
             {
                 const auto * sc = holder.columns;
                 if (!sc)
-                    return; // skip broken holder
+                    return;
                 // matches the original right block rows referenced by this slot's ScatteredColumns
                 ColumnUInt8::MutablePtr filtered = ColumnUInt8::create(sc->columns.at(0)->size(), 0);
                 // apply a contiguous [start, end) range from the source mask into the destination mask
-                // cap 'end' by source-mask length for safety, fill with 1s if NULLs only
+                // fill with 1s if NULLs only
                 auto apply_range = [&](size_t start, size_t end)
                 {
                     if (holder.column)
                     {
                         const auto & src_mask = assert_cast<const ColumnUInt8 &>(*holder.column).getData();
-                        end = std::min(end, src_mask.size());
                         for (size_t r = start; r < end; ++r)
                             filtered->getData()[r] = src_mask[r];
                     }
