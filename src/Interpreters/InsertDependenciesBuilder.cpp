@@ -1662,7 +1662,7 @@ void InsertDependenciesBuilder::DependencyPath::pushBack(StorageIDPrivate id)
 {
     if (visited.contains(id))
         throw Exception(
-            ErrorCodes::TOO_DEEP_RECURSION, "Dependencies of the table {} are cyclic. Dependencies {} ara pointing to the {}.", path.front(), debugInfo(), id);
+            ErrorCodes::TOO_DEEP_RECURSION, "Dependencies of the table {} are cyclic. Dependencies {} are pointing to {}.", path.front(), debugInfo(), id);
 
     path.push_back(id);
     visited.insert(id);
