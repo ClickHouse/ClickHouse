@@ -1077,15 +1077,12 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
     InsertData::EntryPtr current_entry;
     String current_exception;
 
-    const auto & insert_query = assert_cast<const ASTInsertQuery &>(*key.query);
     auto format = getInputFormatFromASTInsertQuery(key.query, false, header, insert_context, nullptr);
     std::shared_ptr<ISimpleTransform> adding_defaults_transform;
 
-    if (insert_context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields] && insert_query.table_id)
+    if (insert_context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields] && insert_context->hasInsertionTableColumnsDescription())
     {
-        StoragePtr storage = DatabaseCatalog::instance().getTable(insert_query.table_id, insert_context);
-        auto metadata_snapshot = storage->getInMemoryMetadataPtr();
-        const auto & columns = metadata_snapshot->getColumns();
+        const auto & columns = insert_context->getInsertionTableColumnsDescription().value();
         if (columns.hasDefaults())
             adding_defaults_transform = std::make_shared<AddingDefaultsTransform>(std::make_shared<const Block>(header), columns, *format, insert_context);
     }
