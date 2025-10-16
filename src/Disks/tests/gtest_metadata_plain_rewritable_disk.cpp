@@ -181,16 +181,19 @@ TEST_F(MetadataPlainRewritableDiskTest, MoveTree)
         tx->commit();
     }
 
-    /// This is a bug. Should be MOVED everywhere
     EXPECT_EQ(readObject(object_storage, a_path), "MOVED/");
     EXPECT_EQ(readObject(object_storage, ab_path), "MOVED/B/");
-    EXPECT_EQ(readObject(object_storage, abc_path), "A/B/C/");
-    EXPECT_EQ(readObject(object_storage, abcd_path), "A/B/C/D/");
+    EXPECT_EQ(readObject(object_storage, abc_path), "MOVED/B/C/");
+    EXPECT_EQ(readObject(object_storage, abcd_path), "MOVED/B/C/D/");
 
     EXPECT_FALSE(metadata->existsDirectory("A"));
     EXPECT_FALSE(metadata->existsDirectory("A/B"));
-    EXPECT_TRUE(metadata->existsDirectory("A/B/C"));
-    EXPECT_TRUE(metadata->existsDirectory("A/B/C/D"));
+    EXPECT_FALSE(metadata->existsDirectory("A/B/C"));
+    EXPECT_FALSE(metadata->existsDirectory("A/B/C/D"));
+    EXPECT_TRUE(metadata->existsDirectory("MOVED"));
+    EXPECT_TRUE(metadata->existsDirectory("MOVED/B"));
+    EXPECT_TRUE(metadata->existsDirectory("MOVED/B/C"));
+    EXPECT_TRUE(metadata->existsDirectory("MOVED/B/C/D"));
 }
 
 TEST_F(MetadataPlainRewritableDiskTest, MoveUndo)
