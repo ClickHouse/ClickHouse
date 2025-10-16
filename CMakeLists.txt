@@ -220,7 +220,7 @@ else ()
 endif ()
 
 # Optionally split binaries and debug symbols.
-option(DISABLE_ALL_DEBUG_SYMBOLS "Force disable debug symbols, independently of the build" OFF)
+option(DISABLE_ALL_DEBUG_SYMBOLS "Disable debug symbols, independently of which build type is used" OFF)
 option(SPLIT_DEBUG_SYMBOLS "Split binaries and debug symbols" OFF)
 if (SPLIT_DEBUG_SYMBOLS)
     message(STATUS "Will split binaries and debug symbols")
