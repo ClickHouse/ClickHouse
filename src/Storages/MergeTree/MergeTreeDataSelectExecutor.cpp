@@ -666,7 +666,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     bool is_final_query,
     bool is_parallel_reading_from_replicas)
 {
-
     const auto original_num_parts = parts_with_ranges.size();
     const Settings & settings = context->getSettingsRef();
 
@@ -743,8 +742,20 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         num_threads = std::min<size_t>(num_streams, settings[Setting::max_threads_for_indexes]);
     }
 
-    const bool use_skip_indexes_on_data_read = settings[Setting::use_skip_indexes_on_data_read] && !is_parallel_reading_from_replicas &&
-                                                     !(is_final_query && settings[Setting::use_skip_indexes_if_final_exact_mode]);
+    auto is_index_supported_on_data_read = [&](const MergeTreeIndexPtr & index) -> bool
+    {
+        /// Vector similarity indexes are not applicable on data reads.
+        if (index->isVectorSimilarityIndex())
+            return false;
+
+        if (is_parallel_reading_from_replicas && !index->supportsReadingOnParallelReplicas())
+            return false;
+
+        if (is_final_query && settings[Setting::use_skip_indexes_if_final_exact_mode])
+            return false;
+
+        return settings[Setting::use_skip_indexes_on_data_read];
+    };
 
     /// Let's find what range to read from each part.
     {
@@ -838,7 +849,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithSecondaryKeysMicroseconds);
 
-
                     const auto index_idx = skip_indexes.per_part_index_orders[part_index][idx];
                     const auto & index_and_condition = skip_indexes.useful_indices[index_idx];
 
@@ -858,8 +868,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                         continue;
                     }
 
-                    /// Vector similarity indexes are not applicable on data reads.
-                    if (!use_skip_indexes_on_data_read || index_and_condition.index->isVectorSimilarityIndex())
+                    if (!is_index_supported_on_data_read(index_and_condition.index))
                     {
                         std::tie(ranges.ranges, ranges.read_hints) = filterMarksUsingIndex(
                             index_and_condition.index,
@@ -899,7 +908,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     }
 
                     size_t total_granules = ranges.ranges.getNumberOfMarks();
-                    if (!use_skip_indexes_on_data_read)
+                    bool use_skip_indexes_on_data_read = settings[Setting::use_skip_indexes_on_data_read] && !is_parallel_reading_from_replicas;
+
+                    if (use_skip_indexes_on_data_read)
                     {
                         ranges.ranges = filterMarksUsingMergedIndex(
                             indices_and_condition.indices,
