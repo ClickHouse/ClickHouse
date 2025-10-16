@@ -3,6 +3,7 @@ description: 'Calculates the approximate number of different argument values.'
 sidebar_position: 205
 slug: /sql-reference/aggregate-functions/reference/uniqcombined
 title: 'uniqCombined'
+doc_type: 'reference'
 ---
 
 # uniqCombined

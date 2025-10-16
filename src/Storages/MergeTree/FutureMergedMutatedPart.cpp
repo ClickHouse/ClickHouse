@@ -18,6 +18,7 @@ void FutureMergedMutatedPart::assign(MergeTreeData::DataPartsVector parts_, Merg
     size_t sum_bytes_uncompressed = 0;
     MergeTreeDataPartType future_part_type;
     MergeTreeDataPartStorageType future_part_storage_type;
+    UInt32 max_level = 0;
 
     for (const auto & part : parts_)
     {
@@ -25,9 +26,10 @@ void FutureMergedMutatedPart::assign(MergeTreeData::DataPartsVector parts_, Merg
         sum_bytes_uncompressed += part->getTotalColumnsSize().data_uncompressed;
         future_part_type = std::min(future_part_type, part->getType());
         future_part_storage_type = std::min(future_part_storage_type, part->getDataPartStorage().getType());
+        max_level = std::max(max_level, part->info.level);
     }
 
-    auto chosen_format = parts_.front()->storage.choosePartFormat(sum_bytes_uncompressed, sum_rows);
+    auto chosen_format = parts_.front()->storage.choosePartFormat(sum_bytes_uncompressed, sum_rows, max_level + 1);
     future_part_type = std::min(future_part_type, chosen_format.part_type);
     future_part_storage_type = std::min(future_part_storage_type, chosen_format.storage_type);
     assign(std::move(parts_), std::move(patch_parts_), {future_part_type, future_part_storage_type});
