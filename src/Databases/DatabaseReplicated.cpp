@@ -19,6 +19,7 @@
 #include <IO/ReadSettings.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLTask.h>
@@ -1822,6 +1823,9 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadata(
         create.attach = true;
     if (create.storage && create.storage->engine && (create.storage->engine->name == "TimeSeries"))
         create.attach = true;
+
+    if (create.select && create.isView())
+        ApplyWithSubqueryVisitor(context_).visit(*create.select);
 
     return ast;
 }
