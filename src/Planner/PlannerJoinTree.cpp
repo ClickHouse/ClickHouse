@@ -1073,7 +1073,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             // check if left one is not subquery
                             return left_table_expr->getNodeType() != QueryTreeNodeType::QUERY
                                 && left_table_expr->getNodeType() != QueryTreeNodeType::UNION
-                                && left_table_expr->getNodeType() != QueryTreeNodeType::JOIN;
+                                && left_table_expr->getNodeType() != QueryTreeNodeType::JOIN
+                                && left_table_expr->getNodeType() != QueryTreeNodeType::ARRAY_JOIN
+                                && left_table_expr->getNodeType() != QueryTreeNodeType::CROSS_JOIN;
                         }
 
                         if (join_kind == JoinKind::Right)
@@ -1984,7 +1986,12 @@ JoinTreeQueryPlan buildQueryPlanForJoinNodeLegacy(
             auto & join_node_using_column_node = join_node_using_node->as<ColumnNode &>();
             auto & inner_columns_list = join_node_using_column_node.getExpressionOrThrow()->as<ListNode &>();
 
-            auto & left_inner_column_node = inner_columns_list.getNodes().at(0);
+            if (inner_columns_list.getNodes().size() < 2)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "JOIN USING clause expected at least two column identifiers, got: {}",
+                    join_node_using_column_node.formatASTForErrorMessage());
+
+            auto & left_inner_column_node = inner_columns_list.getNodes().front();
             auto * left_inner_column = left_inner_column_node->as<ColumnNode>();
             if (!left_inner_column)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -1992,7 +1999,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNodeLegacy(
                     left_inner_column_node->getNodeTypeName(),
                     left_inner_column_node->formatASTForErrorMessage());
 
-            auto & right_inner_column_node = inner_columns_list.getNodes().at(1);
+            auto & right_inner_column_node = inner_columns_list.getNodes().back();
             auto * right_inner_column = right_inner_column_node->as<ColumnNode>();
             if (!right_inner_column)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -2200,8 +2207,8 @@ JoinTreeQueryPlan buildQueryPlanForJoinNodeLegacy(
         {
             auto & join_using_column_node = join_using_node->as<ColumnNode &>();
             auto & using_join_columns_list = join_using_column_node.getExpressionOrThrow()->as<ListNode &>();
-            auto & using_join_left_join_column_node = using_join_columns_list.getNodes().at(0);
-            auto & using_join_right_join_column_node = using_join_columns_list.getNodes().at(1);
+            auto & using_join_left_join_column_node = using_join_columns_list.getNodes().front();
+            auto & using_join_right_join_column_node = using_join_columns_list.getNodes().back();
 
             const auto & left_column_identifier = planner_context->getColumnNodeIdentifierOrThrow(using_join_left_join_column_node);
             const auto & right_column_identifier = planner_context->getColumnNodeIdentifierOrThrow(using_join_right_join_column_node);
@@ -2597,7 +2604,8 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
             for (size_t j = i + 1; j < table_expressions_stack.size(); ++j)
             {
                 const auto & node = table_expressions_stack[j];
-                if (node->getNodeType() == QueryTreeNodeType::JOIN || node->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
+                if (node->getNodeType() == QueryTreeNodeType::JOIN || node->getNodeType() == QueryTreeNodeType::ARRAY_JOIN
+                    || node->getNodeType() == QueryTreeNodeType::CROSS_JOIN)
                 {
                     parent_join_tree = node;
                     break;
@@ -2610,7 +2618,7 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
             bool is_remote = planner_context->getTableExpressionDataOrThrow(table_expression).isRemote();
             query_plans_stack.push_back(buildQueryPlanForTableExpression(
                 table_expression,
-                join_tree_node,
+                parent_join_tree,
                 select_query_info,
                 select_query_options,
                 planner_context,

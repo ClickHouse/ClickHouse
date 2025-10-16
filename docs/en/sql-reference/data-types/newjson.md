@@ -829,6 +829,8 @@ This serialization is quite inefficient for writing data (so it's not recommende
 Note: because of storing some additional information inside the data structure, the disk storage size is higher with this serialization compared to 
 `map` and `map_with_buckets` serializations.
 
+For more detailed overview of the new shared data serializations and implementation details read the [blog post](https://clickhouse.com/blog/json-data-type-gets-even-better).
+
 ## Introspection functions {#introspection-functions}
 
 There are several functions that can help to inspect the content of the JSON column: 

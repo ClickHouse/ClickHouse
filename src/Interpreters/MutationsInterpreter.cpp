@@ -647,6 +647,7 @@ void MutationsInterpreter::prepare(bool dry_run)
     NameSet updated_columns;
     bool materialize_ttl_recalculate_only = source.materializeTTLRecalculateOnly();
     bool has_lightweight_delete_materialization = false;
+    bool has_rewrite_parts = false;
 
     for (const auto & command : commands)
     {
@@ -655,6 +656,9 @@ void MutationsInterpreter::prepare(bool dry_run)
 
         if (command.type == MutationCommand::APPLY_DELETED_MASK)
             has_lightweight_delete_materialization = true;
+
+        if (command.type == MutationCommand::REWRITE_PARTS)
+            has_rewrite_parts = true;
 
         for (const auto & [name, _] : command.column_to_update_expression)
         {
@@ -710,6 +714,15 @@ void MutationsInterpreter::prepare(bool dry_run)
     std::vector<String> read_columns;
 
     if (has_lightweight_delete_materialization)
+    {
+        auto & stage = stages.emplace_back(context);
+        stage.affects_all_columns = true;
+
+        need_rebuild_indexes = true;
+        need_rebuild_projections = true;
+    }
+
+    if (has_rewrite_parts)
     {
         auto & stage = stages.emplace_back(context);
         stage.affects_all_columns = true;
@@ -941,6 +954,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             {
                 if (!columns_desc.has(stat_column_name) || columns_desc.get(stat_column_name).statistics.empty())
                     throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Unknown statistics column: {}", stat_column_name);
+
                 dependencies.emplace(stat_column_name, ColumnDependency::STATISTICS);
                 materialized_statistics.emplace(stat_column_name);
             }
@@ -964,8 +978,20 @@ void MutationsInterpreter::prepare(bool dry_run)
         else if (command.type == MutationCommand::DROP_STATISTICS)
         {
             mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION);
-            for (const auto & stat_column_name: command.statistics_columns)
-                materialized_statistics.erase(stat_column_name);
+
+            if (command.clear && command.statistics_columns.empty())
+            {
+                for (const auto & column_desc : columns_desc)
+                {
+                    if (!column_desc.statistics.empty())
+                        materialized_statistics.erase(column_desc.name);
+                }
+            }
+            else
+            {
+                for (const auto & stat_column_name: command.statistics_columns)
+                    materialized_statistics.erase(stat_column_name);
+            }
         }
         else if (command.type == MutationCommand::DROP_PROJECTION)
         {
@@ -1036,19 +1062,12 @@ void MutationsInterpreter::prepare(bool dry_run)
                 dependencies.emplace(all_columns.front().name, ColumnDependency::TTL_EXPRESSION);
             }
         }
-        else if (command.type == MutationCommand::REWRITE_PARTS)
-        {
-            mutation_kind.set(MutationKind::MUTATE_OTHER);
-            addStageIfNeeded(command.mutation_version, true);
-            stages.back().affects_all_columns = true;
-
-            need_rebuild_indexes = true;
-            need_rebuild_projections = true;
-        }
         else if (command.type == MutationCommand::READ_COLUMN)
         {
             mutation_kind.set(MutationKind::MUTATE_OTHER);
             read_columns.emplace_back(command.column_name);
+            materialized_statistics.insert(command.column_name);
+
             /// Check if the type of this column is changed and there are projections that
             /// have this column in the primary key. We should rebuild such projections.
             if (const auto & merge_tree_data_part = source.getMergeTreeDataPart())
@@ -1069,8 +1088,10 @@ void MutationsInterpreter::prepare(bool dry_run)
                 }
             }
         }
-        /// Lightweight mutations materialization is handled separately.
-        else if (command.type == MutationCommand::APPLY_DELETED_MASK || command.type == MutationCommand::APPLY_PATCHES)
+        /// The following mutations handled separately:
+        else if (command.type == MutationCommand::APPLY_DELETED_MASK
+              || command.type == MutationCommand::APPLY_PATCHES
+              || command.type == MutationCommand::REWRITE_PARTS)
         {
             continue;
         }
@@ -1188,6 +1209,15 @@ void MutationsInterpreter::prepare(bool dry_run)
 
         if (changed)
             materialized_projections.insert(projection.name);
+    }
+
+    for (const auto & column : metadata_snapshot->getColumns())
+    {
+        if (column.statistics.empty())
+            continue;
+
+        if (updated_columns.contains(column.name) || changed_columns.contains(column.name))
+            materialized_statistics.insert(column.name);
     }
 
     /// Stages might be empty when we materialize skip indices or projections which don't add any
