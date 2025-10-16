@@ -129,8 +129,7 @@ void registerOutputFormatArrow(FormatFactory & factory)
         "Arrow",
         [](WriteBuffer & buf,
            const Block & sample,
-           const FormatSettings & format_settings,
-           FormatFilterInfoPtr /*format_filter_info*/)
+           const FormatSettings & format_settings)
         {
             return std::make_shared<ArrowBlockOutputFormat>(buf, std::make_shared<const Block>(sample), false, format_settings);
         });
@@ -142,8 +141,7 @@ void registerOutputFormatArrow(FormatFactory & factory)
         "ArrowStream",
         [](WriteBuffer & buf,
            const Block & sample,
-           const FormatSettings & format_settings,
-          FormatFilterInfoPtr /*format_filter_info*/)
+           const FormatSettings & format_settings)
         {
             return std::make_shared<ArrowBlockOutputFormat>(buf, std::make_shared<const Block>(sample), true, format_settings);
         });

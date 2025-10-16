@@ -87,8 +87,7 @@ void registerOutputFormatTabSeparated(FormatFactory & factory)
             factory.registerOutputFormat(format_name, [is_raw, with_names, with_types](
                 WriteBuffer & buf,
                 const Block & sample,
-                const FormatSettings & settings,
-                FormatFilterInfoPtr /*format_filter_info*/)
+                const FormatSettings & settings)
             {
                 return std::make_shared<TabSeparatedRowOutputFormat>(buf, std::make_shared<const Block>(sample), with_names, with_types, is_raw, settings);
             });

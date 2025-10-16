@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-replicated-database, no-ordinary-database, long, no-encrypted-storage
+# Tags: no-fasttest, no-replicated-database, no-ordinary-database, long
 
 set -e -o pipefail
 

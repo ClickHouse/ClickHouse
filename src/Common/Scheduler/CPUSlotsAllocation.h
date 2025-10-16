@@ -22,17 +22,7 @@ class CPUSlotsAllocation;
 class CPUSlotRequest final : public ResourceRequest
 {
 public:
-    CPUSlotRequest()
-        // 1 second is a fixed cost of a CPU slot used without preemption (it does not depend on real consumption)
-        // The only purpose of this value is to ensure that during transition to/from `cpu_slot_preemption` mode,
-        // when preemptibale and non-preemptible slots are mixed, the request cost is reasonable enough.
-        : ResourceRequest(1'000'000'000)
-    {
-        // Ignore throttling for this request, because cost has no meaning in this case
-        // This disables `max_cpus` and `max_burst_cpu_seconds` throttling for non-preemptible CPU slots
-        ignore_throttling = true;
-    }
-
+    CPUSlotRequest() = default;
     ~CPUSlotRequest() override = default;
 
     /// Callback to trigger resource consumption.
@@ -48,7 +38,7 @@ public:
 class AcquiredCPUSlot final : public IAcquiredSlot
 {
 public:
-    explicit AcquiredCPUSlot(SlotAllocationPtr && allocation_, CPUSlotRequest * request_, size_t slot_id_);
+    explicit AcquiredCPUSlot(SlotAllocationPtr && allocation_, CPUSlotRequest * request_);
     ~AcquiredCPUSlot() override;
 
 private:
@@ -78,15 +68,15 @@ public:
     [[nodiscard]] AcquiredSlotPtr acquire() override;
 
     // For tests only. Returns true iff resource request is enqueued in the scheduler
-    bool isRequesting() const override;
+    bool isRequesting() const;
 
 private:
-    friend class CPUSlotRequest; // for grant() and failed()
+    friend class CPUSlotRequest; // for schedule() and failed()
 
     // Resource request failed
     void failed(const std::exception_ptr & ptr);
 
-    // Grant a slot and enqueue another resource request if necessary
+    // Enqueue resource request if necessary
     void grant();
 
     // Returns the queue for the current request
@@ -101,7 +91,6 @@ private:
     static constexpr SlotCount exception_value = SlotCount(-1);
     std::atomic<SlotCount> noncompeting{0}; // allocated noncompeting slots left to acquire
     std::atomic<SlotCount> granted{0}; // allocated competing slots left to acquire
-    std::atomic<size_t> last_slot_id{0};
     std::atomic<size_t> last_acquire_index{0};
 
     // Field that require sync with the scheduler thread

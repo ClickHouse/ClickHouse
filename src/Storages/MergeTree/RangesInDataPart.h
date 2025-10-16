@@ -2,14 +2,12 @@
 
 #include <unordered_map>
 #include <vector>
-#include <deque>
 
 #include <IO/WriteBuffer.h>
 #include <IO/ReadBuffer.h>
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
-#include <Storages/MergeTree/VectorSearchUtils.h>
 
 
 namespace DB
@@ -25,31 +23,21 @@ struct RangesInDataPartDescription
     MergeTreePartInfo info{};
     MarkRanges ranges{};
     size_t rows = 0;
-    String projection_name;
 
-    void serialize(WriteBuffer & out, UInt64 parallel_protocol_version) const;
+    void serialize(WriteBuffer & out) const;
     String describe() const;
-    void deserialize(ReadBuffer & in, UInt64 parallel_protocol_version);
-    String getPartOrProjectionName() const;
+    void deserialize(ReadBuffer & in);
 };
 
 struct RangesInDataPartsDescription: public std::deque<RangesInDataPartDescription>
 {
     using std::deque<RangesInDataPartDescription>::deque;
 
-    void serialize(WriteBuffer & out, UInt64 parallel_protocol_version) const;
+    void serialize(WriteBuffer & out) const;
     String describe() const;
-    void deserialize(ReadBuffer & in, UInt64 parallel_protocol_version);
+    void deserialize(ReadBuffer & in);
 
     void merge(const RangesInDataPartsDescription & other);
-};
-
-
-/// A vehicle which transports additional information to optimize searches
-struct RangesInDataPartReadHints
-{
-    /// Currently only information related to vector search
-    std::optional<NearestNeighbours> vector_search_results;
 };
 
 struct RangesInDataPart
@@ -60,7 +48,6 @@ struct RangesInDataPart
     size_t part_starting_offset_in_query;
     MarkRanges ranges;
     MarkRanges exact_ranges;
-    RangesInDataPartReadHints read_hints;
 
     RangesInDataPart(
         const DataPartPtr & data_part_,

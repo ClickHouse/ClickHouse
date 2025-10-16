@@ -4,7 +4,6 @@ description: 'System table containing information about tables that drop table h
 keywords: ['system table', 'dropped_tables']
 slug: /operations/system-tables/dropped_tables
 title: 'system.dropped_tables'
-doc_type: 'reference'
 ---
 
 Contains information about tables that drop table has been executed on but for which data cleanup has not yet been performed.

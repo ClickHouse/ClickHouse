@@ -176,6 +176,7 @@ private:
     void executeMergeAggregated(QueryPlan & query_plan, bool overflow_row, bool final, bool has_grouping_sets);
     void executeTotalsAndHaving(QueryPlan & query_plan, bool has_having, const ActionsAndProjectInputsFlagPtr & expression, bool remove_filter, bool overflow_row, bool final);
     void executeHaving(QueryPlan & query_plan, const ActionsAndProjectInputsFlagPtr & expression, bool remove_filter);
+    static void executeExpression(QueryPlan & query_plan, const ActionsAndProjectInputsFlagPtr & expression, const std::string & description);
     /// FIXME should go through ActionsDAG to behave as a proper function
     void executeWindow(QueryPlan & query_plan);
     void executeOrder(QueryPlan & query_plan, InputOrderInfoPtr sorting_info);
@@ -219,7 +220,7 @@ private:
     ExpressionAnalysisResult analysis_result;
     /// For row-level security.
     RowPolicyFilterPtr row_policy_filter;
-    FilterDAGInfoPtr row_policy_info;
+    FilterDAGInfoPtr filter_info;
 
     /// For additional_filter setting.
     FilterDAGInfoPtr additional_filter_info;

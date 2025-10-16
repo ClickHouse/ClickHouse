@@ -6,8 +6,8 @@
 #include <Common/logger_useful.h>
 #include <Common/memory.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
-#include <Core/Settings.h>
 #include <base/getPageSize.h>
+#include <base/errnoToString.h>
 #include <Interpreters/Context.h>
 
 #include <Poco/Logger.h>
@@ -106,6 +106,10 @@ static thread_local ThreadStack alt_stack;
 static thread_local bool has_alt_stack = false;
 #endif
 
+ThreadGroup::ThreadGroup()
+    : master_thread_id(CurrentThread::get().thread_id)
+    , memory_spill_scheduler(std::make_shared<MemorySpillScheduler>(false))
+{}
 
 ThreadStatus::ThreadStatus()
     : thread_id(getThreadId())
@@ -322,7 +326,6 @@ void ThreadStatus::onFatalError()
 }
 
 ThreadStatus * MainThreadStatus::main_thread = nullptr;
-std::atomic_flag MainThreadStatus::is_initialized;
 
 MainThreadStatus & MainThreadStatus::getInstance()
 {
@@ -333,12 +336,10 @@ MainThreadStatus & MainThreadStatus::getInstance()
 MainThreadStatus::MainThreadStatus()
 {
     main_thread = current_thread;
-    is_initialized.test_and_set(std::memory_order_relaxed);
 }
 
 MainThreadStatus::~MainThreadStatus()
 {
-    reset();
     /// Stop gathering task stats. We do this to avoid issues due to static object destruction order
     /// `MainThreadStatus thread_status` inside MainThreadStatus::getInstance might call detachFromGroup which calls taskstats->updateCounters
     /// `thread_local auto metrics_provider` inside TasksStatsCounters::TasksStatsCounters holds the file descriptors open

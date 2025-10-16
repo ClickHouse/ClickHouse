@@ -43,73 +43,31 @@ This setting should be used with extra caution since forwarded addresses can be 
 
 ## backups {#backups}
 
-Settings for backups, used when executing the [`BACKUP` and `RESTORE`](../backup.md) statements.
+Settings for backups, used when writing `BACKUP TO File()`.
 
 The following settings can be configured by sub-tags:
 
-<!-- SQL
-WITH settings AS (
-  SELECT arrayJoin([
-    ('allow_concurrent_backups', 'Bool','Determines whether multiple backup operations can run concurrently on the same host.', 'true'),
-    ('allow_concurrent_restores', 'Bool', 'Determines whether multiple restore operations can run concurrently on the same host.', 'true'),
-    ('allowed_disk', 'String', 'Disk to backup to when using `File()`. This setting must be set in order to use `File`.', ''),
-    ('allowed_path', 'String', 'Path to backup to when using `File()`. This setting must be set in order to use `File`.', ''),
-    ('attempts_to_collect_metadata_before_sleep', 'UInt', 'Number of attempts to collect metadata before sleeping in case of inconsistency after comparing collected metadata.', '2'),
-    ('collect_metadata_timeout', 'UInt64', 'Timeout in milliseconds for collecting metadata during backup.', '600000'),
-    ('compare_collected_metadata', 'Bool', 'If true, compares the collected metadata with the existing metadata to ensure they are not changed during backup .', 'true'),
-    ('create_table_timeout', 'UInt64', 'Timeout in milliseconds for creating tables during restore.', '300000'),
-    ('max_attempts_after_bad_version', 'UInt64', 'Maximum number of attempts to retry after encountering a bad version error during coordinated backup/restore.', '3'),
-    ('max_sleep_before_next_attempt_to_collect_metadata', 'UInt64', 'Maximum sleep time in milliseconds before the next attempt to collect metadata.', '100'),
-    ('min_sleep_before_next_attempt_to_collect_metadata', 'UInt64', 'Minimum sleep time in milliseconds before the next attempt to collect metadata.', '5000'),
-    ('remove_backup_files_after_failure', 'Bool', 'If the `BACKUP` command fails, ClickHouse will try to remove the files already copied to the backup before the failure,  otherwise it will leave the copied files as they are.', 'true'),
-    ('sync_period_ms', 'UInt64', 'Synchronization period in milliseconds for coordinated backup/restore.', '5000'),
-    ('test_inject_sleep', 'Bool', 'Testing related sleep', 'false'),
-    ('test_randomize_order', 'Bool', 'If true, randomizes the order of certain operations for testing purposes.', 'false'),
-    ('zookeeper_path', 'String', 'Path in ZooKeeper where backup and restore metadata is stored when using `ON CLUSTER` clause.', '/clickhouse/backups')
-  ]) AS t )
-SELECT concat('`', t.1, '`') AS Setting, t.2 AS Type, t.3 AS Description, concat('`', t.4, '`') AS Default FROM settings FORMAT Markdown
--->
-| Setting | Type | Description | Default |
-|:-|:-|:-|:-|
-| `allow_concurrent_backups` | Bool | Determines whether multiple backup operations can run concurrently on the same host. | `true` |
-| `allow_concurrent_restores` | Bool | Determines whether multiple restore operations can run concurrently on the same host. | `true` |
-| `allowed_disk` | String | Disk to backup to when using `File()`. This setting must be set in order to use `File`. | `` |
-| `allowed_path` | String | Path to backup to when using `File()`. This setting must be set in order to use `File`. | `` |
-| `attempts_to_collect_metadata_before_sleep` | UInt | Number of attempts to collect metadata before sleeping in case of inconsistency after comparing collected metadata. | `2` |
-| `collect_metadata_timeout` | UInt64 | Timeout in milliseconds for collecting metadata during backup. | `600000` |
-| `compare_collected_metadata` | Bool | If true, compares the collected metadata with the existing metadata to ensure they are not changed during backup . | `true` |
-| `create_table_timeout` | UInt64 | Timeout in milliseconds for creating tables during restore. | `300000` |
-| `max_attempts_after_bad_version` | UInt64 | Maximum number of attempts to retry after encountering a bad version error during coordinated backup/restore. | `3` |
-| `max_sleep_before_next_attempt_to_collect_metadata` | UInt64 | Maximum sleep time in milliseconds before the next attempt to collect metadata. | `100` |
-| `min_sleep_before_next_attempt_to_collect_metadata` | UInt64 | Minimum sleep time in milliseconds before the next attempt to collect metadata. | `5000` |
-| `remove_backup_files_after_failure` | Bool | If the `BACKUP` command fails, ClickHouse will try to remove the files already copied to the backup before the failure,  otherwise it will leave the copied files as they are. | `true` |
-| `sync_period_ms` | UInt64 | Synchronization period in milliseconds for coordinated backup/restore. | `5000` |
-| `test_inject_sleep` | Bool | Testing related sleep | `false` |
-| `test_randomize_order` | Bool | If true, randomizes the order of certain operations for testing purposes. | `false` |
-| `zookeeper_path` | String | Path in ZooKeeper where backup and restore metadata is stored when using `ON CLUSTER` clause. | `/clickhouse/backups` |
+| Setting                             | Description                                                                                                                                                                    | Default |
+|-------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
+| `allowed_path`                      | Path to backup to when using `File()`. This setting must be set in order to use `File`. The path can be relative to the instance directory or it can be absolute.              | `true`  |
+| `remove_backup_files_after_failure` | If the `BACKUP` command fails, ClickHouse will try to remove the files already copied to the backup before the failure,  otherwise it will leave the copied files as they are. | `true`  |
 
 This setting is configured by default as:
 
 ```xml
 <backups>
-    ....
+    <allowed_path>backups</allowed_path>
+    <remove_backup_files_after_failure>true</remove_backup_files_after_failure>
 </backups>
 ```
 
 ## bcrypt_workfactor {#bcrypt_workfactor}
 
-Work factor for the `bcrypt_password` authentication type which uses the [Bcrypt algorithm](https://wildlyinaccurate.com/bcrypt-choosing-a-work-factor/).
-The work factor defines the amount of computations and time needed to compute the hash and verify the password.
+Work factor for the bcrypt_password authentication type which uses the [Bcrypt algorithm](https://wildlyinaccurate.com/bcrypt-choosing-a-work-factor/).
 
 ```xml
 <bcrypt_workfactor>12</bcrypt_workfactor>
 ```
-
-:::warning
-For applications with high-frequency authentication,
-consider alternative authentication methods due to
-bcrypt's computational overhead at higher work factors.
-:::
 
 ## table_engines_require_grant {#table_engines_require_grant}
 
@@ -854,23 +812,20 @@ The location and format of log messages.
 
 **Keys**:
 
-| Key                    | Description                                                                                                                                                        |
-|------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `level`                | Log level. Acceptable values: `none` (turn logging off), `fatal`, `critical`, `error`, `warning`, `notice`, `information`,`debug`, `trace`, `test`                 |
-| `log`                  | The path to the log file.                                                                                                                                          |
-| `errorlog`             | The path to the error log file.                                                                                                                                    |
-| `size`                 | Rotation policy: Maximum size of the log files in bytes. Once the log file size exceeds this threshold, it is renamed and archived, and a new log file is created. |
-| `count`                | Rotation policy: How many historical log files Clickhouse are kept at most.                                                                                        |
-| `stream_compress`      | Compress log messages using LZ4. Set to `1` or `true` to enable.                                                                                                   |
-| `console`              | Enable logging to the console. Set to `1` or `true` to enable. Default is `1` if Clickhouse does not run in daemon mode, `0` otherwise.                            |
-| `console_log_level`    | Log level for console output. Defaults to `level`.                                                                                                                 |
-| `formatting.type`      | Log format for console output. Currently, only `json` is supported                                                                                                 |
-| `use_syslog`           | Also forward log output to syslog.                                                                                                                                 |
-| `syslog_level`         | Log level for logging to syslog.                                                                                                                                   |
-| `async`                | When `true` (default) logging will happen asynchronously (one background thread per output channel). Otherwise it will log inside the thread calling LOG           |
-| `async_queue_max_size` | When using async logging, the max amount of messages that will be kept in the the queue waiting for flushing. Extra messages will be dropped                       |
-| `startup_level`        | Startup level is used to set the root logger level at server startup. After startup log level is reverted to the `level` setting                                   |
-| `shutdown_level`       | Shutdown level is used to set the root logger level at server Shutdown.                                                                                            |
+| Key                 | Description                                                                                                                                                                         |
+|---------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `level`             | Log level. Acceptable values: `none` (turn logging off), `fatal`, `critical`, `error`, `warning`, `notice`, `information`,`debug`, `trace`, `test`                                  |
+| `log`               | The path to the log file.                                                                                                                                                           |
+| `errorlog`          | The path to the error log file.                                                                                                                                                     |
+| `size`              | Rotation policy: Maximum size of the log files in bytes. Once the log file size exceeds this threshold, it is renamed and archived, and a new log file is created.                  |
+| `count`             | Rotation policy: How many historical log files Clickhouse are kept at most.                                                                                                         |
+| `stream_compress`   | Compress log messages using LZ4. Set to `1` or `true` to enable.                                                                                                                    |
+| `console`           | Do not write log messages to log files, instead print them in the console. Set to `1` or `true` to enable. Default is `1` if Clickhouse does not run in daemon mode, `0` otherwise. |
+| `console_log_level` | Log level for console output. Defaults to `level`.                                                                                                                                  |
+| `formatting`        | Log format for console output. Currently, only `json` is supported                                                                                                                  |
+| `use_syslog`        | Also forward log output to syslog.                                                                                                                                                  |
+| `syslog_level`      | Log level for logging to syslog.                                                                                                                                                    |
+| `async`             | When `true` (default) logging will happen asynchronously (one background thread per output channel). Otherwise it will log inside the thread calling LOG                            |
 
 **Log format specifiers**
 
@@ -1278,6 +1233,39 @@ To disable `metric_log` setting, you should create the following file `/etc/clic
 ```
 
 <SystemLogParameters/>
+
+## latency_log {#latency_log}
+
+It is disabled by default.
+
+**Enabling**
+
+To manually turn on latency history collection [`system.latency_log`](../../operations/system-tables/latency_log.md), create `/etc/clickhouse-server/config.d/latency_log.xml` with the following content:
+
+```xml
+<clickhouse>
+    <latency_log>
+        <database>system</database>
+        <table>latency_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
+    </latency_log>
+</clickhouse>
+```
+
+**Disabling**
+
+To disable `latency_log` setting, you should create the following file `/etc/clickhouse-server/config.d/disable_latency_log.xml` with the following content:
+
+```xml
+<clickhouse>
+<latency_log remove="1" />
+</clickhouse>
+```
 
 ## replicated_merge_tree {#replicated_merge_tree}
 
@@ -1693,7 +1681,7 @@ Settings for the [asynchronous_insert_log](/operations/system-tables/asynchronou
 
 ## crash_log {#crash_log}
 
-Settings for the [crash_log](../../operations/system-tables/crash_log.md) system table operation.
+Settings for the [crash_log](../../operations/system-tables/crash-log.md) system table operation.
 
 <SystemLogParameters/>
 
@@ -1911,14 +1899,6 @@ Port for communicating with clients over PostgreSQL protocol.
 <postgresql_port>9005</postgresql_port>
 ```
 
-## mysql_require_secure_transport {#mysql_require_secure_transport}
-
-If set to true, secure communication is required with clients over [mysql_port](#mysql_port). Connection with option `--ssl-mode=none` will be refused. Use it with [OpenSSL](#openssl) settings.
-
-## postgresql_require_secure_transport {#postgresql_require_secure_transport}
-
-If set to true, secure communication is required with clients over [postgresql_port](#postgresql_port). Connection with option `sslmode=disable` will be refused. Use it with [OpenSSL](#openssl) settings.
-
 ## tmp_path {#tmp_path}
 
 Path on the local filesystem to store temporary data for processing large queries.
@@ -2046,23 +2026,6 @@ The default settings are:
     <partition_by>toYYYYMM(event_date)</partition_by>
     <flush_interval_milliseconds>7500</flush_interval_milliseconds>
 </s3queue_log>
-```
-
-## dead_letter_queue {#dead_letter_queue}
-
-Setting for the 'dead_letter_queue' system table.
-
-<SystemLogParameters/>
-
-The default settings are:
-
-```xml
-<dead_letter_queue>
-    <database>system</database>
-    <table>dead_letter</table>
-    <partition_by>toYYYYMM(event_date)</partition_by>
-    <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-</dead_letter_queue>
 ```
 
 ## zookeeper {#zookeeper}
@@ -2250,7 +2213,7 @@ Accepted values are:
 Section of the configuration file that contains settings:
 - Path to configuration file with predefined users.
 - Path to folder where users created by SQL commands are stored.
-- ZooKeeper node path where users created by SQL commands are stored and replicated.
+- ZooKeeper node path where users created by SQL commands are stored and replicated (experimental).
 
 If this section is specified, the path from [users_config](/operations/server-configuration-parameters/settings#users_config) and [access_control_path](../../operations/server-configuration-parameters/settings.md#access_control_path) won't be used.
 
@@ -2371,6 +2334,7 @@ Select a parent field in the tabs below to view their children:
 
   </TabItem>
   <TabItem value="http_https" label="<http> and <https>">
+
 
 | Field   | Description          |
 |---------|----------------------|

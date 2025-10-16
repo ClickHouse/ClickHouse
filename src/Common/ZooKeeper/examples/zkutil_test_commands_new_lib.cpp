@@ -44,7 +44,7 @@ try
         nodes.emplace_back(node);
     }
 
-    ZooKeeper zk(nodes, args, nullptr, nullptr);
+    ZooKeeper zk(nodes, args, nullptr);
 
     Poco::Event event(true);
 

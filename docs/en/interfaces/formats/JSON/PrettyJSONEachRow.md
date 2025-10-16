@@ -6,7 +6,6 @@ keywords: ['PrettyJSONEachRow', 'PrettyJSONLines', 'PrettyNDJSON']
 output_format: true
 slug: /interfaces/formats/PrettyJSONEachRow
 title: 'PrettyJSONEachRow'
-doc_type: 'guide'
 ---
 
 | Input | Output | Alias                             |
@@ -318,4 +317,6 @@ The output will be in JSON format:
 }  
 ```
 
+
 ## Format settings {#format-settings}
+

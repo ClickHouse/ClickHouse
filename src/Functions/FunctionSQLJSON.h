@@ -103,6 +103,7 @@ public:
     }
     void commit()
     {
+        chars.push_back(0);
         offsets.push_back(chars.size());
     }
     void rollback()

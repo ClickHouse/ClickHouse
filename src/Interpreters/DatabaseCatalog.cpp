@@ -2,6 +2,16 @@
 
 #include <Access/ContextAccess.h>
 
+#include <Common/assert_cast.h>
+#include <Common/checkStackSize.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/Exception.h>
+#include <Common/filesystemHelpers.h>
+#include <Common/logger_useful.h>
+#include <Common/noexcept_scope.h>
+#include <Common/quoteString.h>
+#include <Common/ThreadPool.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -9,30 +19,20 @@
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/IDatabase.h>
 #include <Disks/IDisk.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/executeQuery.h>
+#include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/loadMetadata.h>
+#include <Interpreters/TableNameHints.h>
 #include <IO/ReadHelpers.h>
 #include <IO/SharedThreadPools.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/InterpreterCreateQuery.h>
-#include <Interpreters/TableNameHints.h>
-#include <Interpreters/executeQuery.h>
+#include <Poco/DirectoryIterator.h>
+#include <Poco/Util/AbstractConfiguration.h>
 #include <Storages/IStorage.h>
 #include <Storages/MemorySettings.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageMemory.h>
-#include <Poco/DirectoryIterator.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/Exception.h>
-#include <Common/ThreadPool.h>
-#include <Common/UniqueLock.h>
-#include <Common/assert_cast.h>
-#include <Common/checkStackSize.h>
-#include <Common/filesystemHelpers.h>
-#include <Common/getRandomASCIIString.h>
-#include <Common/logger_useful.h>
-#include <Common/noexcept_scope.h>
-#include <Common/quoteString.h>
-#include <Common/threadPoolCallbackRunner.h>
 
 #include <algorithm>
 #include <mutex>
@@ -44,8 +44,7 @@
 #include <boost/range/adaptor/map.hpp>
 #include <fmt/ranges.h>
 
-#include <config.h>
-#include <base/sleep.h>
+#include "config.h"
 
 #if USE_LIBPQXX
 #    include <Databases/PostgreSQL/DatabaseMaterializedPostgreSQL.h>
@@ -83,17 +82,11 @@ namespace ErrorCodes
     extern const int UNFINISHED;
     extern const int INFINITE_LOOP;
     extern const int THERE_IS_NO_QUERY;
-    extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace Setting
 {
     extern const SettingsBool fsync_metadata;
-}
-
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsSearchOrphanedPartsDisks search_orphaned_parts_disks;
 }
 
 class DatabaseNameHints : public IHints<>
@@ -651,24 +644,17 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
             throw;
         }
     }
+
     db->shutdown();
 
     if (drop)
     {
         UUID db_uuid = db->getUUID();
+
+        /// Delete the database.
+        db->drop(local_context);
+
         auto default_db_disk = getContext()->getDatabaseDisk();
-
-        try
-        {
-            /// Delete the database.
-            db->drop(local_context);
-        }
-        catch (...)
-        {
-            attachDatabase(database_name, db);
-            throw;
-        }
-
         /// Old ClickHouse versions did not store database.sql files
         /// Remove metadata dir (if exists) to avoid recreation of .sql file on server startup
         fs::path database_metadata_dir = fs::path("metadata") / escapeForFileName(database_name);
@@ -1492,29 +1478,11 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
         table.table->drop();
     }
 
-    /// Check if we are interested in a particular disk
-    ///   or it is better to bypass it e.g. to avoid interactions with a remote storage
-    auto is_disk_eligible_for_search = [this](DiskPtr disk, std::shared_ptr<MergeTreeData> storage)
-    {
-        bool is_disk_eligible = !disk->isReadOnly();
-
-        /// Disk is not actually used by MergeTree table
-        if (is_disk_eligible && storage && !storage->getStoragePolicy()->tryGetVolumeIndexByDiskName(disk->getName()).has_value())
-        {
-            SearchOrphanedPartsDisks mode = (*storage->getSettings())[MergeTreeSetting::search_orphaned_parts_disks];
-            is_disk_eligible = mode == SearchOrphanedPartsDisks::ANY || (mode == SearchOrphanedPartsDisks::LOCAL && !disk->isRemote());
-        }
-
-        LOG_TRACE(log, "is disk {} eligible for search: {}", disk->getName(), is_disk_eligible);
-        return is_disk_eligible;
-    };
-
     /// Even if table is not loaded, try remove its data from disks.
     for (const auto & [disk_name, disk] : getContext()->getDisksMap())
     {
         String data_path = "store/" + getPathForUUID(table.table_id.uuid);
-        auto table_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(table.table);
-        if (!is_disk_eligible_for_search(disk, table_merge_tree) || !disk->existsDirectory(data_path))
+        if (disk->isReadOnly() || !disk->existsDirectory(data_path))
             continue;
 
         LOG_INFO(log, "Removing data directory {} of dropped table {} from disk {}", data_path, table.table_id.getNameForLogs(), disk_name);
@@ -1540,13 +1508,14 @@ void DatabaseCatalog::waitTableFinallyDropped(const UUID & uuid)
         return;
 
     LOG_DEBUG(log, "Waiting for table {} to be finally dropped", toString(uuid));
-    UniqueLock lock{tables_marked_dropped_mutex};
-    wait_table_finally_dropped.wait(lock.getUnderlyingLock(), [&]() TSA_REQUIRES(tables_marked_dropped_mutex) -> bool
+    std::unique_lock lock{tables_marked_dropped_mutex};
+    wait_table_finally_dropped.wait(lock, [&]() TSA_REQUIRES(tables_marked_dropped_mutex) -> bool
     {
         return !tables_marked_dropped_ids.contains(uuid) || is_shutting_down;
     });
 
-    const bool has_table = tables_marked_dropped_ids.contains(uuid);
+    /// TSA doesn't support unique_lock
+    const bool has_table = TSA_SUPPRESS_WARNING_FOR_READ(tables_marked_dropped_ids).contains(uuid);
     LOG_DEBUG(log, "Done waiting for the table {} to be dropped. The outcome: {}", toString(uuid), has_table ? "table still exists" : "table dropped successfully");
 
     if (has_table)
@@ -2064,31 +2033,12 @@ DDLGuard::DDLGuard(Map & map_, SharedMutex & db_mutex_, std::unique_lock<std::mu
     is_database_guard = elem.empty();
     if (!is_database_guard)
     {
-        static constexpr int MAX_TRY = 10;
-        static constexpr UInt64 INTERVAL_MS = 100;
-        bool acquired_db_mutex_lock = false;
-        for (int i = 0; i < MAX_TRY; ++i)
-        {
-            acquired_db_mutex_lock = db_mutex.try_lock_shared();
-            if (acquired_db_mutex_lock)
-                break;
 
-            if (!DatabaseCatalog::instance().isDatabaseExist(database_name))
-            {
-                releaseTableLock();
-                throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} is currently dropped or renamed", database_name);
-            }
-
-            sleepForMilliseconds(INTERVAL_MS);
-        }
-        if (!acquired_db_mutex_lock)
+        bool locked_database_for_read = db_mutex.try_lock_shared();
+        if (!locked_database_for_read)
         {
             releaseTableLock();
-            throw Exception(
-                ErrorCodes::TIMEOUT_EXCEEDED,
-                "Unable to acquire the database lock of {} after {} ms",
-                database_name,
-                MAX_TRY * INTERVAL_MS);
+            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} is currently dropped or renamed", database_name);
         }
     }
 }

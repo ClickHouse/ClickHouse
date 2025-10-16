@@ -36,7 +36,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsSeconds lock_acquire_timeout;
-    extern const SettingsBool enable_lightweight_update;
+    extern const SettingsBool allow_experimental_lightweight_update;
 }
 
 namespace ServerSetting
@@ -71,8 +71,8 @@ static MutationCommand createMutationCommand(const ASTUpdateQuery & update_query
 BlockIO InterpreterUpdateQuery::execute()
 {
     const auto & settings = getContext()->getSettingsRef();
-    if (!settings[Setting::enable_lightweight_update])
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Lightweight updates are not allowed. Set 'enable_lightweight_update = 1' to allow them");
+    if (!settings[Setting::allow_experimental_lightweight_update])
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Lightweight updates are not allowed. Set 'allow_experimental_lightweight_update = 1' to allow them");
 
     FunctionNameNormalizer::visit(query_ptr.get());
     auto & update_query = query_ptr->as<ASTUpdateQuery &>();

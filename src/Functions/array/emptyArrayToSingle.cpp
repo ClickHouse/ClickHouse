@@ -236,9 +236,12 @@ namespace
                     }
                     else
                     {
+                        res_data.push_back(0);  /// An empty string, including zero at the end.
+
                         if (nullable)
                             res_null_map->push_back(1);
 
+                        ++res_string_prev_offset;
                         res_string_offsets.push_back(res_string_prev_offset);
 
                         ++res_array_prev_offset;

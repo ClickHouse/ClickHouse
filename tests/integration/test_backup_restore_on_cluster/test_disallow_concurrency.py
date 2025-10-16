@@ -1,4 +1,4 @@
-from typing import List
+import concurrent
 
 import pytest
 
@@ -15,11 +15,6 @@ cluster = ClickHouseCluster(__file__)
 
 num_nodes = 2
 
-
-main_configs = [
-    "configs/disallow_concurrency.xml",
-    generate_cluster_def(__file__, num_nodes),
-]
 # No [Zoo]Keeper retries for tests with concurrency
 user_configs = ["configs/allow_database_types.xml"]
 

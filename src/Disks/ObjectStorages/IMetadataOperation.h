@@ -1,15 +1,16 @@
 #pragma once
 
-#include <memory>
+#include <mutex>
+#include <Common/SharedMutex.h>
 
 namespace DB
 {
 
 struct IMetadataOperation
 {
-    virtual void execute() = 0;
-    virtual void undo() {}
-    virtual void finalize() {}
+    virtual void execute(std::unique_lock<SharedMutex> & metadata_lock) = 0;
+    virtual void undo(std::unique_lock<SharedMutex> & metadata_lock) = 0;
+    virtual void finalize() { }
     virtual ~IMetadataOperation() = default;
 };
 

@@ -287,7 +287,7 @@ struct ExistsExpressionData
 
         auto new_subquery = std::make_shared<ASTSubquery>(std::move(select_with_union_query));
 
-        auto function = makeASTOperator("in", std::make_shared<ASTLiteral>(1u), new_subquery);
+        auto function = makeASTFunction("in", std::make_shared<ASTLiteral>(1u), new_subquery);
         func = *function;
     }
 };
@@ -1172,17 +1172,11 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
     if (storage_snapshot)
     {
         const auto & virtuals = storage_snapshot->virtual_columns;
-        const auto & common_virtual_columns = IStorage::getCommonVirtuals();
         for (auto it = unknown_required_source_columns.begin(); it != unknown_required_source_columns.end();)
         {
             if (auto column = virtuals->tryGet(*it))
             {
                 source_columns.push_back(*column);
-                it = unknown_required_source_columns.erase(it);
-            }
-            else if (auto common_column = common_virtual_columns.tryGet(*it))
-            {
-                source_columns.push_back(*common_column);
                 it = unknown_required_source_columns.erase(it);
             }
             else
