@@ -402,7 +402,7 @@ bool ParserInterpolateExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expect
 
 bool ParserTTLExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    return ParserList(std::make_unique<ParserTTLElement>(), std::make_unique<ParserToken>(TokenType::Comma), false)
+    return ParserList(std::make_unique<ParserTTLElement>(), std::make_unique<ParserToken>(TokenType::Comma), /* allow_empty_ = */ false)
         .parse(pos, node, expected);
 }
 

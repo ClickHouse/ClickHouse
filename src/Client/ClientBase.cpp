@@ -1696,7 +1696,7 @@ bool ClientBase::receiveSampleBlock(Block & out, ColumnsDescription & columns_de
                 break;
 
             case Protocol::Server::TableColumns:
-                columns_description = ColumnsDescription::parse(packet.multistring_message[1]);
+                columns_description = ColumnsDescription::parse(packet.columns_description);
                 return receiveSampleBlock(out, columns_description, parsed_query);
 
             case Protocol::Server::TimezoneUpdate:
@@ -3370,11 +3370,6 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
 
     if (options.count("prompt"))
         getClientConfiguration().setString("prompt", options["prompt"].as<std::string>());
-
-    if (options.count("oauth-url"))
-        getClientConfiguration().setString("oauth-url", options["oauth-url"].as<std::string>());
-    if (options.count("oauth-client-id"))
-        getClientConfiguration().setString("oauth-client-id", options["oauth-client-id"].as<std::string>());
 
     if (options.count("log-level"))
         Poco::Logger::root().setLevel(options["log-level"].as<std::string>());
