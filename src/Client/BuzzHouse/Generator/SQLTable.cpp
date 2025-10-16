@@ -298,7 +298,7 @@ SQLRelation StatementGenerator::createViewRelation(const String & rel_name, cons
 {
     SQLRelation rel(rel_name);
 
-    assert(!v.cols.empty());
+    chassert(!v.cols.empty());
     for (const auto & entry : v.cols)
     {
         rel.cols.emplace_back(SQLRelationCol(rel_name, {"c" + std::to_string(entry)}));
