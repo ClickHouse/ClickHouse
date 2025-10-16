@@ -3473,17 +3473,24 @@ void ClientBase::runInteractive()
     if (!isEmbeeddedClient())
     {
         /// Load command history if present.
+        bool should_create_parent_directories = false;
         if (getClientConfiguration().has("history_file"))
             history_file = getClientConfiguration().getString("history_file");
         else
+        {
             history_file = getHistoryFilePath();
+
+            /// Avoid creating parent directories
+            /// if history file path was specified explicitly in config.
+            should_create_parent_directories = true;
+        }
 
         if (!history_file.empty() && !fs::exists(history_file))
         {
             /// Avoid TOCTOU issue.
             try
             {
-                if (history_file.has_parent_path())
+                if (should_create_parent_directories && history_file.has_parent_path())
                     fs::create_directories(history_file.parent_path());
 
                 FS::createFile(history_file);
