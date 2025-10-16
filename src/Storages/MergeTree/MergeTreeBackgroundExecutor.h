@@ -59,7 +59,7 @@ struct TaskRuntimeData
         CurrentMetrics::values[metric].fetch_sub(1);
     }
 
-    void cancel()
+    void cancel() const
     {
         Stopwatch sw;
         if (task)
@@ -74,7 +74,7 @@ struct TaskRuntimeData
         ProfileEvents::incrementNoTrace(ProfileEvents::MergeTreeBackgroundExecutorWaitMicroseconds, sw.elapsedMicroseconds());
     }
 
-    bool executeStep()
+    bool executeStep() const
     {
         Stopwatch sw;
         bool res = task->executeStep();
