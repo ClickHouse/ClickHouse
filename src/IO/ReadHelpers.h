@@ -813,9 +813,9 @@ inline ReturnType readMacAddressTextImpl(MacAddress & mac, ReadBuffer & buf)
     {
         // Convert 6-byte array to UInt64 in big-endian order
         UInt64 value = 0;
-        for (size_t i = 0; i < MAC_ADDRESS_BINARY_LENGTH; ++i)
+        for (unsigned char byte : bytes)
         {
-            value = (value << 8) | bytes[i];
+            value = (value << 8) | byte;
         }
         mac = MacAddress(value);
         return ReturnType(true);
