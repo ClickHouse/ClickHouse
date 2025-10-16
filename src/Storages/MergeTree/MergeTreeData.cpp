@@ -2537,7 +2537,7 @@ try
     LOG_DEBUG(log, "Refreshing statistics");
     DataPartsVector data_parts = getDataPartsVectorForInternalUsage();
     ConditionSelectivityEstimatorBuilder estimator_builder(getContext());
-    for (DataPartPtr data_part : data_parts)
+    for (const DataPartPtr & data_part : data_parts)
     {
         try
         {
