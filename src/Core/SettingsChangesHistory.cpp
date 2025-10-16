@@ -66,7 +66,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_use_logical_join_step", true, true, "Added alias"},
             {"schema_inference_make_columns_nullable", 1, 3, "Take nullability information from Parquet/ORC/Arrow metadata by default, instead of making everything nullable."},
             {"materialized_views_squash_parallel_inserts", false, true, "Added setting to preserve old behavior if needed."},
-            {"refresh_statistics_interval", 0, 0, "New setting"},
             {"use_statistics_cache", 0, 0, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.9",
@@ -914,6 +913,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"replicated_deduplication_window_seconds", 7 * 24 * 60 * 60, 60*60, "decrease default value"},
             {"shared_merge_tree_activate_coordinated_merges_tasks", false, false, "New settings"},
             {"shared_merge_tree_merge_coordinator_factor", 1.1f, 1.1f, "Lower coordinator sleep time after load"},
+            {"refresh_statistics_interval", 0, 0, "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.9",
         {
