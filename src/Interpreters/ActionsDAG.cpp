@@ -237,6 +237,10 @@ ActionsDAG::ActionsDAG(const ColumnsWithTypeAndName & inputs_, bool duplicate_co
 
 ActionsDAG::Node & ActionsDAG::addNode(Node node)
 {
+    if (node.column && !WhichDataType(node.result_type).isSet() 
+        && typeid_cast<const ColumnConst *>(node.column.get()) == nullptr)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add node {} because it has non-constant column {}", node.result_name, node.column->dumpStructure());
+
     auto & res = nodes.emplace_back(std::move(node));
 
     if (res.type == ActionType::INPUT)
