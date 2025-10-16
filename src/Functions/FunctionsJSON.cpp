@@ -772,7 +772,7 @@ public:
 };
 
 
-template <typename JSONParser, typename NumberType, bool convert_bool_to_integer = false>
+template <typename JSONParser, typename NumberType>
 class JSONExtractNumericImpl
 {
 public:
@@ -794,7 +794,7 @@ public:
     {
         NumberType value;
 
-        if (!tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, convert_bool_to_integer, /*allow_type_conversion=*/true, error))
+        if (!tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, /*convert_bool_to_number=*/false, /*allow_type_conversion=*/true, error))
             return false;
         auto & col_vec = assert_cast<ColumnVector<NumberType> &>(dest);
         col_vec.insertValue(value);
