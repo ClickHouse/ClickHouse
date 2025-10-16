@@ -22,7 +22,7 @@ private:
     size_t dimension;
 
     /// Helper template for serialization from Field tuple. Untransposes tuple data and writes floats
-    template <typename Word, typename Val>
+    template <typename FloatType>
     void serializeFloatsFromQBitTuple(const Tuple & tuple, WriteBuffer & ostr) const;
 
     /// Helper template for deserialization to Field tuple. Reads floats and transposes to tuple
@@ -31,7 +31,7 @@ private:
 
     /// Helper template for serialization. Untransposes QBit data and writes floats. The writer function allows to write in any format
     /// wanted (i.e. comma-separated for text serialization, binary for binary serialization)
-    template <typename Word, typename Val, typename WriteFunc>
+    template <typename FloatType, typename WriteFunc>
     void serializeFloatsFromQBit(const IColumn & column, size_t row_num, WriteFunc && write_func) const;
 
     /// Helper template for deserialization. Reads floats and transposes to QBit format
@@ -40,6 +40,10 @@ private:
 
     /// Helper function to validate and read QBit size from buffer for binary deserialization
     size_t validateAndReadQBitSize(ReadBuffer & istr, const FormatSettings & settings) const;
+
+    /// Helper function to dispatch based on element_size to the appropriate float type
+    template <typename Func>
+    void dispatchByElementSize(Func && func) const;
 
 
 public:

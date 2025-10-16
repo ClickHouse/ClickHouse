@@ -125,21 +125,35 @@ size_t SerializationQBit::validateAndReadQBitSize(ReadBuffer & istr, const Forma
             size,
             settings.binary.max_binary_string_size);
 
-    /// If the dimension % 8 != 0, the buffer will contain padding floats. Thus, `size` can be larger, equal, but never smaller than dimension
-    if (size < dimension)
+    if (size != dimension)
         throw Exception(
-            ErrorCodes::SERIALIZATION_ERROR, "Size of the read QBit {} doesn't match expected size {}", size, (dimension / 8) * 8);
+            ErrorCodes::SERIALIZATION_ERROR, "Dimension of the read QBit {} doesn't match expected dimension {}", size, dimension);
 
     return size;
 }
 
-template <typename Word, typename Val>
+template <typename Func>
+void SerializationQBit::dispatchByElementSize(Func && func) const
+{
+    if (element_size == 16)
+        func.template operator()<BFloat16>();
+    else if (element_size == 32)
+        func.template operator()<Float32>();
+    else if (element_size == 64)
+        func.template operator()<Float64>();
+    else
+        throw Exception(ErrorCodes::SERIALIZATION_ERROR, "Unsupported size for QBit: {}. Only 16, 32, and 64 are supported", element_size);
+}
+
+template <typename FloatType>
 void SerializationQBit::serializeFloatsFromQBitTuple(const Tuple & tuple, WriteBuffer & ostr) const
 {
+    using Word = std::conditional_t<sizeof(FloatType) == 2, UInt16, std::conditional_t<sizeof(FloatType) == 4, UInt32, UInt64>>;
+
     constexpr size_t bits = sizeof(Word) * 8;
     const size_t slice_size = DataTypeQBit::bitsToBytes(dimension);
     const size_t slice_size_bits = slice_size * 8;
-    std::vector<Val> dst(slice_size_bits, Val{});
+    std::vector<FloatType> dst(slice_size_bits, FloatType{});
 
     for (size_t bit = 0; bit < bits; ++bit)
     {
@@ -149,6 +163,8 @@ void SerializationQBit::serializeFloatsFromQBitTuple(const Tuple & tuple, WriteB
         SerializationQBit::untransposeBitPlane(src, reinterpret_cast<Word *>(dst.data()), slice_size_bits, mask);
     }
 
+    /// We untransposed QBit and might have trailing zero floats at the tail if dimension % 8 != 0. Remove them
+    dst.resize(dimension);
     writeVectorBinary(dst, ostr);
 }
 
@@ -167,7 +183,6 @@ Tuple SerializationQBit::deserializeFloatsToQBitTuple(ReadBuffer & istr) const
 
     size_t i = 0;
 
-    /// Only transpose for the actual data, skip the 0 padding floats at the tail (dimension <= i < total_bits)
     while (i < dimension)
     {
         Word w = 0;
@@ -175,13 +190,6 @@ Tuple SerializationQBit::deserializeFloatsToQBitTuple(ReadBuffer & istr) const
         readFloatBinary(v, istr);
         std::memcpy(&w, &v, sizeof(Word));
         transposeBits<Word>(w, i, total_bits, plane_ptrs.data());
-        i++;
-    }
-
-    while (i < total_bits)
-    {
-        FloatType v;
-        readFloatBinary(v, istr);
         i++;
     }
 
@@ -194,14 +202,16 @@ Tuple SerializationQBit::deserializeFloatsToQBitTuple(ReadBuffer & istr) const
     return tuple_elements;
 }
 
-template <typename Word, typename Val, typename WriteFunc>
+template <typename FloatType, typename WriteFunc>
 void SerializationQBit::serializeFloatsFromQBit(const IColumn & column, size_t row_num, WriteFunc && write_func) const
 {
+    using Word = std::conditional_t<sizeof(FloatType) == 2, UInt16, std::conditional_t<sizeof(FloatType) == 4, UInt32, UInt64>>;
+
     constexpr size_t bits = sizeof(Word) * 8;
     const size_t slice_size = DataTypeQBit::bitsToBytes(dimension);
     const size_t slice_size_bits = slice_size * 8;
 
-    std::vector<Val> dst(slice_size_bits, Val{});
+    std::vector<FloatType> dst(slice_size_bits, FloatType{});
 
     for (size_t bit = 0; bit < bits; ++bit)
     {
@@ -211,6 +221,8 @@ void SerializationQBit::serializeFloatsFromQBit(const IColumn & column, size_t r
         SerializationQBit::untransposeBitPlane(src, reinterpret_cast<Word *>(dst.data()), slice_size_bits, mask);
     }
 
+    /// We untransposed QBit and might have trailing zero floats at the tail if dimension % 8 != 0. Remove them
+    dst.resize(dimension);
     write_func(dst);
 }
 
@@ -232,10 +244,6 @@ void SerializationQBit::deserializeFloatsToQBit(IColumn & column, ReadFunc read_
         column_data_ptrs[col_idx] = reinterpret_cast<char *>(&chars[chars.size() - bytes_per_fixedstring]);
     }
 
-    /// We do not need to worry about skipping padding floats at the tail here like we do in deserializeFloatsToQBitTuple(...) .
-    /// The latter is always called in a context where we need to skip, while this method can be called from within deserializeText(...),
-    /// where there is no padding to skip and from deserializeBinary(...) where there is. So the caller is responsible for calling
-    /// read_one(...) the correct number of times.
     for (size_t i = 0; i < dimension; ++i)
     {
         FloatType value;
@@ -257,28 +265,14 @@ void SerializationQBit::serializeBinary(const Field & field, WriteBuffer & ostr,
         throw Exception(
             ErrorCodes::SERIALIZATION_ERROR, "QBit tuple size {} doesn't match expected element_size {}", tuple.size(), element_size);
 
-    if (element_size == 16)
-        serializeFloatsFromQBitTuple<UInt16, BFloat16>(tuple, ostr);
-    else if (element_size == 32)
-        serializeFloatsFromQBitTuple<UInt32, Float32>(tuple, ostr);
-    else if (element_size == 64)
-        serializeFloatsFromQBitTuple<UInt64, Float64>(tuple, ostr);
-    else
-        throw Exception(ErrorCodes::SERIALIZATION_ERROR, "Unsupported QBit element size {}", element_size);
+    dispatchByElementSize([&]<typename FloatType>() { serializeFloatsFromQBitTuple<FloatType>(tuple, ostr); });
 }
 
 void SerializationQBit::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
 {
     validateAndReadQBitSize(istr, settings);
 
-    if (element_size == 16)
-        field = deserializeFloatsToQBitTuple<BFloat16>(istr);
-    else if (element_size == 32)
-        field = deserializeFloatsToQBitTuple<Float32>(istr);
-    else if (element_size == 64)
-        field = deserializeFloatsToQBitTuple<Float64>(istr);
-    else
-        throw Exception(ErrorCodes::SERIALIZATION_ERROR, "Unsupported QBit element size {}", element_size);
+    dispatchByElementSize([&]<typename FloatType>() { field = deserializeFloatsToQBitTuple<FloatType>(istr); });
 }
 
 void SerializationQBit::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
@@ -286,45 +280,18 @@ void SerializationQBit::serializeBinary(const IColumn & column, size_t row_num, 
     /// Lambda to write the vector of floats to the output buffer
     auto write_binary = [&ostr](const auto & dst) { writeVectorBinary(dst, ostr); };
 
-    if (element_size == 16)
-        serializeFloatsFromQBit<UInt16, BFloat16>(column, row_num, write_binary);
-    else if (element_size == 32)
-        serializeFloatsFromQBit<UInt32, Float32>(column, row_num, write_binary);
-    else if (element_size == 64)
-        serializeFloatsFromQBit<UInt64, Float64>(column, row_num, write_binary);
-    else
-        throw Exception(ErrorCodes::SERIALIZATION_ERROR, "Unsupported QBit size {}. Only 16, 32, and 64 are supported", element_size);
+    dispatchByElementSize([&]<typename FloatType>() { serializeFloatsFromQBit<FloatType>(column, row_num, write_binary); });
 }
 
 void SerializationQBit::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    size_t size = validateAndReadQBitSize(istr, settings);
+    validateAndReadQBitSize(istr, settings);
 
-    auto run = [&]<class T>()
-    {
-        deserializeFloatsToQBit<T>(column, [&](T & v, size_t) { readBinary(v, istr); });
-        T temp;
-
-        /// Read and discard the padding floats
-        while (size > dimension)
-        {
-            readBinary(temp, istr);
-            --size;
-        }
-    };
+    auto read_binary = [&]<typename FloatType>(FloatType & v, size_t) { readBinary(v, istr); };
 
     auto deserialize = [&]() -> bool
     {
-        if (element_size == 16)
-            run.template operator()<BFloat16>();
-        else if (element_size == 32)
-            run.template operator()<Float32>();
-        else if (element_size == 64)
-            run.template operator()<Float64>();
-        else
-            throw Exception(
-                ErrorCodes::SERIALIZATION_ERROR, "Unsupported size for QBit: {}. Only 16, 32, and 64 are supported", element_size);
-
+        dispatchByElementSize([&]<typename FloatType>() { deserializeFloatsToQBit<FloatType>(column, read_binary); });
         return true;
     };
 
@@ -345,14 +312,11 @@ void SerializationQBit::serializeText(const IColumn & column, size_t row_num, Wr
     };
 
     writeChar('[', ostr);
-    if (element_size == 16)
-        serializeFloatsFromQBit<UInt16, BFloat16>(column, row_num, write_text);
-    else if (element_size == 32)
-        serializeFloatsFromQBit<UInt32, Float32>(column, row_num, write_text);
-    else if (element_size == 64)
-        serializeFloatsFromQBit<UInt64, Float64>(column, row_num, write_text);
-    else
-        throw Exception(ErrorCodes::SERIALIZATION_ERROR, "Unsupported QBit size {}. Only 16, 32, and 64 are supported", element_size);
+    dispatchByElementSize(
+        [&]<typename FloatType>()
+        {
+            serializeFloatsFromQBit<FloatType>(column, row_num, write_text);
+        });
     writeChar(']', ostr);
 }
 
@@ -375,15 +339,7 @@ void SerializationQBit::deserializeText(IColumn & column, ReadBuffer & istr, con
         assertChar('[', istr);
         skipWhitespaceIfAny(istr);
 
-        if (element_size == 16)
-            deserializeFloatsToQBit<BFloat16>(column, read_with_comma);
-        else if (element_size == 32)
-            deserializeFloatsToQBit<Float32>(column, read_with_comma);
-        else if (element_size == 64)
-            deserializeFloatsToQBit<Float64>(column, read_with_comma);
-        else
-            throw Exception(
-                ErrorCodes::SERIALIZATION_ERROR, "Unsupported size for QBit: {}. Only 16, 32, and 64 are supported", element_size);
+        dispatchByElementSize([&]<typename FloatType>() { deserializeFloatsToQBit<FloatType>(column, read_with_comma); });
 
         skipWhitespaceIfAny(istr);
         assertChar(']', istr);
