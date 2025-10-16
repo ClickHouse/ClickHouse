@@ -1,8 +1,9 @@
 Negative tests
 1
 1
-Test what happens hasAnyTokens/All are called on columns without index
--- It is expected that the default tokenizer is used
+Test singular aliases
+Test what happens when hasAnyTokens/All is called on a column without index
+-- We expected that the default tokenizer is used
 -- { echoOn }
 SELECT hasAnyTokens('a b', ['b']);
 1
@@ -78,11 +79,31 @@ SELECT id FROM tab WHERE hasAllTokens('a b', 'a b');
 SELECT id FROM tab WHERE hasAllTokens('a b', 'a c');
 SELECT id FROM tab WHERE hasAllTokens(col_str, 'a a');
 SELECT id FROM tab WHERE hasAllTokens(col_str, 'b c');
-Testing edge cases on non-indexed column
+-- Test search without needle on non-empty columns (all are expected to match)
+SELECT count() FROM tab WHERE hasAnyTokens(col_str, []);
 3
+SELECT count() FROM tab WHERE hasAllTokens(col_str, []);
 3
+SELECT count() FROM tab WHERE hasAnyTokens(col_str, ['']); -- matches nothing
 0
+SELECT count() FROM tab WHERE hasAnyTokens(col_str, ''); -- TODO currently this goes through the default tokenizer and matches everything
 3
+-- { echoOn }
+SELECT id FROM tab WHERE hasAnyTokens(s, ['hello']) ORDER BY id;
+1
+3
+SELECT id FROM tab WHERE hasAnyTokens(s, ['moon', 'goodbye']) ORDER BY id;
+2
+3
+SELECT id FROM tab WHERE hasAnyTokens(s, ['unknown', 'goodbye']) ORDER BY id;
+2
+SELECT id FROM tab WHERE hasAllTokens(s, ['hello', 'world']) ORDER BY id;
+1
+SELECT id FROM tab WHERE hasAllTokens(s, ['goodbye']) ORDER BY id;
+2
+SELECT id FROM tab WHERE hasAllTokens(s, ['hello', 'moon']) ORDER BY id;
+3
+SELECT id FROM tab WHERE hasAllTokens(s, ['hello', 'unknown']) ORDER BY id;
 FixedString input columns
 [1]
 [1]

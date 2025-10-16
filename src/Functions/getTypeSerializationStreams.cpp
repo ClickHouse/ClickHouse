@@ -76,7 +76,24 @@ private:
 
 REGISTER_FUNCTION(GetTypeSerializationStreams)
 {
-    factory.registerFunction<FunctionGetTypeSerializationStreams>();
+    FunctionDocumentation::Description description = R"(
+Enumerates stream paths of a data type.
+This function is intended for developmental use.
+    )";
+    FunctionDocumentation::Syntax syntax = "getTypeSerializationStreams(col)";
+    FunctionDocumentation::Arguments arguments = {
+        {"col", "Column or string representation of a data-type from which the data type will be detected.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array with all the serialization sub-stream paths.", {"Array(String)"}};
+    FunctionDocumentation::Examples examples = {
+        {"tuple", "SELECT getTypeSerializationStreams(tuple('a', 1, 'b', 2))", "['{TupleElement(1), Regular}','{TupleElement(2), Regular}','{TupleElement(3), Regular}','{TupleElement(4), Regular}']"},
+        {"map", "SELECT getTypeSerializationStreams('Map(String, Int64)')", "['{ArraySizes}','{ArrayElements, TupleElement(keys), Regular}','{ArrayElements, TupleElement(values), Regular}']"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionGetTypeSerializationStreams>(documentation);
 }
 
 }
