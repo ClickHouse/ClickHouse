@@ -34,8 +34,8 @@ Like [multiSearchAny](#multiSearchAny) but ignores case.
         "SELECT multiSearchAnyCaseInsensitive('ClickHouse',['c','h'])",
         R"(
 ┌─multiSearchAnyCaseInsensitive('ClickHouse', ['c', 'h'])─┐
-│                                                        1 │
-└──────────────────────────────────────────────────────────┘
+│                                                       1 │
+└─────────────────────────────────────────────────────────┘
         )"
     }
     };

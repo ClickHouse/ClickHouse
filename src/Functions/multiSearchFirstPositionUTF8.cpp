@@ -36,8 +36,8 @@ Like [multiSearchFirstPosition](#multiSearchFirstPosition) but assumes `haystack
         R"(SELECT multiSearchFirstPositionUTF8('\x68\x65\x6c\x6c\x6f\x20\x77\x6f\x72\x6c\x64',['wor', 'ld', 'ello']))",
         R"(
 ┌─multiSearchFirstPositionUTF8('hello world', ['wor', 'ld', 'ello'])─┐
-│                                                                   2 │
-└─────────────────────────────────────────────────────────────────────┘
+│                                                                  2 │
+└────────────────────────────────────────────────────────────────────┘
         )"
     }
     };

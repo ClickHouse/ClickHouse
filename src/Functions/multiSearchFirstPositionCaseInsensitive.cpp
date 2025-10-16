@@ -36,8 +36,8 @@ Like [multiSearchFirstPosition](#multiSearchFirstPosition) but ignores case.
         "SELECT multiSearchFirstPositionCaseInsensitive('HELLO WORLD',['wor', 'ld', 'ello'])",
         R"(
 ┌─multiSearchFirstPositionCaseInsensitive('HELLO WORLD', ['wor', 'ld', 'ello'])─┐
-│                                                                              2 │
-└────────────────────────────────────────────────────────────────────────────────┘
+│                                                                             2 │
+└───────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
