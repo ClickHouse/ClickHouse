@@ -69,13 +69,18 @@ namespace
 String calculateActionNodeNameWithCastIfNeeded(const ConstantNode & constant_node)
 {
     const auto & [name, type] = constant_node.getValueNameAndType();
-    bool requires_cast_call = constant_node.hasSourceExpression() || ConstantNode::requiresCastCall(type, constant_node.getResultType());
+    DataTypePtr constant_type = constant_node.getResultType();
+    bool requires_cast_call = ConstantNode::requiresCastCall(type, constant_type);
+
+    if (requires_cast_call)
+        if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
+            constant_type = nullable_type->getNestedType();
 
     WriteBufferFromOwnString buffer;
     if (requires_cast_call)
         buffer << "_CAST(";
 
-    buffer << name << "_" << constant_node.getResultType()->getName();
+    buffer << name << "_" << constant_type->getName();
 
     if (requires_cast_call)
     {
