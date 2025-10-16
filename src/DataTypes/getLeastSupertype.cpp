@@ -432,8 +432,8 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
     }
 
     /// For tuples
-        for (const auto & type : types)
-        {
+    for (const auto & type : types)
+    {
         if (typeid_cast<const DataTypeTuple *>(type.get()))
             return getLeastSuperTypeForTuple<on_error>(types);
     }
