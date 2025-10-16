@@ -29,6 +29,7 @@ using UUID = StrongTypedef<UInt128, struct UUIDTag>;
 
 struct IPv4;
 struct IPv6;
+struct MacAddress;
 
 struct Null;
 

@@ -35,6 +35,7 @@ template class FunctionConvert<DataTypeDateTime64, NameToDateTime64, ToDateTimeM
 template class FunctionConvert<DataTypeUUID, NameToUUID, ToNumberMonotonicity<UInt128>>;
 template class FunctionConvert<DataTypeIPv4, NameToIPv4, ToNumberMonotonicity<UInt32>>;
 template class FunctionConvert<DataTypeIPv6, NameToIPv6, ToNumberMonotonicity<UInt128>>;
+template class FunctionConvert<DataTypeMacAddress, NameToMacAddress, ToNumberMonotonicity<UInt64>>;
 template class FunctionConvert<DataTypeString, NameToString, ToStringMonotonicity>;
 template class FunctionConvert<DataTypeUInt32, NameToUnixTimestamp, ToNumberMonotonicity<UInt32>>;
 template class FunctionConvert<DataTypeDecimal<Decimal32>, NameToDecimal32, UnknownMonotonicity>;

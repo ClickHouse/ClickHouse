@@ -35,6 +35,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
+#include <DataTypes/DataTypeMacAddress.h>
 #include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
@@ -1019,6 +1020,17 @@ inline bool tryParseImpl<DataTypeIPv6>(DataTypeIPv6::FieldType & x, ReadBuffer &
 {
     IPv6 tmp;
     if (!tryReadIPv6Text(tmp, rb))
+        return false;
+
+    x = tmp;
+    return true;
+}
+
+template <>
+inline bool tryParseImpl<DataTypeMacAddress>(DataTypeMacAddress::FieldType & x, ReadBuffer & rb, const DateLUTImpl *, bool)
+{
+    MacAddress tmp;
+    if (!tryReadMacAddressText(tmp, rb))
         return false;
 
     x = tmp;
@@ -2195,6 +2207,11 @@ struct ConvertImpl
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                                     "Conversion between numeric types and IPv6 is not supported. "
                                     "Probably the passed IPv6 is unquoted");
+                }
+                else if constexpr (is_floating_point<FromFieldType> && std::is_same_v<ToDataType, DataTypeMacAddress>)
+                {
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                                    "Conversion from floating point types to MacAddress is not supported");
                 }
                 else if constexpr (
                     ((std::is_same_v<FromDataType, DataTypeDate> || std::is_same_v<FromDataType, DataTypeDate32>)
@@ -3645,6 +3662,7 @@ struct NameToFloat64 { static constexpr auto name = "toFloat64"; };
 struct NameToUUID { static constexpr auto name = "toUUID"; };
 struct NameToIPv4 { static constexpr auto name = "toIPv4"; };
 struct NameToIPv6 { static constexpr auto name = "toIPv6"; };
+struct NameToMacAddress { static constexpr auto name = "toMacAddress"; };
 
 extern template class FunctionConvert<DataTypeUInt8, NameToUInt8, ToNumberMonotonicity<UInt8>>;
 extern template class FunctionConvert<DataTypeUInt16, NameToUInt16, ToNumberMonotonicity<UInt16>>;
@@ -3679,6 +3697,7 @@ extern template class FunctionConvert<DataTypeDateTime64, NameToDateTime64, ToDa
 extern template class FunctionConvert<DataTypeUUID, NameToUUID, ToNumberMonotonicity<UInt128>>;
 extern template class FunctionConvert<DataTypeIPv4, NameToIPv4, ToNumberMonotonicity<UInt32>>;
 extern template class FunctionConvert<DataTypeIPv6, NameToIPv6, ToNumberMonotonicity<UInt128>>;
+extern template class FunctionConvert<DataTypeMacAddress, NameToMacAddress, ToNumberMonotonicity<UInt64>>;
 extern template class FunctionConvert<DataTypeString, NameToString, ToStringMonotonicity>;
 extern template class FunctionConvert<DataTypeUInt32, NameToUnixTimestamp, ToNumberMonotonicity<UInt32>>;
 extern template class FunctionConvert<DataTypeDecimal<Decimal32>, NameToDecimal32, UnknownMonotonicity>;
@@ -3720,6 +3739,7 @@ using FunctionToDateTime64 = FunctionConvert<DataTypeDateTime64, NameToDateTime6
 using FunctionToUUID = FunctionConvert<DataTypeUUID, NameToUUID, ToNumberMonotonicity<UInt128>>;
 using FunctionToIPv4 = FunctionConvert<DataTypeIPv4, NameToIPv4, ToNumberMonotonicity<UInt32>>;
 using FunctionToIPv6 = FunctionConvert<DataTypeIPv6, NameToIPv6, ToNumberMonotonicity<UInt128>>;
+using FunctionToMacAddress = FunctionConvert<DataTypeMacAddress, NameToMacAddress, ToNumberMonotonicity<UInt64>>;
 using FunctionToString = FunctionConvert<DataTypeString, NameToString, ToStringMonotonicity>;
 using FunctionToUnixTimestamp = FunctionConvert<DataTypeUInt32, NameToUnixTimestamp, ToNumberMonotonicity<UInt32>>;
 using FunctionToDecimal32 = FunctionConvert<DataTypeDecimal<Decimal32>, NameToDecimal32, UnknownMonotonicity>;
@@ -3755,6 +3775,7 @@ template <> struct FunctionTo<DataTypeDateTime64> { using Type = FunctionToDateT
 template <> struct FunctionTo<DataTypeUUID> { using Type = FunctionToUUID; };
 template <> struct FunctionTo<DataTypeIPv4> { using Type = FunctionToIPv4; };
 template <> struct FunctionTo<DataTypeIPv6> { using Type = FunctionToIPv6; };
+template <> struct FunctionTo<DataTypeMacAddress> { using Type = FunctionToMacAddress; };
 template <> struct FunctionTo<DataTypeString> { using Type = FunctionToString; };
 template <> struct FunctionTo<DataTypeFixedString> { using Type = FunctionToFixedString; };
 template <> struct FunctionTo<DataTypeDecimal<Decimal32>> { using Type = FunctionToDecimal32; };
@@ -3795,6 +3816,7 @@ struct NameToDecimal256OrZero { static constexpr auto name = "toDecimal256OrZero
 struct NameToUUIDOrZero { static constexpr auto name = "toUUIDOrZero"; };
 struct NameToIPv4OrZero { static constexpr auto name = "toIPv4OrZero"; };
 struct NameToIPv6OrZero { static constexpr auto name = "toIPv6OrZero"; };
+struct NameToMacAddressOrZero { static constexpr auto name = "toMacAddressOrZero"; };
 
 extern template class FunctionConvertFromString<DataTypeUInt8, NameToUInt8OrZero, ConvertFromStringExceptionMode::Zero>;
 extern template class FunctionConvertFromString<DataTypeUInt16, NameToUInt16OrZero, ConvertFromStringExceptionMode::Zero>;
@@ -3824,6 +3846,7 @@ extern template class FunctionConvertFromString<DataTypeDecimal<Decimal256>, Nam
 extern template class FunctionConvertFromString<DataTypeUUID, NameToUUIDOrZero, ConvertFromStringExceptionMode::Zero>;
 extern template class FunctionConvertFromString<DataTypeIPv4, NameToIPv4OrZero, ConvertFromStringExceptionMode::Zero>;
 extern template class FunctionConvertFromString<DataTypeIPv6, NameToIPv6OrZero, ConvertFromStringExceptionMode::Zero>;
+extern template class FunctionConvertFromString<DataTypeMacAddress, NameToMacAddressOrZero, ConvertFromStringExceptionMode::Zero>;
 
 using FunctionToUInt8OrZero = FunctionConvertFromString<DataTypeUInt8, NameToUInt8OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToUInt16OrZero = FunctionConvertFromString<DataTypeUInt16, NameToUInt16OrZero, ConvertFromStringExceptionMode::Zero>;
@@ -3853,6 +3876,7 @@ using FunctionToDecimal256OrZero = FunctionConvertFromString<DataTypeDecimal<Dec
 using FunctionToUUIDOrZero = FunctionConvertFromString<DataTypeUUID, NameToUUIDOrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToIPv4OrZero = FunctionConvertFromString<DataTypeIPv4, NameToIPv4OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToIPv6OrZero = FunctionConvertFromString<DataTypeIPv6, NameToIPv6OrZero, ConvertFromStringExceptionMode::Zero>;
+using FunctionToMacAddressOrZero = FunctionConvertFromString<DataTypeMacAddress, NameToMacAddressOrZero, ConvertFromStringExceptionMode::Zero>;
 
 struct NameToUInt8OrNull { static constexpr auto name = "toUInt8OrNull"; };
 struct NameToUInt16OrNull { static constexpr auto name = "toUInt16OrNull"; };
@@ -3882,6 +3906,7 @@ struct NameToDecimal256OrNull { static constexpr auto name = "toDecimal256OrNull
 struct NameToUUIDOrNull { static constexpr auto name = "toUUIDOrNull"; };
 struct NameToIPv4OrNull { static constexpr auto name = "toIPv4OrNull"; };
 struct NameToIPv6OrNull { static constexpr auto name = "toIPv6OrNull"; };
+struct NameToMacAddressOrNull { static constexpr auto name = "toMacAddressOrNull"; };
 
 extern template class FunctionConvertFromString<DataTypeUInt8, NameToUInt8OrNull, ConvertFromStringExceptionMode::Null>;
 extern template class FunctionConvertFromString<DataTypeUInt16, NameToUInt16OrNull, ConvertFromStringExceptionMode::Null>;
@@ -3911,6 +3936,7 @@ extern template class FunctionConvertFromString<DataTypeDecimal<Decimal256>, Nam
 extern template class FunctionConvertFromString<DataTypeUUID, NameToUUIDOrNull, ConvertFromStringExceptionMode::Null>;
 extern template class FunctionConvertFromString<DataTypeIPv4, NameToIPv4OrNull, ConvertFromStringExceptionMode::Null>;
 extern template class FunctionConvertFromString<DataTypeIPv6, NameToIPv6OrNull, ConvertFromStringExceptionMode::Null>;
+extern template class FunctionConvertFromString<DataTypeMacAddress, NameToMacAddressOrNull, ConvertFromStringExceptionMode::Null>;
 
 using FunctionToUInt8OrNull = FunctionConvertFromString<DataTypeUInt8, NameToUInt8OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToUInt16OrNull = FunctionConvertFromString<DataTypeUInt16, NameToUInt16OrNull, ConvertFromStringExceptionMode::Null>;
@@ -3940,6 +3966,7 @@ using FunctionToDecimal256OrNull = FunctionConvertFromString<DataTypeDecimal<Dec
 using FunctionToUUIDOrNull = FunctionConvertFromString<DataTypeUUID, NameToUUIDOrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToIPv4OrNull = FunctionConvertFromString<DataTypeIPv4, NameToIPv4OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToIPv6OrNull = FunctionConvertFromString<DataTypeIPv6, NameToIPv6OrNull, ConvertFromStringExceptionMode::Null>;
+using FunctionToMacAddressOrNull = FunctionConvertFromString<DataTypeMacAddress, NameToMacAddressOrNull, ConvertFromStringExceptionMode::Null>;
 
 struct NameParseDateTimeBestEffort { static constexpr auto name = "parseDateTimeBestEffort"; };
 struct NameParseDateTimeBestEffortOrZero { static constexpr auto name = "parseDateTimeBestEffortOrZero"; };
