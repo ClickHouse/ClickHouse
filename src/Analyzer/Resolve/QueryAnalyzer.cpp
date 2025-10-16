@@ -106,6 +106,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int UNEXPECTED_EXPRESSION;
+    extern const int SYNTAX_ERROR;
 }
 
 QueryAnalyzer::QueryAnalyzer(bool only_analyze_)
