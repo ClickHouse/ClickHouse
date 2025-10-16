@@ -31,7 +31,7 @@ MergeTreeSkipIndexReader::MergeTreeSkipIndexReader(
 {
 }
 
-SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & part)
+SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & part, const StorageMetadataPtr & metadata_snapshot, const NameSet & all_updated_columns)
 {
     CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithSecondaryKeys);
 
@@ -46,6 +46,13 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
             break;
 
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithSecondaryKeysMicroseconds);
+
+        auto result = MergeTreeDataSelectExecutor::canUseIndex(index_and_condition.index, metadata_snapshot, all_updated_columns);
+        if (!result)
+        {
+            LOG_TRACE(log, "Cannot use skip index for part {}. Reason: {}", part.data_part->name, result.error().text);
+            continue;
+        }
 
         ranges = MergeTreeDataSelectExecutor::filterMarksUsingIndex(
             index_and_condition.index,
@@ -69,6 +76,13 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
             break;
 
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithSecondaryKeysMicroseconds);
+
+        auto result = MergeTreeDataSelectExecutor::canUsedMergedIndex(indices_and_condition.indices, metadata_snapshot, all_updated_columns);
+        if (!result)
+        {
+            LOG_TRACE(log, "Cannot use merged skip index for part {}. Reason: {}", part.data_part->name, result.error().text);
+            continue;
+        }
 
         ranges = MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
             indices_and_condition.indices,
@@ -100,7 +114,7 @@ MergeTreeIndexReadResultPool::MergeTreeIndexReadResultPool(MergeTreeSkipIndexRea
     chassert(skip_index_reader);
 }
 
-MergeTreeIndexReadResultPtr MergeTreeIndexReadResultPool::getOrBuildIndexReadResult(const RangesInDataPart & part)
+MergeTreeIndexReadResultPtr MergeTreeIndexReadResultPool::getOrBuildIndexReadResult(const RangesInDataPart & part, const StorageMetadataPtr & metadata_snapshot, const NameSet & all_updated_columns)
 {
     std::unique_lock lock(index_read_result_registry_mutex);
     auto it = index_read_result_registry.find(part.data_part.get());
@@ -112,7 +126,8 @@ MergeTreeIndexReadResultPtr MergeTreeIndexReadResultPool::getOrBuildIndexReadRes
         try
         {
             MergeTreeIndexReadResultPtr res;
-            auto skip_index_res = skip_index_reader->read(part);
+            auto skip_index_res = skip_index_reader->read(part, metadata_snapshot, all_updated_columns);
+
             if (skip_index_res)
             {
                 res = std::make_shared<MergeTreeIndexReadResult>();
