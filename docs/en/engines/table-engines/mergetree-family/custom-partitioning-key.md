@@ -4,7 +4,6 @@ sidebar_label: 'Custom Partitioning Key'
 sidebar_position: 30
 slug: /engines/table-engines/mergetree-family/custom-partitioning-key
 title: 'Custom Partitioning Key'
-doc_type: 'guide'
 ---
 
 # Custom partitioning key

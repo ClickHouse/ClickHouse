@@ -8,7 +8,7 @@
 #include <Interpreters/IKeyValueEntity.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
-#include <Interpreters/JoinOperator.h>
+#include <Interpreters/JoinInfo.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/IAST_fwd.h>
 #include <QueryPipeline/SizeLimits.h>
@@ -152,7 +152,6 @@ private:
     const UInt64 cross_join_min_bytes_to_compress = 10000;
     const size_t max_joined_block_rows = 0;
     const size_t max_joined_block_bytes = 0;
-    const bool joined_block_split_single_row = false;
     std::vector<JoinAlgorithm> join_algorithms;
     const size_t partial_merge_join_rows_in_right_blocks = 0;
     const size_t partial_merge_join_left_table_buffer_bytes = 0;
@@ -162,7 +161,6 @@ private:
     const size_t sort_right_minimum_perkey_rows = 0;
     const size_t sort_right_maximum_table_rows = 0;
     const bool allow_join_sorting = false;
-    const bool allow_dynamic_type_in_join_keys = false;
 
     /// Value if setting max_memory_usage for query, can be used when max_bytes_in_join is not specified.
     size_t max_memory_usage = 0;
@@ -175,7 +173,7 @@ private:
     std::shared_ptr<ExpressionActions> mixed_join_expression = nullptr;
 
     ASTTableJoin table_join;
-    std::optional<JoinOperator> join_operator;
+    std::optional<JoinInfo> join_info;
 
     ASOFJoinInequality asof_inequality = ASOFJoinInequality::GreaterOrEquals;
 
@@ -311,7 +309,6 @@ public:
     size_t sortRightMaximumTableRows() const { return sort_right_maximum_table_rows; }
     bool allowJoinSorting() const { return allow_join_sorting; }
     size_t defaultMaxBytes() const { return default_max_bytes; }
-    bool joinedBlockAllowSplitSingleRow() const { return joined_block_split_single_row; }
     size_t maxJoinedBlockRows() const { return max_joined_block_rows; }
     size_t maxJoinedBlockBytes() const { return max_joined_block_bytes; }
     size_t maxRowsInRightBlock() const { return partial_merge_join_rows_in_right_blocks; }
@@ -325,7 +322,7 @@ public:
     ASTTableJoin & getTableJoin() { return table_join; }
     const ASTTableJoin & getTableJoin() const { return table_join; }
 
-    void setJoinOperator(const JoinOperator & join_operator_) { join_operator = join_operator_; }
+    void setJoinInfo(const JoinInfo & join_info_) { join_info = join_info_; }
 
     JoinOnClause & getOnlyClause() { assertHasOneOnExpr(); return clauses[0]; }
     const JoinOnClause & getOnlyClause() const { assertHasOneOnExpr(); return clauses[0]; }

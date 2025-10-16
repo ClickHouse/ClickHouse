@@ -33,7 +33,6 @@ public:
     void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
-    QueryPlanStepPtr clone() const override;
 
 private:
     ObjectStoragePtr object_storage;

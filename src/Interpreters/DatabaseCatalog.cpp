@@ -2,6 +2,16 @@
 
 #include <Access/ContextAccess.h>
 
+#include <Common/assert_cast.h>
+#include <Common/checkStackSize.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/Exception.h>
+#include <Common/filesystemHelpers.h>
+#include <Common/logger_useful.h>
+#include <Common/noexcept_scope.h>
+#include <Common/quoteString.h>
+#include <Common/ThreadPool.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -9,30 +19,20 @@
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/IDatabase.h>
 #include <Disks/IDisk.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/executeQuery.h>
+#include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/loadMetadata.h>
+#include <Interpreters/TableNameHints.h>
 #include <IO/ReadHelpers.h>
 #include <IO/SharedThreadPools.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/InterpreterCreateQuery.h>
-#include <Interpreters/TableNameHints.h>
-#include <Interpreters/executeQuery.h>
+#include <Poco/DirectoryIterator.h>
+#include <Poco/Util/AbstractConfiguration.h>
 #include <Storages/IStorage.h>
 #include <Storages/MemorySettings.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageMemory.h>
-#include <Poco/DirectoryIterator.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/Exception.h>
-#include <Common/ThreadPool.h>
-#include <Common/UniqueLock.h>
-#include <Common/assert_cast.h>
-#include <Common/checkStackSize.h>
-#include <Common/filesystemHelpers.h>
-#include <Common/getRandomASCIIString.h>
-#include <Common/logger_useful.h>
-#include <Common/noexcept_scope.h>
-#include <Common/quoteString.h>
-#include <Common/threadPoolCallbackRunner.h>
 
 #include <algorithm>
 #include <mutex>
@@ -651,24 +651,17 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
             throw;
         }
     }
+
     db->shutdown();
 
     if (drop)
     {
         UUID db_uuid = db->getUUID();
+
+        /// Delete the database.
+        db->drop(local_context);
+
         auto default_db_disk = getContext()->getDatabaseDisk();
-
-        try
-        {
-            /// Delete the database.
-            db->drop(local_context);
-        }
-        catch (...)
-        {
-            attachDatabase(database_name, db);
-            throw;
-        }
-
         /// Old ClickHouse versions did not store database.sql files
         /// Remove metadata dir (if exists) to avoid recreation of .sql file on server startup
         fs::path database_metadata_dir = fs::path("metadata") / escapeForFileName(database_name);
@@ -1540,13 +1533,14 @@ void DatabaseCatalog::waitTableFinallyDropped(const UUID & uuid)
         return;
 
     LOG_DEBUG(log, "Waiting for table {} to be finally dropped", toString(uuid));
-    UniqueLock lock{tables_marked_dropped_mutex};
-    wait_table_finally_dropped.wait(lock.getUnderlyingLock(), [&]() TSA_REQUIRES(tables_marked_dropped_mutex) -> bool
+    std::unique_lock lock{tables_marked_dropped_mutex};
+    wait_table_finally_dropped.wait(lock, [&]() TSA_REQUIRES(tables_marked_dropped_mutex) -> bool
     {
         return !tables_marked_dropped_ids.contains(uuid) || is_shutting_down;
     });
 
-    const bool has_table = tables_marked_dropped_ids.contains(uuid);
+    /// TSA doesn't support unique_lock
+    const bool has_table = TSA_SUPPRESS_WARNING_FOR_READ(tables_marked_dropped_ids).contains(uuid);
     LOG_DEBUG(log, "Done waiting for the table {} to be dropped. The outcome: {}", toString(uuid), has_table ? "table still exists" : "table dropped successfully");
 
     if (has_table)

@@ -4,7 +4,6 @@ description: 'This table contains histogram metrics that can be calculated insta
 keywords: ['system table', 'histogram_metrics']
 slug: /operations/system-tables/histogram_metrics
 title: 'system.histogram_metrics'
-doc_type: 'reference'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';

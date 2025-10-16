@@ -42,7 +42,7 @@ private:
         if (!number_parser.parse(pos, number, expected))
             return false;
 
-        node = makeASTOperator("equals", identifier, number);
+        node = makeASTFunction("equals", identifier, number);
         return true;
     }
 };
@@ -99,7 +99,7 @@ private:
             if (!number_parser.parse(pos, number, expected))
                 return false;
 
-            argument->parameter = makeASTOperator("equals", identifier, number);
+            argument->parameter = makeASTFunction("equals", identifier, number);
             argument->children.push_back(argument->parameter);
             node = argument;
             return true;

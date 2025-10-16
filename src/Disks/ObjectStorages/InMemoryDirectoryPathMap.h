@@ -1,6 +1,5 @@
 #pragma once
 
-#include <ranges>
 #include <set>
 #include <map>
 #include <mutex>
@@ -196,26 +195,22 @@ public:
         return num_removed;
     }
 
-    std::vector<std::string> listFiles(const std::string & path) const
+    void iterateFiles(const std::string & path, std::function<void(const std::string &)> callback) const
     {
         auto base_path = path;
         if (base_path.ends_with('/'))
             base_path.pop_back();
 
         std::lock_guard lock(mutex);
-
-        std::vector<std::string> files;
-        if (auto it = map.find(base_path); it != map.end())
-            files.append_range(it->second.files);
-
-        return files;
+        auto it = map.find(base_path);
+        if (it != map.end())
+            for (const auto & file : it->second.files)
+                callback(file);
     }
 
-    std::vector<std::string> listSubdirectories(const std::string & path) const
+    void iterateSubdirectories(const std::string & path, std::function<void(const std::string &)> callback) const
     {
         std::lock_guard lock(mutex);
-
-        std::vector<std::string> subdirectories;
         for (auto it = map.lower_bound(path); it != map.end(); ++it)
         {
             const auto & subdirectory = it->first.string();
@@ -230,10 +225,8 @@ public:
             if (slash_num != 0)
                 break;
 
-            subdirectories.push_back(std::string(subdirectory.begin() + path.size(), subdirectory.end()) + "/");
+            callback(std::string(subdirectory.begin() + path.size(), subdirectory.end()) + "/");
         }
-
-        return subdirectories;
     }
 
     void moveDirectory(const std::string & from, const std::string & to)

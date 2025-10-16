@@ -59,13 +59,6 @@ using TemporaryFileProvider = std::function<std::unique_ptr<TemporaryFileHolder>
 TemporaryFileProvider createTemporaryFileProvider(VolumePtr volume);
 TemporaryFileProvider createTemporaryFileProvider(FileCache * file_cache);
 
-#if ENABLE_DISTRIBUTED_CACHE
-struct DistributedCacheTag
-{};
-
-TemporaryFileProvider createTemporaryFileProvider(DistributedCacheTag);
-#endif
-
 /*
  * Used to account amount of temporary data written to disk.
  * If limit is set, throws exception if limit is exceeded.
@@ -82,9 +75,9 @@ public:
     };
 
     /// Root scope
-    template <typename... Args>
-    explicit TemporaryDataOnDiskScope(TemporaryDataOnDiskSettings settings_, Args &&... storage_args)
-        : file_provider(createTemporaryFileProvider(std::forward<Args>(storage_args)...))
+    template <typename T>
+    TemporaryDataOnDiskScope(T && storage, TemporaryDataOnDiskSettings settings_)
+        : file_provider(createTemporaryFileProvider(std::forward<T>(storage)))
         , settings(std::move(settings_))
     {}
 
@@ -139,11 +132,6 @@ public:
 
     Holder * getHolder() { return holder.get(); }
     const Holder * getHolder() const { return holder.get(); }
-    std::unique_ptr<Holder> releaseHolder()
-    {
-        impl.reset();
-        return std::move(holder);
-    }
 
     void reset()
     {
@@ -165,10 +153,7 @@ public:
     TemporaryFileHolder();
 
     virtual std::unique_ptr<WriteBuffer> write() = 0;
-    virtual std::unique_ptr<SeekableReadBuffer> read(size_t buffer_size) const = 0;
-
-    virtual void releaseWriteBuffer(std::unique_ptr<WriteBuffer> /*write_buffer*/)
-    {}
+    virtual std::unique_ptr<ReadBuffer> read(size_t buffer_size) const = 0;
 
     /// Get location for logging
     virtual String describeFilePath() const = 0;
@@ -208,13 +193,7 @@ public:
     void cancelImpl() noexcept override;
 
     std::unique_ptr<ReadBuffer> read();
-    std::unique_ptr<SeekableReadBuffer> readRaw();
-
-    CompressedWriteBuffer & getCompressedWriteBuffer();
-
     Stat finishWriting();
-
-    Stat getStat() const;
 
     String describeFilePath() const;
 

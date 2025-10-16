@@ -3,7 +3,6 @@ description: 'Documentation for Tuple Functions'
 sidebar_label: 'Tuples'
 slug: /sql-reference/functions/tuple-functions
 title: 'Tuple Functions'
-doc_type: 'reference'
 ---
 
 ## tuple {#tuple}
@@ -171,7 +170,7 @@ Result:
 └─────────────────┘
 ```
 
-Can be used with [MinHash](../../sql-reference/functions/hash-functions.md#ngramMinHash) functions for detection of semi-duplicate strings:
+Can be used with [MinHash](../../sql-reference/functions/hash-functions.md#ngramminhash) functions for detection of semi-duplicate strings:
 
 ```sql
 SELECT tupleHammingDistance(wordShingleMinHash(string), wordShingleMinHashCaseInsensitive(string)) AS HammingDistance

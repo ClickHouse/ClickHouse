@@ -190,7 +190,7 @@ class HtmlRunnerHooks:
             workflow_config = RunConfig.from_fs(_workflow.name)
             skipped_jobs = workflow_config.cache_success
             filtered_job_and_reason = workflow_config.filtered_jobs
-            job_cache_records = workflow_config.cache_jobs
+            job_cache_records = RunConfig.from_fs(_workflow.name).cache_jobs
             results = []
             info = Info()
             for skipped_job in skipped_jobs:
@@ -266,7 +266,7 @@ class HtmlRunnerHooks:
             print("Update workflow results with new info")
             new_result_info = info_str
 
-        if not result.is_ok() and not result.do_not_block_pipeline_on_failure():
+        if not result.is_ok() and not result.skip_dependee_jobs_dropping():
             print(
                 "Current job failed - find dependee jobs in the workflow and set their statuses to dropped"
             )
@@ -289,7 +289,7 @@ class HtmlRunnerHooks:
 
             for dependee in dependees:
                 print(
-                    f"NOTE: Set job [{dependee}] status to [{Result.Status.DROPPED}] due to current failure"
+                    f"NOTE: Set job [{dependee}] status to [{Result.Status.SKIPPED}] due to current failure"
                 )
                 new_sub_results.append(
                     Result(

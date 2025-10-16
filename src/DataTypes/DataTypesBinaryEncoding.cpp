@@ -10,7 +10,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeObject.h>
-#include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -103,21 +102,10 @@ enum class BinaryTypeIndex : uint8_t
     Nested = 0x2F,
     JSON = 0x30,
     BFloat16 = 0x31,
-    Time = 0x32,
-    /* The reason behind putting Time64 to 0x34 instead of 0x33 is following:
-    Originally, there were Time and Time64 with (and without) timezones, which were making the following indexing:
-    TimeUTC = 0x32
-    TimeWithTimezone = 0x33
-    Time64UTC = 0x34
-    Time64WithTimezone = 0x35
-
-    After that timezones became forbidden for Time[64] types, so we removed those types from here.
-    But we need to make the indexing consistent to ensure backwards compatibility.
-
-    Please don't use 0x33 and 0x35, because older client might try to serialise data as TimeWithTimezone/Time64WithTimezone, and newer server would deserialise them as incorrect types. */
-    Time64 = 0x34,
-    /// reserved = 0x35
-    QBit = 0x36
+    TimeUTC = 0x32,
+    TimeWithTimezone = 0x33,
+    Time64UTC = 0x34,
+    Time64WithTimezone = 0x35,
 };
 
 /// In future we can introduce more arguments in the JSON data type definition.
@@ -192,9 +180,13 @@ BinaryTypeIndex getBinaryTypeIndex(const DataTypePtr & type)
                 return BinaryTypeIndex::DateTime64WithTimezone;
             return BinaryTypeIndex::DateTime64UTC;
         case TypeIndex::Time:
-            return BinaryTypeIndex::Time;
+            if (assert_cast<const DataTypeTime &>(*type).hasExplicitTimeZone())
+                return BinaryTypeIndex::TimeWithTimezone;
+            return BinaryTypeIndex::TimeUTC;
         case TypeIndex::Time64:
-            return BinaryTypeIndex::Time64;
+            if (assert_cast<const DataTypeTime64 &>(*type).hasExplicitTimeZone())
+                return BinaryTypeIndex::Time64WithTimezone;
+            return BinaryTypeIndex::Time64UTC;
         case TypeIndex::String:
             return BinaryTypeIndex::String;
         case TypeIndex::FixedString:
@@ -222,8 +214,6 @@ BinaryTypeIndex getBinaryTypeIndex(const DataTypePtr & type)
                 return BinaryTypeIndex::NamedTuple;
             return BinaryTypeIndex::UnnamedTuple;
         }
-        case TypeIndex::QBit:
-            return BinaryTypeIndex::QBit;
         case TypeIndex::Set:
             return BinaryTypeIndex::Set;
         case TypeIndex::Interval:
@@ -386,11 +376,24 @@ void encodeDataType(const DataTypePtr & type, WriteBuffer & buf)
             writeStringBinary(getDateLUTTimeZone(datetime64_type.getTimeZone()), buf);
             break;
         }
-        case BinaryTypeIndex::Time64:
+        case BinaryTypeIndex::TimeWithTimezone:
+        {
+            const auto & time_type = assert_cast<const DataTypeTime &>(*type);
+            writeStringBinary(time_type.getTimeZone().getTimeZone(), buf);
+            break;
+        }
+        case BinaryTypeIndex::Time64UTC:
         {
             const auto & time64_type = assert_cast<const DataTypeTime64 &>(*type);
             /// Maximum scale for Time64 is 9, so we can write it as 1 byte.
             buf.write(UInt8(time64_type.getScale()));
+            break;
+        }
+        case BinaryTypeIndex::Time64WithTimezone:
+        {
+            const auto & time64_type = assert_cast<const DataTypeTime64 &>(*type);
+            buf.write(UInt8(time64_type.getScale()));
+            writeStringBinary(time64_type.getTimeZone().getTimeZone(), buf);
             break;
         }
         case BinaryTypeIndex::FixedString:
@@ -455,13 +458,6 @@ void encodeDataType(const DataTypePtr & type, WriteBuffer & buf)
             writeVarUInt(element_types.size(), buf);
             for (const auto & element_type : element_types)
                 encodeDataType(element_type, buf);
-            break;
-        }
-        case BinaryTypeIndex::QBit:
-        {
-            const auto & qbit_type = assert_cast<const DataTypeQBit &>(*type);
-            encodeDataType(qbit_type.getElementType(), buf);
-            writeVarUInt(qbit_type.getDimension(), buf);
             break;
         }
         case BinaryTypeIndex::Interval:
@@ -650,13 +646,27 @@ DataTypePtr decodeDataType(ReadBuffer & buf)
             readStringBinary(time_zone, buf);
             return std::make_shared<DataTypeDateTime64>(scale, time_zone);
         }
-        case BinaryTypeIndex::Time:
+        case BinaryTypeIndex::TimeUTC:
             return std::make_shared<DataTypeTime>();
-        case BinaryTypeIndex::Time64:
+        case BinaryTypeIndex::TimeWithTimezone:
+        {
+            String time_zone;
+            readStringBinary(time_zone, buf);
+            return std::make_shared<DataTypeTime>(time_zone);
+        }
+        case BinaryTypeIndex::Time64UTC:
         {
             UInt8 scale;
             readBinary(scale, buf);
             return std::make_shared<DataTypeTime64>(scale);
+        }
+        case BinaryTypeIndex::Time64WithTimezone:
+        {
+            UInt8 scale;
+            readBinary(scale, buf);
+            String time_zone;
+            readStringBinary(time_zone, buf);
+            return std::make_shared<DataTypeTime64>(scale, time_zone);
         }
         case BinaryTypeIndex::String:
             return getDataTypesCache().getType("String");
@@ -714,13 +724,6 @@ DataTypePtr decodeDataType(ReadBuffer & buf)
             for (size_t i = 0; i != size; ++i)
                 elements.push_back(decodeDataType(buf));
             return std::make_shared<DataTypeTuple>(elements);
-        }
-        case BinaryTypeIndex::QBit:
-        {
-            auto element_type = decodeDataType(buf);
-            size_t dimension;
-            readVarUInt(dimension, buf);
-            return std::make_shared<DataTypeQBit>(element_type, dimension);
         }
         case BinaryTypeIndex::Set:
             return std::make_shared<DataTypeSet>();

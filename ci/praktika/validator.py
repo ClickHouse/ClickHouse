@@ -66,11 +66,6 @@ class Validator:
                     f"Invalid Job.Config.runs_on [{job.runs_on}] for [{job.name}]",
                     workflow.name,
                 )
-                cls.evaluate_check(
-                    "PARAMETER" not in job.command,
-                    f"Job parametrization config issue: job name [{job.name}], job command: [{job.command}]",
-                    workflow.name,
-                )
 
             cls.validate_file_paths_in_run_command(workflow)
             cls.validate_file_paths_in_digest_configs(workflow)

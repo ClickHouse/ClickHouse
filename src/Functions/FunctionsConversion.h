@@ -12,7 +12,6 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnObjectDeprecated.h>
 #include <Columns/ColumnObject.h>
-#include <Columns/ColumnQBit.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnStringHelpers.h>
 #include <Columns/ColumnTuple.h>
@@ -43,7 +42,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeObjectDeprecated.h>
 #include <DataTypes/DataTypeObject.h>
-#include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -54,7 +52,6 @@
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/Serializations/SerializationDecimal.h>
-#include <DataTypes/Serializations/SerializationQBit.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/FormatFactory.h>
@@ -121,7 +118,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
-    extern const int SIZES_OF_ARRAYS_DONT_MATCH;
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 
@@ -259,78 +255,128 @@ struct ToTimeImpl
 /// Implementation of toDate function.
 
 template <typename FromType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-requires is_arithmetic_v<FromType>
-struct ToDateTransformFromSecondsOrDays
+struct ToDateTransform32Or64
 {
     static constexpr auto name = "toDate";
 
     static NO_SANITIZE_UNDEFINED UInt16 execute(const FromType & from, const DateLUTImpl & time_zone)
     {
-        constexpr bool overflow_throw = date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw;
-        if constexpr (overflow_throw && std::numeric_limits<FromType>::max() > MAX_DATETIME_TIMESTAMP)
+        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
             if (from > MAX_DATETIME_TIMESTAMP) [[unlikely]]
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", static_cast<Int64>(from));
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", from);
         }
-
-        if constexpr (is_signed_v<FromType>)
-            if (from < 0)
-            {
-                if constexpr (overflow_throw)
-                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", static_cast<Int64>(from));
-                else
-                    return 0;
-            }
-
         /// if value is smaller (or equal) than maximum day value for Date, than treat it as day num,
         /// otherwise treat it as unix timestamp. This is a bit weird, but we leave this behavior.
-        if constexpr (std::numeric_limits<FromType>::max() > DATE_LUT_MAX_DAY_NUM)
-            if (from > DATE_LUT_MAX_DAY_NUM) [[unlikely]]
-                return time_zone.toDayNum(std::min(time_t(from), time_t(MAX_DATETIME_TIMESTAMP)));
+        if (from <= DATE_LUT_MAX_DAY_NUM)
+            return from;
+        else
+            return time_zone.toDayNum(std::min(time_t(from), time_t(MAX_DATETIME_TIMESTAMP)));
+    }
+};
 
-        return static_cast<UInt16>(from);
+
+template <typename FromType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ToDateTransform32Or64Signed
+{
+    static constexpr auto name = "toDate";
+
+    static NO_SANITIZE_UNDEFINED UInt16 execute(const FromType & from, const DateLUTImpl & time_zone)
+    {
+        // TODO: decide narrow or extended range based on FromType
+        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+        {
+            if (from < 0 || from > MAX_DATE_TIMESTAMP) [[unlikely]]
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", from);
+        }
+        else
+        {
+            if (from < 0)
+                return 0;
+        }
+        return (from <= DATE_LUT_MAX_DAY_NUM)
+            ? static_cast<UInt16>(from)
+            : time_zone.toDayNum(std::min(time_t(from), time_t(MAX_DATE_TIMESTAMP)));
+    }
+};
+
+template <typename FromType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ToDateTransform8Or16Signed
+{
+    static constexpr auto name = "toDate";
+
+    static NO_SANITIZE_UNDEFINED UInt16 execute(const FromType & from, const DateLUTImpl &)
+    {
+        if (from < 0)
+        {
+            if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", from);
+            else
+                return 0;
+        }
+        return from;
     }
 };
 
 /// Implementation of toDate32 function.
 
 template <typename FromType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-requires is_arithmetic_v<FromType>
-struct ToDate32TransformFromSecondsOrDays
+struct ToDate32Transform32Or64
 {
     static constexpr auto name = "toDate32";
 
     static NO_SANITIZE_UNDEFINED Int32 execute(const FromType & from, const DateLUTImpl & time_zone)
     {
-        constexpr bool overflow_throw = date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw;
-        constexpr Int32 daynum_min_offset = -static_cast<Int32>(DateLUTImpl::getDayNumOffsetEpoch());
-
-        if constexpr (is_signed_v<FromType>)
+        if (from < DATE_LUT_MAX_EXTEND_DAY_NUM)
         {
-            bool is_nan = false;
-            if constexpr (is_floating_point<FromType>)
-                 is_nan = isNaN(from);
-            if (is_nan || from < daynum_min_offset)
-            {
-                if constexpr (overflow_throw)
-                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Date32", static_cast<Int64>(from));
-                return daynum_min_offset;
-            }
+            return static_cast<Int32>(from);
         }
-
-        if constexpr (overflow_throw && std::numeric_limits<FromType>::max() > MAX_DATETIME64_TIMESTAMP)
-            if (from > MAX_DATETIME64_TIMESTAMP) [[unlikely]]
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Date32", static_cast<Int64>(from));
-
-        if constexpr (std::numeric_limits<FromType>::max() >= DATE_LUT_MAX_EXTEND_DAY_NUM)
-            if (from >= DATE_LUT_MAX_EXTEND_DAY_NUM)
-                return time_zone.toDayNum(std::min(time_t(Int64(from)), time_t(MAX_DATETIME64_TIMESTAMP)));
-
-        return static_cast<Int32>(from);
+        else
+        {
+            if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+            {
+                if (from > MAX_DATETIME64_TIMESTAMP) [[unlikely]]
+                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Date32", from);
+            }
+            return time_zone.toDayNum(std::min(time_t(from), time_t(MAX_DATETIME64_TIMESTAMP)));
+        }
     }
 };
 
-/// Implementation of toDateTime function.
+template <typename FromType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ToDate32Transform32Or64Signed
+{
+    static constexpr auto name = "toDate32";
+
+    static NO_SANITIZE_UNDEFINED Int32 execute(const FromType & from, const DateLUTImpl & time_zone)
+    {
+        static const Int32 daynum_min_offset = -static_cast<Int32>(DateLUTImpl::getDayNumOffsetEpoch());
+
+        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+        {
+            if (from < daynum_min_offset || from > MAX_DATETIME64_TIMESTAMP) [[unlikely]]
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Date32", from);
+        }
+
+        if (from < daynum_min_offset)
+            return daynum_min_offset;
+
+        return (from < DATE_LUT_MAX_EXTEND_DAY_NUM)
+            ? static_cast<Int32>(from)
+            : time_zone.toDayNum(std::min(time_t(Int64(from)), time_t(MAX_DATETIME64_TIMESTAMP)));
+    }
+};
+
+template <typename FromType>
+struct ToDate32Transform8Or16Signed
+{
+    static constexpr auto name = "toDate32";
+
+    static NO_SANITIZE_UNDEFINED Int32 execute(const FromType & from, const DateLUTImpl &)
+    {
+        return from;
+    }
+};
 
 template <typename FromType, typename ToType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
 struct ToDateTimeTransform64
@@ -1166,13 +1212,9 @@ struct ConvertThroughParsing
         if constexpr (IsDataTypeDecimal<ToDataType>)
         {
             UInt32 scale = additions;
-            if constexpr (to_datetime64)
+            if constexpr (to_datetime64 || to_time64)
             {
                 ToDataType check_bounds_in_ctor(scale, local_time_zone ? local_time_zone->getTimeZone() : String{});
-            }
-            else if constexpr (to_time64)
-            {
-                ToDataType check_bounds_in_ctor(scale);
             }
             else
             {
@@ -1500,8 +1542,8 @@ struct ConvertImpl
             return DateTimeTransformImpl<DataTypeDateTime64, DataTypeDate32, TransformDateTime64<ToDate32Impl>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count, additions);
         }
-        /** Special case of converting Int8, Int16, (U)Int32, (U)Int64, (U)Int128 or (U)Int256 (and also, for convenience,
-          * Float32, Float64, BFloat16) to Date. If the
+        /** Special case of converting Int8, Int16, (U)Int32 or (U)Int64 (and also, for convenience,
+          * Float32, Float64) to Date. If the
           * number is less than 65536, then it is treated as DayNum, and if it's greater or equals to 65536,
           * then treated as unix timestamp. If the number exceeds UInt32, saturate to MAX_UINT32 then as DayNum.
           * It's a bit illogical, as we actually have two functions in one.
@@ -1513,42 +1555,55 @@ struct ConvertImpl
           * instead of 65536.
           */
         else if constexpr ((
-            std::is_same_v<FromDataType, DataTypeUInt16>
-            || std::is_same_v<FromDataType, DataTypeUInt32>
-            || std::is_same_v<FromDataType, DataTypeUInt64>
-            || std::is_same_v<FromDataType, DataTypeUInt128>
-            || std::is_same_v<FromDataType, DataTypeUInt256>
-            || std::is_same_v<FromDataType, DataTypeInt8>
-            || std::is_same_v<FromDataType, DataTypeInt16>
-            || std::is_same_v<FromDataType, DataTypeInt32>
-            || std::is_same_v<FromDataType, DataTypeInt64>
-            || std::is_same_v<FromDataType, DataTypeInt128>
-            || std::is_same_v<FromDataType, DataTypeInt256>
-            || std::is_same_v<FromDataType, DataTypeFloat32>
-            || std::is_same_v<FromDataType, DataTypeFloat64>
-            || std::is_same_v<FromDataType, DataTypeBFloat16>
-            ) && std::is_same_v<ToDataType, DataTypeDate>)
+                std::is_same_v<FromDataType, DataTypeUInt32>
+                || std::is_same_v<FromDataType, DataTypeUInt64>)
+            && std::is_same_v<ToDataType, DataTypeDate>)
         {
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTransformFromSecondsOrDays<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTransform32Or64<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count);
         }
         else if constexpr ((
-            std::is_same_v<FromDataType, DataTypeUInt16>
-            || std::is_same_v<FromDataType, DataTypeUInt32>
-            || std::is_same_v<FromDataType, DataTypeUInt64>
-            || std::is_same_v<FromDataType, DataTypeUInt128>
-            || std::is_same_v<FromDataType, DataTypeUInt256>
-            || std::is_same_v<FromDataType, DataTypeInt16>
-            || std::is_same_v<FromDataType, DataTypeInt32>
-            || std::is_same_v<FromDataType, DataTypeInt64>
-            || std::is_same_v<FromDataType, DataTypeInt128>
-            || std::is_same_v<FromDataType, DataTypeInt256>
-            || std::is_same_v<FromDataType, DataTypeFloat32>
-            || std::is_same_v<FromDataType, DataTypeFloat64>
-            || std::is_same_v<FromDataType, DataTypeBFloat16>
-            ) && std::is_same_v<ToDataType, DataTypeDate32>)
+                std::is_same_v<FromDataType, DataTypeInt8>
+                || std::is_same_v<FromDataType, DataTypeInt16>)
+            && std::is_same_v<ToDataType, DataTypeDate>)
         {
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToDate32TransformFromSecondsOrDays<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTransform8Or16Signed<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+                arguments, result_type, input_rows_count);
+        }
+        else if constexpr ((
+                std::is_same_v<FromDataType, DataTypeInt32>
+                || std::is_same_v<FromDataType, DataTypeInt64>
+                || std::is_same_v<FromDataType, DataTypeFloat32>
+                || std::is_same_v<FromDataType, DataTypeFloat64>)
+            && std::is_same_v<ToDataType, DataTypeDate>)
+        {
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTransform32Or64Signed<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+                arguments, result_type, input_rows_count);
+        }
+        else if constexpr ((
+                std::is_same_v<FromDataType, DataTypeUInt32>
+                || std::is_same_v<FromDataType, DataTypeUInt64>)
+            && std::is_same_v<ToDataType, DataTypeDate32>)
+        {
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDate32Transform32Or64<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+                arguments, result_type, input_rows_count);
+        }
+        else if constexpr ((
+                std::is_same_v<FromDataType, DataTypeInt8>
+                || std::is_same_v<FromDataType, DataTypeInt16>)
+            && std::is_same_v<ToDataType, DataTypeDate32>)
+        {
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDate32Transform8Or16Signed<typename FromDataType::FieldType>, false>::template execute<Additions>(
+                arguments, result_type, input_rows_count);
+        }
+        else if constexpr ((
+                std::is_same_v<FromDataType, DataTypeInt32>
+                || std::is_same_v<FromDataType, DataTypeInt64>
+                || std::is_same_v<FromDataType, DataTypeFloat32>
+                || std::is_same_v<FromDataType, DataTypeFloat64>)
+            && std::is_same_v<ToDataType, DataTypeDate32>)
+        {
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDate32Transform32Or64Signed<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count);
         }
         else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime> && std::is_same_v<ToDataType, DataTypeTime>)
@@ -1771,7 +1826,7 @@ struct ConvertImpl
                 if constexpr (std::is_same_v<FromDataType, DataTypeDate> || std::is_same_v<FromDataType, DataTypeDate32>)
                     time_zone = &DateLUT::instance();
                 /// For argument of Date or DateTime type, second argument with time zone could be specified.
-                if constexpr (std::is_same_v<FromDataType, DataTypeDateTime> || std::is_same_v<FromDataType, DataTypeDateTime64>)
+                if constexpr (std::is_same_v<FromDataType, DataTypeDateTime> || std::is_same_v<FromDataType, DataTypeDateTime64> || std::is_same_v<FromDataType, DataTypeTime> || std::is_same_v<FromDataType, DataTypeTime64>)
                 {
                     if ((time_zone_column = checkAndGetColumnConst<ColumnString>(arguments[1].column.get())))
                     {
@@ -2739,13 +2794,17 @@ public:
         }
 
         // toString(DateTime or DateTime64, [timezone: String])
-        if ((std::is_same_v<Name, NameToString> && !arguments.empty() && (isDateTime64(arguments[0].type) || isDateTime(arguments[0].type)))
+        if ((std::is_same_v<Name, NameToString> && !arguments.empty() && (isDateTime64(arguments[0].type) || isDateTime(arguments[0].type) || isTime64(arguments[0].type) || isTime(arguments[0].type)))
             // toUnixTimestamp(value[, timezone : String])
             || std::is_same_v<Name, NameToUnixTimestamp>
             // toDate(value[, timezone : String])
             || std::is_same_v<ToDataType, DataTypeDate> // TODO: shall we allow timestamp argument for toDate? DateTime knows nothing about timezones and this argument is ignored below.
             // toDate32(value[, timezone : String])
             || std::is_same_v<ToDataType, DataTypeDate32>
+            // toTime(value[, timezone : String])
+            || std::is_same_v<ToDataType, DataTypeTime>
+            // toTime64(value, scale : Integer[, timezone: String])
+            || std::is_same_v<ToDataType, DataTypeTime64>
             // toDateTime(value[, timezone: String])
             || std::is_same_v<ToDataType, DataTypeDateTime>
             // toDateTime64(value, scale : Integer[, timezone: String])
@@ -2799,15 +2858,16 @@ public:
                 scale = static_cast<UInt32>(arguments[1].column->get64(0));
 
                 if (to_time64 || scale != 0) /// toTime('xxx:xx:xx', 0) return Time
-                    return std::make_shared<DataTypeTime64>(scale);
+                    return std::make_shared<DataTypeTime64>(scale,
+                        extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0, false));
 
-                return std::make_shared<DataTypeTime>();
+                return std::make_shared<DataTypeTime>(extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0, false));
             }
 
             if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
                 return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0, false));
             else if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
-                return std::make_shared<DataTypeTime>();
+                return std::make_shared<DataTypeTime>(extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0, false));
             else if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64> || std::is_same_v<ToDataType, DataTypeTime64>)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected branch in code of conversion function: it is a bug.");
             else
@@ -3147,30 +3207,21 @@ public:
 
         if (isDateTime64<Name, ToDataType>(arguments) || isTime64<Name, ToDataType>(arguments))
         {
-            const auto required = FunctionArgumentDescriptors{
-                {"string", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}
-            };
-            const auto precision_opt = FunctionArgumentDescriptors{
-                {"precision", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8"}
-            };
-            const auto precision_with_timezone_opt = FunctionArgumentDescriptors{
-                {"precision", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8"},
-                {"timezone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), isColumnConst, "const String or FixedString"}
-            };
-
-            if (isTime64<Name, ToDataType>(arguments))
-                validateFunctionArguments(*this, arguments, required, precision_opt);
-            else
-                validateFunctionArguments(*this, arguments, required, precision_with_timezone_opt);
+            validateFunctionArguments(*this, arguments,
+                FunctionArgumentDescriptors{{"string", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}},
+                // optional
+                FunctionArgumentDescriptors{
+                    {"precision", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8"},
+                    {"timezone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), isColumnConst, "const String or FixedString"},
+                });
 
             UInt64 scale = (to_datetime64 || to_time64) ? DataTypeDateTime64::default_scale : 0;
             if (arguments.size() > 1)
                 scale = extractToDecimalScale(arguments[1]);
-
             const auto timezone = extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, false);
 
             if (isTime64<Name, ToDataType>(arguments))
-                res = scale == 0 ? res = std::make_shared<DataTypeTime>() : std::make_shared<DataTypeTime64>(scale);
+                res = scale == 0 ? res = std::make_shared<DataTypeTime>(timezone) : std::make_shared<DataTypeTime64>(scale, timezone);
             else
                 res = scale == 0 ? res = std::make_shared<DataTypeDateTime>(timezone) : std::make_shared<DataTypeDateTime64>(scale, timezone);
         }
@@ -4716,169 +4767,6 @@ private:
         };
     }
 
-    WrapperType createQBitWrapper(const DataTypePtr & from_type_untyped, const DataTypeQBit & to_type) const
-    {
-        /// Conversion from String through parsing.
-        if (checkAndGetDataType<DataTypeString>(from_type_untyped.get()))
-        {
-            return [this](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * column_nullable, size_t input_rows_count) -> ColumnPtr
-            {
-                return ConvertImplGenericFromString<true>::execute(arguments, result_type, column_nullable, input_rows_count, context);
-            };
-        }
-
-        const auto * from_qbit_type = checkAndGetDataType<DataTypeQBit>(from_type_untyped.get());
-        const auto * from_array_type = checkAndGetDataType<DataTypeArray>(from_type_untyped.get());
-
-        /// TODO: possible to add from Map to QBit too
-        /// From another QBit
-        if (from_qbit_type)
-        {
-            if (from_qbit_type->getDimension() != to_type.getDimension())
-                throw Exception(
-                    ErrorCodes::TYPE_MISMATCH,
-                    "CAST AS between two QBits can only be performed if they have the same number of elements. From: {}, To: {}",
-                    from_qbit_type->getName(),
-                    to_type.getName());
-            else if (!from_qbit_type->getElementType()->equals(*to_type.getElementType()))
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                    "CAST AS between two QBits containing different types isn't implemented. From: {}, To: {}",
-                    from_qbit_type->getName(),
-                    to_type.getName());
-            /// For identical types we create createIdentityWrapper in prepareImpl, so this is unreachable
-            UNREACHABLE();
-        }
-
-        /// From Array to QBit
-        if (from_array_type)
-        {
-            switch (to_type.getElementSize())
-            {
-                case 16:
-                    return createArrayToQBitWrapper<BFloat16>(*from_array_type, to_type);
-                case 32:
-                    return createArrayToQBitWrapper<Float32>(*from_array_type, to_type);
-                case 64:
-                    return createArrayToQBitWrapper<Float64>(*from_array_type, to_type);
-                default:
-                    UNREACHABLE();
-            }
-        }
-
-        throw Exception(
-            ErrorCodes::TYPE_MISMATCH,
-            "CAST AS QBit can only be performed from String, Array or another QBit. Left type: {}, right type: {}",
-            from_type_untyped->getName(),
-            to_type.getName());
-    }
-
-    template <typename FloatType>
-    static ColumnPtr convertArrayToQBit(
-        ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t n, size_t size)
-    {
-        using Word = std::conditional_t<sizeof(FloatType) == 2, UInt16, std::conditional_t<sizeof(FloatType) == 4, UInt32, UInt64>>;
-
-        ColumnPtr src_col = arguments.front().column;
-
-        if (nullable_source)
-            src_col = nullable_source->getNestedColumnPtr();
-
-        const auto * col_array = checkAndGetColumn<ColumnArray>(src_col.get());
-
-        if (!col_array)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "Unexpected column type {} for Array source when converting to QBit", src_col->getName());
-
-        const auto & offsets = col_array->getOffsets();
-        const auto & data = typeid_cast<const ColumnVector<FloatType> &>(col_array->getData()).getData();
-        const size_t arrays_count = offsets.size();
-        const size_t bytes_per_fixedstring = DataTypeQBit::bitsToBytes(n);
-        const size_t padded_dimension = bytes_per_fixedstring * 8;
-        constexpr size_t element_size = sizeof(Word) * 8;
-
-        /// Verify array size matches expected QBit size
-        size_t prev_offset = 0;
-        for (auto off : offsets)
-        {
-            size_t array_size = off - prev_offset;
-            if (array_size != n)
-                throw Exception(
-                    ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "Array arguments must have size {} for QBit conversion, got {}", n, array_size);
-            prev_offset = off;
-        }
-
-        /// Handle empty input column
-        if (arrays_count == 0)
-        {
-            MutableColumns empty_tuple_columns(size);
-
-            for (size_t i = 0; i < size; ++i)
-                empty_tuple_columns[i] = ColumnFixedString::create(bytes_per_fixedstring);
-
-            ColumnPtr tuple = ColumnTuple::create(std::move(empty_tuple_columns));
-            return ColumnQBit::create(tuple, n);
-        }
-
-        MutableColumns tuple_columns(size);
-        for (size_t i = 0; i < size; ++i)
-        {
-            auto column = ColumnFixedString::create(bytes_per_fixedstring);
-            column->reserve(arrays_count);
-            tuple_columns[i] = std::move(column);
-        }
-
-        prev_offset = 0;
-        for (auto off : offsets)
-        {
-            /// The input array might have elements count not divisible by 8. We need to pad it with zeros to avoid reading uninitialized memory.
-            std::vector<FloatType> value_floats(padded_dimension);
-            memcpy(value_floats.data(), &data.data()[prev_offset], n * sizeof(FloatType));
-
-            /// Transpose the data
-            std::vector<char> transposed_bytes(bytes_per_fixedstring * element_size);
-
-            SerializationQBit::transposeBits<Word>(
-                reinterpret_cast<const Word *>(value_floats.data()), reinterpret_cast<Word *>(transposed_bytes.data()), bytes_per_fixedstring * 8);
-
-            /// Insert the transposed data into columns
-            for (size_t j = 0; j < size; ++j)
-            {
-                auto & fixed_string_column = assert_cast<ColumnFixedString &>(*tuple_columns[j]);
-                fixed_string_column.insertData(transposed_bytes.data() + j * bytes_per_fixedstring, bytes_per_fixedstring);
-            }
-
-            prev_offset = off;
-        }
-
-        ColumnPtr tuple = ColumnTuple::create(std::move(tuple_columns));
-        return ColumnQBit::create(tuple, n);
-    }
-
-    template <typename T>
-    WrapperType createArrayToQBitWrapper(const DataTypeArray & from_array_type, const DataTypeQBit & to_qbit_type) const
-    {
-        const DataTypePtr & nested_type = from_array_type.getNestedType();
-
-        if (!nested_type->equals(*to_qbit_type.getElementType()))
-            throw Exception(
-                ErrorCodes::TYPE_MISMATCH,
-                "Cannot convert from Array({}) to QBit({}, {})",
-                nested_type->getName(),
-                to_qbit_type.getElementType()->getName(),
-                to_qbit_type.getDimension());
-
-        /// Number of elements in the vector and width (in bits) of each element
-        size_t n = to_qbit_type.getDimension();
-        size_t size = to_qbit_type.getElementSize();
-
-        return [n, size](
-                   ColumnsWithTypeAndName & arguments,
-                   const DataTypePtr & result_type,
-                   const ColumnNullable * nullable_source,
-                   size_t /* input_rows_count */) -> ColumnPtr
-        { return convertArrayToQBit<T>(arguments, result_type, nullable_source, n, size); };
-    }
-
     /// The case of: tuple([key1, key2, ..., key_n], [value1, value2, ..., value_n])
     WrapperType createTupleToMapWrapper(const DataTypes & from_kv_types, const DataTypes & to_kv_types) const
     {
@@ -4948,6 +4836,7 @@ private:
             return ColumnMap::create(converted_columns[0], converted_columns[1], column_array.getOffsetsPtr());
         };
     }
+
 
     WrapperType createMapWrapper(const DataTypePtr & from_type_untyped, const DataTypeMap * to_type) const
     {
@@ -5337,15 +5226,12 @@ private:
         return ColumnDynamic::create(std::move(new_variant_column), new_variant_type, dynamic_column.getMaxDynamicTypes(), dynamic_column.getGlobalMaxDynamicTypes());
     }
 
-    WrapperType createObjectWrapper(const DataTypePtr & from_type, const DataTypeObject * to_object, bool requested_result_is_nullable) const
+    WrapperType createObjectWrapper(const DataTypePtr & from_type, const DataTypeObject * to_object) const
     {
         if (checkAndGetDataType<DataTypeString>(from_type.get()))
         {
-            return [this, requested_result_is_nullable](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
+            return [this](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
             {
-                if (requested_result_is_nullable && cast_type == CastType::accurateOrNull)
-                    return ConvertImplGenericFromString<false>::execute(arguments, makeNullable(result_type), nullable_source, input_rows_count, context);
-
                 return ConvertImplGenericFromString<true>::execute(arguments, result_type, nullable_source, input_rows_count, context);
             };
         }
@@ -6535,14 +6421,12 @@ private:
                 return createArrayWrapper(from_type, static_cast<const DataTypeArray &>(*to_type));
             case TypeIndex::Tuple:
                 return createTupleWrapper(from_type, checkAndGetDataType<DataTypeTuple>(to_type.get()));
-            case TypeIndex::QBit:
-                return createQBitWrapper(from_type, static_cast<const DataTypeQBit &>(*to_type));
             case TypeIndex::Map:
                 return createMapWrapper(from_type, checkAndGetDataType<DataTypeMap>(to_type.get()));
             case TypeIndex::ObjectDeprecated:
                 return createObjectDeprecatedWrapper(from_type, checkAndGetDataType<DataTypeObjectDeprecated>(to_type.get()));
             case TypeIndex::Object:
-                return createObjectWrapper(from_type, checkAndGetDataType<DataTypeObject>(to_type.get()), requested_result_is_nullable);
+                return createObjectWrapper(from_type, checkAndGetDataType<DataTypeObject>(to_type.get()));
             case TypeIndex::AggregateFunction:
                 return createAggregateFunctionWrapper(from_type, checkAndGetDataType<DataTypeAggregateFunction>(to_type.get()));
             case TypeIndex::Interval:
