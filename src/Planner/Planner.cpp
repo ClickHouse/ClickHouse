@@ -1035,38 +1035,48 @@ void addPreliminaryLimitStep(QueryPlan & query_plan,
     const auto & query_context = planner_context->getQueryContext();
     const Settings & settings = query_context->getSettingsRef();
 
-    if (limit_length || fractional_limit == 0) [[likely]]
+    if (limit_length && !fractional_offset)
     {
-        if (fractional_offset > 0)
-        {
-            auto fractional_offset_step = std::make_unique<FractionalOffsetStep>(
-                query_plan.getCurrentHeader(), 
-                fractional_offset
-            );
-            query_plan.addStep(std::move(fractional_offset_step));
-        }
-
         auto limit = std::make_unique<LimitStep>(
                 query_plan.getCurrentHeader(), 
                 limit_length,
                 limit_offset,
                 settings[Setting::exact_rows_before_limit]
         );
+
         if (do_not_skip_offset)
             limit->setStepDescription("preliminary LIMIT (with OFFSET)");
         else
             limit->setStepDescription("preliminary LIMIT (without OFFSET)");
-        query_plan.addStep(std::move(limit));
-        return;
-    }
 
-    auto fractional_limit_step = std::make_unique<FractionalLimitStep>(
-        query_plan.getCurrentHeader(), 
-        fractional_limit,
-        fractional_offset,
-        limit_offset
-    );
-    query_plan.addStep(std::move(fractional_limit_step));
+        query_plan.addStep(std::move(limit));
+    }
+    else if (limit_length && fractional_offset)
+    {
+        auto fractional_offset_step = std::make_unique<FractionalOffsetStep>(
+            query_plan.getCurrentHeader(), 
+            fractional_offset
+        );
+        query_plan.addStep(std::move(fractional_offset_step));
+
+        auto limit = std::make_unique<LimitStep>(
+                query_plan.getCurrentHeader(), 
+                limit_length,
+                0,
+                settings[Setting::exact_rows_before_limit]
+        );
+        query_plan.addStep(std::move(limit));
+    }
+    else 
+    {
+        // Else its fractional limit + fractional offset or normal offset
+        auto fractional_limit_step = std::make_unique<FractionalLimitStep>(
+            query_plan.getCurrentHeader(), 
+            fractional_limit,
+            fractional_offset
+        );
+        query_plan.addStep(std::move(fractional_limit_step));
+    }
 }
 
 bool addPreliminaryLimitOptimizationStepIfNeeded(QueryPlan & query_plan,
@@ -1277,41 +1287,50 @@ void addLimitStep(QueryPlan & query_plan,
     BFloat16 fractional_limit = query_analysis_result.fractional_limit;
     BFloat16 fractional_offset = query_analysis_result.fractional_offset;
 
-    if (limit_length || fractional_limit == 0) [[likely]]
+    if (limit_length && !fractional_offset)
     {
-
-        if (fractional_offset > 0)
-        {
-            auto fractional_offset_step = std::make_unique<FractionalOffsetStep>(
-                query_plan.getCurrentHeader(), 
-                fractional_offset
-            );
-            query_plan.addStep(std::move(fractional_offset_step));
-        }
-
         auto limit = std::make_unique<LimitStep>(
-            query_plan.getCurrentHeader(),
-            limit_length,
-            limit_offset,
-            always_read_till_end,
-            limit_with_ties,
-            limit_with_ties_sort_description
+                query_plan.getCurrentHeader(), 
+                limit_length,
+                limit_offset,
+                always_read_till_end,
+                limit_with_ties
         );
+
         if (limit_with_ties)
             limit->setStepDescription("LIMIT WITH TIES");
-        query_plan.addStep(std::move(limit));
-        return;
-    }
 
-    auto fractional_limit_step = std::make_unique<FractionalLimitStep>(
-        query_plan.getCurrentHeader(), 
-        fractional_limit,
-        fractional_offset,
-        limit_offset,
-        limit_with_ties,
-        limit_with_ties_sort_description
-    );
-    query_plan.addStep(std::move(fractional_limit_step));
+        query_plan.addStep(std::move(limit));
+    }
+    else if (limit_length && fractional_offset)
+    {
+        auto fractional_offset_step = std::make_unique<FractionalOffsetStep>(
+            query_plan.getCurrentHeader(), 
+            query_analysis_result.fractional_offset
+        );
+        query_plan.addStep(std::move(fractional_offset_step));
+
+        auto limit = std::make_unique<LimitStep>(
+                query_plan.getCurrentHeader(), 
+                limit_length,
+                limit_offset,
+                always_read_till_end,
+                limit_with_ties
+        );
+        query_plan.addStep(std::move(limit));
+    }
+    else 
+    {
+        // Else its fractional limit + fractional offset or normal offset
+        auto fractional_limit_step = std::make_unique<FractionalLimitStep>(
+            query_plan.getCurrentHeader(), 
+            fractional_limit,
+            fractional_offset,
+            limit_offset,
+            limit_with_ties
+        );
+        query_plan.addStep(std::move(fractional_limit_step));
+    }
 }
 
 void addExtremesStepIfNeeded(QueryPlan & query_plan, const PlannerContextPtr & planner_context)
