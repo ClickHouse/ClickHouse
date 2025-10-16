@@ -235,7 +235,7 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
         active.erase(std::remove(active.begin(), active.end(), item_), active.end());
     };
 
-    auto release_task = [] (TaskRuntimeDataPtr && item_) TSA_REQUIRES(mutex)
+    auto release_task = [this] (TaskRuntimeDataPtr && item_) TSA_REQUIRES(mutex)
     {
         /// We have to call reset() under a lock, otherwise a race is possible.
         /// Imagine, that task is finally completed (last execution returned false),
@@ -247,7 +247,19 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
             item_->task.reset();
         });
         item_->is_done.set();
+
+        Stopwatch destruction_watch;
         item_.reset();
+
+        UInt64 elapsed_us = destruction_watch.elapsedMicroseconds();
+        NOEXCEPT_SCOPE({
+            ALLOW_ALLOCATIONS_IN_SCOPE;
+            ProfileEvents::increment(ProfileEvents::MergeTreeBackgroundExecutorTaskReleaseMicroseconds, elapsed_us);
+            if (elapsed_us > 60ULL * 1000000ULL)
+            {
+                LOG_WARNING(log, "Releasing background task runtime data took {:.3f} seconds (> 60s)", static_cast<double>(elapsed_us) / 1000000.0);
+            }
+        });
     };
 
     /// No TSA because of unique_lock
