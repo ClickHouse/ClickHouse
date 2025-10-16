@@ -977,7 +977,7 @@ void QueryOracle::processSecondOracleQueryResult(const int errcode, ExternalInte
                 || fc.oracle_ignore_error_codes.find(static_cast<uint32_t>(first_errcode ? first_errcode : errcode))
                     == fc.oracle_ignore_error_codes.end()))
         {
-            throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "{}: failed with different success results", oracle_name);
+            throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "{}: failed with different success results: {} vs {}", oracle_name, first_errcode, errcode);
         }
         if (!first_errcode && !errcode)
         {
