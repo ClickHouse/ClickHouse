@@ -494,39 +494,87 @@ CONV_FN(SpecialVal, val)
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_INT32:
             ret += std::to_string(std::numeric_limits<int32_t>::min());
+            if (val.paren())
+            {
+                ret += "::Int32";
+            }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_INT32:
             ret += std::to_string(std::numeric_limits<int32_t>::max());
+            if (val.paren())
+            {
+                ret += "::Int32";
+            }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_INT64:
             ret += std::to_string(std::numeric_limits<int64_t>::min());
+            if (val.paren())
+            {
+                ret += "::Int64";
+            }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_INT64:
             ret += std::to_string(std::numeric_limits<int64_t>::max());
+            if (val.paren())
+            {
+                ret += "::Int64";
+            }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_INT128:
             ret += "-170141183460469231731687303715884105728";
+            if (val.paren())
+            {
+                ret += "::Int128";
+            }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_INT128:
             ret += "170141183460469231731687303715884105727";
+            if (val.paren())
+            {
+                ret += "::Int128";
+            }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_INT256:
             ret += "-57896044618658097711785492504343953926634992332820282019728792003956564819968";
+            if (val.paren())
+            {
+                ret += "::Int256";
+            }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_INT256:
             ret += "57896044618658097711785492504343953926634992332820282019728792003956564819967";
+            if (val.paren())
+            {
+                ret += "::Int256";
+            }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_UINT32:
             ret += std::to_string(std::numeric_limits<uint32_t>::max());
+            if (val.paren())
+            {
+                ret += "::UInt32";
+            }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_UINT64:
             ret += std::to_string(std::numeric_limits<uint64_t>::max());
+            if (val.paren())
+            {
+                ret += "::UInt64";
+            }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_UINT128:
             ret += "340282366920938463463374607431768211455";
+            if (val.paren())
+            {
+                ret += "::UInt128";
+            }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_UINT256:
             ret += "115792089237316195423570985008687907853269984665640564039457584007913129639935";
+            if (val.paren())
+            {
+                ret += "::UInt256";
+            }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_DATE:
             ret += "'1970-01-01'";
@@ -2898,6 +2946,9 @@ CONV_FN(DatabaseEngineParam, dep)
             DatabaseToString(ret, dep.disk().database());
             ret += "')";
             break;
+        case DatabaseEngineParamType::kExpr:
+            ExprToString(ret, dep.expr());
+            break;
         default:
             ret += "d0";
     }
@@ -3864,6 +3915,21 @@ CONV_FN(RefreshableView, rv)
     }
     ret += " RANDOMIZE FOR ";
     RefreshIntervalToString(ret, rv.randomize());
+    if (rv.has_depends())
+    {
+        ret += " DEPENDS ON ";
+        ExprSchemaTableToString(ret, rv.depends().est());
+        for (int i = 0; i < rv.depends().other_est_size(); i++)
+        {
+            ret += ", ";
+            ExprSchemaTableToString(ret, rv.depends().other_est(i));
+        }
+    }
+    if (rv.has_setting_values())
+    {
+        ret += " SETTINGS ";
+        SettingValuesToString(ret, rv.setting_values());
+    }
     if (rv.append())
     {
         ret += " APPEND";
@@ -4494,6 +4560,14 @@ CONV_FN(AlterItem, alter)
             break;
         case AlterType::kRemoveTtl:
             ret += "REMOVE TTL";
+            break;
+        case AlterType::kRewriteParts:
+            ret += "REWRITE PARTS";
+            if (alter.rewrite_parts().has_single_partition())
+            {
+                ret += " IN ";
+                SinglePartitionExprToString(ret, alter.rewrite_parts().single_partition());
+            }
             break;
         case AlterType::kModifyQuery:
             ret += "MODIFY QUERY ";
@@ -5176,7 +5250,7 @@ CONV_FN(ShowIndex, sh)
     {
         ret += "EXTENDED ";
     }
-    ShowIndex_IndexShow_Name(sh.key());
+    ret += ShowIndex_IndexShow_Name(sh.key());
     ret += " FROM ";
     TableToString(ret, true, sh.est().table());
     if (sh.est().has_database())

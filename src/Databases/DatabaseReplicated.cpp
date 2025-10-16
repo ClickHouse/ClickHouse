@@ -76,6 +76,7 @@ namespace ServerSetting
 {
     extern const ServerSettingsBool database_replicated_allow_detach_permanently;
     extern const ServerSettingsUInt32 max_database_replicated_create_table_thread_pool_size;
+    extern const ServerSettingsBool database_replicated_drop_broken_tables;
 }
 
 namespace DatabaseReplicatedSetting
@@ -84,6 +85,9 @@ namespace DatabaseReplicatedSetting
     extern const DatabaseReplicatedSettingsFloat max_broken_tables_ratio;
     extern const DatabaseReplicatedSettingsUInt64 max_replication_lag_to_enqueue;
     extern const DatabaseReplicatedSettingsNonZeroUInt64 logs_to_keep;
+    extern const DatabaseReplicatedSettingsString default_replica_path;
+    extern const DatabaseReplicatedSettingsString default_replica_shard_name;
+    extern const DatabaseReplicatedSettingsString default_replica_name;
 }
 
 namespace ErrorCodes
@@ -104,11 +108,13 @@ namespace ErrorCodes
     extern const int QUERY_IS_PROHIBITED;
     extern const int SUPPORT_IS_DISABLED;
     extern const int ASYNC_LOAD_CANCELED;
-}
-
+    extern const int KEEPER_EXCEPTION;
+    }
 namespace FailPoints
 {
     extern const char database_replicated_startup_pause[];
+    extern const char database_replicated_drop_before_removing_keeper_failed[];
+    extern const char database_replicated_drop_after_removing_keeper_failed[];
 }
 
 static constexpr const char * REPLICATED_DATABASE_MARK = "DatabaseReplicated";
@@ -1466,7 +1472,9 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     String to_db_name_replicated = getDatabaseName() + BROKEN_REPLICATED_TABLES_SUFFIX;
     if (total_tables * db_settings[DatabaseReplicatedSetting::max_broken_tables_ratio] < tables_to_detach.size())
         throw Exception(ErrorCodes::DATABASE_REPLICATION_FAILED, "Too many tables to recreate: {} of {}", tables_to_detach.size(), total_tables);
-    if (!tables_to_detach.empty())
+
+    bool drop_broken_tables = getContext()->getServerSettings()[ServerSetting::database_replicated_drop_broken_tables];
+    if (!drop_broken_tables && !tables_to_detach.empty())
     {
         LOG_WARNING(log, "Will recreate {} broken tables to recover replica", tables_to_detach.size());
         /// It's too dangerous to automatically drop tables, so we will move them to special database.
@@ -1522,7 +1530,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             ++moved_tables;
         };
 
-        if (!table->storesDataOnDisk())
+        if (drop_broken_tables || !table->storesDataOnDisk())
         {
             LOG_DEBUG(log, "Will DROP TABLE {}, because it does not store data on disk and can be safely dropped", backQuoteIfNeed(table_name));
             dropped_tables.push_back(tryGetTableUUID(table_name));
@@ -1920,6 +1928,11 @@ void DatabaseReplicated::drop(ContextPtr context_)
 
     DatabaseAtomic::drop(context_);
 
+    fiu_do_on(FailPoints::database_replicated_drop_before_removing_keeper_failed,
+    {
+        throw Exception(ErrorCodes::KEEPER_EXCEPTION, "Injecting fault when before removing keeper path from '{}'", replica_path);
+    });
+
     current_zookeeper->tryRemoveRecursive(replica_path);
     /// TODO it may leave garbage in ZooKeeper if the last node lost connection here
     if (current_zookeeper->tryRemove(zookeeper_path + "/replicas") == Coordination::Error::ZOK)
@@ -1927,6 +1940,11 @@ void DatabaseReplicated::drop(ContextPtr context_)
         /// It was the last replica, remove all metadata
         current_zookeeper->tryRemoveRecursive(zookeeper_path);
     }
+
+    fiu_do_on(FailPoints::database_replicated_drop_after_removing_keeper_failed,
+    {
+        throw Exception(ErrorCodes::KEEPER_EXCEPTION, "Injecting fault when after removing keeper path from '{}'", replica_path);
+    });
 }
 
 void DatabaseReplicated::renameDatabase(ContextPtr query_context, const String & new_name)
@@ -2316,8 +2334,13 @@ bool DatabaseReplicated::shouldReplicateQuery(const ContextPtr & query_context, 
     /// Some ALTERs are not replicated on database level
     if (const auto * alter = query_ptr->as<const ASTAlterQuery>())
     {
-        if (alter->isAttachAlter() || alter->isFetchAlter() || alter->isDropPartitionAlter()
-            || is_keeper_map_table(query_ptr) || alter->isFreezeAlter() || alter->isUnlockSnapshot())
+        if (alter->isAttachAlter() || alter->isFetchAlter() || alter->isDropPartitionAlter() || alter->isFreezeAlter()
+            || alter->isUnlockSnapshot())
+            return false;
+
+        // Allowed ALTER operation on KeeperMap still should be replicated
+        // to update metadata on all nodes and commit it to database metadata
+        if (is_keeper_map_table(query_ptr) && !alter->isCommentAlter())
             return false;
 
         if (has_many_shards() || !is_replicated_table(query_ptr))
@@ -2366,7 +2389,25 @@ void registerDatabaseReplicated(DatabaseFactory & factory)
     auto create_fn = [](const DatabaseFactory::Arguments & args)
     {
         auto * engine_define = args.create_query.storage;
-        const ASTFunction * engine = engine_define->engine;
+        ASTFunction * engine = engine_define->engine;
+
+        /// Fill in default parameters
+        if (!args.create_query.attach)
+        {
+            if (!engine->arguments)
+            {
+                engine->arguments = std::make_shared<ASTExpressionList>();
+                engine->children.push_back(engine->arguments);
+            }
+
+            auto settings = args.context->getDatabaseReplicatedSettings();
+            if (engine->arguments->children.empty())
+                engine->arguments->children.emplace_back(std::make_shared<ASTLiteral>(settings[DatabaseReplicatedSetting::default_replica_path].value));
+            if (engine->arguments->children.size() == 1)
+                engine->arguments->children.emplace_back(std::make_shared<ASTLiteral>(settings[DatabaseReplicatedSetting::default_replica_shard_name].value));
+            if (engine->arguments->children.size() == 2)
+                engine->arguments->children.emplace_back(std::make_shared<ASTLiteral>(settings[DatabaseReplicatedSetting::default_replica_name].value));
+        }
 
         if (!engine->arguments || engine->arguments->children.size() != 3)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replicated database requires 3 arguments: zookeeper path, shard name and replica name");
@@ -2381,8 +2422,15 @@ void registerDatabaseReplicated(DatabaseFactory & factory)
 
         /// Expand macros.
         Macros::MacroExpansionInfo info;
+        info.expand_for_database = true;
         info.table_id.database_name = args.database_name;
-        info.table_id.uuid = args.uuid;
+
+        const bool is_on_cluster = args.context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+        /// Allow implicit {uuid} macros only for zookeeper_path in ON CLUSTER queries
+        /// and if UUID was explicitly passed in CREATE DATABASE (like for ATTACH)
+        bool allow_uuid_macro = is_on_cluster || args.create_query.attach || args.create_query.has_uuid;
+        if (allow_uuid_macro)
+            info.table_id.uuid = args.uuid;
         zookeeper_path = args.context->getMacros()->expand(zookeeper_path, info);
 
         info.level = 0;

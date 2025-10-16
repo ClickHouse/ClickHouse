@@ -125,6 +125,7 @@ void StatementGenerator::generateArrayJoin(RandomGenerator & rg, ArrayJoin * aj)
         UINT32_C(3), (rg.nextRandomUInt32() % (available_cols.empty() ? 3 : static_cast<uint32_t>(available_cols.size()))) + 1);
     const uint32_t nclauses = std::min<uint32_t>(this->fc.max_width - this->width, nccols);
 
+    chassert(nclauses);
     for (uint32_t i = 0; i < nclauses; i++)
     {
         const String ncname = getNextAlias();
@@ -426,8 +427,9 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
         {
             structure->mutable_lit_val()->set_string_lit(getTableStructure(rg, t, false));
         }
-        if (sfunc || afunc || lfunc)
+        if ((sfunc || afunc || lfunc) && !t.isAnyQueueEngine())
         {
+            /// Queue tables don't support settings in table function counterparts
             SettingValues * svs = nullptr;
             const auto & engineSettings = allTableSettings.at(t.teng);
 
@@ -511,6 +513,8 @@ auto StatementGenerator::getQueryTableLambda()
             && (this->peer_query != PeerQuery::ClickHouseOnly || tt.hasClickHousePeer())
             /* Don't use tables backing not deterministic views in query oracles */
             && (tt.is_deterministic || this->allow_not_deterministic)
+            /* Don't use tables with Dolor integration when async requests can insert between oracle queries */
+            && (tt.integration != IntegrationCall::Dolor || !fc.allow_async_requests || this->allow_not_deterministic)
             /* May require MergeTree table */
             && (req != TableRequirement::RequireMergeTree || tt.isMergeTreeFamily())
             /* May by replaced by a table engine */
@@ -536,6 +540,7 @@ void StatementGenerator::addRandomRelation(RandomGenerator & rg, const std::opti
         {
             SQLRelation rel(rel_name.value());
 
+            chassert(ncols);
             for (uint32_t i = 0; i < ncols; i++)
             {
                 rel.cols.emplace_back(SQLRelationCol(rel_name.value(), {"c" + std::to_string(i + 1)}));
@@ -569,6 +574,7 @@ void StatementGenerator::addRandomRelation(RandomGenerator & rg, const std::opti
             SQLRelation rel(rel_name.value());
 
             flatColumnPath(flat_tuple | flat_nested | flat_json | to_table_entries | collect_generated, centries);
+            chassert(!this->table_entries.empty());
             for (const auto & entry : this->table_entries)
             {
                 DB::Strings names;
@@ -578,7 +584,7 @@ void StatementGenerator::addRandomRelation(RandomGenerator & rg, const std::opti
                 {
                     names.push_back(path.cname);
                 }
-                rel.cols.emplace_back(SQLRelationCol(rel_name.value(), std::move(names)));
+                rel.cols.emplace_back(SQLRelationCol(rel_name.value(), names));
             }
             this->table_entries.clear();
             this->levels[this->current_level].rels.emplace_back(rel);
@@ -691,6 +697,7 @@ bool StatementGenerator::joinedTableOrFunction(
         const auto & next_cte = rg.pickValueRandomlyFromMap(rg.pickValueRandomlyFromMap(this->ctes));
 
         tof->mutable_est()->mutable_table()->set_table(next_cte.name);
+        chassert(!next_cte.cols.empty());
         for (const auto & entry : next_cte.cols)
         {
             chassert(!entry.path.empty() && !entry.path[0].empty());
@@ -839,6 +846,7 @@ bool StatementGenerator::joinedTableOrFunction(
 
         est->mutable_database()->set_database(ntable.schema_name);
         est->mutable_table()->set_table(ntable.table_name);
+        chassert(!ntable.columns.empty());
         for (const auto & entry : ntable.columns)
         {
             rel.cols.emplace_back(SQLRelationCol(rel_name, {entry}));
@@ -921,7 +929,7 @@ bool StatementGenerator::joinedTableOrFunction(
             DB::Strings npath = entry.path;
 
             npath.push_back("mark");
-            marks.emplace_back(SQLRelationCol(rel_name, std::move(npath)));
+            marks.emplace_back(SQLRelationCol(rel_name, npath));
         }
         rel.cols.insert(rel.cols.end(), marks.begin(), marks.end());
         rel.cols.emplace_back(SQLRelationCol(rel_name, {"part_name"}));
@@ -953,6 +961,7 @@ bool StatementGenerator::joinedTableOrFunction(
         const uint32_t nrows = (rg.nextSmallNumber() % 3) + UINT32_C(1);
         ValuesStatement * vs = tof->mutable_tfunc()->mutable_values();
 
+        chassert(ncols);
         for (const auto & [key, val] : this->levels)
         {
             levels_backup[key] = val;
@@ -972,8 +981,8 @@ bool StatementGenerator::joinedTableOrFunction(
 
             for (uint32_t j = 0; j < ncols; j++)
             {
-                this->width++;
                 generateExpression(rg, j == 0 ? elist->mutable_expr() : elist->add_extra_exprs());
+                this->width++;
             }
             this->width -= ncols;
         }
@@ -1109,7 +1118,7 @@ bool StatementGenerator::joinedTableOrFunction(
             DB::Strings npath = entry.path;
 
             npath.back() = "_parent" + npath.back();
-            parents.emplace_back(SQLRelationCol(rel_name, std::move(npath)));
+            parents.emplace_back(SQLRelationCol(rel_name, npath));
         }
         rel.cols.insert(rel.cols.end(), parents.begin(), parents.end());
     }
@@ -1156,6 +1165,7 @@ void StatementGenerator::addJoinClause(RandomGenerator & rg, Expr * expr)
 {
     Expr * expr1 = nullptr;
     Expr * expr2 = nullptr;
+    chassert(this->levels[this->current_level].rels.size() > 1);
     const SQLRelation * rel1 = &rg.pickRandomly(this->levels[this->current_level].rels);
     const SQLRelation * rel2 = &this->levels[this->current_level].rels.back();
     const auto & op = rg.nextSmallNumber() < 9
@@ -1166,6 +1176,8 @@ void StatementGenerator::addJoinClause(RandomGenerator & rg, Expr * expr)
     {
         rel1 = &this->levels[this->current_level].rels[this->levels[this->current_level].rels.size() - 2];
     }
+    chassert(!rel1->cols.empty());
+    chassert(!rel2->cols.empty());
     if (rg.nextSmallNumber() < 4)
     {
         /// Swap relations
@@ -1336,7 +1348,7 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
     const GroupCol & gcol = rg.pickRandomly(available_cols);
     const uint32_t noption = rg.nextLargeNumber();
 
-    if (noption < 761)
+    if (noption < 751)
     {
         /// Binary expr
         Expr * lexpr = nullptr;
@@ -1373,7 +1385,7 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
             refColumn(rg, gcol, rexpr);
         }
     }
-    else if (noption < 901)
+    else if (noption < 851)
     {
         /// Between expr
         const uint32_t noption2 = rg.nextMediumNumber();
@@ -1403,7 +1415,7 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
             refColumn(rg, gcol, expr3);
         }
     }
-    else if (noption < 971)
+    else if (noption < 901)
     {
         /// Is null expr
         Expr * isexpr = nullptr;
@@ -1427,7 +1439,7 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
         }
         refColumn(rg, gcol, isexpr);
     }
-    else if (noption < 981)
+    else if (noption < 931)
     {
         /// Like expr
         Expr * expr1 = nullptr;
@@ -1455,14 +1467,19 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
             expr2 = sfc->add_args()->mutable_expr();
         }
         refColumn(rg, gcol, expr1);
-        if (rg.nextSmallNumber() < 5)
+        if (rg.nextBool())
         {
-            expr2->mutable_lit_val()->set_no_quote_str(rg.nextString("'", true, rg.nextStrlen()));
+            generateLikeExpr(rg, expr2);
         }
         else
         {
             addWhereSide(rg, available_cols, expr2);
         }
+    }
+    else if (noption < 961)
+    {
+        /// Search expr
+        refColumn(rg, gcol, generatePartialSearchExpr(rg, expr));
     }
     else if (noption < 991)
     {
@@ -1545,8 +1562,6 @@ void StatementGenerator::generateWherePredicate(RandomGenerator & rg, Expr * exp
 
         for (uint32_t i = 0; i < nclauses; i++)
         {
-            this->width++;
-
             if (rg.nextSmallNumber() < 3)
             {
                 /// Negate clause
@@ -1595,6 +1610,7 @@ void StatementGenerator::generateWherePredicate(RandomGenerator & rg, Expr * exp
                 }
                 addWhereFilter(rg, available_cols, predicate);
             }
+            this->width++;
         }
         this->width -= nclauses;
     }
@@ -1727,9 +1743,9 @@ bool StatementGenerator::generateGroupBy(
 
             for (uint32_t i = 0; i < nclauses; i++)
             {
-                this->width++;
                 generateGroupByExpr(
                     rg, enforce_having, i, ncols, available_cols, gcols, i == 0 ? elist->mutable_expr() : elist->add_extra_exprs());
+                this->width++;
             }
         }
         else
@@ -1746,14 +1762,14 @@ bool StatementGenerator::generateGroupBy(
                 OptionalExprList * oel = i == 0 ? gsets->mutable_exprs() : gsets->add_other_exprs();
 
                 has_global |= nelems == 0;
-                this->width++;
                 for (uint32_t j = 0; j < nelems; j++)
                 {
-                    this->width++;
                     generateGroupByExpr(rg, enforce_having, j, ncols, available_cols, gcols, oel->add_exprs());
+                    this->width++;
                 }
                 this->width -= nelems;
                 std::shuffle(available_cols.begin(), available_cols.end(), rg.generator);
+                this->width++;
             }
             this->levels[this->current_level].global_aggregate |= gcols.empty() && has_global;
         }
@@ -1837,7 +1853,6 @@ void StatementGenerator::generateOrderBy(
             Expr * expr = eot->mutable_expr();
             const uint32_t next_option = rg.nextSmallNumber();
 
-            this->width++;
             if (!available_cols.empty() && next_option < 7)
             {
                 refColumn(rg, available_cols[i], expr);
@@ -1892,6 +1907,7 @@ void StatementGenerator::generateOrderBy(
                     }
                 }
             }
+            this->width++;
         }
         this->width -= nclauses;
 
@@ -1993,6 +2009,7 @@ void StatementGenerator::addCTEs(RandomGenerator & rg, const uint32_t allowed_cl
             const bool recursive = fc.allow_infinite_tables && this->depth<this->fc.max_depth && this->fc.max_width> this->width + 1
                 && rg.nextSmallNumber() < 4;
 
+            chassert(ncols);
             nqcte->set_recursive(recursive);
             generateDerivedTable(
                 rg,
@@ -2151,7 +2168,7 @@ void StatementGenerator::generateSelect(
         {
             addWindowDefs(rg, ssc);
         }
-        if ((allowed_clauses & allow_prewhere) && this->depth < this->fc.max_depth && ssc->has_from() && rg.nextSmallNumber() < 2)
+        if ((allowed_clauses & allow_prewhere) && this->depth < this->fc.max_depth && ssc->has_from() && rg.nextSmallNumber() < 3)
         {
             generateWherePredicate(rg, ssc->mutable_pre_where()->mutable_expr()->mutable_expr());
         }
@@ -2195,9 +2212,8 @@ void StatementGenerator::generateSelect(
         {
             ExprColAlias * eca = ssc->add_result_columns()->mutable_eca();
 
-            this->width++;
             generateExpression(rg, eca->mutable_expr());
-            if (!top)
+            if (!top && rg.nextBool())
             {
                 const String ncname = getNextAlias();
 
@@ -2208,6 +2224,7 @@ void StatementGenerator::generateSelect(
                 this->levels[this->current_level].projections.emplace_back(ncname);
             }
             eca->set_use_parenthesis(rg.nextLargeNumber() < 11);
+            this->width++;
         }
         this->depth--;
         this->width -= ncols;
