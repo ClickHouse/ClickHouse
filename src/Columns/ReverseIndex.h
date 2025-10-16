@@ -402,10 +402,13 @@ private:
 
 
 template <typename IndexType, typename ColumnType>
-void ReverseIndex<IndexType, ColumnType>:: setColumn(ColumnType * column_)
+void ReverseIndex<IndexType, ColumnType>::setColumn(ColumnType * column_)
 {
     if (column != column_)
     {
+        if (external_saved_hash_ptr.load())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "No new data should be inserted into ReverseIndex after calling tryGetSavedHash().");
+
         index = nullptr;
         saved_hash = nullptr;
     }
@@ -480,6 +483,9 @@ ColumnUInt64::MutablePtr ReverseIndex<IndexType, ColumnType>::calcHashes() const
 template <typename IndexType, typename ColumnType>
 UInt64 ReverseIndex<IndexType, ColumnType>::insert(StringRef data)
 {
+    if (external_saved_hash_ptr.load())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No new data should be inserted into ReverseIndex after calling tryGetSavedHash().");
+
     if (!index)
         buildIndex();
 
