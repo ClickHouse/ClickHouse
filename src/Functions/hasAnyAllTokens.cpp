@@ -290,17 +290,16 @@ template class FunctionHasAnyAllTokens<traits::HasAllTokensTraits>;
 REGISTER_FUNCTION(HasAnyTokens)
 {
     FunctionDocumentation::Description description_hasAnyTokens = R"(
-Returns 1, if at least one token in the `needle` string or array matches the `input` string, and 0 otherwise.
+Returns 1, if at least one token in the `needle` string or array matches the `input` string, and 0 otherwise. If `input` is a column, returns all rows that satisfy this condition.
 
 :::note
 Column `input` should have a [text index](../../engines/table-engines/mergetree-family/invertedindexes) defined for optimal performance.
-If no text index is defined, the function performs a brute-force column scan which orders of magnitude slower than an index lookup.
+If no text index is defined, the function performs a brute-force column scan which is orders of magnitude slower than an index lookup.
 :::
 
 Prior to searching, the function tokenizes
 - the `input` argument (always), and
 - the `needle` argument (if given as a [String](../../sql-reference/data-types/string.md))
-
 using the tokenizer specified for the text index.
 If the column has no text index defined, the `splitByNonAlpha` tokenizer is used instead.
 If the `needle` argument is of type [Array(String)](../../sql-reference/data-types/array.md), each array element is treated as a token — no additional tokenization takes place.
@@ -372,17 +371,16 @@ SELECT count() FROM table WHERE hasAnyTokens(msg, tokens('a()d', 'splitByString'
 REGISTER_FUNCTION(HasAllTokens)
 {
     FunctionDocumentation::Description description_hasAllTokens = R"(
-Like [`hasAnyTokens`](#hasanytokens), but returns 1, if all tokens in the `needle` string or array match the `input` string, and 0 otherwise.
+Like [`hasAnyTokens`](#hasanytokens), but returns 1, if all tokens in the `needle` string or array match the `input` string, and 0 otherwise. If `input` is a column, returns all rows that satisfy this condition.
 
 :::note
 Column `input` should have a [text index](../../engines/table-engines/mergetree-family/invertedindexes) defined for optimal performance.
-If no text index is defined, the function performs a brute-force column scan which orders of magnitude slower than an index lookup.
+If no text index is defined, the function performs a brute-force column scan which is orders of magnitude slower than an index lookup.
 :::
 
 Prior to searching, the function tokenizes
 - the `input` argument (always), and
 - the `needle` argument (if given as a [String](../../sql-reference/data-types/string.md))
-
 using the tokenizer specified for the text index.
 If the column has no text index defined, the `splitByNonAlpha` tokenizer is used instead.
 If the `needle` argument is of type [Array(String)](../../sql-reference/data-types/array.md), each array element is treated as a token — no additional tokenization takes place.
