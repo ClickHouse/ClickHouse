@@ -12,7 +12,7 @@ class ShufflingStep : public ITransformingStep
 public:
     enum class Type : uint8_t
     {
-        /// Performs a complete shuffling operation and returns a single fully ordered data stream
+        /// Performs a complete shuffling operation and returns a single fully shuffled data stream
         Full,
 
         /// Merges multiple shuffled streams into a single shuffled output.
@@ -64,7 +64,7 @@ public:
 
     UInt64 getLimit() const { return limit; }
     /// Add limit or change it to lower value.
-    void updateLimit(size_t limit_);
+    // void updateLimit(size_t limit_);
 
     // bool hasPartitions() const { return !partition_by_description.empty(); }
 
@@ -103,18 +103,12 @@ private:
 
     Type type;
 
-    SortDescription prefix_description;
-    const SortDescription result_description;
-
-    SortDescription partition_by_description;
-
     /// See `findQueryForParallelReplicas`
-    bool is_shuffling_for_merge_join = false;
 
     UInt64 limit;
     bool always_read_till_end = false;
-    bool use_buffering = false;
-    bool apply_virtual_row_conversions = false;
+    // bool use_buffering = false;
+    // bool apply_virtual_row_conversions = false;
 
     Settings sort_settings;
 };

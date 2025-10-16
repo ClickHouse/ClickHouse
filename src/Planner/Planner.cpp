@@ -813,7 +813,6 @@ void addShufflingStep(QueryPlan & query_plan,
     query_plan.addStep(std::move(shuffling_step));
 }
 
-void addMergeSortingStep(QueryPlan & query_plan,
 template<size_t size>
 ALWAYS_INLINE void addMergeSortingStep(QueryPlan & query_plan,
     const QueryAnalysisResult & query_analysis_result,
@@ -835,10 +834,11 @@ ALWAYS_INLINE void addMergeSortingStep(QueryPlan & query_plan,
     query_plan.addStep(std::move(merging_sorted));
 }
 
-void addMergeShufflingStep(QueryPlan & query_plan,
+template<size_t size>
+ALWAYS_INLINE void addMergeShufflingStep(QueryPlan & query_plan,
     const QueryAnalysisResult & query_analysis_result,
     const PlannerContextPtr & planner_context,
-    const std::string & description)
+    const char (&description)[size])
 {
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
@@ -848,7 +848,7 @@ void addMergeShufflingStep(QueryPlan & query_plan,
         settings[Setting::max_block_size],
         query_analysis_result.partial_sorting_limit,
         settings[Setting::exact_rows_before_limit]);
-    merging_shuffled->setStepDescription("Merge shuffled streams " + description);
+    merging_shuffled->setStepDescription(description);
     query_plan.addStep(std::move(merging_shuffled));
 }
 
@@ -1960,21 +1960,21 @@ void Planner::buildPlanForQueryNode()
 
         if (query_node.isShuffle())
         {
-            /** If there is an ORDER BY for distributed query processing,
-              * but there is no aggregation, then on the remote servers ORDER BY was made
-              * and we merge the sorted streams from remote servers.
+            /** If there is a SHUFFLE for distributed query processing,
+              * but there is no aggregation, then on the remote servers SHUFFLE was made
+              * and we merge the shuffled streams from remote servers.
               *
               * Also in case of remote servers was process the query up to WithMergeableStateAfterAggregationAndLimit
               * (distributed_group_by_no_merge=2 or optimize_distributed_group_by_sharding_key=1 takes place),
-              * then merge the sorted streams is enough, since remote servers already did full ORDER BY.
+              * then merge the shuffled streams is enough, since remote servers already did full SHUFFLE.
               */
             if (query_processing_info.isFromAggregationState())
-                addMergeShufflingStep(query_plan, query_analysis_result, planner_context, "after aggregation stage for ORDER BY");
+                addMergeShufflingStep(query_plan, query_analysis_result, planner_context, "Merged shuffled after aggregation stage for ORDER BY");
             else if (!query_processing_info.isFirstStage() &&
                 !expression_analysis_result.hasAggregation() &&
                 !expression_analysis_result.hasWindow() &&
                 !(query_node.isGroupByWithTotals() && !query_analysis_result.aggregate_final))
-                addMergeShufflingStep(query_plan, query_analysis_result, planner_context, "for ORDER BY, without aggregation");
+                addMergeShufflingStep(query_plan, query_analysis_result, planner_context, "Merged shuffled for SHUFFLE, without aggregation");
             else
                 addShufflingStep(query_plan, query_analysis_result, planner_context);
         }

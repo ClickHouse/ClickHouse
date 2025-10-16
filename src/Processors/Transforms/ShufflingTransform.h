@@ -27,11 +27,7 @@ private:
 
     ShuffleCursors cursors;
 
-    /** Two different cursors are supported - with and without Collation.
-      * Templates are used (instead of virtual functions in SortCursor) for zero-overhead.
-      */
     Chunk mergeImpl();
-
 };
 
 
@@ -53,12 +49,11 @@ private:
 };
 
 /** Base class for shuffling.
- *  Currently there is one implementation: MergeShufflingTransform.
  */
 class ShufflingTransform : public IProcessor
 {
 public:
-    /// limit - if not 0, allowed to return just first 'limit' rows in sorted order.
+    /// limit - if not 0, allowed to return just first 'limit' rows in random order.
     ShufflingTransform(SharedHeader header,
         size_t max_merged_block_size_,
         UInt64 limit_,

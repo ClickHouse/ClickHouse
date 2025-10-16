@@ -95,6 +95,7 @@ public:
     /// Returns true if query node has settings changes, false otherwise
     bool hasSettingsChanges() const
     {
+        LOG_TRACE(getLogger("QueryNode"), "hasSettingsChanges");
         return !settings_changes.empty();
     }
 
@@ -244,13 +245,13 @@ public:
     /// Returns true, if query node has ORDER BY ALL modifier, false otherwise
     bool isOrderByAll() const
     {
-        LOG_TRACE(getLogger("QueryNode"), "isOrderByAll()");
         return is_order_by_all;
     }
 
+    /// Returns true, if query node has SHUFFLE, false otherwise
     bool isShuffle() const
     {
-
+        LOG_TRACE(getLogger("QueryNode"), "isShuffle");
         return is_shuffle;
     }
 
@@ -260,8 +261,10 @@ public:
         is_order_by_all = is_order_by_all_value;
     }
 
+    /// Set query node has SHUFFLE
     void setIsShuffle(bool is_shuffle_value) 
     {
+        LOG_TRACE(getLogger("QueryNode"), "isShuffle");
         is_shuffle = is_shuffle_value;
     }
 

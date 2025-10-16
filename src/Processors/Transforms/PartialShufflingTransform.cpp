@@ -14,7 +14,7 @@ PartialShufflingTransform::PartialShufflingTransform(
     : ISimpleTransform(header_, header_, false)
     , limit(limit_)
 {
-    // LOG_TRACE(getLogger("PartialShufflingTransform"), "PartialShufflingTransform::PartialShufflingTransform");
+    // LOG_TRACE(getLogger("PartialShufflingTransform"), "PartialShufflingTransform");
 }
 
 void PartialShufflingTransform::transform(Chunk & chunk)
@@ -31,16 +31,14 @@ void PartialShufflingTransform::transform(Chunk & chunk)
     // LOG_TRACE(getLogger("PartialShufflingTransform"), "transform, rows: {}", chunk.getNumRows());
 
 
-    if (read_rows)
-        read_rows->add(chunk.getNumRows());
+    // if (read_rows)
+    //     read_rows->add(chunk.getNumRows());
 
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
 
-    /** If we've saved columns from previously blocks we could filter all rows from current block
-      * which are unnecessary for sortBlock(...) because they obviously won't be in the top LIMIT rows.
-      */
-
     shuffleBlock(block);
+
+    // LOG_TRACE(getLogger("PartialShufflingTransform"), "transform, rows after shuffle: {}", block.rows());
 
     chunk.setColumns(block.getColumns(), block.rows());
 }
@@ -61,8 +59,8 @@ void PartialShufflingTransform::shufflePermutation(IColumn::Permutation & permut
 void PartialShufflingTransform::shuffleBlock(Block & block)
 {
     auto size = block.rows();
+    // LOG_TRACE(getLogger("PartialShufflingTransform"), "shuffleBlock, rows: {}", size);
 
-    // LOG_TRACE(getLogger("PartialShufflingTransform"), "shuffleBlock, size: {}", size);
 
     IColumn::Permutation permutation = getIdentityPermutation(size);
 

@@ -143,7 +143,7 @@ ShufflingTransform::ShufflingTransform(
     , max_merged_block_size(max_merged_block_size_)
     , limit(limit_)
 {
-    LOG_INFO(getLogger("ShufflingTransform"), "ShufflingTransform::ShufflingTransform");
+    // LOG_INFO(getLogger("ShufflingTransform"), "ShufflingTransform::ShufflingTransform");
     const auto & sample = inputs.front().getHeader();
 
     /// Remove constants from header and map old indexes to new.

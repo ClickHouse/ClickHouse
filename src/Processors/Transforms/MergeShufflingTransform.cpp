@@ -154,6 +154,7 @@ MergeShufflingTransform::MergeShufflingTransform(
     // , min_free_disk_space(min_free_disk_space_)
     // , max_block_bytes(max_block_bytes_)
 {
+    LOG_TRACE(getLogger("MergeShufflingTransform"), "MergeShufflingTransform, mbs: {}", max_merged_block_size_);
 }
 
 Processors MergeShufflingTransform::expandPipeline()
@@ -210,6 +211,9 @@ void MergeShufflingTransform::consume(Chunk chunk)
         && max_bytes_before_remerge
         && sum_bytes_in_blocks > max_bytes_before_remerge)
     {
+        LOG_INFO(log, "Start reading part of data from temporary file");
+
+
         remerge();
     }
 
@@ -317,7 +321,7 @@ void MergeShufflingTransform::generate()
 
 void MergeShufflingTransform::remerge()
 {
-    LOG_DEBUG(log, "Re-merging intermediate ORDER BY data ({} blocks with {} rows) to save memory consumption", chunks.size(), sum_rows_in_blocks);
+    LOG_DEBUG(log, "Re-merging intermediate SHUFFLE data ({} blocks with {} rows) to save memory consumption", chunks.size(), sum_rows_in_blocks);
 
     /// NOTE Maybe concat all blocks and partial sort will be faster than merge?
     MergeShuffler remerge_shuffler(std::make_shared<const Block>(header_without_constants), std::move(chunks), max_merged_block_size, limit);
