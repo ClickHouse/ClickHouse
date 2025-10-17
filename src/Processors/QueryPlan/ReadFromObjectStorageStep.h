@@ -3,7 +3,7 @@
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include "Storages/StorageInMemoryMetadata.h"
+#include <Storages/StorageInMemoryMetadata.h>
 
 namespace DB
 {
