@@ -20,6 +20,20 @@ Negative limits are also supported:
 
 `LIMIT -m OFFSET -n` selects the last `m` rows after skipping the last `n` rows. The `LIMIT -n, -m` syntax is equivalent.
 
+Selecting a percentage from the table is also supported via **Fractions**:
+
+`LIMIT 0.m` selects the first (m * 10)% percent of rows from the result.
+
+`LIMIT 0.m OFFSET 0.n` selects the (m * 10)% percent of rows from the result, after skipping the first (n * 10)% percent of rows.
+
+Examples:
+    • `LIMIT 0.5 OFFSET 1` selects the median row
+    • `LIMIT 0.5 OFFSET 0.25` selects 3rd quarter of the result
+
+> **Note**
+> • fractions must be Float32 numbers less than 1 and greater than zero
+
+
 If there is no [ORDER BY](../../../sql-reference/statements/select/order-by.md) clause that explicitly sorts results, the choice of rows for the result may be arbitrary and non-deterministic.
 
 :::note    
@@ -40,7 +54,7 @@ For example, the following query
 ```sql
 SELECT * FROM (
     SELECT number%50 AS n FROM numbers(100)
-) ORDER BY n LIMIT 0,5
+) ORDER BY n LIMIT 0, 5
 ```
 
 returns
@@ -60,7 +74,7 @@ but after apply `WITH TIES` modifier
 ```sql
 SELECT * FROM (
     SELECT number%50 AS n FROM numbers(100)
-) ORDER BY n LIMIT 0,5 WITH TIES
+) ORDER BY n LIMIT 0, 5 WITH TIES
 ```
 
 it returns another rows set
