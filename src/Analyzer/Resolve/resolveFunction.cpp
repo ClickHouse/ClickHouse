@@ -918,7 +918,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
     FunctionOverloadResolverPtr function = UserDefinedExecutableFunctionFactory::instance().tryGet(function_name, scope.context, parameters); /// NOLINT(readability-static-accessed-through-instance)
     /// Executable UDFs may have parameters. They are checked in UserDefinedExecutableFunctionFactory.
-    bool can_have_parameters = bool(function);
+    bool can_have_parameters = (function != nullptr);
 
     if (!function)
     {
@@ -929,19 +929,28 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
     }
 
-    IdentifierResolveScope::ResolvedFunctionsCache * function_cache = nullptr;
+    ResolvedFunctionsCache * function_cache = nullptr;
 
     if (!function)
     {
         /// This is a hack to allow a query like `select randConstant(), randConstant(), randConstant()`.
         /// Function randConstant() would return the same value for the same arguments (in scope).
+        /// But we need to exclude getSetting() function because SETTINGS can change its result for every scope.
 
-        auto hash = function_node_ptr->getTreeHash();
-        function_cache = &scope.functions_cache[hash];
-        if (!function_cache->resolver)
-            function_cache->resolver = FunctionFactory::instance().tryGet(function_name, scope.context);
+        if (function_name != "getSetting" && function_name != "rowNumberInAllBlocks")
+        {
+            auto hash = function_node_ptr->getTreeHash();
 
-        function = function_cache->resolver;
+            function_cache = &functions_cache[hash];
+            if (!function_cache->resolver)
+                function_cache->resolver = FunctionFactory::instance().tryGet(function_name, scope.context);
+
+            function = function_cache->resolver;
+        }
+        else
+            function = FunctionFactory::instance().tryGet(function_name, scope.context);
+
+        can_have_parameters = false;
     }
 
     if (function)

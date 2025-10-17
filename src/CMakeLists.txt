@@ -696,7 +696,6 @@ if (TARGET ch_contrib::google_cloud_cpp)
 endif()
 
 if (TARGET ch_rust::delta_kernel_rs)
-    # dbms_target_link_libraries(PRIVATE ch_contrib::delta_kernel_rs)
     # FIXME: This is a temporary hack to force cmake put delta_kernel_rs at the
     # end of the dependencies list, so that the linker will use symbols from it
     # only if there were no such symbols before.
@@ -719,11 +718,11 @@ if (ENABLE_BUZZHOUSE)
 endif()
 
 if (TARGET ch_contrib::wasmedge)
-    dbms_target_link_libraries(PRIVATE ch_contrib::wasmedge)
+    target_link_libraries(dbms PRIVATE ch_contrib::wasmedge)
 endif()
 
 if (TARGET ch_contrib::wasmtime)
-    dbms_target_link_libraries(PRIVATE ch_contrib::wasmtime)
+    target_link_libraries(dbms PRIVATE ch_contrib::wasmtime)
 endif()
 
 if (ENABLE_TESTS)

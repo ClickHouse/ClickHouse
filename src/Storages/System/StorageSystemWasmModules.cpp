@@ -158,7 +158,7 @@ void StorageSystemWasmModules::mutate(const MutationCommands & commands, Context
 {
     auto module_name = getModuleNameToDeleteFromAst(commands);
     if (!module_name)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected single DELETE command with WHERE clause, got {}", commands.toString());
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected single DELETE command with WHERE clause, got {}", commands.toString(/* with_pure_metadata_commands */ true));
 
     wasm_module_manager.deleteModuleIfExists(*module_name);
 }

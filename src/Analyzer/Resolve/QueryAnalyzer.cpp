@@ -2596,10 +2596,6 @@ ProjectionNames QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_nod
     return result_projection_names;
 }
 
-<<<<<<< HEAD
-
-=======
->>>>>>> master
 /** Resolve expression node.
   * Argument node can be replaced with different node, or even with list node in case of matcher resolution.
   * Example: SELECT * FROM test_table;

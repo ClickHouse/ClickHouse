@@ -94,8 +94,6 @@ wasmtime::FuncType toWasmFunctionType(WasmHostFunction * host_function_ptr)
     return wasmtime::FuncType::from_iters(param_types, result_type);
 }
 
-}
-
 struct WasmTimeRuntime::Impl
 {
     static wasmtime::Config getConfig()
