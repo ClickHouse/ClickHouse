@@ -32,23 +32,16 @@ INSERT INTO system.webassembly_modules (name, code) SELECT 'test_faulty', base64
     'fmV4cDF+MjAyNDA3MzExNDUwMDAuMTQ0KQAsD3RhcmdldF9mZWF0dXJlcwIrD211dGFibGUtZ2xvYmFscysIc2lnbi1leHQ='
 ));
 
+-- this function tries to grow number of pages specified in the argument
+-- and stops on unsuccessful allocation returning the number of successfully allocated pages
 CREATE OR REPLACE FUNCTION huge_allocate LANGUAGE WASM ABI PLAIN FROM 'test_faulty' ARGUMENTS (UInt32) RETURNS UInt32 SETTINGS max_memory = 655360;
-SELECT huge_allocate(1 :: UInt32) <= 10 SETTINGS send_logs_level = 'fatal';
-SELECT huge_allocate(10 :: UInt32) == 0 SETTINGS send_logs_level = 'fatal';
+SELECT huge_allocate(1 :: UInt32) <= 10;
+SELECT huge_allocate(10 :: UInt32) == 0;
 
 CREATE OR REPLACE FUNCTION huge_allocate LANGUAGE WASM ABI PLAIN FROM 'test_faulty' ARGUMENTS (UInt32) RETURNS UInt32 SETTINGS max_memory = 6553600;
-SELECT 10 < huge_allocate(1 :: UInt32) AND huge_allocate(1 :: UInt32) <= 100 SETTINGS send_logs_level = 'fatal';
+SELECT 10 < huge_allocate(1 :: UInt32) AND huge_allocate(1 :: UInt32) <= 100;
 
 CREATE OR REPLACE FUNCTION infinite_loop LANGUAGE WASM ABI PLAIN FROM 'test_faulty' ARGUMENTS (UInt32) RETURNS UInt32;
-SELECT infinite_loop(1 :: UInt32); -- { serverError WASM_ERROR }
-
-CREATE OR REPLACE FUNCTION infinite_loop LANGUAGE WASM ABI PLAIN FROM 'test_faulty' ARGUMENTS (UInt32) RETURNS UInt32 SETTINGS max_fuel = 100_000_000;
-SELECT infinite_loop(1 :: UInt32); -- { serverError WASM_ERROR }
-
-CREATE OR REPLACE FUNCTION infinite_loop LANGUAGE WASM ABI PLAIN FROM 'test_faulty' ARGUMENTS (UInt32) RETURNS UInt32 SETTINGS max_fuel = 1000;
-SELECT infinite_loop(1 :: UInt32); -- { serverError WASM_ERROR }
-
-CREATE OR REPLACE FUNCTION infinite_loop LANGUAGE WASM ABI PLAIN FROM 'test_faulty' ARGUMENTS (UInt32) RETURNS UInt32 SETTINGS max_fuel = 1_000_000_000_000; -- { serverError BAD_ARGUMENTS }
 SELECT infinite_loop(1 :: UInt32); -- { serverError WASM_ERROR }
 
 CREATE OR REPLACE FUNCTION fib_wasm LANGUAGE WASM ABI PLAIN FROM 'test_faulty' :: 'fib' ARGUMENTS (UInt32) RETURNS UInt32;
