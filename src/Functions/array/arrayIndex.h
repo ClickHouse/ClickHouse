@@ -112,7 +112,7 @@ private:
     /// Generic
     static bool compare(const IColumn & left, const IColumn & right, size_t i, size_t j)
     {
-        return 0 == left.compareAt(i, RightArgIsConstant ? 0 : j, right, 1);
+        return left.equalsAt(i, RightArgIsConstant ? 0 : j, right);
     }
 
     static bool compare(const Array & arr, const Field& rhs, size_t pos, size_t)

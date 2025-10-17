@@ -35,7 +35,7 @@ bool sliceEqualElements(const GenericArraySlice &, const NumericArraySlice<U> &,
 
 inline ALWAYS_INLINE bool sliceEqualElements(const GenericArraySlice & first, const GenericArraySlice & second, size_t first_ind, size_t second_ind)
 {
-    return first.elements->compareAt(first_ind + first.begin, second_ind + second.begin, *second.elements, -1) == 0;
+    return first.elements->equalsAt(first_ind + first.begin, second_ind + second.begin, *second.elements);
 }
 
 }
