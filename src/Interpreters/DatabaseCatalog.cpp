@@ -776,7 +776,7 @@ DatabasePtr DatabaseCatalog::getDatabase(const String & database_name) const
             backQuoteIfNeed(database_name),
             backQuoteIfNeed(names[0]));
     }
-    chassert(database_name == db->getDatabaseName());
+    chassert(database_name == TSA_SUPPRESS_WARNING_FOR_READ(db->database_name));
     return db;
 }
 
@@ -787,7 +787,7 @@ DatabasePtr DatabaseCatalog::tryGetDatabase(const String & database_name) const
     auto it = databases.find(database_name);
     if (it == databases.end())
         return {};
-    chassert(database_name == it->second->getDatabaseName());
+    chassert(database_name == TSA_SUPPRESS_WARNING_FOR_READ(it->second->database_name));
     return it->second;
 }
 

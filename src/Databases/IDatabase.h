@@ -437,11 +437,12 @@ public:
 
     virtual ~IDatabase();
 
+    String database_name TSA_GUARDED_BY(mutex);
+
 protected:
     virtual ASTPtr getCreateTableQueryImpl(const String & /*name*/, ContextPtr /*context*/, bool throw_on_error) const;
 
     mutable std::mutex mutex;
-    String database_name TSA_GUARDED_BY(mutex);
     String comment TSA_GUARDED_BY(mutex);
 };
 
