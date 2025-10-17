@@ -292,7 +292,7 @@ def main():
                 env=test_env,
                 pytest_report_file=f"{temp_path}/pytest_parallel.jsonl",
             )
-            if not test_result_parallel.is_ok():
+            if is_flaky_check and not test_result_parallel.is_ok():
                 print(
                     f"Flaky check: Test run fails after attempt [{attempt+1}/{module_repeat_cnt}] - break"
                 )
@@ -313,7 +313,7 @@ def main():
                 cwd="./tests/integration/",
                 pytest_report_file=f"{temp_path}/pytest_sequential.jsonl",
             )
-            if not test_result_sequential.is_ok():
+            if is_flaky_check and not test_result_sequential.is_ok():
                 print(
                     f"Flaky check: Test run fails after attempt [{attempt+1}/{module_repeat_cnt}] - break"
                 )
