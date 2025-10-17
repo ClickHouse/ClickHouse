@@ -744,10 +744,7 @@
         results.forEach((result, _index) => {
             const row = document.createElement('tr');
 
-            columns.forEach(column => {
-                if (!existing_columns[column]) {
-                    return;
-                }
+            existing_columns.forEach(column => {
                 const td = document.createElement('td');
                 const value = result[column];
 
