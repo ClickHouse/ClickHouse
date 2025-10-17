@@ -303,7 +303,8 @@ def main():
     Result.create_from(
         results=results,
         stopwatch=stop_watch,
-        files=ch.prepare_logs() + [shell_log_file, buzz_config_file, buzz_log_file],
+        files=ch.prepare_logs(info=Info())
+        + [shell_log_file, buzz_config_file, buzz_log_file],
     ).complete_job()
 
 
