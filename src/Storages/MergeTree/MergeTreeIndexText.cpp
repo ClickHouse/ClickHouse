@@ -20,6 +20,8 @@
 #include <Parsers/ASTIndexDeclaration.h>
 
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ActionsVisitor.h>
+#include <Interpreters/ActionsMatcher.h>
 
 namespace ProfileEvents
 {
@@ -835,7 +837,7 @@ MergeTreeIndexText::MergeTreeIndexText(
     : IMergeTreeIndex(index_)
     , params(std::move(params_))
     , token_extractor(std::move(token_extractor_))
-    , preprocessor(parseExpression(params.preprocessor))
+    , preprocessor(parseExpression(index_, params.preprocessor))
 {
 }
 
@@ -1254,26 +1256,58 @@ FieldVector MergeTreeIndexText::parseArgumentsListFromAST(const ASTPtr & argumen
     return result;
 }
 
-
-ASTPtr MergeTreeIndexText::parseExpression(const String & expression)
+ExpressionActionsPtr MergeTreeIndexText::parseExpression(const IndexDescription & index_description, const String & expression)
 {
-    if (expression.empty())
+    if (std::ranges::all_of(expression, isspace))
         return nullptr;
 
     const char * expression_begin = &*expression.begin();
     const char * expression_end = &*expression.end();
 
+    // These are expression tokens, do not confuse with index tokens
     Tokens tokens(expression_begin, expression_end);
     IParser::Pos token_iterator(tokens, 1000, 1000000);
 
     Expected expected;
-    ASTPtr res;
+    ASTPtr expression_ast;
 
-    const bool parse_res = ParserExpression().parse(token_iterator, res, expected);
+    const bool parse_res = ParserExpression().parse(token_iterator, expression_ast, expected);
     if (!parse_res)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Error parsing preprocessor expression");
 
-    return res;
+
+    // TODO(JAM): Check this
+    String name = expression_ast->getColumnName();
+    String alias = expression_ast->getAliasOrColumnName();
+
+    chassert(index_description.column_names.size() == 1);
+    chassert(index_description.data_types.size() == 1);
+
+    NamesAndTypesList source_columns({{index_description.column_names.front(), index_description.data_types.front()}});
+
+    NamesAndTypesList aggregation_keys;
+    ColumnNumbersList aggregation_keys_indexes_list;
+
+    ActionsVisitor::Data visitor_data(
+        nullptr,
+        SizeLimits() /* set_size_limit */,
+        0 /* subquery_depth */,
+        source_columns,
+        ActionsDAG(source_columns),
+        {} /* prepared_sets */,
+        false /* no_makeset_for_subqueries */,
+        false /* no_makeset */,
+        false /* only_consts */,
+        AggregationKeysInfo(aggregation_keys, aggregation_keys_indexes_list, GroupByKind::NONE)
+    );
+    ActionsVisitor(visitor_data).visit(expression_ast);
+
+    ActionsDAG actions = visitor_data.getActions();
+    actions.project(NamesWithAliases({{name, alias}}));
+
+    ExpressionActionsPtr preprocessor_actions = std::make_shared<ExpressionActions>(std::move(actions));
+
+    return preprocessor_actions;
 }
 
 

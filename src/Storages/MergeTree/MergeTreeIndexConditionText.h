@@ -45,7 +45,7 @@ public:
         ContextPtr context,
         const Block & index_sample_block,
         TokenExtractorPtr token_extactor_,
-        ASTPtr preprocessor_);
+        ExpressionActionsPtr preprocessor_);
 
     ~MergeTreeIndexConditionText() override = default;
     static bool isSupportedFunctionForDirectRead(const String & function_name);
@@ -128,7 +128,7 @@ private:
     TextSearchMode global_search_mode = TextSearchMode::All;
 
     /// Reference preprocessor expression
-    ASTPtr preprocessor;
+    ExpressionActionsPtr preprocessor;
 };
 
 }

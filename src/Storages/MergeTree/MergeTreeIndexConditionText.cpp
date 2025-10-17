@@ -42,7 +42,7 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     ContextPtr context_,
     const Block & index_sample_block,
     TokenExtractorPtr token_extactor_,
-    ASTPtr preprocessor_)
+    ExpressionActionsPtr preprocessor_)
     : WithContext(context_)
     , header(index_sample_block)
     , token_extractor(token_extactor_)

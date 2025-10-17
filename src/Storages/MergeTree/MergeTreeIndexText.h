@@ -1,4 +1,6 @@
 #pragma once
+#include <algorithm>
+#include <functional>
 #include <vector>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
@@ -283,7 +285,7 @@ class MergeTreeIndexText final : public IMergeTreeIndex
 
     static Tuple parseNamedArgumentFromAST(const ASTFunction * ast_equal_function);
     static const ASTFunction * tryGetPreprocessorFromAST(const ASTPtr ast_preprocessor_argument);
-    static ASTPtr parseExpression(const String & expression);
+    static ExpressionActionsPtr parseExpression(const IndexDescription & index, const String & expression);
 
 public:
     MergeTreeIndexText(
@@ -310,7 +312,8 @@ public:
 
     MergeTreeIndexTextParams params;
     std::unique_ptr<ITokenExtractor> token_extractor;
-    ASTPtr preprocessor {nullptr};
+
+    ExpressionActionsPtr preprocessor {nullptr};
 };
 
 }
