@@ -20,7 +20,7 @@ void OptimizeGroupTask::execute(OptimizerContext & optimizer_context)
     }
     else
     {
-        for (auto & expression : group->expressions)
+        for (auto & expression : group->logical_expressions)
             optimizer_context.pushTask(std::make_shared<OptimizeExpressionTask>(expression, cost_limit));
     }
 }
@@ -32,7 +32,7 @@ void ExploreGroupTask::execute(OptimizerContext & optimizer_context)
     auto group = optimizer_context.getGroup(group_id);
     group->setExplored();
 
-    for (const auto & expression : group->expressions)
+    for (const auto & expression : group->logical_expressions)
         optimizer_context.pushTask(std::make_shared<ExploreExpressionTask>(expression, cost_limit));
 }
 

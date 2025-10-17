@@ -28,14 +28,16 @@ public:
         : group_id(group_id_)
     {}
 
-    void addExpression(GroupExpressionPtr group_expression);
+    void addLogicalExpression(GroupExpressionPtr group_expression);
+    void addPhysicalExpression(GroupExpressionPtr group_expression);
     bool isExplored() const { return is_explored; }
     void setExplored() { is_explored = true; }
 
     void dump(WriteBuffer & out, String indent = {}) const;
     String dump() const;
 
-    std::vector<GroupExpressionPtr> expressions;
+    std::vector<GroupExpressionPtr> logical_expressions;
+    std::vector<GroupExpressionPtr> physical_expressions;
     ExpressionWithCost best_implementation;
 
 private:

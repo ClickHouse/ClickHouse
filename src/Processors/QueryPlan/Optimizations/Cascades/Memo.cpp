@@ -13,7 +13,7 @@ GroupId Memo::addGroup(GroupExpressionPtr group_expression)
     auto group_id = groups_by_id.size();
     GroupPtr new_group = std::make_shared<Group>(group_id);
     group_expression->group_id = group_id;
-    new_group->addExpression(group_expression);
+    new_group->addLogicalExpression(group_expression);
     groups_by_id.push_back(new_group);
     LOG_TRACE(log, "Add group '{}' -> id {}", group_expression->getName(), group_id);
     return group_id;

@@ -190,7 +190,7 @@ std::vector<GroupExpressionPtr> JoinCommutativity::applyImpl(GroupExpressionPtr 
     expression_with_swapped_inputs->plan_step = std::move(swapped_join_step);
     expression_with_swapped_inputs->inputs = {expression->inputs[1], expression->inputs[0]};
     expression_with_swapped_inputs->setApplied(*this);  /// Don't apply commutativity rule to the new expression
-    memo.getGroup(expression->group_id)->addExpression(expression_with_swapped_inputs);
+    memo.getGroup(expression->group_id)->addLogicalExpression(expression_with_swapped_inputs);
 
     return {expression_with_swapped_inputs};
 }
@@ -248,7 +248,7 @@ std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressio
     GroupExpressionPtr hash_join_expression = std::make_shared<GroupExpression>(*expression);
     hash_join_expression->plan_step = std::move(new_join_step);
     chassert(hash_join_expression->inputs.size() == 2);
-    memo.getGroup(expression->group_id)->addExpression(hash_join_expression);
+    memo.getGroup(expression->group_id)->addPhysicalExpression(hash_join_expression);
     hash_join_expression->setApplied(*this);
     return {hash_join_expression};
 }
@@ -267,7 +267,7 @@ std::vector<GroupExpressionPtr> DefaultImplementation::applyImpl(GroupExpression
     implementation_expression->inputs = expression->inputs;
     implementation_expression->applied_rules = expression->applied_rules;
     implementation_expression->setApplied(*this);
-    memo.getGroup(expression->group_id)->addExpression(implementation_expression);
+    memo.getGroup(expression->group_id)->addPhysicalExpression(implementation_expression);
     return {implementation_expression};
 }
 
