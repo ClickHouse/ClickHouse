@@ -260,10 +260,10 @@ AsynchronousInsertQueue::AsynchronousInsertQueue(ContextPtr context_, size_t poo
 
     if (parse_pool_size_)
         parse_pool_ptr = std::make_shared<ThreadPool>(
-          CurrentMetrics::AsynchronousInsertThreads,
-          CurrentMetrics::AsynchronousInsertThreadsActive,
-          CurrentMetrics::AsynchronousInsertThreadsScheduled,
-          parse_pool_size_);
+            CurrentMetrics::AsynchronousInsertThreads,
+            CurrentMetrics::AsynchronousInsertThreadsActive,
+            CurrentMetrics::AsynchronousInsertThreadsScheduled,
+            parse_pool_size_);
 
     const auto & settings = getContext()->getSettingsRef();
 
@@ -895,6 +895,7 @@ try
 
     auto async_insert_log = global_context->getAsynchronousInsertLog();
     std::vector<AsynchronousInsertLogElement> log_elements;
+    std::mutex log_elements_mutex;
     if (async_insert_log)
         log_elements.reserve(data->entries.size());
 
@@ -949,6 +950,7 @@ try
         else
         {
             elem.status = AsynchronousInsertLogElement::Ok;
+            std::lock_guard lock(log_elements_mutex);
             log_elements.push_back(std::move(elem));
         }
     };
@@ -1012,24 +1014,23 @@ try
 
     try
     {
-        Chunks chunks(1);
-        auto header = pipeline.getSharedHeader();
+        size_t num_chunks
+            = key.data_kind == AsynchronousInsertQueueDataKind::Parsed && parse_pool_ptr ? parse_pool_ptr->getMaxThreads() : 1;
+        Chunks chunks(num_chunks);
 
-        bool many_chunks = false;
+        auto header = pipeline.getSharedHeader();
 
         if (key.data_kind == AsynchronousInsertQueueDataKind::Parsed)
         {
             if (parse_pool_ptr)
-            {
                 processEntriesWithAsyncParsing(chunks, key, data, *header, insert_context, log, add_entry_to_asynchronous_insert_log);
-                many_chunks = true;
-            }
             else
                 processEntriesWithParsing(chunks, key, data, *header, insert_context, log, add_entry_to_asynchronous_insert_log);
         }
         else
+        {
             processPreprocessedEntries(chunks, data, *header, add_entry_to_asynchronous_insert_log);
-
+        }
 
         size_t num_rows = 0;
         size_t num_bytes = 0;
@@ -1043,11 +1044,11 @@ try
         if (num_rows == 0)
         {
             pipeline.cancel(); // this just cancels the processors
-            finish_entries(std::move(pipeline), /*num_rows=*/0, /*num_bytes=*/0);
+            finish_entries(std::move(pipeline), /*num_rows=*/ 0, /*num_bytes=*/ 0);
             return;
         }
 
-        if (many_chunks)
+        if (parse_pool_ptr)
         {
             auto source = std::make_unique<SourceFromChunks>(header, std::move(chunks));
             pipeline.complete(Pipe(std::move(source)));
@@ -1131,13 +1132,21 @@ void AsynchronousInsertQueue::processEntriesWithAsyncParsingImpl(
     LoggerPtr logger,
     LogFunc && add_to_async_insert_log)
 {
+    if (data->entries.empty())
+        return;
+
     InsertData::EntryPtr current_entry;
 
     const auto & insert_query = assert_cast<const ASTInsertQuery &>(*key.query);
 
     size_t num_threads;
     if constexpr (IS_PARALLEL)
-        num_threads =  parse_pool_ptr->getMaxThreads();
+    {
+        num_threads = parse_pool_ptr->getMaxThreads();
+        if (!num_threads)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "zero number of threads");
+    }
     else
         num_threads = 1;
 
@@ -1156,7 +1165,7 @@ void AsynchronousInsertQueue::processEntriesWithAsyncParsingImpl(
     };
 
     std::vector<ExecutorInfo> executor_info_v(num_threads);
-    auto get_executor_info = [&](size_t executors_num [[maybe_unused]]) -> ExecutorInfo &
+    auto get_executor_info = [&executor_info_v](size_t executors_num [[maybe_unused]]) -> ExecutorInfo &
     {
         if constexpr(IS_PARALLEL)
             return executor_info_v[executors_num];
@@ -1168,15 +1177,17 @@ void AsynchronousInsertQueue::processEntriesWithAsyncParsingImpl(
     for (size_t executors_num = 0; executors_num < num_threads; ++executors_num)
     {
         auto format = getInputFormatFromASTInsertQuery(key.query, false, header, insert_context, nullptr);
-        std::shared_ptr<ISimpleTransform> adding_defaults_transform;
+        /// it seems that we cannot share format between threads
 
+        std::shared_ptr<ISimpleTransform> adding_defaults_transform;
         if (insert_context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields] && insert_query.table_id)
         {
             StoragePtr storage = DatabaseCatalog::instance().getTable(insert_query.table_id, insert_context);
             auto metadata_snapshot = storage->getInMemoryMetadataPtr();
             const auto & columns = metadata_snapshot->getColumns();
             if (columns.hasDefaults())
-                adding_defaults_transform = std::make_shared<AddingDefaultsTransform>(std::make_shared<const Block>(header), columns, *format, insert_context);
+                adding_defaults_transform
+                    = std::make_shared<AddingDefaultsTransform>(std::make_shared<const Block>(header), columns, *format, insert_context);
         }
 
         auto on_error = [&, executors_num](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)
