@@ -402,11 +402,6 @@
     M(MergeTreeDataWriterBlocks, "Number of blocks INSERTed to MergeTree tables. Each block forms a data part of level zero.", ValueType::Number) \
     M(MergeTreeDataWriterBlocksAlreadySorted, "Number of blocks INSERTed to MergeTree tables that appeared to be already sorted.", ValueType::Number) \
     \
-    M(MergeTreeBackgroundExecutorTaskExecuteStepMicroseconds, "Time spent in IExecutableTask::executeStep() for tasks executed by MergeTreeBackgroundExecutor.", ValueType::Microseconds) \
-    M(MergeTreeBackgroundExecutorTaskCancelMicroseconds, "Time spent in IExecutableTask::cancel() for tasks executed by MergeTreeBackgroundExecutor.", ValueType::Microseconds) \
-    M(MergeTreeBackgroundExecutorTaskResetMicroseconds, "Time spent resetting underlying task (shared_ptr reset) in MergeTreeBackgroundExecutor.", ValueType::Microseconds) \
-    M(MergeTreeBackgroundExecutorWaitMicroseconds, "Time spent waiting for task completion (is_done.wait) in MergeTreeBackgroundExecutor.", ValueType::Microseconds) \
-    \
     /* Per-executor background executor task timings */ \
     M(MergeMutateBackgroundExecutorTaskExecuteStepMicroseconds, "Time spent in executeStep() for MergeMutate executor tasks.", ValueType::Microseconds) \
     M(MergeMutateBackgroundExecutorTaskCancelMicroseconds, "Time spent in cancel() for MergeMutate executor tasks.", ValueType::Microseconds) \
