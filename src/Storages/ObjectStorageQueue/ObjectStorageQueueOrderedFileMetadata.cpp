@@ -296,8 +296,13 @@ bool ObjectStorageQueueOrderedFileMetadata::getMaxProcessedFilesByHivePartition(
 {
     Strings hive_partitions;
 
-    auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log_);
-    auto code = zk_client->tryGetChildren(processed_node_path_, hive_partitions);
+    auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log_);
+
+    Coordination::Error code;
+    zk_retry.retryLoop([&]
+    {
+        code = ObjectStorageQueueMetadata::getZooKeeper(log_)->tryGetChildren(processed_node_path_, hive_partitions);
+    });
 
     if (code == Coordination::Error::ZNONODE)
         return false;
@@ -311,7 +316,12 @@ bool ObjectStorageQueueOrderedFileMetadata::getMaxProcessedFilesByHivePartition(
         paths.push_back(std::move(node_path));
     }
 
-    auto responses = zk_client->tryGet(paths);
+    zkutil::ZooKeeper::MultiTryGetResponse responses;
+
+    zk_retry.retryLoop([&]
+    {
+        responses = ObjectStorageQueueMetadata::getZooKeeper(log_)->tryGet(paths);
+    });
 
     if (responses.size() != hive_partitions.size())
         throw Exception(
@@ -420,7 +430,12 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
             Coordination::Requests requests;
             std::vector<std::string> paths{processed_node_path, failed_node_path};
 
-            zkutil::ZooKeeper::MultiTryGetResponse responses = zk_client->tryGet(paths);
+            zkutil::ZooKeeper::MultiTryGetResponse responses;
+
+            zk_retry.retryLoop([&]
+            {
+                responses = ObjectStorageQueueMetadata::getZooKeeper(log)->tryGet(paths);
+            });
 
             auto check_code = [this](auto code_)
             {
@@ -626,8 +641,12 @@ void ObjectStorageQueueOrderedFileMetadata::prepareHiveProcessedMap(HiveLastProc
     auto file_info = file_map.find(node_path);
     if (file_info == file_map.end())
     {
-        auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
-        file_map.emplace(node_path, HiveLastProcessedFileInfo({zk_client->exists(node_path), node_metadata.file_path}));
+        auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
+        zk_retry.retryLoop([&]
+        {
+            auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
+            file_map.emplace(node_path, HiveLastProcessedFileInfo({zk_client->exists(node_path), node_metadata.file_path}));
+        });
     }
     else if (node_metadata.file_path > file_info->second.file_path)
         file_info->second.file_path = node_metadata.file_path;

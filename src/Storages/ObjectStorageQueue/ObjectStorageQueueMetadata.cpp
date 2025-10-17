@@ -1203,7 +1203,7 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
             zkutil::ZooKeeper::MultiTryGetResponse response;
             zk_retries.retryLoop([&]
             {
-                response = zk_client->tryGet(paths);
+                response = getZooKeeper(log)->tryGet(paths);
             });
 
             for (size_t i = 0; i < response.size(); ++i)
@@ -1256,7 +1256,10 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
 
     const auto remove_nodes = [&](bool node_limit)
     {
-        code = zk_client->tryMulti(remove_requests, remove_responses);
+        zk_retries.retryLoop([&]
+        {
+            code = getZooKeeper(log)->tryMulti(remove_requests, remove_responses);
+        });
 
         if (code == Coordination::Error::ZOK)
         {
