@@ -750,12 +750,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
 
-    LOG_DEBUG(
-        getLogger(__PRETTY_FUNCTION__),
-        "enable_parallel_replicas={}\n{}",
-        settings[Setting::allow_experimental_parallel_reading_from_replicas],
-        StackTrace().toString());
-
     auto & table_expression_data = planner_context->getTableExpressionDataOrThrow(table_expression);
 
     QueryProcessingStage::Enum till_stage = QueryProcessingStage::Enum::FetchColumns;
@@ -1359,11 +1353,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
             if (query_node)
             {
                 query_node->getMutableContext() = planner_context->getMutableQueryContext();
-
-                LOG_DEBUG(
-                    getLogger(__PRETTY_FUNCTION__),
-                    "table_expression/enable_parallel_replicas={}",
-                    query_node->getContext()->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas]);
             }
 
             Planner subquery_planner(table_expression, subquery_options, subquery_planner_context);
@@ -2505,7 +2494,7 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     const auto & settings = planner_context->getQueryContext()->getSettingsRef();
     if (!settings[Setting::parallel_replicas_for_queries_with_multiple_tables] && table_expressions_stack_size > 1)
     {
-        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Disable parallel replicas due to parallel_replicas_for_queries_with_multiple_tables setting");
+        LOG_DEBUG(getLogger("Planner"), "Disable parallel replicas due to enabled parallel_replicas_for_queries_with_multiple_tables setting");
         planner_context->getMutableQueryContext()->setSetting("enable_parallel_replicas", Field{0});
     }
 
