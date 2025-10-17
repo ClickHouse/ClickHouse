@@ -797,22 +797,18 @@ void PostingListBuilder::add(UInt32 value, PostingListsHolder & postings_holder)
 
 void MergeTreeIndexTextGranuleBuilder::addDocument(StringRef document)
 {
-    size_t cur = 0;
-    size_t token_start = 0;
-    size_t token_len = 0;
-    size_t length = document.size;
-
-    while (cur < length && token_extractor->nextInStringPadded(document.data, length, &cur, &token_start, &token_len))
+    forEachTokenPadded(*token_extractor, document.data, document.size, [&](const char * token_start, size_t token_length)
     {
         bool inserted;
         TokenToPostingsMap::LookupResult it;
 
-        ArenaKeyHolder key_holder{StringRef(document.data + token_start, token_len), *arena};
+        ArenaKeyHolder key_holder{StringRef(token_start, token_length), *arena};
         tokens_map.emplace(key_holder, it, inserted);
 
         auto & posting_list_builder = it->getMapped();
         posting_list_builder.add(current_row, posting_lists);
-    }
+        return false;
+    });
 }
 
 std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuilder::build()

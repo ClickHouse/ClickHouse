@@ -20,6 +20,7 @@ public:
         Ngram,
         Split,
         NoOp,
+        SparseGram,
     };
 
     ITokenExtractor() = default;
@@ -309,6 +310,12 @@ void forEachTokenCase(const ITokenExtractor & extractor, const char * __restrict
         case ITokenExtractor::Type::NoOp:
         {
             callback(data, length);
+            return;
+        }
+        case ITokenExtractor::Type::SparseGram:
+        {
+            const auto & sparse_gram_extractor = assert_cast<const SparseGramTokenExtractor &>(extractor);
+            forEachTokenImpl<is_padded>(sparse_gram_extractor, data, length, callback);
             return;
         }
     }
