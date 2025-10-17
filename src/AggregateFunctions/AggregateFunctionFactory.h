@@ -4,7 +4,6 @@
 #include <Parsers/NullsAction.h>
 #include <Common/FunctionDocumentation.h>
 #include <Common/IFactoryWithAliases.h>
-#include <Common/FunctionDocumentation.h>
 
 #include <functional>
 #include <memory>
