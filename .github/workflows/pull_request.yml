@@ -43,13 +43,13 @@ jobs:
           EOF
           ENV_SETUP_SCRIPT_EOF
 
-      - name: Run
-        id: run
-        run: |
           echo job.check_run_id  ${{ job.check_run_id }}
           cat ./ci/tmp/workflow_status.json
           exit 1
 
+      - name: Run
+        id: run
+        run: |
           echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
