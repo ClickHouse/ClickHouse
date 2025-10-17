@@ -1,9 +1,11 @@
-#include "CassandraDictionarySource.h"
-#include "DictionarySourceFactory.h"
-#include "DictionaryStructure.h"
+#include <Dictionaries/CassandraDictionarySource.h>
+#include <Columns/IColumn.h>
 #include <Interpreters/Context.h>
-#include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipeline.h>
+#include <Common/RemoteHostFilter.h>
+#include <Dictionaries/DictionarySourceFactory.h>
+#include <Dictionaries/DictionaryStructure.h>
 
 namespace DB
 {
@@ -16,7 +18,8 @@ namespace ErrorCodes
 
 void registerDictionarySourceCassandra(DictionarySourceFactory & factory)
 {
-    auto create_table_source = [=]([[maybe_unused]] const DictionaryStructure & dict_struct,
+    auto create_table_source = [=]([[maybe_unused]] const String & name,
+                                   [[maybe_unused]] const DictionaryStructure & dict_struct,
                                    [[maybe_unused]] const Poco::Util::AbstractConfiguration & config,
                                    [[maybe_unused]] const std::string & config_prefix,
                                    [[maybe_unused]] Block & sample_block,
@@ -108,7 +111,7 @@ CassandraDictionarySource::CassandraDictionarySource(
     : log(getLogger("CassandraDictionarySource"))
     , dict_struct(dict_struct_)
     , configuration(configuration_)
-    , sample_block(sample_block_)
+    , sample_block(std::make_shared<const Block>(sample_block_))
     , query_builder(dict_struct, configuration.db, "", configuration.table, configuration.query, configuration.where, IdentifierQuotingStyle::DoubleQuotes)
 {
     cassandraCheck(cass_cluster_set_contact_points(cluster, configuration.host.c_str()));

@@ -38,6 +38,13 @@ bool ParserTimeInterval::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     if (intervals.empty())
         return false;
 
+    std::sort(intervals.begin(), intervals.end());
+    for (size_t i = 0; i + 1 < intervals.size(); ++i)
+    {
+        if (intervals[i].first == intervals[i + 1].first)
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Time interval contains multiple {} components", intervals[i].first.toString());
+    }
+
     CalendarTimeInterval interval(intervals);
 
     if (!options.allow_zero)

@@ -1,3 +1,5 @@
+SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0.0;
+
 CREATE TABLE test (id UInt64, `amax` AggregateFunction(argMax, String, DateTime))
 ENGINE=MergeTree()
 ORDER BY id
@@ -26,7 +28,7 @@ GROUP BY number;
 SELECT sum(id) FROM test FORMAT Null;
 SELECT argMaxMerge(amax) FROM test FORMAT Null;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT 'UInt64',
        read_rows,

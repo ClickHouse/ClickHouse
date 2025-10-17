@@ -19,10 +19,10 @@ SELECT
 FROM `01746_merge_tree`;
 
 ALTER TABLE `01746_merge_tree`
-    DROP COLUMN n3;  -- { serverError 524 }
+    DROP COLUMN n3;  -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 
 ALTER TABLE `01746_merge_tree`
-    DROP COLUMN n2;  -- { serverError 524 }
+    DROP COLUMN n2;  -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 
 -- ok
 ALTER TABLE `01746_merge_tree`
@@ -50,10 +50,10 @@ SELECT
 FROM `01746_null`;
 
 ALTER TABLE `01746_null`
-    DROP COLUMN n1; -- { serverError 524 }
+    DROP COLUMN n1; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 
 ALTER TABLE `01746_null`
-    DROP COLUMN n2; -- { serverError 524 }
+    DROP COLUMN n2; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 
 -- ok
 ALTER TABLE `01746_null`
@@ -86,10 +86,10 @@ SELECT
 FROM `01746_dist`;
 
 ALTER TABLE `01746_dist`
-    DROP COLUMN n1; -- { serverError 524 }
+    DROP COLUMN n1; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 
 ALTER TABLE `01746_dist`
-    DROP COLUMN n2; -- { serverError 524 }
+    DROP COLUMN n2; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 
 -- ok
 ALTER TABLE `01746_dist`
@@ -122,10 +122,10 @@ SELECT
 FROM `01746_merge`;
 
 ALTER TABLE `01746_merge`
-    DROP COLUMN n1; -- { serverError 524 }
+    DROP COLUMN n1; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 
 ALTER TABLE `01746_merge`
-    DROP COLUMN n2; -- { serverError 524 }
+    DROP COLUMN n2; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 
 -- ok
 ALTER TABLE `01746_merge`
@@ -158,10 +158,10 @@ SELECT
 FROM `01746_buffer`;
 
 ALTER TABLE `01746_buffer`
-    DROP COLUMN n1; -- { serverError 524 }
+    DROP COLUMN n1; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 
 ALTER TABLE `01746_buffer`
-    DROP COLUMN n2; -- { serverError 524 }
+    DROP COLUMN n2; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 
 -- ok
 ALTER TABLE `01746_buffer`

@@ -19,7 +19,7 @@ namespace ErrorCodes
  * Scheduler node that implements priority scheduling policy.
  * Requests are scheduled in order of priorities.
  */
-class PriorityPolicy : public ISchedulerNode
+class PriorityPolicy final : public ISchedulerNode
 {
     /// Scheduling state of a child
     struct Item
@@ -39,11 +39,28 @@ public:
         : ISchedulerNode(event_queue_, config, config_prefix)
     {}
 
+    explicit PriorityPolicy(EventQueue * event_queue_, const SchedulerNodeInfo & node_info)
+        : ISchedulerNode(event_queue_, node_info)
+    {}
+
+    ~PriorityPolicy() override
+    {
+        // We need to clear `parent` in all children to avoid dangling references
+        while (!children.empty())
+            removeChild(children.begin()->second.get());
+    }
+
+    const String & getTypeName() const override
+    {
+        static String type_name("priority");
+        return type_name;
+    }
+
     bool equals(ISchedulerNode * other) override
     {
         if (!ISchedulerNode::equals(other))
             return false;
-        if (auto * o = dynamic_cast<PriorityPolicy *>(other))
+        if (auto * _ = dynamic_cast<PriorityPolicy *>(other))
             return true;
         return false;
     }
@@ -96,31 +113,35 @@ public:
     {
         if (auto iter = children.find(child_name); iter != children.end())
             return iter->second.get();
-        else
-            return nullptr;
+        return nullptr;
     }
 
     std::pair<ResourceRequest *, bool> dequeueRequest() override
     {
-        if (items.empty())
-            return {nullptr, false};
-
-        // Recursively pull request from child
-        auto [request, child_active] = items.front().child->dequeueRequest();
-        assert(request != nullptr);
-
-        // Deactivate child if it is empty
-        if (!child_active)
+        // Cycle is required to do deactivations in the case of canceled requests, when dequeueRequest returns `nullptr`
+        while (true)
         {
-            std::pop_heap(items.begin(), items.end());
-            items.pop_back();
             if (items.empty())
-                busy_periods++;
-        }
+                return {nullptr, false};
 
-        dequeued_requests++;
-        dequeued_cost += request->cost;
-        return {request, !items.empty()};
+            // Recursively pull request from child
+            auto [request, child_active] = items.front().child->dequeueRequest();
+
+            // Deactivate child if it is empty
+            if (!child_active)
+            {
+                std::pop_heap(items.begin(), items.end());
+                items.pop_back();
+                if (items.empty())
+                    busy_periods++;
+            }
+
+            if (request)
+            {
+                incrementDequeued(request->cost);
+                return {request, !items.empty()};
+            }
+        }
     }
 
     bool isActive() override

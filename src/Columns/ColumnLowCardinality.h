@@ -28,7 +28,7 @@ class ColumnLowCardinality final : public COWHelper<IColumnHelper<ColumnLowCardi
 {
     friend class COWHelper<IColumnHelper<ColumnLowCardinality>, ColumnLowCardinality>;
 
-    ColumnLowCardinality(MutableColumnPtr && column_unique, MutableColumnPtr && indexes, bool is_shared = false);
+    ColumnLowCardinality(MutableColumnPtr && column_unique, MutableColumnPtr && indexes, bool is_shared);
     ColumnLowCardinality(const ColumnLowCardinality & other) = default;
 
 public:
@@ -36,18 +36,18 @@ public:
       * Use IColumn::mutate in order to make mutable column and mutate shared nested columns.
       */
     using Base = COWHelper<IColumnHelper<ColumnLowCardinality>, ColumnLowCardinality>;
-    static Ptr create(const ColumnPtr & column_unique_, const ColumnPtr & indexes_, bool is_shared = false)
+    static Ptr create(const ColumnPtr & column_unique_, const ColumnPtr & indexes_, bool is_shared)
     {
         return ColumnLowCardinality::create(column_unique_->assumeMutable(), indexes_->assumeMutable(), is_shared);
     }
 
-    static MutablePtr create(MutableColumnPtr && column_unique, MutableColumnPtr && indexes, bool is_shared = false)
+    static MutablePtr create(MutableColumnPtr && column_unique, MutableColumnPtr && indexes, bool is_shared)
     {
         return Base::create(std::move(column_unique), std::move(indexes), is_shared);
     }
 
-    std::string getName() const override { return "ColumnLowCardinality"; }
-    const char * getFamilyName() const override { return "ColumnLowCardinality"; }
+    std::string getName() const override { return "LowCardinality(" + getDictionary().getNestedColumn()->getName() + ")"; }
+    const char * getFamilyName() const override { return "LowCardinality"; }
     TypeIndex getDataType() const override { return TypeIndex::LowCardinality; }
 
     ColumnPtr convertToFullColumn() const { return getDictionary().getNestedColumn()->index(getIndexes(), 0); }
@@ -58,6 +58,10 @@ public:
 
     Field operator[](size_t n) const override { return getDictionary()[getIndexes().getUInt(n)]; }
     void get(size_t n, Field & res) const override { getDictionary().get(getIndexes().getUInt(n), res); }
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override
+    {
+        return getDictionary().getValueNameAndType(getIndexes().getUInt(n));
+    }
 
     StringRef getDataAt(size_t n) const override { return getDictionary().getDataAt(getIndexes().getUInt(n)); }
 
@@ -71,17 +75,25 @@ public:
     bool isNullAt(size_t n) const override { return getDictionary().isNullAt(getIndexes().getUInt(n)); }
     ColumnPtr cut(size_t start, size_t length) const override
     {
-        return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().cut(start, length));
+        return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().cut(start, length), isSharedDictionary());
     }
 
     void insert(const Field & x) override;
     bool tryInsert(const Field & x) override;
     void insertDefault() override;
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertFrom(const IColumn & src, size_t n) override;
+#else
+    void doInsertFrom(const IColumn & src, size_t n) override;
+#endif
     void insertFromFullColumn(const IColumn & src, size_t n);
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
+#else
+    void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
+#endif
     void insertRangeFromFullColumn(const IColumn & src, size_t start, size_t length);
     void insertRangeFromDictionaryEncodedColumn(const IColumn & keys, const IColumn & positions);
 
@@ -90,26 +102,29 @@ public:
     void popBack(size_t n) override { idx.popBack(n); }
 
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
+    StringRef serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     char * serializeValueIntoMemory(size_t n, char * memory) const override;
 
     void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const override;
 
     const char * deserializeAndInsertFromArena(const char * pos) override;
+    const char * deserializeAndInsertAggregationStateValueFromArena(const char * pos) override;
 
     const char * skipSerializedInArena(const char * pos) const override;
 
     void updateHashWithValue(size_t n, SipHash & hash) const override
     {
-        return getDictionary().updateHashWithValue(getIndexes().getUInt(n), hash);
+        getDictionary().updateHashWithValue(getIndexes().getUInt(n), hash);
     }
 
-    void updateWeakHash32(WeakHash32 & hash) const override;
+    WeakHash32 getWeakHash32() const override;
 
     void updateHashFast(SipHash &) const override;
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override
     {
-        return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().filter(filt, result_size_hint));
+        return ColumnLowCardinality::create(
+            dictionary.getColumnUniquePtr(), getIndexes().filter(filt, result_size_hint), isSharedDictionary());
     }
 
     void expand(const Filter & mask, bool inverted) override
@@ -119,15 +134,19 @@ public:
 
     ColumnPtr permute(const Permutation & perm, size_t limit) const override
     {
-        return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().permute(perm, limit));
+        return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().permute(perm, limit), isSharedDictionary());
     }
 
     ColumnPtr index(const IColumn & indexes_, size_t limit) const override
     {
-        return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().index(indexes_, limit));
+        return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().index(indexes_, limit), isSharedDictionary());
     }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
+#else
+    int doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
+#endif
 
     int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator &) const override;
 
@@ -145,28 +164,31 @@ public:
     void updatePermutationWithCollation(const Collator & collator, IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                         size_t limit, int nan_direction_hint, Permutation & res, EqualRanges& equal_ranges) const override;
 
+    size_t estimateCardinalityInPermutedRange(const Permutation & permutation, const EqualRange & equal_range) const override;
+
     ColumnPtr replicate(const Offsets & offsets) const override
     {
-        return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().replicate(offsets));
+        return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().replicate(offsets), isSharedDictionary());
     }
 
     std::vector<MutableColumnPtr> scatter(ColumnIndex num_columns, const Selector & selector) const override;
 
     void getExtremes(Field & min, Field & max) const override
     {
-        return dictionary.getColumnUnique().getNestedColumn()->index(getIndexes(), 0)->getExtremes(min, max); /// TODO: optimize
+        dictionary.getColumnUnique().getNestedColumn()->index(getIndexes(), 0)->getExtremes(min, max); /// TODO: optimize
     }
 
     void reserve(size_t n) override { idx.reserve(n); }
+    size_t capacity() const override { return idx.capacity(); }
     void shrinkToFit() override { idx.shrinkToFit(); }
 
     /// Don't count the dictionary size as it can be shared between different blocks.
-    size_t byteSize() const override { return idx.getPositions()->byteSize(); }
+    size_t byteSize() const override { return idx.getPositions()->byteSize() + (isSharedDictionary() ? 0 : getDictionary().byteSize()); }
 
     size_t byteSizeAt(size_t n) const override { return getDictionary().byteSizeAt(getIndexes().getUInt(n)); }
     size_t allocatedBytes() const override { return idx.getPositions()->allocatedBytes() + getDictionary().allocatedBytes(); }
 
-    void forEachSubcolumn(MutableColumnCallback callback) override
+    void forEachSubcolumn(ColumnCallback callback) const override
     {
         callback(idx.getPositionsPtr());
 
@@ -175,8 +197,24 @@ public:
             callback(dictionary.getColumnUniquePtr());
     }
 
-    void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
+    void forEachMutableSubcolumn(MutableColumnCallback callback) override
     {
+        callback(idx.getPositionsPtr());
+
+        /// Column doesn't own dictionary if it's shared.
+        if (!dictionary.isShared())
+            callback(dictionary.getColumnUniquePtr());
+    }
+
+    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override
+    {
+        /** It is important to have both const and non-const versions here.
+          * The behavior of ColumnUnique::forEachSubcolumnRecursively differs between const and non-const versions.
+          * The non-const version will update a field in ColumnUnique.
+          * In the meantime, the default implementation IColumn::forEachSubcolumnRecursively uses const_cast,
+          * so when the const version is called, the field will still be mutated.
+          * This can lead to a data race if constness is expected.
+          */
         callback(*idx.getPositionsPtr());
         idx.getPositionsPtr()->forEachSubcolumnRecursively(callback);
 
@@ -185,6 +223,19 @@ public:
         {
             callback(*dictionary.getColumnUniquePtr());
             dictionary.getColumnUniquePtr()->forEachSubcolumnRecursively(callback);
+        }
+    }
+
+    void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
+    {
+        callback(*idx.getPositionsPtr());
+        idx.getPositionsPtr()->forEachMutableSubcolumnRecursively(callback);
+
+        /// Column doesn't own dictionary if it's shared.
+        if (!dictionary.isShared())
+        {
+            callback(*dictionary.getColumnUniquePtr());
+            dictionary.getColumnUniquePtr()->forEachMutableSubcolumnRecursively(callback);
         }
     }
 
@@ -208,7 +259,7 @@ public:
 
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
     {
-        return getIndexes().getIndicesOfNonDefaultRows(indices, from, limit);
+        getIndexes().getIndicesOfNonDefaultRows(indices, from, limit);
     }
 
     bool valuesHaveFixedSize() const override { return getDictionary().valuesHaveFixedSize(); }
@@ -295,6 +346,7 @@ public:
 
         void popBack(size_t n) { positions->popBack(n); }
         void reserve(size_t n) { positions->reserve(n); }
+        size_t capacity() const { return positions->capacity(); }
         void shrinkToFit() { positions->shrinkToFit(); }
 
         UInt64 getMaxPositionForCurrentType() const;
@@ -311,7 +363,7 @@ public:
 
         bool containsDefault() const;
 
-        void updateWeakHash(WeakHash32 & hash, WeakHash32 & dict_hash) const;
+        WeakHash32 getWeakHash(const WeakHash32 & dict_hash) const;
 
         void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const PaddedPODArray<UInt64> & dict_sizes) const;
 
@@ -373,6 +425,11 @@ private:
     int compareAtImpl(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator * collator=nullptr) const;
 
     void getPermutationImpl(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability, size_t limit, int nan_direction_hint, Permutation & res, const Collator * collator = nullptr) const;
+
+    template <typename IndexColumn>
+    void updatePermutationWithIndexType(
+        IColumn::PermutationSortStability stability, size_t limit, const PaddedPODArray<UInt64> & position_by_index,
+        IColumn::Permutation & res, EqualRanges & equal_ranges) const;
 };
 
 bool isColumnLowCardinalityNullable(const IColumn & column);

@@ -1,10 +1,9 @@
-#include <Processors/QueryPlan/WindowStep.h>
-
-#include <Processors/Transforms/WindowTransform.h>
-#include <Processors/Transforms/ExpressionTransform.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Interpreters/ExpressionActions.h>
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <IO/Operators.h>
+#include <Processors/QueryPlan/WindowStep.h>
+#include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/WindowTransform.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
 
 namespace DB
@@ -44,11 +43,11 @@ static Block addWindowFunctionResultColumns(const Block & block,
 }
 
 WindowStep::WindowStep(
-    const DataStream & input_stream_,
+    const SharedHeader & input_header_,
     const WindowDescription & window_description_,
     const std::vector<WindowFunctionDescription> & window_functions_,
     bool streams_fan_out_)
-    : ITransformingStep(input_stream_, addWindowFunctionResultColumns(input_stream_.header, window_functions_), getTraits(!streams_fan_out_))
+    : ITransformingStep(input_header_, std::make_shared<const Block>(addWindowFunctionResultColumns(*input_header_, window_functions_)), getTraits(!streams_fan_out_))
     , window_description(window_description_)
     , window_functions(window_functions_)
     , streams_fan_out(streams_fan_out_)
@@ -71,10 +70,10 @@ void WindowStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
         pipeline.resize(1);
 
     pipeline.addSimpleTransform(
-        [&](const Block & /*header*/)
+        [&](const SharedHeader & /*header*/)
         {
             return std::make_shared<WindowTransform>(
-                input_streams.front().header, output_stream->header, window_description, window_functions);
+                input_headers.front(), output_header, window_description, window_functions);
         });
 
     if (streams_fan_out)
@@ -82,7 +81,7 @@ void WindowStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
         pipeline.resize(num_threads);
     }
 
-    assertBlocksHaveEqualStructure(pipeline.getHeader(), output_stream->header,
+    assertBlocksHaveEqualStructure(pipeline.getHeader(), *output_header,
         "WindowStep transform for '" + window_description.window_name + "'");
 }
 
@@ -144,10 +143,9 @@ void WindowStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Functions", std::move(functions_array));
 }
 
-void WindowStep::updateOutputStream()
+void WindowStep::updateOutputHeader()
 {
-    output_stream = createOutputStream(
-        input_streams.front(), addWindowFunctionResultColumns(input_streams.front().header, window_functions), getDataStreamTraits());
+    output_header = std::make_shared<const Block>(addWindowFunctionResultColumns(*input_headers.front(), window_functions));
 
     window_description.checkValid();
 }

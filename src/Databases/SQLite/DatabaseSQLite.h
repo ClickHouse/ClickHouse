@@ -12,6 +12,8 @@
 
 namespace DB
 {
+struct AlterCommand;
+
 class DatabaseSQLite final : public IDatabase, WithContext
 {
 public:
@@ -22,23 +24,21 @@ public:
 
     String getEngineName() const override { return "SQLite"; }
 
-    bool canContainMergeTreeTables() const override { return false; }
-
-    bool canContainDistributedTables() const override { return false; }
-
     bool shouldBeEmptyOnDetach() const override { return false; }
 
     bool isTableExist(const String & name, ContextPtr context) const override;
 
     StoragePtr tryGetTable(const String & name, ContextPtr context) const override;
 
-    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) const override;
+    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
 
     bool empty() const override;
 
     ASTPtr getCreateDatabaseQuery() const override;
 
     void shutdown() override {}
+
+    void alterDatabaseComment(const AlterCommand & command) override;
 
 protected:
     ASTPtr getCreateTableQueryImpl(const String & table_name, ContextPtr context, bool throw_on_error) const override;

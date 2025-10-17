@@ -21,7 +21,7 @@ public:
     virtual bool needNewTask(const MergeTreeReadTask & task) const = 0;
 
     virtual MergeTreeReadTaskPtr getNewTask(IMergeTreeReadPool & pool, MergeTreeReadTask * previous_task) = 0;
-    virtual BlockAndProgress readFromTask(MergeTreeReadTask & task, const BlockSizeParams & params) = 0;
+    virtual BlockAndProgress readFromTask(MergeTreeReadTask & task) = 0;
 };
 
 using MergeTreeSelectAlgorithmPtr = std::unique_ptr<IMergeTreeSelectAlgorithm>;
@@ -35,7 +35,7 @@ public:
     bool needNewTask(const MergeTreeReadTask & task) const override { return task.isFinished(); }
 
     MergeTreeReadTaskPtr getNewTask(IMergeTreeReadPool & pool, MergeTreeReadTask * previous_task) override { return pool.getTask(thread_idx, previous_task); }
-    BlockAndProgress readFromTask(MergeTreeReadTask & task, const BlockSizeParams & params) override { return task.read(params); }
+    BlockAndProgress readFromTask(MergeTreeReadTask & task) override { return task.read(); }
 
 private:
     const size_t thread_idx;
@@ -50,7 +50,7 @@ public:
     bool needNewTask(const MergeTreeReadTask & task) const override { return task.isFinished(); }
 
     MergeTreeReadTaskPtr getNewTask(IMergeTreeReadPool & pool, MergeTreeReadTask * previous_task) override;
-    MergeTreeReadTask::BlockAndProgress readFromTask(MergeTreeReadTask & task, const BlockSizeParams & params) override { return task.read(params); }
+    MergeTreeReadTask::BlockAndProgress readFromTask(MergeTreeReadTask & task) override { return task.read(); }
 
 private:
     const size_t part_idx;
@@ -65,7 +65,7 @@ public:
     bool needNewTask(const MergeTreeReadTask & task) const override { return chunks.empty() && task.isFinished(); }
 
     MergeTreeReadTaskPtr getNewTask(IMergeTreeReadPool & pool, MergeTreeReadTask * previous_task) override;
-    BlockAndProgress readFromTask(MergeTreeReadTask & task, const BlockSizeParams & params) override;
+    BlockAndProgress readFromTask(MergeTreeReadTask & task) override;
 
 private:
     const size_t part_idx;

@@ -75,15 +75,13 @@ bool LZMAInflatingReadBuffer::nextImpl()
             eof_flag = true;
             return !working_buffer.empty();
         }
-        else
-        {
-            throw Exception(
-                ErrorCodes::LZMA_STREAM_DECODER_FAILED,
-                "lzma decoder finished, but input stream has not exceeded: error code: {}; lzma version: {}{}",
-                ret,
-                LZMA_VERSION_STRING,
-                getExceptionEntryWithFileName(*in));
-        }
+
+        throw Exception(
+            ErrorCodes::LZMA_STREAM_DECODER_FAILED,
+            "lzma decoder finished, but input stream has not exceeded: error code: {}; lzma version: {}{}",
+            ret,
+            LZMA_VERSION_STRING,
+            getExceptionEntryWithFileName(*in));
     }
 
     if (ret != LZMA_OK)

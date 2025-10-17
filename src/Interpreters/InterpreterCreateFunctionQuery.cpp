@@ -21,7 +21,7 @@ namespace ErrorCodes
 
 BlockIO InterpreterCreateFunctionQuery::execute()
 {
-    FunctionNameNormalizer().visit(query_ptr.get());
+    FunctionNameNormalizer::visit(query_ptr.get());
     const auto updated_query_ptr = removeOnClusterClauseIfNeeded(query_ptr, getContext());
     ASTCreateFunctionQuery & create_function_query = updated_query_ptr->as<ASTCreateFunctionQuery &>();
 

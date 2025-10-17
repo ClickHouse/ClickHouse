@@ -1,11 +1,11 @@
 import pytest
-from helpers.cluster import ClickHouseCluster
+
+from helpers.cluster import ClickHouseCluster, is_arm
 from helpers.test_tools import TSV
 
 disk_types = {
     "default": "Local",
     "disk_s3": "S3",
-    "disk_hdfs": "HDFS",
     "disk_encrypted": "S3",
 }
 
@@ -16,9 +16,13 @@ def cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "node",
-            main_configs=["configs/storage.xml"],
+            main_configs=(
+                ["configs/storage_arm.xml"] if is_arm() else ["configs/storage_amd.xml"]
+            ),
             with_minio=True,
-            with_hdfs=True,
+            # Disable with_remote_database_disk to reduce diversion between the public and private repo.
+            # So we do not handle the test differently in the private repo
+            with_remote_database_disk=False,
         )
         cluster.start()
 

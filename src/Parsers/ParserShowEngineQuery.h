@@ -20,7 +20,7 @@ protected:
     {
         auto query = std::make_shared<ASTShowEnginesQuery>();
 
-        if (!ParserKeyword("SHOW ENGINES").ignore(pos, expected))
+        if (!ParserKeyword(Keyword::SHOW_ENGINES).ignore(pos, expected))
             return false;
 
         node = query;

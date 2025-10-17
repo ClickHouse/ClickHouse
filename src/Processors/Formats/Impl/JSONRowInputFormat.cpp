@@ -8,12 +8,12 @@
 namespace DB
 {
 
-JSONRowInputFormat::JSONRowInputFormat(ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_)
+JSONRowInputFormat::JSONRowInputFormat(ReadBuffer & in_, SharedHeader header_, Params params_, const FormatSettings & format_settings_)
     : JSONRowInputFormat(std::make_unique<PeekableReadBuffer>(in_), header_, params_, format_settings_)
 {
 }
 
-JSONRowInputFormat::JSONRowInputFormat(std::unique_ptr<PeekableReadBuffer> buf, const DB::Block & header_, DB::IRowInputFormat::Params params_, const DB::FormatSettings & format_settings_)
+JSONRowInputFormat::JSONRowInputFormat(std::unique_ptr<PeekableReadBuffer> buf, SharedHeader header_, DB::IRowInputFormat::Params params_, const DB::FormatSettings & format_settings_)
     : JSONEachRowRowInputFormat(*buf, header_, params_, format_settings_, false), validate_types_from_metadata(format_settings_.json.validate_types_from_metadata), peekable_buf(std::move(buf))
 {
 }
@@ -27,9 +27,9 @@ void JSONRowInputFormat::readPrefix()
 
     /// Try to parse metadata, if failed, try to parse data as JSONEachRow format.
     if (JSONUtils::checkAndSkipObjectStart(*peekable_buf)
-        && JSONUtils::tryReadMetadata(*peekable_buf, names_and_types_from_metadata)
+        && JSONUtils::tryReadMetadata(*peekable_buf, names_and_types_from_metadata, format_settings.json)
         && JSONUtils::checkAndSkipComma(*peekable_buf)
-        && JSONUtils::skipUntilFieldInObject(*peekable_buf, "data")
+        && JSONUtils::skipUntilFieldInObject(*peekable_buf, "data", format_settings.json)
         && JSONUtils::checkAndSkipArrayStart(*peekable_buf))
     {
         data_in_square_brackets = true;
@@ -55,7 +55,7 @@ void JSONRowInputFormat::readSuffix()
     else
     {
         JSONUtils::skipArrayEnd(*peekable_buf);
-        JSONUtils::skipTheRestOfObject(*peekable_buf);
+        JSONUtils::skipTheRestOfObject(*peekable_buf, format_settings.json);
     }
 }
 
@@ -90,17 +90,15 @@ NamesAndTypesList JSONRowSchemaReader::readSchema()
         PeekableReadBufferCheckpoint checkpoint(*peekable_buf);
         /// Try to parse metadata, if failed, try to parse data as JSONEachRow format
         NamesAndTypesList names_and_types;
-        if (JSONUtils::checkAndSkipObjectStart(*peekable_buf) && JSONUtils::tryReadMetadata(*peekable_buf, names_and_types))
+        if (JSONUtils::checkAndSkipObjectStart(*peekable_buf) && JSONUtils::tryReadMetadata(*peekable_buf, names_and_types, format_settings.json))
             return names_and_types;
 
         peekable_buf->rollbackToCheckpoint(true);
         return JSONEachRowSchemaReader::readSchema();
     }
-    else
-    {
-        JSONUtils::skipObjectStart(*peekable_buf);
-        return JSONUtils::readMetadata(*peekable_buf);
-    }
+
+    JSONUtils::skipObjectStart(*peekable_buf);
+    return JSONUtils::readMetadata(*peekable_buf, format_settings.json);
 }
 
 void registerInputFormatJSON(FormatFactory & factory)
@@ -111,7 +109,7 @@ void registerInputFormatJSON(FormatFactory & factory)
                      IRowInputFormat::Params params,
                      const FormatSettings & settings)
     {
-        return std::make_shared<JSONRowInputFormat>(buf, sample, std::move(params), settings);
+        return std::make_shared<JSONRowInputFormat>(buf, std::make_shared<const Block>(sample), std::move(params), settings);
     });
 
     factory.markFormatSupportsSubsetOfColumns("JSON");

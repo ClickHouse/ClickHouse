@@ -6,8 +6,8 @@ namespace DB
 TTLUpdateInfoAlgorithm::TTLUpdateInfoAlgorithm(
     const TTLExpressions & ttl_expressions_,
     const TTLDescription & description_,
-    const TTLUpdateField ttl_update_field_,
-    const String ttl_update_key_,
+    TTLUpdateField ttl_update_field_,
+    String ttl_update_key_,
     const TTLInfo & old_ttl_info_,
     time_t current_time_,
     bool force_)
@@ -19,13 +19,13 @@ TTLUpdateInfoAlgorithm::TTLUpdateInfoAlgorithm(
 
 void TTLUpdateInfoAlgorithm::execute(Block & block)
 {
-    if (!block)
+    if (block.empty())
         return;
 
     auto ttl_column = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column);
     for (size_t i = 0; i < block.rows(); ++i)
     {
-        UInt32 cur_ttl = ITTLAlgorithm::getTimestampByIndex(ttl_column.get(), i);
+        Int64 cur_ttl = ITTLAlgorithm::getTimestampByIndex(ttl_column.get(), i);
         new_ttl_info.update(cur_ttl);
     }
 }

@@ -21,7 +21,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-enum class ConvertToFixedStringExceptionMode
+enum class ConvertToFixedStringExceptionMode : uint8_t
 {
     Throw,
     Null
@@ -34,7 +34,6 @@ class FunctionToFixedString : public IFunction
 public:
     static constexpr auto name = "toFixedString";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionToFixedString>(); }
-    static FunctionPtr create() { return std::make_shared<FunctionToFixedString>(); }
 
     String getName() const override
     {
@@ -93,7 +92,7 @@ public:
             for (size_t i = 0; i < in_offsets.size(); ++i)
             {
                 const size_t off = i ? in_offsets[i - 1] : 0;
-                const size_t len = in_offsets[i] - off - 1;
+                const size_t len = in_offsets[i] - off;
                 if (len > n)
                 {
                     if constexpr (exception_mode == ConvertToFixedStringExceptionMode::Throw)
@@ -117,6 +116,9 @@ public:
         else if (const auto * column_fixed_string = checkAndGetColumn<ColumnFixedString>(column.get()))
         {
             const auto src_n = column_fixed_string->getN();
+            if (src_n == n)
+                return column_fixed_string->cloneResized(column_fixed_string->size());
+
             if (src_n > n)
             {
                 if constexpr (exception_mode == ConvertToFixedStringExceptionMode::Throw)
@@ -158,4 +160,3 @@ public:
 };
 
 }
-

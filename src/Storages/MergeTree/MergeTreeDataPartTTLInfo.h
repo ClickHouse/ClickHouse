@@ -1,13 +1,19 @@
 #pragma once
-#include <IO/WriteBufferFromFile.h>
-#include <IO/ReadBufferFromFile.h>
-#include <Storages/TTLDescription.h>
+
+#include <base/types.h>
 
 #include <map>
 #include <optional>
+#include <vector>
+#include <time.h>
 
 namespace DB
 {
+
+class ReadBuffer;
+class WriteBuffer;
+struct TTLDescription;
+using TTLDescriptions = std::vector<TTLDescription>;
 
 /// Minimal and maximal ttl for column or table
 struct MergeTreeDataPartTTLInfo
@@ -69,7 +75,7 @@ struct MergeTreeDataPartTTLInfos
     bool empty() const
     {
         /// part_min_ttl in minimum of rows, rows_where and group_by TTLs
-        return !part_min_ttl && moves_ttl.empty() && recompression_ttl.empty() && columns_ttl.empty();
+        return !part_min_ttl && moves_ttl.empty() && recompression_ttl.empty() && columns_ttl.empty() && rows_where_ttl.empty() && group_by_ttl.empty();
     }
 };
 

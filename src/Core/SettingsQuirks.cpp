@@ -1,10 +1,10 @@
+#include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <Core/SettingsQuirks.h>
-#include <base/defines.h>
 #include <Poco/Environment.h>
 #include <Poco/Platform.h>
 #include <Common/VersionNumber.h>
-#include <Common/getNumberOfPhysicalCPUCores.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
 
 
@@ -48,9 +48,21 @@ bool queryProfilerWorks() { return false; }
 namespace DB
 {
 
-namespace ErrorCodes
+namespace Setting
 {
-extern const int INVALID_SETTING_VALUE;
+    extern const SettingsBool async_query_sending_for_remote;
+    extern const SettingsBool async_socket_for_remote;
+    extern const SettingsNonZeroUInt64 input_format_parquet_max_block_size;
+    extern const SettingsNonZeroUInt64 max_block_size;
+    extern const SettingsNonZeroUInt64 max_insert_block_size;
+    extern const SettingsUInt64 min_insert_block_size_rows;
+    extern const SettingsUInt64 min_insert_block_size_bytes_for_materialized_views;
+    extern const SettingsUInt64 min_external_table_block_size_rows;
+    extern const SettingsUInt64 max_joined_block_size_rows;
+    extern const SettingsMaxThreads max_threads;
+    extern const SettingsUInt64 query_profiler_cpu_time_period_ns;
+    extern const SettingsUInt64 query_profiler_real_time_period_ns;
+    extern const SettingsBool use_hedged_requests;
 }
 
 /// Update some settings defaults to avoid some known issues.
@@ -58,21 +70,21 @@ void applySettingsQuirks(Settings & settings, LoggerPtr log)
 {
     if (!nestedEpollWorks(log))
     {
-        if (!settings.async_socket_for_remote.changed && settings.async_socket_for_remote)
+        if (!settings[Setting::async_socket_for_remote].changed && settings[Setting::async_socket_for_remote])
         {
-            settings.async_socket_for_remote = false;
+            settings[Setting::async_socket_for_remote] = false;
             if (log)
                 LOG_WARNING(log, "async_socket_for_remote has been disabled (you can explicitly enable it still)");
         }
-        if (!settings.async_query_sending_for_remote.changed && settings.async_query_sending_for_remote)
+        if (!settings[Setting::async_query_sending_for_remote].changed && settings[Setting::async_query_sending_for_remote])
         {
-            settings.async_query_sending_for_remote = false;
+            settings[Setting::async_query_sending_for_remote] = false;
             if (log)
                 LOG_WARNING(log, "async_query_sending_for_remote has been disabled (you can explicitly enable it still)");
         }
-        if (!settings.use_hedged_requests.changed && settings.use_hedged_requests)
+        if (!settings[Setting::use_hedged_requests].changed && settings[Setting::use_hedged_requests])
         {
-            settings.use_hedged_requests = false;
+            settings[Setting::use_hedged_requests] = false;
             if (log)
                 LOG_WARNING(log, "use_hedged_requests has been disabled (you can explicitly enable it still)");
         }
@@ -80,49 +92,61 @@ void applySettingsQuirks(Settings & settings, LoggerPtr log)
 
     if (!queryProfilerWorks())
     {
-        if (settings.query_profiler_real_time_period_ns)
+        if (settings[Setting::query_profiler_real_time_period_ns])
         {
-            settings.query_profiler_real_time_period_ns = 0;
+            settings[Setting::query_profiler_real_time_period_ns] = 0;
             if (log)
                 LOG_WARNING(log, "query_profiler_real_time_period_ns has been disabled (due to server had been compiled with sanitizers)");
         }
-        if (settings.query_profiler_cpu_time_period_ns)
+        if (settings[Setting::query_profiler_cpu_time_period_ns])
         {
-            settings.query_profiler_cpu_time_period_ns = 0;
+            settings[Setting::query_profiler_cpu_time_period_ns] = 0;
             if (log)
                 LOG_WARNING(log, "query_profiler_cpu_time_period_ns has been disabled (due to server had been compiled with sanitizers)");
         }
     }
 }
 
-void doSettingsSanityCheck(const Settings & current_settings)
+void doSettingsSanityCheckClamp(Settings & current_settings, LoggerPtr log)
 {
-    auto getCurrentValue = [&current_settings](const std::string_view name) -> Field
+    UInt64 max_threads = current_settings[Setting::max_threads];
+    UInt64 max_threads_max_value = 256 * getNumberOfCPUCoresToUse();
+    if (max_threads > max_threads_max_value)
     {
-        Field current_value;
-        bool has_current_value = current_settings.tryGet(name, current_value);
-        chassert(has_current_value);
-        return current_value;
-    };
+        if (log)
+            LOG_WARNING(log, "Sanity check: Too many threads requested ({}). Reduced to {}", max_threads, max_threads_max_value);
+        current_settings[Setting::max_threads] = max_threads_max_value;
+    }
 
-    UInt64 max_threads = getCurrentValue("max_threads").get<UInt64>();
-    if (max_threads > getNumberOfPhysicalCPUCores() * 65536)
-        throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Sanity check: Too many threads requested ({})", max_threads);
+    static constexpr UInt64 max_sane_block_rows_size = 4294967296; // 2^32
 
-    constexpr UInt64 max_sane_block_rows_size = 4294967296; // 2^32
-    std::unordered_set<String> block_rows_settings{
-        "max_block_size",
-        "max_insert_block_size",
-        "min_insert_block_size_rows",
-        "min_insert_block_size_bytes_for_materialized_views",
-        "min_external_table_block_size_rows",
-        "max_joined_block_size_rows",
-        "input_format_parquet_max_block_size"};
-    for (auto const & setting : block_rows_settings)
+    using namespace std::literals;
+#define CHECK_MAX_VALUE(SETTING_VALUE) \
+    if (UInt64 block_size = current_settings[Setting::SETTING_VALUE]; block_size > max_sane_block_rows_size) \
+    { \
+        if (log) \
+            LOG_WARNING( \
+                log, "Sanity check: '{}' value is too high ({}). Reduced to {}", #SETTING_VALUE, block_size, max_sane_block_rows_size); \
+        current_settings[Setting::SETTING_VALUE] = max_sane_block_rows_size; \
+    }
+
+    CHECK_MAX_VALUE(max_block_size)
+    CHECK_MAX_VALUE(max_insert_block_size)
+    CHECK_MAX_VALUE(min_insert_block_size_rows)
+    CHECK_MAX_VALUE(min_insert_block_size_bytes_for_materialized_views)
+    CHECK_MAX_VALUE(min_external_table_block_size_rows)
+    CHECK_MAX_VALUE(max_joined_block_size_rows)
+    CHECK_MAX_VALUE(input_format_parquet_max_block_size)
+
+#undef CHECK_MAX_VALUE
+
+
+    if (auto max_block_size = current_settings[Setting::max_block_size]; max_block_size == 0)
     {
-        auto block_size = getCurrentValue(setting).get<UInt64>();
-        if (block_size > max_sane_block_rows_size)
-            throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Sanity check: '{}' value is too high ({})", setting, block_size);
+        if (log)
+            LOG_WARNING(log, "Sanity check: 'max_block_size' cannot be 0. Set to default value {}", DEFAULT_BLOCK_SIZE);
+        current_settings[Setting::max_block_size] = DEFAULT_BLOCK_SIZE;
     }
 }
+
 }

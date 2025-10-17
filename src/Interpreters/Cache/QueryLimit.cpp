@@ -1,6 +1,8 @@
-#include <Interpreters/Cache/QueryLimit.h>
-#include <Interpreters/Cache/Metadata.h>
 #include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/Cache/Metadata.h>
+#include <Interpreters/Cache/QueryLimit.h>
+#include <IO/ReadSettings.h>
+#include <Common/CurrentThread.h>
 
 namespace DB
 {
@@ -16,7 +18,7 @@ static bool isQueryInitialized()
         && !CurrentThread::getQueryId().empty();
 }
 
-FileCacheQueryLimit::QueryContextPtr FileCacheQueryLimit::tryGetQueryContext(const CacheGuard::Lock &)
+FileCacheQueryLimit::QueryContextPtr FileCacheQueryLimit::tryGetQueryContext(const CachePriorityGuard::Lock &)
 {
     if (!isQueryInitialized())
         return nullptr;
@@ -25,7 +27,7 @@ FileCacheQueryLimit::QueryContextPtr FileCacheQueryLimit::tryGetQueryContext(con
     return (query_iter == query_map.end()) ? nullptr : query_iter->second;
 }
 
-void FileCacheQueryLimit::removeQueryContext(const std::string & query_id, const CacheGuard::Lock &)
+void FileCacheQueryLimit::removeQueryContext(const std::string & query_id, const CachePriorityGuard::Lock &)
 {
     auto query_iter = query_map.find(query_id);
     if (query_iter == query_map.end())
@@ -41,7 +43,7 @@ void FileCacheQueryLimit::removeQueryContext(const std::string & query_id, const
 FileCacheQueryLimit::QueryContextPtr FileCacheQueryLimit::getOrSetQueryContext(
     const std::string & query_id,
     const ReadSettings & settings,
-    const CacheGuard::Lock &)
+    const CachePriorityGuard::Lock &)
 {
     if (query_id.empty())
         return nullptr;
@@ -51,7 +53,7 @@ FileCacheQueryLimit::QueryContextPtr FileCacheQueryLimit::getOrSetQueryContext(
     {
         it->second = std::make_shared<QueryContext>(
             settings.filesystem_cache_max_download_size,
-            !settings.skip_download_if_exceeds_query_cache);
+            !settings.filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit);
     }
 
     return it->second;
@@ -70,7 +72,7 @@ void FileCacheQueryLimit::QueryContext::add(
     size_t offset,
     size_t size,
     const FileCache::UserInfo & user,
-    const CacheGuard::Lock & lock)
+    const CachePriorityGuard::Lock & lock)
 {
     auto it = getPriority().add(key_metadata, offset, size, user, lock);
     auto [_, inserted] = records.emplace(FileCacheKeyAndOffset{key_metadata->key, offset}, it);
@@ -87,7 +89,7 @@ void FileCacheQueryLimit::QueryContext::add(
 void FileCacheQueryLimit::QueryContext::remove(
     const Key & key,
     size_t offset,
-    const CacheGuard::Lock & lock)
+    const CachePriorityGuard::Lock & lock)
 {
     auto record = records.find({key, offset});
     if (record == records.end())
@@ -100,7 +102,7 @@ void FileCacheQueryLimit::QueryContext::remove(
 IFileCachePriority::IteratorPtr FileCacheQueryLimit::QueryContext::tryGet(
     const Key & key,
     size_t offset,
-    const CacheGuard::Lock &)
+    const CachePriorityGuard::Lock &)
 {
     auto it = records.find({key, offset});
     if (it == records.end())

@@ -1,7 +1,7 @@
 #include "coverage.h"
 #include <sys/mman.h>
 
-#pragma GCC diagnostic ignored "-Wreserved-identifier"
+#pragma clang diagnostic ignored "-Wreserved-identifier"
 
 
 /// WITH_COVERAGE enables the default implementation of code coverage,

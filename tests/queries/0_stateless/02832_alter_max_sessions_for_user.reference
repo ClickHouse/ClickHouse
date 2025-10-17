@@ -1,8 +1,7 @@
-test_alter_profile case: max_session_count 1 alter_sessions_count 1
-test_alter_profile case: max_session_count 2 alter_sessions_count 1
+test_alter_profile case: max_sessions_for_user 1
 USER_SESSION_LIMIT_EXCEEDED
-test_alter_profile case: max_session_count 1 alter_sessions_count 2
-test_alter_profile case: max_session_count 2 alter_sessions_count 2
+test_alter_profile case: max_sessions_for_user 2
+USER_SESSION_LIMIT_EXCEEDED
 READONLY
 READONLY
 READONLY

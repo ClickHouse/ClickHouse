@@ -8,10 +8,8 @@
 #define DBMS_HASH_MAP_DEBUG_RESIZES
 
 #include <Compression/CompressedReadBuffer.h>
-#include <base/types.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
-#include <Interpreters/AggregationCommon.h>
 #include <Common/HashTable/FixedHashMap.h>
 #include <Common/HashTable/HashMap.h>
 

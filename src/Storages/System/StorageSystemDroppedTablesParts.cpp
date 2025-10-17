@@ -1,16 +1,18 @@
-#include <Storages/StorageMaterializedMySQL.h>
-#include <Storages/VirtualColumnUtils.h>
 #include <Access/ContextAccess.h>
-#include <Storages/System/StorageSystemDroppedTablesParts.h>
+#include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Storages/System/StorageSystemDroppedTablesParts.h>
+#include <Storages/VirtualColumnUtils.h>
 
 
 namespace DB
 {
 
 
-StoragesDroppedInfoStream::StoragesDroppedInfoStream(const ActionsDAG::Node * predicate, ContextPtr context)
+StoragesDroppedInfoStream::StoragesDroppedInfoStream(std::optional<ActionsDAG> filter, ContextPtr context)
         : StoragesInfoStreamBase(context)
 {
     /// Will apply WHERE to subset of columns and then add more columns.
@@ -38,13 +40,6 @@ StoragesDroppedInfoStream::StoragesDroppedInfoStream(const ActionsDAG::Node * pr
         String database_name = storage->getStorageID().getDatabaseName();
         String table_name = storage->getStorageID().getTableName();
         String engine_name = storage->getName();
-#if USE_MYSQL
-        if (auto * proxy = dynamic_cast<StorageMaterializedMySQL *>(storage.get()))
-        {
-            auto nested = proxy->getNested();
-            storage.swap(nested);
-        }
-#endif
         if (!dynamic_cast<MergeTreeData *>(storage.get()))
             continue;
 
@@ -73,7 +68,8 @@ StoragesDroppedInfoStream::StoragesDroppedInfoStream(const ActionsDAG::Node * pr
     if (block_to_filter.rows())
     {
         /// Filter block_to_filter with columns 'database', 'table', 'engine', 'active'.
-        VirtualColumnUtils::filterBlockWithPredicate(predicate, block_to_filter, context);
+        if (filter)
+            VirtualColumnUtils::filterBlockWithExpression(VirtualColumnUtils::buildFilterExpression(std::move(*filter), context), block_to_filter);
         rows = block_to_filter.rows();
     }
 

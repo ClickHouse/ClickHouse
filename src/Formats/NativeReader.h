@@ -1,12 +1,16 @@
 #pragma once
 
+#include <Formats/FormatSettings.h>
 #include <Formats/IndexForNativeFormat.h>
 #include <Formats/MarkInCompressedFile.h>
 #include <Common/PODArray.h>
 #include <Core/Block.h>
+#include <Core/BlockMissingValues.h>
 
 namespace DB
 {
+
+using ValueSizeMap = std::map<std::string, double>;
 
 class CompressedReadBufferFromFile;
 
@@ -20,7 +24,7 @@ class NativeReader
 {
 public:
     /// If a non-zero server_revision is specified, additional block information may be expected and read.
-    NativeReader(ReadBuffer & istr_, UInt64 server_revision_);
+    NativeReader(ReadBuffer & istr_, UInt64 server_revision_, std::optional<FormatSettings> format_settings_ = std::nullopt);
 
     /// For cases when data structure (header) is known in advance.
     /// NOTE We may use header for data validation and/or type conversions. It is not implemented.
@@ -28,9 +32,7 @@ public:
         ReadBuffer & istr_,
         const Block & header_,
         UInt64 server_revision_,
-        bool skip_unknown_columns_ = false,
-        bool null_as_default_ = false,
-        bool allow_types_conversion_ = false,
+        std::optional<FormatSettings> format_settings_ = std::nullopt,
         BlockMissingValues * block_missing_values_ = nullptr);
 
     /// For cases when we have an index. It allows to skip columns. Only columns specified in the index will be read.
@@ -38,21 +40,26 @@ public:
         IndexForNativeFormat::Blocks::const_iterator index_block_it_,
         IndexForNativeFormat::Blocks::const_iterator index_block_end_);
 
-    static void readData(const ISerialization & serialization, ColumnPtr & column, ReadBuffer & istr, size_t rows, double avg_value_size_hint);
-
     Block getHeader() const;
 
     void resetParser();
 
     Block read();
 
+    static void readData(
+        const ISerialization & serialization,
+        ColumnPtr & column,
+        ReadBuffer & istr,
+        const FormatSettings * format_settings,
+        size_t rows,
+        const NameAndTypePair * name_and_type,
+        ValueSizeMap * avg_value_size_hints_);
+
 private:
     ReadBuffer & istr;
     Block header;
     UInt64 server_revision;
-    bool skip_unknown_columns = false;
-    bool null_as_default = false;
-    bool allow_types_conversion = false;
+    std::optional<FormatSettings> format_settings = std::nullopt;
     BlockMissingValues * block_missing_values = nullptr;
 
     bool use_index = false;
@@ -63,9 +70,8 @@ private:
     /// If an index is specified, then `istr` must be CompressedReadBufferFromFile. Unused otherwise.
     CompressedReadBufferFromFile * istr_concrete = nullptr;
 
-    PODArray<double> avg_value_size_hints;
-
-    void updateAvgValueSizeHints(const Block & block);
+    /// avg_value_size_hints are used to reduce the number of reallocations when creating columns of variable size.
+    ValueSizeMap avg_value_size_hints;
 };
 
 }

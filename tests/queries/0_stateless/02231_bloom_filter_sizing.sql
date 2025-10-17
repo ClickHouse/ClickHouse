@@ -12,7 +12,7 @@ INSERT INTO bloom_filter_sizing_pk
 SELECT
 number % 100 as key, -- 100 unique keys
 number as value -- whatever
-FROM numbers(1000 * 1000);
+FROM numbers(100_000);
 
 --
 -- Merge everything into a single part
@@ -40,7 +40,7 @@ SELECT
 number % 100 as key1, -- 100 unique keys
 rand() % 100 as key2, -- 100 unique keys
 number as value -- whatever
-FROM numbers(1000 * 1000);
+FROM numbers(100_000);
 
 --
 -- Merge everything into a single part

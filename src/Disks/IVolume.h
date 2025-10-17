@@ -8,14 +8,14 @@
 namespace DB
 {
 
-enum class VolumeType
+enum class VolumeType : uint8_t
 {
     JBOD,
     SINGLE_DISK,
     UNKNOWN
 };
 
-enum class VolumeLoadBalancing
+enum class VolumeLoadBalancing : uint8_t
 {
     ROUND_ROBIN,
     LEAST_USED,
@@ -64,7 +64,7 @@ public:
         DiskSelectorPtr disk_selector
     );
 
-    virtual ReservationPtr reserve(UInt64 bytes) override = 0;
+    ReservationPtr reserve(UInt64 bytes) override = 0;
 
     /// This is a volume.
     bool isVolume() const override { return true; }
@@ -80,6 +80,9 @@ public:
     virtual DiskPtr getDisk(size_t i) const { return disks[i]; }
     Disks & getDisks() { return disks; }
     const Disks & getDisks() const { return disks; }
+
+    /// Returns true if all disks are readonly.
+    virtual bool isReadOnly() const;
 
     /// Returns effective value of whether merges are allowed on this volume (false) or not (true).
     virtual bool areMergesAvoided() const { return false; }

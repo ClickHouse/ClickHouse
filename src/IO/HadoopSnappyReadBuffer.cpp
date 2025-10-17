@@ -9,7 +9,7 @@
 
 #include <snappy-c.h>
 
-#include "HadoopSnappyReadBuffer.h"
+#include <IO/HadoopSnappyReadBuffer.h>
 
 #include <IO/WithFileName.h>
 
@@ -224,7 +224,7 @@ bool HadoopSnappyReadBuffer::nextImpl()
         }
         return true;
     }
-    else if (decoder->result != Status::NEEDS_MORE_INPUT)
+    if (decoder->result != Status::NEEDS_MORE_INPUT)
     {
         throw Exception(
             ErrorCodes::SNAPPY_UNCOMPRESS_FAILED,

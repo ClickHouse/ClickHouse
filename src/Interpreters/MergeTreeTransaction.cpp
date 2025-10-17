@@ -5,6 +5,8 @@
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Common/noexcept_scope.h>
 
+#include <fmt/ranges.h>
+
 namespace DB
 {
 
@@ -65,7 +67,7 @@ void MergeTreeTransaction::checkIsNotCancelled() const
     CSN c = csn.load();
     if (c == Tx::RolledBackCSN)
         throw Exception(ErrorCodes::INVALID_TRANSACTION, "Transaction was cancelled");
-    else if (c != Tx::UnknownCSN)
+    if (c != Tx::UnknownCSN)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected CSN state: {}", c);
 }
 
@@ -125,6 +127,8 @@ void MergeTreeTransaction::addNewPartAndRemoveCovered(const StoragePtr & storage
         {
             transaction_context.part_name = covered->name;
             covered->version.lockRemovalTID(tid, transaction_context);
+            if (covered->wasInvolvedInTransaction())
+                covered->appendRemovalTIDToVersionMetadata();
         }
     }
 }
@@ -212,6 +216,7 @@ scope_guard MergeTreeTransaction::beforeCommit()
 
 void MergeTreeTransaction::afterCommit(CSN assigned_csn) noexcept
 {
+    auto blocker = CannotAllocateThreadFaultInjector::blockFaultInjections();
     LockMemoryExceptionInThread memory_tracker_lock(VariableContext::Global);
     /// Write allocated CSN into version metadata, so we will know CSN without reading it from transaction log
     /// and we will be able to remove old entries from transaction log in ZK.
@@ -248,6 +253,7 @@ void MergeTreeTransaction::afterCommit(CSN assigned_csn) noexcept
 
 bool MergeTreeTransaction::rollback() noexcept
 {
+    auto blocker = CannotAllocateThreadFaultInjector::blockFaultInjections();
     LockMemoryExceptionInThread memory_tracker_lock(VariableContext::Global);
     CSN expected = Tx::UnknownCSN;
     bool need_rollback = csn.compare_exchange_strong(expected, Tx::RolledBackCSN);
@@ -365,7 +371,7 @@ String MergeTreeTransaction::dumpDescription() const
 
     for (const auto & part : removing_parts)
     {
-        String info = fmt::format("{} (created by {}, {})", part->name, part->version.getCreationTID(), part->version.creation_csn);
+        String info = fmt::format("{} (created by {}, {})", part->name, part->version.getCreationTID(), part->version.creation_csn.load());
         std::get<1>(storage_to_changes[&(part->storage)]).push_back(std::move(info));
         chassert(!part->version.creation_csn || part->version.creation_csn <= getSnapshot());
     }

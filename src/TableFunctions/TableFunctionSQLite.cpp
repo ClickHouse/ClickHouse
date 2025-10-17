@@ -7,7 +7,7 @@
 #include <Storages/StorageSQLite.h>
 
 #include <Databases/SQLite/SQLiteUtils.h>
-#include "registerTableFunctions.h"
+#include <TableFunctions/registerTableFunctions.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
 
@@ -41,7 +41,7 @@ private:
             const ASTPtr & ast_function, ContextPtr context,
             const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
 
-    const char * getStorageTypeName() const override { return "SQLite"; }
+    const char * getStorageEngineName() const override { return "SQLite"; }
 
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
@@ -57,7 +57,7 @@ StoragePtr TableFunctionSQLite::executeImpl(const ASTPtr & /*ast_function*/,
                                          sqlite_db,
                                          database_path,
                                          remote_table_name,
-                                         cached_columns, ConstraintsDescription{}, context);
+                                         cached_columns, ConstraintsDescription{}, /* comment = */ "", context);
 
     storage->startup();
     return storage;

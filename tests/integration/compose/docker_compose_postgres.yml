@@ -1,0 +1,42 @@
+services:
+    postgres1:
+        image: postgres
+        stop_grace_period: 5s
+        command: ["postgres", "-c", "wal_level=logical", "-c", "max_replication_slots=4", "-c", "logging_collector=on", "-c", "log_directory=/postgres/logs", "-c", "log_statement=all", "-c", "max_connections=200", "-c", "statement_timeout=180000"] # statement_timeout: avoid test timeout because of postgres getting unavailable
+        restart: always
+        expose:
+            - ${POSTGRES_PORT:-5432}
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U postgres"]
+            interval: 10s
+            timeout: 5s
+            retries: 5
+        networks:
+            default:
+                aliases:
+                    - postgre-sql.local
+        environment:
+            POSTGRES_HOST_AUTH_METHOD: "trust"
+            POSTGRES_PASSWORD: ClickHouse_PostgreSQL_P@ssw0rd
+            PGDATA: /postgres/data
+        volumes:
+            - type: ${POSTGRES_LOGS_FS:-tmpfs}
+              source: ${POSTGRES_DIR:-}
+              target: /postgres/
+        labels:
+            - "autoheal=true"
+    autoheal:
+      image: willfarrell/autoheal:latest
+      stop_grace_period: 5s
+      tty: true
+      restart: always
+      environment:
+        - AUTOHEAL_INTERVAL=5
+        # Due to pause/unpause we can have false-positive unhealthy containers.
+        # Let's start only after 10 minutes. Let's consider this as enough for tests.
+        - AUTOHEAL_START_PERIOD=600
+        - AUTOHEAL_DEFAULT_STOP_TIMEOUT=10
+        # docker API calls
+        - CURL_TIMEOUT=30
+      volumes:
+        - /var/run/docker.sock:/var/run/docker.sock

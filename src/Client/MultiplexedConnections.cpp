@@ -2,6 +2,9 @@
 
 #include <Common/thread_local_rng.h>
 #include <Core/Protocol.h>
+#include <Core/ProtocolDefines.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/Operators.h>
 #include <Interpreters/ClientInfo.h>
@@ -10,6 +13,16 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsDialect dialect;
+    extern const SettingsUInt64 group_by_two_level_threshold;
+    extern const SettingsUInt64 group_by_two_level_threshold_bytes;
+    extern const SettingsUInt64 parallel_replicas_count;
+    extern const SettingsUInt64 parallel_replica_offset;
+    extern const SettingsSeconds receive_timeout;
+}
 
 // NOLINTBEGIN(bugprone-undefined-memory-manipulation)
 
@@ -23,8 +36,8 @@ namespace ErrorCodes
 }
 
 
-MultiplexedConnections::MultiplexedConnections(Connection & connection, const Settings & settings_, const ThrottlerPtr & throttler)
-    : settings(settings_)
+MultiplexedConnections::MultiplexedConnections(Connection & connection, ContextPtr context_, const ThrottlerPtr & throttler)
+    : context(std::move(context_)), settings(context->getSettingsRef())
 {
     connection.setThrottler(throttler);
 
@@ -36,9 +49,9 @@ MultiplexedConnections::MultiplexedConnections(Connection & connection, const Se
 }
 
 
-MultiplexedConnections::MultiplexedConnections(std::shared_ptr<Connection> connection_ptr_, const Settings & settings_, const ThrottlerPtr & throttler)
-    : settings(settings_)
-    , connection_ptr(connection_ptr_)
+MultiplexedConnections::MultiplexedConnections(
+    std::shared_ptr<Connection> connection_ptr_, ContextPtr context_, const ThrottlerPtr & throttler)
+    : context(std::move(context_)), settings(context->getSettingsRef()), connection_ptr(connection_ptr_)
 {
     connection_ptr->setThrottler(throttler);
 
@@ -50,9 +63,8 @@ MultiplexedConnections::MultiplexedConnections(std::shared_ptr<Connection> conne
 }
 
 MultiplexedConnections::MultiplexedConnections(
-        std::vector<IConnectionPool::Entry> && connections,
-        const Settings & settings_, const ThrottlerPtr & throttler)
-    : settings(settings_)
+    std::vector<IConnectionPool::Entry> && connections, ContextPtr context_, const ThrottlerPtr & throttler)
+    : context(std::move(context_)), settings(context->getSettingsRef())
 {
     /// If we didn't get any connections from pool and getMany() did not throw exceptions, this means that
     /// `skip_unavailable_shards` was set. Then just return.
@@ -89,6 +101,21 @@ void MultiplexedConnections::sendScalarsData(Scalars & data)
     }
 }
 
+void MultiplexedConnections::sendQueryPlan(const QueryPlan & query_plan)
+{
+    std::lock_guard lock(cancel_mutex);
+
+    if (!sent_query)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot send scalars data: query not yet sent.");
+
+    for (ReplicaState & state : replica_states)
+    {
+        Connection * connection = state.connection;
+        if (connection != nullptr)
+            connection->sendQueryPlan(query_plan);
+    }
+}
+
 void MultiplexedConnections::sendExternalTablesData(std::vector<ExternalTablesData> & data)
 {
     std::lock_guard lock(cancel_mutex);
@@ -117,7 +144,8 @@ void MultiplexedConnections::sendQuery(
     const String & query_id,
     UInt64 stage,
     ClientInfo & client_info,
-    bool with_pending_data)
+    bool with_pending_data,
+    const std::vector<String> & external_roles)
 {
     std::lock_guard lock(cancel_mutex);
 
@@ -127,8 +155,8 @@ void MultiplexedConnections::sendQuery(
     Settings modified_settings = settings;
 
     /// Queries in foreign languages are transformed to ClickHouse-SQL. Ensure the setting before sending.
-    modified_settings.dialect = Dialect::clickhouse;
-    modified_settings.dialect.changed = false;
+    modified_settings[Setting::dialect] = Dialect::clickhouse;
+    modified_settings[Setting::dialect].changed = false;
 
     for (auto & replica : replica_states)
     {
@@ -138,45 +166,52 @@ void MultiplexedConnections::sendQuery(
         if (replica.connection->getServerRevision(timeouts) < DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD)
         {
             /// Disable two-level aggregation due to version incompatibility.
-            modified_settings.group_by_two_level_threshold = 0;
-            modified_settings.group_by_two_level_threshold_bytes = 0;
-        }
-
-        if (replica_info)
-        {
-            client_info.collaborate_with_initiator = true;
-            client_info.count_participating_replicas = replica_info->all_replicas_count;
-            client_info.number_of_current_replica = replica_info->number_of_current_replica;
+            modified_settings[Setting::group_by_two_level_threshold] = 0;
+            modified_settings[Setting::group_by_two_level_threshold_bytes] = 0;
         }
     }
 
-    const bool enable_sample_offset_parallel_processing = settings.max_parallel_replicas > 1 && settings.allow_experimental_parallel_reading_from_replicas == 0;
+    if (replica_info)
+    {
+        client_info.collaborate_with_initiator = true;
+        client_info.number_of_current_replica = replica_info->number_of_current_replica;
+    }
+
+    /// FIXME: Remove once we will make `allow_experimental_analyzer` obsolete setting.
+    /// Make the analyzer being set, so it will be effectively applied on the remote server.
+    /// In other words, the initiator always controls whether the analyzer enabled or not for
+    /// all servers involved in the distributed query processing.
+    modified_settings.set("allow_experimental_analyzer", static_cast<bool>(modified_settings[Setting::allow_experimental_analyzer]));
+
+    const bool enable_offset_parallel_processing = context->canUseOffsetParallelReplicas();
 
     size_t num_replicas = replica_states.size();
+    chassert(num_replicas > 0);
     if (num_replicas > 1)
     {
-        if (enable_sample_offset_parallel_processing)
+        if (enable_offset_parallel_processing)
             /// Use multiple replicas for parallel query processing.
-            modified_settings.parallel_replicas_count = num_replicas;
+            modified_settings[Setting::parallel_replicas_count] = num_replicas;
 
         for (size_t i = 0; i < num_replicas; ++i)
         {
-            if (enable_sample_offset_parallel_processing)
-                modified_settings.parallel_replica_offset = i;
+            if (enable_offset_parallel_processing)
+                modified_settings[Setting::parallel_replica_offset] = i;
 
             replica_states[i].connection->sendQuery(
-                timeouts, query, /* query_parameters */ {}, query_id, stage, &modified_settings, &client_info, with_pending_data, {});
+                timeouts, query, /* query_parameters */ {}, query_id, stage, &modified_settings, &client_info, with_pending_data, external_roles, {});
         }
     }
     else
     {
         /// Use single replica.
         replica_states[0].connection->sendQuery(
-            timeouts, query, /* query_parameters */ {}, query_id, stage, &modified_settings, &client_info, with_pending_data, {});
+            timeouts, query, /* query_parameters */ {}, query_id, stage, &modified_settings, &client_info, with_pending_data, external_roles, {});
     }
 
     sent_query = true;
 }
+
 
 void MultiplexedConnections::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
 {
@@ -194,12 +229,12 @@ void MultiplexedConnections::sendIgnoredPartUUIDs(const std::vector<UUID> & uuid
 }
 
 
-void MultiplexedConnections::sendReadTaskResponse(const String & response)
+void MultiplexedConnections::sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse & response)
 {
     std::lock_guard lock(cancel_mutex);
     if (cancelled)
         return;
-    current_connection->sendReadTaskResponse(response);
+    current_connection->sendClusterFunctionReadTaskResponse(response);
 }
 
 
@@ -314,6 +349,36 @@ std::string MultiplexedConnections::dumpAddressesUnlocked() const
     return buf.str();
 }
 
+UInt64 MultiplexedConnections::receivePacketTypeUnlocked(AsyncCallback async_callback)
+{
+    if (!sent_query)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot receive packets: no query sent.");
+    if (!hasActiveConnections())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No more packets are available.");
+
+    ReplicaState & state = getReplicaForReading();
+    current_connection = state.connection;
+    if (current_connection == nullptr)
+        throw Exception(ErrorCodes::NO_AVAILABLE_REPLICA, "No available replica");
+
+    try
+    {
+        AsyncCallbackSetter<Connection> async_setter(current_connection, std::move(async_callback));
+        return current_connection->receivePacketType();
+    }
+    catch (Exception & e)
+    {
+        if (e.code() == ErrorCodes::UNKNOWN_PACKET_FROM_SERVER)
+        {
+            /// Exception may happen when packet is received, e.g. when got unknown packet.
+            /// In this case, invalidate replica, so that we would not read from it anymore.
+            current_connection->disconnect();
+            invalidateReplica(state);
+        }
+        throw;
+    }
+}
+
 Packet MultiplexedConnections::receivePacketUnlocked(AsyncCallback async_callback)
 {
     if (!sent_query)
@@ -329,7 +394,7 @@ Packet MultiplexedConnections::receivePacketUnlocked(AsyncCallback async_callbac
     Packet packet;
     try
     {
-        AsyncCallbackSetter async_setter(current_connection, std::move(async_callback));
+        AsyncCallbackSetter<Connection> async_setter(current_connection, std::move(async_callback));
         packet = current_connection->receivePacket();
     }
     catch (Exception & e)
@@ -397,7 +462,7 @@ MultiplexedConnections::ReplicaState & MultiplexedConnections::getReplicaForRead
         Poco::Net::Socket::SocketList write_list;
         Poco::Net::Socket::SocketList except_list;
 
-        auto timeout = settings.receive_timeout;
+        auto timeout = settings[Setting::receive_timeout];
         int n = 0;
 
         /// EINTR loop

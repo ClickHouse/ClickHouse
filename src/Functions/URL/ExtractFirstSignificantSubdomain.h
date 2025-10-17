@@ -1,8 +1,8 @@
 #pragma once
 
 #include <base/find_symbols.h>
-#include "domain.h"
-#include "tldLookup.h"
+#include <Functions/URL/domain.h>
+#include <Functions/URL/tldLookup.h>
 #include <Common/TLDListsHolder.h> /// TLDType
 
 namespace DB
@@ -23,8 +23,8 @@ struct ExtractFirstSignificantSubdomain
 
     static void execute(const Pos data, const size_t size, Pos & res_data, size_t & res_size, Pos * out_domain_end = nullptr)
     {
-        FirstSignificantSubdomainDefaultLookup loookup;
-        return execute(loookup, data, size, res_data, res_size, out_domain_end);
+        FirstSignificantSubdomainDefaultLookup lookup;
+        return execute(lookup, data, size, res_data, res_size, out_domain_end);
     }
 
     template <class Lookup>

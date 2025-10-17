@@ -213,7 +213,20 @@ namespace Net
         Poco::Timespan getKeepAliveTimeout() const;
         /// Returns the connection timeout for HTTP connections.
 
-        virtual std::ostream & sendRequest(HTTPRequest & request);
+        void setKeepAliveMaxRequests(int max_requests);
+
+        int getKeepAliveMaxRequests() const;
+
+        int getKeepAliveRequest() const;
+
+        bool isKeepAliveExpired(double reliability = 1.0) const;
+        /// Returns if the connection is expired with some margin as fraction of timeout as reliability
+
+        double getKeepAliveReliability() const;
+        /// Returns the current fraction of keep alive timeout when connection is considered safe to use
+        /// It helps to avoid situation when a client uses nearly expired connection and receives NoMessageException
+
+        virtual std::ostream & sendRequest(HTTPRequest & request, uint64_t * connect_time, uint64_t * first_byte_time);
         /// Sends the header for the given HTTP request to
         /// the server.
         ///
@@ -232,6 +245,8 @@ namespace Net
         /// be reused and persistent connections are enabled
         /// to ensure a new connection will be set up
         /// for the next request.
+
+        std::ostream & sendRequest(HTTPRequest & request) { return sendRequest(request, nullptr, nullptr); }
 
         virtual std::istream & receiveResponse(HTTPResponse & response);
         /// Receives the header for the response to the previous
@@ -312,7 +327,7 @@ namespace Net
             DEFAULT_KEEP_ALIVE_TIMEOUT = 8
         };
 
-        virtual void reconnect();
+        virtual void reconnect(uint64_t * connect_time);
         /// Connects the underlying socket to the HTTP server.
 
         int write(const char * buffer, std::streamsize length);
@@ -344,6 +359,11 @@ namespace Net
         void setLastRequest(Poco::Timestamp time);
 
         void assign(HTTPClientSession & session);
+        /// Takes away socket and properties from another `session`, which is then reset.
+        /// This is helpful to organize connection pools.
+        /// NOTE: it does NOT take away throttlers and data hooks, keeps its own.
+
+        void setKeepAliveRequest(int request);
 
         HTTPSessionFactory _proxySessionFactory;
         /// Factory to create HTTPClientSession to proxy.
@@ -353,6 +373,8 @@ namespace Net
         Poco::UInt16 _port;
         ProxyConfig _proxyConfig;
         Poco::Timespan _keepAliveTimeout;
+        int _keepAliveCurrentRequest = 0;
+        int _keepAliveMaxRequests = 1000;
         Poco::Timestamp _lastRequest;
         bool _reconnect;
         bool _mustReconnect;
@@ -361,6 +383,7 @@ namespace Net
         Poco::SharedPtr<std::ostream> _pRequestStream;
         Poco::SharedPtr<std::istream> _pResponseStream;
 
+        static const double _defaultKeepAliveReliabilityLevel;
         static ProxyConfig _globalProxyConfig;
 
         HTTPClientSession(const HTTPClientSession &);
@@ -450,9 +473,19 @@ namespace Net
         return _lastRequest;
     }
 
-    inline void HTTPClientSession::setLastRequest(Poco::Timestamp time)
+    inline double HTTPClientSession::getKeepAliveReliability() const
     {
-        _lastRequest = time;
+        return _defaultKeepAliveReliabilityLevel;
+    }
+
+    inline int HTTPClientSession::getKeepAliveMaxRequests() const
+    {
+        return _keepAliveMaxRequests;
+    }
+
+    inline int HTTPClientSession::getKeepAliveRequest() const
+    {
+        return _keepAliveCurrentRequest;
     }
 
 }

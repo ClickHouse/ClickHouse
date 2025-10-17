@@ -32,14 +32,16 @@ public:
     /// (Unless an error appeared and the archive is in fact no longer needed.)
     virtual void finalize() = 0;
 
+    virtual void cancel() noexcept = 0;
+
     static constexpr const int kDefaultCompressionLevel = -1;
 
     /// Sets compression method and level.
     /// Changing them will affect next file in the archive.
-    virtual void setCompression(const String & /* compression_method */, int /* compression_level */ = kDefaultCompressionLevel) {}
+    virtual void setCompression(const String & /*compression_method*/, int /*compression_level*/) {}
 
     /// Sets password. If the password is not empty it will enable encryption in the archive.
-    virtual void setPassword(const String & /* password */) {}
+    virtual void setPassword(const String & /*password*/) {}
 };
 
 }

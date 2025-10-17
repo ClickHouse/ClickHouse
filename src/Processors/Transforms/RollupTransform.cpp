@@ -6,8 +6,8 @@
 namespace DB
 {
 
-GroupByModifierTransform::GroupByModifierTransform(Block header, AggregatingTransformParamsPtr params_, bool use_nulls_)
-    : IAccumulatingTransform(std::move(header), generateOutputHeader(params_->getHeader(), params_->params.keys, use_nulls_))
+GroupByModifierTransform::GroupByModifierTransform(SharedHeader header, AggregatingTransformParamsPtr params_, bool use_nulls_)
+    : IAccumulatingTransform(std::move(header), std::make_shared<const Block>(generateOutputHeader(params_->getHeader(), params_->params.keys, use_nulls_)))
     , params(std::move(params_))
     , use_nulls(use_nulls_)
 {
@@ -57,7 +57,8 @@ Chunk GroupByModifierTransform::merge(Chunks && chunks, bool is_input, bool fina
     for (auto & chunk : chunks)
         blocks.emplace_back(header.cloneWithColumns(chunk.detachColumns()));
 
-    auto current_block = is_input ? params->aggregator.mergeBlocks(blocks, final) : output_aggregator->mergeBlocks(blocks, final);
+    auto & aggregator = is_input ? params->aggregator : *output_aggregator;
+    auto current_block = aggregator.mergeBlocks(blocks, final, is_cancelled);
     auto num_rows = current_block.rows();
     return Chunk(current_block.getColumns(), num_rows);
 }
@@ -70,7 +71,7 @@ MutableColumnPtr GroupByModifierTransform::getColumnWithDefaults(size_t key, siz
     return result_column;
 }
 
-RollupTransform::RollupTransform(Block header, AggregatingTransformParamsPtr params_, bool use_nulls_)
+RollupTransform::RollupTransform(SharedHeader header, AggregatingTransformParamsPtr params_, bool use_nulls_)
     : GroupByModifierTransform(std::move(header), params_, use_nulls_)
     , aggregates_mask(getAggregatesMask(params->getHeader(), params->params.aggregates))
 {}

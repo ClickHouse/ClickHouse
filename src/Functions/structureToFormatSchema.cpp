@@ -1,3 +1,4 @@
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -9,8 +10,6 @@
 #include <Formats/StructureToCapnProtoSchema.h>
 #include <Formats/StructureToProtobufSchema.h>
 
-#include <Common/randomSeed.h>
-
 
 namespace DB
 {
@@ -21,22 +20,33 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-template <class Impl>
+namespace
+{
+    enum class Impl
+    {
+        Protobuf,
+        CapnProto,
+    };
+}
+
 class FunctionStructureToFormatSchema : public IFunction
 {
+private:
+    Impl impl;
+
 public:
-
-    static constexpr auto name = Impl::name;
-    explicit FunctionStructureToFormatSchema(ContextPtr context_) : context(std::move(context_))
+    explicit FunctionStructureToFormatSchema(Impl impl_, ContextPtr context_) : impl(impl_), context(std::move(context_))
     {
     }
 
-    static FunctionPtr create(ContextPtr ctx)
+    String getName() const override
     {
-        return std::make_shared<FunctionStructureToFormatSchema>(std::move(ctx));
+        switch (impl)
+        {
+            case Impl::Protobuf: return StructureToProtobufSchema::name;
+            case Impl::CapnProto: return StructureToCapnProtoSchema::name;
+        }
     }
-
-    String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 0; }
     bool isVariadic() const override { return true; }
@@ -88,9 +98,19 @@ public:
         auto columns_list = parseColumnsListFromString(structure, context);
         auto col_res = ColumnString::create();
         auto & data = assert_cast<ColumnString &>(*col_res).getChars();
-        WriteBufferFromVector buf(data);
-        Impl::writeSchema(buf, message_name, columns_list.getAll());
-        buf.finalize();
+        {
+            auto buf = WriteBufferFromVector<ColumnString::Chars>(data);
+            switch (impl)
+            {
+                case Impl::Protobuf:
+                    StructureToProtobufSchema::writeSchema(buf, message_name, columns_list.getAll());
+                    break;
+                case Impl::CapnProto:
+                    StructureToCapnProtoSchema::writeSchema(buf, message_name, columns_list.getAll());
+                    break;
+            }
+            buf.finalize();
+        }
         auto & offsets = assert_cast<ColumnString &>(*col_res).getOffsets();
         offsets.push_back(data.size());
         return ColumnConst::create(std::move(col_res), input_rows_count);
@@ -103,7 +123,9 @@ private:
 
 REGISTER_FUNCTION(StructureToCapnProtoSchema)
 {
-    factory.registerFunction<FunctionStructureToFormatSchema<StructureToCapnProtoSchema>>(FunctionDocumentation
+    factory.registerFunction(StructureToCapnProtoSchema::name,
+        [](ContextPtr context){ return std::make_shared<FunctionStructureToFormatSchema>(Impl::CapnProto, std::move(context)); },
+        FunctionDocumentation
         {
             .description=R"(
 Function that converts ClickHouse table structure to CapnProto format schema
@@ -115,21 +137,22 @@ Function that converts ClickHouse table structure to CapnProto format schema
 "    x @1 : UInt32;\n"
 "}"},
             },
-            .categories{"Other"}
-        },
-        FunctionFactory::CaseSensitive);
+            .category = FunctionDocumentation::Category::Other
+        });
 }
 
 
 REGISTER_FUNCTION(StructureToProtobufSchema)
 {
-    factory.registerFunction<FunctionStructureToFormatSchema<StructureToProtobufSchema>>(FunctionDocumentation
+    factory.registerFunction(StructureToProtobufSchema::name,
+        [](ContextPtr context){ return std::make_shared<FunctionStructureToFormatSchema>(Impl::Protobuf, std::move(context)); },
+        FunctionDocumentation
         {
             .description=R"(
 Function that converts ClickHouse table structure to Protobuf format schema
 )",
             .examples{
-                {"random", "SELECT structureToCapnProtoSchema('s String, x UInt32', 'MessageName') format TSVRaw", "syntax = \"proto3\";\n"
+                {"random", "SELECT structureToProtobufSchema('s String, x UInt32', 'MessageName') format TSVRaw", "syntax = \"proto3\";\n"
 "\n"
 "message MessageName\n"
 "{\n"
@@ -137,9 +160,8 @@ Function that converts ClickHouse table structure to Protobuf format schema
 "    uint32 x = 2;\n"
 "}"},
             },
-            .categories{"Other"}
-        },
-        FunctionFactory::CaseSensitive);
+            .category = FunctionDocumentation::Category::Other
+        });
 }
 
 }

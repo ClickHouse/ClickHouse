@@ -1,9 +1,10 @@
 #pragma once
 
-#include "protocol.h"
+#include <Common/StringUtils.h>
+#include <Functions/URL/protocol.h>
 #include <base/find_symbols.h>
+
 #include <cstring>
-#include <Common/StringUtils/StringUtils.h>
 
 namespace DB
 {
@@ -88,7 +89,7 @@ exloop: if ((scheme_end - pos) > 2 && *pos == ':' && *(pos + 1) == '/' && *(pos 
     const auto * start_of_host = pos;
     for (; pos < end; ++pos)
     {
-        switch (*pos)
+        switch (*pos) /// NOLINT(bugprone-switch-missing-default-case)
         {
         case '.':
             if (has_open_bracket)
@@ -171,7 +172,7 @@ inline std::string_view getURLHost(const char * data, size_t size)
     Pos pos = data;
     Pos end = data + size;
 
-    if (*pos == '/' && *(pos + 1) == '/')
+    if (size >= 2 && *pos == '/' && *(pos + 1) == '/')
     {
         pos += 2;
     }
@@ -220,7 +221,7 @@ exloop: if ((scheme_end - pos) > 2 && *pos == ':' && *(pos + 1) == '/' && *(pos 
     const auto * start_of_host = pos;
     for (; pos < end; ++pos)
     {
-        switch (*pos)
+        switch (*pos) /// NOLINT(bugprone-switch-missing-default-case)
         {
         case '.':
             dot_pos = pos;
@@ -276,7 +277,7 @@ struct ExtractDomain
         }
         else
         {
-            if (without_www && host.size() > 4 && !strncmp(host.data(), "www.", 4))
+            if (without_www && host.size() > 4 && !strncmp(host.data(), "www.", 4))  /// NOLINT(bugprone-suspicious-stringview-data-usage)
                 host = { host.data() + 4, host.size() - 4 };
 
             res_data = host.data();

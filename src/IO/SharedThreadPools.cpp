@@ -1,6 +1,7 @@
 #include <IO/SharedThreadPools.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ThreadPool.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 #include <Core/Field.h>
 
 namespace CurrentMetrics
@@ -11,6 +12,9 @@ namespace CurrentMetrics
     extern const Metric BackupsIOThreads;
     extern const Metric BackupsIOThreadsActive;
     extern const Metric BackupsIOThreadsScheduled;
+    extern const Metric MergeTreeFetchPartitionThreads;
+    extern const Metric MergeTreeFetchPartitionThreadsActive;
+    extern const Metric MergeTreeFetchPartitionThreadsScheduled;
     extern const Metric MergeTreePartsLoaderThreads;
     extern const Metric MergeTreePartsLoaderThreadsActive;
     extern const Metric MergeTreePartsLoaderThreadsScheduled;
@@ -20,9 +24,21 @@ namespace CurrentMetrics
     extern const Metric MergeTreeOutdatedPartsLoaderThreads;
     extern const Metric MergeTreeOutdatedPartsLoaderThreadsActive;
     extern const Metric MergeTreeOutdatedPartsLoaderThreadsScheduled;
+    extern const Metric MergeTreeUnexpectedPartsLoaderThreads;
+    extern const Metric MergeTreeUnexpectedPartsLoaderThreadsActive;
+    extern const Metric MergeTreeUnexpectedPartsLoaderThreadsScheduled;
+    extern const Metric DatabaseCatalogThreads;
+    extern const Metric DatabaseCatalogThreadsActive;
+    extern const Metric DatabaseCatalogThreadsScheduled;
     extern const Metric DatabaseReplicatedCreateTablesThreads;
     extern const Metric DatabaseReplicatedCreateTablesThreadsActive;
     extern const Metric DatabaseReplicatedCreateTablesThreadsScheduled;
+    extern const Metric MergeTreeSubcolumnsReaderThreads;
+    extern const Metric MergeTreeSubcolumnsReaderThreadsActive;
+    extern const Metric MergeTreeSubcolumnsReaderThreadsScheduled;
+    extern const Metric FormatParsingThreads;
+    extern const Metric FormatParsingThreadsActive;
+    extern const Metric FormatParsingThreadsScheduled;
 }
 
 namespace DB
@@ -51,6 +67,23 @@ void StaticThreadPool::initialize(size_t max_threads, size_t max_free_threads, s
     if (instance)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The {} is initialized twice", name);
 
+    std::call_once(init_flag, [&]
+        {
+            initializeImpl(max_threads, max_free_threads, queue_size);
+        });
+}
+
+void StaticThreadPool::initializeWithDefaultSettingsIfNotInitialized()
+{
+    std::call_once(init_flag, [&]
+        {
+            size_t max_threads = getNumberOfCPUCoresToUse();
+            initializeImpl(max_threads, /*max_free_threads*/ 0, /*queue_size*/ 10000);
+        });
+}
+
+void StaticThreadPool::initializeImpl(size_t max_threads, size_t max_free_threads, size_t queue_size)
+{
     /// By default enabling "turbo mode" won't affect the number of threads anyhow
     max_threads_turbo = max_threads;
     max_threads_normal = max_threads;
@@ -62,6 +95,11 @@ void StaticThreadPool::initialize(size_t max_threads, size_t max_free_threads, s
         max_free_threads,
         queue_size,
         /* shutdown_on_exception= */ false);
+}
+
+bool StaticThreadPool::isInitialized() const
+{
+    return instance.operator bool();
 }
 
 void StaticThreadPool::reloadConfiguration(size_t max_threads, size_t max_free_threads, size_t queue_size)
@@ -133,6 +171,12 @@ StaticThreadPool & getBackupsIOThreadPool()
     return instance;
 }
 
+StaticThreadPool & getFetchPartitionThreadPool()
+{
+    static StaticThreadPool instance("MergeTreeFetchPartitionThreadPool", CurrentMetrics::MergeTreeFetchPartitionThreads, CurrentMetrics::MergeTreeFetchPartitionThreadsActive, CurrentMetrics::MergeTreeFetchPartitionThreadsScheduled);
+    return instance;
+}
+
 StaticThreadPool & getActivePartsLoadingThreadPool()
 {
     static StaticThreadPool instance("MergeTreePartsLoaderThreadPool", CurrentMetrics::MergeTreePartsLoaderThreads, CurrentMetrics::MergeTreePartsLoaderThreadsActive, CurrentMetrics::MergeTreePartsLoaderThreadsScheduled);
@@ -151,9 +195,34 @@ StaticThreadPool & getOutdatedPartsLoadingThreadPool()
     return instance;
 }
 
+StaticThreadPool & getUnexpectedPartsLoadingThreadPool()
+{
+    static StaticThreadPool instance("MergeTreeUnexpectedPartsLoaderThreadPool", CurrentMetrics::MergeTreeUnexpectedPartsLoaderThreads, CurrentMetrics::MergeTreeUnexpectedPartsLoaderThreadsActive, CurrentMetrics::MergeTreeUnexpectedPartsLoaderThreadsScheduled);
+    return instance;
+}
+
 StaticThreadPool & getDatabaseReplicatedCreateTablesThreadPool()
 {
     static StaticThreadPool instance("CreateTablesThreadPool", CurrentMetrics::DatabaseReplicatedCreateTablesThreads, CurrentMetrics::DatabaseReplicatedCreateTablesThreadsActive, CurrentMetrics::DatabaseReplicatedCreateTablesThreadsScheduled);
+    return instance;
+}
+
+/// ThreadPool used for dropping tables.
+StaticThreadPool & getDatabaseCatalogDropTablesThreadPool()
+{
+    static StaticThreadPool instance("DropTablesThreadPool", CurrentMetrics::DatabaseCatalogThreads, CurrentMetrics::DatabaseCatalogThreadsActive, CurrentMetrics::DatabaseCatalogThreadsScheduled);
+    return instance;
+}
+
+StaticThreadPool & getMergeTreePrefixesDeserializationThreadPool()
+{
+    static StaticThreadPool instance("MergeTreePrefixesDeserializationThreadPool", CurrentMetrics::MergeTreeSubcolumnsReaderThreads, CurrentMetrics::MergeTreeSubcolumnsReaderThreadsActive, CurrentMetrics::MergeTreeSubcolumnsReaderThreadsScheduled);
+    return instance;
+}
+
+StaticThreadPool & getFormatParsingThreadPool()
+{
+    static StaticThreadPool instance("FormatParsingThreadPool", CurrentMetrics::FormatParsingThreads, CurrentMetrics::FormatParsingThreadsActive, CurrentMetrics::FormatParsingThreadsScheduled);
     return instance;
 }
 

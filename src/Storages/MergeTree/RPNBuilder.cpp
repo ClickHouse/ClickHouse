@@ -1,6 +1,8 @@
 #include <Storages/MergeTree/RPNBuilder.h>
 
 #include <Common/FieldVisitorToString.h>
+#include <Storages/MergeTree/KeyCondition.h>
+#include <Core/Settings.h>
 
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
@@ -17,12 +19,25 @@
 #include <Functions/indexHint.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
+#include <Functions/FunctionsMiscellaneous.h>
+
+#include <Interpreters/Context.h>
+
+#include <IO/WriteHelpers.h>
 
 #include <Storages/KeyDescription.h>
 
+#include <Storages/MergeTree/MergeTreeIndexBloomFilter.h>
+#include <Storages/MergeTree/MergeTreeIndexBloomFilterText.h>
+#include <Storages/MergeTree/MergeTreeIndexConditionText.h>
+#include <Storages/Statistics/ConditionSelectivityEstimator.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_analyzer;
+}
 
 namespace ErrorCodes
 {
@@ -32,7 +47,7 @@ namespace ErrorCodes
 namespace
 {
 
-void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuffer & out, bool allow_experimental_analyzer, bool legacy = false)
+void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuffer & out, const ContextPtr & context, bool use_analyzer, bool legacy = false)
 {
     switch (node.type)
     {
@@ -44,29 +59,64 @@ void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuffer & o
             /// If it was created from ASTLiteral, then result_name can be an alias.
             /// We need to convert value back to string here.
             const auto * column_const = typeid_cast<const ColumnConst *>(node.column.get());
-            if (column_const && !allow_experimental_analyzer)
+            if (column_const && !use_analyzer)
                 writeString(applyVisitor(FieldVisitorToString(), column_const->getField()), out);
             else
                 writeString(node.result_name, out);
             break;
         }
         case ActionsDAG::ActionType::ALIAS:
-            appendColumnNameWithoutAlias(*node.children.front(), out, allow_experimental_analyzer, legacy);
+            appendColumnNameWithoutAlias(*node.children.front(), out, context, use_analyzer, legacy);
             break;
         case ActionsDAG::ActionType::ARRAY_JOIN:
             writeCString("arrayJoin(", out);
-            appendColumnNameWithoutAlias(*node.children.front(), out, allow_experimental_analyzer, legacy);
+            appendColumnNameWithoutAlias(*node.children.front(), out, context, use_analyzer, legacy);
             writeChar(')', out);
             break;
         case ActionsDAG::ActionType::FUNCTION:
         {
-            auto name = node.function_base->getName();
-            if (legacy && name == "modulo")
-                writeCString("moduloLegacy", out);
-            else
-                writeString(name, out);
+            if (const auto * func_capture = typeid_cast<const ExecutableFunctionCapture *>(node.function.get()))
+            {
+                const auto & capture = func_capture->getCapture();
+                auto capture_dag = func_capture->getActions()->getActionsDAG().clone();
+                if (!node.children.empty())
+                {
+                    auto captured_columns_dag = ActionsDAG::cloneSubDAG(node.children, false);
+                    auto & outputs = captured_columns_dag.getOutputs();
+                    for (size_t i = 0; i < capture->captured_names.size(); ++i)
+                        outputs[i] = &captured_columns_dag.addAlias(*outputs[i], capture->captured_names[i]);
 
-            writeChar('(', out);
+                    capture_dag = ActionsDAG::merge(std::move(captured_columns_dag), std::move(capture_dag));
+                }
+
+                writeString("lambda(tuple(", out);
+                bool first = true;
+                for (const auto & arg : capture->lambda_arguments)
+                {
+                    if (!first)
+                        writeCString(", ", out);
+                    first = false;
+
+                    writeString(arg.name, out);
+                }
+                writeString("), ", out);
+
+                ActionsDAGWithInversionPushDown inverted_capture_dag(capture_dag.getOutputs().at(0), context);
+                appendColumnNameWithoutAlias(*inverted_capture_dag.predicate, out, context, use_analyzer, legacy);
+                writeChar(')', out);
+                break;
+            }
+            else
+            {
+                auto name = node.function_base->getName();
+                if (legacy && name == "modulo")
+                    writeCString("moduloLegacy", out);
+                else
+                    writeString(name, out);
+
+                writeChar('(', out);
+            }
+
             bool first = true;
             for (const auto * arg : node.children)
             {
@@ -74,17 +124,21 @@ void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuffer & o
                     writeCString(", ", out);
                 first = false;
 
-                appendColumnNameWithoutAlias(*arg, out, allow_experimental_analyzer, legacy);
+                appendColumnNameWithoutAlias(*arg, out, context, use_analyzer, legacy);
             }
             writeChar(')', out);
+            break;
         }
+        case ActionsDAG::ActionType::PLACEHOLDER:
+            writeString(node.result_name, out);
+            break;
     }
 }
 
-String getColumnNameWithoutAlias(const ActionsDAG::Node & node, bool allow_experimental_analyzer, bool legacy = false)
+String getColumnNameWithoutAlias(const ActionsDAG::Node & node, const ContextPtr & context, bool use_analyzer, bool legacy = false)
 {
     WriteBufferFromOwnString out;
-    appendColumnNameWithoutAlias(node, out, allow_experimental_analyzer, legacy);
+    appendColumnNameWithoutAlias(node, out, context, use_analyzer, legacy);
 
     return std::move(out.str());
 }
@@ -111,6 +165,11 @@ RPNBuilderTreeContext::RPNBuilderTreeContext(ContextPtr query_context_, Block bl
     , prepared_sets(std::move(prepared_sets_))
 {}
 
+const Settings & RPNBuilderTreeContext::getSettings() const
+{
+    return query_context->getSettingsRef();
+}
+
 RPNBuilderTreeNode::RPNBuilderTreeNode(const ActionsDAG::Node * dag_node_, RPNBuilderTreeContext & tree_context_)
     : dag_node(dag_node_)
     , tree_context(tree_context_)
@@ -129,8 +188,8 @@ std::string RPNBuilderTreeNode::getColumnName() const
 {
     if (ast_node)
         return ast_node->getColumnNameWithoutAlias();
-    else
-        return getColumnNameWithoutAlias(*dag_node, getTreeContext().getSettings().allow_experimental_analyzer);
+
+    return getColumnNameWithoutAlias(*dag_node, getTreeContext().getQueryContext(), getTreeContext().getSettings()[Setting::allow_experimental_analyzer]);
 }
 
 std::string RPNBuilderTreeNode::getColumnNameWithModuloLegacy() const
@@ -141,10 +200,8 @@ std::string RPNBuilderTreeNode::getColumnNameWithModuloLegacy() const
         KeyDescription::moduloToModuloLegacyRecursive(adjusted_ast);
         return adjusted_ast->getColumnNameWithoutAlias();
     }
-    else
-    {
-        return getColumnNameWithoutAlias(*dag_node, getTreeContext().getSettings().allow_experimental_analyzer, true /*legacy*/);
-    }
+
+    return getColumnNameWithoutAlias(*dag_node, getTreeContext().getQueryContext(), getTreeContext().getSettings()[Setting::allow_experimental_analyzer], true /*legacy*/);
 }
 
 bool RPNBuilderTreeNode::isFunction() const
@@ -153,11 +210,9 @@ bool RPNBuilderTreeNode::isFunction() const
     {
         return typeid_cast<const ASTFunction *>(ast_node);
     }
-    else
-    {
-        const auto * node_without_alias = getNodeWithoutAlias(dag_node);
-        return node_without_alias->type == ActionsDAG::ActionType::FUNCTION;
-    }
+
+    const auto * node_without_alias = getNodeWithoutAlias(dag_node);
+    return node_without_alias->type == ActionsDAG::ActionType::FUNCTION;
 }
 
 bool RPNBuilderTreeNode::isConstant() const
@@ -176,11 +231,9 @@ bool RPNBuilderTreeNode::isConstant() const
 
         return false;
     }
-    else
-    {
-        const auto * node_without_alias = getNodeWithoutAlias(dag_node);
-        return node_without_alias->column && isColumnConst(*node_without_alias->column);
-    }
+
+    const auto * node_without_alias = getNodeWithoutAlias(dag_node);
+    return node_without_alias->column && isColumnConst(*node_without_alias->column);
 }
 
 bool RPNBuilderTreeNode::isSubqueryOrSet() const
@@ -191,11 +244,9 @@ bool RPNBuilderTreeNode::isSubqueryOrSet() const
             typeid_cast<const ASTSubquery *>(ast_node) ||
             typeid_cast<const ASTTableIdentifier *>(ast_node);
     }
-    else
-    {
-        const auto * node_without_alias = getNodeWithoutAlias(dag_node);
-        return node_without_alias->result_type->getTypeId() == TypeIndex::Set;
-    }
+
+    const auto * node_without_alias = getNodeWithoutAlias(dag_node);
+    return node_without_alias->result_type->getTypeId() == TypeIndex::Set;
 }
 
 ColumnWithTypeAndName RPNBuilderTreeNode::getConstantColumn() const
@@ -221,12 +272,10 @@ ColumnWithTypeAndName RPNBuilderTreeNode::getConstantColumn() const
 
         return block_with_constants.getByName(column_name);
     }
-    else
-    {
-        const auto * node_without_alias = getNodeWithoutAlias(dag_node);
-        result.type = node_without_alias->result_type;
-        result.column = node_without_alias->column;
-    }
+
+    const auto * node_without_alias = getNodeWithoutAlias(dag_node);
+    result.type = node_without_alias->result_type;
+    result.column = node_without_alias->column;
 
     return result;
 }
@@ -257,8 +306,7 @@ bool RPNBuilderTreeNode::tryGetConstant(Field & output_value, DataTypePtr & outp
 
             return true;
         }
-        else if (block_with_constants.has(column_name) &&
-            isColumnConst(*block_with_constants.getByName(column_name).column))
+        if (block_with_constants.has(column_name) && isColumnConst(*block_with_constants.getByName(column_name).column))
         {
             /// An expression which is dependent on constants only
             const auto & constant_column = block_with_constants.getByName(column_name);
@@ -324,7 +372,7 @@ FutureSetPtr RPNBuilderTreeNode::tryGetPreparedSet() const
 
         return prepared_sets->findSubquery(key);
     }
-    else if (dag_node)
+    if (dag_node)
     {
         const auto * node_without_alias = getNodeWithoutAlias(dag_node);
         return tryGetSetFromDAGNode(node_without_alias);
@@ -344,7 +392,7 @@ FutureSetPtr RPNBuilderTreeNode::tryGetPreparedSet(const DataTypes & data_types)
 
         return prepared_sets->findTuple(ast_node->getTreeHash(/*ignore_aliases=*/ true), data_types);
     }
-    else if (dag_node)
+    if (dag_node)
     {
         const auto * node_without_alias = getNodeWithoutAlias(dag_node);
         return tryGetSetFromDAGNode(node_without_alias);
@@ -360,8 +408,7 @@ RPNBuilderFunctionTreeNode RPNBuilderTreeNode::toFunctionNode() const
 
     if (ast_node)
         return RPNBuilderFunctionTreeNode(ast_node, tree_context);
-    else
-        return RPNBuilderFunctionTreeNode(getNodeWithoutAlias(dag_node), tree_context);
+    return RPNBuilderFunctionTreeNode(getNodeWithoutAlias(dag_node), tree_context);
 }
 
 std::optional<RPNBuilderFunctionTreeNode> RPNBuilderTreeNode::toFunctionNodeOrNull() const
@@ -371,16 +418,19 @@ std::optional<RPNBuilderFunctionTreeNode> RPNBuilderTreeNode::toFunctionNodeOrNu
 
     if (ast_node)
         return RPNBuilderFunctionTreeNode(this->ast_node, tree_context);
-    else
-        return RPNBuilderFunctionTreeNode(getNodeWithoutAlias(dag_node), tree_context);
+    return RPNBuilderFunctionTreeNode(getNodeWithoutAlias(dag_node), tree_context);
 }
 
 std::string RPNBuilderFunctionTreeNode::getFunctionName() const
 {
     if (ast_node)
         return assert_cast<const ASTFunction *>(ast_node)->name;
-    else
-        return dag_node->function_base->getName();
+    return dag_node->function_base->getName();
+}
+
+FunctionBasePtr RPNBuilderFunctionTreeNode::getFunctionBase() const
+{
+    return ast_node ? nullptr : dag_node->function_base;
 }
 
 size_t RPNBuilderFunctionTreeNode::getArgumentsSize() const
@@ -390,19 +440,17 @@ size_t RPNBuilderFunctionTreeNode::getArgumentsSize() const
         const auto * ast_function = assert_cast<const ASTFunction *>(ast_node);
         return ast_function->arguments ? ast_function->arguments->children.size() : 0;
     }
-    else
-    {
-        // indexHint arguments are stored inside of `FunctionIndexHint` class,
-        // because they are used only for index analysis.
-        if (dag_node->function_base->getName() == "indexHint")
-        {
-            const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(dag_node->function_base.get());
-            const auto * index_hint = typeid_cast<const FunctionIndexHint *>(adaptor->getFunction().get());
-            return index_hint->getActions()->getOutputs().size();
-        }
 
-        return dag_node->children.size();
+    // indexHint arguments are stored inside of `FunctionIndexHint` class,
+    // because they are used only for index analysis.
+    if (dag_node->function_base->getName() == "indexHint")
+    {
+        const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(dag_node->function_base.get());
+        const auto * index_hint = typeid_cast<const FunctionIndexHint *>(adaptor->getFunction().get());
+        return index_hint->getActions().getOutputs().size();
     }
+
+    return dag_node->children.size();
 }
 
 RPNBuilderTreeNode RPNBuilderFunctionTreeNode::getArgumentAt(size_t index) const
@@ -418,19 +466,116 @@ RPNBuilderTreeNode RPNBuilderFunctionTreeNode::getArgumentAt(size_t index) const
         const auto * ast_function = assert_cast<const ASTFunction *>(ast_node);
         return RPNBuilderTreeNode(ast_function->arguments->children[index].get(), tree_context);
     }
-    else
-    {
-        // indexHint arguments are stored inside of `FunctionIndexHint` class,
-        // because they are used only for index analysis.
-        if (dag_node->function_base->getName() == "indexHint")
-        {
-            const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(dag_node->function_base.get());
-            const auto * index_hint = typeid_cast<const FunctionIndexHint *>(adaptor->getFunction().get());
-            return RPNBuilderTreeNode(index_hint->getActions()->getOutputs()[index], tree_context);
-        }
 
-        return RPNBuilderTreeNode(dag_node->children[index], tree_context);
+    // indexHint arguments are stored inside of `FunctionIndexHint` class,
+    // because they are used only for index analysis.
+    if (dag_node->function_base->getName() == "indexHint")
+    {
+        const auto & adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor &>(*dag_node->function_base);
+        const auto & index_hint = typeid_cast<const FunctionIndexHint &>(*adaptor.getFunction());
+        return RPNBuilderTreeNode(index_hint.getActions().getOutputs()[index], tree_context);
     }
+
+    return RPNBuilderTreeNode(dag_node->children[index], tree_context);
 }
 
+template <typename RPNElement>
+RPNBuilder<RPNElement>::RPNBuilder(
+    const ActionsDAG::Node * filter_actions_dag_node,
+    ContextPtr query_context_,
+    const ExtractAtomFromTreeFunction & extract_atom_from_tree_function_)
+    : extract_atom_from_tree_function(extract_atom_from_tree_function_)
+{
+    RPNBuilderTreeContext tree_context(query_context_);
+    traverseTree(RPNBuilderTreeNode(filter_actions_dag_node, tree_context));
+}
+
+template <typename RPNElement>
+RPNBuilder<RPNElement>::RPNBuilder(const RPNBuilderTreeNode & node, const ExtractAtomFromTreeFunction & extract_atom_from_tree_function_)
+    : extract_atom_from_tree_function(extract_atom_from_tree_function_)
+{
+    traverseTree(node);
+}
+
+template <typename RPNElement>
+RPNBuilder<RPNElement>::RPNElements && RPNBuilder<RPNElement>::extractRPN() &&
+{
+    return std::move(rpn_elements);
+}
+
+template <typename RPNElement>
+void RPNBuilder<RPNElement>::traverseTree(const RPNBuilderTreeNode & node)
+{
+    RPNElement element;
+
+    if (node.isFunction())
+    {
+        auto function_node = node.toFunctionNode();
+
+        if (extractLogicalOperatorFromTree(function_node, element))
+        {
+            size_t arguments_size = function_node.getArgumentsSize();
+
+            for (size_t argument_index = 0; argument_index < arguments_size; ++argument_index)
+            {
+                auto function_node_argument = function_node.getArgumentAt(argument_index);
+                traverseTree(function_node_argument);
+
+                /** The first part of the condition is for the correct support of `and` and `or` functions of arbitrary arity
+                      * - in this case `n - 1` elements are added (where `n` is the number of arguments).
+                      */
+                if (argument_index != 0 || element.function == RPNElement::FUNCTION_NOT)
+                    rpn_elements.emplace_back(std::move(element)); /// NOLINT(bugprone-use-after-move,hicpp-invalid-access-moved)
+            }
+
+            if (arguments_size == 0 && function_node.getFunctionName() == "indexHint")
+            {
+                element.function = RPNElement::ALWAYS_TRUE;
+                rpn_elements.emplace_back(std::move(element));
+            }
+
+            return;
+        }
+    }
+
+    if (!extract_atom_from_tree_function(node, element))
+        element.function = RPNElement::FUNCTION_UNKNOWN;
+
+    rpn_elements.emplace_back(std::move(element));
+}
+
+template <typename RPNElement>
+bool RPNBuilder<RPNElement>::extractLogicalOperatorFromTree(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out)
+{
+    /** Functions AND, OR, NOT.
+          * Also a special function `indexHint` - works as if instead of calling a function there are just parentheses
+          * (or, the same thing - calling the function `and` from one argument).
+          */
+
+    auto function_name = function_node.getFunctionName();
+    if (function_name == "not")
+    {
+        if (function_node.getArgumentsSize() != 1)
+            return false;
+
+        out.function = RPNElement::FUNCTION_NOT;
+    }
+    else
+    {
+        if (function_name == "and" || function_name == "indexHint")
+            out.function = RPNElement::FUNCTION_AND;
+        else if (function_name == "or")
+            out.function = RPNElement::FUNCTION_OR;
+        else
+            return false;
+    }
+
+    return true;
+}
+
+template class RPNBuilder<KeyCondition::RPNElement>;
+template class RPNBuilder<ConditionSelectivityEstimator::RPNElement>;
+template class RPNBuilder<MergeTreeConditionBloomFilterText::RPNElement>;
+template class RPNBuilder<MergeTreeIndexConditionBloomFilter::RPNElement>;
+template class RPNBuilder<MergeTreeIndexConditionText::RPNElement>;
 }

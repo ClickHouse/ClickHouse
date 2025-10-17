@@ -12,6 +12,10 @@
                 <status>402</status>
                 <content_type>text/html; charset=UTF-8</content_type>
                 <response_content>Test get static handler and fix content</response_content>
+                <http_response_headers>
+                  <X-Test-Http-Response-Headers-Works>it works</X-Test-Http-Response-Headers-Works>
+                  <X-Test-Http-Response-Headers-Even-Multiple>also works</X-Test-Http-Response-Headers-Even-Multiple>
+                </http_response_headers>
             </handler>
         </rule>
 

@@ -1,5 +1,5 @@
 #include <map>
-#include "ASTColumnsTransformers.h"
+#include <Parsers/ASTColumnsTransformers.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -12,6 +12,7 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -19,12 +20,12 @@ namespace ErrorCodes
     extern const int CANNOT_COMPILE_REGEXP;
 }
 
-void ASTColumnsTransformerList::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTColumnsTransformerList::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     for (const auto & child : children)
     {
-        settings.ostr << ' ';
-        child->formatImpl(settings, state, frame);
+        ostr << ' ';
+        child->format(ostr, settings, state, frame);
     }
 }
 
@@ -44,33 +45,33 @@ void IASTColumnsTransformer::transform(const ASTPtr & transformer, ASTs & nodes)
     }
 }
 
-void ASTColumnsApplyTransformer::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTColumnsApplyTransformer::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "APPLY" << (settings.hilite ? hilite_none : "") << " ";
+    ostr << "APPLY" << " ";
 
     if (!column_name_prefix.empty())
-        settings.ostr << "(";
+        ostr << "(";
 
     if (lambda)
     {
-        lambda->formatImpl(settings, state, frame);
+        lambda->format(ostr, settings, state, frame);
     }
     else
     {
-        settings.ostr << func_name;
+        ostr << func_name;
 
         if (parameters)
         {
             auto nested_frame = frame;
             nested_frame.expression_list_prepend_whitespace = false;
-            settings.ostr << "(";
-            parameters->formatImpl(settings, state, nested_frame);
-            settings.ostr << ")";
+            ostr << "(";
+            parameters->format(ostr, settings, state, nested_frame);
+            ostr << ")";
         }
     }
 
     if (!column_name_prefix.empty())
-        settings.ostr << ", '" << column_name_prefix << "')";
+        ostr << ", '" << column_name_prefix << "')";
 }
 
 void ASTColumnsApplyTransformer::transform(ASTs & nodes) const
@@ -163,27 +164,27 @@ void ASTColumnsApplyTransformer::updateTreeHashImpl(SipHash & hash_state, bool i
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
-void ASTColumnsExceptTransformer::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTColumnsExceptTransformer::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "EXCEPT" << (is_strict ? " STRICT " : " ") << (settings.hilite ? hilite_none : "");
+    ostr << "EXCEPT" << (is_strict ? " STRICT " : " ");
 
     if (children.size() > 1)
-        settings.ostr << "(";
+        ostr << "(";
 
     for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
     {
         if (it != children.begin())
         {
-            settings.ostr << ", ";
+            ostr << ", ";
         }
-        (*it)->formatImpl(settings, state, frame);
+        (*it)->format(ostr, settings, state, frame);
     }
 
-    if (!original_pattern.empty())
-        settings.ostr << quoteString(original_pattern);
+    if (pattern)
+        ostr << quoteString(*pattern);
 
     if (children.size() > 1)
-        settings.ostr << ")";
+        ostr << ")";
 }
 
 void ASTColumnsExceptTransformer::appendColumnName(WriteBuffer & ostr) const
@@ -202,8 +203,8 @@ void ASTColumnsExceptTransformer::appendColumnName(WriteBuffer & ostr) const
         (*it)->appendColumnName(ostr);
     }
 
-    if (!original_pattern.empty())
-        writeQuotedString(original_pattern, ostr);
+    if (pattern)
+        writeQuotedString(*pattern, ostr);
 
     if (children.size() > 1)
         writeChar(')', ostr);
@@ -212,8 +213,11 @@ void ASTColumnsExceptTransformer::appendColumnName(WriteBuffer & ostr) const
 void ASTColumnsExceptTransformer::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     hash_state.update(is_strict);
-    hash_state.update(original_pattern.size());
-    hash_state.update(original_pattern);
+    if (pattern)
+    {
+        hash_state.update(pattern->size());
+        hash_state.update(*pattern);
+    }
 
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
@@ -221,7 +225,7 @@ void ASTColumnsExceptTransformer::updateTreeHashImpl(SipHash & hash_state, bool 
 void ASTColumnsExceptTransformer::transform(ASTs & nodes) const
 {
     std::set<String> expected_columns;
-    if (original_pattern.empty())
+    if (!pattern)
     {
         for (const auto & child : children)
             expected_columns.insert(child->as<const ASTIdentifier &>().name());
@@ -243,11 +247,13 @@ void ASTColumnsExceptTransformer::transform(ASTs & nodes) const
     }
     else
     {
+        auto regexp = getMatcher();
+
         for (auto * it = nodes.begin(); it != nodes.end();)
         {
             if (const auto * id = it->get()->as<ASTIdentifier>())
             {
-                if (isColumnMatching(id->shortName()))
+                if (RE2::PartialMatch(id->shortName(), *regexp))
                 {
                     it = nodes.erase(it);
                     continue;
@@ -268,32 +274,30 @@ void ASTColumnsExceptTransformer::transform(ASTs & nodes) const
     }
 }
 
-void ASTColumnsExceptTransformer::setPattern(String pattern)
+void ASTColumnsExceptTransformer::setPattern(String pattern_)
 {
-    original_pattern = std::move(pattern);
-    column_matcher = std::make_shared<RE2>(original_pattern, RE2::Quiet);
-    if (!column_matcher->ok())
-        throw DB::Exception(DB::ErrorCodes::CANNOT_COMPILE_REGEXP, "COLUMNS pattern {} cannot be compiled: {}",
-            original_pattern, column_matcher->error());
+    pattern = std::move(pattern_);
 }
 
-const std::shared_ptr<re2::RE2> & ASTColumnsExceptTransformer::getMatcher() const
+std::shared_ptr<re2::RE2> ASTColumnsExceptTransformer::getMatcher() const
 {
-    return column_matcher;
-}
+    if (!pattern)
+        return {};
 
-bool ASTColumnsExceptTransformer::isColumnMatching(const String & column_name) const
-{
-    return RE2::PartialMatch(column_name, *column_matcher);
+    auto regexp = std::make_shared<re2::RE2>(*pattern, re2::RE2::Quiet);
+    if (!regexp->ok())
+        throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
+            "COLUMNS pattern {} cannot be compiled: {}", *pattern, regexp->error());
+    return regexp;
 }
 
 void ASTColumnsReplaceTransformer::Replacement::formatImpl(
-    const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+    WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     assert(children.size() == 1);
 
-    children[0]->formatImpl(settings, state, frame);
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "") << backQuoteIfNeed(name);
+    children[0]->format(ostr, settings, state, frame);
+    ostr << " AS " << backQuoteIfNeed(name);
 }
 
 void ASTColumnsReplaceTransformer::Replacement::appendColumnName(WriteBuffer & ostr) const
@@ -315,23 +319,19 @@ void ASTColumnsReplaceTransformer::Replacement::updateTreeHashImpl(SipHash & has
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
-void ASTColumnsReplaceTransformer::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTColumnsReplaceTransformer::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "REPLACE" << (is_strict ? " STRICT " : " ") << (settings.hilite ? hilite_none : "");
+    ostr << "REPLACE" << (is_strict ? " STRICT " : " ");
 
-    if (children.size() > 1)
-        settings.ostr << "(";
-
+    ostr << "(";
     for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
     {
         if (it != children.begin())
-            settings.ostr << ", ";
+            ostr << ", ";
 
-        (*it)->formatImpl(settings, state, frame);
+        (*it)->format(ostr, settings, state, frame);
     }
-
-    if (children.size() > 1)
-        settings.ostr << ")";
+    ostr << ")";
 }
 
 void ASTColumnsReplaceTransformer::appendColumnName(WriteBuffer & ostr) const

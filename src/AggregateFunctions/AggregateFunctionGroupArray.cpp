@@ -4,11 +4,11 @@
 #include <Interpreters/Context.h>
 #include <Core/ServerSettings.h>
 
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
+#include <IO/Operators_pcg_random.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
+#include <IO/WriteHelpers.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
@@ -26,12 +26,18 @@
 
 #include <type_traits>
 
-#define AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ELEMENT_SIZE 0xFFFFFF
+constexpr size_t AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ELEMENT_SIZE = 0xFFFFFF;
 
 
 namespace DB
 {
 struct Settings;
+
+namespace ServerSetting
+{
+    extern const ServerSettingsGroupArrayActionWhenLimitReached aggregate_function_group_array_action_when_limit_is_reached;
+    extern const ServerSettingsUInt64 aggregate_function_group_array_max_element_size;
+}
 
 namespace ErrorCodes
 {
@@ -43,7 +49,7 @@ namespace ErrorCodes
 namespace
 {
 
-enum class Sampler
+enum class Sampler : uint8_t
 {
     NONE,
     RNG,
@@ -60,21 +66,20 @@ struct GroupArrayTrait
 template <typename Trait>
 constexpr const char * getNameByTrait()
 {
-    if (Trait::last)
+    if constexpr (Trait::last)
         return "groupArrayLast";
-    if (Trait::sampler == Sampler::NONE)
-        return "groupArray";
-    else if (Trait::sampler == Sampler::RNG)
-        return "groupArraySample";
-
-    UNREACHABLE();
+    switch (Trait::sampler)
+    {
+        case Sampler::NONE: return "groupArray";
+        case Sampler::RNG: return "groupArraySample";
+    }
 }
 
 template <typename T>
 struct GroupArraySamplerData
 {
     /// For easy serialization.
-    static_assert(std::has_unique_object_representations_v<T> || std::is_floating_point_v<T>);
+    static_assert(std::has_unique_object_representations_v<T> || is_floating_point<T>);
 
     // Switch to ordinary Allocator after 4096 bytes to avoid fragmentation and trash in Arena
     using Allocator = MixedAlignedArenaAllocator<alignof(T), 4096>;
@@ -89,10 +94,9 @@ struct GroupArraySamplerData
         chassert(lim != 0);
 
         /// With a large number of values, we will generate random numbers several times slower.
-        if (lim <= static_cast<UInt64>(rng.max()))
-            return rng() % lim;
-        else
-            return (static_cast<UInt64>(rng()) * (static_cast<UInt64>(rng.max()) + 1ULL) + static_cast<UInt64>(rng())) % lim;
+        if (lim <= static_cast<UInt64>(pcg32_fast::max()))
+            return rng() % lim;  /// NOLINT(clang-analyzer-core.DivideZero)
+        return (static_cast<UInt64>(rng()) * (static_cast<UInt64>(pcg32::max()) + 1ULL) + static_cast<UInt64>(rng())) % lim;
     }
 
     void randomShuffle()
@@ -116,7 +120,7 @@ template <typename T>
 struct GroupArrayNumericData<T, false>
 {
     /// For easy serialization.
-    static_assert(std::has_unique_object_representations_v<T> || std::is_floating_point_v<T>);
+    static_assert(std::has_unique_object_representations_v<T> || is_floating_point<T>);
 
     // Switch to ordinary Allocator after 4096 bytes to avoid fragmentation and trash in Arena
     using Allocator = MixedAlignedArenaAllocator<alignof(T), 4096>;
@@ -452,7 +456,7 @@ struct GroupArrayNodeGeneral : public GroupArrayNodeBase<GroupArrayNodeGeneral>
     static Node * allocate(const IColumn & column, size_t row_num, Arena * arena)
     {
         const char * begin = arena->alignedAlloc(sizeof(Node), alignof(Node));
-        StringRef value = column.serializeValueIntoArena(row_num, *arena, begin);
+        StringRef value = column.serializeAggregationStateValueIntoArena(row_num, *arena, begin);
 
         Node * node = reinterpret_cast<Node *>(const_cast<char *>(begin));
         node->size = value.size;
@@ -460,7 +464,7 @@ struct GroupArrayNodeGeneral : public GroupArrayNodeBase<GroupArrayNodeGeneral>
         return node;
     }
 
-    void insertInto(IColumn & column) { std::ignore = column.deserializeAndInsertFromArena(data()); }
+    void insertInto(IColumn & column) { std::ignore = column.deserializeAndInsertAggregationStateValueFromArena(data()); }
 };
 
 template <typename Node, bool has_sampler>
@@ -490,7 +494,7 @@ class GroupArrayGeneralImpl final
 {
     static constexpr bool limit_num_elems = Trait::has_limit;
     using Data = GroupArrayGeneralData<Node, Trait::sampler != Sampler::NONE>;
-    static Data & data(AggregateDataPtr __restrict place) { return *reinterpret_cast<Data *>(place); }
+    static Data & data(AggregateDataPtr __restrict place) { return *reinterpret_cast<Data *>(place); }  /// NOLINT(readability-non-const-parameter)
     static const Data & data(ConstAggregateDataPtr __restrict place) { return *reinterpret_cast<const Data *>(place); }
 
     DataTypePtr & data_type;
@@ -672,17 +676,16 @@ public:
     {
         UInt64 elems;
         readVarUInt(elems, buf);
-
-        if (unlikely(elems == 0))
-            return;
-
         checkArraySize(elems, max_elems);
 
-        auto & value = data(place).value;
+        if (likely(elems > 0))
+        {
+            auto & value = data(place).value;
 
-        value.resize_exact(elems, arena);
-        for (UInt64 i = 0; i < elems; ++i)
-            value[i] = Node::read(buf, arena);
+            value.resize_exact(elems, arena);
+            for (UInt64 i = 0; i < elems; ++i)
+                value[i] = Node::read(buf, arena);
+        }
 
         if constexpr (Trait::last)
             readBinaryLittleEndian(data(place).total_values, buf);
@@ -735,22 +738,31 @@ IAggregateFunction * createWithNumericOrTimeType(const IDataType & argument_type
 template <typename Trait, typename ... TArgs>
 inline AggregateFunctionPtr createAggregateFunctionGroupArrayImpl(const DataTypePtr & argument_type, const Array & parameters, TArgs ... args)
 {
-    if (auto res = createWithNumericOrTimeType<GroupArrayNumericImpl, Trait>(*argument_type, argument_type, parameters, std::forward<TArgs>(args)...))
+    if (auto res = createWithNumericOrTimeType<GroupArrayNumericImpl, Trait>(*argument_type, argument_type, parameters, args...))
         return AggregateFunctionPtr(res);
 
     WhichDataType which(argument_type);
     if (which.idx == TypeIndex::String)
-        return std::make_shared<GroupArrayGeneralImpl<GroupArrayNodeString, Trait>>(argument_type, parameters, std::forward<TArgs>(args)...);
+        return std::make_shared<GroupArrayGeneralImpl<GroupArrayNodeString, Trait>>(argument_type, parameters, args...);
 
-    return std::make_shared<GroupArrayGeneralImpl<GroupArrayNodeGeneral, Trait>>(argument_type, parameters, std::forward<TArgs>(args)...);
+    return std::make_shared<GroupArrayGeneralImpl<GroupArrayNodeGeneral, Trait>>(argument_type, parameters, args...);
 }
 
 size_t getMaxArraySize()
 {
     if (auto context = Context::getGlobalContextInstance())
-        return context->getServerSettings().aggregate_function_group_array_max_element_size;
+        return context->getServerSettings()[ServerSetting::aggregate_function_group_array_max_element_size];
 
     return 0xFFFFFF;
+}
+
+bool discardOnLimitReached()
+{
+    if (auto context = Context::getGlobalContextInstance())
+        return context->getServerSettings()[ServerSetting::aggregate_function_group_array_action_when_limit_is_reached]
+            == GroupArrayActionWhenLimitReached::DISCARD;
+
+    return false;
 }
 
 template <bool Tlast>
@@ -759,7 +771,7 @@ AggregateFunctionPtr createAggregateFunctionGroupArray(
 {
     assertUnary(name, argument_types);
 
-    bool limit_size = false;
+    bool has_limit = discardOnLimitReached();
     UInt64 max_elems = getMaxArraySize();
 
     if (parameters.empty())
@@ -772,25 +784,25 @@ AggregateFunctionPtr createAggregateFunctionGroupArray(
         if (type != Field::Types::Int64 && type != Field::Types::UInt64)
                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should be positive number", name);
 
-        if ((type == Field::Types::Int64 && parameters[0].get<Int64>() < 0) ||
-            (type == Field::Types::UInt64 && parameters[0].get<UInt64>() == 0))
+        if ((type == Field::Types::Int64 && parameters[0].safeGet<Int64>() <= 0) ||
+            (type == Field::Types::UInt64 && parameters[0].safeGet<UInt64>() == 0))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should be positive number", name);
 
-        limit_size = true;
-        max_elems = parameters[0].get<UInt64>();
+        has_limit = true;
+        max_elems = parameters[0].safeGet<UInt64>();
     }
     else
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "Incorrect number of parameters for aggregate function {}, should be 0 or 1", name);
 
-    if (!limit_size)
+    if (!has_limit)
     {
         if (Tlast)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "groupArrayLast make sense only with max_elems (groupArrayLast(max_elems)())");
         return createAggregateFunctionGroupArrayImpl<GroupArrayTrait</* Thas_limit= */ false, Tlast, /* Tsampler= */ Sampler::NONE>>(argument_types[0], parameters, max_elems, std::nullopt);
     }
-    else
-        return createAggregateFunctionGroupArrayImpl<GroupArrayTrait</* Thas_limit= */ true, Tlast, /* Tsampler= */ Sampler::NONE>>(argument_types[0], parameters, max_elems, std::nullopt);
+    return createAggregateFunctionGroupArrayImpl<GroupArrayTrait</* Thas_limit= */ true, Tlast, /* Tsampler= */ Sampler::NONE>>(
+        argument_types[0], parameters, max_elems, std::nullopt);
 }
 
 AggregateFunctionPtr createAggregateFunctionGroupArraySample(
@@ -808,11 +820,11 @@ AggregateFunctionPtr createAggregateFunctionGroupArraySample(
         if (type != Field::Types::Int64 && type != Field::Types::UInt64)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should be positive number", name);
 
-        if ((type == Field::Types::Int64 && parameters[i].get<Int64>() < 0) ||
-                (type == Field::Types::UInt64 && parameters[i].get<UInt64>() == 0))
+        if ((type == Field::Types::Int64 && parameters[i].safeGet<Int64>() <= 0) ||
+                (type == Field::Types::UInt64 && parameters[i].safeGet<UInt64>() == 0))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should be positive number", name);
 
-        return parameters[i].get<UInt64>();
+        return parameters[i].safeGet<UInt64>();
     };
 
     UInt64 max_elems = get_parameter(0);
@@ -832,8 +844,8 @@ void registerAggregateFunctionGroupArray(AggregateFunctionFactory & factory)
     AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
 
     factory.registerFunction("groupArray", { createAggregateFunctionGroupArray<false>, properties });
-    factory.registerAlias("array_agg", "groupArray", AggregateFunctionFactory::CaseInsensitive);
-    factory.registerAliasUnchecked("array_concat_agg", "groupArrayArray", AggregateFunctionFactory::CaseInsensitive);
+    factory.registerAlias("array_agg", "groupArray", AggregateFunctionFactory::Case::Insensitive);
+    factory.registerAliasUnchecked("array_concat_agg", "groupArrayArray", AggregateFunctionFactory::Case::Insensitive);
     factory.registerFunction("groupArraySample", { createAggregateFunctionGroupArraySample, properties });
     factory.registerFunction("groupArrayLast", { createAggregateFunctionGroupArray<true>, properties });
 }

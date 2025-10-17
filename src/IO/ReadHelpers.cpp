@@ -1,17 +1,19 @@
 #include <Core/Defines.h>
 #include <base/hex.h>
 #include <Common/PODArray.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/memcpySmall.h>
+#include <Common/checkStackSize.h>
 #include <Formats/FormatSettings.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/PeekableReadBuffer.h>
 #include <IO/readFloatText.h>
 #include <IO/Operators.h>
-#include <base/find_symbols.h>
 #include <cstdlib>
 #include <bit>
+#include <utility>
+#include <boost/algorithm/string/replace.hpp>
 
 #include <base/simd.h>
 
@@ -39,6 +41,7 @@ namespace ErrorCodes
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int TOO_DEEP_RECURSION;
 }
 
 template <size_t num_bytes, typename IteratorSrc, typename IteratorDst>
@@ -57,7 +60,7 @@ UUID parseUUID(std::span<const UInt8> src)
     const auto size = src.size();
 
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-    const std::reverse_iterator dst(reinterpret_cast<UInt8 *>(&uuid) + sizeof(UUID));
+    const std::reverse_iterator<UInt8 *> dst(reinterpret_cast<UInt8 *>(&uuid) + sizeof(UUID));
 #else
     auto * dst = reinterpret_cast<UInt8 *>(&uuid);
 #endif
@@ -209,6 +212,20 @@ void readStringUntilCharsInto(Vector & s, ReadBuffer & buf)
     }
 }
 
+template <char... chars>
+void skipStringUntilChars(ReadBuffer & buf)
+{
+    while (!buf.eof())
+    {
+        char * next_pos = find_first_symbols<chars...>(buf.position(), buf.buffer().end());
+
+        buf.position() = next_pos;
+
+        if (buf.hasPendingData())
+            return;
+    }
+}
+
 template <typename Vector>
 void readStringInto(Vector & s, ReadBuffer & buf)
 {
@@ -243,6 +260,23 @@ void readStringUntilWhitespace(String & s, ReadBuffer & buf)
     readStringUntilWhitespaceInto(s, buf);
 }
 
+void skipStringUntilWhitespace(ReadBuffer & buf)
+{
+    skipStringUntilChars<' '>(buf);
+}
+
+void readStringUntilAmpersand(String & s, ReadBuffer & buf)
+{
+    s.clear();
+    readStringUntilCharsInto<'&'>(s, buf);
+}
+
+void readStringUntilEquals(String & s, ReadBuffer & buf)
+{
+    s.clear();
+    readStringUntilCharsInto<'='>(s, buf);
+}
+
 template void readNullTerminated<PODArray<char>>(PODArray<char> & s, ReadBuffer & buf);
 template void readNullTerminated<String>(String & s, ReadBuffer & buf);
 
@@ -250,6 +284,13 @@ void readString(String & s, ReadBuffer & buf)
 {
     s.clear();
     readStringInto(s, buf);
+}
+
+void readString(String & s, ReadBuffer & buf, size_t n)
+{
+    s.resize(n);
+    if (n)
+        s.resize(buf.read(s.data(), n));
 }
 
 template void readStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
@@ -340,7 +381,6 @@ static ReturnType parseComplexEscapeSequence(Vector & s, ReadBuffer & buf)
         {
             return error("Cannot parse escape sequence", ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
         }
-
         s.push_back(unhex2(hex_code));
     }
     else if (char_after_backslash == 'N')
@@ -380,7 +420,7 @@ bool parseComplexEscapeSequence(String & s, ReadBuffer & buf)
 }
 
 template <typename Vector, typename ReturnType>
-static ReturnType parseJSONEscapeSequence(Vector & s, ReadBuffer & buf)
+static ReturnType parseJSONEscapeSequence(Vector & s, ReadBuffer & buf, bool keep_bad_sequences)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
@@ -394,7 +434,11 @@ static ReturnType parseJSONEscapeSequence(Vector & s, ReadBuffer & buf)
     ++buf.position();
 
     if (buf.eof())
-        return error("Cannot parse escape sequence", ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
+    {
+        if (keep_bad_sequences)
+            return ReturnType(true);
+        return error("Cannot parse escape sequence: unexpected eof", ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
+    }
 
     assert(buf.hasPendingData());
 
@@ -429,8 +473,32 @@ static ReturnType parseJSONEscapeSequence(Vector & s, ReadBuffer & buf)
             ++buf.position();
 
             char hex_code[4];
-            if (4 != buf.read(hex_code, 4))
-                return error("Cannot parse escape sequence: less than four bytes after \\u", ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
+            if (keep_bad_sequences)
+            {
+                for (size_t i = 0; i != 4; ++i)
+                {
+                    if (buf.eof() || *buf.position() == '"')
+                    {
+                        /// Save initial data without parsing of escape sequence.
+                        s.push_back('\\');
+                        s.push_back('u');
+                        for (size_t j = 0; j != i; ++j)
+                            s.push_back(hex_code[j]);
+                        return ReturnType(true);
+                    }
+
+                    hex_code[i] = *buf.position();
+                    ++buf.position();
+                }
+            }
+            else
+            {
+                if (4 != buf.read(hex_code, 4))
+                    return error(
+                        "Cannot parse escape sequence: less than four bytes after \\u. In JSON input formats you can disable setting "
+                        "input_format_json_throw_on_bad_escape_sequence to save bad escape sequences as is",
+                        ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
+            }
 
             /// \u0000 - special case
             if (0 == memcmp(hex_code, "0000", 4))
@@ -455,13 +523,70 @@ static ReturnType parseJSONEscapeSequence(Vector & s, ReadBuffer & buf)
                 /// Surrogate pair.
                 if (code_point >= 0xD800 && code_point <= 0xDBFF)
                 {
-                    if (!checkString("\\u", buf))
-                        return error("Cannot parse escape sequence: missing second part of surrogate pair", ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
+                    auto restore_first_unicode = [&]()
+                    {
+                        s.push_back('\\');
+                        s.push_back('u');
+                        for (char & c : hex_code)
+                            s.push_back(c);
+                    };
+
+                    if (keep_bad_sequences)
+                    {
+                        if (buf.eof() || *buf.position() != '\\')
+                        {
+                            restore_first_unicode();
+                            return ReturnType(true);
+                        }
+
+                        ++buf.position();
+                        if (buf.eof() || *buf.position() != 'u')
+                        {
+                            restore_first_unicode();
+                            s.push_back('\\');
+                            return ReturnType(true);
+                        }
+
+                        ++buf.position();
+                    }
+                    else
+                    {
+                        if (!checkString("\\u", buf))
+                            return error(
+                                "Cannot parse escape sequence: missing second part of surrogate pair. In JSON input formats you can "
+                                "disable setting input_format_json_throw_on_bad_escape_sequence to save bad escape sequences as is",
+                                ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
+                    }
 
                     char second_hex_code[4];
-                    if (4 != buf.read(second_hex_code, 4))
-                        return error("Cannot parse escape sequence: less than four bytes after \\u of second part of surrogate pair",
-                            ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
+                    if (keep_bad_sequences)
+                    {
+                        for (size_t i = 0; i != 4; ++i)
+                        {
+                            if (buf.eof() || *buf.position() == '"')
+                            {
+                                /// Save initial data without parsing of escape sequence.
+                                restore_first_unicode();
+                                s.push_back('\\');
+                                s.push_back('u');
+                                for (size_t j = 0; j != i; ++j)
+                                    s.push_back(second_hex_code[j]);
+                                return ReturnType(true);
+                            }
+
+                            second_hex_code[i] = *buf.position();
+                            ++buf.position();
+                        }
+                    }
+                    else
+                    {
+                        if (4 != buf.read(second_hex_code, 4))
+                            return error(
+                                "Cannot parse escape sequence: less than four bytes after \\u of second part of surrogate pair. In JSON "
+                                "input formats you can disable setting input_format_json_throw_on_bad_escape_sequence to save bad escape "
+                                "sequences as is",
+                                ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
+                    }
 
                     UInt16 second_code_point = unhex4(second_hex_code);
 
@@ -475,7 +600,21 @@ static ReturnType parseJSONEscapeSequence(Vector & s, ReadBuffer & buf)
                         s.push_back((full_code_point & 0x3F) | 0x80);
                     }
                     else
-                        return error("Incorrect surrogate pair of unicode escape sequences in JSON", ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
+                    {
+                        if (!keep_bad_sequences)
+                            return error(
+                                "Incorrect surrogate pair of unicode escape sequences in JSON. In JSON input formats you can disable "
+                                "setting input_format_json_throw_on_bad_escape_sequence to save bad escape sequences as is",
+                                ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
+
+                        /// Save initial data without parsing of escape sequence.
+                        restore_first_unicode();
+                        s.push_back('\\');
+                        s.push_back('u');
+                        for (char & c : second_hex_code)
+                            s.push_back(c);
+                        return ReturnType(true);
+                    }
                 }
                 else
                 {
@@ -497,13 +636,20 @@ static ReturnType parseJSONEscapeSequence(Vector & s, ReadBuffer & buf)
 }
 
 
-template <typename Vector, bool parse_complex_escape_sequence>
+template <typename Vector, bool parse_complex_escape_sequence, bool support_crlf>
 void readEscapedStringIntoImpl(Vector & s, ReadBuffer & buf)
 {
     while (!buf.eof())
     {
-        char * next_pos = find_first_symbols<'\t', '\n', '\\'>(buf.position(), buf.buffer().end());
-
+        char * next_pos;
+        if constexpr (support_crlf)
+        {
+            next_pos = find_first_symbols<'\t', '\n', '\\','\r'>(buf.position(), buf.buffer().end());
+        }
+        else
+        {
+            next_pos = find_first_symbols<'\t', '\n', '\\'>(buf.position(), buf.buffer().end());
+        }
         appendToStringOrVector(s, buf, next_pos);
         buf.position() = next_pos;
 
@@ -530,25 +676,46 @@ void readEscapedStringIntoImpl(Vector & s, ReadBuffer & buf)
                 }
             }
         }
+
+        if constexpr (support_crlf)
+        {
+            if (*buf.position() == '\r')
+            {
+                ++buf.position();
+                if (!buf.eof() && *buf.position() != '\n')
+                {
+                    s.push_back('\r');
+                    continue;
+                }
+                return;
+            }
+        }
     }
 }
 
-template <typename Vector>
+template <typename Vector, bool support_crlf>
 void readEscapedStringInto(Vector & s, ReadBuffer & buf)
 {
-    readEscapedStringIntoImpl<Vector, true>(s, buf);
+    readEscapedStringIntoImpl<Vector, true, support_crlf>(s, buf);
 }
 
 
 void readEscapedString(String & s, ReadBuffer & buf)
 {
     s.clear();
-    readEscapedStringInto(s, buf);
+    readEscapedStringInto<String,false>(s, buf);
 }
 
-template void readEscapedStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
-template void readEscapedStringInto<NullOutput>(NullOutput & s, ReadBuffer & buf);
+void readEscapedStringCRLF(String & s, ReadBuffer & buf)
+{
+    s.clear();
+    readEscapedStringInto<String,true>(s, buf);
+}
 
+template void readEscapedStringInto<PaddedPODArray<UInt8>,false>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
+template void readEscapedStringInto<NullOutput,false>(NullOutput & s, ReadBuffer & buf);
+template void readEscapedStringInto<PaddedPODArray<UInt8>,true>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
+template void readEscapedStringInto<NullOutput,true>(NullOutput & s, ReadBuffer & buf);
 
 /** If enable_sql_style_quoting == true,
   *  strings like 'abc''def' will be parsed as abc'def.
@@ -714,6 +881,12 @@ void readBackQuotedString(String & s, ReadBuffer & buf)
 {
     s.clear();
     readBackQuotedStringInto<false>(s, buf);
+}
+
+bool tryReadBackQuotedString(String & s, ReadBuffer & buf)
+{
+    s.clear();
+    return readAnyQuotedStringInto<'`', false, String, bool>(s, buf);
 }
 
 void readBackQuotedStringWithSQLStyle(String & s, ReadBuffer & buf)
@@ -1000,7 +1173,7 @@ template void readCSVStringInto<PaddedPODArray<UInt8>, false, false>(PaddedPODAr
 
 
 template <typename Vector, typename ReturnType>
-ReturnType readJSONStringInto(Vector & s, ReadBuffer & buf)
+ReturnType readJSONStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::JSON & settings)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
@@ -1032,23 +1205,23 @@ ReturnType readJSONStringInto(Vector & s, ReadBuffer & buf)
         }
 
         if (*buf.position() == '\\')
-            parseJSONEscapeSequence<Vector, ReturnType>(s, buf);
+            parseJSONEscapeSequence<Vector, ReturnType>(s, buf, !settings.throw_on_bad_escape_sequence);
     }
 
     return error("Cannot parse JSON string: expected closing quote", ErrorCodes::CANNOT_PARSE_QUOTED_STRING);
 }
 
-void readJSONString(String & s, ReadBuffer & buf)
+void readJSONString(String & s, ReadBuffer & buf, const FormatSettings::JSON & settings)
 {
     s.clear();
-    readJSONStringInto(s, buf);
+    readJSONStringInto(s, buf, settings);
 }
 
-template void readJSONStringInto<PaddedPODArray<UInt8>, void>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
-template bool readJSONStringInto<PaddedPODArray<UInt8>, bool>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
-template void readJSONStringInto<NullOutput>(NullOutput & s, ReadBuffer & buf);
-template void readJSONStringInto<String>(String & s, ReadBuffer & buf);
-template bool readJSONStringInto<String, bool>(String & s, ReadBuffer & buf);
+template void readJSONStringInto<PaddedPODArray<UInt8>, void>(PaddedPODArray<UInt8> & s, ReadBuffer & buf, const FormatSettings::JSON & settings);
+template bool readJSONStringInto<PaddedPODArray<UInt8>, bool>(PaddedPODArray<UInt8> & s, ReadBuffer & buf, const FormatSettings::JSON & settings);
+template void readJSONStringInto<NullOutput>(NullOutput & s, ReadBuffer & buf, const FormatSettings::JSON & settings);
+template void readJSONStringInto<String>(String & s, ReadBuffer & buf, const FormatSettings::JSON & settings);
+template bool readJSONStringInto<String, bool>(String & s, ReadBuffer & buf, const FormatSettings::JSON & settings);
 
 template <typename Vector, typename ReturnType, char opening_bracket, char closing_bracket>
 ReturnType readJSONObjectOrArrayPossiblyInvalid(Vector & s, ReadBuffer & buf)
@@ -1130,9 +1303,85 @@ ReturnType readJSONArrayInto(Vector & s, ReadBuffer & buf)
 
 template void readJSONArrayInto<PaddedPODArray<UInt8>, void>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 template bool readJSONArrayInto<PaddedPODArray<UInt8>, bool>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
+template void readJSONArrayInto<String>(String & s, ReadBuffer & buf);
+
+std::string_view readJSONObjectAsViewPossiblyInvalid(ReadBuffer & buf, String & object_buffer)
+{
+    if (buf.eof() || *buf.position() != '{')
+        throw Exception(ErrorCodes::INCORRECT_DATA, "JSON object should start with '{{'");
+
+    char * start = buf.position();
+    bool use_object_buffer = false;
+    object_buffer.clear();
+
+    ++buf.position();
+    Int64 balance = 1;
+    bool quotes = false;
+
+    while (true)
+    {
+        if (!buf.hasPendingData() && !use_object_buffer)
+        {
+            use_object_buffer = true;
+            object_buffer.append(start, buf.position() - start);
+        }
+
+        if (buf.eof())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected EOF while reading JSON object");
+
+        char * next_pos = find_first_symbols<'\\', '{', '}', '"'>(buf.position(), buf.buffer().end());
+        if (use_object_buffer)
+            object_buffer.append(buf.position(), next_pos - buf.position());
+        buf.position() = next_pos;
+
+        if (!buf.hasPendingData())
+            continue;
+
+        if (use_object_buffer)
+            object_buffer.push_back(*buf.position());
+
+        if (*buf.position() == '\\')
+        {
+            ++buf.position();
+            if (!buf.hasPendingData() && !use_object_buffer)
+            {
+                use_object_buffer = true;
+                object_buffer.append(start, buf.position() - start);
+            }
+
+            if (buf.eof())
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected EOF while reading JSON object");
+
+            if (use_object_buffer)
+                object_buffer.push_back(*buf.position());
+            ++buf.position();
+
+            continue;
+        }
+
+        if (*buf.position() == '"')
+            quotes = !quotes;
+        else if (!quotes) // can be only opening_bracket or closing_bracket
+            balance += *buf.position() == '{' ? 1 : -1;
+
+        ++buf.position();
+
+        if (balance == 0)
+        {
+            if (use_object_buffer)
+                return object_buffer;
+            return {start, buf.position()};
+        }
+
+        if (balance < 0)
+            break;
+    }
+
+    throw Exception(ErrorCodes::INCORRECT_DATA, "JSON object should have equal number of opening and closing brackets");
+}
 
 template <typename ReturnType>
-ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf)
+ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf, const char * allowed_delimiters)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
@@ -1151,8 +1400,7 @@ ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf)
             ++buf.position();
             return true;
         }
-        else
-            return false;
+        return false;
     };
 
     UInt16 year = 0;
@@ -1179,6 +1427,9 @@ ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf)
     }
     else
     {
+        if (!isSymbolIn(*buf.position(), allowed_delimiters))
+            return error();
+
         ++buf.position();
 
         if (!append_digit(month))
@@ -1186,7 +1437,11 @@ ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf)
         append_digit(month);
 
         if (!buf.eof() && !isNumericASCII(*buf.position()))
+        {
+            if (!isSymbolIn(*buf.position(), allowed_delimiters))
+                return error();
             ++buf.position();
+        }
         else
             return error();
 
@@ -1199,12 +1454,12 @@ ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf)
     return ReturnType(true);
 }
 
-template void readDateTextFallback<void>(LocalDate &, ReadBuffer &);
-template bool readDateTextFallback<bool>(LocalDate &, ReadBuffer &);
+template void readDateTextFallback<void>(LocalDate &, ReadBuffer &, const char * allowed_delimiters);
+template bool readDateTextFallback<bool>(LocalDate &, ReadBuffer &, const char * allowed_delimiters);
 
 
 template <typename ReturnType, bool dt64_mode>
-ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut)
+ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_date_delimiters, const char * allowed_time_delimiters)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
@@ -1261,10 +1516,8 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
         size_t size = buf.read(s_pos, remaining_date_size);
         if (size != remaining_date_size)
         {
-            s_pos[size] = 0;
-
             if constexpr (throw_exception)
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime {}", s);
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime {}", std::string_view(s, already_read_length + size));
             else
                 return false;
         }
@@ -1273,6 +1526,9 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
         {
             if (!isNumericASCII(s[0]) || !isNumericASCII(s[1]) || !isNumericASCII(s[2]) || !isNumericASCII(s[3])
                 || !isNumericASCII(s[5]) || !isNumericASCII(s[6]) || !isNumericASCII(s[8]) || !isNumericASCII(s[9]))
+                return false;
+
+            if (!isSymbolIn(s[4], allowed_date_delimiters) || !isSymbolIn(s[7], allowed_date_delimiters))
                 return false;
         }
 
@@ -1291,10 +1547,8 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
 
             if (size != time_broken_down_length)
             {
-                s_pos[size] = 0;
-
                 if constexpr (throw_exception)
-                    throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse time component of DateTime {}", s);
+                    throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse time component of DateTime {}", std::string_view(s, size));
                 else
                     return false;
             }
@@ -1304,6 +1558,9 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
                 if (!isNumericASCII(s[0]) || !isNumericASCII(s[1]) || !isNumericASCII(s[3]) || !isNumericASCII(s[4])
                     || !isNumericASCII(s[6]) || !isNumericASCII(s[7]))
                     return false;
+
+                if (!isSymbolIn(s[2], allowed_time_delimiters) || !isSymbolIn(s[5], allowed_time_delimiters))
+                    return false;
             }
 
             hour = (s[0] - '0') * 10 + (s[1] - '0');
@@ -1311,10 +1568,25 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
             second = (s[6] - '0') * 10 + (s[7] - '0');
         }
 
-        if (unlikely(year == 0))
-            datetime = 0;
+        if constexpr (throw_exception)
+        {
+            if (unlikely(year == 0))
+                datetime = 0;
+            else
+                datetime = makeDateTime(date_lut, year, month, day, hour, minute, second);
+        }
         else
-            datetime = date_lut.makeDateTime(year, month, day, hour, minute, second);
+        {
+            auto datetime_maybe = tryToMakeDateTime(date_lut, year, month, day, hour, minute, second);
+            if (!datetime_maybe)
+                return false;
+
+            /// For usual DateTime check if value is within supported range
+            if (!dt64_mode && (*datetime_maybe < 0 || *datetime_maybe > UINT32_MAX))
+                return false;
+
+            datetime = *datetime_maybe;
+        }
     }
     else
     {
@@ -1349,29 +1621,152 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
     return ReturnType(true);
 }
 
-template void readDateTimeTextFallback<void, false>(time_t &, ReadBuffer &, const DateLUTImpl &);
-template void readDateTimeTextFallback<void, true>(time_t &, ReadBuffer &, const DateLUTImpl &);
-template bool readDateTimeTextFallback<bool, false>(time_t &, ReadBuffer &, const DateLUTImpl &);
-template bool readDateTimeTextFallback<bool, true>(time_t &, ReadBuffer &, const DateLUTImpl &);
+template void readDateTimeTextFallback<void, false>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *);
+template void readDateTimeTextFallback<void, true>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *);
+template bool readDateTimeTextFallback<bool, false>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *);
+template bool readDateTimeTextFallback<bool, true>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *);
 
-
-template <typename ReturnType>
-ReturnType skipJSONFieldImpl(ReadBuffer & buf, StringRef name_of_field)
+template <typename ReturnType, bool t64_mode>
+ReturnType readTimeTextFallback(time_t & time, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_date_delimiters, const char * allowed_time_delimiters)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
+
+    /// hhh:mm:ss
+    static constexpr auto time_broken_down_length = 9;
+
+    char s[time_broken_down_length];
+    char * s_pos = s;
+
+    int negative_multiplier = 1;
+
+    if (!buf.eof() && *buf.position() == '-')
+    {
+        negative_multiplier = -1;
+        ++buf.position();
+    }
+
+    /// A piece similar to unix timestamp, maybe scaled to subsecond precision.
+    while (s_pos < s + time_broken_down_length && !buf.eof() && isNumericASCII(*buf.position()))
+    {
+        *s_pos = *buf.position();
+        ++s_pos;
+        ++buf.position();
+    }
+
+    if (!t64_mode && s_pos == s + 4 && !buf.eof() && !isNumericASCII(*buf.position()))
+    {
+        const auto already_read_length = s_pos - s;
+        const size_t remaining_time_size = time_broken_down_length - already_read_length;
+
+        size_t size = buf.read(s_pos, remaining_time_size);
+
+        if constexpr (!throw_exception)
+        {
+            if (!isNumericASCII(s[0]) || !isNumericASCII(s[1]) || !isNumericASCII(s[2]) || !isNumericASCII(s[4])
+                || !isNumericASCII(s[5]) || !isNumericASCII(s[7]) || !isNumericASCII(s[8]))
+                return false;
+
+            if (!isSymbolIn(s[4], allowed_date_delimiters) || !isSymbolIn(s[7], allowed_date_delimiters))
+                return false;
+        }
+
+        uint64_t hour = 0;
+        UInt8 minute = 0;
+        UInt8 second = 0;
+
+        if (!buf.eof() && (*buf.position() == ' ' || *buf.position() == 'T'))
+        {
+            ++buf.position();
+
+            if (size != time_broken_down_length)
+            {
+                if constexpr (throw_exception)
+                    throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse Time {}", std::string_view(s, size));
+                else
+                    return false;
+            }
+
+            if constexpr (!throw_exception)
+            {
+                if (!isNumericASCII(s[0]) || !isNumericASCII(s[1]) || !isNumericASCII(s[2]) || !isNumericASCII(s[4]) || !isNumericASCII(s[5])
+                    || !isNumericASCII(s[7]) || !isNumericASCII(s[8]))
+                    return false;
+
+                if (!isSymbolIn(s[3], allowed_time_delimiters) || !isSymbolIn(s[6], allowed_time_delimiters))
+                    return false;
+            }
+
+            hour = (s[0] - '0') * 100 + (s[1] - '0') * 10 + (s[2] - '0');
+            minute = (s[4] - '0') * 10 + (s[5] - '0');
+            second = (s[7] - '0') * 10 + (s[8] - '0');
+        }
+
+        time = date_lut.makeTime(hour, minute, second) * negative_multiplier;
+    }
+    else
+    {
+        time = 0;
+        bool too_short = s_pos - s <= 4;
+
+        if (!too_short || t64_mode)
+        {
+            for (const char * digit_pos = s; digit_pos < s_pos; ++digit_pos)
+            {
+                if constexpr (!throw_exception)
+                {
+                    if (!isNumericASCII(*digit_pos))
+                        return false;
+                }
+                time = time * 10 + *digit_pos - '0';
+            }
+        }
+        time *= negative_multiplier;
+
+        if (too_short && negative_multiplier != -1)
+        {
+            if constexpr (throw_exception)
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse Time");
+            else
+                return false;
+        }
+
+    }
+
+    return ReturnType(true);
+}
+
+template void readTimeTextFallback<void, false>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *);
+template void readTimeTextFallback<void, true>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *);
+template bool readTimeTextFallback<bool, false>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *);
+template bool readTimeTextFallback<bool, true>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *);
+
+template <typename ReturnType>
+ReturnType skipJSONFieldImpl(ReadBuffer & buf, std::string_view name_of_field, const FormatSettings::JSON & settings, size_t current_depth)
+{
+    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
+
+    if (unlikely(current_depth > settings.max_depth))
+    {
+        if constexpr (throw_exception)
+            throw Exception(ErrorCodes::TOO_DEEP_RECURSION, "JSON is too deep for key '{}'", name_of_field);
+        return ReturnType(false);
+    }
+
+    if (unlikely(current_depth > 0 && current_depth % 1024 == 0))
+        checkStackSize();
 
     if (buf.eof())
     {
         if constexpr (throw_exception)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected EOF for key '{}'", name_of_field.toString());
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected EOF for key '{}'", name_of_field);
         return ReturnType(false);
     }
-    else if (*buf.position() == '"') /// skip double-quoted string
+    if (*buf.position() == '"') /// skip double-quoted string
     {
         NullOutput sink;
         if constexpr (throw_exception)
-            readJSONStringInto(sink, buf);
-        else if (!tryReadJSONStringInto(sink, buf))
+            readJSONStringInto(sink, buf, settings);
+        else if (!tryReadJSONStringInto(sink, buf, settings))
             return ReturnType(false);
     }
     else if (isNumericASCII(*buf.position()) || *buf.position() == '-' || *buf.position() == '+' || *buf.position() == '.') /// skip number
@@ -1383,7 +1778,7 @@ ReturnType skipJSONFieldImpl(ReadBuffer & buf, StringRef name_of_field)
         if (!tryReadFloatText(v, buf))
         {
             if constexpr (throw_exception)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Expected a number field for key '{}'", name_of_field.toString());
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Expected a number field for key '{}'", name_of_field);
             return ReturnType(false);
         }
     }
@@ -1422,8 +1817,8 @@ ReturnType skipJSONFieldImpl(ReadBuffer & buf, StringRef name_of_field)
         while (true)
         {
             if constexpr (throw_exception)
-                skipJSONFieldImpl<ReturnType>(buf, name_of_field);
-            else if (!skipJSONFieldImpl<ReturnType>(buf, name_of_field))
+                skipJSONFieldImpl<ReturnType>(buf, name_of_field, settings, current_depth + 1);
+            else if (!skipJSONFieldImpl<ReturnType>(buf, name_of_field, settings, current_depth + 1))
                 return ReturnType(false);
 
             skipWhitespaceIfAny(buf);
@@ -1441,7 +1836,7 @@ ReturnType skipJSONFieldImpl(ReadBuffer & buf, StringRef name_of_field)
             else
             {
                 if constexpr (throw_exception)
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected symbol for key '{}'", name_of_field.toString());
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected symbol for key '{}'", name_of_field);
                 return ReturnType(false);
             }
         }
@@ -1458,14 +1853,14 @@ ReturnType skipJSONFieldImpl(ReadBuffer & buf, StringRef name_of_field)
             {
                 NullOutput sink;
                 if constexpr (throw_exception)
-                    readJSONStringInto(sink, buf);
-                else if (!tryReadJSONStringInto(sink, buf))
+                    readJSONStringInto(sink, buf, settings);
+                else if (!tryReadJSONStringInto(sink, buf, settings))
                     return ReturnType(false);
             }
             else
             {
                 if constexpr (throw_exception)
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected symbol for key '{}'", name_of_field.toString());
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected symbol for key '{}'", name_of_field);
                 return ReturnType(false);
             }
 
@@ -1474,15 +1869,15 @@ ReturnType skipJSONFieldImpl(ReadBuffer & buf, StringRef name_of_field)
             if (buf.eof() || !(*buf.position() == ':'))
             {
                 if constexpr (throw_exception)
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected symbol for key '{}'", name_of_field.toString());
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected symbol for key '{}'", name_of_field);
                 return ReturnType(false);
             }
             ++buf.position();
             skipWhitespaceIfAny(buf);
 
             if constexpr (throw_exception)
-                skipJSONFieldImpl<ReturnType>(buf, name_of_field);
-            else if (!skipJSONFieldImpl<ReturnType>(buf, name_of_field))
+                skipJSONFieldImpl<ReturnType>(buf, name_of_field, settings, current_depth + 1);
+            else if (!skipJSONFieldImpl<ReturnType>(buf, name_of_field, settings, current_depth + 1))
                 return ReturnType(false);
 
             skipWhitespaceIfAny(buf);
@@ -1498,7 +1893,7 @@ ReturnType skipJSONFieldImpl(ReadBuffer & buf, StringRef name_of_field)
         if (buf.eof())
         {
             if constexpr (throw_exception)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected EOF for key '{}'", name_of_field.toString());
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected EOF for key '{}'", name_of_field);
             return ReturnType(false);
         }
         ++buf.position();
@@ -1511,7 +1906,7 @@ ReturnType skipJSONFieldImpl(ReadBuffer & buf, StringRef name_of_field)
                 "Cannot read JSON field here: '{}'. Unexpected symbol '{}'{}",
                 String(buf.position(), std::min(buf.available(), size_t(10))),
                 std::string(1, *buf.position()),
-                name_of_field.empty() ? "" : " for key " + name_of_field.toString());
+                name_of_field.empty() ? "" : " for key " + String{name_of_field});
 
         return ReturnType(false);
     }
@@ -1519,14 +1914,14 @@ ReturnType skipJSONFieldImpl(ReadBuffer & buf, StringRef name_of_field)
     return ReturnType(true);
 }
 
-void skipJSONField(ReadBuffer & buf, StringRef name_of_field)
+void skipJSONField(ReadBuffer & buf, std::string_view name_of_field, const FormatSettings::JSON & settings)
 {
-    skipJSONFieldImpl<void>(buf, name_of_field);
+    skipJSONFieldImpl<void>(buf, name_of_field, settings, 0);
 }
 
-bool trySkipJSONField(ReadBuffer & buf, StringRef name_of_field)
+bool trySkipJSONField(ReadBuffer & buf, std::string_view name_of_field, const FormatSettings::JSON & settings)
 {
-    return skipJSONFieldImpl<bool>(buf, name_of_field);
+    return skipJSONFieldImpl<bool>(buf, name_of_field, settings, 0);
 }
 
 
@@ -1756,6 +2151,11 @@ static ReturnType readParsedValueInto(Vector & s, ReadBuffer & buf, ParseFunc pa
     return ReturnType(true);
 }
 
+void readParsedValueIntoString(String & s, ReadBuffer & buf, std::function<void(ReadBuffer &)> parse_func)
+{
+    readParsedValueInto<void>(s, buf, std::move(parse_func));
+}
+
 template <typename ReturnType = void, typename Vector>
 static ReturnType readQuotedStringFieldInto(Vector & s, ReadBuffer & buf)
 {
@@ -1867,13 +2267,13 @@ ReturnType readQuotedFieldInto(Vector & s, ReadBuffer & buf)
 
     if (*buf.position() == '\'')
         return readQuotedStringFieldInto<ReturnType>(s, buf);
-    else if (*buf.position() == '[')
+    if (*buf.position() == '[')
         return readQuotedFieldInBracketsInto<ReturnType, '[', ']'>(s, buf);
-    else if (*buf.position() == '(')
+    if (*buf.position() == '(')
         return readQuotedFieldInBracketsInto<ReturnType, '(', ')'>(s, buf);
-    else if (*buf.position() == '{')
+    if (*buf.position() == '{')
         return readQuotedFieldInBracketsInto<ReturnType, '{', '}'>(s, buf);
-    else if (checkCharCaseInsensitive('n', buf))
+    if (checkCharCaseInsensitive('n', buf))
     {
         /// NULL or NaN
         if (checkCharCaseInsensitive('u', buf))
@@ -1941,24 +2341,40 @@ bool tryReadQuotedField(String & s, ReadBuffer & buf)
     return readQuotedFieldInto<bool>(s, buf);
 }
 
-void readJSONField(String & s, ReadBuffer & buf)
+void readJSONField(String & s, ReadBuffer & buf, const FormatSettings::JSON & settings)
 {
     s.clear();
-    auto parse_func = [](ReadBuffer & in) { skipJSONField(in, ""); };
+    auto parse_func = [&settings](ReadBuffer & in) { skipJSONField(in, "", settings); };
     readParsedValueInto<void>(s, buf, parse_func);
 }
 
-bool tryReadJSONField(String & s, ReadBuffer & buf)
+bool tryReadJSONField(String & s, ReadBuffer & buf, const FormatSettings::JSON & settings)
 {
     s.clear();
-    auto parse_func = [](ReadBuffer & in) { return trySkipJSONField(in, ""); };
+    auto parse_func = [&settings](ReadBuffer & in) { return trySkipJSONField(in, "", settings); };
     return readParsedValueInto<bool>(s, buf, parse_func);
 }
 
 void readTSVField(String & s, ReadBuffer & buf)
 {
     s.clear();
-    readEscapedStringIntoImpl<String, false>(s, buf);
+    readEscapedStringIntoImpl<String, false, false>(s, buf);
+}
+
+void readTSVFieldCRLF(String & s, ReadBuffer & buf)
+{
+    s.clear();
+    readEscapedStringIntoImpl<String, false, true>(s, buf);
+}
+
+String escapeDotInJSONKey(const String & key)
+{
+    return boost::replace_all_copy(key, ".", "%2E");
+}
+
+String unescapeDotInJSONKey(const String & key)
+{
+    return boost::replace_all_copy(key, "%2E", ".");
 }
 
 }

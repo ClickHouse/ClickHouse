@@ -27,10 +27,9 @@ if (ENABLE_QAT_OUT_OF_TREE_BUILD)
                 ${QAT_AL_INCLUDE_DIR}
                 ${QAT_USDM_INCLUDE_DIR}
                 ${ZSTD_LIBRARY_DIR})
-    target_compile_definitions(_qatzstd_plugin PRIVATE -DDEBUGLEVEL=0 PUBLIC -DENABLE_ZSTD_QAT_CODEC)
+    target_compile_definitions(_qatzstd_plugin PRIVATE -DDEBUGLEVEL=0)
     add_library (ch_contrib::qatzstd_plugin ALIAS _qatzstd_plugin)
 else () # In-tree build
-    message(STATUS "Intel QATZSTD in-tree build")
     set(QATZSTD_SRC_DIR "${ClickHouse_SOURCE_DIR}/contrib/QAT-ZSTD-Plugin/src")
     set(QATZSTD_SRC "${QATZSTD_SRC_DIR}/qatseqprod.c")
     set(ZSTD_LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/zstd/lib")
@@ -78,7 +77,7 @@ else () # In-tree build
         ${QAT_USDM_INCLUDE_DIR}
         ${ZSTD_LIBRARY_DIR}
         ${LIBQAT_HEADER_DIR})
-    target_compile_definitions(_qatzstd_plugin PRIVATE -DDEBUGLEVEL=0 PUBLIC -DENABLE_ZSTD_QAT_CODEC -DINTREE)
+    target_compile_definitions(_qatzstd_plugin PRIVATE -DDEBUGLEVEL=0 PUBLIC -DINTREE)
     target_include_directories(_qatzstd_plugin SYSTEM PUBLIC $<BUILD_INTERFACE:${QATZSTD_SRC_DIR}> $<INSTALL_INTERFACE:include>)
     add_library (ch_contrib::qatzstd_plugin ALIAS _qatzstd_plugin)
 endif ()

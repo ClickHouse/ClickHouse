@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Block.h>
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <IO/WriteBufferFromString.h>
@@ -21,7 +20,7 @@ public:
       */
     TabSeparatedRowOutputFormat(
         WriteBuffer & out_,
-        const Block & header_,
+        SharedHeader header_,
         bool with_names_,
         bool with_types_,
         bool is_raw_,
@@ -29,19 +28,16 @@ public:
 
     String getName() const override { return "TabSeparatedRowOutputFormat"; }
 
-    /// https://www.iana.org/assignments/media-types/text/tab-separated-values
-    String getContentType() const override { return "text/tab-separated-values; charset=UTF-8"; }
-
 protected:
     void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;
-    void writeFieldDelimiter() override final;
+    void writeFieldDelimiter() final;
     void writeRowEndDelimiter() override;
 
     bool supportTotals() const override { return true; }
     bool supportExtremes() const override { return true; }
 
-    void writeBeforeTotals() override final;
-    void writeBeforeExtremes() override final;
+    void writeBeforeTotals() final;
+    void writeBeforeExtremes() final;
 
     void writePrefix() override;
     void writeLine(const std::vector<String> & values);

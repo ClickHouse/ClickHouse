@@ -30,7 +30,7 @@ create table db_01530_atomic.data (key Int) Engine=ReplicatedMergeTree('/clickho
 drop database db_01530_atomic;
 
 create database db_01530_atomic Engine=Atomic;
-create table db_01530_atomic.data (key Int) Engine=ReplicatedMergeTree('/clickhouse/tables/{database}/db_01530_atomic/data', 'test') order by key; -- { serverError 253 }
+create table db_01530_atomic.data (key Int) Engine=ReplicatedMergeTree('/clickhouse/tables/{database}/db_01530_atomic/data', 'test') order by key; -- { serverError REPLICA_ALREADY_EXISTS }
 
 set database_atomic_wait_for_drop_and_detach_synchronously=1;
 

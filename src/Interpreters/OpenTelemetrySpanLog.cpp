@@ -1,6 +1,7 @@
 #include <Interpreters/OpenTelemetrySpanLog.h>
 
 #include <base/getFQDNOrHostName.h>
+#include <Common/DateLUTImpl.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -20,11 +21,11 @@ ColumnsDescription OpenTelemetrySpanLogElement::getColumnsDescription()
     auto span_kind_type = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
         {
-            {"INTERNAL",    static_cast<Int8>(OpenTelemetry::INTERNAL)},
-            {"SERVER",      static_cast<Int8>(OpenTelemetry::SERVER)},
-            {"CLIENT",      static_cast<Int8>(OpenTelemetry::CLIENT)},
-            {"PRODUCER",    static_cast<Int8>(OpenTelemetry::PRODUCER)},
-            {"CONSUMER",    static_cast<Int8>(OpenTelemetry::CONSUMER)}
+            {"INTERNAL",    static_cast<Int8>(OpenTelemetry::SpanKind::INTERNAL)},
+            {"SERVER",      static_cast<Int8>(OpenTelemetry::SpanKind::SERVER)},
+            {"CLIENT",      static_cast<Int8>(OpenTelemetry::SpanKind::CLIENT)},
+            {"PRODUCER",    static_cast<Int8>(OpenTelemetry::SpanKind::PRODUCER)},
+            {"CONSUMER",    static_cast<Int8>(OpenTelemetry::SpanKind::CONSUMER)}
         }
     );
 

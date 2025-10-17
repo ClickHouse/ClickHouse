@@ -11,12 +11,17 @@
 #include <Interpreters/Context.h>
 #include <Parsers/ParserCreateFunctionQuery.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/queryToString.h>
 #include <Common/escapeForFileName.h>
+#include <Core/Settings.h>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+}
 
 namespace ErrorCodes
 {
@@ -34,7 +39,7 @@ void backupUserDefinedSQLObjects(
     backup_entries.reserve(objects.size());
     for (const auto & [object_name, create_object_query] : objects)
         backup_entries.emplace_back(
-            escapeForFileName(object_name) + ".sql", std::make_shared<BackupEntryFromMemory>(queryToString(create_object_query)));
+            escapeForFileName(object_name) + ".sql", std::make_shared<BackupEntryFromMemory>(create_object_query->formatWithSecretsOneLine()));
 
     auto context = backup_entries_collector.getContext();
     const auto & storage = context->getUserDefinedSQLObjectsStorage();
@@ -88,7 +93,7 @@ restoreUserDefinedSQLObjects(RestorerFromBackup & restorer, const String & data_
     auto backup = restorer.getBackup();
     fs::path data_path_in_backup_fs{data_path_in_backup};
 
-    Strings filenames = backup->listFiles(data_path_in_backup);
+    Strings filenames = backup->listFiles(data_path_in_backup, /*recursive*/ false);
     if (filenames.empty())
         return {}; /// Nothing to restore.
 
@@ -128,7 +133,8 @@ restoreUserDefinedSQLObjects(RestorerFromBackup & restorer, const String & data_
                     statement_def.data() + statement_def.size(),
                     "in file " + filepath + " from backup " + backup->getNameForLogging(),
                     0,
-                    context->getSettingsRef().max_parser_depth);
+                    context->getSettingsRef()[Setting::max_parser_depth],
+                    context->getSettingsRef()[Setting::max_parser_backtracks]);
                 break;
             }
         }

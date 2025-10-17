@@ -1,8 +1,8 @@
 import pytest
-from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV
-from helpers.keeper_utils import KeeperClient, KeeperException
 
+from helpers.cluster import ClickHouseCluster
+from helpers.keeper_utils import KeeperClient, KeeperException
+from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
 
@@ -26,9 +26,16 @@ def started_cluster():
 
 @pytest.fixture(scope="function")
 def client(started_cluster):
-    with KeeperClient.from_cluster(cluster, "zoo1") as keeper_client:
+    with KeeperClient.from_cluster(cluster, "zoo1", identity="clickhouse:password") as keeper_client:
         yield keeper_client
 
+
+def drop_node_if_exists(client: KeeperClient, node_path: str, recursive=False):
+    if client.exists(node_path):
+        if recursive:
+            client.rmr(node_path)
+        else:
+            client.rm(node_path)
 
 def test_big_family(client: KeeperClient):
     client.touch("/test_big_family")
@@ -47,24 +54,24 @@ def test_big_family(client: KeeperClient):
 
     assert response == TSV(
         [
-            ["/test_big_family/1", "5"],
-            ["/test_big_family/2", "3"],
-            ["/test_big_family/2/3", "0"],
-            ["/test_big_family/2/2", "0"],
-            ["/test_big_family/2/1", "0"],
-            ["/test_big_family/1/5", "0"],
-            ["/test_big_family/1/4", "0"],
-            ["/test_big_family/1/3", "0"],
-            ["/test_big_family/1/2", "0"],
-            ["/test_big_family/1/1", "0"],
+            ["/test_big_family", "11"],
+            ["/test_big_family/1", "6"],
+            ["/test_big_family/2", "4"],
+            ["/test_big_family/2/3", "1"],
+            ["/test_big_family/2/2", "1"],
+            ["/test_big_family/2/1", "1"],
+            ["/test_big_family/1/5", "1"],
+            ["/test_big_family/1/4", "1"],
+            ["/test_big_family/1/3", "1"],
+            ["/test_big_family/1/2", "1"],
         ]
     )
 
-    response = client.find_big_family("/test_big_family", 1)
-
+    response = client.find_big_family("/test_big_family", 2)
     assert response == TSV(
         [
-            ["/test_big_family/1", "5"],
+            ["/test_big_family", "11"],
+            ["/test_big_family/1", "6"],
         ]
     )
 
@@ -86,7 +93,12 @@ def test_find_super_nodes(client: KeeperClient):
     client.cd("/test_find_super_nodes")
 
     response = client.find_super_nodes(4)
-    assert response == TSV(
+
+    # The order of the response is not guaranteed, so we need to sort it
+    normalized_response = response.strip().split("\n")
+    normalized_response.sort()
+
+    assert TSV(normalized_response) == TSV(
         [
             ["/test_find_super_nodes/1", "5"],
             ["/test_find_super_nodes/2", "4"],
@@ -117,14 +129,20 @@ def test_delete_stale_backups(client: KeeperClient):
 
 
 def test_base_commands(client: KeeperClient):
-    client.create("/test_create_zk_node1", "testvalue1")
-    client.create("/test_create_zk_node_2", "testvalue2")
-    assert client.get("/test_create_zk_node1") == "testvalue1"
+    try:
+        client.create("/test_create_zk_node1", "testvalue1")
 
-    client.create("/123", "1=2")
-    client.create("/123/321", "'foo;bar'")
-    assert client.get("/123") == "1=2"
-    assert client.get("/123/321") == "foo;bar"
+        client.create("/test_create_zk_node_2", "testvalue2")
+        assert client.get("/test_create_zk_node1") == "testvalue1"
+
+        client.create("/123", "1=2")
+        client.create("/123/321", "foo;bar")
+        assert client.get("/123") == "1=2"
+        assert client.get("/123/321") == "foo;bar"
+    finally:
+        drop_node_if_exists(client, "/test_create_zk_node1")
+        drop_node_if_exists(client, "/test_create_zk_node_2")
+        drop_node_if_exists(client, "/123", recursive=True)
 
 
 def test_four_letter_word_commands(client: KeeperClient):
@@ -170,52 +188,61 @@ def test_rm_without_version(client: KeeperClient):
 
 
 def test_set_with_version(client: KeeperClient):
-    node_path = "/test_set_with_version_node"
-    client.create(node_path, "value")
-    assert client.get(node_path) == "value"
+    try:
+        node_path = "/test_set_with_version_node"
+        client.create(node_path, "value")
+        assert client.get(node_path) == "value"
 
-    client.set(node_path, "value1", 0)
-    assert client.get(node_path) == "value1"
+        client.set(node_path, "value1", 0)
+        assert client.get(node_path) == "value1"
 
-    with pytest.raises(KeeperException) as ex:
-        client.set(node_path, "value2", 2)
+        with pytest.raises(KeeperException) as ex:
+            client.set(node_path, "value2", 2)
 
-    ex_as_str = str(ex)
-    assert "Coordination error: Bad version" in ex_as_str
-    assert node_path in ex_as_str
-    assert client.get(node_path) == "value1"
+        ex_as_str = str(ex)
+        assert "Coordination error: Bad version" in ex_as_str
+        assert node_path in ex_as_str
+        assert client.get(node_path) == "value1"
 
-    client.set(node_path, "value2", 1)
-    assert client.get(node_path) == "value2"
+        client.set(node_path, "value2", 1)
+        assert client.get(node_path) == "value2"
+    finally:
+        drop_node_if_exists(client, node_path)
 
 
 def test_set_without_version(client: KeeperClient):
-    node_path = "/test_set_without_version_node"
-    client.create(node_path, "value")
-    assert client.get(node_path) == "value"
+    try:
+        node_path = "/test_set_without_version_node"
+        client.create(node_path, "value")
+        assert client.get(node_path) == "value"
 
-    client.set(node_path, "value1")
-    assert client.get(node_path) == "value1"
+        client.set(node_path, "value1")
+        assert client.get(node_path) == "value1"
 
-    client.set(node_path, "value2")
-    assert client.get(node_path) == "value2"
+        client.set(node_path, "value2")
+        assert client.get(node_path) == "value2"
+    finally:
+        drop_node_if_exists(client, node_path)
 
 
 def test_quoted_argument_parsing(client: KeeperClient):
     node_path = "/test_quoted_argument_parsing_node"
-    client.create(node_path, "value")
+    try:
+        client.create(node_path, "value")
 
-    client.execute_query(f"set '{node_path}' 'value1 with some whitespace'")
-    assert client.get(node_path) == "value1 with some whitespace"
+        client.execute_query(f"set '{node_path}' 'value1 with some whitespace'")
+        assert client.get(node_path) == "value1 with some whitespace"
 
-    client.execute_query(f"set '{node_path}' 'value2 with some whitespace' 1")
-    assert client.get(node_path) == "value2 with some whitespace"
+        client.execute_query(f"set '{node_path}' 'value2 with some whitespace' 1")
+        assert client.get(node_path) == "value2 with some whitespace"
 
-    client.execute_query(f"set '{node_path}' \"value3 with some whitespace\"")
-    assert client.get(node_path) == "value3 with some whitespace"
+        client.execute_query(f"set '{node_path}' \"value3 with some whitespace\"")
+        assert client.get(node_path) == "value3 with some whitespace"
 
-    client.execute_query(f"set '{node_path}' \"value4 with some whitespace\" 3")
-    assert client.get(node_path) == "value4 with some whitespace"
+        client.execute_query(f"set '{node_path}' \"value4 with some whitespace\" 3")
+        assert client.get(node_path) == "value4 with some whitespace"
+    finally:
+        drop_node_if_exists(client, node_path)
 
 
 def get_direct_children_number(client: KeeperClient):
@@ -245,3 +272,7 @@ def test_get_all_children_number(client: KeeperClient):
     client.touch("/test_get_all_children_number/2/4")
 
     assert client.get_all_children_number("/test_get_all_children_number") == "11"
+
+def test_get_acl(client: KeeperClient):
+    client.touch("/test_get_acl")
+    assert client.get_acl("/test_get_acl") == "[digest] clickhouse:sMa7nZnCETJITpLiCPtfC4GnbwY= ALL"

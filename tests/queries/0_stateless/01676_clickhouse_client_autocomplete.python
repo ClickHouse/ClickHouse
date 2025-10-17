@@ -1,0 +1,178 @@
+import multiprocessing
+import os
+import pty
+import shlex
+import time
+
+COMPLETION_TIMEOUT_SECONDS = 30
+DEBUG_LOG = os.path.join(
+    os.environ["CLICKHOUSE_TMP"],
+    os.path.basename(os.path.abspath(__file__)).strip(".python") + ".debuglog",
+)
+
+STATE_MAP = {
+    -1: "process did not start",
+    0: "completion was found",
+    1: "process started and said ':)'",
+    2: "completion search was started",
+    3: "completion is missing",
+}
+
+
+def run_with_timeout(func, args, timeout):
+    for _ in range(5):
+        state = multiprocessing.Value("i", -1)
+        process = multiprocessing.Process(
+            target=func, args=args, kwargs={"state": state}
+        )
+        process.start()
+        process.join(timeout)
+
+        if state.value in (0, 3):
+            return
+
+        if process.is_alive():
+            process.terminate()
+
+            if state.value == -1:
+                continue
+
+            print(f"Timeout, state: {STATE_MAP[state.value]}")
+            return
+
+
+def test_completion(program, argv, comp_word, state=None):
+    comp_begin = comp_word[:-3]
+
+    shell_pid, master = pty.fork()
+    if shell_pid == 0:
+        os.execv(program, argv)
+    else:
+        try:
+            debug_log_fd = open(DEBUG_LOG, "a")
+
+            output_b = os.read(master, 4096)
+            output = output_b.decode()
+            debug_log_fd.write(repr(output_b) + "\n")
+            debug_log_fd.flush()
+            while not ":)" in output:
+                output_b = os.read(master, 4096)
+                output += output_b.decode()
+                debug_log_fd.write(repr(output_b) + "\n")
+                debug_log_fd.flush()
+
+            state.value = 1
+
+            os.write(master, b"SET " + bytes(comp_begin.encode()))
+            output_b = os.read(master, 4096)
+            output = output_b.decode()
+            debug_log_fd.write(repr(output_b) + "\n")
+            debug_log_fd.flush()
+            while not comp_begin in output:
+                output_b = os.read(master, 4096)
+                output += output_b.decode()
+                debug_log_fd.write(repr(output_b) + "\n")
+                debug_log_fd.flush()
+
+            time.sleep(0.01)
+            os.write(master, b"\t")
+
+            state.value = 2
+
+            output_b = os.read(master, 4096)
+            output = output_b.decode()
+            debug_log_fd.write(repr(output_b) + "\n")
+            debug_log_fd.flush()
+
+            while not comp_word in output:
+                # fail fast if there is a bell character in the output,
+                # meaning no concise completion is found
+                if "\x07" in output:
+                    print(f"{comp_word}: FAIL")
+                    state.value = 3
+                    return
+
+                output_b = os.read(master, 4096)
+                output += output_b.decode()
+                debug_log_fd.write(repr(output_b) + "\n")
+                debug_log_fd.flush()
+
+            print(f"{comp_word}: OK")
+            state.value = 0
+        finally:
+            os.close(master)
+            debug_log_fd.close()
+
+
+client_compwords_positive = [
+    # system.functions
+    "concatAssumeInjective",
+    # system.table_engines
+    "ReplacingMergeTree",
+    # system.formats
+    "JSONEachRow",
+    # system.table_functions
+    "clusterAllReplicas",
+    # system.data_type_families
+    "SimpleAggregateFunction",
+    # system.settings
+    "max_concurrent_queries_for_all_users",
+    # system.clusters
+    "test_shard_localhost",
+    # system.macros
+    "default_path_test",
+    # system.storage_policies, egh not uniq
+    "default",
+    # system.aggregate_function_combinators
+    "uniqCombined64ForEach",
+    # system.keywords
+    "CHANGEABLE_IN_READONLY",
+    # FIXME: one may add separate case for suggestion_limit
+    # system.databases
+    "system",
+    # system.tables
+    "aggregate_function_combinators",
+    # system.columns
+    "primary_key_bytes_in_memory_allocated",
+    # system.dictionaries
+    # FIXME: none
+]
+
+local_compwords_positive = [
+    # system.functions
+    "concatAssumeInjective",
+    # system.table_engines
+    "ReplacingMergeTree",
+    # system.formats
+    "JSONEachRow",
+    # system.table_functions
+    "clusterAllReplicas",
+    # system.data_type_families
+    "SimpleAggregateFunction",
+]
+
+
+if __name__ == "__main__":
+    print("# clickhouse-client")
+    clickhouse_client = os.environ["CLICKHOUSE_CLIENT"]
+    args = shlex.split(clickhouse_client)
+    args.append("--wait_for_suggestions_to_load")
+    args.append("--highlight=0")
+    [
+        run_with_timeout(
+            test_completion, [args[0], args, comp_word], COMPLETION_TIMEOUT_SECONDS
+        )
+        for comp_word in client_compwords_positive
+    ]
+
+    print("# clickhouse-local")
+    clickhouse_local = os.environ["CLICKHOUSE_LOCAL"]
+    args = shlex.split(clickhouse_local)
+    args.append("--wait_for_suggestions_to_load")
+    args.append("--highlight=0")
+    [
+        run_with_timeout(
+            test_completion, [args[0], args, comp_word], COMPLETION_TIMEOUT_SECONDS
+        )
+        for comp_word in local_compwords_positive
+    ]

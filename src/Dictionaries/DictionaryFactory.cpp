@@ -1,9 +1,9 @@
-#include "DictionaryFactory.h"
+#include <Dictionaries/DictionaryFactory.h>
 
 #include <memory>
-#include "DictionarySourceFactory.h"
-#include "DictionaryStructure.h"
-#include "getDictionaryConfigurationFromAST.h"
+#include <Dictionaries/DictionarySourceFactory.h>
+#include <Dictionaries/DictionaryStructure.h>
+#include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
 
@@ -55,11 +55,7 @@ DictionaryPtr DictionaryFactory::create(
         if (found != registered_layouts.end())
         {
             const auto & layout_creator = found->second.layout_create_function;
-            auto result = layout_creator(name, dict_struct, config, config_prefix, std::move(source_ptr), global_context, created_from_ddl);
-            if (config.hasProperty(config_prefix + ".comment"))
-                result->setDictionaryComment(config.getString(config_prefix + ".comment"));
-
-            return result;
+            return layout_creator(name, dict_struct, config, config_prefix, std::move(source_ptr), global_context, created_from_ddl);
         }
     }
 

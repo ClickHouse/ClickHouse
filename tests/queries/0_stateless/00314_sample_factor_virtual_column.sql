@@ -1,3 +1,7 @@
+-- Tags: no-msan
+--          ^
+--          makes SELECTs extremely slow sometimes for some reason: "Aggregated. 1000000 to 1 rows (from 7.63 MiB) in 242.829221645 sec."
+
 DROP TABLE IF EXISTS sample_00314_1;
 DROP TABLE IF EXISTS sample_00314_2;
 DROP TABLE IF EXISTS sample_merge_00314;

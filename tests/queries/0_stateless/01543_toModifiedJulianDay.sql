@@ -5,9 +5,9 @@ SELECT toModifiedJulianDay('1858-11-16');
 SELECT toModifiedJulianDay('1858-11-17');
 SELECT toModifiedJulianDay('2020-11-01');
 SELECT toModifiedJulianDay(NULL);
-SELECT toModifiedJulianDay('unparsable'); -- { serverError 27 }
-SELECT toModifiedJulianDay('1999-02-29'); -- { serverError 38 }
-SELECT toModifiedJulianDay('1999-13-32'); -- { serverError 38 }
+SELECT toModifiedJulianDay('unparsable'); -- { serverError CANNOT_PARSE_INPUT_ASSERTION_FAILED }
+SELECT toModifiedJulianDay('1999-02-29'); -- { serverError CANNOT_PARSE_DATE }
+SELECT toModifiedJulianDay('1999-13-32'); -- { serverError CANNOT_PARSE_DATE }
 
 SELECT 'or null';
 SELECT toModifiedJulianDayOrNull('2020-11-01');

@@ -1,0 +1,30 @@
+After insert
+        Prewhere info
+          Prewhere filter
+          Prewhere filter column: and(less(a, 10_UInt8), less(b, 10_UInt8)) (removed)
+After drop statistic
+        Prewhere info
+          Prewhere filter
+          Prewhere filter column: and(less(b, 10_UInt8), less(a, 10_UInt8)) (removed)
+all_1_1_0	a	[]
+all_1_1_0	b	[]
+all_1_1_0_2	a	[]
+all_1_1_0_2	b	[]
+all_1_1_0	a	[]
+all_1_1_0	b	[]
+all_1_1_0_2	a	[]
+all_1_1_0_2	b	[]
+all_1_1_0_3	a	['TDigest']
+all_1_1_0_3	b	['TDigest']
+After add and materialize statistic
+        Prewhere info
+          Prewhere filter
+          Prewhere filter column: and(less(a, 10_UInt8), less(b, 10_UInt8)) (removed)
+After merge
+        Prewhere info
+          Prewhere filter
+          Prewhere filter column: and(less(a, 10_UInt8), less(b, 10_UInt8)) (removed)
+After rename
+        Prewhere info
+          Prewhere filter
+          Prewhere filter column: and(less(a, 10_UInt8), less(c, 10_UInt8)) (removed)

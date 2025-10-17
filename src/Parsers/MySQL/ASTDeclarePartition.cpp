@@ -46,7 +46,7 @@ ASTPtr ASTDeclarePartition::clone() const
 
 bool ParserDeclarePartition::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
-    if (!ParserKeyword{"PARTITION"}.ignore(pos, expected))
+    if (!ParserKeyword{Keyword::PARTITION}.ignore(pos, expected))
         return false;
 
     ASTPtr options;
@@ -60,15 +60,15 @@ bool ParserDeclarePartition::parseImpl(IParser::Pos & pos, ASTPtr & node, Expect
     if (!p_identifier.parse(pos, partition_name, expected))
         return false;
 
-    ParserKeyword p_values("VALUES");
+    ParserKeyword p_values(Keyword::VALUES);
     if (p_values.ignore(pos, expected))
     {
-        if (ParserKeyword{"IN"}.ignore(pos, expected))
+        if (ParserKeyword{Keyword::IN}.ignore(pos, expected))
         {
             if (!p_expression.parse(pos, in_expression, expected))
                 return false;
         }
-        else if (ParserKeyword{"LESS THAN"}.ignore(pos, expected))
+        else if (ParserKeyword{Keyword::LESS_THAN}.ignore(pos, expected))
         {
             if (!p_expression.parse(pos, less_than, expected))
                 return false;

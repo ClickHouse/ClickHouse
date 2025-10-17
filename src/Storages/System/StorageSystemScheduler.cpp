@@ -12,7 +12,6 @@
 #include <Common/Scheduler/Nodes/ThrottlerConstraint.h>
 #include <Common/Scheduler/Nodes/FifoQueue.h>
 #include <Interpreters/Context.h>
-#include "Common/Scheduler/ResourceRequest.h"
 
 
 namespace DB
@@ -30,7 +29,10 @@ ColumnsDescription StorageSystemScheduler::getColumnsDescription()
         {"is_active", std::make_shared<DataTypeUInt8>(), "Whether this node is currently active - has resource requests to be dequeued and constraints satisfied."},
         {"active_children", std::make_shared<DataTypeUInt64>(), "The number of children in active state."},
         {"dequeued_requests", std::make_shared<DataTypeUInt64>(), "The total number of resource requests dequeued from this node."},
+        {"canceled_requests", std::make_shared<DataTypeUInt64>(), "The total number of resource requests canceled from this node."},
         {"dequeued_cost", std::make_shared<DataTypeInt64>(), "The sum of costs (e.g. size in bytes) of all requests dequeued from this node."},
+        {"throughput", std::make_shared<DataTypeFloat64>(), "Current average throughput (dequeued cost per second)."},
+        {"canceled_cost", std::make_shared<DataTypeInt64>(), "The sum of costs (e.g. size in bytes) of all requests canceled from this node."},
         {"busy_periods", std::make_shared<DataTypeUInt64>(), "The total number of deactivations of this node."},
         {"vruntime", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeFloat64>()),
             "For children of `fair` nodes only. Virtual runtime of a node used by SFQ algorithm to select the next child to process in a max-min fair manner."},
@@ -82,18 +84,21 @@ ColumnsDescription StorageSystemScheduler::getColumnsDescription()
 
 void StorageSystemScheduler::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
-    context->getResourceManager()->forEachNode([&] (const String & resource, const String & path, const String & type, const SchedulerNodePtr & node)
+    context->getResourceManager()->forEachNode([&] (const String & resource, const String & path, ISchedulerNode * node)
     {
         size_t i = 0;
         res_columns[i++]->insert(resource);
         res_columns[i++]->insert(path);
-        res_columns[i++]->insert(type);
+        res_columns[i++]->insert(node->getTypeName());
         res_columns[i++]->insert(node->info.weight);
         res_columns[i++]->insert(node->info.priority.value);
         res_columns[i++]->insert(node->isActive());
         res_columns[i++]->insert(node->activeChildren());
         res_columns[i++]->insert(node->dequeued_requests.load());
+        res_columns[i++]->insert(node->canceled_requests.load());
         res_columns[i++]->insert(node->dequeued_cost.load());
+        res_columns[i++]->insert(node->throughput.rate(static_cast<double>(clock_gettime_ns())/1e9));
+        res_columns[i++]->insert(node->canceled_cost.load());
         res_columns[i++]->insert(node->busy_periods.load());
 
         Field vruntime;
@@ -113,23 +118,23 @@ void StorageSystemScheduler::fillData(MutableColumns & res_columns, ContextPtr c
 
         if (auto * parent = dynamic_cast<FairPolicy *>(node->parent))
         {
-            if (auto value = parent->getChildVRuntime(node.get()))
+            if (auto value = parent->getChildVRuntime(node))
                 vruntime = *value;
         }
-        if (auto * ptr = dynamic_cast<FairPolicy *>(node.get()))
+        if (auto * ptr = dynamic_cast<FairPolicy *>(node))
             system_vruntime = ptr->getSystemVRuntime();
-        if (auto * ptr = dynamic_cast<FifoQueue *>(node.get()))
+        if (auto * ptr = dynamic_cast<FifoQueue *>(node))
             std::tie(queue_length, queue_cost) = ptr->getQueueLengthAndCost();
-        if (auto * ptr = dynamic_cast<ISchedulerQueue *>(node.get()))
+        if (auto * ptr = dynamic_cast<ISchedulerQueue *>(node))
             budget = ptr->getBudget();
-        if (auto * ptr = dynamic_cast<ISchedulerConstraint *>(node.get()))
+        if (auto * ptr = dynamic_cast<ISchedulerConstraint *>(node))
             is_satisfied = ptr->isSatisfied();
-        if (auto * ptr = dynamic_cast<SemaphoreConstraint *>(node.get()))
+        if (auto * ptr = dynamic_cast<SemaphoreConstraint *>(node))
         {
             std::tie(inflight_requests, inflight_cost) = ptr->getInflights();
             std::tie(max_requests, max_cost) = ptr->getLimits();
         }
-        if (auto * ptr = dynamic_cast<ThrottlerConstraint *>(node.get()))
+        if (auto * ptr = dynamic_cast<ThrottlerConstraint *>(node))
         {
             std::tie(max_speed, max_burst) = ptr->getParams();
             throttling_us = ptr->getThrottlingDuration().count() / 1000;

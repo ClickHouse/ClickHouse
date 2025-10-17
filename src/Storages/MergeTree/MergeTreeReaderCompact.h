@@ -3,7 +3,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <IO/ReadBufferFromFileBase.h>
-
+#include <DataTypes/Serializations/ISerialization.h>
 
 namespace DB
 {
@@ -14,7 +14,7 @@ using DataPartCompactPtr = std::shared_ptr<const MergeTreeDataPartCompact>;
 class IMergeTreeDataPart;
 using DataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 
-/// Reader for compact parts
+/// Base class of readers for compact parts.
 class MergeTreeReaderCompact : public IMergeTreeReader
 {
 public:
@@ -25,33 +25,49 @@ public:
         const StorageSnapshotPtr & storage_snapshot_,
         UncompressedCache * uncompressed_cache_,
         MarkCache * mark_cache_,
+        DeserializationPrefixesCache * deserialization_prefixes_cache_,
         MarkRanges mark_ranges_,
         MergeTreeReaderSettings settings_,
-        ThreadPool * load_marks_threadpool_,
-        ValueSizeMap avg_value_size_hints_ = {},
-        const ReadBufferFromFileBase::ProfileCallback & profile_callback_ = {},
-        clockid_t clock_type_ = CLOCK_MONOTONIC_COARSE);
+        ValueSizeMap avg_value_size_hints_,
+        const ReadBufferFromFileBase::ProfileCallback & profile_callback_,
+        clockid_t clock_type_);
 
-    /// Return the number of rows has been read or zero if there is no columns to read.
-    /// If continue_reading is true, continue reading from last state, otherwise seek to from_mark
-    size_t readRows(size_t from_mark, size_t current_task_last_mark,
-                    bool continue_reading, size_t max_rows_to_read, Columns & res_columns) override;
+    bool canReadIncompleteGranules() const final { return false; }
 
-    bool canReadIncompleteGranules() const override { return false; }
-
-    void prefetchBeginOfRange(Priority priority) override;
-
-private:
-    bool isContinuousReading(size_t mark, size_t column_position);
+protected:
     void fillColumnPositions();
-    void initialize();
 
-    ReadBuffer * data_buffer;
-    CompressedReadBufferBase * compressed_data_buffer;
-    std::unique_ptr<CachedCompressedReadBuffer> cached_buffer;
-    std::unique_ptr<CompressedReadBufferFromFile> non_cached_buffer;
+    using InputStreamGetter = ISerialization::InputStreamGetter;
 
-    MergeTreeMarksLoader marks_loader;
+    void readData(
+        size_t column_idx,
+        ColumnPtr & column,
+        size_t rows_to_read,
+        size_t rows_offset,
+        size_t from_mark,
+        size_t column_size_before_reading,
+        MergeTreeReaderStream & stream,
+        std::unordered_map<String, ColumnPtr> & columns_cache,
+        std::unordered_map<String, ColumnPtr> * columns_cache_for_subcolumns,
+        ISerialization::SubstreamsCache * substreams_cache);
+
+    virtual MergeTreeReaderStream & getStream(const NameAndTypePair & column) = 0;
+
+    void readPrefix(size_t column_idx, size_t from_mark, MergeTreeReaderStream & stream, ISerialization::SubstreamsDeserializeStatesCache * cache);
+
+    void readSubcolumnsPrefixes(size_t from_mark, size_t current_task_last_mark);
+    void initSubcolumnsDeserializationOrder();
+
+    void createColumnsForReading(Columns & res_columns) const;
+    bool needSkipStream(size_t column_pos, const ISerialization::SubstreamPath & substream) const;
+
+    const ColumnsSubstreams & columns_substreams;
+
+    MergeTreeMarksLoaderPtr marks_loader;
+    MergeTreeMarksGetterPtr marks_getter;
+
+    ReadBufferFromFileBase::ProfileCallback profile_callback;
+    clockid_t clock_type;
 
     /// Storage columns with collected separate arrays of Nested to columns of Nested type.
     /// They maybe be needed for finding offsets of missed Nested columns in parts.
@@ -65,34 +81,34 @@ private:
 
     /// Should we read full column or only it's offsets.
     /// Element of the vector is the level of the alternative stream.
-    std::vector<ColumnNameLevel> columns_for_offsets;
+    std::vector<std::optional<ColumnForOffsets>> columns_for_offsets;
 
-    /// For asynchronous reading from remote fs. Same meaning as in MergeTreeReaderStream.
-    std::optional<size_t> last_right_offset;
-
+    /// Mark to read in next 'readRows' call in case,
+    /// when 'continue_reading' is true.
     size_t next_mark = 0;
-    std::optional<std::pair<size_t, size_t>> last_read_granule;
 
-    void seekToMark(size_t row_index, size_t column_index);
+    /// True if we have marks per each substream and not per each column.
+    bool has_substream_marks;
+    bool has_subcolumns = false;
+    /// Remember indexes of subcolumns in columns_to_read list for each column if any.
+    std::unordered_map<String, std::vector<size_t>> column_to_subcolumns_indexes;
+    /// If we have marks for substreams we read all subcolumns of the same column from a single stream
+    /// by seeking to the required substream during deserialization. To avoid seeks back in the file
+    /// we deserialize subcolumns of the same column in the order of their serialization.
+    std::unordered_map<String, std::vector<size_t>> subcolumns_deserialization_order;
 
-    void readData(const NameAndTypePair & name_and_type, ColumnPtr & column, size_t from_mark,
-        size_t current_task_last_mark, size_t column_position,
-        size_t rows_to_read, ColumnNameLevel name_level_for_offsets, std::unordered_map<String, ColumnPtr> & columns_cache_for_subcolumns);
+    DeserializationPrefixesCache * deserialization_prefixes_cache;
+    DeserializeBinaryBulkStateMap cached_subcolumn_prefixes;
+private:
+    void readPrefix(
+        const NameAndTypePair & name_and_type,
+        const SerializationPtr & serialization,
+        ISerialization::DeserializeBinaryBulkStatePtr & state,
+        const InputStreamGetter & buffer_getter,
+        ISerialization::SubstreamsDeserializeStatesCache * cache);
 
-    /// Returns maximal value of granule size in compressed file from @mark_ranges.
-    /// This value is used as size of read buffer.
-    static size_t getReadBufferSize(
-        const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
-        MergeTreeMarksLoader & marks_loader,
-        const ColumnPositions & column_positions,
-        const MarkRanges & mark_ranges);
-
-    /// For asynchronous reading from remote fs.
-    void adjustUpperBound(size_t last_mark);
-
-    ReadBufferFromFileBase::ProfileCallback profile_callback;
-    clockid_t clock_type;
-    bool initialized = false;
+    NameAndTypePair getColumnConvertedToSubcolumnOfNested(const NameAndTypePair & column);
+    void findPositionForMissedNested(size_t pos);
 };
 
 }

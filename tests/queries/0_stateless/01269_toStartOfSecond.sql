@@ -1,8 +1,8 @@
 -- Error cases
-SELECT toStartOfSecond('123');  -- {serverError 43}
-SELECT toStartOfSecond(now());  -- {serverError 43}
-SELECT toStartOfSecond();   -- {serverError 42}
-SELECT toStartOfSecond(now64(), 123);   -- {serverError 43}
+SELECT toStartOfSecond('123');  -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
+SELECT toStartOfSecond(now());  -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
+SELECT toStartOfSecond();   -- {serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH}
+SELECT toStartOfSecond(now64(), 123);   -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
 
 WITH toDateTime64('2019-09-16 19:20:11', 3, 'Asia/Istanbul') AS dt64 SELECT toStartOfSecond(dt64, 'UTC') AS res, toTypeName(res);
 WITH toDateTime64('2019-09-16 19:20:11', 0, 'UTC') AS dt64 SELECT toStartOfSecond(dt64) AS res, toTypeName(res);

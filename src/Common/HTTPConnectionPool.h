@@ -40,18 +40,19 @@ public:
     using ConnectionPtr = std::shared_ptr<Poco::Net::HTTPClientSession>;
 
     /// can throw Poco::Net::Exception, DB::NetException, DB::Exception
-    virtual ConnectionPtr getConnection(const ConnectionTimeouts & timeouts) = 0;
+    virtual ConnectionPtr getConnection(const ConnectionTimeouts & timeouts, UInt64 * connect_time) = 0;
     virtual const Metrics & getMetrics() const = 0;
     virtual ~IHTTPConnectionPoolForEndpoint() = default;
+
+    IHTTPConnectionPoolForEndpoint(const IHTTPConnectionPoolForEndpoint &) = delete;
+    IHTTPConnectionPoolForEndpoint & operator=(const IHTTPConnectionPoolForEndpoint &) = delete;
 
 protected:
     IHTTPConnectionPoolForEndpoint() = default;
 
-    IHTTPConnectionPoolForEndpoint(const IHTTPConnectionPoolForEndpoint &) = delete;
-    IHTTPConnectionPoolForEndpoint & operator=(const IHTTPConnectionPoolForEndpoint &) = delete;
 };
 
-enum class HTTPConnectionGroupType
+enum class HTTPConnectionGroupType : uint8_t
 {
     DISK,
     STORAGE,
@@ -70,10 +71,11 @@ public:
         static constexpr size_t warning_step = 100;
     };
 
-private:
-    HTTPConnectionPools();
     HTTPConnectionPools(const HTTPConnectionPools &) = delete;
     HTTPConnectionPools & operator=(const HTTPConnectionPools &) = delete;
+
+private:
+    HTTPConnectionPools();
 
 public:
     static HTTPConnectionPools & instance();

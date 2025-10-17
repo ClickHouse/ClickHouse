@@ -1,22 +1,20 @@
 include("${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake")
 add_headers_and_sources(clickhouse_aggregate_functions .)
 add_headers_and_sources(clickhouse_aggregate_functions Combinators)
+add_headers_and_sources(clickhouse_aggregate_functions TimeSeries)
 
 extract_into_parent_list(clickhouse_aggregate_functions_sources dbms_sources
-    IAggregateFunction.cpp
-    AggregateFunctionFactory.cpp
-    Combinators/AggregateFunctionCombinatorFactory.cpp
-    Combinators/AggregateFunctionState.cpp
-    AggregateFunctionCount.cpp
-    parseAggregateFunctionParameters.cpp
+    AggregateFunctionFactory.cpp # AggregateFunctionFactory::instance() Used many times
+    Combinators/AggregateFunctionCombinatorFactory.cpp # AggregateFunctionCombinatorFactory::instance() Used by AggregateFunctionFactory.cpp
+    AggregateFunctionCount.cpp # Used in optimizeUseAggregateProjection.cpp
+    IAggregateFunction.cpp # For AggregateFunctionCount.cpp, WindowTransform.cpp, FunctionsConversion.cpp...
+    parseAggregateFunctionParameters.cpp # getAggregateFunctionNameAndParametersArray, getAggregateFunctionParametersArray (Graphite.cpp, ExpressionAnalyzer.cpp)
 )
 extract_into_parent_list(clickhouse_aggregate_functions_headers dbms_headers
     IAggregateFunction.h
     Combinators/IAggregateFunctionCombinator.h
     AggregateFunctionFactory.h
     Combinators/AggregateFunctionCombinatorFactory.h
-    Combinators/AggregateFunctionState.h
-    AggregateFunctionCount.cpp
     FactoryHelpers.h
     parseAggregateFunctionParameters.h
 )

@@ -1,14 +1,20 @@
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/Serializations/SerializationEnum.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <IO/WriteHelpers.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/UTF8Helpers.h>
+#include <Common/SipHash.h>
+#include <Columns/ColumnSparse.h>
 #include <Poco/UTF8Encoding.h>
+#include <Interpreters/Context.h>
+#include <Core/Settings.h>
 
 #include <limits>
 
@@ -24,11 +30,9 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
-
 template <typename FieldType> struct EnumName;
 template <> struct EnumName<Int8> { static constexpr auto value = "Enum8"; };
 template <> struct EnumName<Int16> { static constexpr auto value = "Enum16"; };
-
 
 template <typename Type>
 const char * DataTypeEnum<Type>::getFamilyName() const
@@ -76,9 +80,31 @@ Field DataTypeEnum<Type>::getDefault() const
 }
 
 template <typename Type>
+Type DataTypeEnum<Type>::getDefaultValue() const
+{
+    return this->getValues().front().second;
+}
+
+template <typename Type>
 void DataTypeEnum<Type>::insertDefaultInto(IColumn & column) const
 {
-    assert_cast<ColumnType &>(column).getData().push_back(this->getValues().front().second);
+    const auto & default_value = this->getValues().front().second;
+
+    /// This code is actually bad, but unfortunately, `IDataType::insertDefaultInto`
+    /// breaks the abstraction of the separation of data types, serializations, and columns.
+    /// Since this method is overridden only for `DataTypeEnum` and this code
+    /// has remained unchanged for years, so it should be okay.
+    if (auto * sparse_column = typeid_cast<ColumnSparse *>(&column))
+    {
+        if (default_value == Type{})
+            sparse_column->insertDefault();
+        else
+            sparse_column->insert(default_value);
+    }
+    else
+    {
+        assert_cast<ColumnType &>(column).getData().push_back(default_value);
+    }
 }
 
 template <typename Type>
@@ -87,6 +113,11 @@ bool DataTypeEnum<Type>::equals(const IDataType & rhs) const
     return typeid(rhs) == typeid(*this) && type_name == static_cast<const DataTypeEnum<Type> &>(rhs).type_name;
 }
 
+template <typename Type>
+void DataTypeEnum<Type>::updateHashImpl(SipHash & hash) const
+{
+    hash.update(type_name);
+}
 
 template <typename Type>
 bool DataTypeEnum<Type>::textCanContainOnlyValidUTF8() const
@@ -117,23 +148,22 @@ static void checkOverflow(Int64 value)
         throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "DataTypeEnum: Unexpected value {}", toString(value));
 }
 
+
 template <typename Type>
 Field DataTypeEnum<Type>::castToName(const Field & value_or_name) const
 {
     if (value_or_name.getType() == Field::Types::String)
     {
-        this->getValue(value_or_name.get<String>()); /// Check correctness
-        return value_or_name.get<String>();
+        this->getValue(value_or_name.safeGet<String>()); /// Check correctness
+        return value_or_name.safeGet<String>();
     }
-    else if (value_or_name.getType() == Field::Types::Int64)
+    if (value_or_name.getType() == Field::Types::Int64)
     {
-        Int64 value = value_or_name.get<Int64>();
+        Int64 value = value_or_name.safeGet<Int64>();
         checkOverflow<Type>(value);
         return this->getNameForValue(static_cast<Type>(value)).toString();
     }
-    else
-        throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD,
-            "DataTypeEnum: Unsupported type of field {}", value_or_name.getTypeName());
+    throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "DataTypeEnum: Unsupported type of field {}", value_or_name.getTypeName());
 }
 
 template <typename Type>
@@ -141,19 +171,16 @@ Field DataTypeEnum<Type>::castToValue(const Field & value_or_name) const
 {
     if (value_or_name.getType() == Field::Types::String)
     {
-        return this->getValue(value_or_name.get<String>());
+        return this->getValue(value_or_name.safeGet<String>());
     }
-    else if (value_or_name.getType() == Field::Types::Int64
-          || value_or_name.getType() == Field::Types::UInt64)
+    if (value_or_name.getType() == Field::Types::Int64 || value_or_name.getType() == Field::Types::UInt64)
     {
-        Int64 value = value_or_name.get<Int64>();
+        Int64 value = value_or_name.safeGet<Int64>();
         checkOverflow<Type>(value);
         this->getNameForValue(static_cast<Type>(value)); /// Check correctness
         return value;
     }
-    else
-        throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD,
-            "DataTypeEnum: Unsupported type of field {}", value_or_name.getTypeName());
+    throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "DataTypeEnum: Unsupported type of field {}", value_or_name.getTypeName());
 }
 
 
@@ -203,7 +230,7 @@ static void autoAssignNumberForEnum(const ASTPtr & arguments)
         if (child->as<ASTLiteral>())
         {
             assign_count += !is_first_child;
-            ASTPtr func = makeASTFunction("equals", child, std::make_shared<ASTLiteral>(literal_child_assign_num + assign_count));
+            ASTPtr func = makeASTOperator("equals", child, std::make_shared<ASTLiteral>(literal_child_assign_num + assign_count));
             assign_number_child.emplace_back(func);
         }
         else if (child->as<ASTFunction>())
@@ -220,7 +247,7 @@ static void autoAssignNumberForEnum(const ASTPtr & arguments)
                                     "Elements of Enum data type must be of form: "
                                     "'name' = number or 'name', where name is string literal and number is an integer");
 
-                literal_child_assign_num = value_literal->value.get<Int64>();
+                literal_child_assign_num = value_literal->value.safeGet<Int64>();
             }
             assign_number_child.emplace_back(child);
         }
@@ -269,8 +296,8 @@ static DataTypePtr createExact(const ASTPtr & arguments)
                                     "Elements of Enum data type must be of form: "
                                     "'name' = number or 'name', where name is string literal and number is an integer");
 
-        const String & field_name = name_literal->value.get<String>();
-        const auto value = value_literal->value.get<FieldType>();
+        const String & field_name = name_literal->value.safeGet<String>();
+        const auto value = value_literal->value.safeGet<FieldType>();
 
         if (value > std::numeric_limits<FieldType>::max() || value < std::numeric_limits<FieldType>::min())
             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Value {} for element '{}' exceeds range of {}",
@@ -302,7 +329,7 @@ static DataTypePtr create(const ASTPtr & arguments)
                                     "Elements of Enum data type must be of form: "
                                     "'name' = number or 'name', where name is string literal and number is an integer");
 
-        Int64 value = value_literal->value.get<Int64>();
+        Int64 value = value_literal->value.safeGet<Int64>();
 
         if (value > std::numeric_limits<Int8>::max() || value < std::numeric_limits<Int8>::min())
             return createExact<DataTypeEnum16>(arguments);
@@ -318,7 +345,7 @@ void registerDataTypeEnum(DataTypeFactory & factory)
     factory.registerDataType("Enum", create);
 
     /// MySQL
-    factory.registerAlias("ENUM", "Enum", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("ENUM", "Enum", DataTypeFactory::Case::Insensitive);
 }
 
 }

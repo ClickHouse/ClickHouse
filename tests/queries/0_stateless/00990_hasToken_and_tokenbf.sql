@@ -1,3 +1,6 @@
+-- Force using skip indexes in planning to make test deterministic with max_rows_to_read.
+SET use_skip_indexes_on_data_read = 0;
+
 DROP TABLE IF EXISTS bloom_filter;
 
 CREATE TABLE bloom_filter
@@ -53,10 +56,10 @@ select max(id) from bloom_filter2 where hasTokenCaseInsensitive(s, 'ABC');
 -- SELECT max(id) FROM bloom_filter WHERE NOT hasToken(s, 'yyy');
 
 -- accessing to many rows
-SELECT max(id) FROM bloom_filter WHERE hasToken(s, 'yyy'); -- { serverError 158 }
+SELECT max(id) FROM bloom_filter WHERE hasToken(s, 'yyy'); -- { serverError TOO_MANY_ROWS }
 
 -- this syntax is not supported by tokenbf
-SELECT max(id) FROM bloom_filter WHERE hasToken(s, 'zzz') == 1; -- { serverError 158 }
+SELECT max(id) FROM bloom_filter WHERE hasToken(s, 'zzz') == 1; -- { serverError TOO_MANY_ROWS }
 
 DROP TABLE bloom_filter;
 

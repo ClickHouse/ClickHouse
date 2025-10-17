@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/MemorySanitizer.h>
+#include <base/MemorySanitizer.h>
 
 #include <cstring>
 #include <sys/types.h> /// ssize_t
@@ -49,6 +49,9 @@ namespace detail
             dst += 16;
             src += 16;
             n -= 16;
+
+            /// Avoid clang loop-idiom optimization, which transforms _mm_storeu_si128 to built-in memcpy
+            __asm__ __volatile__("" : : : "memory");
         }
     }
 }

@@ -10,6 +10,8 @@
 #include <Analyzer/Utils.h>
 #include <Analyzer/HashUtils.h>
 
+#include <Core/Settings.h>
+
 #include <Storages/IStorage.h>
 
 #include <Functions/FunctionFactory.h>
@@ -17,6 +19,13 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool convert_query_to_cnf;
+    extern const SettingsBool optimize_append_index;
+    extern const SettingsBool optimize_substitute_columns;
+    extern const SettingsBool optimize_using_constraints;
+}
 
 namespace
 {
@@ -38,7 +47,7 @@ enum class MatchState : uint8_t
     NONE,
 };
 
-MatchState match(const Analyzer::CNF::AtomicFormula & a, const Analyzer::CNF::AtomicFormula & b)
+MatchState match(const Analyzer::CNFAtomicFormula & a, const Analyzer::CNFAtomicFormula & b)
 {
     using enum MatchState;
     if (a.node_with_hash != b.node_with_hash)
@@ -99,7 +108,24 @@ bool checkIfGroupAlwaysTrueGraph(const Analyzer::CNF::OrGroup & group, const Com
     return false;
 }
 
-bool checkIfAtomAlwaysFalseFullMatch(const Analyzer::CNF::AtomicFormula & atom, const ConstraintsDescription::QueryTreeData & query_tree_constraints)
+bool checkIfGroupAlwaysTrueAtoms(const Analyzer::CNF::OrGroup & group)
+{
+    /// Filters out groups containing mutually exclusive atoms,
+    /// since these groups are always True
+
+    for (const auto & atom : group)
+    {
+        auto negated(atom);
+        negated.negative = !atom.negative;
+        if (group.contains(negated))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool checkIfAtomAlwaysFalseFullMatch(const Analyzer::CNFAtomicFormula & atom, const ConstraintsDescription::QueryTreeData & query_tree_constraints)
 {
     const auto constraint_atom_ids = query_tree_constraints.getAtomIds(atom.node_with_hash);
     if (constraint_atom_ids)
@@ -115,7 +141,7 @@ bool checkIfAtomAlwaysFalseFullMatch(const Analyzer::CNF::AtomicFormula & atom, 
     return false;
 }
 
-bool checkIfAtomAlwaysFalseGraph(const Analyzer::CNF::AtomicFormula & atom, const ComparisonGraph<QueryTreeNodePtr> & graph)
+bool checkIfAtomAlwaysFalseGraph(const Analyzer::CNFAtomicFormula & atom, const ComparisonGraph<QueryTreeNodePtr> & graph)
 {
     const auto * function_node = atom.node_with_hash.node->as<FunctionNode>();
     if (!function_node)
@@ -146,7 +172,7 @@ void replaceToConstants(QueryTreeNodePtr & term, const ComparisonGraph<QueryTree
     }
 }
 
-Analyzer::CNF::AtomicFormula replaceTermsToConstants(const Analyzer::CNF::AtomicFormula & atom, const ComparisonGraph<QueryTreeNodePtr> & graph)
+Analyzer::CNFAtomicFormula replaceTermsToConstants(const Analyzer::CNFAtomicFormula & atom, const ComparisonGraph<QueryTreeNodePtr> & graph)
 {
     auto node = atom.node_with_hash.node->clone();
     replaceToConstants(node, graph);
@@ -158,7 +184,7 @@ StorageSnapshotPtr getStorageSnapshot(const QueryTreeNodePtr & node)
     StorageSnapshotPtr storage_snapshot{nullptr};
     if (auto * table_node = node->as<TableNode>())
         return table_node->getStorageSnapshot();
-    else if (auto * table_function_node = node->as<TableFunctionNode>())
+    if (auto * table_function_node = node->as<TableFunctionNode>())
         return table_function_node->getStorageSnapshot();
 
     return nullptr;
@@ -286,7 +312,7 @@ Analyzer::CNF::OrGroup createIndexHintGroup(
                     helper_function_node.getArguments().getNodes()[index] = primary_key_node->clone();
                     auto reverse_function_name = getReverseRelationMap().at(mostStrict(expected_result, actual_result));
                     helper_function_node.resolveAsFunction(FunctionFactory::instance().get(reverse_function_name, context));
-                    result.insert(Analyzer::CNF::AtomicFormula{atom.negative, std::move(helper_node)});
+                    result.insert(Analyzer::CNFAtomicFormula{atom.negative, std::move(helper_node)});
                     return true;
                 }
             }
@@ -644,9 +670,10 @@ void optimizeWithConstraints(Analyzer::CNF & cnf, const QueryTreeNodes & table_e
         cnf.filterAlwaysTrueGroups([&](const auto & group)
            {
                /// remove always true groups from CNF
-               return !checkIfGroupAlwaysTrueFullMatch(group, query_tree_constraints) && !checkIfGroupAlwaysTrueGraph(group, compare_graph);
+               return !checkIfGroupAlwaysTrueFullMatch(group, query_tree_constraints)
+                   && !checkIfGroupAlwaysTrueGraph(group, compare_graph) && !checkIfGroupAlwaysTrueAtoms(group);
            })
-           .filterAlwaysFalseAtoms([&](const Analyzer::CNF::AtomicFormula & atom)
+           .filterAlwaysFalseAtoms([&](const Analyzer::CNFAtomicFormula & atom)
            {
                /// remove always false atoms from CNF
                return !checkIfAtomAlwaysFalseFullMatch(atom, query_tree_constraints) && !checkIfAtomAlwaysFalseGraph(atom, compare_graph);
@@ -661,7 +688,7 @@ void optimizeWithConstraints(Analyzer::CNF & cnf, const QueryTreeNodes & table_e
     cnf.pushNotIntoFunctions(context);
 
     const auto & settings = context->getSettingsRef();
-    if (settings.optimize_append_index)
+    if (settings[Setting::optimize_append_index])
         addIndexConstraint(cnf, table_expressions, context);
 }
 
@@ -673,7 +700,7 @@ void optimizeNode(QueryTreeNodePtr & node, const QueryTreeNodes & table_expressi
     if (!cnf)
         return;
 
-    if (settings.optimize_using_constraints)
+    if (settings[Setting::optimize_using_constraints])
         optimizeWithConstraints(*cnf, table_expressions, context);
 
     auto new_node = cnf->toQueryTree();
@@ -711,7 +738,7 @@ public:
         optimize_filter(query_node->getPrewhere());
         optimize_filter(query_node->getHaving());
 
-        if (has_filter && settings.optimize_substitute_columns)
+        if (has_filter && settings[Setting::optimize_substitute_columns])
             substituteColumns(*query_node, table_expressions, context);
     }
 };
@@ -721,7 +748,7 @@ public:
 void ConvertLogicalExpressionToCNFPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     const auto & settings = context->getSettingsRef();
-    if (!settings.convert_query_to_cnf)
+    if (!settings[Setting::convert_query_to_cnf])
         return;
 
     ConvertQueryToCNFVisitor visitor(std::move(context));

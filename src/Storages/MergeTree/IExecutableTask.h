@@ -10,10 +10,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 /**
  * Generic interface for background operations. Simply this is self-made coroutine.
@@ -41,6 +37,7 @@ public:
     virtual bool printExecutionException() const { return true; }
 
     virtual void onCompleted() = 0;
+    virtual void cancel() noexcept = 0;
     virtual StorageID getStorageID() const = 0;
     virtual String getQueryId() const = 0;
     virtual Priority getPriority() const = 0;
@@ -72,12 +69,11 @@ public:
         return false;
     }
 
+    void cancel() noexcept override { /* no op */ }
+
     void onCompleted() override { job_result_callback(!res); }
     StorageID getStorageID() const override { return id; }
-    Priority getPriority() const override
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "getPriority() method is not supported by LambdaAdapter");
-    }
+    Priority getPriority() const override;
 
     String getQueryId() const override { return id.getShortName() + "::lambda"; }
 

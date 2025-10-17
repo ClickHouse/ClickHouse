@@ -23,7 +23,7 @@ namespace
     constexpr size_t max_string_size = 1UL << 15;
 
     template <typename ModelMap>
-    ALWAYS_INLINE inline Float64 naiveBayes(
+    Float64 naiveBayes(
         const FrequencyHolder::EncodingMap & standard,
         const ModelMap & model,
         Float64 max_result)
@@ -51,7 +51,7 @@ namespace
 
     /// Count how many times each bigram occurs in the text.
     template <typename ModelMap>
-    ALWAYS_INLINE inline void calculateStats(
+    void calculateStats(
         const UInt8 * data,
         const size_t size,
         ModelMap & model)
@@ -77,27 +77,28 @@ struct CharsetClassificationImpl
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets)
+        ColumnString::Offsets & res_offsets,
+        size_t input_rows_count)
     {
         const auto & encodings_freq = FrequencyHolder::getInstance().getEncodingsFrequency();
 
         if constexpr (detect_language)
-            /// 2 chars for ISO code + 1 zero byte
-            res_data.reserve(offsets.size() * 3);
+            /// 2 chars for ISO code
+            res_data.reserve(input_rows_count * 2);
         else
-            /// Mean charset length is 8
-            res_data.reserve(offsets.size() * 8);
+            /// The average charset name length is 8
+            res_data.reserve(input_rows_count * 8);
 
-        res_offsets.resize(offsets.size());
+        res_offsets.resize(input_rows_count);
 
         size_t current_result_offset = 0;
 
         double zero_frequency_log = log(zero_frequency);
 
-        for (size_t i = 0; i < offsets.size(); ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             const UInt8 * str = data.data() + offsets[i - 1];
-            const size_t str_len = offsets[i] - offsets[i - 1] - 1;
+            const size_t str_len = offsets[i] - offsets[i - 1];
 
             HashMapWithStackMemory<UInt16, UInt64, DefaultHash<UInt16>, 4> model;
             calculateStats(str, str_len, model);
@@ -121,11 +122,9 @@ struct CharsetClassificationImpl
             }
 
             size_t result_value_size = result_value.size();
-            res_data.resize(current_result_offset + result_value_size + 1);
+            res_data.resize(current_result_offset + result_value_size);
             memcpy(&res_data[current_result_offset], result_value.data(), result_value_size);
-            res_data[current_result_offset + result_value_size] = '\0';
-            current_result_offset += result_value_size + 1;
-
+            current_result_offset += result_value_size;
             res_offsets[i] = current_result_offset;
         }
     }
@@ -148,8 +147,40 @@ using FunctionDetectLanguageUnknown = FunctionTextClassificationString<CharsetCl
 
 REGISTER_FUNCTION(DetectCharset)
 {
-    factory.registerFunction<FunctionDetectCharset>();
-    factory.registerFunction<FunctionDetectLanguageUnknown>();
+    FunctionDocumentation::Description description_charset = R"(
+Detects the character set of a non-UTF8-encoded input string.
+)";
+    FunctionDocumentation::Syntax syntax_charset = "detectCharset(s)";
+    FunctionDocumentation::Arguments arguments_charset = {
+        {"s", "The text to analyze.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_charset = {"Returns a string containing the code of the detected character set", {"String"}};
+    FunctionDocumentation::Examples examples_charset = {
+        {"Basic usage", "SELECT detectCharset('Ich bleibe für ein paar Tage.')", "WINDOWS-1252"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_charset = {22, 2};
+    FunctionDocumentation::Category category_charset = FunctionDocumentation::Category::NLP;
+    FunctionDocumentation documentation_charset = {description_charset, syntax_charset, arguments_charset, returned_value_charset, examples_charset, introduced_in_charset, category_charset};
+
+    factory.registerFunction<FunctionDetectCharset>(documentation_charset);
+
+    FunctionDocumentation::Description description_unknown = R"(
+Similar to the [`detectLanguage`](#detectLanguage) function, except the detectLanguageUnknown function works with non-UTF8-encoded strings.
+Prefer this version when your character set is UTF-16 or UTF-32.
+)";
+    FunctionDocumentation::Syntax syntax_unknown = "detectLanguageUnknown('s')";
+    FunctionDocumentation::Arguments arguments_unknown = {
+        {"s", "The text to analyze.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_unknown = {"Returns the 2-letter ISO code of the detected language. Other possible results: `un` = unknown, can not detect any language, `other` = the detected language does not have 2 letter code.", {"String"}};
+    FunctionDocumentation::Examples examples_unknown = {
+        {"Basic usage", "SELECT detectLanguageUnknown('Ich bleibe für ein paar Tage.')", "de"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_unknown = {22, 2};
+    FunctionDocumentation::Category category_unknown = FunctionDocumentation::Category::NLP;
+    FunctionDocumentation documentation_unknown = {description_unknown, syntax_unknown, arguments_unknown, returned_value_unknown, examples_unknown, introduced_in_unknown, category_unknown};
+
+    factory.registerFunction<FunctionDetectLanguageUnknown>(documentation_unknown);
 }
 
 }

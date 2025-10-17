@@ -5,17 +5,17 @@
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTQueryParameter.h>
+
 
 namespace DB
 {
 
 bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKeyword s_id("ID");
-    ParserKeyword s_all("ALL");
+    ParserKeyword s_id(Keyword::ID);
+    ParserKeyword s_all(Keyword::ALL);
     ParserStringLiteral parser_string_literal;
     ParserSubstitution parser_substitution;
     ParserExpression parser_expr;
@@ -61,11 +61,11 @@ bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 else
                     fields_count = 0;
             }
-            else if (const auto* literal_ast = value->as<ASTLiteral>(); literal_ast)
+            else if (const auto * literal_ast = value->as<ASTLiteral>(); literal_ast)
             {
                 if (literal_ast->value.getType() == Field::Types::Tuple)
                 {
-                    fields_count = literal_ast->value.get<const Tuple &>().size();
+                    fields_count = literal_ast->value.safeGet<Tuple>().size();
                 }
                 else
                 {

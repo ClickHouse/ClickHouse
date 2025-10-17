@@ -1,16 +1,13 @@
-#include "AggregateFunctionMLMethod.h"
-
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/AggregateFunctionMLMethod.h>
+#include <AggregateFunctions/FactoryHelpers.h>
+#include <Columns/ColumnArray.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/castColumn.h>
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnTuple.h>
 #include <Common/FieldVisitorConvertToNumber.h>
-#include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include "AggregateFunctionFactory.h"
-#include "FactoryHelpers.h"
-#include "Helpers.h"
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -22,7 +19,8 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
+    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 
 namespace
@@ -34,12 +32,12 @@ namespace
         const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
     {
         if (parameters.size() > 4)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
                 "Aggregate function {} requires at most four parameters: "
                 "learning_rate, l2_regularization_coef, mini-batch size and weights_updater method", name);
 
         if (argument_types.size() < 2)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
                 "Aggregate function {} requires at least two arguments: target and model's parameters", name);
 
         for (size_t i = 0; i < argument_types.size(); ++i)
@@ -89,7 +87,7 @@ namespace
         }
         else
         {
-            []<bool flag = false>() {static_assert(flag, "Such gradient computer is not implemented yet");}(); // delay static_asssert in constexpr if until template instantiation
+            []<bool flag = false>() {static_assert(flag, "Such gradient computer is not implemented yet");}(); // delay static_assert in constexpr if until template instantiation
         }
 
         return std::make_shared<Method>(

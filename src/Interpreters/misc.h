@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Parsers/ASTFunction.h>
 
 namespace DB

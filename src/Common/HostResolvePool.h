@@ -26,7 +26,7 @@
 //    a) it still occurs in resolve set after `history_` time or b) all other addresses are pessimized as well.
 // - resolve schedule
 //    Addresses are resolved through `DB::DNSResolver::instance()`.
-//    Usually it does not happen more often than once in `history_` time.
+//    Usually it does not happen more often than 3 times in `history_` period.
 //    But also new resolve performed each `setFail()` call.
 
 namespace DB
@@ -39,9 +39,11 @@ struct HostResolverMetrics
     const ProfileEvents::Event failed = ProfileEvents::end();
 
     const CurrentMetrics::Metric active_count = CurrentMetrics::end();
+    const CurrentMetrics::Metric banned_count = CurrentMetrics::end();
 };
 
 constexpr size_t DEFAULT_RESOLVE_TIME_HISTORY_SECONDS = 2*60;
+constexpr size_t RECORD_CONSECTIVE_FAIL_COUNT_LIMIT = 6;
 
 
 class HostResolver : public std::enable_shared_from_this<HostResolver>
@@ -67,8 +69,8 @@ public:
     class Entry
     {
     public:
-        explicit Entry(Entry && entry) = default;
-        explicit Entry(Entry & entry) = delete;
+        Entry(Entry && entry) = default;
+        Entry(Entry & entry) = delete;
 
         // no access as r-value
         const String * operator->() && = delete;
@@ -89,7 +91,7 @@ public:
 
         Entry(HostResolver & pool_, Poco::Net::IPAddress address_)
             : pool(pool_.getWeakFromThis())
-            , address(std::move(address_))
+            , address(address_)
             , resolved_host(address.toString())
         { }
 
@@ -126,14 +128,14 @@ protected:
     struct Record
     {
         Record(Poco::Net::IPAddress address_, Poco::Timestamp resolve_time_)
-            : address(std::move(address_))
+            : address(address_)
             , resolve_time(resolve_time_)
         {}
 
-        explicit Record(Record && rec) = default;
+        Record(Record && rec) = default;
         Record& operator=(Record && s) = default;
 
-        explicit Record(const Record & rec) = default;
+        Record(const Record & rec) = default;
         Record& operator=(const Record & s) = default;
 
         Poco::Net::IPAddress address;
@@ -141,12 +143,18 @@ protected:
         size_t usage = 0;
         bool failed = false;
         Poco::Timestamp fail_time = 0;
+        size_t consecutive_fail_count = 0;
 
         size_t weight_prefix_sum;
 
         bool operator <(const Record & r) const
         {
             return address < r.address;
+        }
+
+        bool operator ==(const Record & r) const
+        {
+            return address == r.address;
         }
 
         size_t getWeight() const
@@ -166,6 +174,28 @@ protected:
                 return 8;
             return 10;
         }
+
+        bool setFail(const Poco::Timestamp & now)
+        {
+            bool was_ok = !failed;
+
+            failed = true;
+            fail_time = now;
+
+            if (was_ok)
+            {
+                if (consecutive_fail_count < RECORD_CONSECTIVE_FAIL_COUNT_LIMIT)
+                    ++consecutive_fail_count;
+            }
+
+            return was_ok;
+        }
+
+        void setSuccess()
+        {
+            consecutive_fail_count = 0;
+            ++usage;
+        }
     };
 
     using Records = std::vector<Record>;
@@ -178,9 +208,11 @@ protected:
     void updateWeights() TSA_REQUIRES(mutex);
     void updateWeightsImpl() TSA_REQUIRES(mutex);
     size_t getTotalWeight() const TSA_REQUIRES(mutex);
+    Poco::Timespan getRecordHistoryTime(const Record&) const;
 
     const String host;
     const Poco::Timespan history;
+    const Poco::Timespan resolve_interval;
     const HostResolverMetrics metrics = getMetrics();
 
     // for tests purpose
@@ -188,7 +220,7 @@ protected:
 
     std::mutex mutex;
 
-    Poco::Timestamp last_resolve_time TSA_GUARDED_BY(mutex);
+    Poco::Timestamp last_resolve_time TSA_GUARDED_BY(mutex) = Poco::Timestamp::TIMEVAL_MIN;
     Records records TSA_GUARDED_BY(mutex);
 
     Poco::Logger * log = &Poco::Logger::get("ConnectionPool");
@@ -198,10 +230,11 @@ class HostResolversPool
 {
 private:
     HostResolversPool() = default;
+
+public:
     HostResolversPool(const HostResolversPool &) = delete;
     HostResolversPool & operator=(const HostResolversPool &) = delete;
 
-public:
     static HostResolversPool & instance();
 
     void dropCache();
@@ -213,4 +246,3 @@ private:
 };
 
 }
-

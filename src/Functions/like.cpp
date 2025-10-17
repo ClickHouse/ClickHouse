@@ -1,5 +1,5 @@
-#include "FunctionFactory.h"
-#include "like.h"
+#include <Functions/like.h>
+#include <Functions/FunctionFactory.h>
 
 
 namespace DB

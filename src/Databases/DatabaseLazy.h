@@ -12,7 +12,7 @@ class DatabaseLazyIterator;
 class Context;
 
 /** Lazy engine of databases.
-  * Works like DatabaseOrdinary, but stores in memory only cache.
+  * Works like DatabaseOrdinary, but stores only recently accessed tables in memory.
   * Can be used only with *Log engines.
   */
 class DatabaseLazy final : public DatabaseOnDisk
@@ -22,9 +22,7 @@ public:
 
     String getEngineName() const override { return "Lazy"; }
 
-    bool canContainMergeTreeTables() const override { return false; }
-
-    bool canContainDistributedTables() const override { return false; }
+    bool isExternal() const override { return false; }
 
     void loadStoredObjects(ContextMutablePtr context, LoadingStrictnessLevel /*mode*/) override;
 
@@ -50,7 +48,8 @@ public:
     void alterTable(
         ContextPtr context,
         const StorageID & table_id,
-        const StorageInMemoryMetadata & metadata) override;
+        const StorageInMemoryMetadata & metadata,
+        bool validate_new_create_query) override;
 
     time_t getObjectMetadataModificationTime(const String & table_name) const override;
 
@@ -62,7 +61,7 @@ public:
 
     bool empty() const override;
 
-    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) const override;
+    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
 
     void attachTable(ContextPtr context, const String & table_name, const StoragePtr & table, const String & relative_table_path) override;
 

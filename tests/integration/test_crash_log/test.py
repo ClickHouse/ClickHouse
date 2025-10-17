@@ -1,5 +1,6 @@
 import os
 import time
+
 import pytest
 
 import helpers.cluster
@@ -30,7 +31,7 @@ def send_signal(started_node, signal):
 
 def wait_for_clickhouse_stop(started_node):
     result = None
-    for attempt in range(120):
+    for attempt in range(180):
         time.sleep(1)
         pid = started_node.get_process_pid("clickhouse")
         if pid is None:
@@ -39,7 +40,7 @@ def wait_for_clickhouse_stop(started_node):
     assert result == "OK", "ClickHouse process is still running"
 
 
-def test_pkill(started_node):
+def test_crash_log_synchronous(started_node):
     if (
         started_node.is_built_with_thread_sanitizer()
         or started_node.is_built_with_address_sanitizer()
@@ -49,6 +50,7 @@ def test_pkill(started_node):
 
     crashes_count = 0
     for signal in ["SEGV", "4"]:
+        started_node.query("SYSTEM ENABLE FAILPOINT sleep_in_logs_flush")
         send_signal(started_node, signal)
         wait_for_clickhouse_stop(started_node)
         started_node.restart_clickhouse()
@@ -60,6 +62,13 @@ def test_pkill(started_node):
 
 
 def test_pkill_query_log(started_node):
+    if (
+        started_node.is_built_with_thread_sanitizer()
+        or started_node.is_built_with_address_sanitizer()
+        or started_node.is_built_with_memory_sanitizer()
+    ):
+        pytest.skip("doesn't fit in timeouts for stacktrace generation")
+
     for signal in ["SEGV", "4"]:
         # force create query_log if it was not created
         started_node.query("SYSTEM FLUSH LOGS")

@@ -8,6 +8,7 @@ DROP TABLE IF EXISTS nation;
 DROP TABLE IF EXISTS region;
 
 SET cross_to_inner_join_rewrite = 1;
+SET allow_experimental_correlated_subqueries = 0;
 
 CREATE TABLE part
 (
@@ -180,7 +181,7 @@ order by
     n_name,
     s_name,
     p_partkey
-limit 100; -- { serverError 1, 47 }
+limit 100; -- { serverError UNSUPPORTED_METHOD, 47 }
 
 select 3;
 select
@@ -546,7 +547,7 @@ where
             revenue0
     )
 order by
-    s_suppkey; -- { serverError 47 }
+    s_suppkey; -- { serverError UNKNOWN_IDENTIFIER }
 drop view revenue0;
 
 select 16;
@@ -598,7 +599,7 @@ where
             lineitem
         where
             l_partkey = p_partkey
-    ); -- { serverError 1, 47 }
+    ); -- { serverError UNSUPPORTED_METHOD, 47 }
 
 select 18;
 select
@@ -709,7 +710,7 @@ where
     and s_nationkey = n_nationkey
     and n_name = 'CANADA'
 order by
-    s_name; -- { serverError 1, 47 }
+    s_name; -- { serverError UNSUPPORTED_METHOD, 47 }
 
 select 21, 'fail: exists, not exists'; -- TODO
 -- select

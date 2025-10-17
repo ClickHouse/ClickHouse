@@ -1,9 +1,6 @@
-#include <Common/SharedMutex.h>
-
 #ifdef OS_LINUX /// Because of futex
 
-#include <bit>
-
+#include <Common/SharedMutex.h>
 #include <Common/futex.h>
 
 namespace DB
@@ -16,10 +13,16 @@ SharedMutex::SharedMutex()
 
 void SharedMutex::lock()
 {
-    UInt64 value = state.load();
+    /// Try fast acquire
+    UInt64 value = 0;
+    if (likely(state.compare_exchange_strong(value, writers)))
+        return;
+
+    /// Drain writers and set up self as next writer
+    value = state.load();
     while (true)
     {
-        if (value & writers)
+        if (unlikely(value & writers))
         {
             waiters++;
             futexWaitUpperFetch(state, value);
@@ -29,6 +32,7 @@ void SharedMutex::lock()
             break;
     }
 
+    /// Drain readers
     value |= writers;
     while (value & readers)
         futexWaitLowerFetch(state, value);
@@ -52,7 +56,7 @@ void SharedMutex::lock_shared()
     UInt64 value = state.load();
     while (true)
     {
-        if (value & writers)
+        if (unlikely(value & writers))
         {
             waiters++;
             futexWaitUpperFetch(state, value);

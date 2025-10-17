@@ -1,10 +1,21 @@
 #pragma once
-#include <Coordination/KeeperFeatureFlags.h>
+#include <Common/ZooKeeper/KeeperFeatureFlags.h>
+#include <Common/ZooKeeper/ZooKeeperConstants.h>
+#include <IO/WriteBufferFromString.h>
+#include <base/defines.h>
+
 #include <Poco/Util/AbstractConfiguration.h>
+
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
 #include <memory>
+#include <variant>
+
+namespace rocksdb
+{
+struct Options;
+}
 
 namespace DB
 {
@@ -17,8 +28,6 @@ using CoordinationSettingsPtr = std::shared_ptr<CoordinationSettings>;
 class DiskSelector;
 class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
-
-class WriteBufferFromOwnString;
 
 class KeeperContext
 {
@@ -41,6 +50,7 @@ public:
 
     bool digestEnabled() const;
     void setDigestEnabled(bool digest_enabled_);
+    bool digestEnabledOnCommit() const;
 
     DiskPtr getLatestLogDisk() const;
     DiskPtr getLogDisk() const;
@@ -62,6 +72,12 @@ public:
 
     constexpr KeeperDispatcher * getDispatcher() const { return dispatcher; }
 
+    void setRocksDBDisk(DiskPtr disk);
+    DiskPtr getTemporaryRocksDBDisk() const;
+
+    void setRocksDBOptions(std::shared_ptr<rocksdb::Options> rocksdb_options_ = nullptr);
+    std::shared_ptr<rocksdb::Options> getRocksDBOptions() const { return rocksdb_options; }
+
     UInt64 getKeeperMemorySoftLimit() const { return memory_soft_limit; }
     void updateKeeperMemorySoftLimit(const Poco::Util::AbstractConfiguration & config);
 
@@ -81,8 +97,19 @@ public:
     /// returns true if the log is committed, false if timeout happened
     bool waitCommittedUpto(uint64_t log_idx, uint64_t wait_timeout_ms);
 
-    const CoordinationSettingsPtr & getCoordinationSettings() const;
+    const CoordinationSettings & getCoordinationSettings() const;
 
+    int64_t getPrecommitSleepMillisecondsForTesting() const;
+
+    double getPrecommitSleepProbabilityForTesting() const;
+
+    bool shouldBlockACL() const;
+    void setBlockACL(bool block_acl_);
+
+    bool isOperationSupported(Coordination::OpNum operation) const;
+
+    bool shouldLogRequests() const;
+    void setLogRequests(bool log_requests_);
 private:
     /// local disk defined using path or disk name
     using Storage = std::variant<DiskPtr, std::string>;
@@ -90,6 +117,7 @@ private:
     void initializeFeatureFlags(const Poco::Util::AbstractConfiguration & config);
     void initializeDisks(const Poco::Util::AbstractConfiguration & config);
 
+    Storage getRocksDBPathFromConfig(const Poco::Util::AbstractConfiguration & config) const;
     Storage getLogsPathFromConfig(const Poco::Util::AbstractConfiguration & config) const;
     Storage getSnapshotsPathFromConfig(const Poco::Util::AbstractConfiguration & config) const;
     Storage getStatePathFromConfig(const Poco::Util::AbstractConfiguration & config) const;
@@ -108,14 +136,18 @@ private:
 
     bool ignore_system_path_on_startup{false};
     bool digest_enabled{true};
+    bool digest_enabled_on_commit{false};
 
     std::shared_ptr<DiskSelector> disk_selector;
 
+    Storage rocksdb_storage;
     Storage log_storage;
     Storage latest_log_storage;
     Storage snapshot_storage;
     Storage latest_snapshot_storage;
     Storage state_file_storage;
+
+    std::shared_ptr<rocksdb::Options> rocksdb_options;
 
     std::vector<std::string> old_log_disk_names;
     std::vector<std::string> old_snapshot_disk_names;
@@ -136,7 +168,14 @@ private:
     std::mutex last_committed_log_idx_cv_mutex;
     std::condition_variable last_committed_log_idx_cv;
 
+    int64_t precommit_sleep_ms_for_testing = 0;
+    double precommit_sleep_probability_for_testing = 0.0;
+
     CoordinationSettingsPtr coordination_settings;
+
+    bool block_acl = false;
+
+    std::atomic<bool> log_requests = false;
 };
 
 using KeeperContextPtr = std::shared_ptr<KeeperContext>;

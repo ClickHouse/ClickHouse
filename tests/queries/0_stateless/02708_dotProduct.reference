@@ -11,6 +11,8 @@
 [-1,-2,-3]	[4,5,6]	-32	Int64
 [1,2,3]	[4,5,6]	32	Float32
 [1,2,3]	[4,5,6]	32	Float64
+[]	[]	0	Float32
+[]	[]	0	UInt16
    -- Tuple
 (1,2,3)	(4,5,6)	32	UInt64
 (1,2,3)	(4,5,6)	32	UInt64
@@ -24,6 +26,8 @@
 (1,2,3)	(4,5,6)	32	Float64
 -- Non-const argument
 [1,2,3]	[4,5,6]	32	UInt16
+[]	[]	0	Float32
+[]	[]	0	UInt16
  -- Array with mixed element arguments types (result type is the supertype)
 [1,2,3]	[4,5,6]	32	Float32
  -- Tuple with mixed element arguments types
@@ -32,3 +36,18 @@
 32
 32
 32
+-- Tests that trigger special paths
+   -- non-const / non-const
+0	61
+1	186
+0	61
+1	186
+0	61
+1	186
+   -- const / non-const
+0	62
+1	187
+0	62
+1	187
+0	62
+1	187

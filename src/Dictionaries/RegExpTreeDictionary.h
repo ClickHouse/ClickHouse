@@ -8,21 +8,16 @@
 
 #include <base/types.h>
 
-#include <Columns/IColumn.h>
 #include <Columns/ColumnString.h>
-#include <Common/Exception.h>
-#include <Common/HashTable/Hash.h>
-#include <Common/HashTable/HashSet.h>
+#include <Columns/IColumn.h>
 #include <Core/Block.h>
-#include <Core/Field.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/Regexps.h>
 #include <QueryPipeline/Pipe.h>
+#include <Common/Exception.h>
 
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionary.h>
-
-#include <Storages/ColumnsDescription.h>
 
 namespace DB
 {
@@ -86,7 +81,7 @@ public:
 
     bool hasHierarchy() const override { return false; }
 
-    std::shared_ptr<const IExternalLoadable> clone() const override
+    std::shared_ptr<IExternalLoadable> clone() const override
     {
         return std::make_shared<RegExpTreeDictionary>(
             getDictionaryID(), structure, source_ptr->clone(), configuration, use_vectorscan, flag_case_insensitive, flag_dotall);
@@ -114,12 +109,10 @@ public:
             IColumn::Filter & default_mask = std::get<RefFilter>(default_or_filter).get();
             return getColumns({attribute_name}, {attribute_type}, key_columns, key_types, default_mask).front();
         }
-        else
-        {
-            const ColumnPtr & default_values_column = std::get<RefDefault>(default_or_filter).get();
-            const Columns & columns= Columns({default_values_column});
-            return getColumns({attribute_name}, {attribute_type}, key_columns, key_types, columns).front();
-        }
+
+        const ColumnPtr & default_values_column = std::get<RefDefault>(default_or_filter).get();
+        const Columns & columns = Columns({default_values_column});
+        return getColumns({attribute_name}, {attribute_type}, key_columns, key_types, columns).front();
     }
 
     Columns getColumns(
@@ -210,7 +203,7 @@ private:
         const String & data,
         std::unordered_set<UInt64> & visited_nodes,
         const std::unordered_map<String, const DictionaryAttribute &> & attributes,
-        std::unordered_set<String> * const defaults) const;
+        std::unordered_set<String> * defaults) const;
 
     struct RegexTreeNode;
     using RegexTreeNodePtr = std::shared_ptr<RegexTreeNode>;

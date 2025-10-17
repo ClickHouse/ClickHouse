@@ -1,3 +1,5 @@
+#include <Common/DimensionalMetrics.h>
+#include <Common/HistogramMetrics.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 
@@ -111,7 +113,6 @@
     M(PerfLocalMemoryReferences) \
     M(PerfLocalMemoryMisses) \
 \
-    M(CreatedHTTPConnections) \
     M(CannotWriteToWriteBufferDiscard) \
 \
     M(S3ReadMicroseconds) \
@@ -151,12 +152,18 @@
     M(S3PutObject) \
     M(S3GetObject) \
 \
-    M(AzureUploadPart) \
-    M(DiskAzureUploadPart) \
+    M(AzureUpload) \
+    M(DiskAzureUpload) \
+    M(AzureStageBlock) \
+    M(DiskAzureStageBlock) \
+    M(AzureCommitBlockList) \
+    M(DiskAzureCommitBlockList) \
     M(AzureCopyObject) \
     M(DiskAzureCopyObject) \
     M(AzureDeleteObjects) \
+    M(DiskAzureDeleteObjects) \
     M(AzureListObjects) \
+    M(DiskAzureListObjects) \
 \
     M(DiskS3DeleteObjects) \
     M(DiskS3CopyObject) \
@@ -178,10 +185,6 @@
     M(ReadBufferFromS3InitMicroseconds) \
     M(ReadBufferFromS3Bytes) \
     M(ReadBufferFromS3RequestsErrors) \
-    M(ReadBufferFromS3ResetSessions) \
-    M(ReadBufferFromS3PreservedSessions) \
-\
-    M(ReadWriteBufferFromHTTPPreservedSessions) \
 \
     M(WriteBufferFromS3Microseconds) \
     M(WriteBufferFromS3Bytes) \
@@ -241,6 +244,13 @@
     M(KeeperPacketsReceived) \
     M(KeeperRequestTotal) \
     M(KeeperLatency) \
+    M(KeeperTotalElapsedMicroseconds) \
+    M(KeeperProcessElapsedMicroseconds) \
+    M(KeeperPreprocessElapsedMicroseconds) \
+    M(KeeperStorageLockWaitMicroseconds) \
+    M(KeeperCommitWaitElapsedMicroseconds) \
+    M(KeeperBatchMaxCount) \
+    M(KeeperBatchMaxTotalSize) \
     M(KeeperCommits) \
     M(KeeperCommitsFailed) \
     M(KeeperSnapshotCreations) \
@@ -261,7 +271,8 @@
     M(KeeperExistsRequest) \
 \
     M(IOUringSQEsSubmitted) \
-    M(IOUringSQEsResubmits) \
+    M(IOUringSQEsResubmitsAsync) \
+    M(IOUringSQEsResubmitsSync) \
     M(IOUringCQEsCompleted) \
     M(IOUringCQEsFailed) \
 \
@@ -272,6 +283,7 @@
     M(LogWarning) \
     M(LogError) \
     M(LogFatal) \
+    M(LoggerElapsedNanoseconds) \
 \
     M(InterfaceHTTPSendBytes) \
     M(InterfaceHTTPReceiveBytes) \
@@ -290,6 +302,11 @@
     M(KeeperLogsEntryReadFromCommitCache) \
     M(KeeperLogsEntryReadFromFile) \
     M(KeeperLogsPrefetchedEntries) \
+\
+    M(JemallocFailedAllocationSampleTracking) \
+    M(JemallocFailedDeallocationSampleTracking) \
+\
+    M(KeeperRequestRejectedDueToSoftMemoryLimitCount) \
 
 namespace ProfileEvents
 {
@@ -361,7 +378,7 @@ extern const std::vector<Event> keeper_profile_events
     M(AsynchronousReadWait) \
     M(S3Requests) \
     M(KeeperAliveConnections) \
-    M(KeeperOutstandingRequets) \
+    M(KeeperOutstandingRequests) \
     M(ThreadsInOvercommitTracker) \
     M(IOUringPendingEvents) \
     M(IOUringInFlightEvents) \
@@ -378,4 +395,14 @@ extern const std::vector<Metric> keeper_metrics
     APPLY_FOR_KEEPER_METRICS(M)
 };
 #undef M
+}
+
+namespace HistogramMetrics
+{
+    std::vector<MetricFamily *> keeper_histograms;
+}
+
+namespace DimensionalMetrics
+{
+    std::vector<MetricFamily *> keeper_dimensional_metrics;
 }

@@ -1,9 +1,16 @@
 #pragma once
 
 #include <Compression/ICompressionCodec.h>
+#include <Common/Logger.h>
+#include <atomic>
 #include <map>
 #include <random>
 #include <pcg_random.hpp>
+
+#include "config.h"
+
+#if USE_QPL
+
 #include <qpl/qpl.h>
 
 namespace Poco
@@ -26,7 +33,7 @@ public:
 
     qpl_job * acquireJob(UInt32 & job_id);
     void releaseJob(UInt32 job_id);
-    const bool & isJobPoolReady() { return job_pool_ready; }
+    const bool & isJobPoolReady() const { return job_pool_ready; }
 
 private:
     bool tryLockJob(UInt32 index);
@@ -103,6 +110,12 @@ protected:
     bool isGenericCompression() const override { return true; }
     bool isDeflateQpl() const override { return true; }
 
+    String getDescription() const override
+    {
+        return "Requires hardware support for Intel’s QuickAssist Technology for DEFLATE compression; enhanced performance for specific hardware.";
+    }
+
+
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
     void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
 
@@ -117,3 +130,4 @@ private:
 };
 
 }
+#endif

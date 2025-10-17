@@ -1,15 +1,20 @@
-#include <Interpreters/TransactionLog.h>
-#include <Interpreters/TransactionVersionMetadata.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/TransactionsInfoLog.h>
+#include <atomic>
+#include <Core/ServerUUID.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <IO/ReadBufferFromString.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/TransactionLog.h>
+#include <Interpreters/TransactionVersionMetadata.h>
+#include <Interpreters/TransactionsInfoLog.h>
+#include <base/sort.h>
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/KeeperException.h>
-#include <Core/ServerUUID.h>
 #include <Common/logger_useful.h>
 #include <Common/noexcept_scope.h>
+#include <Common/threadPoolCallbackRunner.h>
+
+#include <Poco/Util/LayeredConfiguration.h>
 
 
 namespace DB
@@ -271,6 +276,17 @@ void TransactionLog::removeOldEntries()
     if (!global_context->isServerCompletelyStarted())
         return;
 
+    /// Because `loadTableFromMetadataAsync` is running asynchronously, it is possible that the outdated parts are loading while the `tail_ptr` is updated here.
+    /// It might trigger assertion when the part `create_csn` is lower than `tail_ptr`. Refer: https://github.com/ClickHouse/ClickHouse/issues/60406
+    /// We keep track of `asyncTablesLoadingJobNumber`, and not update `tail_ptr` if there are running jobs.
+    if (!updated_tail_ptr.load(std::memory_order_relaxed) && asyncTablesLoadingJobNumber() != 0)
+    {
+        LOG_TRACE(log, "There are running async tables loading jobs, skip updating tail_ptr");
+        return;
+    }
+
+    updated_tail_ptr.store(true, std::memory_order_relaxed);
+
     /// Also similar problem is possible if some table was not attached during startup (for example, if table is detached permanently).
     /// Also we write CSNs into data parts without fsync, so it's theoretically possible that we wrote CSN, finished transaction,
     /// removed its entry from the log, but after that server restarts and CSN is not actually saved to metadata on disk.
@@ -282,7 +298,7 @@ void TransactionLog::removeOldEntries()
     CSN new_tail_ptr = getOldestSnapshot();
     if (new_tail_ptr < old_tail_ptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Got unexpected tail_ptr {}, oldest snapshot is {}, it's a bug", old_tail_ptr, new_tail_ptr);
-    else if (new_tail_ptr == old_tail_ptr)
+    if (new_tail_ptr == old_tail_ptr)
         return;
 
     /// (it's not supposed to fail with ZBADVERSION while there is only one host)
@@ -451,6 +467,7 @@ CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn, bool 
 CSN TransactionLog::finalizeCommittedTransaction(MergeTreeTransaction * txn, CSN allocated_csn, scope_guard & state_guard) noexcept
 {
     LockMemoryExceptionInThread memory_tracker_lock(VariableContext::Global);
+    auto blocker = CannotAllocateThreadFaultInjector::blockFaultInjections();
     chassert(!allocated_csn == txn->isReadOnly());
     if (allocated_csn)
     {
@@ -601,7 +618,7 @@ void TransactionLog::assertTIDIsNotOutdated(const TransactionID & tid, const std
     /// If the second case takes place transaction's commit csn has to be set.
     /// We should load CSN again to distinguish the second case.
     if (failback_with_strict_load_csn)
-        if (CSN maybe_csn = failback_with_strict_load_csn->load())
+        if (CSN _ = failback_with_strict_load_csn->load())
             return;
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to get CSN for too old TID {}, current tail_ptr is {}, probably it's a bug", tid, tail);
@@ -633,4 +650,16 @@ void TransactionLog::sync() const
     waitForCSNLoaded(newest_csn);
 }
 
+void TransactionLog::increaseAsyncTablesLoadingJobNumber()
+{
+    async_tables_loading_job_number.fetch_add(1);
+}
+void TransactionLog::decreaseAsyncTablesLoadingJobNumber()
+{
+    async_tables_loading_job_number.fetch_sub(1);
+}
+Int64 TransactionLog::asyncTablesLoadingJobNumber()
+{
+    return async_tables_loading_job_number.load();
+}
 }

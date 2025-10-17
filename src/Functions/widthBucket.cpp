@@ -3,6 +3,7 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Types.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NumberTraits.h>
@@ -15,6 +16,7 @@
 #include <Common/Exception.h>
 #include <Common/NaNUtils.h>
 #include <Common/register_objects.h>
+#include <base/range.h>
 
 #include <algorithm>
 #include <iterator>
@@ -97,7 +99,7 @@ class FunctionWidthBucket : public IFunction
         {
             return 0;
         }
-        else if (operand >= high)
+        if (operand >= high)
         {
             return count + 1;
         }
@@ -128,21 +130,21 @@ class FunctionWidthBucket : public IFunction
         using ResultType = typename NumberTraits::Construct<false, false, NumberTraits::nextSize(sizeof(TCountType))>::Type;
         auto common_type = std::make_shared<DataTypeNumber<Float64>>();
 
-        std::vector<ColumnPtr> casted_columns;
-        casted_columns.reserve(3);
+        std::vector<ColumnPtr> cast_columns;
+        cast_columns.reserve(3);
         for (const auto argument_index : collections::range(0, 3))
         {
-            casted_columns.push_back(castColumn(arguments[argument_index], common_type));
+            cast_columns.push_back(castColumn(arguments[argument_index], common_type));
         }
 
-        const auto * operands_vec = getDataIfNotNull(checkAndGetColumn<ColumnVector<Float64>>(casted_columns[0].get()));
-        const auto * lows_vec = getDataIfNotNull(checkAndGetColumn<ColumnVector<Float64>>(casted_columns[1].get()));
-        const auto * highs_vec = getDataIfNotNull(checkAndGetColumn<ColumnVector<Float64>>(casted_columns[2].get()));
+        const auto * operands_vec = getDataIfNotNull(checkAndGetColumn<ColumnVector<Float64>>(cast_columns[0].get()));
+        const auto * lows_vec = getDataIfNotNull(checkAndGetColumn<ColumnVector<Float64>>(cast_columns[1].get()));
+        const auto * highs_vec = getDataIfNotNull(checkAndGetColumn<ColumnVector<Float64>>(cast_columns[2].get()));
         const auto * counts_vec = getDataIfNotNull(checkAndGetColumn<ColumnVector<TCountType>>(arguments[3].column.get()));
 
-        const auto * operands_col_const = checkAndGetColumnConst<ColumnVector<Float64>>(casted_columns[0].get());
-        const auto * lows_col_const = checkAndGetColumnConst<ColumnVector<Float64>>(casted_columns[1].get());
-        const auto * highs_col_const = checkAndGetColumnConst<ColumnVector<Float64>>(casted_columns[2].get());
+        const auto * operands_col_const = checkAndGetColumnConst<ColumnVector<Float64>>(cast_columns[0].get());
+        const auto * lows_col_const = checkAndGetColumnConst<ColumnVector<Float64>>(cast_columns[1].get());
+        const auto * highs_col_const = checkAndGetColumnConst<ColumnVector<Float64>>(cast_columns[2].get());
         const auto * counts_col_const = checkAndGetColumnConst<ColumnVector<TCountType>>(arguments[3].column.get());
 
         throwIfInvalid<Float64>(0, operands_col_const, operands_vec, input_rows_count);
@@ -164,12 +166,12 @@ class FunctionWidthBucket : public IFunction
         result_column->reserve(1);
         auto & result_data = result_column->getData();
 
-        for (const auto row_index : collections::range(0, input_rows_count))
+        for (size_t row = 0; row < input_rows_count; ++row)
         {
-            const auto operand = getValue<Float64>(operands_col_const, operands_vec, row_index);
-            const auto low = getValue<Float64>(lows_col_const, lows_vec, row_index);
-            const auto high = getValue<Float64>(highs_col_const, highs_vec, row_index);
-            const auto count = getValue<TCountType>(counts_col_const, counts_vec, row_index);
+            const auto operand = getValue<Float64>(operands_col_const, operands_vec, row);
+            const auto low = getValue<Float64>(lows_col_const, lows_vec, row);
+            const auto high = getValue<Float64>(highs_col_const, highs_vec, row);
+            const auto count = getValue<TCountType>(counts_col_const, counts_vec, row);
             result_data.push_back(calculate<ResultType>(operand, low, high, count));
         }
 
@@ -252,40 +254,27 @@ public:
 
 REGISTER_FUNCTION(WidthBucket)
 {
-    factory.registerFunction<FunctionWidthBucket>(FunctionDocumentation{
-        .description=R"(
-Returns the number of the bucket in which `operand` falls in a histogram having `count` equal-width buckets spanning the range `low` to `high`. Returns `0` if `operand < low`, and returns `count+1` if `operand >= high`.
-
-`operand`, `low`, `high` can be any native number type. `count` can only be unsigned native integer and its value cannot be zero.
-
-**Syntax**
-
-```sql
-widthBucket(operand, low, high, count)
-```
-
+    FunctionDocumentation::Description description = R"(
+Returns the number of the bucket in which parameter `operand` falls in a histogram having count equal-width buckets spanning the range `low` to `high`. Returns 0 if `operand` is less than `low`, and returns `count`+1 if `operand` is greater than or equal to `high`.
 There is also a case insensitive alias called `WIDTH_BUCKET` to provide compatibility with other databases.
+)";
+FunctionDocumentation::Syntax syntax = "widthBucket(operand, low, high, count)";
+FunctionDocumentation::Arguments arguments = {
+    {"operand", "The value for which to determine the bucket.", {"(U)Int8/16/32/64"}},
+    {"low", "The lower bound of the histogram range.", {"(U)Int8/16/32/64"}},
+    {"high", "The upper bound of the histogram range.", {"(U)Int8/16/32/64"}},
+    {"count", "The number of equal-width buckets. Cannot be zero.", {"UInt8/16/32/64"}}
+};
+FunctionDocumentation::ReturnedValue returned_value = {"Returns the bucket number as an integer. Returns 0 if operand < low, returns count+1 if operand >= high.", {"UInt8/16/32/64"}};
+FunctionDocumentation::Examples examples = {
+    {"Usage example", "widthBucket(10.15, -8.6, 23, 18)", "11"}
+};
+FunctionDocumentation::IntroducedIn introduced_in = {23, 3};
+FunctionDocumentation::Category category = FunctionDocumentation::Category::Mathematical;
+FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionWidthBucket>(documentation);
 
-**Example**
-
-Query:
-[example:simple]
-
-Result:
-
-``` text
-┌─widthBucket(10.15, -8.6, 23, 18)─┐
-│                               11 │
-└──────────────────────────────────┘
-```
-)",
-        .examples{
-            {"simple", "SELECT widthBucket(10.15, -8.6, 23, 18)", ""},
-        },
-        .categories{"Mathematical"},
-    });
-
-    factory.registerAlias("width_bucket", "widthBucket", FunctionFactory::CaseInsensitive);
+    factory.registerAlias("width_bucket", "widthBucket", FunctionFactory::Case::Insensitive);
 }
 
 }

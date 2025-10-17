@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <mutex>
+#include <string_view>
 
 #include <Poco/Net/HTTPClientSession.h>
 #include <Poco/Net/HTTPRequest.h>
@@ -34,7 +35,7 @@ public:
     {}
 
     HTTPException * clone() const override { return new HTTPException(*this); }
-    void rethrow() const override { throw *this; }
+    void rethrow() const override { throw *this; } /// NOLINT(cert-err60-cpp)
 
     Poco::Net::HTTPResponse::HTTPStatus getHTTPStatus() const { return http_status; }
 
@@ -54,14 +55,15 @@ private:
 
 using HTTPSessionPtr = std::shared_ptr<Poco::Net::HTTPClientSession>;
 
-void setResponseDefaultHeaders(HTTPServerResponse & response, size_t keep_alive_timeout);
+void setResponseDefaultHeaders(HTTPServerResponse & response);
 
 /// Create session object to perform requests and set required parameters.
 HTTPSessionPtr makeHTTPSession(
     HTTPConnectionGroupType group,
     const Poco::URI & uri,
     const ConnectionTimeouts & timeouts,
-    ProxyConfiguration proxy_config = {}
+    const ProxyConfiguration & proxy_config = {},
+    UInt64 * connect_time = nullptr
 );
 
 bool isRedirect(Poco::Net::HTTPResponse::HTTPStatus status);

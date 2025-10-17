@@ -96,7 +96,7 @@
 /*
  * Defined if clock_gettime(CLOCK_MONOTONIC_COARSE, ...) is available.
  */
-#define JEMALLOC_HAVE_CLOCK_MONOTONIC_COARSE 
+/* #undef JEMALLOC_HAVE_CLOCK_MONOTONIC_COARSE */ 
 
 /*
  * Defined if clock_gettime(CLOCK_MONOTONIC, ...) is available.
@@ -319,6 +319,9 @@
  * Defined if MADV_[NO]CORE is supported as an argument to madvise.
  */
 #define JEMALLOC_MADVISE_NOCORE 
+
+/* Defined if process_madvise(2) is available. */
+#undef JEMALLOC_HAVE_PROCESS_MADVISE
 
 /* Defined if mprotect(2) is available. */
 #define JEMALLOC_HAVE_MPROTECT 

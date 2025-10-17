@@ -90,9 +90,12 @@ public:
         const String & query_id,
         UInt64 stage,
         ClientInfo & client_info,
-        bool with_pending_data) override;
+        bool with_pending_data,
+        const std::vector<String> & external_roles) override;
 
-    void sendReadTaskResponse(const String &) override
+    void sendQueryPlan(const QueryPlan & query_plan) override;
+
+    void sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse &) override
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "sendReadTaskResponse in not supported with HedgedConnections");
     }
@@ -105,6 +108,8 @@ public:
     Packet receivePacket() override;
 
     Packet receivePacketUnlocked(AsyncCallback async_callback) override;
+
+    UInt64 receivePacketTypeUnlocked(AsyncCallback async_callback) override;
 
     void disconnect() override;
 
@@ -178,12 +183,12 @@ private:
     std::queue<int> offsets_queue;
 
     /// The current number of valid connections to the replicas of this shard.
-    size_t active_connection_count;
+    size_t active_connection_count = 0;
 
     /// We count offsets in which we can't change replica anymore,
     /// it's needed to cancel choosing new replicas when we
     /// disabled replica changing in all offsets.
-    size_t offsets_with_disabled_changing_replica;
+    size_t offsets_with_disabled_changing_replica = 0;
 
     Pipeline pipeline_for_new_replicas;
 

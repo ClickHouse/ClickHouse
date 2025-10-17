@@ -1,21 +1,31 @@
+#include <Access/AccessControl.h>
+#include <Access/Common/AccessEntityType.h>
+#include <Backups/BackupCoordinationStage.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupEntryFromMemory.h>
-#include <Backups/IBackupCoordination.h>
-#include <Backups/BackupCoordinationStage.h>
 #include <Backups/BackupUtils.h>
 #include <Backups/DDLAdjustingForBackupVisitor.h>
+#include <Backups/IBackupCoordination.h>
+#include <Core/Settings.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/formatAST.h>
 #include <Storages/IStorage.h>
-#include <Access/Common/AccessEntityType.h>
+#include <Storages/MergeTree/extractZooKeeperPathFromReplicatedTableDef.h>
 #include <base/chrono_io.h>
 #include <base/insertAtEnd.h>
-#include <base/sleep.h>
-#include <Common/escapeForFileName.h>
-#include <boost/range/algorithm/copy.hpp>
 #include <base/scope_guard.h>
+#include <base/sleep.h>
+#include <base/sort.h>
+#include <Common/escapeForFileName.h>
+#include <Common/threadPoolCallbackRunner.h>
+#include <Common/intExp2.h>
+#include <Common/quoteString.h>
+
+#include <boost/range/adaptor/map.hpp>
+#include <boost/range/algorithm/copy.hpp>
+
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -29,6 +39,16 @@ namespace ProfileEvents
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 backup_restore_keeper_retry_initial_backoff_ms;
+    extern const SettingsUInt64 backup_restore_keeper_retry_max_backoff_ms;
+    extern const SettingsUInt64 backup_restore_keeper_max_retries;
+    extern const SettingsSeconds lock_acquire_timeout;
+
+    /// Cloud only
+    extern const SettingsBool cloud_mode;
+}
 
 namespace ErrorCodes
 {
@@ -88,7 +108,6 @@ BackupEntriesCollector::BackupEntriesCollector(
     , read_settings(read_settings_)
     , context(context_)
     , process_list_element(context->getProcessListElement())
-    , on_cluster_first_sync_timeout(context->getConfigRef().getUInt64("backups.on_cluster_first_sync_timeout", 180000))
     , collect_metadata_timeout(context->getConfigRef().getUInt64(
           "backups.collect_metadata_timeout", context->getConfigRef().getUInt64("backups.consistent_metadata_snapshot_timeout", 600000)))
     , attempts_to_collect_metadata_before_sleep(context->getConfigRef().getUInt("backups.attempts_to_collect_metadata_before_sleep", 2))
@@ -96,12 +115,16 @@ BackupEntriesCollector::BackupEntriesCollector(
           context->getConfigRef().getUInt64("backups.min_sleep_before_next_attempt_to_collect_metadata", 100))
     , max_sleep_before_next_attempt_to_collect_metadata(
           context->getConfigRef().getUInt64("backups.max_sleep_before_next_attempt_to_collect_metadata", 5000))
-    , compare_collected_metadata(context->getConfigRef().getBool("backups.compare_collected_metadata", true))
+    , compare_collected_metadata(
+        context->getConfigRef().getBool("backups.compare_collected_metadata",
+                                        !context->getSettingsRef()[Setting::cloud_mode])) /// Collected metadata shouldn't be compared by default in our Cloud
+                                                                                          /// (because in the Cloud only Replicated databases are used)
     , log(getLogger("BackupEntriesCollector"))
-    , global_zookeeper_retries_info(
-          context->getSettingsRef().backup_restore_keeper_max_retries,
-          context->getSettingsRef().backup_restore_keeper_retry_initial_backoff_ms,
-          context->getSettingsRef().backup_restore_keeper_retry_max_backoff_ms)
+    , zookeeper_retries_info(
+          context->getSettingsRef()[Setting::backup_restore_keeper_max_retries],
+          context->getSettingsRef()[Setting::backup_restore_keeper_retry_initial_backoff_ms],
+          context->getSettingsRef()[Setting::backup_restore_keeper_retry_max_backoff_ms],
+          context->getProcessListElementSafe())
     , threadpool(threadpool_)
 {
 }
@@ -121,7 +144,7 @@ BackupEntries BackupEntriesCollector::run()
         = BackupSettings::Util::filterHostIDs(backup_settings.cluster_host_ids, backup_settings.shard_num, backup_settings.replica_num);
 
     /// Do renaming in the create queries according to the renaming config.
-    renaming_map = makeRenamingMapFromBackupQuery(backup_query_elements);
+    renaming_map = BackupUtils::makeRenamingMap(backup_query_elements);
 
     /// Calculate the root path for collecting backup entries, it's either empty or has the format "shards/<shard_num>/replicas/<replica_num>/".
     calculateRootPathInBackup();
@@ -162,23 +185,7 @@ Strings BackupEntriesCollector::setStage(const String & new_stage, const String 
     checkIsQueryCancelled();
 
     current_stage = new_stage;
-    backup_coordination->setStage(new_stage, message);
-
-    if (new_stage == Stage::formatGatheringMetadata(0))
-    {
-        return backup_coordination->waitForStage(new_stage, on_cluster_first_sync_timeout);
-    }
-    else if (new_stage.starts_with(Stage::GATHERING_METADATA))
-    {
-        auto current_time = std::chrono::steady_clock::now();
-        auto end_of_timeout = std::max(current_time, collect_metadata_end_time);
-        return backup_coordination->waitForStage(
-            new_stage, std::chrono::duration_cast<std::chrono::milliseconds>(end_of_timeout - current_time));
-    }
-    else
-    {
-        return backup_coordination->waitForStage(new_stage);
-    }
+    return backup_coordination->setStage(new_stage, message, /* sync = */ true);
 }
 
 void BackupEntriesCollector::checkIsQueryCancelled() const
@@ -390,7 +397,7 @@ void BackupEntriesCollector::gatherDatabasesMetadata()
 
             case ASTBackupQuery::ElementType::ALL:
             {
-                for (const auto & [database_name, database] : DatabaseCatalog::instance().getDatabases())
+                for (const auto & [database_name, database] : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true}))
                 {
                     if (!element.except_databases.contains(database_name))
                     {
@@ -515,7 +522,8 @@ void BackupEntriesCollector::gatherTablesMetadata()
             const auto & create = create_table_query->as<const ASTCreateQuery &>();
             String table_name = create.getTable();
 
-            fs::path metadata_path_in_backup, data_path_in_backup;
+            fs::path metadata_path_in_backup;
+            fs::path data_path_in_backup;
             auto table_name_in_backup = renaming_map.getNewTableName({database_name, table_name});
             if (table_name_in_backup.database == DatabaseCatalog::TEMPORARY_DATABASE)
             {
@@ -566,17 +574,16 @@ std::vector<std::pair<ASTPtr, StoragePtr>> BackupEntriesCollector::findTablesInD
 
     checkIsQueryCancelled();
 
-    auto filter_by_table_name = [my_database_info = &database_info](const String & table_name)
+    auto filter_by_table_name = [&](const String & table_name)
     {
-        /// We skip inner tables of materialized views.
-        if (table_name.starts_with(".inner_id."))
+        if (BackupUtils::isInnerTable(database_name, table_name))
             return false;
 
-        if (my_database_info->tables.contains(table_name))
+        if (database_info.tables.contains(table_name))
             return true;
 
-        if (my_database_info->all_tables)
-            return !my_database_info->except_table_names.contains(table_name);
+        if (database_info.all_tables)
+            return !database_info.except_table_names.contains(table_name);
 
         return false;
     };
@@ -586,8 +593,7 @@ std::vector<std::pair<ASTPtr, StoragePtr>> BackupEntriesCollector::findTablesInD
     try
     {
         /// Database or table could be replicated - so may use ZooKeeper. We need to retry.
-        auto zookeeper_retries_info = global_zookeeper_retries_info;
-        ZooKeeperRetriesControl retries_ctl("getTablesForBackup", log, zookeeper_retries_info, nullptr);
+        ZooKeeperRetriesControl retries_ctl("getTablesForBackup", log, zookeeper_retries_info);
         retries_ctl.retryLoop([&](){ db_tables = database->getTablesForBackup(filter_by_table_name, context); });
     }
     catch (Exception & e)
@@ -648,7 +654,7 @@ void BackupEntriesCollector::lockTablesForReading()
 
         checkIsQueryCancelled();
 
-        table_info.table_lock = storage->tryLockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
+        table_info.table_lock = storage->tryLockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
     }
 
     std::erase_if(
@@ -672,9 +678,9 @@ bool BackupEntriesCollector::compareWithPrevious(String & mismatch_description)
     tables_metadata.reserve(table_infos.size());
 
     for (const auto & [database_name, database_info] : database_infos)
-        databases_metadata.emplace_back(database_name, database_info.create_database_query ? serializeAST(*database_info.create_database_query) : "");
+        databases_metadata.emplace_back(database_name, database_info.create_database_query ? database_info.create_database_query->formatWithSecretsOneLine() : "");
     for (const auto & [table_name, table_info] : table_infos)
-        tables_metadata.emplace_back(table_name, serializeAST(*table_info.create_table_query));
+        tables_metadata.emplace_back(table_name, table_info.create_table_query->formatWithSecretsOneLine());
 
     /// We need to sort the lists to make the comparison below correct.
     ::sort(databases_metadata.begin(), databases_metadata.end());
@@ -685,7 +691,13 @@ bool BackupEntriesCollector::compareWithPrevious(String & mismatch_description)
         previous_tables_metadata = std::move(tables_metadata);
     });
 
-    enum class MismatchType { ADDED, REMOVED, CHANGED, NONE };
+    enum class MismatchType : uint8_t
+    {
+        ADDED,
+        REMOVED,
+        CHANGED,
+        NONE
+    };
 
     /// Helper function - used to compare the metadata of databases and tables.
     auto find_mismatch = [](const auto & metadata, const auto & previous_metadata)
@@ -697,23 +709,20 @@ bool BackupEntriesCollector::compareWithPrevious(String & mismatch_description)
         {
             if (mismatch->first == p_mismatch->first)
                 return {MismatchType::CHANGED, mismatch->first};
-            else if (mismatch->first < p_mismatch->first)
+            if (mismatch->first < p_mismatch->first)
                 return {MismatchType::ADDED, mismatch->first};
-            else
-                return {MismatchType::REMOVED, mismatch->first};
+            return {MismatchType::REMOVED, mismatch->first};
         }
-        else if (mismatch != metadata.end())
+        if (mismatch != metadata.end())
         {
             return {MismatchType::ADDED, mismatch->first};
         }
-        else if (p_mismatch != previous_metadata.end())
+        if (p_mismatch != previous_metadata.end())
         {
             return {MismatchType::REMOVED, p_mismatch->first};
         }
-        else
-        {
-            return {MismatchType::NONE, {}};
-        }
+
+        return {MismatchType::NONE, {}};
     };
 
     /// Databases must be the same as during the previous scan.
@@ -755,11 +764,11 @@ void BackupEntriesCollector::makeBackupEntriesForDatabasesDefs()
         checkIsQueryCancelled();
 
         ASTPtr new_create_query = database_info.create_database_query;
-        adjustCreateQueryForBackup(new_create_query, context->getGlobalContext(), nullptr);
+        adjustCreateQueryForBackup(new_create_query, context->getGlobalContext());
         renameDatabaseAndTableNameInCreateQuery(new_create_query, renaming_map, context->getGlobalContext());
 
         const String & metadata_path_in_backup = database_info.metadata_path_in_backup;
-        backup_entries.emplace_back(metadata_path_in_backup, std::make_shared<BackupEntryFromMemory>(serializeAST(*new_create_query)));
+        backup_entries.emplace_back(metadata_path_in_backup, std::make_shared<BackupEntryFromMemory>(new_create_query->formatWithSecretsOneLine()));
     }
 }
 
@@ -772,11 +781,12 @@ void BackupEntriesCollector::makeBackupEntriesForTablesDefs()
         checkIsQueryCancelled();
 
         ASTPtr new_create_query = table_info.create_table_query;
-        adjustCreateQueryForBackup(new_create_query, context->getGlobalContext(), &table_info.replicated_table_shared_id);
+        table_info.replicated_table_zk_path = extractZooKeeperPathFromReplicatedTableDef(new_create_query->as<const ASTCreateQuery &>(), context);
+        adjustCreateQueryForBackup(new_create_query, context->getGlobalContext());
         renameDatabaseAndTableNameInCreateQuery(new_create_query, renaming_map, context->getGlobalContext());
 
         const String & metadata_path_in_backup = table_info.metadata_path_in_backup;
-        backup_entries.emplace_back(metadata_path_in_backup, std::make_shared<BackupEntryFromMemory>(serializeAST(*new_create_query)));
+        backup_entries.emplace_back(metadata_path_in_backup, std::make_shared<BackupEntryFromMemory>(new_create_query->formatWithSecretsOneLine()));
     }
 }
 
@@ -785,20 +795,15 @@ void BackupEntriesCollector::makeBackupEntriesForTablesData()
     if (backup_settings.structure_only)
         return;
 
-    std::vector<std::future<void>> futures;
+    ThreadPoolCallbackRunnerLocal<void> runner(threadpool, "BackupCollect");
     for (const auto & table_name : table_infos | boost::adaptors::map_keys)
     {
-        futures.push_back(scheduleFromThreadPool<void>([&]()
+        runner([&]()
         {
             makeBackupEntriesForTableData(table_name);
-        }, threadpool, "BackupCollect"));
+        });
     }
-    /// Wait for all tasks.
-    for (auto & future : futures)
-        future.wait();
-    /// Make sure there is no exception.
-    for (auto & future : futures)
-        future.get();
+    runner.waitForAllToFinishAndRethrowFirstError();
 }
 
 void BackupEntriesCollector::makeBackupEntriesForTableData(const QualifiedTableName & table_name)
@@ -816,8 +821,8 @@ void BackupEntriesCollector::makeBackupEntriesForTableData(const QualifiedTableN
         /// If this table is replicated in this case we call IBackupCoordination::addReplicatedDataPath() which will cause
         /// other replicas to fill the storage's data in the backup.
         /// If this table is not replicated we'll do nothing leaving the storage's data empty in the backup.
-        if (table_info.replicated_table_shared_id)
-            backup_coordination->addReplicatedDataPath(*table_info.replicated_table_shared_id, data_path_in_backup);
+        if (table_info.replicated_table_zk_path)
+            backup_coordination->addReplicatedDataPath(*table_info.replicated_table_zk_path, data_path_in_backup);
         return;
     }
 
@@ -896,11 +901,20 @@ void BackupEntriesCollector::runPostTasks()
     LOG_TRACE(log, "All post tasks successfully executed");
 }
 
-size_t BackupEntriesCollector::getAccessCounter(AccessEntityType type)
+std::unordered_map<UUID, AccessEntityPtr> BackupEntriesCollector::getAllAccessEntities()
 {
     std::lock_guard lock(mutex);
-    access_counters.resize(static_cast<size_t>(AccessEntityType::MAX));
-    return access_counters[static_cast<size_t>(type)]++;
+    if (!all_access_entities)
+    {
+        all_access_entities.emplace();
+        auto entities_with_ids = context->getAccessControl().readAllWithIDs();
+        for (const auto & [id, entity] : entities_with_ids)
+        {
+            if (entity->isBackupAllowed())
+                all_access_entities->emplace(id, entity);
+        }
+    }
+    return *all_access_entities;
 }
 
 }

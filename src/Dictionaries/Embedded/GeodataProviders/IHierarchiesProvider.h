@@ -3,7 +3,7 @@
 #include <memory>
 #include <string>
 #include <vector>
-#include "Entries.h"
+#include <Dictionaries/Embedded/GeodataProviders/Entries.h>
 
 namespace DB
 {
@@ -14,7 +14,7 @@ class IRegionsHierarchyReader
 public:
     virtual bool readNext(RegionEntry & entry) = 0;
 
-    virtual ~IRegionsHierarchyReader() {}
+    virtual ~IRegionsHierarchyReader() = default;
 };
 
 using IRegionsHierarchyReaderPtr = std::unique_ptr<IRegionsHierarchyReader>;
