@@ -65,7 +65,7 @@ def get_entity_id(entity):
 def test_create_replicated(started_cluster, entity):
     node1.query(f"CREATE {entity.keyword} {entity.name} {entity.options}")
     assert (
-        f"cannot insert because {entity.keyword.lower()} `{entity.name}{entity.options}` already exists in replicated"
+        f"cannot insert because {entity.keyword.lower()} `{entity.name}{entity.options}` already exists in `replicated`"
         in node2.query_and_get_error_with_retry(
             f"CREATE {entity.keyword} {entity.name} {entity.options}"
         )
@@ -82,7 +82,7 @@ def test_create_and_delete_replicated(started_cluster, entity):
 @pytest.mark.parametrize("entity", entities, ids=get_entity_id)
 def test_create_replicated_on_cluster(started_cluster, entity):
     assert (
-        f"cannot insert because {entity.keyword.lower()} `{entity.name}{entity.options}` already exists in replicated"
+        f"cannot insert because {entity.keyword.lower()} `{entity.name}{entity.options}` already exists in `replicated`"
         in node1.query_and_get_error(
             f"CREATE {entity.keyword} {entity.name} ON CLUSTER default {entity.options}"
         )
@@ -112,7 +112,7 @@ def test_create_replicated_on_cluster_ignore(started_cluster, entity):
         f"CREATE {entity.keyword} {entity.name} ON CLUSTER default {entity.options}"
     )
     assert (
-        f"cannot insert because {entity.keyword.lower()} `{entity.name}{entity.options}` already exists in replicated"
+        f"cannot insert because {entity.keyword.lower()} `{entity.name}{entity.options}` already exists in `replicated`"
         in node2.query_and_get_error_with_retry(
             f"CREATE {entity.keyword} {entity.name} {entity.options}"
         )

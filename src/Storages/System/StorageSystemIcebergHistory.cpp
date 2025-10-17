@@ -62,7 +62,7 @@ void StorageSystemIcebergHistory::fillData([[maybe_unused]] MutableColumns & res
         {
             if (IcebergMetadata * iceberg_metadata = dynamic_cast<IcebergMetadata *>(object_storage->getExternalMetadata(context)); iceberg_metadata)
             {
-                IcebergMetadata::IcebergHistory iceberg_history_items = iceberg_metadata->getHistory();
+                IcebergMetadata::IcebergHistory iceberg_history_items = iceberg_metadata->getHistory(context);
 
                 for (auto & iceberg_history_item : iceberg_history_items)
                 {
@@ -87,7 +87,7 @@ void StorageSystemIcebergHistory::fillData([[maybe_unused]] MutableColumns & res
 
     if (show_tables_granted)
     {
-        auto databases = DatabaseCatalog::instance().getDatabases();
+        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true});
         for (const auto & db: databases)
         {
             /// with last flag we are filtering out all non iceberg table

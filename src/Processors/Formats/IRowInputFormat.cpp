@@ -30,6 +30,7 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_IPV6;
     extern const int UNKNOWN_ELEMENT_OF_ENUM;
     extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
+    extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
 }
 
 
@@ -52,10 +53,11 @@ bool isParseError(int code)
         || code == ErrorCodes::CANNOT_PARSE_IPV4
         || code == ErrorCodes::CANNOT_PARSE_IPV6
         || code == ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM
-        || code == ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE;
+        || code == ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE
+        || code == ErrorCodes::UNEXPECTED_DATA_AFTER_PARSED_VALUE;
 }
 
-IRowInputFormat::IRowInputFormat(Block header, ReadBuffer & in_, Params params_)
+IRowInputFormat::IRowInputFormat(SharedHeader header, ReadBuffer & in_, Params params_)
     : IInputFormat(std::move(header), &in_)
     , serializations(getPort().getHeader().getSerializations())
     , params(params_)

@@ -1,4 +1,4 @@
-#include "ColumnVector.h"
+#include <Columns/ColumnVector.h>
 
 #include <base/bit_cast.h>
 #include <base/scope_guard.h>
@@ -996,6 +996,13 @@ ColumnPtr ColumnVector<T>::createWithOffsets(const IColumn::Offsets & offsets, c
     return res;
 }
 
+template <typename T>
+void ColumnVector<T>::updateAt(const IColumn & src, size_t dst_pos, size_t src_pos)
+{
+    const auto & src_data = assert_cast<const Self &>(src).getData();
+    data[dst_pos] = src_data[src_pos];
+}
+
 DECLARE_DEFAULT_CODE(
     template <typename Container, typename Type> void vectorIndexImpl(
     const Container & data, const PaddedPODArray<Type> & indexes, size_t limit, Container & res_data)
@@ -1140,6 +1147,14 @@ ColumnPtr ColumnVector<T>::indexImpl(const PaddedPODArray<Type> & indexes, size_
     TargetSpecific::Default::vectorIndexImpl<Container, Type>(data, indexes, limit, res_data);
 
     return res;
+}
+
+template <typename T>
+std::span<char> ColumnVector<T>::insertRawUninitialized(size_t count)
+{
+    size_t start = data.size();
+    data.resize(start + count);
+    return {reinterpret_cast<char *>(data.data() + start), count * sizeof(T)};
 }
 
 /// Explicit template instantiations - to avoid code bloat in headers.

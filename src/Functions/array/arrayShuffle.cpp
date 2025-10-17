@@ -182,10 +182,10 @@ This function will not materialize constants.
     )";
     FunctionDocumentation::Syntax syntax = "arrayShuffle(arr [, seed])";
     FunctionDocumentation::Arguments arguments = {
-        {"arr", "The array to shuffle. [`Array(T)`](/sql-reference/data-types/array)."},
-        {"seed (optional)", "Optional. The seed to be used with random number generation. If not provided a random one is used. [`(U)Int*`](../data-types/int-uint.md)."},
+        {"arr", "The array to shuffle.", {"Array(T)"}},
+        {"seed (optional)", "Optional. The seed to be used with random number generation. If not provided a random one is used.", {"(U)Int*"}},
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Array with elements shuffled. [`Array(T)`](/sql-reference/data-types/array).";
+    FunctionDocumentation::ReturnedValue returned_value = {"Array with elements shuffled", {"Array(T)"}};
     FunctionDocumentation::Examples examples = {
         {"Example without seed (unstable results)", "SELECT arrayShuffle([1, 2, 3, 4]);", "[1,4,2,3]"},
         {"Example without seed (stable results)", "SELECT arrayShuffle([1, 2, 3, 4], 41);", "[3,2,1,4]"}
@@ -204,21 +204,21 @@ Value of limit shall be in range `[1..n]`. Values outside of that range are equi
 :::note
 This function will not materialize constants.
 
-The value of `limit` should be in the range `[1..N]`. Values outside of that range are equivalent to performing full [`arrayShuffle`](#arrayshuffle).
+The value of `limit` should be in the range `[1..N]`. Values outside of that range are equivalent to performing full [`arrayShuffle`](#arrayShuffle).
 :::
     )";
     syntax = "arrayPartialShuffle(arr [, limit[, seed]])";
     arguments = {
-        {"arr", "The array to shuffle. [`Array(T)`](/sql-reference/data-types/array)."},
-        {"seed", "Optional. The seed to be used with random number generation. If not provided, a random one is used. [`(U)Int*`](../data-types/int-uint.md)."},
-        {"limit", "Optional. The number to limit element swaps to, in the range `[1..N]`. [`(U)Int*`](../data-types/int-uint.md)."},
+        {"arr", "The array to shuffle.", {"Array(T)"}},
+        {"seed", "Optional. The seed to be used with random number generation. If not provided, a random one is used.", {"(U)Int*"}},
+        {"limit", "Optional. The number to limit element swaps to, in the range `[1..N]`.", {"(U)Int*"}},
     };
-    returned_value = "Array with elements partially shuffled. [`Array(T)`](/sql-reference/data-types/array)).";
+    returned_value = {"Array with elements partially shuffled.", {"Array(T)"}};
     examples = {
-        {"no_limit1", "SELECT arrayPartialShuffle([1, 2, 3, 4], 0)", "[2,4,3,1]"},
-        {"no_limit2", "SELECT arrayPartialShuffle([1, 2, 3, 4])", "[4,1,3,2]"},
-        {"random_seed", "SELECT arrayPartialShuffle([1, 2, 3, 4], 2)", "[3,4,1,2]"},
-        {"explicit_seed", "SELECT arrayPartialShuffle([1, 2, 3, 4], 2, 41)", "[3,2,1,4]"},
+        {"no_limit1", "SELECT arrayPartialShuffle([1, 2, 3, 4], 0)", "[2, 4, 3, 1]"},
+        {"no_limit2", "SELECT arrayPartialShuffle([1, 2, 3, 4])", "[4, 1, 3, 2]"},
+        {"random_seed", "SELECT arrayPartialShuffle([1, 2, 3, 4], 2)", "[3, 4, 1, 2]"},
+        {"explicit_seed", "SELECT arrayPartialShuffle([1, 2, 3, 4], 2, 41)", "[3, 2, 1, 4]"},
         {"materialize", "SELECT arrayPartialShuffle(materialize([1, 2, 3, 4]), 2, 42), arrayPartialShuffle([1, 2, 3], 2, 42) FROM numbers(10)", R"(
 ┌─arrayPartial⋯4]), 2, 42)─┬─arrayPartial⋯ 3], 2, 42)─┐
 │ [3,2,1,4]                │ [3,2,1]                  │

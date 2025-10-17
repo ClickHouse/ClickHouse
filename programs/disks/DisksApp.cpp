@@ -1,13 +1,13 @@
-#include "DisksApp.h"
+#include <DisksApp.h>
 #include <Client/ClientBase.h>
 #include <Client/ReplxxLineReader.h>
 #include <Common/Exception.h>
-#include "Common/filesystemHelpers.h"
+#include <Common/filesystemHelpers.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Macros.h>
-#include "DisksClient.h"
-#include "ICommand.h"
-#include "ICommand_fwd.h"
+#include <DisksClient.h>
+#include <ICommand.h>
+#include <ICommand_fwd.h>
 
 #include <cstring>
 #include <exception>
@@ -22,13 +22,15 @@
 #include <Common/TerminalSize.h>
 
 #include <Common/logger_useful.h>
-#include "Loggers/OwnFormattingChannel.h"
-#include "Loggers/OwnPatternFormatter.h"
+#include <Loggers/OwnFormattingChannel.h>
+#include <Loggers/OwnPatternFormatter.h>
 #include "config.h"
 
-#include "Utils.h"
+#include <Utils.h>
 #include <Server/CloudPlacementInfo.h>
 #include <IO/SharedThreadPools.h>
+
+#include <Poco/FileChannel.h>
 
 namespace DB
 {
@@ -222,7 +224,7 @@ bool DisksApp::processQueryText(const String & text)
         catch (DB::Exception & err)
         {
             int code = err.code();
-            error_string = getExceptionMessage(err, true, false);
+            error_string = getExceptionMessageForLogging(err, true, false);
             if (code == ErrorCodes::BAD_ARGUMENTS)
             {
                 if (command.get())
@@ -602,9 +604,9 @@ int mainEntryClickHouseDisks(int argc, char ** argv)
         app.init(common_arguments);
         return app.run();
     }
-    catch (const DB::Exception & e)
+    catch (DB::Exception & e)
     {
-        std::cerr << DB::getExceptionMessage(e, false) << std::endl;
+        std::cerr << DB::getExceptionMessageForLogging(e, false) << std::endl;
         auto code = DB::getCurrentExceptionCode();
         return static_cast<UInt8>(code) ? code : 1;
     }

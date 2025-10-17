@@ -15,6 +15,9 @@ namespace DB
 
         std::string getName() const override { return "Loop"; }
 
+        QueryProcessingStage::Enum
+        getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
+
         void read(
                 QueryPlan & query_plan,
                 const Names & column_names,

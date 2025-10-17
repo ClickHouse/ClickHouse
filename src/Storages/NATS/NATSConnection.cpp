@@ -1,4 +1,4 @@
-#include "NATSConnection.h"
+#include <Storages/NATS/NATSConnection.h>
 
 #include <IO/WriteHelpers.h>
 #include <Common/logger_useful.h>

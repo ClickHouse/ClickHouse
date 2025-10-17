@@ -1,4 +1,5 @@
 import dataclasses
+import traceback
 from typing import List
 
 from praktika.result import Result
@@ -44,8 +45,7 @@ class FTResultsProcessor:
 
     def __init__(self, wd):
         self.tests_output_file = f"{wd}/test_result.txt"
-        # self.test_results_parsed_file = f"{wd}/test_result.tsv"
-        # self.status_file = f"{wd}/check_status.tsv"
+        self.debug_files = []
 
     def _process_test_output(self):
         total = 0
@@ -82,13 +82,21 @@ class FTResultsProcessor:
                 ):
                     test_name = line.split(" ")[2].split(":")[0]
 
-                    test_time = ""
+                    if test_name == "+":
+                        # TODO: investigate and remove
+                        # https://github.com/ClickHouse/ClickHouse/issues/81888
+                        print(
+                            f"ERROR: incorrect test name: {test_name} in line:\n{line}"
+                        )
+                        continue
+
+                    test_time = None
                     try:
                         time_token = line.split("]")[1].strip().split()[0]
                         float(time_token)
                         test_time = time_token
                     except:
-                        pass
+                        print(f"ERROR: Failed to parse time str from line [{line}]")
 
                     total += 1
                     if TIMEOUT_SIGN in line:
@@ -109,7 +117,7 @@ class FTResultsProcessor:
                     test_end = False
                 elif (
                     len(test_results) > 0
-                    and test_results[-1][1] == "FAIL"
+                    and test_results[-1][1] in ("FAIL", "SKIPPED")
                     and not test_end
                 ):
                     test_results[-1][3].append(original_line)
@@ -120,16 +128,36 @@ class FTResultsProcessor:
                 if DATABASE_SIGN in line:
                     test_end = True
 
-        test_results = [
-            Result(
-                name=test[0],
-                status=test[1],
-                start_time=None,
-                duration=float(test[2]),
-                info="".join(test[3])[:16384],
-            )
-            for test in test_results
-        ]
+        test_results_ = []
+        for test in test_results:
+            try:
+                test_results_.append(
+                    Result(
+                        name=test[0],
+                        status=test[1],
+                        start_time=None,
+                        duration=float(test[2]),
+                        info="".join(test[3])[:16384],
+                    )
+                )
+            except Exception as e:
+                print(f"ERROR: Failed to parse test results: {test}")
+                traceback.print_exc()
+                self.debug_files.append(self.tests_output_file)
+                if test[0] == "+":
+                    # TODO: investigate and remove
+                    # https://github.com/ClickHouse/ClickHouse/issues/81888
+                    continue
+                test_results_.append(
+                    Result(
+                        name=test[0],
+                        status=Result.Status.ERROR,
+                        start_time=None,
+                        duration=None,
+                        info=f"test results parse failure:\n{traceback.print_exc()}",
+                    )
+                )
+        test_results = test_results_
 
         s = self.Summary(
             total=total,
@@ -179,6 +207,7 @@ class FTResultsProcessor:
         if s.failed != 0 or s.unknown != 0:
             state = Result.Status.FAILED
 
+        info = ""
         if s.hung:
             state = Result.Status.FAILED
             test_results.append(
@@ -193,10 +222,8 @@ class FTResultsProcessor:
                     result.status = "SERVER_DIED"
             test_results.append(Result("Server died", "FAIL", info="Server died"))
         elif not s.success_finish:
-            state = Result.Status.FAILED
-            test_results.append(
-                Result("Tests are not finished", "FAIL", info="Tests are not finished")
-            )
+            state = Result.Status.ERROR
+            info = "The test runner was terminated unexpectedly"
         elif s.retries:
             test_results.append(
                 Result("Some tests restarted", "SKIPPED", info="Some tests restarted")
@@ -204,25 +231,10 @@ class FTResultsProcessor:
         else:
             pass
 
-        info = f"Failed: {s.failed}, Passed: {s.success}, Skipped: {s.skipped}"
+        if not info:
+            info = f"Failed: {s.failed}, Passed: {s.success}, Skipped: {s.skipped}"
 
-        # TODO: !!!
-        # def test_result_comparator(item):
-        #     # sort by status then by check name
-        #     order = {
-        #         "FAIL": 0,
-        #         "SERVER_DIED": 1,
-        #         "Timeout": 2,
-        #         "NOT_FAILED": 3,
-        #         "BROKEN": 4,
-        #         "OK": 5,
-        #         "SKIPPED": 6,
-        #     }
-        #     return order.get(item[1], 10), str(item[0]), item[1]
-        #
-        # test_results.sort(key=test_result_comparator)
-
-        return Result.create_from(
+        result = Result.create_from(
             name="Tests",
             results=test_results,
             status=state,
@@ -231,28 +243,16 @@ class FTResultsProcessor:
             with_info_from_results=False,
         )
 
+        if not result.is_ok():
+            order = {
+                "FAIL": 0,
+                "SERVER_DIED": 1,
+                "Timeout": 2,
+                "NOT_FAILED": 3,
+                "BROKEN": 4,
+                "OK": 5,
+                "SKIPPED": 6,
+            }
+            result.results.sort(key=lambda x: order.get(x.status, -1))
 
-# if __name__ == "__main__":
-#     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
-#     parser = argparse.ArgumentParser(
-#         description="ClickHouse script for parsing results of functional tests"
-#     )
-#
-#     parser.add_argument("--out-results-file", default="/test_output/test_results.tsv")
-#     parser.add_argument("--out-status-file", default="/test_output/check_status.tsv")
-#     args = parser.parse_args()
-#
-#     broken_tests = []
-#     state, description, test_results = process_result(
-#         args.in_results_dir,
-#         broken_tests,
-#         args.in_test_result_file,
-#         args.in_results_file,
-#     )
-#     logging.info("Result parsed")
-#     status = (state, description)
-#
-#
-#
-#     write_results(args.out_results_file, args.out_status_file, test_results, status)
-#     logging.info("Result written")
+        return result

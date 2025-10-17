@@ -3,6 +3,7 @@ description: 'Page describing automatic schema inference from input data in Clic
 sidebar_label: 'Schema inference'
 slug: /interfaces/schema-inference
 title: 'Automatic schema inference from input data'
+doc_type: 'reference'
 ---
 
 ClickHouse can automatically determine the structure of input data in almost all supported [Input formats](formats.md).
@@ -390,6 +391,18 @@ DESC format(JSONEachRow, '{"arr" : [null, 42, null]}')
 └──────┴────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
+If an array contains values of different types and setting `input_format_json_infer_array_of_dynamic_from_array_of_different_types` is enabled (it is enabled by default), then it will have type `Array(Dynamic)`:
+```sql
+SET input_format_json_infer_array_of_dynamic_from_array_of_different_types=1;
+DESC format(JSONEachRow, '{"arr" : [42, "hello", [1, 2, 3]]}');
+```
+
+```response
+┌─name─┬─type───────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ arr  │ Array(Dynamic) │              │                    │         │                  │                │
+└──────┴────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
 Named tuples:
 
 When setting `input_format_json_try_infer_named_tuples_from_objects` is enabled, during schema inference ClickHouse will try to infer named Tuple from JSON objects.
@@ -408,8 +421,9 @@ DESC format(JSONEachRow, '{"obj" : {"a" : 42, "b" : "Hello"}}, {"obj" : {"a" : 4
 
 Unnamed Tuples:
 
-In JSON formats we treat Arrays with elements of different types as Unnamed Tuples.
+If setting `input_format_json_infer_array_of_dynamic_from_array_of_different_types` is disabled, we treat Arrays with elements of different types as Unnamed Tuples in JSON formats.
 ```sql
+SET input_format_json_infer_array_of_dynamic_from_array_of_different_types = 0;
 DESC format(JSONEachRow, '{"tuple" : [1, "Hello, World!", [1, 2, 3]]}')
 ```
 ```response
@@ -420,6 +434,7 @@ DESC format(JSONEachRow, '{"tuple" : [1, "Hello, World!", [1, 2, 3]]}')
 
 If some values are `null` or empty, we use types of corresponding values from the other rows:
 ```sql
+SET input_format_json_infer_array_of_dynamic_from_array_of_different_types=0;
 DESC format(JSONEachRow, $$
                               {"tuple" : [1, null, null]}
                               {"tuple" : [null, "Hello, World!", []]}
@@ -613,7 +628,6 @@ DESC format(JSONEachRow, $$
 │ obj  │ Nullable(String) │              │                    │         │                  │                │
 └──────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
-
 
 ##### input_format_json_read_numbers_as_strings {#input_format_json_read_numbers_as_strings}
 
@@ -1277,7 +1291,7 @@ $$)
 
 ### Template {#template}
 
-In Template format ClickHouse first extracts all column values from the row according to the specified template and then tries to infer the 
+In Template format ClickHouse first extracts all column values from the row according to the specified template and then tries to infer the
 data type for each value according to its escaping rule.
 
 **Example**
@@ -1326,7 +1340,7 @@ data type for each value according to the specified escaping rule.
 ```sql
 SET format_regexp = '^Line: value_1=(.+?), value_2=(.+?), value_3=(.+?)',
        format_regexp_escaping_rule = 'CSV'
-       
+
 DESC format(Regexp, $$Line: value_1=42, value_2="Some string 1", value_3="[1, NULL, 3]"
 Line: value_1=2, value_2="Some string 2", value_3="[4, 5, NULL]"$$)
 ```
@@ -1389,10 +1403,13 @@ DESC format(JSONEachRow, '{"id" : 1, "age" : 25, "name" : "Josh", "status" : nul
 
 #### schema_inference_make_columns_nullable ${#schema-inference-make-columns-nullable}
 
-Controls making inferred types `Nullable` in schema inference for formats without information about nullability.
-If the setting is enabled, all inferred type will be `Nullable`, if disabled, the inferred type will never be `Nullable`, if set to `auto`, the inferred type will be `Nullable` only if the column contains `NULL` in a sample that is parsed during schema inference or file metadata contains information about column nullability.
+Controls making inferred types `Nullable` in schema inference for formats without information about nullability. Possible values:
+* 0 - the inferred type will never be `Nullable`,
+* 1 - all inferred types will be `Nullable`,
+* 2 or 'auto' - for text formats, the inferred type will be `Nullable` only if the column contains `NULL` in a sample that is parsed during schema inference; for strongly-typed formats (Parquet, ORC, Arrow), nullability information is taken from file metadata,
+* 3 - for text formats, use `Nullable`; for strongly-typed formats, use file metadata.
 
-Enabled by default.
+Default: 3.
 
 **Examples**
 
@@ -1784,7 +1801,7 @@ In Parquet format ClickHouse reads its schema from the data and converts it to C
 | `STRUCT`                     | [Tuple](../sql-reference/data-types/tuple.md)           |
 | `MAP`                        | [Map](../sql-reference/data-types/map.md)               |
 
-Other Parquet types are not supported. By default, all inferred types are inside `Nullable`, but it can be changed using the setting `schema_inference_make_columns_nullable`.
+Other Parquet types are not supported.
 
 ### Arrow {#arrow}
 
@@ -1812,7 +1829,7 @@ In Arrow format ClickHouse reads its schema from the data and converts it to Cli
 | `STRUCT`                        | [Tuple](../sql-reference/data-types/tuple.md)           |
 | `MAP`                           | [Map](../sql-reference/data-types/map.md)               |
 
-Other Arrow types are not supported. By default, all inferred types are inside `Nullable`, but it can be changed using the setting `schema_inference_make_columns_nullable`.
+Other Arrow types are not supported.
 
 ### ORC {#orc}
 
@@ -1835,7 +1852,7 @@ In ORC format ClickHouse reads its schema from the data and converts it to Click
 | `Struct`                             | [Tuple](../sql-reference/data-types/tuple.md)           |
 | `Map`                                | [Map](../sql-reference/data-types/map.md)               |
 
-Other ORC types are not supported. By default, all inferred types are inside `Nullable`, but it can be changed using the setting `schema_inference_make_columns_nullable`.
+Other ORC types are not supported.
 
 ### Native {#native}
 
@@ -1988,7 +2005,7 @@ DESC format(JSONAsString, '{"x" : 42, "y" : "Hello, World!"}') SETTINGS allow_ex
 ## Schema inference modes {#schema-inference-modes}
 
 Schema inference from the set of data files can work in 2 different modes: `default` and `union`.
-The mode is controlled by the setting `schema_inference_mode`. 
+The mode is controlled by the setting `schema_inference_mode`.
 
 ### Default mode {#default-schema-inference-mode}
 
@@ -2033,13 +2050,13 @@ Result:
 └────────┴──────────────────┘
 ```
 
-As we can see, we don't have `field3` from file `data3.jsonl`. 
+As we can see, we don't have `field3` from file `data3.jsonl`.
 It happens because ClickHouse first tried to infer schema from file `data1.jsonl`, failed because of only nulls for field `field2`,
 and then tried to infer schema from `data2.jsonl` and succeeded, so data from file `data3.jsonl` wasn't read.
 
 ### Union mode {#default-schema-inference-mode-1}
 
-In union mode, ClickHouse assumes that files can have different schemas, so it infer schemas of all files and then union them to the common schema. 
+In union mode, ClickHouse assumes that files can have different schemas, so it infer schemas of all files and then union them to the common schema.
 
 Let's say we have 3 files `data1.jsonl`, `data2.jsonl` and `data3.jsonl` with the next content:
 
@@ -2085,7 +2102,6 @@ Note:
 - As some of the files may not contain some columns from the resulting schema, union mode is supported only for formats that support reading subset of columns (like JSONEachRow, Parquet, TSVWithNames, etc) and won't work for other formats (like CSV, TSV, JSONCompactEachRow, etc).
 - If ClickHouse cannot infer the schema from one of the files, the exception will be thrown.
 - If you have a lot of files, reading schema from all of them can take a lot of time.
-
 
 ## Automatic format detection {#automatic-format-detection}
 

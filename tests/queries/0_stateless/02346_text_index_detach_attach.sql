@@ -6,11 +6,10 @@ CREATE TABLE tab
 (
     key UInt64,
     str String,
-    INDEX inv_idx str TYPE text(tokenizer = 'default') GRANULARITY 1
+    INDEX inv_idx str TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 1
 )
 ENGINE = MergeTree
-ORDER BY key
-SETTINGS min_bytes_for_full_part_storage = 0; -- Text indexes currently don't work with packed parts
+ORDER BY key;
 
 INSERT INTO tab VALUES (1, 'Hello World');
 

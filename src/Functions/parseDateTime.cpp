@@ -21,7 +21,7 @@
 
 #include <expected>
 
-#include "StringHelpers.h"
+#include <Functions/StringHelpers.h>
 
 namespace DB
 {
@@ -658,7 +658,7 @@ namespace
         String getName() const override { return name; }
 
         bool useDefaultImplementationForConstants() const override { return true; }
-        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
         ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
         bool isVariadic() const override { return true; }
         size_t getNumberOfArguments() const override { return 0; }
@@ -677,11 +677,15 @@ namespace
             String time_zone_name = getTimeZone(arguments).getTimeZone();
             DataTypePtr data_type;
             if constexpr (return_type == ReturnType::DateTime)
+            {
                 data_type = std::make_shared<DataTypeDateTime>(time_zone_name);
+            }
             else
             {
                 if constexpr (parse_syntax == ParseSyntax::MySQL)
+                {
                     data_type = std::make_shared<DataTypeDateTime64>(6, time_zone_name);
+                }
                 else
                 {
                     /// The precision of the return type is the number of 'S' placeholders.
@@ -1835,12 +1839,7 @@ namespace
             [[nodiscard]]
             static PosOrError jodaTimezone(size_t, Pos cur, Pos end, const String &, ParsedValue<error_handling, return_type> & parsed_value)
             {
-                String read_time_zone;
-                while (cur <= end)
-                {
-                    read_time_zone += *cur;
-                    ++cur;
-                }
+                std::string_view read_time_zone{cur, end};
                 const DateLUTImpl & date_time_zone = DateLUT::instance(read_time_zone);
                 const auto result = parsed_value.buildDateTime(date_time_zone);
                 if (result.has_value())
@@ -1848,7 +1847,7 @@ namespace
                     const DateLUTImpl::Time timezone_offset = date_time_zone.timezoneOffset(*result);
                     parsed_value.has_time_zone_offset = true;
                     parsed_value.time_zone_offset = timezone_offset;
-                    return cur;
+                    return end;
                 }
                 else
                     RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Unable to parse date time from timezone {}", read_time_zone)
@@ -2422,10 +2421,97 @@ namespace
 
 REGISTER_FUNCTION(ParseDateTime)
 {
-    factory.registerFunction<FunctionParseDateTime>();
+    /// parseDateTime documentation
+    FunctionDocumentation::Description parseDateTime_description = R"(
+Parses a date and time string according to a MySQL date format string.
+
+This function is the inverse of [`formatDateTime`](./format-date-time.md).
+It parses a String argument using a format String. Returns a DateTime type.
+    )";
+    FunctionDocumentation::Syntax parseDateTime_syntax = "parseDateTime(time_string, format[, timezone])";
+    FunctionDocumentation::Arguments parseDateTime_arguments = {
+        {"time_string", "String to be parsed into DateTime.", {"String"}},
+        {"format", "Format string specifying how to parse time_string.", {"String"}},
+        {"timezone", "Optional. Timezone.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue parseDateTime_returned_value = {"Returns a DateTime parsed from the input string according to the MySQL style format string.", {"DateTime"}};
+    FunctionDocumentation::Examples parseDateTime_examples = {
+    {
+        "Usage example",
+        R"(
+SELECT parseDateTime('2025-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')
+        )",
+        R"(
+┌─parseDateTime('2025-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')─┐
+│                                       2025-01-04 23:00:00 │
+└───────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn parseDateTime_introduced_in = {23, 3};
+    FunctionDocumentation::Category parseDateTime_category = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation parseDateTime_documentation = {parseDateTime_description, parseDateTime_syntax, parseDateTime_arguments, parseDateTime_returned_value, parseDateTime_examples, parseDateTime_introduced_in, parseDateTime_category};
+
+    /// parseDateTimeOrZero documentation
+    FunctionDocumentation::Description parseDateTimeOrZero_description = R"(
+Same as [`parseDateTime`](#parseDateTime) but returns zero date when it encounters an unparsable date format.
+    )";
+    FunctionDocumentation::Syntax parseDateTimeOrZero_syntax = "parseDateTimeOrZero(time_string, format[, timezone])";
+    FunctionDocumentation::Arguments parseDateTimeOrZero_arguments = {
+        {"time_string", "String to be parsed into DateTime.", {"String"}},
+        {"format", "Format string specifying how to parse time_string.", {"String"}},
+        {"timezone", "Optional. Timezone.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue parseDateTimeOrZero_returned_value = {"Returns DateTime parsed from input string, or zero DateTime if parsing fails.", {"DateTime"}};
+    FunctionDocumentation::Examples parseDateTimeOrZero_examples = {
+    {
+        "Usage example",
+        R"(
+SELECT parseDateTimeOrZero('2025-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')
+        )",
+        R"(
+┌─parseDateTimeOrZero('2025-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')─┐
+│                                             2025-01-04 23:00:00 │
+└─────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn parseDateTimeOrZero_introduced_in = {23, 3};
+    FunctionDocumentation::Category parseDateTimeOrZero_category = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation parseDateTimeOrZero_documentation = {parseDateTimeOrZero_description, parseDateTimeOrZero_syntax, parseDateTimeOrZero_arguments, parseDateTimeOrZero_returned_value, parseDateTimeOrZero_examples, parseDateTimeOrZero_introduced_in, parseDateTimeOrZero_category};
+
+    /// parseDateTimeOrNull documentation
+    FunctionDocumentation::Description parseDateTimeOrNull_description = R"(
+Same as [`parseDateTime`](#parseDateTime) but returns `NULL` when it encounters an unparsable date format.
+    )";
+    FunctionDocumentation::Syntax parseDateTimeOrNull_syntax = "parseDateTimeOrNull(time_string, format[, timezone])";
+    FunctionDocumentation::Arguments parseDateTimeOrNull_arguments = {
+        {"time_string", "String to be parsed into DateTime.", {"String"}},
+        {"format", "Format string specifying how to parse time_string.", {"String"}},
+        {"timezone", "Optional. Timezone.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue parseDateTimeOrNull_returned_value = {"Returns DateTime parsed from input string, or NULL if parsing fails.", {"Nullable(DateTime)"}};
+    FunctionDocumentation::Examples parseDateTimeOrNull_examples = {
+    {
+        "Usage example",
+        R"(
+SELECT parseDateTimeOrNull('2025-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')
+        )",
+        R"(
+┌─parseDateTimeOrNull('2025-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')─┐
+│                                            2025-01-04 23:00:00  │
+└─────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn parseDateTimeOrNull_introduced_in = {23, 3};
+    FunctionDocumentation::Category parseDateTimeOrNull_category = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation parseDateTimeOrNull_documentation = {parseDateTimeOrNull_description, parseDateTimeOrNull_syntax, parseDateTimeOrNull_arguments, parseDateTimeOrNull_returned_value, parseDateTimeOrNull_examples, parseDateTimeOrNull_introduced_in, parseDateTimeOrNull_category};
+
+    factory.registerFunction<FunctionParseDateTime>(parseDateTime_documentation);
     factory.registerAlias("TO_UNIXTIME", FunctionParseDateTime::name, FunctionFactory::Case::Insensitive);
-    factory.registerFunction<FunctionParseDateTimeOrZero>();
-    factory.registerFunction<FunctionParseDateTimeOrNull>();
+    factory.registerFunction<FunctionParseDateTimeOrZero>(parseDateTimeOrZero_documentation);
+    factory.registerFunction<FunctionParseDateTimeOrNull>(parseDateTimeOrNull_documentation);
     factory.registerAlias("str_to_date", FunctionParseDateTimeOrNull::name, FunctionFactory::Case::Insensitive);
     factory.registerFunction<FunctionParseDateTimeInJodaSyntax>();
     factory.registerFunction<FunctionParseDateTimeInJodaSyntaxOrZero>();

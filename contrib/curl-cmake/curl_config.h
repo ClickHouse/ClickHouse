@@ -16,6 +16,7 @@
 #define HAVE_GETADDRINFO
 #define HAVE_LONGLONG
 #define HAVE_POLL_FINE
+#define HAVE_SELECT
 #define HAVE_SIGACTION
 #define HAVE_SIGNAL
 #define HAVE_SIGSETJMP
@@ -44,8 +45,9 @@
 #define HAVE_FCNTL_H
 #define HAVE_NETDB_H
 #define HAVE_NETINET_IN_H
+#define HAVE_SELECT_H
 #define HAVE_SETJMP_H
-#define HAVE_SYS_STAT_H
+#define HAVE_SETJMP_H
 #define HAVE_UNISTD_H
 #define HAVE_POLL_H
 #define HAVE_PTHREAD_H

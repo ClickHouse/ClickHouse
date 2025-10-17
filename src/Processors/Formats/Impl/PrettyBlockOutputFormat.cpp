@@ -23,14 +23,14 @@ namespace DB
 {
 
 PrettyBlockOutputFormat::PrettyBlockOutputFormat(
-    WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_, Style style_, bool mono_block_, bool color_, bool glue_chunks_)
-     : IOutputFormat(header_, out_), format_settings(format_settings_), serializations(header_.getSerializations()), style(style_), mono_block(mono_block_), color(color_), glue_chunks(glue_chunks_)
+    WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_, Style style_, bool mono_block_, bool color_, bool glue_chunks_)
+     : IOutputFormat(header_, out_), format_settings(format_settings_), serializations(header_->getSerializations()), style(style_), mono_block(mono_block_), color(color_), glue_chunks(glue_chunks_)
 {
     /// Decide whether we should print a tip near the single number value in the result.
-    if (header_.getColumns().size() == 1)
+    if (header_->getColumns().size() == 1)
     {
         /// Check if it is a numeric type, possible wrapped by Nullable or LowCardinality.
-        DataTypePtr type = removeNullable(recursiveRemoveLowCardinality(header_.getDataTypes().at(0)));
+        DataTypePtr type = removeNullable(recursiveRemoveLowCardinality(header_->getDataTypes().at(0)));
         if (isNumber(type))
             readable_number_tip = true;
     }
@@ -420,7 +420,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
     auto num_rows = chunk.getNumRows();
     auto num_columns = chunk.getNumColumns();
     const auto & columns = chunk.getColumns();
-    const auto & header = getPort(port_kind).getHeader();
+    const auto & header = getPort(port_kind).getSharedHeader();
 
     size_t cut_to_width = format_settings.pretty.max_value_width;
     if (!format_settings.pretty.max_value_width_apply_for_single_value && num_rows == 1 && num_columns == 1 && total_rows == 0)
@@ -439,7 +439,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
     std::vector<int32_t> max_enc_lvl;
 
     bool has_newlines = false;
-    calculateWidths(header, chunk, format_settings.pretty.multiline_fields, has_newlines, widths, max_widths, name_widths, names,
+    calculateWidths(*header, chunk, format_settings.pretty.multiline_fields, has_newlines, widths, max_widths, name_widths, names,
         subcol_names, subcol_widths, subcol_max_widths, subcol_name_widths, leaves, max_enc_lvl);
     size_t table_width = 0;
     for (size_t width : max_widths)
@@ -787,7 +787,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
                     out << "   ";
             }
 
-            const auto & col = header.getByPosition(i);
+            const auto & col = header->getByPosition(i);
 
             auto write_value = [&]
             {
@@ -1062,12 +1062,12 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
                 bool all_lines_printed = true;
                 for (size_t j = 0; j < num_columns; ++j)
                 {   
-                    const auto & type = *header.getByPosition(j).type;
+                    const auto & type = header.getByPosition(j).type;
                     if (style != Style::Space)
                         out << vertical_bar;
                     else if (j != 0)
                         out << " ";
-                    auto sub_names = type.getSubcolumnNames();
+                    auto sub_names = type->getSubcolumnNames();
                     if (!sub_names.empty() && format_settings.pretty.display_tuple_as_subcolumns)
                     {
                         serialized_subcol_values[j].resize(sub_names.size());
@@ -1078,9 +1078,9 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
                             offsets_inside_serialized_subcol_values[j][leaves[j][k]] = 0;
                             String serialized_value;
                             WriteBufferFromString out_serialize(serialized_value);
-                            auto serialization = type.getDefaultSerialization();
-                            auto subcolumn = type.getSubcolumn(sub_names[leaves[j][k]], columns[j]);
-                            auto sub_serialization = type.getSubcolumnSerialization(sub_names[leaves[j][k]], serialization);
+                            auto serialization = type->getDefaultSerialization();
+                            auto subcolumn = type->getSubcolumn(sub_names[leaves[j][k]], columns[j]);
+                            auto sub_serialization = type->getSubcolumnSerialization(sub_names[leaves[j][k]], serialization);
                             sub_serialization->serializeText(*subcolumn, i, out_serialize, format_settings);
                             writeValueWithPadding(
                                 *subcolumn,
@@ -1090,8 +1090,8 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
                                 subcol_widths[j][leaves[j][k]].empty() ? subcol_max_widths[j][leaves[j][k]] : subcol_widths[j][leaves[j][k]][displayed_row],
                                 subcol_max_widths[j][leaves[j][k]],
                                 cut_to_width,
-                                type.shouldAlignRightInPrettyFormats(),
-                                isNumber(type));
+                                type->shouldAlignRightInPrettyFormats(),
+                                isNumber(removeNullable(type)));
                             if (serialized_subcol_values[j][leaves[j][k]]->size() != offsets_inside_serialized_subcol_values[j][leaves[j][k]])
                                 all_lines_printed = false;
                             if (k != leaves[j].size() - 1)
@@ -1113,8 +1113,8 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
                             widths[j].empty() ? max_widths[j] : widths[j][displayed_row],
                             max_widths[j],
                             cut_to_width,
-                            type.shouldAlignRightInPrettyFormats(),
-                            isNumber(type));
+                            type->shouldAlignRightInPrettyFormats(),
+                            isNumber(removeNullable(type)));
 
                         if (offsets_inside_serialized_values[j] != serialized_values[j]->size())
                             all_lines_printed = false;
@@ -1385,13 +1385,14 @@ void registerOutputFormatPretty(FormatFactory & factory)
                 factory.registerOutputFormat(name, [style, no_escapes, mono_block](
                     WriteBuffer & buf,
                     const Block & sample,
-                    const FormatSettings & format_settings)
+                    const FormatSettings & format_settings,
+                    FormatFilterInfoPtr /*format_filter_info*/)
                 {
                     bool color = !no_escapes
                         && (format_settings.pretty.color == 1 || (format_settings.pretty.color == 2 && format_settings.is_writing_to_terminal));
                     bool glue_chunks = !no_escapes
                         && (format_settings.pretty.glue_chunks == 1 || (format_settings.pretty.glue_chunks == 2 && format_settings.is_writing_to_terminal));
-                    return std::make_shared<PrettyBlockOutputFormat>(buf, sample, format_settings, style, mono_block, color, glue_chunks);
+                    return std::make_shared<PrettyBlockOutputFormat>(buf, std::make_shared<const Block>(sample), format_settings, style, mono_block, color, glue_chunks);
                 });
             }
         }

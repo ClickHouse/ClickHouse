@@ -20,16 +20,13 @@ public:
       */
     TabSeparatedRowOutputFormat(
         WriteBuffer & out_,
-        const Block & header_,
+        SharedHeader header_,
         bool with_names_,
         bool with_types_,
         bool is_raw_,
         const FormatSettings & format_settings_);
 
     String getName() const override { return "TabSeparatedRowOutputFormat"; }
-
-    /// https://www.iana.org/assignments/media-types/text/tab-separated-values
-    String getContentType() const override { return "text/tab-separated-values; charset=UTF-8"; }
 
 protected:
     void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;
