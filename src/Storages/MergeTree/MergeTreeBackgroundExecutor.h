@@ -58,33 +58,29 @@ struct TaskRuntimeData
 
     void cancel() const
     {
-        Stopwatch sw;
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::events.cancel_ms);
         if (task)
             task->cancel();
-        ProfileEvents::incrementNoTrace(events.cancel_ms, sw.elapsedMicroseconds());
     }
 
     void wait()
     {
-        Stopwatch sw;
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::events.wait_ms);
         is_done.wait();
-        ProfileEvents::incrementNoTrace(events.wait_ms, sw.elapsedMicroseconds());
     }
 
     bool executeStep() const
     {
-        Stopwatch sw;
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::events.execute_ms);
         bool res = task->executeStep();
-        ProfileEvents::incrementNoTrace(events.execute_ms, sw.elapsedMicroseconds());
         return res;
     }
 
     void resetTask()
     {
-        Stopwatch sw;
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::events.reset_ms);
         if (task)
             task.reset();
-        ProfileEvents::incrementNoTrace(events.reset_ms, sw.elapsedMicroseconds());
     }
 
     ExecutableTaskPtr task;
