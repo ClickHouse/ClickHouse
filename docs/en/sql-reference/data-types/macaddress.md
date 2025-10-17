@@ -84,4 +84,3 @@ DESCRIBE TABLE devices_pg;
 **See Also**
 
 - [Functions for Working with MAC Addresses](../functions/mac-address-functions.md)
-
