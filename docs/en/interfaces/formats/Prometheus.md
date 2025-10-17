@@ -6,6 +6,7 @@ keywords: ['Prometheus']
 output_format: true
 slug: /interfaces/formats/Prometheus
 title: 'Prometheus'
+doc_type: 'reference'
 ---
 
 | Input | Output | Alias |

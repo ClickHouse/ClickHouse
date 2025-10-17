@@ -66,13 +66,6 @@ public:
         delegate->createDirectories(wrapped_path);
     }
 
-    void clearDirectory(const String & path) override
-    {
-        auto tx = createEncryptedTransaction();
-        tx->clearDirectory(path);
-        tx->commit();
-    }
-
     void moveDirectory(const String & from_path, const String & to_path) override
     {
         auto tx = createEncryptedTransaction();
@@ -121,11 +114,18 @@ public:
         const WriteSettings & write_settings,
         const std::function<void()> & cancellation_hook) override;
 
+    void copyFile(
+        const String & from_file_path,
+        IDisk & to_disk,
+        const String & to_file_path,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings,
+        const std::function<void()> & cancellation_hook) override;
+
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
         const ReadSettings & settings,
-        std::optional<size_t> read_hint,
-        std::optional<size_t> file_size) const override;
+        std::optional<size_t> read_hint) const override;
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
@@ -134,7 +134,7 @@ public:
         const WriteSettings & settings) override
     {
         auto tx = createEncryptedTransaction();
-        auto result = tx->writeFile(path, buf_size, mode, settings);
+        auto result = tx->writeFileWithAutoCommit(path, buf_size, mode, settings);
         return result;
     }
 
@@ -288,6 +288,8 @@ public:
 
     void truncateFile(const String & path, size_t size) override;
 
+    void refresh(UInt64 not_sooner_than_milliseconds) override { delegate->refresh(not_sooner_than_milliseconds); }
+
     String getUniqueId(const String & path) const override
     {
         auto wrapped_path = wrappedPath(path);
@@ -308,7 +310,18 @@ public:
         return delegate_description;
     }
 
+    bool supportsCache() const override { return delegate->supportsCache(); }
+    NameSet getCacheLayersNames() const override { return delegate->getCacheLayersNames(); }
+    const String & getCacheName() const override { return delegate->getCacheName(); }
+
     bool isRemote() const override { return delegate->isRemote(); }
+    bool isBroken() const override { return delegate->isBroken(); }
+    bool supportParallelWrite() const override { return delegate->supportParallelWrite(); }
+    bool supportsHardLinks() const override { return delegate->supportsHardLinks(); }
+    bool supportsPartitionCommand(const PartitionCommand & command) const override { return delegate->supportsPartitionCommand(command); }
+    bool supportsStat() const override { return delegate->supportsStat(); }
+    bool supportsChmod() const override { return delegate->supportsChmod(); }
+    bool isSymlinkSupported() const override { return delegate->isSymlinkSupported(); }
 
     SyncGuardPtr getDirectorySyncGuard(const String & path) const override;
 
@@ -367,6 +380,9 @@ public:
         auto wrapped_path = wrappedPath(path);
         return delegate->getRefCount(wrapped_path);
     }
+
+    void syncRevision(UInt64 revision) override { delegate->syncRevision(revision); }
+    UInt64 getRevision() const override { return delegate->getRevision(); }
 
 #if USE_AWS_S3
     std::shared_ptr<const S3::Client> getS3StorageClient() const override

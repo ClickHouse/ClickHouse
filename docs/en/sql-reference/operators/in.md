@@ -3,6 +3,7 @@ description: 'Documentation for the IN operators excluding NOT IN, GLOBAL IN and
   NOT IN operators which are covered separately'
 slug: /sql-reference/operators/in
 title: 'IN Operators'
+doc_type: 'reference'
 ---
 
 # IN Operators

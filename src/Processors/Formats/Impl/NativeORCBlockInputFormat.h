@@ -11,7 +11,6 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <boost/algorithm/string.hpp>
-#include <orc/MemoryPool.hh>
 #include <orc/OrcFile.hh>
 #include <Common/threadPoolCallbackRunner.h>
 
@@ -89,10 +88,7 @@ private:
 
     void prepareFileReader();
     bool prepareStripeReader();
-
     void prefetchStripes();
-
-    std::unique_ptr<orc::MemoryPool> memory_pool;
 
     std::unique_ptr<orc::Reader> file_reader;
     std::unique_ptr<orc::RowReader> stripe_reader;

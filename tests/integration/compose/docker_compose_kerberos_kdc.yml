@@ -7,3 +7,4 @@ services:
       - ${KERBEROS_KDC_DIR}/../kerberos_image_config.sh:/config.sh
       - /dev/urandom:/dev/random
     ports: [88, 749]
+    stop_grace_period: 5s
