@@ -1,6 +1,6 @@
 services:
   bridge1:
-    image: clickhouse/jdbc-bridge
+    image: clickhouse/jdbc-bridge:2.1.0-dirty
     command: |
       /bin/bash -c 'cat << EOF > config/datasources/self.json
       {
@@ -24,3 +24,4 @@ services:
       - type: ${JDBC_BRIDGE_FS:-tmpfs}
         source: ${JDBC_BRIDGE_LOGS:-}
         target: /app/logs
+    stop_grace_period: 5s

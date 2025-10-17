@@ -9,6 +9,7 @@
 #include <iterator>
 #include <optional>
 #include <unordered_set>
+#include <vector>
 #include <IO/ReadHelpers.h>
 #include <IO/S3Common.h>
 #include <IO/SharedThreadPools.h>
@@ -158,12 +159,17 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load)
 
                 try
                 {
-                    auto read_buf = object_storage->readObject(object, settings);
-                    readStringUntilEOF(local_path, *read_buf);
+                    if (metadata->size_bytes == 0)
+                        LOG_TRACE(log, "The object with the key '{}' has size 0, skipping the read", remote_metadata_path);
+                    else
+                    {
+                        auto read_buf = object_storage->readObject(object, settings);
+                        readStringUntilEOF(local_path, *read_buf);
+                    }
 
                     /// Load the list of files inside the directory.
                     fs::path full_remote_path = object_storage->getCommonKeyPrefix() / remote_path;
-                    size_t prefix_length = remote_path.string().size() + 1; /// randomlygenerated/
+                    size_t full_prefix_length = full_remote_path.string().size() + 1; /// common/key/prefix/randomlygenerated/
                     for (auto dir_iterator = object_storage->iterate(full_remote_path, 0); dir_iterator->isValid(); dir_iterator->next())
                     {
                         auto remote_file = dir_iterator->current();
@@ -178,7 +184,8 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load)
                         }
 
                         /// Check that the file is a direct child.
-                        if (remote_file_path.substr(prefix_length) == filename)
+                        chassert(full_prefix_length < remote_file_path.size());
+                        if (std::string_view(remote_file_path.data() + full_prefix_length) == filename)
                             files.insert(std::move(filename));
                     }
 
@@ -302,8 +309,7 @@ bool MetadataStorageFromPlainRewritableObjectStorage::existsDirectory(const std:
 
 std::vector<std::string> MetadataStorageFromPlainRewritableObjectStorage::listDirectory(const std::string & path) const
 {
-    std::unordered_set<std::string> result = getDirectChildrenOnDisk(fs::path(path) / "");
-    return std::vector<std::string>(std::make_move_iterator(result.begin()), std::make_move_iterator(result.end()));
+    return getDirectChildrenOnDisk(fs::path(path) / "");
 }
 
 std::optional<Poco::Timestamp> MetadataStorageFromPlainRewritableObjectStorage::getLastModifiedIfExists(const String & path) const
@@ -318,12 +324,11 @@ std::optional<Poco::Timestamp> MetadataStorageFromPlainRewritableObjectStorage::
     return std::nullopt;
 }
 
-std::unordered_set<std::string>
-MetadataStorageFromPlainRewritableObjectStorage::getDirectChildrenOnDisk(const fs::path & local_path) const
+std::vector<std::string> MetadataStorageFromPlainRewritableObjectStorage::getDirectChildrenOnDisk(const fs::path & local_path) const
 {
-    std::unordered_set<std::string> result;
-    path_map->iterateSubdirectories(local_path, [&](const auto & elem){ result.emplace(elem); });
-    path_map->iterateFiles(local_path, [&](const auto & elem){ result.emplace(elem); });
+    std::vector<std::string> result;
+    result.append_range(path_map->listSubdirectories(local_path));
+    result.append_range(path_map->listFiles(local_path));
     return result;
 }
 

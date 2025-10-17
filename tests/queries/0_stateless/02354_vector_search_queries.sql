@@ -2,10 +2,11 @@
 
 -- Tests various simple approximate nearest neighborhood (ANN) queries that utilize vector search indexes.
 
-SET allow_experimental_vector_similarity_index = 1;
-
 -- Test runs with analyzer enabled
 SET enable_analyzer = 1;
+
+-- Force using skip indexes in planning to proper test with EXPLAIN indexes = 1.
+SET use_skip_indexes_on_data_read = 0;
 
 SELECT '10 rows, index_granularity = 8192, GRANULARITY = 1 million --> 1 granule, 1 indexed block';
 
@@ -69,14 +70,14 @@ FROM tab
 ORDER BY cosineDistance(vec, reference_vec)
 LIMIT 3;
 
-SELECT '-- Setting "max_limit_for_ann_queries"';
+SELECT '-- Setting "max_limit_for_vector_search_queries"';
 EXPLAIN indexes=1
 WITH [0.0, 2.0] as reference_vec
 SELECT id, vec, cosineDistance(vec, reference_vec)
 FROM tab
 ORDER BY cosineDistance(vec, reference_vec)
 LIMIT 3
-SETTINGS max_limit_for_ann_queries = 2; -- LIMIT 3 > 2 --> don't use the ann index
+SETTINGS max_limit_for_vector_search_queries = 2; -- LIMIT 3 > 2 --> don't use the ann index
 
 DROP TABLE tab;
 

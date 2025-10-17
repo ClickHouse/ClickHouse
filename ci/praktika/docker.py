@@ -19,7 +19,7 @@ class Docker:
         platforms: List[str]
 
     @classmethod
-    def build(cls, config: "Docker.Config", digests, amd_only, arm_only, with_log):
+    def build(cls, config: "Docker.Config", digests, amd_only, arm_only):
         from .result import Result
 
         sw = Utils.Stopwatch()
@@ -60,7 +60,11 @@ class Docker:
             command = f"docker buildx build --builder default {tags_substr} {from_tag} --platform {','.join(platforms)} --cache-to type=inline --cache-from type=registry,ref={config.name} {config.path} --push"
 
             return Result.from_commands_run(
-                name=name, command=command, with_info=with_log
+                name=name,
+                command=command,
+                retry_errors=[
+                    "Error response from daemon: manifest unknown: manifest unknown",
+                ],
             )
         else:
             return Result(
@@ -105,7 +109,6 @@ class Docker:
         return Result.from_commands_run(
             name=f"merge: {config.name}:{digests[config.name]} (latest={add_latest})",
             command=commands,
-            with_info=with_log,
             fail_fast=True,
         )
 

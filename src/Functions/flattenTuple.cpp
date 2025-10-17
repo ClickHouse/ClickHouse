@@ -32,9 +32,9 @@ public:
     {
         const auto & type = arguments[0];
         const auto * type_tuple = checkAndGetDataType<DataTypeTuple>(type.get());
-        if (!type_tuple || !type_tuple->haveExplicitNames())
+        if (!type_tuple || !type_tuple->hasExplicitNames())
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Argument for function '{}' must be Named Tuple. Got '{}'",
+                "Tuple argument for function '{}' must be named. Got '{}'",
                 getName(), type->getName());
 
         auto [paths, types] = flattenTuple(type);
@@ -62,7 +62,36 @@ public:
 
 REGISTER_FUNCTION(FlattenTuple)
 {
-    factory.registerFunction<FunctionFlattenTuple>();
+    FunctionDocumentation::Description description = R"(
+Flattens a named and nested tuple.
+The elements of the returned tuple are the paths of the input tuple.
+)";
+    FunctionDocumentation::Syntax syntax = "flattenTuple(input)";
+    FunctionDocumentation::Arguments arguments = {
+        {"input", "Named and nested tuple to flatten.", {"Tuple(n1 T1[, n2 T2, ... ])"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an output tuple whose elements are paths from the original input.", {"Tuple(T)"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+CREATE TABLE tab(t Tuple(a UInt32, b Tuple(c String, d UInt32))) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO tab VALUES ((3, ('c', 4)));
+
+SELECT flattenTuple(t) FROM tab;
+        )",
+        R"(
+┌─flattenTuple(t)┐
+│ (3, 'c', 4)    │
+└────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Tuple;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionFlattenTuple>(documentation);
 }
 
 }

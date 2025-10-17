@@ -485,7 +485,7 @@ std::optional<AuthResult> LDAPAccessStorage::authenticateImpl(
         // We treat this situation as if there is no such user because we don't want to block
         // other storages following this LDAPAccessStorage from trying to authenticate on their own.
         if (throw_if_user_not_exists)
-            throwNotFound(AccessEntityType::USER, credentials.getUserName());
+            throwNotFound(AccessEntityType::USER, credentials.getUserName(), getStorageName());
         else
             return {};
     }
