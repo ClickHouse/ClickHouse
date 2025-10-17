@@ -74,6 +74,7 @@ struct QueryStatusInfo
     bool is_cancelled;
     CancelReason cancel_reason;
     bool is_all_data_sent;
+    bool is_internal;
 
     /// Optional fields, filled by query
     std::vector<UInt64> thread_ids;
@@ -190,6 +191,8 @@ protected:
     /// This field is unused in this class, but it
     /// increments/decrements metric in constructor/destructor.
     CurrentMetrics::Increment num_queries_increment;
+
+    bool is_internal;
 public:
     QueryStatus(
         ContextPtr context_,
@@ -201,7 +204,8 @@ public:
         ThreadGroupPtr && thread_group_,
         IAST::QueryKind query_kind_,
         const Settings & query_settings_,
-        UInt64 watch_start_nanoseconds);
+        UInt64 watch_start_nanoseconds,
+        bool is_internal);
 
     ~QueryStatus();
 
@@ -449,7 +453,7 @@ public:
       * If timeout is passed - throw an exception.
       * Don't count KILL QUERY queries or async insert flush queries
       */
-    EntryPtr insert(const String & query_, UInt64 normalized_query_hash, const IAST * ast, ContextMutablePtr query_context, UInt64 watch_start_nanoseconds);
+    EntryPtr insert(const String & query_, UInt64 normalized_query_hash, const IAST * ast, ContextMutablePtr query_context, UInt64 watch_start_nanoseconds, bool is_internal);
 
     /// Number of currently executing queries.
     size_t size() const { return processes.size(); }

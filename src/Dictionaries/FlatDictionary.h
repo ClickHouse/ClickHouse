@@ -7,6 +7,7 @@
 
 #include <Common/HashTable/HashSet.h>
 #include <Common/Arena.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <DataTypes/IDataType.h>
 #include <Core/Block_fwd.h>
 
