@@ -126,7 +126,7 @@ void FileCacheReserveStat::update(size_t size, FileSegmentKind kind, State state
             ++total_stat.invalidated_count;
             ++local_stat.invalidated_count;
             if (iterator)
-                total_stat.invalidated_entries.emplace_back(iterator);
+                total_stat.invalidated_entries.emplace_back(iterator->getEntry(), iterator);
             break;
         }
     }

@@ -40,7 +40,7 @@ struct FileCacheReserveStat
         size_t evicting_count = 0;
         size_t invalidated_count = 0;
 
-        std::vector<IFileCachePriority::IteratorPtr> invalidated_entries;
+        std::vector<IFileCachePriority::InvalidatedEntryInfo> invalidated_entries;
 
         Stat & operator +=(const Stat & other)
         {

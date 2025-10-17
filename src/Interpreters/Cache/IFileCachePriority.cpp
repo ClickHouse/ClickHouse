@@ -94,15 +94,15 @@ std::unordered_map<std::string, IFileCachePriority::UsageStat> IFileCachePriorit
 }
 
 void IFileCachePriority::removeEntries(
-    const std::vector<IteratorPtr> & entries,
+    const std::vector<InvalidatedEntryInfo> & entries,
     const CachePriorityGuard::WriteLock & lock)
 {
     if (entries.empty())
         return;
 
-    for (const auto & it : entries)
+    for (const auto & [entry, it] : entries)
     {
-        if (it->isValid(lock))
+        if (!entry->isRemoved(lock))
             it->remove(lock);
     }
 }

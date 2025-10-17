@@ -310,7 +310,14 @@ public:
 
     virtual void resetEvictionPos(const CachePriorityGuard::ReadLock &) = 0;
 
-    static void removeEntries(const std::vector<IteratorPtr> & entries, const CachePriorityGuard::WriteLock &);
+    struct InvalidatedEntryInfo
+    {
+        /// Iterator becomes invalid when entry is removed
+        /// so we also save the entry here.
+        IFileCachePriority::EntryPtr entry;
+        IFileCachePriority::IteratorPtr iterator;
+    };
+    static void removeEntries(const std::vector<InvalidatedEntryInfo> & entries, const CachePriorityGuard::WriteLock &);
 
 protected:
     IFileCachePriority(size_t max_size_, size_t max_elements_);
