@@ -46,9 +46,6 @@ class SettingsChanges;
 // clang-format off
 
 #define DATA_LAKE_STORAGE_RELATED_SETTINGS(DECLARE, ALIAS) \
-    DECLARE(Bool, allow_dynamic_metadata_for_data_lakes, false, R"(
-If enabled, indicates that metadata is taken from iceberg specification that is pulled from cloud before each query.
-)", 0) \
     DECLARE(String, iceberg_metadata_file_path, "", R"(
 Explicit path to desired Iceberg metadata file, should be relative to path in object storage. Make sense for table function use case only.
 )", 0) \
@@ -61,12 +58,11 @@ If enabled, the engine would use the metadata file with the most recent last_upd
     DECLARE(Bool, iceberg_use_version_hint, false, R"(
 Get latest metadata path from version-hint.text file.
 )", 0) \
-    DECLARE(Int64, iceberg_format_version, 2, R"(
+    DECLARE(NonZeroUInt64, iceberg_format_version, 2, R"(
 Metadata format version.
 )", 0) \
     DECLARE(DatabaseDataLakeCatalogType, storage_catalog_type, DatabaseDataLakeCatalogType::NONE, "Catalog type", 0) \
     DECLARE(String, storage_catalog_credential, "", "", 0)             \
-    DECLARE(Bool, storage_vended_credentials, true, "Use vended credentials (storage credentials) from catalog", 0)             \
     DECLARE(String, storage_auth_scope, "PRINCIPAL_ROLE:ALL", "Authorization scope for client credentials or token exchange", 0)             \
     DECLARE(String, storage_oauth_server_uri, "", "OAuth server uri", 0)             \
     DECLARE(Bool, storage_oauth_server_use_request_body, true, "Put parameters into request body or query params", 0)             \
@@ -77,11 +73,12 @@ Metadata format version.
     DECLARE(String, storage_region, "", "Region for Glue catalog", 0)           \
     DECLARE(String, object_storage_endpoint, "", "Object storage endpoint", 0) \
     DECLARE(String, storage_catalog_url, "", "Catalog url", 0) \
+    DECLARE(String, disk, "", "Disk name to use for underlying storage", 0) \
 
 #define OBSOLETE_SETTINGS(M, ALIAS) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_delta_kernel_rs, true) \
-    MAKE_OBSOLETE(M, Bool, delta_lake_read_schema_same_as_table_schema, false)
-
+    MAKE_OBSOLETE(M, Bool, delta_lake_read_schema_same_as_table_schema, false) \
+    MAKE_OBSOLETE(M, Bool, allow_dynamic_metadata_for_data_lakes, true)
 // clang-format on
 
 STORAGE_DATA_LAKE_STORAGE_SETTINGS_SUPPORTED_TYPES(DataLakeStorageSettings, DECLARE_SETTING_TRAIT)

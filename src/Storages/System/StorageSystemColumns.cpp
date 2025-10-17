@@ -20,13 +20,18 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-
+#include <Common/Exception.h>
 
 namespace DB
 {
 namespace Setting
 {
     extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsBool show_data_lake_catalogs_in_system_tables;
+}
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_DATABASE;
 }
 
 StorageSystemColumns::StorageSystemColumns(const StorageID & table_id_)
@@ -130,7 +135,7 @@ protected:
             Names cols_required_for_primary_key;
             Names cols_required_for_sampling;
             IStorage::ColumnSizeByName column_sizes;
-            SerializationInfoByName serialization_hints;
+            SerializationInfoByName serialization_hints{{}};
 
             {
                 StoragePtr storage = storages.at(std::make_pair(database_name, table_name));
@@ -148,7 +153,19 @@ protected:
 
                 /// Certain information about a table - should be calculated only when the corresponding columns are queried.
                 if (columns_mask[7] || columns_mask[8] || columns_mask[9])
-                    column_sizes = storage->getColumnSizes();
+                {
+                    /// Can throw UNKNOWN_DATABASE in case of Merge table
+                    try
+                    {
+                        column_sizes = storage->getColumnSizes();
+                    }
+                    catch (const Exception & e)
+                    {
+                        if (e.code() != ErrorCodes::UNKNOWN_DATABASE)
+                            throw;
+                        tryLogCurrentException(getLogger("SystemColumns"), fmt::format("While obtaining columns sizes for {}", storage->getStorageID().getNameForLogs()), LogsLevel::debug);
+                    }
+                }
 
                 if (columns_mask[11])
                     cols_required_for_partition_key = metadata_snapshot->getColumnsRequiredForPartitionKey();
@@ -425,7 +442,9 @@ void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, 
         /// Add `database` column.
         MutableColumnPtr database_column_mut = ColumnString::create();
 
-        const auto databases = DatabaseCatalog::instance().getDatabases();
+        const auto & context = getContext();
+        const auto & settings = context->getSettingsRef();
+        const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = settings[Setting::show_data_lake_catalogs_in_system_tables]});
         for (const auto & [database_name, database] : databases)
         {
             if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)

@@ -5,6 +5,8 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeQBit.h>
 
 #include <Storages/IStorage.h>
 
@@ -25,6 +27,7 @@
 
 #include <Core/Settings.h>
 
+#include <stack>
 namespace DB
 {
 namespace Setting
@@ -45,6 +48,33 @@ struct ColumnContext
 };
 
 using NodeToSubcolumnTransformer = std::function<void(QueryTreeNodePtr &, FunctionNode &, ColumnContext &)>;
+
+void optimizeFunctionStringLength(QueryTreeNodePtr & node, FunctionNode &, ColumnContext & ctx)
+{
+    /// Replace `length(argument)` with `argument.size`.
+    /// `argument` is String.
+
+    NameAndTypePair column{ctx.column.name + ".size", std::make_shared<DataTypeUInt64>()};
+    node = std::make_shared<ColumnNode>(column, ctx.column_source);
+}
+
+template <bool positive>
+void optimizeFunctionStringEmpty(QueryTreeNodePtr &, FunctionNode & function_node, ColumnContext & ctx)
+{
+    /// Replace `empty(argument)` with `equals(argument.size, 0)` if positive.
+    /// Replace `notEmpty(argument)` with `notEquals(argument.size, 0)` if not positive.
+    /// `argument` is String.
+
+    NameAndTypePair column{ctx.column.name + ".size", std::make_shared<DataTypeUInt64>()};
+    auto & function_arguments_nodes = function_node.getArguments().getNodes();
+
+    function_arguments_nodes.clear();
+    function_arguments_nodes.push_back(std::make_shared<ColumnNode>(column, ctx.column_source));
+    function_arguments_nodes.push_back(std::make_shared<ConstantNode>(static_cast<UInt64>(0)));
+
+    const auto * function_name = positive ? "equals" : "notEquals";
+    resolveOrdinaryFunctionNodeByName(function_node, function_name, ctx.context);
+}
 
 void optimizeFunctionLength(QueryTreeNodePtr & node, FunctionNode &, ColumnContext & ctx)
 {
@@ -70,6 +100,7 @@ void optimizeFunctionEmpty(QueryTreeNodePtr &, FunctionNode & function_node, Col
     function_arguments_nodes.push_back(std::make_shared<ConstantNode>(static_cast<UInt64>(0)));
 
     const auto * function_name = positive ? "equals" : "notEquals";
+    function_node.markAsOperator();
     resolveOrdinaryFunctionNodeByName(function_node, function_name, ctx.context);
 }
 
@@ -103,6 +134,36 @@ std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const
     return {};
 }
 
+std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const DataTypeVariant & data_type_variant)
+{
+    if (value.getType() != Field::Types::String)
+        return {};
+
+    const auto & name = value.safeGet<String>();
+    auto discr = data_type_variant.tryGetVariantDiscriminator(name);
+
+    if (!discr)
+        return {};
+
+    return NameAndTypePair{name, data_type_variant.getVariant(*discr)};
+}
+
+std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const DataTypeQBit & data_type_qbit)
+{
+    size_t index;
+
+    if (value.getType() == Field::Types::UInt64)
+        index = value.safeGet<UInt64>();
+    else
+        return {};
+
+    if (index == 0 || index > data_type_qbit.getElementSize())
+        return {};
+
+    return NameAndTypePair{toString(index), std::make_shared<const DataTypeFixedString>((data_type_qbit.getDimension() + 7) / 8)};
+}
+
+template <typename DataType>
 void optimizeSubcolumnFromSecondArgument(QueryTreeNodePtr & node, FunctionNode & function_node, ColumnContext & ctx)
 {
     /// Replace `tupleElement(tuple_argument, string_literal)`, `tupleElement(tuple_argument, integer_literal)` with `tuple_argument.column_name`.
@@ -127,6 +188,15 @@ void optimizeSubcolumnFromSecondArgument(QueryTreeNodePtr & node, FunctionNode &
 
 std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transformers =
 {
+    {
+        {TypeIndex::String, "length"}, optimizeFunctionStringLength,
+    },
+    {
+        {TypeIndex::String, "empty"}, optimizeFunctionStringEmpty<true>,
+    },
+    {
+        {TypeIndex::String, "notEmpty"}, optimizeFunctionStringEmpty<false>,
+    },
     {
         {TypeIndex::Array, "length"}, optimizeFunctionLength,
     },
@@ -195,6 +265,7 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
 
             auto new_column_node = std::make_shared<ColumnNode>(column, ctx.column_source);
             auto function_node_not = std::make_shared<FunctionNode>("not");
+            function_node_not->markAsOperator();
 
             function_node_not->getArguments().getNodes().push_back(std::move(new_column_node));
             resolveOrdinaryFunctionNodeByName(*function_node_not, "not", ctx.context);
@@ -229,6 +300,9 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
     },
     {
         {TypeIndex::Variant, "variantElement"}, optimizeSubcolumnFromSecondArgument,
+    },
+    {
+        {TypeIndex::QBit, "tupleElement"}, optimizeTupleOrVariantElement<DataTypeQBit>, /// QBit uses tupleElement for subcolumns
     },
 };
 
@@ -343,6 +417,7 @@ public:
             return {};
         }
 
+        /// TODO(ab): need to optimize for prewhere anyway
         /// Do not optimize if full column is requested in other context.
         /// It doesn't make sense because it doesn't reduce amount of read data
         /// and optimized functions are not computation heavy. But introducing
@@ -449,13 +524,18 @@ class FunctionToSubcolumnsVisitorSecondPass : public InDepthQueryTreeVisitorWith
 {
 private:
     std::unordered_set<Identifier> identifiers_to_optimize;
+    std::unordered_set<const TableNode *> outer_joined_tables;
 
 public:
     using Base = InDepthQueryTreeVisitorWithContext<FunctionToSubcolumnsVisitorSecondPass>;
     using Base::Base;
 
-    FunctionToSubcolumnsVisitorSecondPass(ContextPtr context_, std::unordered_set<Identifier> identifiers_to_optimize_)
-        : Base(std::move(context_)), identifiers_to_optimize(std::move(identifiers_to_optimize_))
+    FunctionToSubcolumnsVisitorSecondPass(ContextPtr context_,
+        std::unordered_set<Identifier> identifiers_to_optimize_,
+        std::unordered_set<const TableNode *> outer_joined_tables_)
+        : Base(std::move(context_))
+        , identifiers_to_optimize(std::move(identifiers_to_optimize_))
+        , outer_joined_tables(std::move(outer_joined_tables_))
     {
     }
 
@@ -489,6 +569,64 @@ public:
     }
 };
 
+class GetOuterJoinedTablesVisitor : public InDepthQueryTreeVisitorWithContext<GetOuterJoinedTablesVisitor>
+{
+public:
+    using Base = InDepthQueryTreeVisitorWithContext<GetOuterJoinedTablesVisitor>;
+    using Base::Base;
+
+    void enterImpl(const QueryTreeNodePtr & node)
+    {
+        /// If we are inside the subtree of a JOIN.
+        if (!join_nodes_stack.empty())
+        {
+            const auto * current_join_node = join_nodes_stack.top();
+
+            /// If we are in the left (right) subtree of a LEFT (RIGHT) JOIN, skip this subtree
+            /// and mark all tables as outer-joined tables.
+            if (isLeftOrFull(current_join_node->getKind()) && current_join_node->getRightTableExpression().get() == node.get())
+                need_skip_subtree = true;
+            if (isRightOrFull(current_join_node->getKind()) && current_join_node->getLeftTableExpression().get() == node.get())
+                need_skip_subtree = true;
+        }
+
+        /// Once a JOIN node is entered, keep it on the stack until it is left.
+        if (const auto * join_node = node->as<JoinNode>(); join_node && !need_skip_subtree)
+        {
+            join_nodes_stack.push(join_node);
+            return;
+        }
+
+        if (const auto * table_node = node->as<TableNode>())
+        {
+            if (need_skip_subtree)
+                outer_joined_tables.insert(table_node);
+            return;
+        }
+    }
+
+    void leaveImpl(const QueryTreeNodePtr & node)
+    {
+        if (join_nodes_stack.empty())
+            return;
+
+        const auto * current_join_node = join_nodes_stack.top();
+
+        /// Leaving the left (or right) subtree of a LEFT (or RIGHT) JOIN.
+        if (node.get() == current_join_node->getRightTableExpression().get()
+         || node.get() == current_join_node->getLeftTableExpression().get())
+            need_skip_subtree = false;
+
+        /// Leaving a JOIN node.
+        if (node.get() == current_join_node)
+            join_nodes_stack.pop();
+    }
+
+    bool need_skip_subtree = false;
+    std::stack<const JoinNode *> join_nodes_stack;
+    std::unordered_set<const TableNode *> outer_joined_tables;
+};
+
 }
 
 void FunctionToSubcolumnsPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
@@ -500,7 +638,12 @@ void FunctionToSubcolumnsPass::run(QueryTreeNodePtr & query_tree_node, ContextPt
     if (identifiers_to_optimize.empty())
         return;
 
-    FunctionToSubcolumnsVisitorSecondPass second_visitor(std::move(context), std::move(identifiers_to_optimize));
+    /// Tables appearing in LEFT or RIGHT JOIN may produce default values for missing rows.
+    /// Inserting a default into a null-mask (of type UInt8) gives a different result than inserting NULL into a Nullable column.
+    /// Therefore, functions on Nullable columns from outer-joined tables cannot be optimized.
+    GetOuterJoinedTablesVisitor outer_join_visitor(context);
+    outer_join_visitor.visit(query_tree_node);
+    FunctionToSubcolumnsVisitorSecondPass second_visitor(std::move(context), std::move(identifiers_to_optimize), std::move(outer_join_visitor.outer_joined_tables));
     second_visitor.visit(query_tree_node);
 }
 

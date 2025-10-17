@@ -229,3 +229,48 @@ def test_insert_select_limit(start_cluster, max_parallel_replicas, parallel_repl
         )
         == f"{limit}\n"
     )
+
+
+@pytest.mark.parametrize(
+    "max_parallel_replicas",
+    [
+        pytest.param(2),
+        pytest.param(3),
+    ],
+)
+@pytest.mark.parametrize(
+    "parallel_replicas_local_plan",
+    [
+        pytest.param(False),
+        pytest.param(True),
+    ]
+)
+def test_insert_select_with_constant(start_cluster, max_parallel_replicas, parallel_replicas_local_plan):
+    populate_count = 1_000_000
+    cluster_name = "test_1_shard_3_replicas"
+
+    source_table = "t_source"
+    create_tables(source_table, populate_count=populate_count, skip_last_replica=False)
+    target_table = "t_target"
+    create_tables(target_table, populate_count=0, skip_last_replica=False)
+
+    query_id = str(uuid.uuid4())
+    node1.query(
+        f"INSERT INTO {target_table} WITH 1 + 1 as two SELECT key + (select sum(number) from numbers(10) where number < two), value FROM {source_table}",
+        settings={
+            "parallel_distributed_insert_select": 2,
+            "enable_parallel_replicas": 2,
+            "max_parallel_replicas": max_parallel_replicas,
+            "cluster_for_parallel_replicas": cluster_name,
+            "parallel_replicas_local_plan": parallel_replicas_local_plan,
+            "enable_analyzer": 1,
+        },
+        query_id=query_id
+    )
+    node1.query(f"SYSTEM SYNC REPLICA {target_table} LIGHTWEIGHT")
+    assert (
+        node1.query(
+            f"select count() from {target_table}"
+        )
+        == f"{populate_count}\n"
+    )

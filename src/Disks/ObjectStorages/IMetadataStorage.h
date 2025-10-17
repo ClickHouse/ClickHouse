@@ -12,6 +12,7 @@
 #include <Disks/DirectoryIterator.h>
 #include <Disks/WriteMode.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/ObjectStorages/StoredObject.h>
 #include <Disks/DiskCommitTransactionOptions.h>
 #include <Disks/DiskType.h>
 #include <Common/ErrorCodes.h>
@@ -53,11 +54,16 @@ using TruncateFileOperationOutcomePtr = std::shared_ptr<TruncateFileOperationOut
 class IMetadataTransaction : private boost::noncopyable
 {
 public:
-    virtual void commit(const TransactionCommitOptionsVariant & = NoCommitOptions{}) = 0; // NOLINT
+    virtual void commit(const TransactionCommitOptionsVariant & options) = 0;
+    void commit() { commit(NoCommitOptions{}); }
 
-    virtual TransactionCommitOutcomeVariant tryCommit(const TransactionCommitOptionsVariant & = NoCommitOptions{}) // NOLINT
+    virtual TransactionCommitOutcomeVariant tryCommit(const TransactionCommitOptionsVariant &)
     {
         throwNotImplemented();
+    }
+    TransactionCommitOutcomeVariant tryCommit()
+    {
+        return tryCommit(NoCommitOptions{});
     }
 
     virtual const IMetadataStorage & getStorageForNonTransactionalReads() const = 0;
@@ -139,18 +145,13 @@ public:
 
     /// Metadata related methods
 
-    /// Create empty file in metadata storage
-    virtual void createEmptyMetadataFile(const std::string & path) = 0;
-
-    virtual void createEmptyFile(const std::string & /* path */) {}
-
-    /// Create metadata file on paths with content (blob_name, size_in_bytes)
-    virtual void createMetadataFile(const std::string & path, ObjectStorageKey key, uint64_t size_in_bytes) = 0;
+    /// Create metadata file on paths with content consisting of objects
+    virtual void createMetadataFile(const std::string & path, const StoredObjects & objects) = 0;
 
     virtual bool supportAddingBlobToMetadata() { return false; }
     /// Add to new blob to metadata file (way to implement appends).
     /// If `addBlobToMetadata` is supported, `supportAddingBlobToMetadata` must return `true`
-    virtual void addBlobToMetadata(const std::string & /* path */, ObjectStorageKey /* key */, uint64_t /* size_in_bytes */)
+    virtual void addBlobToMetadata(const std::string & /* path */, const StoredObject & /* object */)
     {
         throwNotImplemented();
     }

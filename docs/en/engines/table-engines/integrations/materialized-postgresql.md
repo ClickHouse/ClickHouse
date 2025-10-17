@@ -5,6 +5,7 @@ sidebar_label: 'MaterializedPostgreSQL'
 sidebar_position: 130
 slug: /engines/table-engines/integrations/materialized-postgresql
 title: 'MaterializedPostgreSQL'
+doc_type: 'guide'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
