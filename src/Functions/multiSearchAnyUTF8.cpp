@@ -31,7 +31,7 @@ Like [multiSearchAny](#multiSearchAny) but assumes `haystack` and the `needle` s
     FunctionDocumentation::Examples examples = {
     {
         "Given ClickHouse as a UTF-8 string, check if there are any C ('\x43') or H ('\x48') letters in the word",
-        "SELECT multiSearchAnyUTF8('\x43\x6c\x69\x63\x6b\x48\x6f\x75\x73\x65',['\x43','\x48'])",
+        "SELECT multiSearchAnyUTF8('\\x43\\x6c\\x69\\x63\\x6b\\x48\\x6f\\x75\\x73\\x65',['\\x43','\\x48'])",
         R"(
 ┌─multiSearchAnyUTF8('ClickHouse', ['C', 'H'])─┐
 │                                            1 │

@@ -33,7 +33,7 @@ Like [multiSearchAnyUTF8](#multiSearchAnyUTF8) but ignores case.
     FunctionDocumentation::Examples examples = {
     {
         "Case insensitive UTF-8 search",
-        R"(SELECT multiSearchAnyCaseInsensitiveUTF8('\x43\x6c\x69\x63\x6b\x48\x6f\x75\x73\x65',['\x68']))",
+        "SELECT multiSearchAnyCaseInsensitiveUTF8('\\x43\\x6c\\x69\\x63\\x6b\\x48\\x6f\\x75\\x73\\x65',['\\x68'])",
         R"(
 ┌─multiSearchAnyCaseInsensitiveUTF8('ClickHouse', ['h'])─┐
 │                                                      1 │
