@@ -357,11 +357,6 @@ public:
         ready_object_storage = disk->getObjectStorage();
     }
 
-    KeyDescription getSortingKey(StorageMetadataPtr metadata_snapshot) const override
-    {
-        assertInitialized();
-        return current_metadata->getSortingKey(metadata_snapshot);
-    }
 
 private:
     DataLakeMetadataPtr current_metadata;

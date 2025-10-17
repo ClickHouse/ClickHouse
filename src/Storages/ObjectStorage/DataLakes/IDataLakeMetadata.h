@@ -124,10 +124,6 @@ public:
     virtual void checkAlterIsPossible(const AlterCommands & /*commands*/) { throwNotImplemented("alter"); }
     virtual void alter(const AlterCommands & /*params*/, ContextPtr /*context*/) { throwNotImplemented("alter"); }
     virtual void drop(ContextPtr) { }
-    virtual KeyDescription getSortingKey(StorageMetadataPtr /*metadata_snapshot*/) const
-    {
-        return {};
-    }
 
 protected:
     virtual ObjectIterator

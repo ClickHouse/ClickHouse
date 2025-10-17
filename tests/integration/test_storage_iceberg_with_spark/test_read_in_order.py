@@ -30,10 +30,10 @@ def test_read_in_order(started_cluster_iceberg_with_spark,  storage_type):
         WRITE ORDERED BY id
     """)
 
-    spark.sql(f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range(10, 100)")
-    spark.sql(f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range(100, 150)")
+    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (1,'a'), (3, 'c')")
+    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (2,'d'), (4, 'f')")
 
-    default_upload_directory(
+    files = default_upload_directory(
         started_cluster_iceberg_with_spark,
         storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",
@@ -44,35 +44,41 @@ def test_read_in_order(started_cluster_iceberg_with_spark,  storage_type):
 
     query_id = get_uuid_str()
 
-    assert get_array(instance.query(f"SELECT id FROM {TABLE_NAME} ORDER BY id", query_id=query_id)) == list(range(10, 150))
+    assert get_array(instance.query(f"SELECT id FROM {TABLE_NAME} ORDER BY id", query_id=query_id)) == [1,2,3,4]
     assert 'PartialSortingTransform' not in (
         instance.query(
             f"EXPLAIN PIPELINE SELECT * FROM {TABLE_NAME} ORDER BY id;"
         )
     )
 
-    assert get_array(instance.query(f"SELECT distinct(id) FROM {TABLE_NAME}", query_id=query_id)) == list(range(10, 150))
+    assert 'MergingSortedTransform' in (
+        instance.query(
+            f"EXPLAIN PIPELINE SELECT * FROM {TABLE_NAME} ORDER BY id;"
+        )
+    )
+
+    assert get_array(instance.query(f"SELECT distinct(id) FROM {TABLE_NAME}", query_id=query_id)) == [1,2,3,4]
     assert 'PartialSortingTransform' not in (
         instance.query(
             f"EXPLAIN PIPELINE SELECT distinct(id) FROM {TABLE_NAME};"
         )
     )
 
-    assert get_array(instance.query(f"SELECT id FROM {TABLE_NAME} ORDER BY (id, data)", query_id=query_id)) == list(range(10, 150))
+    assert get_array(instance.query(f"SELECT id FROM {TABLE_NAME} ORDER BY (id, data)", query_id=query_id)) == [1,2,3,4]
     assert 'PartialSortingTransform' in (
         instance.query(
             f"EXPLAIN PIPELINE SELECT * FROM {TABLE_NAME} ORDER BY (id, data);"
         )
     )
 
-    assert get_array(instance.query(f"SELECT id FROM {TABLE_NAME}", query_id=query_id)) == list(range(10, 150))
+    assert get_array(instance.query(f"SELECT id FROM {TABLE_NAME}", query_id=query_id)) == [1,2,3,4]
     assert 'PartialSortingTransform' not in (
         instance.query(
             f"EXPLAIN PIPELINE SELECT * FROM {TABLE_NAME};"
         )
     )
 
-    assert get_array(instance.query(f"SELECT id FROM {TABLE_NAME} ORDER BY (data, id)", query_id=query_id)) == list(range(10, 150))
+    assert get_array(instance.query(f"SELECT id FROM {TABLE_NAME} ORDER BY (data, id)", query_id=query_id)) == [1,2,3,4]
     assert 'PartialSortingTransform' in (
         instance.query(
             f"EXPLAIN PIPELINE SELECT * FROM {TABLE_NAME} ORDER BY (data, id);"

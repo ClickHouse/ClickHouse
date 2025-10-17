@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include "Storages/StorageInMemoryMetadata.h"
 
 namespace DB
 {
@@ -34,11 +35,9 @@ public:
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
-    bool requestReadingInOrder(InputOrderInfoPtr order_info_) const;
+    bool requestReadingInOrder(InputOrderInfoPtr order_info_, const StorageInMemoryMetadata & metadata) const;
 
-    InputOrderInfoPtr getInputOrder() const;
-
-    KeyDescription getSortingKey() const;
+    InputOrderInfoPtr getInputOrder(const StorageInMemoryMetadata & metadata) const;
 
 private:
     ObjectStoragePtr object_storage;

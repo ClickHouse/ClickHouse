@@ -252,11 +252,6 @@ public:
 
     virtual void drop(ContextPtr) {}
 
-    virtual KeyDescription getSortingKey(StorageMetadataPtr /*metadata_snapshot*/) const
-    {
-        return {};
-    }
-
     String format = "auto";
     String compression_method = "auto";
     String structure = "auto";

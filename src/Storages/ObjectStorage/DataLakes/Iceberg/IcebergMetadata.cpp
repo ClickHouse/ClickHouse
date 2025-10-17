@@ -863,6 +863,7 @@ StorageInMemoryMetadata IcebergMetadata::getStorageSnapshotMetadata(ContextPtr l
     result.setColumns(
         ColumnsDescription{*persistent_components.schema_processor->getClickhouseTableSchemaById(actual_table_state_snapshot.schema_id)});
     result.setDataLakeTableState(actual_table_state_snapshot);
+    result.sorting_key = getSortingKey();
     return result;
 }
 
@@ -1051,15 +1052,15 @@ ColumnMapperPtr IcebergMetadata::getColumnMapperForCurrentSchema(StorageMetadata
     return persistent_components.schema_processor->getColumnMapperById(iceberg_table_state->schema_id);
 }
 
-KeyDescription IcebergMetadata::getSortingKey(StorageMetadataPtr metadata_snapshot) const
+KeyDescription IcebergMetadata::getSortingKey() const
 {
     auto local_context = CurrentThread::getQueryContext();
     auto configuration_ptr = getConfiguration();
 
-    auto iceberg_table_state = extractIcebergSnapshotIdFromMetadataObject(metadata_snapshot);
+    auto [actual_data_snapshot, actual_table_state_snapshot] = getRelevantState(local_context);
 
     auto metadata_object = getMetadataJSONObject(
-        iceberg_table_state->metadata_file_path,
+        actual_table_state_snapshot.metadata_file_path,
         object_storage,
         configuration_ptr,
         persistent_components.metadata_cache,
@@ -1105,8 +1106,10 @@ KeyDescription IcebergMetadata::getSortingKey(StorageMetadataPtr metadata_snapsh
             else
                 order_by_str += fmt::format("{} DESC,", column_name);
         }
+        break;
     }
-    
+    if (order_by_str.empty())
+        return KeyDescription{};
     order_by_str.pop_back();
     return KeyDescription::parse(order_by_str, column_description, local_context, true);
 }

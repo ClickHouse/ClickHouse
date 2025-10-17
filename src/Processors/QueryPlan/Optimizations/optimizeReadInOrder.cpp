@@ -94,7 +94,7 @@ ISourceStep * checkSupportedReadingStep(IQueryPlanStep * step, bool allow_existi
             return nullptr;
         }
 
-        const auto & sorting_key = reading->getSortingKey();
+        const auto & sorting_key = reading->getStorageSnapshot()->metadata->getSortingKey();
         if (sorting_key.column_names.empty())
         {
             return nullptr;
@@ -838,7 +838,7 @@ SortingInputOrder buildInputOrderFromSortDescription(
     const SortDescription & description,
     size_t limit)
 {
-    const auto & sorting_key = reading->getSortingKey();
+    const auto & sorting_key = reading->getStorageSnapshot()->metadata->getSortingKey();
     const auto & pk_column_names = sorting_key.column_names;
 
     return buildInputOrderFromSortDescription(
@@ -945,7 +945,7 @@ InputOrder buildInputOrderFromUnorderedKeys(
     const std::optional<ActionsDAG> & dag,
     const Names & unordered_keys)
 {
-    const auto & sorting_key = object_storage_step->getSortingKey();
+    const auto & sorting_key = object_storage_step->getStorageSnapshot()->metadata->getSortingKey();
     const auto & sorting_key_columns = sorting_key.column_names;
 
     return buildInputOrderFromUnorderedKeys(
@@ -1022,7 +1022,7 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtua
 
         if (order_info.input_order)
         {
-            bool can_read = object_storage_step->requestReadingInOrder(order_info.input_order);
+            bool can_read = object_storage_step->requestReadingInOrder(order_info.input_order, *object_storage_step->getStorageSnapshot()->metadata);
             if (!can_read)
             {
                 return nullptr;
@@ -1096,7 +1096,7 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
 
         if (order_info.input_order)
         {
-            bool can_read = object_storage_step->requestReadingInOrder(order_info.input_order);
+            bool can_read = object_storage_step->requestReadingInOrder(order_info.input_order, *object_storage_step->getStorageSnapshot()->metadata);
             if (!can_read)
                 return {};
         }
@@ -1197,10 +1197,10 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node)
             fixed_columns,
             dag, keys);
 
-        if (!canImproveOrderForDistinct(order_info, object_storage_step->getInputOrder()))
+        if (!canImproveOrderForDistinct(order_info, object_storage_step->getInputOrder(*object_storage_step->getStorageSnapshot()->metadata)))
             return {};
 
-        if (!object_storage_step->requestReadingInOrder(order_info.input_order))
+        if (!object_storage_step->requestReadingInOrder(order_info.input_order, *object_storage_step->getStorageSnapshot()->metadata))
             return {};
 
         return order_info;

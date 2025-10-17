@@ -125,8 +125,6 @@ public:
 
     void drop(ContextPtr context) override;
 
-    KeyDescription getSortingKey(StorageMetadataPtr metadata_snapshot) const override;
-
 private:
     Iceberg::PersistentTableComponents initializePersistentTableComponents(
         IcebergMetadataFilesCachePtr cache_ptr,
@@ -150,6 +148,7 @@ private:
     const StorageObjectStorageConfigurationWeakPtr configuration;
     LoggerPtr log;
     DB::Iceberg::PersistentTableComponents persistent_components;
+    KeyDescription getSortingKey() const;
 };
 }
 
