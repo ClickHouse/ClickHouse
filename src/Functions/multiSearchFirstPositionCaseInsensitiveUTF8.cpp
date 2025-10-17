@@ -32,7 +32,7 @@ Like [multiSearchFirstPosition](#multiSearchFirstPosition) but assumes `haystack
     FunctionDocumentation::ReturnedValue returned_value = {"Leftmost offset in a `haystack` string which matches any of multiple `needle` strings, ignoring case. Returns `0`, if there was no match.", {"UInt64"}};
     FunctionDocumentation::Examples examples = {
     {
-        "Case insensitive UTF-8 first position",
+        "Find the leftmost offset in UTF-8 string 'HELLO WORLD' which matches any of the given needles",
         R"(SELECT multiSearchFirstPositionCaseInsensitiveUTF8('\x48\x45\x4c\x4c\x4f\x20\x57\x4f\x52\x4c\x44',['wor', 'ld', 'ello']))",
         R"(
 ┌─multiSearchFirstPositionCaseInsensitiveUTF8('HELLO WORLD', ['wor', 'ld', 'ello'])─┐
