@@ -398,6 +398,7 @@ HTTPThreads
 HashedDictionary
 HashedDictionaryThreads
 HashedDictionaryThreadsActive
+HashiCorp
 Haversine
 Heredoc
 HexAreaKm
@@ -2097,6 +2098,7 @@ hasTokenCaseInsensitiveOrNull
 hasTokenOrNull
 hasall
 hasany
+hashicorp
 hashtables
 haversine
 hdbc
@@ -2560,6 +2562,7 @@ oneof
 onstraints
 ontime
 onwards
+OpenBao
 openSSL
 openSUSE
 openldap

@@ -2506,6 +2506,59 @@ The same applies to GitLab, even though it has a leading dot. Both `gitlab.com` 
 </proxy>
 ```
 
+## hashicorp_vault {#hashicorp_vault}
+
+Configures HashiCorp Vault or OpenBao for secure secrets retrieval in configuration. Currently only token authentication is supported.
+
+The following settings can be configured by sub-tags:
+
+| Sub-tags             | Definition                                                                                                                                        |
+|----------------------|---------------------------------------------------------------------------------------------------------------------------------------------------|
+| `url`                | Scheme, site, port of Vault server without path.                                                           |
+| `token`                | Token used for token authentication with Vault                                                           |
+
+Each section in ClickHouse configuration or users configuration may have the following attributes:
+
+| Attributes             | Definition                                                                                                                                        |
+|----------------------|---------------------------------------------------------------------------------------------------------------------------------------------------|
+| `from_hashicorp_vault`                 | Name of secret.                                                           |
+| `hashicorp_vault_key`                | Name of secret's key                                                           |
+
+**Example**
+
+ClickHouse configuration:
+
+```xml
+<clickhouse>
+    <hashicorp_vault>
+      <url>http://hashicorpvault:8200</url>
+      <token>foobar</token>
+    </hashicorp_vault>
+</clickhouse>
+```
+
+Users configuration:
+
+```xml
+<clickhouse>
+    <users>
+        <default>
+            <password from_hashicorp_vault="username" hashicorp_vault_key="password"/>
+            <profile>default</profile>
+        </default>
+    </users>
+</clickhouse>
+```
+
+Secret maybe created by command:
+
+```bash
+curl --header "X-Vault-Token: foobar" \
+     --request POST \
+     --data '{"data": {"password": "test"}}' \
+     http://hashicorpvault:8200/v1/secret/data/username
+```
+
 ## workload_path {#workload_path}
 
 The directory used as a storage for all `CREATE WORKLOAD` and `CREATE RESOURCE` queries. By default `/workload/` folder under server working directory is used.
