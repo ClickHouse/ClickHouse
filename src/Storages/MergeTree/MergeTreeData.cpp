@@ -2540,7 +2540,7 @@ try
     DataPartsVector data_parts = getDataPartsVectorForInternalUsage();
     if (cached_estimator)
     {
-        if(!cached_estimator->isStale(data_parts))
+        if (!cached_estimator->isStale(data_parts))
         {
             LOG_DEBUG(log, "The parts in this storage does not change, will not refresh statistics");
             if (interval_seconds)
