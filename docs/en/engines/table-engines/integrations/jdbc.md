@@ -4,6 +4,7 @@ sidebar_label: 'JDBC'
 sidebar_position: 100
 slug: /engines/table-engines/integrations/jdbc
 title: 'JDBC'
+doc_type: 'reference'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
@@ -34,7 +35,6 @@ ENGINE = JDBC(datasource, external_database, external_table)
 ```
 
 **Engine Parameters**
-
 
 - `datasource` — URI or name of an external DBMS.
 

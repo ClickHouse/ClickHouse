@@ -36,7 +36,6 @@ public:
         DROP_ICEBERG_METADATA_CACHE,
         DROP_FILESYSTEM_CACHE,
         DROP_DISTRIBUTED_CACHE,
-        DROP_DISTRIBUTED_CACHE_CONNECTIONS,
         DROP_DISK_METADATA_CACHE,
         DROP_PAGE_CACHE,
         DROP_SCHEMA_CACHE,
@@ -47,6 +46,7 @@ public:
         RESTART_REPLICAS,
         RESTART_REPLICA,
         RESTORE_REPLICA,
+        RESTORE_DATABASE_REPLICA,
         WAIT_LOADING_PARTS,
         DROP_REPLICA,
         DROP_DATABASE_REPLICA,
@@ -120,6 +120,7 @@ public:
         STOP_REDUCE_BLOCKING_PARTS,
         START_REDUCE_BLOCKING_PARTS,
         UNLOCK_SNAPSHOT,
+        RECONNECT_ZOOKEEPER,
         END
     };
 
@@ -144,6 +145,7 @@ public:
     String shard;
     String replica_zk_path;
     bool is_drop_whole_replica{};
+    bool with_tables{false};
     String storage_policy;
     String volume;
     String disk;

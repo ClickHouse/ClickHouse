@@ -28,7 +28,7 @@ MemoryTracker * getMemoryTracker()
     /// Note, we cannot use total_memory_tracker earlier (i.e. just after static variable initialized without this check),
     /// since the initialization order of static objects is not defined, and total_memory_tracker may not be initialized yet.
     /// So here we relying on MainThreadStatus initialization.
-    if (DB::MainThreadStatus::get())
+    if (DB::MainThreadStatus::initialized())
         return &total_memory_tracker;
 
     return nullptr;
@@ -100,14 +100,12 @@ void CurrentMemoryTracker::check()
 
 AllocationTrace CurrentMemoryTracker::alloc(Int64 size)
 {
-    bool throw_if_memory_exceeded = true;
-    return allocImpl(size, throw_if_memory_exceeded);
+    return allocImpl(size, /*throw_if_memory_exceeded=*/ true);
 }
 
 AllocationTrace CurrentMemoryTracker::allocNoThrow(Int64 size)
 {
-    bool throw_if_memory_exceeded = false;
-    return allocImpl(size, throw_if_memory_exceeded);
+    return allocImpl(size, /*throw_if_memory_exceeded=*/ false);
 }
 
 AllocationTrace CurrentMemoryTracker::free(Int64 size)
@@ -145,4 +143,3 @@ void CurrentMemoryTracker::injectFault()
     if (auto * memory_tracker = getMemoryTracker())
         memory_tracker->injectFault();
 }
-

@@ -6,14 +6,16 @@ sidebar_label: 'Atomic'
 sidebar_position: 10
 slug: /engines/database-engines/atomic
 title: 'Atomic'
+doc_type: 'reference'
 ---
 
 # Atomic 
 
-The `Atomic` engine supports non-blocking [`DROP TABLE`](#drop-detach-table) and [`RENAME TABLE`](#rename-table) queries, and atomic [`EXCHANGE TABLES`](#exchange-tables) queries. The `Atomic` database engine is used by default. 
+The `Atomic` engine supports non-blocking [`DROP TABLE`](#drop-detach-table) and [`RENAME TABLE`](#rename-table) queries, and atomic [`EXCHANGE TABLES`](#exchange-tables) queries. The `Atomic` database engine is used by default in open-source ClickHouse. 
 
 :::note
-On ClickHouse Cloud, the `Replicated` database engine is used by default.
+On ClickHouse Cloud, the [`Shared` database engine](/cloud/reference/shared-catalog#shared-database-engine) is used by default and also supports
+the above mentioned operations.
 :::
 
 ## Creating a database {#creating-a-database}
@@ -80,7 +82,6 @@ For example:
 CREATE TABLE db (n UInt64) ENGINE = Atomic SETTINGS disk=disk(type='local', path='/var/lib/clickhouse-disks/db_disk');
 ```
 If unspecified, the disk defined in `database_disk.disk` is used by default.
-
 
 ## See also {#see-also}
 

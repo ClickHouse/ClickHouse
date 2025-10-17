@@ -4,11 +4,12 @@ sidebar_label: 'Window Functions'
 sidebar_position: 1
 slug: /sql-reference/window-functions/
 title: 'Window Functions'
+doc_type: 'reference'
 ---
 
 # Window functions 
 
-Windows functions let you perform calculations across a set of rows that are related to the current row.
+Window functions let you perform calculations across a set of rows that are related to the current row.
 Some of the calculations that you can do are similar to those that can be done with an aggregate function, but a window function doesn't cause rows to be grouped into a single output - the individual rows are still returned.
 
 ## Standard window functions {#standard-window-functions}
@@ -774,7 +775,6 @@ https://dev.mysql.com/doc/refman/8.0/en/window-function-descriptions.html
 https://dev.mysql.com/doc/refman/8.0/en/window-functions-usage.html
 
 https://dev.mysql.com/doc/refman/8.0/en/window-functions-frames.html
-
 
 ## Related Content {#related-content}
 

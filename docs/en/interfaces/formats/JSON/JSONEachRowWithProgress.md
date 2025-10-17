@@ -6,6 +6,7 @@ keywords: ['JSONEachRowWithProgress']
 output_format: true
 slug: /interfaces/formats/JSONEachRowWithProgress
 title: 'JSONEachRowWithProgress'
+doc_type: 'reference'
 ---
 
 | Input | Output | Alias |
@@ -26,4 +27,3 @@ Differs from [`JSONEachRow`](./JSONEachRow.md)/[`JSONStringsEachRow`](./JSONStri
 ```
 
 ## Format settings {#format-settings}
-

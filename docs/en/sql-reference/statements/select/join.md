@@ -4,6 +4,7 @@ sidebar_label: 'JOIN'
 slug: /sql-reference/statements/select/join
 title: 'JOIN Clause'
 keywords: ['INNER JOIN', 'LEFT JOIN', 'LEFT OUTER JOIN', 'RIGHT JOIN', 'RIGHT OUTER JOIN', 'FULL OUTER JOIN', 'CROSS JOIN', 'LEFT SEMI JOIN', 'RIGHT SEMI JOIN', 'LEFT ANTI JOIN', 'RIGHT ANTI JOIN', 'LEFT ANY JOIN', 'RIGHT ANY JOIN', 'INNER ANY JOIN', 'ASOF JOIN', 'LEFT ASOF JOIN', 'PASTE JOIN']
+doc_type: 'reference'
 ---
 
 # JOIN clause
@@ -226,7 +227,6 @@ key1    e    5    5    5            0    0    \N
 key2    a2    1    1    1            0    0    \N
 key4    f    2    3    4            0    0    \N
 ```
-
 
 ## NULL values in JOIN keys {#null-values-in-join-keys}
 

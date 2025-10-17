@@ -51,4 +51,6 @@ public:
     DataTypePtr operator() (const bool & x) const;
 };
 
+FieldToDataType() -> FieldToDataType<LeastSupertypeOnError::Throw>;
+
 }
