@@ -143,7 +143,7 @@ FractionalLimitTransform::Status FractionalLimitTransform::pullData(PortsData & 
     if (!input.hasData())
         return Status::NeedData;
 
-    data.current_chunk = input.pull(true);
+    data.current_chunk = input.pull();
 
     auto rows = data.current_chunk.getNumRows();
 
