@@ -1526,13 +1526,14 @@ std::tuple<UInt64, BFloat16, UInt64, BFloat16> InterpreterSelectQuery::getLimitL
 
 UInt64 InterpreterSelectQuery::getLimitForSorting(const ASTSelectQuery & query, const ContextPtr & context_)
 {
-    /// Partial sort can be done if there is LIMIT but no DISTINCT or LIMIT BY, neither ARRAY JOIN.
+    /// Partial sort can be done if there is LIMIT but no DISTINCT, LIMIT BY, ARRAY JOIN, FRACTIONAL OFFSET.
     if (!query.distinct && !query.limitBy() && !query.limit_with_ties && !query.arrayJoinExpressionList().first && query.limitLength())
     {
         UInt64 limit_length = 0;
         UInt64 limit_offset = 0;
-        std::tie(limit_length, std::ignore, limit_offset, std::ignore) = getLimitLengthAndOffset(query, context_);
-        if (limit_length > std::numeric_limits<UInt64>::max() - limit_offset)
+        BFloat16 fractional_offset;
+        std::tie(limit_length, std::ignore, limit_offset, fractional_offset) = getLimitLengthAndOffset(query, context_);
+        if (limit_length > std::numeric_limits<UInt64>::max() - limit_offset || fractional_offset)
             return 0;
 
         return limit_length + limit_offset;
@@ -2500,9 +2501,7 @@ UInt64 InterpreterSelectQuery::maxBlockSizeByLimit() const
 {
     const auto & query = query_ptr->as<const ASTSelectQuery &>();
 
-    UInt64 limit_length = 0;
-    UInt64 limit_offset = 0;
-    std::tie(limit_length, std::ignore, limit_offset, std::ignore) = getLimitLengthAndOffset(query, context);
+    auto [limit_length, fractional_limit, limit_offset, fractional_offset] = getLimitLengthAndOffset(query, context);
 
     if (!query.distinct
        && !query.limit_with_ties
@@ -2516,6 +2515,8 @@ UInt64 InterpreterSelectQuery::maxBlockSizeByLimit() const
        && !query.join()
        && !query_analyzer->hasAggregation()
        && !query_analyzer->hasWindow()
+       && !fractional_limit
+       && !fractional_offset
        && query.limitLength()
        && limit_length <= std::numeric_limits<UInt64>::max() - limit_offset)
         return limit_length + limit_offset;
@@ -3330,7 +3331,9 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
                     query_plan.getCurrentHeader(), 
                     limit_length,
                     limit_offset,
-                    settings[Setting::exact_rows_before_limit]
+                    settings[Setting::exact_rows_before_limit],
+                    query.limit_with_ties,
+                    order_descr
             );
 
             if (query.limit_with_ties)
