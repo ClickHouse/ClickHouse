@@ -7,14 +7,20 @@ from helpers.cluster import ClickHouseCluster
 def started_cluster():
     try:
         cluster = ClickHouseCluster(__file__)
+        # Disable `with_remote_database_disk` as the test uses the local disk to store metadata files.
         instance = cluster.add_instance(
-            "dummy", clickhouse_path_dir="clickhouse_path", stay_alive=True
+            "dummy",
+            clickhouse_path_dir="clickhouse_path",
+            stay_alive=True,
+            with_remote_database_disk=False,
         )
         cluster.start()
 
         cluster_fail = ClickHouseCluster(__file__, name="fail")
         instance_fail = cluster_fail.add_instance(
-            "dummy_fail", clickhouse_path_dir="clickhouse_path_fail"
+            "dummy_fail",
+            clickhouse_path_dir="clickhouse_path_fail",
+            with_remote_database_disk=False,
         )
         with pytest.raises(Exception):
             cluster_fail.start()
@@ -28,6 +34,7 @@ def started_cluster():
 
 def test_sophisticated_default(started_cluster):
     instance = started_cluster.instances["dummy"]
+    instance.query("TRUNCATE TABLE sophisticated_default")
     instance.query("INSERT INTO sophisticated_default (c) VALUES (0)")
     assert instance.query("SELECT a, b, c FROM sophisticated_default") == "3\t9\t0\n"
 

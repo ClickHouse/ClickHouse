@@ -19,7 +19,7 @@ Actions: INPUT : 0 -> __table1.id UInt64 : 0
          ALIAS __table2.id :: 2 -> rhs.id UInt64 : 1
          ALIAS __table2.value :: 3 -> rhs.value String : 2
 Positions: 4 1 0 2
-  Expression
+  Expression (Post Join Actions)
   Header: __table1.id UInt64
           __table1.value String
           __table2.id UInt64
@@ -38,13 +38,13 @@ Positions: 4 1 0 2
     Strictness: ALL
     Algorithm: ConcurrentHashJoin
     Clauses: [(__table1.id) = (__table2.id)]
-      Expression
+      Expression (Left Pre Join Actions)
       Header: __table1.id UInt64
               __table1.value String
       Actions: INPUT :: 0 -> __table1.id UInt64 : 0
                INPUT :: 1 -> __table1.value String : 1
       Positions: 0 1
-        Filter (( + Change column names to column identifiers))
+        Filter ((WHERE + Change column names to column identifiers))
         Header: __table1.id UInt64
                 __table1.value String
         Filter column: equals(__table1.id, 5_UInt8) (removed)
@@ -61,13 +61,13 @@ Positions: 4 1 0 2
           ReadType: Default
           Parts: 1
           Granules: 1
-      Expression
+      Expression (Right Pre Join Actions)
       Header: __table2.id UInt64
               __table2.value String
       Actions: INPUT :: 0 -> __table2.id UInt64 : 0
                INPUT :: 1 -> __table2.value String : 1
       Positions: 0 1
-        Filter (( + Change column names to column identifiers))
+        Filter ((WHERE + Change column names to column identifiers))
         Header: __table2.id UInt64
                 __table2.value String
         Filter column: equals(__table2.id, 5_UInt8) (removed)
@@ -110,7 +110,7 @@ Actions: INPUT : 0 -> __table1.id UInt64 : 0
          ALIAS __table2.id :: 2 -> rhs.id UInt64 : 1
          ALIAS __table2.value :: 3 -> rhs.value String : 2
 Positions: 4 1 0 2
-  Expression
+  Expression (Post Join Actions)
   Header: __table1.id UInt64
           __table1.value String
           __table2.id UInt64
@@ -129,13 +129,13 @@ Positions: 4 1 0 2
     Strictness: ALL
     Algorithm: ConcurrentHashJoin
     Clauses: [(__table1.id) = (__table2.id)]
-      Expression
+      Expression (Left Pre Join Actions)
       Header: __table1.id UInt64
               __table1.value String
       Actions: INPUT :: 0 -> __table1.id UInt64 : 0
                INPUT :: 1 -> __table1.value String : 1
       Positions: 0 1
-        Filter (( + Change column names to column identifiers))
+        Filter ((WHERE + Change column names to column identifiers))
         Header: __table1.id UInt64
                 __table1.value String
         Filter column: equals(__table1.id, 5_UInt8) (removed)
@@ -152,13 +152,13 @@ Positions: 4 1 0 2
           ReadType: Default
           Parts: 1
           Granules: 1
-      Expression
+      Expression (Right Pre Join Actions)
       Header: __table2.id UInt64
               __table2.value String
       Actions: INPUT :: 0 -> __table2.id UInt64 : 0
                INPUT :: 1 -> __table2.value String : 1
       Positions: 0 1
-        Filter (( + Change column names to column identifiers))
+        Filter ((WHERE + Change column names to column identifiers))
         Header: __table2.id UInt64
                 __table2.value String
         Filter column: equals(__table2.id, 5_UInt8) (removed)
@@ -201,7 +201,7 @@ Actions: INPUT : 0 -> __table1.id UInt64 : 0
          ALIAS __table2.id :: 2 -> rhs.id UInt64 : 1
          ALIAS __table2.value :: 3 -> rhs.value String : 2
 Positions: 4 1 0 2
-  Expression
+  Expression (Post Join Actions)
   Header: __table1.id UInt64
           __table1.value String
           __table2.id UInt64
@@ -220,13 +220,13 @@ Positions: 4 1 0 2
     Strictness: ALL
     Algorithm: ConcurrentHashJoin
     Clauses: [(__table1.id) = (__table2.id)]
-      Expression
+      Expression (Left Pre Join Actions)
       Header: __table1.id UInt64
               __table1.value String
       Actions: INPUT :: 0 -> __table1.id UInt64 : 0
                INPUT :: 1 -> __table1.value String : 1
       Positions: 0 1
-        Filter (( + Change column names to column identifiers))
+        Filter ((WHERE + Change column names to column identifiers))
         Header: __table1.id UInt64
                 __table1.value String
         AND column: equals(__table1.id, 5_UInt8)
@@ -250,13 +250,13 @@ Positions: 4 1 0 2
           ReadType: Default
           Parts: 1
           Granules: 1
-      Expression
+      Expression (Right Pre Join Actions)
       Header: __table2.id UInt64
               __table2.value String
       Actions: INPUT :: 0 -> __table2.id UInt64 : 0
                INPUT :: 1 -> __table2.value String : 1
       Positions: 0 1
-        Filter (( + Change column names to column identifiers))
+        Filter ((WHERE + Change column names to column identifiers))
         Header: __table2.id UInt64
                 __table2.value String
         AND column: equals(__table2.id, 6_UInt8)
@@ -303,7 +303,7 @@ Actions: INPUT : 0 -> __table1.id UInt64 : 0
          ALIAS __table2.id :: 2 -> rhs.id UInt64 : 1
          ALIAS __table2.value :: 3 -> rhs.value String : 2
 Positions: 4 1 0 2
-  Expression
+  Expression (Post Join Actions)
   Header: __table1.id UInt64
           __table1.value String
           __table2.id UInt64
@@ -322,13 +322,13 @@ Positions: 4 1 0 2
     Strictness: ALL
     Algorithm: ConcurrentHashJoin
     Clauses: [(__table1.id) = (__table2.id)]
-      Expression
+      Expression (Left Pre Join Actions)
       Header: __table1.id UInt64
               __table1.value String
       Actions: INPUT :: 0 -> __table1.id UInt64 : 0
                INPUT :: 1 -> __table1.value String : 1
       Positions: 0 1
-        Filter (( + Change column names to column identifiers))
+        Filter ((WHERE + Change column names to column identifiers))
         Header: __table1.id UInt64
                 __table1.value String
         Filter column: equals(__table1.id, 5_UInt8) (removed)
@@ -345,13 +345,13 @@ Positions: 4 1 0 2
           ReadType: Default
           Parts: 1
           Granules: 1
-      Expression
+      Expression (Right Pre Join Actions)
       Header: __table2.id UInt64
               __table2.value String
       Actions: INPUT :: 0 -> __table2.id UInt64 : 0
                INPUT :: 1 -> __table2.value String : 1
       Positions: 0 1
-        Filter (( + Change column names to column identifiers))
+        Filter ((WHERE + Change column names to column identifiers))
         Header: __table2.id UInt64
                 __table2.value String
         Filter column: equals(__table2.id, 5_UInt8) (removed)
@@ -407,7 +407,7 @@ Positions: 4 1 0 2
            COLUMN Const(UInt8) -> 5_UInt8 UInt8 : 4
            FUNCTION equals(__table2.id : 2, 5_UInt8 :: 4) -> equals(__table2.id, 5_UInt8) UInt8 : 5
   Positions: 5 0 1 2 3
-    Expression
+    Expression (Post Join Actions)
     Header: __table1.id UInt64
             __table1.value String
             __table2.id UInt64
@@ -426,7 +426,7 @@ Positions: 4 1 0 2
       Strictness: ALL
       Algorithm: ConcurrentHashJoin
       Clauses: [(__table1.id) = (__table2.id)]
-        Expression
+        Expression (Left Pre Join Actions)
         Header: __table1.id UInt64
                 __table1.value String
         Actions: INPUT :: 0 -> __table1.id UInt64 : 0
@@ -446,7 +446,7 @@ Positions: 4 1 0 2
             ReadType: Default
             Parts: 1
             Granules: 1
-        Expression
+        Expression (Right Pre Join Actions)
         Header: __table2.id UInt64
                 __table2.value String
         Actions: INPUT :: 0 -> __table2.id UInt64 : 0
@@ -505,7 +505,7 @@ Positions: 4 1 0 2
            COLUMN Const(UInt8) -> 5_UInt8 UInt8 : 4
            FUNCTION equals(__table1.id : 0, 5_UInt8 :: 4) -> equals(__table1.id, 5_UInt8) UInt8 : 5
   Positions: 5 0 1 2 3
-    Expression
+    Expression (Post Join Actions)
     Header: __table1.id UInt64
             __table1.value String
             __table2.id UInt64
@@ -524,7 +524,7 @@ Positions: 4 1 0 2
       Strictness: ALL
       Algorithm: HashJoin
       Clauses: [(__table1.id) = (__table2.id)]
-        Expression
+        Expression (Left Pre Join Actions)
         Header: __table1.id UInt64
                 __table1.value String
         Actions: INPUT :: 0 -> __table1.id UInt64 : 0
@@ -544,7 +544,7 @@ Positions: 4 1 0 2
             ReadType: Default
             Parts: 1
             Granules: 1
-        Expression
+        Expression (Right Pre Join Actions)
         Header: __table2.id UInt64
                 __table2.value String
         Actions: INPUT :: 0 -> __table2.id UInt64 : 0
@@ -590,7 +590,7 @@ Actions: INPUT : 0 -> __table1.id UInt64 : 0
          ALIAS __table2.id :: 2 -> rhs.id UInt64 : 1
          ALIAS __table2.value :: 3 -> rhs.value String : 2
 Positions: 4 1 0 2
-  Expression
+  Expression (Post Join Actions)
   Header: __table1.id UInt64
           __table1.value String
           __table2.id UInt64
@@ -609,13 +609,13 @@ Positions: 4 1 0 2
     Strictness: ALL
     Algorithm: HashJoin
     Clauses: [(__table1.id) = (__table2.id)]
-      Expression
+      Expression (Left Pre Join Actions)
       Header: __table1.id UInt64
               __table1.value String
       Actions: INPUT :: 0 -> __table1.id UInt64 : 0
                INPUT :: 1 -> __table1.value String : 1
       Positions: 0 1
-        Filter (( + Change column names to column identifiers))
+        Filter ((WHERE + Change column names to column identifiers))
         Header: __table1.id UInt64
                 __table1.value String
         Filter column: equals(__table1.id, 5_UInt8) (removed)
@@ -632,13 +632,13 @@ Positions: 4 1 0 2
           ReadType: Default
           Parts: 1
           Granules: 1
-      Expression
+      Expression (Right Pre Join Actions)
       Header: __table2.id UInt64
               __table2.value String
       Actions: INPUT :: 0 -> __table2.id UInt64 : 0
                INPUT :: 1 -> __table2.value String : 1
       Positions: 0 1
-        Filter (( + Change column names to column identifiers))
+        Filter ((WHERE + Change column names to column identifiers))
         Header: __table2.id UInt64
                 __table2.value String
         Filter column: equals(__table2.id, 5_UInt8) (removed)
@@ -694,7 +694,7 @@ Positions: 4 1 0 2
            COLUMN Const(UInt8) -> 5_UInt8 UInt8 : 4
            FUNCTION equals(__table1.id : 0, 5_UInt8 :: 4) -> equals(__table1.id, 5_UInt8) UInt8 : 5
   Positions: 5 0 1 2 3
-    Expression
+    Expression (Post Join Actions)
     Header: __table1.id UInt64
             __table1.value String
             __table2.id UInt64
@@ -713,7 +713,7 @@ Positions: 4 1 0 2
       Strictness: ALL
       Algorithm: HashJoin
       Clauses: [(__table1.id) = (__table2.id)]
-        Expression
+        Expression (Left Pre Join Actions)
         Header: __table1.id UInt64
                 __table1.value String
         Actions: INPUT :: 0 -> __table1.id UInt64 : 0
@@ -733,7 +733,7 @@ Positions: 4 1 0 2
             ReadType: Default
             Parts: 1
             Granules: 1
-        Expression
+        Expression (Right Pre Join Actions)
         Header: __table2.id UInt64
                 __table2.value String
         Actions: INPUT :: 0 -> __table2.id UInt64 : 0
@@ -792,7 +792,7 @@ Positions: 4 1 0 2
            COLUMN Const(UInt8) -> 5_UInt8 UInt8 : 4
            FUNCTION equals(__table2.id : 2, 5_UInt8 :: 4) -> equals(__table2.id, 5_UInt8) UInt8 : 5
   Positions: 5 0 1 2 3
-    Expression
+    Expression (Post Join Actions)
     Header: __table1.id UInt64
             __table1.value String
             __table2.id UInt64
@@ -811,7 +811,7 @@ Positions: 4 1 0 2
       Strictness: ALL
       Algorithm: HashJoin
       Clauses: [(__table1.id) = (__table2.id)]
-        Expression
+        Expression (Left Pre Join Actions)
         Header: __table1.id UInt64
                 __table1.value String
         Actions: INPUT :: 0 -> __table1.id UInt64 : 0
@@ -831,7 +831,7 @@ Positions: 4 1 0 2
             ReadType: Default
             Parts: 1
             Granules: 1
-        Expression
+        Expression (Right Pre Join Actions)
         Header: __table2.id UInt64
                 __table2.value String
         Actions: INPUT :: 0 -> __table2.id UInt64 : 0
@@ -897,7 +897,7 @@ Positions: 4 1 0 2
            FUNCTION equals(__table2.id : 2, 6_UInt8 :: 4) -> equals(__table2.id, 6_UInt8) UInt8 : 6
            FUNCTION and(equals(__table1.id, 5_UInt8) :: 5, equals(__table2.id, 6_UInt8) :: 6) -> and(equals(__table1.id, 5_UInt8), equals(__table2.id, 6_UInt8)) UInt8 : 4
   Positions: 4 0 1 2 3
-    Expression
+    Expression (Post Join Actions)
     Header: __table1.id UInt64
             __table1.value String
             __table2.id UInt64
@@ -916,7 +916,7 @@ Positions: 4 1 0 2
       Strictness: ALL
       Algorithm: HashJoin
       Clauses: [(__table1.id) = (__table2.id)]
-        Expression
+        Expression (Left Pre Join Actions)
         Header: __table1.id UInt64
                 __table1.value String
         Actions: INPUT :: 0 -> __table1.id UInt64 : 0
@@ -936,7 +936,7 @@ Positions: 4 1 0 2
             ReadType: Default
             Parts: 1
             Granules: 1
-        Expression
+        Expression (Right Pre Join Actions)
         Header: __table2.id UInt64
                 __table2.value String
         Actions: INPUT :: 0 -> __table2.id UInt64 : 0

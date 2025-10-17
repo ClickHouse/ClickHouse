@@ -13,7 +13,7 @@ SELECT *,
   multiIf(column_b  = 'c2', 'true', 'false') AS condition_2
 FROM (SELECT column_a, column_b FROM bugcheck1)
 WHERE (condition_1 IN ('yes')) AND (condition_2 in ('true'))
-settings allow_experimental_analyzer=0;
+SETTINGS enable_analyzer=0;
 
 select 'this query worked:';
 
@@ -22,7 +22,7 @@ SELECT
   multiIf(column_b  = 'c2', 'true', 'false') AS condition_2
 FROM (SELECT column_a, column_b FROM bugcheck1)
 WHERE (condition_1 IN ('yes')) AND (condition_2 in ('true'))
-settings allow_experimental_analyzer=0;
+SETTINGS enable_analyzer=0;
 
 select 'experimental analyzer:';
 SELECT *,
@@ -30,6 +30,6 @@ SELECT *,
   multiIf(column_b  = 'c2', 'true', 'false') AS condition_2
 FROM (SELECT column_a, column_b FROM bugcheck1)
 WHERE (condition_1 IN ('yes')) AND (condition_2 in ('true'))
-settings allow_experimental_analyzer=1;
+SETTINGS enable_analyzer=1;
 
 DROP TABLE bugcheck1;

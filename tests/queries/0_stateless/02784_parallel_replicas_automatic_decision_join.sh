@@ -64,10 +64,10 @@ function run_query_with_pure_parallel_replicas () {
         --query "$3" \
         --query_id "${1}_pure" \
         --max_parallel_replicas 3 \
-        --prefer_localhost_replica 1 \
         --parallel_replicas_prefer_local_join 0 \
         --cluster_for_parallel_replicas "parallel_replicas" \
         --enable_parallel_replicas 1 \
+        --parallel_replicas_only_with_analyzer 0 \
         --parallel_replicas_for_non_replicated_merge_tree 1 \
         --parallel_replicas_min_number_of_rows_per_replica "$2" \
     |& grep "It is enough work for" | awk '{ print substr($7, 2, length($7) - 2) "\t" $20 " estimated parallel replicas" }' | sort -n -k2 -b | grep -Pv "\t0 estimated parallel replicas"
@@ -92,7 +92,7 @@ run_query_with_pure_parallel_replicas "${query_id_base}_simple_join_5M" 5000000 
 run_query_with_pure_parallel_replicas "${query_id_base}_simple_join_1M" 1000000 "$simple_join_query" # Right: 1->0. Left: 10->3
 run_query_with_pure_parallel_replicas "${query_id_base}_simple_join_300k" 300000 "$simple_join_query" # Right: 2. Left: 33->3
 
-$CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS"
+$CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
 were_parallel_replicas_used "${query_id_base}"
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS test_parallel_replicas_automatic_left_side"

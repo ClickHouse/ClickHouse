@@ -274,7 +274,7 @@ inline const char * find_first_symbols_sse42(const char * const begin, const cha
     const char * pos = begin;
 
 #if defined(__SSE4_2__)
-    constexpr int mode = _SIDD_UBYTE_OPS | _SIDD_CMP_EQUAL_ANY | _SIDD_LEAST_SIGNIFICANT;
+    constexpr int mode = _SIDD_UBYTE_OPS | _SIDD_CMP_EQUAL_ANY | _SIDD_LEAST_SIGNIFICANT;  // NOLINT(misc-redundant-expression)
 
     __m128i set = _mm_setr_epi8(c01, c02, c03, c04, c05, c06, c07, c08, c09, c10, c11, c12, c13, c14, c15, c16);
 
@@ -370,9 +370,9 @@ inline const char * find_first_symbols_dispatch(const std::string_view haystack,
 {
 #if defined(__SSE4_2__)
     if (symbols.str.size() >= 5)
-        return find_first_symbols_sse42<positive, return_mode>(haystack.begin(), haystack.end(), symbols);
+        return find_first_symbols_sse42<positive, return_mode>(haystack.data(), haystack.data() + haystack.size(), symbols);
 #endif
-    return find_first_symbols_sse2<positive, return_mode>(haystack.begin(), haystack.end(), symbols.str.data(), symbols.str.size());
+    return find_first_symbols_sse2<positive, return_mode>(haystack.data(), haystack.data() + haystack.size(), symbols.str.data(), symbols.str.size());
 }
 
 template <bool positive, ReturnMode return_mode, char... symbols>
@@ -385,7 +385,7 @@ inline const char * find_last_symbols_dispatch(const char * begin, const char * 
 template <bool positive, ReturnMode return_mode>
 inline const char * find_last_symbols_dispatch(const std::string_view haystack, const SearchSymbols & symbols)
 {
-    return find_last_symbols_sse2<positive, return_mode>(haystack.begin(), haystack.end(), symbols.str.data(), symbols.str.size());
+    return find_last_symbols_sse2<positive, return_mode>(haystack.data(), haystack.data() + haystack.size(), symbols.str.data(), symbols.str.size());
 }
 
 }

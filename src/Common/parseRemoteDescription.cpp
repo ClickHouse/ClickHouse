@@ -1,4 +1,4 @@
-#include "parseRemoteDescription.h"
+#include <Common/parseRemoteDescription.h>
 #include <Common/Exception.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -206,7 +206,7 @@ std::vector<std::pair<String, uint16_t>> parseRemoteDescriptionForExternalDataba
         }
         else
         {
-            result.emplace_back(std::make_pair(host, DB::parseFromString<UInt16>(address.substr(colon + 1))));
+            result.emplace_back(std::make_pair(host, DB::parseFromStringWithoutAssertEOF<UInt16>(address.substr(colon + 1))));
         }
     }
 

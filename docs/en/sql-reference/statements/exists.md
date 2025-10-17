@@ -1,12 +1,15 @@
 ---
-slug: /en/sql-reference/statements/exists
+description: 'Documentation for EXISTS Statement'
+sidebar_label: 'EXISTS'
 sidebar_position: 45
-sidebar_label: EXISTS
+slug: /sql-reference/statements/exists
+title: 'EXISTS Statement'
+doc_type: 'reference'
 ---
 
 # EXISTS Statement
 
-``` sql
+```sql
 EXISTS [TEMPORARY] [TABLE|DICTIONARY|DATABASE] [db.]name [INTO OUTFILE filename] [FORMAT format]
 ```
 

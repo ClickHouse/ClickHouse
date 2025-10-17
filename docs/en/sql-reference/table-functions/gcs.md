@@ -1,8 +1,12 @@
 ---
-slug: /en/sql-reference/table-functions/gcs
+description: 'Provides a table-like interface to `SELECT` and `INSERT` data from Google
+  Cloud Storage. Requires the `Storage Object User` IAM role.'
+keywords: ['gcs', 'bucket']
+sidebar_label: 'gcs'
 sidebar_position: 70
-sidebar_label: gcs
-keywords: [gcs, bucket]
+slug: /sql-reference/table-functions/gcs
+title: 'gcs'
+doc_type: 'reference'
 ---
 
 # gcs Table Function
@@ -13,59 +17,65 @@ This is an alias of the [s3 table function](../../sql-reference/table-functions/
 
 If you have multiple replicas in your cluster, you can use the [s3Cluster function](../../sql-reference/table-functions/s3Cluster.md) (which works with GCS) instead to parallelize inserts.
 
-**Syntax**
+## Syntax {#syntax}
 
-``` sql
+```sql
 gcs(url [, NOSIGN | hmac_key, hmac_secret] [,format] [,structure] [,compression_method])
 gcs(named_collection[, option=value [,..]])
 ```
 
 :::tip GCS
-The GCS Table Function integrates with Google Cloud Storage by using the GCS XML API and HMAC keys. See the [Google interoperability docs]( https://cloud.google.com/storage/docs/interoperability) for more details about the endpoint and HMAC.
-
+The GCS Table Function integrates with Google Cloud Storage by using the GCS XML API and HMAC keys. 
+See the [Google interoperability docs]( https://cloud.google.com/storage/docs/interoperability) for more details about the endpoint and HMAC.
 :::
 
-**Parameters**
+## Arguments {#arguments}
 
-- `url` — Bucket path to file. Supports following wildcards in readonly mode: `*`, `**`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc'`, `'def'` — strings.
-  :::note GCS
-  The GCS path is in this format as the endpoint for the Google XML API is different than the JSON API:
-  ```
+| Argument                     | Description                                                                                                                                                                              |
+|------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `url`                        | Bucket path to file. Supports following wildcards in readonly mode: `*`, `**`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc'`, `'def'` — strings.                       |
+| `NOSIGN`                     | If this keyword is provided in place of credentials, all the requests will not be signed.                                                                                                |
+| `hmac_key` and `hmac_secret` | Keys that specify credentials to use with given endpoint. Optional.                                                                                                                      |
+| `format`                     | The [format](/sql-reference/formats) of the file.                                                                                                                                        |
+| `structure`                  | Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                            |
+| `compression_method`         | Parameter is optional. Supported values: `none`, `gzip` or `gz`, `brotli` or `br`, `xz` or `LZMA`, `zstd` or `zst`. By default, it will autodetect compression method by file extension. |
+
+:::note GCS
+The GCS path is in this format as the endpoint for the Google XML API is different than the JSON API:
+
+```text
   https://storage.googleapis.com/<bucket>/<folder>/<filename(s)>
-  ```
-  and not ~~https://storage.cloud.google.com~~.
-  :::
-- `NOSIGN` — If this keyword is provided in place of credentials, all the requests will not be signed.
-- `hmac_key` and `hmac_secret` — Keys that specify credentials to use with given endpoint. Optional.
-- `format` — The [format](../../interfaces/formats.md#formats) of the file.
-- `structure` — Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.
-- `compression_method` — Parameter is optional. Supported values: `none`, `gzip` or `gz`, `brotli` or `br`, `xz` or `LZMA`, `zstd` or `zst`. By default, it will autodetect compression method by file extension.
+```
 
-Arguments can also be passed using [named collections](/docs/en/operations/named-collections.md). In this case `url`, `format`, `structure`, `compression_method` work in the same way, and some extra parameters are supported:
+and not ~~https://storage.cloud.google.com~~.
+:::
 
- - `access_key_id` — `hmac_key`, optional.
- - `secret_access_key` — `hmac_secret`, optional.
- - `filename` — appended to the url if specified.
- - `use_environment_credentials` — enabled by default, allows passing extra parameters using environment variables `AWS_CONTAINER_CREDENTIALS_RELATIVE_URI`, `AWS_CONTAINER_CREDENTIALS_FULL_URI`, `AWS_CONTAINER_AUTHORIZATION_TOKEN`, `AWS_EC2_METADATA_DISABLED`.
- - `no_sign_request` — disabled by default.
- - `expiration_window_seconds` — default value is 120.
+Arguments can also be passed using [named collections](operations/named-collections.md). In this case `url`, `format`, `structure`, `compression_method` work in the same way, and some extra parameters are supported:
 
+| Parameter                     | Description                                                                                                                                                                                                                       |
+|-------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `access_key_id`               | `hmac_key`, optional.                                                                                                                                                                                                             |
+| `secret_access_key`           | `hmac_secret`, optional.                                                                                                                                                                                                          |
+| `filename`                    | Appended to the url if specified.                                                                                                                                                                                                 |
+| `use_environment_credentials` | Enabled by default, allows passing extra parameters using environment variables `AWS_CONTAINER_CREDENTIALS_RELATIVE_URI`, `AWS_CONTAINER_CREDENTIALS_FULL_URI`, `AWS_CONTAINER_AUTHORIZATION_TOKEN`, `AWS_EC2_METADATA_DISABLED`. |
+| `no_sign_request`             | Disabled by default.                                                                                                                                                                                                              |
+| `expiration_window_seconds`   | Default value is 120.                                                                                                                                                                                                             |
 
-**Returned value**
+## Returned value {#returned_value}
 
 A table with the specified structure for reading or writing data in the specified file.
 
-**Examples**
+## Examples {#examples}
 
 Selecting the first two rows from the table from GCS file `https://storage.googleapis.com/my-test-bucket-768/data.csv`:
 
-``` sql
+```sql
 SELECT *
 FROM gcs('https://storage.googleapis.com/clickhouse_public_datasets/my-test-bucket-768/data.csv.gz', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
 LIMIT 2;
 ```
 
-``` text
+```text
 ┌─column1─┬─column2─┬─column3─┐
 │       1 │       2 │       3 │
 │       3 │       2 │       1 │
@@ -74,20 +84,20 @@ LIMIT 2;
 
 The similar but from file with `gzip` compression method:
 
-``` sql
+```sql
 SELECT *
 FROM gcs('https://storage.googleapis.com/clickhouse_public_datasets/my-test-bucket-768/data.csv.gz', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32', 'gzip')
 LIMIT 2;
 ```
 
-``` text
+```text
 ┌─column1─┬─column2─┬─column3─┐
 │       1 │       2 │       3 │
 │       3 │       2 │       1 │
 └─────────┴─────────┴─────────┘
 ```
 
-## Usage
+## Usage {#usage}
 
 Suppose that we have several files with following URIs on GCS:
 
@@ -102,12 +112,12 @@ Suppose that we have several files with following URIs on GCS:
 
 Count the amount of rows in files ending with numbers from 1 to 3:
 
-``` sql
+```sql
 SELECT count(*)
 FROM gcs('https://storage.googleapis.com/clickhouse_public_datasets/my-test-bucket-768/{some,another}_prefix/some_file_{1..3}.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
 ```
 
-``` text
+```text
 ┌─count()─┐
 │      18 │
 └─────────┘
@@ -115,12 +125,12 @@ FROM gcs('https://storage.googleapis.com/clickhouse_public_datasets/my-test-buck
 
 Count the total amount of rows in all files in these two directories:
 
-``` sql
+```sql
 SELECT count(*)
 FROM gcs('https://storage.googleapis.com/clickhouse_public_datasets/my-test-bucket-768/{some,another}_prefix/*', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
 ```
 
-``` text
+```text
 ┌─count()─┐
 │      24 │
 └─────────┘
@@ -132,12 +142,12 @@ If your listing of files contains number ranges with leading zeros, use the cons
 
 Count the total amount of rows in files named `file-000.csv`, `file-001.csv`, ... , `file-999.csv`:
 
-``` sql
+```sql
 SELECT count(*)
 FROM gcs('https://storage.googleapis.com/clickhouse_public_datasets/my-test-bucket-768/big_prefix/file-{000..999}.csv', 'CSV', 'name String, value UInt32');
 ```
 
-``` text
+```text
 ┌─count()─┐
 │      12 │
 └─────────┘
@@ -145,32 +155,32 @@ FROM gcs('https://storage.googleapis.com/clickhouse_public_datasets/my-test-buck
 
 Insert data into file `test-data.csv.gz`:
 
-``` sql
+```sql
 INSERT INTO FUNCTION gcs('https://storage.googleapis.com/my-test-bucket-768/test-data.csv.gz', 'CSV', 'name String, value UInt32', 'gzip')
 VALUES ('test-data', 1), ('test-data-2', 2);
 ```
 
 Insert data into file `test-data.csv.gz` from existing table:
 
-``` sql
+```sql
 INSERT INTO FUNCTION gcs('https://storage.googleapis.com/my-test-bucket-768/test-data.csv.gz', 'CSV', 'name String, value UInt32', 'gzip')
 SELECT name, value FROM existing_table;
 ```
 
 Glob ** can be used for recursive directory traversal. Consider the below example, it will fetch all files from `my-test-bucket-768` directory recursively:
 
-``` sql
+```sql
 SELECT * FROM gcs('https://storage.googleapis.com/my-test-bucket-768/**', 'CSV', 'name String, value UInt32', 'gzip');
 ```
 
 The below get data from all `test-data.csv.gz` files from any folder inside `my-test-bucket` directory recursively:
 
-``` sql
+```sql
 SELECT * FROM gcs('https://storage.googleapis.com/my-test-bucket-768/**/test-data.csv.gz', 'CSV', 'name String, value UInt32', 'gzip');
 ```
 
-For production use cases it is recommended to use [named collections](/docs/en/operations/named-collections.md). Here is the example:
-``` sql
+For production use cases it is recommended to use [named collections](operations/named-collections.md). Here is the example:
+```sql
 
 CREATE NAMED COLLECTION creds AS
         access_key_id = '***',
@@ -179,7 +189,7 @@ SELECT count(*)
 FROM gcs(creds, url='https://s3-object-url.csv')
 ```
 
-## Partitioned Write
+## Partitioned Write {#partitioned-write}
 
 If you specify `PARTITION BY` expression when inserting data into `GCS` table, a separate file is created for each partition value. Splitting the data into separate files helps to improve reading operations efficiency.
 
@@ -203,7 +213,6 @@ INSERT INTO TABLE FUNCTION
 ```
 As a result, the data is written into three files in different buckets: `my_bucket_1/file.csv`, `my_bucket_10/file.csv`, and `my_bucket_20/file.csv`.
 
-**See Also**
-
--   [S3 table function](s3.md)
--   [S3 engine](../../engines/table-engines/integrations/s3.md)
+## Related {#related}
+- [S3 table function](s3.md)
+- [S3 engine](../../engines/table-engines/integrations/s3.md)

@@ -51,6 +51,8 @@ public:
     bool isCategorial() const override { return isValueRepresentedByInteger(); }
     bool canBeInsideLowCardinality() const override { return true; }
 
+    void updateHashImpl(SipHash &) const override { /* For numeric types, the type ID is sufficient */ }
+
     SerializationPtr doGetDefaultSerialization() const override { return std::make_shared<SerializationNumber<T>>(); }
 };
 
