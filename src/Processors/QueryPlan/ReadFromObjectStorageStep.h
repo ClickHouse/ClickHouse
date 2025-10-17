@@ -40,7 +40,8 @@ public:
 
     bool requestReadingInOrder(InputOrderInfoPtr order_info_) const;
 
-    // The name of classs is misleading, this order has nothing in common with corresponding SELECT query 
+    // The name of the returned type is misleading, this order has nothing in common with the corresponding SELECT query
+    // and is taken from the storage metadata.
     InputOrderInfoPtr getDataOrder() const;
 
 private:
