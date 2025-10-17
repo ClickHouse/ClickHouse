@@ -1,0 +1,33 @@
+<clickhouse>
+    <profiles>
+        <default/>
+    </profiles>
+
+    <users>
+        <default>
+            <jwks/>
+
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+
+            <access_management>1</access_management>
+            <named_collection_control>1</named_collection_control>
+        </default>
+
+        <user_jwt>
+            <jwks/>
+
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+
+            <access_management>1</access_management>
+            <named_collection_control>1</named_collection_control>
+        </user_jwt>
+    </users>
+
+    <quotas>
+        <default/>
+    </quotas>
+</clickhouse>
