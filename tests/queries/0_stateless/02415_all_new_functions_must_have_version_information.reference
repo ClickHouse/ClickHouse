@@ -159,16 +159,6 @@ readWKTPoint
 readWKTPolygon
 readWKTRing
 regexpExtract
-regionHierarchy
-regionIn
-regionToArea
-regionToCity
-regionToContinent
-regionToCountry
-regionToDistrict
-regionToName
-regionToPopulation
-regionToTopContinent
 sigmoid
 sin
 structureToCapnProtoSchema

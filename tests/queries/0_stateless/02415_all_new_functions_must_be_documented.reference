@@ -89,16 +89,6 @@ readWKTMultiPolygon
 readWKTPoint
 readWKTPolygon
 readWKTRing
-regionHierarchy
-regionIn
-regionToArea
-regionToCity
-regionToContinent
-regionToCountry
-regionToDistrict
-regionToName
-regionToPopulation
-regionToTopContinent
 sigmoid
 svg
 toDate32OrDefault
