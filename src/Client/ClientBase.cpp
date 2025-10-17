@@ -132,7 +132,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int CANNOT_PARSE_TEXT;
+    extern const int SYNTAX_ERROR;
     extern const int DEADLOCK_AVOIDED;
     extern const int CLIENT_OUTPUT_FORMAT_SPECIFIED;
     extern const int UNKNOWN_PACKET_FROM_SERVER;
@@ -1696,7 +1696,7 @@ bool ClientBase::receiveSampleBlock(Block & out, ColumnsDescription & columns_de
                 break;
 
             case Protocol::Server::TableColumns:
-                columns_description = ColumnsDescription::parse(packet.multistring_message[1]);
+                columns_description = ColumnsDescription::parse(packet.columns_description);
                 return receiveSampleBlock(out, columns_description, parsed_query);
 
             case Protocol::Server::TimezoneUpdate:
@@ -2576,21 +2576,21 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
             case MultiQueryProcessingStage::PARSING_FAILED:
             {
                 have_error |= buzz_house;
-                error_code = buzz_house ? ErrorCodes::CANNOT_PARSE_TEXT : error_code;
+                error_code = buzz_house ? ErrorCodes::SYNTAX_ERROR : error_code;
                 return true;
             }
             case MultiQueryProcessingStage::CONTINUE_PARSING:
             {
                 is_first = false;
                 have_error |= buzz_house;
-                error_code = buzz_house ? ErrorCodes::CANNOT_PARSE_TEXT : error_code;
+                error_code = buzz_house ? ErrorCodes::SYNTAX_ERROR : error_code;
                 continue;
             }
             case MultiQueryProcessingStage::PARSING_EXCEPTION:
             {
                 is_first = false;
                 have_error |= buzz_house;
-                error_code = buzz_house ? ErrorCodes::CANNOT_PARSE_TEXT : error_code;
+                error_code = buzz_house ? ErrorCodes::SYNTAX_ERROR : error_code;
                 this_query_end = find_first_symbols<'\n'>(this_query_end, all_queries_end);
 
                 // Try to find test hint for syntax error. We don't know where

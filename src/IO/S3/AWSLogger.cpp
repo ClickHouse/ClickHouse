@@ -121,6 +121,13 @@ void AWSLogger::callLogImpl(Aws::Utils::Logging::LogLevel log_level, const char 
         LOG_IMPL(default_logger, level, prio, "{}: {}", tag, message);
 }
 
+void AWSLogger::vaLog(Aws::Utils::Logging::LogLevel log_level, const char * tag, const char * format_str, va_list)
+{
+    if (is404Muted(format_str))
+        return;
+    callLogImpl(log_level, tag, format_str); /// FIXME. Variadic arguments?
+}
+
 }
 
 #endif
