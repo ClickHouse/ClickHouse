@@ -1214,6 +1214,7 @@ public:
 
     UInt32 getZooKeeperSessionUptime() const;
     UInt64 getClientProtocolVersion() const;
+    void reconnectZooKeeper(const String & reason) const;
     void setClientProtocolVersion(UInt64 version);
 
 #if USE_NURAFT
@@ -1679,11 +1680,13 @@ private:
     /// Expect lock for shared->clusters_mutex
     std::shared_ptr<Clusters> getClustersImpl(std::lock_guard<std::mutex> & lock) const;
 
-    void initWasmModuleManager();
+    WasmModuleManager * initWasmModuleManager();
 
     std::unordered_set<String> allowed_disks;
-public:
     /// Throttling
+public:
+    /// Does not hold the lock, should be called once at the startup.
+    void configureServerWideThrottling();
     ThrottlerPtr getReplicatedFetchesThrottler() const;
     ThrottlerPtr getReplicatedSendsThrottler() const;
 

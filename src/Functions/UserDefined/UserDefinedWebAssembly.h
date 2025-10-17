@@ -9,7 +9,7 @@
 
 #include <Parsers/IAST_fwd.h>
 
-#include <shared_mutex>
+#include <Common/SharedMutex.h>
 
 namespace DB
 {
@@ -91,7 +91,7 @@ public:
 
     static UserDefinedWebAssemblyFunctionFactory & instance();
 private:
-    std::shared_mutex registry_mutex;
+    DB::SharedMutex registry_mutex;
     std::unordered_map<String, std::shared_ptr<UserDefinedWebAssemblyFunction>> registry;
 };
 

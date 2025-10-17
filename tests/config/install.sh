@@ -19,12 +19,9 @@ USE_ASYNC_INSERT=${USE_ASYNC_INSERT:0}
 BUGFIX_VALIDATE_CHECK=0
 NO_AZURE=0
 KEEPER_INJECT_AUTH=1
-<<<<<<< HEAD
 WASM_ENGINE=""
 USE_ENCRYPTED_STORAGE=0
-=======
 REMOTE_DATABASE_DISK=1
->>>>>>> master
 
 while [[ "$#" -gt 0 ]]; do
     case $1 in
@@ -164,16 +161,13 @@ ln -sf $SRC_PATH/config.d/memory_profiler.yaml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/rocksdb.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/process_query_plan_packet.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/storage_conf_03008.xml $DEST_SERVER_PATH/config.d/
-<<<<<<< HEAD
 ln -sf $SRC_PATH/config.d/user_files.xml $DEST_SERVER_PATH/config.d/
-=======
 ln -sf $SRC_PATH/config.d/memory_access.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/jemalloc_flush_profile.yaml $DEST_SERVER_PATH/config.d/
 
 if [ "$FAST_TEST" != "1" ]; then
     ln -sf $SRC_PATH/config.d/abort_on_logical_error.yaml $DEST_SERVER_PATH/config.d/
 fi
->>>>>>> master
 
 # Not supported with fasttest.
 if [ "$FAST_TEST" != "1" ]; then

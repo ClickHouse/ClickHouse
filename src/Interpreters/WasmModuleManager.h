@@ -3,7 +3,7 @@
 #include <memory>
 #include <map>
 #include <filesystem>
-#include <shared_mutex>
+#include <Common/SharedMutex.h>
 
 #include <Common/Logger.h>
 #include <Disks/IDisk.h>
@@ -50,7 +50,7 @@ protected:
     DiskPtr user_scripts_disk;
     std::filesystem::path user_scripts_path;
 
-    mutable std::shared_mutex modules_mutex;
+    mutable DB::SharedMutex modules_mutex;
 
     struct ModuleRef
     {

@@ -270,12 +270,7 @@ void WasmModuleManager::deleteModuleIfExists(std::string_view module_name)
 void WasmModuleManager::registerExistingModules()
 {
     std::unique_lock lock(modules_mutex);
-    LOG_DEBUG(
-        log,
-        "Loading WASM modules from '{}/{}' at disk '{}'",
-        user_scripts_disk->getPath(),
-        user_scripts_path,
-        user_scripts_disk->getName());
+    LOG_DEBUG(log, "Loading WASM modules from '{}/{}' at disk '{}'", user_scripts_disk->getPath(), user_scripts_path, user_scripts_disk->getName());
 
     auto files_it = user_scripts_disk->iterateDirectory(user_scripts_path);
     for (; files_it->isValid(); files_it->next())

@@ -2,12 +2,6 @@
 
 #include <Interpreters/WebAssembly/WasmTypes.h>
 
-#include <Common/Exception.h>
-namespace DB::ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 namespace DB::WebAssembly
 {
 

@@ -274,6 +274,7 @@ private:
 };
 
 /// Deserializer for MessagePack string sequences
+/// We use specialization for specific data types is more performant than generic row msgpack deserializer
 class MsgPackStringDeserializer
 {
 protected:
@@ -346,13 +347,13 @@ protected:
     }
 
 public:
-    MsgPackStringDeserializer(std::span<uint8_t> data)
+    explicit MsgPackStringDeserializer(std::span<uint8_t> data)
         : pos(reinterpret_cast<const char *>(data.data()))
         , end(reinterpret_cast<const char *>(data.data() + data.size()))
     {
     }
 
-    MsgPackStringDeserializer(std::string_view data)
+    explicit MsgPackStringDeserializer(std::string_view data)
         : pos(data.data())
         , end(data.data() + data.size())
     {
@@ -389,16 +390,15 @@ class MsgPackArrayStringDeserializer : public MsgPackStringDeserializer
 {
 public:
     using MsgPackStringDeserializer::MsgPackStringDeserializer;
-    MsgPackArrayStringDeserializer(std::span<uint8_t> data)
+    explicit MsgPackArrayStringDeserializer(std::span<uint8_t> data)
         : MsgPackStringDeserializer(data)
     {
     }
 
-    MsgPackArrayStringDeserializer(std::string_view data)
+    explicit MsgPackArrayStringDeserializer(std::string_view data)
         : MsgPackStringDeserializer(data)
     {
     }
-
 
     void deserializeAll(ColumnString & column1, ColumnString & column2)
     {
@@ -433,7 +433,7 @@ protected:
     WriteBuffer & out;
 
 public:
-    MsgPackBinStringSerializer(WriteBuffer & out_) : out(out_) { }
+    explicit MsgPackBinStringSerializer(WriteBuffer & out_) : out(out_) { }
 
     template<typename... Args>
     void serializeAll(Args &&... columns)
@@ -475,35 +475,6 @@ public:
             (serializeData(columns->getDataAt(i)), ...);
         }
     }
-
-};
-
-
-class VectorInWasmMemory
-{
-public:
-    explicit VectorInWasmMemory(WasmMemoryManager & wmm_)
-        : wmm(wmm_)
-    {
-
-    }
-
-    void resize(size_t new_size)
-    {
-        if (new_size > size)
-        {
-            wasm_mem.getMemoryView();
-        }
-    }
-
-    void * data;
-    size_t size = 0;
-
-    WasmMemoryGuard wasm_mem = nullptr;
-    std::span<uint8_t> view;
-    std::vector<UInt8> buffer;
-
-    WasmMemoryManager & wmm;
 };
 
 class UserDefinedWebAssemblyFunctionV1 : public UserDefinedWebAssemblyFunction
@@ -641,7 +612,7 @@ public:
             return res_column;
         }
 
-        if (result_type->equals(DataTypeTuple({std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()})))
+        if (result_type->equals(DataTypeTuple({std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()})) && format_name == "MsgPack")
         {
             MutableColumns tuple_columns(2);
             tuple_columns[0] = ColumnString::create();

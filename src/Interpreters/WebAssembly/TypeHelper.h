@@ -1,3 +1,5 @@
+#pragma once
+
 #include <Interpreters/WebAssembly/WasmTypes.h>
 
 namespace DB::ErrorCodes

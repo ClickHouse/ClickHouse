@@ -100,6 +100,11 @@ struct WasmTimeRuntime::Impl
     {
         wasmtime::Config config;
         config.consume_fuel(true);
+        config.signals_based_traps(false);
+        // config.memory_guard_size(0);
+        // config.memory_reservation(0);
+        // config.memory_reservation_for_growth(0);
+        // config.host_memory_creator(MyMemoryCreator{});
         return config;
     }
 

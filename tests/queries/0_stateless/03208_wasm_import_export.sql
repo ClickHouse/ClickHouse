@@ -36,7 +36,8 @@ SELECT test_host_api(materialize(1) :: UInt32) SETTINGS log_comment = '03208_was
 
 DROP FUNCTION IF EXISTS test_host_api;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS text_log;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT count() >= 1
 FROM system.text_log
@@ -49,7 +50,7 @@ WHERE event_date >= yesterday() AND query_id = (
     ORDER BY event_time DESC
     LIMIT 1
 )
-AND message LIKE 'Hello, ClickHouse%' || substring(replace(version(), '.', '%'), 1, 6) || '%!'
+AND message LIKE 'Hello, ClickHouse%' || (SELECT value FROM system.build_options WHERE name = 'VERSION_INTEGER') || '%!'
 ;
 
 SELECT exception LIKE '%Goodbye, ClickHouse%'

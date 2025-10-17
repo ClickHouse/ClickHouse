@@ -110,7 +110,6 @@ do
     if [[ "$dependency" == *"ring"* ]]; then continue; fi
     if [[ "$dependency" == *"ocaml-sys"* ]]; then continue; fi
     if [[ "$dependency" == *"fxhash"* ]]; then continue; fi
-    if [[ "$dependency" == *"wast"* ]]; then continue; fi
 
     FOLDER=$(dirname "$dependency")
 
@@ -162,13 +161,14 @@ do
            [ "$LICENSE_TYPE" == "MIT/Apache-2.0" ] ||
            [ "$LICENSE_TYPE" == "MIT OR Apache-2.0 OR LGPL-2.1-or-later" ] ||
            [ "$LICENSE_TYPE" == "Apache-2.0 OR BSL-1.0 OR MIT" ] ||
-           [ "$LICENSE_TYPE" == "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT" ];
+           [ "$LICENSE_TYPE" == "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT" ] ||
+           [ "$LICENSE_TYPE" == "Apache-2.0 WITH LLVM-exception" ];
         then
             LICENSE_PATH="/utils/list-licenses/Apache-2.0.txt"
         elif [ "$LICENSE_TYPE" == "MIT" ]
         then
             LICENSE_PATH="/utils/list-licenses/MIT.txt"
-        elif [ "$LICENSE_TYPE" == "MPL-2.0" ] ||  [ "$LICENSE_TYPE" == "MPL-2.0+" ]
+        elif [ "$LICENSE_TYPE" == "MPL-2.0" ] || [ "$LICENSE_TYPE" == "MPL-2.0+" ];
         then
             LICENSE_PATH="/utils/list-licenses/MPL-2.0.txt"
         elif [ "$LICENSE_TYPE" == "BSD-3-Clause" ]
