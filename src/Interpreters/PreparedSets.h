@@ -174,7 +174,11 @@ private:
 
     std::unique_ptr<QueryPlan> source;
     QueryTreeNodePtr query_tree;
+
+    size_t object_id;
+    static size_t class_counter;
 };
+
 
 using FutureSetFromSubqueryPtr = std::shared_ptr<FutureSetFromSubquery>;
 

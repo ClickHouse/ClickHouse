@@ -178,26 +178,26 @@ ManifestFilesPruner::ManifestFilesPruner(
     }
 
 
-    if (manifest_file.hasBoundsInfoInManifests() && transformed_dag != nullptr)
-    {
-        {
-            const auto & bounded_colums = manifest_file.getColumnsIDsWithBounds();
-            for (Int32 used_column_id : used_columns_in_filter)
-            {
-                if (!bounded_colums.contains(used_column_id))
-                    continue;
+    // if (manifest_file.hasBoundsInfoInManifests() && transformed_dag != nullptr)
+    // {
+    //     {
+    //         const auto & bounded_colums = manifest_file.getColumnsIDsWithBounds();
+    //         for (Int32 used_column_id : used_columns_in_filter)
+    //         {
+    //             if (!bounded_colums.contains(used_column_id))
+    //                 continue;
 
-                NameAndTypePair name_and_type = schema_processor.getFieldCharacteristics(manifest_schema_id, used_column_id);
-                name_and_type.name = DB::backQuote(DB::toString(used_column_id));
+    //             NameAndTypePair name_and_type = schema_processor.getFieldCharacteristics(manifest_schema_id, used_column_id);
+    //             name_and_type.name = DB::backQuote(DB::toString(used_column_id));
 
-                ExpressionActionsPtr expression = std::make_shared<ExpressionActions>(
-                    ActionsDAG({name_and_type}), ExpressionActionsSettings(context));
+    //             ExpressionActionsPtr expression = std::make_shared<ExpressionActions>(
+    //                 ActionsDAG({name_and_type}), ExpressionActionsSettings(context));
 
-                ActionsDAGWithInversionPushDown inverted_dag(transformed_dag->getOutputs().front(), context);
-                min_max_key_conditions.emplace(used_column_id, KeyCondition(inverted_dag, context, {name_and_type.name}, expression));
-            }
-        }
-    }
+    //             ActionsDAGWithInversionPushDown inverted_dag(transformed_dag->getOutputs().front(), context);
+    //             min_max_key_conditions.emplace(used_column_id, KeyCondition(inverted_dag, context, {name_and_type.name}, expression));
+    //         }
+    //     }
+    // }
 }
 
 bool ManifestFilesPruner::canBePruned(const ManifestFileEntry & entry) const

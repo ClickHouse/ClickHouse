@@ -60,7 +60,7 @@ void ReadFromObjectStorageStep::applyFilters(ActionDAGNodes added_filter_nodes)
 {
     LOG_DEBUG(&Poco::Logger::get("ApplyFilters"), "Applying filters to ReadFromObjectStorageStep");
     SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
-    createIterator();
+    // createIterator();
 }
 
 void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)

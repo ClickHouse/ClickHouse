@@ -21,6 +21,9 @@
 
 namespace DB
 {
+
+size_t FutureSetFromSubquery::class_counter = 0;
+
 namespace Setting
 {
     extern const SettingsUInt64 max_bytes_in_set;
@@ -68,6 +71,10 @@ DataTypes FutureSetFromStorage::getTypes() const { return set->getElementsTypes(
 
 SetPtr FutureSetFromStorage::buildOrderedSetInplace(const ContextPtr &)
 {
+    LOG_DEBUG(
+        &Poco::Logger::get("FutureSetFromStorage"),
+        "Building ordered set inplace from storage. Has explicit elements: {}",
+        set->hasExplicitSetElements());
     return set->hasExplicitSetElements() ? set : nullptr;
 }
 
@@ -121,6 +128,10 @@ Columns FutureSetFromTuple::getKeyColumns()
 
 SetPtr FutureSetFromTuple::buildOrderedSetInplace(const ContextPtr & context)
 {
+    LOG_DEBUG(
+        &Poco::Logger::get("FutureSetFromTuple"),
+        "Building ordered set inplace from tuple. Has explicit elements: {}",
+        set->hasExplicitSetElements());
     if (set->hasExplicitSetElements())
         return set;
 
@@ -146,8 +157,18 @@ FutureSetFromSubquery::FutureSetFromSubquery(
     bool transform_null_in,
     SizeLimits size_limits,
     size_t max_size_for_index)
-    : hash(hash_), ast(std::move(ast_)), external_table(std::move(external_table_)), external_table_set(std::move(external_table_set_)), source(std::move(source_))
+    : hash(hash_)
+    , ast(std::move(ast_))
+    , external_table(std::move(external_table_))
+    , external_table_set(std::move(external_table_set_))
+    , source(std::move(source_))
+    , object_id(class_counter++)
 {
+    LOG_DEBUG(
+        &Poco::Logger::get("FutureSetFromSubquery::FutureSetFromSubquery, big ctr"),
+        "object_id: {}, stacktrace: {}",
+        object_id,
+        StackTrace().toString());
     set_and_key = std::make_shared<SetAndKey>();
     set_and_key->key = PreparedSets::toString(hash_, {});
 
@@ -156,14 +177,17 @@ FutureSetFromSubquery::FutureSetFromSubquery(
 }
 
 FutureSetFromSubquery::FutureSetFromSubquery(
-    Hash hash_,
-    ASTPtr ast_,
-    QueryTreeNodePtr query_tree_,
-    bool transform_null_in,
-    SizeLimits size_limits,
-    size_t max_size_for_index)
-    : hash(hash_), ast(std::move(ast_)), query_tree(std::move(query_tree_))
+    Hash hash_, ASTPtr ast_, QueryTreeNodePtr query_tree_, bool transform_null_in, SizeLimits size_limits, size_t max_size_for_index)
+    : hash(hash_)
+    , ast(std::move(ast_))
+    , query_tree(std::move(query_tree_))
+    , object_id(class_counter++)
 {
+    LOG_DEBUG(
+        &Poco::Logger::get("FutureSetFromSubquery::FutureSetFromSubquery, small ctr"),
+        "Setting query plan for FutureSetFromSubquery, object_id: {}, stacktrace: {}",
+        object_id,
+        StackTrace().toString());
     set_and_key = std::make_shared<SetAndKey>();
     set_and_key->key = PreparedSets::toString(hash_, {});
     set_and_key->set = std::make_shared<Set>(size_limits, max_size_for_index, transform_null_in);
@@ -181,6 +205,12 @@ SetPtr FutureSetFromSubquery::get() const
 
 void FutureSetFromSubquery::setQueryPlan(std::unique_ptr<QueryPlan> source_)
 {
+    LOG_DEBUG(
+        &Poco::Logger::get("FutureSetFromSubquery::setQueryPlan"),
+        "Setting query plan for FutureSetFromSubquery, source is nullptr: {}, object_id: {}, stacktrace: {}",
+        source_ == nullptr,
+        object_id,
+        StackTrace().toString());
     source = std::move(source_);
     set_and_key->set->setHeader(source->getCurrentHeader().getColumnsWithTypeAndName());
 }
@@ -196,22 +226,33 @@ FutureSet::Hash FutureSetFromSubquery::getHash() const { return hash; }
 
 std::unique_ptr<QueryPlan> FutureSetFromSubquery::build(const SizeLimits & network_transfer_limits, const PreparedSetsCachePtr & prepared_sets_cache)
 {
+    LOG_DEBUG(&Poco::Logger::get("FutureSetFromSubquery::build"), "Object id: {}, Stacktrace: {}", object_id, StackTrace().toString());
     if (set_and_key->set->isCreated())
+    {
+        LOG_DEBUG(&Poco::Logger::get("FutureSetFromSubquery::build"), "Set is already created.");
+
         return nullptr;
+    }
+
+    LOG_DEBUG(&Poco::Logger::get("FutureSetFromSubquery::build"), "Building set from subquery");
 
     auto plan = std::move(source);
 
     if (!plan)
+    {
+        LOG_DEBUG(&Poco::Logger::get("FutureSetFromSubquery::build"), "There is no plan to build set from subquery.");
         return nullptr;
+    }
+
+    LOG_DEBUG(&Poco::Logger::get("FutureSetFromSubquery::build"), "Building set from subquery (plan exists)");
+
 
     auto creating_set = std::make_unique<CreatingSetStep>(
-        plan->getCurrentHeader(),
-        set_and_key,
-        external_table,
-        network_transfer_limits,
-        prepared_sets_cache);
+        plan->getCurrentHeader(), set_and_key, external_table, network_transfer_limits, prepared_sets_cache);
     creating_set->setStepDescription("Create set for subquery");
     plan->addStep(std::move(creating_set));
+    LOG_DEBUG(&Poco::Logger::get("FutureSetFromSubquery::build"), "Creating set step added to plan.");
+
     return plan;
 }
 
@@ -239,22 +280,31 @@ void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
 
 SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
 {
+    LOG_DEBUG(&Poco::Logger::get("FutureSetFromSubquery::buildOrderedSetInplace"), "Building ordered set inplace from subquery");
+
     if (!context->getSettingsRef()[Setting::use_index_for_in_with_subqueries])
         return nullptr;
+    LOG_DEBUG(&Poco::Logger::get("FutureSetFromSubquery::buildOrderedSetInplace"), "Good setting");
 
     if (auto set = get())
     {
+        LOG_DEBUG(&Poco::Logger::get("FutureSetFromSubquery::buildOrderedSetInplace"), "Set is got.");
         if (set->hasExplicitSetElements())
             return set;
+
 
         return nullptr;
     }
 
     if (external_table_set)
     {
+        LOG_DEBUG(&Poco::Logger::get("FutureSetFromSubquery::buildOrderedSetInplace"), "In external_table_set.");
+
         auto set = external_table_set->buildOrderedSetInplace(context);
         if (set)
         {
+            LOG_DEBUG(&Poco::Logger::get("FutureSetFromSubquery::buildOrderedSetInplace"), "Managed to built from external set.");
+
             set_and_key->set = set;
             return set_and_key->set;
         }
@@ -266,7 +316,14 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
 
     auto plan = build(network_transfer_limits, prepared_sets_cache);
     if (!plan)
+    {
+        LOG_DEBUG(&Poco::Logger::get("FutureSetFromSubquery::buildOrderedSetInplace"), "No plan to build.");
         return nullptr;
+    }
+    else
+    {
+        LOG_DEBUG(&Poco::Logger::get("FutureSetFromSubquery::buildOrderedSetInplace"), "Plan to build exists.");
+    }
 
     set_and_key->set->fillSetElements();
     auto builder = plan->buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
@@ -280,7 +337,13 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     /// timeout_overflow_mode set to `break`, no exception is thrown, and the executor just stops executing
     /// the pipeline without setting `set_and_key->set->is_created` to true.
     if (!set_and_key->set->isCreated())
+    {
+        LOG_DEBUG(&Poco::Logger::get("FutureSetFromSubquery::buildOrderedSetInplace"), "Set is not created after executing the pipeline.");
         return nullptr;
+    }
+
+    LOG_DEBUG(&Poco::Logger::get("FutureSetFromSubquery::buildOrderedSetInplace"), "Set is created after executing the pipeline.");
+
 
     logProcessorProfile(context, pipeline.getProcessors());
 

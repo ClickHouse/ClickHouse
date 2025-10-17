@@ -27,6 +27,10 @@
 
 #include <Storages/KeyDescription.h>
 
+#include <Storages/MergeTree/MergeTreeIndexBloomFilter.h>
+#include <Storages/MergeTree/MergeTreeIndexBloomFilterText.h>
+#include <Storages/MergeTree/MergeTreeIndexGin.h>
+#include <Storages/Statistics/ConditionSelectivityEstimator.h>
 
 namespace DB
 {
@@ -538,7 +542,14 @@ void RPNBuilder<RPNElement>::traverseTree(const RPNBuilderTreeNode & node)
     }
 
     if (!extract_atom_from_tree_function(node, element))
+    {
         element.function = RPNElement::FUNCTION_UNKNOWN;
+        LOG_DEBUG(&Poco::Logger::get("RPNBuilder"), "Did not extract atom from tree: {}", element.function);
+    }
+    else
+    {
+        LOG_DEBUG(&Poco::Logger::get("RPNBuilder"), "Extracted atom from tree: {}", element.function);
+    }
 
     rpn_elements.emplace_back(std::move(element));
 }
@@ -575,5 +586,6 @@ bool RPNBuilder<RPNElement>::extractLogicalOperatorFromTree(const RPNBuilderFunc
 template class RPNBuilder<KeyCondition::RPNElement>;
 template class RPNBuilder<ConditionSelectivityEstimator::RPNElement>;
 template class RPNBuilder<MergeTreeConditionBloomFilterText::RPNElement>;
+template class RPNBuilder<MergeTreeIndexConditionBloomFilter::RPNElement>;
 template class RPNBuilder<MergeTreeIndexConditionGin::RPNElement>;
 }

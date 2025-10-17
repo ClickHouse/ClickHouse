@@ -56,6 +56,20 @@ namespace Setting
     extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
 }
 
+bool return_from_f(bool val, size_t line)
+{
+    LOG_DEBUG(
+        &Poco::Logger::get("Rapapapapa"),
+        "KeyCondition::extractAtomFromTree returning: {}, at line {}, StackTrace: {}",
+        val,
+        line,
+        StackTrace().toString());
+    return val;
+}
+
+#define return_from(val) return_from_f(val, __LINE__)
+
+
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
@@ -1331,21 +1345,29 @@ bool KeyCondition::tryPrepareSetIndex(
     }
 
     if (indexes_mapping.empty())
-        return false;
+        return return_from(false);
 
     const auto right_arg = func.getArgumentAt(1);
 
     auto future_set = right_arg.tryGetPreparedSet();
     if (!future_set)
-        return false;
+        return return_from(false);
+
 
     auto prepared_set = future_set->buildOrderedSetInplace(right_arg.getTreeContext().getQueryContext());
+
+    LOG_DEBUG(
+        &Poco::Logger::get("KeyCondition"),
+        "Trying to use Set index for KeyCondition. Set prepared: {}, has explicit elements: {}",
+        (prepared_set != nullptr),
+        (prepared_set ? prepared_set->hasExplicitSetElements() : false));
+
     if (!prepared_set)
-        return false;
+        return return_from(false);
 
     /// The index can be prepared if the elements of the set were saved in advance.
     if (!prepared_set->hasExplicitSetElements())
-        return false;
+        return return_from(false);
 
     /** Try to convert set columns to primary key columns.
       * Example: SELECT id FROM test_table WHERE id IN (SELECT 1);
@@ -1377,7 +1399,7 @@ bool KeyCondition::tryPrepareSetIndex(
                 }
             }
             if (!has_tuple)
-                return false;
+                return return_from(false);
 
             set_columns.swap(new_columns);
             set_types.swap(new_types);
@@ -1408,7 +1430,7 @@ bool KeyCondition::tryPrepareSetIndex(
                     set_transforming_chains[indexes_mapping_index],
                     transformed_set_column,
                     transformed_set_type))
-                return false;
+                return return_from(false);
 
             set_column = transformed_set_column;
             set_element_type = transformed_set_type;
@@ -1422,7 +1444,8 @@ bool KeyCondition::tryPrepareSetIndex(
         }
 
         if (!key_column_type->canBeInsideNullable())
-            return false;
+            return return_from(false);
+
 
         const NullMap * set_column_null_map = nullptr;
 
@@ -1442,7 +1465,7 @@ bool KeyCondition::tryPrepareSetIndex(
             // Obtain the nullable column without reassigning set_column immediately
             const auto * set_column_nullable = typeid_cast<const ColumnNullable *>(transformed_set_columns[set_element_index].get());
             if (!set_column_nullable)
-                return false;
+                return return_from(false);
 
             const NullMap & null_map_data = set_column_nullable->getNullMapData();
             if (!null_map_data.empty())
@@ -1457,7 +1480,7 @@ bool KeyCondition::tryPrepareSetIndex(
         ColumnPtr nullable_set_column = castColumnAccurateOrNull({set_column, set_element_type, {}}, key_column_type);
         const auto * nullable_set_column_typed = typeid_cast<const ColumnNullable *>(nullable_set_column.get());
         if (!nullable_set_column_typed)
-            return false;
+            return return_from(false);
 
         const NullMap & nullable_set_column_null_map = nullable_set_column_typed->getNullMapData();
         size_t nullable_set_column_null_map_size = nullable_set_column_null_map.size();
@@ -1497,7 +1520,7 @@ bool KeyCondition::tryPrepareSetIndex(
     if (indexes_mapping_size < set_types_size || out.set_index->size() > 1)
         relaxed = true;
 
-    return true;
+    return return_from(true);
 }
 
 
@@ -1991,16 +2014,30 @@ KeyCondition::RPNElement::RPNElement(Function function_, size_t key_column_, con
 {
 }
 
+// #define RETURN(val) \
+//     do \
+//     { \
+//         int __ret_val = (val); \
+//         LOG_DEBUG( \
+//             &Poco::Logger::get("kek"), \
+//             "KeyCondition::extractAtomFromTree returning: {}, at line {}, StackTrace: {}", \
+//             __ret_val, \
+//             __LINE__, \
+//             StackTrace().toString()); \
+//         return __ret_val; \
+//     } while (0)
 
 bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out)
 {
+    LOG_DEBUG(
+        &Poco::Logger::get("Pupupupu"), "Extracting atom from node: {}, {}", node.getColumnName(), node.getColumnNameWithModuloLegacy());
     const auto * node_dag = node.getDAGNode();
     if (node_dag && node_dag->result_type->equals(DataTypeNullable(std::make_shared<DataTypeNothing>())))
     {
         /// If the inferred result type is Nullable(Nothing) at the query analysis stage,
         /// we don't analyze this node further as its condition will always be false.
         out.function = RPNElement::ALWAYS_FALSE;
-        return true;
+        return return_from(true);
     }
 
     /** Functions < > = != <= >= in `notIn` isNull isNotNull, where one argument is a constant, and the other is one of columns of key,
@@ -2032,15 +2069,15 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
         std::string func_name = func.getFunctionName();
 
         if (atom_map.find(func_name) == std::end(atom_map))
-            return false;
+            return return_from(false);
 
         auto analyze_point_in_polygon = [&, this]() -> bool
         {
             /// pointInPolygon((x, y), [(0, 0), (8, 4), (5, 8), (0, 2)])
             if (func.getArgumentAt(0).tryGetConstant(const_value, const_type))
-                return false;
+                return return_from(false);
             if (!func.getArgumentAt(1).tryGetConstant(const_value, const_type))
-                return false;
+                return return_from(false);
 
             const auto atom_it = atom_map.find(func_name);
 
@@ -2050,18 +2087,18 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
 
             /// TODO: support index analysis for first argument of Point/Tuple type.
             if (!func.getArgumentAt(0).isFunction())
-                return false;
+                return return_from(false);
 
             auto first_argument = func.getArgumentAt(0).toFunctionNode();
             if (first_argument.getArgumentsSize() != 2 || first_argument.getFunctionName() != "tuple")
-                return false;
+                return return_from(false);
 
             for (size_t i = 0; i < 2; ++i)
             {
                 auto name = first_argument.getArgumentAt(i).getColumnName();
                 auto it = key_columns.find(name);
                 if (it == key_columns.end())
-                    return false;
+                    return return_from(false);
                 column_desc.key_columns.push_back(name);
                 column_desc.key_column_positions.push_back(key_columns[name]);
             }
@@ -2072,18 +2109,18 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
             for (const auto & elem : const_value.safeGet<Array>())
             {
                 if (elem.getType() != Field::Types::Tuple)
-                    return false;
+                    return return_from(false);
 
                 const auto & elem_tuple = elem.safeGet<Tuple>();
                 if (elem_tuple.size() != 2)
-                    return false;
+                    return return_from(false);
 
                 auto x = applyVisitor(FieldVisitorConvertToNumber<Float64>(), elem_tuple[0]);
                 auto y = applyVisitor(FieldVisitorConvertToNumber<Float64>(), elem_tuple[1]);
                 out.polygon->data.outer().push_back({x, y});
             }
             boost::geometry::correct(out.polygon->data);
-            return atom_it->second(out, const_value);
+            return return_from(atom_it->second(out, const_value));
         };
 
         bool allow_constant_transformation = !no_relaxed_atom_functions.contains(func_name);
@@ -2091,7 +2128,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
         {
             if (!(isKeyPossiblyWrappedByMonotonicFunctions(
                 func.getArgumentAt(0), key_column_num, argument_num_of_space_filling_curve, key_expr_type, chain)))
-                return false;
+                return return_from(false);
 
             if (key_column_num == static_cast<size_t>(-1))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "`key_column_num` wasn't initialized. It is a bug.");
@@ -2110,12 +2147,12 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
                     is_set_const = true;
                 }
                 else
-                    return false;
+                    return return_from(false);
             }
             else if (func_name == "pointInPolygon")
             {
                 /// Case1 no holes in polygon
-                return analyze_point_in_polygon();
+                return return_from(analyze_point_in_polygon());
             }
             else if (func.getArgumentAt(1).tryGetConstant(const_value, const_type))
             {
@@ -2123,7 +2160,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
                 if (const_value.isNull())
                 {
                     out.function = RPNElement::ALWAYS_FALSE;
-                    return true;
+                    return return_from(true);
                 }
 
                 if (isKeyPossiblyWrappedByMonotonicFunctions(
@@ -2152,7 +2189,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
                     is_constant_transformed = true;
                 }
                 else
-                    return false;
+                    return return_from(false);
             }
             else if (func.getArgumentAt(0).tryGetConstant(const_value, const_type))
             {
@@ -2160,7 +2197,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
                 if (const_value.isNull())
                 {
                     out.function = RPNElement::ALWAYS_FALSE;
-                    return true;
+                    return return_from(true);
                 }
 
                 if (isKeyPossiblyWrappedByMonotonicFunctions(
@@ -2189,10 +2226,10 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
                     is_constant_transformed = true;
                 }
                 else
-                    return false;
+                    return return_from(false);
             }
             else
-                return false;
+                return return_from(false);
 
             if (key_column_num == static_cast<size_t>(-1))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "`key_column_num` wasn't initialized. It is a bug.");
@@ -2214,7 +2251,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
                          func_name == "startsWith" || func_name == "match")
                 {
                     /// "const IN data_column" doesn't make sense (unlike "data_column IN const")
-                    return false;
+                    return return_from(false);
                 }
             }
 
@@ -2239,21 +2276,21 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
                 {
                     const_value = convertFieldToType(const_value, *key_expr_type_not_null);
                     if (const_value.isNull())
-                        return false;
+                        return return_from(false);
                     // No need to set is_constant_transformed because we're doing exact conversion
                 }
                 else
                 {
                     DataTypePtr common_type = tryGetLeastSupertype(DataTypes{key_expr_type_not_null, const_type});
                     if (!common_type)
-                        return false;
+                        return return_from(false);
 
                     if (!const_type->equals(*common_type))
                     {
                         // Replace direct call that throws exception with try version
                         Field converted = tryConvertFieldToType(const_value, *common_type, const_type.get(), {});
                         if (converted.isNull())
-                            return false;
+                            return return_from(false);
 
                         const_value = converted;
 
@@ -2271,7 +2308,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
 
                         /// If we know the given range only contains one value, then we treat all functions as positive monotonic.
                         if (!single_point && !func_cast->hasInformationAboutMonotonicity())
-                            return false;
+                            return return_from(false);
                         chain.push_back(func_cast);
                     }
                 }
@@ -2294,11 +2331,13 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
             if (func_name == "pointInPolygon")
             {
                 /// Case2 has holes in polygon, when checking skip index, the hole will be ignored.
-                return analyze_point_in_polygon();
+                return return_from(analyze_point_in_polygon());
             }
 
-            return false;
+            return return_from(false);
         }
+
+        LOG_DEBUG(&Poco::Logger::get("Rere"), "Extracted atom function name: {}", func_name);
 
         const auto atom_it = atom_map.find(func_name);
 
@@ -2309,7 +2348,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
         bool valid_atom = atom_it->second(out, const_value);
         if (valid_atom && out.relaxed)
             relaxed = true;
-        return valid_atom;
+        return return_from(valid_atom);
     }
     if (node.tryGetConstant(const_value, const_type))
     {
@@ -2318,20 +2357,20 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
         if (const_value.getType() == Field::Types::UInt64)
         {
             out.function = const_value.safeGet<UInt64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
-            return true;
+            return return_from(true);
         }
         if (const_value.getType() == Field::Types::Int64)
         {
             out.function = const_value.safeGet<Int64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
-            return true;
+            return return_from(true);
         }
         if (const_value.getType() == Field::Types::Float64)
         {
             out.function = const_value.safeGet<Float64>() != 0.0 ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
-            return true;
+            return return_from(true);
         }
     }
-    return false;
+    return return_from(false);
 }
 
 
