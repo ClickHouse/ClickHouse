@@ -181,16 +181,14 @@ Tuple SerializationQBit::deserializeFloatsToQBitTuple(ReadBuffer & istr) const
     for (size_t col_idx = 0; col_idx < element_size; ++col_idx)
         plane_ptrs[col_idx] = reinterpret_cast<char *>(planes[col_idx].data());
 
-    size_t i = 0;
+    Word w;
+    FloatType v;
 
-    while (i < dimension)
+    for (size_t i = 0; i < dimension; i++)
     {
-        Word w = 0;
-        FloatType v;
         readFloatBinary(v, istr);
         std::memcpy(&w, &v, sizeof(Word));
         transposeBits<Word>(w, i, total_bits, plane_ptrs.data());
-        i++;
     }
 
     Tuple tuple_elements;
@@ -312,11 +310,7 @@ void SerializationQBit::serializeText(const IColumn & column, size_t row_num, Wr
     };
 
     writeChar('[', ostr);
-    dispatchByElementSize(
-        [&]<typename FloatType>()
-        {
-            serializeFloatsFromQBit<FloatType>(column, row_num, write_text);
-        });
+    dispatchByElementSize([&]<typename FloatType>() { serializeFloatsFromQBit<FloatType>(column, row_num, write_text); });
     writeChar(']', ostr);
 }
 
