@@ -1196,7 +1196,7 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node)
             fixed_columns,
             dag, keys);
 
-        if (!canImproveOrderForDistinct(order_info, object_storage_step->getInputOrder()))
+        if (!canImproveOrderForDistinct(order_info, object_storage_step->getDataOrder()))
             return {};
 
         if (!object_storage_step->requestReadingInOrder(order_info.input_order))

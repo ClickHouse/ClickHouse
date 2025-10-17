@@ -40,7 +40,8 @@ public:
 
     bool requestReadingInOrder(InputOrderInfoPtr order_info_) const;
 
-    InputOrderInfoPtr getInputOrder() const;
+    // The name of classs is misleading, this order has nothing in common with corresponding SELECT query 
+    InputOrderInfoPtr getDataOrder() const;
 
 private:
     ObjectStoragePtr object_storage;

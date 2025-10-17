@@ -166,10 +166,10 @@ static InputOrderInfoPtr convertSortingKeyToInputOrder(const KeyDescription & ke
 
 bool ReadFromObjectStorageStep::requestReadingInOrder(InputOrderInfoPtr order_info_) const
 {
-    return isPrefixInputOrder(order_info_, getInputOrder());
+    return isPrefixInputOrder(order_info_, getDataOrder());
 }
 
-InputOrderInfoPtr ReadFromObjectStorageStep::getInputOrder() const
+InputOrderInfoPtr ReadFromObjectStorageStep::getDataOrder() const
 {
     return convertSortingKeyToInputOrder(getStorageMetadata()->getSortingKey());
 }
