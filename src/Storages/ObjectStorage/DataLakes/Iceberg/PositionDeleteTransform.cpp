@@ -145,7 +145,7 @@ void IcebergBitmapPositionDeleteTransform::transform(Chunk & chunk)
 
     auto chunk_info = chunk.getChunkInfos().get<ChunkInfoRowNumbers>();
     if (!chunk_info)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ChunkInfoRowNumbers does not exist");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ChunkInfoRowNumbers does not exist. Please ensure ChunkInfoRowNumbers is propagated through the pipeline. This is required for position-based delete operations in Iceberg tables.");
 
     size_t row_num_offset = chunk_info->row_num_offset;
     auto & applied_filter = chunk_info->applied_filter;
@@ -251,7 +251,7 @@ void IcebergStreamingPositionDeleteTransform::transform(Chunk & chunk)
     size_t num_rows_after_filtration = chunk.getNumRows();
     auto chunk_info = chunk.getChunkInfos().get<ChunkInfoRowNumbers>();
     if (!chunk_info)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ChunkInfoRowNumbers does not exist");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ChunkInfoRowNumbers does not exist in streaming position delete transform. Please ensure ChunkInfoRowNumbers is added to chunks in the pipeline before the transform.");
 
     size_t num_indices = chunk_info->applied_filter.has_value() ? chunk_info->applied_filter->size() : chunk.getNumRows();
 
