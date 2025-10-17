@@ -117,7 +117,7 @@ size_t SerializationQBit::validateAndReadQBitSize(ReadBuffer & istr, const Forma
     size_t size;
     readVarUInt(size, istr);
 
-    if (settings.binary.max_binary_string_size && size > settings.binary.max_binary_string_size)
+    if (settings.binary.max_binary_array_size && size > settings.binary.max_binary_array_size)
         throw Exception(
             ErrorCodes::TOO_LARGE_ARRAY_SIZE,
             "Too large array size: {}. The maximum is: {}. To increase the maximum, use setting "
