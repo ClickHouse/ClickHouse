@@ -4,9 +4,12 @@
 #include <ranges>
 
 #include <Backups/BackupEntriesCollector.h>
+#include <Core/BackgroundSchedulePool.h>
+#include <Core/Names.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
 #include <Databases/IDatabase.h>
+#include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/copyData.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
@@ -24,6 +27,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
+#include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/Compaction/CompactionStatistics.h>
 #include <Storages/MergeTree/Compaction/ConstructFuturePart.h>
 #include <Storages/MergeTree/Compaction/MergePredicates/MergeTreeMergePredicate.h>
@@ -35,12 +39,11 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeSink.h>
+#include <Storages/MergeTree/MergeTreeSinkPatch.h>
+#include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/buildQueryTreeForShard.h>
-#include <Storages/MergeTree/MergeTreeSinkPatch.h>
-#include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
-#include <Storages/MergeTree/AlterConversions.h>
 #include <fmt/core.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
@@ -48,8 +51,6 @@
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/escapeForFileName.h>
-#include <Core/BackgroundSchedulePool.h>
-#include <Core/Names.h>
 
 
 namespace ProfileEvents
@@ -188,6 +189,21 @@ StorageMergeTree::StorageMergeTree(
         getActivePartsLoadingThreadPool().get(),
         getMarkCacheToPrewarm(0),
         getPrimaryIndexCacheToPrewarm(0));
+
+    auto disks = getDisks();
+    support_transaction = true;
+    for (auto & disk : disks)
+    {
+        if (auto * object_storage = dynamic_cast<DiskObjectStorage *>(disk.get()))
+        {
+            if (!object_storage->getMetadataStorage()->supportWritingWithAppend())
+            {
+                LOG_DEBUG(log, "Disk {} does not support writing with append", object_storage->getName());
+                support_transaction = false;
+                break;
+            }
+        }
+    }
 }
 
 
