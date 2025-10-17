@@ -7,6 +7,10 @@ from minio.deleteobjects import DeleteObject
 import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster, is_arm
 
+import time
+
+import logging
+
 if is_arm():
     pytestmark = pytest.mark.skip
 
@@ -140,10 +144,7 @@ def test_logs_with_disks(started_cluster):
         for _ in range(30):
             node_zk.create("/test/somenode", b"somedata", sequence=True)
 
-        node_logs.wait_for_log_line(
-            "Removed changelog changelog_25_27.bin because of compaction",
-            look_behind_lines=1000,
-        )
+        node_logs.wait_for_log_line("Removed changelog changelog_25_27.bin because of compaction")
 
         stop_zk(node_zk)
 
@@ -158,17 +159,25 @@ def test_logs_with_disks(started_cluster):
             cleanup_disks=False,
         )
 
-        node_logs.wait_for_log_line(
-            "KeeperLogStore: Continue to write into changelog_34_36.bin",
-            look_behind_lines=2000,
-        )
+        node_logs.wait_for_log_line("KeeperLogStore: Continue to write into changelog_34_36.bin")
+
+        def get_single_local_log_file():
+            local_log_files = get_local_logs(node_logs)
+            start_time = time.time()
+            while len(local_log_files) != 1:
+                logging.debug(f"Local log files: {local_log_files}")
+                assert (
+                    time.time() - start_time < 60
+                ), "local_log_files size is not equal to 1 after 60s"
+                time.sleep(1)
+                local_log_files = get_local_logs(node_logs)
+            return local_log_files
 
         # all but the latest log should be on S3
+        local_log_files = get_single_local_log_file()
+        assert local_log_files[0] == previous_log_files[-1]
         s3_log_files = list_s3_objects(started_cluster, "logs/")
         assert set(s3_log_files) == set(previous_log_files[:-1])
-        local_log_files = get_local_logs(node_logs)
-        assert len(local_log_files) == 1
-        assert local_log_files[0] == previous_log_files[-1]
 
         previous_log_files = s3_log_files + local_log_files
 
@@ -179,9 +188,8 @@ def test_logs_with_disks(started_cluster):
 
         stop_zk(node_zk)
 
+        local_log_files = get_single_local_log_file()
         log_files = list_s3_objects(started_cluster, "logs/")
-        local_log_files = get_local_logs(node_logs)
-        assert len(local_log_files) == 1
 
         log_files.extend(local_log_files)
         assert set(log_files) != previous_log_files
@@ -221,9 +229,7 @@ def test_snapshots_with_disks(started_cluster):
         stop_zk(node_zk)
 
         snapshot_idx = keeper_utils.send_4lw_cmd(cluster, node_snapshot, "csnp")
-        node_snapshot.wait_for_log_line(
-            f"Created persistent snapshot {snapshot_idx}", look_behind_lines=1000
-        )
+        node_snapshot.wait_for_log_line(f"Created persistent snapshot {snapshot_idx}")
 
         previous_snapshot_files = get_local_snapshots(node_snapshot)
 
@@ -253,9 +259,7 @@ def test_snapshots_with_disks(started_cluster):
         stop_zk(node_zk)
 
         snapshot_idx = keeper_utils.send_4lw_cmd(cluster, node_snapshot, "csnp")
-        node_snapshot.wait_for_log_line(
-            f"Created persistent snapshot {snapshot_idx}", look_behind_lines=1000
-        )
+        node_snapshot.wait_for_log_line(f"Created persistent snapshot {snapshot_idx}")
 
         snapshot_files = list_s3_objects(started_cluster, "snapshots/")
         local_snapshot_files = get_local_snapshots(node_snapshot)

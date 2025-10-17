@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Parsers/formatAST.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -12,7 +11,6 @@
 #include <Common/ThreadPool.h>
 #include <atomic>
 #include <memory>
-#include <chrono>
 #include <optional>
 #include <Interpreters/Cluster.h>
 

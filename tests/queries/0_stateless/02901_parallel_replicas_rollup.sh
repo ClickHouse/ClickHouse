@@ -6,18 +6,16 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 function were_parallel_replicas_used ()
 {
-    $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS"
+    $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
 
     # Not using current_database = '$CLICKHOUSE_DATABASE' as nested parallel queries aren't run with it
     $CLICKHOUSE_CLIENT --query "
         SELECT
             initial_query_id,
-            concat('Used parallel replicas: ', (countIf(initial_query_id != query_id) != 0)::bool::String) as used
+            'Used parallel replicas: ' || (ProfileEvents['ParallelReplicasUsedCount'] > 0)::bool::String
         FROM system.query_log
     WHERE event_date >= yesterday()
-      AND initial_query_id = '$1'
-    GROUP BY initial_query_id
-    ORDER BY min(event_time_microseconds) ASC
+      AND query_id = '$1' AND type = 'QueryFinish'
     FORMAT TSV"
 }
 

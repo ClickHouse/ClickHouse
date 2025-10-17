@@ -1,12 +1,13 @@
 ---
-slug: /engines/table-engines/mergetree-family/replication
+description: 'Overview of Data Replication in ClickHouse'
+sidebar_label: 'Data Replication'
 sidebar_position: 20
-sidebar_label: Data Replication
-title: "Data Replication"
-description: "Overview of Data Replication in ClickHouse"
+slug: /engines/table-engines/mergetree-family/replication
+title: 'Data Replication'
+doc_type: 'reference'
 ---
 
-# Data Replication
+# Data replication
 
 :::note
 In ClickHouse Cloud replication is managed for you. Please create your tables without adding arguments.  For example, in the text below you would replace:
@@ -14,8 +15,7 @@ In ClickHouse Cloud replication is managed for you. Please create your tables wi
 ```sql
 ENGINE = ReplicatedMergeTree(
     '/clickhouse/tables/{shard}/table_name',
-    '{replica}',
-    ver
+    '{replica}'
 )
 ```
 
@@ -40,7 +40,7 @@ Replication works at the level of an individual table, not the entire server. A 
 
 Replication does not depend on sharding. Each shard has its own independent replication.
 
-Compressed data for `INSERT` and `ALTER` queries is replicated (for more information, see the documentation for [ALTER](/sql-reference/statements/alter/index.md#query_language_queries_alter)).
+Compressed data for `INSERT` and `ALTER` queries is replicated (for more information, see the documentation for [ALTER](/sql-reference/statements/alter).
 
 `CREATE`, `DROP`, `ATTACH`, `DETACH` and `RENAME` queries are executed on a single server and are not replicated:
 
@@ -50,7 +50,7 @@ Compressed data for `INSERT` and `ALTER` queries is replicated (for more informa
 
 ClickHouse uses [ClickHouse Keeper](/guides/sre/keeper/index.md) for storing replicas meta information. It is possible to use ZooKeeper version 3.4.5 or newer, but ClickHouse Keeper is recommended.
 
-To use replication, set parameters in the [zookeeper](/operations/server-configuration-parameters/settings.md/#server-settings_zookeeper) server configuration section.
+To use replication, set parameters in the [zookeeper](/operations/server-configuration-parameters/settings#zookeeper) server configuration section.
 
 :::note
 Don't neglect the security setting. ClickHouse supports the `digest` [ACL scheme](https://zookeeper.apache.org/doc/current/zookeeperProgrammers.html#sc_ZooKeeperAccessControl) of the ZooKeeper security subsystem.
@@ -58,7 +58,7 @@ Don't neglect the security setting. ClickHouse supports the `digest` [ACL scheme
 
 Example of setting the addresses of the ClickHouse Keeper cluster:
 
-``` xml
+```xml
 <zookeeper>
     <node>
         <host>example1</host>
@@ -80,7 +80,7 @@ In other words, it supports storing the metadata of different tables in differen
 
 Example of setting the addresses of the auxiliary ZooKeeper cluster:
 
-``` xml
+```xml
 <auxiliary_zookeepers>
     <zookeeper2>
         <node>
@@ -123,7 +123,7 @@ For very large clusters, you can use different ZooKeeper clusters for different 
 
 Replication is asynchronous and multi-master. `INSERT` queries (as well as `ALTER`) can be sent to any available server. Data is inserted on the server where the query is run, and then it is copied to the other servers. Because it is asynchronous, recently inserted data appears on the other replicas with some latency. If part of the replicas are not available, the data is written when they become available. If a replica is available, the latency is the amount of time it takes to transfer the block of compressed data over the network. The number of threads performing background tasks for replicated tables can be set by [background_schedule_pool_size](/operations/server-configuration-parameters/settings.md/#background_schedule_pool_size) setting.
 
-`ReplicatedMergeTree` engine uses a separate thread pool for replicated fetches. Size of the pool is limited by the [background_fetches_pool_size](/operations/settings/settings.md/#background_fetches_pool_size) setting which can be tuned with a server restart.
+`ReplicatedMergeTree` engine uses a separate thread pool for replicated fetches. Size of the pool is limited by the [background_fetches_pool_size](/operations/server-configuration-parameters/settings#background_fetches_pool_size) setting which can be tuned with a server restart.
 
 By default, an INSERT query waits for confirmation of writing the data from only one replica. If the data was successfully written to only one replica and the server with this replica ceases to exist, the stored data will be lost. To enable getting confirmation of data writes from multiple replicas, use the `insert_quorum` option.
 
@@ -137,42 +137,28 @@ You can have any number of replicas of the same data. Based on our experiences, 
 
 The system monitors data synchronicity on replicas and is able to recover after a failure. Failover is automatic (for small differences in data) or semi-automatic (when data differs too much, which may indicate a configuration error).
 
-## Creating Replicated Tables {#creating-replicated-tables}
+## Creating replicated tables {#creating-replicated-tables}
 
 :::note
-In ClickHouse Cloud replication is managed for you. Please create your tables without adding arguments.  For example, in the text below you would replace:
-```sql
-ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/table_name', '{replica}', ver)
-```
-with:
-```sql
-ENGINE = ReplicatedMergeTree
-```
-:::
+In ClickHouse Cloud, replication is handled automatically.
 
-The `Replicated` prefix is added to the table engine name. For example:`ReplicatedMergeTree`.
+Create tables using [`MergeTree`](/engines/table-engines/mergetree-family/mergetree) without replication arguments. The system internally rewrites [`MergeTree`](/engines/table-engines/mergetree-family/mergetree) to [`SharedMergeTree`](/cloud/reference/shared-merge-tree) for replication and data distribution.
 
-:::tip
-Adding `Replicated` is optional in ClickHouse Cloud, as all of the tables are replicated.
+Avoid using `ReplicatedMergeTree` or specifying replication parameters, as replication is managed by the platform.
+
 :::
 
 ### Replicated\*MergeTree parameters {#replicatedmergetree-parameters}
 
-#### zoo_path {#zoo_path}
-
-`zoo_path` — The path to the table in ClickHouse Keeper.
-
-#### replica_name {#replica_name}
-
-`replica_name` — The replica name in ClickHouse Keeper.
-
-#### other_parameters {#other_parameters}
-
-`other_parameters` — Parameters of an engine which is used for creating the replicated version, for example, version in `ReplacingMergeTree`.
+| Parameter       | Description                                                                  |
+|-----------------|------------------------------------------------------------------------------|
+| `zoo_path`      | The path to the table in ClickHouse Keeper.                                  |
+| `replica_name`  | The replica name in ClickHouse Keeper.                                       |
+| `other_parameters` | Parameters of an engine used for creating the replicated version, for example, version in `ReplacingMergeTree`. |
 
 Example:
 
-``` sql
+```sql
 CREATE TABLE table_name
 (
     EventDate DateTime,
@@ -189,7 +175,7 @@ SAMPLE BY intHash32(UserID);
 
 <summary>Example in deprecated syntax</summary>
 
-``` sql
+```sql
 CREATE TABLE table_name
 (
     EventDate DateTime,
@@ -204,7 +190,7 @@ As the example shows, these parameters can contain substitutions in curly bracke
 
 Example:
 
-``` xml
+```xml
 <macros>
     <shard>02</shard>
     <replica>example05-02-1</replica>
@@ -239,18 +225,18 @@ You can specify default arguments for `Replicated` table engine in the server co
 
 In this case, you can omit arguments when creating tables:
 
-``` sql
+```sql
 CREATE TABLE table_name (
-	x UInt32
+    x UInt32
 ) ENGINE = ReplicatedMergeTree
 ORDER BY x;
 ```
 
 It is equivalent to:
 
-``` sql
+```sql
 CREATE TABLE table_name (
-	x UInt32
+    x UInt32
 ) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/{database}/table_name', '{replica}')
 ORDER BY x;
 ```
@@ -261,7 +247,7 @@ If you add a new replica after the table already contains some data on other rep
 
 To delete a replica, run `DROP TABLE`. However, only one replica is deleted – the one that resides on the server where you run the query.
 
-## Recovery After Failures {#recovery-after-failures}
+## Recovery after failures {#recovery-after-failures}
 
 If ClickHouse Keeper is unavailable when a server starts, replicated tables switch to read-only mode. The system periodically attempts to connect to ClickHouse Keeper.
 
@@ -279,13 +265,13 @@ If the local set of data differs too much from the expected one, a safety mechan
 
 To start recovery, create the node `/path_to_table/replica_name/flags/force_restore_data` in ClickHouse Keeper with any content, or run the command to restore all replicated tables:
 
-``` bash
+```bash
 sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
 ```
 
 Then restart the server. On start, the server deletes these flags and starts recovery.
 
-## Recovery After Complete Data Loss {#recovery-after-complete-data-loss}
+## Recovery after complete data loss {#recovery-after-complete-data-loss}
 
 If all data and metadata disappeared from one of the servers, follow these steps for recovery:
 
@@ -345,7 +331,7 @@ If you want to get rid of a `ReplicatedMergeTree` table without launching the se
 
 After this, you can launch the server, create a `MergeTree` table, move the data to its directory, and then restart the server.
 
-## Recovery When Metadata in the ClickHouse Keeper Cluster Is Lost or Damaged {#recovery-when-metadata-in-the-zookeeper-cluster-is-lost-or-damaged}
+## Recovery when metadata in the ClickHouse Keeper cluster is lost or damaged {#recovery-when-metadata-in-the-zookeeper-cluster-is-lost-or-damaged}
 
 If the data in ClickHouse Keeper was lost or damaged, you can save data by moving it to an unreplicated table as described above.
 
@@ -353,6 +339,6 @@ If the data in ClickHouse Keeper was lost or damaged, you can save data by movin
 
 - [background_schedule_pool_size](/operations/server-configuration-parameters/settings.md/#background_schedule_pool_size)
 - [background_fetches_pool_size](/operations/server-configuration-parameters/settings.md/#background_fetches_pool_size)
-- [execute_merges_on_single_replica_time_threshold](/operations/settings/settings.md/#execute-merges-on-single-replica-time-threshold)
+- [execute_merges_on_single_replica_time_threshold](/operations/settings/merge-tree-settings#execute_merges_on_single_replica_time_threshold)
 - [max_replicated_fetches_network_bandwidth](/operations/settings/merge-tree-settings.md/#max_replicated_fetches_network_bandwidth)
 - [max_replicated_sends_network_bandwidth](/operations/settings/merge-tree-settings.md/#max_replicated_sends_network_bandwidth)

@@ -112,7 +112,7 @@ WITH (
         LIMIT 1
     ) AS t)
 SELECT if(dateDiff('second', toDateTime(time_with_microseconds), toDateTime(t)) = -9223372036854775808, 'ok', '')
-SETTINGS allow_experimental_analyzer = 1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SETTINGS enable_analyzer = 1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 WITH (
     (

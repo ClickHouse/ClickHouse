@@ -19,7 +19,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
-#include <Parsers/formatAST.h>
 
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/IStorage.h>
@@ -204,7 +203,7 @@ void DatabaseBackup::renameTable(
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "RENAME TABLE is not supported for Backup database");
 }
 
-void DatabaseBackup::alterTable(ContextPtr, const StorageID &, const StorageInMemoryMetadata &)
+void DatabaseBackup::alterTable(ContextPtr, const StorageID &, const StorageInMemoryMetadata &, const bool)
 {
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ALTER TABLE is not supported for Backup database");
 }

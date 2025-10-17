@@ -1,8 +1,9 @@
 ---
+description: 'Page describing automatic schema inference from input data in ClickHouse'
+sidebar_label: 'Schema inference'
 slug: /interfaces/schema-inference
-sidebar_position: 21
-sidebar_label: Schema inference
-title: Automatic schema inference from input data
+title: 'Automatic schema inference from input data'
+doc_type: 'reference'
 ---
 
 ClickHouse can automatically determine the structure of input data in almost all supported [Input formats](formats.md).
@@ -102,19 +103,19 @@ Let's use the file `hobbies.jsonl`. We can query the data from this file using `
 clickhouse-local --file='hobbies.jsonl' --table='hobbies' --query='DESCRIBE TABLE hobbies'
 ```
 ```response
-id	Nullable(Int64)
-age	Nullable(Int64)
-name	Nullable(String)
-hobbies	Array(Nullable(String))
+id    Nullable(Int64)
+age    Nullable(Int64)
+name    Nullable(String)
+hobbies    Array(Nullable(String))
 ```
 ```shell
 clickhouse-local --file='hobbies.jsonl' --table='hobbies' --query='SELECT * FROM hobbies'
 ```
 ```response
-1	25	Josh	['football','cooking','music']
-2	19	Alan	['tennis','art']
-3	32	Lana	['fitness','reading','shopping']
-4	47	Brayan	['movies','skydiving']
+1    25    Josh    ['football','cooking','music']
+2    19    Alan    ['tennis','art']
+3    32    Lana    ['fitness','reading','shopping']
+4    47    Brayan    ['movies','skydiving']
 ```
 
 ## Using structure from insertion table {#using-structure-from-insertion-table}
@@ -390,6 +391,18 @@ DESC format(JSONEachRow, '{"arr" : [null, 42, null]}')
 └──────┴────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
+If an array contains values of different types and setting `input_format_json_infer_array_of_dynamic_from_array_of_different_types` is enabled (it is enabled by default), then it will have type `Array(Dynamic)`:
+```sql
+SET input_format_json_infer_array_of_dynamic_from_array_of_different_types=1;
+DESC format(JSONEachRow, '{"arr" : [42, "hello", [1, 2, 3]]}');
+```
+
+```response
+┌─name─┬─type───────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ arr  │ Array(Dynamic) │              │                    │         │                  │                │
+└──────┴────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
 Named tuples:
 
 When setting `input_format_json_try_infer_named_tuples_from_objects` is enabled, during schema inference ClickHouse will try to infer named Tuple from JSON objects.
@@ -408,8 +421,9 @@ DESC format(JSONEachRow, '{"obj" : {"a" : 42, "b" : "Hello"}}, {"obj" : {"a" : 4
 
 Unnamed Tuples:
 
-In JSON formats we treat Arrays with elements of different types as Unnamed Tuples.
+If setting `input_format_json_infer_array_of_dynamic_from_array_of_different_types` is disabled, we treat Arrays with elements of different types as Unnamed Tuples in JSON formats.
 ```sql
+SET input_format_json_infer_array_of_dynamic_from_array_of_different_types = 0;
 DESC format(JSONEachRow, '{"tuple" : [1, "Hello, World!", [1, 2, 3]]}')
 ```
 ```response
@@ -420,6 +434,7 @@ DESC format(JSONEachRow, '{"tuple" : [1, "Hello, World!", [1, 2, 3]]}')
 
 If some values are `null` or empty, we use types of corresponding values from the other rows:
 ```sql
+SET input_format_json_infer_array_of_dynamic_from_array_of_different_types=0;
 DESC format(JSONEachRow, $$
                               {"tuple" : [1, null, null]}
                               {"tuple" : [null, "Hello, World!", []]}
@@ -613,7 +628,6 @@ DESC format(JSONEachRow, $$
 │ obj  │ Nullable(String) │              │                    │         │                  │                │
 └──────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
-
 
 ##### input_format_json_read_numbers_as_strings {#input_format_json_read_numbers_as_strings}
 
@@ -933,7 +947,7 @@ If setting `input_format_tsv_detect_header` is enabled, ClickHouse will try to d
 
 Integers, Floats, Bools, Strings:
 ```sql
-DESC format(TSV, '42	42.42	true	Hello,World!')
+DESC format(TSV, '42    42.42    true    Hello,World!')
 ```
 ```response
 ┌─name─┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
@@ -944,7 +958,7 @@ DESC format(TSV, '42	42.42	true	Hello,World!')
 └──────┴───────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 ```sql
-DESC format(TSKV, 'int=42	float=42.42	bool=true	string=Hello,World!\n')
+DESC format(TSKV, 'int=42    float=42.42    bool=true    string=Hello,World!\n')
 ```
 ```response
 ┌─name───┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
@@ -958,7 +972,7 @@ DESC format(TSKV, 'int=42	float=42.42	bool=true	string=Hello,World!\n')
 Dates, DateTimes:
 
 ```sql
-DESC format(TSV, '2020-01-01	2020-01-01 00:00:00	2022-01-01 00:00:00.000')
+DESC format(TSV, '2020-01-01    2020-01-01 00:00:00    2022-01-01 00:00:00.000')
 ```
 ```response
 ┌─name─┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
@@ -970,7 +984,7 @@ DESC format(TSV, '2020-01-01	2020-01-01 00:00:00	2022-01-01 00:00:00.000')
 
 Arrays:
 ```sql
-DESC format(TSV, '[1,2,3]	[[1, 2], [], [3, 4]]')
+DESC format(TSV, '[1,2,3]    [[1, 2], [], [3, 4]]')
 ```
 ```response
 ┌─name─┬─type──────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
@@ -979,7 +993,7 @@ DESC format(TSV, '[1,2,3]	[[1, 2], [], [3, 4]]')
 └──────┴───────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 ```sql
-DESC format(TSV, '[''Hello'', ''world'']	[[''Abc'', ''Def''], []]')
+DESC format(TSV, '[''Hello'', ''world'']    [[''Abc'', ''Def''], []]')
 ```
 ```response
 ┌─name─┬─type───────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
@@ -1041,7 +1055,7 @@ DESC format(TSV, '[NULL, NULL]')
 Example with disabled setting `input_format_tsv_use_best_effort_in_schema_inference`:
 ```sql
 SET input_format_tsv_use_best_effort_in_schema_inference = 0
-DESC format(TSV, '[1,2,3]	42.42	Hello World!')
+DESC format(TSV, '[1,2,3]    42.42    Hello World!')
 ```
 ```response
 ┌─name─┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
@@ -1056,9 +1070,9 @@ Examples of header auto-detection (when `input_format_tsv_detect_header` is enab
 Only names:
 ```sql
 SELECT * FROM format(TSV,
-$$number	string	array
-42	Hello	[1, 2, 3]
-43	World	[4, 5, 6]
+$$number    string    array
+42    Hello    [1, 2, 3]
+43    World    [4, 5, 6]
 $$);
 ```
 
@@ -1073,10 +1087,10 @@ Names and types:
 
 ```sql
 DESC format(TSV,
-$$number	string	array
-UInt32	String	Array(UInt16)
-42	Hello	[1, 2, 3]
-43	World	[4, 5, 6]
+$$number    string    array
+UInt32    String    Array(UInt16)
+42    Hello    [1, 2, 3]
+43    World    [4, 5, 6]
 $$)
 ```
 
@@ -1092,9 +1106,9 @@ Note that the header can be detected only if there is at least one column with a
 
 ```sql
 SELECT * FROM format(TSV,
-$$first_column	second_column
-Hello	World
-World	Hello
+$$first_column    second_column
+Hello    World
+World    Hello
 $$)
 ```
 
@@ -1204,7 +1218,7 @@ most likely this column contains only Nulls or empty Arrays/Maps.
 Example with disabled setting `input_format_tsv_use_best_effort_in_schema_inference`:
 ```sql
 SET input_format_tsv_use_best_effort_in_schema_inference = 0
-DESC format(TSV, '[1,2,3]	42.42	Hello World!')
+DESC format(TSV, '[1,2,3]    42.42    Hello World!')
 ```
 ```response
 ┌─name─┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
@@ -1277,7 +1291,7 @@ $$)
 
 ### Template {#template}
 
-In Template format ClickHouse first extracts all column values from the row according to the specified template and then tries to infer the 
+In Template format ClickHouse first extracts all column values from the row according to the specified template and then tries to infer the
 data type for each value according to its escaping rule.
 
 **Example**
@@ -1326,7 +1340,7 @@ data type for each value according to the specified escaping rule.
 ```sql
 SET format_regexp = '^Line: value_1=(.+?), value_2=(.+?), value_3=(.+?)',
        format_regexp_escaping_rule = 'CSV'
-       
+
 DESC format(Regexp, $$Line: value_1=42, value_2="Some string 1", value_3="[1, NULL, 3]"
 Line: value_1=2, value_2="Some string 2", value_3="[4, 5, NULL]"$$)
 ```
@@ -1357,7 +1371,7 @@ The list of column names to use in schema inference for formats without explicit
 **Example**
 
 ```sql
-DESC format(TSV, 'Hello, World!	42	[1, 2, 3]') settings column_names_for_schema_inference = 'str,int,arr'
+DESC format(TSV, 'Hello, World!    42    [1, 2, 3]') settings column_names_for_schema_inference = 'str,int,arr'
 ```
 ```response
 ┌─name─┬─type───────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
@@ -1389,10 +1403,13 @@ DESC format(JSONEachRow, '{"id" : 1, "age" : 25, "name" : "Josh", "status" : nul
 
 #### schema_inference_make_columns_nullable ${#schema-inference-make-columns-nullable}
 
-Controls making inferred types `Nullable` in schema inference for formats without information about nullability.
-If the setting is enabled, all inferred type will be `Nullable`, if disabled, the inferred type will never be `Nullable`, if set to `auto`, the inferred type will be `Nullable` only if the column contains `NULL` in a sample that is parsed during schema inference or file metadata contains information about column nullability.
+Controls making inferred types `Nullable` in schema inference for formats without information about nullability. Possible values:
+* 0 - the inferred type will never be `Nullable`,
+* 1 - all inferred types will be `Nullable`,
+* 2 or 'auto' - for text formats, the inferred type will be `Nullable` only if the column contains `NULL` in a sample that is parsed during schema inference; for strongly-typed formats (Parquet, ORC, Arrow), nullability information is taken from file metadata,
+* 3 - for text formats, use `Nullable`; for strongly-typed formats, use file metadata.
 
-Enabled by default.
+Default: 3.
 
 **Examples**
 
@@ -1448,6 +1465,10 @@ DESC format(JSONEachRow, $$
 ```
 
 #### input_format_try_infer_integers {#input-format-try-infer-integers}
+
+:::note
+This setting does not apply to the `JSON` data type.
+:::
 
 If enabled, ClickHouse will try to infer integers instead of floats in schema inference for text formats.
 If all numbers in the column from sample data are integers, the result type will be `Int64`, if at least one number is float, the result type will be `Float64`.
@@ -1663,9 +1684,9 @@ While schema inference for such formats, ClickHouse reads the first two rows and
 
 ```sql
 DESC format(TSVWithNamesAndTypes,
-$$num	str	arr
-UInt8	String	Array(UInt8)
-42	Hello, World!	[1,2,3]
+$$num    str    arr
+UInt8    String    Array(UInt8)
+42    Hello, World!    [1,2,3]
 $$)
 ```
 ```response
@@ -1678,46 +1699,46 @@ $$)
 
 ### JSON formats with metadata {#json-with-metadata}
 
-Some JSON input formats ([JSON](formats.md#json), [JSONCompact](formats.md#json-compact), [JSONColumnsWithMetadata](formats.md#jsoncolumnswithmetadata)) contain metadata with column names and types.
+Some JSON input formats ([JSON](formats.md#json), [JSONCompact](/interfaces/formats/JSONCompact), [JSONColumnsWithMetadata](/interfaces/formats/JSONColumnsWithMetadata)) contain metadata with column names and types.
 In schema inference for such formats, ClickHouse reads this metadata.
 
 **Example**
 ```sql
 DESC format(JSON, $$
 {
-	"meta":
-	[
-		{
-			"name": "num",
-			"type": "UInt8"
-		},
-		{
-			"name": "str",
-			"type": "String"
-		},
-		{
-			"name": "arr",
-			"type": "Array(UInt8)"
-		}
-	],
+    "meta":
+    [
+        {
+            "name": "num",
+            "type": "UInt8"
+        },
+        {
+            "name": "str",
+            "type": "String"
+        },
+        {
+            "name": "arr",
+            "type": "Array(UInt8)"
+        }
+    ],
 
-	"data":
-	[
-		{
-			"num": 42,
-			"str": "Hello, World",
-			"arr": [1,2,3]
-		}
-	],
+    "data":
+    [
+        {
+            "num": 42,
+            "str": "Hello, World",
+            "arr": [1,2,3]
+        }
+    ],
 
-	"rows": 1,
+    "rows": 1,
 
-	"statistics":
-	{
-		"elapsed": 0.005723915,
-		"rows_read": 1,
-		"bytes_read": 1
-	}
+    "statistics":
+    {
+        "elapsed": 0.005723915,
+        "rows_read": 1,
+        "bytes_read": 1
+    }
 }
 $$)
 ```
@@ -1780,7 +1801,7 @@ In Parquet format ClickHouse reads its schema from the data and converts it to C
 | `STRUCT`                     | [Tuple](../sql-reference/data-types/tuple.md)           |
 | `MAP`                        | [Map](../sql-reference/data-types/map.md)               |
 
-Other Parquet types are not supported. By default, all inferred types are inside `Nullable`, but it can be changed using the setting `schema_inference_make_columns_nullable`.
+Other Parquet types are not supported.
 
 ### Arrow {#arrow}
 
@@ -1808,7 +1829,7 @@ In Arrow format ClickHouse reads its schema from the data and converts it to Cli
 | `STRUCT`                        | [Tuple](../sql-reference/data-types/tuple.md)           |
 | `MAP`                           | [Map](../sql-reference/data-types/map.md)               |
 
-Other Arrow types are not supported. By default, all inferred types are inside `Nullable`, but it can be changed using the setting `schema_inference_make_columns_nullable`.
+Other Arrow types are not supported.
 
 ### ORC {#orc}
 
@@ -1831,7 +1852,7 @@ In ORC format ClickHouse reads its schema from the data and converts it to Click
 | `Struct`                             | [Tuple](../sql-reference/data-types/tuple.md)           |
 | `Map`                                | [Map](../sql-reference/data-types/map.md)               |
 
-Other ORC types are not supported. By default, all inferred types are inside `Nullable`, but it can be changed using the setting `schema_inference_make_columns_nullable`.
+Other ORC types are not supported.
 
 ### Native {#native}
 
@@ -1984,7 +2005,7 @@ DESC format(JSONAsString, '{"x" : 42, "y" : "Hello, World!"}') SETTINGS allow_ex
 ## Schema inference modes {#schema-inference-modes}
 
 Schema inference from the set of data files can work in 2 different modes: `default` and `union`.
-The mode is controlled by the setting `schema_inference_mode`. 
+The mode is controlled by the setting `schema_inference_mode`.
 
 ### Default mode {#default-schema-inference-mode}
 
@@ -2029,13 +2050,13 @@ Result:
 └────────┴──────────────────┘
 ```
 
-As we can see, we don't have `field3` from file `data3.jsonl`. 
+As we can see, we don't have `field3` from file `data3.jsonl`.
 It happens because ClickHouse first tried to infer schema from file `data1.jsonl`, failed because of only nulls for field `field2`,
 and then tried to infer schema from `data2.jsonl` and succeeded, so data from file `data3.jsonl` wasn't read.
 
 ### Union mode {#default-schema-inference-mode-1}
 
-In union mode, ClickHouse assumes that files can have different schemas, so it infer schemas of all files and then union them to the common schema. 
+In union mode, ClickHouse assumes that files can have different schemas, so it infer schemas of all files and then union them to the common schema.
 
 Let's say we have 3 files `data1.jsonl`, `data2.jsonl` and `data3.jsonl` with the next content:
 
@@ -2081,7 +2102,6 @@ Note:
 - As some of the files may not contain some columns from the resulting schema, union mode is supported only for formats that support reading subset of columns (like JSONEachRow, Parquet, TSVWithNames, etc) and won't work for other formats (like CSV, TSV, JSONCompactEachRow, etc).
 - If ClickHouse cannot infer the schema from one of the files, the exception will be thrown.
 - If you have a lot of files, reading schema from all of them can take a lot of time.
-
 
 ## Automatic format detection {#automatic-format-detection}
 

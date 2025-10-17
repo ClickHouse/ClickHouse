@@ -67,24 +67,35 @@ def test_system_tables(start_cluster):
         {
             "name": "default",
             "path": "/var/lib/clickhouse/",
-            "keep_free_space": "1024",
+            "keep_free_space": 1024,
         },
         {
             "name": "jbod1",
             "path": "/jbod1/",
-            "keep_free_space": "0",
+            "keep_free_space": 0,
         },
         {
             "name": "jbod2",
             "path": "/jbod2/",
-            "keep_free_space": "10485760",
+            "keep_free_space": 10485760,
         },
         {
             "name": "external",
             "path": "/external/",
-            "keep_free_space": "0",
+            "keep_free_space": 0,
         },
     ]
+    if node1.with_remote_database_disk:
+        db_disk_path = node1.query(
+            "SELECT path FROM system.disks WHERE name='disk_db_remote'"
+        ).strip()
+        expected_disks_data.append(
+            {
+                "name": "disk_db_remote",
+                "path": f"{db_disk_path}",
+                "keep_free_space": 0,
+            }
+        )
 
     click_disk_data = json.loads(
         node1.query("SELECT name, path, keep_free_space FROM system.disks FORMAT JSON")
@@ -97,10 +108,10 @@ def test_system_tables(start_cluster):
         {
             "policy_name": "small_jbod_with_external",
             "volume_name": "main",
-            "volume_priority": "1",
+            "volume_priority": 1,
             "disks": ["jbod1"],
             "volume_type": "JBOD",
-            "max_data_part_size": "0",
+            "max_data_part_size": 0,
             "move_factor": 0.1,
             "prefer_not_to_merge": 0,
             "perform_ttl_move_on_insert": 1,
@@ -109,10 +120,10 @@ def test_system_tables(start_cluster):
         {
             "policy_name": "small_jbod_with_external",
             "volume_name": "external",
-            "volume_priority": "2",
+            "volume_priority": 2,
             "disks": ["external"],
             "volume_type": "JBOD",
-            "max_data_part_size": "0",
+            "max_data_part_size": 0,
             "move_factor": 0.1,
             "prefer_not_to_merge": 0,
             "perform_ttl_move_on_insert": 1,
@@ -121,10 +132,10 @@ def test_system_tables(start_cluster):
         {
             "policy_name": "small_jbod_with_external_no_merges",
             "volume_name": "main",
-            "volume_priority": "1",
+            "volume_priority": 1,
             "disks": ["jbod1"],
             "volume_type": "JBOD",
-            "max_data_part_size": "0",
+            "max_data_part_size": 0,
             "move_factor": 0.1,
             "prefer_not_to_merge": 0,
             "perform_ttl_move_on_insert": 1,
@@ -133,10 +144,10 @@ def test_system_tables(start_cluster):
         {
             "policy_name": "small_jbod_with_external_no_merges",
             "volume_name": "external",
-            "volume_priority": "2",
+            "volume_priority": 2,
             "disks": ["external"],
             "volume_type": "JBOD",
-            "max_data_part_size": "0",
+            "max_data_part_size": 0,
             "move_factor": 0.1,
             "prefer_not_to_merge": 1,
             "perform_ttl_move_on_insert": 1,
@@ -145,10 +156,10 @@ def test_system_tables(start_cluster):
         {
             "policy_name": "one_more_small_jbod_with_external",
             "volume_name": "m",
-            "volume_priority": "1",
+            "volume_priority": 1,
             "disks": ["jbod1"],
             "volume_type": "JBOD",
-            "max_data_part_size": "0",
+            "max_data_part_size": 0,
             "move_factor": 0.1,
             "prefer_not_to_merge": 0,
             "perform_ttl_move_on_insert": 1,
@@ -157,10 +168,10 @@ def test_system_tables(start_cluster):
         {
             "policy_name": "one_more_small_jbod_with_external",
             "volume_name": "e",
-            "volume_priority": "2",
+            "volume_priority": 2,
             "disks": ["external"],
             "volume_type": "JBOD",
-            "max_data_part_size": "0",
+            "max_data_part_size": 0,
             "move_factor": 0.1,
             "prefer_not_to_merge": 0,
             "perform_ttl_move_on_insert": 1,
@@ -169,10 +180,10 @@ def test_system_tables(start_cluster):
         {
             "policy_name": "jbods_with_external",
             "volume_name": "main",
-            "volume_priority": "1",
+            "volume_priority": 1,
             "disks": ["jbod1", "jbod2"],
             "volume_type": "JBOD",
-            "max_data_part_size": "10485760",
+            "max_data_part_size": 10485760,
             "move_factor": 0.1,
             "prefer_not_to_merge": 0,
             "perform_ttl_move_on_insert": 1,
@@ -181,10 +192,10 @@ def test_system_tables(start_cluster):
         {
             "policy_name": "jbods_with_external",
             "volume_name": "external",
-            "volume_priority": "2",
+            "volume_priority": 2,
             "disks": ["external"],
             "volume_type": "JBOD",
-            "max_data_part_size": "0",
+            "max_data_part_size": 0,
             "move_factor": 0.1,
             "prefer_not_to_merge": 0,
             "perform_ttl_move_on_insert": 1,
@@ -193,10 +204,10 @@ def test_system_tables(start_cluster):
         {
             "policy_name": "moving_jbod_with_external",
             "volume_name": "main",
-            "volume_priority": "1",
+            "volume_priority": 1,
             "disks": ["jbod1"],
             "volume_type": "JBOD",
-            "max_data_part_size": "0",
+            "max_data_part_size": 0,
             "move_factor": 0.7,
             "prefer_not_to_merge": 0,
             "perform_ttl_move_on_insert": 1,
@@ -205,10 +216,10 @@ def test_system_tables(start_cluster):
         {
             "policy_name": "moving_jbod_with_external",
             "volume_name": "external",
-            "volume_priority": "2",
+            "volume_priority": 2,
             "disks": ["external"],
             "volume_type": "JBOD",
-            "max_data_part_size": "0",
+            "max_data_part_size": 0,
             "move_factor": 0.7,
             "prefer_not_to_merge": 0,
             "perform_ttl_move_on_insert": 1,
@@ -217,10 +228,10 @@ def test_system_tables(start_cluster):
         {
             "policy_name": "default_disk_with_external",
             "volume_name": "small",
-            "volume_priority": "1",
+            "volume_priority": 1,
             "disks": ["default"],
             "volume_type": "JBOD",
-            "max_data_part_size": "2097152",
+            "max_data_part_size": 2097152,
             "move_factor": 0.1,
             "prefer_not_to_merge": 0,
             "perform_ttl_move_on_insert": 1,
@@ -229,10 +240,10 @@ def test_system_tables(start_cluster):
         {
             "policy_name": "default_disk_with_external",
             "volume_name": "big",
-            "volume_priority": "2",
+            "volume_priority": 2,
             "disks": ["external"],
             "volume_type": "JBOD",
-            "max_data_part_size": "20971520",
+            "max_data_part_size": 20971520,
             "move_factor": 0.1,
             "prefer_not_to_merge": 0,
             "perform_ttl_move_on_insert": 1,
@@ -241,10 +252,10 @@ def test_system_tables(start_cluster):
         {
             "policy_name": "special_warning_policy",
             "volume_name": "special_warning_zero_volume",
-            "volume_priority": "1",
+            "volume_priority": 1,
             "disks": ["default"],
             "volume_type": "JBOD",
-            "max_data_part_size": "0",
+            "max_data_part_size": 0,
             "move_factor": 0.1,
             "prefer_not_to_merge": 0,
             "perform_ttl_move_on_insert": 1,
@@ -253,10 +264,10 @@ def test_system_tables(start_cluster):
         {
             "policy_name": "special_warning_policy",
             "volume_name": "special_warning_default_volume",
-            "volume_priority": "2",
+            "volume_priority": 2,
             "disks": ["external"],
             "volume_type": "JBOD",
-            "max_data_part_size": "0",
+            "max_data_part_size": 0,
             "move_factor": 0.1,
             "prefer_not_to_merge": 0,
             "perform_ttl_move_on_insert": 1,
@@ -265,10 +276,10 @@ def test_system_tables(start_cluster):
         {
             "policy_name": "special_warning_policy",
             "volume_name": "special_warning_small_volume",
-            "volume_priority": "3",
+            "volume_priority": 3,
             "disks": ["jbod1"],
             "volume_type": "JBOD",
-            "max_data_part_size": "1024",
+            "max_data_part_size": 1024,
             "move_factor": 0.1,
             "prefer_not_to_merge": 0,
             "perform_ttl_move_on_insert": 1,
@@ -277,10 +288,10 @@ def test_system_tables(start_cluster):
         {
             "policy_name": "special_warning_policy",
             "volume_name": "special_warning_big_volume",
-            "volume_priority": "4",
+            "volume_priority": 4,
             "disks": ["jbod2"],
             "volume_type": "JBOD",
-            "max_data_part_size": "1024000000",
+            "max_data_part_size": 1024000000,
             "move_factor": 0.1,
             "prefer_not_to_merge": 0,
             "perform_ttl_move_on_insert": 1,

@@ -50,6 +50,8 @@ public:
 
     size_t approximateMemoryUsage() const;
 
+    size_t getNumberOfMarks() const { return num_marks; }
+
 private:
     /** Throughout this class:
      *   * "x" stands for offset_in_compressed_file,

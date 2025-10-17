@@ -87,13 +87,13 @@ void ASTIndexDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & 
 
     if (auto type = getType())
     {
-        ostr << (s.hilite ? hilite_keyword : "") << " TYPE " << (s.hilite ? hilite_none : "");
+        ostr << " TYPE ";
         type->format(ostr, s, state, frame);
     }
 
     if (granularity)
     {
-        ostr << (s.hilite ? hilite_keyword : "") << " GRANULARITY " << (s.hilite ? hilite_none : "");
+        ostr << " GRANULARITY ";
         ostr << granularity;
     }
 }

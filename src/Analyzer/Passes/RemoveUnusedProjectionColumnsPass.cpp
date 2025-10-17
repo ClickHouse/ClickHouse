@@ -2,12 +2,13 @@
 
 #include <Functions/FunctionFactory.h>
 
-#include <Analyzer/InDepthQueryTreeVisitor.h>
-#include <Analyzer/FunctionNode.h>
-#include <Analyzer/QueryNode.h>
-#include <Analyzer/ColumnNode.h>
-#include <Analyzer/SortNode.h>
 #include <Analyzer/AggregationUtils.h>
+#include <Analyzer/ColumnNode.h>
+#include <Analyzer/FunctionNode.h>
+#include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/SortNode.h>
+#include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
 
 namespace DB
@@ -48,6 +49,29 @@ public:
             return;
         }
 
+        if (node_type == QueryTreeNodeType::FUNCTION)
+        {
+            auto & function_node = node->as<FunctionNode &>();
+
+            if (function_node.getFunctionName() != "exists")
+                return;
+
+            const auto & subquery_argument = function_node.getArguments().getNodes().front();
+            auto * query_node = subquery_argument->as<QueryNode>();
+            auto * union_node = subquery_argument->as<UnionNode>();
+
+            const auto & correlated_columns = query_node != nullptr ? query_node->getCorrelatedColumns() : union_node->getCorrelatedColumns();
+            for (const auto & correlated_column : correlated_columns)
+            {
+                auto * column_node = correlated_column->as<ColumnNode>();
+                auto column_source_node = column_node->getColumnSource();
+                auto column_source_node_type = column_source_node->getNodeType();
+                if (column_source_node_type == QueryTreeNodeType::QUERY || column_source_node_type == QueryTreeNodeType::UNION)
+                    query_or_union_node_to_used_columns[column_source_node].insert(column_node->getColumnName());
+            }
+            return;
+        }
+
         if (node_type != QueryTreeNodeType::COLUMN)
             return;
 
@@ -56,10 +80,15 @@ public:
             return;
 
         auto column_source_node = column_node.getColumnSource();
-        auto column_source_node_type = column_source_node->getNodeType();
 
-        if (column_source_node_type == QueryTreeNodeType::QUERY || column_source_node_type == QueryTreeNodeType::UNION)
-            query_or_union_node_to_used_columns[column_source_node].insert(column_node.getColumnName());
+        auto it = query_or_union_node_to_used_columns.find(column_source_node);
+        /// If the source node is not found in the map then:
+        /// 1. Tt's either not a Query or Union node.
+        /// 2. It's a correlated column and it comes from the outer scope.
+        if (it != query_or_union_node_to_used_columns.end())
+        {
+            it->second.insert(column_node.getColumnName());
+        }
     }
 
     void reset()

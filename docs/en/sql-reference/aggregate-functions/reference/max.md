@@ -1,8 +1,9 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/max
+description: 'Aggregate function that calculates the maximum across a group of values.'
 sidebar_position: 162
-title: max
-description: "Aggregate function that calculates the maximum across a group of values."
+slug: /sql-reference/aggregate-functions/reference/max
+title: 'max'
+doc_type: 'reference'
 ---
 
 Aggregate function that calculates the maximum across a group of values.

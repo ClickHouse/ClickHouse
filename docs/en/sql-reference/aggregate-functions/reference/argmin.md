@@ -1,8 +1,11 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/argmin
+description: 'Calculates the `arg` value for a minimum `val` value. If there are multiple
+  rows with equal `val` being the maximum, which of the associated `arg` is returned
+  is not deterministic.'
 sidebar_position: 110
-title: "argMin"
-description: "Calculates the `arg` value for a minimum `val` value. If there are multiple rows with equal `val` being the maximum, which of the associated `arg` is returned is not deterministic."
+slug: /sql-reference/aggregate-functions/reference/argmin
+title: 'argMin'
+doc_type: 'reference'
 ---
 
 # argMin
@@ -12,7 +15,7 @@ Both parts the `arg` and the `min` behave as [aggregate functions](/sql-referenc
 
 **Syntax**
 
-``` sql
+```sql
 argMin(arg, val)
 ```
 
@@ -31,7 +34,7 @@ Type: matches `arg` type.
 
 Input table:
 
-``` text
+```text
 ┌─user─────┬─salary─┐
 │ director │   5000 │
 │ manager  │   3000 │
@@ -41,13 +44,13 @@ Input table:
 
 Query:
 
-``` sql
+```sql
 SELECT argMin(user, salary) FROM salary
 ```
 
 Result:
 
-``` text
+```text
 ┌─argMin(user, salary)─┐
 │ worker               │
 └──────────────────────┘
@@ -65,7 +68,7 @@ ENGINE = Memory AS
 SELECT *
 FROM VALUES((NULL, 0), ('a', 1), ('b', 2), ('c', 2), (NULL, NULL), ('d', NULL));
 
-select * from test;
+SELECT * FROM test;
 ┌─a────┬────b─┐
 │ ᴺᵁᴸᴸ │    0 │
 │ a    │    1 │

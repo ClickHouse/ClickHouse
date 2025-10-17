@@ -1,10 +1,12 @@
 ---
-title: PrettyNoEscapesMonoBlock
-slug: /interfaces/formats/PrettyNoEscapesMonoBlock
-keywords: [PrettyNoEscapesMonoBlock]
-input_format: false
-output_format: true
 alias: []
+description: 'Documentation for the PrettyNoEscapesMonoBlock format'
+input_format: false
+keywords: ['PrettyNoEscapesMonoBlock']
+output_format: true
+slug: /interfaces/formats/PrettyNoEscapesMonoBlock
+title: 'PrettyNoEscapesMonoBlock'
+doc_type: 'reference'
 ---
 
 import PrettyFormatSettings from './_snippets/common-pretty-format-settings.md';
@@ -18,8 +20,8 @@ import PrettyFormatSettings from './_snippets/common-pretty-format-settings.md';
 Differs from the [`PrettyNoEscapes`](./PrettyNoEscapes.md) format in that up to `10,000` rows are buffered, 
 and then output as a single table, and not by blocks.
 
-## Example Usage {#example-usage}
+## Example usage {#example-usage}
 
-## Format Settings {#format-settings}
+## Format settings {#format-settings}
 
 <PrettyFormatSettings/>

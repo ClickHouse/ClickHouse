@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2016,SC2028
+# Tags: no-parallel-replicas
+# no-parallel-replicas: FORMAT JSON returns additional entries
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

@@ -1,7 +1,10 @@
 ---
-slug: /sql-reference/data-types/string
+description: 'Documentation for the String data type in ClickHouse'
+sidebar_label: 'String'
 sidebar_position: 8
-sidebar_label: String
+slug: /sql-reference/data-types/string
+title: 'String'
+doc_type: 'reference'
 ---
 
 # String
