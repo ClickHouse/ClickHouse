@@ -79,7 +79,32 @@ private:
 
 REGISTER_FUNCTION(MonthName)
 {
-    factory.registerFunction<FunctionMonthName>({}, FunctionFactory::Case::Insensitive);
+    FunctionDocumentation::Description description = R"(
+Returns the name of the month as a string from a date or date with time value.
+    )";
+    FunctionDocumentation::Syntax syntax = R"(
+monthName(datetime)
+    )";
+    FunctionDocumentation::Arguments arguments = {
+        {"datetime", "Date or date with time.", {"Date", "Date32", "DateTime", "DateTime64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the name of the month.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+        {"Get month name from date", R"(
+WITH toDateTime('2021-04-14 11:22:33') AS date_value
+SELECT monthName(date_value)
+        )",
+        R"(
+┌─monthName(date_value)─┐
+│ April                 │
+└───────────────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionMonthName>(documentation, FunctionFactory::Case::Insensitive);
 }
 
 }

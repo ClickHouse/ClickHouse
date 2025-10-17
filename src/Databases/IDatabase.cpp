@@ -1,5 +1,6 @@
 #include <memory>
 #include <Databases/IDatabase.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/TableNameHints.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -181,7 +182,8 @@ void IDatabase::renameTable(
 void IDatabase::alterTable(
     ContextPtr /*context*/,
     const StorageID & /*table_id*/,
-    const StorageInMemoryMetadata & /*metadata*/)
+    const StorageInMemoryMetadata & /*metadata*/,
+    const bool /*validate_new_create_query*/)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: alterTable() is not supported", getEngineName());
 }
@@ -215,5 +217,8 @@ ASTPtr IDatabase::getCreateTableQueryImpl(const String & /*name*/, ContextPtr /*
     return nullptr;
 }
 
-
+DiskPtr IDatabase::getDisk() const
+{
+    return Context::getGlobalContextInstance()->getDatabaseDisk();
+}
 }

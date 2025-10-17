@@ -3,12 +3,13 @@ FROM ubuntu:22.04
 
 RUN apt-get update && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
         aspell \
-        libxml2-utils \
-        python3-pip \
-        locales \
-        ripgrep \
         curl \
         git \
+        libxml2-utils \
+        locales \
+        python3-pip \
+        ripgrep \
+        zstd \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 

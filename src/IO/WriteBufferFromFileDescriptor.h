@@ -1,7 +1,7 @@
 #pragma once
 
 #include <IO/WriteBufferFromFileBase.h>
-#include <Common/Throttler_fwd.h>
+#include <Common/IThrottler.h>
 
 
 namespace DB

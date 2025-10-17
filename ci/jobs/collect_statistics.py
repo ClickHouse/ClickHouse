@@ -113,15 +113,15 @@ if __name__ == "__main__":
     cidb = CIDB(
         url=Secret.Config(
             name="clickhouse-test-stat-url",
-            type=Secret.Type.AWS_SSM_VAR,
+            type=Secret.Type.AWS_SSM_PARAMETER,
         ).get_value(),
         user=Secret.Config(
             name="clickhouse-test-stat-login",
-            type=Secret.Type.AWS_SSM_VAR,
+            type=Secret.Type.AWS_SSM_PARAMETER,
         ).get_value(),
         passwd=Secret.Config(
             name="clickhouse-test-stat-password",
-            type=Secret.Type.AWS_SSM_VAR,
+            type=Secret.Type.AWS_SSM_PARAMETER,
         ).get_value(),
     )
 
@@ -139,9 +139,7 @@ if __name__ == "__main__":
         return True
 
     results.append(
-        Result.from_commands_run(
-            name="Get all job names", command=get_all_job_names, with_info=True
-        )
+        Result.from_commands_run(name="Get all job names", command=get_all_job_names)
     )
     if not results[-1].is_ok():
         sys.exit()

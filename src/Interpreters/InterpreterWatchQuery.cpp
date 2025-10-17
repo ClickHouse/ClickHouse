@@ -28,7 +28,7 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_live_view;
     extern const SettingsBool allow_experimental_window_view;
-    extern const SettingsUInt64 max_block_size;
+    extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_columns_to_read;
     extern const SettingsUInt64 max_result_bytes;
     extern const SettingsUInt64 max_result_rows;
