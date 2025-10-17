@@ -2,6 +2,7 @@
 
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
+#include <Storages/MergeTree/MergeTreeRangeReader.h>
 
 #include <algorithm>
 
@@ -12,25 +13,39 @@ namespace DB
 struct MergeTreeReaderSettings;
 class IMergeTreeDataPartInfoForReader;
 
-/** If some of the requested columns are not in the part,
-  * then find out which columns may need to be read further,
-  * so that you can calculate the DEFAULT expression for these columns.
-  * Adds them to the `columns`.
-  */
 NameSet injectRequiredColumns(
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const StorageSnapshotPtr & storage_snapshot,
     bool with_subcolumns,
     Names & columns);
 
+PrewhereExprStepPtr createLightweightDeleteStep(bool remove_filter_column);
+
+void addPatchPartsColumns(
+    MergeTreeReadTaskColumns & result,
+    const StorageSnapshotPtr & storage_snapshot,
+    const GetColumnsOptions & options,
+    const PatchPartsForReader & patch_parts,
+    const Names & all_columns_to_read,
+    bool has_lightweight_delete);
+
 MergeTreeReadTaskColumns getReadTaskColumns(
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const StorageSnapshotPtr & storage_snapshot,
     const Names & required_columns,
+    const FilterDAGInfoPtr & row_level_filter,
     const PrewhereInfoPtr & prewhere_info,
+    const PrewhereExprSteps & mutation_steps,
+    const IndexReadTasks & index_read_tasks,
     const ExpressionActionsSettings & actions_settings,
     const MergeTreeReaderSettings & reader_settings,
     bool with_subcolumns);
+
+MergeTreeReadTaskColumns getReadTaskColumnsForMerge(
+    const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
+    const StorageSnapshotPtr & storage_snapshot,
+    const Names & required_columns,
+    const PrewhereExprSteps & mutation_steps);
 
 struct MergeTreeBlockSizePredictor
 {
@@ -51,6 +66,13 @@ struct MergeTreeBlockSizePredictor
     /// Predicts what number of rows should be read to exhaust byte quota per column
     size_t estimateNumRowsForMaxSizeColumn(size_t bytes_quota) const
     {
+        /// Below we calculate the following expression: `bytes_quota / max_size_per_row` and then cast its result to size_t.
+        /// The problem is that the conversion to double (`max_size_per_row` is double) can overflow size_t if `bytes_quota` is close to `SIZE_MAX`
+        /// and an attempt to convert this value back to size_t will result in undefined behavior.
+        /// ATST, if `bytes_quota` is close to `SIZE_MAX`, we can safely ignore it and assume that no limit was set.
+        if (static_cast<double>(bytes_quota) >= static_cast<double>(std::numeric_limits<size_t>::max()))
+            return 0;
+
         double max_size_per_row
             = std::max<double>({max_size_per_row_fixed, static_cast<double>(static_cast<UInt64>(1)), max_size_per_row_dynamic});
         return (bytes_quota > block_size_rows * max_size_per_row)

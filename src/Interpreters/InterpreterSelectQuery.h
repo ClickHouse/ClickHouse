@@ -4,19 +4,16 @@
 #include <optional>
 
 #include <Access/EnabledRowPolicies.h>
+#include <Core/Block.h>
 #include <Core/QueryProcessingStage.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/IInterpreterUnionOrSelectQuery.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/StorageID.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/TableLockHolder.h>
 #include <QueryPipeline/Pipe.h>
-
-#include <Columns/FilterDescription.h>
 
 namespace Poco
 {
@@ -133,8 +130,15 @@ public:
 
     static bool isQueryWithFinal(const SelectQueryInfo & info);
 
+    struct LimitInfo
+    {
+        UInt64 limit_length{0};
+        UInt64 limit_offset{0};
+        bool is_limit_length_negative{false};
+        bool is_limit_offset_negative{false};
+    };
 
-    static std::pair<UInt64, UInt64> getLimitLengthAndOffset(const ASTSelectQuery & query, const ContextPtr & context);
+    static LimitInfo getLimitLengthAndOffset(const ASTSelectQuery & query, const ContextPtr & context);
 
     /// Adjust the parallel replicas settings (enabled, disabled) based on the query analysis
     bool adjustParallelReplicasAfterAnalysis();
@@ -179,7 +183,6 @@ private:
     void executeMergeAggregated(QueryPlan & query_plan, bool overflow_row, bool final, bool has_grouping_sets);
     void executeTotalsAndHaving(QueryPlan & query_plan, bool has_having, const ActionsAndProjectInputsFlagPtr & expression, bool remove_filter, bool overflow_row, bool final);
     void executeHaving(QueryPlan & query_plan, const ActionsAndProjectInputsFlagPtr & expression, bool remove_filter);
-    static void executeExpression(QueryPlan & query_plan, const ActionsAndProjectInputsFlagPtr & expression, const std::string & description);
     /// FIXME should go through ActionsDAG to behave as a proper function
     void executeWindow(QueryPlan & query_plan);
     void executeOrder(QueryPlan & query_plan, InputOrderInfoPtr sorting_info);
@@ -223,7 +226,7 @@ private:
     ExpressionAnalysisResult analysis_result;
     /// For row-level security.
     RowPolicyFilterPtr row_policy_filter;
-    FilterDAGInfoPtr filter_info;
+    FilterDAGInfoPtr row_policy_info;
 
     /// For additional_filter setting.
     FilterDAGInfoPtr additional_filter_info;
@@ -236,7 +239,7 @@ private:
     /// List of columns to read to execute the query.
     Names required_columns;
     /// Structure of query source (table, subquery, etc).
-    Block source_header;
+    SharedHeader source_header;
 
     /// Actions to calculate ALIAS if required.
     std::optional<ActionsDAG> alias_actions;

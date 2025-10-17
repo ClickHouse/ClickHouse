@@ -1,4 +1,4 @@
-#include "CachedObjectStorage.h"
+#include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
 
 #include <IO/BoundedReadBuffer.h>
 #include <Disks/IO/CachedOnDiskWriteBufferFromFile.h>
@@ -6,6 +6,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/Cache/FileCacheSettings.h>
 #include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
 #include <filesystem>
@@ -14,6 +15,10 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
+namespace FileCacheSetting
+{
+    extern const FileCacheSettingsBool cache_on_write_operations;
+}
 
 CachedObjectStorage::CachedObjectStorage(
     ObjectStoragePtr object_storage_,
@@ -46,6 +51,11 @@ CachedObjectStorage::generateObjectKeyPrefixForDirectoryPath(const std::string &
     return object_storage->generateObjectKeyPrefixForDirectoryPath(path, key_prefix);
 }
 
+bool CachedObjectStorage::areObjectKeysRandom() const
+{
+    return object_storage->areObjectKeysRandom();
+}
+
 ReadSettings CachedObjectStorage::patchSettings(const ReadSettings & read_settings) const
 {
     return object_storage->patchSettings(read_settings);
@@ -64,8 +74,7 @@ bool CachedObjectStorage::exists(const StoredObject & object) const
 std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOLINT
     const StoredObject & object,
     const ReadSettings & read_settings,
-    std::optional<size_t> read_hint,
-    std::optional<size_t> file_size) const
+    std::optional<size_t> read_hint) const
 {
     if (read_settings.enable_filesystem_cache)
     {
@@ -77,7 +86,7 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOL
 
             auto read_buffer_creator = [=, this]()
             {
-                return object_storage->readObject(object, patchSettings(read_settings), read_hint, file_size);
+                return object_storage->readObject(object, patchSettings(read_settings), read_hint);
             };
 
             return std::make_unique<CachedOnDiskReadBufferFromFile>(
@@ -100,7 +109,7 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOL
         }
     }
 
-    return object_storage->readObject(object, patchSettings(read_settings), read_hint, file_size);
+    return object_storage->readObject(object, patchSettings(read_settings), read_hint);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// NOLINT
@@ -115,7 +124,7 @@ std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// N
     auto implementation_buffer = object_storage->writeObject(object, mode, attributes, buf_size, modified_write_settings);
 
     bool cache_on_write = modified_write_settings.enable_filesystem_cache_on_write_operations
-        && FileCacheFactory::instance().getByName(cache_config_name)->getSettings().cache_on_write_operations
+        && FileCacheFactory::instance().getByName(cache_config_name)->getSettings()[FileCacheSetting::cache_on_write_operations]
         && fs::path(object.remote_path).extension() != ".tmp";
 
     /// Need to remove even if cache_on_write == false.
@@ -183,15 +192,6 @@ void CachedObjectStorage::copyObject( // NOLINT
     object_storage->copyObject(object_from, object_to, read_settings, write_settings, object_to_attributes);
 }
 
-std::unique_ptr<IObjectStorage> CachedObjectStorage::cloneObjectStorage(
-    const std::string & new_namespace,
-    const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix,
-    ContextPtr context)
-{
-    return object_storage->cloneObjectStorage(new_namespace, config, config_prefix, context);
-}
-
 void CachedObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const
 {
     object_storage->listObjects(path, children, max_keys);
@@ -200,6 +200,11 @@ void CachedObjectStorage::listObjects(const std::string & path, RelativePathsWit
 ObjectMetadata CachedObjectStorage::getObjectMetadata(const std::string & path) const
 {
     return object_storage->getObjectMetadata(path);
+}
+
+std::optional<ObjectMetadata> CachedObjectStorage::tryGetObjectMetadata(const std::string & path) const
+{
+    return object_storage->tryGetObjectMetadata(path);
 }
 
 void CachedObjectStorage::shutdown()

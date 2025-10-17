@@ -1,3 +1,5 @@
+#include <Common/DimensionalMetrics.h>
+#include <Common/HistogramMetrics.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 
@@ -281,6 +283,7 @@
     M(LogWarning) \
     M(LogError) \
     M(LogFatal) \
+    M(LoggerElapsedNanoseconds) \
 \
     M(InterfaceHTTPSendBytes) \
     M(InterfaceHTTPReceiveBytes) \
@@ -299,6 +302,11 @@
     M(KeeperLogsEntryReadFromCommitCache) \
     M(KeeperLogsEntryReadFromFile) \
     M(KeeperLogsPrefetchedEntries) \
+\
+    M(JemallocFailedAllocationSampleTracking) \
+    M(JemallocFailedDeallocationSampleTracking) \
+\
+    M(KeeperRequestRejectedDueToSoftMemoryLimitCount) \
 
 namespace ProfileEvents
 {
@@ -387,4 +395,14 @@ extern const std::vector<Metric> keeper_metrics
     APPLY_FOR_KEEPER_METRICS(M)
 };
 #undef M
+}
+
+namespace HistogramMetrics
+{
+    std::vector<MetricFamily *> keeper_histograms;
+}
+
+namespace DimensionalMetrics
+{
+    std::vector<MetricFamily *> keeper_dimensional_metrics;
 }

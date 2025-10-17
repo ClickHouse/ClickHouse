@@ -1,8 +1,8 @@
 #include <Interpreters/InterpreterCheckQuery.h>
 #include <Interpreters/InterpreterFactory.h>
 
-#include <algorithm>
 #include <memory>
+#include <thread>
 
 #include <Access/Common/AccessFlags.h>
 
@@ -12,6 +12,7 @@
 #include <Common/FailPoint.h>
 #include <Common/thread_local_rng.h>
 #include <Common/typeid_cast.h>
+#include <Common/logger_useful.h>
 
 #include <Core/Settings.h>
 
@@ -23,16 +24,17 @@
 #include <Interpreters/ProcessList.h>
 
 #include <Parsers/ASTCheckQuery.h>
-#include <Parsers/ASTSetQuery.h>
 
 #include <Processors/Chunk.h>
 #include <Processors/IAccumulatingTransform.h>
-#include <Processors/IInflatingTransform.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/ResizeProcessor.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
+#include <QueryPipeline/Pipe.h>
+
 #include <Storages/IStorage.h>
+
 
 namespace DB
 {
@@ -108,7 +110,7 @@ public:
         , check_data_tasks(table->getCheckTaskList(partition_or_part, context))
     {
         chassert(context);
-        context->checkAccess(AccessType::SHOW_TABLES, table_id);
+        context->checkAccess(AccessType::CHECK, table_id);
     }
 
     TableCheckTask(StoragePtr table_, ContextPtr context)
@@ -116,7 +118,7 @@ public:
         , check_data_tasks(table->getCheckTaskList({}, context))
     {
         chassert(context);
-        context->checkAccess(AccessType::SHOW_TABLES, table_->getStorageID());
+        context->checkAccess(AccessType::CHECK, table_->getStorageID());
     }
 
     TableCheckTask(const TableCheckTask & other)
@@ -136,10 +138,19 @@ public:
             std::this_thread::sleep_for(sleep_time);
         });
 
-        IStorage::DataValidationTasksPtr tmp = check_data_tasks;
-        auto result = table->checkDataNext(tmp);
-        is_finished = !result.has_value();
-        return result;
+        try
+        {
+            IStorage::DataValidationTasksPtr tmp = check_data_tasks;
+            auto result = table->checkDataNext(tmp);
+            is_finished = !result.has_value();
+            return result;
+        }
+        catch (const Exception & e)
+        {
+            is_finished = true;
+            CheckResult result{"", false, e.displayText()};
+            return result;
+        }
     }
 
     bool isFinished() const { return is_finished || !table || !check_data_tasks; }
@@ -166,7 +177,7 @@ class TableCheckSource : public ISource
 {
 public:
     TableCheckSource(Strings databases_, ContextPtr context_, LoggerPtr log_)
-        : ISource(getSingleValueBlock(0))
+        : ISource(std::make_shared<const Block>(getSingleValueBlock(0)))
         , databases(databases_)
         , context(context_)
         , log(log_)
@@ -174,7 +185,7 @@ public:
     }
 
     TableCheckSource(std::shared_ptr<TableCheckTask> table_check_task_, LoggerPtr log_)
-        : ISource(getSingleValueBlock(0))
+        : ISource(std::make_shared<const Block>(getSingleValueBlock(0)))
         , table_check_task(table_check_task_)
         , log(log_)
     {
@@ -330,10 +341,10 @@ private:
 class TableCheckResultEmitter : public IAccumulatingTransform
 {
 public:
-    explicit TableCheckResultEmitter(Block input_header)
-        : IAccumulatingTransform(input_header, getSingleValueBlock(1).cloneEmpty())
+    explicit TableCheckResultEmitter(SharedHeader input_header)
+        : IAccumulatingTransform(input_header, std::make_shared<const Block>(getSingleValueBlock(1).cloneEmpty()))
     {
-        column_position_to_check = input_header.getPositionByName("is_passed");
+        column_position_to_check = input_header->getPositionByName("is_passed");
     }
 
     String getName() const override { return "TableCheckResultEmitter"; }
@@ -384,7 +395,7 @@ InterpreterCheckQuery::InterpreterCheckQuery(const ASTPtr & query_ptr_, ContextP
 static Strings getAllDatabases(const ContextPtr & context)
 {
     Strings res;
-    const auto & databases = DatabaseCatalog::instance().getDatabases();
+    const auto & databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
     res.reserve(databases.size());
     for (const auto & [database_name, _] : databases)
     {
@@ -433,7 +444,7 @@ BlockIO InterpreterCheckQuery::execute()
         /// Create one source and N workers
         auto & worker_source_port = worker_source->getPort();
 
-        auto resize_processor = std::make_shared<ResizeProcessor>(worker_source_port.getHeader(), 1, num_streams);
+        auto resize_processor = std::make_shared<ResizeProcessor>(worker_source_port.getSharedHeader(), 1, num_streams);
         processors->emplace_back(resize_processor);
 
         connect(worker_source_port, resize_processor->getInputs().front());
@@ -451,7 +462,7 @@ BlockIO InterpreterCheckQuery::execute()
     OutputPort * resize_outport;
     {
         chassert(!processors->empty() && !processors->back()->getOutputs().empty());
-        Block header = processors->back()->getOutputs().front().getHeader();
+        auto header = processors->back()->getOutputs().front().getSharedHeader();
 
         /// Merge output of all workers
         auto resize_processor = std::make_shared<ResizeProcessor>(header, worker_ports.size(), 1);
@@ -469,7 +480,7 @@ BlockIO InterpreterCheckQuery::execute()
     if (settings[Setting::check_query_single_value_result])
     {
         chassert(!processors->empty() && !processors->back()->getOutputs().empty());
-        Block header = processors->back()->getOutputs().front().getHeader();
+        auto header = processors->back()->getOutputs().front().getSharedHeader();
 
         /// Merge all results into single value
         auto emitter_processor = std::make_shared<TableCheckResultEmitter>(header);

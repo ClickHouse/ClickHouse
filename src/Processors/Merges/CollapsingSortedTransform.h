@@ -16,7 +16,7 @@ class CollapsingSortedTransform final : public IMergingTransform<CollapsingSorte
 {
 public:
     CollapsingSortedTransform(
-        const Block & header,
+        SharedHeader header,
         size_t num_inputs,
         SortDescription description_,
         const String & sign_column,

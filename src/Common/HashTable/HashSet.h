@@ -19,7 +19,7 @@ namespace ErrorCodes
 
 /** NOTE HashSet could only be used for memmoveable (position independent) types.
   * Example: std::string is not position independent in libstdc++ with C++11 ABI or in libc++.
-  * Also, key must be of type, that zero bytes is compared equals to zero key.
+  * Also, key must be of a type, such as that zero bytes is compared equals to zero key.
   */
 
 
@@ -69,6 +69,13 @@ public:
     using Base = TwoLevelHashTable<Key, TCell, Hash, Grower, Allocator, HashSetTable<Key, TCell, Hash, Grower, Allocator>>;
 
     using Base::Base;
+
+    template <typename... Args>
+    void merge(const HashSetTable<Key, Args...> & rhs)
+    {
+        for (auto it = rhs.begin(), end = rhs.end(); it != end; ++it)
+            this->insert(it->getValue());
+    }
 
     /// Writes its content in a way that it will be correctly read by HashSetTable.
     /// Used by uniqExact to preserve backward compatibility.

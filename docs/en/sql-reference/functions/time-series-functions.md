@@ -1,165 +1,120 @@
 ---
-slug: /en/sql-reference/functions/time-series-functions
-sidebar_position: 172
-sidebar_label: Time Series
+description: 'Documentation for Functions for Working with Time Series'
+sidebar_label: 'TimeSeries'
+slug: /sql-reference/functions/time-series-functions
+title: 'Functions for Working with Time Series'
+doc_type: 'reference'
 ---
 
-# Time Series Functions
+# Time series functions
 
-Below functions are used for series data analysis.
+Below functions are designed to be used with `timeSeries*()` aggregate functions like
+[timeSeriesInstantRateToGrid](../aggregate-functions/reference/timeSeriesInstantRateToGrid.md),
+[timeSeriesLastToGrid](../aggregate-functions/reference/timeSeriesResampleToGridWithStaleness.md),
+and so on.
 
-## seriesOutliersDetectTukey
+## timeSeriesRange {#timeSeriesRange}
 
-Detects outliers in series data using [Tukey Fences](https://en.wikipedia.org/wiki/Outlier#Tukey%27s_fences).
+Generates a range of timestamps.
 
 **Syntax**
 
-``` sql
-seriesOutliersDetectTukey(series);
-seriesOutliersDetectTukey(series, min_percentile, max_percentile, K);
+```sql
+timeSeriesRange(start_timestamp, end_timestamp, step)
 ```
 
 **Arguments**
 
-- `series` - An array of numeric values.
-- `min_percentile` - The minimum percentile to be used to calculate inter-quantile range [(IQR)](https://en.wikipedia.org/wiki/Interquartile_range). The value must be in range [0.02,0.98]. The default is 0.25.
-- `max_percentile` - The maximum percentile to be used to calculate inter-quantile range (IQR). The value must be in range [0.02,0.98]. The default is 0.75.
-- `K` - Non-negative constant value to detect mild or stronger outliers. The default value is 1.5.
-
-At least four data points are required in `series` to detect outliers.
+- `start_timestamp` - Start of the range.
+- `end_timestamp` - End of the range.
+- `step` - Step of the range in seconds.
 
 **Returned value**
 
-- Returns an array of the same length as the input array where each value represents score of possible anomaly of corresponding element in the series. A non-zero score indicates a possible anomaly. [Array](../data-types/array.md).
+- Returns a range of timestamps `[start_timestamp, start_timestamp + step, start_timestamp + 2 * step, ..., end_timestamp]`.
 
 **Examples**
 
 Query:
 
-``` sql
-SELECT seriesOutliersDetectTukey([-3, 2, 15, 3, 5, 6, 4, 5, 12, 45, 12, 3, 3, 4, 5, 6]) AS print_0;
+```sql
+SELECT timeSeriesRange('2025-06-01 00:00:00'::DateTime64(3), '2025-06-01 00:01:00'::DateTime64(3), 30) AS rng;
 ```
 
 Result:
 
-``` text
-┌───────────print_0─────────────────┐
-│[0,0,0,0,0,0,0,0,0,27,0,0,0,0,0,0] │
-└───────────────────────────────────┘
+```text
+┌────────────────────────────────────result─────────────────────────────────────────┐
+│ ['2025-06-01 00:00:00.000', '2025-06-01 00:00:30.000', '2025-06-01 00:01:00.000'] │
+└───────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-Query:
-
-``` sql
-SELECT seriesOutliersDetectTukey([-3, 2, 15, 3, 5, 6, 4.50, 5, 12, 45, 12, 3.40, 3, 4, 5, 6], 0.2, 0.8, 1.5) AS print_0;
+**Notes**
+- If function `timeSeriesRange()` is called with `start_timestamp` equal to `end_timestamp`
+then it returns a 1-element array containing that timestamp: `[start_timestamp]`
+- Function `timeSeriesRange()` is similar to function [range](../functions/array-functions.md#range).
+For example, if the type of timestamps is `DateTime64(3)` and `start_timestamp < end_timestamp` then
+`timeSeriesRange(start_timestamp, end_timestamp, step)` returns the same result as the following expression:
+```sql
+range(start_timestamp::Int64, end_timestamp::Int64 + 1, step::Int64)::Array(DateTime64(3))
 ```
 
-Result:
+## timeSeriesFromGrid {#timeSeriesFromGrid}
 
-``` text
-┌─print_0──────────────────────────────┐
-│ [0,0,0,0,0,0,0,0,0,19.5,0,0,0,0,0,0] │
-└──────────────────────────────────────┘
-```
+Converts array of values `[value1, value2, value3, ..., valueN]` to array of tuples
+`[(start_timestamp, value1), (start_timestamp + step, value2), (start_timestamp + 2 * step, value3), ..., (end_timestamp, valueN)]`.
 
-## seriesPeriodDetectFFT
+If some of the values `[value1, value2, value3, ...]` are `NULL` then the function won't copy such null values to the result array
+but will still increase the current timestamp, i.e. for example for `[value1, NULL, value2]` the function will return
+`[(start_timestamp, value1), (start_timestamp + 2 * step, value2)]`.
 
-Finds the period of the given series data data using FFT
-FFT - [Fast Fourier transform](https://en.wikipedia.org/wiki/Fast_Fourier_transform)
+The current timestamp is increased by step until it becomes greater than end_timestamp, each timestamp will be combined with a value
+from a specified array of values. If number of the values doesn't match number of the timestamps the function will throw an exception.
 
 **Syntax**
 
-``` sql
-seriesPeriodDetectFFT(series);
+```sql
+timeSeriesFromGrid(start_timestamp, end_timestamp, step, values);
 ```
 
 **Arguments**
 
-- `series` - An array of numeric values
+- `start_timestamp` - Start of the grid.
+- `end_timestamp` - End of the grid.
+- `step` - Step of the grid in seconds.
+- `values` - Array of values `[value1, value2, ..., valueN]`.
 
 **Returned value**
 
-- A real value equal to the period of series data. NaN when number of data points are less than four. [Float64](../data-types/float.md).
+- Returns values from the source array of values combined with timestamps on a regular time grid described by `start_timestamp` and `step`.
 
 **Examples**
 
 Query:
 
-``` sql
-SELECT seriesPeriodDetectFFT([1, 4, 6, 1, 4, 6, 1, 4, 6, 1, 4, 6, 1, 4, 6, 1, 4, 6, 1, 4, 6]) AS print_0;
+```sql
+SELECT timeSeriesFromGrid('2025-06-01 00:00:00'::DateTime64(3), '2025-06-01 00:01:30.000'::DateTime64(3), 30, [10, 20, NULL, 30]) AS result;
 ```
 
 Result:
 
-``` text
-┌───────────print_0──────┐
-│                      3 │
-└────────────────────────┘
+```text
+┌─────────────────────────────────────────────result─────────────────────────────────────────────┐
+│ [('2025-06-01 00:00:00.000',10),('2025-06-01 00:00:30.000',20),('2025-06-01 00:01:30.000',30)] │
+└────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-``` sql
-SELECT seriesPeriodDetectFFT(arrayMap(x -> abs((x % 6) - 3), range(1000))) AS print_0;
+**Note**
+Function `timeSeriesFromGrid(start_timestamp, end_timestamp, step, values)` returns the same result as the following expression:
+```sql
+arrayFilter(x -> x.2 IS NOT NULL, arrayZip(timeSeriesRange(start_timestamp, end_timestamp, step), values))
 ```
 
-Result:
+<!-- 
+The inner content of the tags below are replaced at doc framework build time with 
+docs generated from system.functions. Please do not modify or remove the tags.
+See: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
+-->
 
-``` text
-┌─print_0─┐
-│       6 │
-└─────────┘
-```
-
-## seriesDecomposeSTL
-
-Decomposes a series data using STL [(Seasonal-Trend Decomposition Procedure Based on Loess)](https://www.wessa.net/download/stl.pdf) into a season, a trend and a residual component. 
-
-**Syntax**
-
-``` sql
-seriesDecomposeSTL(series, period);
-```
-
-**Arguments**
-
-- `series` - An array of numeric values
-- `period` - A positive integer
-
-The number of data points in `series` should be at least twice the value of `period`.
-
-**Returned value**
-
-- An array of four arrays where the first array include seasonal components, the second array - trend,
-the third array - residue component, and the fourth array - baseline(seasonal + trend) component. [Array](../data-types/array.md).
-
-**Examples**
-
-Query:
-
-``` sql
-SELECT seriesDecomposeSTL([10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34], 3) AS print_0;
-```
-
-Result:
-
-``` text
-┌───────────print_0──────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ [[
-        -13.529999, -3.1799996, 16.71,      -13.53,     -3.1799996, 16.71,      -13.53,     -3.1799996,
-        16.71,      -13.530001, -3.18,      16.710001,  -13.530001, -3.1800003, 16.710001,  -13.530001,
-        -3.1800003, 16.710001,  -13.530001, -3.1799994, 16.71,      -13.529999, -3.1799994, 16.709997
-    ],
-    [
-        23.63,     23.63,     23.630003, 23.630001, 23.630001, 23.630001, 23.630001, 23.630001,
-        23.630001, 23.630001, 23.630001, 23.63,     23.630001, 23.630001, 23.63,     23.630001,
-        23.630001, 23.63,     23.630001, 23.630001, 23.630001, 23.630001, 23.630001, 23.630003
-    ],
-    [
-        0, 0.0000019073486, -0.0000019073486, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -0.0000019073486, 0,
-        0
-    ],
-    [
-        10.1, 20.449999, 40.340004, 10.100001, 20.45, 40.34, 10.100001, 20.45, 40.34, 10.1, 20.45, 40.34,
-        10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.100002, 20.45, 40.34
-    ]]                                                                                                                   │
-└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-```
+<!--AUTOGENERATED_START-->
+<!--AUTOGENERATED_END-->

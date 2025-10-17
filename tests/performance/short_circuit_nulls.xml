@@ -1,0 +1,42 @@
+<test>
+    <query>
+        with
+            null::Nullable(String) as x,
+            'hello' as y,
+            ' clickhouse' as z
+        select
+            concat(materialize(x), materialize(y), materialize(z))
+        from
+            numbers(10000000)
+        format Null
+    </query>
+
+    <query>
+        with
+            if(number % 10000 = 0, 'bye',  null)::Nullable(String) as x,
+            'hello' as y,
+            ' clickhouse' as z
+        select
+            concat(materialize(x), materialize(y), materialize(z))
+        from
+            numbers(10000000)
+        format Null
+        settings
+            short_circuit_function_evaluation_for_nulls = 1,
+            short_circuit_function_evaluation_for_nulls_threshold = 0.99
+    </query>
+
+    <query>
+        with
+            if(number % 10000 = 0, 'bye',  null)::Nullable(String) as x,
+            'hello' as y,
+            ' clickhouse' as z
+        select
+            concat(materialize(x), materialize(y), materialize(z))
+        from
+            numbers(10000000)
+        format Null
+        settings
+            short_circuit_function_evaluation_for_nulls = 0
+    </query>
+</test>

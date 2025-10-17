@@ -157,7 +157,7 @@ const ActionsDAG::Node & addCast(
         const ActionsDAG::Node & node_to_cast,
         const DataTypePtr & to_type)
 {
-    if (!node_to_cast.result_type->equals(*to_type))
+    if (node_to_cast.result_type->equals(*to_type))
         return node_to_cast;  /// NOLINT(bugprone-return-const-ref-from-parameter)
 
     const auto & new_node = dag->addCast(node_to_cast, to_type, {});
@@ -262,7 +262,7 @@ bool tryBuildPrewhereSteps(
         const auto & condition_group = condition_groups[step_index];
         ActionsDAGPtr step_dag = std::make_unique<ActionsDAG>();
         const ActionsDAG::Node * original_node = nullptr;
-         const ActionsDAG::Node * result_node;
+        const ActionsDAG::Node * result_node;
 
         std::vector<const ActionsDAG::Node *> new_condition_nodes;
         for (const auto * node : condition_group)
@@ -281,12 +281,6 @@ bool tryBuildPrewhereSteps(
         else
         {
             result_node = new_condition_nodes.front();
-            /// Check if explicit cast is needed for the condition to serve as a filter.
-            if (!isUInt8(removeNullable(removeLowCardinality(result_node->result_type))))
-            {
-                /// Build "condition AND True" expression to "cast" the condition to UInt8 or Nullable(UInt8) depending on its type.
-                result_node = &addAndTrue(step_dag, *result_node);
-            }
         }
 
         step_dag->getOutputs().insert(step_dag->getOutputs().begin(), result_node);
@@ -305,7 +299,10 @@ bool tryBuildPrewhereSteps(
         if (node_remap.contains(output))
         {
             const auto & new_node_info = node_remap[output];
-            new_node_info.dag->getOutputs().push_back(new_node_info.node);
+            auto & new_outputs = new_node_info.dag->getOutputs();
+            // If not `remove_prewhere_column` then column present in all_outputs, but it's already in the outputs
+            if (std::ranges::find(new_outputs, new_node_info.node) == new_outputs.end())
+                new_outputs.push_back(new_node_info.node);
         }
         else if (output->result_name == prewhere_info->prewhere_column_name)
         {
@@ -349,6 +346,7 @@ bool tryBuildPrewhereSteps(
                     step.original_node && !all_outputs.contains(step.original_node) && node_to_step[step.original_node] <= step_index,
                 .need_filter = force_short_circuit_execution,
                 .perform_alter_conversions = true,
+                .mutation_version = std::nullopt,
             };
 
             prewhere.steps.push_back(std::make_shared<PrewhereExprStep>(std::move(new_step)));

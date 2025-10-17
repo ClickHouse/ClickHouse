@@ -16,7 +16,7 @@ namespace DB
 class JoinSwitcher : public IJoin
 {
 public:
-    JoinSwitcher(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_);
+    JoinSwitcher(std::shared_ptr<TableJoin> table_join_, SharedHeader right_sample_block_);
 
     std::string getName() const override { return "JoinSwitcher"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
@@ -31,9 +31,9 @@ public:
         join->checkTypesOfKeys(block);
     }
 
-    void joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_processed) override
+    JoinResultPtr joinBlock(Block block) override
     {
-        join->joinBlock(block, not_processed);
+        return join->joinBlock(block);
     }
 
     const Block & getTotals() const override
@@ -76,6 +76,8 @@ public:
     {
         return join->hasDelayedBlocks();
     }
+
+    void onBuildPhaseFinish() override { join->onBuildPhaseFinish(); }
 
 private:
     JoinPtr join;

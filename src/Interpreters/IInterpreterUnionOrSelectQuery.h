@@ -1,10 +1,10 @@
 #pragma once
 
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/SelectQueryOptions.h>
+#include <Core/Block_fwd.h>
 #include <Parsers/IAST_fwd.h>
-#include <DataTypes/DataTypesNumber.h>
 
 namespace DB
 {
@@ -12,11 +12,7 @@ namespace DB
 class IInterpreterUnionOrSelectQuery : public IInterpreter
 {
 public:
-    IInterpreterUnionOrSelectQuery(const ASTPtr & query_ptr_, const ContextPtr & context_, const SelectQueryOptions & options_)
-        : IInterpreterUnionOrSelectQuery(query_ptr_, Context::createCopy(context_), options_)
-    {
-    }
-
+    IInterpreterUnionOrSelectQuery(const ASTPtr & query_ptr_, const ContextPtr & context_, const SelectQueryOptions & options_);
     IInterpreterUnionOrSelectQuery(const ASTPtr & query_ptr_, const ContextMutablePtr & context_, const SelectQueryOptions & options_);
 
     virtual void buildQueryPlan(QueryPlan & query_plan) = 0;
@@ -27,7 +23,7 @@ public:
 
     ~IInterpreterUnionOrSelectQuery() override = default;
 
-    Block getSampleBlock() { return result_header; }
+    SharedHeader getSampleBlock() { return result_header; }
 
     size_t getMaxStreams() const { return max_streams; }
 
@@ -48,7 +44,7 @@ public:
 protected:
     ASTPtr query_ptr;
     ContextMutablePtr context;
-    Block result_header;
+    SharedHeader result_header;
     SelectQueryOptions options;
     StorageLimitsList storage_limits;
 

@@ -1,5 +1,7 @@
 #include <Storages/IMessageProducer.h>
 #include <Common/logger_useful.h>
+#include <Core/BackgroundSchedulePool.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {

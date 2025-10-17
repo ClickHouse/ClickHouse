@@ -8,6 +8,7 @@
 #include <Coordination/KeeperSnapshotManagerS3.h>
 #include <Coordination/KeeperStateMachine.h>
 #include <Coordination/KeeperStateManager.h>
+#include <Coordination/KeeperStorage.h>
 #include <Coordination/LoggerWrapper.h>
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
 #include <Disks/DiskLocal.h>
@@ -31,7 +32,6 @@
 #if USE_SSL
 #    include <Server/CertificateReloader.h>
 #    include <openssl/ssl.h>
-#    include <Poco/Crypto/EVPPKey.h>
 #    include <Poco/Net/Context.h>
 #    include <Poco/Net/SSLManager.h>
 #    include <Poco/Net/Utility.h>
@@ -158,12 +158,14 @@ auto getSslContextProvider(const Poco::Util::AbstractConfiguration & config, std
             if (auto err = SSL_CTX_clear_chain_certs(ssl_ctx); err != 1)
                 throw Exception(ErrorCodes::OPENSSL_ERROR, "Clear certificates {}", Poco::Net::Utility::getLastError());
 
-            if (auto err = SSL_CTX_use_certificate(ssl_ctx, const_cast<X509 *>(certificate_data->certs_chain[0].certificate())); err != 1)
+            const auto * root_certificate = static_cast<const X509 *>(certificate_data->certs_chain.front());
+            if (auto err = SSL_CTX_use_certificate(ssl_ctx, const_cast<X509 *>(root_certificate)); err != 1)
                 throw Exception(ErrorCodes::OPENSSL_ERROR, "Use certificate {}", Poco::Net::Utility::getLastError());
 
             for (auto cert = certificate_data->certs_chain.begin() + 1; cert != certificate_data->certs_chain.end(); cert++)
             {
-                if (auto err = SSL_CTX_add1_chain_cert(ssl_ctx, const_cast<X509 *>(cert->certificate())); err != 1)
+                const auto * certificate = static_cast<const X509 *>(*cert);
+                if (auto err = SSL_CTX_add1_chain_cert(ssl_ctx, const_cast<X509 *>(certificate)); err != 1)
                     throw Exception(ErrorCodes::OPENSSL_ERROR, "Add certificate to chain {}", Poco::Net::Utility::getLastError());
             }
 
@@ -173,7 +175,6 @@ auto getSslContextProvider(const Poco::Util::AbstractConfiguration & config, std
             if (auto err = SSL_CTX_check_private_key(ssl_ctx); err != 1)
                 throw Exception(ErrorCodes::OPENSSL_ERROR, "Unusable key-pair {}", Poco::Net::Utility::getLastError());
         }
-
 
         return context.takeSslContext();
     };
@@ -525,7 +526,12 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     {
         auto asio_listener = asio_service->create_rpc_listener(state_manager->getPort(), logger, enable_ipv6);
         if (!asio_listener)
-            throw Exception(ErrorCodes::RAFT_ERROR, "Cannot create interserver listener on port {}", state_manager->getPort());
+        {
+            LOG_WARNING(log, "Failed to create listener with IPv6 enabled, falling back to IPv4 only.");
+            asio_listener = asio_service->create_rpc_listener(state_manager->getPort(), logger, /*_enable_ipv6=*/false);
+            if (!asio_listener)
+                throw Exception(ErrorCodes::RAFT_ERROR, "Cannot create interserver listener on port {} after trying both IPv6 and IPv4.", state_manager->getPort());
+        }
         asio_listeners.emplace_back(std::move(asio_listener));
     }
     else
@@ -558,6 +564,7 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     nuraft::raft_server::limits raft_limits;
     raft_limits.reconnect_limit_ = getValueOrMaxInt32AndLogWarning(coordination_settings[CoordinationSetting::raft_limits_reconnect_limit], "raft_limits_reconnect_limit", log);
     raft_limits.response_limit_ = getValueOrMaxInt32AndLogWarning(coordination_settings[CoordinationSetting::raft_limits_response_limit], "response_limit", log);
+    raft_limits.busy_connection_limit_ = 0;
     KeeperRaftServer::set_raft_limits(raft_limits);
 
     raft_instance->start_server(init_options.skip_initial_election_timeout_);
@@ -582,7 +589,7 @@ void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, boo
 
     auto log_store = state_manager->load_log_store();
     last_log_idx_on_disk = log_store->next_slot() - 1;
-    LOG_TRACE(log, "Last local log idx {}", last_log_idx_on_disk);
+    LOG_TRACE(log, "Last local log idx {}", last_log_idx_on_disk.load());
     if (state_machine->last_commit_index() >= last_log_idx_on_disk)
         keeper_context->setLocalLogsPreprocessed();
 
@@ -652,7 +659,7 @@ namespace
 
 }
 
-void KeeperServer::putLocalReadRequest(const KeeperStorageBase::RequestForSession & request_for_session)
+void KeeperServer::putLocalReadRequest(const KeeperRequestForSession & request_for_session)
 {
     if (!request_for_session.request->isReadRequest())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot process non-read request locally");
@@ -660,7 +667,7 @@ void KeeperServer::putLocalReadRequest(const KeeperStorageBase::RequestForSessio
     state_machine->processReadRequest(request_for_session);
 }
 
-RaftAppendResult KeeperServer::putRequestBatch(const KeeperStorageBase::RequestsForSessions & requests_for_sessions)
+RaftAppendResult KeeperServer::putRequestBatch(const KeeperRequestsForSessions & requests_for_sessions)
 {
     std::vector<nuraft::ptr<nuraft::buffer>> entries;
     entries.reserve(requests_for_sessions.size());
@@ -853,8 +860,15 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 if (req.log_entries().empty())
                     break;
 
+                /// we need to rollback some local logs so we set last_log_idx_on_disk
+                /// to the last common log index from leader
                 if (req.get_last_log_idx() < last_log_idx_on_disk)
                     last_log_idx_on_disk = req.get_last_log_idx();
+
+                /// if local logs detects invalid entry from leader we don't want to allow
+                /// leader to continue committing new logs
+                /// so we clear all new log entries until all local logs are processed
+                req.log_entries().clear();
 
                 break;
             }
@@ -907,10 +921,11 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 size_t request_end_position = 0;
                 auto request_for_session = state_machine->parseRequest(*entry_buf, /*final=*/false, &serialization_version, &request_end_position);
                 request_for_session->zxid = next_zxid;
-                if (!state_machine->preprocess(*request_for_session))
+                auto digest_after_preprocessing = state_machine->preprocess(*request_for_session);
+                if (!digest_after_preprocessing)
                     return nuraft::cb_func::ReturnCode::ReturnNull;
 
-                request_for_session->digest = state_machine->getNodesDigest();
+                request_for_session->digest = *digest_after_preprocessing;
 
                 /// older versions of Keeper can send logs that are missing some fields
                 size_t bytes_missing = 0;
@@ -944,8 +959,8 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                     writeIntBinary(request_for_session->time, write_buf);
 
                 writeIntBinary(request_for_session->zxid, write_buf);
-                writeIntBinary(request_for_session->digest->version, write_buf);
-                if (request_for_session->digest->version != KeeperStorageBase::NO_DIGEST)
+                writeIntBinary(static_cast<uint8_t>(request_for_session->digest->version), write_buf);
+                if (request_for_session->digest->version != KeeperDigestVersion::NO_DIGEST)
                     writeIntBinary(request_for_session->digest->value, write_buf);
 
                 write_buf.finalize();
@@ -1190,7 +1205,7 @@ void KeeperServer::applyConfigUpdateWithReconfigDisabled(const ClusterUpdateActi
 
     throw Exception(ErrorCodes::RAFT_ERROR,
         "Configuration change {} was not accepted by Raft after {} retries",
-        action, coordination_settings[CoordinationSetting::configuration_change_tries_count]);
+        action, coordination_settings[CoordinationSetting::configuration_change_tries_count].value);
 }
 
 bool KeeperServer::waitForConfigUpdateWithReconfigDisabled(const ClusterUpdateAction& action)

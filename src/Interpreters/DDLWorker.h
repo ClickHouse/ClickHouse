@@ -1,11 +1,11 @@
 #pragma once
 
-#include <Interpreters/Context.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/DNSResolver.h>
+#include <Common/SharedMutex.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -15,7 +15,6 @@
 #include <atomic>
 #include <list>
 #include <mutex>
-#include <shared_mutex>
 #include <unordered_set>
 
 
@@ -89,10 +88,10 @@ public:
 
     bool isCurrentlyActive() const { return initialized && !stop_flag; }
 
-
     /// Returns cached ZooKeeper session (possibly expired).
-    ZooKeeperPtr tryGetZooKeeper() const;
+    ZooKeeperPtr getZooKeeper() const;
     /// If necessary, creates a new session and caches it.
+    /// Should be called in `initializeMainThread` only, so if it is expired, `runMainThread` will reinitialized the state.
     ZooKeeperPtr getAndSetZooKeeper();
 
 protected:
@@ -120,7 +119,7 @@ protected:
 
     private:
         std::unordered_set<String> set;
-        mutable std::shared_mutex mtx;
+        mutable SharedMutex mtx;
     };
 
     /// Pushes query into DDL queue, returns path to created node
@@ -136,7 +135,7 @@ protected:
     /// If dry_run = false, the task will be processed right after this call.
     virtual DDLTaskPtr initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper, bool dry_run);
 
-    void processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper);
+    void processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper, bool internal_query);
     void updateMaxDDLEntryID(const String & entry_name);
 
     /// Check that query should be executed on leader replica only
@@ -154,10 +153,11 @@ protected:
         const ZooKeeperPtr & zookeeper,
         std::unique_ptr<zkutil::ZooKeeperLock> & execute_on_leader_lock);
 
-    bool tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeeper);
+    bool tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeeper, bool internal);
 
     /// Checks and cleanups queue's nodes
     void cleanupQueue(Int64 current_time_seconds, const ZooKeeperPtr & zookeeper);
+    void cleanupStaleReplicas(Int64 current_time_seconds, const ZooKeeperPtr & zookeeper);
     virtual bool canRemoveQueueEntry(const String & entry_name, const Coordination::Stat & stat);
 
     /// Init task node
@@ -198,7 +198,7 @@ protected:
     std::shared_ptr<Poco::Event> queue_updated_event = std::make_shared<Poco::Event>();
     std::shared_ptr<Poco::Event> cleanup_event = std::make_shared<Poco::Event>();
     std::atomic<bool> initialized = false;
-    std::atomic<bool> stop_flag = true;
+    std::atomic<bool> stop_flag = false;
 
     std::unique_ptr<ThreadFromGlobalPool> main_thread;
     std::unique_ptr<ThreadFromGlobalPool> cleanup_thread;

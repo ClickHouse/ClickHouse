@@ -2,10 +2,10 @@
 
 #include "config.h"
 
+#include <Common/SharedMutex.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 
 #include <filesystem>
-#include <shared_mutex>
 
 namespace Poco
 {
@@ -36,8 +36,7 @@ public:
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
         const ReadSettings & read_settings,
-        std::optional<size_t> read_hint = {},
-        std::optional<size_t> file_size = {}) const override;
+        std::optional<size_t> read_hint = {}) const override;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
     std::unique_ptr<WriteBufferFromFileBase> writeObject( /// NOLINT
@@ -52,6 +51,7 @@ public:
     void removeObjectsIfExist(const StoredObjects & objects) override;
 
     ObjectMetadata getObjectMetadata(const std::string & path) const override;
+    std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path) const override;
 
     void copyObject( /// NOLINT
         const StoredObject & object_from,
@@ -66,16 +66,12 @@ public:
 
     String getObjectsNamespace() const override { return ""; }
 
-    std::unique_ptr<IObjectStorage> cloneObjectStorage(
-        const std::string & new_namespace,
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_prefix,
-        ContextPtr context) override;
-
     ObjectStorageKey generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & /* key_prefix */) const override
     {
         return ObjectStorageKey::createAsRelative(path);
     }
+
+    bool areObjectKeysRandom() const override { return false; }
 
     bool isRemote() const override { return true; }
 
@@ -132,7 +128,7 @@ protected:
     };
 
     mutable Files files;
-    mutable std::shared_mutex metadata_mutex;
+    mutable SharedMutex metadata_mutex;
 
     FileDataPtr tryGetFileInfo(const String & path) const;
     std::vector<std::filesystem::path> listDirectory(const String & path) const;
@@ -140,7 +136,7 @@ protected:
 
 private:
     std::pair<WebObjectStorage::FileDataPtr, std::vector<std::filesystem::path>>
-    loadFiles(const String & path, const std::unique_lock<std::shared_mutex> &) const;
+    loadFiles(const String & path, const std::unique_lock<SharedMutex> &) const;
 
     const String url;
     LoggerPtr log;

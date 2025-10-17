@@ -72,14 +72,7 @@ public:
 
     using VariantSerializations = std::vector<SerializationPtr>;
 
-    explicit SerializationVariant(
-        const VariantSerializations & variants_,
-        const std::vector<String> & variant_names_,
-        const std::vector<size_t> & deserialize_text_order_,
-        const String & variant_name_)
-        : variants(variants_), variant_names(variant_names_), deserialize_text_order(deserialize_text_order_), variant_name(variant_name_)
-    {
-    }
+    explicit SerializationVariant(const DataTypes & variant_types_, const String & variant_name_);
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
@@ -118,6 +111,7 @@ public:
 
     void deserializeBinaryBulkWithMultipleStreams(
         ColumnPtr & column,
+        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
@@ -186,14 +180,20 @@ private:
         CompactDiscriminatorsGranuleFormat granule_format = CompactDiscriminatorsGranuleFormat::PLAIN;
         size_t remaining_rows_in_granule = 0;
         ColumnVariant::Discriminator compact_discr = 0;
+
+        ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+        {
+            return std::make_shared<DeserializeBinaryBulkStateVariantDiscriminators>(*this);
+        }
     };
 
     static DeserializeBinaryBulkStatePtr deserializeDiscriminatorsStatePrefix(
         DeserializeBinaryBulkSettings & settings,
         SubstreamsDeserializeStatesCache * cache);
 
-    std::vector<size_t> deserializeCompactDiscriminators(
+    std::pair<std::vector<size_t>, std::vector<size_t>> deserializeCompactDiscriminators(
         ColumnPtr & discriminators_column,
+        size_t rows_offset,
         size_t limit,
         ReadBuffer * stream,
         bool continuous_reading,
@@ -212,10 +212,12 @@ private:
         IColumn & column,
         const String & field,
         std::function<bool(ReadBuffer &)> check_for_null,
-        std::function<bool(IColumn & variant_columm, const SerializationPtr & nested, ReadBuffer &)> try_deserialize_nested) const;
+        std::function<bool(IColumn & variant_columm, const SerializationPtr & nested, ReadBuffer &, const FormatSettings &)> try_deserialize_nested,
+        const FormatSettings & settings) const;
 
-    VariantSerializations variants;
+    VariantSerializations variant_serializations;
     std::vector<String> variant_names;
+    DataTypes variant_types;
     std::vector<size_t> deserialize_text_order;
     /// Name of Variant data type for better exception messages.
     String variant_name;

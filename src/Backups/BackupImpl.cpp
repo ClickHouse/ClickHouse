@@ -3,18 +3,20 @@
 #include <Backups/BackupFileInfo.h>
 #include <Backups/BackupIO.h>
 #include <Backups/IBackupEntry.h>
+#include <Backups/BackupIO_S3.h>
+#include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/StringUtils.h>
 #include <base/hex.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/XMLUtils.h>
-#include <Interpreters/Context.h>
 #include <IO/Archives/IArchiveReader.h>
 #include <IO/Archives/IArchiveWriter.h>
 #include <IO/Archives/createArchiveReader.h>
 #include <IO/Archives/createArchiveWriter.h>
-#include <IO/ConcatSeekableReadBuffer.h>
+#include <IO/ConcatReadBufferFromFile.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFileBase.h>
@@ -29,18 +31,22 @@ namespace ProfileEvents
 {
     extern const Event BackupsOpenedForRead;
     extern const Event BackupsOpenedForWrite;
+    extern const Event BackupsOpenedForUnlock;
     extern const Event BackupReadMetadataMicroseconds;
     extern const Event BackupWriteMetadataMicroseconds;
+    extern const Event BackupLockFileReads;
 }
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int BACKUP_NOT_FOUND;
     extern const int BACKUP_ALREADY_EXISTS;
     extern const int BACKUP_VERSION_NOT_SUPPORTED;
     extern const int BACKUP_DAMAGED;
+    extern const int BAD_ARGUMENTS;
     extern const int NO_BASE_BACKUP;
     extern const int WRONG_BASE_BACKUP;
     extern const int BACKUP_ENTRY_NOT_FOUND;
@@ -53,7 +59,8 @@ namespace ErrorCodes
 namespace
 {
     const int INITIAL_BACKUP_VERSION = 1;
-    const int CURRENT_BACKUP_VERSION = 1;
+    /// We may use lightweight backup in version 2.
+    const int CURRENT_BACKUP_VERSION = 2;
 
     using SizeAndChecksum = IBackup::SizeAndChecksum;
 
@@ -86,26 +93,20 @@ namespace
 
 
 BackupImpl::BackupImpl(
-    const BackupInfo & backup_info_,
+    BackupFactory::CreateParams params_,
     const ArchiveParams & archive_params_,
-    const std::optional<BackupInfo> & base_backup_info_,
     std::shared_ptr<IBackupReader> reader_,
-    const ContextPtr & context_,
-    bool is_internal_backup_,
-    bool use_same_s3_credentials_for_base_backup_,
-    bool use_same_password_for_base_backup_)
-    : backup_info(backup_info_)
+    SnapshotReaderCreator lightweight_snapshot_reader_creator_)
+    : params(std::move(params_))
+    , backup_info(params.backup_info)
     , backup_name_for_logging(backup_info.toStringForLogging())
     , use_archive(!archive_params_.archive_name.empty())
     , archive_params(archive_params_)
     , open_mode(OpenMode::READ)
     , reader(std::move(reader_))
-    , context(context_)
-    , is_internal_backup(is_internal_backup_)
+    , lightweight_snapshot_reader_creator(lightweight_snapshot_reader_creator_)
     , version(INITIAL_BACKUP_VERSION)
-    , base_backup_info(base_backup_info_)
-    , use_same_s3_credentials_for_base_backup(use_same_s3_credentials_for_base_backup_)
-    , use_same_password_for_base_backup(use_same_password_for_base_backup_)
+    , base_backup_info(params.base_backup_info)
     , log(getLogger("BackupImpl"))
 {
     open();
@@ -113,37 +114,41 @@ BackupImpl::BackupImpl(
 
 
 BackupImpl::BackupImpl(
-    const BackupInfo & backup_info_,
+    BackupFactory::CreateParams params_,
     const ArchiveParams & archive_params_,
-    const std::optional<BackupInfo> & base_backup_info_,
-    std::shared_ptr<IBackupWriter> writer_,
-    const ContextPtr & context_,
-    bool is_internal_backup_,
-    const std::shared_ptr<IBackupCoordination> & coordination_,
-    const std::optional<UUID> & backup_uuid_,
-    bool deduplicate_files_,
-    bool use_same_s3_credentials_for_base_backup_,
-    bool use_same_password_for_base_backup_)
-    : backup_info(backup_info_)
+    std::shared_ptr<IBackupWriter> writer_)
+    : params(std::move(params_))
+    , backup_info(params.backup_info)
     , backup_name_for_logging(backup_info.toStringForLogging())
     , use_archive(!archive_params_.archive_name.empty())
     , archive_params(archive_params_)
     , open_mode(OpenMode::WRITE)
     , writer(std::move(writer_))
-    , context(context_)
-    , is_internal_backup(is_internal_backup_)
-    , coordination(coordination_)
-    , uuid(backup_uuid_)
+    , coordination(params.backup_coordination)
+    , uuid(params.backup_uuid)
     , version(CURRENT_BACKUP_VERSION)
-    , base_backup_info(base_backup_info_)
-    , deduplicate_files(deduplicate_files_)
-    , use_same_s3_credentials_for_base_backup(use_same_s3_credentials_for_base_backup_)
-    , use_same_password_for_base_backup(use_same_password_for_base_backup_)
+    , base_backup_info(params.base_backup_info)
     , log(getLogger("BackupImpl"))
 {
     open();
 }
 
+BackupImpl::BackupImpl(
+    const BackupInfo & backup_info_,
+    const ArchiveParams & archive_params_,
+    std::shared_ptr<IBackupReader> reader_,
+    std::shared_ptr<IBackupWriter> lightweight_snapshot_writer_)
+    : backup_info(backup_info_)
+    , backup_name_for_logging(backup_info.toStringForLogging())
+    , use_archive(!archive_params_.archive_name.empty())
+    , archive_params(archive_params_)
+    , open_mode(OpenMode::UNLOCK)
+    , reader(reader_)
+    , lightweight_snapshot_writer(lightweight_snapshot_writer_)
+    , log(getLogger("BackupImpl"))
+{
+    open();
+}
 
 BackupImpl::~BackupImpl()
 {
@@ -168,7 +173,12 @@ void BackupImpl::open()
 {
     std::lock_guard lock{mutex};
 
-    if (open_mode == OpenMode::READ)
+    if (open_mode == OpenMode::UNLOCK)
+    {
+        ProfileEvents::increment(ProfileEvents::BackupsOpenedForUnlock);
+        LOG_INFO(log, "Unlocking backup: {}", backup_name_for_logging);
+    }
+    else if (open_mode == OpenMode::READ)
     {
         ProfileEvents::increment(ProfileEvents::BackupsOpenedForRead);
         LOG_INFO(log, "Reading backup: {}", backup_name_for_logging);
@@ -186,7 +196,7 @@ void BackupImpl::open()
 
         /// Check that we can write a backup there and create the lock file to own this destination.
         checkBackupDoesntExist();
-        if (!is_internal_backup)
+        if (!params.is_internal_backup)
             createLockFile();
         checkLockFile(true);
     }
@@ -194,7 +204,7 @@ void BackupImpl::open()
     if (use_archive)
         openArchive();
 
-    if (open_mode == OpenMode::READ)
+    if (open_mode == OpenMode::READ || open_mode == OpenMode::UNLOCK)
         readBackupMetadata();
 }
 
@@ -204,6 +214,7 @@ void BackupImpl::close()
     closeArchive(/* finalize= */ false);
     writer.reset();
     reader.reset();
+    lightweight_snapshot_reader.reset();
     coordination.reset();
 }
 
@@ -254,23 +265,11 @@ std::shared_ptr<const IBackup> BackupImpl::getBaseBackupUnlocked() const
 {
     if (!base_backup && base_backup_info)
     {
-        if (use_same_s3_credentials_for_base_backup)
+        if (params.use_same_s3_credentials_for_base_backup)
             backup_info.copyS3CredentialsTo(*base_backup_info);
 
-        BackupFactory::CreateParams params;
-        params.backup_info = *base_backup_info;
-        params.open_mode = OpenMode::READ;
-        params.context = context;
-        params.is_internal_backup = is_internal_backup;
-        /// use_same_s3_credentials_for_base_backup should be inherited for base backups
-        params.use_same_s3_credentials_for_base_backup = use_same_s3_credentials_for_base_backup;
-        /// use_same_password_for_base_backup should be inherited for base backups
-        params.use_same_password_for_base_backup = use_same_password_for_base_backup;
-
-        if (params.use_same_password_for_base_backup)
-            params.password = archive_params.password;
-
-        base_backup = BackupFactory::instance().createBackup(params);
+        BackupFactory::CreateParams base_params = params.getCreateParamsForBaseBackup(*base_backup_info, archive_params.password);
+        base_backup = BackupFactory::instance().createBackup(base_params);
 
         if ((open_mode == OpenMode::READ) && (base_backup_uuid != base_backup->getUUID()))
         {
@@ -341,7 +340,7 @@ void BackupImpl::writeBackupMetadata()
     LOG_TRACE(log, "Backup {}: Writing metadata", backup_name_for_logging);
     auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::BackupWriteMetadataMicroseconds);
 
-    assert(!is_internal_backup);
+    assert(!params.is_internal_backup);
     checkLockFile(true);
 
     std::unique_ptr<WriteBuffer> out;
@@ -351,8 +350,8 @@ void BackupImpl::writeBackupMetadata()
         out = writer->writeFile(".backup");
 
     *out << "<config>";
-    *out << "<version>" << CURRENT_BACKUP_VERSION << "</version>";
-    *out << "<deduplicate_files>" << deduplicate_files << "</deduplicate_files>";
+    *out << "<version>" << (params.is_lightweight_snapshot ? CURRENT_BACKUP_VERSION : INITIAL_BACKUP_VERSION) << "</version>";
+    *out << "<deduplicate_files>" << params.deduplicate_files << "</deduplicate_files>";
     *out << "<timestamp>" << toString(LocalDateTime{timestamp}) << "</timestamp>";
     *out << "<uuid>" << toString(*uuid) << "</uuid>";
 
@@ -377,6 +376,12 @@ void BackupImpl::writeBackupMetadata()
         }
     }
 
+    if (params.is_lightweight_snapshot)
+    {
+        *out << "<original_endpoint>" << original_endpoint << "</original_endpoint>";
+        *out << "<original_namespace>" << original_namespace << "</original_namespace>";
+    }
+
     num_files = all_file_infos.size();
     total_size = 0;
     num_entries = 0;
@@ -389,6 +394,13 @@ void BackupImpl::writeBackupMetadata()
 
         *out << "<name>" << xml << info.file_name << "</name>";
         *out << "<size>" << info.size << "</size>";
+
+        if (!info.object_key.empty())
+        {
+            *out << "<object_key>" << info.object_key << "</object_key>";
+            if (original_endpoint.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "In lightweight snapshot backup, the endpoint should not be empty. Do not run this command with `ON CLUSTER`");
+        }
 
         if (info.size)
         {
@@ -409,7 +421,7 @@ void BackupImpl::writeBackupMetadata()
         }
 
         total_size += info.size;
-        bool has_entry = !deduplicate_files || (info.size && (info.size != info.base_size) && (info.data_file_name.empty() || (info.data_file_name == info.file_name)));
+        bool has_entry = !params.deduplicate_files || (info.size && (info.size != info.base_size) && (info.data_file_name.empty() || (info.data_file_name == info.file_name)));
         if (has_entry)
         {
             ++num_entries;
@@ -457,7 +469,6 @@ void BackupImpl::readBackupMetadata()
     Poco::XML::DOMParser dom_parser;
     Poco::AutoPtr<Poco::XML::Document> config = dom_parser.parseMemory(str.data(), str.size());
     const Poco::XML::Node * config_root = getRootNode(config);
-
     version = getInt(config_root, "version");
     if ((version < INITIAL_BACKUP_VERSION) || (version > CURRENT_BACKUP_VERSION))
         throw Exception(
@@ -472,6 +483,11 @@ void BackupImpl::readBackupMetadata()
     if (config_root->getNodeByPath("base_backup_uuid"))
         base_backup_uuid = parse<UUID>(getString(config_root, "base_backup_uuid"));
 
+    if (config_root->getNodeByPath("original_endpoint"))
+        original_endpoint = getString(config_root, "original_endpoint");
+    if (config_root->getNodeByPath("original_namespace"))
+        original_namespace = getString(config_root, "original_namespace");
+
     num_files = 0;
     total_size = 0;
     num_entries = 0;
@@ -485,7 +501,7 @@ void BackupImpl::readBackupMetadata()
             const Poco::XML::Node * file_config = child;
             BackupFileInfo info;
             info.file_name = getString(file_config, "name");
-
+            info.object_key = getString(file_config, "object_key", "");
             info.size = getUInt64(file_config, "size");
             if (info.size)
             {
@@ -521,12 +537,23 @@ void BackupImpl::readBackupMetadata()
             }
 
             file_names.emplace(info.file_name, std::pair{info.size, info.checksum});
-            if (info.size)
+            if (!info.object_key.empty())
+            {
+                if (original_endpoint.empty() || original_namespace.empty())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "In lightweight snapshot backup, the endpoint or namespace should be not empty. We cannot restore this file.");
+
+                if (open_mode == OpenMode::READ)
+                    lightweight_snapshot_reader = lightweight_snapshot_reader_creator(original_endpoint, original_namespace);
+
+                file_object_keys.emplace(info.file_name, info.object_key);
+                lightweight_snapshot_file_infos.try_emplace(info.object_key, info);
+            }
+            else if (info.size)
                 file_infos.try_emplace(std::pair{info.size, info.checksum}, info);
 
             ++num_files;
             total_size += info.size;
-            bool has_entry = !deduplicate_files || (info.size && (info.size != info.base_size) && (info.data_file_name.empty() || (info.data_file_name == info.file_name)));
+            bool has_entry = !params.deduplicate_files || (info.size && (info.size != info.base_size) && (info.data_file_name.empty() || (info.data_file_name == info.file_name)));
             if (has_entry)
             {
                 ++num_entries;
@@ -555,7 +582,7 @@ void BackupImpl::checkBackupDoesntExist() const
         throw Exception(ErrorCodes::BACKUP_ALREADY_EXISTS, "Backup {} already exists", backup_name_for_logging);
 
     /// Check that no other backup (excluding internal backups) is writing to the same destination.
-    if (!is_internal_backup)
+    if (!params.is_internal_backup)
     {
         assert(!lock_file_name.empty());
         if (writer->fileExists(lock_file_name))
@@ -566,7 +593,7 @@ void BackupImpl::checkBackupDoesntExist() const
 void BackupImpl::createLockFile()
 {
     /// Internal backup must not create the lock file (it should be created by the initiator).
-    assert(!is_internal_backup);
+    assert(!params.is_internal_backup);
 
     assert(uuid);
     auto out = writer->writeFile(lock_file_name);
@@ -576,8 +603,15 @@ void BackupImpl::createLockFile()
 
 bool BackupImpl::checkLockFile(bool throw_if_failed) const
 {
-    if (!lock_file_name.empty() && uuid && writer->fileContentsEqual(lock_file_name, toString(*uuid)))
-        return true;
+    if (!lock_file_name.empty() && uuid)
+    {
+        LOG_TRACE(log, "Checking lock file {}", lock_file_name);
+        ProfileEvents::increment(ProfileEvents::BackupLockFileReads);
+        String actual_file_contents;
+        if (writer->fileContentsEqual(lock_file_name, toString(*uuid), actual_file_contents))
+            return true;
+        LOG_TRACE(log, "Lock file {} contents do not match, expected: {}, actual: {}", lock_file_name, toString(*uuid), actual_file_contents);
+    }
 
     if (throw_if_failed)
     {
@@ -602,10 +636,15 @@ void BackupImpl::removeLockFile()
         writer->removeFile(lock_file_name);
 }
 
+bool BackupImpl::directoryExists(const String & directory) const
+{
+    return !listFiles(directory, true /*recursive*/).empty();
+}
+
 Strings BackupImpl::listFiles(const String & directory, bool recursive) const
 {
-    if (open_mode != OpenMode::READ)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not opened for reading");
+    if (open_mode == OpenMode::WRITE)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for writing. Something is wrong internally");
 
     String prefix = removeLeadingSlash(directory);
     if (!prefix.empty() && !prefix.ends_with('/'))
@@ -634,8 +673,8 @@ Strings BackupImpl::listFiles(const String & directory, bool recursive) const
 
 bool BackupImpl::hasFiles(const String & directory) const
 {
-    if (open_mode != OpenMode::READ)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not opened for reading");
+    if (open_mode == OpenMode::WRITE)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for writing. Something is wrong internally");
 
     String prefix = removeLeadingSlash(directory);
     if (!prefix.empty() && !prefix.ends_with('/'))
@@ -652,8 +691,8 @@ bool BackupImpl::hasFiles(const String & directory) const
 
 bool BackupImpl::fileExists(const String & file_name) const
 {
-    if (open_mode != OpenMode::READ)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not opened for reading");
+    if (open_mode == OpenMode::WRITE)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for writing. Something is wrong internally");
 
     auto adjusted_path = removeLeadingSlash(file_name);
     std::lock_guard lock{mutex};
@@ -662,8 +701,8 @@ bool BackupImpl::fileExists(const String & file_name) const
 
 bool BackupImpl::fileExists(const SizeAndChecksum & size_and_checksum) const
 {
-    if (open_mode != OpenMode::READ)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not opened for reading");
+    if (open_mode == OpenMode::WRITE)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for writing. Something is wrong internally");
 
     std::lock_guard lock{mutex};
     return file_infos.contains(size_and_checksum);
@@ -681,8 +720,8 @@ UInt128 BackupImpl::getFileChecksum(const String & file_name) const
 
 SizeAndChecksum BackupImpl::getFileSizeAndChecksum(const String & file_name) const
 {
-    if (open_mode != OpenMode::READ)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not opened for reading");
+    if (open_mode == OpenMode::WRITE)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for writing. Something is wrong internally");
 
     auto adjusted_path = removeLeadingSlash(file_name);
 
@@ -700,27 +739,42 @@ SizeAndChecksum BackupImpl::getFileSizeAndChecksum(const String & file_name) con
     return it->second;
 }
 
-std::unique_ptr<SeekableReadBuffer> BackupImpl::readFile(const String & file_name) const
+std::unique_ptr<ReadBufferFromFileBase> BackupImpl::readFile(const String & file_name) const
 {
-    return readFile(getFileSizeAndChecksum(file_name));
+    return readFile(file_name, getFileSizeAndChecksum(file_name));
 }
 
-std::unique_ptr<SeekableReadBuffer> BackupImpl::readFile(const SizeAndChecksum & size_and_checksum) const
+std::unique_ptr<ReadBufferFromFileBase> BackupImpl::readFile(const String & file_name, const SizeAndChecksum & size_and_checksum) const
 {
-    return readFileImpl(size_and_checksum, /* read_encrypted= */ false);
+    return readFileImpl(file_name, size_and_checksum, /* read_encrypted= */ false);
 }
 
-std::unique_ptr<SeekableReadBuffer> BackupImpl::readFileImpl(const SizeAndChecksum & size_and_checksum, bool read_encrypted) const
+std::unique_ptr<ReadBufferFromFileBase> BackupImpl::readFileByObjectKey(const BackupFileInfo & info) const
 {
-    if (open_mode != OpenMode::READ)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not opened for reading");
+    if (open_mode == OpenMode::WRITE)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for writing. Something is wrong internally");
 
+    if (info.object_key.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Object key of {} is empty string", info.data_file_name);
+
+    return lightweight_snapshot_reader->readFile(info.object_key);
+}
+
+std::unique_ptr<ReadBufferFromFileBase>
+BackupImpl::readFileImpl(const String & file_name, const SizeAndChecksum & size_and_checksum, bool read_encrypted) const
+
+{
+    if (open_mode == OpenMode::WRITE)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for writing. Something is wrong internally");
+
+    // Zero-sized files are not inserted into `file_infos` during metadata load,
+    // but they are present in `file_names`. Short-circuit them here and return
+    // an empty buffer without consulting `file_infos`.
     if (size_and_checksum.first == 0)
     {
-        /// Entry's data is empty.
         std::lock_guard lock{mutex};
         ++num_read_files;
-        return std::make_unique<ReadBufferFromMemory>(static_cast<char *>(nullptr), 0);
+        return std::make_unique<ReadBufferFromOutsideMemoryFile>(file_name, std::string_view{});
     }
 
     BackupFileInfo info;
@@ -731,9 +785,10 @@ std::unique_ptr<SeekableReadBuffer> BackupImpl::readFileImpl(const SizeAndChecks
         {
             throw Exception(
                 ErrorCodes::BACKUP_ENTRY_NOT_FOUND,
-                "Backup {}: Entry {} not found in the backup",
+                "Backup {}: Entry {} for file '{}' not found in the backup",
                 backup_name_for_logging,
-                formatSizeAndChecksum(size_and_checksum));
+                formatSizeAndChecksum(size_and_checksum),
+                file_name);
         }
         info = it->second;
     }
@@ -746,8 +801,8 @@ std::unique_ptr<SeekableReadBuffer> BackupImpl::readFileImpl(const SizeAndChecks
             info.data_file_name);
     }
 
-    std::unique_ptr<SeekableReadBuffer> read_buffer;
-    std::unique_ptr<SeekableReadBuffer> base_read_buffer;
+    std::unique_ptr<ReadBufferFromFileBase> read_buffer;
+    std::unique_ptr<ReadBufferFromFileBase> base_read_buffer;
 
     if (info.size > info.base_size)
     {
@@ -778,7 +833,7 @@ std::unique_ptr<SeekableReadBuffer> BackupImpl::readFileImpl(const SizeAndChecks
                 backup_name_for_logging, formatSizeAndChecksum(size_and_checksum));
         }
 
-        base_read_buffer = base->readFile(std::pair{info.base_size, info.base_checksum});
+        base_read_buffer = base->readFile(info.file_name, std::pair{info.base_size, info.base_checksum});
     }
 
     {
@@ -801,21 +856,40 @@ std::unique_ptr<SeekableReadBuffer> BackupImpl::readFileImpl(const SizeAndChecks
 
     /// The beginning of the data comes from the base backup,
     /// and the ending comes from this backup.
-    return std::make_unique<ConcatSeekableReadBuffer>(
-        std::move(base_read_buffer), info.base_size, std::move(read_buffer), info.size - info.base_size);
+    return std::make_unique<ConcatReadBufferFromFile>(
+        info.data_file_name, std::move(base_read_buffer), info.base_size, std::move(read_buffer), info.size - info.base_size);
+}
+
+String BackupImpl::getObjectKey(const String & file_name) const
+{
+    if (open_mode == OpenMode::WRITE)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for writing. Something is wrong internally");
+
+    auto adjusted_path = removeLeadingSlash(file_name);
+
+    std::lock_guard lock{mutex};
+    auto it = file_object_keys.find(adjusted_path);
+    if (it != file_object_keys.end())
+        return it->second;
+    return "";
 }
 
 size_t BackupImpl::copyFileToDisk(const String & file_name,
                                   DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) const
 {
+#if CLICKHOUSE_CLOUD
+    String object_key = getObjectKey(file_name);
+    if (!object_key.empty())
+        return copyFileToDiskByObjectKey(object_key, destination_disk, destination_path, write_mode);
+#endif
     return copyFileToDisk(getFileSizeAndChecksum(file_name), destination_disk, destination_path, write_mode);
 }
 
 size_t BackupImpl::copyFileToDisk(const SizeAndChecksum & size_and_checksum,
                                   DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) const
 {
-    if (open_mode != OpenMode::READ)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not opened for reading");
+    if (open_mode == OpenMode::WRITE)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for writing. Something is wrong internally");
 
     if (size_and_checksum.first == 0)
     {
@@ -878,7 +952,7 @@ size_t BackupImpl::copyFileToDisk(const SizeAndChecksum & size_and_checksum,
     else
     {
         /// Use the generic way to copy data. `readFile()` will update `num_read_files`.
-        auto read_buffer = readFileImpl(size_and_checksum, /* read_encrypted= */ info.encrypted_by_disk);
+        auto read_buffer = readFileImpl(info.file_name, size_and_checksum, /* read_encrypted= */ info.encrypted_by_disk);
         std::unique_ptr<WriteBuffer> write_buffer;
         size_t buf_size = std::min<size_t>(info.size, reader->getWriteBufferSize());
         if (info.encrypted_by_disk)
@@ -899,8 +973,17 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
     if (entry->isReference())
         return;
 
-    if (open_mode != OpenMode::WRITE)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not opened for writing");
+    if (entry->isFromRemoteFile())
+    {
+        LOG_TRACE(log, "Writing backup for file {} : skipped because of lightweight snapshot", info.data_file_name);
+        std::lock_guard lock{mutex};
+        original_endpoint = entry->getEndpointURI();
+        original_namespace = entry->getNamespace();
+        return;
+    }
+
+    if (open_mode == OpenMode::READ)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for reading. Something is wrong internally");
 
     if (writing_finalized)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is already finalized");
@@ -950,12 +1033,12 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
     }
     else if (src_disk && from_immutable_file)
     {
-        LOG_INFO(log, "Writing backup for file {} from {} (disk {}): data file #{}", info.data_file_name, src_file_desc, src_disk->getName(), info.data_file_index);
+        LOG_TRACE(log, "Writing backup for file {} from {} (disk {}): data file #{}", info.data_file_name, src_file_desc, src_disk->getName(), info.data_file_index);
         writer->copyFileFromDisk(info.data_file_name, src_disk, src_file_path, info.encrypted_by_disk, info.base_size, info.size - info.base_size);
     }
     else
     {
-        LOG_INFO(log, "Writing backup for file {} from {}: data file #{}", info.data_file_name, src_file_desc, info.data_file_index);
+        LOG_TRACE(log, "Writing backup for file {} from {}: data file #{}", info.data_file_name, src_file_desc, info.data_file_index);
         auto create_read_buffer = [entry, read_settings = writer->getReadSettings()] { return entry->getReadBuffer(read_settings); };
         writer->copyDataToFile(info.data_file_name, create_read_buffer, info.base_size, info.size - info.base_size);
     }
@@ -987,8 +1070,8 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
 void BackupImpl::finalizeWriting()
 {
     std::lock_guard lock{mutex};
-    if (open_mode != OpenMode::WRITE)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not opened for writing");
+    if (open_mode == OpenMode::READ)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for reading. Something is wrong internally");
 
     if (corrupted)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup can't be finalized after an error happened");
@@ -996,7 +1079,7 @@ void BackupImpl::finalizeWriting()
     if (writing_finalized)
         return;
 
-    if (!is_internal_backup)
+    if (!params.is_internal_backup)
     {
         LOG_TRACE(log, "Finalizing backup {}", backup_name_for_logging);
         writeBackupMetadata();
@@ -1088,6 +1171,31 @@ bool BackupImpl::tryRemoveAllFiles() noexcept
         writer->removeFiles(files_to_remove);
         removeLockFile();
         writer->removeEmptyDirectories();
+        return true;
+    }
+    catch (...)
+    {
+        DB::tryLogCurrentException(log, "Caught exception while removing files of a corrupted backup");
+        return false;
+    }
+}
+
+bool BackupImpl::tryRemoveAllFilesUnderDirectory(const String & directory) const noexcept
+{
+    try
+    {
+        LOG_INFO(log, "Removing all files of under directory {}", directory);
+
+        Strings files_to_remove = listFiles(directory, true);
+        Strings objects_to_remove;
+        for (const String & file_name : files_to_remove)
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            String file_object_key = file_object_keys.at(fs::path(removeLeadingSlash(directory)) / file_name);
+            objects_to_remove.push_back(file_object_key);
+        }
+
+        lightweight_snapshot_writer->removeFiles(objects_to_remove);
         return true;
     }
     catch (...)

@@ -1,20 +1,28 @@
-#include <Databases/IDatabase.h>
+#include <Access/ContextAccess.h>
+#include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
-#include <Access/ContextAccess.h>
-#include <Storages/System/StorageSystemDatabases.h>
-#include <Storages/SelectQueryInfo.h>
-#include <Storages/VirtualColumnUtils.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Storages/SelectQueryInfo.h>
+#include <Storages/System/StorageSystemDatabases.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Common/logger_useful.h>
-#include <Parsers/formatAST.h>
+#include <Core/Settings.h>
 
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool show_data_lake_catalogs_in_system_tables;
+}
+
 
 ColumnsDescription StorageSystemDatabases::getColumnsDescription()
 {
@@ -26,7 +34,8 @@ ColumnsDescription StorageSystemDatabases::getColumnsDescription()
         {"metadata_path", std::make_shared<DataTypeString>(), "Metadata path."},
         {"uuid", std::make_shared<DataTypeUUID>(), "Database UUID."},
         {"engine_full", std::make_shared<DataTypeString>(), "Parameters of the database engine."},
-        {"comment", std::make_shared<DataTypeString>(), "Database comment."}
+        {"comment", std::make_shared<DataTypeString>(), "Database comment."},
+        {"is_external", std::make_shared<DataTypeUInt8>(), "Database is external (i.e. PostgreSQL/DataLakeCatalog)."},
     };
 
     description.setAliases({
@@ -111,8 +120,8 @@ void StorageSystemDatabases::fillData(MutableColumns & res_columns, ContextPtr c
 {
     const auto access = context->getAccess();
     const bool need_to_check_access_for_databases = !access->isGranted(AccessType::SHOW_DATABASES);
-
-    const auto databases = DatabaseCatalog::instance().getDatabases();
+    const auto & settings = context->getSettingsRef();
+    const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = settings[Setting::show_data_lake_catalogs_in_system_tables]});
     ColumnPtr filtered_databases_column = getFilteredDatabases(databases, predicate, context);
 
     for (size_t i = 0; i < filtered_databases_column->size(); ++i)
@@ -143,6 +152,8 @@ void StorageSystemDatabases::fillData(MutableColumns & res_columns, ContextPtr c
             res_columns[res_index++]->insert(getEngineFull(context, database));
         if (columns_mask[src_index++])
             res_columns[res_index++]->insert(database->getDatabaseComment());
+        if (columns_mask[src_index++])
+            res_columns[res_index++]->insert(database->isExternal());
    }
 }
 

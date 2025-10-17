@@ -10,10 +10,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 /**
  * Generic interface for background operations. Simply this is self-made coroutine.
@@ -77,10 +73,7 @@ public:
 
     void onCompleted() override { job_result_callback(!res); }
     StorageID getStorageID() const override { return id; }
-    Priority getPriority() const override
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "getPriority() method is not supported by LambdaAdapter");
-    }
+    Priority getPriority() const override;
 
     String getQueryId() const override { return id.getShortName() + "::lambda"; }
 

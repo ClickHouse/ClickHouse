@@ -7,6 +7,7 @@
 #include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
+#include <Storages/ObjectStorage/HDFS/HDFSErrorWrapper.h>
 #include <Core/UUID.h>
 #include <memory>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -26,7 +27,7 @@ struct HDFSObjectStorageSettings
 };
 
 
-class HDFSObjectStorage : public IObjectStorage
+class HDFSObjectStorage : public IObjectStorage, public HDFSErrorWrapper
 {
 public:
 
@@ -37,7 +38,8 @@ public:
         SettingsPtr settings_,
         const Poco::Util::AbstractConfiguration & config_,
         bool lazy_initialize)
-        : config(config_)
+        : HDFSErrorWrapper(hdfs_root_path_, config_)
+        , config(config_)
         , settings(std::move(settings_))
         , log(getLogger("HDFSObjectStorage(" + hdfs_root_path_ + ")"))
     {
@@ -66,8 +68,7 @@ public:
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
         const ReadSettings & read_settings,
-        std::optional<size_t> read_hint = {},
-        std::optional<size_t> file_size = {}) const override;
+        std::optional<size_t> read_hint = {}) const override;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
     std::unique_ptr<WriteBufferFromFileBase> writeObject( /// NOLINT
@@ -83,6 +84,8 @@ public:
 
     ObjectMetadata getObjectMetadata(const std::string & path) const override;
 
+    std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path) const override;
+
     void copyObject( /// NOLINT
         const StoredObject & object_from,
         const StoredObject & object_to,
@@ -94,13 +97,9 @@ public:
 
     String getObjectsNamespace() const override { return ""; }
 
-    std::unique_ptr<IObjectStorage> cloneObjectStorage(
-        const std::string & new_namespace,
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_prefix,
-        ContextPtr context) override;
-
     ObjectStorageKey generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const override;
+
+    bool areObjectKeysRandom() const override { return true; }
 
     bool isRemote() const override { return true; }
 
@@ -119,7 +118,6 @@ private:
 
     const Poco::Util::AbstractConfiguration & config;
 
-    mutable HDFSBuilderWrapper hdfs_builder;
     mutable HDFSFSPtr hdfs_fs;
 
     mutable std::mutex init_mutex;

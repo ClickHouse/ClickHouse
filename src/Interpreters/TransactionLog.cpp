@@ -1,3 +1,4 @@
+#include <atomic>
 #include <Core/ServerUUID.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -12,6 +13,9 @@
 #include <Common/logger_useful.h>
 #include <Common/noexcept_scope.h>
 #include <Common/threadPoolCallbackRunner.h>
+
+#include <Poco/Util/LayeredConfiguration.h>
+
 
 namespace DB
 {
@@ -271,6 +275,17 @@ void TransactionLog::removeOldEntries()
     /// but it's possible that some CSNs are not written into data parts (and we will write them during startup).
     if (!global_context->isServerCompletelyStarted())
         return;
+
+    /// Because `loadTableFromMetadataAsync` is running asynchronously, it is possible that the outdated parts are loading while the `tail_ptr` is updated here.
+    /// It might trigger assertion when the part `create_csn` is lower than `tail_ptr`. Refer: https://github.com/ClickHouse/ClickHouse/issues/60406
+    /// We keep track of `asyncTablesLoadingJobNumber`, and not update `tail_ptr` if there are running jobs.
+    if (!updated_tail_ptr.load(std::memory_order_relaxed) && asyncTablesLoadingJobNumber() != 0)
+    {
+        LOG_TRACE(log, "There are running async tables loading jobs, skip updating tail_ptr");
+        return;
+    }
+
+    updated_tail_ptr.store(true, std::memory_order_relaxed);
 
     /// Also similar problem is possible if some table was not attached during startup (for example, if table is detached permanently).
     /// Also we write CSNs into data parts without fsync, so it's theoretically possible that we wrote CSN, finished transaction,
@@ -635,4 +650,16 @@ void TransactionLog::sync() const
     waitForCSNLoaded(newest_csn);
 }
 
+void TransactionLog::increaseAsyncTablesLoadingJobNumber()
+{
+    async_tables_loading_job_number.fetch_add(1);
+}
+void TransactionLog::decreaseAsyncTablesLoadingJobNumber()
+{
+    async_tables_loading_job_number.fetch_sub(1);
+}
+Int64 TransactionLog::asyncTablesLoadingJobNumber()
+{
+    return async_tables_loading_job_number.load();
+}
 }
