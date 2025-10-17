@@ -15,7 +15,7 @@
         <raft_configuration>
             <server>
                 <id>1</id>
-                <hostname>node1</hostname>
+                <hostname>node</hostname>
                 <port>9234</port>
                 <can_become_leader>true</can_become_leader>
                 <priority>3</priority>
