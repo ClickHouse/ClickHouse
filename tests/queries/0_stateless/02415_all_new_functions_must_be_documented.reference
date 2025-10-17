@@ -34,12 +34,6 @@ ilike
 in
 inIgnoreSet
 like
-map
-mapAdd
-mapFromArrays
-mapPopulateSeries
-mapSubtract
-mapUpdate
 moduloLegacy
 multiFuzzyMatchAllIndices
 multiFuzzyMatchAny
