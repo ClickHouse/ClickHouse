@@ -24,6 +24,8 @@ public:
 
     String getName() const override { return "JSONEachRowRowOutputFormat"; }
 
+    bool supportsSpecialSerializationKinds() const override { return true; }
+
 protected:
     void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;
     void writeFieldDelimiter() override;

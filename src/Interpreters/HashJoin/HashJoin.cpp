@@ -84,16 +84,26 @@ Block materializeColumnsFromRightBlock(Block block, const Block & sample_block, 
             auto & column = *column_ptr;
 
             /// There's no optimization for right side const columns. Remove constness if any.
-            column.column = recursiveRemoveSparse(column.column->convertToFullColumnIfConst());
+            column.column = column.column->convertToFullColumnIfConst();
+            auto actual_column = column.column;
+            const auto * replicated_column = typeid_cast<const ColumnReplicated *>(actual_column.get());
+            if (replicated_column)
+                actual_column = replicated_column->getNestedColumn();
+            actual_column = recursiveRemoveSparse(actual_column);
 
-            if (column.column->lowCardinality() && !sample_column.column->lowCardinality())
+            if (actual_column->lowCardinality() && !sample_column.column->lowCardinality())
             {
-                column.column = column.column->convertToFullColumnIfLowCardinality();
+                actual_column = actual_column->convertToFullColumnIfLowCardinality();
                 column.type = removeLowCardinality(column.type);
             }
 
+            column.column = actual_column;
+
             if (sample_column.column->isNullable())
                 JoinCommon::convertColumnToNullable(column);
+
+            if (replicated_column)
+                column.column = ColumnReplicated::create(column.column, replicated_column->getIndexesColumn());
         }
     }
 
@@ -140,6 +150,7 @@ HashJoin::HashJoin(
     , max_joined_block_rows(table_join->maxJoinedBlockRows())
     , max_joined_block_bytes(table_join->maxJoinedBlockBytes())
     , joined_block_split_single_row(table_join->joinedBlockAllowSplitSingleRow())
+    , enable_lazy_columns_replication(table_join->enableColumnsLazyReplication())
     , instance_log_id(!instance_id_.empty() ? "(" + instance_id_ + ") " : "")
     , log(getLogger("HashJoin"))
 {
@@ -653,7 +664,7 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
     for (const auto & column_name : right_key_names)
     {
         const auto & column = block.getByName(column_name).column;
-        all_key_columns[column_name] = recursiveRemoveSparse(column->convertToFullColumnIfConst())->convertToFullColumnIfLowCardinality();
+        all_key_columns[column_name] = removeSpecialRepresentations(column->convertToFullColumnIfConst())->convertToFullColumnIfLowCardinality();
     }
 
     Block block_to_save = filterColumnsPresentInSampleBlock(block, savedBlockSample());
@@ -683,7 +694,7 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
         if (storage_join_lock)
             throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "addBlockToJoin called when HashJoin locked to prevent updates");
 
-        assertBlocksHaveEqualStructure(data->sample_block, block_to_save, "joined block");
+        assertBlocksHaveEqualStructureAllowReplicated(data->sample_block, block_to_save, "joined block");
 
         size_t min_bytes_to_compress = table_join->crossJoinMinBytesToCompress();
         size_t min_rows_to_compress = table_join->crossJoinMinRowsToCompress();

@@ -1569,7 +1569,7 @@ void Aggregator::prepareAggregateInstructions(
         for (size_t j = 0; j < aggregate_columns[i].size(); ++j)
         {
             const auto pos = header.getPositionByName(params.aggregates[i].argument_names[j]);
-            materialized_columns.push_back(columns.at(pos)->convertToFullColumnIfConst());
+            materialized_columns.push_back(columns.at(pos)->convertToFullColumnIfConst()->convertToFullColumnIfReplicated());
             aggregate_columns[i][j] = materialized_columns.back().get();
 
             /// Sparse columns without defaults may be handled incorrectly.
@@ -1677,7 +1677,7 @@ bool Aggregator::executeOnBlock(Columns columns,
         }
         else
         {
-            materialized_columns.push_back(recursiveRemoveSparse(columns.at(keys_positions[i]))->convertToFullColumnIfConst());
+            materialized_columns.push_back(removeSpecialRepresentations(columns.at(keys_positions[i]))->convertToFullColumnIfConst());
             key_columns[i] = materialized_columns.back().get();
         }
 

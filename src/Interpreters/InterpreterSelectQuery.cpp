@@ -197,6 +197,7 @@ namespace Setting
     extern const SettingsOverflowMode transfer_overflow_mode;
     extern const SettingsString implicit_table_at_top_level;
     extern const SettingsBool enable_producing_buckets_out_of_order_in_aggregation;
+    extern const SettingsBool enable_lazy_columns_replication;
 }
 
 namespace ServerSetting
@@ -1797,7 +1798,9 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         query_plan.getCurrentHeader(),
                         *expressions.array_join,
                         settings[Setting::enable_unaligned_array_join],
-                        settings[Setting::max_block_size]);
+                        settings[Setting::max_block_size],
+                        settings[Setting::enable_lazy_columns_replication]
+                        );
 
                 array_join_step->setStepDescription("ARRAY JOIN");
                 query_plan.addStep(std::move(array_join_step));

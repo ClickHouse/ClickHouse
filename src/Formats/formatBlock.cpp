@@ -12,7 +12,7 @@ void formatBlock(OutputFormatPtr out, const Block & block)
 {
     auto source = std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(Block{block}));
     QueryPipeline pipeline(source);
-    pipeline.complete(out);
+    pipeline.complete(out, false);
     CompletedPipelineExecutor executor(pipeline);
     executor.execute();
     out->flush();

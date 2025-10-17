@@ -64,6 +64,7 @@ public:
     void finalize();
 
     virtual bool expectMaterializedColumns() const { return true; }
+    virtual bool supportsSpecialSerializationKinds() const { return false; }
 
     void setTotals(const Block & totals);
     void setExtremes(const Block & extremes);

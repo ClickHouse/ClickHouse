@@ -325,7 +325,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     if (auto it = serialization_hints.find(column.name); it != serialization_hints.end())
-                        res_columns[res_index++]->insert(ISerialization::kindToString(it->second->getKind()));
+                        res_columns[res_index++]->insert(ISerialization::kindStackToString(it->second->getKindStack()));
                     else
                         res_columns[res_index++]->insertDefault();
                 }

@@ -94,7 +94,7 @@ public:
     /// Only for pushing.
     void complete(Pipe pipe);
     /// Only for pulling.
-    void complete(std::shared_ptr<IOutputFormat> format);
+    void complete(std::shared_ptr<IOutputFormat> format, bool allow_special_serialization_kinds_in_output_formats);
     void complete(Chain chain);
     void complete(std::shared_ptr<SinkToStorage> sink);
     void complete(std::shared_ptr<ISink> sink);

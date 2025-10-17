@@ -237,7 +237,10 @@ Block NativeReader::read()
             UInt8 has_custom;
             readBinary(has_custom, istr);
             if (has_custom)
+            {
                 info->deserializeFromKindsBinary(istr);
+                std::cerr << ISerialization::kindStackToString(info->getKindStack()) << "\n";
+            }
 
             serialization = column.type->getSerialization(*info);
             auto new_column = column.type->createColumn(*serialization);

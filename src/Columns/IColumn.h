@@ -30,6 +30,7 @@ class ColumnGathererStream;
 class Field;
 class WeakHash32;
 class ColumnConst;
+class ColumnReplicated;
 class IDataType;
 class Block;
 using DataTypePtr = std::shared_ptr<const IDataType>;
@@ -114,9 +115,13 @@ public:
     /// If column is ColumnSparse, transforms it to full column.
     [[nodiscard]] virtual Ptr convertToFullColumnIfSparse() const { return getPtr(); }
 
-    [[nodiscard]] Ptr convertToFullIfNeeded() const
+    /// If column isn't ColumnReplicated, return itself.
+    /// If column is ColumnReplicated, transforms it to full column.
+    [[nodiscard]] virtual Ptr convertToFullColumnIfReplicated() const { return getPtr(); }
+
+    [[nodiscard]] virtual Ptr convertToFullIfNeeded() const
     {
-        return convertToFullColumnIfSparse()->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality();
+        return convertToFullColumnIfConst()->convertToFullColumnIfReplicated()->convertToFullColumnIfSparse()->convertToFullColumnIfLowCardinality();
     }
 
     /// Creates empty column with the same type.
@@ -474,9 +479,8 @@ public:
       * Selector must contain values from 0 to num_columns - 1.
       * For default implementation, see scatterImpl.
       */
-    using ColumnIndex = UInt64;
-    using Selector = PaddedPODArray<ColumnIndex>;
-    [[nodiscard]] virtual std::vector<MutablePtr> scatter(ColumnIndex num_columns, const Selector & selector) const = 0;
+    using Selector = PaddedPODArray<UInt64>;
+    [[nodiscard]] virtual std::vector<MutablePtr> scatter(size_t num_columns, const Selector & selector) const = 0;
 
     /// Insert data from several other columns according to source mask (used in vertical merge).
     /// For now it is a helper to de-virtualize calls to insert*() functions inside gather loop
@@ -635,11 +639,11 @@ public:
 
     /// Fills column values from RowRefList
     /// If row_refs_are_ranges is true, then each RowRefList has one element with >=1 consecutive rows
-    virtual void fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, bool row_refs_are_ranges);
+    virtual void fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, bool row_refs_are_ranges, bool source_columns_might_be_replicated);
 
     /// Fills column values from list of blocks and row numbers
     /// `blocks` and `row_nums` must have same size
-    virtual void fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const std::vector<const Columns *> & columns, const std::vector<UInt32> & row_nums);
+    virtual void fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const std::vector<const Columns *> & columns, const std::vector<UInt32> & row_nums, bool source_columns_might_be_replicated);
 
     /// Some columns may require finalization before using of other operations.
     virtual void finalize() {}
@@ -735,6 +739,8 @@ public:
 
     [[nodiscard]] virtual bool isSparse() const { return false; }
 
+    [[nodiscard]] virtual bool isReplicated() const { return false; }
+
     [[nodiscard]] virtual bool isConst() const { return false; }
 
     [[nodiscard]] virtual bool isCollationSupported() const { return false; }
@@ -780,7 +786,7 @@ private:
         /// For Sparse and Const columns, we can compare only internal types. It is considered normal to e.g. insert from normal vector column to a sparse vector column.
         /// This case is specifically handled in ColumnSparse implementation. Similar situation with Const column.
         /// For the rest of column types we can compare the types directly.
-        chassert((isConst() || isSparse()) ? getDataType() == rhs.getDataType() : typeid(*this) == typeid(rhs));
+        chassert((isConst() || isSparse() || isReplicated()) ? getDataType() == rhs.getDataType() : typeid(*this) == typeid(rhs));
     }
 #endif
 };
@@ -855,7 +861,7 @@ private:
     IColumnHelper(const IColumnHelper &) = default;
 
     /// Devirtualize insertFrom.
-    MutableColumns scatter(IColumn::ColumnIndex num_columns, const IColumn::Selector & selector) const override;
+    MutableColumns scatter(size_t num_columns, const IColumn::Selector & selector) const override;
 
     /// Devirtualize insertFrom and insertRangeFrom.
     void gather(ColumnGathererStream & gatherer) override;
@@ -892,11 +898,11 @@ private:
 
     /// Fills column values from RowRefList
     /// If row_refs_are_ranges is true, then each RowRefList has one element with >=1 consecutive rows
-    void fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, bool row_refs_are_ranges) override;
+    void fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, bool row_refs_are_ranges, bool source_columns_might_be_replicated) override;
 
     /// Fills column values from list of columns and row numbers
     /// `columns` and `row_nums` must have same size
-    void fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const std::vector<const Columns *> & columns, const std::vector<UInt32> & row_nums) override;
+    void fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const std::vector<const Columns *> & columns, const std::vector<UInt32> & row_nums, bool source_columns_might_be_replicated) override;
 
     /// Move common implementations into the same translation unit to ensure they are properly inlined.
     char * serializeValueIntoMemoryWithNull(size_t n, char * memory, const UInt8 * is_null) const override;
