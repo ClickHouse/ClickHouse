@@ -106,6 +106,7 @@ Needles extractNeedlesFromString(std::string_view needle_str)
     }
     return needles;
 }
+
 }
 
 template <class HasTokensTraits>
@@ -118,7 +119,10 @@ DataTypePtr FunctionHasAnyAllTokens<HasTokensTraits>::getReturnTypeImpl(const Co
 
     FunctionArgumentDescriptors mandatory_args{
         {"input", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"},
-        {"needles", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrArrayOfStringType), isColumnConst, "const String or const Array(String)"}};
+        {"needles",
+         static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrArrayOfStringType),
+         isColumnConst,
+         "const String or const Array(String)"}};
 
     validateFunctionArguments(*this, arguments, mandatory_args);
 
