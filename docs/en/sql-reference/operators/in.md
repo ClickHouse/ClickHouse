@@ -3,6 +3,7 @@ description: 'Documentation for the IN operators excluding NOT IN, GLOBAL IN and
   NOT IN operators which are covered separately'
 slug: /sql-reference/operators/in
 title: 'IN Operators'
+doc_type: 'reference'
 ---
 
 # IN Operators
@@ -232,12 +233,12 @@ It also makes sense to specify a local table in the `GLOBAL IN` clause, in case 
 
 ### Distributed Subqueries and max_rows_in_set {#distributed-subqueries-and-max_rows_in_set}
 
-You can use [`max_rows_in_set`](../../operations/settings/query-complexity.md#max-rows-in-set) and [`max_bytes_in_set`](../../operations/settings/query-complexity.md#max-rows-in-set) to control how much data is transferred during distributed queries. 
+You can use [`max_rows_in_set`](/operations/settings/settings#max_rows_in_set) and [`max_bytes_in_set`](/operations/settings/settings#max_bytes_in_set) to control how much data is transferred during distributed queries. 
 
 This is specially important if the `GLOBAL IN` query returns a large amount of data. Consider the following SQL:
 
 ```sql
-select * from table1 where col1 global in (select col1 from table2 where <some_predicate>)
+SELECT * FROM table1 WHERE col1 GLOBAL IN (SELECT col1 FROM table2 WHERE <some_predicate>)
 ```
  
 If `some_predicate` is not selective enough, it will return a large amount of data and cause performance issues. In such cases, it is wise to limit the data transfer over the network. Also, note that [`set_overflow_mode`](/operations/settings/settings#set_overflow_mode) is set to `throw` (by default) meaning that an exception is raised when these thresholds are met.

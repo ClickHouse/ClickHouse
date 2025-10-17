@@ -5,6 +5,7 @@ import random
 import string
 import time
 import uuid
+from datetime import datetime
 from multiprocessing.dummy import Pool
 
 import pytest
@@ -55,7 +56,25 @@ def started_cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "instance",
-            user_configs=["configs/users.xml"],
+            user_configs=[
+                "configs/users.xml",
+                "configs/enable_keeper_fault_injection.xml",
+            ],
+            with_minio=True,
+            with_azurite=True,
+            with_zookeeper=True,
+            main_configs=[
+                "configs/zookeeper.xml",
+                "configs/s3queue_log.xml",
+            ],
+            stay_alive=True,
+        )
+
+        cluster.add_instance(
+            "instance_no_keeper_fault_injection",
+            user_configs=[
+                "configs/users.xml",
+            ],
             with_minio=True,
             with_azurite=True,
             with_zookeeper=True,
@@ -231,7 +250,10 @@ def test_failed_retry(started_cluster, mode, engine_name):
 
 @pytest.mark.parametrize("mode", AVAILABLE_MODES)
 def test_direct_select_file(started_cluster, mode):
-    node = started_cluster.instances["instance"]
+    # Disabled keeper fault injection because this test uses direct select
+    # from s3queue (not via MV), so it is difficult to retry "fault injected after operation" for commit(),
+    # which we in fact do not want to retry, but in case of direct select this causes query failure.
+    node = started_cluster.instances["instance_no_keeper_fault_injection"]
     table_name = f"direct_select_file_{mode}"
     # A unique path is necessary for repeatable tests
     keeper_path = f"/clickhouse/test_{table_name}_{mode}_{generate_random_string()}"
@@ -337,7 +359,10 @@ def test_direct_select_file(started_cluster, mode):
 
 @pytest.mark.parametrize("mode", AVAILABLE_MODES)
 def test_direct_select_multiple_files(started_cluster, mode):
-    node = started_cluster.instances["instance"]
+    # Disabled keeper fault injection because this test uses direct select
+    # from s3queue (not via MV), so it is difficult to retry "fault injected after operation" for commit(),
+    # which we in fact do not want to retry, but in case of direct select this causes query failure.
+    node = started_cluster.instances["instance_no_keeper_fault_injection"]
     table_name = f"direct_select_multiple_files_{mode}"
     files_path = f"{table_name}_data"
     # A unique path is necessary for repeatable tests
@@ -397,7 +422,7 @@ def test_streaming_to_view(started_cluster, mode):
         selected_values = {
             tuple(map(int, l.split()))
             for l in node.query(
-                f"SELECT column1, column2, column3 FROM {dst_table_name}"
+                f"SELECT column1, column2, column3 FROM {dst_table_name} ORDER BY all"
             ).splitlines()
         }
         if selected_values == expected_values:
@@ -410,51 +435,125 @@ def test_streaming_to_view(started_cluster, mode):
 def test_streaming_to_many_views(started_cluster, mode):
     node = started_cluster.instances["instance"]
     table_name = f"streaming_to_many_views_{mode}"
-    dst_table_name = f"{table_name}_dst"
-    # A unique path is necessary for repeatable tests
     keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
     files_path = f"{table_name}_data"
 
-    for i in range(10):
-        table = f"{table_name}_{i + 1}"
-        create_table(
-            started_cluster,
-            node,
-            table,
-            mode,
-            files_path,
-            additional_settings={
-                "keeper_path": keeper_path,
-                "polling_min_timeout_ms": 100,
-                "polling_max_timeout_ms": 100,
-                "polling_backoff_ms": 0,
-            },
+    loading_retries = 2
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        mode,
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "polling_min_timeout_ms": 100,
+            "polling_max_timeout_ms": 100,
+            "s3queue_loading_retries": loading_retries,
+            "polling_backoff_ms": 0,
+        },
+    )
+
+    tables_num = 10
+    mv_tables = [f"{table_name}_{i + 1}_mv" for i in range(tables_num)]
+    dst_tables = [f"{table_name}_{i + 1}_dst" for i in range(tables_num)]
+
+    for i in range(tables_num):
+        create_mv(node, table_name, dst_tables[i], mv_name=mv_tables[i])
+
+    start_idx = [0]
+    expect_files_num = [0]
+    expect_rows_num = [0]
+    files = []
+
+    # ensure that streaming from S3 will be started only once all MVs has been created
+    time.sleep(5)
+
+    def generate_files(files_num=20, row_num=100, file_prefix="a"):
+        files.extend(
+            [
+                (f"{files_path}/{file_prefix}_{i}.csv", i)
+                for i in range(start_idx[0], start_idx[0] + files_num)
+            ]
         )
-        create_mv(node, table, dst_table_name)
+        generate_random_files(
+            started_cluster, files_path, files_num, files=files, row_num=row_num
+        )
+        start_idx[0] += files_num
+        expect_files_num[0] += files_num
+        expect_rows_num[0] += files_num * row_num
 
-    files_num = 20
-    row_num = 100
-    files = [(f"{files_path}/test_{i}.csv", i) for i in range(0, files_num)]
-    total_values = generate_random_files(
-        started_cluster, files_path, files_num, files=files, row_num=row_num
+    def check(dst_tables, expect_rows_num, expect_files_num):
+        for dst_table_name in dst_tables:
+
+            def get_uniq_paths_count():
+                return int(node.query(f"SELECT uniqExact(_path) FROM {dst_table_name}"))
+
+            for _ in range(20):
+                if get_uniq_paths_count() == expect_files_num:
+                    break
+                time.sleep(1)
+
+            processed_files = node.query(
+                f"SELECT distinct(_path) FROM {dst_table_name}"
+            )
+            missing_files = [
+                x[0] for x in files if x[0] not in processed_files.strip().split("\n")
+            ]
+            assert (
+                get_uniq_paths_count() == expect_files_num
+            ), f"Missing files for {dst_table_name}: {missing_files}"
+
+            def get_rows_count():
+                return int(node.query(f"SELECT count() FROM {dst_table_name}"))
+
+            for _ in range(20):
+                if get_rows_count() == expect_rows_num:
+                    break
+                time.sleep(1)
+
+            rows_count = get_rows_count()
+            assert (
+                expect_rows_num == rows_count
+            ), f"Missing or extra data for {dst_table_name}: {rows_count} (expected: {expect_rows_num})"
+
+    generate_files()
+    check(dst_tables, expect_rows_num[0], expect_files_num[0])
+
+    # Create incorrect destination table
+    broken_dst_table = f"{table_name}_{expect_files_num[0] + 1}_dst"
+    create_mv(
+        node,
+        table_name,
+        broken_dst_table,
+        mv_name=f"{table_name}_{expect_files_num[0] + 1}_mv",
+        format="column1 String, column2 Array(UInt32)",
+        create_dst_table_first=False,
     )
-    expected_values = sorted(set([tuple(i) for i in total_values]))
 
-    def check():
-        return int(node.query(f"SELECT uniqExact(_path) FROM {dst_table_name}"))
+    generate_files(file_prefix="b")
+    # there is no gurantee what is inserted to other MV because the insert is failed
+    check([broken_dst_table], 0, 0)
 
-    for _ in range(20):
-        if check() == files_num:
-            break
-        time.sleep(1)
-    processed_files = node.query(f"SELECT distinct(_path) FROM {dst_table_name}")
-    missing_files = [
-        x[0] for x in files if x[0] not in processed_files.strip().split("\n")
-    ]
-    assert check() == files_num, f"Missing files: {missing_files}"
-    assert row_num * files_num == int(
-        node.query(f"SELECT count() FROM {dst_table_name}")
-    )
+    for i in range(20, 40):
+        log_message = (
+            f"File {files_path}/b_{i}.csv failed at try 2/2, retries node exists: true"
+        )
+
+        for _ in range(10):
+            if node.contains_in_log(log_message):
+                break
+            time.sleep(1)
+
+        assert node.contains_in_log(
+            log_message
+        ), f"Cannot find log message 1 for path {files_path}/b_{i}.csv: {log_message}"
+        log_message = (
+            f"File {files_path}/b_{i}.csv failed to process and will not be retried"
+        )
+        assert node.contains_in_log(
+            log_message
+        ), f"Cannot find log message 2 for path {files_path}/b_{i}.csv: {log_message}"
 
 
 def test_multiple_tables_meta_mismatch(started_cluster):
@@ -543,3 +642,51 @@ def test_multiple_tables_meta_mismatch(started_cluster):
             "keeper_path": keeper_path,
         },
     )
+
+
+def test_virtual_columns(started_cluster):
+    start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    node = started_cluster.instances["instance"]
+    table_name = f"test_s3queue_virtual_columns_{generate_random_string()}"
+    # A unique path is necessary for repeatable tests
+    keeper_path = f"/clickhouse/test_{table_name}"
+    dst_table_name = f"{table_name}_dst"
+    files_path = f"{table_name}_data"
+
+    total_values = generate_random_files(started_cluster, files_path, 1)
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={"keeper_path": keeper_path},
+    )
+    create_mv(
+        node,
+        table_name,
+        dst_table_name,
+        virtual_columns="_path String, _file String, _size UInt64, _time DateTime",
+    )
+    expected_values = set([tuple(i) for i in total_values])
+    for i in range(20):
+        selected_values = {
+            tuple(map(int, l.split()))
+            for l in node.query(
+                f"SELECT column1, column2, column3 FROM {dst_table_name}"
+            ).splitlines()
+        }
+        if selected_values == expected_values:
+            break
+        time.sleep(1)
+    assert selected_values == expected_values
+    virtual_values = node.query(
+        f"SELECT count(), _path, _file, _size, _time FROM {dst_table_name} GROUP BY _path, _file, _size, _time"
+    ).splitlines()
+    assert len(virtual_values) > 0
+    (_, res_path, res_file, res_size, res_time) = virtual_values[0].split("\t")
+    finish_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    assert f"{files_path}/{res_file}" == res_path
+    assert int(res_size) > 0
+    assert start_time <= res_time
+    assert res_time <= finish_time

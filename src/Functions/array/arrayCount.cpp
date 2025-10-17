@@ -2,7 +2,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 
-#include "FunctionArrayMapped.h"
+#include <Functions/array/FunctionArrayMapped.h>
 
 
 namespace DB
@@ -81,7 +81,24 @@ using FunctionArrayCount = FunctionArrayMapped<ArrayCountImpl, NameArrayCount>;
 
 REGISTER_FUNCTION(ArrayCount)
 {
-    factory.registerFunction<FunctionArrayCount>();
+    FunctionDocumentation::Description description = R"(
+Returns the number of elements for which `func(arr1[i], ..., arrN[i])` returns true.
+If `func` is not specified, it returns the number of non-zero elements in the array.
+
+`arrayCount` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions).
+    )";
+    FunctionDocumentation::Syntax syntax = "arrayCount([func, ] arr1, ...)";
+    FunctionDocumentation::Arguments arguments = {
+        {"func", "Optional. Function to apply to each element of the array(s).", {"Lambda function"}},
+        {"arr1, ..., arrN", "N arrays.", {"Array(T)"}},
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the number of elements for which `func` returns true. Otherwise, returns the number of non-zero elements in the array.", {"UInt32"}};
+    FunctionDocumentation::Examples example = {{"Usage example", "SELECT arrayCount(x -> (x % 2), groupArray(number)) FROM numbers(10)", "5"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
+
+    factory.registerFunction<FunctionArrayCount>(documentation);
 }
 
 }

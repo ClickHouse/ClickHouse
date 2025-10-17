@@ -4,6 +4,7 @@ sidebar_label: 'DICTIONARY'
 sidebar_position: 38
 slug: /sql-reference/statements/create/dictionary
 title: 'CREATE DICTIONARY'
+doc_type: 'reference'
 ---
 
 Creates a new [dictionary](../../../sql-reference/dictionaries/index.md) with given [structure](../../../sql-reference/dictionaries/index.md#dictionary-key-and-fields), [source](../../../sql-reference/dictionaries/index.md#dictionary-sources), [layout](/sql-reference/dictionaries#storing-dictionaries-in-memory) and [lifetime](/sql-reference/dictionaries#refreshing-dictionary-data-using-lifetime).
@@ -85,7 +86,7 @@ LAYOUT(FLAT())
 
 :::note
 When using the SQL console in [ClickHouse Cloud](https://clickhouse.com), you must specify a user (`default` or any other user with the role `default_role`) and password when creating a dictionary.
-:::note
+:::
 
 ```sql
 CREATE USER IF NOT EXISTS clickhouse_admin

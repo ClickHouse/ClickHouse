@@ -33,9 +33,9 @@ public:
         DROP_QUERY_CONDITION_CACHE,
         DROP_QUERY_CACHE,
         DROP_COMPILED_EXPRESSION_CACHE,
+        DROP_ICEBERG_METADATA_CACHE,
         DROP_FILESYSTEM_CACHE,
         DROP_DISTRIBUTED_CACHE,
-        DROP_DISTRIBUTED_CACHE_CONNECTIONS,
         DROP_DISK_METADATA_CACHE,
         DROP_PAGE_CACHE,
         DROP_SCHEMA_CACHE,
@@ -46,6 +46,7 @@ public:
         RESTART_REPLICAS,
         RESTART_REPLICA,
         RESTORE_REPLICA,
+        RESTORE_DATABASE_REPLICA,
         WAIT_LOADING_PARTS,
         DROP_REPLICA,
         DROP_DATABASE_REPLICA,
@@ -106,8 +107,10 @@ public:
         WAIT_VIEW,
         START_VIEW,
         START_VIEWS,
+        START_REPLICATED_VIEW,
         STOP_VIEW,
         STOP_VIEWS,
+        STOP_REPLICATED_VIEW,
         CANCEL_VIEW,
         TEST_VIEW,
         LOAD_PRIMARY_KEY,
@@ -117,6 +120,7 @@ public:
         STOP_REDUCE_BLOCKING_PARTS,
         START_REDUCE_BLOCKING_PARTS,
         UNLOCK_SNAPSHOT,
+        RECONNECT_ZOOKEEPER,
         END
     };
 
@@ -126,6 +130,7 @@ public:
 
     ASTPtr database;
     ASTPtr table;
+    bool if_exists = false;
     ASTPtr query_settings;
 
     String getDatabase() const;
@@ -140,6 +145,7 @@ public:
     String shard;
     String replica_zk_path;
     bool is_drop_whole_replica{};
+    bool with_tables{false};
     String storage_policy;
     String volume;
     String disk;
@@ -148,7 +154,7 @@ public:
     std::optional<String> query_result_cache_tag;
 
     String filesystem_cache_name;
-    String distributed_cache_servive_id;
+    String distributed_cache_server_id;
     bool distributed_cache_drop_connections = false;
 
     std::string key_to_drop;

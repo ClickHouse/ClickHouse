@@ -84,7 +84,7 @@ bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expe
         {
             if (parseCurrentUserTag(pos, expected))
                 current_user = true;
-            else if (parseUserNames(pos, expected, names))
+            else if (parseUserNames(pos, expected, names, /*allow_query_parameter=*/ false))
             {
             }
             else if (plural)

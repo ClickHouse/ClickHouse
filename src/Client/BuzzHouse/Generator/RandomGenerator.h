@@ -26,10 +26,10 @@ private:
 
     std::uniform_int_distribution<uint16_t> uints16;
 
-    std::uniform_int_distribution<int32_t> ints32;
+    std::uniform_int_distribution<int32_t> ints32, time_hours, second_offsets;
 
     std::uniform_int_distribution<uint32_t> uints32, dist1, dist2, dist3, dist4, date_years, datetime_years, datetime64_years, months,
-        hours, minutes;
+        hours, minutes, subseconds, strlens;
 
     std::uniform_int_distribution<int64_t> ints64;
 
@@ -64,10 +64,6 @@ private:
     const DB::Strings common_chinese{
         "认识你很高兴", "美国", "叫", "名字", "你们", "日本", "哪国人", "爸爸", "兄弟姐妹", "漂亮", "照片", "😉"};
 
-    const DB::Strings nasty_strings{"a\"a", "b\\tb", "c\\nc", "d\\'d", "e e", "",   "😉", "\"", "\\'",  "\\t",  "\\n",  "--",   "0",
-                                    "1",    "-1",    "{",     "}",     "(",   ")",  "[",  "]",  ",",    ".",    ";",    ":",    "\\\\",
-                                    "/",    "_",     "%",     "*",     "\\0", "{}", "[]", "()", "null", "NULL", "TRUE", "FALSE"};
-
     /// Use bad_utf8 on x' strings!
     const DB::Strings bad_utf8{
         "FF",
@@ -89,7 +85,7 @@ private:
 public:
     pcg64_fast generator;
 
-    explicit RandomGenerator(const uint64_t in_seed)
+    RandomGenerator(const uint64_t in_seed, const uint32_t min_string_length, const uint32_t max_string_length)
         : seed(in_seed ? in_seed : randomSeed())
         , ints8(std::numeric_limits<int8_t>::min(), std::numeric_limits<int8_t>::max())
         , uints8(std::numeric_limits<uint8_t>::min(), std::numeric_limits<uint8_t>::max())
@@ -98,6 +94,8 @@ public:
         , ints16(std::numeric_limits<int16_t>::min(), std::numeric_limits<int16_t>::max())
         , uints16(std::numeric_limits<uint16_t>::min(), std::numeric_limits<uint16_t>::max())
         , ints32(std::numeric_limits<int32_t>::min(), std::numeric_limits<int32_t>::max())
+        , time_hours(-999, 999)
+        , second_offsets(-10, 80)
         , uints32(std::numeric_limits<uint32_t>::min(), std::numeric_limits<uint32_t>::max())
         , dist1(UINT32_C(1), UINT32_C(10))
         , dist2(UINT32_C(1), UINT32_C(100))
@@ -109,12 +107,18 @@ public:
         , months(1, 12)
         , hours(0, 23)
         , minutes(0, 59)
+        , subseconds(0, UINT32_C(1000000000))
+        , strlens(min_string_length, max_string_length)
         , ints64(std::numeric_limits<int64_t>::min(), std::numeric_limits<int64_t>::max())
         , uints64(std::numeric_limits<uint64_t>::min(), std::numeric_limits<uint64_t>::max())
         , zero_one(0, 1)
         , generator(seed)
     {
     }
+
+    const DB::Strings nasty_strings{"a\"a", "b\\tb", "c\\nc", "d\\'d", "e e", "",   "😉", "\"", "\\'",  "\\t",  "\\n",  "--", "0",
+                                    "1",    "-1",    "{",     "}",     "(",   ")",  "[",  "]",  ",",    ".",    ";",    ":",  "\\\\",
+                                    "/",    "_",     "%",     "*",     "\\0", "{}", "[]", "()", "null", "NULL", "TRUE", "叫", "FALSE"};
 
     uint64_t getSeed() const;
 
@@ -140,21 +144,29 @@ public:
 
     int64_t nextRandomInt64();
 
+    uint32_t nextStrlen();
+
     char nextDigit();
 
     bool nextBool();
 
     /// Range [1970-01-01, 2149-06-06]
-    String nextDate();
+    String nextDate(const String & separator, bool allow_func);
 
     /// Range [1900-01-01, 2299-12-31]
-    String nextDate32();
+    String nextDate32(const String & separator, bool allow_func);
+
+    /// Range [-999:59:59, 999:59:59]
+    String nextTime(const String & separator, bool allow_func);
+
+    /// Range [-999:59:59.999999999, 999:59:59.999999999]
+    String nextTime64(const String & separator, bool allow_func, bool has_subseconds);
 
     /// Range [1970-01-01 00:00:00, 2106-02-07 06:28:15]
-    String nextDateTime();
+    String nextDateTime(const String & separator, bool allow_func, bool has_subseconds);
 
     /// Range [1900-01-01 00:00:00, 2299-12-31 23:59:59.99999999]
-    String nextDateTime64();
+    String nextDateTime64(const String & separator, bool allow_func, bool has_subseconds);
 
     template <typename T>
     T thresholdGenerator(const double always_on_prob, const double always_off_prob, T min_val, T max_val)
@@ -169,14 +181,30 @@ public:
         {
             return max_val;
         }
-        if constexpr (std::is_same_v<T, uint32_t>)
+        if (tmp <= always_on_prob + always_off_prob + 0.01)
         {
-            std::uniform_int_distribution<uint32_t> d{min_val, max_val};
+            if constexpr (std::is_unsigned_v<T>)
+            {
+                return std::numeric_limits<T>::max();
+            }
+            if constexpr (std::is_floating_point_v<T>)
+            {
+                if (max_val >= 0.9 && max_val <= 1.1)
+                {
+                    return max_val;
+                }
+                return std::numeric_limits<T>::max();
+            }
+            chassert(0);
+        }
+        if constexpr (std::is_unsigned_v<T>)
+        {
+            std::uniform_int_distribution<T> d{min_val, max_val};
             return d(generator);
         }
-        if constexpr (std::is_same_v<T, double>)
+        if constexpr (std::is_floating_point_v<T>)
         {
-            std::uniform_real_distribution<double> d{min_val, max_val};
+            std::uniform_real_distribution<T> d{min_val, max_val};
             return d(generator);
         }
         chassert(0);
@@ -218,6 +246,8 @@ public:
 
     String nextJSONCol();
 
+    String nextTokenString();
+
     String nextString(const String & delimiter, bool allow_nasty, uint32_t limit);
 
     String nextUUID();
@@ -227,7 +257,9 @@ public:
     String nextIPv6();
 };
 
-using RandomSettingParameter = std::function<String(RandomGenerator &)>;
+class FuzzConfig;
+
+using RandomSettingParameter = std::function<String(RandomGenerator &, FuzzConfig &)>;
 
 struct CHSetting
 {

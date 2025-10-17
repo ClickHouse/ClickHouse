@@ -28,6 +28,11 @@ void registerStorageWindowView(StorageFactory & factory);
 void registerStorageLoop(StorageFactory & factory);
 void registerStorageFuzzQuery(StorageFactory & factory);
 void registerStorageTimeSeries(StorageFactory & factory);
+void registerStorageAlias(StorageFactory & factory);
+
+#if USE_ARROWFLIGHT
+void registerStorageArrowFlight(StorageFactory & factory);
+#endif
 
 #if USE_RAPIDJSON || USE_SIMDJSON
 void registerStorageFuzzJSON(StorageFactory & factory);
@@ -37,9 +42,10 @@ void registerStorageFuzzJSON(StorageFactory & factory);
 void registerStorageS3(StorageFactory & factory);
 void registerStorageHudi(StorageFactory & factory);
 void registerStorageS3Queue(StorageFactory & factory);
-#  if USE_PARQUET
+#endif
+
+#if USE_PARQUET && USE_DELTA_KERNEL_RS
 void registerStorageDeltaLake(StorageFactory & factory);
-#  endif
 #endif
 
 #if USE_AVRO
@@ -65,6 +71,9 @@ void registerStorageMySQL(StorageFactory & factory);
 
 #if USE_MONGODB
 void registerStorageMongoDB(StorageFactory & factory);
+#endif
+#if USE_YTSAURUS
+void registerStorageYTsaurus(StorageFactory & factory);
 #endif
 
 void registerStorageRedis(StorageFactory & factory);
@@ -129,6 +138,11 @@ void registerStorages()
     registerStorageLoop(factory);
     registerStorageFuzzQuery(factory);
     registerStorageTimeSeries(factory);
+    registerStorageAlias(factory);
+
+#if USE_ARROWFLIGHT
+    registerStorageArrowFlight(factory);
+#endif
 
 #if USE_RAPIDJSON || USE_SIMDJSON
     registerStorageFuzzJSON(factory);
@@ -145,11 +159,10 @@ void registerStorages()
 #if USE_AWS_S3
     registerStorageHudi(factory);
     registerStorageS3Queue(factory);
+#endif
 
-#  if USE_PARQUET && USE_DELTA_KERNEL_RS
+#if USE_PARQUET && USE_DELTA_KERNEL_RS
     registerStorageDeltaLake(factory);
-#  endif
-
 #endif
 
 #if USE_HDFS
@@ -169,6 +182,7 @@ void registerStorages()
     registerStorageMongoDB(factory);
 #endif
 
+    registerStorageYTsaurus(factory);
     registerStorageRedis(factory);
 
 #if USE_RDKAFKA

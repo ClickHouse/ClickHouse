@@ -3,12 +3,13 @@ description: 'Documentation for the sampling query profiler tool in ClickHouse'
 sidebar_label: 'Query Profiling'
 sidebar_position: 54
 slug: /operations/optimizing-performance/sampling-query-profiler
-title: 'Sampling Query Profiler'
+title: 'Sampling query profiler'
+doc_type: 'reference'
 ---
 
 import SelfManaged from '@site/docs/_snippets/_self_managed_only_no_roadmap.md';
 
-# Sampling Query Profiler
+# Sampling query profiler
 
 ClickHouse runs sampling profiler that allows analyzing query execution. Using profiler you can find source code routines that used the most frequently during query execution. You can trace CPU time and wall-clock time spent including idle time.
 
@@ -22,7 +23,7 @@ SELECT
     count(),
     arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym
 FROM system.trace_log
-WHERE (query_id = 'ebca3574-ad0a-400a-9cbc-dca382f5998c') AND (event_date = today())
+WHERE query_id = 'ebca3574-ad0a-400a-9cbc-dca382f5998c' AND trace_type = 'CPU' AND event_date = today()
 GROUP BY trace
 ORDER BY count() DESC
 LIMIT 10
@@ -43,7 +44,7 @@ The default sampling frequency is one sample per second and both CPU and real ti
 
 To analyze the `trace_log` system table:
 
-- Install the `clickhouse-common-static-dbg` package. See [Install from DEB Packages](../../getting-started/install.md#install-from-deb-packages).
+- Install the `clickhouse-common-static-dbg` package. See [Install from DEB Packages](../../getting-started/install/install.mdx).
 
 - Allow introspection functions by the [allow_introspection_functions](../../operations/settings/settings.md#allow_introspection_functions) setting.
 
@@ -63,8 +64,8 @@ In this example we:
 
 - Using introspection functions, we will get a report of:
 
-    - Names of symbols and corresponding source code functions.
-    - Source code locations of these functions.
+  - Names of symbols and corresponding source code functions.
+  - Source code locations of these functions.
 
 <!-- -->
 

@@ -1,18 +1,18 @@
 #pragma once
-#include <Storages/MarkCache.h>
 #include <Storages/MergeTree/MarkRange.h>
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/MergeTreeRangeReader.h>
-#include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
-#include <Compression/CachedCompressedReadBuffer.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
-#include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
 
 
 namespace DB
 {
+
+class IDataPartStorage;
+using DataPartStoragePtr = std::shared_ptr<const IDataPartStorage>;
+
+class UncompressedCache;
+class CachedCompressedReadBuffer;
 
 /// Basic and the most low-level class
 /// for reading single columns or indexes.
@@ -32,13 +32,15 @@ public:
         const ReadBufferFromFileBase::ProfileCallback & profile_callback_,
         clockid_t clock_type_);
 
-    virtual ~MergeTreeReaderStream() = default;
+    virtual ~MergeTreeReaderStream();
 
     /// Seeks to start of @row_index mark. Column position is implementation defined.
     virtual void seekToMark(size_t row_index) = 0;
 
     /// Seeks to exact mark in file.
     void seekToMarkAndColumn(size_t row_index, size_t column_position);
+
+    void seekToMark(const MarkInCompressedFile & mark);
 
     /// Seeks to the start of the file.
     void seekToStart();

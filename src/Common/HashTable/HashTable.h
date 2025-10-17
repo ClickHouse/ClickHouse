@@ -30,7 +30,7 @@
 
 /** NOTE HashTable could only be used for memmoveable (position independent) types.
   * Example: std::string is not position independent in libstdc++ with C++11 ABI or in libc++.
-  * Also, key in hash table must be of type, that zero bytes is compared equals to zero key.
+  * Also, key in hash table must be of a type, such as that zero bytes is compared equals to zero key.
   */
 
 
@@ -501,7 +501,7 @@ protected:
     }
 
     /// Increase the size of the buffer.
-    void PRESERVE_MOST resize(size_t for_num_elems = 0, size_t for_buf_size = 0)
+    void resize(size_t for_num_elems = 0, size_t for_buf_size = 0)
     {
 #ifdef DBMS_HASH_MAP_DEBUG_RESIZES
         Stopwatch watch;
@@ -961,7 +961,10 @@ protected:
     }
 
 public:
-    void PRESERVE_MOST reserve(size_t num_elements) { resize(num_elements); }
+    void reserve(size_t num_elements)
+    {
+        resize(num_elements);
+    }
 
     /// Insert a value. In the case of any more complex values, it is better to use the `emplace` function.
     std::pair<LookupResult, bool> ALWAYS_INLINE insert(const value_type & x)

@@ -1,8 +1,12 @@
 #pragma once
 
+#include <string_view>
+
 #include <Parsers/IAST.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 
+#include <Common/Scheduler/CostUnit.h>
+#include <Common/Scheduler/ResourceAccessMode.h>
 
 namespace DB
 {
@@ -10,15 +14,12 @@ namespace DB
 class ASTCreateResourceQuery : public IAST, public ASTQueryWithOnCluster
 {
 public:
-    enum class AccessMode
-    {
-        Read,
-        Write
-    };
+    /// Describes specific operation that requires this resource
     struct Operation
     {
-        AccessMode mode;
+        ResourceAccessMode mode;
         std::optional<String> disk; // Applies to all disks if not set
+        CostUnit unit() const { return costUnitForMode(mode); }
 
         friend bool operator ==(const Operation & lhs, const Operation & rhs) { return lhs.mode == rhs.mode && lhs.disk == rhs.disk; }
         friend bool operator !=(const Operation & lhs, const Operation & rhs) { return !(lhs == rhs); }
@@ -28,6 +29,8 @@ public:
 
     ASTPtr resource_name;
     Operations operations; /// List of operations that require this resource
+
+    CostUnit unit; /// What cost units are managed by the resource
 
     bool or_replace = false;
     bool if_not_exists = false;

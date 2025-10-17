@@ -96,9 +96,11 @@ ColumnsDescription SessionLogElement::getColumnsDescription()
             AUTH_TYPE_NAME_AND_VALUE(AuthType::SSL_CERTIFICATE),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::BCRYPT_PASSWORD),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::HTTP),
+            AUTH_TYPE_NAME_AND_VALUE(AuthType::SCRAM_SHA256_PASSWORD),
+            AUTH_TYPE_NAME_AND_VALUE(AuthType::NO_AUTHENTICATION),
         });
 #undef AUTH_TYPE_NAME_AND_VALUE
-    static_assert(static_cast<int>(AuthenticationType::MAX) == 11);
+    static_assert(static_cast<int>(AuthenticationType::MAX) == 13);
 
     auto interface_type_column = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
@@ -113,7 +115,7 @@ ColumnsDescription SessionLogElement::getColumnsDescription()
             {"Prometheus",             static_cast<Int8>(Interface::PROMETHEUS)},
             {"Background",             static_cast<Int8>(Interface::BACKGROUND)},
         });
-    static_assert(magic_enum::enum_count<Interface>() == 9, "Please update the array above to match the enum.");
+    static_assert(magic_enum::enum_count<Interface>() == 10, "Please update the array above to match the enum.");
 
     auto lc_string_datatype = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
 

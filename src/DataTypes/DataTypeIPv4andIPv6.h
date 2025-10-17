@@ -30,6 +30,7 @@ public:
     bool haveSubtypes() const override { return false; }
 
     bool equals(const IDataType & rhs) const override { return typeid(rhs) == typeid(*this); }
+    void updateHashImpl(SipHash &) const override {}
 
     bool canBeUsedInBitOperations() const override { return true; }
     bool canBeInsideNullable() const override { return true; }
@@ -71,6 +72,7 @@ public:
     bool haveSubtypes() const override { return false; }
 
     bool equals(const IDataType & rhs) const override { return typeid(rhs) == typeid(*this); }
+    void updateHashImpl(SipHash &) const override {}
 
     bool canBeUsedInBitOperations() const override { return true; }
     bool canBeInsideNullable() const override { return true; }

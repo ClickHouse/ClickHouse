@@ -113,7 +113,6 @@ void ASTIdentifier::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetti
 {
     auto format_element = [&](const String & elem_name)
     {
-        ostr << (settings.hilite ? hilite_identifier : "");
         if (auto special_delimiter_and_identifier = ParserCompoundIdentifier::splitSpecialDelimiterAndIdentifierIfAny(elem_name))
         {
             ostr << special_delimiter_and_identifier->first;
@@ -123,7 +122,6 @@ void ASTIdentifier::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetti
         {
             settings.writeIdentifier(ostr, elem_name, /*ambiguous=*/false);
         }
-        ostr << (settings.hilite ? hilite_none : "");
     };
 
     if (compound())
@@ -206,6 +204,7 @@ ASTPtr ASTTableIdentifier::clone() const
 {
     auto ret = std::make_shared<ASTTableIdentifier>(*this);
     ret->semantic = std::make_shared<IdentifierSemanticImpl>(*ret->semantic);
+    ret->cloneChildren();
     return ret;
 }
 

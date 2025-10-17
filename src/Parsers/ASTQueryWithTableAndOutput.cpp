@@ -1,5 +1,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
+#include <Parsers/IAST_erase.h>
 
 
 namespace DB

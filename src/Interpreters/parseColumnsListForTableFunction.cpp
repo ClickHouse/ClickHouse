@@ -16,10 +16,9 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_dynamic_type;
-    extern const SettingsBool allow_experimental_json_type;
     extern const SettingsBool allow_experimental_object_type;
-    extern const SettingsBool allow_experimental_variant_type;
+    extern const SettingsBool allow_experimental_time_time64_type;
+    extern const SettingsBool allow_experimental_qbit_type;
     extern const SettingsBool allow_suspicious_fixed_string_types;
     extern const SettingsBool allow_suspicious_low_cardinality_types;
     extern const SettingsBool allow_suspicious_variant_types;
@@ -41,32 +40,13 @@ DataTypeValidationSettings::DataTypeValidationSettings(const DB::Settings & sett
     : allow_suspicious_low_cardinality_types(settings[Setting::allow_suspicious_low_cardinality_types])
     , allow_experimental_object_type(settings[Setting::allow_experimental_object_type])
     , allow_suspicious_fixed_string_types(settings[Setting::allow_suspicious_fixed_string_types])
-    , enable_variant_type(settings[Setting::allow_experimental_variant_type])
     , allow_suspicious_variant_types(settings[Setting::allow_suspicious_variant_types])
     , validate_nested_types(settings[Setting::validate_experimental_and_suspicious_types_inside_nested_types])
-    , enable_dynamic_type(settings[Setting::allow_experimental_dynamic_type])
-    , enable_json_type(settings[Setting::allow_experimental_json_type])
+    , enable_time_time64_type(settings[Setting::allow_experimental_time_time64_type])
+    , allow_experimental_qbit_type(settings[Setting::allow_experimental_qbit_type])
 {
 }
 
-static bool allowedInDataTypeLowCardinality(const IDataType & data_type)
-{
-    WhichDataType which(data_type);
-    if (which.isStringOrFixedString())
-        return true;
-    /// It is allowed having LowCardinality(UUID) because often times UUIDs are highly repetitive in tables,
-    /// and their relatively large size provides opportunity for better performance.
-    if (which.isUUID())
-        return true;
-
-    if (which.isDecimal128())
-        return true;
-
-    if (which.isDecimal256())
-        return true;
-
-    return false;
-}
 
 void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidationSettings & settings)
 {
@@ -77,7 +57,11 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
             if (const auto * lc_type = typeid_cast<const DataTypeLowCardinality *>(&data_type))
             {
                 auto unwrapped = removeNullable(lc_type->getDictionaryType());
-                if (!allowedInDataTypeLowCardinality(*unwrapped))
+
+                /// It is allowed having LowCardinality(UUID) because often times UUIDs are highly repetitive in tables,
+                /// and their relatively large size provides opportunity for better performance.
+
+                if (!isStringOrFixedString(unwrapped) && !isUUID(unwrapped))
                     throw Exception(
                         ErrorCodes::SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY,
                         "Creating columns of type {} is prohibited by default due to expected negative impact on performance. "
@@ -109,18 +93,6 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
                         "Set setting allow_suspicious_fixed_string_types = 1 in order to allow it",
                         data_type.getName(),
                         MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS);
-            }
-        }
-
-        if (!settings.enable_variant_type)
-        {
-            if (isVariant(data_type))
-            {
-                throw Exception(
-                    ErrorCodes::ILLEGAL_COLUMN,
-                    "Cannot create column with type '{}' because Variant type is not allowed. "
-                    "Set setting enable_variant_type = 1 in order to allow it",
-                    data_type.getName());
             }
         }
 
@@ -156,27 +128,34 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
             }
         }
 
-        if (!settings.enable_dynamic_type)
+        if (!settings.enable_time_time64_type)
         {
-            if (isDynamic(data_type))
+            if (isTime(data_type))
             {
                 throw Exception(
                     ErrorCodes::ILLEGAL_COLUMN,
-                    "Cannot create column with type '{}' because Dynamic type is not allowed. "
-                    "Set setting enable_dynamic_type = 1 in order to allow it",
+                    "Cannot create column with type '{}' because Time type is not allowed. "
+                    "Set setting enable_time_time64_type = 1 in order to allow it",
+                    data_type.getName());
+            }
+            if (isTime64(data_type))
+            {
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Cannot create column with type '{}' because Time64 type is not allowed. "
+                    "Set setting enable_time_time64_type = 1 in order to allow it",
                     data_type.getName());
             }
         }
 
-        if (!settings.enable_json_type)
+        if (!settings.allow_experimental_qbit_type)
         {
-            const auto * object_type = typeid_cast<const DataTypeObject *>(&data_type);
-            if (object_type && object_type->getSchemaFormat() == DataTypeObject::SchemaFormat::JSON)
+            if (isQBit(data_type))
             {
                 throw Exception(
                     ErrorCodes::ILLEGAL_COLUMN,
-                    "Cannot create column with type '{}' because JSON type is not allowed. "
-                    "Set setting enable_json_type = 1 in order to allow it",
+                    "Cannot create column with type '{}' because QBit type is not allowed. "
+                    "Set setting allow_experimental_qbit_type = 1 in order to allow it",
                     data_type.getName());
             }
         }

@@ -32,7 +32,7 @@ private:
     StoragePtr getStorage(
         const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr global_context,
         const std::string & table_name, const std::string & compression_method_, bool) const override;
-    const char * getStorageTypeName() const override { return "File"; }
+    const char * getStorageEngineName() const override { return "File"; }
 };
 
 }
