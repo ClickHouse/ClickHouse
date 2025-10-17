@@ -1,7 +1,9 @@
 import pytest
+import os
 
 from helpers.cluster import ClickHouseCluster
 
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "instance",
@@ -22,6 +24,12 @@ def started_cluster():
 
 
 def test_user_grants():
+    instance.copy_file_to_container(
+        os.path.join(SCRIPT_DIR, "configs/users.xml"),
+        "/etc/clickhouse-server/users.d/users.xml",
+    )
+    instance.query("system reload users")
+    instance.wait_for_log_line("performing update on configuration")
     assert instance.query("show grants for user1") == ""
     instance.query("create role role1")
     instance.replace_in_config("/etc/clickhouse-server/users.d/users.xml", "<grants></grants>", "<grants><query>GRANT role1</query></grants>")
@@ -29,6 +37,5 @@ def test_user_grants():
     instance.wait_for_log_line("performing update on configuration")
     assert instance.query("show grants for user1") == "GRANT role1 TO user1\n"
     # Make sure that assigning roles created in SQL to XML users works after restart
-    instance.stop_clickhouse()
-    instance.start_clickhouse()
+    instance.restart_clickhouse()
     assert instance.query("show grants for user1") == "GRANT role1 TO user1\n"
