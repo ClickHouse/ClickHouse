@@ -173,6 +173,11 @@ void XRayInstrumentationManager::dispatchHandler(int32_t func_id, XRayEntryType 
 
 void XRayInstrumentationManager::dispatchHandlerImpl(int32_t func_id, XRayEntryType entry_type)
 {
+    /// We don't need to distinguish between a normal EXIT and a TAIL EXIT, so we convert
+    /// the latter to the former to simplify the rest of the logic.
+    if (entry_type == XRayEntryType::TAIL)
+        entry_type = XRayEntryType::EXIT;
+
     for (const auto & [handler_name, handler_function] : handler_name_to_function)
     {
         SharedLockGuard lock(shared_mutex);
