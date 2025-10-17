@@ -59,7 +59,7 @@ WHERE is_done = 0 AND table = 'tmp';
 Note: this requires read permissions on the `system.*` tables.
 
 :::tip Cloud usage
-In CLickHouse Cloud the `system.mutations` table on each node has all the mutations in the cluster, and there is no need for `clusterAllReplicas`.
+In ClickHouse Cloud the `system.mutations` table on each node has all the mutations in the cluster, and there is no need for `clusterAllReplicas`.
 :::
 
 **See Also**
