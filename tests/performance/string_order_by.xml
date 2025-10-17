@@ -6,8 +6,8 @@
     <fill_query>
         INSERT INTO str_sort
         SELECT 
-            ('number key ' || toString(number % 400)) AS a,
-            number % 20 AS b, ('ABCD' || toString(rand()%10)) as c,
+            randomString(4) AS a,
+            rand()  AS b, cast(randomString(5) AS FixedString(5)) as c,
             toString(rand() % 100000) as d,
             rand() % 1000 as e,
             rand() % 1000 as f
