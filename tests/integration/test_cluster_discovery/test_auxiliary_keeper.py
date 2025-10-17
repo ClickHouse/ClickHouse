@@ -77,7 +77,7 @@ def test_cluster_discovery_with_auxiliary_keeper_startup_and_stop(start_cluster)
         int(
             nodes["node_observer"]
             .query(
-                "SELECT sum(x) FROM clusterAllReplicas(test_auto_cluster, default.tbl)"
+                "SELECT sum(x) FROM clusterAllReplicas(test_auto_cluster, default.tbl) settings serialize_query_plan=0"
             )
             .strip()
         )

@@ -1,13 +1,20 @@
 #include <Parsers/CreateQueryUUIDs.h>
 
-#include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTFunction.h>
+#include <Core/ServerSettings.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <Interpreters/Context.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
 
 
 namespace DB
 {
+
+namespace ServerSetting
+{
+extern const ServerSettingsBool storage_shared_set_join_use_inner_uuid;
+}
 
 CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_random, bool force_random)
 {
@@ -46,6 +53,16 @@ CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_r
             /// An exception is refreshable MV that replaces inner table by renaming, changing UUID on each refresh.
             if (query.is_materialized_view && !(query.refresh_strategy && !query.refresh_strategy->append))
                 generate_target_uuid(ViewTarget::To);
+
+
+            /// We should generate UUID of inner table for `SharedSet` or `SharedJoin` table here
+            if (query.storage && query.storage->engine
+                && (query.storage->engine->name == "SharedSet" || query.storage->engine->name == "SharedJoin")
+                && Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::storage_shared_set_join_use_inner_uuid])
+            {
+                if (query.getTargetInnerUUID(ViewTarget::To) == UUIDHelpers::Nil)
+                    setTargetInnerUUID(ViewTarget::To, UUIDHelpers::generateV4());
+            }
 
             if (query.is_time_series_table)
             {

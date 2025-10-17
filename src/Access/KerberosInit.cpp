@@ -2,7 +2,6 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Poco/Logger.h>
-#include <Loggers/Loggers.h>
 #include <filesystem>
 #include <boost/core/noncopyable.hpp>
 #include <fmt/format.h>

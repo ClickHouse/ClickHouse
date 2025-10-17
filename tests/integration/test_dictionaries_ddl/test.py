@@ -8,6 +8,7 @@ import pytest
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
+from helpers.config_cluster import mysql_pass
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -127,7 +128,7 @@ def started_cluster():
 )
 def test_create_and_select_mysql(started_cluster, clickhouse, name, layout):
     mysql_conn = create_mysql_conn(
-        "root", "clickhouse", started_cluster.mysql8_ip, started_cluster.mysql8_port
+        "root", mysql_pass, started_cluster.mysql8_ip, started_cluster.mysql8_port
     )
     execute_mysql_query(mysql_conn, "DROP DATABASE IF EXISTS create_and_select")
     execute_mysql_query(mysql_conn, "CREATE DATABASE create_and_select")
@@ -148,8 +149,8 @@ def test_create_and_select_mysql(started_cluster, clickhouse, name, layout):
     )
 
     clickhouse.query(
-        """
-    CREATE DICTIONARY default.{} (
+        f"""
+    CREATE DICTIONARY default.{name} (
         key_field1 Int32,
         key_field2 Int64,
         value1 String DEFAULT 'xxx',
@@ -158,17 +159,15 @@ def test_create_and_select_mysql(started_cluster, clickhouse, name, layout):
     PRIMARY KEY key_field1, key_field2
     SOURCE(MYSQL(
         USER 'root'
-        PASSWORD 'clickhouse'
+        PASSWORD '{mysql_pass}'
         DB 'create_and_select'
-        TABLE '{}'
+        TABLE '{name}'
         REPLICA(PRIORITY 1 HOST '127.0.0.1' PORT 3333)
         REPLICA(PRIORITY 2 HOST 'mysql80' PORT 3306)
     ))
-    {}
+    {layout}
     LIFETIME(MIN 1 MAX 3)
-    """.format(
-            name, name, layout
-        )
+    """
     )
 
     for i in range(172, 200):
@@ -410,7 +409,7 @@ def test_file_dictionary_restrictions(started_cluster):
 
 def test_dictionary_with_where(started_cluster):
     mysql_conn = create_mysql_conn(
-        "root", "clickhouse", started_cluster.mysql8_ip, started_cluster.mysql8_port
+        "root", mysql_pass, started_cluster.mysql8_ip, started_cluster.mysql8_port
     )
     execute_mysql_query(
         mysql_conn, "CREATE DATABASE IF NOT EXISTS dictionary_with_where"
@@ -425,7 +424,7 @@ def test_dictionary_with_where(started_cluster):
     )
 
     node1.query(
-        """
+        f"""
     CREATE DICTIONARY default.special_dict (
         key_field1 Int32,
         value1 String DEFAULT 'xxx'
@@ -433,7 +432,7 @@ def test_dictionary_with_where(started_cluster):
     PRIMARY KEY key_field1
     SOURCE(MYSQL(
         USER 'root'
-        PASSWORD 'clickhouse'
+        PASSWORD '{mysql_pass}'
         DB 'dictionary_with_where'
         TABLE 'special_table'
         REPLICA(PRIORITY 1 HOST 'mysql80' PORT 3306)

@@ -19,7 +19,7 @@ SELECT 1 SETTINGS use_query_cache = true, enable_writes_to_query_cache = false, 
 
 -- Technically, both SELECT queries have different ASTs, leading to different QC keys. QC does some AST normalization (erase all
 -- QC-related settings) such that the keys match regardless. Verify by checking that the second query caused a QC hit.
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['QueryCacheHits'], ProfileEvents['QueryCacheMisses']
 FROM system.query_log
 WHERE type = 'QueryFinish'

@@ -14,6 +14,7 @@ INSERT INTO left SELECT number, toString(number) FROM numbers(25367182);
 INSERT INTO right SELECT number, toString(number) FROM numbers(23124707);
 
 SET join_algorithm = 'partial_merge';
+SET query_plan_join_swap_table = 0;
 
 SELECT key, count(1) AS cnt
 FROM (

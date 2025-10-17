@@ -5,16 +5,14 @@
 #include <atomic>
 #include <memory>
 #include <unordered_map>
-#include <string>
 #include <vector>
+#include <base/types.h>
 #include <boost/noncopyable.hpp>
 
 namespace DB
 {
 
 class KeeperDispatcher;
-
-using String = std::string;
 
 struct IFourLetterCommand;
 using FourLetterCommandPtr = std::shared_ptr<DB::IFourLetterCommand>;
@@ -492,5 +490,18 @@ struct ProfileEventsCommand : public IFourLetterCommand
     String run() override;
     ~ProfileEventsCommand() override = default;
 };
+
+struct ToggleRequestLogging : public IFourLetterCommand
+{
+    explicit ToggleRequestLogging(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
+
+    String name() override { return "lgrq"; }
+    String run() override;
+    ~ToggleRequestLogging() override = default;
+};
+
 
 }

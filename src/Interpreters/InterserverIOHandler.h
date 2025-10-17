@@ -3,6 +3,7 @@
 #include <Common/ActionBlocker.h>
 #include <Common/Exception.h>
 #include <Common/SharedMutex.h>
+#include <IO/ReadBuffer.h>
 #include <base/types.h>
 
 #include <map>
@@ -25,6 +26,8 @@ namespace ErrorCodes
 
 class HTMLForm;
 class HTTPServerResponse;
+class ReadBuffer;
+class WriteBuffer;
 
 /** Query processor from other servers.
   */
@@ -32,7 +35,7 @@ class InterserverIOEndpoint
 {
 public:
     virtual std::string getId(const std::string & path) const = 0;
-    virtual void processQuery(const HTMLForm & params, ReadBuffer & body, WriteBuffer & out, HTTPServerResponse & response) = 0;
+    virtual void processQuery(const HTMLForm & params, ReadBufferPtr body, WriteBuffer & out, HTTPServerResponse & response) = 0;
     virtual ~InterserverIOEndpoint() = default;
 
     /// You need to stop the data transfer if blocker is activated.

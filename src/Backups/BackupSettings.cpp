@@ -5,12 +5,12 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTLiteral.h>
-#include <IO/ReadHelpers.h>
 #include <Backups/SettingsFieldOptionalUUID.h>
-#include <Backups/SettingsFieldOptionalUInt64.h>
+
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int CANNOT_PARSE_BACKUP_SETTINGS;
@@ -169,6 +169,7 @@ ASTPtr BackupSettings::Util::clusterHostIDsToAST(const std::vector<Strings> & cl
 
     auto res = std::make_shared<ASTFunction>();
     res->name = "array";
+    res->is_operator = true;
     auto res_replicas = std::make_shared<ASTExpressionList>();
     res->arguments = res_replicas;
     res->children.push_back(res_replicas);

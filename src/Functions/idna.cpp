@@ -55,7 +55,7 @@ struct IdnaEncode
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             const char * value = reinterpret_cast<const char *>(&data[prev_offset]);
-            const size_t value_length = offsets[row] - prev_offset - 1;
+            const size_t value_length = offsets[row] - prev_offset;
 
             std::string_view value_view(value, value_length);
             if (!value_view.empty()) /// to_ascii() expects non-empty input
@@ -76,7 +76,7 @@ struct IdnaEncode
                 }
             }
 
-            res_data.insert(ascii.c_str(), ascii.c_str() + ascii.size() + 1);
+            res_data.insert(ascii.data(), ascii.data() + ascii.size());
             res_offsets.push_back(res_data.size());
 
             prev_offset = offsets[row];
@@ -110,12 +110,12 @@ struct IdnaDecode
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             const char * ascii = reinterpret_cast<const char *>(&data[prev_offset]);
-            const size_t ascii_length = offsets[row] - prev_offset - 1;
+            const size_t ascii_length = offsets[row] - prev_offset;
             std::string_view ascii_view(ascii, ascii_length);
 
             unicode = ada::idna::to_unicode(ascii_view);
 
-            res_data.insert(unicode.c_str(), unicode.c_str() + unicode.size() + 1);
+            res_data.insert(unicode.data(), unicode.data() + unicode.size());
             res_offsets.push_back(res_data.size());
 
             prev_offset = offsets[row];
@@ -140,56 +140,82 @@ using FunctionIdnaDecode = FunctionStringToString<IdnaDecode, NameIdnaDecode>;
 
 REGISTER_FUNCTION(Idna)
 {
-    factory.registerFunction<FunctionIdnaEncode>(FunctionDocumentation{
-        .description=R"(
-Computes an ASCII representation of an Internationalized Domain Name. Throws an exception in case of error.)",
-        .syntax="idnaEncode(str)",
-        .arguments={{"str", "Input string"}},
-        .returned_value="An ASCII-encoded domain name [String](/docs/en/sql-reference/data-types/string.md).",
-        .examples={
-            {"simple",
-            "SELECT idnaEncode('straße.münchen.de') AS ascii;",
-            R"(
-┌─ascii───────────────────────────┐
-│ xn--strae-oqa.xn--mnchen-3ya.de │
-└─────────────────────────────────┘
-            )"
-            }}
-    });
+    FunctionDocumentation::Description description_encode = R"(
+Returns the ASCII representation (ToASCII algorithm) of a domain name according to the [Internationalized Domain Names in Applications](https://en.wikipedia.org/wiki/Internationalized_domain_name#Internationalizing_Domain_Names_in_Applications) (IDNA) mechanism.
+The input string must be UTF-encoded and translatable to an ASCII string, otherwise an exception is thrown.
 
-    factory.registerFunction<FunctionTryIdnaEncode>(FunctionDocumentation{
-        .description=R"(
-Computes a ASCII representation of an Internationalized Domain Name. Returns an empty string in case of error)",
-        .syntax="punycodeEncode(str)",
-        .arguments={{"str", "Input string"}},
-        .returned_value="An ASCII-encoded domain name [String](/docs/en/sql-reference/data-types/string.md).",
-        .examples={
-            {"simple",
-            "SELECT idnaEncodeOrNull('München') AS ascii;",
-            R"(
-┌─ascii───────────────────────────┐
-│ xn--strae-oqa.xn--mnchen-3ya.de │
-└─────────────────────────────────┘
-            )"
-            }}
-    });
+:::note
+No percent decoding or trimming of tabs, spaces or control characters is performed.
+:::
+)";
+    FunctionDocumentation::Syntax syntax_encode = "idnaEncode(s)";
+    FunctionDocumentation::Arguments arguments_encode = {
+        {"s", "Input string.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_encode = {"Returns an ASCII representation of the input string according to the IDNA mechanism of the input value.", {"String"}};
+    FunctionDocumentation::Examples examples_encode = {
+    {
+        "Usage example",
+        "SELECT idnaEncode('straße.münchen.de')",
+        R"(
+┌─idnaEncode('straße.münchen.de')─────┐
+│ xn--strae-oqa.xn--mnchen-3ya.de     │
+└─────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {24, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
+    FunctionDocumentation documentation_encode = {description_encode, syntax_encode, arguments_encode, returned_value_encode, examples_encode, introduced_in, category};
 
-    factory.registerFunction<FunctionIdnaDecode>(FunctionDocumentation{
-        .description=R"(
-Computes the Unicode representation of ASCII-encoded Internationalized Domain Name.)",
-        .syntax="idnaDecode(str)",
-        .arguments={{"str", "Input string"}},
-        .returned_value="An Unicode-encoded domain name [String](/docs/en/sql-reference/data-types/string.md).",
-        .examples={
-            {"simple",
-            "SELECT idnaDecode('xn--strae-oqa.xn--mnchen-3ya.de') AS unicode;",
-            R"(
-┌─unicode───────────┐
-│ straße.münchen.de │
-└───────────────────┘
-            )"
-            }}
-    });
+    FunctionDocumentation::Description description_try_encode = R"(
+Returns the Unicode (UTF-8) representation (ToUnicode algorithm) of a domain name according to the [Internationalized Domain Names in Applications](https://en.wikipedia.org/wiki/Internationalized_domain_name#Internationalizing_Domain_Names_in_Applications) (IDNA) mechanism.
+In case of an error it returns an empty string instead of throwing an exception.
+)";
+    FunctionDocumentation::Syntax syntax_try_encode = "tryIdnaEncode(s)";
+    FunctionDocumentation::Arguments arguments_try_encode = {
+        {"s", "Input string.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_try_encode = {"Returns an ASCII representation of the input string according to the IDNA mechanism of the input value, or empty string if input is invalid.", {"String"}};
+    FunctionDocumentation::Examples examples_try_encode = {
+    {
+        "Usage example",
+        "SELECT tryIdnaEncode('straße.münchen.de')",
+        R"(
+┌─tryIdnaEncode('straße.münchen.de')──┐
+│ xn--strae-oqa.xn--mnchen-3ya.de     │
+└─────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation documentation_try_encode = {description_try_encode, syntax_try_encode, arguments_try_encode, returned_value_try_encode, examples_try_encode, introduced_in, category};
+
+    FunctionDocumentation::Description description_decode = R"(
+Returns the Unicode (UTF-8) representation (ToUnicode algorithm) of a domain name according to the [Internationalized Domain Names in Applications](https://en.wikipedia.org/wiki/Internationalized_domain_name#Internationalizing_Domain_Names_in_Applications) (IDNA) mechanism.
+In case of an error (e.g. because the input is invalid), the input string is returned.
+Note that repeated application of [`idnaEncode()`](#idnaEncode) and [`idnaDecode()`](#idnaDecode) does not necessarily return the original string due to case normalization.
+)";
+    FunctionDocumentation::Syntax syntax_decode = "idnaDecode(s)";
+    FunctionDocumentation::Arguments arguments_decode = {
+        {"s", "Input string.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_decode = {"Returns a Unicode (UTF-8) representation of the input string according to the IDNA mechanism of the input value.", {"String"}};
+    FunctionDocumentation::Examples examples_decode = {
+    {
+        "Usage example",
+        "SELECT idnaDecode('xn--strae-oqa.xn--mnchen-3ya.de')",
+        R"(
+┌─idnaDecode('xn--strae-oqa.xn--mnchen-3ya.de')─┐
+│ straße.münchen.de                             │
+└───────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation documentation_decode = {description_decode, syntax_decode, arguments_decode, returned_value_decode, examples_decode, introduced_in, category};
+
+    factory.registerFunction<FunctionIdnaEncode>(documentation_encode);
+    factory.registerFunction<FunctionTryIdnaEncode>(documentation_try_encode);
+    factory.registerFunction<FunctionIdnaDecode>(documentation_decode);
 }
 
 }

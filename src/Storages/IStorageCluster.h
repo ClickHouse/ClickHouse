@@ -1,12 +1,14 @@
 #pragma once
 
 #include <Storages/IStorage.h>
-#include <Interpreters/Cluster.h>
+#include <Interpreters/ActionsDAG.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
-#include <Parsers/ASTExpressionList.h>
 
 namespace DB
 {
+
+class Cluster;
+using ClusterPtr = std::shared_ptr<Cluster>;
 
 
 /**
@@ -32,8 +34,15 @@ public:
         size_t /*num_streams*/) override;
 
     ClusterPtr getCluster(ContextPtr context) const;
+
     /// Query is needed for pruning by virtual columns (_file, _path)
-    virtual RemoteQueryExecutor::Extension getTaskIteratorExtension(const ActionsDAG::Node * predicate, const ContextPtr & context) const = 0;
+    virtual RemoteQueryExecutor::Extension getTaskIteratorExtension(
+        const ActionsDAG::Node * predicate,
+        const ActionsDAG * filter_actions_dag,
+        const ContextPtr & context,
+        ClusterPtr cluster,
+        StorageMetadataPtr storage_metadata_snapshot) const
+        = 0;
 
     QueryProcessingStage::Enum getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
 

@@ -1,6 +1,6 @@
 #include <cassert>
 
-#include "CompressedReadBufferFromFile.h"
+#include <Compression/CompressedReadBufferFromFile.h>
 
 #include <Common/logger_useful.h>
 #include <Compression/LZ4_decompress_faster.h>
@@ -58,7 +58,7 @@ CompressedReadBufferFromFile::CompressedReadBufferFromFile(std::unique_ptr<ReadB
     : BufferWithOwnMemory<ReadBuffer>(0)
     , p_file_in(std::move(buf))
     , file_in(*p_file_in)
-    , log(getLogger("CompressedReadBufferFromFile"))
+    , log(getLogger("CompressedReadBufferFromFile"), /* allowed_count */ 1, /* interval */ 1)
 {
     compressed_in = &file_in;
     allow_different_codecs = allow_different_codecs_;
@@ -101,6 +101,11 @@ void CompressedReadBufferFromFile::seek(size_t offset_in_compressed_file, size_t
         /// the next ReadBuffer::next() call
         nextimpl_working_buffer_offset = offset_in_decompressed_block;
     }
+}
+
+off_t CompressedReadBufferFromFile::getPosition() const
+{
+    return file_in.getPosition();
 }
 
 size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)

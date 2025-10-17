@@ -1,9 +1,9 @@
 #pragma once
 
-#include <stdexcept>
 #include <cstddef>
 #include <cstdlib>
 
+#include <Common/AllocationInterceptors.h>
 #include <Common/CurrentMemoryTracker.h>
 
 
@@ -11,7 +11,9 @@
 /// NOTE We already plug MemoryTracker into new/delete operators. So, everything works even with default allocator.
 /// But it is enabled only if jemalloc is used (to obtain the size of the allocation on call to delete).
 /// And jemalloc is disabled for builds with sanitizers. In these cases memory was not always tracked.
-
+///
+/// Functions __real_malloc and __real_free are used to call the MemoryTracker explicitly, so
+/// it works even with sanitizers which has its own mechanism for intercepting malloc and free.
 template <typename T>
 struct AllocatorWithMemoryTracking
 {
@@ -32,7 +34,7 @@ struct AllocatorWithMemoryTracking
         size_t bytes = n * sizeof(T); /// NOLINT(bugprone-sizeof-expression)
         auto trace = CurrentMemoryTracker::alloc(bytes);
 
-        T * p = static_cast<T *>(malloc(bytes));
+        T * p = static_cast<T *>(__real_malloc(bytes));
         if (!p)
             throw std::bad_alloc();
 
@@ -45,7 +47,7 @@ struct AllocatorWithMemoryTracking
     {
         size_t bytes = n * sizeof(T); /// NOLINT(bugprone-sizeof-expression)
 
-        free(p);
+        __real_free(p);
         auto trace = CurrentMemoryTracker::free(bytes);
         trace.onFree(p, bytes);
     }
@@ -62,4 +64,3 @@ bool operator!=(const AllocatorWithMemoryTracking <T> &, const AllocatorWithMemo
 {
     return false;
 }
-

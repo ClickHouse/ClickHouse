@@ -10,7 +10,11 @@ else
     GREP_CMD='grep'
 fi
 
-ROOT_PATH="$(git rev-parse --show-toplevel)"
+ROOT_PATH="${1:-}"
+if [[ -z "$ROOT_PATH" ]]; then
+    ROOT_PATH="$(git rev-parse --show-toplevel)"
+fi
+
 LIBS_PATH="${ROOT_PATH}/contrib"
 
 libs=$(echo "${ROOT_PATH}/base/poco"; (find "${LIBS_PATH}" -maxdepth 1 -type d -not -name '*-cmake' -not -name 'rust_vendor' | LC_ALL=C sort) )
@@ -51,6 +55,8 @@ do
         (${GREP_CMD} -q -i -F 'Permission is hereby granted, free of charge, to any person' "$LIB_LICENSE" &&
          ${GREP_CMD} -q -i -F 'The above copyright notice and this permission notice shall be' "$LIB_LICENSE" &&
          ${GREP_CMD} -q -i -F 'THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND' "$LIB_LICENSE" &&
+         echo "MIT") ||
+        (${GREP_CMD} -q -i -F 'MIT License' "$LIB_LICENSE" &&
          echo "MIT") ||
         (${GREP_CMD} -q -F 'PostgreSQL' "$LIB_LICENSE" &&
          echo "PostgreSQL") ||
@@ -97,4 +103,77 @@ do
 done
 
 # Special care for Rust
-find "${LIBS_PATH}/rust_vendor/" -name 'Cargo.toml' | xargs ${GREP_CMD} 'license = ' | (${GREP_CMD} -v -P 'MIT|Apache|MPL|ISC|BSD|Unicode|Zlib' && echo "Fatal error: unrecognized licenses in the Rust code" >&2 && exit 1 || true)
+for dependency in $(find "${LIBS_PATH}/rust_vendor/" -name 'Cargo.toml');
+do
+    FOLDER=$(dirname "$dependency")
+
+    # Crate names follow `some-crate-name-1.0.0` pattern.
+    CRATE=$(basename "$FOLDER")
+    NAME=$(echo "$CRATE" | rev | cut -f2- -d- | rev)
+
+    LICENSE_TYPE=$(${GREP_CMD} 'license = "' "$dependency"  | cut -d '"' -f2)
+    if echo "${LICENSE_TYPE}" | ${GREP_CMD} -v -P 'MIT|Apache|MPL|ISC|BSD|Unicode|Zlib|CC0-1.0|CDLA-Permissive';
+    then
+        echo "Fatal error: unrecognized licenses ($LICENSE_TYPE) in the Rust code"
+        exit 1
+    fi
+
+    LICENSE_PATH=""
+    declare -a arr=(
+      "LICENSE"
+      "LICENCE"
+      "LICENSE.md"
+      "LICENSE.txt"
+      "LICENSE.TXT"
+      "COPYING"
+      "LICENSE_APACHE"
+      "LICENSE-APACHE"
+      "license-apache-2.0"
+      "LICENSES/Apache-2.0.txt"
+      "LICENSE-MIT"
+      "LICENSE-MIT.txt"
+      "LICENSE-MIT.md"
+      "LICENSE.MIT"
+      "LICENSE_A2"
+      "LICENSE_CC0"
+      "LICENSE_A2LLVM"
+    )
+    for possible_path in "${arr[@]}"
+    do
+        if test -f "${FOLDER}/${possible_path}";
+        then
+            LICENSE_PATH="${FOLDER}/${possible_path}"
+            break
+        fi
+    done
+
+    if [ -z "${LICENSE_PATH}" ];
+    then
+        # It's important that we match exactly the license that we want for those projects that don't include a LICENSE file
+        if [ "$LICENSE_TYPE" == "Apache-2.0" ] ||
+           [ "$LICENSE_TYPE" == "MIT OR Apache-2.0" ] ||
+           [ "$LICENSE_TYPE" == "MIT/Apache-2.0" ] ||
+           [ "$LICENSE_TYPE" == "MIT OR Apache-2.0 OR LGPL-2.1-or-later" ] ||
+           [ "$LICENSE_TYPE" == "Apache-2.0 OR BSL-1.0 OR MIT" ] ||
+           [ "$LICENSE_TYPE" == "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT" ];
+        then
+            LICENSE_PATH="/utils/list-licenses/Apache-2.0.txt"
+        elif [ "$LICENSE_TYPE" == "MIT" ]
+        then
+            LICENSE_PATH="/utils/list-licenses/MIT.txt"
+        elif [ "$LICENSE_TYPE" == "MPL-2.0" ]
+        then
+            LICENSE_PATH="/utils/list-licenses/MPL-2.0.txt"
+        elif [ "$LICENSE_TYPE" == "BSD-3-Clause" ]
+        then
+            LICENSE_PATH="/utils/list-licenses/BSD-3-Clause.txt"
+        else
+            echo "Could not find a valid license file for \"${LICENSE_TYPE}\" in $FOLDER"
+            ls "$FOLDER"
+            exit 1
+        fi
+    fi
+
+    RELATIVE_PATH=$(echo "$LICENSE_PATH" | sed -r -e 's!^.+/(contrib|base)/!/\1/!')
+    echo -e "$NAME\t$LICENSE_TYPE\t$RELATIVE_PATH"
+done

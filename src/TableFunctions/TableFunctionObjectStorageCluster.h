@@ -1,8 +1,11 @@
 #pragma once
 #include "config.h"
+
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/ITableFunctionCluster.h>
 #include <TableFunctions/TableFunctionObjectStorage.h>
+#include <Storages/ObjectStorage/StorageObjectStorageDefinitions.h>
+#include <Common/CurrentThread.h>
 
 
 namespace DB
@@ -15,54 +18,6 @@ class StorageAzureBlobSettings;
 class StorageS3Configuration;
 class StorageAzureConfiguration;
 
-struct AzureClusterDefinition
-{
-    static constexpr auto name = "azureBlobStorageCluster";
-    static constexpr auto storage_type_name = "AzureBlobStorageCluster";
-};
-
-struct S3ClusterDefinition
-{
-    static constexpr auto name = "s3Cluster";
-    static constexpr auto storage_type_name = "S3Cluster";
-};
-
-struct HDFSClusterDefinition
-{
-    static constexpr auto name = "hdfsCluster";
-    static constexpr auto storage_type_name = "HDFSCluster";
-};
-
-struct IcebergS3ClusterDefinition
-{
-    static constexpr auto name = "icebergS3Cluster";
-    static constexpr auto storage_type_name = "IcebergS3Cluster";
-};
-
-struct IcebergAzureClusterDefinition
-{
-    static constexpr auto name = "icebergAzureCluster";
-    static constexpr auto storage_type_name = "IcebergAzureCluster";
-};
-
-struct IcebergHDFSClusterDefinition
-{
-    static constexpr auto name = "icebergHDFSCluster";
-    static constexpr auto storage_type_name = "IcebergHDFSCluster";
-};
-
-struct DeltaLakeClusterDefinition
-{
-    static constexpr auto name = "deltaLakeCluster";
-    static constexpr auto storage_type_name = "DeltaLakeS3Cluster";
-};
-
-struct HudiClusterDefinition
-{
-    static constexpr auto name = "hudiCluster";
-    static constexpr auto storage_type_name = "HudiS3Cluster";
-};
-
 /**
 * Class implementing s3/hdfs/azureBlobStorageCluster(...) table functions,
 * which allow to process many files from S3/HDFS/Azure blob storage on a specific cluster.
@@ -71,8 +26,8 @@ struct HudiClusterDefinition
 * On worker node it asks initiator about next task to process, processes it.
 * This is repeated until the tasks are finished.
 */
-template <typename Definition, typename Configuration>
-class TableFunctionObjectStorageCluster : public ITableFunctionCluster<TableFunctionObjectStorage<Definition, Configuration>>
+template <typename Definition, typename Configuration, bool is_data_lake = false>
+class TableFunctionObjectStorageCluster : public ITableFunctionCluster<TableFunctionObjectStorage<Definition, Configuration, is_data_lake>>
 {
 public:
     static constexpr auto name = Definition::name;
@@ -80,7 +35,7 @@ public:
     String getName() const override { return name; }
 
 protected:
-    using Base = TableFunctionObjectStorage<Definition, Configuration>;
+    using Base = TableFunctionObjectStorage<Definition, Configuration, is_data_lake>;
 
     StoragePtr executeImpl(
         const ASTPtr & ast_function,
@@ -89,13 +44,18 @@ protected:
         ColumnsDescription cached_columns,
         bool is_insert_query) const override;
 
-    const char * getStorageTypeName() const override { return Definition::storage_type_name; }
-
-    bool hasStaticStructure() const override { return Base::getConfiguration()->structure != "auto"; }
-
-    bool needStructureHint() const override { return Base::getConfiguration()->structure == "auto"; }
-
+    const char * getStorageEngineName() const override { return Definition::storage_engine_name; }
+    const char * getNonClusteredStorageEngineName() const override { return Definition::non_clustered_storage_engine_name; }
+    bool hasStaticStructure() const override { return Base::getConfiguration(getQueryOrGlobalContext())->structure != "auto"; }
+    bool needStructureHint() const override { return Base::getConfiguration(getQueryOrGlobalContext())->structure == "auto"; }
     void setStructureHint(const ColumnsDescription & structure_hint_) override { Base::structure_hint = structure_hint_; }
+private:
+    static ContextPtr getQueryOrGlobalContext()
+    {
+        if (auto query_context = CurrentThread::getQueryContext(); query_context != nullptr)
+            return query_context;
+        return Context::getGlobalContextInstance();
+    }
 };
 
 #if USE_AWS_S3
@@ -111,23 +71,43 @@ using TableFunctionHDFSCluster = TableFunctionObjectStorageCluster<HDFSClusterDe
 #endif
 
 #if USE_AVRO && USE_AWS_S3
-using TableFunctionIcebergS3Cluster = TableFunctionObjectStorageCluster<IcebergS3ClusterDefinition, StorageS3IcebergConfiguration>;
+using TableFunctionIcebergS3Cluster = TableFunctionObjectStorageCluster<IcebergS3ClusterDefinition, StorageS3IcebergConfiguration, true>;
+using TableFunctionIcebergCluster = TableFunctionObjectStorageCluster<IcebergClusterDefinition, StorageS3IcebergConfiguration, true>;
 #endif
 
 #if USE_AVRO && USE_AZURE_BLOB_STORAGE
-using TableFunctionIcebergAzureCluster = TableFunctionObjectStorageCluster<IcebergAzureClusterDefinition, StorageAzureIcebergConfiguration>;
+using TableFunctionIcebergAzureCluster = TableFunctionObjectStorageCluster<IcebergAzureClusterDefinition, StorageAzureIcebergConfiguration, true>;
 #endif
 
 #if USE_AVRO && USE_HDFS
-using TableFunctionIcebergHDFSCluster = TableFunctionObjectStorageCluster<IcebergHDFSClusterDefinition, StorageHDFSIcebergConfiguration>;
+using TableFunctionIcebergHDFSCluster = TableFunctionObjectStorageCluster<IcebergHDFSClusterDefinition, StorageHDFSIcebergConfiguration, true>;
 #endif
 
-#if USE_AWS_S3 && USE_PARQUET
-using TableFunctionDeltaLakeCluster = TableFunctionObjectStorageCluster<DeltaLakeClusterDefinition, StorageS3DeltaLakeConfiguration>;
+#if USE_AVRO && USE_AWS_S3
+using TableFunctionPaimonS3Cluster = TableFunctionObjectStorageCluster<PaimonS3ClusterDefinition, StorageS3PaimonConfiguration, true>;
+using TableFunctionPaimonCluster = TableFunctionObjectStorageCluster<PaimonClusterDefinition, StorageS3PaimonConfiguration, true>;
+#endif
+
+#if USE_AVRO && USE_AZURE_BLOB_STORAGE
+using TableFunctionPaimonAzureCluster = TableFunctionObjectStorageCluster<PaimonAzureClusterDefinition, StorageAzurePaimonConfiguration, true>;
+#endif
+
+#if USE_AVRO && USE_HDFS
+using TableFunctionPaimonHDFSCluster = TableFunctionObjectStorageCluster<PaimonHDFSClusterDefinition, StorageHDFSPaimonConfiguration, true>;
+#endif
+
+
+#if USE_AWS_S3 && USE_PARQUET && USE_DELTA_KERNEL_RS
+using TableFunctionDeltaLakeCluster = TableFunctionObjectStorageCluster<DeltaLakeClusterDefinition, StorageS3DeltaLakeConfiguration, true>;
+using TableFunctionDeltaLakeS3Cluster = TableFunctionObjectStorageCluster<DeltaLakeS3ClusterDefinition, StorageS3DeltaLakeConfiguration, true>;
+#endif
+
+#if USE_PARQUET && USE_AZURE_BLOB_STORAGE
+using TableFunctionDeltaLakeAzureCluster = TableFunctionObjectStorageCluster<DeltaLakeAzureClusterDefinition, StorageAzureDeltaLakeConfiguration, true>;
 #endif
 
 #if USE_AWS_S3
-using TableFunctionHudiCluster = TableFunctionObjectStorageCluster<HudiClusterDefinition, StorageS3HudiConfiguration>;
+using TableFunctionHudiCluster = TableFunctionObjectStorageCluster<HudiClusterDefinition, StorageS3HudiConfiguration, true>;
 #endif
 
 }

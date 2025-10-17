@@ -1,6 +1,7 @@
 #include <IO/WriteHelpers.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/IDataType.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnsCommon.h>
@@ -299,7 +300,7 @@ void ColumnAggregateFunction::doInsertRangeFrom(const IColumn & from, size_t sta
 
         size_t old_size = data.size();
         data.resize(old_size + length);
-        memcpy(data.data() + old_size, &from_concrete.data[start], length * sizeof(data[0]));
+        memcpy(data.data() + old_size, &from_concrete.data[start], length * sizeof(data[0]));  // NOLINT(bugprone-bitwise-pointer-cast)
     }
 }
 

@@ -28,7 +28,7 @@ def run_echo_server():
         [
             "bash",
             "-c",
-            "python3 /http_auth_server.py > /http_auth_server.log 2>&1",
+            "python3 /http_auth_server.py > /var/log/clickhouse-server/http_auth_server.log 2>&1",
         ],
         detach=True,
         user="root",
@@ -93,6 +93,13 @@ def test_basic_auth_failed(started_cluster):
         "SELECT currentUser()", user="good_user", password="bad_password"
     )
 
+def test_header_failed(started_cluster):
+    for header_name in ["Custom-Header", "CUSTOM-HEADER", "custom-header"]:
+        ping_response = instance.exec_in_container(
+            ["curl", "-s", "-u", "good_user:bad_password", "-H", f"{header_name}: ok",  "--data", f"SELECT 2+2", f"http://localhost:8123"],
+            nothrow=True,
+        )
+        assert ping_response == "4\n"
 
 def test_session_settings_from_auth_response(started_cluster):
     for user, response in USER_RESPONSES.items():
