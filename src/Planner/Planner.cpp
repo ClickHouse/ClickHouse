@@ -358,7 +358,7 @@ void extendQueryContextAndStoragesLifetime(QueryPlan & query_plan, const Planner
     }
 }
 
-std::pair<UInt64, double> getLimitUintandBFloatValues(const Field & field) 
+std::pair<UInt64, Float32> getLimitUintAndFloatValues(const Field & field) 
 {
     Field converted_value_uint = convertFieldToType(field, DataTypeUInt64());
     if (!converted_value_uint.isNull()) 
@@ -407,20 +407,20 @@ public:
         {
             /// Constness of limit is validated during query analysis stage
             Field limit_value = query_node.getLimit()->as<ConstantNode &>().getValue();
-            std::tie(limit_length, fractional_limit) = getLimitUintandBFloatValues(limit_value);
+            std::tie(limit_length, fractional_limit) = getLimitUintAndFloatValues(limit_value);
 
             if (query_node.hasOffset() && (limit_length || fractional_limit > 0))
             {
                 /// Constness of offset is validated during query analysis stage
                 Field offset_value = query_node.getOffset()->as<ConstantNode &>().getValue();
-                std::tie(limit_offset, fractional_offset) = getLimitUintandBFloatValues(offset_value);
+                std::tie(limit_offset, fractional_offset) = getLimitUintAndFloatValues(offset_value);
             }
         }
         else if (query_node.hasOffset())
         {
             /// Constness of offset is validated during query analysis stage
             Field offset_value = query_node.getOffset()->as<ConstantNode &>().getValue();
-            std::tie(limit_offset, fractional_offset) = getLimitUintandBFloatValues(offset_value);
+            std::tie(limit_offset, fractional_offset) = getLimitUintAndFloatValues(offset_value);
         }
 
         /// Partial sort can be done if there is LIMIT, but no DISTINCT, LIMIT WITH TIES, LIMIT BY, ARRAY JOIN, FRACTIONAL OFFSET
@@ -1328,7 +1328,8 @@ void addLimitStep(QueryPlan & query_plan,
             fractional_limit,
             fractional_offset,
             limit_offset,
-            limit_with_ties
+            limit_with_ties,
+            limit_with_ties_sort_description
         );
         query_plan.addStep(std::move(fractional_limit_step));
     }
@@ -1347,21 +1348,25 @@ void addExtremesStepIfNeeded(QueryPlan & query_plan, const PlannerContextPtr & p
 void addOffsetStep(QueryPlan & query_plan, const QueryAnalysisResult & query_analysis_result)
 {
     /// If there is a LIMIT or there is no OFFSET
-    if ((query_analysis_result.limit_length || query_analysis_result.fractional_limit > 0) || !(query_analysis_result.limit_offset || query_analysis_result.fractional_offset > 0))
-        return; 
-
-    if (query_analysis_result.fractional_offset > 0) 
+    if (!(query_analysis_result.limit_length && query_analysis_result.fractional_limit > 0) &&
+        (query_analysis_result.limit_offset || query_analysis_result.fractional_offset > 0))
     {
-        auto fractional_offset_step = std::make_unique<FractionalOffsetStep>(
-            query_plan.getCurrentHeader(), 
-            query_analysis_result.fractional_offset
-        );
-        query_plan.addStep(std::move(fractional_offset_step));
-        return;
+        if (query_analysis_result.limit_offset) [[likely]]
+        {
+            auto offsets_step = std::make_unique<OffsetStep>(query_plan.getCurrentHeader(), query_analysis_result.limit_offset);
+            query_plan.addStep(std::move(offsets_step));
+        }
+        else
+        {
+            std::cerr << std::endl << std::endl << " offset " << query_analysis_result.fractional_offset << std::endl << std::endl;
+            auto fractional_offset_step = std::make_unique<FractionalOffsetStep>(
+                query_plan.getCurrentHeader(), 
+                query_analysis_result.fractional_offset
+            );
+            query_plan.addStep(std::move(fractional_offset_step));
+            return;
+        }
     }
-
-    auto offsets_step = std::make_unique<OffsetStep>(query_plan.getCurrentHeader(), query_analysis_result.limit_offset);
-    query_plan.addStep(std::move(offsets_step));
 }
 
 void addBuildSubqueriesForSetsStepIfNeeded(
