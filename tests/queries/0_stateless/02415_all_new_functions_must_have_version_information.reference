@@ -121,7 +121,6 @@ regexpExtract
 sigmoid
 sin
 structureToCapnProtoSchema
-structureToProtobufSchema
 svg
 toDate32OrDefault
 toDateOrDefault
