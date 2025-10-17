@@ -11,6 +11,7 @@ from helpers.iceberg_utils import (
 
 import logging
 import time
+import uuid
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure"])
@@ -250,6 +251,22 @@ def test_cluster_table_function_split_by_row_groups(started_cluster_iceberg_with
         run_on_cluster=True,
     )
 
+    def get_buffers_count(func):
+        buffers_count_before = int(
+            instance.query(
+                f"SELECT sum(ProfileEvents['EngineFileLikeReadFiles']) FROM system.query_log WHERE type = 'QueryFinish'"
+            )
+        )
+
+        func()
+        instance.query("SYSTEM FLUSH LOGS")
+        buffers_count = int(
+            instance.query(
+                f"SELECT sum(ProfileEvents['EngineFileLikeReadFiles']) FROM system.query_log WHERE type = 'QueryFinish'"
+            )
+        )
+        return buffers_count - buffers_count_before
+
     select_cluster = (
         instance.query(f"SELECT * FROM {table_function_expr_cluster} ORDER BY ALL SETTINGS input_format_parquet_use_native_reader_v3={input_format_parquet_use_native_reader_v3},enable_split_in_cluster_table_function=1, cluster_table_function_buckets_batch_size={cluster_table_function_buckets_batch_size}").strip().split()
     )
@@ -258,3 +275,7 @@ def test_cluster_table_function_split_by_row_groups(started_cluster_iceberg_with
     assert len(select_cluster) == len(select_regular)
     # Actual check
     assert select_cluster == select_regular
+
+    buffers_count_with_splitted_tasks = get_buffers_count(lambda: instance.query(f"SELECT * FROM {table_function_expr_cluster} ORDER BY ALL SETTINGS input_format_parquet_use_native_reader_v3={input_format_parquet_use_native_reader_v3},enable_split_in_cluster_table_function=1, cluster_table_function_buckets_batch_size={cluster_table_function_buckets_batch_size}").strip().split())
+    buffers_count_default = get_buffers_count(lambda: instance.query(f"SELECT * FROM {table_function_expr_cluster} ORDER BY ALL SETTINGS input_format_parquet_use_native_reader_v3={input_format_parquet_use_native_reader_v3}, cluster_table_function_buckets_batch_size={cluster_table_function_buckets_batch_size}").strip().split())
+    assert buffers_count_with_splitted_tasks > buffers_count_default

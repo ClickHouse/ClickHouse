@@ -4,6 +4,7 @@
 #include <IO/ReadBuffer.h>
 #include <Processors/Formats/InputFormatErrorsLogger.h>
 #include <Common/PODArray.h>
+#include "IO/WriteBuffer.h"
 #include <Core/BlockMissingValues.h>
 #include <Processors/ISource.h>
 
@@ -45,6 +46,28 @@ struct ChunkInfoRowNumbers : public ChunkInfo
     std::optional<IColumnFilter> applied_filter;
 };
 
+struct FileBucketInfo
+{
+    virtual void serialize(WriteBuffer & buffer) = 0;
+    virtual void deserialize(ReadBuffer & buffer) = 0;
+    virtual String getIdentifier() const = 0;
+    virtual std::shared_ptr<FileBucketInfo> createFromBuckets(std::vector<size_t> buckets_ids) = 0;
+
+    virtual ~FileBucketInfo() = default;
+};
+
+using FileBucketInfoPtr = std::shared_ptr<FileBucketInfo>;
+
+class FileBucketInfoFactory
+{
+public:
+    FileBucketInfoFactory();
+
+    FileBucketInfoPtr createFromBuckets(const String & format, const std::vector<size_t> & buckets);
+private:
+    std::unordered_map<String, FileBucketInfoPtr> instances;
+};
+
 /** Input format is a source, that reads data from ReadBuffer.
   */
 class IInputFormat : public ISource
@@ -70,7 +93,7 @@ public:
 
     virtual std::optional<std::vector<size_t>> getChunksByteSizes();
 
-    virtual void setBucketsToRead(const std::vector<size_t> & buckets_to_read);
+    virtual void setBucketsToRead(const FileBucketInfoPtr & buckets_to_read);
     /** In some usecase (hello Kafka) we need to read a lot of tiny streams in exactly the same format.
      * The recreating of parser for each small stream takes too long, so we introduce a method
      * resetParser() which allow to reset the state of parser to continue reading of

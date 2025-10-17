@@ -40,12 +40,13 @@
 #endif
 
 #include <fmt/ranges.h>
-
+#include <Common/ProfileEvents.h>
 
 namespace fs = std::filesystem;
 namespace ProfileEvents
 {
     extern const Event EngineFileLikeReadFiles;
+    extern const Event ObjectStorageCreatedReadBuffers;
 }
 
 namespace CurrentMetrics
@@ -465,6 +466,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     FormatFilterInfoPtr format_filter_info,
     bool need_only_count)
 {
+    std::cerr << "StorageObjectStorageSource::createReader\n";
     ObjectInfoPtr object_info;
     auto query_settings = configuration->getQuerySettings(context_);
 
@@ -548,6 +550,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         {
             compression_method = chooseCompressionMethod(object_info->getFileName(), configuration->compression_method);
             read_buf = createReadBuffer(*object_info, object_storage, context_, log);
+            ProfileEvents::increment(ProfileEvents::ObjectStorageCreatedReadBuffers);
         }
 
         Block initial_header = read_from_format_info.format_header;
@@ -586,8 +589,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             compression_method,
             need_only_count);
 
-        if (object_info->buckets_to_read)
-            input_format->setBucketsToRead(*object_info->buckets_to_read);
+        input_format->setBucketsToRead(object_info->file_bucket_info);
         input_format->setSerializationHints(read_from_format_info.serialization_hints);
 
         if (need_only_count)

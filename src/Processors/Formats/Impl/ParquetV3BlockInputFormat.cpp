@@ -1,4 +1,7 @@
+#include <memory>
+#include <optional>
 #include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
+#include "Processors/Formats/Impl/ParquetBlockInputFormat.h"
 
 #if USE_PARQUET
 
@@ -86,7 +89,7 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
         reader.emplace();
         reader->reader.prefetcher.init(in, read_options, parser_shared_resources);
         reader->reader.init(read_options, getPort().getHeader(), format_filter_info);
-        reader->init(parser_shared_resources, buckets_to_read);
+        reader->init(parser_shared_resources, buckets_to_read ? buckets_to_read->row_group_ids : std::nullopt);
     }
 }
 
@@ -118,7 +121,7 @@ Chunk ParquetV3BlockInputFormat::read()
 
 std::optional<std::vector<size_t>> ParquetV3BlockInputFormat::getChunksByteSizes()
 {
-    buckets_to_read = std::vector<size_t>{};
+    buckets_to_read = std::make_shared<ParquetFileBucketInfo>(std::vector<size_t>{});
     initializeIfNeeded();
 
     std::vector<size_t> result;
@@ -129,11 +132,11 @@ std::optional<std::vector<size_t>> ParquetV3BlockInputFormat::getChunksByteSizes
     return result;
 }
 
-void ParquetV3BlockInputFormat::setBucketsToRead(const std::vector<size_t> & buckets_to_read_)
+void ParquetV3BlockInputFormat::setBucketsToRead(const FileBucketInfoPtr & buckets_to_read_)
 {
     if (reader)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Reader already initialized");
-    buckets_to_read = buckets_to_read_;
+    buckets_to_read = std::static_pointer_cast<ParquetFileBucketInfo>(buckets_to_read_);
 }
 
 const BlockMissingValues * ParquetV3BlockInputFormat::getMissingValues() const

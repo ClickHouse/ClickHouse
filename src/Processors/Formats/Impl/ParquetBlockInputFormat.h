@@ -51,6 +51,20 @@ class ParquetRecordReader;
 // parallel reading+decoding, instead of using ParallelReadBuffer and ParallelParsingInputFormat.
 // That's what RandomAccessInputCreator in FormatFactory is about.
 
+struct ParquetFileBucketInfo : public FileBucketInfo
+{
+    std::optional<std::vector<size_t>> row_group_ids;
+
+    ParquetFileBucketInfo(std::optional<std::vector<size_t>> row_group_ids_);
+    void serialize(WriteBuffer & buffer) override;
+    void deserialize(ReadBuffer & buffer) override;
+    String getIdentifier() const override;
+    std::shared_ptr<FileBucketInfo> createFromBuckets(std::vector<size_t> buckets_ids) override;
+};
+using ParquetFileBucketInfoPtr = std::shared_ptr<ParquetFileBucketInfo>;
+
+void registerParquetFileBucketInfo(std::unordered_map<String, FileBucketInfoPtr> & instances);
+
 class ParquetBlockInputFormat : public IInputFormat
 {
 public:
@@ -73,7 +87,7 @@ public:
     size_t getApproxBytesReadForChunk() const override { return previous_approx_bytes_read_for_chunk; }
 
     std::optional<std::vector<size_t>> getChunksByteSizes() override;
-    void setBucketsToRead(const std::vector<size_t> & buckets_to_read_) override;
+    void setBucketsToRead(const FileBucketInfoPtr & buckets_to_read_) override;
 
 private:
     Chunk read() override;
@@ -299,7 +313,7 @@ private:
 
     const FormatSettings format_settings;
     std::unordered_set<int> skip_row_groups;
-    std::optional<std::vector<size_t>> buckets_to_read;
+    ParquetFileBucketInfoPtr buckets_to_read;
     FormatParserSharedResourcesPtr parser_shared_resources;
     FormatFilterInfoPtr format_filter_info;
     size_t min_bytes_for_seek;

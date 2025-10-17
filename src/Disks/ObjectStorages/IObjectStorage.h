@@ -28,6 +28,7 @@
 #include <Disks/WriteMode.h>
 
 #include <Processors/ISimpleTransform.h>
+#include <Processors/Formats/IInputFormat.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeObjectMetadata.h>
 
 #include <Interpreters/Context_fwd.h>
@@ -116,7 +117,7 @@ struct RelativePathWithMetadata
     /// Delta lake related object metadata.
     std::optional<DataLakeObjectMetadata> data_lake_metadata;
 
-    std::optional<std::vector<size_t>> buckets_to_read;
+    FileBucketInfoPtr file_bucket_info;
 
     String getIdentifier() const;
 

@@ -32,7 +32,7 @@ ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr o
 
     const bool send_over_whole_archive = !context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes];
     path = send_over_whole_archive ? object->getPathOrPathToArchiveIfArchive() : object->getPath();
-    buckets_to_read = object->buckets_to_read;
+    file_bucket_info = object->file_bucket_info;
 }
 
 ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(const std::string & path_)
@@ -47,8 +47,7 @@ ObjectInfoPtr ClusterFunctionReadTaskResponse::getObjectInfo() const
 
     auto object = std::make_shared<ObjectInfo>(path);
     object->data_lake_metadata = data_lake_metadata;
-    if (buckets_to_read.has_value())
-        object->buckets_to_read = buckets_to_read;
+    object->file_bucket_info = file_bucket_info;
 
     return object;
 }
@@ -67,17 +66,8 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t protoc
             ActionsDAG().serialize(out, registry);
     }
 
-    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_METADATA_PARTITIONED_BY_ROWGROUPS)
-    {
-        if (buckets_to_read)
-        {
-            writeVarInt(buckets_to_read->size(), out);
-            for (auto chunk : *buckets_to_read)
-                writeVarUInt(chunk, out);
-        }
-        else
-            writeVarInt(-1, out);
-    }
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_METADATA_PARTITIONED_BY_ROWGROUPS && file_bucket_info)
+        file_bucket_info->serialize(out);
 }
 
 void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
@@ -105,23 +95,8 @@ void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
         }
     }
 
-    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_METADATA_PARTITIONED_BY_ROWGROUPS)
-    {
-        Int32 size_chunks;
-        readVarInt(size_chunks, in);
-        if (size_chunks != -1)
-        {
-            buckets_to_read = std::vector<size_t>{};
-            for (Int32 i = 0; i < size_chunks; ++i)
-            {
-                size_t bucket;
-                readVarUInt(bucket, in);
-                buckets_to_read->push_back(bucket);
-            }
-        }
-        else
-            buckets_to_read = std::nullopt;
-    }
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_METADATA_PARTITIONED_BY_ROWGROUPS && file_bucket_info)
+        file_bucket_info->deserialize(in);
 }
 
 }

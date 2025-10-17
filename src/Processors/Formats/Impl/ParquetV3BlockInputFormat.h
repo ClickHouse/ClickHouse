@@ -1,4 +1,5 @@
 #pragma once
+#include "Processors/Formats/Impl/ParquetBlockInputFormat.h"
 #include "config.h"
 #if USE_PARQUET
 
@@ -33,7 +34,7 @@ public:
     }
 
     std::optional<std::vector<size_t>> getChunksByteSizes() override;
-    void setBucketsToRead(const std::vector<size_t> & buckets_to_read_) override;
+    void setBucketsToRead(const FileBucketInfoPtr & buckets_to_read_) override;
 
 private:
     Chunk read() override;
@@ -52,7 +53,7 @@ private:
     size_t previous_approx_bytes_read_for_chunk = 0;
 
     void initializeIfNeeded();
-    std::optional<std::vector<size_t>> buckets_to_read;
+    std::shared_ptr<ParquetFileBucketInfo> buckets_to_read;
 };
 
 class NativeParquetSchemaReader : public ISchemaReader

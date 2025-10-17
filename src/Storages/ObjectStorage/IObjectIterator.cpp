@@ -8,6 +8,7 @@
 #include <Core/Settings.h>
 #include <Core/Defines.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include "Processors/Formats/IInputFormat.h"
 
 namespace DB
 {
@@ -138,7 +139,7 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
         for (const auto & bucket : buckets)
         {
             auto copy_object_info = *last_object_info;
-            copy_object_info.buckets_to_read = bucket;
+            copy_object_info.file_bucket_info = FileBucketInfoFactory().createFromBuckets(last_object_info->getFileFormat().value_or(format), bucket);
             pending_objects_info.push(std::make_shared<ObjectInfo>(copy_object_info));
         }
     }

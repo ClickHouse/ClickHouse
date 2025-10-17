@@ -3,6 +3,7 @@
 #include <IO/ReadBuffer.h>
 #include <IO/WithFileName.h>
 #include <Common/Exception.h>
+#include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 
 namespace DB
 {
@@ -77,7 +78,19 @@ void IInputFormat::onFinish()
     resetReadBuffer();
 }
 
-void IInputFormat::setBucketsToRead(const std::vector<size_t> & /*buckets_to_read*/)
+FileBucketInfoFactory::FileBucketInfoFactory()
+{
+    registerParquetFileBucketInfo(instances);
+}
+
+FileBucketInfoPtr FileBucketInfoFactory::createFromBuckets(const String & format, const std::vector<size_t> & buckets)
+{
+    if (!instances.contains(format))
+        return nullptr;
+    return instances.at(format)->createFromBuckets(buckets);
+}
+
+void IInputFormat::setBucketsToRead(const FileBucketInfoPtr & /*buckets_to_read*/)
 {
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not skip chunks for format {}", getName());
 }
