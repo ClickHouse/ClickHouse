@@ -47,7 +47,7 @@ protected:
 class JSONColumnsBlockInputFormatBase : public IInputFormat
 {
 public:
-    JSONColumnsBlockInputFormatBase(ReadBuffer & in_, const Block & header_, const FormatSettings & format_settings_, std::unique_ptr<JSONColumnsReaderBase> reader_);
+    JSONColumnsBlockInputFormatBase(ReadBuffer & in_, SharedHeader header_, const FormatSettings & format_settings_, std::unique_ptr<JSONColumnsReaderBase> reader_);
 
     String getName() const override { return "JSONColumnsBlockInputFormatBase"; }
 

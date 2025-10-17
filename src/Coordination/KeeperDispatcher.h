@@ -7,7 +7,6 @@
 #include <Common/ThreadPool.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Common/Exception.h>
 #include <functional>
 #include <Coordination/KeeperServer.h>
 #include <Coordination/Keeper4LWInfo.h>

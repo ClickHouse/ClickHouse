@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-parallel
+# Tags: long, no-parallel, no-shared-merge-tree
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -37,7 +37,9 @@ wait
 
 function insert_thread()
 {
-    while true; do
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]
+    do
         REPLICA=$(($RANDOM % 16))
         LIMIT=$(($RANDOM % 100))
         $CLICKHOUSE_CLIENT -q "INSERT INTO $1_$REPLICA SELECT * FROM generateRandom('p UInt64, k UInt64, v UInt64') LIMIT $LIMIT" 2>/dev/null
@@ -46,7 +48,9 @@ function insert_thread()
 
 function move_partition_src_dst_thread()
 {
-    while true; do
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]
+    do
         FROM_REPLICA=$(($RANDOM % 16))
         TO_REPLICA=$(($RANDOM % 16))
         PARTITION=$(($RANDOM % 10))
@@ -57,7 +61,9 @@ function move_partition_src_dst_thread()
 
 function replace_partition_src_src_thread()
 {
-    while true; do
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]
+    do
         FROM_REPLICA=$(($RANDOM % 16))
         TO_REPLICA=$(($RANDOM % 16))
         PARTITION=$(($RANDOM % 10))
@@ -68,7 +74,9 @@ function replace_partition_src_src_thread()
 
 function drop_partition_thread()
 {
-    while true; do
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]
+    do
         REPLICA=$(($RANDOM % 16))
         PARTITION=$(($RANDOM % 10))
         $CLICKHOUSE_CLIENT -q "ALTER TABLE dst_$REPLICA DROP PARTITION $PARTITION" 2>/dev/null
@@ -78,7 +86,9 @@ function drop_partition_thread()
 
 function optimize_thread()
 {
-  while true; do
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]
+    do
         REPLICA=$(($RANDOM % 16))
         TABLE="src"
         if (( RANDOM % 2 )); then
@@ -91,7 +101,9 @@ function optimize_thread()
 
 function drop_part_thread()
 {
-    while true; do
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]
+    do
         REPLICA=$(($RANDOM % 16))
         part=$($CLICKHOUSE_CLIENT -q "SELECT name FROM system.parts WHERE active AND database='$CLICKHOUSE_DATABASE' and table='dst_$REPLICA' ORDER BY rand() LIMIT 1")
         $CLICKHOUSE_CLIENT -q "ALTER TABLE dst_$REPLICA DROP PART '$part'" 2>/dev/null
@@ -99,25 +111,16 @@ function drop_part_thread()
     done
 }
 
-#export -f create_drop_thread;
-export -f insert_thread;
-export -f move_partition_src_dst_thread;
-export -f replace_partition_src_src_thread;
-export -f drop_partition_thread;
-export -f optimize_thread;
-export -f drop_part_thread;
-
 TIMEOUT=40
 
-#timeout $TIMEOUT bash -c "create_drop_thread ${engines[@]}" &
-timeout $TIMEOUT bash -c 'insert_thread src' &
-timeout $TIMEOUT bash -c 'insert_thread src' &
-timeout $TIMEOUT bash -c 'insert_thread dst' &
-timeout $TIMEOUT bash -c move_partition_src_dst_thread &
-timeout $TIMEOUT bash -c replace_partition_src_src_thread &
-timeout $TIMEOUT bash -c drop_partition_thread &
-timeout $TIMEOUT bash -c optimize_thread &
-timeout $TIMEOUT bash -c drop_part_thread &
+insert_thread src &
+insert_thread src &
+insert_thread dst &
+move_partition_src_dst_thread &
+replace_partition_src_src_thread &
+drop_partition_thread &
+optimize_thread &
+drop_part_thread &
 wait
 
 check_replication_consistency "dst_" "count(), sum(p), sum(k), sum(v)"

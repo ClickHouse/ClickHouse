@@ -1,7 +1,7 @@
 -- See https://dev.mysql.com/doc/refman/8.0/en/cast-functions.html#function_cast
 -- Tests are in order of the type appearance in the docs
 
-SET allow_experimental_json_type = 1;
+SET enable_json_type = 1;
 
 SELECT '-- Uppercase tests';
 -- Not supported as it is translated to FixedString without arguments
@@ -18,7 +18,7 @@ SELECT 'JSON' AS mysql_type, CAST('{\"foo\":\"bar\"}' AS JSON) AS result, toType
 SELECT 'Real' AS mysql_type, CAST(49.22 AS REAL) AS result, toTypeName(result) AS native_type;
 SELECT 'Signed' AS mysql_type, CAST(50 AS SIGNED) AS result, toTypeName(result) AS native_type;
 SELECT 'Unsigned' AS mysql_type, CAST(52 AS UNSIGNED) AS result, toTypeName(result) AS native_type;
--- Could be added as an alias, but SIGNED INTEGER in CAST context means UInt64, 
+-- Could be added as an alias, but SIGNED INTEGER in CAST context means UInt64,
 -- while INTEGER SIGNED as a column definition means UInt32.
 -- SELECT 'Signed integer' AS mysql_type, CAST(51 AS SIGNED INTEGER) AS result, toTypeName(result) AS native_type;
 -- SELECT 'Unsigned integer' AS mysql_type, CAST(53 AS UNSIGNED INTEGER) AS result, toTypeName(result) AS native_type;

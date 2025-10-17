@@ -1,7 +1,9 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/min
+description: 'Aggregate function that calculates the minimum across a group of values.'
 sidebar_position: 168
-title: min
+slug: /sql-reference/aggregate-functions/reference/min
+title: 'min'
+doc_type: 'reference'
 ---
 
 Aggregate function that calculates the minimum across a group of values.

@@ -4,8 +4,6 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDecimalBase.h>
 
-class DateLUTImpl;
-
 namespace DB
 {
 
@@ -22,7 +20,7 @@ public:
     static constexpr auto family_name = "DateTime64";
     static constexpr auto type_id = TypeIndex::DateTime64;
 
-    explicit DataTypeDateTime64(UInt32 scale_, const std::string & time_zone_name = "");
+    explicit DataTypeDateTime64(UInt32 scale_, std::string_view time_zone_name = "");
 
     // reuse timezone from other DateTime/DateTime64
     DataTypeDateTime64(UInt32 scale_, const TimezoneMixin & time_zone_info);
@@ -30,7 +28,7 @@ public:
     const char * getFamilyName() const override { return family_name; }
     std::string doGetName() const override;
     TypeIndex getTypeId() const override { return type_id; }
-
+    void updateHashImpl(SipHash & hash) const override;
     bool equals(const IDataType & rhs) const override;
 
     bool canBePromoted() const override { return false; }
@@ -46,4 +44,3 @@ protected:
 std::string getDateTimeTimezone(const IDataType & data_type);
 
 }
-

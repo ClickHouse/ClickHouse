@@ -1,6 +1,6 @@
 -- Tags: no-fasttest
 
-SET allow_experimental_json_type = 1;
+SET enable_json_type = 1;
 SET allow_not_comparable_types_in_order_by = 1;
 SELECT dummy FROM system.one ORDER BY materialize('{"k":"v"}'::JSON);
 SELECT dummy FROM system.one ORDER BY materialize('{"k":"v"}'::JSON), dummy;

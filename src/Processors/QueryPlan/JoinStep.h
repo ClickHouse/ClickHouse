@@ -15,15 +15,17 @@ class JoinStep : public IQueryPlanStep
 {
 public:
     JoinStep(
-        const Header & left_header_,
-        const Header & right_header_,
+        const SharedHeader & left_header_,
+        const SharedHeader & right_header_,
         JoinPtr join_,
         size_t max_block_size_,
+        size_t min_block_size_rows_,
         size_t min_block_size_bytes_,
         size_t max_streams_,
         NameSet required_output_,
         bool keep_left_read_in_order_,
-        bool use_new_analyzer_);
+        bool use_new_analyzer_,
+        bool use_join_disjunctions_push_down_ = false);
 
     String getName() const override { return "Join"; }
 
@@ -41,14 +43,32 @@ public:
     /// Swap automatically if not set, otherwise always or never, depending on the value
     std::optional<bool> swap_join_tables = false;
 
+    struct PrimaryKeyNamesPair
+    {
+        std::string lhs_name;
+        std::string rhs_name;
+    };
+
+    using PrimaryKeySharding = std::vector<PrimaryKeyNamesPair>;
+
+    /// Set names of PK columns for optimized for JOIN sharder by PK ranges.
+    /// Names are required for EXPLAIN only.
+    void enableJoinByLayers(PrimaryKeySharding sharding) { primary_key_sharding = std::move(sharding); }
+    void keepLeftPipelineInOrder() { keep_left_read_in_order = true; }
+
+    bool isOptimized() const { return optimized; }
+    void setOptimized() { optimized = true; }
+
 private:
+    bool optimized = false;
     void updateOutputHeader() override;
 
     /// Header that expected to be returned from IJoin
-    Block join_algorithm_header;
+    SharedHeader join_algorithm_header;
 
     JoinPtr join;
     size_t max_block_size;
+    size_t min_block_size_rows;
     size_t min_block_size_bytes;
     size_t max_streams;
 
@@ -56,7 +76,20 @@ private:
     std::set<size_t> columns_to_remove;
     bool keep_left_read_in_order;
     bool use_new_analyzer = false;
+    bool use_join_disjunctions_push_down;
+    bool disjunctions_optimization_applied = false;    /// Flag that indicates that disjunction optimization was already applied
+    /// to prevent infinite optimization loop
+
+public:
+    /// Check if disjunction optimization was already applied to this JoinStep
+    bool isDisjunctionsOptimizationApplied() const { return disjunctions_optimization_applied; }
+
+    /// Mark that disjunction optimization has been applied to this JoinStep
+    void setDisjunctionsOptimizationApplied(bool value) { disjunctions_optimization_applied = value; }
+
     bool swap_streams = false;
+    bool useJoinDisjunctionsPushDown() const { return use_join_disjunctions_push_down; }
+    PrimaryKeySharding primary_key_sharding;
 };
 
 /// Special step for the case when Join is already filled.
@@ -64,7 +97,7 @@ private:
 class FilledJoinStep : public ITransformingStep
 {
 public:
-    FilledJoinStep(const Header & input_header_, JoinPtr join_, size_t max_block_size_);
+    FilledJoinStep(const SharedHeader & input_header_, JoinPtr join_, size_t max_block_size_);
 
     String getName() const override { return "FilledJoin"; }
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
@@ -74,11 +107,15 @@ public:
 
     const JoinPtr & getJoin() const { return join; }
 
+    bool isDisjunctionsOptimizationApplied() const { return disjunctions_optimization_applied; }
+    void setDisjunctionsOptimizationApplied(bool v) { disjunctions_optimization_applied = v; }
+
 private:
     void updateOutputHeader() override;
 
     JoinPtr join;
     size_t max_block_size;
+    bool disjunctions_optimization_applied = false;
 };
 
 }

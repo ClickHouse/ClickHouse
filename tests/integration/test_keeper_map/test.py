@@ -13,6 +13,7 @@ node = cluster.add_instance(
     user_configs=["configs/keeper_retries.xml"],
     with_zookeeper=True,
     stay_alive=True,
+    with_remote_database_disk=False,  # `test_keeper_map_without_zk` stops the Keeper connection, which might not work with the remote DB disk
 )
 
 
@@ -130,4 +131,23 @@ def test_keeper_map_with_failed_drop(started_cluster):
     run_query("SYSTEM DISABLE FAILPOINT keepermap_fail_drop_data")
     run_query(
         "CREATE TABLE test_keeper_map_with_failed_drop_another (key UInt64, value UInt64) ENGINE = KeeperMap('/test_keeper_map_with_failed_drop') PRIMARY KEY(key);"
+    )
+
+def test_keeper_drop_after_update(started_cluster):
+    run_query("DROP TABLE IF EXISTS test_keeper_drop_after_update SYNC")
+    run_query(
+        "CREATE TABLE test_keeper_drop_after_update (key UInt64, value UInt64) ENGINE = KeeperMap('/test_keeper_drop_after_update') PRIMARY KEY(key);"
+    )
+
+    zk_client = get_genuine_zk()
+    assert (
+        zk_client.delete("/test_keeper_map/test_keeper_drop_after_update/metadata/drop_lock_version")
+        is not None
+    )
+
+    run_query("DROP TABLE test_keeper_drop_after_update SYNC")
+
+    assert (
+        zk_client.exists("/test_keeper_map/test_keeper_drop_after_update/data")
+        is None
     )

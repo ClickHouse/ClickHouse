@@ -1,7 +1,7 @@
 EXPLAIN PIPELINE SELECT sleep(1);
 
 SELECT sleep(1) SETTINGS log_processors_profiles=true, log_queries=1, log_queries_min_type='QUERY_FINISH';
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log, processors_profile_log;
 
 WITH
     (

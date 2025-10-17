@@ -1,13 +1,17 @@
 ---
-slug: /en/interfaces/cpp
+description: 'Documentation for the ClickHouse C++ client library and integration
+  with u-server framework'
+sidebar_label: 'C++ Client Library'
 sidebar_position: 24
-sidebar_label: C++ Client Library
+slug: /interfaces/cpp
+title: 'C++ Client Library'
+doc_type: 'reference'
 ---
 
-# C++ Client Library
+# C++ client library
 
 See README at [clickhouse-cpp](https://github.com/ClickHouse/clickhouse-cpp) repository.
 
-# userver Asynchronous Framework
+# Userver asynchronous framework
 
 [userver (beta)](https://github.com/userver-framework/userver) has builtin support for ClickHouse.

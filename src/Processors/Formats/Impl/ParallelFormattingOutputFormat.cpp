@@ -9,7 +9,6 @@ namespace DB
 {
     void ParallelFormattingOutputFormat::finalizeImpl()
     {
-        need_flush = true;
         /// Don't throw any background_exception here, because we want to finalize the execution.
         /// Exception will be checked after main thread is finished.
         addChunk(Chunk{}, ProcessingUnitType::FINALIZE, /*can_throw_exception*/ false);
@@ -156,7 +155,7 @@ namespace DB
                 /// Do main work here.
                 out.write(unit.segment.data(), unit.actual_memory_size);
 
-                if (need_flush.exchange(false) || auto_flush)
+                if (auto_flush || need_flush.exchange(false) || unit.type == ProcessingUnitType::FINALIZE)
                     out.next();
 
                 ++collector_unit_number;

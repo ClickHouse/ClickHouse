@@ -1,5 +1,5 @@
 #include <Parsers/ASTDeleteQuery.h>
-#include <Common/quoteString.h>
+
 
 namespace DB
 {
@@ -13,6 +13,12 @@ ASTPtr ASTDeleteQuery::clone() const
 {
     auto res = std::make_shared<ASTDeleteQuery>(*this);
     res->children.clear();
+
+    if (partition)
+    {
+        res->partition = partition->clone();
+        res->children.push_back(res->partition);
+    }
 
     if (predicate)
     {
@@ -32,7 +38,7 @@ ASTPtr ASTDeleteQuery::clone() const
 
 void ASTDeleteQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    ostr << (settings.hilite ? hilite_keyword : "") << "DELETE FROM " << (settings.hilite ? hilite_none : "");
+    ostr << "DELETE FROM ";
 
     if (database)
     {
@@ -47,11 +53,11 @@ void ASTDeleteQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
 
     if (partition)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << " IN PARTITION " << (settings.hilite ? hilite_none : "");
+        ostr << " IN PARTITION ";
         partition->format(ostr, settings, state, frame);
     }
 
-    ostr << (settings.hilite ? hilite_keyword : "") << " WHERE " << (settings.hilite ? hilite_none : "");
+    ostr << " WHERE ";
     predicate->format(ostr, settings, state, frame);
 }
 

@@ -68,7 +68,7 @@ function run_test()
     $CLICKHOUSE_CLIENT -q "ALTER $type ${name} ADD PROFILE ${profile_a}"
     show_create $type ${name}
 
-    $CLICKHOUSE_CLIENT -q "ALTER $type ${name} ADD PROFILE ${profile_b}, ${profile_a}, DROP SETTING custom_t, MODIFY SETTING custom_s READONLY, custom_x = 321"
+    $CLICKHOUSE_CLIENT -q "ALTER $type ${name} DROP SETTING custom_t, ADD PROFILE ${profile_b}, ${profile_a}, MODIFY SETTING custom_s READONLY, custom_x = 321"
     show_create $type ${name}
 
     $CLICKHOUSE_CLIENT -q "ALTER $type ${name} DROP ALL SETTINGS, ALL PROFILES"
