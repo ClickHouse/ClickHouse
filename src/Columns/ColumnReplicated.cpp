@@ -10,6 +10,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
+    extern const int LOGICAL_ERROR;
 }
 
 ColumnReplicated::ColumnReplicated(MutableColumnPtr && nested_column_, MutableColumnPtr && indexes_)
@@ -116,14 +117,7 @@ StringRef ColumnReplicated::getDataAt(size_t n) const
 
 ColumnPtr ColumnReplicated::convertToFullColumnIfReplicated() const
 {
-    try
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "");
-    }
-    catch (...)
-    {
-        LOG_DEBUG(getLogger("ColumnReplicated"), "Convert to full: {}", getCurrentExceptionMessage(true));
-    }
+    LOG_DEBUG(getLogger("ColumnReplicated"), "Convert to full");
     return nested_column->index(*indexes.getIndexes(), 0);
 }
 

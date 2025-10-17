@@ -1,6 +1,5 @@
-#include <Core/Block.h>
 #include <Core/ProtocolDefines.h>
-#include "llvm/Support/CommandLine.h"
+#include <Core/Block.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/VarInt.h>
