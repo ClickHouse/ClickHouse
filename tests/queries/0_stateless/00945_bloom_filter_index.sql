@@ -2,7 +2,6 @@
 
 SET allow_suspicious_low_cardinality_types = 1;
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0.0;
-SET read_overflow_mode = 'break';
 
 -- Prevent remote replicas from skipping index analysis in Parallel Replicas. Otherwise, they may return full ranges and trigger max_rows_to_read validation failures.
 SET parallel_replicas_index_analysis_only_on_coordinator = 0;

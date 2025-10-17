@@ -23,7 +23,6 @@ limit 1000000;
 OPTIMIZE TABLE set_array FINAL;
 
 SET max_rows_to_read = 8192;
-SET read_overflow_mode = 'break';
 
 select count() from set_array where has(index_array, 333);
 

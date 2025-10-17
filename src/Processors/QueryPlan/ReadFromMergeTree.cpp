@@ -2626,6 +2626,9 @@ bool ReadFromMergeTree::supportsSkipIndexesOnDataRead() const
     if (is_parallel_reading_from_replicas)
         return false;
 
+    if (settings[Setting::read_overflow_mode] == OverflowMode::THROW && settings[Setting::max_rows_to_read]) /// Need to do full index analysis to get row count estimate
+        return false;
+
     return true;
 }
 

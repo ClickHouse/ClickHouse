@@ -267,7 +267,7 @@ CREATE VIEW explain_index_has AS (
     SELECT trimLeft(explain) AS explain FROM (
         EXPLAIN indexes=1
         SELECT count() FROM tab WHERE (
-            CASE 
+            CASE
                 WHEN {use_idx_fixed:boolean} = 1 THEN has(mapValues(map_fixed), {filter:FixedString(2)})
                 ELSE has(mapValues(map), {filter:String})
             END

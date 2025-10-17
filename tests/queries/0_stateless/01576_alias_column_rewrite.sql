@@ -1,4 +1,3 @@
-SET read_overflow_mode = 'break';
 DROP TABLE IF EXISTS test_table;
 CREATE TABLE test_table
 (

@@ -77,6 +77,7 @@ namespace Setting
     extern const SettingsBool force_index_by_date;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsInt64 max_partitions_to_read;
+    extern const SettingsUInt64 max_rows_to_read;
     extern const SettingsUInt64 max_threads_for_indexes;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsUInt64 merge_tree_coarse_index_granularity;
@@ -85,6 +86,7 @@ namespace Setting
     extern const SettingsUInt64 parallel_replica_offset;
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
+    extern const SettingsOverflowMode read_overflow_mode;
     extern const SettingsBool use_skip_indexes_if_final_exact_mode;
     extern const SettingsBool use_skip_indexes_on_data_read;
     extern const SettingsBool use_query_condition_cache;
@@ -752,6 +754,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             return false;
 
         if (is_final_query && settings[Setting::use_skip_indexes_if_final_exact_mode])
+            return false;
+
+        if (settings[Setting::read_overflow_mode] == OverflowMode::THROW && settings[Setting::max_rows_to_read]) /// Need to do full index analysis to get row count estimate
             return false;
 
         return settings[Setting::use_skip_indexes_on_data_read];
