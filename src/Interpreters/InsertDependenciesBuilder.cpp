@@ -541,7 +541,7 @@ DB::ConstraintsDescription buildConstraints(StorageMetadataPtr metadata, Storage
 
         auto valid_values_ast = std::make_unique<ASTLiteral>(std::move(valid_values_array));
         auto sign_column_ast = std::make_unique<ASTIdentifier>(storage_merge_tree->merging_params.sign_column);
-        sign_column_check_constraint->set(sign_column_check_constraint->expr, makeASTFunction("in", std::move(sign_column_ast), std::move(valid_values_ast)));
+        sign_column_check_constraint->set(sign_column_check_constraint->expr, makeASTOperator("in", std::move(sign_column_ast), std::move(valid_values_ast)));
 
         auto constraints_ast = constraints.getConstraints();
         constraints_ast.push_back(std::move(sign_column_check_constraint));
@@ -1662,7 +1662,7 @@ void InsertDependenciesBuilder::DependencyPath::pushBack(StorageIDPrivate id)
 {
     if (visited.contains(id))
         throw Exception(
-            ErrorCodes::TOO_DEEP_RECURSION, "Dependencies of the table {} are cyclic. Dependencies {} ara pointing to the {}.", path.front(), debugInfo(), id);
+            ErrorCodes::TOO_DEEP_RECURSION, "Dependencies of the table {} are cyclic. Dependencies {} are pointing to {}.", path.front(), debugInfo(), id);
 
     path.push_back(id);
     visited.insert(id);

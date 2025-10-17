@@ -1909,3 +1909,30 @@ def test_timeseries(started_cluster):
             SELECT count() FROM system.tables WHERE database='ts_db';
             """, timeout=10
         ) == "4\n", f"Node {node.name} failed"
+
+
+def test_mv_false_cyclic_dependency(started_cluster):
+    main_node.query(
+        """
+        DROP DATABASE default;
+        CREATE DATABASE default ENGINE = Replicated('/clickhouse/databases/default', '{shard}', '{replica}');
+        CREATE TABLE default.table_1 (id Int32) ENGINE = MergeTree ORDER BY id;
+        CREATE MATERIALIZED VIEW default.table_2 (id Int32) ENGINE = MergeTree ORDER BY id AS WITH table_3 AS (SELECT id AS id FROM table_1) SELECT * FROM table_3;
+        CREATE MATERIALIZED VIEW default.table_3 (id Int32) ENGINE = MergeTree ORDER BY id AS SELECT id AS id FROM table_2;
+        """
+    )
+    dummy_node.query(
+        """
+        DROP DATABASE default;
+        CREATE DATABASE default ENGINE = Replicated('/clickhouse/databases/default', '{shard}', '{replica}');
+        SYSTEM SYNC DATABASE REPLICA default;
+        DROP DATABASE default SYNC;
+        CREATE DATABASE default;
+        """
+    )
+    main_node.query(
+        """
+        DROP DATABASE default SYNC;
+        CREATE DATABASE default;
+        """
+    )

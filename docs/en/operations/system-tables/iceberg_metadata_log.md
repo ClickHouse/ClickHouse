@@ -19,9 +19,10 @@ This table logs every metadata file and entry read from Iceberg tables, includin
 
 :::note
 This table is primarily intended for debugging purposes.
-:::note
+:::
 
 ## Columns {#columns}
+
 | Name           | Type      | Description                                                                                   |
 |----------------|-----------|----------------------------------------------------------------------------------------------|
 | `event_date`   | [Date](../../sql-reference/data-types/date.md)      | Date of the log entry.                                                                       |

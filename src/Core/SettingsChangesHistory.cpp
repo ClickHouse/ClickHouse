@@ -41,12 +41,16 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.10",
         {
+            {"optimize_rewrite_like_perfect_affix", false, true, "New setting"},
             {"allow_dynamic_type_in_join_keys", true, false, "Disallow using Dynamic type in JOIN keys by default"},
             {"use_skip_indexes_on_data_read", false, true, "Enabled skip index usage in read phase by default"},
+            {"s3queue_keeper_fault_injection_probablility", 0, 0, "New setting."},
             {"enable_join_runtime_filters", false, false, "New setting"},
+            {"join_runtime_filter_exact_values_limit", 10000, 10000, "New setting"},
             {"join_runtime_bloom_filter_bytes", 512_KiB, 512_KiB, "New setting"},
-            {"use_join_disjunctions_push_down", false, false, "New setting."},
             {"join_runtime_bloom_filter_hash_functions", 3, 3, "New setting"},
+            {"use_join_disjunctions_push_down", false, false, "New setting."},
+            {"joined_block_split_single_row", false, false, "New setting"},
             {"rewrite_in_to_join", false, false, "New experimental setting"},
             {"iceberg_insert_max_rows_in_data_file", 100000, 1000000, "New setting."},
             {"iceberg_insert_max_bytes_in_data_file", 100000000, 100000000, "New setting."},
@@ -58,6 +62,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"read_from_distributed_cache_if_exists_otherwise_bypass_cache", false, false, "New setting"},
             {"s3_slow_all_threads_after_retryable_error", false, false, "Disable the setting by default"},
             {"backup_slow_all_threads_after_retryable_s3_error", false, false, "Disable the setting by default"},
+            {"enable_http_compression", false, true, "It should be beneficial in general"},
             {"inject_random_order_for_select_without_order_by", false, false, "New setting"},
             {"exclude_materialize_skip_indexes_on_insert", "", "", "New setting."},
             {"optimize_empty_string_comparisons", false, true, "A new setting."},
@@ -903,12 +908,15 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "25.10",
         {
+            {"auto_statistics_types", "", "", "New setting"},
             {"exclude_materialize_skip_indexes_on_merge", "", "", "New setting."},
             {"serialization_info_version", "default", "default", "New setting"},
             {"string_serialization_version", "default", "default", "New setting"},
             {"replicated_deduplication_window_seconds", 7 * 24 * 60 * 60, 60*60, "decrease default value"},
             {"shared_merge_tree_activate_coordinated_merges_tasks", false, false, "New settings"},
             {"shared_merge_tree_merge_coordinator_factor", 1.1f, 1.1f, "Lower coordinator sleep time after load"},
+            {"min_level_for_wide_part", 0, 0, "New setting"},
+            {"min_level_for_full_part_storage", 0, 0, "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.9",
         {

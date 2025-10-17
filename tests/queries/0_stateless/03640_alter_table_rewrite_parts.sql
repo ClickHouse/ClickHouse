@@ -12,3 +12,4 @@ select partition_id, rows, index_granularity_bytes_in_memory_allocated>25 from s
 alter table test_materialize rewrite parts settings mutations_sync=2;
 select partition_id, rows, index_granularity_bytes_in_memory_allocated from system.parts where database = currentDatabase() and table = 'test_materialize' and active order by 1;
 select count() from test_materialize;
+select * from system.mutations where database = currentDatabase() and not is_done format Vertical;

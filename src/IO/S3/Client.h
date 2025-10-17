@@ -132,6 +132,8 @@ public:
 
     std::unique_ptr<Client> clone() const;
 
+    std::unique_ptr<Client> cloneWithConfigurationOverride(const PocoHTTPClientConfiguration & client_configuration_override) const;
+
     Client & operator=(const Client &) = delete;
 
     Client(Client && other) = delete;
@@ -301,6 +303,7 @@ private:
     void updateNextTimeToRetryAfterRetryableError(Aws::Client::AWSError<Aws::Client::CoreErrors> error, Int64 attempt_no) const;
     void slowDownAfterRetryableError() const;
 
+    void logConfiguration() const;
     String initial_endpoint;
     std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider;
     PocoHTTPClientConfiguration client_configuration;

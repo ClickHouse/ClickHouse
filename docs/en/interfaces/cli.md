@@ -820,10 +820,6 @@ The hostname of the ClickHouse server to connect to. Can either be a hostname or
 
 Default value: localhost
 
-**`--login`**
-
-Invokes the device grant OAuth flow in order to authenticate via an IDP. For ClickHouse Cloud hosts, the OAuth variables are inferred otherwise they must be provided with `--oauth-url`, `--oauth-client-id` and `--oauth-audience`.
-
 **`--jwt <value>`**
 
 Use JSON Web Token (JWT) for authentication.
@@ -869,6 +865,17 @@ The database user to connect as.
 Default value: default
 
 Instead of the `--host`, `--port`, `--user` and `--password` options, the client also supports [connection strings](#connection_string).
+
+**`--proto-caps <value>`**  
+
+Enable/disable chunking in data transfer.  
+
+choices: `chunked_optional`, `notchunked`, `notchunked_optional`, `send_chunked`, `send_chunked_optional`, `send_notchunked`, `send_notchunked_optional`, `recv_chunked`, `recv_chunked_optional`, `recv_notchunked`, `recv_notchunked_optional`.  
+
+To have different options for send and receive, choices can be comma-separated:
+```bash
+$ clickhouse-client --proto-caps send_chunked_optional,recv_notchunked --query "SELECT 1"
+```
 
 ### Query options {#command-line-options-query}
 

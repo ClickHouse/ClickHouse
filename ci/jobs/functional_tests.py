@@ -418,7 +418,7 @@ def main():
         print("Collect logs")
 
         def collect_logs():
-            CH.prepare_logs(all=test_result and not test_result.is_ok())
+            CH.prepare_logs(all=test_result and not test_result.is_ok(), info=info)
 
         results.append(
             Result.from_commands_run(
@@ -442,6 +442,9 @@ def main():
                 f"NOTE: Failed {failures_cnt} tests, label 'ci-non-blocking' is set - do not block pipeline - exit with 0"
             )
             force_ok_exit = True
+
+    if test_result:
+        test_result.sort()
 
     Result.create_from(
         results=results,

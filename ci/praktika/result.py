@@ -9,7 +9,7 @@ import sys
 import time
 import traceback
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Union
 
 from ._environment import _Environment
 from .s3 import S3
@@ -182,10 +182,10 @@ class Result(MetaClasses.Serializable):
         )
 
     def is_failure(self):
-        return self.status in (Result.Status.FAILED)
+        return self.status in (Result.Status.FAILED, Result.StatusExtended.FAIL)
 
     def is_error(self):
-        return self.status in (Result.Status.ERROR,)
+        return self.status in (Result.Status.ERROR, Result.StatusExtended.ERROR)
 
     def set_status(self, status) -> "Result":
         self.status = status
@@ -307,6 +307,11 @@ class Result(MetaClasses.Serializable):
         if not self.ext.get("labels", None):
             self.ext["labels"] = []
         self.ext["labels"].append(label)
+
+    def set_clickable_label(self, label, link):
+        if not self.ext.get("hlabels", None):
+            self.ext["hlabels"] = []
+        self.ext["hlabels"].append((label, link))
 
     def set_required_label(self):
         self.set_label(self.Label.REQUIRED)
@@ -684,6 +689,32 @@ class Result(MetaClasses.Serializable):
         if add_frame:
             res += "+" * 80 + "\n"
         return res
+
+    def get_sub_result_by_name(self, name, recursive=False) -> Optional["Result"]:
+        if not name:
+            return self
+        for r in self.results:
+            if r.name == name:
+                return r
+        if recursive:
+            for r in self.results:
+                res = r.get_sub_result_by_name(name, recursive=True)
+                if res:
+                    return res
+        return None
+
+    def sort(self, sub_result_name="", failed_first=True):
+        if not self.results:
+            return self
+        sub_result_to_sort = self.get_sub_result_by_name(sub_result_name)
+        if failed_first and sub_result_to_sort:
+            # Stable partition: move all not-ok results to beginning, preserve order within groups
+            not_ok_results = [r for r in sub_result_to_sort.results if not r.is_ok()]
+            ok_results = [r for r in sub_result_to_sort.results if r.is_ok()]
+            sub_result_to_sort.results = not_ok_results + ok_results
+        else:
+            raise RuntimeError("Not implemented")
+        return self
 
 
 class ResultInfo:

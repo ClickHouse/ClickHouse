@@ -17,6 +17,7 @@ node = cluster.add_instance(
 def start_cluster():
     try:
         cluster.start()
+        node.query("SET database_atomic_wait_for_drop_and_detach_synchronously = 1")
         yield cluster
     finally:
         cluster.shutdown()
@@ -26,7 +27,7 @@ def test_min_free_disk_settings(start_cluster):
     # min_free_disk_bytes_to_perform_insert (default 0)
     # min_free_disk_ratio_to_perform_insert (default 0.0)
 
-    node.query("DROP TABLE IF EXISTS test_table")
+    node.query("DROP TABLE IF EXISTS test_table SYNC")
 
     node.query(
         f"""
@@ -41,7 +42,9 @@ def test_min_free_disk_settings(start_cluster):
 
     node.query("INSERT INTO test_table (id, data) values (1, 'a')")
 
-    free_bytes = 7 * 1024 * 1024  # 7MB -- size of disk
+    free_bytes = int(node.query(
+        "SELECT total_space FROM system.disks WHERE name = 'disk1'"
+    ).strip())
     node.query(f"SET min_free_disk_bytes_to_perform_insert = {free_bytes}")
 
     try:
@@ -60,7 +63,7 @@ def test_min_free_disk_settings(start_cluster):
     except QueryRuntimeException as e:
         assert "NOT_ENOUGH_SPACE" in str(e)
 
-    node.query("DROP TABLE test_table")
+    node.query("DROP TABLE test_table SYNC")
 
     # server setting for min_free_disk_ratio_to_perform_insert is 1 but we can overwrite at table level
     node.query(
@@ -76,12 +79,12 @@ def test_min_free_disk_settings(start_cluster):
 
     node.query("INSERT INTO test_table (id, data) values (1, 'a')")
 
-    node.query("DROP TABLE test_table")
+    node.query("DROP TABLE test_table SYNC")
     node.query("SET min_free_disk_ratio_to_perform_insert = 0.0")
 
 
 def test_insert_stops_when_disk_full(start_cluster):
-    node.query("DROP TABLE IF EXISTS test_table")
+    node.query("DROP TABLE IF EXISTS test_table SYNC")
 
     min_free_bytes = 3 * 1024 * 1024  # 3 MiB
 
@@ -106,8 +109,9 @@ def test_insert_stops_when_disk_full(start_cluster):
             )
             count += 1
     except QueryRuntimeException as e:
-        assert "Could not perform insert" in str(e)
-        assert "free bytes left in the disk space" in str(e)
+        msg = str(e)
+        assert any(s in msg for s in ("Could not perform insert", "Cannot reserve", "NOT_ENOUGH_SPACE"))
+        assert "The amount of free space" in msg or "not enough space" in msg.lower()
 
     free_space = int(
         node.query("SELECT free_space FROM system.disks WHERE name = 'disk1'").strip()
@@ -119,4 +123,4 @@ def test_insert_stops_when_disk_full(start_cluster):
     rows = int(node.query("SELECT count() from test_table").strip())
     assert rows == count
 
-    node.query("DROP TABLE test_table")
+    node.query("DROP TABLE test_table SYNC")

@@ -174,6 +174,11 @@ class Job:
             res.runs_on = runs_on
             return res
 
+        def set_command(self, command):
+            res = copy.deepcopy(self)
+            res.command = command
+            return res
+
         def unset_provides(self, artifact_keyword):
             """
             removes artifact matching artifact_keyword

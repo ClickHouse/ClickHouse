@@ -5,6 +5,8 @@
 #include <Interpreters/BloomFilter.h>
 
 
+#include <Functions/sparseGrams.h>
+
 namespace DB
 {
 
@@ -202,6 +204,25 @@ struct NoOpTokenExtractor final : public ITokenExtractorHelper<NoOpTokenExtracto
     bool nextInStringLike(const char * data, size_t length, size_t * pos, String & token) const override;
 
     bool supportsStringLike() const override { return false; }
+};
+
+struct SparseGramTokenExtractor final : public ITokenExtractorHelper<SparseGramTokenExtractor>
+{
+    explicit SparseGramTokenExtractor(size_t min_length = 3, size_t max_length = 100, std::optional<size_t> min_cutoff_length_ = std::nullopt);
+
+    static const char * getBloomFilterIndexName() { return "sparse_grams"; }
+    static const char * getName() { return "sparseGrams"; }
+    static const char * getExternalName() { return getName(); }
+
+    bool nextInString(const char * data, size_t length, size_t *  __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const override;
+
+    bool nextInStringLike(const char * data, size_t length, size_t * pos, String & token) const override;
+    bool supportsStringLike() const override { return true; }
+
+private:
+    mutable SparseGramsImpl<true> sparse_grams_iterator;
+    mutable const char * previous_data = nullptr;
+    mutable size_t previous_len = 0;
 };
 
 }

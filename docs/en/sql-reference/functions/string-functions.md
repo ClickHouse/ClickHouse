@@ -2792,6 +2792,42 @@ Result:
 └─────────────────────────────────────┘
 ```
 
+## conv
+
+Converts numbers between different number bases, supporting bases from 2 to 36. This function is compatible with MySQL's
+[CONV()](https://dev.mysql.com/doc/refman/8.4/en/mathematical-functions.html#function_conv) function and handles partial
+invalid inputs by processing valid digits until the first invalid character.
+
+**Syntax**
+
+```sql
+conv(number, from_base, to_base)
+```
+
+**Arguments**
+
+- `number` — The number to convert. [String](../data-types/string.md), [FixedString](../data-types/fixedstring.md) or [Integer](../data-types/int-uint)
+- `from_base` — The source base (2-36). [Integer](../data-types/int-uint)
+- `to_base` — The target base (2-36). [Integer](../data-types/int-uint)
+
+**Returned value**
+
+- Returns the string representation of the number in the target base. [String](../data-types/string.md)
+
+**Example**
+
+```sql
+SELECT conv('10', 10, 2);
+```
+
+Result:
+
+```result
+┌─conv('10', 10, 2)─┐
+│ 1010              │
+└───────────────────┘
+```
+
 <!-- 
 The inner content of the tags below are replaced at doc framework build time with 
 docs generated from system.functions. Please do not modify or remove the tags.
