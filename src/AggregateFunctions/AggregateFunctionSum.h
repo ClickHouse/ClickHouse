@@ -167,7 +167,7 @@ struct AggregateFunctionSumData
 
             for (size_t i = 0; i < count; ++i)
             {
-                uint8_t flag = (condition_map[i] != add_if_zero);
+                uint8_t flag = (condition_map[i] == add_if_zero);
 
                 T mask{};
                 std::memset(&mask, flag ? 0xFF : 0x00, sizeof(T));
