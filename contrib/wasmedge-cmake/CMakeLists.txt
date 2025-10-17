@@ -85,6 +85,7 @@ target_include_directories(_wasmedge PRIVATE ${SOURCE_DIR}/thirdparty)
 target_compile_definitions(_wasmedge PRIVATE SPDLOG_FMT_EXTERNAL)
 target_compile_definitions(_wasmedge PRIVATE FMT_HEADER_ONLY)
 target_include_directories(_wasmedge PRIVATE "${ClickHouse_SOURCE_DIR}/contrib/spdlog/include")
+target_include_directories(_wasmedge PRIVATE "${ClickHouse_SOURCE_DIR}/contrib/fmtlib/include")
 
 if (WASMEDGE_USE_LLVM)
     target_compile_definitions(_wasmedge PUBLIC -DWASMEDGE_USE_LLVM)
