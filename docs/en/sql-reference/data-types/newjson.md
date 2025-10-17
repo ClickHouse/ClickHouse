@@ -519,7 +519,7 @@ SELECT '{}'::JSON AS json1, '{"a" : null}'::JSON AS json2, json1 = json2
 └───────┴───────┴──────────────────────┘
 ```
 
-It means that it's impossible to determine whether the originsl JSON data contained some path with the NULL value or didn't contain it at all.
+It means that it's impossible to determine whether the original JSON data contained some path with the NULL value or didn't contain it at all.
 
 ## Handling JSON keys with dots {#handling-json-keys-with-dots}
 
