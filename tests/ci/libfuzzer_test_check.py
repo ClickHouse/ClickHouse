@@ -21,7 +21,6 @@ from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
 
-TIMEOUT = 60 * 30
 NO_CHANGES_MSG = "Nothing to run"
 s3 = S3Helper()
 
