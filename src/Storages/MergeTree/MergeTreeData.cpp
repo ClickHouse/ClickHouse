@@ -812,7 +812,7 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
         try
         {
             auto stats = part.data_part->loadStatistics();
-            estimator_builder.incrementRowCount(part.data_part->rows_count);
+            estimator_builder.markDataPart(part.data_part);
             for (const auto & stat : stats)
                 estimator_builder.addStatistics(stat);
         }
@@ -2534,15 +2534,25 @@ catch (...)
 void MergeTreeData::refreshStatistics(UInt64 interval_seconds)
 try
 {
-    LOG_DEBUG(log, "Refreshing statistics");
     DataPartsVector data_parts = getDataPartsVectorForInternalUsage();
+    if (cached_estimator)
+    {
+        if(!cached_estimator->isStale(data_parts))
+        {
+            LOG_DEBUG(log, "The parts in this storage does not change, will not refresh statistics");
+            if (interval_seconds)
+                refresh_stats_task->scheduleAfter(interval_seconds * 1000);
+            return;
+        }
+    }
+    LOG_DEBUG(log, "Refreshing statistics");
     ConditionSelectivityEstimatorBuilder estimator_builder(getContext());
     for (const DataPartPtr & data_part : data_parts)
     {
         try
         {
             auto stats = data_part->loadStatistics();
-            estimator_builder.incrementRowCount(data_part->rows_count);
+            estimator_builder.markDataPart(data_part);
             for (const auto & stat : stats)
                 estimator_builder.addStatistics(stat);
         }
