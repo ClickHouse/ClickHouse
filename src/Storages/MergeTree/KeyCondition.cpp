@@ -53,64 +53,12 @@ namespace Setting
 {
     extern const SettingsBool analyze_index_with_space_filling_curves;
     extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
+    extern const SettingsTimezone session_timezone;
 }
 
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
-}
-
-/// Returns the prefix of like_pattern before the first wildcard, e.g. 'Hello\_World% ...' --> 'Hello\_World'
-/// We call a pattern "perfect prefix" if:
-/// - (1) the pattern has a wildcard
-/// - (2) the first wildcard is '%' and is only followed by nothing or other '%'
-/// e.g. 'test%' or 'test%% has perfect prefix 'test', 'test%x', 'test%_' or 'test_' has no perfect prefix.
-std::tuple<String, bool> extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool requires_perfect_prefix)
-{
-    String fixed_prefix;
-    fixed_prefix.reserve(like_pattern.size());
-
-    const char * pos = like_pattern.data();
-    const char * end = pos + like_pattern.size();
-    while (pos < end)
-    {
-        switch (*pos)
-        {
-            case '%':
-            case '_':
-            {
-                bool is_perfect_prefix = std::all_of(pos, end, [](auto c) { return c == '%'; });
-                if (requires_perfect_prefix)
-                {
-                    if (is_perfect_prefix)
-                        return {fixed_prefix, true};
-                    else
-                        return {"", false};
-                }
-                else
-                {
-                    return {fixed_prefix, is_perfect_prefix};
-                }
-            }
-            case '\\':
-            {
-                ++pos;
-                if (pos == end)
-                    break;
-                [[fallthrough]];
-            }
-            default:
-            {
-                fixed_prefix += *pos;
-            }
-        }
-
-        ++pos;
-    }
-    /// If we can reach this code, it means there was no wildcard found in the pattern, so it is not a perfect prefix
-    if (requires_perfect_prefix)
-        return {"", false};
-    return {fixed_prefix, false};
 }
 
 /// for "^prefix..." string it returns "prefix"
@@ -196,32 +144,6 @@ static String extractFixedPrefixFromRegularExpression(const String & regexp)
     }
 
     return fixed_prefix;
-}
-
-
-/** For a given string, get a minimum string that is strictly greater than all strings with this prefix,
-  *  or return an empty string if there are no such strings.
-  */
-static String firstStringThatIsGreaterThanAllStringsWithPrefix(const String & prefix)
-{
-    /** Increment the last byte of the prefix by one. But if it is max (255), then remove it and increase the previous one.
-      * Example (for convenience, suppose that the maximum value of byte is `z`)
-      * abcx -> abcy
-      * abcz -> abd
-      * zzz -> empty string
-      * z -> empty string
-      */
-
-    String res = prefix;
-
-    while (!res.empty() && static_cast<UInt8>(res.back()) == std::numeric_limits<UInt8>::max())
-        res.pop_back();
-
-    if (res.empty())
-        return res;
-
-    res.back() = static_cast<char>(1 + static_cast<UInt8>(res.back()));
-    return res;
 }
 
 namespace
@@ -1093,7 +1015,7 @@ bool applyFunctionChainToColumn(
     }
 
     // And cast it to the argument type of the first function in the chain
-    auto in_argument_type = getArgumentTypeOfMonotonicFunction(*functions[0]);
+    auto in_argument_type = removeLowCardinality(getArgumentTypeOfMonotonicFunction(*functions[0]));
     if (canBeSafelyCast(result_type, in_argument_type))
     {
         result_column = castColumnAccurate({result_column, result_type, ""}, in_argument_type);
@@ -1122,13 +1044,13 @@ bool applyFunctionChainToColumn(
         if (func->getArgumentTypes().empty())
             return false;
 
-        auto argument_type = getArgumentTypeOfMonotonicFunction(*func);
+        auto argument_type = removeLowCardinality(getArgumentTypeOfMonotonicFunction(*func));
         if (!canBeSafelyCast(result_type, argument_type))
             return false;
 
         result_column = castColumnAccurate({result_column, result_type, ""}, argument_type);
-        result_column = func->execute({{result_column, argument_type, ""}}, func->getResultType(), result_column->size(), /* dry_run = */ false);
-        result_type = func->getResultType();
+        result_type = removeLowCardinality(func->getResultType());
+        result_column = func->execute({{result_column, argument_type, ""}}, result_type, result_column->size(), /* dry_run = */ false);
 
         // Transforming nullable columns to the nested ones, in case no nulls found
         if (result_column->isNullable())
@@ -1141,7 +1063,7 @@ bool applyFunctionChainToColumn(
                     return false;
             }
             result_column = result_column_nullable.getNestedColumnPtr();
-            result_type = removeNullable(func->getResultType());
+            result_type = removeNullable(result_type);
         }
     }
     out_column = result_column;
@@ -1903,48 +1825,57 @@ bool KeyCondition::extractMonotonicFunctionsChainFromKey(
                     auto func_name = func->function_base->getName();
                     auto func_base = func->function_base;
 
-                    ColumnsWithTypeAndName arguments;
                     ColumnWithTypeAndName const_arg;
                     FunctionWithOptionalConstArg::Kind kind = FunctionWithOptionalConstArg::Kind::NO_CONST;
 
                     if (date_time_parsing_functions.contains(func_name))
                     {
-                        const auto & arg_types = func_base->getArgumentTypes();
-                        if (!arg_types.empty() && isStringOrFixedString(arg_types[0]))
-                            func_name = func_name + "OrNull";
+                        const auto & func_arg_types = func_base->getArgumentTypes();
+
+                        const bool has_string_argument = !func_arg_types.empty() && isStringOrFixedString(func_arg_types[0]);
+                        const bool has_session_timezone = !context->getSettingsRef()[Setting::session_timezone].value.empty();
+
+                        // Skipping analysis in case when is requires parsing datetime from string
+                        // with `session_timezone` specified
+                        if (has_string_argument && has_session_timezone)
+                            return false;
+
+                        // Otherwise, in case when datetime parsing is required, rebuilding the function,
+                        // to get its "-OrNull" version required for safe parsing, and not failing on
+                        // values with incorrect format
+                        if (has_string_argument)
+                        {
+                            ColumnsWithTypeAndName new_args;
+                            for (const auto & type : func->function_base->getArgumentTypes())
+                                new_args.push_back({nullptr, type, ""});
+
+                            const auto func_builder = FunctionFactory::instance().tryGet(func_name + "OrNull", context);
+                            func_base = func_builder->build(new_args);
+                        }
                     }
 
-                    auto func_builder = FunctionFactory::instance().tryGet(func_name, context);
-
-                    if (func->children.size() == 1)
-                    {
-                        arguments.push_back({nullptr, removeLowCardinality(func->children[0]->result_type), ""});
-                    }
-                    else if (func->children.size() == 2)
+                    // For single argument functions, the input may be used as-is, for binary functions,
+                    // we'll produce a partially applied version of `func` with the reduced arity
+                    if (func->children.size() == 2)
                     {
                         const auto * left = func->children[0];
                         const auto * right = func->children[1];
                         if (left->column && isColumnConst(*left->column))
                         {
                             const_arg = {left->result_type->createColumnConst(0, (*left->column)[0]), left->result_type, ""};
-                            arguments.push_back(const_arg);
-                            arguments.push_back({nullptr, removeLowCardinality(right->result_type), ""});
                             kind = FunctionWithOptionalConstArg::Kind::LEFT_CONST;
                         }
                         else
                         {
                             const_arg = {right->result_type->createColumnConst(0, (*right->column)[0]), right->result_type, ""};
-                            arguments.push_back({nullptr, removeLowCardinality(left->result_type), ""});
-                            arguments.push_back(const_arg);
                             kind = FunctionWithOptionalConstArg::Kind::RIGHT_CONST;
                         }
                     }
 
-                    auto out_func = func_builder->build(arguments);
                     if (kind == FunctionWithOptionalConstArg::Kind::NO_CONST)
-                        out_functions_chain.push_back(out_func);
+                        out_functions_chain.push_back(func_base);
                     else
-                        out_functions_chain.push_back(std::make_shared<FunctionWithOptionalConstArg>(out_func, const_arg, kind));
+                        out_functions_chain.push_back(std::make_shared<FunctionWithOptionalConstArg>(func_base, const_arg, kind));
                 }
 
                 out_key_column_num = it->second;

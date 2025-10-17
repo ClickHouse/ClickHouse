@@ -198,4 +198,17 @@ void MergeTreeIndexReader::adjustRightMark(size_t right_mark)
         stream->adjustRightMark(right_mark);
 }
 
+void MergeTreeIndexReader::prefetchBeginOfRange(size_t from_mark, Priority priority)
+{
+    initStreamIfNeeded();
+
+    for (const auto & stream : stream_holders)
+    {
+        stream->seekToMark(from_mark);
+        stream->getDataBuffer()->prefetch(priority);
+    }
+
+    stream_mark = from_mark;
+}
+
 }
