@@ -1,17 +1,17 @@
-#include <string>
 #include <Client/BuzzHouse/Generator/SQLCatalog.h>
 
 namespace BuzzHouse
 {
 
-void SQLDatabase::finishDatabaseSpecification(DatabaseEngine * de) const
+void SQLDatabase::finishDatabaseSpecification(DatabaseEngine * de, const bool add_params)
 {
-    if (isReplicatedDatabase())
+    if (add_params && isReplicatedOrSharedDatabase())
     {
-        chassert(de->params_size() == 0);
+        chassert(de->params_size() == 0 && this->nparams == 0);
         de->add_params()->set_svalue("/clickhouse/path/" + this->getName());
         de->add_params()->set_svalue("{shard}");
         de->add_params()->set_svalue("{replica}");
+        this->nparams = 3;
     }
 }
 
@@ -394,4 +394,5 @@ String ColumnPathChain::columnPathRef() const
     res += "`";
     return res;
 }
+
 }

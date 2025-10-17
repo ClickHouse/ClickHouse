@@ -1270,6 +1270,12 @@
                         td.appendChild(link);
                     }
 
+                    // Create a container for labels and linklabels
+                    const labelsContainer = document.createElement('span');
+                    labelsContainer.className = 'labels-container';
+                    labelsContainer.style.userSelect = 'none'; // Prevent selection
+                    labelsContainer.style.marginLeft = '4px';
+
                     if (Array.isArray(labels)) {
                         labels.forEach(labelStr => {
                             const label = document.createElement('span');
@@ -1283,14 +1289,12 @@
                             label.style.fontWeight = 'bold';
                             label.style.display = 'inline-block';
                             label.style.verticalAlign = 'middle';
-                            td.appendChild(label);
+                            labelsContainer.appendChild(label);
                         });
                     }
 
-                    // Add hyperlink labels (hlabels) with the same visual style as plain labels
                     if (Array.isArray(linklabels)) {
                         linklabels.forEach(item => {
-                            // Expect [text, href]; tolerate objects or malformed entries
                             let text, href;
                             if (Array.isArray(item)) {
                                 [text, href] = item;
@@ -1298,13 +1302,10 @@
                                 text = item.text || item.label || '';
                                 href = item.href || item.url || '';
                             } else if (typeof item === 'string') {
-                                // If only a string is provided, show it as a non-clickable label for robustness
                                 text = item;
                                 href = '';
                             }
-
                             if (!text) return;
-
                             if (href) {
                                 const a = document.createElement('a');
                                 a.textContent = text;
@@ -1319,11 +1320,8 @@
                                 a.style.borderRadius = '8px';
                                 a.style.fontWeight = 'bold';
                                 a.style.display = 'inline-block';
-                                a.style.verticalAlign = 'middle';
-                                a.style.textDecoration = 'none';
-                                td.appendChild(a);
+                                labelsContainer.appendChild(a);
                             } else {
-                                // Fallback to plain label if no href
                                 const label = document.createElement('span');
                                 label.textContent = text;
                                 label.style.marginLeft = '6px';
@@ -1334,10 +1332,14 @@
                                 label.style.borderRadius = '8px';
                                 label.style.fontWeight = 'bold';
                                 label.style.display = 'inline-block';
-                                label.style.verticalAlign = 'middle';
-                                td.appendChild(label);
+                                labelsContainer.appendChild(label);
                             }
                         });
+                    }
+
+                    // Only append if there are labels
+                    if (labelsContainer.childNodes.length > 0) {
+                        td.appendChild(labelsContainer);
                     }
 
                 } else if (column === 'start_time') {

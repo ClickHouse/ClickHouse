@@ -26,7 +26,7 @@ struct TextSearchQuery
     TextSearchMode mode;
     std::vector<String> tokens;
 
-    UInt128 getHash() const;
+    SipHash getHash() const;
 };
 
 using TextSearchQueryPtr = std::shared_ptr<TextSearchQuery>;
@@ -115,8 +115,6 @@ private:
     std::vector<String> all_search_tokens;
     /// Search qieries from all RPN elements.s
     std::unordered_map<UInt128, TextSearchQueryPtr> all_search_queries;
-    /// Counters to generate unique virtual column names.
-    std::unordered_map<String, size_t> function_name_to_index;
     /// Mapping from virtual column (optimized for direct read from text index) to search query.
     std::unordered_map<String, TextSearchQueryPtr> virtual_column_to_search_query;
     /// Bloom filter can be disabled for better testing of dictionary analysis.
