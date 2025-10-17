@@ -429,11 +429,7 @@ Direct read is controlled by two settings:
 - Setting [use_skip_indexes_on_data_read](../../../operations/settings/settings#use_skip_indexes_on_data_read) (default: 1) which is another prerequisite for direct read. Note that on ClickHouse databases with [compatibility](../../../operations/settings/settings#compatibility) < 25.10, `use_skip_indexes_on_data_read` is disabled, so you either need to raise the compatibility setting value or `SET use_skip_indexes_on_data_read = 1` explicitly.
 
 **Supported functions**
-<<<<<<< HEAD
-The direct read optimization supports functions `hasToken`, `searchAll`, and `searchAny`.
-=======
 The direct read optimization supports functions `hasToken`, `hasAllTokens`, and `hasAnyTokens`.
->>>>>>> b4ef5d437504c4eaa1069144ae9411813f621916
 These functions can also be combined by AND, OR, and NOT operators.
 The WHERE clause can also contain additional non-text-search-functions filters (for text columns or other columns) - in that case, the direct read optimization will still be used but less effective (it only applies to the supported text search functions).
 
@@ -444,11 +440,7 @@ As an example, a query with disabled direct read
 EXPLAIN PLAN actions = 1
 SELECT count()
 FROM tab
-<<<<<<< HEAD
-WHERE hasToken(col, ['some_token'])
-=======
 WHERE hasToken(col, 'some_token')
->>>>>>> b4ef5d437504c4eaa1069144ae9411813f621916
 SETTINGS query_plan_direct_read_from_text_index = 0;
 ```
 
@@ -470,11 +462,7 @@ whereas the same query run with `query_plan_direct_read_from_text_index = 1`
 EXPLAIN PLAN actions = 1
 SELECT count()
 FROM tab
-<<<<<<< HEAD
-WHERE hasToken(col, ['some_token'])
-=======
 WHERE hasToken(col, 'some_token')
->>>>>>> b4ef5d437504c4eaa1069144ae9411813f621916
 SETTINGS query_plan_direct_read_from_text_index = 1;
 ```
 
@@ -485,13 +473,8 @@ returns
 Expression (Before GROUP BY)
 Positions:
   Filter
-<<<<<<< HEAD
-  Filter column: __text_index_idx_hasToken_0 (removed)
-  Actions: INPUT :: 0 -> __text_index_idx_hasToken_0 UInt8 : 0
-=======
   Filter column: __text_index_idx_hasToken_94cc2a813036b453d84b6fb344a63ad3 (removed)
   Actions: INPUT :: 0 -> __text_index_idx_hasToken_94cc2a813036b453d84b6fb344a63ad3 UInt8 : 0
->>>>>>> b4ef5d437504c4eaa1069144ae9411813f621916
 [...]
 ```
 
