@@ -1,6 +1,4 @@
 Negative tests
-1
-1
 Test singular aliases
 Test what happens when hasAnyTokens/All is called on a column without index
 -- We expected that the default tokenizer is used
@@ -37,15 +35,6 @@ SELECT hasAllTokens(materialize('a b'), ['a', 'c']);
 SELECT hasAllTokens(materialize('a b'), 'a b');
 1
 SELECT hasAllTokens(materialize('a b'), 'a c');
-0
--- Test singular aliases
-SELECT hasAnyToken('a b', ['b']);
-1
-SELECT hasAnyToken('a b', ['c']);
-0
-SELECT hasAllToken('a b', ['b']);
-1
-SELECT hasAllToken('a b', ['c']);
 0
 -- These are equivalent to the lines above, but using Search{Any,All} in the filter step.
 -- We keep this test because the direct read optimization substituted Search{Any,All} only

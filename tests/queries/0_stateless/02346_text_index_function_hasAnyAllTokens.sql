@@ -31,11 +31,9 @@ SELECT id FROM tab WHERE hasAllTokens('a', 'b', 'c'); -- { serverError NUMBER_OF
 -- 1st arg must be String or FixedString
 SELECT id FROM tab WHERE hasAnyTokens(1, ['a']); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT id FROM tab WHERE hasAllTokens(1, ['a']); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
--- 2nd arg must be const Array(String)
-SELECT id FROM tab WHERE hasAnyTokens(message, 'b');
+-- 2nd arg must be const Array(String) or const String
 SELECT id FROM tab WHERE hasAnyTokens(message, materialize('b')); -- { serverError ILLEGAL_COLUMN }
 SELECT id FROM tab WHERE hasAnyTokens(message, materialize(['b'])); -- { serverError ILLEGAL_COLUMN }
-SELECT id FROM tab WHERE hasAllTokens(message, 'b');
 SELECT id FROM tab WHERE hasAllTokens(message, materialize('b')); -- { serverError ILLEGAL_COLUMN }
 SELECT id FROM tab WHERE hasAllTokens(message, materialize(['b'])); -- { serverError ILLEGAL_COLUMN }
 -- Supports a max of 64 needles
@@ -44,7 +42,9 @@ SELECT id FROM tab WHERE hasAnyTokens(message, 'a b c d e f g h i j k l m n o p 
 
 SELECT 'Test singular aliases';
 
+SELECT hasAnyToken('a b', 'b') FORMAT Null;
 SELECT hasAnyToken('a b', ['b']) FORMAT Null;
+SELECT hasAllToken('a b', 'b') FORMAT Null;
 SELECT hasAllToken('a b', ['b']) FORMAT Null;
 
 SELECT 'Test what happens when hasAnyTokens/All is called on a column without index';
@@ -68,12 +68,6 @@ SELECT hasAllTokens(materialize('a b'), ['a', 'b']);
 SELECT hasAllTokens(materialize('a b'), ['a', 'c']);
 SELECT hasAllTokens(materialize('a b'), 'a b');
 SELECT hasAllTokens(materialize('a b'), 'a c');
-
--- Test singular aliases
-SELECT hasAnyToken('a b', ['b']);
-SELECT hasAnyToken('a b', ['c']);
-SELECT hasAllToken('a b', ['b']);
-SELECT hasAllToken('a b', ['c']);
 
 -- These are equivalent to the lines above, but using Search{Any,All} in the filter step.
 -- We keep this test because the direct read optimization substituted Search{Any,All} only

@@ -70,7 +70,7 @@ void FunctionHasAnyAllTokens<HasTokensTraits>::setSearchTokens(const std::vector
 namespace
 {
 
-/// Functions accept string as input (will be tokenized) or array of strings (used as-is)
+/// Functions accept needles string (will be tokenized) or array of string needles/tokens (used as-is)
 /// Also accepts Array(Nothing) which is the type of Array([])
 bool isStringOrArrayOfStringType(const IDataType & type)
 {
@@ -89,20 +89,22 @@ bool isStringOrArrayOfStringType(const IDataType & type)
 }
 
 
-void fillNeedlesFromString(Needles & needles_tmp, const StringRef & needle_str)
+Needles extractNeedlesFromString(std::string_view needle_str)
 {
-    auto token_extractor_ = DefaultTokenExtractor();
+    DefaultTokenExtractor default_token_extractor;
 
     size_t cur = 0;
     size_t token_start = 0;
     size_t token_len = 0;
-    size_t length = needle_str.size;
+    size_t length = needle_str.size();
     size_t pos = 0;
 
-    while (cur < length && token_extractor_.nextInStringPadded(needle_str.data, length, &cur, &token_start, &token_len))
+    Needles needles;
+    while (cur < length && default_token_extractor.nextInStringPadded(needle_str.data(), length, &cur, &token_start, &token_len))
     {
-        needles_tmp.emplace(StringRef(needle_str.data + token_start, token_len), pos++);
+        needles.emplace(std::string{needle_str.data() + token_start, token_len}, pos++);
     }
+    return needles;
 }
 }
 
@@ -239,11 +241,11 @@ ColumnPtr FunctionHasAnyAllTokens<HasTokensTraits>::executeImpl(
 
         if (const ColumnConst * col_needles_str_const = checkAndGetColumnConst<ColumnString>(col_needles.get()))
         {
-            fillNeedlesFromString(needles_tmp, col_needles_str_const->getDataAt(0));
+            needles_tmp = extractNeedlesFromString(col_needles_str_const->getDataAt(0).toView());
         }
         else if (const ColumnString * col_needles_str = checkAndGetColumn<ColumnString>(col_needles.get()))
         {
-            fillNeedlesFromString(needles_tmp, col_needles_str->getDataAt(0));
+            needles_tmp = extractNeedlesFromString(col_needles_str->getDataAt(0).toView());
         }
         else if (const ColumnConst * col_needles_const = checkAndGetColumnConst<ColumnArray>(col_needles.get()))
         {
