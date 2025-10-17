@@ -26,10 +26,10 @@ namespace DB
 struct TaskRuntimeData;
 struct TaskProfileEvents
 {
-    ProfileEvents::Event execute_ms{};
-    ProfileEvents::Event cancel_ms{};
-    ProfileEvents::Event reset_ms{};
-    ProfileEvents::Event wait_ms{};
+    ProfileEvents::Event execute_ms = ProfileEvents::end();
+    ProfileEvents::Event cancel_ms = ProfileEvents::end();
+    ProfileEvents::Event reset_ms = ProfileEvents::end();
+    ProfileEvents::Event wait_ms = ProfileEvents::end();
 };
 using TaskRuntimeDataPtr = std::shared_ptr<TaskRuntimeData>;
 
@@ -351,10 +351,10 @@ private:
     CurrentMetrics::Metric metric;
     CurrentMetrics::Increment max_tasks_metric;
 
-    ProfileEvents::Event execute_profile_event{};
-    ProfileEvents::Event cancel_profile_event{};
-    ProfileEvents::Event reset_profile_event{};
-    ProfileEvents::Event wait_profile_event{};
+    ProfileEvents::Event execute_profile_event = ProfileEvents::end();
+    ProfileEvents::Event cancel_profile_event = ProfileEvents::end();
+    ProfileEvents::Event reset_profile_event = ProfileEvents::end();
+    ProfileEvents::Event wait_profile_event = ProfileEvents::end();
 
     void routine(TaskRuntimeDataPtr item);
 
