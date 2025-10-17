@@ -8,7 +8,7 @@
 #include <Processors/OffsetTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <IO/Operators.h>
-#include <base/BFloat16.h>
+#include <base/types.h>
 #include <Common/JSONBuilder.h>
 
 namespace DB
@@ -29,7 +29,7 @@ static ITransformingStep::Traits getTraits()
     };
 }
 
-FractionalOffsetStep::FractionalOffsetStep(const SharedHeader & input_header_, BFloat16 fractional_offset_)
+FractionalOffsetStep::FractionalOffsetStep(const SharedHeader & input_header_, Float32 fractional_offset_)
     : ITransformingStep(input_header_, input_header_, getTraits())
     , fractional_offset(fractional_offset_)
 {
@@ -48,12 +48,12 @@ void FractionalOffsetStep::transformPipeline(QueryPipelineBuilder & pipeline, co
 
 void FractionalOffsetStep::describeActions(FormatSettings & settings) const
 {
-    settings.out << String(settings.offset, ' ') << "Fractional Offset " << Float32(fractional_offset) << '\n';
+    settings.out << String(settings.offset, ' ') << "Fractional Offset " << fractional_offset << '\n';
 }
 
 void FractionalOffsetStep::describeActions(JSONBuilder::JSONMap & map) const
 {
-    map.add("Fractional Offset", Float32(fractional_offset));
+    map.add("Fractional Offset", fractional_offset);
 }
 
 void FractionalOffsetStep::serialize(Serialization & ctx) const
@@ -63,7 +63,7 @@ void FractionalOffsetStep::serialize(Serialization & ctx) const
 
 std::unique_ptr<IQueryPlanStep> FractionalOffsetStep::deserialize(Deserialization & ctx)
 {
-    BFloat16 offset;
+    Float32 offset;
     readFloatText(offset, ctx.in);
 
     return std::make_unique<FractionalOffsetStep>(ctx.input_headers.front(), offset);

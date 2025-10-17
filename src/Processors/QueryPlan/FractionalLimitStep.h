@@ -1,7 +1,6 @@
 #pragma once
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Core/SortDescription.h>
-#include <base/BFloat16.h>
 #include <base/types.h>
 
 namespace DB
@@ -13,8 +12,8 @@ class FractionalLimitStep : public ITransformingStep
 public:
     FractionalLimitStep(
         const SharedHeader & input_header_,
-        BFloat16 limit_fraction_, 
-        BFloat16 offset_fraction_,
+        Float32 limit_fraction_, 
+        Float32 offset_fraction_,
         UInt64 offset = 0,
         bool with_ties_ = false, /// Limit with ties.
         SortDescription description_ = {});
@@ -26,7 +25,7 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
-    BFloat16 getLimitFraction() const { return limit_fraction; }
+    Float32 getLimitFraction() const { return limit_fraction; }
 
     bool withTies() const { return with_ties; }
 
@@ -43,8 +42,8 @@ private:
         output_header = input_headers.front();
     }
 
-    BFloat16 limit_fraction; 
-    BFloat16 offset_fraction;
+    Float32 limit_fraction; 
+    Float32 offset_fraction;
 
     UInt64 offset;
 

@@ -2,8 +2,6 @@
 #include <Processors/Chunk.h>
 #include <Processors/FractionalOffsetTransform.h>
 #include <Processors/Port.h>
-#include <base/BFloat16.h>
-#include <base/types.h>
 
 namespace DB
 {
@@ -14,7 +12,7 @@ namespace ErrorCodes
 }
 
 FractionalOffsetTransform::FractionalOffsetTransform(
-    const Block & header_, BFloat16 fractional_offset_, size_t num_streams)
+    const Block & header_, Float32 fractional_offset_, size_t num_streams)
     : IProcessor(InputPorts(num_streams, header_), OutputPorts(num_streams, header_))
     , fractional_offset(fractional_offset_)
 {

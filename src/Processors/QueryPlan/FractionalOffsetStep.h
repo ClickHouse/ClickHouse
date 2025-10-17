@@ -1,7 +1,7 @@
 #pragma once
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <QueryPipeline/SizeLimits.h>
-#include <base/BFloat16.h>
+#include <base/types.h>
 
 namespace DB
 {
@@ -10,7 +10,7 @@ namespace DB
 class FractionalOffsetStep : public ITransformingStep
 {
 public:
-    FractionalOffsetStep(const SharedHeader & input_header_, BFloat16 fractional_offset_);
+    FractionalOffsetStep(const SharedHeader & input_header_, Float32 fractional_offset_);
 
     String getName() const override { return "FractionalOffset"; }
 
@@ -30,7 +30,7 @@ private:
         output_header = input_headers.front();
     }
 
-    BFloat16 fractional_offset;
+    Float32 fractional_offset;
 };
 
 }

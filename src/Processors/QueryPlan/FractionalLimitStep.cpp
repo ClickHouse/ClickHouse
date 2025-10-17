@@ -10,8 +10,6 @@
 #include <Processors/LimitTransform.h>
 #include <Processors/Port.h>
 #include <IO/Operators.h>
-#include <base/BFloat16.h>
-#include <base/types.h>
 #include <Common/JSONBuilder.h>
 
 namespace DB
@@ -34,8 +32,8 @@ static ITransformingStep::Traits getTraits()
 
 FractionalLimitStep::FractionalLimitStep(
     const SharedHeader & input_header_,
-    BFloat16 limit_fraction_, 
-    BFloat16 offset_fraction_,
+    Float32 limit_fraction_, 
+    Float32 offset_fraction_,
     UInt64 offset_,
     bool with_ties_,
     SortDescription description_)
@@ -66,8 +64,8 @@ void FractionalLimitStep::transformPipeline(QueryPipelineBuilder & pipeline, con
 void FractionalLimitStep::describeActions(FormatSettings & settings) const
 {
     String prefix(settings.offset, ' ');
-    settings.out << prefix << "Fractional Limit " << Float32(limit_fraction) << '\n';
-    settings.out << prefix << "Fractional Offset " << Float32(offset_fraction) << '\n';
+    settings.out << prefix << "Fractional Limit " << limit_fraction << '\n';
+    settings.out << prefix << "Fractional Offset " <<offset_fraction << '\n';
 
     if (with_ties)
         settings.out << prefix << "WITH TIES" << '\n';
@@ -75,8 +73,8 @@ void FractionalLimitStep::describeActions(FormatSettings & settings) const
 
 void FractionalLimitStep::describeActions(JSONBuilder::JSONMap & map) const
 {
-    map.add("Fractional Limit", Float32(limit_fraction));
-    map.add("Fractional Offset", Float32(offset_fraction));
+    map.add("Fractional Limit", limit_fraction);
+    map.add("Fractional Offset", offset_fraction);
     map.add("With Ties", with_ties);
 }
 
@@ -102,8 +100,8 @@ std::unique_ptr<IQueryPlanStep> FractionalLimitStep::deserialize(Deserialization
     readIntBinary(flags, ctx.in);
     bool with_ties = bool(flags & 1);
 
-    BFloat16 limit_fraction;
-    BFloat16 offset_fraction;
+    Float32 limit_fraction;
+    Float32 offset_fraction;
     UInt64 offset;
 
     readFloatText(limit_fraction, ctx.in);

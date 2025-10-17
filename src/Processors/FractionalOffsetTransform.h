@@ -6,7 +6,7 @@
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
 #include <Processors/RowsBeforeStepCounter.h>
-#include <base/BFloat16.h>
+#include <base/types.h>
 
 namespace DB
 {
@@ -19,7 +19,7 @@ namespace DB
 class FractionalOffsetTransform final : public IProcessor
 {
 private:
-    BFloat16 fractional_offset;
+    Float32 fractional_offset;
 
     UInt64 offset = 0;
     UInt64 rows_read = 0; /// including the last read block
@@ -49,7 +49,7 @@ private:
     std::deque<CacheEntity> chunks_cache;
 
 public:
-    FractionalOffsetTransform(const Block & header_, BFloat16 fractional_offset_, size_t num_streams = 1);
+    FractionalOffsetTransform(const Block & header_, Float32 fractional_offset_, size_t num_streams = 1);
 
     String getName() const override { return "FractionalOffset"; }
 

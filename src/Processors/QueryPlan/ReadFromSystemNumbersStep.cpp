@@ -408,7 +408,7 @@ std::optional<size_t> getLimitFromQueryInfo(const SelectQueryInfo & query_info, 
 
     auto [limit, _, offset, fractional_offset] = InterpreterSelectQuery::getLimitLengthAndOffset(query_info.query->as<ASTSelectQuery &>(), context);
 
-    if (!shouldPushdownLimit(query_info, limit) || fractional_offset)
+    if (!shouldPushdownLimit(query_info, limit) || fractional_offset > 0) 
         return {};
 
     return limit + offset;

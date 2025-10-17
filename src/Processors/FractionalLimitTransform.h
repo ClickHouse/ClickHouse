@@ -8,7 +8,6 @@
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
 #include <Processors/RowsBeforeStepCounter.h>
-#include <base/BFloat16.h>
 #include <base/types.h>
 
 namespace DB
@@ -26,8 +25,8 @@ namespace DB
 class FractionalLimitTransform final : public IProcessor
 {
 private:
-    BFloat16 limit_fraction;
-    BFloat16 offset_fraction;
+    Float32 limit_fraction;
+    Float32 offset_fraction;
 
     // real LIMIT and OFFSET values to use after (data_rows_cnt * fraction) evaluation.
     UInt64 offset = 0;
@@ -69,8 +68,8 @@ private:
 public:
     FractionalLimitTransform(
         SharedHeader header_, 
-        BFloat16 limit_fraction_, 
-        BFloat16 offset_fraction_, 
+        Float32 limit_fraction_, 
+        Float32 offset_fraction_, 
         UInt64 offset_ = 0,
         size_t num_streams = 1,
         bool with_ties_ = false,
