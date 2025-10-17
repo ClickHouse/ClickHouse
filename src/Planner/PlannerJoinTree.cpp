@@ -63,6 +63,7 @@
 
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/HashJoin/HashJoin.h>
@@ -634,29 +635,36 @@ std::optional<FilterDAGInfo> buildAdditionalFiltersIfNeeded(const StoragePtr & s
 
 UInt64 mainQueryNodeBlockSizeByLimit(const SelectQueryInfo & select_query_info)
 {
+    // Since we support negative limit, query node field could potentially be Int64 implying negative value.
+    // So, we have to handle to separately
     auto const & main_query_node = select_query_info.query_tree->as<QueryNode const &>();
 
     /// Constness of limit and offset is validated during query analysis stage
     UInt64 limit_length = 0;
     if (main_query_node.hasLimit())
     {
-        Field limit_value = main_query_node.getLimit()->as<ConstantNode &>().getValue();
-        Field converted_value_uint = convertFieldToType(limit_value, DataTypeUInt64());
-        if (!converted_value_uint.isNull()) 
-        {
-            limit_length = converted_value_uint.safeGet<UInt64>();
-        }
+        const auto & field = main_query_node.getLimit()->as<ConstantNode &>().getValue();
+
+        const bool is_uint64 = !convertFieldToType(field, DataTypeUInt64()).isNull();
+
+        // Negative LIMIT, skip optimization
+        if (!is_uint64)
+            return 0;
+
+        limit_length = field.safeGet<UInt64>();
     }
 
     UInt64 limit_offset = 0;
     if (main_query_node.hasOffset())
     {
-        Field offset_value = main_query_node.getOffset()->as<ConstantNode &>().getValue();
-        Field converted_value_uint = convertFieldToType(offset_value, DataTypeUInt64());
-        if (!converted_value_uint.isNull()) 
-        {
-            limit_offset = converted_value_uint.safeGet<UInt64>();
-        }
+        const auto & field = main_query_node.getOffset()->as<ConstantNode &>().getValue();
+        const bool is_uint64 = !convertFieldToType(field, DataTypeUInt64()).isNull();
+
+        // Negative OFFSET, skip optimization
+        if (!is_uint64)
+            return 0;
+
+        limit_offset = field.safeGet<UInt64>();
     }
 
     /** If not specified DISTINCT, WHERE, GROUP BY, HAVING, ORDER BY, JOIN, LIMIT BY, LIMIT WITH TIES
@@ -1091,7 +1099,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             // check if left one is not subquery
                             return left_table_expr->getNodeType() != QueryTreeNodeType::QUERY
                                 && left_table_expr->getNodeType() != QueryTreeNodeType::UNION
-                                && left_table_expr->getNodeType() != QueryTreeNodeType::JOIN;
+                                && left_table_expr->getNodeType() != QueryTreeNodeType::JOIN
+                                && left_table_expr->getNodeType() != QueryTreeNodeType::ARRAY_JOIN
+                                && left_table_expr->getNodeType() != QueryTreeNodeType::CROSS_JOIN;
                         }
 
                         if (join_kind == JoinKind::Right)
@@ -1238,7 +1248,11 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     const auto & data_header = query_plan.getCurrentHeader();
                     if (!data_header->findByName(static_cast<std::string_view>("_table")))
                     {
-                        const auto & table_name = storage->getStorageID().getTableName();
+                        String table_name;
+                        if (table_node && !(table_node->getTemporaryTableName().empty()))
+                            table_name = table_node->getTemporaryTableName();
+                        else
+                            table_name = storage->getStorageID().getTableName();
                         ColumnWithTypeAndName column;
                         column.name = "_table";
                         column.type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
@@ -1998,7 +2012,12 @@ JoinTreeQueryPlan buildQueryPlanForJoinNodeLegacy(
             auto & join_node_using_column_node = join_node_using_node->as<ColumnNode &>();
             auto & inner_columns_list = join_node_using_column_node.getExpressionOrThrow()->as<ListNode &>();
 
-            auto & left_inner_column_node = inner_columns_list.getNodes().at(0);
+            if (inner_columns_list.getNodes().size() < 2)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "JOIN USING clause expected at least two column identifiers, got: {}",
+                    join_node_using_column_node.formatASTForErrorMessage());
+
+            auto & left_inner_column_node = inner_columns_list.getNodes().front();
             auto * left_inner_column = left_inner_column_node->as<ColumnNode>();
             if (!left_inner_column)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -2006,7 +2025,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNodeLegacy(
                     left_inner_column_node->getNodeTypeName(),
                     left_inner_column_node->formatASTForErrorMessage());
 
-            auto & right_inner_column_node = inner_columns_list.getNodes().at(1);
+            auto & right_inner_column_node = inner_columns_list.getNodes().back();
             auto * right_inner_column = right_inner_column_node->as<ColumnNode>();
             if (!right_inner_column)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -2214,8 +2233,8 @@ JoinTreeQueryPlan buildQueryPlanForJoinNodeLegacy(
         {
             auto & join_using_column_node = join_using_node->as<ColumnNode &>();
             auto & using_join_columns_list = join_using_column_node.getExpressionOrThrow()->as<ListNode &>();
-            auto & using_join_left_join_column_node = using_join_columns_list.getNodes().at(0);
-            auto & using_join_right_join_column_node = using_join_columns_list.getNodes().at(1);
+            auto & using_join_left_join_column_node = using_join_columns_list.getNodes().front();
+            auto & using_join_right_join_column_node = using_join_columns_list.getNodes().back();
 
             const auto & left_column_identifier = planner_context->getColumnNodeIdentifierOrThrow(using_join_left_join_column_node);
             const auto & right_column_identifier = planner_context->getColumnNodeIdentifierOrThrow(using_join_right_join_column_node);
@@ -2611,7 +2630,8 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
             for (size_t j = i + 1; j < table_expressions_stack.size(); ++j)
             {
                 const auto & node = table_expressions_stack[j];
-                if (node->getNodeType() == QueryTreeNodeType::JOIN || node->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
+                if (node->getNodeType() == QueryTreeNodeType::JOIN || node->getNodeType() == QueryTreeNodeType::ARRAY_JOIN
+                    || node->getNodeType() == QueryTreeNodeType::CROSS_JOIN)
                 {
                     parent_join_tree = node;
                     break;
@@ -2624,7 +2644,7 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
             bool is_remote = planner_context->getTableExpressionDataOrThrow(table_expression).isRemote();
             query_plans_stack.push_back(buildQueryPlanForTableExpression(
                 table_expression,
-                join_tree_node,
+                parent_join_tree,
                 select_query_info,
                 select_query_options,
                 planner_context,

@@ -400,18 +400,21 @@ void shrinkRanges(RangesWithStep & ranges, size_t size)
     ranges.erase(ranges.begin() + (last_range_idx + 1), ranges.end());
 }
 
-/// This is idealogically wrong. We should only get it from the query plan optimization.
+/// This is ideologically wrong. We should only get it from the query plan optimization.
 std::optional<size_t> getLimitFromQueryInfo(const SelectQueryInfo & query_info, const ContextPtr & context)
 {
     if (!query_info.query)
         return {};
 
-    auto [limit, _, offset, fractional_offset] = InterpreterSelectQuery::getLimitLengthAndOffset(query_info.query->as<ASTSelectQuery &>(), context);
+    const auto lim_info = InterpreterSelectQuery::getLimitLengthAndOffset(query_info.query->as<ASTSelectQuery &>(), context);
 
-    if (!shouldPushdownLimit(query_info, limit) || fractional_offset > 0) 
+    if (lim_info.is_limit_length_negative || lim_info.fractional_offset > 0)
         return {};
 
-    return limit + offset;
+    if (!shouldPushdownLimit(query_info, lim_info.limit_length))
+        return {};
+
+    return lim_info.limit_length + lim_info.limit_offset;
 }
 
 }

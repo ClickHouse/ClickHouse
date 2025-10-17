@@ -76,7 +76,8 @@ def parse_args():
     return parser.parse_args()
 
 
-FLAKY_CHECK_REPEAT_COUNT = 50
+FLAKY_CHECK_TEST_REPEAT_COUNT = 3
+FLAKY_CHECK_MODULE_REPEAT_COUNT = 2
 
 
 def main():
@@ -89,7 +90,6 @@ def main():
     use_distributed_plan = False
     is_flaky_check = False
     is_bugfix_validation = False
-    build_type = ""
     is_parallel = False
     is_sequential = False
     workers = MAX_WORKERS
@@ -113,16 +113,18 @@ def main():
             use_distributed_plan = True
         elif to == "flaky":
             is_flaky_check = True
-            repeat_option = "--count 50 --repeat-scope=function"
+            args.count = FLAKY_CHECK_TEST_REPEAT_COUNT
         elif to == "parallel":
             is_parallel = True
         elif to == "sequential":
             is_sequential = True
+        elif "bugfix" in to.lower() or "validation" in to.lower():
+            is_bugfix_validation = True
         else:
             assert False, f"Unknown job option [{to}]"
 
     if args.count:
-        repeat_option = f"--count {args.count} --repeat-scope=function"
+        repeat_option = f"--count {args.count} --random-order"
 
     changed_test_modules = []
     if is_bugfix_validation or is_flaky_check:
@@ -154,14 +156,21 @@ def main():
         if args.path:
             clickhouse_path = args.path
         else:
-            if Path(clickhouse_path).is_file():
-                pass
-            elif Path(f"{Utils.cwd()}/build/programs/clickhouse").is_file():
-                clickhouse_path = f"{Utils.cwd()}/build/programs/clickhouse"
-            elif Path(f"{Utils.cwd()}/clickhouse").is_file():
-                clickhouse_path = f"{Utils.cwd()}/clickhouse"
+            paths_to_check = [
+                clickhouse_path,  # it's set for CI runs, but we need to check it
+                f"{Utils.cwd()}/build/programs/clickhouse",
+                f"{Utils.cwd()}/clickhouse",
+            ]
+            for path in paths_to_check:
+                if Path(path).is_file():
+                    clickhouse_path = path
+                    break
             else:
-                raise FileNotFoundError(f"Clickhouse binary not found")
+                raise FileNotFoundError(
+                    "Clickhouse binary not found in any of the paths: "
+                    + ", ".join(paths_to_check)
+                    + ". You can also specify path to binary via --path argument"
+                )
         if args.path_1:
             clickhouse_server_config_dir = args.path_1
     assert Path(
@@ -256,14 +265,20 @@ def main():
         if test_result_specific.files:
             files.extend(test_result_specific.files)
     else:
-
+        module_repeat_cnt = 1 if not is_flaky_check else FLAKY_CHECK_MODULE_REPEAT_COUNT
         if parallel_test_modules:
-            test_result_parallel = Result.from_pytest_run(
-                command=f"{' '.join(reversed(parallel_test_modules))} --report-log-exclude-logs-on-passed-tests -n {workers} --dist=loadfile --tb=short {repeat_option}",
-                cwd="./tests/integration/",
-                env=test_env,
-                pytest_report_file=f"{temp_path}/pytest_parallel.jsonl",
-            )
+            for attempt in range(module_repeat_cnt):
+                test_result_parallel = Result.from_pytest_run(
+                    command=f"{' '.join(reversed(parallel_test_modules))} --report-log-exclude-logs-on-passed-tests -n {workers} --dist=loadfile --tb=short {repeat_option}",
+                    cwd="./tests/integration/",
+                    env=test_env,
+                    pytest_report_file=f"{temp_path}/pytest_parallel.jsonl",
+                )
+                if not test_result_parallel.is_ok():
+                    print(
+                        f"Flaky check: Test run fails after attempt [{attempt+1}/{module_repeat_cnt}] - break"
+                    )
+                    break
             test_results.extend(test_result_parallel.results)
             if test_result_parallel.files:
                 files.extend(test_result_parallel.files)
@@ -277,13 +292,18 @@ def main():
             and fail_num < MAX_FAILS_BEFORE_DROP
             and not has_error
         ):
-
-            test_result_sequential = Result.from_pytest_run(
-                command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile",
-                env=test_env,
-                cwd="./tests/integration/",
-                pytest_report_file=f"{temp_path}/pytest_sequential.jsonl",
-            )
+            for attempt in range(module_repeat_cnt):
+                test_result_sequential = Result.from_pytest_run(
+                    command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile",
+                    env=test_env,
+                    cwd="./tests/integration/",
+                    pytest_report_file=f"{temp_path}/pytest_sequential.jsonl",
+                )
+                if not test_result_sequential.is_ok():
+                    print(
+                        f"Flaky check: Test run fails after attempt [{attempt+1}/{module_repeat_cnt}] - break"
+                    )
+                    break
             test_results.extend(test_result_sequential.results)
             if test_result_sequential.files:
                 files.extend(test_result_sequential.files)
@@ -297,6 +317,7 @@ def main():
     if not info.is_local_run:
         print("Dumping dmesg")
         Shell.check("dmesg -T > dmesg.log", verbose=True, strict=True)
+        files.append("dmesg.log")
         with open("dmesg.log", "rb") as dmesg:
             dmesg = dmesg.read()
             if (
@@ -317,11 +338,7 @@ def main():
                 failed_suits.append(test_result.name.split("/")[0])
         failed_suits = list(set(failed_suits))
         for failed_suit in failed_suits:
-            files.extend(
-                Shell.get_output(
-                    f"find ./tests/integration/{failed_suit} -name '*.log'"
-                ).splitlines()
-            )
+            files.append(f"tests/integration/{failed_suit}")
 
         files = [Utils.compress_files_gz(files, f"{temp_path}/logs.tar.gz")]
 
@@ -347,7 +364,7 @@ def main():
         else:
             R.set_success()
 
-    R.complete_job()
+    R.sort().complete_job()
 
 
 if __name__ == "__main__":
