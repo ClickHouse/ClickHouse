@@ -495,7 +495,6 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
     InterpreterSetQuery::applySettingsFromQuery(query, explain_query_context);
     query_context = std::move(explain_query_context);
 
-
     switch (ast.getKind())
     {
         case ASTExplainQuery::ParsedAST:
