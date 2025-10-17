@@ -19,6 +19,9 @@ void drainRequestIfNeeded(HTTPServerRequest & request, HTTPServerResponse & resp
         return;
     }
 
+    LOG_DEBUG(getLogger("sendExceptionToHTTPClient"), "Draining connection ({}, Transfer-Encoding: {}, Content-Length: {}, Keep-Alive: {})",
+              request.getVersion(), request.getTransferEncoding(), request.getContentLength(), request.getKeepAlive());
+
     /// If HTTP method is POST and Keep-Alive is turned on, we should try to read the whole request body
     /// to avoid reading part of the current request body in the next request.
     /// Or we have to close connection after this request.
@@ -37,7 +40,10 @@ void drainRequestIfNeeded(HTTPServerRequest & request, HTTPServerResponse & resp
             try
             {
                 if (!input_stream->eof())
-                    input_stream->ignoreAll();
+                {
+                    size_t ignored_bytes = input_stream->ignoreAll();
+                    LOG_DEBUG(getLogger("sendExceptionToHTTPClient"), "Drained {} bytes", ignored_bytes);
+                }
             }
             catch (...)
             {

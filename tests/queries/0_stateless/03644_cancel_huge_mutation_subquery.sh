@@ -6,7 +6,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS cancel_huge_mutation_subquery"
 $CLICKHOUSE_CLIENT -n -q "
-    CREATE TABLE cancel_huge_mutation_subquery (key Int, value String) Engine=MergeTree ORDER BY tuple();
+    CREATE TABLE cancel_huge_mutation_subquery (key Int, value String) Engine=MergeTree ORDER BY tuple() SETTINGS number_of_free_entries_in_pool_to_execute_mutation=0;
     INSERT INTO cancel_huge_mutation_subquery SELECT number, toString(number) FROM numbers(10000);"
 
 
