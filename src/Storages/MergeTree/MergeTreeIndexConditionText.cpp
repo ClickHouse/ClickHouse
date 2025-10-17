@@ -424,12 +424,20 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     {
         std::vector<String> search_tokens;
 
-        for (const auto & element : const_value.safeGet<Array>())
+        // hasAny/AllTokens funcs accept either string which will be tokenized or array of strings to be used as-is
+        if (value_data_type.isString())
         {
-            if (element.getType() != Field::Types::String)
-                return false;
+            search_tokens = stringToTokens(const_value, *token_extractor);
+        }
+        else
+        {
+            for (const auto & element : const_value.safeGet<Array>())
+            {
+                if (element.getType() != Field::Types::String)
+                    return false;
 
-            search_tokens.push_back(element.safeGet<String>());
+                search_tokens.push_back(element.safeGet<String>());
+            }
         }
 
         /// TODO(ahmadov): move this block to another place, e.g. optimizations or query tree re-write.
