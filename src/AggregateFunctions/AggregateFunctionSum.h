@@ -172,7 +172,7 @@ struct AggregateFunctionSumData
                 T mask{};
                 std::memset(&mask, flag ? 0xFF : 0x00, sizeof(T));
 
-                Impl::add(local_sum, ptr[i]);
+                Impl::add(local_sum, ptr[i] & mask);
             }
 
             Impl::add(sum, local_sum);
