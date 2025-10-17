@@ -45,13 +45,6 @@ struct AggregateFunctionWithProperties
 
     template <typename Creator>
     requires (!std::is_same_v<Creator, AggregateFunctionWithProperties>)
-    AggregateFunctionWithProperties(Creator creator_, AggregateFunctionProperties properties_ = {}, FunctionDocumentation documentation_ = {}) /// NOLINT
-        : creator(std::forward<Creator>(creator_)), properties(std::move(properties_)), documentation(std::move(documentation_))
-    {
-    }
-
-    template <typename Creator>
-    requires (!std::is_same_v<Creator, AggregateFunctionWithProperties>)
     AggregateFunctionWithProperties(Creator creator_, AggregateFunctionProperties properties_, FunctionDocumentation documentation_) /// NOLINT
         : creator(std::forward<Creator>(creator_)), properties(std::move(properties_)), documentation(std::move(documentation_))
     {
