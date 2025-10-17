@@ -140,7 +140,7 @@ bool ReadBufferFromS3::nextImpl()
             */
             impl->position() = position();
         }
-        assert(!impl->hasPendingData());
+        chassert(!impl->hasPendingData());
     }
 
     bool next_result = false;
