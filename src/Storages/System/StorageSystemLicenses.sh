@@ -10,7 +10,12 @@ echo "const char * library_licenses[] = {"
 ${ROOT_PATH}/utils/list-licenses/list-licenses.sh | while read row; do
     arr=($row)
 
-    echo "\"${arr[0]}\", \"${arr[1]}\", \"${arr[2]}\", R\"heredoc($(cat "${ROOT_PATH}/${arr[2]}"))heredoc\","
+    if ! cat "${ROOT_PATH}/${arr[2]}" 2>/dev/null; then
+        echo "Error: Failed to read license file: ${arr[*]}" >&2
+        exit 1
+    fi | {
+        echo "\"${arr[0]}\", \"${arr[1]}\", \"${arr[2]}\", R\"heredoc($(cat))heredoc\","
+    }
     echo
 done
 echo "nullptr"

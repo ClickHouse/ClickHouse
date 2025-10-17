@@ -105,7 +105,7 @@ done
 # Special care for Rust
 for dependency in $(find "${LIBS_PATH}/rust_vendor/" -name 'Cargo.toml');
 do
-    # FIXME: skip this for now, need to figure out how to handle it
+    # FIXME: some wasmtime deps, skip this for now, need to figure out how to handle it
     if [[ "$dependency" == *"ittapi"* ]]; then continue; fi
     if [[ "$dependency" == *"ring"* ]]; then continue; fi
     if [[ "$dependency" == *"ocaml-sys"* ]]; then continue; fi
@@ -168,7 +168,7 @@ do
         elif [ "$LICENSE_TYPE" == "MIT" ]
         then
             LICENSE_PATH="/utils/list-licenses/MIT.txt"
-        elif [ "$LICENSE_TYPE" == "MPL-2.0" ]
+        elif [ "$LICENSE_TYPE" == "MPL-2.0" ] ||  [ "$LICENSE_TYPE" == "MPL-2.0+" ]
         then
             LICENSE_PATH="/utils/list-licenses/MPL-2.0.txt"
         elif [ "$LICENSE_TYPE" == "BSD-3-Clause" ]
