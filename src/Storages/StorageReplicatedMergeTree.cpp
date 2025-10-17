@@ -6890,7 +6890,7 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(
             {
                 attachPartition(std::make_shared<ASTLiteral>(part_name), metadata_snapshot, true, getContext());
             }
-            catch (const DB::Exception & e)
+            catch (const Exception & e)
             {
                 if (e.code() == ErrorCodes::NO_ZOOKEEPER || e.code() == ErrorCodes::KEEPER_EXCEPTION)
                     throw;
