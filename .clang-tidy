@@ -103,6 +103,8 @@ Checks: [
   '-performance-unnecessary-value-param',
 
   '-portability-simd-intrinsics',
+  '-portability-avoid-pragma-once',
+  '-portability-template-virtual-member-function',
 
   '-readability-avoid-nested-conditional-operator',
   '-readability-avoid-unconditional-preprocessor-if',
@@ -129,6 +131,7 @@ Checks: [
   '-readability-uppercase-literal-suffix',
   '-readability-use-anyofallof',
   '-readability-math-missing-parentheses',
+  '-readability-use-concise-preprocessor-directives',
 
   '-zircon-*'
 ]
