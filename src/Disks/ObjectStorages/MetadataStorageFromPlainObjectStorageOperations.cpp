@@ -594,14 +594,14 @@ void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::execute()
 {
     if (path_map.existsLocalPath(path))
     {
+        move_tried = true;
         move_to_tmp_op->execute();
-        moved = true;
     }
 }
 
 void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::undo()
 {
-    if (moved)
+    if (move_tried)
     {
         move_to_tmp_op->undo();
     }
@@ -609,7 +609,7 @@ void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::undo()
 
 void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::finalize()
 {
-    if (!moved)
+    if (!move_tried)
         return;
 
     StoredObjects objects_to_remove;

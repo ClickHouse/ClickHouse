@@ -213,7 +213,7 @@ private:
 
     std::filesystem::path tmp_path;
     std::unique_ptr<MetadataStorageFromPlainObjectStorageMoveDirectoryOperation> move_to_tmp_op;
-    bool moved = false;
+    bool move_tried = false;
 
 public:
     MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation(
