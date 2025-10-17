@@ -105,7 +105,9 @@ void XRayInstrumentationManager::setHandlerAndPatch(ContextPtr context, const St
         if (stripped_it != functions_container.get<StrippedFunctionName>().end())
             function_id = stripped_it->function_id;
         else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown function to instrument: ({})", function_name);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown function to instrument: '{}'. XRay instruments by default only functions of at least 200 instructions. "
+                "You can change that threshold with '-fxray-instruction-threshold=1'. You can also force the instrumentation of specific functions decorating them with '[[clang::xray_always_instrument]]' "
+                "and making sure they are not decorated with '[[clang::xray_never_instrument]]'", function_name);
     }
 
     SharedLockGuard lock(shared_mutex);

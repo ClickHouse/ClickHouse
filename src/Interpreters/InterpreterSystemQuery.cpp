@@ -1754,16 +1754,17 @@ void InterpreterSystemQuery::instrumentWithXRay(bool add, ASTSystemQuery & query
     }
     catch (const DB::Exception & e)
     {
-        String id;
+        String id_str;
         if (query.instrumentation_point_id.has_value())
         {
+            String id;
             if (std::holds_alternative<bool>(query.instrumentation_point_id.value()))
                 id = "ALL";
             else
                 id = std::to_string(std::get<UInt64>(query.instrumentation_point_id.value()));
+
+            id_str = fmt::format(" and instrumentation_point_id '{}'", id);
         }
-        else
-            id = "None";
 
         String entry_type;
         if (query.instrumentation_entry_type.has_value())
@@ -1773,11 +1774,11 @@ void InterpreterSystemQuery::instrumentWithXRay(bool add, ASTSystemQuery & query
 
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Failed to instrument function '{}' with handler '{}', entry type '{}' and instrumentation_point_id '{}': {}",
+            "Failed to instrument function '{}' with handler '{}', entry type '{}'{}: {}",
             query.instrumentation_function_name,
             query.instrumentation_handler_name,
             entry_type,
-            id,
+            id_str,
             e.what());
     }
 }
