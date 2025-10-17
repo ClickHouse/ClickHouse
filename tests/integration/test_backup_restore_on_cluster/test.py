@@ -99,13 +99,13 @@ def get_path_to_backup(backup_name):
 
 
 @pytest.mark.parametrize(
-    "key_prefix_template",
+    "key_prefix_length",
     [
-        pytest.param("", id="no_key_prefix"),
-        pytest.param("[a-z]{3}", id="regex_key_prefix"),
+        pytest.param(None, id="no_prefix"),
+        pytest.param(3, id="prefix_length=3"),
     ],
 )
-def test_replicated_table(key_prefix_template):
+def test_replicated_table(key_prefix_length):
     node1.query(
         "CREATE TABLE tbl ON CLUSTER 'cluster' ("
         "x UInt8, y String"
@@ -122,7 +122,10 @@ def test_replicated_table(key_prefix_template):
     backup_name = new_backup_name()
 
     # Make backup on node 1.
-    backup_settings = {"replica_num": 1, "key_prefix_template": key_prefix_template}
+    backup_settings = (
+        {"key_prefix_length": key_prefix_length} if key_prefix_length else None
+    )
+    backup_settings = {"replica_num": 1} | (backup_settings or {})
     node1.query(
         f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} {format_settings(backup_settings)}"
     )
@@ -144,13 +147,13 @@ def test_replicated_table(key_prefix_template):
 
 
 @pytest.mark.parametrize(
-    "key_prefix_template",
+    "key_prefix_length",
     [
-        pytest.param("", id="no_key_prefix"),
-        pytest.param("[a-z]{3}", id="regex_key_prefix"),
+        pytest.param(None, id="no_prefix"),
+        pytest.param(3, id="prefix_length=3"),
     ],
 )
-def test_empty_replicated_table(key_prefix_template):
+def test_empty_replicated_table(key_prefix_length):
     node1.query(
         "CREATE TABLE tbl ON CLUSTER 'cluster' ("
         "x UInt8, y String"
@@ -161,7 +164,10 @@ def test_empty_replicated_table(key_prefix_template):
     backup_name = new_backup_name()
 
     # Make backup on node 1.
-    backup_settings = {"replica_num": 1, "key_prefix_template": key_prefix_template}
+    backup_settings = (
+        {"key_prefix_length": key_prefix_length} if key_prefix_length else None
+    )
+    backup_settings = {"replica_num": 1} | (backup_settings or {})
     node1.query(
         f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} {format_settings(backup_settings)}"
     )
@@ -178,13 +184,13 @@ def test_empty_replicated_table(key_prefix_template):
 
 
 @pytest.mark.parametrize(
-    "key_prefix_template",
+    "key_prefix_length",
     [
-        pytest.param("", id="no_key_prefix"),
-        pytest.param("[a-z]{3}", id="regex_key_prefix"),
+        pytest.param(None, id="no_prefix"),
+        pytest.param(3, id="prefix_length=3"),
     ],
 )
-def test_replicated_database(key_prefix_template):
+def test_replicated_database(key_prefix_length):
     node1.query(
         "CREATE DATABASE mydb ON CLUSTER 'cluster' ENGINE=Replicated('/clickhouse/path/','{shard}','{replica}')"
     )
@@ -210,7 +216,10 @@ def test_replicated_database(key_prefix_template):
 
     # Make backup.
     backup_name = new_backup_name()
-    backup_settings = {"replica_num": 2, "key_prefix_template": key_prefix_template}
+    backup_settings = (
+        {"key_prefix_length": key_prefix_length} if key_prefix_length else None
+    )
+    backup_settings = {"replica_num": 2} | (backup_settings or {})
     node1.query(
         f"BACKUP DATABASE mydb ON CLUSTER 'cluster' TO {backup_name} {format_settings(backup_settings)}"
     )
@@ -227,13 +236,13 @@ def test_replicated_database(key_prefix_template):
 
 
 @pytest.mark.parametrize(
-    "key_prefix_template",
+    "key_prefix_length",
     [
-        pytest.param("", id="no_key_prefix"),
-        pytest.param("[a-z]{3}", id="regex_key_prefix"),
+        pytest.param(None, id="no_prefix"),
+        pytest.param(3, id="prefix_length=3"),
     ],
 )
-def test_replicated_database_compare_parts(key_prefix_template):
+def test_replicated_database_compare_parts(key_prefix_length):
     """
     stop merges and fetches then write data to two nodes and
     compare that parts are restored from single node (second) after backup
@@ -265,7 +274,10 @@ def test_replicated_database_compare_parts(key_prefix_template):
 
     # Make backup.
     backup_name = new_backup_name()
-    backup_settings = {"replica_num": 2, "key_prefix_template": key_prefix_template}
+    backup_settings = (
+        {"key_prefix_length": key_prefix_length} if key_prefix_length else None
+    )
+    backup_settings = {"replica_num": 2} | (backup_settings or {})
     node1.query(
         f"BACKUP DATABASE mydb ON CLUSTER 'cluster' TO {backup_name} {format_settings(backup_settings)}"
     )
@@ -289,13 +301,13 @@ def test_replicated_database_compare_parts(key_prefix_template):
 
 
 @pytest.mark.parametrize(
-    "key_prefix_template",
+    "key_prefix_length",
     [
-        pytest.param("", id="no_key_prefix"),
-        pytest.param("[a-z]{3}", id="regex_key_prefix"),
+        pytest.param(None, id="no_prefix"),
+        pytest.param(3, id="prefix_length=3"),
     ],
 )
-def test_different_tables_on_nodes(key_prefix_template):
+def test_different_tables_on_nodes(key_prefix_length):
     node1.query(
         "CREATE TABLE tbl (`x` UInt8, `y` String) ENGINE = MergeTree ORDER BY x"
     )
@@ -307,7 +319,9 @@ def test_different_tables_on_nodes(key_prefix_template):
     node2.query("INSERT INTO tbl VALUES (-333), (-222), (-111), (0), (111)")
 
     backup_name = new_backup_name()
-    backup_settings = {"key_prefix_template": key_prefix_template}
+    backup_settings = (
+        {"key_prefix_length": key_prefix_length} if key_prefix_length else None
+    )
     node1.query(
         f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} {format_settings(backup_settings)}"
     )
@@ -323,13 +337,13 @@ def test_different_tables_on_nodes(key_prefix_template):
 
 
 @pytest.mark.parametrize(
-    "key_prefix_template",
+    "key_prefix_length",
     [
-        pytest.param("", id="no_key_prefix"),
-        pytest.param("[a-z]{3}", id="regex_key_prefix"),
+        pytest.param(None, id="no_prefix"),
+        pytest.param(3, id="prefix_length=3"),
     ],
 )
-def test_backup_restore_on_single_replica(key_prefix_template):
+def test_backup_restore_on_single_replica(key_prefix_length):
     node1.query(
         "CREATE DATABASE mydb ON CLUSTER 'cluster' ENGINE=Replicated('/clickhouse/path/','{shard}','{replica}')"
     )
@@ -340,7 +354,9 @@ def test_backup_restore_on_single_replica(key_prefix_template):
     node1.query("INSERT INTO mydb.test VALUES ('ghi', 3)")
 
     backup_name = new_backup_name()
-    backup_settings = {"key_prefix_template": key_prefix_template}
+    backup_settings = (
+        {"key_prefix_length": key_prefix_length} if key_prefix_length else None
+    )
     node1.query(
         f"BACKUP DATABASE mydb TO {backup_name} {format_settings(backup_settings)}"
     )
@@ -376,13 +392,13 @@ def test_backup_restore_on_single_replica(key_prefix_template):
 
 
 @pytest.mark.parametrize(
-    "key_prefix_template",
+    "key_prefix_length",
     [
-        pytest.param("", id="no_key_prefix"),
-        pytest.param("[a-z]{3}", id="regex_key_prefix"),
+        pytest.param(None, id="no_prefix"),
+        pytest.param(3, id="prefix_length=3"),
     ],
 )
-def test_table_with_parts_in_queue_considered_non_empty(key_prefix_template):
+def test_table_with_parts_in_queue_considered_non_empty(key_prefix_length):
     node1.query(
         "CREATE DATABASE mydb ON CLUSTER 'cluster' ENGINE=Replicated('/clickhouse/path/','{shard}','{replica}')"
     )
@@ -392,7 +408,9 @@ def test_table_with_parts_in_queue_considered_non_empty(key_prefix_template):
     node1.query("INSERT INTO mydb.test SELECT number AS x FROM numbers(10000000)")
 
     backup_name = new_backup_name()
-    backup_settings = {"key_prefix_template": key_prefix_template}
+    backup_settings = (
+        {"key_prefix_length": key_prefix_length} if key_prefix_length else None
+    )
     node1.query(
         f"BACKUP DATABASE mydb TO {backup_name} {format_settings(backup_settings)}"
     )
@@ -407,13 +425,13 @@ def test_table_with_parts_in_queue_considered_non_empty(key_prefix_template):
 
 
 @pytest.mark.parametrize(
-    "key_prefix_template",
+    "key_prefix_length",
     [
-        pytest.param("", id="no_key_prefix"),
-        pytest.param("[a-z]{3}", id="regex_key_prefix"),
+        pytest.param(None, id="no_prefix"),
+        pytest.param(3, id="prefix_length=3"),
     ],
 )
-def test_replicated_table_with_uuid_in_zkpath(key_prefix_template):
+def test_replicated_table_with_uuid_in_zkpath(key_prefix_length):
     node1.query(
         "CREATE TABLE tbl ON CLUSTER 'cluster' ("
         "x UInt8, y String"
@@ -425,7 +443,9 @@ def test_replicated_table_with_uuid_in_zkpath(key_prefix_template):
     node2.query("INSERT INTO tbl VALUES (2, 'BB')")
 
     backup_name = new_backup_name()
-    backup_settings = {"key_prefix_template": key_prefix_template}
+    backup_settings = (
+        {"key_prefix_length": key_prefix_length} if key_prefix_length else None
+    )
     node1.query(
         f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} {format_settings(backup_settings)}"
     )
@@ -448,13 +468,13 @@ def test_replicated_table_with_uuid_in_zkpath(key_prefix_template):
 
 
 @pytest.mark.parametrize(
-    "key_prefix_template",
+    "key_prefix_length",
     [
-        pytest.param("", id="no_key_prefix"),
-        pytest.param("[a-z]{3}", id="regex_key_prefix"),
+        pytest.param(None, id="no_prefix"),
+        pytest.param(3, id="prefix_length=3"),
     ],
 )
-def test_replicated_table_with_not_synced_insert(key_prefix_template):
+def test_replicated_table_with_not_synced_insert(key_prefix_length):
     node1.query(
         "CREATE TABLE tbl ON CLUSTER 'cluster' ("
         "x UInt32"
@@ -472,7 +492,9 @@ def test_replicated_table_with_not_synced_insert(key_prefix_template):
     node2.query("INSERT INTO tbl VALUES (444)")
 
     backup_name = new_backup_name()
-    backup_settings = {"key_prefix_template": key_prefix_template}
+    backup_settings = (
+        {"key_prefix_length": key_prefix_length} if key_prefix_length else None
+    )
     node1.query(
         f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} {format_settings(backup_settings)}"
     )
@@ -487,13 +509,13 @@ def test_replicated_table_with_not_synced_insert(key_prefix_template):
 
 
 @pytest.mark.parametrize(
-    "key_prefix_template",
+    "key_prefix_length",
     [
-        pytest.param("", id="no_key_prefix"),
-        pytest.param("[a-z]{3}", id="regex_key_prefix"),
+        pytest.param(None, id="no_prefix"),
+        pytest.param(3, id="prefix_length=3"),
     ],
 )
-def test_replicated_table_with_not_synced_merge(key_prefix_template):
+def test_replicated_table_with_not_synced_merge(key_prefix_length):
     node1.query(
         "CREATE TABLE tbl ON CLUSTER 'cluster' ("
         "x UInt32"
@@ -512,8 +534,12 @@ def test_replicated_table_with_not_synced_merge(key_prefix_template):
     node2.query("OPTIMIZE TABLE tbl FINAL")
 
     backup_name = new_backup_name()
-    backup_settings = {"key_prefix_template": key_prefix_template}
-    node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} {format_settings(backup_settings)}")
+    backup_settings = (
+        {"key_prefix_length": key_prefix_length} if key_prefix_length else None
+    )
+    node1.query(
+        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} {format_settings(backup_settings)}"
+    )
 
     node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
@@ -525,13 +551,13 @@ def test_replicated_table_with_not_synced_merge(key_prefix_template):
 
 
 @pytest.mark.parametrize(
-    "key_prefix_template",
+    "key_prefix_length",
     [
-        pytest.param("", id="no_key_prefix"),
-        pytest.param("[a-z]{3}", id="regex_key_prefix"),
+        pytest.param(None, id="no_prefix"),
+        pytest.param(3, id="prefix_length=3"),
     ],
 )
-def test_replicated_table_restored_into_bigger_cluster(key_prefix_template):
+def test_replicated_table_restored_into_bigger_cluster(key_prefix_length):
     node1.query(
         "CREATE TABLE tbl ON CLUSTER 'cluster' ("
         "x UInt32"
@@ -543,8 +569,12 @@ def test_replicated_table_restored_into_bigger_cluster(key_prefix_template):
     node2.query("INSERT INTO tbl VALUES (222)")
 
     backup_name = new_backup_name()
-    backup_settings = {"key_prefix_template": key_prefix_template}
-    node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} {format_settings(backup_settings)}")
+    backup_settings = (
+        {"key_prefix_length": key_prefix_length} if key_prefix_length else None
+    )
+    node1.query(
+        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} {format_settings(backup_settings)}"
+    )
 
     node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
@@ -934,13 +964,13 @@ def test_system_functions():
 
 
 @pytest.mark.parametrize(
-    "key_prefix_template",
+    "key_prefix_length",
     [
-        pytest.param("", id="no_key_prefix"),
-        pytest.param("[a-z]{3}", id="regex_key_prefix"),
+        pytest.param(None, id="no_prefix"),
+        pytest.param(3, id="prefix_length=3"),
     ],
 )
-def test_projection(key_prefix_template):
+def test_projection(key_prefix_length):
     node1.query(
         "CREATE TABLE tbl ON CLUSTER 'cluster' (x UInt32, y String) ENGINE=ReplicatedMergeTree('/clickhouse/tables/tbl/', '{replica}') "
         "ORDER BY y PARTITION BY x%10"
@@ -958,7 +988,9 @@ def test_projection(key_prefix_template):
     )
 
     backup_name = new_backup_name()
-    backup_settings = {"key_prefix_template": key_prefix_template}
+    backup_settings = (
+        {"key_prefix_length": key_prefix_length} if key_prefix_length else None
+    )
     node1.query(
         f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} {format_settings(backup_settings)}"
     )
@@ -1165,13 +1197,13 @@ def has_mutation_in_backup(
 
 
 @pytest.mark.parametrize(
-    "key_prefix_template",
+    "key_prefix_length",
     [
-        pytest.param("", id="no_key_prefix"),
-        pytest.param("[a-z]{3}", id="regex_key_prefix"),
+        pytest.param(None, id="no_prefix"),
+        pytest.param(3, id="prefix_length=3"),
     ],
 )
-def test_mutation(key_prefix_template):
+def test_mutation(key_prefix_length):
     node1.query(
         "CREATE TABLE tbl ON CLUSTER 'cluster' ("
         "x UInt8, y String"
@@ -1190,13 +1222,18 @@ def test_mutation(key_prefix_template):
     node1.query("ALTER TABLE tbl UPDATE x=x+1+sleep(3) WHERE 1")
 
     backup_name = new_backup_name()
-    backup_settings = {"key_prefix_template": key_prefix_template}
+    backup_settings = (
+        {"key_prefix_length": key_prefix_length} if key_prefix_length else None
+    )
     node1.query(
         f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} {format_settings(backup_settings)}"
     )
+    list_backup(backup_name)
+    # assert False
 
     # mutation #0000000000: "UPDATE x=x+1 WHERE 1" could already finish before starting the backup
     # mutation #0000000001: "UPDATE x=x+1+sleep(3) WHERE 1"
+    key_prefix_template = f"[a-z]{{{key_prefix_length}}}" if key_prefix_length else ""
     assert has_mutation_in_backup(
         "0000000001",
         backup_name,
