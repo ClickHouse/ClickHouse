@@ -35,9 +35,9 @@ public:
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
-    bool requestReadingInOrder(InputOrderInfoPtr order_info_, const StorageInMemoryMetadata & metadata) const;
+    bool requestReadingInOrder(InputOrderInfoPtr order_info_, const KeyDescription & sorting_key) const;
 
-    InputOrderInfoPtr getInputOrder(const StorageInMemoryMetadata & metadata) const;
+    InputOrderInfoPtr getInputOrder(const KeyDescription & sorting_key) const;
 
 private:
     ObjectStoragePtr object_storage;

@@ -164,14 +164,14 @@ static InputOrderInfoPtr convertSortingKeyToInputOrder(const KeyDescription & ke
     return std::make_shared<const InputOrderInfo>(sort_description_for_merging, sort_description_for_merging.size(), 1, 0);
 }
 
-bool ReadFromObjectStorageStep::requestReadingInOrder(InputOrderInfoPtr order_info_, const StorageInMemoryMetadata & metadata) const
+bool ReadFromObjectStorageStep::requestReadingInOrder(InputOrderInfoPtr order_info_, const KeyDescription & sorting_key) const
 {
-    return isPrefixInputOrder(order_info_, getInputOrder(metadata));
+    return isPrefixInputOrder(order_info_, getInputOrder(sorting_key));
 }
 
-InputOrderInfoPtr ReadFromObjectStorageStep::getInputOrder(const StorageInMemoryMetadata & metadata) const
+InputOrderInfoPtr ReadFromObjectStorageStep::getInputOrder(const KeyDescription & sorting_key) const
 {
-    return convertSortingKeyToInputOrder(metadata.getSortingKey());
+    return convertSortingKeyToInputOrder(sorting_key);
 }
 
 }
