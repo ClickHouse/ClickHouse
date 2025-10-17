@@ -697,6 +697,12 @@ BlockIO InterpreterSystemQuery::execute()
                 asynchronous_metrics->update(std::chrono::system_clock::now(), /*force_update*/ true);
             break;
         }
+        case Type::RECONNECT_ZOOKEEPER:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_RECONNECT_ZOOKEEPER);
+            system_context->reconnectZooKeeper("triggered via SYSTEM RECONNECT ZOOKEEPER command");
+            break;
+        }
         case Type::STOP_MERGES:
             startStopAction(ActionLocks::PartsMerge, false);
             break;
@@ -1102,7 +1108,7 @@ void InterpreterSystemQuery::restartReplicas(ContextMutablePtr system_context)
 
     for (auto & elem : catalog.getDatabases())
     {
-        if (!elem.second->canContainMergeTreeTables())
+        if (elem.second->isExternal())
             continue;
 
         if (!access_is_granted_globally && !show_tables_is_granted_globally && !access->isGranted(AccessType::SHOW_TABLES, elem.first))
@@ -1897,6 +1903,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::RELOAD_ASYNCHRONOUS_METRICS:
         {
             required_access.emplace_back(AccessType::SYSTEM_RELOAD_ASYNCHRONOUS_METRICS);
+            break;
+        }
+        case Type::RECONNECT_ZOOKEEPER:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_RECONNECT_ZOOKEEPER);
             break;
         }
         case Type::STOP_MERGES:

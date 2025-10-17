@@ -5350,18 +5350,6 @@ class ClickHouseInstance:
         if version_parts[0].isdigit() and version_parts[1].isdigit():
             version = {"major": int(version_parts[0]), "minor": int(version_parts[1])}
 
-        # async replication is only supported in version 23.9+
-        # for tags that don't specify a version we assume it has a version of ClickHouse
-        # that supports async replication if a test for it is present
-        if not self.with_dolor and (
-            version == None
-            or version["major"] > 23
-            or (version["major"] == 23 and version["minor"] >= 9)
-        ):
-            write_embedded_config(
-                "0_common_enable_keeper_async_replication.xml", self.config_d_dir
-            )
-
         logging.debug("Generate and write macros file")
         macros = self.macros.copy()
         macros["instance"] = self.name

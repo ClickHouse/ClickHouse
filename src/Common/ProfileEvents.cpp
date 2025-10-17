@@ -1003,6 +1003,7 @@ The server successfully detected this situation and will download merged part fr
     M(DistrCacheServerCachedReadBufferCacheWrittenBytes, "Distributed Cache server event. The number of bytes written to cache in distributed cache while reading from filesystem cache", ValueType::Number) \
     M(DistrCacheServerCachedReadBufferCacheReadBytes, "Distributed Cache server event. The number of bytes read from cache in distributed cache while reading from filesystem cache", ValueType::Number) \
     M(DistrCacheServerCachedReadBufferObjectStorageReadBytes, "Distributed Cache server event. The number of bytes read from object storage in distributed cache while reading from filesystem cache", ValueType::Number) \
+    M(DistrCacheServerSkipped, "Distributed Cache server event. The number of times distributed cache server was skipped because of previous failed connection attempts", ValueType::Number) \
     \
     M(LogTest, "Number of log messages with level Test", ValueType::Number) \
     M(LogTrace, "Number of log messages with level Trace", ValueType::Number) \
@@ -1054,6 +1055,10 @@ The server successfully detected this situation and will download merged part fr
     M(SharedMergeTreeCondemnedPartsKillRequest, "How many ZooKeeper requests were used to remove condemned parts", ValueType::Number) \
     M(SharedMergeTreeCondemnedPartsLockConfict, "How many times we failed to acquite lock because of conflict", ValueType::Number) \
     M(SharedMergeTreeCondemnedPartsRemoved, "How many condemned parts were removed", ValueType::Number) \
+    M(SharedMergeTreePartsKillerRuns, "How many times parts killer has been running", ValueType::Number) \
+    M(SharedMergeTreePartsKillerMicroseconds, "How much time does parts killer main thread takes", ValueType::Microseconds) \
+    M(SharedMergeTreePartsKillerParts, "How many parts has been scheduled by the killer", ValueType::Number) \
+    M(SharedMergeTreePartsKillerPartsMicroseconds, "How many time does it take to remove parts (executed from multiple threads)", ValueType::Microseconds) \
     M(SharedMergeTreeMergeSelectingTaskMicroseconds, "Merge selecting task microseconds for SMT", ValueType::Number) \
     M(SharedMergeTreeOptimizeAsync, "Asynchronous OPTIMIZE queries executed", ValueType::Number) \
     M(SharedMergeTreeOptimizeSync, "Synchronous OPTIMIZE queries executed", ValueType::Number) \

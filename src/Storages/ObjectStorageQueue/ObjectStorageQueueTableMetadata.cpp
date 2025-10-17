@@ -63,7 +63,7 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(
     const ColumnsDescription & columns_,
     const std::string & format_)
     : format_name(format_)
-    , columns(columns_.toString())
+    , columns(columns_.toString(true))
     , mode(engine_settings[ObjectStorageQueueSetting::mode].toString())
     , last_processed_path(engine_settings[ObjectStorageQueueSetting::last_processed_path])
     , after_processing_move_uri(engine_settings[ObjectStorageQueueSetting::after_processing_move_uri])
