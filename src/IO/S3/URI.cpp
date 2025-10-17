@@ -55,7 +55,6 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
         uri_str = uri_;
 
     uri = Poco::URI(uri_str);
-    String original_uri_str = uri_str;  // Save original for later use
 
     std::unordered_map<std::string, std::string> mapper;
     auto context = Context::getGlobalContextInstance();
