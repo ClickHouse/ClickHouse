@@ -32,6 +32,7 @@ Checks: [
   '-bugprone-crtp-constructor-accessibility',
   '-bugprone-not-null-terminated-result',
   '-bugprone-forward-declaration-namespace',
+  '-bugprone-nondeterministic-pointer-iteration-order',
 
   '-cert-dcl16-c',
   '-cert-err58-cpp',
