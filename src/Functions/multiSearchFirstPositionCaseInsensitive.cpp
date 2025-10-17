@@ -29,7 +29,7 @@ Like [multiSearchFirstPosition](#multiSearchFirstPosition) but ignores case.
         {"haystack", "String in which the search is performed.", {"String"}},
         {"needle", "Array of substrings to be searched.", {"Array(String)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Leftmost offset in a `haystack` string which matches any of multiple `needle` strings. Returns `0`, if there was no match.", {"UInt64"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the leftmost offset in a `haystack` string which matches any of multiple `needle` strings. Returns `0`, if there was no match.", {"UInt64"}};
     FunctionDocumentation::Examples examples = {
     {
         "Case insensitive first position",

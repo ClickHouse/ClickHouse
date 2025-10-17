@@ -30,7 +30,7 @@ Like [multiSearchAny](#multiSearchAny) but assumes `haystack` and the `needle` s
     FunctionDocumentation::ReturnedValue returned_value = {"Returns `1`, if there was at least one match, otherwise `0`, if there was not at least one match.", {"UInt8"}};
     FunctionDocumentation::Examples examples = {
     {
-        "Given '你好，世界' ('Hello world') as a UTF-8 string, check if there are any 你 or 界 characters in the string",
+        "Given '你好，世界' ('Hello, world') as a UTF-8 string, check if there are any 你 or 界 characters in the string",
         "SELECT multiSearchAnyUTF8('你好，世界', ['你', '界'])",
         R"(
 ┌─multiSearchA⋯你', '界'])─┐

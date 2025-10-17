@@ -29,15 +29,15 @@ Like [multiSearchFirstPosition](#multiSearchFirstPosition) but assumes `haystack
         {"haystack", "UTF-8 string in which the search is performed.", {"String"}},
         {"needle", "Array of UTF-8 substrings to be searched.", {"Array(String)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Leftmost offset in a `haystack` string which matches any of multiple `needle` strings, ignoring case. Returns `0`, if there was no match.", {"UInt64"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the leftmost offset in a `haystack` string which matches any of multiple `needle` strings, ignoring case. Returns `0`, if there was no match.", {"UInt64"}};
     FunctionDocumentation::Examples examples = {
     {
         "Find the leftmost offset in UTF-8 string 'Здравствуй, мир' ('Hello, world') which matches any of the given needles",
-        "SELECT multiSearchFirstPositionCaseInsensitiveUTF8('Здравствуй, мир',['мир', 'вст', 'Здра'])",
+        "SELECT multiSearchFirstPositionCaseInsensitiveUTF8('Здравствуй, мир', ['МИР', 'вст', 'Здра'])",
         R"(
 ┌─multiSearchFirstPositionCaseInsensitiveUTF8('Здравствуй, мир', ['мир', 'вст', 'Здра'])─┐
-│                                                                                       3 │
-└─────────────────────────────────────────────────────────────────────────────────────────┘
+│                                                                                      3 │
+└────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
