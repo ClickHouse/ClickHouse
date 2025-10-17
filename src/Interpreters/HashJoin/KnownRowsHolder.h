@@ -19,7 +19,7 @@ template<>
 class KnownRowsHolder<true>
 {
 public:
-    using Type = PairNoInit<const Columns *, DB::RowRef::SizeT>;
+    using Type = std::pair<const Columns *, DB::RowRef::SizeT>;
 
 private:
     static const size_t MAX_LINEAR = 16; // threshold to switch from Array to Set
@@ -105,7 +105,7 @@ void addFoundRowAll(
 
         for (auto it = mapped.begin(); it.ok(); ++it)
         {
-            if (!known_rows.isKnown(makePairNoInit(it->columns, it->row_num)))
+            if (!known_rows.isKnown(std::make_pair(it->columns, it->row_num)))
             {
                 added.appendFromBlock(*it, false);
                 ++current_offset;
