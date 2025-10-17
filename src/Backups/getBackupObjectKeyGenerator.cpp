@@ -4,7 +4,7 @@
 #include <Common/SipHash.h>
 
 #include <filesystem>
-#include <stddef.h>
+#include <cstddef>
 
 namespace fs = std::filesystem;
 
@@ -22,7 +22,7 @@ extern const int ARGUMENT_OUT_OF_BOUND;
 
 namespace
 {
-static constexpr size_t DEFAULT_BACKUP_PREFIX_LENGTH = 0;
+constexpr size_t DEFAULT_BACKUP_PREFIX_LENGTH = 0;
 
 class BackupKeysGenerator : public DB::IObjectStorageKeysGenerator
 {
