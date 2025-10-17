@@ -32,12 +32,12 @@ Like [multiSearchAnyUTF8](#multiSearchAnyUTF8) but ignores case.
     FunctionDocumentation::ReturnedValue returned_value = {"Returns `1`, if there was at least one case-insensitive match, otherwise `0`, if there was not at least one case-insensitive match.", {"UInt8"}};
     FunctionDocumentation::Examples examples = {
     {
-        "Case insensitive UTF-8 search",
-        "SELECT multiSearchAnyCaseInsensitiveUTF8('\\x43\\x6c\\x69\\x63\\x6b\\x48\\x6f\\x75\\x73\\x65',['\\x68'])",
+        "Given a UTF-8 string 'Здравствуйте', check if character 'з' (lowercase) is present",
+        "SELECT multiSearchAnyCaseInsensitiveUTF8('Здравствуйте',['з'])",
         R"(
-┌─multiSearchAnyCaseInsensitiveUTF8('ClickHouse', ['h'])─┐
-│                                                      1 │
-└────────────────────────────────────────────────────────┘
+┌─multiSearchA⋯те', ['з'])─┐
+│                        1 │
+└──────────────────────────┘
         )"
     }
     };

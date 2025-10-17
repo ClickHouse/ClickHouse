@@ -15,7 +15,7 @@ Accepts 3 parameters:
 -- name of the column of the dictionary or tuple of column names;
 -- key value - expression returning dictionary key-type value or tuple-type value - depending on the dictionary configuration;
 
-Returned value: value of the dictionary attribute parsed in the {} if key is found, otherwise <null_value> element specified in the dictionary configuration.
+Returned value: value of the dictionary attribute parsed in the {} if key is found, otherwise `<null_value>` element specified in the dictionary configuration.
 
 Throws an exception if cannot parse the value of the attribute or the value does not match the attribute data type.
 )" };

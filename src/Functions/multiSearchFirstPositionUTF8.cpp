@@ -32,12 +32,12 @@ Like [multiSearchFirstPosition](#multiSearchFirstPosition) but assumes `haystack
     FunctionDocumentation::ReturnedValue returned_value = {"Leftmost offset in a `haystack` string which matches any of multiple `needle` strings. Returns `0`, if there was no match.", {"UInt64"}};
     FunctionDocumentation::Examples examples = {
     {
-        "Find the leftmost offset in UTF-8 string 'Hello World' which matches any of the given needles",
-        "SELECT multiSearchFirstPositionUTF8('\\x68\\x65\\x6c\\x6c\\x6f\\x20\\x77\\x6f\\x72\\x6c\\x64',['wor', 'ld', 'ello'])",
+        "Find the leftmost offset in UTF-8 string 'Здравствуй, мир' ('Hello, world') which matches any of the given needles",
+        "SELECT multiSearchFirstPositionUTF8('Здравствуй, мир',['мир', 'вст', 'авст'])",
         R"(
-┌─multiSearchFirstPositionUTF8('hello world', ['wor', 'ld', 'ello'])─┐
-│                                                                  2 │
-└────────────────────────────────────────────────────────────────────┘
+┌─multiSearchFirstPositionUTF8('Здравствуй, мир', ['мир', 'вст', 'авст'])─┐
+│                                                                       3 │
+└─────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
