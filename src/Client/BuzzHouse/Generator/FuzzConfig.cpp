@@ -432,6 +432,10 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
             min_string_length,
             max_string_length);
     }
+    if (max_columns == 0)
+    {
+        throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "max_columns must be at least 1");
+    }
     for (const auto & entry : std::views::values(metrics))
     {
         measure_performance |= entry.enabled;

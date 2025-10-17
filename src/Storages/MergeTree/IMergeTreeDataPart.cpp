@@ -2476,6 +2476,14 @@ ColumnSize IMergeTreeDataPart::getColumnSize(const String & column_name) const
     return ColumnSize{};
 }
 
+IMergeTreeDataPart::ColumnSizeByName IMergeTreeDataPart::getColumnSizes() const
+{
+    std::unique_lock lock(columns_and_secondary_indices_sizes_mutex);
+    if (!are_columns_and_secondary_indices_sizes_calculated && areChecksumsLoaded())
+        calculateColumnsAndSecondaryIndicesSizesOnDisk();
+    return columns_sizes;
+}
+
 ColumnSize IMergeTreeDataPart::getTotalColumnsSize() const
 {
     std::unique_lock lock(columns_and_secondary_indices_sizes_mutex);

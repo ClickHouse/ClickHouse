@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 
-import pyarrow as pa
-import pyarrow.flight as fl
 import argparse
 import base64
 import json
+
+import pyarrow as pa
+import pyarrow.flight as fl
 
 
 class FlightServer(fl.FlightServerBase):

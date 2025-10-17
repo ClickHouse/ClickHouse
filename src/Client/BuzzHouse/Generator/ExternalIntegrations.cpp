@@ -83,19 +83,27 @@ void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, Cr
                     }
                     else
                     {
-                        sv.set_value(rg.pickRandomly(chs.oracle_values));
+                        const String ovalue = sv.value();
+                        String nvalue = rg.pickRandomly(chs.oracle_values);
+
+                        for (uint32_t j = 0; j < 4 && ovalue == nvalue; j++)
+                        {
+                            /// Pick another value until they are different
+                            nvalue = rg.pickRandomly(chs.oracle_values);
+                        }
+                        sv.set_value(nvalue);
                     }
                 }
             }
         }
     }
+    if (te.has_partition_by() && rg.nextSmallNumber() < 5)
+    {
+        /// Remove partition by
+        te.clear_partition_by();
+    }
     if (teng >= TableEngineValues::MergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree)
     {
-        if (te.has_partition_by() && rg.nextSmallNumber() < 5)
-        {
-            /// Remove partition by
-            te.clear_partition_by();
-        }
         if (te.has_primary_key() && te.has_order() && rg.nextSmallNumber() < 5)
         {
             /// Remove primary key or order by clause
@@ -194,6 +202,7 @@ void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, Cr
     }
     if (newt.has_cluster() && rg.nextSmallNumber() < 4)
     {
+        /// Remove cluster
         newt.clear_cluster();
     }
     else if (!fc.clusters.empty() && rg.nextSmallNumber() < 4)
@@ -225,7 +234,7 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
             newd.set_if_not_exists(true);
             deng->set_engine(t.db->deng);
             t.db->setName(newd.mutable_database());
-            t.db->finishDatabaseSpecification(deng);
+            t.db->finishDatabaseSpecification(deng, t.db->nparams > 0);
             CreateDatabaseToString(buf, newd);
             res &= !performQuery(buf + ";");
         }
@@ -355,7 +364,7 @@ String MySQLIntegration::truncateStatement()
 bool MySQLIntegration::optimizeTableForOracle(const PeerTableDatabase pt, const SQLTable & t)
 {
     chassert(t.hasDatabasePeer());
-    if (is_clickhouse)
+    if (is_clickhouse && t.isMergeTreeFamily())
     {
         /// Sometimes the optimize step doesn't have to do anything, then throws error. Ignore it
         const auto u = performQueryOnServerOrRemote(pt, fmt::format("ALTER TABLE {} APPLY DELETED MASK;", getTableName(t.db, t.tname)));
@@ -699,7 +708,7 @@ String PostgreSQLIntegration::columnTypeAsString(RandomGenerator & rg, const boo
         if (rg.nextSmallNumber() < 3)
         {
             /// Generate array type
-            const uint32_t ndimensions = rg.nextMediumNumber() < 81 ? 1 : (rg.nextMediumNumber() % 4) + 1;
+            const uint32_t ndimensions = rg.nextMediumNumber() < 81 ? 1 : rg.randomInt<uint32_t>(1, 4);
 
             for (uint32_t i = 0; i < ndimensions; i++)
             {
@@ -838,9 +847,9 @@ std::unique_ptr<SQLiteIntegration> SQLiteIntegration::testAndAddSQLiteIntegratio
 void RedisIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTable &, TableEngine * te)
 {
     te->add_params()->set_svalue(sc.server_hostname + ":" + std::to_string(sc.port));
-    te->add_params()->set_num(rg.nextBool() ? 0 : rg.nextLargeNumber() % 16);
+    te->add_params()->set_num(rg.nextBool() ? 0 : rg.randomInt<uint32_t>(0, 15));
     te->add_params()->set_svalue(sc.password);
-    te->add_params()->set_num(rg.nextBool() ? 16 : rg.nextLargeNumber() % 33);
+    te->add_params()->set_num(rg.nextBool() ? 16 : rg.randomInt<uint32_t>(0, 33));
 }
 
 bool RedisIntegration::performTableIntegration(RandomGenerator &, SQLTable &, const bool, std::vector<ColumnPathChain> &)

@@ -289,7 +289,7 @@ void optimizeDirectReadFromTextIndex(const Stack & stack, QueryPlan::Nodes & /*n
     auto logger = getLogger("optimizeDirectReadFromTextIndex");
     LOG_DEBUG(logger, "{}", optimizationInfoToString(added_columns, removed_columns));
 
-    read_from_merge_tree_step->replaceColumnsForTextSearch(added_columns, removed_columns);
+    read_from_merge_tree_step->createReadTasksForTextIndex(indexes->skip_indexes, added_columns, removed_columns);
 
     bool removes_filter_column = filter_step->removesFilterColumn();
 
