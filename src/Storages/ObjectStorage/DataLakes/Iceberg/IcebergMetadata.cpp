@@ -863,7 +863,7 @@ StorageInMemoryMetadata IcebergMetadata::getStorageSnapshotMetadata(ContextPtr l
     result.setColumns(
         ColumnsDescription{*persistent_components.schema_processor->getClickhouseTableSchemaById(actual_table_state_snapshot.schema_id)});
     result.setDataLakeTableState(actual_table_state_snapshot);
-    result.sorting_key = getSortingKey();
+    result.sorting_key = getSortingKey(local_context, actual_table_state_snapshot);
     return result;
 }
 
@@ -1052,17 +1052,12 @@ ColumnMapperPtr IcebergMetadata::getColumnMapperForCurrentSchema(StorageMetadata
     return persistent_components.schema_processor->getColumnMapperById(iceberg_table_state->schema_id);
 }
 
-KeyDescription IcebergMetadata::getSortingKey() const
+KeyDescription IcebergMetadata::getSortingKey(ContextPtr local_context, TableStateSnapshot actual_table_state_snapshot) const
 {
-    auto local_context = CurrentThread::getQueryContext();
-    auto configuration_ptr = getConfiguration();
-
-    auto [actual_data_snapshot, actual_table_state_snapshot] = getRelevantState(local_context);
-
     auto metadata_object = getMetadataJSONObject(
         actual_table_state_snapshot.metadata_file_path,
         object_storage,
-        configuration_ptr,
+        getConfiguration(),
         persistent_components.metadata_cache,
         local_context,
         log,

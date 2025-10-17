@@ -357,7 +357,6 @@ public:
         ready_object_storage = disk->getObjectStorage();
     }
 
-
 private:
     DataLakeMetadataPtr current_metadata;
     LoggerPtr log = getLogger("DataLakeConfiguration");

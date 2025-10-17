@@ -30,14 +30,17 @@ public:
 
     std::string getName() const override { return STEP_NAME; }
 
+    StorageMetadataPtr getStorageMetadata() const { return storage_snapshot->metadata; }
+
+
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
     void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
-    bool requestReadingInOrder(InputOrderInfoPtr order_info_, const KeyDescription & sorting_key) const;
+    bool requestReadingInOrder(InputOrderInfoPtr order_info_) const;
 
-    InputOrderInfoPtr getInputOrder(const KeyDescription & sorting_key) const;
+    InputOrderInfoPtr getInputOrder() const;
 
 private:
     ObjectStoragePtr object_storage;

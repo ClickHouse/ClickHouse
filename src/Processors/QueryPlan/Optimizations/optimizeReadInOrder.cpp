@@ -94,7 +94,7 @@ ISourceStep * checkSupportedReadingStep(IQueryPlanStep * step, bool allow_existi
             return nullptr;
         }
 
-        const auto & sorting_key = reading->getStorageSnapshot()->metadata->getSortingKey();
+        const auto & sorting_key = reading->getStorageMetadata()->getSortingKey();
         if (sorting_key.column_names.empty())
         {
             return nullptr;
@@ -838,7 +838,7 @@ SortingInputOrder buildInputOrderFromSortDescription(
     const SortDescription & description,
     size_t limit)
 {
-    const auto & sorting_key = reading->getStorageSnapshot()->metadata->getSortingKey();
+    const auto & sorting_key = reading->getStorageMetadata()->getSortingKey();
     const auto & pk_column_names = sorting_key.column_names;
 
     return buildInputOrderFromSortDescription(
@@ -905,6 +905,21 @@ InputOrder buildInputOrderFromUnorderedKeys(
 }
 
 InputOrder buildInputOrderFromUnorderedKeys(
+    ReadFromObjectStorageStep * reading,
+    const FixedColumns & fixed_columns,
+    const std::optional<ActionsDAG> & dag,
+    const Names & unordered_keys)
+{
+    const auto & sorting_key = reading->getStorageMetadata()->getSortingKey();
+    const auto & sorting_key_columns = sorting_key.column_names;
+
+    return buildInputOrderFromUnorderedKeys(
+        fixed_columns,
+        dag, unordered_keys,
+        sorting_key.expression->getActionsDAG(), sorting_key_columns);
+}
+
+InputOrder buildInputOrderFromUnorderedKeys(
     ReadFromMerge * merge,
     const FixedColumns & fixed_columns,
     const std::optional<ActionsDAG> & dag,
@@ -938,22 +953,6 @@ InputOrder buildInputOrderFromUnorderedKeys(
 
     return order_info;
 }
-
-InputOrder buildInputOrderFromUnorderedKeys(
-    ReadFromObjectStorageStep * object_storage_step,
-    const FixedColumns & fixed_columns,
-    const std::optional<ActionsDAG> & dag,
-    const Names & unordered_keys)
-{
-    const auto & sorting_key = object_storage_step->getStorageSnapshot()->metadata->getSortingKey();
-    const auto & sorting_key_columns = sorting_key.column_names;
-
-    return buildInputOrderFromUnorderedKeys(
-        fixed_columns,
-        dag, unordered_keys,
-        sorting_key.expression->getActionsDAG(), sorting_key_columns);
-}
-
 
 InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtual_row, QueryPlan::Node & node)
 {
@@ -1022,7 +1021,7 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtua
 
         if (order_info.input_order)
         {
-            bool can_read = object_storage_step->requestReadingInOrder(order_info.input_order, object_storage_step->getStorageSnapshot()->metadata->getSortingKey());
+            bool can_read = object_storage_step->requestReadingInOrder(order_info.input_order);
             if (!can_read)
             {
                 return nullptr;
@@ -1096,7 +1095,7 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
 
         if (order_info.input_order)
         {
-            bool can_read = object_storage_step->requestReadingInOrder(order_info.input_order, object_storage_step->getStorageSnapshot()->metadata->getSortingKey());
+            bool can_read = object_storage_step->requestReadingInOrder(order_info.input_order);
             if (!can_read)
                 return {};
         }
@@ -1197,10 +1196,10 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node)
             fixed_columns,
             dag, keys);
 
-        if (!canImproveOrderForDistinct(order_info, object_storage_step->getInputOrder(object_storage_step->getStorageSnapshot()->metadata->getSortingKey())))
+        if (!canImproveOrderForDistinct(order_info, object_storage_step->getInputOrder()))
             return {};
 
-        if (!object_storage_step->requestReadingInOrder(order_info.input_order, object_storage_step->getStorageSnapshot()->metadata->getSortingKey()))
+        if (!object_storage_step->requestReadingInOrder(order_info.input_order))
             return {};
 
         return order_info;

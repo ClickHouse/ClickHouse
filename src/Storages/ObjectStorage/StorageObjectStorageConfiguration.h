@@ -15,7 +15,6 @@
 #include <Storages/IStorage.h>
 #include <Common/Exception.h>
 #include <Storages/StorageFactory.h>
-#include <Storages/SelectQueryInfo.h>
 
 namespace DB
 {

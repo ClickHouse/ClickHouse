@@ -73,7 +73,7 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
     ContextMutablePtr context_copy = Context::createCopy(args.getContext());
     Settings settings_copy = args.getLocalContext()->getSettingsCopy();
     context_copy->setSettings(settings_copy);
-    auto storage = std::make_shared<StorageObjectStorage>(
+    return std::make_shared<StorageObjectStorage>(
         configuration,
         // We only want to perform write actions (e.g. create a container in Azure) when the table is being created,
         // and we want to avoid it when we load the table after a server restart.
@@ -90,7 +90,6 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         /* is_datalake_query*/ false,
         /* distributed_processing */ false,
         partition_by);
-    return storage;
 }
 
 #endif
