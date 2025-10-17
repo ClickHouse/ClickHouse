@@ -43,11 +43,17 @@ using FunctionCutToFirstSignificantSubdomainCustomWithWWWRFC = FunctionCutToFirs
 REGISTER_FUNCTION(CutToFirstSignificantSubdomainCustom)
 {
     FunctionDocumentation::Description cutToFirstSignificantSubdomainCustom_description = R"(
-Returns the part of the domain that includes top-level subdomains up to the first significant subdomain. 
-Accepts a custom TLD list name from the configuration.
+Returns the part of the domain that includes top-level subdomains up to the first significant subdomain. Accepts custom [TLD list](https://en.wikipedia.org/wiki/List_of_Internet_top-level_domains) name. This function can be useful if you need a fresh TLD list or if you have a custom list.
 
-This function allows you to specify a custom public suffix list, which can be useful if you need a fresh TLD list 
-or have custom domain requirements. The TLD list must be configured in the ClickHouse configuration file.
+**Configuration example**
+
+```yaml
+<!-- <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> -->
+<top_level_domains_lists>
+    <!-- https://publicsuffix.org/list/public_suffix_list.dat -->
+    <public_suffix_list>public_suffix_list.dat</public_suffix_list>
+    <!-- NOTE: path is under top_level_domains_path -->
+</top_level_domains_lists>
     )";
     FunctionDocumentation::Syntax cutToFirstSignificantSubdomainCustom_syntax = "cutToFirstSignificantSubdomainCustom(url, tld_list_name)";
     FunctionDocumentation::Arguments cutToFirstSignificantSubdomainCustom_arguments = {
@@ -55,7 +61,7 @@ or have custom domain requirements. The TLD list must be configured in the Click
         {"tld_list_name", "Name of the custom TLD list configured in ClickHouse."}
     };
     FunctionDocumentation::ReturnedValue cutToFirstSignificantSubdomainCustom_returned_value = {
-        "Returns the part of the domain from the first significant subdomain up to the top-level domain, without 'www.', using the specified custom TLD list.", 
+        "Returns the part of the domain that includes top-level subdomains up to the first significant subdomain.", 
         {"String"}
     };
     FunctionDocumentation::Examples cutToFirstSignificantSubdomainCustom_examples = {
@@ -71,11 +77,17 @@ or have custom domain requirements. The TLD list must be configured in the Click
     factory.registerFunction<FunctionCutToFirstSignificantSubdomainCustom>(cutToFirstSignificantSubdomainCustom_documentation);
 
     FunctionDocumentation::Description cutToFirstSignificantSubdomainCustomWithWWW_description = R"(
-Returns the part of the domain that includes top-level subdomains up to the first significant subdomain, without stripping 'www.'. 
-Accepts a custom TLD list name from the configuration.
+Returns the part of the domain that includes top-level subdomains up to the first significant subdomain without stripping 'www'. Accepts custom TLD list name. It can be useful if you need a fresh TLD list or if you have a custom list.
 
-Similar to [`cutToFirstSignificantSubdomainCustom`](#cutToFirstSignificantSubdomainCustom) but preserves the 'www.' prefix if present. This function allows you to 
-specify a custom public suffix list, which can be useful if you need a fresh TLD list or have custom domain requirements.
+**Configuration example**
+
+```yaml
+<!-- <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> -->
+<top_level_domains_lists>
+    <!-- https://publicsuffix.org/list/public_suffix_list.dat -->
+    <public_suffix_list>public_suffix_list.dat</public_suffix_list>
+    <!-- NOTE: path is under top_level_domains_path -->
+</top_level_domains_lists>
     )";
     FunctionDocumentation::Syntax cutToFirstSignificantSubdomainCustomWithWWW_syntax = "cutToFirstSignificantSubdomainCustomWithWWW(url, tld_list_name)";
     FunctionDocumentation::Arguments cutToFirstSignificantSubdomainCustomWithWWW_arguments = {
@@ -83,14 +95,20 @@ specify a custom public suffix list, which can be useful if you need a fresh TLD
         {"tld_list_name", "Name of the custom TLD list configured in ClickHouse."}
     };
     FunctionDocumentation::ReturnedValue cutToFirstSignificantSubdomainCustomWithWWW_returned_value = {
-        "Returns the part of the domain from the first significant subdomain up to the top-level domain, preserving 'www.', using the specified custom TLD list.", 
+        "Part of the domain that includes top-level subdomains up to the first significant subdomain without stripping 'www'.", 
         {"String"}
     };
     FunctionDocumentation::Examples cutToFirstSignificantSubdomainCustomWithWWW_examples = {
     {
-        "Preserving www with custom TLD list", 
-        "SELECT cutToFirstSignificantSubdomainCustomWithWWW('www.foo', 'public_suffix_list')", 
-        "www.foo"
+        "Usage example", 
+        R"(
+SELECT cutToFirstSignificantSubdomainCustomWithWWW('www.foo', 'public_suffix_list');        
+        )", 
+        R"(
+┌─cutToFirstSignificantSubdomainCustomWithWWW('www.foo', 'public_suffix_list')─┐
+│ www.foo                                                                      │
+└──────────────────────────────────────────────────────────────────────────────┘        
+        )"
     }
     };
     FunctionDocumentation::IntroducedIn cutToFirstSignificantSubdomainCustomWithWWW_introduced_in = {21, 1};
@@ -100,25 +118,40 @@ specify a custom public suffix list, which can be useful if you need a fresh TLD
     factory.registerFunction<FunctionCutToFirstSignificantSubdomainCustomWithWWW>(cutToFirstSignificantSubdomainCustomWithWWW_documentation);
 
     FunctionDocumentation::Description cutToFirstSignificantSubdomainCustomRFC_description = R"(
-Similar to [`cutToFirstSignificantSubdomainCustom`](#cutToFirstSignificantSubdomainCustom) but follows stricter rules to be compatible with [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986).
+Returns the part of the domain that includes top-level subdomains up to the first significant subdomain.
+Accepts custom [TLD list](https://en.wikipedia.org/wiki/List_of_Internet_top-level_domains) name.
+This function can be useful if you need a fresh TLD list or if you have a custom list.
+Similar to [cutToFirstSignificantSubdomainCustom](#cuttofirstsignificantsubdomaincustom) but conforms to RFC 3986.
 
-This variant performs more thorough URL parsing according to RFC 3986 standards with a custom TLD list, 
-which may result in lower performance compared to the standard version but provides more accurate handling of edge cases.
-    )";
+**Configuration example**
+
+```xml
+<!-- <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> -->
+<top_level_domains_lists>
+    <!-- https://publicsuffix.org/list/public_suffix_list.dat -->
+    <public_suffix_list>public_suffix_list.dat</public_suffix_list>
+    <!-- NOTE: path is under top_level_domains_path -->
+</top_level_domains_lists>
     FunctionDocumentation::Syntax cutToFirstSignificantSubdomainCustomRFC_syntax = "cutToFirstSignificantSubdomainCustomRFC(url, tld_list_name)";
     FunctionDocumentation::Arguments cutToFirstSignificantSubdomainCustomRFC_arguments = {
         {"url", "URL or domain string to process according to RFC 3986."},
         {"tld_list_name", "Name of the custom TLD list configured in ClickHouse."}
     };
     FunctionDocumentation::ReturnedValue cutToFirstSignificantSubdomainCustomRFC_returned_value = {
-        "Returns the part of the domain from the first significant subdomain up to the top-level domain, without 'www.', using the specified custom TLD list and following RFC 3986.", 
+        "Returns the part of the domain that includes top-level subdomains up to the first significant subdomain.", 
         {"String"}
     };
     FunctionDocumentation::Examples cutToFirstSignificantSubdomainCustomRFC_examples = {
     {
-        "RFC 3986 parsing with custom TLD list", 
-        "SELECT cutToFirstSignificantSubdomainCustomRFC('https://subdomain.example.custom', 'public_suffix_list')", 
-        "example.custom"
+        "Usage example", 
+        R"(
+SELECT cutToFirstSignificantSubdomainCustomRFC('www.foo', 'public_suffix_list');        
+        )"
+        R"(
+┌─cutToFirstSignificantSubdomainCustomRFC('www.foo', 'public_suffix_list')─┐
+│ www.foo                                                                      │
+└──────────────────────────────────────────────────────────────────────────────┘        
+        )"
     }
     };
     FunctionDocumentation::IntroducedIn cutToFirstSignificantSubdomainCustomRFC_introduced_in = {22, 10};
@@ -128,11 +161,20 @@ which may result in lower performance compared to the standard version but provi
     factory.registerFunction<FunctionCutToFirstSignificantSubdomainCustomRFC>(cutToFirstSignificantSubdomainCustomRFC_documentation);
 
     FunctionDocumentation::Description cutToFirstSignificantSubdomainCustomWithWWWRFC_description = R"(
-Similar to [`cutToFirstSignificantSubdomainCustomWithWWW`](#cutToFirstSignificantSubdomainCustomWithWWW) but follows stricter rules to be compatible with [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986).
+Returns the part of the domain that includes top-level subdomains up to the first significant subdomain without stripping `www`.
+Accepts custom TLD list name.
+It can be useful if you need a fresh TLD list or if you have a custom list.
+Similar to [cutToFirstSignificantSubdomainCustomWithWWW](#cutToFirstSignificantSubdomainCustomWithWWW) but conforms to [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986).
 
-This variant performs more thorough URL parsing according to RFC 3986 standards with a custom TLD list, 
-while preserving the 'www.' prefix, which may result in lower performance compared to the standard version 
-but provides more accurate handling of edge cases.
+**Configuration example**
+
+```xml
+<!-- <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> -->
+<top_level_domains_lists>
+    <!-- https://publicsuffix.org/list/public_suffix_list.dat -->
+    <public_suffix_list>public_suffix_list.dat</public_suffix_list>
+    <!-- NOTE: path is under top_level_domains_path -->
+</top_level_domains_lists>
     )";
     FunctionDocumentation::Syntax cutToFirstSignificantSubdomainCustomWithWWWRFC_syntax = "cutToFirstSignificantSubdomainCustomWithWWWRFC(url, tld_list_name)";
     FunctionDocumentation::Arguments cutToFirstSignificantSubdomainCustomWithWWWRFC_arguments = {
@@ -140,7 +182,7 @@ but provides more accurate handling of edge cases.
         {"tld_list_name", "Name of the custom TLD list configured in ClickHouse."}
     };
     FunctionDocumentation::ReturnedValue cutToFirstSignificantSubdomainCustomWithWWWRFC_returned_value = {
-        "Returns the part of the domain from the first significant subdomain up to the top-level domain, preserving 'www.', using the specified custom TLD list and following RFC 3986.", 
+        "Returns the part of the domain that includes top-level subdomains up to the first significant subdomain without stripping `www`.", 
         {"String"}
     };
     FunctionDocumentation::Examples cutToFirstSignificantSubdomainCustomWithWWWRFC_examples = {

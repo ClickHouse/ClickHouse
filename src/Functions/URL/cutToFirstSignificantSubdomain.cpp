@@ -44,37 +44,31 @@ using FunctionCutToFirstSignificantSubdomainWithWWWRFC = FunctionStringToString<
 REGISTER_FUNCTION(CutToFirstSignificantSubdomain)
 {
     FunctionDocumentation::Description cutToFirstSignificantSubdomain_description = R"(
-Returns the part of the domain that includes top-level subdomains up to the "first significant subdomain".
+Returns the part of the domain that includes top-level subdomains up to the [first significant subdomain](/sql-reference/functions/url-functions#firstSignificantSubdomain).
 
-The first significant subdomain is the subdomain one level higher than the public suffix. 
-For example, the first significant subdomain of 'news.clickhouse.com' is 'clickhouse', 
-because 'com' is the public suffix.
-
-The function strips 'www.' if present.
     )";
     FunctionDocumentation::Syntax cutToFirstSignificantSubdomain_syntax = "cutToFirstSignificantSubdomain(url)";
     FunctionDocumentation::Arguments cutToFirstSignificantSubdomain_arguments = {
         {"url", "URL or domain string to process.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue cutToFirstSignificantSubdomain_returned_value = {
-        "Returns the part of the domain from the first significant subdomain up to the top-level domain, without 'www.'", 
+        "Returns the part of the domain that includes top-level subdomains up to the first significant subdomain if possible, otherwise returns an empty string.", 
         {"String"}
     };
     FunctionDocumentation::Examples cutToFirstSignificantSubdomain_examples = {
     {
-        "Strips www and returns first significant subdomain", 
-        "SELECT cutToFirstSignificantSubdomain('https://www.news.bbc.co.uk/')", 
-        "bbc.co.uk"
-    },
-    {
-        "Extracts first significant subdomain from nested subdomains", 
-        "SELECT cutToFirstSignificantSubdomain('https://docs.clickhouse.com/')", 
-        "clickhouse.com"
-    },
-    {
-        "Returns simple domain as is", 
-        "SELECT cutToFirstSignificantSubdomain('example.org')", 
-        "example.org"
+        "Usage example"
+        R"(
+SELECT
+    cutToFirstSignificantSubdomain('https://news.clickhouse.com.tr/'),
+    cutToFirstSignificantSubdomain('www.tr'),
+    cutToFirstSignificantSubdomain('tr');        
+        )",
+        R"(
+┌─cutToFirstSignificantSubdomain('https://news.clickhouse.com.tr/')─┬─cutToFirstSignificantSubdomain('www.tr')─┬─cutToFirstSignificantSubdomain('tr')─┐
+│ clickhouse.com.tr                                                 │ tr                                       │                                      │
+└───────────────────────────────────────────────────────────────────┴──────────────────────────────────────────┴──────────────────────────────────────┘        
+        )"
     }
     };
     FunctionDocumentation::IntroducedIn cutToFirstSignificantSubdomain_introduced_in = {1, 1};
@@ -93,24 +87,23 @@ Similar to [`cutToFirstSignificantSubdomain`](#cutToFirstSignificantSubdomain) b
         {"url", "URL or domain string to process.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue cutToFirstSignificantSubdomainWithWWW_returned_value = {
-        "Returns the part of the domain from the first significant subdomain up to the top-level domain, preserving 'www.'", 
+        "Returns the part of the domain that includes top-level subdomains up to the first significant subdomain (with www) if possible, otherwise returns an empty string.", 
         {"String"}
     };
     FunctionDocumentation::Examples cutToFirstSignificantSubdomainWithWWW_examples = {
     {
-        "Preserves www prefix when present", 
-        "SELECT cutToFirstSignificantSubdomainWithWWW('https://www.news.bbc.co.uk/')", 
-        "www.bbc.co.uk"
-    },
-    {
-        "Returns domain without www when not present", 
-        "SELECT cutToFirstSignificantSubdomainWithWWW('https://docs.github.com/')", 
-        "github.com"
-    },
-    {
-        "Handles simple www domains", 
-        "SELECT cutToFirstSignificantSubdomainWithWWW('www.example.org')", 
-        "www.example.org"
+         "Usage example",
+         R"(
+SELECT
+    cutToFirstSignificantSubdomainWithWWW('https://news.clickhouse.com.tr/'),
+    cutToFirstSignificantSubdomainWithWWW('www.tr'),
+    cutToFirstSignificantSubdomainWithWWW('tr');         
+         )",
+         R"(
+┌─cutToFirstSignificantSubdomainWithWWW('https://news.clickhouse.com.tr/')─┬─cutToFirstSignificantSubdomainWithWWW('www.tr')─┬─cutToFirstSignificantSubdomainWithWWW('tr')─┐
+│ clickhouse.com.tr                                                        │ www.tr                                          │                                             │
+└──────────────────────────────────────────────────────────────────────────┴─────────────────────────────────────────────────┴─────────────────────────────────────────────┘         
+         )"
     }
     };
     FunctionDocumentation::IntroducedIn cutToFirstSignificantSubdomainWithWWW_introduced_in = {20, 12};
@@ -120,34 +113,29 @@ Similar to [`cutToFirstSignificantSubdomain`](#cutToFirstSignificantSubdomain) b
     factory.registerFunction<FunctionCutToFirstSignificantSubdomainWithWWW>(cutToFirstSignificantSubdomainWithWWW_documentation);
 
     FunctionDocumentation::Description cutToFirstSignificantSubdomainRFC_description = R"(
-Similar to [`cutToFirstSignificantSubdomain`](#cutToFirstSignificantSubdomain) but follows stricter rules to be compatible with [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986).
-
-This variant performs more thorough URL parsing according to RFC 3986 standards, which may result in lower performance 
-compared to the standard version but provides more accurate handling of edge cases.
+Returns the part of the domain that includes top-level subdomains up to the ["first significant subdomain"](/sql-reference/functions/url-functions#firstSignificantSubdomain). Similar to [`cutToFirstSignificantSubdomain`](#cutToFirstSignificantSubdomain) but conforms to [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986).
     )";
     FunctionDocumentation::Syntax cutToFirstSignificantSubdomainRFC_syntax = "cutToFirstSignificantSubdomainRFC(url)";
     FunctionDocumentation::Arguments cutToFirstSignificantSubdomainRFC_arguments = {
         {"url", "URL or domain string to process according to RFC 3986.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue cutToFirstSignificantSubdomainRFC_returned_value = {
-        "Returns the part of the domain from the first significant subdomain up to the top-level domain, without 'www.', following RFC 3986.", 
+        "Returns the part of the domain that includes top-level subdomains up to the first significant subdomain if possible, otherwise returns an empty string.", 
         {"String"}
     };
     FunctionDocumentation::Examples cutToFirstSignificantSubdomainRFC_examples = {
     {
-        "Strips www prefix using RFC 3986 parsing", 
-        "SELECT cutToFirstSignificantSubdomainRFC('https://www.news.bbc.co.uk/')", 
-        "bbc.co.uk"
-    },
-    {
-        "Handles subdomains without www", 
-        "SELECT cutToFirstSignificantSubdomainRFC('https://docs.github.com/')", 
-        "github.com"
-    },
-    {   
-        "Processes simple domains", 
-        "SELECT cutToFirstSignificantSubdomainRFC('example.org')", 
-        "example.org"
+        "Usage example",
+        R"(
+SELECT
+    cutToFirstSignificantSubdomain('http://user:password@example.com:8080'),
+    cutToFirstSignificantSubdomainRFC('http://user:password@example.com:8080');        
+        )",
+        R"(
+┌─cutToFirstSignificantSubdomain('http://user:password@example.com:8080')─┬─cutToFirstSignificantSubdomainRFC('http://user:password@example.com:8080')─┐
+│                                                                         │ example.com                                                                │
+└─────────────────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────────────────────┘        
+        )"
     }
     };
     FunctionDocumentation::IntroducedIn cutToFirstSignificantSubdomainRFC_introduced_in = {22, 10};
@@ -157,34 +145,29 @@ compared to the standard version but provides more accurate handling of edge cas
     factory.registerFunction<FunctionCutToFirstSignificantSubdomainRFC>(cutToFirstSignificantSubdomainRFC_documentation);
 
     FunctionDocumentation::Description cutToFirstSignificantSubdomainWithWWWRFC_description = R"(
-Similar to [`cutToFirstSignificantSubdomainWithWWW`](#cutToFirstSignificantSubdomainWithWWW) but follows stricter rules to be compatible with [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986).
-
-This variant performs more thorough URL parsing according to RFC 3986 standards, which may result in lower performance 
-compared to the standard version but provides more accurate handling of edge cases, while preserving the 'www.' prefix.
+Returns the part of the domain that includes top-level subdomains up to the "first significant subdomain", without stripping 'www'. Similar to [`cutToFirstSignificantSubdomainWithWWW`](#cutToFirstSignificantSubdomainWithWWW) but conforms to [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986).
     )";
     FunctionDocumentation::Syntax cutToFirstSignificantSubdomainWithWWWRFC_syntax = "cutToFirstSignificantSubdomainWithWWWRFC(url)";
     FunctionDocumentation::Arguments cutToFirstSignificantSubdomainWithWWWRFC_arguments = {
          {"url", "URL or domain string to process according to RFC 3986."}
     };
     FunctionDocumentation::ReturnedValue cutToFirstSignificantSubdomainWithWWWRFC_returned_value = {
-        "Returns the part of the domain from the first significant subdomain up to the top-level domain, preserving 'www.', following RFC 3986.", 
+        "Returns the part of the domain that includes top-level subdomains up to the first significant subdomain (with "www") if possible, otherwise returns an empty string", 
         {"String"}
     };
     FunctionDocumentation::Examples cutToFirstSignificantSubdomainWithWWWRFC_examples = {
     {
-        "Preserves www prefix with RFC 3986 parsing", 
-        "SELECT cutToFirstSignificantSubdomainWithWWWRFC('https://www.news.bbc.co.uk/')", 
-        "www.bbc.co.uk"
-    },
-    {
-        "Returns domain without www using strict parsing", 
-        "SELECT cutToFirstSignificantSubdomainWithWWWRFC('https://docs.github.com/')", 
-        "github.com"
-    },
-    {
-        "Handles www domains with RFC compliance", 
-        "SELECT cutToFirstSignificantSubdomainWithWWWRFC('www.example.org')", 
-        "www.example.org"
+        "Usage example",
+        R"(
+SELECT
+    cutToFirstSignificantSubdomainWithWWW('http:%2F%2Fwwwww.nova@mail.ru/economicheskiy'),
+    cutToFirstSignificantSubdomainWithWWWRFC('http:%2F%2Fwwwww.nova@mail.ru/economicheskiy');        
+        )",
+        R"(
+┌─cutToFirstSignificantSubdomainWithWWW('http:%2F%2Fwwwww.nova@mail.ru/economicheskiy')─┬─cutToFirstSignificantSubdomainWithWWWRFC('http:%2F%2Fwwwww.nova@mail.ru/economicheskiy')─┐
+│                                                                                       │ mail.ru                                                                                  │
+└───────────────────────────────────────────────────────────────────────────────────────┴──────────────────────────────────────────────────────────────────────────────────────────┘        
+        )"
     }
     };
     FunctionDocumentation::IntroducedIn cutToFirstSignificantSubdomainWithWWWRFC_introduced_in = {22, 10};
