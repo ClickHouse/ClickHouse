@@ -486,7 +486,14 @@ def test_replicated_table_with_not_synced_insert(key_prefix_template):
     assert node2.query("SELECT * FROM tbl ORDER BY x") == TSV([111, 222, 333, 444])
 
 
-def test_replicated_table_with_not_synced_merge():
+@pytest.mark.parametrize(
+    "key_prefix_template",
+    [
+        pytest.param("", id="no_key_prefix"),
+        pytest.param("[a-z]{3}", id="regex_key_prefix"),
+    ],
+)
+def test_replicated_table_with_not_synced_merge(key_prefix_template):
     node1.query(
         "CREATE TABLE tbl ON CLUSTER 'cluster' ("
         "x UInt32"
@@ -505,7 +512,8 @@ def test_replicated_table_with_not_synced_merge():
     node2.query("OPTIMIZE TABLE tbl FINAL")
 
     backup_name = new_backup_name()
-    node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
+    backup_settings = {"key_prefix_template": key_prefix_template}
+    node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} {format_settings(backup_settings)}")
 
     node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
@@ -516,7 +524,14 @@ def test_replicated_table_with_not_synced_merge():
     assert node2.query("SELECT * FROM tbl ORDER BY x") == TSV([111, 222])
 
 
-def test_replicated_table_restored_into_bigger_cluster():
+@pytest.mark.parametrize(
+    "key_prefix_template",
+    [
+        pytest.param("", id="no_key_prefix"),
+        pytest.param("[a-z]{3}", id="regex_key_prefix"),
+    ],
+)
+def test_replicated_table_restored_into_bigger_cluster(key_prefix_template):
     node1.query(
         "CREATE TABLE tbl ON CLUSTER 'cluster' ("
         "x UInt32"
@@ -528,7 +543,8 @@ def test_replicated_table_restored_into_bigger_cluster():
     node2.query("INSERT INTO tbl VALUES (222)")
 
     backup_name = new_backup_name()
-    node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
+    backup_settings = {"key_prefix_template": key_prefix_template}
+    node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} {format_settings(backup_settings)}")
 
     node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
