@@ -46,6 +46,10 @@ jobs:
       - name: Run
         id: run
         run: |
+          echo job.check_run_id  ${{ job.check_run_id }}
+          set
+          exit 1
+
           echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
