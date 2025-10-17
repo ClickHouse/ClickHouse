@@ -334,6 +334,7 @@ public:
         size_t size = 0;
         readVarUInt(size, buf);
 
+        FormatSettings format_settings;
         std::function<void(size_t, Array &)> deserialize;
         switch (*version)
         {
@@ -341,7 +342,7 @@ public:
             {
                 deserialize = [&](size_t col_idx, Array & values)
                 {
-                    values_serializations[col_idx]->deserializeBinary(values[col_idx], buf, {});
+                    values_serializations[col_idx]->deserializeBinary(values[col_idx], buf, format_settings);
                 };
                 break;
             }
@@ -350,7 +351,7 @@ public:
                 deserialize = [&](size_t col_idx, Array & values)
                 {
                     Field & value = values[col_idx];
-                    promoted_values_serializations[col_idx]->deserializeBinary(value, buf, {});
+                    promoted_values_serializations[col_idx]->deserializeBinary(value, buf, format_settings);
 
                     /// Compatibility with previous versions.
                     if (value.getType() == Field::Types::Decimal128)
@@ -376,7 +377,7 @@ public:
         for (size_t i = 0; i < size; ++i)
         {
             Field key;
-            keys_serialization->deserializeBinary(key, buf, {});
+            keys_serialization->deserializeBinary(key, buf, format_settings);
 
             Array values;
             values.resize(values_types.size());
@@ -554,13 +555,13 @@ public:
         // and use the other type with the same numerical value for keepKey verification.
         if (key.getType() == Field::Types::UInt64)
         {
-            const auto & value = key.safeGet<const UInt64 &>();
+            const auto & value = key.safeGet<UInt64>();
             if (value <= std::numeric_limits<Int64>::max())
                 return keys_to_keep.contains(Field(Int64(value)));
         }
         else if (key.getType() == Field::Types::Int64)
         {
-            const auto & value = key.safeGet<const Int64 &>();
+            const auto & value = key.safeGet<Int64>();
             if (value >= 0)
                 return keys_to_keep.contains(Field(UInt64(value)));
         }

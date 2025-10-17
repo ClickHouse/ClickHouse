@@ -4,6 +4,7 @@
 #include <Poco/Logger.h>
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperStateMachine.h>
+#include <Coordination/KeeperStorage.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/Exception.h>
@@ -46,9 +47,9 @@ void dumpMachine(std::shared_ptr<KeeperStateMachine<DB::KeeperMemoryStorage>> ma
         for (const auto & child : value.getChildren())
         {
             if (key == "/")
-                keys.push(key + child.toString());
+                keys.push(key + std::string{child});
             else
-                keys.push(key + "/" + child.toString());
+                keys.push(key + "/" + std::string{child});
         }
     }
     std::cout << std::flush;

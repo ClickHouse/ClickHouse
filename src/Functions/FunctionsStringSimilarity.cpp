@@ -1,9 +1,9 @@
-#include <Functions/FunctionsStringSimilarity.h>
+#include <base/MemorySanitizer.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsHashing.h>
+#include <Functions/FunctionsStringSimilarity.h>
 #include <Common/HashTable/ClearableHashMap.h>
 #include <Common/HashTable/Hash.h>
-#include <Common/MemorySanitizer.h>
 #include <Common/UTF8Helpers.h>
 
 #include <Core/Defines.h>
@@ -26,7 +26,7 @@
 #endif
 
 #if (defined(__PPC64__) || defined(__powerpc64__)) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-#include "vec_crc32.h"
+#include <vec_crc32.h>
 #endif
 
 namespace DB
@@ -334,9 +334,9 @@ struct NgramDistanceImpl
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const char * haystack = reinterpret_cast<const char *>(&haystack_data[prev_haystack_offset]);
-            const size_t haystack_size = haystack_offsets[i] - prev_haystack_offset - 1;
+            const size_t haystack_size = haystack_offsets[i] - prev_haystack_offset;
             const char * needle = reinterpret_cast<const char *>(&needle_data[prev_needle_offset]);
-            const size_t needle_size = needle_offsets[i] - prev_needle_offset - 1;
+            const size_t needle_size = needle_offsets[i] - prev_needle_offset;
 
             if (needle_size <= max_string_size && haystack_size <= max_string_size)
             {
@@ -415,7 +415,7 @@ struct NgramDistanceImpl
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 const char * needle = reinterpret_cast<const char *>(&needle_data[prev_offset]);
-                const size_t needle_size = needle_offsets[i] - prev_offset - 1;
+                const size_t needle_size = needle_offsets[i] - prev_offset;
 
                 if (needle_size <= max_string_size && haystack_size <= max_string_size)
                 {
@@ -476,7 +476,7 @@ struct NgramDistanceImpl
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const UInt8 * haystack = &data[prev_offset];
-            const size_t haystack_size = offsets[i] - prev_offset - 1;
+            const size_t haystack_size = offsets[i] - prev_offset;
             if (haystack_size <= max_string_size)
             {
                 size_t haystack_stats_size = dispatchSearcher(
@@ -556,15 +556,227 @@ using FunctionNgramSearchCaseInsensitiveUTF8 = FunctionsStringSimilarity<NgramDi
 
 REGISTER_FUNCTION(StringSimilarity)
 {
-    factory.registerFunction<FunctionNgramDistance>();
-    factory.registerFunction<FunctionNgramDistanceCaseInsensitive>();
-    factory.registerFunction<FunctionNgramDistanceUTF8>();
-    factory.registerFunction<FunctionNgramDistanceCaseInsensitiveUTF8>();
+    FunctionDocumentation::Description description_ngram_distance = R"(
+Calculates the 4-gram distance between two strings.
+For this, it counts the symmetric difference between two multisets of 4-grams and normalizes it by the sum of their cardinalities.
+The smaller the returned value, the more similar the strings are.
 
-    factory.registerFunction<FunctionNgramSearch>();
-    factory.registerFunction<FunctionNgramSearchCaseInsensitive>();
-    factory.registerFunction<FunctionNgramSearchUTF8>();
-    factory.registerFunction<FunctionNgramSearchCaseInsensitiveUTF8>();
+For case-insensitive search or/and in UTF8 format use functions [`ngramDistanceCaseInsensitive`](#ngramDistanceCaseInsensitive), [`ngramDistanceUTF8`](#ngramDistanceUTF8), [`ngramDistanceCaseInsensitiveUTF8`](#ngramDistanceCaseInsensitiveUTF8).
+    )";
+    FunctionDocumentation::Syntax syntax_ngram_distance = "ngramDistance(haystack, needle)";
+    FunctionDocumentation::Arguments arguments_ngram_distance = {
+        {"haystack", "String for comparison.", {"String"}},
+        {"needle", "String for comparison.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_ngram_distance = {"Returns a Float32 number between `0` and `1`. The smaller the returned value, the more similar the strings are.", {"Float32"}};
+    FunctionDocumentation::Examples examples_ngram_distance = {
+    {
+        "Calculate 4-gram distance",
+        "SELECT ngramDistance('ClickHouse', 'ClickHouses')",
+        R"(
+┌─ngramDistance('ClickHouse', 'ClickHouses')─┐
+│                                        0.1 │
+└────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_ngram_distance = {20, 1};
+    FunctionDocumentation::Category category_ngram_distance = FunctionDocumentation::Category::StringSearch;
+    FunctionDocumentation documentation_ngram_distance = {description_ngram_distance, syntax_ngram_distance, arguments_ngram_distance, returned_value_ngram_distance, examples_ngram_distance, introduced_in_ngram_distance, category_ngram_distance};
+
+    FunctionDocumentation::Description description_ngram_search = R"(
+Checks if the 4-gram distance between two strings is less than or equal to a given threshold.
+
+For case-insensitive search or/and in UTF8 format use functions `ngramSearchCaseInsensitive`, `ngramSearchUTF8`, `ngramSearchCaseInsensitiveUTF8`.
+    )";
+    FunctionDocumentation::Syntax syntax_ngram_search = "ngramSearch(haystack, needle)";
+    FunctionDocumentation::Arguments arguments_ngram_search = {
+        {"haystack", "String for comparison.", {"String"}},
+        {"needle", "String for comparison.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_ngram_search = {"Returns `1` if the 4-gram distance between the strings is less than or equal to a threshold (`1.0` by default), `0` otherwise.", {"UInt8"}};
+    FunctionDocumentation::Examples examples_ngram_search = {
+    {
+        "Search using 4-grams",
+        "SELECT ngramSearch('ClickHouse', 'Click')",
+        R"(
+┌─ngramSearch('ClickHouse', 'Click')─┐
+│                                  1 │
+└────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_ngram_search = {20, 1};
+    FunctionDocumentation::Category category_ngram_search = FunctionDocumentation::Category::StringSearch;
+    FunctionDocumentation documentation_ngram_search = {description_ngram_search, syntax_ngram_search, arguments_ngram_search, returned_value_ngram_search, examples_ngram_search, introduced_in_ngram_search, category_ngram_search};
+
+    FunctionDocumentation::Description description_ngram_distance_case_insensitive = R"(
+Provides a case-insensitive variant of [`ngramDistance`](#ngramDistance).
+Calculates the 4-gram distance between two strings, ignoring case.
+The smaller the returned value, the more similar the strings are.
+    )";
+    FunctionDocumentation::Syntax syntax_ngram_distance_case_insensitive = "ngramDistanceCaseInsensitive(haystack, needle)";
+    FunctionDocumentation::Arguments arguments_ngram_distance_case_insensitive = {
+        {"haystack", "First comparison string.", {"String"}},
+        {"needle", "Second comparison string.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_ngram_distance_case_insensitive = {"Returns a Float32 number between `0` and `1`.", {"Float32"}};
+    FunctionDocumentation::Examples examples_ngram_distance_case_insensitive = {
+    {
+        "Case-insensitive 4-gram distance",
+        "SELECT ngramDistanceCaseInsensitive('ClickHouse','clickhouse')",
+        R"(
+┌─ngramDistanceCaseInsensitive('ClickHouse','clickhouse')─┐
+│                                                       0 │
+└─────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_ngram_distance_case_insensitive = {20, 1};
+    FunctionDocumentation::Category category_ngram_distance_case_insensitive = FunctionDocumentation::Category::StringSearch;
+    FunctionDocumentation documentation_ngram_distance_case_insensitive = {description_ngram_distance_case_insensitive, syntax_ngram_distance_case_insensitive, arguments_ngram_distance_case_insensitive, returned_value_ngram_distance_case_insensitive, examples_ngram_distance_case_insensitive, introduced_in_ngram_distance_case_insensitive, category_ngram_distance_case_insensitive};
+
+    FunctionDocumentation::Description description_ngram_distance_utf8 = R"(
+Provides a UTF-8 variant of [`ngramDistance`](#ngramDistance).
+Assumes that `needle` and `haystack` strings are UTF-8 encoded strings.
+Calculates the 3-gram distance between two UTF-8 strings.
+The smaller the returned value, the more similar the strings are.
+    )";
+    FunctionDocumentation::Syntax syntax_ngram_distance_utf8 = "ngramDistanceUTF8(haystack, needle)";
+    FunctionDocumentation::Arguments arguments_ngram_distance_utf8 = {
+        {"haystack", "First UTF-8 encoded comparison string.", {"String"}},
+        {"needle", "Second UTF-8 encoded comparison string.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_ngram_distance_utf8 = {"Returns a Float32 number between `0` and `1`.", {"Float32"}};
+    FunctionDocumentation::Examples examples_ngram_distance_utf8 = {
+    {
+        "UTF-8 3-gram distance",
+        "SELECT ngramDistanceUTF8('abcde','cde')",
+        R"(
+┌─ngramDistanceUTF8('abcde','cde')─┐
+│                               0.5 │
+└───────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_ngram_distance_utf8 = {20, 1};
+    FunctionDocumentation::Category category_ngram_distance_utf8 = FunctionDocumentation::Category::StringSearch;
+    FunctionDocumentation documentation_ngram_distance_utf8 = {description_ngram_distance_utf8, syntax_ngram_distance_utf8, arguments_ngram_distance_utf8, returned_value_ngram_distance_utf8, examples_ngram_distance_utf8, introduced_in_ngram_distance_utf8, category_ngram_distance_utf8};
+
+    FunctionDocumentation::Description description_ngram_distance_case_insensitive_utf8 = R"(
+Provides a case-insensitive UTF-8 variant of [`ngramDistance`](#ngramDistance).
+Assumes that `needle` and `haystack` strings are UTF-8 encoded strings and ignores case.
+Calculates the 3-gram distance between two UTF-8 strings, ignoring case.
+The smaller the returned value, the more similar the strings are.
+    )";
+    FunctionDocumentation::Syntax syntax_ngram_distance_case_insensitive_utf8 = "ngramDistanceCaseInsensitiveUTF8(haystack, needle)";
+    FunctionDocumentation::Arguments arguments_ngram_distance_case_insensitive_utf8 = {
+        {"haystack", "First UTF-8 encoded comparison string.", {"String"}},
+        {"needle", "Second UTF-8 encoded comparison string.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_ngram_distance_case_insensitive_utf8 = {"Returns a Float32 number between `0` and `1`.", {"Float32"}};
+    FunctionDocumentation::Examples examples_ngram_distance_case_insensitive_utf8 = {
+    {
+        "Case-insensitive UTF-8 3-gram distance",
+        "SELECT ngramDistanceCaseInsensitiveUTF8('abcde','CDE')",
+        R"(
+┌─ngramDistanceCaseInsensitiveUTF8('abcde','CDE')─┐
+│                                             0.5 │
+└─────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_ngram_distance_case_insensitive_utf8 = {20, 1};
+    FunctionDocumentation::Category category_ngram_distance_case_insensitive_utf8 = FunctionDocumentation::Category::StringSearch;
+    FunctionDocumentation documentation_ngram_distance_case_insensitive_utf8 = {description_ngram_distance_case_insensitive_utf8, syntax_ngram_distance_case_insensitive_utf8, arguments_ngram_distance_case_insensitive_utf8, returned_value_ngram_distance_case_insensitive_utf8, examples_ngram_distance_case_insensitive_utf8, introduced_in_ngram_distance_case_insensitive_utf8, category_ngram_distance_case_insensitive_utf8};
+
+    FunctionDocumentation::Description description_ngram_search_case_insensitive = R"(
+Provides a case-insensitive variant of [`ngramSearch`](#ngramSearch).
+Calculates the non-symmetric difference between a needle string and a haystack string, i.e. the number of n-grams from the needle minus the common number of n-grams normalized by the number of needle n-grams.
+Checks if the 4-gram distance between two strings is less than or equal to a given threshold, ignoring case.
+    )";
+    FunctionDocumentation::Syntax syntax_ngram_search_case_insensitive = "ngramSearchCaseInsensitive(haystack, needle)";
+    FunctionDocumentation::Arguments arguments_ngram_search_case_insensitive = {
+        {"haystack", "String for comparison.", {"String"}},
+        {"needle", "String for comparison.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_ngram_search_case_insensitive = {"Returns `1` if the 4-gram distance between the strings is less than or equal to a threshold (`1.0` by default), `0` otherwise.", {"UInt8"}};
+    FunctionDocumentation::Examples examples_ngram_search_case_insensitive = {
+    {
+        "Case-insensitive search using 4-grams",
+        "SELECT ngramSearchCaseInsensitive('Hello World','hello')",
+        R"(
+┌─ngramSearchCaseInsensitive('Hello World','hello')─┐
+│                                                  1 │
+└────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_ngram_search_case_insensitive = {20, 1};
+    FunctionDocumentation::Category category_ngram_search_case_insensitive = FunctionDocumentation::Category::StringSearch;
+    FunctionDocumentation documentation_ngram_search_case_insensitive = {description_ngram_search_case_insensitive, syntax_ngram_search_case_insensitive, arguments_ngram_search_case_insensitive, returned_value_ngram_search_case_insensitive, examples_ngram_search_case_insensitive, introduced_in_ngram_search_case_insensitive, category_ngram_search_case_insensitive};
+
+    FunctionDocumentation::Description description_ngram_search_utf8 = R"(
+Provides a UTF-8 variant of `ngramSearch`.
+Assumes `haystack` and `needle` to be UTF-8 strings.
+Checks if the 3-gram distance between two UTF-8 strings is less than or equal to a given threshold.
+    )";
+    FunctionDocumentation::Syntax syntax_ngram_search_utf8 = "ngramSearchUTF8(haystack, needle)";
+    FunctionDocumentation::Arguments arguments_ngram_search_utf8 = {
+        {"haystack", "UTF-8 string for comparison.", {"String"}},
+        {"needle", "UTF-8 string for comparison.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_ngram_search_utf8 = {"Returns `1` if the 3-gram distance between the strings is less than or equal to a threshold (`1.0` by default), `0` otherwise.", {"UInt8"}};
+    FunctionDocumentation::Examples examples_ngram_search_utf8 = {
+    {
+        "UTF-8 search using 3-grams",
+        "SELECT ngramSearchUTF8('абвгдеёжз', 'гдеёзд')",
+        R"(
+┌─ngramSearchUTF8('абвгдеёжз', 'гдеёзд')─┐
+│                                      1 │
+└────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_ngram_search_utf8 = {20, 1};
+    FunctionDocumentation::Category category_ngram_search_utf8 = FunctionDocumentation::Category::StringSearch;
+    FunctionDocumentation documentation_ngram_search_utf8 = {description_ngram_search_utf8, syntax_ngram_search_utf8, arguments_ngram_search_utf8, returned_value_ngram_search_utf8, examples_ngram_search_utf8, introduced_in_ngram_search_utf8, category_ngram_search_utf8};
+
+    FunctionDocumentation::Description description_ngram_search_case_insensitive_utf8 = R"(
+Provides a case-insensitive UTF-8 variant of [`ngramSearch`](#ngramSearch).
+Assumes `haystack` and `needle` to be UTF-8 strings and ignores case.
+Checks if the 3-gram distance between two UTF-8 strings is less than or equal to a given threshold, ignoring case.
+    )";
+    FunctionDocumentation::Syntax syntax_ngram_search_case_insensitive_utf8 = "ngramSearchCaseInsensitiveUTF8(haystack, needle)";
+    FunctionDocumentation::Arguments arguments_ngram_search_case_insensitive_utf8 = {
+        {"haystack", "UTF-8 string for comparison.", {"String"}},
+        {"needle", "UTF-8 string for comparison.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_ngram_search_case_insensitive_utf8 = {"Returns `1` if the 3-gram distance between the strings is less than or equal to a threshold (`1.0` by default), `0` otherwise.", {"UInt8"}};
+    FunctionDocumentation::Examples examples_ngram_search_case_insensitive_utf8 = {
+    {
+        "Case-insensitive UTF-8 search using 3-grams",
+        "SELECT ngramSearchCaseInsensitiveUTF8('абвГДЕёжз', 'АбвгдЕЁжз')",
+        R"(
+┌─ngramSearchCaseInsensitiveUTF8('абвГДЕёжз', 'АбвгдЕЁжз')─┐
+│                                                        1 │
+└──────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_ngram_search_case_insensitive_utf8 = {20, 1};
+    FunctionDocumentation::Category category_ngram_search_case_insensitive_utf8 = FunctionDocumentation::Category::StringSearch;
+    FunctionDocumentation documentation_ngram_search_case_insensitive_utf8 = {description_ngram_search_case_insensitive_utf8, syntax_ngram_search_case_insensitive_utf8, arguments_ngram_search_case_insensitive_utf8, returned_value_ngram_search_case_insensitive_utf8, examples_ngram_search_case_insensitive_utf8, introduced_in_ngram_search_case_insensitive_utf8, category_ngram_search_case_insensitive_utf8};
+
+    factory.registerFunction<FunctionNgramDistance>(documentation_ngram_distance);
+    factory.registerFunction<FunctionNgramDistanceCaseInsensitive>(documentation_ngram_distance_case_insensitive);
+    factory.registerFunction<FunctionNgramDistanceUTF8>(documentation_ngram_distance_utf8);
+    factory.registerFunction<FunctionNgramDistanceCaseInsensitiveUTF8>(documentation_ngram_distance_case_insensitive_utf8);
+
+    factory.registerFunction<FunctionNgramSearch>(documentation_ngram_search);
+    factory.registerFunction<FunctionNgramSearchCaseInsensitive>(documentation_ngram_search_case_insensitive);
+    factory.registerFunction<FunctionNgramSearchUTF8>(documentation_ngram_search_utf8);
+    factory.registerFunction<FunctionNgramSearchCaseInsensitiveUTF8>(documentation_ngram_search_case_insensitive_utf8);
 }
 
 }

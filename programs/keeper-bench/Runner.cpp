@@ -1,7 +1,8 @@
-#include "Runner.h"
+#include <Runner.h>
 #include <atomic>
 #include <Poco/Util/AbstractConfiguration.h>
 
+#include <Columns/IColumn.h>
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperContext.h>
 #include <Coordination/KeeperSnapshotManager.h>
@@ -25,6 +26,7 @@
 #include <Common/EventNotifier.h>
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/IKeeper.h>
+#include <Common/ZooKeeper/ShuffleHost.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
@@ -39,7 +41,7 @@ namespace CurrentMetrics
 
 namespace DB::Setting
 {
-    extern const SettingsUInt64 max_block_size;
+    extern const SettingsNonZeroUInt64 max_block_size;
 }
 
 namespace DB::ErrorCodes
@@ -574,8 +576,8 @@ struct ZooKeeperRequestFromLogReader
             context,
             context->getSettingsRef()[DB::Setting::max_block_size],
             format_settings,
-            1,
-            std::nullopt,
+            DB::FormatParserSharedResources::singleThreaded(context->getSettingsRef()),
+            nullptr,
             /*is_remote_fs*/ false,
             DB::CompressionMethod::None,
             false);
@@ -960,8 +962,8 @@ void dumpStats(std::string_view type, const RequestFromLogStats::Stats & stats_f
     std::cerr << fmt::format(
         "{} requests: {} total, {} with unexpected results ({:.4}%)",
         type,
-        stats_for_type.total,
-        stats_for_type.unexpected_results,
+        stats_for_type.total.load(),
+        stats_for_type.unexpected_results.load(),
         stats_for_type.total != 0 ? static_cast<double>(stats_for_type.unexpected_results) / stats_for_type.total * 100 : 0.0)
               << std::endl;
 };
@@ -1262,7 +1264,7 @@ std::shared_ptr<Coordination::ZooKeeper> Runner::getConnection(const ConnectionI
     args.operation_timeout_ms = connection_info.operation_timeout_ms;
     args.use_compression = connection_info.use_compression;
     args.use_xid_64 = connection_info.use_xid_64;
-    return std::make_shared<Coordination::ZooKeeper>(nodes, args, nullptr);
+    return std::make_shared<Coordination::ZooKeeper>(nodes, args, nullptr, nullptr);
 }
 
 std::vector<std::shared_ptr<Coordination::ZooKeeper>> Runner::refreshConnections()
@@ -1316,7 +1318,7 @@ void removeRecursive(Coordination::ZooKeeper & zookeeper, const std::string & pa
         children = response.names;
         promise->set_value();
     };
-    zookeeper.list(path, Coordination::ListRequestType::ALL, list_callback, nullptr);
+    zookeeper.list(path, Coordination::ListRequestType::ALL, list_callback, {});
     future.get();
 
     std::span children_span(children);

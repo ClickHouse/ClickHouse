@@ -1,4 +1,4 @@
-protobuf_generate_cpp(clickhouse_buzzhouse_proto_sources clickhouse_buzzhouse_proto_header SQLGrammar.proto)
+protobuf_generate_cpp(clickhouse_buzzhouse_proto_sources clickhouse_buzzhouse_proto_headers SQLGrammar.proto)
 
 # Ignore warnings while compiling protobuf-generated *.pb.h and *.pb.cpp files.
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w")

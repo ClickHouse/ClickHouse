@@ -214,9 +214,13 @@ public:
 
     void popBack(size_t n) override;
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
+    StringRef serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     const char * deserializeAndInsertFromArena(const char * pos) override;
-    const char * deserializeVariantAndInsertFromArena(Discriminator global_discr, const char * pos);
+    const char * deserializeAndInsertAggregationStateValueFromArena(const char * pos) override;
     const char * skipSerializedInArena(const char * pos) const override;
+    char * serializeValueIntoMemory(size_t n, char * memory) const override;
+    std::optional<size_t> getSerializedValueSize(size_t n) const override;
+
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     WeakHash32 getWeakHash32() const override;
     void updateHashFast(SipHash & hash) const override;
@@ -243,7 +247,7 @@ public:
 
     void reserve(size_t n) override;
     size_t capacity() const override;
-    void prepareForSquashing(const Columns & source_columns) override;
+    void prepareForSquashing(const Columns & source_columns, size_t factor) override;
     void ensureOwnership() override;
     size_t byteSize() const override;
     size_t byteSizeAt(size_t n) const override;
@@ -252,8 +256,10 @@ public:
     ColumnCheckpointPtr getCheckpoint() const override;
     void updateCheckpoint(ColumnCheckpoint & checkpoint) const override;
     void rollback(const ColumnCheckpoint & checkpoint) override;
-    void forEachSubcolumn(MutableColumnCallback callback) override;
-    void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override;
+    void forEachMutableSubcolumn(MutableColumnCallback callback) override;
+    void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback) override;
+    void forEachSubcolumn(ColumnCallback callback) const override;
+    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override;
     bool structureEquals(const IColumn & rhs) const override;
     ColumnPtr compress(bool force_compression) const override;
     double getRatioOfDefaultRows(double sample_ratio) const override;
@@ -339,6 +345,7 @@ public:
     bool hasDynamicStructure() const override;
     bool dynamicStructureEquals(const IColumn & rhs) const override;
     void takeDynamicStructureFromSourceColumns(const Columns & source_columns) override;
+    void takeDynamicStructureFromColumn(const ColumnPtr & source_column) override;
 
 private:
     void insertFromImpl(const IColumn & src_, size_t n, const std::vector<ColumnVariant::Discriminator> * global_discriminators_mapping);

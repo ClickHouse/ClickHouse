@@ -132,7 +132,7 @@ public:
 
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
-        this->data(place).read(buf, *serialization, arena);
+        this->data(place).read(buf, *serialization, this->result_type, arena);
     }
 
     bool allocatesMemoryInArena() const override { return Data::allocatesMemoryInArena(); }

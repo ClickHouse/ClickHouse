@@ -5,7 +5,7 @@
 #include <Core/QueryProcessingStage.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/StorageID.h>
-#include <Parsers/IAST.h>
+#include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageSnapshot.h>
 
@@ -15,7 +15,6 @@ namespace DB
 
 struct Settings;
 class Cluster;
-class Throttler;
 struct SelectQueryInfo;
 
 class Pipe;
@@ -58,9 +57,11 @@ public:
         QueryTreeNodePtr query_tree;
         PlannerContextPtr planner_context;
 
+        std::shared_ptr<QueryPlan> query_plan;
+
         /// Used to check the table existence on remote node
         StorageID main_table;
-        Block header;
+        SharedHeader header;
 
         bool has_missing_objects = false;
 
@@ -69,14 +70,13 @@ public:
         /// If we connect to replicas lazily.
         /// (When there is a local replica with big delay).
         bool lazy = false;
-        time_t local_delay = 0;
         AdditionalShardFilterGenerator shard_filter_generator{};
     };
 
     using Shards = std::vector<Shard>;
 
     SelectStreamFactory(
-        const Block & header_,
+        SharedHeader header_,
         const ColumnsDescriptionByShardNum & objects_by_shard_,
         const StorageSnapshotPtr & storage_snapshot_,
         QueryProcessingStage::Enum processed_stage_);
@@ -105,7 +105,7 @@ public:
         bool parallel_replicas_enabled,
         AdditionalShardFilterGenerator shard_filter_generator);
 
-    const Block header;
+    SharedHeader header;
     const ColumnsDescriptionByShardNum objects_by_shard;
     const StorageSnapshotPtr storage_snapshot;
     QueryProcessingStage::Enum processed_stage;
@@ -123,7 +123,7 @@ private:
         UInt32 shard_count,
         bool parallel_replicas_enabled,
         AdditionalShardFilterGenerator shard_filter_generator,
-        bool has_missing_objects = false);
+        bool has_missing_objects = false) const;
 };
 
 }

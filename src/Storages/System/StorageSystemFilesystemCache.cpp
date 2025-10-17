@@ -1,11 +1,13 @@
-#include "StorageSystemFilesystemCache.h"
+#include <Storages/System/StorageSystemFilesystemCache.h>
+
+#include <Columns/IColumn.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeDateTime.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileSegment.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
-#include <Interpreters/Context.h>
 #include <Disks/IDisk.h>
 
 
@@ -25,6 +27,7 @@ ColumnsDescription StorageSystemFilesystemCache::getColumnsDescription()
         {"file_segment_range_end", std::make_shared<DataTypeUInt64>(), "Offset corresponding to the (including) end of the file segment range"},
         {"size", std::make_shared<DataTypeUInt64>(), "Size of the file segment"},
         {"state", std::make_shared<DataTypeString>(), "File segment state (DOWNLOADED, DOWNLOADING, PARTIALLY_DOWNLOADED, ...)"},
+        {"finished_download_time", std::make_shared<DataTypeDateTime>(), "Time when file segment finished downloading."},
         {"cache_hits", std::make_shared<DataTypeUInt64>(), "Number of cache hits of corresponding file segment"},
         {"references", std::make_shared<DataTypeUInt64>(), "Number of references to corresponding file segment. Value 1 means that nobody uses it at the moment (the only existing reference is in cache storage itself)"},
         {"downloaded_size", std::make_shared<DataTypeUInt64>(), "Downloaded size of the file segment"},
@@ -68,6 +71,7 @@ void StorageSystemFilesystemCache::fillData(MutableColumns & res_columns, Contex
             res_columns[i++]->insert(file_segment.range_right);
             res_columns[i++]->insert(file_segment.size);
             res_columns[i++]->insert(FileSegment::stateToString(file_segment.state));
+            res_columns[i++]->insert(file_segment.download_finished_time);
             res_columns[i++]->insert(file_segment.cache_hits);
             res_columns[i++]->insert(file_segment.references);
             res_columns[i++]->insert(file_segment.downloaded_size);

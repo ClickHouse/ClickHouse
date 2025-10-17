@@ -5,7 +5,6 @@
 #include <base/sort.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
-#include <Core/BackgroundSchedulePool.h>
 
 namespace fs = std::filesystem;
 

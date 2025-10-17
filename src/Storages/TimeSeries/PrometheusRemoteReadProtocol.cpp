@@ -1,24 +1,28 @@
+#include <optional>
 #include <Storages/TimeSeries/PrometheusRemoteReadProtocol.h>
 
-#include "config.h"
 #if USE_PROMETHEUS_PROTOBUFS
 
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/logger_useful.h>
 #include <Core/Block.h>
 #include <Core/Field.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeMap.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/StorageID.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/makeASTForLogicalFunction.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Storages/StorageTimeSeries.h>
@@ -42,6 +46,10 @@ namespace ErrorCodes
     extern const int BAD_REQUEST_PARAMETER;
 }
 
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_analyzer;
+}
 
 namespace
 {
@@ -54,33 +62,33 @@ namespace
     /// Makes an AST for condition `data_table.timestamp >= min_timestamp_ms`
     ASTPtr makeASTTimestampGreaterOrEquals(Int64 min_timestamp_ms, const StorageID & data_table_id)
     {
-        return makeASTFunction("greaterOrEquals",
+        return makeASTOperator("greaterOrEquals",
                                makeASTColumn(data_table_id, TimeSeriesColumnNames::Timestamp),
-                               std::make_shared<ASTLiteral>(Field{DecimalField{DateTime64{min_timestamp_ms}, 3}}));
+                               std::make_shared<ASTLiteral>(Field{DecimalField<DateTime64>{DateTime64{min_timestamp_ms}, 3}}));
     }
 
     /// Makes an AST for condition `data_table.timestamp <= max_timestamp_ms`
     ASTPtr makeASTTimestampLessOrEquals(Int64 max_timestamp_ms, const StorageID & data_table_id)
     {
-        return makeASTFunction("lessOrEquals",
+        return makeASTOperator("lessOrEquals",
                                makeASTColumn(data_table_id, TimeSeriesColumnNames::Timestamp),
-                               std::make_shared<ASTLiteral>(Field{DecimalField{DateTime64{max_timestamp_ms}, 3}}));
+                               std::make_shared<ASTLiteral>(Field{DecimalField<DateTime64>{DateTime64{max_timestamp_ms}, 3}}));
     }
 
     /// Makes an AST for condition `tags_table.max_time >= min_timestamp_ms`
     ASTPtr makeASTMaxTimeGreaterOrEquals(Int64 min_timestamp_ms, const StorageID & tags_table_id)
     {
-        return makeASTFunction("greaterOrEquals",
+        return makeASTOperator("greaterOrEquals",
                                makeASTColumn(tags_table_id, TimeSeriesColumnNames::MaxTime),
-                               std::make_shared<ASTLiteral>(Field{DecimalField{DateTime64{min_timestamp_ms}, 3}}));
+                               std::make_shared<ASTLiteral>(Field{DecimalField<DateTime64>{DateTime64{min_timestamp_ms}, 3}}));
     }
 
     /// Makes an AST for condition `tags_table.min_time <= max_timestamp_ms`
     ASTPtr makeASTMinTimeLessOrEquals(Int64 max_timestamp_ms, const StorageID & tags_table_id)
     {
-        return makeASTFunction("lessOrEquals",
+        return makeASTOperator("lessOrEquals",
                                makeASTColumn(tags_table_id, TimeSeriesColumnNames::MinTime),
-                               std::make_shared<ASTLiteral>(Field{DecimalField{DateTime64{max_timestamp_ms}, 3}}));
+                               std::make_shared<ASTLiteral>(Field{DecimalField<DateTime64>{DateTime64{max_timestamp_ms}, 3}}));
     }
 
     /// Makes an AST for the expression referencing a tag value.
@@ -94,7 +102,7 @@ namespace
             return makeASTColumn(tags_table_id, it->second);
 
         /// arrayElement() can be used to extract a value from a Map too.
-        return makeASTFunction("arrayElement", makeASTColumn(tags_table_id, TimeSeriesColumnNames::Tags), std::make_shared<ASTLiteral>(label_name));
+        return makeASTOperator("arrayElement", makeASTColumn(tags_table_id, TimeSeriesColumnNames::Tags), std::make_shared<ASTLiteral>(label_name));
     }
 
     /// Makes an AST for a label matcher, for example `metric_name == 'value'` or `NOT match(labels['label_name'], 'regexp')`.
@@ -108,9 +116,9 @@ namespace
         auto type = label_matcher.type();
 
         if (type == prometheus::LabelMatcher::EQ)
-            return makeASTFunction("equals", makeASTLabelName(label_name, tags_table_id, column_name_by_tag_name), std::make_shared<ASTLiteral>(label_value));
+            return makeASTOperator("equals", makeASTLabelName(label_name, tags_table_id, column_name_by_tag_name), std::make_shared<ASTLiteral>(label_value));
         if (type == prometheus::LabelMatcher::NEQ)
-            return makeASTFunction(
+            return makeASTOperator(
                 "notEquals",
                 makeASTLabelName(label_name, tags_table_id, column_name_by_tag_name),
                 std::make_shared<ASTLiteral>(label_value));
@@ -118,7 +126,7 @@ namespace
             return makeASTFunction(
                 "match", makeASTLabelName(label_name, tags_table_id, column_name_by_tag_name), std::make_shared<ASTLiteral>(label_value));
         if (type == prometheus::LabelMatcher::NRE)
-            return makeASTFunction(
+            return makeASTOperator(
                 "not",
                 makeASTFunction(
                     "match",
@@ -169,7 +177,7 @@ namespace
         const Map & tags_to_columns = storage_settings[TimeSeriesSetting::tags_to_columns];
         for (const auto & tag_name_and_column_name : tags_to_columns)
         {
-            const auto & tuple = tag_name_and_column_name.safeGet<const Tuple &>();
+            const auto & tuple = tag_name_and_column_name.safeGet<Tuple>();
             const auto & tag_name = tuple.at(0).safeGet<String>();
             const auto & column_name = tuple.at(1).safeGet<String>();
             res[tag_name] = column_name;
@@ -205,7 +213,7 @@ namespace
             const Map & tags_to_columns = time_series_settings[TimeSeriesSetting::tags_to_columns];
             for (const auto & tag_name_and_column_name : tags_to_columns)
             {
-                const auto & tuple = tag_name_and_column_name.safeGet<const Tuple &>();
+                const auto & tuple = tag_name_and_column_name.safeGet<Tuple>();
                 const auto & column_name = tuple.at(1).safeGet<String>();
                 exp_list->children.push_back(
                     makeASTColumn(tags_table_id, column_name));
@@ -216,7 +224,7 @@ namespace
 
             exp_list->children.push_back(
                 makeASTFunction("groupArray",
-                                makeASTFunction("tuple",
+                                makeASTOperator("tuple",
                                                 makeASTFunction("CAST", makeASTColumn(data_table_id, TimeSeriesColumnNames::Timestamp), std::make_shared<ASTLiteral>("DateTime64(3)")),
                                                 makeASTFunction("CAST", makeASTColumn(data_table_id, TimeSeriesColumnNames::Value), std::make_shared<ASTLiteral>("Float64")))));
 
@@ -244,7 +252,7 @@ namespace
             table_join->kind = JoinKind::Left;
             table_join->strictness = JoinStrictness::Semi;
 
-            table_join->on_expression = makeASTFunction("equals", makeASTColumn(data_table_id, TimeSeriesColumnNames::ID), makeASTColumn(tags_table_id, TimeSeriesColumnNames::ID));
+            table_join->on_expression = makeASTOperator("equals", makeASTColumn(data_table_id, TimeSeriesColumnNames::ID), makeASTColumn(tags_table_id, TimeSeriesColumnNames::ID));
             table_join->children.push_back(table_join->on_expression);
             table->table_join = table_join;
 
@@ -277,7 +285,7 @@ namespace
             const Map & tags_to_columns = time_series_settings[TimeSeriesSetting::tags_to_columns];
             for (const auto & tag_name_and_column_name : tags_to_columns)
             {
-                const auto & tuple = tag_name_and_column_name.safeGet<const Tuple &>();
+                const auto & tuple = tag_name_and_column_name.safeGet<Tuple>();
                 const auto & column_name = tuple.at(1).safeGet<String>();
                 exp_list->children.push_back(
                     makeASTColumn(tags_table_id, column_name));
@@ -301,14 +309,21 @@ namespace
         std::sort(labels.begin(), labels.end(), less_by_label_name);
     }
 
-    /// Sorts a list of pairs {timestamp, value} by timestamp.
-    void sortTimeSeriesByTimestamp(std::vector<std::pair<Int64 /* timestamp_ms */, Float64 /* value */>> & time_series)
+    /// Sorts a list of pairs {timestamp, value} by timestamp and removes duplicates.
+    /// This is similar to what function timeSeriesGroupArray() does.
+    void sortTimeSeriesAndRemoveDuplicates(std::vector<std::pair<Int64 /* timestamp_ms */, Float64 /* value */>> & time_series)
     {
-        auto less_by_timestamp = [](const std::pair<Int64, Float64> & left, const std::pair<Int64, Float64> & right)
+        /// Sort time-value pairs by timestamp and for pairs with equal timestamp we keep only a pair with a greater value.
+        auto is_before = [](const std::pair<Int64, Float64> & left, const std::pair<Int64, Float64> & right)
         {
-            return left.first < right.first;
+            return (left.first < right.first) || ((left.first == right.first) && (left.second > right.second));
         };
-        std::sort(time_series.begin(), time_series.end(), less_by_timestamp);
+        std::sort(time_series.begin(), time_series.end(), is_before);
+        auto equals_by_timestamp = [](const std::pair<Int64, Float64> & left, const std::pair<Int64, Float64> & right)
+        {
+            return (left.first == right.first);
+        };
+        time_series.erase(std::unique(time_series.begin(), time_series.end(), equals_by_timestamp), time_series.end());
     }
 
     /// Converts a block generated by the SELECT query for converting time series to the protobuf format.
@@ -339,7 +354,7 @@ namespace
         const Map & tags_to_columns = time_series_settings[TimeSeriesSetting::tags_to_columns];
         for (const auto & tag_name_and_column_name : tags_to_columns)
         {
-            const auto & tuple = tag_name_and_column_name.safeGet<const Tuple &>();
+            const auto & tuple = tag_name_and_column_name.safeGet<Tuple>();
             const auto & tag_name = tuple.at(0).safeGet<String>();
             const auto & column_with_type = get_next_column_with_type();
             validator.validateColumnForTagValue(column_with_type);
@@ -413,7 +428,7 @@ namespace
                 time_series.emplace_back(time_series_timestamps.getElement(j), time_series_values.getElement(j));
 
             /// Sort time series.
-            sortTimeSeriesByTimestamp(time_series);
+            sortTimeSeriesAndRemoveDuplicates(time_series);
 
             /// Prepare a result.
             auto & new_time_series = *out_time_series.Add();
@@ -462,10 +477,21 @@ void PrometheusRemoteReadProtocol::readTimeSeries(google::protobuf::RepeatedPtrF
         start_timestamp_ms, end_timestamp_ms, label_matcher, time_series_settings, data_table_id, tags_table_id);
 
     LOG_TRACE(log, "{}: Executing query {}",
-              time_series_storage_id.getNameForLogs(), select_query);
+              time_series_storage_id.getNameForLogs(), select_query->formatForLogging());
 
-    InterpreterSelectQuery interpreter(select_query, getContext(), SelectQueryOptions{});
-    BlockIO io = interpreter.execute();
+    auto context = getContext();
+    BlockIO io;
+    std::optional<InterpreterSelectQuery> interpreter_holder;
+    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    {
+        InterpreterSelectQueryAnalyzer interpreter(select_query, context, SelectQueryOptions{});
+        io = interpreter.execute();
+    }
+    else
+    {
+        interpreter_holder.emplace(select_query, context, SelectQueryOptions{});
+        io = interpreter_holder->execute();
+    }
     PullingPipelineExecutor executor(io.pipeline);
 
     Block block;
@@ -474,7 +500,7 @@ void PrometheusRemoteReadProtocol::readTimeSeries(google::protobuf::RepeatedPtrF
         LOG_TRACE(log, "{}: Pulled block with {} columns and {} rows",
                   time_series_storage_id.getNameForLogs(), block.columns(), block.rows());
 
-        if (block)
+        if (!block.empty())
             convertBlockToProtobuf(std::move(block), out_time_series, time_series_storage_id, time_series_settings);
     }
 

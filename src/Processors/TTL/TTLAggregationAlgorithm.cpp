@@ -1,6 +1,9 @@
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Processors/TTL/TTLAggregationAlgorithm.h>
+
+#include <unordered_set>
 
 namespace DB
 {
@@ -10,15 +13,16 @@ namespace Setting
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
     extern const SettingsBool enable_software_prefetch_in_aggregation;
     extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
-    extern const SettingsUInt64 max_block_size;
+    extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_bytes_before_external_group_by;
     extern const SettingsDouble max_bytes_ratio_before_external_group_by;
     extern const SettingsUInt64 max_rows_to_group_by;
     extern const SettingsMaxThreads max_threads;
-    extern const SettingsUInt64 min_chunk_bytes_for_parallel_parsing;
+    extern const SettingsNonZeroUInt64 min_chunk_bytes_for_parallel_parsing;
     extern const SettingsUInt64 min_count_to_compile_aggregate_expression;
     extern const SettingsUInt64 min_free_disk_space_for_temporary_data;
     extern const SettingsBool optimize_group_by_constant_keys;
+    extern const SettingsBool enable_producing_buckets_out_of_order_in_aggregation;
 }
 
 TTLAggregationAlgorithm::TTLAggregationAlgorithm(
@@ -45,12 +49,13 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
     Aggregator::Params params(
         keys,
         aggregates,
-        /*overflow_row_=*/ false,
+        /*overflow_row_=*/false,
         settings[Setting::max_rows_to_group_by],
         settings[Setting::group_by_overflow_mode],
         /*group_by_two_level_threshold*/ 0,
         /*group_by_two_level_threshold_bytes*/ 0,
-        Aggregator::Params::getMaxBytesBeforeExternalGroupBy(settings[Setting::max_bytes_before_external_group_by], settings[Setting::max_bytes_ratio_before_external_group_by]),
+        Aggregator::Params::getMaxBytesBeforeExternalGroupBy(
+            settings[Setting::max_bytes_before_external_group_by], settings[Setting::max_bytes_ratio_before_external_group_by]),
         settings[Setting::empty_result_for_aggregation_by_empty_set],
         storage_.getContext()->getTempDataOnDisk(),
         settings[Setting::max_threads],
@@ -62,7 +67,8 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
         /*only_merge=*/false,
         settings[Setting::optimize_group_by_constant_keys],
         settings[Setting::min_chunk_bytes_for_parallel_parsing],
-        /*stats_collecting_params_=*/{});
+        /*stats_collecting_params_=*/{},
+        settings[Setting::enable_producing_buckets_out_of_order_in_aggregation]);
 
     aggregator = std::make_unique<Aggregator>(header, params);
 
@@ -76,7 +82,7 @@ void TTLAggregationAlgorithm::execute(Block & block)
     bool some_rows_were_aggregated = false;
     MutableColumns result_columns = header.cloneEmptyColumns();
 
-    if (!block) /// Empty block -- no more data, but we may still have some accumulated rows
+    if (block.empty()) /// Empty block -- no more data, but we may still have some accumulated rows
     {
         if (!aggregation_result.empty()) /// Still have some aggregated data, let's update TTL
         {
@@ -102,7 +108,7 @@ void TTLAggregationAlgorithm::execute(Block & block)
 
         for (size_t i = 0; i < block.rows(); ++i)
         {
-            UInt32 cur_ttl = getTimestampByIndex(ttl_column.get(), i);
+            Int64 cur_ttl = getTimestampByIndex(ttl_column.get(), i);
             bool where_filter_passed = !where_column || where_column->getBool(i);
             bool ttl_expired = isTTLExpired(cur_ttl) && where_filter_passed;
 
@@ -207,25 +213,33 @@ void TTLAggregationAlgorithm::finalizeAggregates(MutableColumns & result_columns
 {
     if (!aggregation_result.empty())
     {
-        auto aggregated_res = aggregator->convertToBlocks(aggregation_result, true, 1);
+        auto aggregated_res = aggregator->convertToBlocks(aggregation_result, true);
 
         for (auto & agg_block : aggregated_res)
         {
             for (const auto & it : description.set_parts)
                 it.expression->execute(agg_block);
 
-            for (const auto & name : description.group_by_keys)
-            {
-                const IColumn * values_column = agg_block.getByName(name).column.get();
-                auto & result_column = result_columns[header.getPositionByName(name)];
-                result_column->insertRangeFrom(*values_column, 0, agg_block.rows());
-            }
-
+            /// Since there might be intersecting columns between GROUP BY and SET, we prioritize
+            /// the SET values over the GROUP BY because doing it the other way causes unexpected
+            /// results.
+            std::unordered_set<String> columns_added;
             for (const auto & it : description.set_parts)
             {
                 const IColumn * values_column = agg_block.getByName(it.expression_result_column_name).column.get();
                 auto & result_column = result_columns[header.getPositionByName(it.column_name)];
                 result_column->insertRangeFrom(*values_column, 0, agg_block.rows());
+                columns_added.emplace(it.column_name);
+            }
+
+            for (const auto & name : description.group_by_keys)
+            {
+                if (!columns_added.contains(name))
+                {
+                    const IColumn * values_column = agg_block.getByName(name).column.get();
+                    auto & result_column = result_columns[header.getPositionByName(name)];
+                    result_column->insertRangeFrom(*values_column, 0, agg_block.rows());
+                }
             }
         }
     }
@@ -235,8 +249,14 @@ void TTLAggregationAlgorithm::finalizeAggregates(MutableColumns & result_columns
 
 void TTLAggregationAlgorithm::finalize(const MutableDataPartPtr & data_part) const
 {
-    data_part->ttl_infos.group_by_ttl[description.result_column] = new_ttl_info;
-    data_part->ttl_infos.updatePartMinMaxTTL(new_ttl_info.min, new_ttl_info.max);
+    if (new_ttl_info.finished())
+    {
+        data_part->ttl_infos.group_by_ttl[description.result_column] = new_ttl_info;
+        data_part->ttl_infos.updatePartMinMaxTTL(new_ttl_info.min, new_ttl_info.max);
+        return;
+    }
+    data_part->ttl_infos.group_by_ttl[description.result_column] = old_ttl_info;
+    data_part->ttl_infos.updatePartMinMaxTTL(old_ttl_info.min, old_ttl_info.max);
 }
 
 }

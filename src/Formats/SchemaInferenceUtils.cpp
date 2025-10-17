@@ -14,6 +14,7 @@
 #include <DataTypes/transformTypesRecursively.h>
 #include <DataTypes/DataTypeObjectDeprecated.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeDynamic.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/parseDateTimeBestEffort.h>
@@ -23,6 +24,7 @@
 #include <Core/Block.h>
 #include <Common/assert_cast.h>
 #include <Common/SipHash.h>
+#include <Core/TypeId.h>
 
 namespace DB
 {
@@ -500,7 +502,7 @@ namespace
             if (isTuple(type))
             {
                 const auto * tuple_type = assert_cast<const DataTypeTuple *>(type.get());
-                if (tuple_type->haveExplicitNames())
+                if (tuple_type->hasExplicitNames())
                     return;
 
                 if (checkIfTypesAreEqual(tuple_type->getElements()))
@@ -535,7 +537,7 @@ namespace
             if (isTuple(type))
             {
                 const auto & tuple_type = assert_cast<const DataTypeTuple &>(*type);
-                if (tuple_type.haveExplicitNames())
+                if (tuple_type.hasExplicitNames())
                     return;
 
                 const auto & current_tuple_size = tuple_type.getElements().size();
@@ -574,6 +576,31 @@ namespace
 
             type_indexes.erase(TypeIndex::Tuple);
         }
+    }
+
+    /// If we have unnamed Tuple and possibly Array types that were not transformed
+    /// into single Array type with common type, change them all to Array(Dynamic).
+    void transformUnnamedTuplesAndArraysToArrayOfDynamic(DataTypes & data_types, TypeIndexesSet & type_indexes)
+    {
+        if (!type_indexes.contains(TypeIndex::Tuple))
+            return;
+
+        /// First check if we have any named Tuple. In this case we should do nothing.
+        /// Only unnamed Tuple types can be inferred from arrays.
+        for (const auto & type : data_types)
+        {
+            if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()); tuple_type && tuple_type->hasExplicitNames())
+                return;
+        }
+
+        /// Next, change all Arrays and Tuples to Array(Dynamic).
+        for (auto & type : data_types)
+        {
+            if (isArray(type) || isTuple(type))
+                type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeDynamic>());
+        }
+
+        type_indexes.erase(TypeIndex::Tuple);
     }
 
     void transformMapsAndStringsToStrings(DataTypes & data_types, TypeIndexesSet & type_indexes)
@@ -623,7 +650,7 @@ namespace
         for (auto & type : data_types)
         {
             const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
-            if (tuple_type && tuple_type->haveExplicitNames())
+            if (tuple_type && tuple_type->hasExplicitNames())
             {
                 const auto & elements = tuple_type->getElements();
                 const auto & names = tuple_type->getElementNames();
@@ -654,7 +681,7 @@ namespace
         for (auto & type : data_types)
         {
             const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
-            if (tuple_type && tuple_type->haveExplicitNames())
+            if (tuple_type && tuple_type->hasExplicitNames())
                 type = result_tuple;
         }
     }
@@ -729,6 +756,10 @@ namespace
 
             /// Convert JSON tuples and arrays to arrays if possible.
             transformJSONTuplesAndArraysToArrays(data_types, settings, type_indexes, json_info);
+
+            /// If we still have unnamed Tuples, change them to Array(Dynamic) if needed.
+            if (settings.json.infer_array_of_dynamic_from_array_of_different_values)
+                transformUnnamedTuplesAndArraysToArrayOfDynamic(data_types, type_indexes);
 
             if (settings.json.read_objects_as_strings)
                 transformMapsAndStringsToStrings(data_types, type_indexes);
@@ -900,7 +931,12 @@ namespace
             }
 
             auto nested_types_copy = nested_types;
-            transformInferredTypesIfNeededImpl<is_json>(nested_types_copy, settings, json_info);
+            /// Disable read_numbers_as_strings in json settings to avoid
+            /// inferring array with numbers and strings as Array(String) here.
+            /// It will be done later if needed in transformFinal*.
+            auto settings_copy = settings;
+            settings_copy.json.read_numbers_as_strings = false;
+            transformInferredTypesIfNeededImpl<is_json>(nested_types_copy, settings_copy, json_info);
 
             if (checkIfTypesAreEqual(nested_types_copy))
                 return std::make_shared<DataTypeArray>(nested_types_copy.back());
@@ -1459,7 +1495,7 @@ void transformFinalInferredJSONTypeIfNeededImpl(DataTypePtr & data_type, const F
     {
         auto nested_types = tuple_type->getElements();
 
-        if (tuple_type->haveExplicitNames())
+        if (tuple_type->hasExplicitNames())
         {
             for (auto & nested_type : nested_types)
                 transformFinalInferredJSONTypeIfNeededImpl(nested_type, settings, json_info, remain_nothing_types);
@@ -1469,7 +1505,11 @@ void transformFinalInferredJSONTypeIfNeededImpl(DataTypePtr & data_type, const F
 
         /// First, try to transform nested types without final transformations to see if there is a common type.
         auto nested_types_copy = nested_types;
-        transformInferredTypesIfNeededImpl<true>(nested_types_copy, settings, json_info);
+        /// Disable read_numbers_as_strings in json settings to avoid
+        /// inferring array with numbers and strings as Array(String) here.
+        auto settings_copy = settings;
+        settings_copy.json.read_numbers_as_strings = false;
+        transformInferredTypesIfNeededImpl<true>(nested_types_copy, settings_copy, json_info);
         if (checkIfTypesAreEqual(nested_types_copy))
         {
             data_type = std::make_shared<DataTypeArray>(nested_types_copy.back());
@@ -1483,21 +1523,37 @@ void transformFinalInferredJSONTypeIfNeededImpl(DataTypePtr & data_type, const F
             transformFinalInferredJSONTypeIfNeededImpl(nested_type, settings, json_info, /*remain_nothing_types=*/ true);
 
         nested_types_copy = nested_types;
-        transformInferredTypesIfNeededImpl<true>(nested_types_copy, settings, json_info);
+        transformInferredTypesIfNeededImpl<true>(nested_types_copy, settings_copy, json_info);
         if (checkIfTypesAreEqual(nested_types_copy))
         {
             data_type = std::make_shared<DataTypeArray>(nested_types_copy.back());
         }
+        /// If we couldn't infer common type for array elements, use Array(Dynamic) or keep it as unnamed Tuple.
+        else if (settings.json.infer_array_of_dynamic_from_array_of_different_values)
+        {
+            data_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeDynamic>());
+        }
         else
         {
-            /// Now we should run transform one more time to convert Nothing to String if needed.
-            if (!remain_nothing_types)
+            /// Try to transform types one more time but without disabled read_numbers_as_strings so we
+            /// can infer array of numbers and strings as Array(String). We couldn't do it before to be able
+            /// to use Array(Dynamic) in this case if corresponding setting is enabled.
+            transformInferredTypesIfNeededImpl<true>(nested_types_copy, settings, json_info);
+            if (checkIfTypesAreEqual(nested_types_copy))
             {
-                for (auto & nested_type : nested_types)
-                    transformFinalInferredJSONTypeIfNeededImpl(nested_type, settings, json_info);
+                data_type = std::make_shared<DataTypeArray>(nested_types_copy.back());
             }
+            else
+            {
+                /// Now we should run transform one more time to convert Nothing to String if needed.
+                if (!remain_nothing_types)
+                {
+                    for (auto & nested_type : nested_types)
+                        transformFinalInferredJSONTypeIfNeededImpl(nested_type, settings, json_info);
+                }
 
-            data_type = std::make_shared<DataTypeTuple>(nested_types);
+                data_type = std::make_shared<DataTypeTuple>(nested_types);
+            }
         }
 
         return;
@@ -1573,7 +1629,7 @@ DataTypePtr tryInferDataTypeForSingleJSONField(std::string_view field, const For
     return type;
 }
 
-DataTypePtr makeNullableRecursively(DataTypePtr type)
+static DataTypePtr adjustNullableRecursively(DataTypePtr type, bool make_nullable, const FormatSettings & settings)
 {
     if (!type)
         return nullptr;
@@ -1581,12 +1637,17 @@ DataTypePtr makeNullableRecursively(DataTypePtr type)
     WhichDataType which(type);
 
     if (which.isNullable())
-        return type;
+        return make_nullable ? type : removeNullable(type);
+
+    /// Leave named compound types unchanged.
+    /// E.g. don't turn `Point` into `Tuple(Nullable(Float64), Nullable(Float64))`.
+    if (type->hasCustomName())
+        return makeNullableSafe(type);
 
     if (which.isArray())
     {
         const auto * array_type = assert_cast<const DataTypeArray *>(type.get());
-        auto nested_type = makeNullableRecursively(array_type->getNestedType());
+        auto nested_type = adjustNullableRecursively(array_type->getNestedType(), make_nullable, settings);
         return nested_type ? std::make_shared<DataTypeArray>(nested_type) : nullptr;
     }
 
@@ -1596,8 +1657,8 @@ DataTypePtr makeNullableRecursively(DataTypePtr type)
         DataTypes nested_types;
         for (const auto & nested_type: variant_type->getVariants())
         {
-            if (!nested_type->lowCardinality() && nested_type->haveSubtypes())
-                nested_types.push_back(makeNullableRecursively(nested_type));
+            if (!make_nullable || (!nested_type->lowCardinality() && nested_type->haveSubtypes()))
+                nested_types.push_back(adjustNullableRecursively(nested_type, make_nullable, settings));
             else
                 nested_types.push_back(nested_type);
         }
@@ -1610,13 +1671,13 @@ DataTypePtr makeNullableRecursively(DataTypePtr type)
         DataTypes nested_types;
         for (const auto & element : tuple_type->getElements())
         {
-            auto nested_type = makeNullableRecursively(element);
+            auto nested_type = adjustNullableRecursively(element, make_nullable, settings);
             if (!nested_type)
                 return nullptr;
             nested_types.push_back(nested_type);
         }
 
-        if (tuple_type->haveExplicitNames())
+        if (tuple_type->hasExplicitNames())
             return std::make_shared<DataTypeTuple>(std::move(nested_types), tuple_type->getElementNames());
 
         return std::make_shared<DataTypeTuple>(std::move(nested_types));
@@ -1625,34 +1686,47 @@ DataTypePtr makeNullableRecursively(DataTypePtr type)
     if (which.isMap())
     {
         const auto * map_type = assert_cast<const DataTypeMap *>(type.get());
-        auto key_type = makeNullableRecursively(map_type->getKeyType());
-        auto value_type = makeNullableRecursively(map_type->getValueType());
+        auto key_type = adjustNullableRecursively(map_type->getKeyType(), make_nullable, settings);
+        auto value_type = adjustNullableRecursively(map_type->getValueType(), make_nullable, settings);
         return key_type && value_type ? std::make_shared<DataTypeMap>(removeNullable(key_type), value_type) : nullptr;
     }
 
     if (which.isLowCardinality())
     {
         const auto * lc_type = assert_cast<const DataTypeLowCardinality *>(type.get());
-        auto nested_type = makeNullableRecursively(lc_type->getDictionaryType());
+        auto nested_type = adjustNullableRecursively(lc_type->getDictionaryType(), make_nullable, settings);
         return nested_type ? std::make_shared<DataTypeLowCardinality>(nested_type) : nullptr;
     }
 
     if (which.isObjectDeprecated())
     {
         const auto * object_type = assert_cast<const DataTypeObjectDeprecated *>(type.get());
-        if (object_type->hasNullableSubcolumns())
+        if (object_type->hasNullableSubcolumns() == make_nullable)
             return type;
-        return std::make_shared<DataTypeObjectDeprecated>(object_type->getSchemaFormat(), true);
+        return std::make_shared<DataTypeObjectDeprecated>(object_type->getSchemaFormat(), make_nullable);
     }
 
-    return makeNullableSafe(type);
+    if (which.isObject() && !settings.schema_inference_make_json_columns_nullable)
+        return type;
+
+    return make_nullable ? makeNullableSafe(type) : type;
 }
 
-NamesAndTypesList getNamesAndRecursivelyNullableTypes(const Block & header)
+DataTypePtr makeNullableRecursively(DataTypePtr type, const FormatSettings & settings)
+{
+    return adjustNullableRecursively(type, true, settings);
+}
+
+DataTypePtr removeNullableRecursively(DataTypePtr type, const FormatSettings & settings)
+{
+    return adjustNullableRecursively(type, false, settings);
+}
+
+NamesAndTypesList getNamesAndRecursivelyNullableTypes(const Block & header, const FormatSettings & settings)
 {
     NamesAndTypesList result;
     for (auto & [name, type] : header.getNamesAndTypesList())
-        result.emplace_back(name, makeNullableRecursively(type));
+        result.emplace_back(name, makeNullableRecursively(type, settings));
     return result;
 }
 

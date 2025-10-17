@@ -172,7 +172,32 @@ private:
 
 REGISTER_FUNCTION(ThrowIf)
 {
-    factory.registerFunction<FunctionThrowIf>();
+    FunctionDocumentation::Description description = R"(
+Throw an exception if argument x is true.
+To use the `error_code` argument, configuration parameter `allow_custom_error_code_in_throw` must be enabled.
+)";
+    FunctionDocumentation::Syntax syntax = "throwIf(x[, message[, error_code]])";
+    FunctionDocumentation::Arguments arguments = {
+        {"x", "The condition to check.", {"Any"}},
+        {"message", "Optional. Custom error message.", {"const String"}},
+        {"error_code", "Optional. Custom error code.", {"const Int8/16/32"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `0` if the condition is false, throws an exception if the condition is true.", {"UInt8"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+SELECT throwIf(number = 3, 'Too many') FROM numbers(10);
+        )",
+        R"(
+↙ Progress: 0.00 rows, 0.00 B (0.00 rows/s., 0.00 B/s.) Received exception from server (version 19.14.1):
+Code: 395. DB::Exception: Received from localhost:9000. DB::Exception: Too many.
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionThrowIf>(documentation);
 }
 
 }

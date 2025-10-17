@@ -2,17 +2,19 @@
 #include <cstdlib>
 #include <csignal>
 #include <iostream>
-#include <iomanip>
+#include <mutex>
 #include <optional>
 #include <random>
 #include <string_view>
 #include <pcg_random.hpp>
 #include <Poco/UUIDGenerator.h>
 #include <Poco/Util/Application.h>
+#include <Common/Config/parseConnectionCredentials.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
 #include <AggregateFunctions/ReservoirSampler.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
+#include <base/defines.h>
 #include <boost/program_options.hpp>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/Exception.h>
@@ -25,7 +27,6 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <IO/ConnectionTimeouts.h>
-#include <IO/UseSSL.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Interpreters/Context.h>
 #include <Client/Connection.h>
@@ -35,9 +36,8 @@
 #include <Common/TerminalSize.h>
 #include <Common/StudentTTest.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/ErrorCodes.h>
-#include "IO/WriteBuffer.h"
-
+#include <IO/WriteBuffer.h>
+#include <Client/ClientApplicationBaseParser.h>
 
 /** A tool for evaluating ClickHouse performance.
   * The tool emulates a case with fixed amount of simultaneously executing queries.
@@ -58,95 +58,59 @@ static constexpr std::string_view DEFAULT_CLIENT_NAME = "benchmark";
 
 namespace ErrorCodes
 {
-extern const int BAD_ARGUMENTS;
-extern const int CANNOT_BLOCK_SIGNAL;
-extern const int EMPTY_DATA_PASSED;
+    extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_BLOCK_SIGNAL;
+    extern const int EMPTY_DATA_PASSED;
+    extern const int UNRECOGNIZED_ARGUMENTS;
 }
 
 class Benchmark : public Poco::Util::Application
 {
 public:
-    Benchmark(unsigned concurrency_,
-            double delay_,
-            Strings && hosts_,
-            Ports && ports_,
-            bool round_robin_,
-            bool cumulative_,
-            bool secure_,
-            const String & default_database_,
-            const String & user_,
-            const String & password_,
-            const String & proto_send_chunked_,
-            const String & proto_recv_chunked_,
-            const String & quota_key_,
-            const String & stage,
-            bool randomize_,
-            size_t max_iterations_,
-            double max_time_,
-            size_t confidence_,
-            const String & query_id_,
-            const String & query_id_prefix_,
-            const String & query_to_execute_,
-            size_t max_consecutive_errors_,
-            bool continue_on_errors_,
-            bool reconnect_,
-            bool display_client_side_time_,
-            bool print_stacktrace_,
-            const Settings & settings_)
-        :
-        round_robin(round_robin_),
-        concurrency(concurrency_),
-        delay(delay_),
-        queue(concurrency),
-        randomize(randomize_),
-        cumulative(cumulative_),
-        max_iterations(max_iterations_),
-        max_time(max_time_),
-        confidence(confidence_),
-        query_id(query_id_),
-        query_id_prefix(query_id_prefix_),
-        query_to_execute(query_to_execute_),
-        continue_on_errors(continue_on_errors_),
-        max_consecutive_errors(max_consecutive_errors_),
-        reconnect(reconnect_),
-        display_client_side_time(display_client_side_time_),
+    Benchmark(
+        const boost::program_options::variables_map & options,
+        String && proto_send_chunked,
+        String && proto_recv_chunked,
+        bool print_stacktrace_,
+        Settings && settings_)
+        : connection_arguments(ConnectionArguments{
+            .hosts = options.contains("host") ? std::make_optional(options["host"].as<Strings>()) : std::nullopt,
+            .ports = options.contains("port") ? std::make_optional(options["port"].as<Ports>()) : std::nullopt,
+            .user = options.contains("user") ? std::make_optional(options["user"].as<std::string>()) : std::nullopt,
+            .password = options.contains("password") ? std::make_optional(options["password"].as<std::string>()) : std::nullopt,
+            .database = options.contains("database") ? std::make_optional(options["database"].as<std::string>()) : std::nullopt,
+            .secure = options.contains("secure") ? std::make_optional(true) : std::nullopt,
+            .accept_invalid_certificate = options.contains("accept-invalid-certificate") ? std::make_optional(true) : std::nullopt,
+            .quota_key = options.contains("quota_key") ? std::make_optional(options["quota_key"].as<std::string>()) : std::nullopt,
+            .proto_send_chunked = proto_send_chunked,
+            .proto_recv_chunked = proto_recv_chunked,
+        }),
+        connection_name(options.contains("connection") ? std::make_optional(options["connection"].as<std::string>()) : std::nullopt),
+        round_robin(options.contains("roundrobin")),
+        concurrency(options["concurrency"].as<unsigned>()),
+        max_concurrency(std::max(concurrency, options["max_concurrency"].as<unsigned>())),
+        threads(concurrency),
+        delay(options["delay"].as<double>()),
+        precise(options.contains("precise")),
+        queue(max_concurrency),
+        randomize(options.contains("randomize")),
+        cumulative(options.contains("cumulative")),
+        max_iterations(options["iterations"].as<size_t>()),
+        max_time(options["timelimit"].as<double>()),
+        confidence(options["confidence"].as<size_t>()),
+        query_id(options["query_id"].as<std::string>()),
+        query_id_prefix(options["query_id_prefix"].as<std::string>()),
+        query_to_execute(options["query"].as<std::string>()),
+        continue_on_errors(options.contains("ignore-error")),
+        max_consecutive_errors(options["max-consecutive-errors"].as<size_t>()),
+        reconnect(options["reconnect"].as<size_t>()),
+        display_client_side_time(options.contains("client-side-time")),
         print_stacktrace(print_stacktrace_),
-        settings(settings_),
+        settings(std::move(settings_)),
         shared_context(Context::createShared()),
         global_context(Context::createGlobal(shared_context.get())),
-        pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, concurrency)
+        pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, max_concurrency)
     {
-        const auto secure = secure_ ? Protocol::Secure::Enable : Protocol::Secure::Disable;
-        size_t connections_cnt = std::max(ports_.size(), hosts_.size());
-
-        connections.reserve(connections_cnt);
-        comparison_info_total.reserve(round_robin ? 1 : connections_cnt);
-        comparison_info_per_interval.reserve(round_robin ? 1 : connections_cnt);
-
-        for (size_t i = 0; i < connections_cnt; ++i)
-        {
-            UInt16 cur_port = i >= ports_.size() ? 9000 : ports_[i];
-            std::string cur_host = i >= hosts_.size() ? "localhost" : hosts_[i];
-
-            connections.emplace_back(std::make_unique<ConnectionPool>(
-                concurrency,
-                cur_host, cur_port,
-                default_database_, user_, password_,
-                proto_send_chunked_, proto_recv_chunked_,
-                quota_key_,
-                /* cluster_= */ "",
-                /* cluster_secret_= */ "",
-                /* client_name_= */ std::string(DEFAULT_CLIENT_NAME),
-                Protocol::Compression::Enable,
-                secure));
-
-            if (!round_robin || comparison_info_per_interval.empty())
-            {
-                comparison_info_per_interval.emplace_back(std::make_shared<Stats>());
-                comparison_info_total.emplace_back(std::make_shared<Stats>());
-            }
-        }
-
         global_context->makeGlobalContext();
         global_context->setSettings(settings);
         global_context->setClientName(std::string(DEFAULT_CLIENT_NAME));
@@ -156,7 +120,10 @@ public:
         /// (example: when using stage = 'with_mergeable_state')
         registerAggregateFunctions();
 
-        query_processing_stage = QueryProcessingStage::fromString(stage);
+        query_processing_stage = QueryProcessingStage::fromString(options["stage"].as<std::string>());
+
+        if (options.contains("config"))
+            config().setString("config-file", options["config"].as<std::string>());
     }
 
     void initialize(Poco::Util::Application & self [[maybe_unused]]) override
@@ -177,13 +144,57 @@ public:
             auto loaded_config = config_processor.loadConfig();
             config().add(loaded_config.configuration);
         }
+
+        if (connection_name.has_value())
+        {
+            std::string default_host;
+            if (connection_arguments.hosts.has_value())
+                default_host = connection_arguments.hosts->front();
+            else if (const char * env_host = getenv("CLICKHOUSE_HOST")) // NOLINT(concurrency-mt-unsafe)
+                default_host = env_host;
+            else
+                default_host = "localhost";
+
+            auto overrides = parseConnectionsCredentials(config(), default_host, connection_name);
+            if (overrides.hostname.has_value() && !connection_arguments.hosts.has_value())
+                connection_arguments.hosts.emplace({overrides.hostname.value()});
+            if (overrides.port.has_value() && !connection_arguments.ports.has_value())
+                connection_arguments.ports.emplace({overrides.port.value()});
+            if (overrides.secure.has_value() && !connection_arguments.secure.has_value())
+                connection_arguments.secure.emplace(overrides.secure.value());
+            if (overrides.accept_invalid_certificate.has_value() && !connection_arguments.accept_invalid_certificate.has_value())
+                connection_arguments.accept_invalid_certificate.emplace(overrides.accept_invalid_certificate.value());
+            if (overrides.user.has_value() && !connection_arguments.user.has_value())
+                connection_arguments.user.emplace(overrides.user.value());
+            if (overrides.password.has_value() && !connection_arguments.password.has_value())
+                connection_arguments.password.emplace(overrides.password.value());
+            if (overrides.database.has_value() && !connection_arguments.database.has_value())
+                connection_arguments.database.emplace(overrides.database.value());
+        }
+
+        if (connection_arguments.accept_invalid_certificate.value_or(false))
+        {
+            config().setString("openSSL.client.invalidCertificateHandler.name", "AcceptCertificateHandler");
+            config().setString("openSSL.client.verificationMode", "none");
+        }
+
+        makeConnections();
     }
 
     int main(const std::vector<std::string> &) override
     {
-        readQueries();
-        runBenchmark();
-        return 0;
+        try
+        {
+            readQueries();
+            runBenchmark();
+            return 0;
+        }
+        catch (...)
+        {
+            log << getCurrentExceptionMessage(print_stacktrace, true) << '\n';
+            auto code = getCurrentExceptionCode();
+            return static_cast<UInt8>(code) ? code : 1;
+        }
     }
 
 private:
@@ -191,9 +202,28 @@ private:
     using EntryPtr = std::shared_ptr<Entry>;
     using EntryPtrs = std::vector<EntryPtr>;
 
+    struct ConnectionArguments
+    {
+        std::optional<Strings> hosts;
+        std::optional<Ports> ports;
+        std::optional<String> user;
+        std::optional<String> password;
+        std::optional<String> database;
+        std::optional<bool> secure;
+        std::optional<bool> accept_invalid_certificate;
+
+        std::optional<String> quota_key;
+        const String proto_send_chunked;
+        const String proto_recv_chunked;
+    } connection_arguments;
+    std::optional<String> connection_name;
+
     bool round_robin;
     unsigned concurrency;
+    unsigned max_concurrency;
+    unsigned threads;
     double delay;
+    bool precise;
 
     using Query = std::string;
     using Queries = std::vector<Query>;
@@ -216,7 +246,7 @@ private:
     String query_to_execute;
     bool continue_on_errors;
     size_t max_consecutive_errors;
-    bool reconnect;
+    size_t reconnect;
     bool display_client_side_time;
     bool print_stacktrace;
     const Settings & settings;
@@ -224,7 +254,8 @@ private:
     ContextMutablePtr global_context;
     QueryProcessingStage::Enum query_processing_stage;
 
-    AutoFinalizedWriteBuffer<WriteBufferFromFileDescriptor> log{STDERR_FILENO};
+    std::mutex mutex;
+    AutoFinalizedWriteBuffer<WriteBufferFromFileDescriptor> log TSA_GUARDED_BY(mutex) {STDERR_FILENO};
 
     std::atomic<size_t> consecutive_errors{0};
 
@@ -233,50 +264,167 @@ private:
 
     std::atomic<size_t> queries_executed{0};
 
+    std::mutex queries_per_connection_mutex;
+    std::vector<size_t> queries_per_connection TSA_GUARDED_BY(queries_per_connection_mutex);
+
     struct Stats
     {
-        std::atomic<size_t> queries{0};
+        double queries = 0;
+        size_t finished_queries = 0;
         size_t errors = 0;
-        size_t read_rows = 0;
-        size_t read_bytes = 0;
-        size_t result_rows = 0;
-        size_t result_bytes = 0;
+        double read_rows = 0;
+        double read_bytes = 0;
+        double result_rows = 0;
+        double result_bytes = 0;
 
         using Sampler = ReservoirSampler<double>;
         Sampler sampler {1 << 16};
 
-        void add(double duration, size_t read_rows_inc, size_t read_bytes_inc, size_t result_rows_inc, size_t result_bytes_inc)
+        void addWeighted(size_t read_rows_inc, size_t read_bytes_inc, size_t result_rows_inc, size_t result_bytes_inc, double weight)
         {
-            ++queries;
-            read_rows += read_rows_inc;
-            read_bytes += read_bytes_inc;
-            result_rows += result_rows_inc;
-            result_bytes += result_bytes_inc;
+            queries += weight;
+            read_rows += weight * read_rows_inc;
+            read_bytes += weight * read_bytes_inc;
+            result_rows += weight * result_rows_inc;
+            result_bytes += weight * result_bytes_inc;
+        }
+
+        void sample(double duration)
+        {
+            ++finished_queries;
             sampler.insert(duration);
         }
 
-        void clear()
+        void add(double duration, size_t read_rows_inc, size_t read_bytes_inc, size_t result_rows_inc, size_t result_bytes_inc)
         {
-            queries = 0;
-            read_rows = 0;
-            read_bytes = 0;
-            result_rows = 0;
-            result_bytes = 0;
-            sampler.clear();
+            addWeighted(read_rows_inc, read_bytes_inc, result_rows_inc, result_bytes_inc, 1.0);
+            sample(duration);
         }
     };
 
     using MultiStats = std::vector<std::shared_ptr<Stats>>;
-    MultiStats comparison_info_per_interval;
-    MultiStats comparison_info_total;
+
+    struct IntervalStats;
+    friend struct IntervalStats;
+    struct IntervalStats
+    {
+        Benchmark & benchmark;
+        bool reported = false;
+
+        UInt64 start_ns;
+        UInt64 end_ns = std::numeric_limits<UInt64>::max();
+        MultiStats stats;
+        size_t threads;
+
+        // NOTE: We keep reference to the next interval for --precise mode
+        std::shared_ptr<IntervalStats> next;
+
+        IntervalStats(Benchmark & benchmark_, UInt64 start_ns_)
+            : benchmark(benchmark_)
+            , start_ns(start_ns_)
+        {}
+
+        ~IntervalStats()
+        {
+            report();
+        }
+
+        // Closes the interval. Note that stats maybe updated after close by queries started during this interval, but finished in a later one
+        void close(UInt64 end_ns_, size_t threads_)
+        {
+            end_ns = end_ns_;
+            threads = threads_;
+        }
+
+        // In --precise mode: it must be called on a closed interval when all queries started during it are finished
+        // Otherwise: it is called just after close()
+        void report()
+        {
+            if (reported || end_ns == std::numeric_limits<UInt64>::max())
+                return;
+            reported = true;
+            benchmark.report(stats, (end_ns - start_ns) / 1e9, threads);
+        }
+    };
+
+    std::mutex interval_mutex;
+    std::shared_ptr<IntervalStats> interval TSA_GUARDED_BY(interval_mutex);
+    MultiStats total_stats; // requires mutex
     StudentTTest t_test;
 
     Stopwatch total_watch;
     Stopwatch delay_watch;
 
-    std::mutex mutex;
-
     ThreadPool pool;
+
+    void makeConnections()
+    {
+        const bool is_secure = connection_arguments.secure.value_or(false);
+        const auto secure = is_secure ? Protocol::Secure::Enable : Protocol::Secure::Disable;
+
+        /// Note: according to the standard, subsequent calls to getenv can mangle previous result.
+        /// So we copy the results to std::string.
+        std::optional<std::string> env_user_str;
+        std::optional<std::string> env_password_str;
+        std::optional<std::string> env_host_str;
+        std::optional<std::string> env_quota_key_str;
+
+        const char * env_user = getenv("CLICKHOUSE_USER"); // NOLINT(concurrency-mt-unsafe)
+        if (env_user != nullptr)
+            env_user_str.emplace(std::string(env_user));
+
+        const char * env_password = getenv("CLICKHOUSE_PASSWORD"); // NOLINT(concurrency-mt-unsafe)
+        if (env_password != nullptr)
+            env_password_str.emplace(std::string(env_password));
+
+        const char * env_host = getenv("CLICKHOUSE_HOST"); // NOLINT(concurrency-mt-unsafe)
+        if (env_host != nullptr)
+            env_host_str.emplace(std::string(env_host));
+
+        const char * env_quota_key = getenv("CLICKHOUSE_QUOTA_KEY"); // NOLINT(concurrency-mt-unsafe)
+        if (env_quota_key != nullptr)
+            env_quota_key_str.emplace(std::string(env_quota_key));
+
+        UInt16 default_port = is_secure ? DBMS_DEFAULT_SECURE_PORT : DBMS_DEFAULT_PORT;
+        Ports ports = connection_arguments.ports.value_or(Ports({default_port}));
+        Strings hosts = connection_arguments.hosts.value_or(Strings({env_host_str.value_or("localhost")}));
+
+        size_t connections_cnt = std::max(ports.size(), hosts.size());
+        for (size_t i = 0; i < connections_cnt; ++i)
+        {
+            UInt16 cur_port = i >= ports.size() ? default_port : ports[i];
+            std::string cur_host = i >= hosts.size() ? "localhost" : hosts[i];
+
+            connections.emplace_back(std::make_unique<ConnectionPool>(
+                max_concurrency,
+                cur_host,
+                cur_port,
+                connection_arguments.database.value_or("default"),
+                connection_arguments.user.value_or(env_user_str.value_or("default")),
+                connection_arguments.password.value_or(env_password_str.value_or("")),
+                connection_arguments.proto_send_chunked,
+                connection_arguments.proto_recv_chunked,
+                connection_arguments.quota_key.value_or(env_quota_key_str.value_or("")),
+                /* cluster_= */ "",
+                /* cluster_secret_= */ "",
+                /* client_name_= */ std::string(DEFAULT_CLIENT_NAME),
+                Protocol::Compression::Enable,
+                secure,
+                /* bind_host_= */ ""));
+
+            if (!round_robin || total_stats.empty())
+                total_stats.emplace_back(std::make_shared<Stats>());
+        }
+
+        connections.reserve(connections_cnt);
+        total_stats.reserve(round_robin ? 1 : connections_cnt);
+
+        // Initialize queries_per_connection to track queries for each connection
+        {
+            std::lock_guard lock(queries_per_connection_mutex);
+            queries_per_connection.resize(connections.size(), 0);
+        }
+    }
 
     void readQueries()
     {
@@ -303,16 +451,8 @@ private:
         }
 
 
+        std::lock_guard lock(mutex);
         log << "Loaded " << queries.size() << " queries.\n" << flush;
-    }
-
-
-    void printNumberOfQueriesExecuted(size_t num)
-    {
-        log << "\nQueries executed: " << num;
-        if (queries.size() > 1)
-            log << " (" << (num * 100.0 / queries.size()) << "%)";
-        log << ".\n" << flush;
     }
 
     /// Try push new query and check cancellation conditions
@@ -344,23 +484,72 @@ private:
             }
         }
 
-        double seconds = delay_watch.elapsedSeconds();
-        if (delay > 0 && seconds > delay)
+        if (delay > 0 && delay_watch.elapsedSeconds() > delay)
         {
-            printNumberOfQueriesExecuted(queries_executed);
-            cumulative
-                ? report(comparison_info_total, total_watch.elapsedSeconds())
-                : report(comparison_info_per_interval, seconds);
-            delay_watch.restart();
+            startNextInterval();
+
+            // Special mode: gradually increasing concurrency.
+            // Concurrency is constant between reports and increased by one after every report.
+            if (concurrency < max_concurrency)
+            {
+                if (threads == max_concurrency)
+                    return false; // Reached maximum concurrency
+                try
+                {
+                    pool.scheduleOrThrowOnError([this]() mutable { thread(); });
+                    threads++;
+                }
+                catch (...)
+                {
+                    shutdown = true;
+                    pool.wait();
+                    throw;
+                }
+            }
         }
 
         return true;
+    }
+
+    void startNextInterval(bool first = false)
+    {
+        std::lock_guard lock(interval_mutex);
+
+        delay_watch.restart();
+        UInt64 now_ns = delay_watch.getStart();
+
+        if (cumulative)
+        {
+            if (!first)
+                report(total_stats, total_watch.elapsedSeconds(), threads);
+        }
+        else
+        {
+            // Report previous interval (if any)
+            if (interval)
+            {
+                interval->close(now_ns, threads);
+                if (!precise)
+                    interval->report();
+            }
+
+            // Start the next interval
+            auto next_interval = std::make_shared<IntervalStats>(*this, now_ns);
+            next_interval->stats.reserve(round_robin ? 1 : connections.size());
+            for (size_t i = 0; i < (round_robin ? 1 : connections.size()); ++i)
+                next_interval->stats.emplace_back(std::make_shared<Stats>());
+            if (interval)
+                interval->next = next_interval;
+            interval = next_interval;
+        }
     }
 
     void runBenchmark()
     {
         pcg64 generator(randomSeed());
         std::uniform_int_distribution<size_t> distribution(0, queries.size() - 1);
+
+        startNextInterval(true);
 
         try
         {
@@ -375,7 +564,6 @@ private:
         }
 
         InterruptListener interrupt_listener;
-        delay_watch.restart();
 
         /// Push queries into queue
         for (size_t i = 0; !max_iterations || i < max_iterations; ++i)
@@ -395,8 +583,7 @@ private:
         pool.wait();
         total_watch.stop();
 
-        printNumberOfQueriesExecuted(queries_executed);
-        report(comparison_info_total, total_watch.elapsedSeconds());
+        report(total_stats, total_watch.elapsedSeconds());
     }
 
 
@@ -437,21 +624,24 @@ private:
             }
             catch (...)
             {
-                std::lock_guard lock(mutex);
-                log << "An error occurred while processing the query " << "'" << query << "'"
-                          << ": " << getCurrentExceptionMessage(false) << '\n';
-                if (!(continue_on_errors || max_consecutive_errors > ++consecutive_errors))
+                size_t info_index = round_robin ? 0 : connection_index;
                 {
-                    shutdown = true;
-                    throw;
+                    std::lock_guard lock(mutex);
+                    if (!(continue_on_errors || max_consecutive_errors > ++consecutive_errors))
+                    {
+                        shutdown = true;
+                        throw;
+                    }
+
+                    log << getCurrentExceptionMessage(print_stacktrace,
+                        true /*check embedded stack trace*/) << "\n\n" << flush;
+
+                    ++total_stats[info_index]->errors;
                 }
 
-                log << getCurrentExceptionMessage(print_stacktrace,
-                    true /*check embedded stack trace*/) << '\n' << flush;
-
-                size_t info_index = round_robin ? 0 : connection_index;
-                ++comparison_info_per_interval[info_index]->errors;
-                ++comparison_info_total[info_index]->errors;
+                std::lock_guard lock(interval_mutex); // Locking order: first intervals_mutex, then mutex
+                if (interval)
+                    ++interval->stats[info_index]->errors;
             }
             // Count failed queries toward executed, so that we'd reach
             // max_iterations even if every run fails.
@@ -459,18 +649,29 @@ private:
         }
     }
 
-    void execute(Query & query, size_t connection_index)
+    void execute(const Query & query, size_t connection_index)
     {
         Stopwatch watch;
 
-        ConnectionPool::Entry entry = connections[connection_index]->get(
-            ConnectionTimeouts::getTCPTimeoutsWithoutFailover(settings));
+        std::shared_ptr<IntervalStats> cur_interval;
+        if (precise)
+        {
+            std::lock_guard lock(interval_mutex);
+            cur_interval = interval;
+        }
 
-        if (reconnect)
+        ConnectionPool::Entry entry = connections[connection_index]->get(ConnectionTimeouts::getTCPTimeoutsWithoutFailover(settings));
+
+        bool should_reconnect = false;
+        {
+            std::lock_guard lock(queries_per_connection_mutex);
+            should_reconnect = reconnect > 0 && (++queries_per_connection[connection_index] % reconnect == 0);
+        }
+
+        if (should_reconnect)
             entry->disconnect();
 
-        RemoteQueryExecutor executor(
-            *entry, query, {}, global_context, nullptr, Scalars(), Tables(), query_processing_stage);
+        RemoteQueryExecutor executor(*entry, query, std::make_shared<const Block>(), global_context, nullptr, Scalars(), Tables(), query_processing_stage);
 
         if (!query_id.empty())
             executor.setQueryId(query_id);
@@ -483,26 +684,79 @@ private:
         executor.sendQuery(ClientInfo::QueryKind::INITIAL_QUERY);
 
         ProfileInfo info;
-        while (Block block = executor.readBlock())
+        for (Block block = executor.readBlock(); !block.empty(); block = executor.readBlock())
             info.update(block);
 
         executor.finish();
 
+        watch.stop();
         double duration = (display_client_side_time || progress.elapsed_ns == 0)
             ? watch.elapsedSeconds()
             : progress.elapsed_ns / 1e9;
+        size_t info_index = round_robin ? 0 : connection_index;
+
+        if (precise && cur_interval)
+        {
+            // Stats weighting across all overlapped intervals
+            UInt64 duration_ns = watch.getEnd() - watch.getStart();
+
+            std::lock_guard lock(interval_mutex);
+
+            // Distribute weights across intervals intersecting query execution span
+            // Intervals:
+            // [beg]    I0: [s0---------e0)
+            //          I1:               [s1--------------e1)
+            // [end]    I2:               |                  [s2-----------e2)
+            //                            |                  |
+            //  Query span:        [qs----+------------------+-------qe)
+            //                         ^           ^              ^
+            //                         w0          w1             w2
+            // Weights (w0, w1, w2) are proportional to the lengths of intersections
+            // and normalized to the total duration of a query to given 1 as a sum of weights.
+            for (; cur_interval; cur_interval = cur_interval->next)
+            {
+                if (cur_interval->end_ns <= watch.getStart())
+                    continue;
+                if (cur_interval->start_ns >= watch.getEnd())
+                    break;
+                const double overlap_ns = std::min(cur_interval->end_ns, watch.getEnd()) - std::max(cur_interval->start_ns, watch.getStart());
+                const double weight = overlap_ns / duration_ns;
+                if (overlap_ns > 0 && duration_ns > 0)
+                    cur_interval->stats[info_index]->addWeighted(progress.read_rows, progress.read_bytes, info.rows, info.bytes, weight);
+            }
+
+            // Latency goes to the last interval only (our sampler does not support weights)
+            interval->stats[info_index]->sample(duration);
+        }
+        else if (!cumulative)
+        {
+            std::lock_guard lock(interval_mutex);
+            interval->stats[info_index]->add(duration, progress.read_rows, progress.read_bytes, info.rows, info.bytes);
+        }
 
         std::lock_guard lock(mutex);
-
-        size_t info_index = round_robin ? 0 : connection_index;
-        comparison_info_per_interval[info_index]->add(duration, progress.read_rows, progress.read_bytes, info.rows, info.bytes);
-        comparison_info_total[info_index]->add(duration, progress.read_rows, progress.read_bytes, info.rows, info.bytes);
+        total_stats[info_index]->add(duration, progress.read_rows, progress.read_bytes, info.rows, info.bytes);
         t_test.add(info_index, duration);
     }
 
-    void report(MultiStats & infos, double seconds)
+    void report(const MultiStats & infos, double seconds, size_t used_threads = 0)
     {
         std::lock_guard lock(mutex);
+
+        size_t executed = queries_executed.load();
+        log << "\nQueries executed: " << executed;
+        if (max_iterations > 1)
+            log << " (" << (executed * 100.0 / max_iterations) << "%)";
+        else if (queries.size() > 1)
+            log << " (" << (executed * 100.0 / queries.size()) << "%)";
+        log << ".\n" << flush;
+
+        if (used_threads > 0 && concurrency < max_concurrency)
+        {
+            log << "Concurrency: " << used_threads;
+            log << " of " << max_concurrency;
+            log << " parallel queries.\n" << flush;
+        }
 
         log << "\n";
         for (size_t i = 0; i < infos.size(); ++i)
@@ -510,7 +764,7 @@ private:
             const auto & info = infos[i];
 
             /// Avoid zeros, nans or exceptions
-            if (0 == info->queries)
+            if (0 == info->finished_queries)
                 return;
 
             std::string connection_description = connections[i]->getDescription();
@@ -526,7 +780,7 @@ private:
             }
             log
                 << connection_description << ", "
-                << "queries: " << info->queries.load() << ", ";
+                << "queries: " << info->finished_queries << ", ";
             if (info->errors)
             {
                 log << "errors: " << info->errors << ", ";
@@ -541,7 +795,7 @@ private:
         }
         log << "\n";
 
-        auto print_percentile = [&](double percent)
+        auto print_percentile = [&](double percent) TSA_REQUIRES(mutex)
         {
             log << percent << "%\t\t";
             for (const auto & info : infos)
@@ -561,12 +815,6 @@ private:
 
         log << "\n" << t_test.compareAndReport(confidence).second << "\n";
 
-        if (!cumulative)
-        {
-            for (auto & info : infos)
-                info->clear();
-        }
-
         log.next();
     }
 
@@ -584,93 +832,104 @@ public:
 int mainEntryClickHouseBenchmark(int argc, char ** argv)
 {
     using namespace DB;
-    bool print_stacktrace = true;
+    bool print_stacktrace = false;
 
     try
     {
         using boost::program_options::value;
 
-        /// Note: according to the standard, subsequent calls to getenv can mangle previous result.
-        /// So we copy the results to std::string.
-        std::optional<std::string> env_user_str;
-        std::optional<std::string> env_password_str;
-        std::optional<std::string> env_quota_key_str;
-
-        const char * env_user = getenv("CLICKHOUSE_USER"); // NOLINT(concurrency-mt-unsafe)
-        if (env_user != nullptr)
-            env_user_str.emplace(std::string(env_user));
-
-        const char * env_password = getenv("CLICKHOUSE_PASSWORD"); // NOLINT(concurrency-mt-unsafe)
-        if (env_password != nullptr)
-            env_password_str.emplace(std::string(env_password));
-
-        const char * env_quota_key = getenv("CLICKHOUSE_QUOTA_KEY"); // NOLINT(concurrency-mt-unsafe)
-        if (env_quota_key != nullptr)
-            env_quota_key_str.emplace(std::string(env_quota_key));
-
-        boost::program_options::options_description desc = createOptionsDescription("Allowed options", getTerminalWidth());
-        desc.add_options()
-            ("help",                                                            "produce help message")
+        boost::program_options::options_description options_description = createOptionsDescription("Allowed options", getTerminalWidth());
+        options_description.add_options()
+            ("help", "Print usage summary and exit; combine with --verbose to display all options")
+            ("verbose", "Increase output verbosity")
             ("query,q",       value<std::string>()->default_value(""),          "query to execute")
             ("concurrency,c", value<unsigned>()->default_value(1),              "number of parallel queries")
+            ("max_concurrency,C", value<unsigned>()->default_value(0),          "gradually increase number of parallel queries up to specified value, making one report for every concurrency level")
             ("delay,d",       value<double>()->default_value(1),                "delay between intermediate reports in seconds (set 0 to disable reports)")
+            ("precise",                                                         "enable precise per-interval reporting with weighted metrics")
             ("stage",         value<std::string>()->default_value("complete"),  "request query processing up to specified stage: complete,fetch_columns,with_mergeable_state,with_mergeable_state_after_aggregation,with_mergeable_state_after_aggregation_and_limit")
             ("iterations,i",  value<size_t>()->default_value(0),                "amount of queries to be executed")
             ("timelimit,t",   value<double>()->default_value(0.),               "stop launch of queries after specified time limit")
             ("randomize,r",                                                     "randomize order of execution")
             ("host,h",        value<Strings>()->multitoken(),                   "list of hosts")
             ("port",          value<Ports>()->multitoken(),                     "list of ports")
+            ("connection",    value<std::string>(),                             "connection name (define under connections_credentials in client config)")
             ("roundrobin",    "Instead of comparing queries for different --host/--port just pick one random --host/--port for every query and send query to it.")
             ("cumulative",    "prints cumulative data instead of data per interval")
             ("secure,s",      "Use TLS connection")
-            ("user,u",        value<std::string>()->default_value(env_user_str.value_or("default")), "")
-            ("password",      value<std::string>()->default_value(env_password_str.value_or("")), "")
-            ("quota_key",     value<std::string>()->default_value(env_quota_key_str.value_or("")), "")
-            ("database", value<std::string>()->default_value("default"), "")
+            ("accept-invalid-certificate", "Ignore certificate verification errors, equal to config parameters " "openSSL.client.invalidCertificateHandler.name=AcceptCertificateHandler and openSSL.client.verificationMode=none")
+            ("user,u",        value<std::string>(), "")
+            ("password",      value<std::string>(), "")
+            ("quota_key",     value<std::string>(), "")
+            ("database",      value<std::string>(), "")
+            ("config",        value<std::string>(), "Path to client config")
             ("stacktrace", "print stack traces of exceptions")
             ("confidence", value<size_t>()->default_value(5), "set the level of confidence for T-test [0=80%, 1=90%, 2=95%, 3=98%, 4=99%, 5=99.5%(default)")
             ("query_id", value<std::string>()->default_value(""), "")
             ("query_id_prefix", value<std::string>()->default_value(""), "")
             ("max-consecutive-errors", value<size_t>()->default_value(0), "set number of allowed consecutive errors")
             ("ignore-error,continue_on_errors", "continue testing even if a query fails")
-            ("reconnect", "establish new connection for every query")
+            ("reconnect", value<size_t>()->default_value(0), "control reconnection behaviour: 0 (never reconnect), 1 (reconnect for every query), or N (reconnect after every N queries)")
             ("client-side-time", "display the time including network communication instead of server-side time; note that for server versions before 22.8 we always display client-side time")
+            ("proto_caps", value<std::string>(), "Enable/disable chunked protocol (comma-separated): chunked_optional, notchunked, notchunked_optional, send_chunked, send_chunked_optional, send_notchunked, send_notchunked_optional, recv_chunked, recv_chunked_optional, recv_notchunked, recv_notchunked_optional")
         ;
 
         Settings settings;
-        settings.addToProgramOptions(desc);
+        auto options_description_non_verbose = options_description;
+        settings.addToProgramOptions(options_description);
 
-        boost::program_options::variables_map options;
-        boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);
-        boost::program_options::notify(options);
+        auto parser = po::command_line_parser(argc, argv)
+                          .options(options_description)
+                          .extra_parser(OptionsAliasParser(options_description))
+                          .allow_unregistered();
+        po::parsed_options parsed = parser.run();
+
+        /// Check unrecognized options.
+        auto unrecognized_options = po::collect_unrecognized(parsed.options, po::collect_unrecognized_mode::exclude_positional);
+        if (!unrecognized_options.empty())
+        {
+            throw Exception(ErrorCodes::UNRECOGNIZED_ARGUMENTS, "Unrecognized option '{}'", unrecognized_options[0]);
+        }
+
+        /// Check positional options.
+        for (const auto & op : parsed.options)
+        {
+            /// Skip all options after empty `--`. These are processed separately into the Application configuration.
+            if (op.string_key.empty() && op.original_tokens[0].starts_with("--"))
+                break;
+
+            if (!op.unregistered && op.string_key.empty() && !op.original_tokens[0].starts_with("--")
+                && !op.original_tokens[0].empty() && !op.value.empty())
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Positional option '{}' is not supported.", op.original_tokens[0]);
+            }
+        }
+
+        po::variables_map options;
+        po::store(parsed, options);
+        po::notify(options);
 
         clearPasswordFromCommandLine(argc, argv);
 
-        if (options.count("help"))
+        if (options.contains("help"))
         {
             std::cout << "Usage: " << argv[0] << " [options] < queries.txt\n";
-            std::cout << desc << "\n";
-            std::cout << "\nSee also: https://clickhouse.com/docs/en/operations/utilities/clickhouse-benchmark/\n";
+            if (options.contains("verbose"))
+                std::cout << options_description << "\n";
+            else
+                std::cout << options_description_non_verbose << "\n";
+            std::cout << "\nSee also: https://clickhouse.com/docs/operations/utilities/clickhouse-benchmark/\n";
             return 0;
         }
 
-        print_stacktrace = options.count("stacktrace");
+        print_stacktrace = options.contains("stacktrace");
 
         /// NOTE Maybe clickhouse-benchmark should also respect .xml configuration of clickhouse-client.
-
-        UInt16 default_port = options.count("secure") ? DBMS_DEFAULT_SECURE_PORT : DBMS_DEFAULT_PORT;
-
-        UseSSL use_ssl;
-        Ports ports = options.count("port")
-            ? options["port"].as<Ports>()
-            : Ports({default_port});
-
-        Strings hosts = options.count("host") ? options["host"].as<Strings>() : Strings({"localhost"});
 
         String proto_send_chunked {"notchunked"};
         String proto_recv_chunked {"notchunked"};
 
-        if (options.count("proto_caps"))
+        if (options.contains("proto_caps"))
         {
             std::string proto_caps_str = options["proto_caps"].as<std::string>();
 
@@ -710,40 +969,23 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             }
         }
 
-
         Benchmark benchmark(
-            options["concurrency"].as<unsigned>(),
-            options["delay"].as<double>(),
-            std::move(hosts),
-            std::move(ports),
-            options.count("roundrobin"),
-            options.count("cumulative"),
-            options.count("secure"),
-            options["database"].as<std::string>(),
-            options["user"].as<std::string>(),
-            options["password"].as<std::string>(),
-            proto_send_chunked,
-            proto_recv_chunked,
-            options["quota_key"].as<std::string>(),
-            options["stage"].as<std::string>(),
-            options.count("randomize"),
-            options["iterations"].as<size_t>(),
-            options["timelimit"].as<double>(),
-            options["confidence"].as<size_t>(),
-            options["query_id"].as<std::string>(),
-            options["query_id_prefix"].as<std::string>(),
-            options["query"].as<std::string>(),
-            options["max-consecutive-errors"].as<size_t>(),
-            options.count("ignore-error"),
-            options.count("reconnect"),
-            options.count("client-side-time"),
+            options,
+            std::move(proto_send_chunked),
+            std::move(proto_recv_chunked),
             print_stacktrace,
-            settings);
+            std::move(settings));
         return benchmark.run();
+    }
+    catch (const po::error & e)
+    {
+        std::cerr << "Bad arguments: " << e.what() << std::endl;
+        return ErrorCodes::BAD_ARGUMENTS;
     }
     catch (...)
     {
         std::cerr << getCurrentExceptionMessage(print_stacktrace, true) << '\n';
-        return getCurrentExceptionCode();
+        auto code = getCurrentExceptionCode();
+        return static_cast<UInt8>(code) ? code : 1;
     }
 }

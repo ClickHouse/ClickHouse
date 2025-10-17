@@ -1,5 +1,6 @@
 #include <Processors/Executors/ExecutingGraph.h>
 #include <Common/Stopwatch.h>
+#include <Common/CurrentThread.h>
 
 #include <shared_mutex>
 #include <stack>
@@ -99,7 +100,7 @@ bool ExecutingGraph::addEdges(uint64_t node)
     return was_edge_added;
 }
 
-ExecutingGraph::UpdateNodeStatus ExecutingGraph::expandPipeline(std::stack<uint64_t> & stack, uint64_t pid)
+ExecutingGraph::UpdateNodeStatus ExecutingGraph::expandPipeline(boost::container::devector<uint64_t> & stack, uint64_t pid)
 {
     auto & cur_node = *nodes[pid];
     Processors new_processors;
@@ -177,7 +178,7 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::expandPipeline(std::stack<uint6
         if (node.status == ExecutingGraph::ExecStatus::Idle)
         {
             node.status = ExecutingGraph::ExecStatus::Preparing;
-            stack.push(updated_node);
+            stack.push_front(updated_node);
         }
     }
 
@@ -212,9 +213,9 @@ void ExecutingGraph::initializeExecution(Queue & queue, Queue & async_queue)
 
 ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(uint64_t pid, Queue & queue, Queue & async_queue)
 {
-    std::stack<Edge *> updated_edges;
-    std::stack<uint64_t> updated_processors;
-    updated_processors.push(pid);
+    boost::container::devector<Edge *> updated_edges;
+    boost::container::devector<uint64_t> updated_processors;
+    updated_processors.push_back(pid);
 
     std::shared_lock read_lock(nodes_mutex);
 
@@ -224,8 +225,8 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(uint64_t pid, Queue 
 
         if (updated_processors.empty())
         {
-            auto * edge = updated_edges.top();
-            updated_edges.pop();
+            auto * edge = updated_edges.front();
+            updated_edges.pop_front();
 
             /// Here we have ownership on edge, but node can be concurrently accessed.
 
@@ -245,7 +246,7 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(uint64_t pid, Queue 
                 if (status == ExecutingGraph::ExecStatus::Idle)
                 {
                     node.status = ExecutingGraph::ExecStatus::Preparing;
-                    updated_processors.push(edge->to);
+                    updated_processors.push_front(edge->to);
                     stack_top_lock = std::move(lock);
                 }
                 else
@@ -255,8 +256,8 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(uint64_t pid, Queue 
 
         if (!updated_processors.empty())
         {
-            pid = updated_processors.top();
-            updated_processors.pop();
+            pid = updated_processors.front();
+            updated_processors.pop_front();
 
             /// In this method we have ownership on node.
             auto & node = *nodes[pid];
@@ -279,6 +280,8 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(uint64_t pid, Queue 
                     const auto last_status = node.last_processor_status;
                     IProcessor::Status status = processor.prepare(node.updated_input_ports, node.updated_output_ports);
                     node.last_processor_status = status;
+                    if (status == IProcessor::Status::Finished && CurrentThread::getGroup())
+                        CurrentThread::getGroup()->memory_spill_scheduler->remove(&processor);
 
                     if (profile_processors)
                     {
@@ -361,14 +364,14 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(uint64_t pid, Queue 
                     for (auto it = node.post_updated_output_ports.rbegin(); it != node.post_updated_output_ports.rend(); ++it)
                     {
                         auto * edge = static_cast<ExecutingGraph::Edge *>(*it);
-                        updated_edges.push(edge);
+                        updated_edges.push_front(edge);
                         edge->update_info.trigger();
                     }
 
                     for (auto it = node.post_updated_input_ports.rbegin(); it != node.post_updated_input_ports.rend(); ++it)
                     {
                         auto * edge = static_cast<ExecutingGraph::Edge *>(*it);
-                        updated_edges.push(edge);
+                        updated_edges.push_front(edge);
                         edge->update_info.trigger();
                     }
 
@@ -390,7 +393,7 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(uint64_t pid, Queue 
                 read_lock.lock();
 
                 /// Add itself back to be prepared again.
-                updated_processors.push(pid);
+                updated_processors.push_front(pid);
             }
         }
     }

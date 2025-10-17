@@ -1,5 +1,6 @@
 <clickhouse>
     <startup_scripts>
+        <throw_on_error>false</throw_on_error>
         <scripts>
             <query>SELECT 42;</query>
         </scripts>

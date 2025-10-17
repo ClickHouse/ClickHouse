@@ -1,4 +1,4 @@
-#include "StorageSystemRemoteDataPaths.h"
+#include <Storages/System/StorageSystemRemoteDataPaths.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -12,6 +12,7 @@
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
+#include <Processors/ISource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -39,7 +40,7 @@ class SystemRemoteDataPathsSource : public ISource
 public:
     SystemRemoteDataPathsSource(
         const DisksMap & disks_,
-        Block header_,
+        SharedHeader header_,
         UInt64 max_block_size_,
         ContextPtr context_)
         : ISource(header_)
@@ -132,7 +133,7 @@ public:
         const Block & header,
         UInt64 max_block_size_)
         : SourceStepWithFilter(
-            header,
+            std::make_shared<const Block>(header),
             column_names_,
             query_info_,
             storage_snapshot_,
@@ -199,8 +200,7 @@ void StorageSystemRemoteDataPaths::read(
 
 void ReadFromSystemRemoteDataPaths::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & /*settings*/)
 {
-    const auto & header = getOutputHeader();
-    auto source = std::make_shared<SystemRemoteDataPathsSource>(std::move(disks), header, max_block_size, context);
+    auto source = std::make_shared<SystemRemoteDataPathsSource>(std::move(disks), getOutputHeader(), max_block_size, context);
     source->setStorageLimits(storage_limits);
     processors.emplace_back(source);
     pipeline.init(Pipe(std::move(source)));
@@ -373,7 +373,7 @@ Chunk SystemRemoteDataPathsSource::generate()
         {
             storage_objects = disk->getMetadataStorage()->getStorageObjects(local_path);
         }
-        catch (const Exception & e)
+        catch (Exception & e)
         {
             /// Unfortunately in rare cases it can happen when files disappear
             /// or can be empty in case of operation interruption (like cancelled metadata fetch)
@@ -383,6 +383,7 @@ Chunk SystemRemoteDataPathsSource::generate()
                 e.code() == ErrorCodes::CANNOT_READ_ALL_DATA)
                 continue;
 
+            e.addMessage("While parsing file {}", local_path);
             throw;
         }
 

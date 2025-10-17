@@ -1,4 +1,6 @@
--- Tags: no-random-merge-tree-settings, no-random-settings, no-fasttest
+-- Tags: no-random-merge-tree-settings, no-random-settings, no-fasttest, no-parallel-replicas, no-parallel
+-- no-parallel-replicas: reading from s3 ('S3GetObject' event) can happened on any "replica", so we can see no 'S3GetObject' on initiator
+-- no-parallel: SYSTEM DROP MARK CACHE is used.
 
 DROP TABLE IF EXISTS t_lightweight_mut_5;
 
@@ -11,6 +13,7 @@ ENGINE = ReplicatedMergeTree('/clickhouse/zktest/tables/{database}/t_lightweight
 SETTINGS min_bytes_for_wide_part = 0,
     min_bytes_for_full_part_storage = 0,
     primary_key_lazy_load = 0,
+    serialization_info_version = 'default',
     storage_policy = 's3_cache';
 
 SYSTEM STOP MERGES t_lightweight_mut_5;
@@ -29,7 +32,7 @@ SELECT s2 FROM t_lightweight_mut_5 ORDER BY id;
 SYSTEM DROP MARK CACHE;
 SELECT s1, s2 FROM t_lightweight_mut_5 ORDER BY id;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT query, ProfileEvents['S3GetObject'] FROM system.query_log
 WHERE

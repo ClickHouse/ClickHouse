@@ -2,14 +2,20 @@
 
 #if USE_SSL
 #include <Disks/DiskFactory.h>
+#include <Common/Base64.h>
+#include <Common/Exception.h>
 #include <IO/FileEncryptionCommon.h>
 #include <IO/ReadBufferFromEncryptedFile.h>
 #include <IO/ReadBufferFromFileDecorator.h>
 #include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferFromEncryptedFile.h>
+#include <IO/S3/Credentials.h>
+#include <IO/S3Common.h>
 #include <boost/algorithm/hex.hpp>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
+#if CLICKHOUSE_CLOUD
+#include <Core/KMS.h>
+#endif
 
 
 namespace DB
@@ -41,22 +47,28 @@ namespace
         }
     }
 
+    struct Key
+    {
+        String plain;
+        std::optional<String> encrypted;
+    };
+
     /// Reads encryption keys from the configuration.
     void getKeysFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix,
-                           std::map<UInt64, String> & out_keys_by_id, Strings & out_keys_without_id)
+                           std::map<UInt64, Key> & out_keys_by_id, std::vector<Key>& out_keys_without_id)
     {
         Strings config_keys;
         config.keys(config_prefix, config_keys);
 
         for (const std::string & config_key : config_keys)
         {
-            String key;
+            Key key;
             std::optional<UInt64> key_id;
 
             if ((config_key == "key") || config_key.starts_with("key["))
             {
                 String key_path = config_prefix + "." + config_key;
-                key = config.getString(key_path);
+                key.plain = toString(config.getString(key_path));
                 String key_id_path = key_path + "[@id]";
                 if (config.has(key_id_path))
                     key_id = config.getUInt64(key_id_path);
@@ -64,11 +76,23 @@ namespace
             else if ((config_key == "key_hex") || config_key.starts_with("key_hex["))
             {
                 String key_path = config_prefix + "." + config_key;
-                key = unhexKey(config.getString(key_path));
+                key.plain = unhexKey(toString(config.getString(key_path)));
                 String key_id_path = key_path + "[@id]";
                 if (config.has(key_id_path))
                     key_id = config.getUInt64(key_id_path);
             }
+#if CLICKHOUSE_CLOUD
+            else if ((config_key == "key_aws") || config_key.starts_with("key_aws[") || (config_key == "key_gcp") || config_key.starts_with("key_gcp[") ||
+                     (config_key == "key_azure") || config_key.starts_with("key_azure["))
+            {
+                String key_path = config_prefix + "." + config_key;
+                String key_id_path = key_path + "[@id]";
+                if (config.has(key_id_path))
+                    key_id = config.getUInt64(key_id_path);
+                key.plain = decryptKeyUsingCloudKeyManagementService(config,config_prefix, key_path, config_key);
+                key.encrypted = config.getString(key_path);
+            }
+#endif
             else
                 continue;
 
@@ -95,7 +119,7 @@ namespace
 
     /// Reads the current encryption key from the configuration.
     String getCurrentKeyFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix,
-                                   const std::map<UInt64, String> & keys_by_id, const Strings & keys_without_id)
+                                   const std::map<UInt64, Key> & keys_by_id, const std::vector<Key> & keys_without_id)
     {
         String key_path = config_prefix + ".current_key";
         String key_hex_path = config_prefix + ".current_key_hex";
@@ -108,28 +132,32 @@ namespace
         {
             for (const auto & [_, key] : keys_by_id)
             {
-                if (key == current_key_)
-                    return;
+                if (key.plain == current_key_)
+                    return current_key_;
+
+                if (std::string_view(key.encrypted.value_or("")) == std::string_view(current_key_))
+                    return key.plain;
             }
             for (const auto & key : keys_without_id)
             {
-                if (key == current_key_)
-                    return;
+                if (key.plain == current_key_)
+                    return current_key_;
+
+                if (std::string_view(key.encrypted.value_or("")) == std::string_view(current_key_))
+                    return key.plain;
             }
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The current key is not found in keys");
         };
 
         if (config.has(key_path))
         {
-            String current_key = config.getString(key_path);
-            check_current_key_found(current_key);
-            return current_key;
+            String current_key = toString(config.getString(key_path));
+            return check_current_key_found(current_key);
         }
         if (config.has(key_hex_path))
         {
-            String current_key = unhexKey(config.getString(key_hex_path));
-            check_current_key_found(current_key);
-            return current_key;
+            String current_key = unhexKey(toString(config.getString(key_hex_path)));
+            return check_current_key_found(current_key);
         }
         if (config.has(key_id_path))
         {
@@ -137,12 +165,12 @@ namespace
             auto it = keys_by_id.find(current_key_id);
             if (it == keys_by_id.end())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found a key with the current ID {}", current_key_id);
-            return it->second;
+            return it->second.plain;
         }
         if (keys_by_id.size() == 1 && keys_without_id.empty() && keys_by_id.begin()->first == 0)
         {
             /// There is only a single key defined with id=0, so we can choose it as current.
-            return keys_by_id.begin()->second;
+            return keys_by_id.begin()->second.plain;
         }
 
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The current key is not specified");
@@ -178,7 +206,7 @@ namespace
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk path must ends with '/', but '{}' doesn't.", quoteString(out_path));
     }
 
-    /// Parses the settings of an ecnrypted disk from the configuration.
+    /// Parses the settings of an encrypted disk from the configuration.
     std::unique_ptr<const DiskEncryptedSettings> parseDiskEncryptedSettings(
         const String & disk_name,
         const Poco::Util::AbstractConfiguration & config,
@@ -189,12 +217,13 @@ namespace
         {
             auto res = std::make_unique<DiskEncryptedSettings>();
 
-            std::map<UInt64, String> keys_by_id;
-            Strings keys_without_id;
+            std::map<UInt64, Key> keys_by_id;
+            std::vector<Key> keys_without_id;
             getKeysFromConfig(config, config_prefix, keys_by_id, keys_without_id);
 
-            for (const auto & [key_id, key] : keys_by_id)
+            for (const auto & [key_id, key_entry] : keys_by_id)
             {
+                const auto key = key_entry.plain;
                 auto fingerprint = calculateKeyFingerprint(key);
                 res->all_keys[fingerprint] = key;
 
@@ -206,8 +235,8 @@ namespace
 
             for (const auto & key : keys_without_id)
             {
-                auto fingerprint = calculateKeyFingerprint(key);
-                res->all_keys[fingerprint] = key;
+                auto fingerprint = calculateKeyFingerprint(key.plain);
+                res->all_keys[fingerprint] = key.plain;
             }
 
             String current_key = getCurrentKeyFromConfig(config, config_prefix, keys_by_id, keys_without_id);
@@ -354,20 +383,49 @@ void DiskEncrypted::copyDirectoryContent(
     IDisk::copyDirectoryContent(from_dir, to_disk, to_dir, read_settings, write_settings, cancellation_hook);
 }
 
+void DiskEncrypted::copyFile(
+    const String & from_file_path,
+    IDisk & to_disk,
+    const String & to_file_path,
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings,
+    const std::function<void()> & cancellation_hook)
+{
+    /// Check if we can copy the file without deciphering.
+    if (isSameDiskType(*this, to_disk))
+    {
+        /// Disk type is the same, check if the key is the same too.
+        if (auto * to_disk_enc = typeid_cast<DiskEncrypted *>(&to_disk))
+        {
+            auto from_settings = current_settings.get();
+            auto to_settings = to_disk_enc->current_settings.get();
+            if (from_settings->all_keys == to_settings->all_keys)
+            {
+                /// Keys are the same so we can simply copy the encrypted file.
+                auto wrapped_from_path = wrappedPath(from_file_path);
+                auto to_delegate = to_disk_enc->delegate;
+                auto wrapped_to_path = to_disk_enc->wrappedPath(to_file_path);
+                delegate->copyFile(wrapped_from_path, *to_delegate, wrapped_to_path, read_settings, write_settings, cancellation_hook);
+                return;
+            }
+        }
+    }
+
+    /// Copy the file through buffers with deciphering.
+    IDisk::copyFile(from_file_path, to_disk, to_file_path, read_settings, write_settings, cancellation_hook);
+}
+
+
 std::unique_ptr<ReadBufferFromFileBase> DiskEncrypted::readFile(
     const String & path,
     const ReadSettings & settings,
-    std::optional<size_t> read_hint,
-    std::optional<size_t> file_size) const
+    std::optional<size_t> read_hint) const
 {
     if (read_hint && *read_hint > 0)
         read_hint = *read_hint + FileEncryption::Header::kSize;
 
-    if (file_size && *file_size > 0)
-        file_size = *file_size + FileEncryption::Header::kSize;
-
     auto wrapped_path = wrappedPath(path);
-    auto buffer = delegate->readFile(wrapped_path, settings, read_hint, file_size);
+    auto buffer = delegate->readFile(wrapped_path, settings, read_hint);
     if (buffer->eof())
     {
         /// File is empty, that's a normal case, see DiskEncrypted::truncateFile().
@@ -377,7 +435,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskEncrypted::readFile(
     auto encryption_settings = current_settings.get();
     FileEncryption::Header header = readHeader(*buffer);
     String key = encryption_settings->findKeyByFingerprint(header.key_fingerprint, path);
-    return std::make_unique<ReadBufferFromEncryptedFile>(settings.local_fs_buffer_size, std::move(buffer), key, header);
+    return std::make_unique<ReadBufferFromEncryptedFile>(path, settings.local_fs_buffer_size, std::move(buffer), key, header);
 }
 
 size_t DiskEncrypted::getFileSize(const String & path) const
@@ -452,13 +510,13 @@ void registerDiskEncrypted(DiskFactory & factory, bool global_skip_access_check)
         const String & name,
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
-        ContextPtr context,
+        ContextPtr,
         const DisksMap & map,
         bool, bool) -> DiskPtr
     {
         bool skip_access_check = global_skip_access_check || config.getBool(config_prefix + ".skip_access_check", false);
         DiskPtr disk = std::make_shared<DiskEncrypted>(name, config, config_prefix, map);
-        disk->startup(context, skip_access_check);
+        disk->startup(skip_access_check);
         return disk;
     };
     factory.registerDiskType("encrypted", creator);

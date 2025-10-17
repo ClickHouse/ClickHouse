@@ -2,8 +2,10 @@
 #include <Common/SystemLogBase.h>
 #include <Interpreters/ErrorLog.h>
 #include <Interpreters/MetricLog.h>
+#include <Interpreters/TransposedMetricLog.h>
 #include <Interpreters/PeriodicLog.h>
 #include <Interpreters/QueryMetricLog.h>
+#include <Interpreters/AggregatedZooKeeperLog.h>
 
 namespace DB
 {
@@ -14,7 +16,7 @@ void PeriodicLog<LogElement>::startCollect(const String & thread_name, size_t co
     collect_interval_milliseconds = collect_interval_milliseconds_;
     is_shutdown_metric_thread = false;
     collecting_thread = std::make_unique<ThreadFromGlobalPool>([this, thread_name] {
-        setThreadName(thread_name.c_str());
+        setThreadName(thread_name.c_str(), /*truncate=*/ true);
         threadFunction();
     });
 }
@@ -60,6 +62,12 @@ void PeriodicLog<LogElement>::threadFunction()
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
+}
+
+template <typename LogElement>
+void PeriodicLog<LogElement>::flushBufferToLog(TimePoint current_time)
+{
+    stepFunction(current_time);
 }
 
 #define INSTANTIATE_PERIODIC_SYSTEM_LOG(ELEMENT) template class PeriodicLog<ELEMENT>;

@@ -4,35 +4,48 @@
 
 #include <Disks/ObjectStorages/IObjectStorage.h>
 
+
 namespace Poco
 {
-class Logger;
+    class Logger;
 }
 
 namespace DB
 {
 
+struct LocalObjectStorageSettings
+{
+    LocalObjectStorageSettings(String key_prefix_, bool read_only_)
+        : key_prefix(key_prefix_), read_only(read_only_)
+    {
+    }
+
+    String key_prefix;
+    bool read_only = false;
+};
+
 /// Treat local disk as an object storage (for interface compatibility).
 class LocalObjectStorage : public IObjectStorage
 {
 public:
-    explicit LocalObjectStorage(String key_prefix_);
+    explicit LocalObjectStorage(LocalObjectStorageSettings settings_);
 
     std::string getName() const override { return "LocalObjectStorage"; }
 
     ObjectStorageType getType() const override { return ObjectStorageType::Local; }
 
-    std::string getCommonKeyPrefix() const override { return key_prefix; }
+    std::string getCommonKeyPrefix() const override { return settings.key_prefix; }
 
     std::string getDescription() const override { return description; }
+
+    bool isReadOnly() const override { return settings.read_only; }
 
     bool exists(const StoredObject & object) const override;
 
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
         const ReadSettings & read_settings,
-        std::optional<size_t> read_hint = {},
-        std::optional<size_t> file_size = {}) const override;
+        std::optional<size_t> read_hint = {}) const override;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
     std::unique_ptr<WriteBufferFromFileBase> writeObject( /// NOLINT
@@ -47,6 +60,8 @@ public:
     void removeObjectsIfExist(const StoredObjects & objects) override;
 
     ObjectMetadata getObjectMetadata(const std::string & path) const override;
+
+    std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path) const override;
 
     void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override;
 
@@ -65,13 +80,9 @@ public:
 
     String getObjectsNamespace() const override { return ""; }
 
-    std::unique_ptr<IObjectStorage> cloneObjectStorage(
-        const std::string & new_namespace,
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_prefix,
-        ContextPtr context) override;
-
     ObjectStorageKey generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const override;
+
+    bool areObjectKeysRandom() const override { return true; }
 
     bool isRemote() const override { return false; }
 
@@ -79,10 +90,11 @@ public:
 
 private:
     void removeObject(const StoredObject & object) const;
-
     void removeObjects(const StoredObjects &  objects) const;
 
-    String key_prefix;
+    void throwIfReadonly() const;
+
+    LocalObjectStorageSettings settings;
     LoggerPtr log;
     std::string description;
 };

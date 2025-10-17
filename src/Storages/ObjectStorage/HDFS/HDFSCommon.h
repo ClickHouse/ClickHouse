@@ -10,7 +10,6 @@
 #include <hdfs/hdfs.h>
 #include <base/types.h>
 
-#include <Interpreters/Context.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
 
@@ -77,10 +76,10 @@ public:
         return *this;
     }
 
-    hdfsBuilder * get() { return hdfs_builder; }
+    hdfsBuilder * get() const { return hdfs_builder; }
 
     #if USE_KRB5
-    void runKinit();
+    void runKinit() const;
     #endif // USE_KRB5
 
 private:

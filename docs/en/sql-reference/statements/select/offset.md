@@ -1,30 +1,32 @@
 ---
-slug: /en/sql-reference/statements/select/offset
-sidebar_label: OFFSET
-title: "OFFSET FETCH Clause"
+description: 'Documentation for Offset'
+sidebar_label: 'OFFSET'
+slug: /sql-reference/statements/select/offset
+title: 'OFFSET FETCH Clause'
+doc_type: 'reference'
 ---
 
 `OFFSET` and `FETCH` allow you to retrieve data by portions. They specify a row block which you want to get by a single query.
 
-``` sql
+```sql
 OFFSET offset_row_count {ROW | ROWS}] [FETCH {FIRST | NEXT} fetch_row_count {ROW | ROWS} {ONLY | WITH TIES}]
 ```
 
 The `offset_row_count` or `fetch_row_count` value can be a number or a literal constant. You can omit `fetch_row_count`; by default, it equals to 1.
 
-`OFFSET` specifies the number of rows to skip before starting to return rows from the query result set.
+`OFFSET` specifies the number of rows to skip before starting to return rows from the query result set. `OFFSET n` skips the first `n` rows from the result. Negative form is also supported: `OFFSET -n` skips the last `n` rows from the result.
 
 The `FETCH` specifies the maximum number of rows that can be in the result of a query.
 
 The `ONLY` option is used to return rows that immediately follow the rows omitted by the `OFFSET`. In this case the `FETCH` is an alternative to the [LIMIT](../../../sql-reference/statements/select/limit.md) clause. For example, the following query
 
-``` sql
+```sql
 SELECT * FROM test_fetch ORDER BY a OFFSET 1 ROW FETCH FIRST 3 ROWS ONLY;
 ```
 
 is identical to the query
 
-``` sql
+```sql
 SELECT * FROM test_fetch ORDER BY a LIMIT 3 OFFSET 1;
 ```
 
@@ -38,11 +40,11 @@ According to the standard, the `OFFSET` clause must come before the `FETCH` clau
 The real offset can also depend on the [offset](../../../operations/settings/settings.md#offset) setting.
 :::
 
-## Examples
+## Examples {#examples}
 
 Input table:
 
-``` text
+```text
 ┌─a─┬─b─┐
 │ 1 │ 1 │
 │ 2 │ 1 │
@@ -56,13 +58,13 @@ Input table:
 
 Usage of the `ONLY` option:
 
-``` sql
+```sql
 SELECT * FROM test_fetch ORDER BY a OFFSET 3 ROW FETCH FIRST 3 ROWS ONLY;
 ```
 
 Result:
 
-``` text
+```text
 ┌─a─┬─b─┐
 │ 2 │ 1 │
 │ 3 │ 4 │
@@ -72,13 +74,13 @@ Result:
 
 Usage of the `WITH TIES` option:
 
-``` sql
+```sql
 SELECT * FROM test_fetch ORDER BY a OFFSET 3 ROW FETCH FIRST 3 ROWS WITH TIES;
 ```
 
 Result:
 
-``` text
+```text
 ┌─a─┬─b─┐
 │ 2 │ 1 │
 │ 3 │ 4 │

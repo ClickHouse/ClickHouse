@@ -76,7 +76,7 @@ public:
     /// Throws an exception that a specified table is already non-empty.
     [[noreturn]] static void throwTableIsNotEmpty(const StorageID & storage_id);
 
-private:
+protected:
     const ASTBackupQuery::Elements restore_query_elements;
     const RestoreSettings restore_settings;
     std::shared_ptr<IRestoreCoordination> restore_coordination;
@@ -132,6 +132,8 @@ private:
     void insertDataToTableImpl(const QualifiedTableName & table_name, StoragePtr storage, const String & data_path_in_backup, const std::optional<ASTs> & partitions);
 
     void runDataRestoreTasks();
+
+    void finalizeTables();
 
     void setStage(const String & new_stage, const String & message = "");
 

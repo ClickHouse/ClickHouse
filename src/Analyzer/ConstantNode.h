@@ -2,11 +2,9 @@
 
 #include <Core/Field.h>
 
-#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ConstantValue.h>
-#include <Columns/IColumn.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <Interpreters/convertFieldToType.h>
+#include <Analyzer/IQueryTreeNode.h>
+#include <Columns/IColumn_fwd.h>
 
 namespace DB
 {
@@ -93,7 +91,6 @@ public:
     }
 
     /// Check if conversion to AST requires wrapping with _CAST function.
-    static bool requiresCastCall(Field::Types::Which type, const DataTypePtr & field_type, const DataTypePtr & data_type);
     static bool requiresCastCall(const DataTypePtr & field_type, const DataTypePtr & data_type);
 
     /// Check if constant is a result of _CAST function constant folding.
