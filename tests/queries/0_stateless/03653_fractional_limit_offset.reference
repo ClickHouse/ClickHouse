@@ -3,6 +3,7 @@ Fractional Limit Only:
 0
 0
 0
+0
 1
 2
 3
@@ -156,24 +157,37 @@ Normal Limit and Fractional Offset:
 2
 5
 90
+Fractional Limit With Ties:
+0
+1
+2
+3
+4
+5
+5
+5
+5
+5
+5
 Double Column:
 OK
 Big Tables:
-996094
-996095
-996096
-996097
-996098
-996099
-996100
-996101
-996102
-996103
+999990
+999991
+999992
+999993
+999994
+999995
+999996
+999997
+999998
+999999
 New Analyzer
 Fractional Limit Only:
 0
 0
 0
+0
 1
 2
 3
@@ -327,16 +341,28 @@ Normal Limit and Fractional Offset:
 2
 5
 90
+Fractional Limit With Ties:
+0
+1
+2
+3
+4
+5
+5
+5
+5
+5
+5
 Double Column:
 OK
 Big Tables:
-996094
-996095
-996096
-996097
-996098
-996099
-996100
-996101
-996102
-996103
+999990
+999991
+999992
+999993
+999994
+999995
+999996
+999997
+999998
+999999
