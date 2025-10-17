@@ -99,7 +99,6 @@
 #include <Planner/PlannerSorting.h>
 #include <Planner/PlannerWindowFunctions.h>
 #include <Planner/Utils.h>
-#include <base/BFloat16.h>
 #include <base/Decimal_fwd.h>
 #include <base/types.h>
 
@@ -367,14 +366,14 @@ std::pair<UInt64, double> getLimitUintandBFloatValues(const Field & field)
         return {converted_value_uint.safeGet<UInt64>(), 0};
     }
 
-    Field converted_value_bfloat = convertFieldToType(field, DataTypeBFloat16());
+    Field converted_value_bfloat = convertFieldToType(field, DataTypeFloat32());
     if (!converted_value_bfloat.isNull()) 
     {
-        return {0, converted_value_bfloat.safeGet<BFloat16>()};
+        return {0, converted_value_bfloat.safeGet<Float32>()};
     }
 
     throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION,
-        "The value {} is not representable as UInt64 nor BFloat16",
+        "The value {} is not representable as UInt64 nor Float32",
         applyVisitor(FieldVisitorToString(), field));
 }
 
@@ -430,7 +429,7 @@ public:
             !query_node.isLimitWithTies() &&
             !query_node.hasLimitBy() &&
             !query_has_array_join_in_join_tree &&
-            !fractional_offset &&
+            fractional_offset == 0 &&
             limit_length <= std::numeric_limits<UInt64>::max() - limit_offset)
         {
             partial_sorting_limit = limit_length + limit_offset;
@@ -446,8 +445,8 @@ public:
     SortDescription sort_description;
     UInt64 limit_length = 0;
     UInt64 limit_offset = 0;
-    BFloat16 fractional_limit;
-    BFloat16 fractional_offset;
+    Float32 fractional_limit;
+    Float32 fractional_offset;
     UInt64 partial_sorting_limit = 0;
 };
 
@@ -1019,8 +1018,8 @@ void addPreliminaryLimitStep(QueryPlan & query_plan,
 {
     UInt64 limit_offset = query_analysis_result.limit_offset;
     UInt64 limit_length = query_analysis_result.limit_length;
-    BFloat16 fractional_limit = query_analysis_result.fractional_limit;
-    BFloat16 fractional_offset = query_analysis_result.fractional_offset;
+    Float32 fractional_limit = query_analysis_result.fractional_limit;
+    Float32 fractional_offset = query_analysis_result.fractional_offset;
 
     if (do_not_skip_offset)
     {
@@ -1034,7 +1033,7 @@ void addPreliminaryLimitStep(QueryPlan & query_plan,
     const auto & query_context = planner_context->getQueryContext();
     const Settings & settings = query_context->getSettingsRef();
 
-    if (limit_length && !fractional_offset)
+    if (limit_length && fractional_offset == 0)
     {
         auto limit = std::make_unique<LimitStep>(
                 query_plan.getCurrentHeader(), 
@@ -1050,7 +1049,7 @@ void addPreliminaryLimitStep(QueryPlan & query_plan,
 
         query_plan.addStep(std::move(limit));
     }
-    else if (limit_length && fractional_offset)
+    else if (limit_length && fractional_offset > 0)
     {
         auto fractional_offset_step = std::make_unique<FractionalOffsetStep>(
             query_plan.getCurrentHeader(), 
@@ -1284,10 +1283,10 @@ void addLimitStep(QueryPlan & query_plan,
 
     UInt64 limit_length = query_analysis_result.limit_length;
     UInt64 limit_offset = query_analysis_result.limit_offset;
-    BFloat16 fractional_limit = query_analysis_result.fractional_limit;
-    BFloat16 fractional_offset = query_analysis_result.fractional_offset;
+    Float32 fractional_limit = query_analysis_result.fractional_limit;
+    Float32 fractional_offset = query_analysis_result.fractional_offset;
 
-    if (limit_length && !fractional_offset)
+    if (limit_length && fractional_offset == 0)
     {
         auto limit = std::make_unique<LimitStep>(
                 query_plan.getCurrentHeader(), 
@@ -1303,7 +1302,7 @@ void addLimitStep(QueryPlan & query_plan,
 
         query_plan.addStep(std::move(limit));
     }
-    else if (limit_length && fractional_offset)
+    else if (limit_length && fractional_offset > 0)
     {
         auto fractional_offset_step = std::make_unique<FractionalOffsetStep>(
             query_plan.getCurrentHeader(), 
@@ -1351,7 +1350,7 @@ void addOffsetStep(QueryPlan & query_plan, const QueryAnalysisResult & query_ana
     if ((query_analysis_result.limit_length || query_analysis_result.fractional_limit > 0) || !(query_analysis_result.limit_offset || query_analysis_result.fractional_offset > 0))
         return; 
 
-    if (query_analysis_result.fractional_offset) 
+    if (query_analysis_result.fractional_offset > 0) 
     {
         auto fractional_offset_step = std::make_unique<FractionalOffsetStep>(
             query_plan.getCurrentHeader(), 

@@ -53,7 +53,6 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/IStorage.h>
 
-#include <base/BFloat16.h>
 #include <base/Decimal_fwd.h>
 #include <base/types.h>
 #include <boost/algorithm/string/predicate.hpp>
@@ -643,13 +642,13 @@ void QueryAnalyzer::convertLimitOffsetExpression(QueryTreeNodePtr & expression_n
         return;
     }
 
-    Field converted_value_decimal = convertFieldToType(limit_offset_constant_node->getValue(), DataTypeDecimal32(4, 3));
+    Field converted_value_decimal = convertFieldToType(limit_offset_constant_node->getValue(), DataTypeDecimal32(8, 7));
     if (!converted_value_decimal.isNull())
     {
-        auto value = converted_value_decimal.safeGet<Decimal32>().getValue() / 1000.0;
+        auto value = converted_value_decimal.safeGet<Decimal32>().getValue() / 10000000.0;
         if (value < 1 && value > 0)
         {
-            auto result_constant_node = std::make_shared<ConstantNode>(Field(BFloat16(value)), std::make_shared<DataTypeBFloat16>());
+            auto result_constant_node = std::make_shared<ConstantNode>(Field(Float32(value)), std::make_shared<DataTypeFloat32>());
             result_constant_node->getSourceExpression() = limit_offset_constant_node->getSourceExpression();
             expression_node = std::move(result_constant_node);
             return;
@@ -657,7 +656,7 @@ void QueryAnalyzer::convertLimitOffsetExpression(QueryTreeNodePtr & expression_n
     }
 
     throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION,
-        "The value {} of {} expression is not representable as UInt64 nor Decimal32(4, 3) range [0.1 to 0.9]",
+        "The value {} of {} expression is not representable as UInt64 nor Decimal32(8, 7) range [0.1 to 0.9]",
         applyVisitor(FieldVisitorToString(), limit_offset_constant_node->getValue()) , expression_description);
 }
 
