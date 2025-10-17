@@ -47,7 +47,7 @@ jobs:
         id: run
         run: |
           echo job.check_run_id  ${{ job.check_run_id }}
-          set
+          cat ./ci/tmp/workflow_status.json
           exit 1
 
           echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
