@@ -1,50 +1,61 @@
 #include <Backups/getBackupObjectKeyGenerator.h>
 
-#include <Common/MatchGenerator.h>
+#include <Common/ErrorCodes.h>
 #include <Common/SipHash.h>
 
-#include <pcg_random.hpp>
+#include <filesystem>
+#include <stddef.h>
 
+namespace fs = std::filesystem;
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+
+extern const int ARGUMENT_OUT_OF_BOUND;
+
+}
+
+}
 
 namespace
 {
+static constexpr size_t DEFAULT_BACKUP_PREFIX_LENGTH = 0;
 
-class DefaultKeysGenerator : public DB::IObjectStorageKeysGenerator
+class BackupKeysGenerator : public DB::IObjectStorageKeysGenerator
 {
 public:
-    DefaultKeysGenerator() = default;
+    explicit BackupKeysGenerator(size_t prefix_length_)
+        : prefix_length(prefix_length_)
+    {
+        if (prefix_length > 13)
+            throw DB::Exception(
+                DB::ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Prefix length n={} too large: 26^n exceeds uint64 range", prefix_length);
+    }
     DB::ObjectStorageKey
     generate(const String & path, bool /* is_directory */, const std::optional<String> & /* key_prefix */) const override
     {
-        return DB::ObjectStorageKey::createAsRelative(/*key_prefix*/ "", path);
+        chassert(path == fs::path(path).lexically_normal());
+
+        if (prefix_length == 0)
+            return DB::ObjectStorageKey::createAsRelative(/*key_prefix*/ "", path);
+
+        std::string prefix(prefix_length, 'a');
+        auto hash = sipHash64(path);
+        for (int i = prefix_length; i > 0; --i)
+        {
+            prefix[i - 1] = 'a' + hash % 26;
+            hash /= 26;
+        }
+        return DB::ObjectStorageKey::createAsRelative(prefix, path);
     }
 
     bool isRandom() const override { return false; }
 
-};
-
-class HashBasedPrefixTemplateKeysGenerator : public DB::IObjectStorageKeysGenerator
-{
-public:
-    explicit HashBasedPrefixTemplateKeysGenerator(String prefix_template_)
-        : prefix_template(std::move(prefix_template_))
-        , re_gen(prefix_template)
-    {
-    }
-    DB::ObjectStorageKey
-    generate(const String & path, bool /* is_directory */, const std::optional<String> & /* key_prefix */) const override
-    {
-        auto hash = sipHash64(path);
-        pcg64 rng(hash);
-        auto key_prefix = re_gen.generate(rng);
-        return DB::ObjectStorageKey::createAsRelative(key_prefix, path);
-    }
-
-    bool isRandom() const override { return true; }
-
 private:
-    String prefix_template;
-    DB::RandomStringGeneratorByRegexp re_gen;
+    const size_t prefix_length;
 };
 
 }
@@ -55,19 +66,16 @@ namespace DB
 ObjectStorageKeysGeneratorPtr
 getBackupObjectKeyGenerator(const Poco::Util::AbstractConfiguration & config, const BackupSettings & backup_settings)
 {
-    String prefix_template;
-    if (!backup_settings.key_prefix_template.empty())
-        prefix_template = backup_settings.key_prefix_template;
+    size_t prefix_length = 0;
+    if (backup_settings.key_prefix_length != 0)
+        prefix_length = backup_settings.key_prefix_length;
 
-    if (prefix_template.empty())
+    if (prefix_length == 0)
     {
         String config_prefix = "backups";
-        prefix_template = config.getString(config_prefix + ".key_prefix_template", String());
+        prefix_length = config.getUInt64(config_prefix + ".key_prefix_length", DEFAULT_BACKUP_PREFIX_LENGTH);
     }
-    if (prefix_template.empty())
-        return std::make_shared<DefaultKeysGenerator>();
-    else
-        return std::make_shared<HashBasedPrefixTemplateKeysGenerator>(prefix_template);
+    return std::make_shared<BackupKeysGenerator>(prefix_length);
 }
 
 }
