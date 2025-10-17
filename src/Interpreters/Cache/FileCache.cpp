@@ -1120,24 +1120,7 @@ bool FileCache::doTryReserve(
         failure_reason = "not enough space on device";
         return false;
     }
-Code: 49. DB::Exception: Having zero bytes, but range is not finished:
-    result: false,
-    file offset: 40635573,
-    read bytes: 0, object size: 40638866,
-    initial read offset: 40573330,
-    nextimpl working buffer offset: 0,
-    reading until: 40638866,
-    read type: REMOTE_FS_READ_AND_PUT_IN_CACHE,
-    impl read stop reason: Connection was released (read offset: 40635573/40638866),
-    impl working buffer size: 0,
-    impl internal buffer size: 1048576,
-    impl available: 0,
-    impl offset: 40635573,
-    impl last position: 40638866,
-    impl eof: true,
-    finished download time: None,
-    cache file size: 40638866,
-    cache file path: production-event-warehouse-fact/summary_event_flag_counter/date=2025-10-15/hour=08/minute=53/176051839_0002_345zmbBYHxD0WmWfjhxwPHicZTN.parquet, remaining file segments: 1, current file segment: File segment: [40573330, 40638865], key: 337c987ab2b48b14d0ffee720c4bbf87, state: DOWNLOADING, downloaded size: 62243, reserved size: 62243, downloader id: 14824682-7d00-4dbb-9184-812f598772bc:256947, current write offset: 40635573, caller id: 14824682-7d00-4dbb-9184-812f598772bc:256947, kind: Regular, unbound: 0: Cache info: Buffer path: summary_event_flag_counter/date=2025-10-15/hour=08/minute=53/176051839_0002_345zmbBYHxD0WmWfjhxwPHicZTN.parquet, hash key: 337c987ab2b48b14d0ffee720c4bbf87, file_offset_of_buffer_end: 40635573, read_until_position: 40638866, internal buffer end: 40635573, read_type: REMOTE_FS_READ_AND_PUT_IN_CACHE, last caller: 14824682-7d00-4dbb-9184-812f598772bc:256947, file segment info: File segment: [40573330, 40638865], key: 337c987ab2b48b14d0ffee720c4bbf87, state: DOWNLOADING, downloaded size: 62243, reserved size: 62243, downloader id: 14824682-7d00-4dbb-9184-812f598772bc:256947, current write offset: 40635573, caller id: 14824682-7d00-4dbb-9184-812f598772bc:256947, kind: Regular, unbound: 0. (LOGICAL_ERROR), Stack trace (when copying this message, always include the lines below):
+
 #ifdef DEBUG_OR_SANITIZER_BUILD
     assertCacheCorrectness();
 #endif

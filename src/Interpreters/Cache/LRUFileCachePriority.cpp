@@ -558,9 +558,7 @@ bool LRUFileCachePriority::LRUIterator::isValid(const CachePriorityGuard::WriteL
 
 void LRUFileCachePriority::LRUIterator::remove(const CachePriorityGuard::WriteLock & lock)
 {
-    if (!isValid(lock))
-        return;
-    //assertValid();
+    assertValid();
     cache_priority->remove(iterator, lock);
     iterator = LRUQueue::iterator{};
 }
