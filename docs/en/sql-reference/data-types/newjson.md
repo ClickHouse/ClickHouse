@@ -505,7 +505,7 @@ SELECT json.a.b[].^k FROM test
 └──────────────────────────────────────┘
 ```
 
-## Handling JSON keys with NULLs {#handling-json-keys-with-nulls}
+## Handling JSON keys with NULL {#handling-json-keys-with-nulls}
 
 In our JSON implementation `null` and absence of the value are considered equivalent:
 
