@@ -100,12 +100,6 @@ in
 inIgnoreSet
 isDynamicElementInSharedData
 like
-map
-mapAdd
-mapFromArrays
-mapPopulateSeries
-mapSubtract
-mapUpdate
 moduloLegacy
 multiFuzzyMatchAllIndices
 multiFuzzyMatchAny
