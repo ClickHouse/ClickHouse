@@ -316,6 +316,13 @@ bool Authentication::areCredentialsValid(
         return checkBasicAuthentication(basic_credentials, authentication_method, external_authenticators, client_info, settings);
     }
 
+    if (const auto * jwt_credentials = typeid_cast<const JWTCredentials *>(&credentials))
+    {
+        auto jwks_str = AuthenticationData::Util::digestToString(authentication_method.getPasswordHashBinary());
+        JWTCredentials cred(jwt_credentials->getToken(), jwks_str);
+        return (authentication_method.getType() == AuthenticationType::JWT) && cred.verify();
+    }
+
     if (const auto * scram_shh256_credentials = typeid_cast<const ScramSHA256Credentials *>(&credentials))
     {
         return checkScramSHA256Authentication(scram_shh256_credentials, authentication_method);

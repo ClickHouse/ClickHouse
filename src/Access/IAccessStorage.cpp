@@ -550,6 +550,8 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
 
             for (const auto & auth_method : user->authentication_methods)
             {
+                LOG_TRACE(getLogger(), "Try Authentication method {}", static_cast<UInt32>(auth_method.getType()));
+
                 auto auth_type = auth_method.getType();
                 if (((auth_type == AuthenticationType::NO_PASSWORD) && !allow_no_password) ||
                     ((auth_type == AuthenticationType::PLAINTEXT_PASSWORD) && !allow_plaintext_password))

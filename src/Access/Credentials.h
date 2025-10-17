@@ -85,6 +85,24 @@ private:
     bool allow_interactive_basic_authentication_in_the_browser = false;
 };
 
+class JWTCredentials
+    : public Credentials
+{
+public:
+    explicit JWTCredentials() = default;
+    explicit JWTCredentials(const String & token_);
+    explicit JWTCredentials(const String & token_, const String & jwks_);
+
+    void setToken(const String & token_) { token = token_; }
+    void setJWKS(const String & jwks_) { jwks = jwks_; }
+    bool verify();
+    const String & getToken() const { return token; }
+
+private:
+    String token;
+    String jwks;
+};
+
 class CredentialsWithScramble : public Credentials
 {
 public:

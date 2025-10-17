@@ -65,17 +65,18 @@ bool authenticateUserByHTTP(
     std::string user = request.get("X-ClickHouse-User", "");
     std::string password = request.get("X-ClickHouse-Key", "");
     std::string quota_key = request.get("X-ClickHouse-Quota", "");
-    bool has_auth_headers = !user.empty() || !password.empty();
+    const bool has_auth_headers = !user.empty() || !password.empty();
 
     /// The header 'X-ClickHouse-SSL-Certificate-Auth: on' enables checking the common name
     /// extracted from the SSL certificate used for this connection instead of checking password.
-    bool has_ssl_certificate_auth = (request.get("X-ClickHouse-SSL-Certificate-Auth", "") == "on");
-    bool has_config_credentials = config_credentials.has_value();
+    const bool has_ssl_certificate_auth = (request.get("X-ClickHouse-SSL-Certificate-Auth", "") == "on");
+    const bool has_config_credentials = config_credentials.has_value();
 
     /// User name and password can be passed using HTTP Basic auth or query parameters
     /// (both methods are insecure).
-    bool has_http_credentials = request.hasCredentials() && request.get("Authorization") != "never";
-    bool has_credentials_in_query_params = params.has("user") || params.has("password");
+    const bool has_http_credentials = request.hasCredentials() && request.get("Authorization") != "never";
+    const bool has_credentials_in_query_params = params.has("user") || params.has("password");
+    std::unique_ptr<JWTCredentials> jwt;
 
     std::string spnego_challenge;
 #if USE_SSL
@@ -148,6 +149,11 @@ bool authenticateUserByHTTP(
             password = credentials.getPassword();
             checkUserNameNotEmpty(user, "Authorization HTTP header");
         }
+        else if (Poco::icompare(scheme, "Bearer") == 0)
+        {
+            jwt = std::make_unique<JWTCredentials>(auth_info);
+            checkUserNameNotEmpty(jwt->getUserName(), "Authorization HTTP header (Bearer)");
+        }
         else if (Poco::icompare(scheme, "Negotiate") == 0)
         {
             spnego_challenge = auth_info;
@@ -212,6 +218,19 @@ bool authenticateUserByHTTP(
         }
     }
 #endif
+    else if (jwt)
+    {
+        if (current_credentials)
+        {
+            auto * jwt_credentials = dynamic_cast<JWTCredentials *>(current_credentials.get());
+            if (!jwt_credentials)
+                throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Invalid authentication: expected 'Bearer' HTTP Authorization scheme");
+            if (jwt_credentials->getToken() != jwt->getToken())
+                throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Invalid authentication: JWT mismatch");
+        }
+        else
+            current_credentials = std::move(jwt);
+    }
     else // I.e., now using user name and password strings ("Basic").
     {
         if (!current_credentials)
