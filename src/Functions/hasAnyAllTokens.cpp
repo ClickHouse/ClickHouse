@@ -82,7 +82,7 @@ bool isStringOrArrayOfStringType(const IDataType & type)
     if (array_type)
     {
         const DataTypePtr & nested_type = array_type->getNestedType();
-        return isString(nested_type) || isFixedString(nested_type) || isNothing(nested_type);
+        return isString(nested_type) || isNothing(nested_type);
     }
 
     return false;
