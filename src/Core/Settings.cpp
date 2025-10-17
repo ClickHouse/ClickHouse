@@ -7224,6 +7224,9 @@ Specifies the name of a TimeSeries table used by the 'promql' dialect.
     DECLARE_WITH_ALIAS(FloatAuto, promql_evaluation_time, Field("auto"), R"(
 Sets the evaluation time to be used with promql dialect. 'auto' means the current time.
 )", EXPERIMENTAL, evaluation_time) \
+    DECLARE(Bool, enable_partition_distinct, false, R"(
+Specifies whether partitioned distinct processing is enabled. When enabled, blocks are partitioned based on distinct keys, and partitions are processed in parallel.
+)", EXPERIMENTAL) \
     \
     /* ####################################################### */ \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \
