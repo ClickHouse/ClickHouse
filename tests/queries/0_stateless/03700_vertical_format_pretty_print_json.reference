@@ -1,7 +1,7 @@
 Row 1:
 ──────
-id:   1
-data: {
+id:           1
+data:         {
     "address": {
         "city": "New York",
         "zip": "10001"
@@ -13,27 +13,14 @@ data: {
     ],
     "name": "Alice"
 }
+nullableData: {
+    "foo": "bar"
+}
 
 Row 2:
 ──────
-id:   2
-data: {
-    "address": {
-        "city": "Los Angeles",
-        "zip": "90001"
-    },
-    "age": 25,
-    "hobbies": [
-        "gaming",
-        "cooking",
-        "traveling"
-    ],
-    "name": "Bob"
-}
-
-Row 3:
-──────
-id:   3
-data: {
+id:           2
+data:         {
 
 }
+nullableData: null
