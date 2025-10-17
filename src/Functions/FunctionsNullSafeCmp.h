@@ -83,7 +83,7 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    ColumnPtr ALWAYS_INLINE executeForVatintOrDynamicAndNull(const ColumnWithTypeAndName & variant_or_dynamic_col) const
+    ColumnPtr ALWAYS_INLINE executeForVariantOrDynamicAndNull(const ColumnWithTypeAndName & variant_or_dynamic_col) const
     {
         const auto & column_variant_or_dynamic =
             isVariant(variant_or_dynamic_col.type) ?
