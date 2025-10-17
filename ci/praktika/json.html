@@ -714,10 +714,7 @@
 
             // Create table headers based on the fixed columns
             const headerRow = document.createElement('tr');
-            columns.forEach(column => {
-                if (!existing_columns[column]) {
-                    return;
-                }
+            existing_columns.forEach(column => {
                 const th = document.createElement('th');
                 th.textContent = columnSymbols[column] || column;
                 th.style.cursor = 'pointer'; // Make headers clickable
