@@ -8,10 +8,6 @@ slug: /interfaces/formats/Protobuf
 title: 'Protobuf'
 ---
 
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
-
-<CloudNotSupportedBadge/>
-
 | Input | Output | Alias |
 |-------|--------|-------|
 | ✔     | ✔      |       |
