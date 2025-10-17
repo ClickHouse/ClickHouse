@@ -137,9 +137,7 @@ FractionalLimitTransform::Status FractionalLimitTransform::pullData(PortsData & 
     auto & input = *data.input_port;
     /// Check can input.
     if (input.isFinished())
-    {
         return Status::Finished;
-    }
 
     input.setNeeded();
     if (!input.hasData())
@@ -226,10 +224,8 @@ FractionalLimitTransform::Status FractionalLimitTransform::pushData()
             previous_row_chunk = makeChunkWithPreviousRow(chunks_cache.front().chunk, rows - 1);
     }
     else
-    {
         /// This function may be heavy to execute in prepare. But it happens no more than twice, and makes code simpler.
         splitChunk(chunks_cache.front().chunk);
-    }
 
     output.push(std::move(chunks_cache.front().chunk));
     chunks_cache.pop_front();

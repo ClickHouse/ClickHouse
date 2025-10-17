@@ -56,7 +56,8 @@ void FractionalLimitStep::transformPipeline(QueryPipelineBuilder & pipeline, con
         offset_fraction, 
         offset,
         pipeline.getNumStreams(), 
-        with_ties, description
+        with_ties, 
+        description
     );
 
     pipeline.addTransform(std::move(transform));
@@ -69,9 +70,7 @@ void FractionalLimitStep::describeActions(FormatSettings & settings) const
     settings.out << prefix << "Fractional Offset " << Float32(offset_fraction) << '\n';
 
     if (with_ties)
-    {
         settings.out << prefix << "WITH TIES" << '\n';
-    }
 }
 
 void FractionalLimitStep::describeActions(JSONBuilder::JSONMap & map) const
