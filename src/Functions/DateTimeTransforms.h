@@ -2437,7 +2437,6 @@ struct Transformer
             _Pragma("clang loop vectorize(enable)")
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                // vec_to[i] = vec_from[i] / 3600;
                 vec_to[i] = transform.execute(vec_from[i], time_zone);
             }
 
