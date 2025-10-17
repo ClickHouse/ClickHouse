@@ -19,11 +19,11 @@ The easiest way to extract the query trace information from a single node enviro
 ```
 collect_query_traces.sh your-query-id
 ```
-The script should create a `query_trace_your-query-id.json` file that can be imported on the above mentioned `index.html`.
+The script should create a `query_trace_your-query-id.json` file that can be imported on the above-mentioned `index.html`.
 
-To find out `trace_id` of a query run the following command:
+To find out `trace_id` of a query, run the following command:
 ```sql
-SELECT DISTINCT trace_id FROM system.opentelemetry_span_log WHERE attribute['clickhouse.query_id'] = 'your-query-id' ORDER BY start_time_us DESC;;
+SELECT DISTINCT trace_id FROM system.opentelemetry_span_log WHERE attribute['clickhouse.query_id'] = 'your-query-id' ORDER BY start_time_us DESC;
 ```
 
 ## Collect traces in local/development environment
