@@ -616,7 +616,7 @@ static void compileSortDescription(llvm::Module & module,
 
         auto dummy_column = column_type->createColumn();
 
-        auto try_load_nullable_value = [&](llvm::Value * value, llvm::Value * column_null_data, llvm::Value * index_arg) -> llvm::Value *
+        auto try_load_nullable_value = [&](llvm::Value * value, llvm::Value * nullable_uninitialized, llvm::Value * column_null_data, llvm::Value * index_arg) -> llvm::Value *
         {
             if (column_null_data)
             {
@@ -646,7 +646,7 @@ static void compileSortDescription(llvm::Module & module,
             value = b.CreateInsertValue(value, column_offset_data, {1});
             value = b.CreateInsertValue(value, index_arg, {2});
 
-            return try_load_nullable_value(value, column_null_data, index_arg);
+            return try_load_nullable_value(value, nullable_uninitialized, column_null_data, index_arg);
         };
 
         auto load_column_fixed_string_value = [&](llvm::Value * column_arg, llvm::Value * index_arg, bool is_nullable)
@@ -663,7 +663,7 @@ static void compileSortDescription(llvm::Module & module,
             value = b.CreateInsertValue(value, column_data, {0});
             value = b.CreateInsertValue(value, index_arg, {1});
 
-            return try_load_nullable_value(value, column_null_data, index_arg);
+            return try_load_nullable_value(value, nullable_uninitialized, column_null_data, index_arg);
         };
 
         auto load_column_native_value = [&](llvm::Value * column_arg, llvm::Value * index_arg, bool is_nullable)
@@ -681,7 +681,7 @@ static void compileSortDescription(llvm::Module & module,
             llvm::Value * column_element_offset = b.CreateInBoundsGEP(column_native_type, column_data, index_arg);
             llvm::Value * value = b.CreateLoad(column_native_type, column_element_offset);
 
-            return try_load_nullable_value(value, column_null_data, index_arg);
+            return try_load_nullable_value(value, nullable_uninitialized, column_null_data, index_arg);
         };
 
         llvm::Value * lhs_value = nullptr;
