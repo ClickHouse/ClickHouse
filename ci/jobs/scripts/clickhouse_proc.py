@@ -6,6 +6,7 @@ import time
 import traceback
 from collections import defaultdict
 from pathlib import Path
+import uuid
 
 from ci.praktika import Secret
 from ci.praktika.info import Info
@@ -165,7 +166,6 @@ class ClickHouseProc:
     @staticmethod
     def enable_thread_fuzzer_config():
         # For flaky check we also enable thread fuzzer
-        os.environ["IS_FLAKY_CHECK"] = "1"
         os.environ["THREAD_FUZZER_CPU_TIME_PERIOD_US"] = "1000"
         os.environ["THREAD_FUZZER_SLEEP_PROBABILITY"] = "0.1"
         os.environ["THREAD_FUZZER_SLEEP_TIME_US_MAX"] = "100000"
@@ -248,6 +248,9 @@ class ClickHouseProc:
             print(f"ClickHouse server ready")
         else:
             print(f"ClickHouse server NOT ready")
+
+        self._flush_system_logs()
+        self.save_system_metadata_files_from_remote_database_disk()
         return res
 
     def install_clickbench_config(self):
@@ -481,6 +484,9 @@ profiles:
         res = True
         if self.is_db_replicated and replica_num == 0:
             res = self.start(replica_num=1) and self.start(replica_num=2)
+
+        self._flush_system_logs()
+        self.save_system_metadata_files_from_remote_database_disk()
 
         return res
 
@@ -1060,6 +1066,14 @@ quit
                     res = False
         return [f for f in glob.glob(f"{temp_dir}/system_tables/*.tsv")]
 
+    @staticmethod
+    def is_valid_uuid(val):
+        try:
+            uuid_obj = uuid.UUID(val)
+            return str(uuid_obj) == val.lower()
+        except ValueError:
+            return False
+
     def save_system_metadata_files_from_remote_database_disk(self):
         if not os.path.exists(
             "/etc/clickhouse-server/config.d/remote_database_disk.xml"
@@ -1067,16 +1081,26 @@ quit
             return
 
         # Store system database and table metadata files
-        self.system_db_uuid = Shell.get_output(
+        system_db_uuid = Shell.get_output(
             "clickhouse disks -C /etc/clickhouse-server/config.xml --disk disk_db_remote -q 'read metadata/system.sql' | grep -F UUID | awk -F\"'\" '{print $2}'",
             verbose=True,
         )
+        if not self.is_valid_uuid(system_db_uuid):
+            print(f"invalid system_db_uuid: '{system_db_uuid}'")
+            return
+
+        if self.system_db_uuid != None and self.system_db_uuid != system_db_uuid:
+            print(
+                f"system_db_uuid changed: '{self.system_db_uuid}' -> '{system_db_uuid}'"
+            )
+
+        self.system_db_uuid = system_db_uuid
         self.system_db_sql = Shell.get_output(
             "clickhouse disks -C /etc/clickhouse-server/config.xml --disk disk_db_remote -q 'read metadata/system.sql'",
             verbose=True,
         )
-        print(f"system_db_uuid = {self.system_db_uuid}")
-        print(f"system_db_sql = {self.system_db_sql}")
+        print(f"system_db_uuid = '{self.system_db_uuid}'")
+        print(f"system_db_sql = '{self.system_db_sql}'")
 
         system_table_sql_files = (
             Shell.get_output(
@@ -1088,6 +1112,7 @@ quit
         )
         self.system_table_sql_map = {}
         for system_table_sql_file in system_table_sql_files:
+            print(f"system_table_sql_file = '{system_table_sql_file}'")
             sql_content = Shell.get_output(
                 f"clickhouse disks -C /etc/clickhouse-server/config.xml --disk disk_db_remote -q 'read store/{self.system_db_uuid[:3]}/{self.system_db_uuid}/{system_table_sql_file}'",
                 verbose=True,
@@ -1105,7 +1130,7 @@ quit
         # Restore system database and table metadata files for `clickhouse local`
         with open(f"{self.run_path0}/metadata/system.sql", "w") as file:
             file.write(self.system_db_sql)
-        res = Shell.check(
+        Shell.check(
             f"mkdir -p {self.run_path0}/store/{self.system_db_uuid[:3]}/{self.system_db_uuid}",
             verbose=True,
         )
