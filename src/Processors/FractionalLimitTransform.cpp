@@ -207,6 +207,8 @@ FractionalLimitTransform::Status FractionalLimitTransform::pushData()
         rows_read += rows;
         if (rows_read <= offset)
             chunks_cache.pop_front();
+        if (rows_before_limit_at_least)
+            rows_before_limit_at_least->add(rows);
     } while (rows_read <= offset && !chunks_cache.empty());
 
     if (chunks_cache.empty())
