@@ -14,7 +14,7 @@
 
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <base/defines.h>
-#include "Common/ElapsedTimeProfileEventIncrement.h"
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Logger.h>
 #include <Common/ProfileEvents.h>
