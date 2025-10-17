@@ -30,11 +30,11 @@ struct MemorySettingsImpl : public BaseSettings<MemorySettingsTraits>
 {
 };
 
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) MemorySettings##TYPE NAME = &MemorySettingsImpl ::NAME;
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) MemorySettings##TYPE NAME = &MemorySettingsImpl ::NAME;
 
 namespace MemorySetting
 {
-MEMORY_SETTINGS(INITIALIZE_SETTING_EXTERN, SKIP_ALIAS)
+MEMORY_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
 }
 
 #undef INITIALIZE_SETTING_EXTERN
@@ -94,16 +94,16 @@ void MemorySettings::sanityCheck() const
         throw Exception(
             ErrorCodes::SETTING_CONSTRAINT_VIOLATION,
             "Setting `min_bytes_to_keep` cannot be higher than the `max_bytes_to_keep`. `min_bytes_to_keep`: {}, `max_bytes_to_keep`: {}",
-            impl->min_bytes_to_keep,
-            impl->max_bytes_to_keep);
+            impl->min_bytes_to_keep.value,
+            impl->max_bytes_to_keep.value);
 
 
     if (impl->min_rows_to_keep > impl->max_rows_to_keep)
         throw Exception(
             ErrorCodes::SETTING_CONSTRAINT_VIOLATION,
             "Setting `min_rows_to_keep` cannot be higher than the `max_rows_to_keep`. `min_rows_to_keep`: {}, `max_rows_to_keep`: {}",
-            impl->min_rows_to_keep,
-            impl->max_rows_to_keep);
+            impl->min_rows_to_keep.value,
+            impl->max_rows_to_keep.value);
 }
 
 void MemorySettings::applyChanges(const DB::SettingsChanges & changes)

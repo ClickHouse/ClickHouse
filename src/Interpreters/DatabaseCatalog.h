@@ -121,6 +121,11 @@ using TemporaryTablesMapping = std::map<String, TemporaryTableHolderPtr>;
 
 class BackgroundSchedulePoolTaskHolder;
 
+struct GetDatabasesOptions
+{
+    bool with_datalake_catalogs{false};
+};
+
 /// For some reason Context is required to get Storage from Database object
 class DatabaseCatalog : boost::noncopyable, WithMutableContext
 {
@@ -137,7 +142,7 @@ public:
 
     static DatabaseCatalog & init(ContextMutablePtr global_context_);
     static DatabaseCatalog & instance();
-    static void shutdown();
+    static void shutdown(std::function<void()> shutdown_system_logs);
 
     void createBackgroundTasks();
     void initializeAndLoadTemporaryDatabase();
@@ -171,7 +176,13 @@ public:
     DatabasePtr getDatabase(const UUID & uuid) const;
     DatabasePtr tryGetDatabase(const UUID & uuid) const;
     bool isDatabaseExist(const String & database_name) const;
-    Databases getDatabases() const;
+    /// Datalake catalogs are implement at IDatabase level in ClickHouse.
+    /// In general case Datalake catalog is a some remote service which contains iceberg/delta tables.
+    /// Sometimes this service charges money for requests. With this flag we explicitly protect ourself
+    /// to not accidentally query external non-free service for some trivial things like
+    /// autocompletion hints or system.tables query. We have a setting which allow to show
+    /// these databases everywhere, but user must explicitly specify it.
+    Databases getDatabases(GetDatabasesOptions options) const;
 
     /// Same as getDatabase(const String & database_name), but if database_name is empty, current database of local_context is used
     DatabasePtr getDatabase(const String & database_name, ContextPtr local_context) const;
@@ -195,10 +206,8 @@ public:
     bool isPredefinedTable(const StorageID & table_id) const;
 
     /// View dependencies between a source table and its view.
-    void addViewDependency(const StorageID & source_table_id, const StorageID & view_id);
     void removeViewDependency(const StorageID & source_table_id, const StorageID & view_id);
     std::vector<StorageID> getDependentViews(const StorageID & source_table_id) const;
-    void updateViewDependency(const StorageID & old_source_table_id, const StorageID & old_view_id, const StorageID & new_source_table_id, const StorageID & new_view_id);
 
     /// If table has UUID, addUUIDMapping(...) must be called when table attached to some database
     /// removeUUIDMapping(...) must be called when it detached,
@@ -225,7 +234,8 @@ public:
 
     String getPathForDroppedMetadata(const StorageID & table_id) const;
     String getPathForMetadata(const StorageID & table_id) const;
-    void enqueueDroppedTableCleanup(StorageID table_id, StoragePtr table, String dropped_metadata_path, bool ignore_delay = false);
+    void enqueueDroppedTableCleanup(
+        StorageID table_id, StoragePtr table, DiskPtr db_disk, String dropped_metadata_path, bool ignore_delay = false);
     void undropTable(StorageID table_id);
 
     void waitTableFinallyDropped(const UUID & uuid);
@@ -234,15 +244,15 @@ public:
     /// if "B" is referenced in the definition of "A".
     /// Loading dependencies were used to check whether a table can be removed before we had those referential dependencies.
     /// Now we support this mode (see `check_table_referential_dependencies` in Setting.h) for compatibility.
-    void addDependencies(const StorageID & table_id, const std::vector<StorageID> & new_referential_dependencies, const std::vector<StorageID> & new_loading_dependencies);
-    void addDependencies(const QualifiedTableName & table_name, const TableNamesSet & new_referential_dependencies, const TableNamesSet & new_loading_dependencies);
-    void addDependencies(const TablesDependencyGraph & new_referential_dependencies, const TablesDependencyGraph & new_loading_dependencies);
-    std::pair<std::vector<StorageID>, std::vector<StorageID>> removeDependencies(const StorageID & table_id, bool check_referential_dependencies, bool check_loading_dependencies, bool is_drop_database = false);
+    void addDependencies(const StorageID & table_id, const std::vector<StorageID> & new_referential_dependencies, const std::vector<StorageID> & new_loading_dependencies, const std::vector<StorageID> & new_view_dependencies);
+    void addDependencies(const QualifiedTableName & table_name, const TableNamesSet & new_referential_dependencies, const TableNamesSet & new_loading_dependencies, const TableNamesSet & new_view_dependencies);
+    void addDependencies(const TablesDependencyGraph & new_referential_dependencies, const TablesDependencyGraph & new_loading_dependencies, const TablesDependencyGraph & new_view_dependencies);
+    std::tuple<std::vector<StorageID>, std::vector<StorageID>, std::vector<StorageID>> removeDependencies(const StorageID & table_id, bool check_referential_dependencies, bool check_loading_dependencies, bool is_drop_database = false, bool is_mv = false);
     std::vector<StorageID> getReferentialDependencies(const StorageID & table_id) const;
     std::vector<StorageID> getReferentialDependents(const StorageID & table_id) const;
     std::vector<StorageID> getLoadingDependencies(const StorageID & table_id) const;
     std::vector<StorageID> getLoadingDependents(const StorageID & table_id) const;
-    void updateDependencies(const StorageID & table_id, const TableNamesSet & new_referential_dependencies, const TableNamesSet & new_loading_dependencies);
+    void updateDependencies(const StorageID & table_id, const TableNamesSet & new_referential_dependencies, const TableNamesSet & new_loading_dependencies, const TableNamesSet & new_view_dependencies);
 
     void checkTableCanBeRemovedOrRenamed(const StorageID & table_id, bool check_referential_dependencies, bool check_loading_dependencies, bool is_drop_database = false) const;
 
@@ -254,6 +264,7 @@ public:
     {
         StorageID table_id = StorageID::createEmpty();
         StoragePtr table;
+        DiskPtr db_disk;
         String metadata_path;
         time_t drop_time{};
     };
@@ -271,6 +282,10 @@ public:
     void startReplicatedDDLQueries();
     bool canPerformReplicatedDDLQueries() const;
 
+    void updateMetadataFile(const DatabasePtr & database);
+    bool hasDatalakeCatalogs() const;
+    bool isDatalakeCatalog(const String & database_name) const;
+
 private:
     // The global instance of database catalog. unique_ptr is to allow
     // deferred initialization. Thought I'd use std::optional, but I can't
@@ -280,7 +295,7 @@ private:
     explicit DatabaseCatalog(ContextMutablePtr global_context_);
     void assertDatabaseDoesntExistUnlocked(const String & database_name) const TSA_REQUIRES(databases_mutex);
 
-    void shutdownImpl();
+    void shutdownImpl(std::function<void()> shutdown_system_logs);
 
     void checkTableCanBeRemovedOrRenamedUnlocked(const StorageID & removing_table, bool check_referential_dependencies, bool check_loading_dependencies, bool is_drop_database) const TSA_REQUIRES(databases_mutex);
 
@@ -317,6 +332,7 @@ private:
     mutable std::mutex databases_mutex;
 
     Databases databases TSA_GUARDED_BY(databases_mutex);
+    Databases databases_without_datalake_catalogs TSA_GUARDED_BY(databases_mutex);
     UUIDToStorageMap uuid_map;
 
     /// Referential dependencies between tables: table "A" depends on table "B"

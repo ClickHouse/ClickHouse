@@ -108,9 +108,61 @@ def test_table_db_limit(started_cluster):
         node.query("drop table t{} sync".format(i))
     for i in range(3):
         node2.query("drop table t{} sync".format(i))
-    node.query("system drop replica 'r1' from ZKPATH '/clickhouse/tables/tx'")
-    node.query("system drop replica 'r2' from ZKPATH '/clickhouse/tables/tx'")
     for i in range(9):
         node.query("drop database db{}".format(i))
     for i in range(10):
         node.query("drop dictionary d{}".format(i))
+
+
+def test_replicated_database(started_cluster):
+    node.query("CREATE DATABASE db_replicated ENGINE = Replicated('/clickhouse/db_replicated', '{replica}');")
+    for i in range(10):
+        node.query(f"CREATE TABLE db_replicated.t{i} (a Int32) ENGINE = Log;")
+    assert "TOO_MANY_TABLES" in node.query_and_get_error(
+        "CREATE TABLE db_replicated.tx (a Int32) ENGINE = Log;"
+    )
+    node.query("DROP DATABASE db_replicated SYNC;")
+
+
+def test_named_collection(started_cluster):
+    def _get_number_of_collections():
+        return int(node.query("SELECT value FROM system.metrics WHERE name = 'NamedCollection'"))
+
+    def _get_warnings():
+        return int(node.query("SELECT count() FROM system.warnings WHERE message = 'The number of named collections is more than 5.'"))
+
+    try:
+        # Not enough named collections don't create any warning
+        for i in range(5):
+            node.query(f"CREATE NAMED COLLECTION test_{i} AS key=1")
+        assert _get_warnings() == 0
+        assert _get_number_of_collections() == 5
+
+        # Adding one more triggers a warning
+        node.query("CREATE NAMED COLLECTION test_5 AS key=1")
+        assert _get_warnings() == 1
+        assert _get_number_of_collections() == 6
+
+        # Reach the limit of named collections
+        for i in range(6, 10):
+            node.query(f"CREATE NAMED COLLECTION test_{i} AS key=1")
+        assert _get_number_of_collections() == 10
+
+        # Trying to create one more throws an error
+        assert "TOO_MANY_NAMED_COLLECTIONS" in node.query_and_get_error(
+            "CREATE NAMED COLLECTION test_11 AS key=1"
+        )
+        assert _get_number_of_collections() == 10
+
+        # Ensure we can still create if we remove them
+        for i in range(10):
+            node.query(f"DROP NAMED COLLECTION test_{i}")
+        assert _get_number_of_collections() == 0
+        assert _get_warnings() == 0
+        for i in range(10):
+            node.query(f"CREATE NAMED COLLECTION test_{i} AS key=1")
+        assert _get_number_of_collections() == 10
+    finally:
+        for i in range(10):
+            node.query(f"DROP NAMED COLLECTION test_{i}")
+        assert _get_number_of_collections() == 0

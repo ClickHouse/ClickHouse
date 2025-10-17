@@ -1,21 +1,14 @@
 #pragma once
 
-#include <Core/Field.h>
-#include <Common/Exception.h>
 #include <Columns/IColumn.h>
-#include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
+#include <Core/Field.h>
 #include <Common/PODArray.h>
+#include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 
 /** ColumnConst contains another column with single element,
   *  but looks like a column with arbitrary amount of same elements.
@@ -259,10 +252,7 @@ public:
 
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
 
-    void gather(ColumnGathererStream &) override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot gather into constant column {}", getName());
-    }
+    void gather(ColumnGathererStream &) override;
 
     void getExtremes(Field & min, Field & max) const override
     {

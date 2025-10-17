@@ -12,8 +12,6 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/formatAST.h>
-#include <Parsers/queryToString.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
@@ -52,7 +50,7 @@ class ProjectionsSource : public ISource
 public:
     ProjectionsSource(
         std::vector<UInt8> columns_mask_,
-        Block header,
+        SharedHeader header,
         UInt64 max_block_size_,
         ColumnPtr databases_,
         ContextPtr context_)
@@ -150,7 +148,7 @@ protected:
                     // 'query' column
                     if (column_mask[src_index++])
                     {
-                        res_columns[res_index++]->insert(serializeAST(*projection.definition_ast->children.at(0)));
+                        res_columns[res_index++]->insert(projection.definition_ast->children.at(0)->formatForLogging());
                     }
                 }
             }
@@ -185,7 +183,7 @@ public:
         std::vector<UInt8> columns_mask_,
         size_t max_block_size_)
         : SourceStepWithFilter(
-            std::move(sample_block),
+            std::make_shared<const Block>(std::move(sample_block)),
             column_names_,
             query_info_,
             storage_snapshot_,
@@ -250,10 +248,12 @@ void ReadFromSystemProjections::initializePipeline(QueryPipelineBuilder & pipeli
 {
     MutableColumnPtr column = ColumnString::create();
 
-    const auto databases = DatabaseCatalog::instance().getDatabases();
+    const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
     for (const auto & [database_name, database] : databases)
     {
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
+            continue;
+        if (database->isExternal())
             continue;
 
         /// Lazy database can contain only very primitive tables, it cannot contain tables with projections.

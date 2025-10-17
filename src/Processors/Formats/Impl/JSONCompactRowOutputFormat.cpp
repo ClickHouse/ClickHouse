@@ -9,7 +9,7 @@ namespace DB
 
 JSONCompactRowOutputFormat::JSONCompactRowOutputFormat(
     WriteBuffer & out_,
-    const Block & header,
+    SharedHeader header,
     const FormatSettings & settings_,
     bool yield_strings_)
     : JSONRowOutputFormat(out_, header, settings_, yield_strings_)
@@ -70,22 +70,26 @@ void registerOutputFormatJSONCompact(FormatFactory & factory)
     factory.registerOutputFormat("JSONCompact", [](
         WriteBuffer & buf,
         const Block & sample,
-        const FormatSettings & format_settings)
+        const FormatSettings & format_settings,
+        FormatFilterInfoPtr /*format_filter_info*/)
     {
-        return std::make_shared<JSONCompactRowOutputFormat>(buf, sample, format_settings, false);
+        return std::make_shared<JSONCompactRowOutputFormat>(buf, std::make_shared<const Block>(sample), format_settings, false);
     });
 
     factory.markOutputFormatSupportsParallelFormatting("JSONCompact");
+    factory.setContentType("JSONCompact", "application/json; charset=UTF-8");
 
     factory.registerOutputFormat("JSONCompactStrings", [](
         WriteBuffer & buf,
         const Block & sample,
-        const FormatSettings & format_settings)
+        const FormatSettings & format_settings,
+        FormatFilterInfoPtr /*format_filter_info*/)
     {
-        return std::make_shared<JSONCompactRowOutputFormat>(buf, sample, format_settings, true);
+        return std::make_shared<JSONCompactRowOutputFormat>(buf, std::make_shared<const Block>(sample), format_settings, true);
     });
 
     factory.markOutputFormatSupportsParallelFormatting("JSONCompactStrings");
+    factory.setContentType("JSONCompactStrings", "application/json; charset=UTF-8");
 }
 
 }

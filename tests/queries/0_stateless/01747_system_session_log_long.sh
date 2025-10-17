@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: long, no-parallel, no-fasttest, no-debug
+# Tags: long, no-parallel, no-fasttest, no-debug, no-openssl-fips
+# fips: SHA1 is not available in FIPS mode
 
 ##################################################################################################
 # Verify that login, logout, and login failure events are properly stored in system.session_log
@@ -358,7 +359,7 @@ testAsUserIdentifiedBy "sha256_password"
 testAsUserIdentifiedBy "double_sha1_password"
 
 executeQuery <<EOF
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS session_log;
 
 WITH
     now64(6) as n,

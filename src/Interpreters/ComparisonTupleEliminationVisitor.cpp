@@ -22,7 +22,7 @@ ASTs splitTuple(const ASTPtr & node)
     if (const auto * literal = node->as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::Tuple)
     {
         ASTs result;
-        const auto & tuple = literal->value.safeGet<const Tuple &>();
+        const auto & tuple = literal->value.safeGet<Tuple>();
         for (const auto & child : tuple)
             result.emplace_back(std::make_shared<ASTLiteral>(child));
         return result;
@@ -39,7 +39,7 @@ ASTPtr concatWithAnd(const ASTs & nodes)
     if (nodes.size() == 1)
         return nodes[0];
 
-    auto result = makeASTFunction("and");
+    auto result = makeASTOperator("and");
     result->arguments->children = nodes;
     return result;
 }
@@ -68,11 +68,11 @@ public:
         new_args.reserve(lhs.size());
         for (size_t i = 0; i < lhs.size(); ++i)
         {
-            new_args.emplace_back(makeASTFunction("equals", lhs[i], rhs[i]));
+            new_args.emplace_back(makeASTOperator("equals", lhs[i], rhs[i]));
         }
 
         if (func->name == "notEquals")
-            ast = makeASTFunction("not", concatWithAnd(new_args));
+            ast = makeASTOperator("not", concatWithAnd(new_args));
         else
             ast = concatWithAnd(new_args);
     }

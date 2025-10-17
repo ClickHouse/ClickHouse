@@ -118,6 +118,7 @@ Cluster::Address::Address(
     password = config.getString(config_prefix + ".password", "");
     default_database = config.getString(config_prefix + ".default_database", "");
     secure = ConfigHelper::getBool(config, config_prefix + ".secure", false, /* empty_as */true) ? Protocol::Secure::Enable : Protocol::Secure::Disable;
+    bind_host = config.getString(config_prefix + ".bind_host", "");
     priority = Priority{config.getInt(config_prefix + ".priority", 1)};
 
     proto_send_chunked = config.getString(config_prefix + ".proto_caps.send", "notchunked");
@@ -131,6 +132,12 @@ Cluster::Address::Address(
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Port is not specified in cluster configuration: {}.port", config_prefix);
 
     is_local = isLocal(config.getInt(port_type, 0));
+
+    /// if bind_host is set, then force is_local to false for easier testing
+    if (!bind_host.empty())
+    {
+        is_local = false;
+    }
 
     /// By default compression is disabled if address looks like localhost.
     /// NOTE: it's still enabled when interacting with servers on different port, but we don't want to complicate the logic.
@@ -173,6 +180,7 @@ Cluster::Address::Address(
     database_replica_name = info.replica_name;
     port = parsed_host_port.second;
     secure = params.secure ? Protocol::Secure::Enable : Protocol::Secure::Disable;
+    bind_host = params.bind_host;
     priority = params.priority;
     is_local = can_be_local && isLocal(params.clickhouse_port);
     shard_index = shard_index_;
@@ -426,12 +434,12 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
 
     size_t shards_with_name_count = std::ranges::count_if(config_keys.begin(), config_keys.end(), [& config, & config_prefix](const String& key)
     {
-        return config.has(config_prefix + key + ".shard_name");
+        return config.has(config_prefix + key + ".name");
     });
 
     if (shards_with_name_count != 0 && shards_with_name_count != config_keys.size())
     {
-        throw Exception(ErrorCodes::INVALID_SHARD_ID, "shard_name must be specified for every shard(node) in the config or for none. Config: {}", config_prefix);
+        throw Exception(ErrorCodes::INVALID_SHARD_ID, "name must be specified for every shard(node) in the config or for none. Config: {}", config_prefix);
     }
 
     bool use_shards_names = shards_with_name_count == config_keys.size();
@@ -448,7 +456,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
 
         const auto & prefix = config_prefix + key + ((shard_with_replicas) ? ".":  "");
         const auto weight = config.getInt(prefix + ".weight", default_weight);
-        auto shard_name = use_shards_names ? config.getString(prefix + ".shard_name") : "";
+        auto shard_name = use_shards_names ? config.getString(prefix + ".name") : "";
         if (use_shards_names)
         {
             if (shard_name.empty() || !used_shard_names.insert(shard_name).second)
@@ -464,7 +472,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
 
             ShardInfo info;
             info.shard_num = current_shard_num;
-            info.shard_name = std::move(shard_name);
+            info.name = std::move(shard_name);
             info.weight = weight;
 
             if (address.is_local)
@@ -485,10 +493,12 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
                 "server",
                 address.compression,
                 address.secure,
+                address.bind_host,
                 address.priority);
 
             info.pool = std::make_shared<ConnectionPoolWithFailover>(ConnectionPoolPtrs{pool}, settings[Setting::load_balancing]);
             info.per_replica_pools = {std::move(pool)};
+            info.default_database = address.default_database;
 
             if (weight)
                 slot_to_shard.insert(std::end(slot_to_shard), weight, shards_info.size());
@@ -515,7 +525,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
 
             for (const auto & replica_key : replica_keys)
             {
-                if (startsWith(replica_key, "weight") || startsWith(replica_key, "internal_replication") || startsWith(replica_key, "shard_name"))
+                if (startsWith(replica_key, "weight") || startsWith(replica_key, "internal_replication") || startsWith(replica_key, "name"))
                     continue;
 
                 if (startsWith(replica_key, "replica"))
@@ -572,6 +582,9 @@ Cluster::Cluster(
 
     for (const auto & shard : names)
     {
+        if (shard.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Shard contains zero number of replicas");
+
         Addresses current;
         for (const auto & replica : shard)
             current.emplace_back(
@@ -649,6 +662,7 @@ void Cluster::addShard(
             "server",
             replica.compression,
             replica.secure,
+            replica.bind_host,
             replica.priority);
 
         all_replicas_pools.emplace_back(replica_pool);
@@ -672,7 +686,8 @@ void Cluster::addShard(
         std::move(shard_local_addresses),
         std::move(shard_pool),
         std::move(all_replicas_pools),
-        internal_replication
+        internal_replication,
+        addresses.at(0).default_database
     });
 }
 
@@ -806,10 +821,12 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
                     "server",
                     address.compression,
                     address.secure,
+                    address.bind_host,
                     address.priority);
 
                 info.pool = std::make_shared<ConnectionPoolWithFailover>(ConnectionPoolPtrs{pool}, settings[Setting::load_balancing]);
                 info.per_replica_pools = {std::move(pool)};
+                info.default_database = address.default_database;
 
                 addresses_with_failover.emplace_back(Addresses{address});
 

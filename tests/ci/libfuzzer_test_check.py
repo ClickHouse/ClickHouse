@@ -21,7 +21,6 @@ from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
 
-TIMEOUT = 60 * 5
 NO_CHANGES_MSG = "Nothing to run"
 s3 = S3Helper()
 
@@ -51,6 +50,8 @@ def get_additional_envs(check_name, run_by_hash_num, run_by_hash_total):
         result.append("RANDOMIZE_OBJECT_KEY_TYPE=1")
     if "analyzer" in check_name:
         result.append("USE_OLD_ANALYZER=1")
+    if "distributed plan" in check_name:
+        result.append("USE_DISTRIBUTED_PLAN=1")
 
     if run_by_hash_total != 0:
         result.append(f"RUN_BY_HASH_NUM={run_by_hash_num}")
@@ -68,7 +69,6 @@ def get_run_command(
     image: DockerImage,
 ) -> str:
     additional_options = ["--hung-check"]
-    additional_options.append("--print-time")
 
     additional_options_str = (
         '-e ADDITIONAL_OPTIONS="' + " ".join(additional_options) + '"'
@@ -105,7 +105,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def download_corpus(path: str):
+def download_corpus(path):
     logging.info("Download corpus...")
 
     try:
@@ -131,7 +131,7 @@ def download_corpus(path: str):
     logging.info("...downloaded %d units", units)
 
 
-def upload_corpus(path: str):
+def upload_corpus(path):
     with zipfile.ZipFile(f"{path}/corpus.zip", "w", zipfile.ZIP_DEFLATED) as zipf:
         zipdir(f"{path}/corpus/", zipf)
     s3.upload_file(
@@ -150,7 +150,7 @@ def process_error(path: Path) -> list:
     error_info = []
     is_error = False
 
-    with open(path, "r", encoding="utf-8") as file:
+    with open(path, "r", encoding="utf-8", errors='replace') as file:
         for line in file:
             line = line.rstrip("\n")
             if is_error:
@@ -238,7 +238,7 @@ def main():
         run_by_hash_num = 0
         run_by_hash_total = 0
 
-    docker_image = pull_image(get_docker_image("clickhouse/libfuzzer"))
+    docker_image = pull_image(get_docker_image("clickhouse/stateless-test"))
 
     fuzzers_path = temp_path / "fuzzers"
     fuzzers_path.mkdir(parents=True, exist_ok=True)

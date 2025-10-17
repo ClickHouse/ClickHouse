@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Tags: no-replicated-database, no-shared-catalog
+# Tag no-replicated-database -- modify on-disk metadata that may lead to "Digest does not match" in case Replicated database
+# Tag no-shared-catalog -- same
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -61,9 +64,19 @@ ${CLICKHOUSE_CLIENT} -q "DETACH TABLE mv"
 
 data_path=$(${CLICKHOUSE_CLIENT} -q "SELECT path FROM system.disks WHERE name = 'default'")
 
-#cat $mv_metadata_path
-sed -i -e 's/`timestamp` DateTime,/`timestamp` DateTime64(9),/g' -e 's/`c12` Nullable(String)/`c12` String/g' "$data_path$mv_metadata_path"
-#cat $mv_metadata_path
+data_path=$(${CLICKHOUSE_CLIENT} -q "SELECT path FROM system.disks WHERE name = 'default'")
+
+if [ -e "$data_path$mv_metadata_path" ]; then
+    #cat $mv_metadata_path
+    sed -i -e 's/`timestamp` DateTime,/`timestamp` DateTime64(9),/g' -e 's/`c12` Nullable(String)/`c12` String/g' "$data_path$mv_metadata_path"
+    #cat $mv_metadata_path
+else
+    # Using a remote DB disk
+    config="${CURDIR}/03001_matview_columns_after_modify_query.xml"
+    mv_metadata=$(clickhouse-disks -C "$config" --disk "disk_db_remote" --save-logs --query "read $mv_metadata_path") 
+    mv_metadata_updated=$(echo $mv_metadata | sed -e 's/`timestamp` DateTime,/`timestamp` DateTime64(9),/g' -e 's/`c12` Nullable(String)/`c12` String/g')
+    echo $mv_metadata_updated | clickhouse-disks -C "$config" --disk "disk_db_remote" --save-logs --query "write --path-to $mv_metadata_path"
+fi
 
 ${CLICKHOUSE_CLIENT} -q "ATTACH TABLE mv"
 

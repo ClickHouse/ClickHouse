@@ -4,7 +4,6 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/DumpASTNode.h>
 #include <Parsers/ParserCreateQuery.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Common/tests/gtest_global_context.h>
@@ -30,7 +29,7 @@ TEST(ConvertDictionaryAST, SimpleDictConfiguration)
 {
     if (!registered)
     {
-        registerDictionaries(false);
+        registerDictionaries();
         registered = true;
     }
 
@@ -103,7 +102,7 @@ TEST(ConvertDictionaryAST, TrickyAttributes)
 {
     if (!registered)
     {
-        registerDictionaries(false);
+        registerDictionaries();
         registered = true;
     }
 
@@ -147,7 +146,7 @@ TEST(ConvertDictionaryAST, ComplexKeyAndLayoutWithParams)
 {
     if (!registered)
     {
-        registerDictionaries(false);
+        registerDictionaries();
         registered = true;
     }
 
@@ -198,7 +197,7 @@ TEST(ConvertDictionaryAST, ComplexSource)
 {
     if (!registered)
     {
-        registerDictionaries(false);
+        registerDictionaries();
         registered = true;
     }
 

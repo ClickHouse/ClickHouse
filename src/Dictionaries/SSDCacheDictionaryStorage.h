@@ -11,21 +11,21 @@
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/flat_hash_set.h>
 
-#include <base/unaligned.h>
-#include <base/defines.h>
-#include <base/sort.h>
-#include <Common/randomSeed.h>
-#include <Common/Arena.h>
-#include <Common/ArenaWithFreeLists.h>
-#include <Common/ArenaUtils.h>
-#include <Common/MemorySanitizer.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/HashTable/HashMap.h>
-#include <IO/AIO.h>
-#include <IO/BufferWithOwnMemory.h>
-#include <Dictionaries/DictionaryStructure.h>
-#include <Dictionaries/ICacheDictionaryStorage.h>
-#include <Dictionaries/DictionaryHelpers.h>
+#    include <base/MemorySanitizer.h>
+#    include <Dictionaries/DictionaryHelpers.h>
+#    include <Dictionaries/DictionaryStructure.h>
+#    include <Dictionaries/ICacheDictionaryStorage.h>
+#    include <IO/AIO.h>
+#    include <IO/BufferWithOwnMemory.h>
+#    include <base/defines.h>
+#    include <base/sort.h>
+#    include <base/unaligned.h>
+#    include <Common/Arena.h>
+#    include <Common/ArenaUtils.h>
+#    include <Common/ArenaWithFreeLists.h>
+#    include <Common/CurrentMetrics.h>
+#    include <Common/HashTable/HashMap.h>
+#    include <Common/randomSeed.h>
 
 
 namespace ProfileEvents
@@ -572,7 +572,7 @@ public:
 
         size_t buffer_size_in_bytes = blocks_length * block_size;
 
-        Memory read_buffer_memory(block_size * blocks_length, block_size);
+        Memory<> read_buffer_memory(block_size * blocks_length, block_size);
 
         iocb request{};
         iocb * request_ptr = &request;
