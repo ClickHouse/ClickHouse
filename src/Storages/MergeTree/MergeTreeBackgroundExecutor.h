@@ -16,25 +16,21 @@
 #include <base/defines.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Logger.h>
-#include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool_fwd.h>
-#include <Common/noexcept_scope.h>
-
-
-namespace ProfileEvents
-{
-    extern const Event MergeTreeBackgroundExecutorTaskExecuteStepMicroseconds;
-    extern const Event MergeTreeBackgroundExecutorTaskCancelMicroseconds;
-    extern const Event MergeTreeBackgroundExecutorTaskResetMicroseconds;
-    extern const Event MergeTreeBackgroundExecutorWaitMicroseconds;
-}
 
 namespace DB
 {
 
 struct TaskRuntimeData;
+struct TaskProfileEvents
+{
+    ProfileEvents::Event execute_ms{};
+    ProfileEvents::Event cancel_ms{};
+    ProfileEvents::Event reset_ms{};
+    ProfileEvents::Event wait_ms{};
+};
 using TaskRuntimeDataPtr = std::shared_ptr<TaskRuntimeData>;
 
 /**
@@ -43,9 +39,10 @@ using TaskRuntimeDataPtr = std::shared_ptr<TaskRuntimeData>;
  */
 struct TaskRuntimeData
 {
-    TaskRuntimeData(ExecutableTaskPtr && task_, CurrentMetrics::Metric metric_)
+    TaskRuntimeData(ExecutableTaskPtr && task_, CurrentMetrics::Metric metric_, TaskProfileEvents events_)
         : task(std::move(task_))
         , metric(metric_)
+        , events(events_)
     {
         /// Increment and decrement a metric with sequentially consistent memory order
         /// This is needed, because in unit test this metric is read from another thread
@@ -64,21 +61,21 @@ struct TaskRuntimeData
         Stopwatch sw;
         if (task)
             task->cancel();
-        ProfileEvents::incrementNoTrace(ProfileEvents::MergeTreeBackgroundExecutorTaskCancelMicroseconds, sw.elapsedMicroseconds());
+        ProfileEvents::incrementNoTrace(events.cancel_ms, sw.elapsedMicroseconds());
     }
 
     void wait()
     {
         Stopwatch sw;
         is_done.wait();
-        ProfileEvents::incrementNoTrace(ProfileEvents::MergeTreeBackgroundExecutorWaitMicroseconds, sw.elapsedMicroseconds());
+        ProfileEvents::incrementNoTrace(events.wait_ms, sw.elapsedMicroseconds());
     }
 
     bool executeStep() const
     {
         Stopwatch sw;
         bool res = task->executeStep();
-        ProfileEvents::incrementNoTrace(ProfileEvents::MergeTreeBackgroundExecutorTaskExecuteStepMicroseconds, sw.elapsedMicroseconds());
+        ProfileEvents::incrementNoTrace(events.execute_ms, sw.elapsedMicroseconds());
         return res;
     }
 
@@ -87,11 +84,12 @@ struct TaskRuntimeData
         Stopwatch sw;
         if (task)
             task.reset();
-        ProfileEvents::incrementNoTrace(ProfileEvents::MergeTreeBackgroundExecutorTaskResetMicroseconds, sw.elapsedMicroseconds());
+        ProfileEvents::incrementNoTrace(events.reset_ms, sw.elapsedMicroseconds());
     }
 
     ExecutableTaskPtr task;
     CurrentMetrics::Metric metric;
+    TaskProfileEvents events;
     /// Guarded by MergeTreeBackgroundExecutor<>::mutex
     bool is_currently_deleting{false};
     /// Actually autoreset=false is needed only for unit test
@@ -307,6 +305,18 @@ public:
         size_t max_tasks_count_,
         CurrentMetrics::Metric metric_,
         CurrentMetrics::Metric max_tasks_metric_,
+        ProfileEvents::Event execute_profile_event_,
+        ProfileEvents::Event cancel_profile_event_,
+        ProfileEvents::Event reset_profile_event_,
+        ProfileEvents::Event wait_profile_event_,
+        std::string_view policy = {});
+
+    MergeTreeBackgroundExecutor(
+        String name_,
+        size_t threads_count_,
+        size_t max_tasks_count_,
+        CurrentMetrics::Metric metric_,
+        CurrentMetrics::Metric max_tasks_metric_,
         std::string_view policy = {});
 
     ~MergeTreeBackgroundExecutor();
@@ -341,6 +351,11 @@ private:
     CurrentMetrics::Metric metric;
     CurrentMetrics::Increment max_tasks_metric;
 
+    ProfileEvents::Event execute_profile_event{};
+    ProfileEvents::Event cancel_profile_event{};
+    ProfileEvents::Event reset_profile_event{};
+    ProfileEvents::Event wait_profile_event{};
+
     void routine(TaskRuntimeDataPtr item);
 
     /// libc++ does not provide TSA support for std::unique_lock -> TSA_NO_THREAD_SAFETY_ANALYSIS
@@ -354,6 +369,7 @@ private:
     bool shutdown TSA_GUARDED_BY(mutex) = false;
     std::unique_ptr<ThreadPool> pool;
     LoggerPtr log = getLogger("MergeTreeBackgroundExecutor");
+    TaskProfileEvents task_events;
 };
 
 extern template class MergeTreeBackgroundExecutor<RoundRobinRuntimeQueue>;

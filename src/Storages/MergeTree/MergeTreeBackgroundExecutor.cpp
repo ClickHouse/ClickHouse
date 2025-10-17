@@ -44,17 +44,30 @@ MergeTreeBackgroundExecutor<Queue>::MergeTreeBackgroundExecutor(
     size_t max_tasks_count_,
     CurrentMetrics::Metric metric_,
     CurrentMetrics::Metric max_tasks_metric_,
+    ProfileEvents::Event execute_profile_event_,
+    ProfileEvents::Event cancel_profile_event_,
+    ProfileEvents::Event reset_profile_event_,
+    ProfileEvents::Event wait_profile_event_,
     std::string_view policy)
     : name(name_)
     , threads_count(threads_count_)
     , max_tasks_count(max_tasks_count_)
     , metric(metric_)
     , max_tasks_metric(max_tasks_metric_, max_tasks_count)
+    , execute_profile_event(execute_profile_event_)
+    , cancel_profile_event(cancel_profile_event_)
+    , reset_profile_event(reset_profile_event_)
+    , wait_profile_event(wait_profile_event_)
     , pool(std::make_unique<ThreadPool>(
           CurrentMetrics::MergeTreeBackgroundExecutorThreads, CurrentMetrics::MergeTreeBackgroundExecutorThreadsActive, CurrentMetrics::MergeTreeBackgroundExecutorThreadsScheduled))
 {
     if (max_tasks_count == 0)
         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Task count for MergeTreeBackgroundExecutor must not be zero");
+
+    task_events.execute_ms = execute_profile_event;
+    task_events.cancel_ms = cancel_profile_event;
+    task_events.reset_ms = reset_profile_event;
+    task_events.wait_ms = wait_profile_event;
 
     pending.setCapacity(max_tasks_count);
     active.set_capacity(max_tasks_count);
@@ -148,7 +161,7 @@ bool MergeTreeBackgroundExecutor<Queue>::trySchedule(ExecutableTaskPtr task)
     if (value.load() >= static_cast<int64_t>(max_tasks_count))
         return false;
 
-    pending.push(std::make_shared<TaskRuntimeData>(std::move(task), metric));
+    pending.push(std::make_shared<TaskRuntimeData>(std::move(task), metric, task_events));
 
     has_tasks.notify_one();
     return true;
