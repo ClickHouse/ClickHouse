@@ -203,7 +203,6 @@ bool ReadBufferFromS3::nextImpl()
 
     ProfileEvents::increment(ProfileEvents::ReadBufferFromS3Bytes, working_buffer.size());
     offset += working_buffer.size();
-    chassert(offset <= read_until_position);
 
     // release result if possible to free pooled HTTP session for better reuse
     bool is_read_until_position = read_until_position && read_until_position == offset;
