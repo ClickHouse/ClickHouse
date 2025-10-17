@@ -1,6 +1,7 @@
 #include <Columns/ColumnUnique.h>
 #include <Common/SipHash.h>
 
+
 namespace DB
 {
 
@@ -63,11 +64,5 @@ template class ColumnUnique<ColumnDecimal<Decimal32>>;
 template class ColumnUnique<ColumnDecimal<Decimal64>>;
 template class ColumnUnique<ColumnDecimal<Decimal128>>;
 template class ColumnUnique<ColumnDecimal<Decimal256>>;
-
-    // template class IColumnHelper<ColumnDecimal<Decimal32>, ColumnFixedSizeHelper>;
-    // template class IColumnHelper<ColumnDecimal<Decimal64>, ColumnFixedSizeHelper>;
-    // template class IColumnHelper<ColumnDecimal<Decimal128>, ColumnFixedSizeHelper>;
-    // template class IColumnHelper<ColumnDecimal<Decimal256>, ColumnFixedSizeHelper>;
-    // template class IColumnHelper<ColumnDecimal<DateTime64>, ColumnFixedSizeHelper>;
 
 }

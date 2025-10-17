@@ -9,7 +9,7 @@ using namespace DB;
 
 static pcg64 rng(randomSeed());
 
-constexpr size_t bytes_per_string = sizeof(uint64_t) + 1;
+constexpr size_t bytes_per_string = sizeof(uint64_t);
 /// Column should have enough bytes to be compressed
 constexpr size_t column_size = ColumnString::min_size_to_compress / bytes_per_string + 42;
 
@@ -23,7 +23,6 @@ TEST(ColumnString, Incompressible)
     {
         const uint64_t value = rng();
         memcpy(&chars[i * bytes_per_string], &value, sizeof(uint64_t));
-        chars[i * bytes_per_string + sizeof(uint64_t)] = '\0';
         offsets.push_back((i + 1) * bytes_per_string);
     }
 
@@ -47,7 +46,6 @@ TEST(ColumnString, CompressibleCharsAndIncompressibleOffsets)
     {
         static const uint64_t value = 42;
         memcpy(&chars[i * bytes_per_string], &value, sizeof(uint64_t));
-        chars[i * bytes_per_string + sizeof(uint64_t)] = '\0';
     }
     offsets.push_back(chars.size());
 
@@ -72,7 +70,6 @@ TEST(ColumnString, CompressibleCharsAndCompressibleOffsets)
     {
         static const uint64_t value = 42;
         memcpy(&chars[i * bytes_per_string], &value, sizeof(uint64_t));
-        chars[i * bytes_per_string + sizeof(uint64_t)] = '\0';
         offsets.push_back((i + 1) * bytes_per_string);
     }
 

@@ -116,9 +116,13 @@ std::vector<const QueryNode *> getSupportingParallelReplicasQueries(const IQuery
                 const auto join_kind = join_node.getKind();
                 const auto join_strictness = join_node.getStrictness();
 
+                /// Do not apply for non-leftmost RIGHT JOIN
+                std::unordered_set<QueryTreeNodeType> supported_table_expression_types = {QueryTreeNodeType::TABLE, QueryTreeNodeType::QUERY, QueryTreeNodeType::UNION};
+
                 if (join_kind == JoinKind::Left || (join_kind == JoinKind::Inner && join_strictness == JoinStrictness::All))
                     query_tree_node = join_node.getLeftTableExpression().get();
-                else if (join_kind == JoinKind::Right && join_strictness != JoinStrictness::RightAny)
+                else if (join_kind == JoinKind::Right && join_strictness != JoinStrictness::RightAny
+                    && supported_table_expression_types.contains(join_node.getLeftTableExpression()->getNodeType()))
                     query_tree_node = join_node.getRightTableExpression().get();
                 else
                     return {};
@@ -271,7 +275,7 @@ const QueryNode * findQueryForParallelReplicas(
             {
                 const auto * join = typeid_cast<JoinStep *>(step);
                 const auto * join_logical = typeid_cast<JoinStepLogical *>(step);
-                if (join_logical && join_logical->hasPreparedJoinStorage())
+                if (join_logical && typeid_cast<JoinStepLogicalLookup *>(children.back()->step.get()))
                     /// JoinStepLogical with prepared storage is converted to FilledJoinStep, not regular JoinStep.
                     join_logical = nullptr;
 
@@ -430,7 +434,7 @@ static const TableNode * findTableForParallelReplicas(const IQueryTreeNode * que
                 const auto join_kind = join_node.getKind();
                 const auto join_strictness = join_node.getStrictness();
 
-                if (join_kind == JoinKind::Left || (join_kind == JoinKind::Inner and join_strictness == JoinStrictness::All))
+                if (join_kind == JoinKind::Left || (join_kind == JoinKind::Inner && join_strictness == JoinStrictness::All))
                 {
                     query_tree_node = join_node.getLeftTableExpression().get();
                     join_nodes.push(join_node.getRightTableExpression().get());

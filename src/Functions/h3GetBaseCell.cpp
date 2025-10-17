@@ -91,7 +91,32 @@ public:
 
 REGISTER_FUNCTION(H3GetBaseCell)
 {
-    factory.registerFunction<FunctionH3GetBaseCell>();
+    FunctionDocumentation::Description description = R"(
+Returns the base cell number of the [H3](#h3-index) index.
+    )";
+    FunctionDocumentation::Syntax syntax = "h3GetBaseCell(index)";
+    FunctionDocumentation::Arguments arguments = {
+        {"index", "Hexagon index number.", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns the hexagon base cell number.",
+        {"UInt8"}
+    };
+    FunctionDocumentation::Examples examples = {
+        {
+            "Get base cell number",
+            "SELECT h3GetBaseCell(612916788725809151) AS basecell",
+            R"(
+┌─basecell─┐
+│       12 │
+└──────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 3};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionH3GetBaseCell>(documentation);
 }
 
 }
