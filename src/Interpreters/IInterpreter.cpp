@@ -7,7 +7,6 @@
 
 namespace DB
 {
-
 namespace Setting
 {
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
@@ -16,14 +15,8 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
-    extern const int LOGICAL_ERROR;
 }
 
-IInterpreter::IInterpreter(const ContextPtr & context)
-{
-    if (context->isGlobalContext())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query execution with global context is a bug");
-}
 
 void IInterpreter::extendQueryLogElem(
     QueryLogElement & elem, const ASTPtr & ast, ContextPtr context, const String & query_database, const String & query_table) const

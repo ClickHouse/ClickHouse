@@ -1,6 +1,0 @@
-<clickhouse>
-    <jdbc_bridge>
-        <host>bridge1</host>
-        <port>9019</port>
-    </jdbc_bridge>
-</clickhouse>

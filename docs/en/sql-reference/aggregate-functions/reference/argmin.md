@@ -5,6 +5,7 @@ description: 'Calculates the `arg` value for a minimum `val` value. If there are
 sidebar_position: 110
 slug: /sql-reference/aggregate-functions/reference/argmin
 title: 'argMin'
+doc_type: 'reference'
 ---
 
 # argMin
@@ -67,7 +68,7 @@ ENGINE = Memory AS
 SELECT *
 FROM VALUES((NULL, 0), ('a', 1), ('b', 2), ('c', 2), (NULL, NULL), ('d', NULL));
 
-select * from test;
+SELECT * FROM test;
 ┌─a────┬────b─┐
 │ ᴺᵁᴸᴸ │    0 │
 │ a    │    1 │

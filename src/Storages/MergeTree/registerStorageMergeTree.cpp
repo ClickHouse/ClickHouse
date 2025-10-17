@@ -17,6 +17,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StatisticsDescription.h>
 
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -55,6 +56,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 index_granularity;
     extern const MergeTreeSettingsBool add_minmax_index_for_numeric_columns;
     extern const MergeTreeSettingsBool add_minmax_index_for_string_columns;
+    extern const MergeTreeSettingsString auto_statistics_types;
 }
 
 namespace ServerSetting
@@ -489,9 +491,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     }
 
     ASTs & engine_args = args.engine_args;
-    /// Some internals may creates InterpreterSelectQuery, and it is prohibited with global context, so let's make a copy.
-    /// Note, that we should not use args.local_context, since it may tune some settings, i.e. max_ast_depth, and on restart this table may not be attached anymore.
-    auto context = Context::createCopy(args.getContext());
+    auto context = args.getContext();
     size_t arg_num = 0;
     size_t arg_cnt = engine_args.size();
 
@@ -648,7 +648,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// value in partition_key structure. MergeTree checks this case and use
         /// single default partition with name "all".
         metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_key, metadata.columns, context);
-
+// tostartOfInterval disabling for primary key
         /// PRIMARY KEY without ORDER BY is allowed and considered as ORDER BY.
         if (!args.storage_def->order_by && args.storage_def->primary_key)
             args.storage_def->set(args.storage_def->order_by, args.storage_def->primary_key->clone());
@@ -657,7 +657,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         {
             if (local_settings[Setting::create_table_empty_primary_key_by_default])
             {
-                args.storage_def->set(args.storage_def->order_by, makeASTFunction("tuple"));
+                args.storage_def->set(args.storage_def->order_by, makeASTOperator("tuple"));
             }
             else
             {
@@ -727,7 +727,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             {
                 metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, columns, context));
                 auto index_name = index->as<ASTIndexDeclaration>()->name;
-                if (!args.query.attach && (
+                if (args.mode <= LoadingStrictnessLevel::CREATE && (
                     ((*storage_settings)[MergeTreeSetting::add_minmax_index_for_numeric_columns]
                     || (*storage_settings)[MergeTreeSetting::add_minmax_index_for_string_columns])
                     && index_name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX)))
@@ -757,23 +757,26 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 if (minmax_index_exists)
                     continue;
 
-                auto index_type = makeASTFunction("minmax");
-                auto index_ast = std::make_shared<ASTIndexDeclaration>(
-                        std::make_shared<ASTIdentifier>(column.name), index_type,
-                        IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column.name);
-                index_ast->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
-                auto new_index = IndexDescription::getIndexFromAST(index_ast, columns, context);
+                auto new_index = createImplicitMinMaxIndexDescription(column.name, columns, context);
                 metadata.secondary_indices.push_back(std::move(new_index));
             }
         }
 
+        String statistics_types_str = (*storage_settings)[MergeTreeSetting::auto_statistics_types];
+
+        if (!statistics_types_str.empty())
+        {
+            addImplicitStatistics(metadata.columns, statistics_types_str);
+        }
+
         if (args.query.columns_list && args.query.columns_list->projections)
+        {
             for (auto & projection_ast : args.query.columns_list->projections->children)
             {
                 auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, columns, context);
                 metadata.projections.add(std::move(projection));
             }
-
+        }
 
         auto column_ttl_asts = columns.getColumnTTLs();
         for (const auto & [name, ast] : column_ttl_asts)
@@ -868,8 +871,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (merging_params.mode != MergeTreeData::MergingParams::Mode::Ordinary
             && (*storage_settings)[MergeTreeSetting::deduplicate_merge_projection_mode] == DeduplicateMergeProjectionMode::THROW)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Projection is fully supported in {}MergeTree with deduplicate_merge_projection_mode = throw. "
-                "Use 'drop' or 'rebuild' option of deduplicate_merge_projection_mode.",
+                "Projections are not supported for {}MergeTree with deduplicate_merge_projection_mode = throw. "
+                "Please set setting 'deduplicate_merge_projection_mode' to 'drop' or 'rebuild'",
                 merging_params.getModeName());
     }
 

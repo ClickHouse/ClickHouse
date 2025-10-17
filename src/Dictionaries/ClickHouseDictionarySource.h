@@ -4,9 +4,9 @@
 #include <Poco/Logger.h>
 #include <Client/ConnectionPoolWithFailover.h>
 #include <Interpreters/Context_fwd.h>
-#include "DictionaryStructure.h"
-#include "ExternalQueryBuilder.h"
-#include "IDictionarySource.h"
+#include <Dictionaries/DictionaryStructure.h>
+#include <Dictionaries/ExternalQueryBuilder.h>
+#include <Dictionaries/IDictionarySource.h>
 
 
 namespace DB

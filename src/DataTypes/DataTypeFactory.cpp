@@ -261,11 +261,13 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeDate(*this);
     registerDataTypeDate32(*this);
     registerDataTypeDateTime(*this);
+    registerDataTypeTime(*this);
     registerDataTypeString(*this);
     registerDataTypeFixedString(*this);
     registerDataTypeEnum(*this);
     registerDataTypeArray(*this);
     registerDataTypeTuple(*this);
+    registerDataTypeQBit(*this);
     registerDataTypeNullable(*this);
     registerDataTypeNothing(*this);
     registerDataTypeUUID(*this);

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "FunctionArrayMapped.h"
+#include <Functions/array/FunctionArrayMapped.h>
 #include <base/sort.h>
 
 namespace DB

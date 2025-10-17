@@ -155,14 +155,29 @@ StringRef ColumnMap::serializeValueIntoArena(size_t n, Arena & arena, char const
     return nested->serializeValueIntoArena(n, arena, begin);
 }
 
+StringRef ColumnMap::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+{
+    return nested->serializeAggregationStateValueIntoArena(n, arena, begin);
+}
+
 char * ColumnMap::serializeValueIntoMemory(size_t n, char * memory) const
 {
     return nested->serializeValueIntoMemory(n, memory);
 }
 
+std::optional<size_t> ColumnMap::getSerializedValueSize(size_t n) const
+{
+    return nested->getSerializedValueSize(n);
+}
+
 const char * ColumnMap::deserializeAndInsertFromArena(const char * pos)
 {
     return nested->deserializeAndInsertFromArena(pos);
+}
+
+const char * ColumnMap::deserializeAndInsertAggregationStateValueFromArena(const char * pos)
+{
+    return nested->deserializeAndInsertAggregationStateValueFromArena(pos);
 }
 
 const char * ColumnMap::skipSerializedInArena(const char * pos) const
@@ -435,5 +450,11 @@ void ColumnMap::takeDynamicStructureFromSourceColumns(const Columns & source_col
         nested_source_columns.push_back(assert_cast<const ColumnMap &>(*source_column).getNestedColumnPtr());
     nested->takeDynamicStructureFromSourceColumns(nested_source_columns);
 }
+
+void ColumnMap::takeDynamicStructureFromColumn(const ColumnPtr & source_column)
+{
+    nested->takeDynamicStructureFromColumn(assert_cast<const ColumnMap &>(*source_column).getNestedColumnPtr());
+}
+
 
 }

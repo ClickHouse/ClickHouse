@@ -804,6 +804,24 @@ StringRef ColumnVariant::serializeValueIntoArena(size_t n, Arena & arena, char c
     return res;
 }
 
+StringRef ColumnVariant::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+{
+    /// During any serialization/deserialization we should always use global discriminators.
+    Discriminator global_discr = globalDiscriminatorAt(n);
+    char * pos = arena.allocContinue(sizeof(global_discr), begin);
+    memcpy(pos, &global_discr, sizeof(global_discr));
+    StringRef res(pos, sizeof(global_discr));
+
+    if (global_discr == NULL_DISCRIMINATOR)
+        return res;
+
+    auto value_ref = variants[localDiscriminatorByGlobal(global_discr)]->serializeAggregationStateValueIntoArena(offsetAt(n), arena, begin);
+    res.data = value_ref.data - res.size;
+    res.size += value_ref.size;
+
+    return res;
+}
+
 const char * ColumnVariant::deserializeAndInsertFromArena(const char * pos)
 {
     /// During any serialization/deserialization we should always use global discriminators.
@@ -821,12 +839,21 @@ const char * ColumnVariant::deserializeAndInsertFromArena(const char * pos)
     return variants[local_discr]->deserializeAndInsertFromArena(pos);
 }
 
-const char * ColumnVariant::deserializeVariantAndInsertFromArena(DB::ColumnVariant::Discriminator global_discr, const char * pos)
+const char * ColumnVariant::deserializeAndInsertAggregationStateValueFromArena(const char * pos)
 {
+    /// During any serialization/deserialization we should always use global discriminators.
+    Discriminator global_discr = unalignedLoad<Discriminator>(pos);
+    pos += sizeof(global_discr);
     Discriminator local_discr = localDiscriminatorByGlobal(global_discr);
     getLocalDiscriminators().push_back(local_discr);
+    if (local_discr == NULL_DISCRIMINATOR)
+    {
+        getOffsets().emplace_back();
+        return pos;
+    }
+
     getOffsets().push_back(variants[local_discr]->size());
-    return variants[local_discr]->deserializeAndInsertFromArena(pos);
+    return variants[local_discr]->deserializeAndInsertAggregationStateValueFromArena(pos);
 }
 
 const char * ColumnVariant::skipSerializedInArena(const char * pos) const
@@ -837,6 +864,31 @@ const char * ColumnVariant::skipSerializedInArena(const char * pos) const
         return pos;
 
     return variants[localDiscriminatorByGlobal(global_discr)]->skipSerializedInArena(pos);
+}
+
+char * ColumnVariant::serializeValueIntoMemory(size_t n, char * memory) const
+{
+    Discriminator global_discr = globalDiscriminatorAt(n);
+    memcpy(memory, &global_discr, sizeof(global_discr));
+    memory += sizeof(global_discr);
+    if (global_discr == NULL_DISCRIMINATOR)
+        return memory;
+
+    return variants[localDiscriminatorByGlobal(global_discr)]->serializeValueIntoMemory(offsetAt(n), memory);
+}
+
+std::optional<size_t> ColumnVariant::getSerializedValueSize(size_t n) const
+{
+    size_t res = sizeof(Discriminator);
+    Discriminator global_discr = globalDiscriminatorAt(n);
+    if (global_discr == NULL_DISCRIMINATOR)
+        return res;
+
+    auto variant_size = variants[localDiscriminatorByGlobal(global_discr)]->getSerializedValueSize(offsetAt(n));
+    if (!variant_size)
+        return std::nullopt;
+
+    return res + *variant_size;
 }
 
 void ColumnVariant::updateHashWithValue(size_t n, SipHash & hash) const
@@ -1698,20 +1750,30 @@ bool ColumnVariant::hasDynamicStructure() const
 
 void ColumnVariant::takeDynamicStructureFromSourceColumns(const Columns & source_columns)
 {
+    /// List of source columns for each variant. In global order.
     std::vector<Columns> variants_source_columns;
-    variants_source_columns.resize(variants.size());
-    for (size_t i = 0; i != variants.size(); ++i)
+    size_t num_variants = variants.size();
+    variants_source_columns.resize(num_variants);
+    for (size_t i = 0; i != num_variants; ++i)
         variants_source_columns[i].reserve(source_columns.size());
 
     for (const auto & source_column : source_columns)
     {
-        const auto & source_variants = assert_cast<const ColumnVariant &>(*source_column).variants;
-        for (size_t i = 0; i != source_variants.size(); ++i)
-            variants_source_columns[i].push_back(source_variants[i]);
+        const auto & source_variant = assert_cast<const ColumnVariant &>(*source_column);
+        for (size_t i = 0; i != num_variants; ++i)
+            variants_source_columns[i].push_back(source_variant.getVariantPtrByGlobalDiscriminator(i));
     }
 
-    for (size_t i = 0; i != variants.size(); ++i)
-        variants[i]->takeDynamicStructureFromSourceColumns(variants_source_columns[i]);
+    for (size_t i = 0; i != num_variants; ++i)
+        getVariantByGlobalDiscriminator(i).takeDynamicStructureFromSourceColumns(variants_source_columns[i]);
 }
+
+void ColumnVariant::takeDynamicStructureFromColumn(const ColumnPtr & source_column)
+{
+    const auto & source_variant = assert_cast<const ColumnVariant &>(*source_column);
+    for (size_t i = 0; i != variants.size(); ++i)
+        getVariantByGlobalDiscriminator(i).takeDynamicStructureFromColumn(source_variant.getVariantPtrByGlobalDiscriminator(i));
+}
+
 
 }

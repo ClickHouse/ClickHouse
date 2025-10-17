@@ -57,6 +57,8 @@ contents:
   dst: /usr/bin/chl
 - src: root/usr/bin/clickhouse-obfuscator
   dst: /usr/bin/clickhouse-obfuscator
+- src: root/usr/bin/clickhouse-chdig
+  dst: /usr/bin/clickhouse-chdig
 - src: root/usr/bin/chdig
   dst: /usr/bin/chdig
 # docs

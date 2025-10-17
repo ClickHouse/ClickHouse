@@ -17,15 +17,30 @@ using FunctionBase64Decode = FunctionBaseXXConversion<Base64DecodeImpl>;
 }
 REGISTER_FUNCTION(TryBase64Decode)
 {
-    FunctionDocumentation::Description description = R"(Decodes a String or FixedString from base64, like base64Decode but returns an empty string in case of an error.)";
+    FunctionDocumentation::Description description = R"(
+Like [`base64Decode`](#base64Decode), but returns an empty string in case of error.
+)";
     FunctionDocumentation::Syntax syntax = "tryBase64Decode(encoded)";
-    FunctionDocumentation::Arguments arguments = {{"encoded", "String column or constant. If the string is not a valid Base64-encoded value, returns an empty string."}};
-    FunctionDocumentation::ReturnedValue returned_value = "A string containing the decoded value of the argument.";
-    FunctionDocumentation::Examples examples = {{"valid", "SELECT tryBase64Decode('Y2xpY2tob3VzZQ==')", "clickhouse"}, {"invalid", "SELECT tryBase64Decode('invalid')", ""}};
+    FunctionDocumentation::Arguments arguments = {
+        {"encoded", "String column or constant to decode. If the string is not valid Base64-encoded, returns an empty string in case of error.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a string containing the decoded value of the argument.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        "SELECT tryBase64Decode('Y2xpY2tob3VzZQ==')",
+        R"(
+┌─tryBase64Decode('Y2xpY2tob3VzZQ==')─┐
+│ clickhouse                          │
+└─────────────────────────────────────┘
+        )"
+    }
+    };
     FunctionDocumentation::IntroducedIn introduced_in = {18, 16};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Encoding;
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionBase64Decode>({description, syntax, arguments, returned_value, examples, introduced_in, category});
+    factory.registerFunction<FunctionBase64Decode>(documentation);
 }
 }
 

@@ -1,4 +1,4 @@
-#include "ExternalQueryBuilder.h"
+#include <Dictionaries/ExternalQueryBuilder.h>
 
 #include <boost/range/join.hpp>
 

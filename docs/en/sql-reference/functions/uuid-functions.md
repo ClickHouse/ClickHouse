@@ -1,14 +1,53 @@
 ---
 description: 'Documentation for Functions for Working with UUIDs'
 sidebar_label: 'UUIDs'
-sidebar_position: 205
 slug: /sql-reference/functions/uuid-functions
 title: 'Functions for Working with UUIDs'
+doc_type: 'reference'
 ---
 
 import DeprecatedBadge from '@theme/badges/DeprecatedBadge';
 
-# Functions for Working with UUIDs
+# Functions for working with UUIDs
+
+## UUIDv7 generation {#uuidv7-generation}
+
+The generated UUID contains a 48-bit timestamp in Unix milliseconds, followed by version "7" (4 bits), a counter (42 bits) to distinguish UUIDs within a millisecond (including a variant field "2", 2 bits), and a random field (32 bits).
+For any given timestamp (`unix_ts_ms`), the counter starts at a random value and is incremented by 1 for each new UUID until the timestamp changes. In case the counter overflows, the timestamp field is incremented by 1 and the counter is reset to a random new start value.
+The UUID generation functions guarantee that the counter field within a timestamp increments monotonically across all function invocations in concurrently running threads and queries.
+
+```text
+ 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
+|                           unix_ts_ms                          |
+├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
+|          unix_ts_ms           |  ver  |   counter_high_bits   |
+├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
+|var|                   counter_low_bits                        |
+├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
+|                            rand_b                             |
+└─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┘
+```
+
+## Snowflake ID generation {#snowflake-id-generation}
+
+The generated Snowflake ID contains the current Unix timestamp in milliseconds (41 + 1 top zero bits), followed by a machine id (10 bits), and a counter (12 bits) to distinguish IDs within a millisecond. For any given timestamp (`unix_ts_ms`), the counter starts at 0 and is incremented by 1 for each new Snowflake ID until the timestamp changes. In case the counter overflows, the timestamp field is incremented by 1 and the counter is reset to 0.
+
+:::note
+The generated Snowflake IDs are based on the UNIX epoch 1970-01-01. While no standard or recommendation exists for the epoch of Snowflake IDs, implementations in other systems may use a different epoch, e.g. Twitter/X (2010-11-04) or Mastodon (2015-01-01).
+:::
+
+```text
+ 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
+|0|                         timestamp                           |
+├─┼                 ┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
+|                   |     machine_id    |    machine_seq_num    |
+└─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┘
+```
+
 
 ## generateUUIDv4 {#generateuuidv4}
 
@@ -62,26 +101,8 @@ SELECT generateUUIDv4(1), generateUUIDv4(2);
 
 Generates a [version 7](https://datatracker.ietf.org/doc/html/draft-peabody-dispatch-new-uuid-format-04) [UUID](../data-types/uuid.md).
 
-The generated UUID contains the current Unix timestamp in milliseconds (48 bits), followed by version "7" (4 bits), a counter (42 bit) to distinguish UUIDs within a millisecond (including a variant field "2", 2 bit), and a random field (32 bits).
-For any given timestamp (unix_ts_ms), the counter starts at a random value and is incremented by 1 for each new UUID until the timestamp changes.
-In case the counter overflows, the timestamp field is incremented by 1 and the counter is reset to a random new start value.
-
-Function `generateUUIDv7` guarantees that the counter field within a timestamp increments monotonically across all function invocations in concurrently running threads and queries.
-
-```text
- 0                   1                   2                   3
- 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
-|                           unix_ts_ms                          |
-├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
-|          unix_ts_ms           |  ver  |   counter_high_bits   |
-├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
-|var|                   counter_low_bits                        |
-├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
-|                            rand_b                             |
-└─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┘
-```
-
+See section ["UUIDv7 generation"](#uuidv7-generation) for details on UUID structure, counter management, and concurrency guarantees.
+ 
 :::note
 As of April 2024, version 7 UUIDs are in draft status and their layout may change in future.
 :::
@@ -129,6 +150,65 @@ SELECT generateUUIDv7(1), generateUUIDv7(2);
 │ 018f05c9-4ab8-7b86-b64e-c9f03fbd45d1 │ 018f05c9-4ab8-7b86-b64e-c9f12efb7e16 │
 └──────────────────────────────────────┴──────────────────────────────────────┘
 ```
+
+## dateTimeToUUIDv7 {#datetimetouuidv7}
+
+Converts a [DateTime](../data-types/datetime.md) value to a [UUIDv7](https://en.wikipedia.org/wiki/UUID#Version_7) at the given time.
+
+See section ["UUIDv7 generation"](#uuidv7-generation) for details on UUID structure, counter management, and concurrency guarantees.
+
+:::note
+As of April 2024, version 7 UUIDs are in draft status and their layout may change in future.
+:::
+
+**Syntax**
+
+```sql
+dateTimeToUUIDv7(value)
+```
+
+**Arguments**
+
+- `value` — Date with time. [DateTime](../data-types/datetime.md).
+
+**Returned value**
+
+A value of type UUIDv7.
+
+**Example**
+
+```sql
+SELECT dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai'));
+```
+
+Result:
+
+```response
+┌─dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai'))─┐
+│ 018f05af-f4a8-778f-beee-1bedbc95c93b                                   │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+**Example with multiple UUIDs for the same timestamp**
+
+```sql
+SELECT dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56'));
+SELECT dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56'));
+```
+
+**Result**
+
+```response
+   ┌─dateTimeToUUIDv7(t⋯08-15 18:57:56'))─┐
+1. │ 017b4b2d-7720-76ed-ae44-bbcc23a8c550 │
+   └──────────────────────────────────────┘
+
+   ┌─dateTimeToUUIDv7(t⋯08-15 18:57:56'))─┐
+1. │ 017b4b2d-7720-76ed-ae44-bbcf71ed0fd3 │
+   └──────────────────────────────────────┘
+```
+
+The function ensures that multiple calls with the same timestamp generate unique, monotonically increasing UUIDs.
 
 ## empty {#empty}
 
@@ -260,7 +340,7 @@ The UUID type value.
 This first example returns the first argument converted to a UUID type as it can be converted:
 
 ```sql
-SELECT toUUIDOrDefault('61f0c404-5cb3-11e7-907b-a6006ad3dba0', cast('59f0c404-5cb3-11e7-907b-a6006ad3dba0' as UUID));
+SELECT toUUIDOrDefault('61f0c404-5cb3-11e7-907b-a6006ad3dba0', cast('59f0c404-5cb3-11e7-907b-a6006ad3dba0' AS UUID));
 ```
 
 Result:
@@ -274,7 +354,7 @@ Result:
 This second example returns the second argument (the provided default UUID) as the first argument cannot be converted to a UUID type:
 
 ```sql
-SELECT toUUIDOrDefault('-----61f0c404-5cb3-11e7-907b-a6006ad3dba0', cast('59f0c404-5cb3-11e7-907b-a6006ad3dba0' as UUID));
+SELECT toUUIDOrDefault('-----61f0c404-5cb3-11e7-907b-a6006ad3dba0', cast('59f0c404-5cb3-11e7-907b-a6006ad3dba0' AS UUID));
 ```
 
 Result:
@@ -546,27 +626,9 @@ serverUUID()
 ## generateSnowflakeID {#generatesnowflakeid}
 
 Generates a [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID).
+This function guarantees that the counter field within a timestamp increments monotonically across all function invocations in concurrently running threads and queries.
 
-The generated Snowflake ID contains the current Unix timestamp in milliseconds (41 + 1 top zero bits), followed by a machine id (10 bits), and a counter (12 bits) to distinguish IDs within a millisecond.
-For any given timestamp (unix_ts_ms), the counter starts at 0 and is incremented by 1 for each new Snowflake ID until the timestamp changes.
-In case the counter overflows, the timestamp field is incremented by 1 and the counter is reset to 0.
-
-Function `generateSnowflakeID` guarantees that the counter field within a timestamp increments monotonically across all function invocations in concurrently running threads and queries.
-
-:::note
-The generated Snowflake IDs are based on the UNIX epoch 1970-01-01.
-While no standard or recommendation exists for the epoch of Snowflake IDs, implementations in other systems may use a different epoch, e.g. Twitter/X (2010-11-04) or Mastodon (2015-01-01).
-:::
-
-```text
- 0                   1                   2                   3
- 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
-|0|                         timestamp                           |
-├─┼                 ┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
-|                   |     machine_id    |    machine_seq_num    |
-└─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┘
-```
+See section ["Snowflake ID generation"](#snowflake-id-generation) for implementation details.
 
 **Syntax**
 
@@ -630,6 +692,8 @@ SELECT generateSnowflakeID('expr', 1);
 :::warning
 This function is deprecated and can only be used if setting [allow_deprecated_snowflake_conversion_functions](../../operations/settings/settings.md#allow_deprecated_snowflake_conversion_functions) is enabled.
 The function will be removed at some point in future.
+
+Please use function [snowflakeIDToDateTime](#snowflakeidtodatetime) instead.
 :::
 
 Extracts the timestamp component of a [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) in [DateTime](../data-types/datetime.md) format.
@@ -673,6 +737,8 @@ Result:
 :::warning
 This function is deprecated and can only be used if setting [allow_deprecated_snowflake_conversion_functions](../../operations/settings/settings.md#allow_deprecated_snowflake_conversion_functions) is enabled.
 The function will be removed at some point in future.
+
+Please use function [snowflakeIDToDateTime64](#snowflakeidtodatetime64) instead.
 :::
 
 Extracts the timestamp component of a [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) in [DateTime64](../data-types/datetime64.md) format.
@@ -716,6 +782,8 @@ Result:
 :::warning
 This function is deprecated and can only be used if setting [allow_deprecated_snowflake_conversion_functions](../../operations/settings/settings.md#allow_deprecated_snowflake_conversion_functions) is enabled.
 The function will be removed at some point in future.
+
+Please use function [dateTimeToSnowflakeID](#datetimetosnowflakeid) instead.
 :::
 
 Converts a [DateTime](../data-types/datetime.md) value to the first [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) at the giving time.
@@ -757,9 +825,11 @@ Result:
 :::warning
 This function is deprecated and can only be used if setting [allow_deprecated_snowflake_conversion_functions](../../operations/settings/settings.md#allow_deprecated_snowflake_conversion_functions) is enabled.
 The function will be removed at some point in future.
+
+Please use function [dateTime64ToSnowflakeID](#datetime64tosnowflakeid) instead.
 :::
 
-Convert a [DateTime64](../data-types/datetime64.md) to the first [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) at the giving time.
+Converts a [DateTime64](../data-types/datetime64.md) to the first [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) at the giving time.
 
 **Syntax**
 
@@ -937,8 +1007,8 @@ Result:
 
 - [dictGetUUID](/sql-reference/functions/ext-dict-functions#other-functions)
 
-<!-- 
-The inner content of the tags below are replaced at doc framework build time with 
+<!--
+The inner content of the tags below are replaced at doc framework build time with
 docs generated from system.functions. Please do not modify or remove the tags.
 See: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
 -->
