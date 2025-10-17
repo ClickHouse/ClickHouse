@@ -171,7 +171,7 @@ static inline T ALWAYS_INLINE packFixed(
 
     size_t offset = 0;
 
-    static constexpr auto bitmap_size = std::tuple_size<KeysNullMap<T>>::value;
+    static constexpr auto bitmap_size = std::tuple_size_v<KeysNullMap<T>>;
     static constexpr bool has_bitmap = bitmap_size > 0;
 
     if constexpr (has_bitmap)
