@@ -583,7 +583,7 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
     bool explain = false;
     Select * sel = nullptr;
     SelectParen * sparen = nullptr;
-    const uint32_t ncols = (rg.nextMediumNumber() % 5) + UINT32_C(1);
+    const uint32_t ncols = rg.randomInt<uint32_t>(1, 5);
 
     peer_query = pq;
     if (peer_query == PeerQuery::ClickHouseOnly && (fc.measure_performance || fc.compare_explains) && rg.nextBool())
@@ -977,7 +977,8 @@ void QueryOracle::processSecondOracleQueryResult(const int errcode, ExternalInte
                 || fc.oracle_ignore_error_codes.find(static_cast<uint32_t>(first_errcode ? first_errcode : errcode))
                     == fc.oracle_ignore_error_codes.end()))
         {
-            throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "{}: failed with different success results", oracle_name);
+            throw DB::Exception(
+                DB::ErrorCodes::BUZZHOUSE, "{}: failed with different success results: {} vs {}", oracle_name, first_errcode, errcode);
         }
         if (!first_errcode && !errcode)
         {
