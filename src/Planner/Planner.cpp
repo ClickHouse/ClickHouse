@@ -448,7 +448,7 @@ public:
     UInt64 limit_offset = 0;
     BFloat16 fractional_limit;
     BFloat16 fractional_offset;
-    UInt64 partial_sorting_limit = 1;
+    UInt64 partial_sorting_limit = 0;
 };
 
 template <size_t size>
