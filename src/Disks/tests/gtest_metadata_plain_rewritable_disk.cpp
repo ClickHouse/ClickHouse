@@ -321,8 +321,8 @@ TEST_F(MetadataPlainRewritableDiskTest, RemoveDirectoryRecursive)
 
     {
         auto inodes = std::filesystem::recursive_directory_iterator("./RemoveDirectoryRecursive")
-                            | std::views::transform([](const auto & dir) { return dir.path(); })
-                            | std::ranges::to<std::vector<std::string>>();
+                        | std::views::transform([](const auto & dir) { return dir.path(); })
+                        | std::ranges::to<std::vector<std::string>>();
         EXPECT_EQ(inodes, inodes_start);
     }
 
@@ -342,9 +342,9 @@ TEST_F(MetadataPlainRewritableDiskTest, RemoveDirectoryRecursive)
     EXPECT_FALSE(metadata->existsDirectory("root/A/B/E/F"));
 
     {
-        std::vector<std::string> inodes = std::filesystem::recursive_directory_iterator("./RemoveDirectoryRecursive")
-                                            | std::views::transform([](const auto & dir) { return dir.path(); })
-                                            | std::ranges::to<std::vector<std::string>>();
+        auto inodes = std::filesystem::recursive_directory_iterator("./RemoveDirectoryRecursive")
+                        | std::views::transform([](const auto & dir) { return dir.path(); })
+                        | std::ranges::to<std::vector<std::string>>();
         EXPECT_EQ(inodes.size(), 3);
     }
 }
