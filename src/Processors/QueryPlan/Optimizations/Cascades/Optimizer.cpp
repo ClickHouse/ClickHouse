@@ -368,7 +368,7 @@ GroupId CascadesOptimizer::populateMemoFromJoinGraph(const JoinGraph & join_grap
                     else
                     {
                         auto existing_group = optimizer_context.getGroup(known_group->second);
-                        existing_group->addExpression(join_expression);
+                        existing_group->addLogicalExpression(join_expression);
                         LOG_TRACE(optimizer_context.log, "Adding to existing group for '{}' id {}", joined_group_name, known_group->second);
                     }
                 }
