@@ -271,10 +271,17 @@ size_t HashJoin::ScatteredColumns::allocatedBytes() const
 
 size_t HashJoin::NullMapHolder::allocatedBytes() const
 {
+    if (!column)
+        return 0;
     size_t rows = column->size();
     if (rows == 0)
         return 0;
-    return column->allocatedBytes() * columns->selector.size() / rows;
+    // we use cached value. In concurrentHashJoin we can sometimes move the nullmaps to the first shard so it's sometimes not available here
+    size_t sel = selector_rows;
+    if (!sel)
+        sel = columns ? columns->selector.size() : rows;
+    sel = std::min(sel, rows);
+    return column->allocatedBytes() * sel / rows;
 }
 
 static HashJoin::Type chooseMethod(JoinKind kind, const ColumnRawPtrs & key_columns, Sizes & key_sizes)
@@ -731,21 +738,33 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
             auto join_mask_col = JoinCommon::getColumnAsMask(block, onexprs[onexpr_idx].condColumnNames().second);
             /// Save blocks that do not hold conditions in ON section
             ColumnUInt8::MutablePtr not_joined_map = nullptr;
+            bool has_right_not_joined = false;
             if (!flag_per_row && isRightOrFull(kind) && join_mask_col.hasData())
             {
-                /// Save rows that do not hold conditions
-                not_joined_map = ColumnUInt8::create(rows, 0);
-                for (size_t i = 0, sz = join_mask_col.getSize(); i < sz; ++i)
+                ///  - build mask in the source block row space
+                ///  - set bits only for rows that belong to THIS slot (by selector)
+                not_joined_map = ColumnUInt8::create(block.rows(), 0);
+                const auto & sel = stored_columns->selector;
+
+                auto mark_if_needed = [&](size_t row)
                 {
-                    /// Condition hold, do not save row
-                    if (!join_mask_col.isRowFiltered(i))
-                        continue;
+                    if (!join_mask_col.isRowFiltered(row))
+                        return; // ON condition passed -> not "non-joined"
+                    if (save_nullmap && (*null_map)[row])
+                        return; // already covered by null-keys map
+                    not_joined_map->getData()[row] = 1;
+                    has_right_not_joined = true;
+                };
 
-                    /// NULL key will be saved anyway because, do not save twice
-                    if (save_nullmap && (*null_map)[i])
-                        continue;
-
-                    not_joined_map->getData()[i] = 1;
+                if (sel.isContinuousRange())
+                {
+                    auto [beg, end] = sel.getRange();
+                    for (size_t r = beg; r < end; ++r) mark_if_needed(r);
+                }
+                else
+                {
+                    const auto & idxs = sel.getIndexes().getData();
+                    for (size_t r : idxs) mark_if_needed(r);
                 }
             }
 
@@ -780,14 +799,16 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
 
             if (!flag_per_row && save_nullmap && is_inserted)
             {
-                data->nullmaps.emplace_back(stored_columns, null_map_holder);
-                data->nullmaps_allocated_size += data->nullmaps.back().allocatedBytes();
+                auto & h = data->nullmaps.emplace_back(stored_columns, null_map_holder);
+                h.selector_rows = stored_columns->selector.size();
+                data->nullmaps_allocated_size += h.allocatedBytes();
             }
 
-            if (!flag_per_row && not_joined_map && is_inserted)
+            if (!flag_per_row && not_joined_map && (is_inserted || has_right_not_joined))
             {
-                data->nullmaps.emplace_back(stored_columns, std::move(not_joined_map));
-                data->nullmaps_allocated_size += data->nullmaps.back().allocatedBytes();
+                auto & h = data->nullmaps.emplace_back(stored_columns, std::move(not_joined_map));
+                h.selector_rows = stored_columns->selector.size();
+                data->nullmaps_allocated_size += h.allocatedBytes();
             }
 
             if (!flag_per_row && !is_inserted)
@@ -1184,8 +1205,7 @@ JoinResultPtr HashJoin::joinScatteredBlock(ScatteredBlock block)
     if (!data)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot join after data has been released");
 
-    chassert(kind == JoinKind::Left || kind == JoinKind::Inner);
-
+    chassert(kind == JoinKind::Left || kind == JoinKind::Inner || kind == JoinKind::Right || kind == JoinKind::Full);
     for (const auto & onexpr : table_join->getClauses())
     {
         auto cond_column_name = onexpr.condColumnNames();
@@ -1251,6 +1271,48 @@ HashJoin::~HashJoin()
         instance_log_id,
         getTotalByteCount(),
         getTotalRowCount());
+}
+
+bool HashJoin::hasNonJoinedRows() const
+{
+    if (has_non_joined_rows_checked.load(std::memory_order_acquire))
+        return has_non_joined_rows.load(std::memory_order_acquire);
+
+    if (!isRightOrFull(kind))
+        return false;
+
+    if (!needUsedFlagsForPerRightTableRow(table_join))
+        return false;
+
+    /// if the hash table is empty, we have no non-joined rows
+    if (data->type == Type::EMPTY || data->type == Type::CROSS || empty())
+        return false;
+
+    updateNonJoinedRowsStatus();
+    return has_non_joined_rows.load(std::memory_order_acquire);
+}
+
+void HashJoin::updateNonJoinedRowsStatus() const
+{
+    if (has_non_joined_rows_checked.load(std::memory_order_acquire))
+        return;
+
+    bool found_non_joined = false;
+    if (!empty())
+    {
+        // 1) There are masks for NULL-keys/ON? -> we have nonJoined rows
+        if (!data->nullmaps.empty())
+            found_non_joined = true;
+        // 2) One disjunct and all offset-flags are set? -> we have no nonJoined rows
+        else if (used_flags && table_join->oneDisjunct())
+            found_non_joined = !used_flags->allOffsetFlagsSet();
+        // 3) Otherwise (many disjuncts or no flags) -> we assume that we have nonJoined rows
+        else if (used_flags)
+            found_non_joined = true;
+    }
+
+    has_non_joined_rows.store(found_non_joined, std::memory_order_release);
+    has_non_joined_rows_checked.store(true, std::memory_order_release);
 }
 
 template <typename Mapped>
@@ -1830,5 +1892,6 @@ void HashJoin::onBuildPhaseFinish()
         all_join_was_promoted_to_right_any = true;
         LOG_DEBUG(log, "Promoting join strictness to RightAny, because all values in the right table are unique");
     }
+    updateNonJoinedRowsStatus();
 }
 }
