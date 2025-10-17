@@ -4,7 +4,6 @@
 #include <Common/isValidUTF8.h>
 #include <Core/Settings.h>
 #include <Storages/ObjectStorage/Utils.h>
-#include <base/defines.h>
 #include <Interpreters/Context.h>
 
 namespace DB
@@ -57,9 +56,22 @@ StorageObjectStorageSink::StorageObjectStorageSink(
     const std::optional<FormatSettings> & format_settings_,
     SharedHeader sample_block_,
     ContextPtr context)
-    : SinkToStorage(sample_block_)
+    : StorageObjectStorageSink(path_, object_storage, configuration, format_settings_, sample_block_, sample_block_, context)
+{
+}
+
+StorageObjectStorageSink::StorageObjectStorageSink(
+    const std::string & path_,
+    ObjectStoragePtr object_storage,
+    StorageObjectStorageConfigurationPtr configuration,
+    const std::optional<FormatSettings> & format_settings_,
+    SharedHeader input_header_,
+    SharedHeader format_header_,
+    ContextPtr context)
+    : SinkToStorage(format_header_)
     , path(path_)
-    , sample_block(sample_block_)
+    , sample_block(format_header_)
+    , input_header(input_header_)
 {
     const auto & settings = context->getSettingsRef();
     const auto chosen_compression_method = chooseCompressionMethod(path, configuration->compression_method);
@@ -75,13 +87,48 @@ StorageObjectStorageSink::StorageObjectStorageSink(
 
     writer = FormatFactory::instance().getOutputFormatParallelIfPossible(
         configuration->format, *write_buf, *sample_block, context, format_settings_);
+
+    // build format header from sample_block (input header) by finding its columns' positions in the sample block.
+    input_to_format_pos.clear();
+    input_to_format_pos.reserve(sample_block->columns());
+    for (size_t i = 0; i < sample_block->columns(); ++i)
+    {
+        const auto & format_col = sample_block->getByPosition(i);
+        if (!input_header->has(format_col.name))
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "Input header does not contain column '{}' required by the writer header", format_col.name);
+        input_to_format_pos.push_back(input_header->getPositionByName(format_col.name));
+    }
 }
 
 void StorageObjectStorageSink::consume(Chunk & chunk)
 {
     if (isCancelled())
         return;
-    writer->write(getHeader().cloneWithColumns(chunk.getColumns()));
+
+    /// If chunk has already been shaped upstream exactly like the writer header, write it as such.
+    /// For e.g., HIVE style partitioned table with partition columns dropped upstream.
+    const auto & src_cols = chunk.getColumns();
+    if (src_cols.size() == sample_block->columns())
+    {
+        writer->write(getHeader().cloneWithColumns(src_cols));
+        return;
+    }
+
+    /// Else, project from input_header shape to writer_header shape using the precomputed map.
+    Columns selected;
+    selected.reserve(input_to_format_pos.size());
+    for (size_t pos : input_to_format_pos)
+    {
+        if (pos >= src_cols.size())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Incoming chunk has {} column(s) but position {} is required by writer header",
+                src_cols.size(),
+                pos);
+        selected.emplace_back(src_cols[pos]);
+    }
+    writer->write(getHeader().cloneWithColumns(selected));
 }
 
 void StorageObjectStorageSink::onFinish()
@@ -171,14 +218,34 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
         file_path = *new_key;
     }
 
+    /// Compute the file/writer header from the current input header (sample_block):
+    /// Take the intersection of column names from the format header (provided by partition_strategy)
+    /// and the input header, ignoring columns dropped due to schema changes (e.g., ALTER DROP).
+    const Block strategy_format = partition_strategy->getFormatHeader();
+    auto final_format_header = std::make_shared<Block>();
+
+    for (size_t i = 0; i < strategy_format.columns(); ++i)
+    {
+        const auto & name = strategy_format.getByPosition(i).name;
+        if (const auto * const column = sample_block->findByName(name); column != nullptr)
+            final_format_header->insert(*column);
+
+        /// if we are here, column suggested by the strategy is absent in the current input
+        /// header (e.g. just dropped); skip it so the writer schema matches the actual data.
+    }
+    /// If the strategy suggested nothing (e.g. wildcard with empty set), fall back to
+    /// writing the whole input header.
+    if (!final_format_header->columns())
+        *final_format_header = *sample_block;
+
     return std::make_shared<StorageObjectStorageSink>(
         file_path,
         object_storage,
         configuration,
         format_settings,
-        std::make_shared<Block>(partition_strategy->getFormatHeader()),
-        context
-    );
+        sample_block, // input header
+        final_format_header, // writer/file header
+        context);
 }
 
 }
