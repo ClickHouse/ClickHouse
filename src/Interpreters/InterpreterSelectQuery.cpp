@@ -3194,7 +3194,7 @@ void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
 
         const Settings & settings = context->getSettingsRef();
 
-        if (limit_length && fractional_offset == 0)
+        if (limit_length && fractional_offset == 0) [[likely]]
         {
             auto limit = std::make_unique<LimitStep>(
                     query_plan.getCurrentHeader(), 
@@ -3324,7 +3324,7 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
 
         auto [limit_length, fractional_limit, limit_offset, fractional_offset] = getLimitLengthAndOffset(query, context);
 
-        if (limit_length && fractional_offset == 0)
+        if (limit_length && fractional_offset == 0) [[likely]]
         {
             auto limit = std::make_unique<LimitStep>(
                     query_plan.getCurrentHeader(), 

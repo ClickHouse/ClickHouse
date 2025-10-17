@@ -1033,7 +1033,7 @@ void addPreliminaryLimitStep(QueryPlan & query_plan,
     const auto & query_context = planner_context->getQueryContext();
     const Settings & settings = query_context->getSettingsRef();
 
-    if (limit_length && fractional_offset == 0)
+    if (limit_length && fractional_offset == 0) [[likely]]
     {
         auto limit = std::make_unique<LimitStep>(
                 query_plan.getCurrentHeader(), 
@@ -1286,7 +1286,7 @@ void addLimitStep(QueryPlan & query_plan,
     Float32 fractional_limit = query_analysis_result.fractional_limit;
     Float32 fractional_offset = query_analysis_result.fractional_offset;
 
-    if (limit_length && fractional_offset == 0)
+    if (limit_length && fractional_offset == 0) [[likely]]
     {
         auto limit = std::make_unique<LimitStep>(
                 query_plan.getCurrentHeader(), 
