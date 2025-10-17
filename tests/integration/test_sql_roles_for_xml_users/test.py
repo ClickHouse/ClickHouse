@@ -31,7 +31,7 @@ def test_user_grants():
     instance.query("system reload users")
     instance.wait_for_log_line("performing update on configuration")
     assert instance.query("show grants for user1") == ""
-    instance.query("create role role1")
+    instance.query("create role if not exists role1")
     instance.replace_in_config("/etc/clickhouse-server/users.d/users.xml", "<grants></grants>", "<grants><query>GRANT role1</query></grants>")
     instance.query("system reload users")
     instance.wait_for_log_line("performing update on configuration")
