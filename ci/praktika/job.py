@@ -29,7 +29,6 @@ class Job:
         provides: Optional[List[str]] = None
         requires: Optional[List[str]] = None
         timeout: Optional[int] = None
-        timeout_shell_cleanup: Optional[str] = None
 
     @dataclass
     class Config:
@@ -256,6 +255,8 @@ class Job:
             return False
 
         def __post_init__(self):
-            if self.timeout_shell_cleanup: return
+            if self.timeout_shell_cleanup:
+                return
             if self.run_in_docker:
-                self.timeout_shell_cleanup = f"docker rm -f praktika" # praktika is the container name, not the image name
+                # the container name is always the same (praktika) for every image
+                self.timeout_shell_cleanup = "docker rm -f praktika"

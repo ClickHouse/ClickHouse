@@ -850,16 +850,11 @@ class TeePopen:
         if self.timeout is None:
             return
         time.sleep(self.timeout)
-        print(
-            f"WARNING: Timeout exceeded [{self.timeout}] for [{self.process.pid}]"
-        )
+        print(f"WARNING: Timeout exceeded [{self.timeout}] for [{self.process.pid}]")
         self.timeout_exceeded = True
 
         if self.timeout_shell_cleanup:
-            print(
-                f"Run [{self.timeout_shell_cleanup}]"
-            )
-            Shell.check(self.timeout_shell_cleanup)
+            Shell.check(self.timeout_shell_cleanup, verbose=True)
             return
 
         self.send_signal(signal.SIGTERM)
