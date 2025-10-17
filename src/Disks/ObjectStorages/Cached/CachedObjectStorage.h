@@ -67,7 +67,7 @@ public:
 
     ObjectMetadata getObjectMetadata(const std::string & path) const override;
 
-    ObjectStorageConnectionInfoPtr getConnectionInfo() const override { return object_storage->getConnectionInfo(); }
+    std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path) const override;
 
     void shutdown() override;
 

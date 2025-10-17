@@ -40,7 +40,11 @@ private:
         ColumnsDescription cached_columns,
         bool is_insert_query) const override;
 
-    const char * getStorageEngineName() const override { return "MergeTreeIndex"; }
+    const char * getStorageEngineName() const override
+    {
+        /// Technically it's MergeTreeIndex but it doesn't register itself
+        return "";
+    }
 
     StorageID source_table_id{StorageID::createEmpty()};
     bool with_marks = false;

@@ -30,9 +30,10 @@ public:
 
 private:
     std::pair<bool, FileStatus::State> setProcessingImpl() override;
-    void prepareProcessedRequestsImpl(Coordination::Requests & requests,
-        LastProcessedFileInfoMapPtr created_nodes) override;
-    SetProcessingResponseIndexes prepareProcessingRequestsImpl(Coordination::Requests & requests) override;
+    void prepareProcessedRequestsImpl(Coordination::Requests & requests, LastProcessedFileInfoMapPtr created_nodes) override;
+    SetProcessingResponseIndexes prepareProcessingRequestsImpl(
+        Coordination::Requests & requests,
+        const std::string & processing_id) override;
 };
 
 }

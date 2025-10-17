@@ -231,7 +231,9 @@ void KeeperClient::initialize(Poco::Util::Application & /* self */)
         std::make_shared<GetDirectChildrenNumberCommand>(),
         std::make_shared<GetAllChildrenNumberCommand>(),
         std::make_shared<CPCommand>(),
+        std::make_shared<CPRCommand>(),
         std::make_shared<MVCommand>(),
+        std::make_shared<MVRCommand>(),
         std::make_shared<GetAclCommand>(),
     });
 
@@ -463,7 +465,7 @@ void KeeperClient::connectToKeeper()
     if (!new_zk_args.identity.empty())
         new_zk_args.auth_scheme = "digest";
     zk_args = new_zk_args;
-    zookeeper = zkutil::ZooKeeper::createWithoutKillingPreviousSessions(zk_args);
+    zookeeper = zkutil::ZooKeeper::createWithoutKillingPreviousSessions(std::move(new_zk_args));
 }
 
 int KeeperClient::main(const std::vector<String> & /* args */)
