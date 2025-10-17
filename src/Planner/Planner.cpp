@@ -1027,9 +1027,7 @@ void addPreliminaryLimitStep(QueryPlan & query_plan,
             return;
 
         limit_length += limit_offset;
-        fractional_limit += fractional_offset;
         limit_offset = 0;
-        fractional_offset = 0;
     }
 
     const auto & query_context = planner_context->getQueryContext();
@@ -1073,7 +1071,8 @@ void addPreliminaryLimitStep(QueryPlan & query_plan,
         auto fractional_limit_step = std::make_unique<FractionalLimitStep>(
             query_plan.getCurrentHeader(), 
             fractional_limit,
-            fractional_offset
+            fractional_offset,
+            limit_offset
         );
         query_plan.addStep(std::move(fractional_limit_step));
     }
