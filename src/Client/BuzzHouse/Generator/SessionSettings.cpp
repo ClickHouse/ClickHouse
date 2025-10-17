@@ -1231,6 +1231,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
           "group_by_two_level_threshold",
           "hnsw_candidate_list_size_for_search",
           "join_output_by_rowlist_perkey_rows_threshold",
+          "join_runtime_filter_exact_values_limit",
           "join_to_sort_maximum_table_rows",
           "join_to_sort_minimum_perkey_rows",
           "iceberg_insert_max_rows_in_data_file",
