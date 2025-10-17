@@ -146,7 +146,7 @@ public:
             || ((isVariant(type_and_name_right_col.type) || isDynamic(type_and_name_right_col.type))
                 && type_and_name_left_col.type->onlyNull()))
         {
-            return executeForVatintOrDynamicAndNull(
+            return executeForVariantOrDynamicAndNull(
                 isVariant(type_and_name_left_col.type) || isDynamic(type_and_name_left_col.type)
                     ? type_and_name_left_col
                     : type_and_name_right_col);
