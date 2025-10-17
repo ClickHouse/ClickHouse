@@ -225,13 +225,18 @@ Functions `hasToken` and `hasTokenOrNull` are the most performant functions to u
 
 Functions [hasAnyTokens](/sql-reference/functions/string-search-functions.md/#hasanytokens) and [hasAllTokens](/sql-reference/functions/string-search-functions.md/#hasalltokens) match against one or all of the given tokens.
 
-Like `hasToken`, no tokenization of the search terms takes place.
+These two functions accept the search tokens as either a string which will be tokenized using the same tokenizer used for the index column, or as an array of already processed tokens to which no tokenization will be applied prior to searching.
+See the function documentation for more info.
 
 Example:
 
 ```sql
-SELECT count() FROM tab WHERE hasAnyTokens(comment, ['clickhouse', 'olap']);
+-- Search tokens passed as string argument
+SELECT count() FROM tab WHERE hasAnyTokens(comment, 'clickhouse olap');
+SELECT count() FROM tab WHERE hasAllTokens(comment, 'clickhouse olap');
 
+-- Search tokens passed as Array(String)
+SELECT count() FROM tab WHERE hasAnyTokens(comment, ['clickhouse', 'olap']);
 SELECT count() FROM tab WHERE hasAllTokens(comment, ['clickhouse', 'olap']);
 ```
 
