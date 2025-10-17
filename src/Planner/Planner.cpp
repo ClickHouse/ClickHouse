@@ -1084,7 +1084,7 @@ void addPreliminaryLimitStep(QueryPlan & query_plan,
         );
         query_plan.addStep(std::move(limit));
     }
-    else if (fractional_limit > 0)
+    else if (!limit_length && fractional_limit > 0)
     {
         auto fractional_limit_step = std::make_unique<FractionalLimitStep>(
             query_plan.getCurrentHeader(), 
@@ -1094,13 +1094,13 @@ void addPreliminaryLimitStep(QueryPlan & query_plan,
         );
         query_plan.addStep(std::move(fractional_limit_step));
     }
-    else if (is_limit_length_negative && is_limit_offset_negative)
+    else if (limit_length && is_limit_length_negative && is_limit_offset_negative)
     {
         auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), limit_length, limit_offset);
 
         query_plan.addStep(std::move(limit));
     }
-    else if (is_limit_length_negative && !is_limit_offset_negative)
+    else if (limit_length && is_limit_length_negative && !is_limit_offset_negative)
     {
         auto offset = std::make_unique<OffsetStep>(query_plan.getCurrentHeader(), limit_offset);
 
@@ -1363,7 +1363,7 @@ void addLimitStep(QueryPlan & query_plan,
         );
         query_plan.addStep(std::move(limit));
     }
-    else if (fractional_limit > 0)
+    else if (!limit_length && fractional_limit > 0)
     {
         // Else its fractional limit + fractional offset or normal offset
         auto fractional_limit_step = std::make_unique<FractionalLimitStep>(
@@ -1376,13 +1376,13 @@ void addLimitStep(QueryPlan & query_plan,
         );
         query_plan.addStep(std::move(fractional_limit_step));
     }
-    else if (is_limit_length_negative && is_limit_offset_negative)
+    else if (limit_length && is_limit_length_negative && is_limit_offset_negative)
     {
         auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), limit_length, limit_offset);
 
         query_plan.addStep(std::move(limit));
     }
-    else if (is_limit_length_negative && !is_limit_offset_negative)
+    else if (limit_length && is_limit_length_negative && !is_limit_offset_negative)
     {
         auto offset = std::make_unique<OffsetStep>(query_plan.getCurrentHeader(), limit_offset);
 
