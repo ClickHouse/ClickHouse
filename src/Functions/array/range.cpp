@@ -184,7 +184,6 @@ private:
         auto & out_offsets = offsets_col->getData();
 
         IColumn::Offset offset{};
-
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
             for (size_t idx = 0; idx < row_length[row_idx]; ++idx)
