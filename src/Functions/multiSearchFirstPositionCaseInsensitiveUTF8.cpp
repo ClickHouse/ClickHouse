@@ -33,7 +33,7 @@ Like [multiSearchFirstPosition](#multiSearchFirstPosition) but assumes `haystack
     FunctionDocumentation::Examples examples = {
     {
         "Find the leftmost offset in UTF-8 string 'HELLO WORLD' which matches any of the given needles",
-        R"(SELECT multiSearchFirstPositionCaseInsensitiveUTF8('\x48\x45\x4c\x4c\x4f\x20\x57\x4f\x52\x4c\x44',['wor', 'ld', 'ello']))",
+        "SELECT multiSearchFirstPositionCaseInsensitiveUTF8('\x48\x45\x4c\x4c\x4f\x20\x57\x4f\x52\x4c\x44',['wor', 'ld', 'ello'])",
         R"(
 ┌─multiSearchFirstPositionCaseInsensitiveUTF8('HELLO WORLD', ['wor', 'ld', 'ello'])─┐
 │                                                                                 2 │
