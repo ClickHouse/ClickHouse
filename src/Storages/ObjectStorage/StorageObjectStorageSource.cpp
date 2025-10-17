@@ -41,6 +41,7 @@
 
 #include <fmt/ranges.h>
 #include <Common/ProfileEvents.h>
+#include <Core/SettingsEnums.h>
 
 namespace fs = std::filesystem;
 namespace ProfileEvents
@@ -68,7 +69,7 @@ namespace Setting
     extern const SettingsBool use_iceberg_partition_pruning;
     extern const SettingsBool cluster_function_process_archive_on_multiple_nodes;
     extern const SettingsBool table_engine_read_through_distributed_cache;
-    extern const SettingsBool enable_split_in_cluster_table_function;
+    extern const SettingsObjectStorageGranularityLevel cluster_table_function_split_granularity;
 }
 
 namespace ErrorCodes
@@ -210,7 +211,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
                 configuration->getNamespace(),
                 local_context);
         }
-        if (local_context->getSettingsRef()[Setting::enable_split_in_cluster_table_function])
+        if (local_context->getSettingsRef()[Setting::cluster_table_function_split_granularity] == ObjectStorageGranularityLevel::BUCKET)
         {
             iter = std::make_shared<ObjectIteratorSplitByBuckets>(
                 std::move(iter),
