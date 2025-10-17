@@ -94,6 +94,8 @@ Checks: [
   '-modernize-use-ranges',
   '-modernize-use-trailing-return-type',
   '-modernize-use-designated-initializers',
+  '-modernize-use-scoped-lock',
+  '-modernize-use-integer-sign-comparison',
 
   '-performance-avoid-endl',
   '-performance-enum-size',
