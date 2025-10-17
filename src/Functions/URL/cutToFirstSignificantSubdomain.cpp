@@ -57,7 +57,7 @@ Returns the part of the domain that includes top-level subdomains up to the [fir
     };
     FunctionDocumentation::Examples cutToFirstSignificantSubdomain_examples = {
     {
-        "Usage example"
+        "Usage example",
         R"(
 SELECT
     cutToFirstSignificantSubdomain('https://news.clickhouse.com.tr/'),
@@ -152,7 +152,7 @@ Returns the part of the domain that includes top-level subdomains up to the "fir
          {"url", "URL or domain string to process according to RFC 3986."}
     };
     FunctionDocumentation::ReturnedValue cutToFirstSignificantSubdomainWithWWWRFC_returned_value = {
-        "Returns the part of the domain that includes top-level subdomains up to the first significant subdomain (with "www") if possible, otherwise returns an empty string", 
+        "Returns the part of the domain that includes top-level subdomains up to the first significant subdomain (with 'www') if possible, otherwise returns an empty string", 
         {"String"}
     };
     FunctionDocumentation::Examples cutToFirstSignificantSubdomainWithWWWRFC_examples = {

@@ -113,7 +113,6 @@ toUInt256OrDefault
 toUInt32OrDefault
 toUInt64OrDefault
 toUInt8OrDefault
-toUUIDOrDefault
 validateNestedArraySizes
 windowID
 wkt

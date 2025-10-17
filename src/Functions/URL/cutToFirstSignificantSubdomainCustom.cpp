@@ -54,11 +54,12 @@ Returns the part of the domain that includes top-level subdomains up to the firs
     <public_suffix_list>public_suffix_list.dat</public_suffix_list>
     <!-- NOTE: path is under top_level_domains_path -->
 </top_level_domains_lists>
+```
     )";
     FunctionDocumentation::Syntax cutToFirstSignificantSubdomainCustom_syntax = "cutToFirstSignificantSubdomainCustom(url, tld_list_name)";
     FunctionDocumentation::Arguments cutToFirstSignificantSubdomainCustom_arguments = {
-        {"url", "URL or domain string to process."},
-        {"tld_list_name", "Name of the custom TLD list configured in ClickHouse."}
+        {"url", "URL or domain string to process.", {"String"}},
+        {"tld_list_name", "Name of the custom TLD list configured in ClickHouse.", {"const String"}}
     };
     FunctionDocumentation::ReturnedValue cutToFirstSignificantSubdomainCustom_returned_value = {
         "Returns the part of the domain that includes top-level subdomains up to the first significant subdomain.", 
@@ -132,6 +133,8 @@ Similar to [cutToFirstSignificantSubdomainCustom](#cuttofirstsignificantsubdomai
     <public_suffix_list>public_suffix_list.dat</public_suffix_list>
     <!-- NOTE: path is under top_level_domains_path -->
 </top_level_domains_lists>
+```
+    )";
     FunctionDocumentation::Syntax cutToFirstSignificantSubdomainCustomRFC_syntax = "cutToFirstSignificantSubdomainCustomRFC(url, tld_list_name)";
     FunctionDocumentation::Arguments cutToFirstSignificantSubdomainCustomRFC_arguments = {
         {"url", "URL or domain string to process according to RFC 3986."},
@@ -146,7 +149,7 @@ Similar to [cutToFirstSignificantSubdomainCustom](#cuttofirstsignificantsubdomai
         "Usage example", 
         R"(
 SELECT cutToFirstSignificantSubdomainCustomRFC('www.foo', 'public_suffix_list');        
-        )"
+        )",
         R"(
 ┌─cutToFirstSignificantSubdomainCustomRFC('www.foo', 'public_suffix_list')─┐
 │ www.foo                                                                      │
