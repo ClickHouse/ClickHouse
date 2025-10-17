@@ -215,7 +215,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_entries_for_hash_table_stats;
 }
 
-static std::pair<UInt64, double> getLimitUintAndBfloatValues(const ASTPtr & node, const ContextPtr & context, const std::string & expr);
+static std::pair<UInt64, BFloat16> getLimitUintAndBfloatValues(const ASTPtr & node, const ContextPtr & context, const std::string & expr);
 
 namespace ErrorCodes
 {
@@ -1482,21 +1482,22 @@ static SortDescription getSortDescriptionFromGroupBy(const ASTSelectQuery & quer
     return order_descr;
 }
 
-static std::pair<UInt64, double> getLimitUintAndBfloatValues(const ASTPtr & node, const ContextPtr & context, const std::string & expr)
+static std::pair<UInt64, BFloat16> getLimitUintAndBfloatValues(const ASTPtr & node, const ContextPtr & context, const std::string & expr)
 {
     const auto & [field, type] = evaluateConstantExpression(node, context);
 
     Field converted_value_uint = convertFieldToType(field, DataTypeUInt64());
     if (!converted_value_uint.isNull())
     {
-        return {converted_value_uint.safeGet<UInt64>(), 0};
+        return {converted_value_uint.safeGet<UInt64>(), BFloat16(0)};
     }
 
-    Field converted_value_bfloat = convertFieldToType(field, DataTypeBFloat16());
-    auto value = converted_value_bfloat.safeGet<BFloat16>();
-    if (!converted_value_bfloat.isNull() && value < 1 && value > 0)
+    Field converted_value_bfloat = convertFieldToType(field, DataTypeDecimal32(4, 3));
+    if (!converted_value_bfloat.isNull())
     {
-        return {0, converted_value_bfloat.safeGet<BFloat16>()};
+        auto value = converted_value_bfloat.safeGet<Decimal32>().getValue() / 1000.0;
+        if (value < 1 && value > 0)
+            return {0, BFloat16(value)};
     }
 
     throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION, "The value {} of {} expression is not representable as UInt64 nor BFloat16 (0.1 to 0.9)",
@@ -3188,45 +3189,54 @@ void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
                 return;
 
             limit_length += limit_offset;
-            fractional_limit += fractional_offset;
             limit_offset = 0;
-            fractional_offset = 0;
         }
 
         const Settings & settings = context->getSettingsRef();
 
-        if (limit_length || fractional_limit == 0) [[likely]]
+        if (limit_length && !fractional_offset)
         {
-            if (fractional_offset > 0)
-            {
-                auto fractional_offset_step = std::make_unique<FractionalOffsetStep>(
-                    query_plan.getCurrentHeader(), 
-                    fractional_offset
-                );
-                query_plan.addStep(std::move(fractional_offset_step));
-            }
-
             auto limit = std::make_unique<LimitStep>(
                     query_plan.getCurrentHeader(), 
                     limit_length,
                     limit_offset,
                     settings[Setting::exact_rows_before_limit]
             );
+
             if (do_not_skip_offset)
                 limit->setStepDescription("preliminary LIMIT (with OFFSET)");
             else
                 limit->setStepDescription("preliminary LIMIT (without OFFSET)");
-            query_plan.addStep(std::move(limit));
-            return;
-        }
 
-        auto fractional_limit_step = std::make_unique<FractionalLimitStep>(
-            query_plan.getCurrentHeader(), 
-            fractional_limit,
-            fractional_offset,
-            limit_offset
-        );
-        query_plan.addStep(std::move(fractional_limit_step));
+            query_plan.addStep(std::move(limit));
+        }
+        else if (limit_length && fractional_offset)
+        {
+            auto fractional_offset_step = std::make_unique<FractionalOffsetStep>(
+                query_plan.getCurrentHeader(), 
+                fractional_offset
+            );
+            query_plan.addStep(std::move(fractional_offset_step));
+
+            auto limit = std::make_unique<LimitStep>(
+                    query_plan.getCurrentHeader(), 
+                    limit_length,
+                    0,
+                    settings[Setting::exact_rows_before_limit]
+            );
+            query_plan.addStep(std::move(limit));
+        }
+        else 
+        {
+            // Else its fractional limit + fractional offset or normal offset
+            auto fractional_limit_step = std::make_unique<FractionalLimitStep>(
+                query_plan.getCurrentHeader(), 
+                fractional_limit,
+                fractional_offset,
+                limit_offset
+            );
+            query_plan.addStep(std::move(fractional_limit_step));
+        }
     }
 }
 
@@ -3314,40 +3324,51 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
 
         auto [limit_length, fractional_limit, limit_offset, fractional_offset] = getLimitLengthAndOffset(query, context);
 
-        if (limit_length || fractional_limit == 0) [[likely]]
+        if (limit_length && !fractional_offset)
         {
-            if (fractional_offset > 0)
-            {
-                auto fractional_offset_step = std::make_unique<FractionalOffsetStep>(
-                    query_plan.getCurrentHeader(), 
-                    fractional_offset
-                );
-                query_plan.addStep(std::move(fractional_offset_step));
-            }
-
             auto limit = std::make_unique<LimitStep>(
-                query_plan.getCurrentHeader(),
-                limit_length,
-                limit_offset,
-                always_read_till_end,
-                query.limit_with_ties,
-                order_descr 
+                    query_plan.getCurrentHeader(), 
+                    limit_length,
+                    limit_offset,
+                    settings[Setting::exact_rows_before_limit]
             );
+
             if (query.limit_with_ties)
                 limit->setStepDescription("LIMIT WITH TIES");
-            query_plan.addStep(std::move(limit));
-            return;
-        }
 
-        auto fractional_limit_step = std::make_unique<FractionalLimitStep>(
-            query_plan.getCurrentHeader(), 
-            fractional_limit,
-            fractional_offset,
-            limit_offset,
-            query.limit_with_ties,
-            order_descr 
-        );
-        query_plan.addStep(std::move(fractional_limit_step));
+            query_plan.addStep(std::move(limit));
+        }
+        else if (limit_length && fractional_offset)
+        {
+            auto fractional_offset_step = std::make_unique<FractionalOffsetStep>(
+                query_plan.getCurrentHeader(), 
+                fractional_offset
+            );
+            query_plan.addStep(std::move(fractional_offset_step));
+
+            auto limit = std::make_unique<LimitStep>(
+                    query_plan.getCurrentHeader(), 
+                    limit_length,
+                    0,
+                    always_read_till_end,
+                    query.limit_with_ties,
+                    order_descr
+            );
+            query_plan.addStep(std::move(limit));
+        }
+        else 
+        {
+            // Else its fractional limit + fractional offset or normal offset
+            auto fractional_limit_step = std::make_unique<FractionalLimitStep>(
+                query_plan.getCurrentHeader(), 
+                fractional_limit,
+                fractional_offset,
+                limit_offset,
+                query.limit_with_ties,
+                order_descr
+            );
+            query_plan.addStep(std::move(fractional_limit_step));
+        }
     }
 }
 
