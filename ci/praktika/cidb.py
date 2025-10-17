@@ -55,7 +55,7 @@ class CIDB:
         }
 
     def get_link_to_test_case_statistics(
-        self, test_name: str, job_name: Optional[str] = None, user: Optional[str] = None
+        self, test_name: str, job_name: Optional[str] = None, url="", user=""
     ) -> str:
         """
         Build a link to query CI DB statistics for a specific test case.
@@ -87,7 +87,7 @@ ORDER BY day DESC
 """
 
         # Compose base URL, optionally attaching user parameter
-        base = self.url or ""
+        base = url or self.url or ""
         if user:
             sep = "&" if "?" in base else "?"
             base = f"{base}/play{sep}user={urllib.parse.quote(user, safe='')}&run=1"

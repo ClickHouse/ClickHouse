@@ -113,7 +113,7 @@ def main():
             use_distributed_plan = True
         elif to == "flaky":
             is_flaky_check = True
-            repeat_option = f"--count {FLAKY_CHECK_TEST_REPEAT_COUNT} --random-order"
+            args.count = FLAKY_CHECK_TEST_REPEAT_COUNT
         elif to == "parallel":
             is_parallel = True
         elif to == "sequential":
@@ -124,7 +124,7 @@ def main():
             assert False, f"Unknown job option [{to}]"
 
     if args.count:
-        repeat_option = f"--count {args.count}"
+        repeat_option = f"--count {args.count} --random-order"
 
     changed_test_modules = []
     if is_bugfix_validation or is_flaky_check:
@@ -156,14 +156,21 @@ def main():
         if args.path:
             clickhouse_path = args.path
         else:
-            if Path(clickhouse_path).is_file():
-                pass
-            elif Path(f"{Utils.cwd()}/build/programs/clickhouse").is_file():
-                clickhouse_path = f"{Utils.cwd()}/build/programs/clickhouse"
-            elif Path(f"{Utils.cwd()}/clickhouse").is_file():
-                clickhouse_path = f"{Utils.cwd()}/clickhouse"
+            paths_to_check = [
+                clickhouse_path,  # it's set for CI runs, but we need to check it
+                f"{Utils.cwd()}/build/programs/clickhouse",
+                f"{Utils.cwd()}/clickhouse",
+            ]
+            for path in paths_to_check:
+                if Path(path).is_file():
+                    clickhouse_path = path
+                    break
             else:
-                raise FileNotFoundError(f"Clickhouse binary not found")
+                raise FileNotFoundError(
+                    "Clickhouse binary not found in any of the paths: "
+                    + ", ".join(paths_to_check)
+                    + ". You can also specify path to binary via --path argument"
+                )
         if args.path_1:
             clickhouse_server_config_dir = args.path_1
     assert Path(
@@ -267,7 +274,7 @@ def main():
                     env=test_env,
                     pytest_report_file=f"{temp_path}/pytest_parallel.jsonl",
                 )
-                if not test_result_parallel.is_ok():
+                if is_flaky_check and not test_result_parallel.is_ok():
                     print(
                         f"Flaky check: Test run fails after attempt [{attempt+1}/{module_repeat_cnt}] - break"
                     )
@@ -292,7 +299,7 @@ def main():
                     cwd="./tests/integration/",
                     pytest_report_file=f"{temp_path}/pytest_sequential.jsonl",
                 )
-                if not test_result_sequential.is_ok():
+                if is_flaky_check and not test_result_sequential.is_ok():
                     print(
                         f"Flaky check: Test run fails after attempt [{attempt+1}/{module_repeat_cnt}] - break"
                     )

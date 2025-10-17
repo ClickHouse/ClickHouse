@@ -52,8 +52,8 @@ ORDER BY key
 
 The `tokenizer` argument specifies the tokenizer:
 
-- `splitByNonAlpha` splits strings along non-alphanumeric ASCII characters (also see function [splitByNonAlpha](/sql-reference/functions/splitting-merging-functions.md/#splitbynonalpha)).
-- `splitByString(S)` splits strings along certain user-defined separator strings `S` (also see function [splitByString](/sql-reference/functions/splitting-merging-functions.md/#splitbystring)).
+- `splitByNonAlpha` splits strings along non-alphanumeric ASCII characters (also see function [splitByNonAlpha](/sql-reference/functions/splitting-merging-functions.md/#splitByNonAlpha)).
+- `splitByString(S)` splits strings along certain user-defined separator strings `S` (also see function [splitByString](/sql-reference/functions/splitting-merging-functions.md/#splitByString)).
   The separators can be specified using an optional parameter, for example, `tokenizer = splitByString([', ', '; ', '\n', '\\'])`.
   Note that each string can consist of multiple characters (`', '` in the example).
   The default separator list, if not specified explicitly (for example, `tokenizer = splitByString`), is a single whitespace `[' ']`.
@@ -61,9 +61,9 @@ The `tokenizer` argument specifies the tokenizer:
   The ngram length can be specified using an optional integer parameter between 2 and 8, for example, `tokenizer = ngrams(3)`.
   The default ngram size, if not specified explicitly (for example, `tokenizer = ngrams`), is 3.
 - `array` performs no tokenization, i.e. every row value is a token (also see function [array](/sql-reference/functions/array-functions.md/#array)).
-- `sparseGrams(MIN_N, MAX_N)` — splits a string into all possible N-grams with lengths ranging from `min_length` to `max_length`, inclusive.  
-  Unlike `ngrams(N)`, which generates only fixed-length N-grams, `sparseGrams` produces a set of variable-length N-grams within the specified range, allowing for a more flexible representation of text context.  
-  For example, `tokenizer = sparseGrams(2, 4)` will create all 2-, 3-, and 4-grams from the input string.  
+- `sparseGrams(MIN_N, MAX_N)` — splits a string into all possible N-grams with lengths ranging from `min_length` to `max_length`, inclusive.
+  Unlike `ngrams(N)`, which generates only fixed-length N-grams, `sparseGrams` produces a set of variable-length N-grams within the specified range, allowing for a more flexible representation of text context.
+  For example, `tokenizer = sparseGrams(2, 4)` will create all 2-, 3-, and 4-grams from the input string.
 
 :::note
 The `splitByString` tokenizer applies the split separators left-to-right.
@@ -225,13 +225,18 @@ Functions `hasToken` and `hasTokenOrNull` are the most performant functions to u
 
 Functions [hasAnyTokens](/sql-reference/functions/string-search-functions.md/#hasanytokens) and [hasAllTokens](/sql-reference/functions/string-search-functions.md/#hasalltokens) match against one or all of the given tokens.
 
-Like `hasToken`, no tokenization of the search terms takes place.
+These two functions accept the search tokens as either a string which will be tokenized using the same tokenizer used for the index column, or as an array of already processed tokens to which no tokenization will be applied prior to searching.
+See the function documentation for more info.
 
 Example:
 
 ```sql
-SELECT count() FROM tab WHERE hasAnyTokens(comment, ['clickhouse', 'olap']);
+-- Search tokens passed as string argument
+SELECT count() FROM tab WHERE hasAnyTokens(comment, 'clickhouse olap');
+SELECT count() FROM tab WHERE hasAllTokens(comment, 'clickhouse olap');
 
+-- Search tokens passed as Array(String)
+SELECT count() FROM tab WHERE hasAnyTokens(comment, ['clickhouse', 'olap']);
 SELECT count() FROM tab WHERE hasAllTokens(comment, ['clickhouse', 'olap']);
 ```
 
@@ -429,7 +434,7 @@ Direct read is controlled by two settings:
 - Setting [use_skip_indexes_on_data_read](../../../operations/settings/settings#use_skip_indexes_on_data_read) (default: 1) which is another prerequisite for direct read. Note that on ClickHouse databases with [compatibility](../../../operations/settings/settings#compatibility) < 25.10, `use_skip_indexes_on_data_read` is disabled, so you either need to raise the compatibility setting value or `SET use_skip_indexes_on_data_read = 1` explicitly.
 
 **Supported functions**
-The direct read optimization supports functions `hasToken`, `searchAll`, and `searchAny`.
+The direct read optimization supports functions `hasToken`, `hasAllTokens`, and `hasAnyTokens`.
 These functions can also be combined by AND, OR, and NOT operators.
 The WHERE clause can also contain additional non-text-search-functions filters (for text columns or other columns) - in that case, the direct read optimization will still be used but less effective (it only applies to the supported text search functions).
 
@@ -440,7 +445,7 @@ As an example, a query with disabled direct read
 EXPLAIN PLAN actions = 1
 SELECT count()
 FROM tab
-WHERE hasToken(col, ['some_token'])
+WHERE hasToken(col, 'some_token')
 SETTINGS query_plan_direct_read_from_text_index = 0;
 ```
 
@@ -462,7 +467,7 @@ whereas the same query run with `query_plan_direct_read_from_text_index = 1`
 EXPLAIN PLAN actions = 1
 SELECT count()
 FROM tab
-WHERE hasToken(col, ['some_token'])
+WHERE hasToken(col, 'some_token')
 SETTINGS query_plan_direct_read_from_text_index = 1;
 ```
 
@@ -473,8 +478,8 @@ returns
 Expression (Before GROUP BY)
 Positions:
   Filter
-  Filter column: __text_index_idx_hasToken_0 (removed)
-  Actions: INPUT :: 0 -> __text_index_idx_hasToken_0 UInt8 : 0
+  Filter column: __text_index_idx_hasToken_94cc2a813036b453d84b6fb344a63ad3 (removed)
+  Actions: INPUT :: 0 -> __text_index_idx_hasToken_94cc2a813036b453d84b6fb344a63ad3 UInt8 : 0
 [...]
 ```
 

@@ -1233,9 +1233,83 @@ SELECT IPv6NumToString(IPv4ToIPv6(IPv4StringToNum('192.168.0.1'))) AS addr;
 
     factory.registerFunction<FunctionIPv4ToIPv6>(documentation_ipv4toipv6);
 
-    factory.registerFunction<FunctionMACNumToString>();
-    factory.registerFunction<FunctionMACStringTo<ParseMACImpl>>();
-    factory.registerFunction<FunctionMACStringTo<ParseOUIImpl>>();
+    FunctionDocumentation::Description description_macnumtostring = R"(
+Interprets a [`UInt64`](/sql-reference/data-types/int-uint) number as a MAC address in big endian format.
+Returns the corresponding MAC address in format `AA:BB:CC:DD:EE:FF` (colon-separated numbers in hexadecimal form) as string.
+    )";
+    FunctionDocumentation::Syntax syntax_macnumtostring = "MACNumToString(num)";
+    FunctionDocumentation::Arguments arguments_macnumtostring = {
+        {"num", "UInt64 number.", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_macnumtostring = {"Returns a MAC address in format AA:BB:CC:DD:EE:FF.", {"String"}};
+    FunctionDocumentation::Examples examples_macnumtostring = {
+    {
+        "Usage example",
+        R"(
+SELECT MACNumToString(149809441867716) AS mac_address;
+        )",
+        R"(
+┌─mac_address───────┐
+│ 88:00:11:22:33:44 │
+└───────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_macnumtostring = {1, 1};
+    FunctionDocumentation::Category category_macnumtostring = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_macnumtostring = {description_macnumtostring, syntax_macnumtostring, arguments_macnumtostring, returned_value_macnumtostring, examples_macnumtostring, introduced_in_macnumtostring, category_macnumtostring};
+
+    factory.registerFunction<FunctionMACNumToString>(documentation_macnumtostring);
+
+    FunctionDocumentation::Description description_macstringtonum = R"(
+The inverse function of MACNumToString. If the MAC address has an invalid format, it returns 0.
+)";
+    FunctionDocumentation::Syntax syntax_macstringtonum = "MACStringToNum(s)";
+    FunctionDocumentation::Arguments arguments_macstringtonum = {
+        {"s", "MAC address string.", {"String"}}
+    };
+    FunctionDocumentation::Examples examples_macstringtonum = {
+    {
+        "Usage example",
+        R"(
+SELECT MACStringToNum('01:02:03:04:05:06') AS mac_numeric;
+        )",
+        R"(
+1108152157446
+        )"
+    }
+    };
+    FunctionDocumentation::ReturnedValue returned_value_macstringtonum = {"Returns a UInt64 number.", {"UInt64"}};
+    FunctionDocumentation::Category category_macstringtonum = FunctionDocumentation::Category::Other;
+    FunctionDocumentation::IntroducedIn introduced_in_macstringtonum = {1, 1};
+    FunctionDocumentation documentation_macstringtonum = {description_macstringtonum, syntax_macstringtonum, arguments_macstringtonum, returned_value_macstringtonum, examples_macstringtonum, introduced_in_macstringtonum, category_macstringtonum};
+
+    factory.registerFunction<FunctionMACStringTo<ParseMACImpl>>(documentation_macstringtonum);
+
+    FunctionDocumentation::Description description_macstringtooui = R"(
+Given a MAC address in format AA:BB:CC:DD:EE:FF (colon-separated numbers in hexadecimal form), returns the first three octets as a UInt64 number. If the MAC address has an invalid format, it returns 0.
+    )";
+    FunctionDocumentation::Syntax syntax_macstringtooui = "MACStringToOUI(s)";
+    FunctionDocumentation::Arguments arguments_macstringtooui = {
+        {"s", "MAC address string.", {"String"}}
+    };
+    FunctionDocumentation::Examples examples_macstringtooui = {
+    {
+        "Usage example",
+        R"(
+SELECT MACStringToOUI('00:50:56:12:34:56') AS oui;
+        )",
+        R"(
+20566
+        )"
+    }
+    };
+    FunctionDocumentation::ReturnedValue returned_value_macstringtooui = {"First three octets as UInt64 number.", {"UInt64"}};
+    FunctionDocumentation::Category category_macstringtooui = FunctionDocumentation::Category::Other;
+    FunctionDocumentation::IntroducedIn introduced_in_macstringtooui = {1, 1};
+    FunctionDocumentation documentation_macstringtooui = {description_macstringtooui, syntax_macstringtooui, arguments_macstringtooui, returned_value_macstringtooui, examples_macstringtooui, introduced_in_macstringtooui, category_macstringtooui};
+
+    factory.registerFunction<FunctionMACStringTo<ParseOUIImpl>>(documentation_macstringtooui);
 
     /// IPv6CIDRToRange function
     FunctionDocumentation::Description description_ipv6cidr = R"(
