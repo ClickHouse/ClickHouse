@@ -214,7 +214,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_entries_for_hash_table_stats;
 }
 
-static std::pair<UInt64, Float32> getLimitUintAndBfloatValues(const ASTPtr & node, const ContextPtr & context, const std::string & expr);
+static std::pair<UInt64, Float32> getLimitUintAndFloatValues(const ASTPtr & node, const ContextPtr & context, const std::string & expr);
 
 namespace ErrorCodes
 {
@@ -1481,7 +1481,7 @@ static SortDescription getSortDescriptionFromGroupBy(const ASTSelectQuery & quer
     return order_descr;
 }
 
-static std::pair<UInt64, Float32> getLimitUintAndBfloatValues(const ASTPtr & node, const ContextPtr & context, const std::string & expr)
+static std::pair<UInt64, Float32> getLimitUintAndFloatValues(const ASTPtr & node, const ContextPtr & context, const std::string & expr)
 {
     const auto & [field, type] = evaluateConstantExpression(node, context);
 
@@ -1513,12 +1513,12 @@ std::tuple<UInt64, Float32, UInt64, Float32> InterpreterSelectQuery::getLimitLen
 
     if (query.limitLength())
     {
-        std::tie(limit_length, fractional_limit) = getLimitUintAndBfloatValues(query.limitLength(), context_, "LIMIT");
+        std::tie(limit_length, fractional_limit) = getLimitUintAndFloatValues(query.limitLength(), context_, "LIMIT");
         if (query.limitOffset() && (limit_length || fractional_limit > 0))
-            std::tie(limit_offset, fractional_offset) = getLimitUintAndBfloatValues(query.limitOffset(), context_, "OFFSET");
+            std::tie(limit_offset, fractional_offset) = getLimitUintAndFloatValues(query.limitOffset(), context_, "OFFSET");
     }
     else if (query.limitOffset())
-        std::tie(limit_offset, fractional_offset) = getLimitUintAndBfloatValues(query.limitOffset(), context_, "OFFSET");
+        std::tie(limit_offset, fractional_offset) = getLimitUintAndFloatValues(query.limitOffset(), context_, "OFFSET");
     return {limit_length, fractional_limit, limit_offset, fractional_offset};
 }
 
