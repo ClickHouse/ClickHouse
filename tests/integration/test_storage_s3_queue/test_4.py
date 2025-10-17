@@ -55,6 +55,7 @@ def started_cluster():
             "instance",
             user_configs=[
                 "configs/users.xml",
+                "configs/enable_keeper_fault_injection.xml",
             ],
             with_minio=True,
             with_azurite=True,
@@ -70,6 +71,7 @@ def started_cluster():
             "instance2",
             user_configs=[
                 "configs/users.xml",
+                "configs/enable_keeper_fault_injection.xml",
             ],
             with_minio=True,
             with_zookeeper=True,
