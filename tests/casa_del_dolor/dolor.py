@@ -259,6 +259,12 @@ parser.add_argument(
     help="Add 'shared_database_catalog' settings",
 )
 parser.add_argument(
+    "--without-database-replicated",
+    action="store_false",
+    dest="add_database_replicated",
+    help="Add 'database_replicated' settings",
+)
+parser.add_argument(
     "--compare-table-dump-prob",
     type=int,
     default=50,

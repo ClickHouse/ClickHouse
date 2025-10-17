@@ -4,11 +4,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 JoinOnKeyColumns::JoinOnKeyColumns(
     const ScatteredBlock & block, const Names & key_names_, const String & cond_column_name, const Sizes & key_sizes_)
     : key_names(key_names_)
@@ -215,13 +210,6 @@ void AddedColumns<false>::appendFromBlock(const RowRef * row_ref, const bool has
 }
 
 template <>
-__attribute__((noreturn)) void AddedColumns<false>::appendFromBlock(const RowRefList *, bool)
-{
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "AddedColumns are not implemented for RowRefList in non-lazy mode");
-}
-
-
-template <>
 void AddedColumns<true>::appendFromBlock(const RowRef * row_ref, bool)
 {
 #ifndef NDEBUG
@@ -230,18 +218,6 @@ void AddedColumns<true>::appendFromBlock(const RowRef * row_ref, bool)
     if (has_columns_to_add)
     {
         lazy_output.addRowRef(row_ref);
-    }
-}
-
-template <>
-void AddedColumns<true>::appendFromBlock(const RowRefList * row_ref_list, bool)
-{
-#ifndef NDEBUG
-    checkColumns(*row_ref_list->columns);
-#endif
-    if (has_columns_to_add)
-    {
-        lazy_output.addRowRefList(row_ref_list);
     }
 }
 
