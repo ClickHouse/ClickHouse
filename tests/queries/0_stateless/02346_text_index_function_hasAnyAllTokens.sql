@@ -31,9 +31,11 @@ SELECT id FROM tab WHERE hasAllTokens('a', 'b', 'c'); -- { serverError NUMBER_OF
 -- 1st arg must be String or FixedString
 SELECT id FROM tab WHERE hasAnyTokens(1, ['a']); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT id FROM tab WHERE hasAllTokens(1, ['a']); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
--- 2nd arg must be const Array(String) or const String
+-- 2nd arg must be const const String or const Array(String)
+SELECT id FROM tab WHERE hasAnyTokens(message, 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT id FROM tab WHERE hasAnyTokens(message, materialize('b')); -- { serverError ILLEGAL_COLUMN }
 SELECT id FROM tab WHERE hasAnyTokens(message, materialize(['b'])); -- { serverError ILLEGAL_COLUMN }
+SELECT id FROM tab WHERE hasAllTokens(message, 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT id FROM tab WHERE hasAllTokens(message, materialize('b')); -- { serverError ILLEGAL_COLUMN }
 SELECT id FROM tab WHERE hasAllTokens(message, materialize(['b'])); -- { serverError ILLEGAL_COLUMN }
 -- Supports a max of 64 needles
@@ -231,7 +233,7 @@ SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, ['cdef', 'defg']); --
 SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, ['efgh', 'cdef', 'defg']); --search for either cdefg or defgh
 
 SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, 'efgh');
-SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, 'efg'); -- currently returns all rows in table
+SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, 'efg'); -- TODO currently returns all rows in table
 SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, 'efghi');
 SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, 'cdefg');
 SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, 'cdefgh');
@@ -244,7 +246,7 @@ SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, ['cdef', 'defg']);
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, ['efgh', 'cdef', 'defg']);
 
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, 'efgh');
-SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, 'efg'); -- currently returns all rows in table
+SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, 'efg'); -- TODO currently returns all rows in table
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, 'efghi');
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, 'cdefg');
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, 'cdefgh');

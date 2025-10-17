@@ -102,7 +102,8 @@ Needles extractNeedlesFromString(std::string_view needle_str)
     Needles needles;
     while (cur < length && default_token_extractor.nextInStringPadded(static_cast<const char *>(needle_str.data()), length, &cur, &token_start, &token_len))
     {
-        needles.emplace(std::string{needle_str.data() + token_start, token_len}, pos++);
+        needles.emplace(std::string{needle_str.data() + token_start, token_len}, pos);
+        ++pos;
     }
     return needles;
 }
@@ -242,7 +243,6 @@ ColumnPtr FunctionHasAnyAllTokens<HasTokensTraits>::executeImpl(
         Needles needles_tmp;
         const ColumnPtr col_needles = arguments[arg_needles].column;
 
-
         if (const ColumnConst * col_needles_str_const = checkAndGetColumnConst<ColumnString>(col_needles.get()))
         {
             needles_tmp = extractNeedlesFromString(col_needles_str_const->getDataAt(0).toView());
@@ -251,21 +251,21 @@ ColumnPtr FunctionHasAnyAllTokens<HasTokensTraits>::executeImpl(
         {
             needles_tmp = extractNeedlesFromString(col_needles_str->getDataAt(0).toView());
         }
-        else if (const ColumnConst * col_needles_const = checkAndGetColumnConst<ColumnArray>(col_needles.get()))
+        else if (const ColumnConst * col_needles_array_const = checkAndGetColumnConst<ColumnArray>(col_needles.get()))
         {
-            const Array & array = col_needles_const->getValue<Array>();
+            const Array & array = col_needles_array_const->getValue<Array>();
 
             for (size_t i = 0; i < array.size(); ++i)
                 needles_tmp.emplace(array.at(i).safeGet<String>(), i);
         }
-        else if (const ColumnArray * col_needles_vector = checkAndGetColumn<ColumnArray>(col_needles.get()))
+        else if (const ColumnArray * col_needles_array = checkAndGetColumn<ColumnArray>(col_needles.get()))
         {
-            const IColumn & needles_data = col_needles_vector->getData();
-            const ColumnArray::Offsets & needles_offsets = col_needles_vector->getOffsets();
+            const IColumn & array_data = col_needles_array->getData();
+            const ColumnArray::Offsets & array_offsets = col_needles_array->getOffsets();
 
-            const ColumnString & needles_data_string = checkAndGetColumn<ColumnString>(needles_data);
+            const ColumnString & needles_data_string = checkAndGetColumn<ColumnString>(array_data);
 
-            for (size_t i = 0; i < needles_offsets[0]; ++i)
+            for (size_t i = 0; i < array_offsets[0]; ++i)
                 needles_tmp.emplace(needles_data_string.getDataAt(i).toView(), i);
         }
         else
@@ -273,18 +273,19 @@ ColumnPtr FunctionHasAnyAllTokens<HasTokensTraits>::executeImpl(
 
         DefaultTokenExtractor default_token_extractor;
 
-        if (const auto * column_string = checkAndGetColumn<ColumnString>(col_input.get()))
-            execute<HasTokensTraits>(&default_token_extractor, *column_string, input_rows_count, needles_tmp, col_result->getData());
-        else if (const auto * column_fixed_string = checkAndGetColumn<ColumnFixedString>(col_input.get()))
-            execute<HasTokensTraits>(&default_token_extractor, *column_fixed_string, input_rows_count, needles_tmp, col_result->getData());
+        if (const auto * col_input_string = checkAndGetColumn<ColumnString>(col_input.get()))
+            execute<HasTokensTraits>(&default_token_extractor, *col_input_string, input_rows_count, needles_tmp, col_result->getData());
+        else if (const auto * col_input_fixedstring = checkAndGetColumn<ColumnFixedString>(col_input.get()))
+            execute<HasTokensTraits>(&default_token_extractor, *col_input_fixedstring, input_rows_count, needles_tmp, col_result->getData());
     }
     else
     {
-        /// If token_extractor != nullptr, we are doing text index lookups
-        if (const auto * column_string = checkAndGetColumn<ColumnString>(col_input.get()))
-            execute<HasTokensTraits>(token_extractor.get(), *column_string, input_rows_count, needles.value(), col_result->getData());
-        else if (const auto * column_fixed_string = checkAndGetColumn<ColumnFixedString>(col_input.get()))
-            execute<HasTokensTraits>(token_extractor.get(), *column_fixed_string, input_rows_count, needles.value(), col_result->getData());
+        /// If token_extractor != nullptr, a text index exists and we are doing text index lookups
+        /// This path is only entered for parts that have no materialized text index
+        if (const auto * col_input_string = checkAndGetColumn<ColumnString>(col_input.get()))
+            execute<HasTokensTraits>(token_extractor.get(), *col_input_string, input_rows_count, needles.value(), col_result->getData());
+        else if (const auto * col_input_fixedstring = checkAndGetColumn<ColumnFixedString>(col_input.get()))
+            execute<HasTokensTraits>(token_extractor.get(), *col_input_fixedstring, input_rows_count, needles.value(), col_result->getData());
     }
 
     return col_result;
