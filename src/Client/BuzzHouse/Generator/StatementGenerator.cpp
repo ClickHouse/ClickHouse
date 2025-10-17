@@ -339,9 +339,6 @@ static void SetViewInterval(RandomGenerator & rg, RefreshInterval * ri)
 
 void StatementGenerator::generateNextRefreshableView(RandomGenerator & rg, RefreshableView * rv)
 {
-    const bool has_tables = collectionHas<SQLTable>(attached_tables);
-    const bool has_views = collectionHas<SQLView>(attached_views);
-    const bool has_dictionaries = collectionHas<SQLDictionary>(attached_dictionaries);
     const RefreshableView_RefreshPolicy pol = rg.nextBool() ? RefreshableView_RefreshPolicy::RefreshableView_RefreshPolicy_EVERY
                                                             : RefreshableView_RefreshPolicy::RefreshableView_RefreshPolicy_AFTER;
 
@@ -349,48 +346,52 @@ void StatementGenerator::generateNextRefreshableView(RandomGenerator & rg, Refre
     SetViewInterval(rg, rv->mutable_interval());
     if (pol == RefreshableView_RefreshPolicy::RefreshableView_RefreshPolicy_EVERY && rg.nextBool())
     {
+        const bool has_tables = collectionHas<SQLTable>(attached_tables);
+        const bool has_views = collectionHas<SQLView>(attached_views);
+        const bool has_dictionaries = collectionHas<SQLDictionary>(attached_dictionaries);
+
         SetViewInterval(rg, rv->mutable_offset());
+        if (has_tables || !systemTables.empty() || has_views || has_dictionaries)
+        {
+            const uint32_t depend_table = 10 * static_cast<uint32_t>(has_tables);
+            const uint32_t depend_system_table = 3 * static_cast<uint32_t>(!systemTables.empty());
+            const uint32_t depend_view = 10 * static_cast<uint32_t>(has_views);
+            const uint32_t depend_dictionary = 10 * static_cast<uint32_t>(has_dictionaries);
+            const uint32_t prob_space = depend_table + depend_system_table + depend_view + depend_dictionary;
+            std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
+            const uint32_t nopt = next_dist(rg.generator);
+
+            if (depend_table && nopt < (depend_table + 1))
+            {
+                const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
+
+                t.setName(rv->mutable_depends()->mutable_est(), false);
+            }
+            else if (depend_system_table && nopt < (depend_table + depend_system_table + 1))
+            {
+                const auto & ntable = rg.pickRandomly(systemTables);
+
+                ntable.setName(rv->mutable_depends()->mutable_est());
+            }
+            else if (depend_view && nopt < (depend_table + depend_system_table + depend_view + 1))
+            {
+                const SQLView & v = rg.pickRandomly(filterCollection<SQLView>(attached_views));
+
+                v.setName(rv->mutable_depends()->mutable_est(), false);
+            }
+            else if (depend_dictionary && nopt < (depend_table + depend_system_table + depend_view + depend_dictionary + 1))
+            {
+                const SQLDictionary & d = rg.pickRandomly(filterCollection<SQLDictionary>(attached_dictionaries));
+
+                d.setName(rv->mutable_depends()->mutable_est(), false);
+            }
+            else
+            {
+                chassert(0);
+            }
+        }
     }
     SetViewInterval(rg, rv->mutable_randomize());
-    if ((has_tables || !systemTables.empty() || has_views || has_dictionaries) && rg.nextBool())
-    {
-        const uint32_t depend_table = 10 * static_cast<uint32_t>(has_tables);
-        const uint32_t depend_system_table = 3 * static_cast<uint32_t>(!systemTables.empty());
-        const uint32_t depend_view = 10 * static_cast<uint32_t>(has_views);
-        const uint32_t depend_dictionary = 10 * static_cast<uint32_t>(has_dictionaries);
-        const uint32_t prob_space = depend_table + depend_system_table + depend_view + depend_dictionary;
-        std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
-        const uint32_t nopt = next_dist(rg.generator);
-
-        if (depend_table && nopt < (depend_table + 1))
-        {
-            const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
-
-            t.setName(rv->mutable_depends()->mutable_est(), false);
-        }
-        else if (depend_system_table && nopt < (depend_table + depend_system_table + 1))
-        {
-            const auto & ntable = rg.pickRandomly(systemTables);
-
-            ntable.setName(rv->mutable_depends()->mutable_est());
-        }
-        else if (depend_view && nopt < (depend_table + depend_system_table + depend_view + 1))
-        {
-            const SQLView & v = rg.pickRandomly(filterCollection<SQLView>(attached_views));
-
-            v.setName(rv->mutable_depends()->mutable_est(), false);
-        }
-        else if (depend_dictionary && nopt < (depend_table + depend_system_table + depend_view + depend_dictionary + 1))
-        {
-            const SQLDictionary & d = rg.pickRandomly(filterCollection<SQLDictionary>(attached_dictionaries));
-
-            d.setName(rv->mutable_depends()->mutable_est(), false);
-        }
-        else
-        {
-            chassert(0);
-        }
-    }
     rv->set_append(rg.nextBool());
 }
 

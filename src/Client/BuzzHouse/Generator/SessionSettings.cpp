@@ -729,7 +729,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
          {},
          false)},
     /// {"lightweight_deletes_sync", CHSetting(zeroOneTwo, {}, false)}, FINAL queries don't cover these
-    {"limit", CHSetting(rowsRange, {}, false)},
+    /// {"limit", CHSetting(rowsRange, {}, false)}, gives problem with query oracle
     {"load_balancing",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
