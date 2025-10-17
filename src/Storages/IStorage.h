@@ -100,6 +100,15 @@ public:
 
     virtual bool isDataLake() const { return false; }
 
+    /// Returns true if the storage is an external database (MySQL, PostgreSQL, MongoDB, etc.)
+    virtual bool isExternalDatabase() const { return false; }
+
+    /// Returns true if the storage is object storage (S3, Azure, GCS, HDFS, etc.)
+    virtual bool isObjectStorage() const { return false; }
+
+    /// Returns true if the storage is a message queue (Kafka, RabbitMQ, NATS)
+    virtual bool isMessageQueue() const { return false; }
+
     /// Returns true if the storage receives data from a remote server or servers.
     virtual bool isRemote() const { return false; }
 
