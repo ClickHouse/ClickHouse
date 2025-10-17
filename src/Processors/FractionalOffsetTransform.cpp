@@ -73,7 +73,7 @@ IProcessor::Status FractionalOffsetTransform::prepare(const PortNumbers & update
         offset = static_cast<UInt64>(std::ceil(rows_cnt * fractional_offset));
     }
 
-    // If we reached here all input ports are finished.
+    // If we reached here then all input ports are finished.
     // we start pushing cached chunks to output ports.
     auto status = pushData(); 
 
