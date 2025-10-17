@@ -121,7 +121,8 @@ using TemporaryTablesMapping = std::map<String, TemporaryTableHolderPtr>;
 
 class BackgroundSchedulePoolTaskHolder;
 
-/// For some reason Context is required to get Storage from Database object
+/// For some reason Context is required to get Storage from Database object.
+/// This must not hold the Database mutex.
 class DatabaseCatalog : boost::noncopyable, WithMutableContext
 {
 public:
@@ -271,7 +272,7 @@ public:
     void startReplicatedDDLQueries();
     bool canPerformReplicatedDDLQueries() const;
 
-    void updateMetadataFile(const DatabasePtr & database);
+    void updateMetadataFile(const String & database_name, const ASTPtr & create_query);
 
 private:
     // The global instance of database catalog. unique_ptr is to allow
