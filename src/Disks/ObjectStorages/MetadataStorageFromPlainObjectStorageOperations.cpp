@@ -24,6 +24,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int FILE_DOESNT_EXIST;
+extern const int DIRECTORY_DOESNT_EXIST;
 extern const int FILE_ALREADY_EXISTS;
 extern const int INCORRECT_DATA;
 extern const int FAULT_INJECTED;
@@ -305,26 +306,16 @@ void MetadataStorageFromPlainObjectStorageWriteFileOperation::execute()
 {
     LOG_TEST(getLogger("MetadataStorageFromPlainObjectStorageWriteFileOperation"), "Creating metadata for a file '{}'", path);
 
-    if (path_map.addFile(path))
-    {
-        written = true;
-    }
-    else
-    {
-        /// Some paths (e.g., clickhouse_access_check) may not have parent directories.
-        LOG_TRACE(
-            getLogger("MetadataStorageFromPlainObjectStorageWriteFileOperation"),
-            "Parent directory does not exist, skipping path {}",
-            path);
-    }
+    if (!path_map.addFile(path))
+        throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Parent directory for file '{}' does not exist.", path);
+
+    written = true;
 }
 
 void MetadataStorageFromPlainObjectStorageWriteFileOperation::undo()
 {
-    if (!written)
-        return;
-
-    path_map.removeFile(path);
+    if (written)
+        path_map.removeFile(path);
 }
 
 MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation(
@@ -354,14 +345,9 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::undo()
         return;
 
     if (!path_map.addFile(path))
-    {
-        /// Some paths (e.g., clickhouse_access_check) may not have parent directories.
-        LOG_TRACE(
-            getLogger("MetadataStorageFromPlainObjectStorageWriteFileOperation"),
-            "Parent directory does not exist, skipping path {}",
-            path);
-    }
+        throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Parent directory for file '{}' does not exist.", path);
 }
+
 MetadataStorageFromPlainObjectStorageCopyFileOperation::MetadataStorageFromPlainObjectStorageCopyFileOperation(
     std::filesystem::path path_from_,
     std::filesystem::path path_to_,
