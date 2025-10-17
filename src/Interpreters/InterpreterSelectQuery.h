@@ -132,7 +132,7 @@ public:
     static bool isQueryWithFinal(const SelectQueryInfo & info);
 
 
-    static std::tuple<UInt64, BFloat16, UInt64, BFloat16> getLimitLengthAndOffset(const ASTSelectQuery & query, const ContextPtr & context);
+    static std::tuple<UInt64, Float32, UInt64, Float32> getLimitLengthAndOffset(const ASTSelectQuery & query, const ContextPtr & context);
 
     /// Adjust the parallel replicas settings (enabled, disabled) based on the query analysis
     bool adjustParallelReplicasAfterAnalysis();

@@ -104,7 +104,6 @@
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/IJoin.h>
 #include <QueryPipeline/SizeLimits.h>
-#include <base/BFloat16.h>
 #include <base/Decimal.h>
 #include <base/types.h>
 #include <Common/Exception.h>
@@ -215,7 +214,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_entries_for_hash_table_stats;
 }
 
-static std::pair<UInt64, BFloat16> getLimitUintAndBfloatValues(const ASTPtr & node, const ContextPtr & context, const std::string & expr);
+static std::pair<UInt64, Float32> getLimitUintAndBfloatValues(const ASTPtr & node, const ContextPtr & context, const std::string & expr);
 
 namespace ErrorCodes
 {
@@ -1482,35 +1481,35 @@ static SortDescription getSortDescriptionFromGroupBy(const ASTSelectQuery & quer
     return order_descr;
 }
 
-static std::pair<UInt64, BFloat16> getLimitUintAndBfloatValues(const ASTPtr & node, const ContextPtr & context, const std::string & expr)
+static std::pair<UInt64, Float32> getLimitUintAndBfloatValues(const ASTPtr & node, const ContextPtr & context, const std::string & expr)
 {
     const auto & [field, type] = evaluateConstantExpression(node, context);
 
     Field converted_value_uint = convertFieldToType(field, DataTypeUInt64());
     if (!converted_value_uint.isNull())
     {
-        return {converted_value_uint.safeGet<UInt64>(), BFloat16(0)};
+        return {converted_value_uint.safeGet<UInt64>(), 0};
     }
 
-    Field converted_value_bfloat = convertFieldToType(field, DataTypeDecimal32(4, 3));
-    if (!converted_value_bfloat.isNull())
+    Field converted_value_float = convertFieldToType(field, DataTypeDecimal32(8, 7));
+    if (!converted_value_float.isNull())
     {
-        auto value = converted_value_bfloat.safeGet<Decimal32>().getValue() / 1000.0;
+        auto value = converted_value_float.safeGet<Decimal32>().getValue() / 10000000.0;
         if (value < 1 && value > 0)
-            return {0, BFloat16(value)};
+            return {0, value};
     }
 
-    throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION, "The value {} of {} expression is not representable as UInt64 nor BFloat16 (0.1 to 0.9)",
+    throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION, "The value {} of {} expression is not representable as UInt64 nor Float32 range [0.1 to 0.9]",
         applyVisitor(FieldVisitorToString(), field), expr);
 }
 
 
-std::tuple<UInt64, BFloat16, UInt64, BFloat16> InterpreterSelectQuery::getLimitLengthAndOffset(const ASTSelectQuery & query, const ContextPtr & context_)
+std::tuple<UInt64, Float32, UInt64, Float32> InterpreterSelectQuery::getLimitLengthAndOffset(const ASTSelectQuery & query, const ContextPtr & context_)
 {
     UInt64 limit_length = 0;
     UInt64 limit_offset = 0;
-    BFloat16 fractional_limit;
-    BFloat16 fractional_offset;
+    Float32 fractional_limit;
+    Float32 fractional_offset;
 
     if (query.limitLength())
     {
@@ -1531,9 +1530,9 @@ UInt64 InterpreterSelectQuery::getLimitForSorting(const ASTSelectQuery & query, 
     {
         UInt64 limit_length = 0;
         UInt64 limit_offset = 0;
-        BFloat16 fractional_offset;
+        Float32 fractional_offset;
         std::tie(limit_length, std::ignore, limit_offset, fractional_offset) = getLimitLengthAndOffset(query, context_);
-        if (limit_length > std::numeric_limits<UInt64>::max() - limit_offset || fractional_offset)
+        if (limit_length > std::numeric_limits<UInt64>::max() - limit_offset || fractional_offset > 0)
             return 0;
 
         return limit_length + limit_offset;
@@ -2515,8 +2514,8 @@ UInt64 InterpreterSelectQuery::maxBlockSizeByLimit() const
        && !query.join()
        && !query_analyzer->hasAggregation()
        && !query_analyzer->hasWindow()
-       && !fractional_limit
-       && !fractional_offset
+       && fractional_limit == 0
+       && fractional_offset == 0
        && query.limitLength()
        && limit_length <= std::numeric_limits<UInt64>::max() - limit_offset)
         return limit_length + limit_offset;
@@ -3195,7 +3194,7 @@ void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
 
         const Settings & settings = context->getSettingsRef();
 
-        if (limit_length && !fractional_offset)
+        if (limit_length && fractional_offset == 0)
         {
             auto limit = std::make_unique<LimitStep>(
                     query_plan.getCurrentHeader(), 
@@ -3211,7 +3210,7 @@ void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
 
             query_plan.addStep(std::move(limit));
         }
-        else if (limit_length && fractional_offset)
+        else if (limit_length && fractional_offset > 0)
         {
             auto fractional_offset_step = std::make_unique<FractionalOffsetStep>(
                 query_plan.getCurrentHeader(), 
@@ -3325,7 +3324,7 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
 
         auto [limit_length, fractional_limit, limit_offset, fractional_offset] = getLimitLengthAndOffset(query, context);
 
-        if (limit_length && !fractional_offset)
+        if (limit_length && fractional_offset == 0)
         {
             auto limit = std::make_unique<LimitStep>(
                     query_plan.getCurrentHeader(), 
@@ -3341,7 +3340,7 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
 
             query_plan.addStep(std::move(limit));
         }
-        else if (limit_length && fractional_offset)
+        else if (limit_length && fractional_offset > 0)
         {
             auto fractional_offset_step = std::make_unique<FractionalOffsetStep>(
                 query_plan.getCurrentHeader(), 
@@ -3383,7 +3382,7 @@ void InterpreterSelectQuery::executeOffset(QueryPlan & query_plan)
     if (!query.limitLength() && query.limitOffset())
     {
         UInt64 limit_offset = 0;
-        BFloat16 fractional_offset;
+        Float32 fractional_offset;
         std::tie(std::ignore, std::ignore, limit_offset, fractional_offset) = getLimitLengthAndOffset(query, context);
 
         if (limit_offset) [[likely]] 
