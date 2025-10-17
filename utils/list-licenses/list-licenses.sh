@@ -105,12 +105,6 @@ done
 # Special care for Rust
 for dependency in $(find "${LIBS_PATH}/rust_vendor/" -name 'Cargo.toml');
 do
-    # FIXME: some wasmtime deps, skip this for now, need to figure out how to handle it
-    if [[ "$dependency" == *"ittapi"* ]]; then continue; fi
-    if [[ "$dependency" == *"ring"* ]]; then continue; fi
-    if [[ "$dependency" == *"ocaml-sys"* ]]; then continue; fi
-    if [[ "$dependency" == *"fxhash"* ]]; then continue; fi
-
     FOLDER=$(dirname "$dependency")
 
     # Crate names follow `some-crate-name-1.0.0` pattern.
@@ -162,7 +156,8 @@ do
            [ "$LICENSE_TYPE" == "MIT OR Apache-2.0 OR LGPL-2.1-or-later" ] ||
            [ "$LICENSE_TYPE" == "Apache-2.0 OR BSL-1.0 OR MIT" ] ||
            [ "$LICENSE_TYPE" == "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT" ] ||
-           [ "$LICENSE_TYPE" == "Apache-2.0 WITH LLVM-exception" ];
+           [ "$LICENSE_TYPE" == "Apache-2.0 WITH LLVM-exception" ] ||
+           [ "$LICENSE_TYPE" == "Apache-2.0/MIT" ];
         then
             LICENSE_PATH="/utils/list-licenses/Apache-2.0.txt"
         elif [ "$LICENSE_TYPE" == "MIT" ]
@@ -171,9 +166,13 @@ do
         elif [ "$LICENSE_TYPE" == "MPL-2.0" ] || [ "$LICENSE_TYPE" == "MPL-2.0+" ];
         then
             LICENSE_PATH="/utils/list-licenses/MPL-2.0.txt"
-        elif [ "$LICENSE_TYPE" == "BSD-3-Clause" ]
+        elif [ "$LICENSE_TYPE" == "BSD-3-Clause" ] ||
+             [ "$LICENSE_TYPE" == "GPL-2.0-only OR BSD-3-Clause" ];
         then
             LICENSE_PATH="/utils/list-licenses/BSD-3-Clause.txt"
+        elif [ "$LICENSE_TYPE" == "ISC" ]
+        then
+            LICENSE_PATH="/utils/list-licenses/ISC.txt"
         else
             echo "Could not find a valid license file for \"${LICENSE_TYPE}\" in $FOLDER"
             ls "$FOLDER"
