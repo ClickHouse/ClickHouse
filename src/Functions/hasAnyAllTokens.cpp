@@ -100,7 +100,7 @@ Needles extractNeedlesFromString(std::string_view needle_str)
     size_t pos = 0;
 
     Needles needles;
-    while (cur < length && default_token_extractor.nextInStringPadded(needle_str.data(), length, &cur, &token_start, &token_len))
+    while (cur < length && default_token_extractor.nextInStringPadded(static_cast<const char *>(needle_str.data()), length, &cur, &token_start, &token_len))
     {
         needles.emplace(std::string{needle_str.data() + token_start, token_len}, pos++);
     }
