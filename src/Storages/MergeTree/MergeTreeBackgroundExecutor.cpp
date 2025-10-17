@@ -2,12 +2,14 @@
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
 
 #include <algorithm>
+#include <optional>
 
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
 #include <Common/Exception.h>
 #include <Common/noexcept_scope.h>
 #include <Common/logger_useful.h>
+#include "base/types.h"
 
 
 namespace CurrentMetrics
@@ -54,20 +56,16 @@ MergeTreeBackgroundExecutor<Queue>::MergeTreeBackgroundExecutor(
     , max_tasks_count(max_tasks_count_)
     , metric(metric_)
     , max_tasks_metric(max_tasks_metric_, max_tasks_count)
-    , execute_profile_event(execute_profile_event_)
-    , cancel_profile_event(cancel_profile_event_)
-    , reset_profile_event(reset_profile_event_)
-    , wait_profile_event(wait_profile_event_)
     , pool(std::make_unique<ThreadPool>(
           CurrentMetrics::MergeTreeBackgroundExecutorThreads, CurrentMetrics::MergeTreeBackgroundExecutorThreadsActive, CurrentMetrics::MergeTreeBackgroundExecutorThreadsScheduled))
 {
     if (max_tasks_count == 0)
         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Task count for MergeTreeBackgroundExecutor must not be zero");
 
-    task_events.execute_ms = execute_profile_event;
-    task_events.cancel_ms = cancel_profile_event;
-    task_events.reset_ms = reset_profile_event;
-    task_events.wait_ms = wait_profile_event;
+    task_events.execute_ms = execute_profile_event_;
+    task_events.cancel_ms = cancel_profile_event_;
+    task_events.reset_ms = reset_profile_event_;
+    task_events.wait_ms = wait_profile_event_;
 
     pending.setCapacity(max_tasks_count);
     active.set_capacity(max_tasks_count);
@@ -255,9 +253,8 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
         /// we removed the task from both queues, but still have pointer.
         /// The thread that shutdowns storage will scan queues in order to find some tasks to wait for, but will find nothing.
         /// So, the destructor of a task and the destructor of a storage will be executed concurrently.
-        StorageID captured_storage_id = StorageID::createEmpty(); // default constructor is private
-        String captured_query_id;
-        bool captured_has_info = false;
+        std::optional<String> captured_storage_id;
+        std::optional<String> captured_query_id;
         bool captured_was_deleting = item_->is_currently_deleting;
 
         Stopwatch destruction_watch;
@@ -266,9 +263,8 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
             ALLOW_ALLOCATIONS_IN_SCOPE;
             if (item_->task)
             {
-                captured_storage_id = item_->task->getStorageID();
+                captured_storage_id = item_->task->getStorageID().getNameForLogs();
                 captured_query_id = item_->task->getQueryId();
-                captured_has_info = true;
             }
             item_->resetTask();
         });
@@ -280,24 +276,13 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
             ALLOW_ALLOCATIONS_IN_SCOPE;
             if (elapsed_ms > 60ULL * 1000ULL)
             {
-                if (captured_has_info)
-                {
-                    LOG_WARNING(log,
-                        "Releasing background task runtime data took {:.3f} seconds (> 60s), executor={}, storage={}, query_id={}, deleting={}",
-                        static_cast<double>(elapsed_ms) / 1000.0,
-                        name,
-                        captured_storage_id,
-                        captured_query_id,
-                        captured_was_deleting);
-                }
-                else
-                {
-                    LOG_WARNING(log,
-                        "Releasing background task runtime data took {:.3f} seconds (> 60s), executor={}, deleting={}, task_info=unavailable",
-                        static_cast<double>(elapsed_ms) / 1000.0,
-                        name,
-                        captured_was_deleting);
-                }
+                LOG_WARNING(log,
+                    "Releasing background task runtime data took {:.3f} seconds (> 60s), executor={}, storage={}, query_id={}, deleting={}",
+                    static_cast<double>(elapsed_ms) / 1000.0,
+                    name,
+                    captured_storage_id.value_or("unknown"),
+                    captured_query_id.value_or("unknown"),
+                    captured_was_deleting);
             }
         });
     };

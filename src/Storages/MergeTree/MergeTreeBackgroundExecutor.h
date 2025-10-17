@@ -14,6 +14,7 @@
 
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <base/defines.h>
+#include "Common/ElapsedTimeProfileEventIncrement.h"
 #include <Common/CurrentMetrics.h>
 #include <Common/Logger.h>
 #include <Common/ProfileEvents.h>
@@ -58,27 +59,26 @@ struct TaskRuntimeData
 
     void cancel() const
     {
-        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::events.cancel_ms);
+        ProfileEventTimeIncrement<Microseconds> watch(events.cancel_ms);
         if (task)
             task->cancel();
     }
 
     void wait()
     {
-        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::events.wait_ms);
+        ProfileEventTimeIncrement<Microseconds> watch(events.wait_ms);
         is_done.wait();
     }
 
     bool executeStep() const
     {
-        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::events.execute_ms);
-        bool res = task->executeStep();
-        return res;
+        ProfileEventTimeIncrement<Microseconds> watch(events.execute_ms);
+        return task->executeStep();
     }
 
     void resetTask()
     {
-        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::events.reset_ms);
+        ProfileEventTimeIncrement<Microseconds> watch(events.reset_ms);
         if (task)
             task.reset();
     }
@@ -346,11 +346,6 @@ private:
     std::atomic<size_t> max_tasks_count = 0;
     CurrentMetrics::Metric metric;
     CurrentMetrics::Increment max_tasks_metric;
-
-    ProfileEvents::Event execute_profile_event = ProfileEvents::end();
-    ProfileEvents::Event cancel_profile_event = ProfileEvents::end();
-    ProfileEvents::Event reset_profile_event = ProfileEvents::end();
-    ProfileEvents::Event wait_profile_event = ProfileEvents::end();
 
     void routine(TaskRuntimeDataPtr item);
 
