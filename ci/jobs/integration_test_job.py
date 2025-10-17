@@ -73,6 +73,13 @@ def parse_args():
         type=str,
         default="",
     )
+    parser.add_argument(
+        "-n",
+        "--workers",
+        help="Optional. Number of parallel workers for pytest",
+        default=None,
+        type=int,
+    )
     return parser.parse_args()
 
 
@@ -125,6 +132,9 @@ def main():
 
     if args.count:
         repeat_option = f"--count {args.count} --random-order"
+
+    if args.workers:
+        workers = args.workers
 
     changed_test_modules = []
     if is_bugfix_validation or is_flaky_check:
@@ -255,8 +265,10 @@ def main():
     error_info = []
 
     if args.test:
+        # Only add -n if explicitly specified by user
+        workers_option = f"-n {workers}" if args.workers is not None else ""
         test_result_specific = Result.from_pytest_run(
-            command=f"{' '.join(args.test)} {'--pdb' if args.debug else ''} {repeat_option}",
+            command=f"{' '.join(args.test)} {'--pdb' if args.debug else ''} {repeat_option} {workers_option}",
             cwd="./tests/integration/",
             env=test_env,
             pytest_report_file=f"{temp_path}/pytest.jsonl",

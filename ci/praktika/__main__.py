@@ -92,6 +92,15 @@ def create_parser():
         default="",
     )
     run_parser.add_argument(
+        "-n",
+        "--workers",
+        help=(
+            "Number of parallel workers for pytest (passed as -n to job script). Useful for integration tests"
+        ),
+        type=int,
+        default=None,
+    )
+    run_parser.add_argument(
         "--pr",
         help=(
             "PR number to fetch required artifacts from its CI run (for local runs). Optional"
@@ -186,6 +195,7 @@ def main():
                 debug=args.debug,
                 path=args.path,
                 path_1=args.path_1,
+                workers=args.workers,
             )
     else:
         parser.print_help()
