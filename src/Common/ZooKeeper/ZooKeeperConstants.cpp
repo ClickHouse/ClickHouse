@@ -56,8 +56,10 @@ const char * toOperationTypeMetricLabel(OpNum op_num)
             return "readonly";
 
         case OpNum::Multi:
-        case OpNum::MultiRead:
             return "multi";
+
+        case OpNum::MultiRead:
+            return "multi-read";
 
         case OpNum::Create:
         case OpNum::Remove:
