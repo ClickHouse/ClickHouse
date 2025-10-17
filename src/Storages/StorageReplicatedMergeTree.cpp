@@ -6633,8 +6633,7 @@ bool StorageReplicatedMergeTree::existsNodeCached(const ZooKeeperWithFaultInject
 void StorageReplicatedMergeTree::tryRemoveNodeCache(const std::string & path) const
 {
     std::lock_guard lock(existing_nodes_cache_mutex);
-    if (existing_nodes_cache.contains(path))
-        existing_nodes_cache.erase(path);
+    existing_nodes_cache.erase(path);
 }
 
 std::optional<EphemeralLockInZooKeeper> StorageReplicatedMergeTree::allocateBlockNumber(
