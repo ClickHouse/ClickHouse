@@ -19,6 +19,8 @@
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
 
+#include <expected>
+
 namespace DB
 {
 
@@ -28,23 +30,20 @@ using WebAssembly::WasmEdgeRuntime;
 
 namespace ErrorCodes
 {
-extern const int RESOURCE_NOT_FOUND;
-extern const int FILE_ALREADY_EXISTS;
-extern const int CANNOT_DROP_FUNCTION;
-extern const int SUPPORT_IS_DISABLED;
-extern const int INCORRECT_DATA;
-extern const int UNKNOWN_ELEMENT_IN_CONFIG;
+    extern const int RESOURCE_NOT_FOUND;
+    extern const int FILE_ALREADY_EXISTS;
+    extern const int CANNOT_DROP_FUNCTION;
+    extern const int SUPPORT_IS_DISABLED;
+    extern const int INCORRECT_DATA;
+    extern const int UNKNOWN_ELEMENT_IN_CONFIG;
 }
 
 constexpr auto FILE_EXTENSION = ".wasm";
 
-template <typename ResultType, typename... Args>
-ResultType onError(int error_code [[maybe_unused]], FormatStringHelper<Args...> fmt [[maybe_unused]], Args &&... args [[maybe_unused]])
+template <typename... Args>
+auto formatUnexpected(FormatStringHelper<Args...> fmt, Args && ...args)
 {
-    if constexpr (std::is_same_v<ResultType, void>)
-        throw Exception(error_code, std::move(fmt), std::forward<Args>(args)...);
-    else
-        return ResultType(false);
+    return std::unexpected(PreformattedMessage::create(std::move(fmt), std::forward<Args>(args)...));
 }
 
 static String trimAndEscape(std::string_view name, size_t max_length = 128)
@@ -80,13 +79,11 @@ std::string hashToHex(const UInt256 & hash)
 }
 
 
-template <typename ResultType>
-ResultType checkValidWasmCode(std::string_view name, std::string_view wasm_code)
+std::expected<void, PreformattedMessage> checkValidWasmCode(std::string_view name, std::string_view wasm_code)
 {
     if (name.empty() || 128 < name.size() || !std::all_of(name.data(), name.data() + name.size(), isWordCharASCII))
     {
-        return onError<ResultType>(
-            ErrorCodes::INCORRECT_DATA,
+        return formatUnexpected(
             "Name of a WebAssembly module must be a non-empty string of length at most 128 consisting of word characters only, got '{}'",
             trimAndEscape(name));
     }
@@ -96,16 +93,35 @@ ResultType checkValidWasmCode(std::string_view name, std::string_view wasm_code)
     constexpr std::array<uint8_t, 8> wasm_magic_number = {0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00};
     if (!std::ranges::equal(wasm_magic_number, std::views::take(wasm_code, wasm_magic_number.size())))
     {
-        return onError<ResultType>(
-            ErrorCodes::INCORRECT_DATA,
+        return formatUnexpected(
             "Cannot read magic number for WebAssembly module '{}', binary module version 0x1 is expected, got '{}'",
-            name,
-            trimAndEscape(wasm_code, 16));
+            name, trimAndEscape(wasm_code, 16));
     }
 
-    return ResultType(true);
+    return {};
 }
 
+std::expected<String, PreformattedMessage> validateModuleFile(const DiskPtr & user_scripts_disk, const String & path)
+{
+    std::filesystem::path file_path(path);
+
+    const auto & file_name = file_path.filename().string();
+
+    if (!endsWith(file_name, FILE_EXTENSION))
+        return formatUnexpected("Unexpected file extension '{}', expected '{}'", file_path.extension().string(), FILE_EXTENSION);
+
+    ReadSettings read_settings;
+    auto read_buf = user_scripts_disk->readFile(path, read_settings);
+    std::string file_header(16, '\0');
+    size_t n = read_buf->read(file_header.data(), file_header.size());
+    if (n != file_header.size())
+        return formatUnexpected("File '{}' is too small to be a valid WebAssembly module", path);
+
+    auto module_name = file_name.substr(0, file_name.size() - strlen(FILE_EXTENSION));
+    if (auto res = checkValidWasmCode(module_name, file_header); !res)
+        return std::unexpected(std::move(res.error()));
+    return module_name;
+}
 
 static std::unique_ptr<WebAssembly::IWasmEngine> createEngine(std::string_view engine_name)
 {
@@ -131,16 +147,14 @@ WasmModuleManager::~WasmModuleManager() = default;
 
 void WasmModuleManager::saveModule(std::string_view module_name, std::string_view wasm_code, UInt256 expected_hash)
 {
-    checkValidWasmCode<void>(module_name, wasm_code);
+    if (auto res = checkValidWasmCode(module_name, wasm_code); !res)
+        throw Exception(std::move(res.error()), ErrorCodes::INCORRECT_DATA);
 
     UInt256 actual_hash = caclculateHash(wasm_code);
     if (expected_hash && actual_hash != expected_hash)
-        throw Exception(
-            ErrorCodes::INCORRECT_DATA,
+        throw Exception(ErrorCodes::INCORRECT_DATA,
             "Hash mismatch for WebAssembly module '{}', expected {}, got {}",
-            module_name,
-            hashToHex(expected_hash),
-            hashToHex(actual_hash));
+            module_name, hashToHex(expected_hash), hashToHex(actual_hash));
 
     {
         std::unique_lock lock(modules_mutex);
@@ -212,9 +226,14 @@ std::pair<std::shared_ptr<WasmModule>, UInt256> WasmModuleManager::getModule(std
 
         auto it = modules.find(module_name);
         if (it == modules.end())
-            throw Exception(ErrorCodes::RESOURCE_NOT_FOUND, "WebAssembly module '{}' not found", module_name);
-
-        if (auto module = it->second.ptr.lock())
+        {
+            auto module_path = getFilePath(module_name);
+            if (!user_scripts_disk->existsFile(module_path))
+                throw Exception(ErrorCodes::RESOURCE_NOT_FOUND, "WebAssembly module '{}' not found", module_name);
+            if (auto res = validateModuleFile(user_scripts_disk, module_path); !res)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot load WebAssembly module '{}': {}", module_name, res.error().text);
+            /// If file exists on disk but is not registered yet, we proceed to load it below
+        } else if (auto module = it->second.ptr.lock())
             return {module, it->second.hash};
     }
 
@@ -263,27 +282,14 @@ void WasmModuleManager::registerExistingModules()
     {
         const auto & file_path = files_it->path();
         const auto & file_name = files_it->name();
-        if (!endsWith(file_name, FILE_EXTENSION))
-            continue;
-
-        ReadSettings read_settings;
-        auto read_buf = user_scripts_disk->readFile(file_path, read_settings);
-        std::string file_header(16, '\0');
-        size_t n = read_buf->read(file_header.data(), file_header.size());
-        if (n != file_header.size())
+        auto res = validateModuleFile(user_scripts_disk, file_path);
+        if (!res)
         {
-            LOG_DEBUG(log, "Ignoring file '{}' with illegal header", file_path);
+            LOG_DEBUG(log, "Ignoring file '{}' which is not a valid WASM module: {}", file_path, res.error().text);
             continue;
         }
 
-        const auto module_name = file_name.substr(0, file_name.size() - strlen(FILE_EXTENSION));
-        if (!checkValidWasmCode<bool>(module_name, file_header))
-        {
-            LOG_DEBUG(log, "Ignoring file '{}' with illegal header", file_path);
-            continue;
-        }
-
-        auto [_, inserted] = modules.insert({std::string(module_name), {}});
+        auto [_, inserted] = modules.insert({res.value(), {}});
         if (!inserted)
         {
             LOG_DEBUG(log, "Ignoring file '{}' with duplicate module name", file_path);

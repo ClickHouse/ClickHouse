@@ -34,9 +34,14 @@ namespace ErrorCodes
 ColumnsDescription StorageSystemWasmModules::getColumnsDescription()
 {
     return ColumnsDescription{
-        {"name", std::make_shared<DataTypeString>(), "The name of the module"},
-        {"code", std::make_shared<DataTypeString>(), "Binary WebAssembly module code"},
-        {"hash", std::make_shared<DataTypeUInt256>(), "The hash of the module code"},
+        {"name", std::make_shared<DataTypeString>(),
+            "Name of the WebAssembly module"},
+        {"code", std::make_shared<DataTypeString>(),
+            "Binary WebAssembly module code in raw format. "
+            "This column is write-only and cannot be selected directly"},
+        {"hash", std::make_shared<DataTypeUInt256>(),
+            "SHA256 hash of the module's binary code, used for integrity verification. "
+            "Contains zero if the module exists on disk but is not currently loaded into memory"},
     };
 }
 

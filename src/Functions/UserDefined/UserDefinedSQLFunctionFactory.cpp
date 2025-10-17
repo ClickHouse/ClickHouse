@@ -189,9 +189,6 @@ bool UserDefinedSQLFunctionFactory::unregisterFunction(const ContextMutablePtr &
 {
     checkCanBeUnregistered(context, function_name);
 
-    if (UserDefinedWebAssemblyFunctionFactory::instance().dropIfExists(function_name))
-        return true;
-
     try
     {
         auto & storage = context->getUserDefinedSQLObjectsStorage();
@@ -208,6 +205,10 @@ bool UserDefinedSQLFunctionFactory::unregisterFunction(const ContextMutablePtr &
         exception.addMessage(fmt::format("while removing user defined function {}", backQuote(function_name)));
         throw;
     }
+
+    /// If deleted function is a WASM function, remove it from WASM function factory as well
+    /// After that wasm modules can be safely dropped as well, since no functions refer to them
+    UserDefinedWebAssemblyFunctionFactory::instance().dropIfExists(function_name);
 
     return true;
 }
