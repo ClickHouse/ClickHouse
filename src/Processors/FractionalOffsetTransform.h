@@ -4,6 +4,7 @@
 #include <Core/SortDescription.h>
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
+#include <Processors/Port.h>
 #include <Processors/RowsBeforeStepCounter.h>
 #include <base/BFloat16.h>
 
@@ -39,7 +40,13 @@ private:
     size_t num_finished_input_ports = 0;
 
     UInt64 rows_cnt = 0;
-    std::deque<Chunk> chunks_cache;
+
+    struct CacheEntity 
+    {
+        OutputPort * output_port = nullptr;
+        Chunk chunk;
+    };
+    std::deque<CacheEntity> chunks_cache;
 
 public:
     FractionalOffsetTransform(const Block & header_, BFloat16 fractional_offset_, size_t num_streams = 1);
@@ -48,7 +55,8 @@ public:
 
     Status prepare(const PortNumbers & /*updated_input_ports*/, const PortNumbers & /*updated_output_ports*/) override;
     Status prepare() override; /// Compatibility for TreeExecutor.
-    Status preparePair(PortsData & data);
+    Status pullData(PortsData & data);
+    Status pushData();
     void splitChunk(Chunk & current_chunk) const;
 
     InputPort & getInputPort() { return inputs.front(); }
