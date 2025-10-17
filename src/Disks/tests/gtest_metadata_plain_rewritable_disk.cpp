@@ -306,11 +306,24 @@ TEST_F(MetadataPlainRewritableDiskTest, RemoveDirectoryRecursive)
     EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("root/A/C/file_3").front().remote_path), "3");
     EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("root/A/B/E/F/file_4").front().remote_path), "4");
 
+    auto inodes_start = std::filesystem::recursive_directory_iterator("./RemoveDirectoryRecursive")
+                            | std::views::transform([](const auto & dir) { return dir.path(); })
+                            | std::ranges::to<std::vector<std::string>>();
+    EXPECT_EQ(inodes_start.size(), 23);
+
+    /// Check undo
     {
-        std::vector<std::string> inodes = std::filesystem::recursive_directory_iterator("./RemoveDirectoryRecursive")
-                                            | std::views::transform([](const auto & dir) { return dir.path(); })
-                                            | std::ranges::to<std::vector<std::string>>();
-        EXPECT_EQ(inodes.size(), 23);
+        auto tx = metadata->createTransaction();
+        tx->removeRecursive("root/A");
+        tx->moveFile("non-existing", "other-place");
+        EXPECT_ANY_THROW(tx->commit());
+    }
+
+    {
+        auto inodes = std::filesystem::recursive_directory_iterator("./RemoveDirectoryRecursive")
+                            | std::views::transform([](const auto & dir) { return dir.path(); })
+                            | std::ranges::to<std::vector<std::string>>();
+        EXPECT_EQ(inodes, inodes_start);
     }
 
     /// Remove fs tree
