@@ -424,12 +424,13 @@ public:
             std::tie(limit_offset, fractional_offset) = getLimitUintandBFloatValues(offset_value);
         }
 
-        /// Partial sort can be done if there is LIMIT, but no DISTINCT, LIMIT WITH TIES, LIMIT BY, ARRAY JOIN
+        /// Partial sort can be done if there is LIMIT, but no DISTINCT, LIMIT WITH TIES, LIMIT BY, ARRAY JOIN, FRACTIONAL OFFSET
         if (limit_length != 0 &&
             !query_node.isDistinct() &&
             !query_node.isLimitWithTies() &&
             !query_node.hasLimitBy() &&
             !query_has_array_join_in_join_tree &&
+            !fractional_offset &&
             limit_length <= std::numeric_limits<UInt64>::max() - limit_offset)
         {
             partial_sorting_limit = limit_length + limit_offset;
@@ -447,7 +448,7 @@ public:
     UInt64 limit_offset = 0;
     BFloat16 fractional_limit;
     BFloat16 fractional_offset;
-    UInt64 partial_sorting_limit = 0;
+    UInt64 partial_sorting_limit = 1;
 };
 
 template <size_t size>
@@ -1293,7 +1294,8 @@ void addLimitStep(QueryPlan & query_plan,
                 limit_length,
                 limit_offset,
                 always_read_till_end,
-                limit_with_ties
+                limit_with_ties,
+                limit_with_ties_sort_description
         );
 
         if (limit_with_ties)
@@ -1314,7 +1316,8 @@ void addLimitStep(QueryPlan & query_plan,
                 limit_length,
                 limit_offset,
                 always_read_till_end,
-                limit_with_ties
+                limit_with_ties,
+                limit_with_ties_sort_description
         );
         query_plan.addStep(std::move(limit));
     }
