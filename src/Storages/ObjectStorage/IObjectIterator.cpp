@@ -1,9 +1,22 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Formats/FormatFactory.h>
+#include <Interpreters/Context.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <IO/ReadBufferFromFileBase.h>
+#include <Core/Settings.h>
+#include <Core/Defines.h>
+#include <Storages/ObjectStorage/Utils.h>
+#include <Processors/Formats/IInputFormat.h>
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsUInt64 cluster_table_function_buckets_batch_size;
+}
 
 static ExpressionActionsPtr getExpressionActions(
     const DB::ActionsDAG & filter_,
@@ -62,5 +75,79 @@ ObjectInfoPtr ObjectIteratorWithPathAndFileFilter::next(size_t id)
     }
     return {};
 }
+
+ObjectIteratorSplitByBuckets::ObjectIteratorSplitByBuckets(
+    ObjectIterator iterator_,
+    const String & format_,
+    ObjectStoragePtr object_storage_,
+    const ContextPtr & context_)
+    : WithContext(context_)
+    , iterator(iterator_)
+    , format(format_)
+    , object_storage(object_storage_)
+{
+}
+
+std::vector<std::vector<size_t>> ObjectIteratorSplitByBuckets::splitObjectToBuckets(const std::vector<size_t> bucket_sizes)
+{
+    size_t bucket_size = getContext()->getSettingsRef()[Setting::cluster_table_function_buckets_batch_size];
+    std::vector<std::vector<size_t>> buckets;
+    size_t current_weight = 0;
+    buckets.push_back({});
+    for (size_t i = 0; i < bucket_sizes.size(); ++i)
+    {
+        if (current_weight + bucket_sizes[i] <= bucket_size)
+        {
+            buckets.back().push_back(i);
+            current_weight += bucket_sizes[i];
+        }
+        else
+        {
+            current_weight = 0;
+            buckets.push_back({});
+            buckets.back().push_back(i);
+            current_weight += bucket_sizes[i];
+        }
+    }
+    return buckets;
+}
+
+ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
+{
+    if (!pending_objects_info.empty())
+    {
+        auto result = pending_objects_info.front();
+        pending_objects_info.pop();
+        return result;
+    }
+    auto last_object_info = iterator->next(id);
+    if (!last_object_info)
+        return {};
+
+    auto buffer = createReadBuffer(*last_object_info, object_storage, getContext(), log);
+    auto input_format = FormatFactory::instance().getInput(
+        last_object_info->getFileFormat().value_or(format),
+        *buffer,
+        {},
+        getContext(),
+        DBMS_DEFAULT_BUFFER_SIZE);
+
+    auto bucket_sizes = input_format->getChunksByteSizes();
+    if (bucket_sizes)
+    {
+        std::vector<std::vector<size_t>> buckets = splitObjectToBuckets(*bucket_sizes);
+        for (const auto & bucket : buckets)
+        {
+            auto copy_object_info = *last_object_info;
+            copy_object_info.file_bucket_info = FileBucketInfoFactory().createFromBuckets(last_object_info->getFileFormat().value_or(format), bucket);
+            pending_objects_info.push(std::make_shared<ObjectInfo>(copy_object_info));
+        }
+    }
+
+    auto result = pending_objects_info.front();
+    pending_objects_info.pop();
+    return result;
+}
+
 
 }

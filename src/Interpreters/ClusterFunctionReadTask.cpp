@@ -7,7 +7,9 @@
 #include <IO/ReadHelpers.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
+#include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 
 namespace DB
 {
@@ -31,6 +33,7 @@ ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr o
 
     const bool send_over_whole_archive = !context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes];
     path = send_over_whole_archive ? object->getPathOrPathToArchiveIfArchive() : object->getPath();
+    file_bucket_info = object->file_bucket_info;
 }
 
 ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(const std::string & path_)
@@ -45,6 +48,8 @@ ObjectInfoPtr ClusterFunctionReadTaskResponse::getObjectInfo() const
 
     auto object = std::make_shared<ObjectInfo>(path);
     object->data_lake_metadata = data_lake_metadata;
+    object->file_bucket_info = file_bucket_info;
+
     return object;
 }
 
@@ -60,6 +65,13 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t protoc
             data_lake_metadata.transform->serialize(out, registry);
         else
             ActionsDAG().serialize(out, registry);
+    }
+
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_METADATA_PARTITIONED_BY_ROWGROUPS)
+    {
+        FileBucketInfoFactory().serializeType(file_bucket_info, out);
+        if (file_bucket_info)
+            file_bucket_info->serialize(out);
     }
 }
 
@@ -86,6 +98,13 @@ void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
         {
             data_lake_metadata.transform = std::move(transform);
         }
+    }
+
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_METADATA_PARTITIONED_BY_ROWGROUPS)
+    {
+        FileBucketInfoFactory().deserializeType(file_bucket_info, in);
+        if (file_bucket_info)
+            file_bucket_info->deserialize(in);
     }
 }
 
