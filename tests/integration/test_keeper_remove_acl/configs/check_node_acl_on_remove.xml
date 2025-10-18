@@ -1,7 +1,7 @@
 <clickhouse>
     <keeper_server>
         <coordination_settings>
-            <async_replication>1</async_replication>
+            <check_node_acl_on_remove>0</check_node_acl_on_remove>
         </coordination_settings>
     </keeper_server>
 </clickhouse>

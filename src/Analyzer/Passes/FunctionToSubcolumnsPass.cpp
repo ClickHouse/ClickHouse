@@ -27,6 +27,7 @@
 
 #include <Core/Settings.h>
 
+#include <stack>
 namespace DB
 {
 namespace Setting
@@ -513,13 +514,18 @@ class FunctionToSubcolumnsVisitorSecondPass : public InDepthQueryTreeVisitorWith
 {
 private:
     std::unordered_set<Identifier> identifiers_to_optimize;
+    std::unordered_set<const TableNode *> outer_joined_tables;
 
 public:
     using Base = InDepthQueryTreeVisitorWithContext<FunctionToSubcolumnsVisitorSecondPass>;
     using Base::Base;
 
-    FunctionToSubcolumnsVisitorSecondPass(ContextPtr context_, std::unordered_set<Identifier> identifiers_to_optimize_)
-        : Base(std::move(context_)), identifiers_to_optimize(std::move(identifiers_to_optimize_))
+    FunctionToSubcolumnsVisitorSecondPass(ContextPtr context_,
+        std::unordered_set<Identifier> identifiers_to_optimize_,
+        std::unordered_set<const TableNode *> outer_joined_tables_)
+        : Base(std::move(context_))
+        , identifiers_to_optimize(std::move(identifiers_to_optimize_))
+        , outer_joined_tables(std::move(outer_joined_tables_))
     {
     }
 
@@ -542,7 +548,7 @@ public:
         auto result_type = function_node->getResultType();
         auto transformer_it = node_transformers.find({column.type->getTypeId(), function_node->getFunctionName()});
 
-        if (transformer_it != node_transformers.end())
+        if (transformer_it != node_transformers.end() && (transformer_it->first.first != TypeIndex::Nullable || !outer_joined_tables.contains(table_node)))
         {
             ColumnContext ctx{std::move(column), first_argument_column_node->getColumnSource(), getContext()};
             transformer_it->second(node, *function_node, ctx);
@@ -551,6 +557,64 @@ public:
                 node = buildCastFunction(node, result_type, getContext());
         }
     }
+};
+
+class GetOuterJoinedTablesVisitor : public InDepthQueryTreeVisitorWithContext<GetOuterJoinedTablesVisitor>
+{
+public:
+    using Base = InDepthQueryTreeVisitorWithContext<GetOuterJoinedTablesVisitor>;
+    using Base::Base;
+
+    void enterImpl(const QueryTreeNodePtr & node)
+    {
+        /// If we are inside the subtree of a JOIN.
+        if (!join_nodes_stack.empty())
+        {
+            const auto * current_join_node = join_nodes_stack.top();
+
+            /// If we are in the left (right) subtree of a LEFT (RIGHT) JOIN, skip this subtree
+            /// and mark all tables as outer-joined tables.
+            if (isLeftOrFull(current_join_node->getKind()) && current_join_node->getRightTableExpression().get() == node.get())
+                need_skip_subtree = true;
+            if (isRightOrFull(current_join_node->getKind()) && current_join_node->getLeftTableExpression().get() == node.get())
+                need_skip_subtree = true;
+        }
+
+        /// Once a JOIN node is entered, keep it on the stack until it is left.
+        if (const auto * join_node = node->as<JoinNode>(); join_node && !need_skip_subtree)
+        {
+            join_nodes_stack.push(join_node);
+            return;
+        }
+
+        if (const auto * table_node = node->as<TableNode>())
+        {
+            if (need_skip_subtree)
+                outer_joined_tables.insert(table_node);
+            return;
+        }
+    }
+
+    void leaveImpl(const QueryTreeNodePtr & node)
+    {
+        if (join_nodes_stack.empty())
+            return;
+
+        const auto * current_join_node = join_nodes_stack.top();
+
+        /// Leaving the left (or right) subtree of a LEFT (or RIGHT) JOIN.
+        if (node.get() == current_join_node->getRightTableExpression().get()
+         || node.get() == current_join_node->getLeftTableExpression().get())
+            need_skip_subtree = false;
+
+        /// Leaving a JOIN node.
+        if (node.get() == current_join_node)
+            join_nodes_stack.pop();
+    }
+
+    bool need_skip_subtree = false;
+    std::stack<const JoinNode *> join_nodes_stack;
+    std::unordered_set<const TableNode *> outer_joined_tables;
 };
 
 }
@@ -564,7 +628,12 @@ void FunctionToSubcolumnsPass::run(QueryTreeNodePtr & query_tree_node, ContextPt
     if (identifiers_to_optimize.empty())
         return;
 
-    FunctionToSubcolumnsVisitorSecondPass second_visitor(std::move(context), std::move(identifiers_to_optimize));
+    /// Tables appearing in LEFT or RIGHT JOIN may produce default values for missing rows.
+    /// Inserting a default into a null-mask (of type UInt8) gives a different result than inserting NULL into a Nullable column.
+    /// Therefore, functions on Nullable columns from outer-joined tables cannot be optimized.
+    GetOuterJoinedTablesVisitor outer_join_visitor(context);
+    outer_join_visitor.visit(query_tree_node);
+    FunctionToSubcolumnsVisitorSecondPass second_visitor(std::move(context), std::move(identifiers_to_optimize), std::move(outer_join_visitor.outer_joined_tables));
     second_visitor.visit(query_tree_node);
 }
 

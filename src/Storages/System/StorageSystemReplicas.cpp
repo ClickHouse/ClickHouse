@@ -171,7 +171,7 @@ void StorageSystemReplicas::read(
 
     /// We collect a set of replicated tables.
     std::map<String, std::map<String, StoragePtr>> replicated_tables;
-    for (const auto & db : DatabaseCatalog::instance().getDatabases())
+    for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
     {
         /// Check if database can contain replicated tables
         if (db.second->isExternal())
