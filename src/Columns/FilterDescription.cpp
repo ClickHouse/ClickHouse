@@ -131,7 +131,7 @@ ColumnPtr FilterDescription::preprocessFilterColumn(ColumnPtr column)
         column = std::move(col);
     }
 
-    return column;
+    return column; // NOLINT(bugprone-use-after-move,hicpp-invalid-access-moved)
 }
 
 FilterDescription::FilterDescription(const IColumn & column_)
