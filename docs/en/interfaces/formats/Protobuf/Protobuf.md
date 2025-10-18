@@ -303,9 +303,9 @@ clickhouse client --host <hostname> --secure --password <password> --query "SELE
 ```
 
 ```response
-Aisha	Khan	19920815	['(555) 247-8903','(555) 612-3457']
-Javier	Rodriguez	20001015	['(555) 891-2046','(555) 738-5129']
-Mei	Ling	19980616	['(555) 956-1834','(555) 403-7682']
+Aisha	Khan 19920815 ['(555) 247-8903','(555) 612-3457']
+Javier Rodriguez 20001015 ['(555) 891-2046','(555) 738-5129']
+Mei	Ling 19980616 ['(555) 956-1834','(555) 403-7682']
 ```
 
 ### `format_schema_source='query'` {#format-schema-source-string}
@@ -340,7 +340,7 @@ clickhouse client --host <hostname> --secure --password <password> --query "SELE
 
 ```response
 Aisha	Khan 19920815 ['(555) 247-8903','(555) 612-3457']
-Javier Rodriguez 20001015	['(555) 891-2046','(555) 738-5129']
+Javier Rodriguez 20001015 ['(555) 891-2046','(555) 738-5129']
 Mei	Ling 19980616 ['(555) 956-1834','(555) 403-7682']
 ```
 
