@@ -17,8 +17,6 @@ countSubstringsCaseInsensitiveUTF8
 currentQueryID
 dateDiff
 dotProduct
-dynamicElement
-dynamicType
 extractKeyValuePairs
 extractKeyValuePairsWithEscaping
 firstSignificantSubdomain
@@ -48,7 +46,6 @@ hasTokenCaseInsensitiveOrNull
 ilike
 in
 inIgnoreSet
-isDynamicElementInSharedData
 like
 moduloLegacy
 multiFuzzyMatchAllIndices
