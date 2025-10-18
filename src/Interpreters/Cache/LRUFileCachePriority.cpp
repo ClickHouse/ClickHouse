@@ -620,10 +620,11 @@ void LRUFileCachePriority::LRUIterator::decrementSize(size_t size)
     entry->size -= size;
 }
 
-void LRUFileCachePriority::LRUIterator::assertValid() const
+bool LRUFileCachePriority::LRUIterator::assertValid() const
 {
     if (iterator == LRUQueue::iterator{})
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to use invalid iterator");
+    return true;
 }
 
 void LRUFileCachePriority::shuffle(const CachePriorityGuard::WriteLock &)

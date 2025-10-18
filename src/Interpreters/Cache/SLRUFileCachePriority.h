@@ -153,7 +153,7 @@ public:
     void setEntry(EntryPtr && entry_, const CacheStateGuard::Lock &);
 
 private:
-    void assertValid() const;
+    bool assertValid() const;
 
     SLRUFileCachePriority * cache_priority;
     LRUFileCachePriority::LRUIterator lru_iterator;

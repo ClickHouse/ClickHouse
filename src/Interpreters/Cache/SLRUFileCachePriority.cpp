@@ -384,6 +384,7 @@ bool SLRUFileCachePriority::tryIncreasePriority(
     CacheStateGuard & state_guard)
 {
     auto & iterator = dynamic_cast<SLRUFileCachePriority::SLRUIterator &>(iterator_);
+    chassert(iterator.assertValid());
 
     /// If entry is already in protected queue,
     /// we only need to increase its priority within the protected queue.
@@ -463,6 +464,7 @@ bool SLRUFileCachePriority::tryIncreasePriority(
         }
         catch (...)
         {
+            chassert(false);
             /// TODO return the entry back to avoid a case when file segment has no entry.
             throw;
         }
@@ -482,6 +484,7 @@ bool SLRUFileCachePriority::tryIncreasePriority(
     catch (...)
     {
         new_iterator->remove(queue_guard.writeLock());
+        chassert(false);
         /// TODO return the entry back to avoid a case when file segment has no entry.
         throw;
     }
@@ -614,9 +617,10 @@ void SLRUFileCachePriority::SLRUIterator::remove(const CachePriorityGuard::Write
     lru_iterator.remove(lock);
 }
 
-void SLRUFileCachePriority::SLRUIterator::assertValid() const
+bool SLRUFileCachePriority::SLRUIterator::assertValid() const
 {
     lru_iterator.assertValid();
+    return true;
 }
 
 std::string SLRUFileCachePriority::getStateInfoForLog(const CacheStateGuard::Lock & lock) const

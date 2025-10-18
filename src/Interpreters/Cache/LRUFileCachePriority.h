@@ -210,7 +210,7 @@ public:
     LRUQueue::iterator get() const { return iterator; }
 
 private:
-    void assertValid() const;
+    bool assertValid() const;
 
     LRUFileCachePriority * cache_priority;
     mutable LRUQueue::iterator iterator;

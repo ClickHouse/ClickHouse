@@ -1146,14 +1146,18 @@ void FileSegment::increasePriority()
 
     if (isCompleted())
     {
-        auto it = getQueueIterator();
-        if (it)
+        std::unique_lock<std::mutex> lock(increase_priority_mutex, std::defer_lock);
+        if (lock.try_lock())
         {
-            if (cache->tryIncreasePriority(*this))
-                ProfileEvents::increment(ProfileEvents::FileSegmentFailToIncreasePriority);
+            auto it = getQueueIterator();
+            if (it)
+            {
+                if (cache->tryIncreasePriority(*this))
+                    ProfileEvents::increment(ProfileEvents::FileSegmentFailToIncreasePriority);
 
-            /// Used only for system.filesystem_cache.
-            ++hits_count;
+                /// Used only for system.filesystem_cache.
+                ++hits_count;
+            }
         }
     }
 }
