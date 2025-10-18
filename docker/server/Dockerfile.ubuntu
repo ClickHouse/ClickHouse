@@ -25,6 +25,7 @@ RUN sed -i "s|http://archive.ubuntu.com|${apt_archive}|g" /etc/apt/sources.list 
         locales \
         tzdata \
         wget \
+        libcap2-bin \
     && busybox --install -s \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
