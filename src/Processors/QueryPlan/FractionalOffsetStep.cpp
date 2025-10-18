@@ -1,13 +1,13 @@
+#include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
 #include <IO/readFloatText.h>
+#include <Processors/FractionalOffsetTransform.h>
+#include <Processors/OffsetTransform.h>
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/FractionalOffsetStep.h>
-#include <Processors/FractionalOffsetTransform.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
-#include <Processors/OffsetTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <IO/Operators.h>
 #include <base/types.h>
 #include <Common/JSONBuilder.h>
 
@@ -16,8 +16,7 @@ namespace DB
 
 static ITransformingStep::Traits getTraits()
 {
-    return ITransformingStep::Traits
-    {
+    return ITransformingStep::Traits{
         {
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
@@ -25,8 +24,7 @@ static ITransformingStep::Traits getTraits()
         },
         {
             .preserves_number_of_rows = false,
-        }
-    };
+        }};
 }
 
 FractionalOffsetStep::FractionalOffsetStep(const SharedHeader & input_header_, Float32 fractional_offset_)
@@ -37,11 +35,7 @@ FractionalOffsetStep::FractionalOffsetStep(const SharedHeader & input_header_, F
 
 void FractionalOffsetStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    auto transform = std::make_shared<FractionalOffsetTransform>(
-            pipeline.getHeader(), 
-            fractional_offset, 
-            pipeline.getNumStreams()
-    );
+    auto transform = std::make_shared<FractionalOffsetTransform>(pipeline.getHeader(), fractional_offset, pipeline.getNumStreams());
 
     pipeline.addTransform(std::move(transform));
 }

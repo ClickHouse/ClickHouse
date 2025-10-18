@@ -1,15 +1,15 @@
+#include <IO/Operators.h>
 #include <IO/ReadBuffer.h>
 #include <IO/VarInt.h>
 #include <IO/WriteHelpers.h>
 #include <IO/readFloatText.h>
 #include <Processors/FractionalLimitTransform.h>
+#include <Processors/LimitTransform.h>
+#include <Processors/Port.h>
 #include <Processors/QueryPlan/FractionalLimitStep.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Processors/LimitTransform.h>
-#include <Processors/Port.h>
-#include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
 
 namespace DB
@@ -17,8 +17,7 @@ namespace DB
 
 static ITransformingStep::Traits getTraits()
 {
-    return ITransformingStep::Traits
-    {
+    return ITransformingStep::Traits{
         {
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
@@ -26,13 +25,12 @@ static ITransformingStep::Traits getTraits()
         },
         {
             .preserves_number_of_rows = false,
-        }
-    };
+        }};
 }
 
 FractionalLimitStep::FractionalLimitStep(
     const SharedHeader & input_header_,
-    Float32 limit_fraction_, 
+    Float32 limit_fraction_,
     Float32 offset_fraction_,
     UInt64 offset_,
     bool with_ties_,
@@ -49,14 +47,7 @@ FractionalLimitStep::FractionalLimitStep(
 void FractionalLimitStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     auto transform = std::make_shared<FractionalLimitTransform>(
-        pipeline.getSharedHeader(), 
-        limit_fraction, 
-        offset_fraction, 
-        offset,
-        pipeline.getNumStreams(), 
-        with_ties, 
-        description
-    );
+        pipeline.getSharedHeader(), limit_fraction, offset_fraction, offset, pipeline.getNumStreams(), with_ties, description);
 
     pipeline.addTransform(std::move(transform));
 }
@@ -65,7 +56,7 @@ void FractionalLimitStep::describeActions(FormatSettings & settings) const
 {
     String prefix(settings.offset, ' ');
     settings.out << prefix << "Fractional Limit " << limit_fraction << '\n';
-    settings.out << prefix << "Fractional Offset " <<offset_fraction << '\n';
+    settings.out << prefix << "Fractional Offset " << offset_fraction << '\n';
 
     if (with_ties)
         settings.out << prefix << "WITH TIES" << '\n';
@@ -113,13 +104,7 @@ std::unique_ptr<IQueryPlanStep> FractionalLimitStep::deserialize(Deserialization
         deserializeSortDescription(description, ctx.in);
 
     return std::make_unique<FractionalLimitStep>(
-        ctx.input_headers.front(), 
-        limit_fraction, 
-        offset_fraction, 
-        offset,
-        with_ties, 
-        std::move(description)
-    );
+        ctx.input_headers.front(), limit_fraction, offset_fraction, offset, with_ties, std::move(description));
 }
 
 void registerFractionalLimitStep(QueryPlanStepRegistry & registry)

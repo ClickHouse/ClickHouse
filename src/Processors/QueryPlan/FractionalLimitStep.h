@@ -1,6 +1,6 @@
 #pragma once
-#include <Processors/QueryPlan/ITransformingStep.h>
 #include <Core/SortDescription.h>
+#include <Processors/QueryPlan/ITransformingStep.h>
 #include <base/types.h>
 
 namespace DB
@@ -12,7 +12,7 @@ class FractionalLimitStep : public ITransformingStep
 public:
     FractionalLimitStep(
         const SharedHeader & input_header_,
-        Float32 limit_fraction_, 
+        Float32 limit_fraction_,
         Float32 offset_fraction_,
         UInt64 offset = 0,
         bool with_ties_ = false, /// Limit with ties.
@@ -37,12 +37,9 @@ public:
     bool hasCorrelatedExpressions() const override { return false; }
 
 private:
-    void updateOutputHeader() override
-    {
-        output_header = input_headers.front();
-    }
+    void updateOutputHeader() override { output_header = input_headers.front(); }
 
-    Float32 limit_fraction; 
+    Float32 limit_fraction;
     Float32 offset_fraction;
 
     UInt64 offset;

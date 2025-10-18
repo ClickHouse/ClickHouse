@@ -13,7 +13,7 @@
 namespace DB
 {
 
-/// Implementation for LIMIT N OFFSET M 
+/// Implementation for LIMIT N OFFSET M
 /// where N and M are fractions from 0.1 to 0.9 representing Percentages.
 ///
 /// This processor support multiple inputs and outputs (the same number).
@@ -28,7 +28,7 @@ private:
     Float32 limit_fraction;
     Float32 offset_fraction;
 
-    // Variables to hold real LIMIT and OFFSET values to 
+    // Variables to hold real LIMIT and OFFSET values to
     // use after (data_rows_cnt * fraction) calculation.
     UInt64 offset = 0;
     UInt64 limit = 0;
@@ -36,7 +36,7 @@ private:
     bool with_ties;
     const SortDescription description;
 
-    Chunk previous_row_chunk;  /// for WITH TIES, contains only sort columns
+    Chunk previous_row_chunk; /// for WITH TIES, contains only sort columns
     std::vector<size_t> sort_column_positions;
 
     UInt64 rows_read = 0; /// including the last read block
@@ -60,9 +60,9 @@ private:
     // 3. calculate target limit, offset
     // 4. pull data from the cache like a normal limit, offset.
     size_t rows_cnt = 0;
-    struct CacheEntry 
+    struct CacheEntry
     {
-        OutputPort* output_port = nullptr;
+        OutputPort * output_port = nullptr;
         Chunk chunk;
     };
     std::deque<CacheEntry> chunks_cache;
@@ -73,14 +73,13 @@ private:
 
 public:
     FractionalLimitTransform(
-        SharedHeader header_, 
-        Float32 limit_fraction_, 
-        Float32 offset_fraction_, 
+        SharedHeader header_,
+        Float32 limit_fraction_,
+        Float32 offset_fraction_,
         UInt64 offset_ = 0,
         size_t num_streams = 1,
         bool with_ties_ = false,
-        SortDescription description_ = {}
-    );
+        SortDescription description_ = {});
 
     String getName() const override { return "FractionalLimit"; }
 

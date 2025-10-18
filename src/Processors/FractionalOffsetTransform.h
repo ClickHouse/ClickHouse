@@ -11,7 +11,7 @@
 namespace DB
 {
 
-/// Implementation for OFFSET N (without limit) 
+/// Implementation for OFFSET N (without limit)
 //  where N is a fraction from 0.1 to 0.9 representing a Percentage.
 //
 /// This processor supports multiple inputs and outputs (the same number).
@@ -44,7 +44,7 @@ private:
     // 3. calculate target limit, offset
     // 4. pull data from the cache like a normal limit, offset.
     UInt64 rows_cnt = 0;
-    struct CacheEntity 
+    struct CacheEntity
     {
         OutputPort * output_port = nullptr;
         Chunk chunk;

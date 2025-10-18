@@ -25,10 +25,7 @@ public:
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
 private:
-    void updateOutputHeader() override
-    {
-        output_header = input_headers.front();
-    }
+    void updateOutputHeader() override { output_header = input_headers.front(); }
 
     Float32 fractional_offset;
 };

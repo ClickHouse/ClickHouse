@@ -12,23 +12,23 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+extern const int LOGICAL_ERROR;
 }
 
 FractionalLimitTransform::FractionalLimitTransform(
-    SharedHeader header_, 
-    Float32 limit_fraction_, 
-    Float32 offset_fraction_, 
+    SharedHeader header_,
+    Float32 limit_fraction_,
+    Float32 offset_fraction_,
     UInt64 offset_,
     size_t num_streams,
     bool with_ties_,
-    SortDescription description_
-) : IProcessor(InputPorts(num_streams, header_), OutputPorts(num_streams, header_)),
-    limit_fraction(limit_fraction_),
-    offset_fraction(offset_fraction_),
-    offset(offset_),
-    with_ties(with_ties_),
-    description(std::move(description_))
+    SortDescription description_)
+    : IProcessor(InputPorts(num_streams, header_), OutputPorts(num_streams, header_))
+    , limit_fraction(limit_fraction_)
+    , offset_fraction(offset_fraction_)
+    , offset(offset_)
+    , with_ties(with_ties_)
+    , description(std::move(description_))
 {
     if (num_streams != 1 && with_ties)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot use FractionalLimitTransform with multiple ports and ties");
@@ -67,9 +67,7 @@ Chunk FractionalLimitTransform::makeChunkWithPreviousRow(const Chunk & chunk, UI
 }
 
 
-IProcessor::Status FractionalLimitTransform::prepare(
-        const PortNumbers & updated_input_ports,
-        const PortNumbers & updated_output_ports)
+IProcessor::Status FractionalLimitTransform::prepare(const PortNumbers & updated_input_ports, const PortNumbers & updated_output_ports)
 {
     // Check can we still pull input?
     if (num_finished_input_ports != ports_data.size())
@@ -80,8 +78,7 @@ IProcessor::Status FractionalLimitTransform::prepare(
 
             switch (status)
             {
-                case IProcessor::Status::Finished:
-                {
+                case IProcessor::Status::Finished: {
                     if (ports_data[pos].input_port->isFinished())
                         ++num_finished_input_ports;
                     return;
@@ -90,7 +87,9 @@ IProcessor::Status FractionalLimitTransform::prepare(
                     return;
                 default:
                     throw Exception(
-                        ErrorCodes::LOGICAL_ERROR, "Unexpected status for FractionalLimitTransform::preparePair : {}", IProcessor::statusToName(status));
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Unexpected status for FractionalLimitTransform::preparePair : {}",
+                        IProcessor::statusToName(status));
             }
         };
 
@@ -111,7 +110,7 @@ IProcessor::Status FractionalLimitTransform::prepare(
 
     // If we reached here all input ports are finished.
     // we start pushing cached chunks to output ports.
-    auto status = pushData(); 
+    auto status = pushData();
     if (status != Status::Finished)
         return status;
 
@@ -124,7 +123,7 @@ IProcessor::Status FractionalLimitTransform::prepare(
     return Status::Finished;
 }
 
-FractionalLimitTransform::Status  FractionalLimitTransform::prepare()
+FractionalLimitTransform::Status FractionalLimitTransform::prepare()
 {
     if (ports_data.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "prepare without arguments is not supported for multi-port LimitTransform");
@@ -357,4 +356,3 @@ bool FractionalLimitTransform::sortColumnsEqualAt(const ColumnRawPtrs & current_
 }
 
 }
-

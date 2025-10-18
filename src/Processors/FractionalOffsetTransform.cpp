@@ -8,11 +8,10 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+extern const int LOGICAL_ERROR;
 }
 
-FractionalOffsetTransform::FractionalOffsetTransform(
-    const Block & header_, Float32 fractional_offset_, size_t num_streams)
+FractionalOffsetTransform::FractionalOffsetTransform(const Block & header_, Float32 fractional_offset_, size_t num_streams)
     : IProcessor(InputPorts(num_streams, header_), OutputPorts(num_streams, header_))
     , fractional_offset(fractional_offset_)
 {
@@ -44,8 +43,7 @@ IProcessor::Status FractionalOffsetTransform::prepare(const PortNumbers & update
             auto status = pullData(ports_data[pos]);
             switch (status)
             {
-                case IProcessor::Status::Finished:
-                {
+                case IProcessor::Status::Finished: {
                     ++num_finished_input_ports;
                     return;
                 }
@@ -53,7 +51,9 @@ IProcessor::Status FractionalOffsetTransform::prepare(const PortNumbers & update
                     return;
                 default:
                     throw Exception(
-                        ErrorCodes::LOGICAL_ERROR, "Unexpected status for FractionalLimitTransform::preparePair : {}", IProcessor::statusToName(status));
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Unexpected status for FractionalLimitTransform::preparePair : {}",
+                        IProcessor::statusToName(status));
             }
         };
 
@@ -63,7 +63,7 @@ IProcessor::Status FractionalOffsetTransform::prepare(const PortNumbers & update
         for (auto pos : updated_output_ports)
             process(pos);
 
-        if (num_finished_input_ports != ports_data.size()) 
+        if (num_finished_input_ports != ports_data.size())
             // Inputs available we can still get more
             return Status::NeedData;
 
@@ -73,7 +73,7 @@ IProcessor::Status FractionalOffsetTransform::prepare(const PortNumbers & update
 
     // If we reached here then all input ports are finished.
     // we start pushing cached chunks to output ports.
-    auto status = pushData(); 
+    auto status = pushData();
 
     if (status != Status::Finished)
         return status;
@@ -195,4 +195,3 @@ void FractionalOffsetTransform::splitChunk(Chunk & current_chunk) const
 }
 
 }
-
