@@ -95,10 +95,12 @@ struct ToDateImpl
     {
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
         {
-            if (t < 0)
-                t = 0;
-            else if (t > MAX_DATE_TIMESTAMP)
-                t = MAX_DATE_TIMESTAMP;
+            auto day_num = time_zone.toDayNum(t);
+            if (day_num < 0)
+                return 0;
+            if (day_num > DATE_LUT_MAX_DAY_NUM)
+                return DATE_LUT_MAX_DAY_NUM;
+            return static_cast<UInt16>(day_num);
         }
         else if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
