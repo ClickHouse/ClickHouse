@@ -105,12 +105,12 @@ GroupId CascadesOptimizer::fillMemoFromQueryPlan(OptimizerContext & optimizer_co
     std::optional<GroupId> root_group_id;
     while (node && node->children.size() == 1)
     {
-        auto group_expression = std::make_shared<GroupExpression>(node);
+        auto group_expression = std::make_shared<GroupExpression>(std::move(node->step));
         auto group_id = optimizer_context.memo.addGroup(group_expression);
         if (!root_group_id.has_value())
             root_group_id = group_id;
         if (expression_above_join_graph)
-            expression_above_join_graph->inputs = {group_id};
+            expression_above_join_graph->inputs = {{group_id, {}}};
         expression_above_join_graph = group_expression;
         node = node->children.front();
     }
@@ -126,7 +126,7 @@ GroupId CascadesOptimizer::fillMemoFromQueryPlan(OptimizerContext & optimizer_co
 
     if (expression_above_join_graph)
     {
-        expression_above_join_graph->inputs = {join_graph_group_id};
+        expression_above_join_graph->inputs = {{join_graph_group_id, {}}};
         return root_group_id.value();
     }
     else
@@ -216,8 +216,9 @@ GroupId CascadesOptimizer::populateMemoFromJoinGraph(const JoinGraph & join_grap
     for (JoinGraph::RelationId relation_id = 0; relation_id < relations_count; ++relation_id)
     {
         QueryPlan::Node & relation_node = join_graph.getRelationNode(relation_id);
+        auto header = relation_node.step->getOutputHeader();
         auto relation_group_id = optimizer_context.addGroup(relation_node);
-        join_groups_by_size[1].push_back(GroupInfo{relation_group_id, {relation_id}, relation_node.step->getOutputHeader()});
+        join_groups_by_size[1].push_back(GroupInfo{relation_group_id, {relation_id}, header});
     }
 
     /// Generate groups of all sizes from 2 to number of relations
@@ -253,7 +254,7 @@ GroupId CascadesOptimizer::populateMemoFromJoinGraph(const JoinGraph & join_grap
                         joined_output_columns.insert(column_from_smaller_group);
 
                     auto join_expression = std::make_shared<GroupExpression>(nullptr); // TODO:
-                    join_expression->inputs = {larger_subgroup.group_id, smaller_subgroup.group_id};
+                    join_expression->inputs = {{larger_subgroup.group_id, {}}, {smaller_subgroup.group_id, {}}};
 #if 0
                     {
 
@@ -402,7 +403,7 @@ void CascadesOptimizer::optimize()
 
     /// Add task to optimize root group
     CostLimit initial_cost_limit = std::numeric_limits<Int64>::max();
-    optimizer_context.pushTask(std::make_shared<OptimizeGroupTask>(root_group_id, initial_cost_limit));
+    optimizer_context.pushTask(std::make_shared<OptimizeGroupTask>(root_group_id, ExpressionProperties{}, initial_cost_limit));
 
     /// Limit the time in terms of optimization tasks instead of wall clock time. This is done for stability of generated plans regardless of system load.
     /// Guys from MS SQL Server describe this in Andy Pavlo's seminar: https://www.youtube.com/watch?v=pQe1LQJiXN0
@@ -418,11 +419,13 @@ void CascadesOptimizer::optimize()
     LOG_TRACE(optimizer_context.log, "Executed {} tasks, Memo after:\n{}", executed_tasks_count, optimizer_context.memo.dump());
 
     /// Get the best plan for the root group
-    auto best_plan = buildBestPlan(root_group_id, optimizer_context.memo);
+    auto best_plan = buildBestPlan(root_group_id, {}, optimizer_context.memo);
 
     LOG_TRACE(optimizer_context.log, "Optimized plan:\n{}", dumpQueryPlanShort(*best_plan));
 
     /// Update the original plan in-place because there might be references to the root node of the original plan
+    query_plan.getRootNode()->step = best_plan->getRootNode()->step->clone();   /// We moved original step from the root node, but replaceNodeWithPlan
+                                                                                /// need the replaced node to have a step, so let's put a stub there
     query_plan.replaceNodeWithPlan(query_plan.getRootNode(), std::move(best_plan));
 }
 
@@ -441,10 +444,10 @@ void addConvertingExpression(QueryPlan & plan, const SharedHeader & expected_hea
     }
 }
 
-QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, const Memo & memo)
+QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, ExpressionProperties required_properties, const Memo & memo)
 {
     auto group = memo.getGroup(subtree_root_group_id);
-    auto group_best_expression = group->best_implementation.expression;
+    auto group_best_expression = group->getBestImplementation(required_properties).expression;
     QueryPlanPtr plan_for_group;
     if (group_best_expression->inputs.empty())
     {
@@ -454,8 +457,8 @@ QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, con
     }
     else if (group_best_expression->inputs.size() == 1)
     {
-        auto input_group_id = group_best_expression->inputs.front();
-        auto child_plan = buildBestPlan(input_group_id, memo);
+        const auto & input = group_best_expression->inputs.front();
+        auto child_plan = buildBestPlan(input.group_id, input.required_properties, memo);
         auto step = group_best_expression->getQueryPlanStep()->clone();
         addConvertingExpression(*child_plan, step->getInputHeaders().at(0));
         child_plan->addStep(std::move(step));
@@ -468,14 +471,20 @@ QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, con
         auto step = group_best_expression->getQueryPlanStep()->clone();
         for (size_t i = 0; i < group_best_expression->inputs.size(); ++i)
         {
-            auto input_group_id = group_best_expression->inputs[i];
-            auto input_plan = buildBestPlan(input_group_id, memo);
+            const auto & input = group_best_expression->inputs[i];
+            auto input_plan = buildBestPlan(input.group_id, input.required_properties, memo);
             addConvertingExpression(*input_plan, step->getInputHeaders().at(i));
             input_plans.push_back(std::move(input_plan));
         }
         auto united_plan = std::make_unique<QueryPlan>();
         united_plan->unitePlans(std::move(step), std::move(input_plans));
         plan_for_group = std::move(united_plan);
+    }
+
+    /// Put all property enforcer steps on top
+    for (auto & enforcer_step : group_best_expression->property_enforcer_steps)
+    {
+        plan_for_group->addStep(std::move(enforcer_step));
     }
 
     plan_for_group->getRootNode()->cost_estimation = CostEstimationInfo

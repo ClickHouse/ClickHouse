@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Cost.h>
 #include <IO/WriteBuffer.h>
 #include <base/types.h>
+#include "Processors/QueryPlan/Optimizations/Cascades/Properties.h"
 #include <memory>
 #include <vector>
 
@@ -32,13 +33,17 @@ public:
     void addPhysicalExpression(GroupExpressionPtr group_expression);
     bool isExplored() const { return is_explored; }
     void setExplored() { is_explored = true; }
+    void updateBestImplementation(GroupExpressionPtr expression);
+    ExpressionWithCost getBestImplementation(const ExpressionProperties & required_properties) const;
 
     void dump(WriteBuffer & out, String indent = {}) const;
     String dump() const;
 
     std::vector<GroupExpressionPtr> logical_expressions;
     std::vector<GroupExpressionPtr> physical_expressions;
-    ExpressionWithCost best_implementation;
+
+    /// Best implementation for various required properties 
+    std::set<GroupExpressionPtr> best_implementations;
 
 private:
     const GroupId group_id;

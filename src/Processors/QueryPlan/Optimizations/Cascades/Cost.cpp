@@ -31,8 +31,10 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
     IQueryPlanStep * expression_plan_step = expression->getQueryPlanStep();
     if (const auto * join_step = typeid_cast<JoinStepLogical *>(expression_plan_step))
     {
-        auto left_best_implementation = memo.getGroup(expression->inputs[0])->best_implementation.expression;
-        auto right_best_implementation = memo.getGroup(expression->inputs[1])->best_implementation.expression;
+        const auto & left_input = expression->inputs[0];
+        const auto & right_input = expression->inputs[1];
+        auto left_best_implementation = memo.getGroup(left_input.group_id)->getBestImplementation(left_input.required_properties).expression;
+        auto right_best_implementation = memo.getGroup(right_input.group_id)->getBestImplementation(right_input.required_properties).expression;
         total_cost = estimateHashJoinCost(*join_step, *expression->statistics, *left_best_implementation->statistics, *right_best_implementation->statistics);
     }
     else if (const auto * read_step = typeid_cast<ReadFromMergeTree *>(expression_plan_step))
@@ -41,13 +43,18 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
     }
     else if (typeid_cast<FilterStep *>(expression_plan_step))
     {
-        auto input_group = memo.getGroup(expression->inputs[0]);
-        total_cost.subtree_cost = 0.1 * input_group->best_implementation.expression->statistics->estimated_row_count;
+        auto input_group = memo.getGroup(expression->inputs[0].group_id);
+        total_cost.subtree_cost = 0.1 * input_group->getBestImplementation(expression->inputs[0].required_properties).expression->statistics->estimated_row_count;
     }
     else if (typeid_cast<ExpressionStep *>(expression_plan_step))
     {
-        auto input_group = memo.getGroup(expression->inputs[0]);
-        total_cost.subtree_cost = 0.1 * input_group->best_implementation.expression->statistics->estimated_row_count;
+        auto input_group = memo.getGroup(expression->inputs[0].group_id);
+        total_cost.subtree_cost = 0.1 * input_group->getBestImplementation(expression->inputs[0].required_properties).expression->statistics->estimated_row_count;
+    }
+    else if (const auto * aggregating_step = typeid_cast<AggregatingStep *>(expression_plan_step))
+    {
+        auto input_group = memo.getGroup(expression->inputs[0].group_id);
+        total_cost = estimateAggregationCost(*aggregating_step, *expression->statistics, *input_group->getBestImplementation(expression->inputs[0].required_properties).expression->statistics);
     }
     else
     {
@@ -59,9 +66,9 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
     }
 
     /// Add costs of all inputs
-    for (auto input_group_id : expression->inputs)
+    for (const auto & input : expression->inputs)
     {
-        const auto & input_group_cost = memo.getGroup(input_group_id)->best_implementation.cost;
+        const auto & input_group_cost = memo.getGroup(input.group_id)->getBestImplementation(input.required_properties).cost;
         total_cost.subtree_cost += input_group_cost.subtree_cost;
     }
 
@@ -69,16 +76,40 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
 }
 
 ExpressionCost CostEstimator::estimateHashJoinCost(
-    const JoinStepLogical & /*join_step*/,
+    const JoinStepLogical & join_step,
         const ExpressionStatistics & this_step_statistics,
         const ExpressionStatistics & left_statistics,
         const ExpressionStatistics & right_statistics)
 {
+    /// TODO: better way to distinguish between implementations: maybe differrent step types?
+    const bool is_broadcast = join_step.getStepDescription().contains("Broadcast");
+    const bool is_shuffle = join_step.getStepDescription().contains("Shuffle");
+
     ExpressionCost join_cost;
-    join_cost.subtree_cost =
-        left_statistics.estimated_row_count +           /// Scan of left table
-        2.0 * right_statistics.estimated_row_count +    /// Right table contributes more because we build hash table from it
-        this_step_statistics.estimated_row_count;       /// Number of output rows
+    join_cost.subtree_cost = this_step_statistics.estimated_row_count;       /// Number of output rows
+
+    const size_t node_count = 4;
+
+    if (is_broadcast)
+    {
+        /// Add the cost of sending right table
+        join_cost.subtree_cost += right_statistics.estimated_row_count * node_count;
+        /// Add the cost of memory consumed by right table
+        join_cost.subtree_cost += right_statistics.estimated_row_count * node_count;
+    }
+    else if (is_shuffle)
+    {
+        /// Add the cost of sending right table
+        join_cost.subtree_cost += right_statistics.estimated_row_count;
+        /// Add the cost of sending left table
+        join_cost.subtree_cost += left_statistics.estimated_row_count;
+    }
+    else
+    {
+        join_cost.subtree_cost +=
+            left_statistics.estimated_row_count +           /// Scan of left table
+            2.0 * right_statistics.estimated_row_count;     /// Right table contributes more because we build hash table from it
+    }
 
     return join_cost;
 }
@@ -90,6 +121,37 @@ ExpressionCost CostEstimator::estimateReadCost(const ReadFromMergeTree & /*read_
     };
 }
 
+ExpressionCost CostEstimator::estimateAggregationCost(
+    const AggregatingStep & aggregating_step,
+    const ExpressionStatistics & this_step_statistics,
+    const ExpressionStatistics & input_statistics)
+{
+    const bool is_local = aggregating_step.getStepDescription().contains("Local");
+    const bool is_shuffle = aggregating_step.getStepDescription().contains("Shuffle");
+    const bool is_partial = aggregating_step.getStepDescription().contains("Partial");
+
+    ExpressionCost aggregation_cost;
+
+    const size_t node_count = 4;
+
+    if (is_local)
+    {
+        aggregation_cost.subtree_cost += this_step_statistics.estimated_row_count;
+    }
+    else if (is_shuffle)
+    {
+        aggregation_cost.subtree_cost +=
+            this_step_statistics.estimated_row_count / node_count +
+            input_statistics.estimated_row_count / node_count;
+    }
+    else if (is_partial)
+    {
+        aggregation_cost.subtree_cost += input_statistics.estimated_row_count;
+    }
+
+    return aggregation_cost;
+}
+
 void CostEstimator::fillStatistics(GroupExpressionPtr expression)
 {
     if (expression->statistics.has_value())
@@ -98,8 +160,10 @@ void CostEstimator::fillStatistics(GroupExpressionPtr expression)
     IQueryPlanStep * expression_plan_step = expression->getQueryPlanStep();
     if (const auto * join_step = typeid_cast<JoinStepLogical *>(expression_plan_step))
     {
-        auto left_best_implementation = memo.getGroup(expression->inputs[0])->best_implementation.expression;
-        auto right_best_implementation = memo.getGroup(expression->inputs[1])->best_implementation.expression;
+        const auto & left_input = expression->inputs[0];
+        const auto & right_input = expression->inputs[1];
+        auto left_best_implementation = memo.getGroup(left_input.group_id)->getBestImplementation(left_input.required_properties).expression;
+        auto right_best_implementation = memo.getGroup(right_input.group_id)->getBestImplementation(right_input.required_properties).expression;
         fillStatistics(left_best_implementation);
         fillStatistics(right_best_implementation);
         expression->statistics = fillJoinStatistics(*join_step, *left_best_implementation->statistics, *right_best_implementation->statistics);
@@ -110,26 +174,26 @@ void CostEstimator::fillStatistics(GroupExpressionPtr expression)
     }
     else if (const auto * filter_step = typeid_cast<FilterStep *>(expression_plan_step))
     {
-        auto input_best_implementation = memo.getGroup(expression->inputs[0])->best_implementation.expression;
+        auto input_best_implementation = memo.getGroup(expression->inputs[0].group_id)->getBestImplementation(expression->inputs[0].required_properties).expression;
         fillStatistics(input_best_implementation);
         expression->statistics = fillFilterStatistics(*filter_step, *input_best_implementation->statistics);
     }
     else if (const auto * expression_step = typeid_cast<ExpressionStep *>(expression_plan_step))
     {
-        auto input_best_implementation = memo.getGroup(expression->inputs[0])->best_implementation.expression;
+        auto input_best_implementation = memo.getGroup(expression->inputs[0].group_id)->getBestImplementation(expression->inputs[0].required_properties).expression;
         fillStatistics(input_best_implementation);
         expression->statistics = fillExpressionStatistics(*expression_step, *input_best_implementation->statistics);
     }
     else if (const auto * aggregating_step = typeid_cast<AggregatingStep *>(expression_plan_step))
     {
-        auto input_best_implementation = memo.getGroup(expression->inputs[0])->best_implementation.expression;
+        auto input_best_implementation = memo.getGroup(expression->inputs[0].group_id)->getBestImplementation(expression->inputs[0].required_properties).expression;
         fillStatistics(input_best_implementation);
         expression->statistics = fillAggregatingStatistics(*aggregating_step, *input_best_implementation->statistics);
     }
     else if (!expression->inputs.empty())
     {
         /// By default take statistics from the first input
-        auto input_best_implementation = memo.getGroup(expression->inputs[0])->best_implementation.expression;
+        auto input_best_implementation = memo.getGroup(expression->inputs[0].group_id)->getBestImplementation(expression->inputs[0].required_properties).expression;
         fillStatistics(input_best_implementation);
         expression->statistics = *input_best_implementation->statistics;
     }
@@ -138,7 +202,8 @@ void CostEstimator::fillStatistics(GroupExpressionPtr expression)
         expression->statistics = ExpressionStatistics();
     }
 
-    LOG_TRACE(log, "Statistics for {}:\n{}", expression->getDescription(), expression->statistics->dump());
+    LOG_TRACE(log, "Statistics for group #{} expression {}:\n{}",
+        expression->group_id, expression->getDescription(), expression->statistics->dump());
 }
 
 ExpressionStatistics CostEstimator::fillJoinStatistics(const JoinStepLogical & join_step, const ExpressionStatistics & left_statistics, const ExpressionStatistics &right_statistics)

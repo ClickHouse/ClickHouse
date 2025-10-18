@@ -44,7 +44,13 @@ private:
         const ExpressionStatistics & this_step_statistics,
         const ExpressionStatistics & left_statistics,
         const ExpressionStatistics & right_statistics);
+
     ExpressionCost estimateReadCost(const ReadFromMergeTree & read_step, const ExpressionStatistics & this_step_statistics);
+
+    ExpressionCost estimateAggregationCost(
+        const AggregatingStep & aggregating_step,
+        const ExpressionStatistics & this_step_statistics,
+        const ExpressionStatistics & input_statistics);
 
     void fillStatistics(GroupExpressionPtr expression);
     ExpressionStatistics fillJoinStatistics(const JoinStepLogical & join_step, const ExpressionStatistics & left_statistics, const ExpressionStatistics &right_statistics);
