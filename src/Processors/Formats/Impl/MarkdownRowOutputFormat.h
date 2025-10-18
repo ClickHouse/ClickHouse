@@ -15,6 +15,8 @@ public:
 
     String getName() const override { return "MarkdownRowOutputFormat"; }
 
+    bool supportsSpecialSerializationKinds() const override { return true; }
+
 private:
     /// Write higher part of markdown table like this:
     /// |columnName1|columnName2|...|columnNameN|

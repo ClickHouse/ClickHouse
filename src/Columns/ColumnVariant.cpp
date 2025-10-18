@@ -1204,7 +1204,7 @@ ColumnPtr ColumnVariant::replicate(const Offsets & replicate_offsets) const
     return ColumnVariant::create(new_local_discriminators, new_variants, local_to_global_discriminators);
 }
 
-MutableColumns ColumnVariant::scatter(ColumnIndex num_columns, const Selector & selector) const
+MutableColumns ColumnVariant::scatter(size_t num_columns, const Selector & selector) const
 {
     const size_t num_variants = variants.size();
 

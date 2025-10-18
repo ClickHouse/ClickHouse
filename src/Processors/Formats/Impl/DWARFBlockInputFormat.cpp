@@ -11,6 +11,7 @@
 #include <Common/logger_useful.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnIndex.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnUnique.h>
@@ -388,7 +389,7 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
     auto col_ancestor_array_offsets = ColumnVector<UInt64>::create();
     auto col_name = ColumnString::create();
     auto col_linkage_name = ColumnString::create();
-    ColumnLowCardinality::Index col_decl_file;
+    ColumnIndex col_decl_file;
     auto col_decl_line = ColumnVector<UInt32>::create();
     auto col_ranges_start = ColumnVector<UInt64>::create();
     auto col_ranges_end = ColumnVector<UInt64>::create();
@@ -433,7 +434,7 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
 
             if (need[COL_NAME]) col_name->insertDefault();
             if (need[COL_LINKAGE_NAME]) col_linkage_name->insertDefault();
-            if (need[COL_DECL_FILE]) col_decl_file.insertPosition(0);
+            if (need[COL_DECL_FILE]) col_decl_file.insertIndex(0);
             if (need[COL_DECL_LINE]) col_decl_line->insertDefault();
             if (need[COL_RANGES]) col_ranges_offsets->insertValue(col_ranges_start->size());
             if (need[COL_ATTR_NAME]) col_attr_offsets->insertValue(col_attr_name->size());
@@ -556,7 +557,7 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
                         {
                             UInt64 idx = val.getRawUValue() + 1;
                             if (attr.Attr == llvm::dwarf::DW_AT_decl_file && std::exchange(need_decl_file, false))
-                                col_decl_file.insertPosition(idx);
+                                col_decl_file.insertIndex(idx);
 
                             if (need[COL_ATTR_STR])
                             {
@@ -693,7 +694,7 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
 
             if (need_name) col_name->insertDefault();
             if (need_linkage_name) col_linkage_name->insertDefault();
-            if (need_decl_file) col_decl_file.insertPosition(0);
+            if (need_decl_file) col_decl_file.insertIndex(0);
             if (need_decl_line) col_decl_line->insertDefault();
 
             if (need_ranges)
@@ -782,7 +783,7 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
                 cols.push_back(std::exchange(col_linkage_name, nullptr));
                 break;
             case COL_DECL_FILE:
-                cols.push_back(ColumnLowCardinality::create(unit.filename_table, col_decl_file.detachPositions(), /*is_shared*/ true));
+                cols.push_back(ColumnLowCardinality::create(unit.filename_table, col_decl_file.detachIndexes(), /*is_shared*/ true));
                 break;
             case COL_DECL_LINE:
                 cols.push_back(std::exchange(col_decl_line, nullptr));

@@ -924,4 +924,10 @@ ColumnPtr recursiveRemoveSparse(const ColumnPtr & column)
     return column->convertToFullColumnIfSparse();
 }
 
+ColumnPtr removeSpecialRepresentations(const ColumnPtr & column)
+{
+    /// We can have only Replicated(Sparse) but not Sparse(Replicated).
+    return recursiveRemoveSparse(column->convertToFullColumnIfReplicated());
+}
+
 }

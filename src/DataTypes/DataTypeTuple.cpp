@@ -2,6 +2,7 @@
 #include <Common/StringUtils.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnReplicated.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
@@ -390,6 +391,17 @@ SerializationInfoPtr DataTypeTuple::getSerializationInfo(const IColumn & column)
 {
     if (const auto * column_const = checkAndGetColumn<ColumnConst>(&column))
         return getSerializationInfo(column_const->getDataColumn());
+    return getSerializationInfoImpl(column);
+}
+
+SerializationInfoMutablePtr DataTypeTuple::getSerializationInfoImpl(const IColumn & column) const
+{
+    if (const auto * column_replicated = checkAndGetColumn<ColumnReplicated>(&column))
+    {
+        auto info = getSerializationInfoImpl(*column_replicated->getNestedColumn());
+        info->appendToKindStack(ISerialization::Kind::REPLICATED);
+        return info;
+    }
 
     MutableSerializationInfos infos;
     infos.reserve(elems.size());
@@ -405,6 +417,7 @@ SerializationInfoPtr DataTypeTuple::getSerializationInfo(const IColumn & column)
 
     return std::make_shared<SerializationInfoTuple>(std::move(infos), names);
 }
+
 
 void DataTypeTuple::forEachChild(const ChildCallback & callback) const
 {

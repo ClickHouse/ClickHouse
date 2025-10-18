@@ -179,6 +179,7 @@ namespace Setting
     extern const SettingsString promql_database;
     extern const SettingsString promql_table;
     extern const SettingsFloatAuto promql_evaluation_time;
+    extern const SettingsBool allow_special_serialization_kinds_in_output_formats;
 }
 
 namespace ServerSetting
@@ -1434,7 +1435,7 @@ static BlockIO executeQueryImpl(
                     auto timeout = settings[Setting::wait_for_async_insert_timeout].totalMilliseconds();
                     auto source = std::make_shared<WaitForAsyncInsertSource>(std::move(result.future), timeout);
                     res.pipeline = QueryPipeline(Pipe(std::move(source)));
-                    res.pipeline.complete(std::make_shared<NullOutputFormat>(std::make_shared<const Block>(Block())));
+                    res.pipeline.complete(std::make_shared<NullOutputFormat>(std::make_shared<const Block>(Block())), settings[Setting::allow_special_serialization_kinds_in_output_formats]);
                 }
 
                 const auto & table_id = insert_query->table_id;
@@ -2082,7 +2083,7 @@ void executeQuery(
             result_details.content_type = FormatFactory::instance().getContentType(format_name, output_format_settings);
             result_details.format = format_name;
 
-            pipeline.complete(output_format);
+            pipeline.complete(output_format, context->getSettingsRef()[Setting::allow_special_serialization_kinds_in_output_formats]);
         }
         else
         {

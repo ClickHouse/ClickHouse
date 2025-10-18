@@ -100,7 +100,7 @@ Columns DirectDictionary<dictionary_key_type>::getColumns(
 
         ++block_num;
         rows_num += block.rows();
-        convertToFullIfSparse(block);
+        removeSpecialColumnRepresentations(block);
 
         /// Split into keys columns and attribute columns
         for (size_t i = 0; i < dictionary_keys_size; ++i)

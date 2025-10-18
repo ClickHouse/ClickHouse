@@ -64,6 +64,8 @@ protected:
 
     bool haveWrittenData() { return !first_row || getRowsReadBefore() != 0; }
 
+    void updateSerializationsIfNeeded(const Columns & columns);
+
     size_t num_columns;
     DataTypes types;
     Serializations serializations;

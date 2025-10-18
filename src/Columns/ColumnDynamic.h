@@ -235,7 +235,7 @@ public:
         return create(variant_column_ptr->replicate(replicate_offsets), variant_info, max_dynamic_types, global_max_dynamic_types);
     }
 
-    MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override
+    MutableColumns scatter(size_t num_columns, const Selector & selector) const override
     {
         MutableColumns scattered_variant_columns = variant_column_ptr->scatter(num_columns, selector);
         MutableColumns scattered_columns;

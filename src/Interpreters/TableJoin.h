@@ -163,6 +163,7 @@ private:
     const size_t sort_right_maximum_table_rows = 0;
     const bool allow_join_sorting = false;
     const bool allow_dynamic_type_in_join_keys = false;
+    const bool enable_lazy_columns_replication = false;
 
     /// Value if setting max_memory_usage for query, can be used when max_bytes_in_join is not specified.
     size_t max_memory_usage = 0;
@@ -319,6 +320,7 @@ public:
     size_t maxFilesToMerge() const { return max_files_to_merge; }
     const String & temporaryFilesCodec() const { return temporary_files_codec; }
     bool needStreamWithNonJoinedRows() const;
+    bool enableColumnsLazyReplication() const { return enable_lazy_columns_replication; }
 
     bool oneDisjunct() const;
 
