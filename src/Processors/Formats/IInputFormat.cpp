@@ -83,7 +83,9 @@ void IInputFormat::onFinish()
 
 FileBucketInfoFactory::FileBucketInfoFactory()
 {
+#if USE_PARQUET
     registerParquetFileBucketInfo(instances);
+#endif
     Int32 total_count = 0;
     for (const auto & [format_name, _] : instances)
     {
