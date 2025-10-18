@@ -50,6 +50,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"join_runtime_filter_exact_values_limit", 10000, 10000, "New setting"},
             {"join_runtime_bloom_filter_bytes", 512_KiB, 512_KiB, "New setting"},
             {"join_runtime_bloom_filter_hash_functions", 3, 3, "New setting"},
+            {"enable_cascades_optimizer", false, false, "New experimental setting."},
             {"use_join_disjunctions_push_down", false, false, "New setting."},
             {"joined_block_split_single_row", false, false, "New setting"},
             {"rewrite_in_to_join", false, false, "New experimental setting"},
