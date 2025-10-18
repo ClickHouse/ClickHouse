@@ -24,7 +24,7 @@ public:
         MergeTreeReaderSettings reader_settings_,
         LoggerPtr log_);
 
-    SkipIndexReadResultPtr read(const RangesInDataPart & part);
+    SkipIndexReadResultPtr read(const RangesInDataPart & part, const StorageMetadataPtr & metadata_snapshot, const NameSet & all_updated_columns);
 
     void cancel() noexcept { is_cancelled = true; }
 
@@ -84,7 +84,7 @@ public:
     /// another thread, waits for its result. Throws if the builder fails.
     ///
     /// This map uses raw pointer of data part as key because it is unique and stable for the lifetime of the part.
-    MergeTreeIndexReadResultPtr getOrBuildIndexReadResult(const RangesInDataPart & part);
+    MergeTreeIndexReadResultPtr getOrBuildIndexReadResult(const RangesInDataPart & part, const StorageMetadataPtr & metadata_snapshot, const NameSet & all_updated_columns);
 
     /// Cleans up the cached MergeTreeIndexReadResult for a given part if it exists.
     /// Should be called when the last task for the part has finished.

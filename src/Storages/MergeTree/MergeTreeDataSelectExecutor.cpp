@@ -648,6 +648,44 @@ void MergeTreeDataSelectExecutor::filterPartsByPartition(
     }
 }
 
+std::expected<void, PreformattedMessage> MergeTreeDataSelectExecutor::canUseIndex(
+    const MergeTreeIndexPtr & index,
+    const StorageMetadataPtr & metadata_snapshot,
+    const NameSet & all_updated_columns)
+{
+    if (all_updated_columns.empty())
+        return {};
+
+    auto options = GetColumnsOptions(GetColumnsOptions::Kind::All).withSubcolumns();
+    auto required_columns_names = index ->getColumnsRequiredForIndexCalc();
+    auto required_columns_list = metadata_snapshot->getColumns().getByNames(options, required_columns_names);
+
+    auto it = std::ranges::find_if(required_columns_list, [&](const auto & column)
+    {
+        return all_updated_columns.contains(column.getNameInStorage());
+    });
+
+    if (it == required_columns_list.end())
+        return {};
+
+    return std::unexpected(PreformattedMessage::create(
+        "Index {} depends on column {} which will be updated on fly",
+        index->index.name, it->getNameInStorage()));
+}
+
+std::expected<void, PreformattedMessage> MergeTreeDataSelectExecutor::canUsedMergedIndex(
+    const std::vector<MergeTreeIndexPtr> & indices,
+    const StorageMetadataPtr & metadata_snapshot,
+    const NameSet & all_updated_columns)
+{
+    for (const auto & index : indices)
+    {
+        if (auto result = canUseIndex(index, metadata_snapshot, all_updated_columns); !result)
+            return result;
+    }
+    return {};
+}
+
 RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(
     RangesInDataParts parts_with_ranges,
     StorageMetadataPtr metadata_snapshot,
@@ -803,40 +841,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             {
                 CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithSecondaryKeys);
                 auto alter_conversions = MergeTreeData::getAlterConversionsForPart(ranges.data_part, mutations_snapshot, context);
-                const auto & all_updated_columns = alter_conversions->getAllUpdatedColumns();
-
-                auto can_use_index = [&](const MergeTreeIndexPtr & index) -> std::expected<void, PreformattedMessage>
-                {
-                    if (all_updated_columns.empty())
-                        return {};
-
-                    auto options = GetColumnsOptions(GetColumnsOptions::Kind::All).withSubcolumns();
-                    auto required_columns_names = index ->getColumnsRequiredForIndexCalc();
-                    auto required_columns_list = metadata_snapshot->getColumns().getByNames(options, required_columns_names);
-
-                    auto it = std::ranges::find_if(required_columns_list, [&](const auto & column)
-                    {
-                        return all_updated_columns.contains(column.getNameInStorage());
-                    });
-
-                    if (it == required_columns_list.end())
-                        return {};
-
-                    return std::unexpected(PreformattedMessage::create(
-                        "Index {} is not used for part {} because it depends on column {} which will be updated on fly",
-                        index->index.name, index->index.name, it->getNameInStorage()));
-                };
-
-                auto can_use_merged_index = [&](const std::vector<MergeTreeIndexPtr> & indices) -> std::expected<void, PreformattedMessage>
-                {
-                    for (const auto & index : indices)
-                    {
-                        if (auto result = can_use_index(index); !result)
-                            return result;
-                    }
-                    return {};
-                };
-
                 const auto num_indexes = skip_indexes.useful_indices.size();
 
                 for (size_t idx = 0; idx < num_indexes; ++idx)
@@ -859,9 +863,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     size_t total_granules = ranges.ranges.getNumberOfMarks();
                     stat.total_granules.fetch_add(total_granules, std::memory_order_relaxed);
 
-                    if (auto result = can_use_index(index_and_condition.index); !result)
+                    if (auto result = canUseIndex(index_and_condition.index, metadata_snapshot, alter_conversions->getAllUpdatedColumns()); !result)
                     {
-                        LOG_TRACE(log, "{}", result.error().text);
+                        LOG_TRACE(log, "Cannot use skip index for part {}. Reason: {}", ranges.data_part->name, result.error().text);
                         continue;
                     }
 
@@ -898,9 +902,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     auto & stat = merged_indices_stat[idx];
                     stat.total_parts.fetch_add(1, std::memory_order_relaxed);
 
-                    if (auto result = can_use_merged_index(indices_and_condition.indices); !result)
+                    if (auto result = canUsedMergedIndex(indices_and_condition.indices, metadata_snapshot, alter_conversions->getAllUpdatedColumns()); !result)
                     {
-                        LOG_TRACE(log, "{}", result.error().text);
+                        LOG_TRACE(log, "Cannot use merged skip index for part {}. Reason: {}", ranges.data_part->name, result.error().text);
                         continue;
                     }
 

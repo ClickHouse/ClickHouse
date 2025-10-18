@@ -5,6 +5,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
+#include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Common/logger_useful.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <base/defines.h>
@@ -251,6 +252,12 @@ void optimizeDirectReadFromTextIndex(const Stack & stack, QueryPlan::Nodes & /*n
         unique_parts.insert(part.data_part);
 
     IndexToConditionMap index_conditions;
+    auto logger = getLogger("optimizeDirectReadFromTextIndex");
+
+    auto metadata_snapshot = read_from_merge_tree_step->getStorageSnapshot()->metadata;
+    auto mutations_snapshot = read_from_merge_tree_step->getMutationsSnapshot();
+    const auto & all_updated_columns = mutations_snapshot->getAllUpdatedColumns();
+
     for (const auto & index : indexes->skip_indexes.useful_indices)
     {
         if (auto * text_index_condition = typeid_cast<MergeTreeIndexConditionText *>(index.condition.get()))
@@ -263,8 +270,19 @@ void optimizeDirectReadFromTextIndex(const Stack & stack, QueryPlan::Nodes & /*n
                 return !!index.index->getDeserializedFormat(part->getDataPartStorage(), index.index->getFileName());
             });
 
-            if (has_index_in_all_parts)
-                index_conditions[index.index->index.name] = text_index_condition;
+            if (!has_index_in_all_parts)
+            {
+                LOG_TRACE(logger, "Cannot use direct reading from text index {} because it is not materialized in all parts", index.index->index.name);
+                continue;
+            }
+
+            if (auto result = MergeTreeDataSelectExecutor::canUseIndex(index.index, metadata_snapshot, all_updated_columns); !result)
+            {
+                LOG_TRACE(logger, "Cannot use direct reading from text index. Reason: {}", result.error().text);
+                continue;
+            }
+
+            index_conditions[index.index->index.name] = text_index_condition;
         }
     }
 
@@ -285,11 +303,8 @@ void optimizeDirectReadFromTextIndex(const Stack & stack, QueryPlan::Nodes & /*n
     if (added_columns.empty())
         return;
 
-    auto logger = getLogger("optimizeDirectReadFromTextIndex");
     LOG_DEBUG(logger, "{}", optimizationInfoToString(added_columns, removed_columns));
-
     read_from_merge_tree_step->createReadTasksForTextIndex(indexes->skip_indexes, added_columns, removed_columns);
-
     bool removes_filter_column = filter_step->removesFilterColumn();
 
     /// The original node (pointer address) should be preserved in the DAG outputs because we replace in-place.
