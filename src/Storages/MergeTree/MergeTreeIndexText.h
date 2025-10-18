@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Columns/IColumn.h>
+#include <Common/LRUResourceCache.h>
 #include <Common/Logger.h>
 #include <Formats/MarkInCompressedFile.h>
 #include <Common/HashTable/HashMap.h>
@@ -173,9 +174,7 @@ struct DictionaryBlockBase
     bool empty() const;
     size_t size() const;
 
-    size_t lowerBound(const StringRef & token) const;
     size_t upperBound(const StringRef & token) const;
-    std::optional<size_t> binarySearch(const StringRef & token) const;
 };
 
 struct DictionarySparseIndex : public DictionaryBlockBase
@@ -185,6 +184,18 @@ struct DictionarySparseIndex : public DictionaryBlockBase
     UInt64 getOffsetInFile(size_t idx) const;
 
     ColumnPtr offsets_in_file;
+};
+
+class ImmutableDictionaryBlock
+{
+public:
+    ImmutableDictionaryBlock() = default;
+    ImmutableDictionaryBlock(ColumnPtr tokens_, std::vector<TokenPostingsInfo> token_infos_);
+
+    TokenPostingsInfo * getTokenInfo(const StringRef & token);
+
+private:
+    absl::flat_hash_map<String, TokenPostingsInfo> token_infos;
 };
 
 struct DictionaryBlock : public DictionaryBlockBase
@@ -232,6 +243,8 @@ private:
     DictionarySparseIndex sparse_index;
     /// Tokens that are in the index granule after analysis.
     TokenToPostingsInfosMap remaining_tokens;
+
+    DB::LRUResourceCache<UInt64, ImmutableDictionaryBlock> block_cache;
 };
 
 /// Save BulkContext to optimize consecutive insertions into the posting list.
