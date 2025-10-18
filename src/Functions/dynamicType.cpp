@@ -152,20 +152,23 @@ REGISTER_FUNCTION(DynamicType)
     FunctionDocumentation::Description dynamicType_description = R"(
 Returns the variant type name for each row of a `Dynamic` column.
 
-For rows containing NULL, the function returns 'None'. For all other rows, it returns the actual data type 
+For rows containing NULL, the function returns 'None'. For all other rows, it returns the actual data type
 stored in that row of the Dynamic column (e.g., 'Int64', 'String', 'Array(Int64)').
 )";
     FunctionDocumentation::Syntax dynamicType_syntax = "dynamicType(dynamic)";
-    FunctionDocumentation::Arguments dynamicType_arguments = {
+    FunctionDocumentation::Arguments dynamicType_arguments =
+    {
         {"dynamic", "Dynamic column to inspect.", {"Dynamic"}}
     };
-    FunctionDocumentation::ReturnedValue dynamicType_returned_value = {
-        "Returns the type name of the value stored in each row, or 'None' for NULL values.", 
+    FunctionDocumentation::ReturnedValue dynamicType_returned_value =
+    {
+        "Returns the type name of the value stored in each row, or 'None' for NULL values.",
         {"String"}
     };
-    FunctionDocumentation::Examples dynamicType_examples = {
+    FunctionDocumentation::Examples dynamicType_examples =
     {
-        "Inspecting types in Dynamic column", 
+    {
+        "Inspecting types in Dynamic column",
         R"(
 CREATE TABLE test (d Dynamic) ENGINE = Memory;
 INSERT INTO test VALUES (NULL), (42), ('Hello, World!'), ([1, 2, 3]);
@@ -190,20 +193,23 @@ SELECT d, dynamicType(d) FROM test;
     FunctionDocumentation::Description isDynamicElementInSharedData_description = R"(
 Returns true for rows in a Dynamic column that are stored in shared variant format rather than as separate subcolumns.
 
-When a Dynamic column has a `max_types` limit, values that exceed this limit are stored in a shared binary format 
+When a Dynamic column has a `max_types` limit, values that exceed this limit are stored in a shared binary format
 instead of being separated into individual typed subcolumns. This function identifies which rows are stored in this shared format.
     )";
     FunctionDocumentation::Syntax isDynamicElementInSharedData_syntax = "isDynamicElementInSharedData(dynamic)";
-    FunctionDocumentation::Arguments isDynamicElementInSharedData_arguments = {
+    FunctionDocumentation::Arguments isDynamicElementInSharedData_arguments =
+    {
         {"dynamic", "Dynamic column to inspect.", {"Dynamic"}}
     };
-    FunctionDocumentation::ReturnedValue isDynamicElementInSharedData_returned_value = {
-        "Returns true if the value is stored in shared variant format, false if stored as a separate subcolumn or is NULL.", 
+    FunctionDocumentation::ReturnedValue isDynamicElementInSharedData_returned_value =
+    {
+        "Returns true if the value is stored in shared variant format, false if stored as a separate subcolumn or is NULL.",
         {"Bool"}
     };
-    FunctionDocumentation::Examples isDynamicElementInSharedData_examples = {
+    FunctionDocumentation::Examples isDynamicElementInSharedData_examples =
     {
-        "Checking storage format in Dynamic column with max_types limit", 
+    {
+        "Checking storage format in Dynamic column with max_types limit",
         R"(
 CREATE TABLE test (d Dynamic(max_types=2)) ENGINE = Memory;
 INSERT INTO test VALUES (NULL), (42), ('Hello, World!'), ([1, 2, 3]);
@@ -224,7 +230,6 @@ SELECT d, isDynamicElementInSharedData(d) FROM test;
     FunctionDocumentation isDynamicElementInSharedData_documentation = {isDynamicElementInSharedData_description, isDynamicElementInSharedData_syntax, isDynamicElementInSharedData_arguments, isDynamicElementInSharedData_returned_value, isDynamicElementInSharedData_examples, isDynamicElementInSharedData_introduced_in, isDynamicElementInSharedData_category};
 
     factory.registerFunction<FunctionIsDynamicElementInSharedData>(isDynamicElementInSharedData_documentation);
-    });
 }
 
 }

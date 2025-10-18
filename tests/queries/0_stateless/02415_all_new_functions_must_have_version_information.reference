@@ -66,8 +66,6 @@ dictGetUUIDOrDefault
 dictHas
 dictIsIn
 dotProduct
-dynamicElement
-dynamicType
 evalMLMethod
 extractKeyValuePairs
 extractKeyValuePairsWithEscaping
@@ -98,7 +96,6 @@ hasTokenCaseInsensitiveOrNull
 ilike
 in
 inIgnoreSet
-isDynamicElementInSharedData
 like
 moduloLegacy
 multiFuzzyMatchAllIndices
