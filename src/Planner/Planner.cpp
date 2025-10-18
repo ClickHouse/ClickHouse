@@ -1431,7 +1431,7 @@ void addExtremesStepIfNeeded(QueryPlan & query_plan, const PlannerContextPtr & p
 void addOffsetStep(QueryPlan & query_plan, const QueryAnalysisResult & query_analysis_result)
 {
     /// If there is a LIMIT or there is no OFFSET
-    if (!(query_analysis_result.limit_length && query_analysis_result.fractional_limit > 0)
+    if (!query_analysis_result.limit_length && query_analysis_result.fractional_limit == 0
         && (query_analysis_result.limit_offset || query_analysis_result.fractional_offset > 0))
     {
         // only one of limit_offset or fractional_offset will have a value
@@ -1452,7 +1452,6 @@ void addOffsetStep(QueryPlan & query_plan, const QueryAnalysisResult & query_ana
             auto fractional_offset_step
                 = std::make_unique<FractionalOffsetStep>(query_plan.getCurrentHeader(), query_analysis_result.fractional_offset);
             query_plan.addStep(std::move(fractional_offset_step));
-            return;
         }
     }
 }
