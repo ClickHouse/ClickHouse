@@ -3471,7 +3471,7 @@ void InterpreterSelectQuery::executeOffset(QueryPlan & query_plan)
             auto offsets_step = std::make_unique<NegativeOffsetStep>(query_plan.getCurrentHeader(), lim_info.limit_offset);
             query_plan.addStep(std::move(offsets_step));
         }
-        else if (lim_info.limit_length) [[likely]]
+        else if (lim_info.limit_offset) [[likely]]
         {
             auto offsets_step = std::make_unique<OffsetStep>(query_plan.getCurrentHeader(), lim_info.limit_offset);
             query_plan.addStep(std::move(offsets_step));
