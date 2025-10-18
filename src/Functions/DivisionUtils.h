@@ -1,20 +1,10 @@
 #pragma once
 
-#include "config.h"
-
 #include <cmath>
 #include <type_traits>
 #include <Common/Exception.h>
 #include <Common/NaNUtils.h>
 #include <DataTypes/NumberTraits.h>
-#include <DataTypes/Native.h>
-#include <iostream>
-
-#if USE_EMBEDDED_COMPILER
-#    include <Core/ValuesWithType.h>
-#    include <llvm/IR/IRBuilder.h>
-#    include <llvm/IR/Module.h>
-#endif
 
 
 namespace DB
@@ -26,43 +16,9 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-#if USE_EMBEDDED_COMPILER
-
-template <typename F>
-static llvm::Value * compileWithNullableValues(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool is_signed, F && compile_func)
-{
-    auto * left_type = left->getType();
-    auto * right_type = right->getType();
-
-    if (!left_type->isStructTy() && !right_type->isStructTy())
-    {
-        // Both arguments are not nullable.
-        return compile_func(b, left, right, is_signed);
-    }
-
-    auto * denull_left = left_type->isStructTy() ? b.CreateExtractValue(left, {1}) : left;
-    auto * denull_right = right_type->isStructTy() ? b.CreateExtractValue(right, {1}) : right;
-    auto * denull_result = compile_func(b, denull_left, denull_right, is_signed);
-
-    auto * nullable_result_type = toNullableType(b, denull_result->getType());
-    llvm::Value * nullable_result = llvm::Constant::getNullValue(nullable_result_type);
-    nullable_result = b.CreateInsertValue(nullable_result, denull_result, {0});
-
-    auto * result_is_null = b.CreateExtractValue(nullable_result, {1});
-    if (left_type->isStructTy())
-        result_is_null = b.CreateOr(result_is_null, b.CreateExtractValue(left, {1}));
-    if (right_type->isStructTy())
-        result_is_null = b.CreateOr(result_is_null, b.CreateExtractValue(right, {1}));
-
-    return b.CreateInsertValue(nullable_result, result_is_null, {1});
-}
-
-#endif
-
 template <typename A, typename B>
 inline void throwIfDivisionLeadsToFPE(A a, B b)
 {
-    std::cout << "jit stacktrace:" << StackTrace().toString() << std::endl;
     /// Is it better to use siglongjmp instead of checks?
 
     if (unlikely(b == 0))
@@ -72,30 +28,9 @@ inline void throwIfDivisionLeadsToFPE(A a, B b)
     if (unlikely(is_signed_v<A> && is_signed_v<B> && a == std::numeric_limits<A>::min() && b == -1))
         throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division of minimal signed number by minus one");
 }
+
 }
 
-/*
-#if USE_EMBEDDED_COMPILER
-
-#define THROW_IF_DIVISION_LEADS_TO_FPE_WRAPPER(TYPE) \
-        extern "C" void throwIfDivisionLeadsToFPE##TYPE(TYPE a, TYPE b);
-
-THROW_IF_DIVISION_LEADS_TO_FPE_WRAPPER(Int8)
-THROW_IF_DIVISION_LEADS_TO_FPE_WRAPPER(UInt8)
-THROW_IF_DIVISION_LEADS_TO_FPE_WRAPPER(Int16)
-THROW_IF_DIVISION_LEADS_TO_FPE_WRAPPER(UInt16)
-THROW_IF_DIVISION_LEADS_TO_FPE_WRAPPER(Int32)
-THROW_IF_DIVISION_LEADS_TO_FPE_WRAPPER(UInt32)
-THROW_IF_DIVISION_LEADS_TO_FPE_WRAPPER(Int64)
-THROW_IF_DIVISION_LEADS_TO_FPE_WRAPPER(UInt64)
-THROW_IF_DIVISION_LEADS_TO_FPE_WRAPPER(Int128)
-THROW_IF_DIVISION_LEADS_TO_FPE_WRAPPER(UInt128)
-THROW_IF_DIVISION_LEADS_TO_FPE_WRAPPER(Int256)
-THROW_IF_DIVISION_LEADS_TO_FPE_WRAPPER(UInt256)
-#undef THROW_IF_DIVISION_LEADS_TO_FPE_WRAPPER
-
-#endif
-*/
 
 namespace DB
 {
@@ -242,56 +177,7 @@ struct ModuloImpl
     }
 
 #if USE_EMBEDDED_COMPILER
-    static constexpr bool compilable = true; /// Ignore exceptions in LLVM IR
-
-    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool is_signed)
-    {
-        return compileWithNullableValues(
-            b,
-            left,
-            right,
-            is_signed,
-            [](auto & b_, auto * left_, auto * right_, auto is_signed_) { return compileImpl(b_, left_, right_, is_signed_); });
-    }
-
-    static llvm::Value * compileImpl(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool is_signed)
-    {
-        if (left->getType()->isFloatingPointTy())
-            return b.CreateFRem(left, right);
-        else if (left->getType()->isIntegerTy())
-        {
-            std::string check_func_name;
-            auto * type = left->getType();
-            if (type->isIntegerTy(8))
-                check_func_name = is_signed ? "throwIfDivisionLeadsToFPEInt8" : "throwIfDivisionLeadsToFPEUInt8";
-            else if (type->isIntegerTy(16))
-                check_func_name = is_signed ? "throwIfDivisionLeadsToFPEInt16" : "throwIfDivisionLeadsToFPEUInt16";
-            else if (type->isIntegerTy(32))
-                check_func_name = is_signed ? "throwIfDivisionLeadsToFPEInt32" : "throwIfDivisionLeadsToFPEUInt32";
-            else if (type->isIntegerTy(64))
-                check_func_name = is_signed ? "throwIfDivisionLeadsToFPEInt64" : "throwIfDivisionLeadsToFPEUInt64";
-            else if (type->isIntegerTy(128))
-                check_func_name = is_signed ? "throwIfDivisionLeadsToFPEInt128" : "throwIfDivisionLeadsToFPEUInt128";
-            else if (type->isIntegerTy(256))
-                check_func_name = is_signed ? "throwIfDivisionLeadsToFPEInt256" : "throwIfDivisionLeadsToFPEUInt256";
-            else
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "ModuloImpl compilation expected integer types in (U)Int8|16|32|64|128|256");
-
-            auto * mod = b.GetInsertBlock()->getParent()->getParent();
-            // for (const auto & func : mod->functions())
-            // {
-            //     std::cout << "register function:" << func.getName().str() << std::endl;
-            // }
-            auto * func_type = llvm::FunctionType::get(b.getVoidTy(), {left->getType(), right->getType()}, false);
-            // auto * func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage, check_func_name, mod);
-            auto func = mod->getOrInsertFunction(check_func_name, func_type);
-            b.CreateCall(func, {left, right});
-            return is_signed ? b.CreateSRem(left, right) : b.CreateURem(left, right);
-        }
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "ModuloImpl compilation expected native integer or floating point type");
-    }
-
+    static constexpr bool compilable = false;
 #endif
 };
 
@@ -348,34 +234,8 @@ struct PositiveModuloImpl : ModuloImpl<A, B>
     }
 
 #if USE_EMBEDDED_COMPILER
-    static constexpr bool compilable = true; /// Ignore exceptions in LLVM IR
-
-    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool is_signed)
-    {
-        return compileWithNullableValues(
-            b,
-            left,
-            right,
-            is_signed,
-            [](auto & b_, auto * left_, auto * right_, auto is_signed_) { return compileImpl(b_, left_, right_, is_signed_); });
-    }
-
-    static llvm::Value * compileImpl(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool is_signed)
-    {
-        auto * result = ModuloImpl<A, B>::compileImpl(b, left, right, is_signed);
-        if (is_signed)
-        {
-            /// If result is negative, result += abs(right).
-            auto * zero = llvm::Constant::getNullValue(result->getType());
-            auto * is_negative = b.CreateICmpSLT(result, zero);
-            auto * abs_right = b.CreateSelect(b.CreateICmpSLT(right, zero), b.CreateNeg(right), right);
-            return b.CreateSelect(is_negative, b.CreateAdd(result, abs_right), result);
-        }
-        else
-            return result;
-    }
+    static constexpr bool compilable = false;
 #endif
-
 };
 
 template <typename A, typename B>

@@ -60,10 +60,10 @@ static NameSet getColumnsContainCompiledFunction(const ActionsDAG & actions_dag)
     return result;
 }
 
-ExpressionStep::ExpressionStep(const Header & input_header_, ActionsDAG actions_dag_)
+ExpressionStep::ExpressionStep(SharedHeader input_header_, ActionsDAG actions_dag_)
     : ITransformingStep(
         input_header_,
-        ExpressionTransform::transformHeader(input_header_, actions_dag_),
+        std::make_shared<const Block>(ExpressionTransform::transformHeader(*input_header_, actions_dag_)),
         getTraits(actions_dag_))
     , actions_dag(std::move(actions_dag_))
 {
@@ -73,7 +73,7 @@ void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
 {
     auto expression = std::make_shared<ExpressionActions>(std::move(actions_dag), settings.getActionsSettings());
 
-    pipeline.addSimpleTransform([&](const Block & header)
+    pipeline.addSimpleTransform([&](const SharedHeader & header)
     {
         return std::make_shared<ExpressionTransform>(header, expression);
     });
@@ -91,7 +91,7 @@ void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
             &columns_contain_compiled_function);
         auto convert_actions = std::make_shared<ExpressionActions>(std::move(convert_actions_dag), settings.getActionsSettings());
 
-        pipeline.addSimpleTransform([&](const Block & header)
+        pipeline.addSimpleTransform([&](const SharedHeader & header)
         {
             return std::make_shared<ExpressionTransform>(header, convert_actions);
         });
@@ -113,7 +113,7 @@ void ExpressionStep::describeActions(JSONBuilder::JSONMap & map) const
 
 void ExpressionStep::updateOutputHeader()
 {
-    output_header = ExpressionTransform::transformHeader(input_headers.front(), actions_dag);
+    output_header = std::make_shared<const Block>(ExpressionTransform::transformHeader(*input_headers.front(), actions_dag));
 }
 
 void ExpressionStep::serialize(Serialization & ctx) const

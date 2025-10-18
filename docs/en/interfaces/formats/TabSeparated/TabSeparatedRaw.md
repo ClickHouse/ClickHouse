@@ -6,6 +6,7 @@ keywords: ['TabSeparatedRaw']
 output_format: true
 slug: /interfaces/formats/TabSeparatedRaw
 title: 'TabSeparatedRaw'
+doc_type: 'reference'
 ---
 
 | Input | Output | Alias           |
@@ -22,9 +23,9 @@ When parsing with this format, tabs or line-feeds are not allowed in each field.
 
 For a comparison of the `TabSeparatedRaw` format and the `RawBlob` format see: [Raw Formats Comparison](../RawBLOB.md/#raw-formats-comparison)
 
-## Example Usage {#example-usage}
+## Example usage {#example-usage}
 
-### Inserting Data {#inserting-data}
+### Inserting data {#inserting-data}
 
 Using the following tsv file, named as `football.tsv`:
 
@@ -54,7 +55,7 @@ Insert the data:
 INSERT INTO football FROM INFILE 'football.tsv' FORMAT TabSeparatedRaw;
 ```
 
-### Reading Data {#reading-data}
+### Reading data {#reading-data}
 
 Read data using the `TabSeparatedRaw` format:
 
@@ -86,5 +87,4 @@ The output will be in tab separated format:
 2022-05-07      2021    Walsall Swindon Town    0       3
 ```
 
-## Format Settings {#format-settings}
-
+## Format settings {#format-settings}

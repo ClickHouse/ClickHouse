@@ -280,8 +280,8 @@ struct StringComparisonImpl
         for (size_t i = 0; i < size; ++i)
         {
             c[i] = Op::apply(memcmpSmallAllowOverflow15(
-                a_data.data() + prev_a_offset, a_offsets[i] - prev_a_offset - 1,
-                b_data.data() + prev_b_offset, b_offsets[i] - prev_b_offset - 1), 0);
+                a_data.data() + prev_a_offset, a_offsets[i] - prev_a_offset,
+                b_data.data() + prev_b_offset, b_offsets[i] - prev_b_offset), 0);
 
             prev_a_offset = a_offsets[i];
             prev_b_offset = b_offsets[i];
@@ -299,7 +299,7 @@ struct StringComparisonImpl
         for (size_t i = 0; i < size; ++i)
         {
             c[i] = Op::apply(memcmpSmallLikeZeroPaddedAllowOverflow15(
-                a_data.data() + prev_a_offset, a_offsets[i] - prev_a_offset - 1,
+                a_data.data() + prev_a_offset, a_offsets[i] - prev_a_offset,
                 b_data.data() + i * b_n, b_n), 0);
 
             prev_a_offset = a_offsets[i];
@@ -317,7 +317,7 @@ struct StringComparisonImpl
         for (size_t i = 0; i < size; ++i)
         {
             c[i] = Op::apply(memcmpSmallAllowOverflow15(
-                a_data.data() + prev_a_offset, a_offsets[i] - prev_a_offset - 1,
+                a_data.data() + prev_a_offset, a_offsets[i] - prev_a_offset,
                 b_data.data(), b_size), 0);
 
             prev_a_offset = a_offsets[i];
@@ -437,8 +437,8 @@ struct StringEqualsImpl
 
         for (size_t i = 0; i < size; ++i)
         {
-            auto a_size = a_offsets[i] - prev_a_offset - 1;
-            auto b_size = b_offsets[i] - prev_b_offset - 1;
+            auto a_size = a_offsets[i] - prev_a_offset;
+            auto b_size = b_offsets[i] - prev_b_offset;
 
             c[i] = positive == memequalSmallAllowOverflow15(
                 a_data.data() + prev_a_offset, a_size,
@@ -459,7 +459,7 @@ struct StringEqualsImpl
 
         for (size_t i = 0; i < size; ++i)
         {
-            auto a_size = a_offsets[i] - prev_a_offset - 1;
+            auto a_size = a_offsets[i] - prev_a_offset;
 
             c[i] = positive == memequalSmallLikeZeroPaddedAllowOverflow15(
                 a_data.data() + prev_a_offset, a_size,
@@ -487,7 +487,7 @@ struct StringEqualsImpl
              */
             for (size_t i = 0; i < size; ++i)
             {
-                auto a_size = a_offsets[i] - prev_a_offset - 1;
+                auto a_size = a_offsets[i] - prev_a_offset;
 
                 if (a_size == 0)
                     c[i] = positive;
@@ -501,7 +501,7 @@ struct StringEqualsImpl
         {
             for (size_t i = 0; i < size; ++i)
             {
-                auto a_size = a_offsets[i] - prev_a_offset - 1;
+                auto a_size = a_offsets[i] - prev_a_offset;
 
                 c[i] = positive == memequalSmallAllowOverflow15(
                     a_data.data() + prev_a_offset, a_size,

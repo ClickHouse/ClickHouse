@@ -14,7 +14,7 @@ class SQLInsertRowOutputFormat : public IRowOutputFormat
 public:
     SQLInsertRowOutputFormat(
         WriteBuffer & out_,
-        const Block & header_,
+        SharedHeader header_,
         const FormatSettings & format_settings_);
 
     String getName() const override { return "SQLInsertRowOutputFormat"; }

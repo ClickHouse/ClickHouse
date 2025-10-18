@@ -26,23 +26,22 @@ class S3KernelHelper final : public IKernelHelper
 public:
     S3KernelHelper(
         const DB::S3::URI & url_,
-        const std::string & access_key_id_,
-        const std::string & secret_access_key_,
-        const std::string & region_,
-        const std::string & token_,
-        bool no_sign_)
+        std::shared_ptr<const DB::S3::Client> client_,
+        const DB::S3::S3AuthSettings & auth_settings)
         : url(url_)
-        , access_key_id(access_key_id_)
-        , secret_access_key(secret_access_key_)
-        , region(region_)
-        , token(token_)
-        , no_sign(no_sign_)
         , table_location(getTableLocation(url_))
+        , client(client_)
     {
+        region = client->getRegion();
+        if (region.empty() || region == Aws::Region::AWS_GLOBAL)
+            region = client->getRegionForBucket(url.bucket, /* force_detect */true);
+
         /// Check if user didn't mention any region.
         /// Same as in S3/Client.cpp (stripping len("https://s3.")).
         if (url.endpoint.substr(11) == "amazonaws.com")
             url.addRegionToURI(region);
+
+        no_sign = auth_settings[DB::S3AuthSetting::no_sign_request];
     }
 
     const std::string & getTableLocation() const override { return table_location; }
@@ -61,6 +60,11 @@ public:
         {
             ffi::set_builder_option(builder, KernelUtils::toDeltaString(name), KernelUtils::toDeltaString(value));
         };
+
+        const auto & credentials = client->getCredentials();
+        auto access_key_id = credentials.GetAWSAccessKeyId();
+        auto secret_access_key = credentials.GetAWSSecretKey();
+        auto token = credentials.GetSessionToken();
 
         /// The delta-kernel-rs integration is currently under experimental flag,
         /// because we wait for delta-kernel maintainers to provide ffi api
@@ -94,7 +98,7 @@ public:
         }
 
         LOG_TRACE(
-            getLogger("KernelHelper"),
+            log,
             "Using endpoint: {}, uri: {}, region: {}, bucket: {}",
             url.endpoint, url.uri_str, region, url.bucket);
 
@@ -103,13 +107,12 @@ public:
 
 private:
     DB::S3::URI url;
-    const std::string access_key_id;
-    const std::string secret_access_key;
-    const std::string region;
-    const std::string token;
-    const bool no_sign;
-
     const std::string table_location;
+    const std::shared_ptr<const DB::S3::Client> client;
+    const LoggerPtr log = getLogger("S3KernelHelper");
+
+    std::string region;
+    bool no_sign;
 
     static std::string getTableLocation(const DB::S3::URI & url)
     {
@@ -160,7 +163,7 @@ namespace S3AuthSetting
 }
 
 DeltaLake::KernelHelperPtr getKernelHelper(
-    const StorageObjectStorage::ConfigurationPtr & configuration,
+    const StorageObjectStorageConfigurationPtr & configuration,
     const ObjectStoragePtr & object_storage)
 {
     switch (configuration->getType())
@@ -168,27 +171,15 @@ DeltaLake::KernelHelperPtr getKernelHelper(
         case DB::ObjectStorageType::S3:
         {
             const auto * s3_conf = dynamic_cast<const DB::StorageS3Configuration *>(configuration.get());
-            const auto & auth_settings = s3_conf->getAuthSettings();
-            const auto & s3_client = object_storage->getS3StorageClient();
-            const auto & s3_credentials = s3_client->getCredentials();
-            const auto & url = s3_conf->getURL();
-
-            auto region = s3_client->getRegion();
-            if (region.empty() || region == Aws::Region::AWS_GLOBAL)
-                region = s3_client->getRegionForBucket(url.bucket, /* force_detect */true);
-
             return std::make_shared<DeltaLake::S3KernelHelper>(
-                url,
-                s3_credentials.GetAWSAccessKeyId(),
-                s3_credentials.GetAWSSecretKey(),
-                std::move(region),
-                s3_credentials.GetSessionToken(),
-                auth_settings[S3AuthSetting::no_sign_request]);
+                s3_conf->url,
+                object_storage->getS3StorageClient(),
+                s3_conf->getAuthSettings());
         }
         case DB::ObjectStorageType::Local:
         {
             const auto * local_conf = dynamic_cast<const DB::StorageLocalConfiguration *>(configuration.get());
-            return std::make_shared<DeltaLake::LocalKernelHelper>(local_conf->getPath());
+            return std::make_shared<DeltaLake::LocalKernelHelper>(local_conf->getPathForRead().path);
         }
         default:
         {

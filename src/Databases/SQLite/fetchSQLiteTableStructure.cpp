@@ -86,7 +86,7 @@ std::shared_ptr<NamesAndTypesList> fetchSQLiteTableStructure(sqlite3 * connectio
 
     if (status != SQLITE_OK)
     {
-        String err_msg(err_message);
+        String err_msg(err_message ? err_message : "unknown error");
         sqlite3_free(err_message);
 
         throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR,

@@ -4,9 +4,10 @@ sidebar_label: 'Proxies'
 sidebar_position: 29
 slug: /interfaces/third-party/proxy
 title: 'Proxy Servers from Third-party Developers'
+doc_type: 'reference'
 ---
 
-# Proxy Servers from Third-party Developers
+# Proxy servers from third-party developers
 
 ## chproxy {#chproxy}
 

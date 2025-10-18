@@ -30,10 +30,10 @@ static ITransformingStep::Traits getTraits()
     };
 }
 
-ArrayJoinStep::ArrayJoinStep(const Header & input_header_, ArrayJoin array_join_, bool is_unaligned_, size_t max_block_size_)
+ArrayJoinStep::ArrayJoinStep(const SharedHeader & input_header_, ArrayJoin array_join_, bool is_unaligned_, size_t max_block_size_)
     : ITransformingStep(
         input_header_,
-        ArrayJoinTransform::transformHeader(input_header_, array_join_.columns),
+        std::make_shared<const Block>(ArrayJoinTransform::transformHeader(*input_header_, array_join_.columns)),
         getTraits())
     , array_join(std::move(array_join_))
     , is_unaligned(is_unaligned_)
@@ -43,13 +43,13 @@ ArrayJoinStep::ArrayJoinStep(const Header & input_header_, ArrayJoin array_join_
 
 void ArrayJoinStep::updateOutputHeader()
 {
-    output_header = ArrayJoinTransform::transformHeader(input_headers.front(), array_join.columns);
+    output_header = std::make_shared<const Block>(ArrayJoinTransform::transformHeader(*input_headers.front(), array_join.columns));
 }
 
 void ArrayJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     auto array_join_actions = std::make_shared<ArrayJoinAction>(array_join.columns, array_join.is_left, is_unaligned, max_block_size);
-    pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type)
+    pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type)
     {
         bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
         return std::make_shared<ArrayJoinTransform>(header, array_join_actions, on_totals);

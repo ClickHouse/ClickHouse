@@ -27,6 +27,10 @@ public:
     bool isInitialized() const;
     void reloadConfiguration(size_t max_threads, size_t max_free_threads, size_t queue_size);
 
+    /// Server and clickhouse-local initialize all thread pools on startup, with settings from config.
+    /// Client and misc tools may initialize the pools they use lazily using this method instead.
+    void initializeWithDefaultSettingsIfNotInitialized();
+
     /// At runtime we can increase the number of threads up the specified limit
     /// This is needed to utilize as much a possible resources to accomplish some task.
     void setMaxTurboThreads(size_t max_threads_turbo_);
@@ -40,11 +44,14 @@ private:
     const CurrentMetrics::Metric threads_scheduled_metric;
 
     std::unique_ptr<ThreadPool> instance;
+    std::once_flag init_flag;
     std::mutex mutex;
     size_t max_threads_turbo = 0;
     size_t max_threads_normal = 0;
     /// If this counter is > 0 - this specific mode is enabled
     size_t turbo_mode_enabled = 0;
+
+    void initializeImpl(size_t max_threads, size_t max_free_threads, size_t queue_size);
 };
 
 /// ThreadPool used for the IO.
@@ -78,5 +85,7 @@ StaticThreadPool & getDatabaseCatalogDropTablesThreadPool();
 
 /// ThreadPool used for parallel prefixes deserialization of subcolumns in Wide MergeTree parts.
 StaticThreadPool & getMergeTreePrefixesDeserializationThreadPool();
+
+StaticThreadPool & getFormatParsingThreadPool();
 
 }

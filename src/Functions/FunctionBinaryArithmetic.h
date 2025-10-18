@@ -367,7 +367,7 @@ struct StringIntegerOperationImpl
         {
             if constexpr (op_case == OpCase::LeftConstant)
             {
-                Op::apply(&in_vec[0], &in_vec[in_offsets[0] - 1], b[i], out_vec, out_offsets);
+                Op::apply(&in_vec[0], &in_vec[in_offsets[0]], b[i], out_vec, out_offsets);
             }
             else
             {
@@ -375,11 +375,11 @@ struct StringIntegerOperationImpl
 
                 if constexpr (op_case == OpCase::Vector)
                 {
-                    Op::apply(&in_vec[prev_offset], &in_vec[new_offset - 1], b[i], out_vec, out_offsets);
+                    Op::apply(&in_vec[prev_offset], &in_vec[new_offset], b[i], out_vec, out_offsets);
                 }
                 else
                 {
-                    Op::apply(&in_vec[prev_offset], &in_vec[new_offset - 1], b[0], out_vec, out_offsets);
+                    Op::apply(&in_vec[prev_offset], &in_vec[new_offset], b[0], out_vec, out_offsets);
                 }
 
                 prev_offset = new_offset;
@@ -516,9 +516,9 @@ struct StringReduceOperationImpl
         {
             res[i] = process(
                 a.data() + offsets_a[i - 1],
-                a.data() + offsets_a[i] - 1,
+                a.data() + offsets_a[i],
                 b.data() + offsets_b[i - 1],
-                b.data() + offsets_b[i] - 1);
+                b.data() + offsets_b[i]);
         }
     }
 
@@ -530,7 +530,7 @@ struct StringReduceOperationImpl
         {
             res[i] = process(
                 a.data() + offsets_a[i - 1],
-                a.data() + offsets_a[i] - 1,
+                a.data() + offsets_a[i],
                 reinterpret_cast<const UInt8 *>(b.data()),
                 reinterpret_cast<const UInt8 *>(b.data()) + b.size());
         }
@@ -820,7 +820,6 @@ class FunctionBinaryArithmetic : public IFunction
     static constexpr bool is_division = IsOperation<Op>::division;
     static constexpr bool is_bit_hamming_distance = IsOperation<Op>::bit_hamming_distance;
     static constexpr bool is_modulo = IsOperation<Op>::modulo;
-    static constexpr bool is_positive_modulo = IsOperation<Op>::positive_modulo;
     static constexpr bool is_int_div = IsOperation<Op>::int_div;
     static constexpr bool is_int_div_or_zero = IsOperation<Op>::int_div_or_zero;
     static constexpr bool is_division_or_null = IsOperation<Op>::division_or_null;
@@ -1776,26 +1775,28 @@ public:
             return arguments[0];
         }
 
-        /// Special case - one or both arguments are IPv4
-        if (isIPv4(arguments[0]) || isIPv4(arguments[1]))
+        /// Special case - one argument is IPv4 and the other is Ipv4 or an integer
+        if ((isIPv4(arguments[0]) && (isIPv4(arguments[1]) || isInteger(arguments[1])))
+            || (isIPv4(arguments[1]) && isInteger(arguments[0])))
         {
             DataTypes new_arguments {
                     isIPv4(arguments[0]) ? std::make_shared<DataTypeUInt32>() : arguments[0],
                     isIPv4(arguments[1]) ? std::make_shared<DataTypeUInt32>() : arguments[1],
             };
 
-            return getReturnTypeImplStatic(new_arguments, context);
+            return getReturnTypeImplStatic2(new_arguments, context);
         }
 
-        /// Special case - one or both arguments are IPv6
-        if (isIPv6(arguments[0]) || isIPv6(arguments[1]))
+        /// Special case -one argument is IPv6 and the other is Ipv4 or an integer
+        if ((isIPv6(arguments[0]) && (isIPv6(arguments[1]) || isInteger(arguments[1])))
+            || (isIPv6(arguments[1]) && isInteger(arguments[0])))
         {
             DataTypes new_arguments {
                     isIPv6(arguments[0]) ? std::make_shared<DataTypeUInt128>() : arguments[0],
                     isIPv6(arguments[1]) ? std::make_shared<DataTypeUInt128>() : arguments[1],
             };
 
-            return getReturnTypeImplStatic(new_arguments, context);
+            return getReturnTypeImplStatic2(new_arguments, context);
         }
 
 
@@ -1865,6 +1866,11 @@ public:
             }
         }
 
+        return getReturnTypeImplStatic2(arguments, context);
+    }
+
+    static DataTypePtr getReturnTypeImplStatic2(const DataTypes & arguments, ContextPtr context)
+    {
         /// Special case when the function is plus or minus, one of arguments is Date/DateTime/String and another is Interval.
         if (auto function_builder = getFunctionForIntervalArithmetic(arguments[0], arguments[1], context))
         {
@@ -2064,16 +2070,7 @@ public:
                     }
                     else if constexpr (std::is_same_v<ResultDataType, DataTypeTime>)
                     {
-                        // Special case for Time: binary OPS should reuse timezone
-                        // of Time argument as timezeone of result type.
-                        // NOTE: binary plus/minus are not allowed on Time64, and we are not handling it here.
-
-                        const TimezoneMixin * tz = nullptr;
-                        if constexpr (std::is_same_v<RightDataType, DataTypeTime>)
-                            tz = &right;
-                        if constexpr (std::is_same_v<LeftDataType, DataTypeTime>)
-                            tz = &left;
-                        type_res = std::make_shared<DataTypeTime>(*tz);
+                        type_res = std::make_shared<DataTypeTime>();
                     }
                     else
                         type_res = std::make_shared<ResultDataType>();
@@ -2752,18 +2749,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                         !std::is_same_v<ResultDataType, InvalidType> && !IsDataTypeDecimal<ResultDataType>
                         && !IsDataTypeDecimal<LeftDataType> && !IsDataTypeDecimal<RightDataType> && OpSpec::compilable)
                     {
-                        if constexpr (is_modulo || is_positive_modulo)
-                        {
-                            using LeftType = typename LeftDataType::FieldType;
-                            using RightType = typename RightDataType::FieldType;
-                            using PromotedType = typename NumberTraits::ResultOfModuloNativePromotion<LeftType, RightType>::Type;
-                            if constexpr (std::is_arithmetic_v<PromotedType>)
-                            {
-                                return true;
-                            }
-                        }
-                        else
-                            return true;
+                        return true;
                     }
                 }
                 return false;
@@ -2796,31 +2782,10 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                         && !IsDataTypeDecimal<LeftDataType> && !IsDataTypeDecimal<RightDataType> && OpSpec::compilable)
                     {
                         auto & b = static_cast<llvm::IRBuilder<> &>(builder);
-                        if constexpr (is_modulo || is_positive_modulo)
-                        {
-                            using LeftType = typename LeftDataType::FieldType;
-                            using RightType = typename RightDataType::FieldType;
-                            using PromotedType = typename NumberTraits::ResultOfModuloNativePromotion<LeftType, RightType>::Type;
-                            if constexpr (std::is_arithmetic_v<PromotedType>)
-                            {
-                                DataTypePtr promoted_type = std::make_shared<DataTypeNumber<PromotedType>>();
-                                if (result_type->isNullable())
-                                    promoted_type = std::make_shared<DataTypeNullable>(promoted_type);
-
-                                auto * lval = nativeCast(b, arguments[0], promoted_type);
-                                auto * rval = nativeCast(b, arguments[1], promoted_type);
-                                result = nativeCast(
-                                    b, promoted_type, OpSpec::compile(b, lval, rval, std::is_signed_v<PromotedType>), result_type);
-                                return true;
-                            }
-                        }
-                        else
-                        {
-                            auto * lval = nativeCast(b, arguments[0], result_type);
-                            auto * rval = nativeCast(b, arguments[1], result_type);
-                            result = OpSpec::compile(b, lval, rval, std::is_signed_v<typename ResultDataType::FieldType>);
-                            return true;
-                        }
+                        auto * lval = nativeCast(b, arguments[0], result_type);
+                        auto * rval = nativeCast(b, arguments[1], result_type);
+                        result = OpSpec::compile(b, lval, rval, std::is_signed_v<typename ResultDataType::FieldType>);
+                        return true;
                     }
                 }
                 return false;

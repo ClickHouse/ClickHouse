@@ -1,5 +1,4 @@
 #include <Functions/FunctionDynamicAdaptor.h>
-#include <Functions/IFunctionAdaptors.h>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -73,14 +72,14 @@ ColumnPtr replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
     size_t num_rows = input_rows_count;
     ColumnPtr indexes;
 
-    /// Find first LowCardinality column and replace it to nested dictionary.
+    /// Find first LowCardinality column and replace it with nested dictionary.
     for (auto & column : args)
     {
         if (const auto * low_cardinality_column = checkAndGetColumn<ColumnLowCardinality>(column.column.get()))
         {
-            /// Single LowCardinality column is supported now.
+            /// Only a single LowCardinality column is supported now.
             if (indexes)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected single dictionary argument for function.");
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Default functions implementation for LowCardinality is supported only with a single LowCardinality argument.");
 
             const auto * low_cardinality_type = checkAndGetDataType<DataTypeLowCardinality>(column.type.get());
 
@@ -407,9 +406,9 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(
             ColumnUniquePtr res_dictionary = std::move(res_mut_dictionary);
 
             if (indexes && !res_is_constant)
-                result = ColumnLowCardinality::create(res_dictionary, res_indexes->index(*indexes, 0));
+                result = ColumnLowCardinality::create(res_dictionary, res_indexes->index(*indexes, 0), /*is_shared=*/false);
             else
-                result = ColumnLowCardinality::create(res_dictionary, res_indexes);
+                result = ColumnLowCardinality::create(res_dictionary, res_indexes, /*is_shared=*/false);
 
             if (res_is_constant)
                 result = ColumnConst::create(std::move(result), input_rows_count);

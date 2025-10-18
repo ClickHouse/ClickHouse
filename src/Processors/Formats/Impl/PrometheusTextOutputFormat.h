@@ -17,7 +17,7 @@ class PrometheusTextOutputFormat : public IRowOutputFormat
 public:
     PrometheusTextOutputFormat(
         WriteBuffer & out_,
-        const Block & header_,
+        SharedHeader header_,
         const FormatSettings & format_settings_);
 
     String getName() const override { return "PrometheusTextOutputFormat"; }

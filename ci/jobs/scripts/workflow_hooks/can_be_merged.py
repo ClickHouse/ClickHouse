@@ -13,6 +13,7 @@ def check():
         Labels.CI_FUNCTIONAL_FLAKY,
         Labels.CI_INTEGRATION,
         Labels.CI_FUNCTIONAL,
+        Labels.CI_BUILD,
     ]
 
     for label in forbidden_labels:
