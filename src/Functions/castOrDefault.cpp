@@ -440,7 +440,7 @@ If the default value is not provided in the second argument, it is assumed to be
     FunctionDocumentation::Description toUUIDOrDefault_description = R"(
 Converts a String value to UUID type. If the conversion fails, returns a default UUID value instead of throwing an error.
 
-This function attempts to parse a string of 36 characters in the standard UUID format (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx). 
+This function attempts to parse a string of 36 characters in the standard UUID format (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx).
 If the string cannot be converted to a valid UUID, the function returns the provided default UUID value.
     )";
     FunctionDocumentation::Syntax toUUIDOrDefault_syntax = "toUUIDOrDefault(string, default)";
@@ -449,15 +449,15 @@ If the string cannot be converted to a valid UUID, the function returns the prov
         {"default", "UUID value to be returned if the first argument cannot be converted to UUID type."}
     };
     FunctionDocumentation::ReturnedValue toUUIDOrDefault_returned_value = {
-        "Returns the converted UUID if successful, or the default UUID if conversion fails.", 
+        "Returns the converted UUID if successful, or the default UUID if conversion fails.",
         {"UUID"}
     };
     FunctionDocumentation::Examples toUUIDOrDefault_examples = {
     {
-        "Successful conversion returns the parsed UUID", 
+        "Successful conversion returns the parsed UUID",
         R"(
 SELECT toUUIDOrDefault('61f0c404-5cb3-11e7-907b-a6006ad3dba0', toUUID('59f0c404-5cb3-11e7-907b-a6006ad3dba0'));
-        )", 
+        )",
         R"(
 ┌─toUUIDOrDefault('61f0c404-5cb3-11e7-907b-a6006ad3dba0', toUUID('59f0c404-5cb3-11e7-907b-a6006ad3dba0'))─┐
 │ 61f0c404-5cb3-11e7-907b-a6006ad3dba0                                                                     │
@@ -465,10 +465,10 @@ SELECT toUUIDOrDefault('61f0c404-5cb3-11e7-907b-a6006ad3dba0', toUUID('59f0c404-
         )"
     },
     {
-        "Failed conversion returns the default UUID", 
+        "Failed conversion returns the default UUID",
         R"(
 SELECT toUUIDOrDefault('-----61f0c404-5cb3-11e7-907b-a6006ad3dba0', toUUID('59f0c404-5cb3-11e7-907b-a6006ad3dba0'));
-        )", 
+        )",
         R"(
 ┌─toUUIDOrDefault('-----61f0c404-5cb3-11e7-907b-a6006ad3dba0', toUUID('59f0c404-5cb3-11e7-907b-a6006ad3dba0'))─┐
 │ 59f0c404-5cb3-11e7-907b-a6006ad3dba0                                                                          │

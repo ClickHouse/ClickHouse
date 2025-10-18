@@ -57,18 +57,21 @@ Returns the part of the domain that includes top-level subdomains up to the firs
 ```
     )";
     FunctionDocumentation::Syntax cutToFirstSignificantSubdomainCustom_syntax = "cutToFirstSignificantSubdomainCustom(url, tld_list_name)";
-    FunctionDocumentation::Arguments cutToFirstSignificantSubdomainCustom_arguments = {
+    FunctionDocumentation::Arguments cutToFirstSignificantSubdomainCustom_arguments =
+    {
         {"url", "URL or domain string to process.", {"String"}},
         {"tld_list_name", "Name of the custom TLD list configured in ClickHouse.", {"const String"}}
     };
-    FunctionDocumentation::ReturnedValue cutToFirstSignificantSubdomainCustom_returned_value = {
-        "Returns the part of the domain that includes top-level subdomains up to the first significant subdomain.", 
+    FunctionDocumentation::ReturnedValue cutToFirstSignificantSubdomainCustom_returned_value =
+    {
+        "Returns the part of the domain that includes top-level subdomains up to the first significant subdomain.",
         {"String"}
     };
-    FunctionDocumentation::Examples cutToFirstSignificantSubdomainCustom_examples = {
+    FunctionDocumentation::Examples cutToFirstSignificantSubdomainCustom_examples =
     {
-        "Using custom TLD list for non-standard domains", 
-        "SELECT cutToFirstSignificantSubdomainCustom('bar.foo.there-is-no-such-domain', 'public_suffix_list')", 
+    {
+        "Using custom TLD list for non-standard domains",
+        "SELECT cutToFirstSignificantSubdomainCustom('bar.foo.there-is-no-such-domain', 'public_suffix_list')",
         "foo.there-is-no-such-domain"
     }
     };
@@ -91,24 +94,27 @@ Returns the part of the domain that includes top-level subdomains up to the firs
 </top_level_domains_lists>
     )";
     FunctionDocumentation::Syntax cutToFirstSignificantSubdomainCustomWithWWW_syntax = "cutToFirstSignificantSubdomainCustomWithWWW(url, tld_list_name)";
-    FunctionDocumentation::Arguments cutToFirstSignificantSubdomainCustomWithWWW_arguments = {
+    FunctionDocumentation::Arguments cutToFirstSignificantSubdomainCustomWithWWW_arguments =
+    {
         {"url", "URL or domain string to process."},
         {"tld_list_name", "Name of the custom TLD list configured in ClickHouse."}
     };
-    FunctionDocumentation::ReturnedValue cutToFirstSignificantSubdomainCustomWithWWW_returned_value = {
-        "Part of the domain that includes top-level subdomains up to the first significant subdomain without stripping 'www'.", 
+    FunctionDocumentation::ReturnedValue cutToFirstSignificantSubdomainCustomWithWWW_returned_value =
+    {
+        "Part of the domain that includes top-level subdomains up to the first significant subdomain without stripping 'www'.",
         {"String"}
     };
-    FunctionDocumentation::Examples cutToFirstSignificantSubdomainCustomWithWWW_examples = {
+    FunctionDocumentation::Examples cutToFirstSignificantSubdomainCustomWithWWW_examples =
     {
-        "Usage example", 
+    {
+        "Usage example",
         R"(
-SELECT cutToFirstSignificantSubdomainCustomWithWWW('www.foo', 'public_suffix_list');        
-        )", 
+SELECT cutToFirstSignificantSubdomainCustomWithWWW('www.foo', 'public_suffix_list');
+        )",
         R"(
 ┌─cutToFirstSignificantSubdomainCustomWithWWW('www.foo', 'public_suffix_list')─┐
 │ www.foo                                                                      │
-└──────────────────────────────────────────────────────────────────────────────┘        
+└──────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
@@ -136,24 +142,27 @@ Similar to [cutToFirstSignificantSubdomainCustom](#cuttofirstsignificantsubdomai
 ```
     )";
     FunctionDocumentation::Syntax cutToFirstSignificantSubdomainCustomRFC_syntax = "cutToFirstSignificantSubdomainCustomRFC(url, tld_list_name)";
-    FunctionDocumentation::Arguments cutToFirstSignificantSubdomainCustomRFC_arguments = {
+    FunctionDocumentation::Arguments cutToFirstSignificantSubdomainCustomRFC_arguments =
+    {
         {"url", "URL or domain string to process according to RFC 3986."},
         {"tld_list_name", "Name of the custom TLD list configured in ClickHouse."}
     };
-    FunctionDocumentation::ReturnedValue cutToFirstSignificantSubdomainCustomRFC_returned_value = {
-        "Returns the part of the domain that includes top-level subdomains up to the first significant subdomain.", 
+    FunctionDocumentation::ReturnedValue cutToFirstSignificantSubdomainCustomRFC_returned_value =
+    {
+        "Returns the part of the domain that includes top-level subdomains up to the first significant subdomain.",
         {"String"}
     };
-    FunctionDocumentation::Examples cutToFirstSignificantSubdomainCustomRFC_examples = {
+    FunctionDocumentation::Examples cutToFirstSignificantSubdomainCustomRFC_examples =
     {
-        "Usage example", 
+    {
+        "Usage example",
         R"(
-SELECT cutToFirstSignificantSubdomainCustomRFC('www.foo', 'public_suffix_list');        
+SELECT cutToFirstSignificantSubdomainCustomRFC('www.foo', 'public_suffix_list');
         )",
         R"(
-┌─cutToFirstSignificantSubdomainCustomRFC('www.foo', 'public_suffix_list')─┐
+┌─cutToFirstSignificantSubdomainCustomRFC('www.foo', 'public_suffix_list')─────┐
 │ www.foo                                                                      │
-└──────────────────────────────────────────────────────────────────────────────┘        
+└──────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
@@ -180,18 +189,21 @@ Similar to [cutToFirstSignificantSubdomainCustomWithWWW](#cutToFirstSignificantS
 </top_level_domains_lists>
     )";
     FunctionDocumentation::Syntax cutToFirstSignificantSubdomainCustomWithWWWRFC_syntax = "cutToFirstSignificantSubdomainCustomWithWWWRFC(url, tld_list_name)";
-    FunctionDocumentation::Arguments cutToFirstSignificantSubdomainCustomWithWWWRFC_arguments = {
+    FunctionDocumentation::Arguments cutToFirstSignificantSubdomainCustomWithWWWRFC_arguments =
+    {
         {"url", "URL or domain string to process according to RFC 3986."},
         {"tld_list_name", "Name of the custom TLD list configured in ClickHouse."}
     };
-    FunctionDocumentation::ReturnedValue cutToFirstSignificantSubdomainCustomWithWWWRFC_returned_value = {
-        "Returns the part of the domain that includes top-level subdomains up to the first significant subdomain without stripping `www`.", 
+    FunctionDocumentation::ReturnedValue cutToFirstSignificantSubdomainCustomWithWWWRFC_returned_value =
+    {
+        "Returns the part of the domain that includes top-level subdomains up to the first significant subdomain without stripping `www`.",
         {"String"}
     };
-    FunctionDocumentation::Examples cutToFirstSignificantSubdomainCustomWithWWWRFC_examples = {
+    FunctionDocumentation::Examples cutToFirstSignificantSubdomainCustomWithWWWRFC_examples =
     {
-        "RFC 3986 parsing preserving www with custom TLD list", 
-        "SELECT cutToFirstSignificantSubdomainCustomWithWWWRFC('https://www.subdomain.example.custom', 'public_suffix_list')", 
+    {
+        "RFC 3986 parsing preserving www with custom TLD list",
+        "SELECT cutToFirstSignificantSubdomainCustomWithWWWRFC('https://www.subdomain.example.custom', 'public_suffix_list')",
         "www.example.custom"
     }
     };
