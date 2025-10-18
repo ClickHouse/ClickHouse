@@ -23,8 +23,18 @@ set (LLVM_VERSION "19.0.0bundled")
 set (LLVM_INCLUDE_DIRS
     "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/llvm/include"
     "${ClickHouse_BINARY_DIR}/contrib/llvm-project/llvm/include"
+    "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/lld/include"
+    # "${ClickHouse_BINARY_DIR}/contrib/llvm-project/lld/include"
 )
 set (LLVM_LIBRARY_DIRS "${ClickHouse_BINARY_DIR}/contrib/llvm-project/llvm")
+
+# set (LLD_VERSION "15.0.0bundled")
+# set (LLD_INCLUDE_DIRS
+#     "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/lld/include"
+#     "${ClickHouse_BINARY_DIR}/contrib/llvm-project/lld/include"
+# )
+# set (LLD_LIBRARY_DIRS "${ClickHouse_BINARY_DIR}/contrib/llvm-project/lld")
+
 # NOTE: You should not remove this line since otherwise it will use default 20,
 # and llvm cannot be compiled with bundled libcxx and 20 standard.
 set (CMAKE_CXX_STANDARD 17)
@@ -82,6 +92,8 @@ else()
         LLVMDebugInfoCodeView
         LLVMSupport
         LLVMDemangle
+        # LLVMOrcJIT
+        # LLVMLinker
     )
 
     if (ARCH_AMD64)
@@ -134,8 +146,17 @@ set(LLVM_INCLUDE_DOCS 0 CACHE INTERNAL "")
 set(LLVM_ENABLE_OCAMLDOC 0 CACHE INTERNAL "")
 set(LLVM_ENABLE_BINDINGS 0 CACHE INTERNAL "")
 
+# set(LLD_SYMLINKS_TO_CREATE "lld" CACHE INTERNAL "")
+# set(LLVM_ENABLE_LTO 0 CACHE INTERNAL "")
+# set(LLVM_DISTRIBUTION_COMPONENTS "" CACHE INTERNAL "")
+# set(LLVM_ENABLE_IDE 0 CACHE INTERNAL "")
+# set(LLVM_ENABLE_PROJECTS llvm lld CACHE INTERNAL "")
+
 set (LLVM_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/llvm")
 set (LLVM_BINARY_DIR "${ClickHouse_BINARY_DIR}/contrib/llvm-project/llvm")
+
+# set (LLD_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/lld")
+# set (LLD_BINARY_DIR "${ClickHouse_BINARY_DIR}/contrib/llvm-project/lld")
 
 message (STATUS "LLVM CMAKE CROSS COMPILING ${CMAKE_CROSSCOMPILING}")
 if (CMAKE_CROSSCOMPILING)
@@ -149,6 +170,7 @@ endif()
 # may not exist and compilation fails. This happens with musl.
 add_compile_definitions("_LARGEFILE64_SOURCE")
 
+# add_subdirectory ("${LLD_SOURCE_DIR}" "${LLD_BINARY_DIR}")
 block()
     # llvm-project/llvm/cmake/modules/CrossCompile.cmake passes CMAKE_C[XX]_COMPILER_LAUNCHER
     # to another CMake generator, but expects a value without spaces.
@@ -176,5 +198,7 @@ set_directory_properties (PROPERTIES
 
 add_library (_llvm INTERFACE)
 target_link_libraries (_llvm INTERFACE ${REQUIRED_LLVM_LIBRARIES})
+# target_link_libraries (_llvm INTERFACE LLDCommon)
+# target_include_directories (_llvm SYSTEM BEFORE INTERFACE ${LLD_INCLUDE_DIRS})
 target_include_directories (_llvm SYSTEM BEFORE INTERFACE ${LLVM_INCLUDE_DIRS})
 add_library(ch_contrib::llvm ALIAS _llvm)

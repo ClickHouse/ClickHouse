@@ -64,6 +64,7 @@
 #include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/ContextTimeSeriesTagsCollector.h>
 #include <Interpreters/SessionTracker.h>
+#include <Interpreters/WasmModuleManager.h>
 #include <Core/ServerSettings.h>
 #include <Interpreters/PreparedSets.h>
 #include <Core/SettingsQuirks.h>
@@ -86,6 +87,7 @@
 #include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
 #include <Functions/UserDefined/createUserDefinedSQLObjectsStorage.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/InterserverCredentials.h>
 #include <Interpreters/Cluster.h>
@@ -360,6 +362,7 @@ namespace ErrorCodes
     extern const int INVALID_SETTING_VALUE;
     extern const int NOT_IMPLEMENTED;
     extern const int UNKNOWN_FUNCTION;
+    extern const int SUPPORT_IS_DISABLED;
     extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int CLUSTER_DOESNT_EXIST;
@@ -452,6 +455,8 @@ struct ContextSharedPart : boost::noncopyable
 
     mutable OnceFlag workload_entity_storage_initialized;
     mutable std::unique_ptr<IWorkloadEntityStorage> workload_entity_storage;
+
+    mutable std::unique_ptr<WasmModuleManager> wasm_module_manager;
 
 #if USE_NLP
     mutable OnceFlag synonyms_extensions_initialized;
@@ -1579,8 +1584,18 @@ void Context::setDictionariesLibPath(const String & path)
 
 void Context::setUserScriptsPath(const String & path)
 {
-    std::lock_guard lock(shared->mutex);
-    shared->user_scripts_path = path;
+    {
+        std::lock_guard lock(shared->mutex);
+        shared->user_scripts_path = path;
+    }
+
+    auto * wasm_module_manager = initWasmModuleManager();
+    if (wasm_module_manager)
+    {
+        auto & function_storage = getUserDefinedSQLObjectsStorage();
+        function_storage.loadObjects();
+        UserDefinedSQLFunctionFactory::instance().loadFunctions(function_storage, *wasm_module_manager);
+    }
 }
 
 void Context::addOrUpdateWarningMessage(WarningType warning, const PreformattedMessage & message) const
@@ -3359,12 +3374,6 @@ IUserDefinedSQLObjectsStorage & Context::getUserDefinedSQLObjectsStorage()
     return *shared->user_defined_sql_objects_storage;
 }
 
-void Context::setUserDefinedSQLObjectsStorage(std::unique_ptr<IUserDefinedSQLObjectsStorage> storage)
-{
-    std::lock_guard lock(shared->mutex);
-    shared->user_defined_sql_objects_storage = std::move(storage);
-}
-
 IWorkloadEntityStorage & Context::getWorkloadEntityStorage() const
 {
     callOnce(shared->workload_entity_storage_initialized, [&] {
@@ -3373,6 +3382,40 @@ IWorkloadEntityStorage & Context::getWorkloadEntityStorage() const
 
     std::lock_guard lock(shared->mutex);
     return *shared->workload_entity_storage;
+}
+
+WasmModuleManager * Context::initWasmModuleManager()
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->wasm_module_manager)
+        return shared->wasm_module_manager.get();
+
+    const auto & config = shared->getConfigRefWithLock(lock);
+    if (!ConfigHelper::getBool(config, "allow_experimental_webassembly_udf"))
+        return nullptr;
+
+    auto engine_name = config.getString("webassembly_udf_engine", "wasmtime");
+
+    auto user_scripts_disk = std::make_shared<DiskLocal>("user_scripts", shared->user_scripts_path);
+    user_scripts_disk->startup(/* skip_access_check */ true);
+    shared->wasm_module_manager = std::make_unique<WasmModuleManager>(std::move(user_scripts_disk), /* user_scripts_path_ */ "wasm", engine_name);
+
+    return shared->wasm_module_manager.get();
+}
+
+bool Context::hasWasmModuleManager() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->wasm_module_manager != nullptr;
+}
+
+WasmModuleManager & Context::getWasmModuleManager() const
+{
+    SharedLockGuard lock(shared->mutex);
+    if (!shared->wasm_module_manager)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "WebAssembly support is not enabled");
+    return *shared->wasm_module_manager;
 }
 
 #if USE_NLP

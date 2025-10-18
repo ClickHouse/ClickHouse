@@ -181,6 +181,7 @@ class AsyncLoader;
 class HTTPHeaderFilter;
 struct AsyncReadCounters;
 struct ICgroupsReader;
+class WasmModuleManager;
 
 struct TemporaryTableHolder;
 using TemporaryTablesMapping = std::map<String, std::shared_ptr<TemporaryTableHolder>>;
@@ -1045,10 +1046,12 @@ public:
     ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoader();
     const IUserDefinedSQLObjectsStorage & getUserDefinedSQLObjectsStorage() const;
     IUserDefinedSQLObjectsStorage & getUserDefinedSQLObjectsStorage();
-    void setUserDefinedSQLObjectsStorage(std::unique_ptr<IUserDefinedSQLObjectsStorage> storage);
     void loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config);
 
     IWorkloadEntityStorage & getWorkloadEntityStorage() const;
+
+    bool hasWasmModuleManager() const;
+    WasmModuleManager & getWasmModuleManager() const;
 
 #if USE_NLP
     SynonymsExtensions & getSynonymsExtensions() const;
@@ -1676,6 +1679,8 @@ private:
 
     /// Expect lock for shared->clusters_mutex
     std::shared_ptr<Clusters> getClustersImpl(std::lock_guard<std::mutex> & lock) const;
+
+    WasmModuleManager * initWasmModuleManager();
 
     std::unordered_set<String> allowed_disks;
     /// Throttling
