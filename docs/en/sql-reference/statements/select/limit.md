@@ -33,7 +33,6 @@ Examples:
 > **Note**
 > • fractions must be Float32 numbers less than 1 and greater than zero
 
-
 If there is no [ORDER BY](../../../sql-reference/statements/select/order-by.md) clause that explicitly sorts results, the choice of rows for the result may be arbitrary and non-deterministic.
 
 :::note    
