@@ -267,7 +267,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
                     continue;
 
                 auto edge = getApplicableExpressions(left->relations, right->relations);
-                if (edge.empty() && (best_plan || join_kind.value() == JoinKind::Inner))
+                if (edge.empty() && best_plan)
                     continue;
 
                 auto selectivity = computeSelectivity(edge);

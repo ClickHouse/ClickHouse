@@ -566,6 +566,8 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
         join_expression_sources.set(total_inputs - 1, false);
         query_graph.join_kinds[total_inputs - 1] = std::make_pair(std::move(join_expression_sources), join_kind);
     }
+    if (join_kind == JoinKind::Cross || join_kind == JoinKind::Comma)
+        query_graph.join_kinds[0] = std::make_pair(BitSet{}, JoinKind::Cross);
 
     chassert(lhs_count && rhs_count && lhs_count + rhs_count == total_inputs && query_graph.relation_stats.size() == total_inputs);
 
