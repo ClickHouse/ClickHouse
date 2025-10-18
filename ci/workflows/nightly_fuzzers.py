@@ -10,11 +10,7 @@ workflow = Workflow.Config(
     event=Workflow.Event.SCHEDULE,
     branches=[BASE_BRANCH],
     jobs=[
-        *[
-            j.set_provides([ArtifactNames.FUZZERS, ArtifactNames.FUZZERS_CORPUS])
-            for j in JobConfigs.special_build_jobs
-            if "fuzzers" in j.name
-        ],
+        JobConfigs.fuzzers_build_job.set_provides([ArtifactNames.FUZZERS, ArtifactNames.FUZZERS_CORPUS]),
         JobConfigs.libfuzzer_job,
     ],
     dockers=DOCKERS,
