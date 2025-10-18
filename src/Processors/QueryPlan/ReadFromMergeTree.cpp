@@ -2126,7 +2126,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         }
 
         std::optional<size_t> condition_hash;
-        if (reader_settings.use_query_condition_cache && query_info_.filter_actions_dag)
+        if (reader_settings.use_query_condition_cache && query_info_.filter_actions_dag && !query_info_.isFinal())
         {
             const auto & outputs = query_info_.filter_actions_dag->getOutputs();
             if (outputs.size() == 1 && VirtualColumnUtils::isDeterministic(outputs.front()))
@@ -2624,6 +2624,9 @@ bool ReadFromMergeTree::supportsSkipIndexesOnDataRead() const
         return false;
 
     if (is_parallel_reading_from_replicas)
+        return false;
+
+    if (settings[Setting::read_overflow_mode] == OverflowMode::THROW && settings[Setting::max_rows_to_read]) /// Need to do full index analysis to get row count estimate
         return false;
 
     return true;
