@@ -396,6 +396,7 @@ void AccessControl::addDiskStorage(const String & storage_name_, const String & 
         }
     }
     auto new_storage = std::make_shared<DiskAccessStorage>(storage_name_, directory_, *changes_notifier, readonly_, allow_backup_);
+    new_storage->reload(ReloadMode::ALL);
     addStorage(new_storage);
     LOG_DEBUG(getLogger(), "Added {} access storage '{}', path: {}", String(new_storage->getStorageType()), new_storage->getStorageName(), new_storage->getPath());
 }
@@ -491,6 +492,11 @@ void AccessControl::addStoragesFromMainConfig(
     const String & config_path,
     const zkutil::GetZooKeeper & get_zookeeper_function)
 {
+    /// Add disk storage first so that entities can be referenced in other storages (e.g. to grant roles in users.xml)
+    String disk_storage_dir = config.getString("access_control_path", "");
+    if (!disk_storage_dir.empty())
+        addDiskStorage(DiskAccessStorage::STORAGE_TYPE, disk_storage_dir, /* readonly= */ false, /* allow_backup= */ true);
+
     String config_dir = std::filesystem::path{config_path}.remove_filename().string();
     String dbms_dir = config.getString("path", DBMS_DEFAULT_PATH);
     String include_from_path = config.getString("include_from", "/etc/metrika.xml");
@@ -520,10 +526,6 @@ void AccessControl::addStoragesFromMainConfig(
             get_zookeeper_function,
             /* allow_backup= */ false);
     }
-
-    String disk_storage_dir = config.getString("access_control_path", "");
-    if (!disk_storage_dir.empty())
-        addDiskStorage(DiskAccessStorage::STORAGE_TYPE, disk_storage_dir, /* readonly= */ false, /* allow_backup= */ true);
 
     if (has_user_directories)
         addStoragesFromUserDirectoriesConfig(config, "user_directories", config_dir, dbms_dir, include_from_path, get_zookeeper_function);
