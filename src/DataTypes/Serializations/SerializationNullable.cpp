@@ -818,11 +818,18 @@ void SerializationNullable::serializeTextJSON(const IColumn & column, size_t row
 
     if (col.isNullAt(row_num))
         serializeNullJSON(ostr);
-    else if (settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8) {
-        constexpr size_t indent = 0;
-        nested->serializeTextJSONPretty(col.getNestedColumn(), row_num, ostr, settings, indent);
-    } else
+    else
         nested->serializeTextJSON(col.getNestedColumn(), row_num, ostr, settings);
+}
+
+void SerializationNullable::serializeTextJSONPretty(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, size_t indent) const
+{
+    const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);
+
+    if (col.isNullAt(row_num))
+        serializeNullJSON(ostr);
+    else
+        nested->serializeTextJSONPretty(col.getNestedColumn(), row_num, ostr, settings, indent);
 }
 
 void SerializationNullable::serializeNullJSON(DB::WriteBuffer & ostr)
