@@ -47,6 +47,16 @@ INSERT INTO num_tab VALUES (5), (5), (5), (5), (5);
 
 SELECT val FROM num_tab ORDER BY val LIMIT 0.3 WITH TIES;
 
+SELECT 'Misc:';
+
+SELECT number FROM numbers(1000) LIMIT 1 OFFSET 0.5;
+
+SELECT number FROM numbers(1000) ORDER BY number DESC LIMIT 1 OFFSET 0.5;
+
+SELECT number FROM numbers(12) LIMIT 0.25 OFFSET 0.5;
+
+SELECT number FROM numbers(1000000) LIMIT 1 OFFSET 0.0999999;
+
 SELECT 'Double Column:';
 
 DROP TABLE IF EXISTS num_tab;
@@ -139,6 +149,16 @@ FROM numbers(15);
 INSERT INTO num_tab VALUES (5), (5), (5), (5), (5);
 
 SELECT val FROM num_tab ORDER BY val LIMIT 0.3 WITH TIES;
+
+SELECT 'Misc:';
+
+SELECT number FROM numbers(1000) LIMIT 1 OFFSET 0.5;
+
+SELECT number FROM numbers(1000) ORDER BY number DESC LIMIT 1 OFFSET 0.5;
+
+SELECT number FROM numbers(12) LIMIT 0.25 OFFSET 0.5;
+
+SELECT number FROM numbers(1000000) LIMIT 1 OFFSET 0.0999999;
 
 SELECT 'Double Column:';
 
