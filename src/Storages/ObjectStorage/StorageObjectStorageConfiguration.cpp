@@ -23,6 +23,11 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace Setting
+{
+    extern const SettingsFileLikeEngineDefaultPartitionStrategy file_like_engine_default_partition_strategy;
+}
+
 void StorageObjectStorageConfiguration::update( ///NOLINT
     ObjectStoragePtr object_storage_ptr,
     ContextPtr context,
@@ -134,6 +139,27 @@ void StorageObjectStorageConfiguration::initialize(
 
 void StorageObjectStorageConfiguration::initPartitionStrategy(ASTPtr partition_by, const ColumnsDescription & columns, ContextPtr context)
 {
+    if (partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE)
+    {
+        if (!partition_by)
+            return;
+
+        switch (context->getSettingsRef()[Setting::file_like_engine_default_partition_strategy].value)
+        {
+            case FileLikeEngineDefaultPartitionStrategy::WILDCARD:
+            {
+                if (getRawPath().hasPartitionWildcard())
+                    partition_strategy_type = PartitionStrategyFactory::StrategyType::WILDCARD;
+                break;
+            }
+            case FileLikeEngineDefaultPartitionStrategy::HIVE:
+            {
+                partition_strategy_type = PartitionStrategyFactory::StrategyType::HIVE;
+                break;
+            }
+        }
+    }
+
     partition_strategy = PartitionStrategyFactory::get(
         partition_strategy_type,
         partition_by,
