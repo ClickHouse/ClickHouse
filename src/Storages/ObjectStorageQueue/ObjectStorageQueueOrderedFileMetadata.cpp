@@ -227,7 +227,7 @@ ObjectStorageQueueOrderedFileMetadata::LastProcessedInfo ObjectStorageQueueOrder
     std::optional<std::string> failed_node_path_;
     if (check_failed)
         failed_node_path_ = failed_node_path;
-    return getLastProcessedFile(stat, processed_node_path,  path, processed_node_hive_partitioning_path,
+    return getLastProcessedFile(stat, processed_node_path, path, processed_node_hive_partitioning_path,
         failed_node_path_, log_);
 }
 
@@ -247,7 +247,7 @@ ObjectStorageQueueOrderedFileMetadata::LastProcessedInfo ObjectStorageQueueOrder
         paths.push_back(*processed_node_hive_partitioning_path);
 
     zkutil::ZooKeeper::MultiTryGetResponse responses;
-    
+
     auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log_);
     zk_retry.retryLoop([&]
     {
