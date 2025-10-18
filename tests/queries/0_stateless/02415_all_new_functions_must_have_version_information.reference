@@ -27,7 +27,6 @@ dateDiff
 dotProduct
 dynamicElement
 dynamicType
-evalMLMethod
 extractKeyValuePairs
 extractKeyValuePairsWithEscaping
 firstSignificantSubdomain
@@ -66,16 +65,10 @@ multiFuzzyMatchAnyIndex
 multiMatchAllIndices
 multiMatchAnyIndex
 multiSearchAllPositionsCaseInsensitiveUTF8
-multiSearchAnyCaseInsensitive
-multiSearchAnyCaseInsensitiveUTF8
-multiSearchAnyUTF8
 multiSearchFirstIndex
 multiSearchFirstIndexCaseInsensitive
 multiSearchFirstIndexCaseInsensitiveUTF8
 multiSearchFirstIndexUTF8
-multiSearchFirstPositionCaseInsensitive
-multiSearchFirstPositionCaseInsensitiveUTF8
-multiSearchFirstPositionUTF8
 nested
 notILike
 notIn

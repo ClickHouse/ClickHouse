@@ -16,7 +16,6 @@ countSubstringsCaseInsensitive
 countSubstringsCaseInsensitiveUTF8
 dateDiff
 dotProduct
-evalMLMethod
 firstSignificantSubdomainCustom
 firstSignificantSubdomainCustomRFC
 globalIn
@@ -41,16 +40,10 @@ multiFuzzyMatchAnyIndex
 multiMatchAllIndices
 multiMatchAnyIndex
 multiSearchAllPositionsCaseInsensitiveUTF8
-multiSearchAnyCaseInsensitive
-multiSearchAnyCaseInsensitiveUTF8
-multiSearchAnyUTF8
 multiSearchFirstIndex
 multiSearchFirstIndexCaseInsensitive
 multiSearchFirstIndexCaseInsensitiveUTF8
 multiSearchFirstIndexUTF8
-multiSearchFirstPositionCaseInsensitive
-multiSearchFirstPositionCaseInsensitiveUTF8
-multiSearchFirstPositionUTF8
 notILike
 notIn
 notInIgnoreSet
