@@ -12,6 +12,8 @@
 #include <Common/HashTable/HashSet.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
+#include "Core/ColumnWithTypeAndName.h"
+#include "Interpreters/ActionsDAG.h"
 #include <Interpreters/ITokenExtractor.h>
 #include <base/range.h>
 #include <fmt/ranges.h>
@@ -766,7 +768,9 @@ void MergeTreeIndexGranuleTextWritable::deserializeBinary(ReadBuffer &, MergeTre
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Deserialization of MergeTreeIndexGranuleTextWritable is not implemented");
 }
 
-MergeTreeIndexTextGranuleBuilder::MergeTreeIndexTextGranuleBuilder(MergeTreeIndexTextParams params_, TokenExtractorPtr token_extractor_)
+MergeTreeIndexTextGranuleBuilder::MergeTreeIndexTextGranuleBuilder(
+    MergeTreeIndexTextParams params_,
+    TokenExtractorPtr token_extractor_)
     : params(std::move(params_))
     , token_extractor(token_extractor_)
     , arena(std::make_unique<Arena>())
@@ -860,11 +864,13 @@ void MergeTreeIndexTextGranuleBuilder::reset()
 MergeTreeIndexAggregatorText::MergeTreeIndexAggregatorText(
     String index_column_name_,
     MergeTreeIndexTextParams params_,
-    TokenExtractorPtr token_extractor_)
+    TokenExtractorPtr token_extractor_,
+    MergeTreePreprocessorPtr preprocessor_)
     : index_column_name(std::move(index_column_name_))
     , params(std::move(params_))
     , token_extractor(token_extractor_)
     , granule_builder(params, token_extractor_)
+    , preprocessor(preprocessor_)
 {
 }
 
@@ -884,22 +890,21 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
             *pos, block.rows());
     }
 
-    size_t rows_read = std::min(limit, block.rows() - *pos);
+    const size_t rows_read = std::min(limit, block.rows() - *pos);
     if (rows_read == 0)
         return;
 
-    size_t current_position = *pos;
-    const auto & index_column = block.getByName(index_column_name).column;
+    auto [processed_column, offset] = preprocessor->processColumn(block.getByName(index_column_name), *pos, rows_read);
 
-    if (isArray(index_column->getDataType()))
+    if (isArray(processed_column->getDataType()))
     {
-        const auto & column_array = assert_cast<const ColumnArray &>(*index_column);
+        const auto & column_array = assert_cast<const ColumnArray &>(*processed_column);
         const auto & column_data = column_array.getData();
         const auto & column_offsets = column_array.getOffsets();
         for (size_t i = 0; i < rows_read; ++i)
         {
-            size_t element_start_row = column_offsets[current_position + i - 1];
-            size_t elements_size = column_offsets[current_position + i] - element_start_row;
+            size_t element_start_row = column_offsets[offset + i - 1];
+            size_t elements_size = column_offsets[offset + i] - element_start_row;
 
             for (size_t element_idx = 0; element_idx < elements_size; ++element_idx)
             {
@@ -914,7 +919,7 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
     {
         for (size_t i = 0; i < rows_read; ++i)
         {
-            auto ref = index_column->getDataAt(current_position + i);
+            auto ref = processed_column->getDataAt(offset + i);
             granule_builder.addDocument(ref);
             granule_builder.incrementCurrentRow();
         }
@@ -930,7 +935,7 @@ MergeTreeIndexText::MergeTreeIndexText(
     : IMergeTreeIndex(index_)
     , params(std::move(params_))
     , token_extractor(std::move(token_extractor_))
-    , preprocessor(parseExpression(index_, params.preprocessor))
+    , preprocessor(std::make_shared<MergeTreePreprocessor>(params.preprocessor, index_))
 {
 }
 
@@ -958,7 +963,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexText::createIndexGranule() const
 
 MergeTreeIndexAggregatorPtr MergeTreeIndexText::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
 {
-    return std::make_shared<MergeTreeIndexAggregatorText>(index.column_names[0], params, token_extractor.get());
+    return std::make_shared<MergeTreeIndexAggregatorText>(index.column_names[0], params, token_extractor.get(), preprocessor);
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexText::createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const
@@ -1390,10 +1395,52 @@ FieldVector MergeTreeIndexText::parseArgumentsListFromAST(const ASTPtr & argumen
     return result;
 }
 
-ExpressionActionsPtr MergeTreeIndexText::parseExpression(const IndexDescription & index_description, const String & expression)
+MergeTreePreprocessor::MergeTreePreprocessor(const String & expression_str, const IndexDescription & index_description)
+    : expression(MergeTreePreprocessor::parseExpression(index_description, expression_str))
+    , column_type(index_description.data_types.front())
+    , column_name(index_description.column_names.front())
+{
+}
+
+std::pair<ColumnPtr,size_t> MergeTreePreprocessor::processColumn(const ColumnWithTypeAndName & index_column_with_type_and_name, size_t start_row, size_t n_rows) const
+{
+    auto index_column = index_column_with_type_and_name.column;
+
+    if (expression.getActions().empty())
+        return {index_column, start_row};
+
+    if (start_row != 0 || n_rows != index_column->size())
+        index_column = index_column->cut(start_row, n_rows);
+
+    Block block( {ColumnWithTypeAndName(index_column, index_column_with_type_and_name.type, index_column_with_type_and_name.name) } );
+
+    expression.execute(block, n_rows);
+
+    return {block.safeGetByPosition(0).column, 0};
+}
+
+String MergeTreePreprocessor::processString(const String &input) const
+{
+    if (expression.getActions().empty())
+        return input;
+
+    Field field(input);
+    ColumnWithTypeAndName entry(column_type->createColumnConst(1, field), column_type, column_name);
+
+    Block block;
+    block.insert(entry);
+
+    size_t nrows = 1;
+    expression.execute(block, nrows);
+
+    return block.safeGetByPosition(0).column->getDataAt(0).toString();
+
+}
+
+ExpressionActions MergeTreePreprocessor::parseExpression(const IndexDescription & index_description, const String & expression)
 {
     if (std::ranges::all_of(expression, isspace))
-        return nullptr;
+        return ExpressionActions(ActionsDAG());
 
     const char * expression_begin = &*expression.begin();
     const char * expression_end = &*expression.end();
@@ -1411,8 +1458,8 @@ ExpressionActionsPtr MergeTreeIndexText::parseExpression(const IndexDescription 
 
 
     // TODO(JAM): Check this
-    String name = expression_ast->getColumnName();
-    String alias = expression_ast->getAliasOrColumnName();
+    const String name = expression_ast->getColumnName();
+    const String alias = expression_ast->getAliasOrColumnName();
 
     chassert(index_description.column_names.size() == 1);
     chassert(index_description.data_types.size() == 1);
@@ -1439,10 +1486,7 @@ ExpressionActionsPtr MergeTreeIndexText::parseExpression(const IndexDescription 
     ActionsDAG actions = visitor_data.getActions();
     actions.project(NamesWithAliases({{name, alias}}));
 
-    ExpressionActionsPtr preprocessor_actions = std::make_shared<ExpressionActions>(std::move(actions));
-
-    return preprocessor_actions;
+    return ExpressionActions(std::move(actions));
 }
-
 
 }

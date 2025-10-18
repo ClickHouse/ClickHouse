@@ -10,10 +10,12 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/StringHashMap.h>
 #include <Common/logger_useful.h>
+#include "Core/ColumnWithTypeAndName.h"
 #include <Interpreters/BloomFilter.h>
 #include <Interpreters/ITokenExtractor.h>
 #include <absl/container/flat_hash_map.h>
 #include <Parsers/ExpressionListParsers.h>
+#include <Interpreters/ExpressionActions.h>
 
 
 #include <roaring.hh>
@@ -279,7 +281,9 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
 
 struct MergeTreeIndexTextGranuleBuilder
 {
-    MergeTreeIndexTextGranuleBuilder(MergeTreeIndexTextParams params_, TokenExtractorPtr token_extractor_);
+    MergeTreeIndexTextGranuleBuilder(
+        MergeTreeIndexTextParams params_,
+        TokenExtractorPtr token_extractor_);
 
     /// Extracts tokens from the document and adds them to the granule.
     void addDocument(StringRef document);
@@ -301,9 +305,32 @@ struct MergeTreeIndexTextGranuleBuilder
     std::unique_ptr<Arena> arena;
 };
 
+class MergeTreePreprocessor
+{
+    static ExpressionActions parseExpression(const IndexDescription & index, const String & expression);
+
+public:
+    MergeTreePreprocessor(const String & expression, const IndexDescription & index_description);
+    std::pair<ColumnPtr,size_t> processColumn(const ColumnWithTypeAndName & column, size_t start_row, size_t n_rows) const;
+    String processString(const String &input) const;
+
+private:
+    ExpressionActions expression;
+    DataTypePtr column_type;
+    String column_name;
+};
+
+using MergeTreePreprocessorPtr = std::shared_ptr<MergeTreePreprocessor>;
+
+
 struct MergeTreeIndexAggregatorText final : IMergeTreeIndexAggregator
 {
-    MergeTreeIndexAggregatorText(String index_column_name_, MergeTreeIndexTextParams params_, TokenExtractorPtr token_extractor_);
+    MergeTreeIndexAggregatorText(
+        String index_column_name_,
+        MergeTreeIndexTextParams params_,
+        TokenExtractorPtr token_extractor_,
+        MergeTreePreprocessorPtr preprocessor_);
+
     ~MergeTreeIndexAggregatorText() override = default;
 
     bool empty() const override { return granule_builder.empty(); }
@@ -314,6 +341,7 @@ struct MergeTreeIndexAggregatorText final : IMergeTreeIndexAggregator
     MergeTreeIndexTextParams params;
     TokenExtractorPtr token_extractor;
     MergeTreeIndexTextGranuleBuilder granule_builder;
+    MergeTreePreprocessorPtr preprocessor;
 };
 
 class ASTIndexDeclaration;
@@ -323,9 +351,9 @@ class MergeTreeIndexText final : public IMergeTreeIndex
 {
 
     static Tuple parseNamedArgumentFromAST(const ASTFunction * ast_equal_function);
-    static const ASTFunction * tryGetPreprocessorFromAST(const ASTPtr ast_preprocessor_argument);
-    static ExpressionActionsPtr parseExpression(const IndexDescription & index, const String & expression);
+    static const ASTFunction * tryGetPreprocessorFromAST(ASTPtr ast_preprocessor_argument);
 
+    //static void ExecuteExpressionInplace(ExpressionActionsPtr expression, ColumnWithTypeAndName &input);
 public:
     MergeTreeIndexText(
         const IndexDescription & index_,
@@ -353,7 +381,7 @@ public:
     MergeTreeIndexTextParams params;
     std::unique_ptr<ITokenExtractor> token_extractor;
 
-    ExpressionActionsPtr preprocessor {nullptr};
+    MergeTreePreprocessorPtr preprocessor;
 };
 
 }

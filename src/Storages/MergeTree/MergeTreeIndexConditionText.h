@@ -31,6 +31,8 @@ struct TextSearchQuery
 
 using TextSearchQueryPtr = std::shared_ptr<TextSearchQuery>;
 
+class MergeTreePreprocessor;
+using MergeTreePreprocessorPtr = std::shared_ptr<MergeTreePreprocessor>;
 
 /// Condition for text index.
 /// Unlike conditions for other indexes, it can be used after analysis
@@ -43,7 +45,7 @@ public:
         ContextPtr context,
         const Block & index_sample_block,
         TokenExtractorPtr token_extactor_,
-        ExpressionActionsPtr preprocessor_);
+        MergeTreePreprocessorPtr preprocessor_);
 
     ~MergeTreeIndexConditionText() override = default;
     static bool isSupportedFunctionForDirectRead(const String & function_name);
@@ -128,7 +130,7 @@ private:
     TextSearchMode global_search_mode = TextSearchMode::All;
 
     /// Reference preprocessor expression
-    ExpressionActionsPtr preprocessor;
+    MergeTreePreprocessorPtr preprocessor;
 };
 
 static constexpr std::string_view TEXT_INDEX_VIRTUAL_COLUMN_PREFIX = "__text_index_";
