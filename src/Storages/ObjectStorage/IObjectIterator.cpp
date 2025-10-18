@@ -8,7 +8,7 @@
 #include <Core/Settings.h>
 #include <Core/Defines.h>
 #include <Storages/ObjectStorage/Utils.h>
-#include "Processors/Formats/IInputFormat.h"
+#include <Processors/Formats/IInputFormat.h>
 
 namespace DB
 {

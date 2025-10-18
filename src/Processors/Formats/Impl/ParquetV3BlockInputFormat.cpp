@@ -1,7 +1,6 @@
 #include <memory>
 #include <optional>
 #include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
-#include "Processors/Formats/Impl/ParquetBlockInputFormat.h"
 
 #if USE_PARQUET
 
@@ -10,6 +9,7 @@
 #include <Formats/FormatParserSharedResources.h>
 #include <IO/SharedThreadPools.h>
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
+#include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 
 namespace DB
 {

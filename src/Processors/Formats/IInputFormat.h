@@ -4,7 +4,7 @@
 #include <IO/ReadBuffer.h>
 #include <Processors/Formats/InputFormatErrorsLogger.h>
 #include <Common/PODArray.h>
-#include "IO/WriteBuffer.h"
+#include <IO/WriteBuffer.h>
 #include <base/types.h>
 #include <Core/BlockMissingValues.h>
 #include <Processors/ISource.h>
