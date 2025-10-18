@@ -198,7 +198,12 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
     if (read_result.num_rows != 0)
     {
         for (const auto & column : read_result.columns)
-            column->assumeMutableRef().shrinkToFit();
+        {
+            /// We may have columns that has other references, usually it is a constant column that has been created during analysis
+            /// (that will not be const here anymore, i.e. after materialize()), and we do not need to shrink it anyway.
+            if (column->use_count() == 1)
+                column->assumeMutableRef().shrinkToFit();
+        }
         block = sample_block.cloneWithColumns(read_result.columns);
     }
 
