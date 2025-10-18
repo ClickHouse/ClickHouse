@@ -402,6 +402,27 @@
     M(MergeTreeDataWriterBlocks, "Number of blocks INSERTed to MergeTree tables. Each block forms a data part of level zero.", ValueType::Number) \
     M(MergeTreeDataWriterBlocksAlreadySorted, "Number of blocks INSERTed to MergeTree tables that appeared to be already sorted.", ValueType::Number) \
     \
+    /* Per-executor background executor task timings */ \
+    M(MergeMutateBackgroundExecutorTaskExecuteStepMicroseconds, "Time spent in executeStep() for MergeMutate executor tasks.", ValueType::Microseconds) \
+    M(MergeMutateBackgroundExecutorTaskCancelMicroseconds, "Time spent in cancel() for MergeMutate executor tasks.", ValueType::Microseconds) \
+    M(MergeMutateBackgroundExecutorTaskResetMicroseconds, "Time spent resetting task for MergeMutate executor.", ValueType::Microseconds) \
+    M(MergeMutateBackgroundExecutorWaitMicroseconds, "Time spent waiting for completion in MergeMutate executor.", ValueType::Microseconds) \
+    \
+    M(MoveBackgroundExecutorTaskExecuteStepMicroseconds, "Time spent in executeStep() for Move executor tasks.", ValueType::Microseconds) \
+    M(MoveBackgroundExecutorTaskCancelMicroseconds, "Time spent in cancel() for Move executor tasks.", ValueType::Microseconds) \
+    M(MoveBackgroundExecutorTaskResetMicroseconds, "Time spent resetting task for Move executor.", ValueType::Microseconds) \
+    M(MoveBackgroundExecutorWaitMicroseconds, "Time spent waiting for completion in Move executor.", ValueType::Microseconds) \
+    \
+    M(FetchBackgroundExecutorTaskExecuteStepMicroseconds, "Time spent in executeStep() for Fetch executor tasks.", ValueType::Microseconds) \
+    M(FetchBackgroundExecutorTaskCancelMicroseconds, "Time spent in cancel() for Fetch executor tasks.", ValueType::Microseconds) \
+    M(FetchBackgroundExecutorTaskResetMicroseconds, "Time spent resetting task for Fetch executor.", ValueType::Microseconds) \
+    M(FetchBackgroundExecutorWaitMicroseconds, "Time spent waiting for completion in Fetch executor.", ValueType::Microseconds) \
+    \
+    M(CommonBackgroundExecutorTaskExecuteStepMicroseconds, "Time spent in executeStep() for Common executor tasks.", ValueType::Microseconds) \
+    M(CommonBackgroundExecutorTaskCancelMicroseconds, "Time spent in cancel() for Common executor tasks.", ValueType::Microseconds) \
+    M(CommonBackgroundExecutorTaskResetMicroseconds, "Time spent resetting task for Common executor.", ValueType::Microseconds) \
+    M(CommonBackgroundExecutorWaitMicroseconds, "Time spent waiting for completion in Common executor.", ValueType::Microseconds) \
+    \
     M(MergeTreeDataWriterSkipIndicesCalculationMicroseconds, "Time spent calculating skip indices", ValueType::Microseconds) \
     M(MergeTreeDataWriterStatisticsCalculationMicroseconds, "Time spent calculating statistics", ValueType::Microseconds) \
     M(MergeTreeDataWriterSortingBlocksMicroseconds, "Time spent sorting blocks", ValueType::Microseconds) \
