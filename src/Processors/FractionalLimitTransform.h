@@ -28,7 +28,8 @@ private:
     Float32 limit_fraction;
     Float32 offset_fraction;
 
-    // real LIMIT and OFFSET values to use after (data_rows_cnt * fraction) evaluation.
+    // Variables to hold real LIMIT and OFFSET values to 
+    // use after (data_rows_cnt * fraction) calculation.
     UInt64 offset = 0;
     UInt64 limit = 0;
 
@@ -54,8 +55,13 @@ private:
     std::vector<PortsData> ports_data;
     size_t num_finished_input_ports = 0;
 
+    // 1. cache all input chunks (with their output destination)
+    // 2. get total rows cnt from input
+    // 3. calculate target limit, offset
+    // 4. pull data from the cache like a normal limit, offset.
     size_t rows_cnt = 0;
-    struct CacheEntry {
+    struct CacheEntry 
+    {
         OutputPort* output_port = nullptr;
         Chunk chunk;
     };

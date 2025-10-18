@@ -39,8 +39,11 @@ private:
     std::vector<PortsData> ports_data;
     size_t num_finished_input_ports = 0;
 
+    // 1. cache all input chunks (with their output destination)
+    // 2. get total rows cnt from input
+    // 3. calculate target limit, offset
+    // 4. pull data from the cache like a normal limit, offset.
     UInt64 rows_cnt = 0;
-
     struct CacheEntity 
     {
         OutputPort * output_port = nullptr;
