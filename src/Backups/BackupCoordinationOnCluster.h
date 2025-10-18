@@ -14,6 +14,9 @@
 namespace DB
 {
 
+class IIObjectStorageKeysGenerator;
+using ObjectStorageKeysGeneratorPtr = std::shared_ptr<IObjectStorageKeysGenerator>;
+
 /// Implementation of the IBackupCoordination interface performing coordination via ZooKeeper. It's necessary for "BACKUP ON CLUSTER".
 class BackupCoordinationOnCluster : public IBackupCoordination
 {
@@ -32,7 +35,8 @@ public:
         bool allow_concurrent_backup_,
         BackupConcurrencyCounters & concurrency_counters_,
         ThreadPoolCallbackRunnerUnsafe<void> schedule_,
-        QueryStatusPtr process_list_element_);
+        QueryStatusPtr process_list_element_,
+        ObjectStorageKeysGeneratorPtr keys_gen_);
 
     ~BackupCoordinationOnCluster() override;
 
@@ -113,6 +117,7 @@ private:
     const size_t current_host_index;
     const bool plain_backup;
     const QueryStatusPtr process_list_element;
+    const ObjectStorageKeysGeneratorPtr keys_gen;
     const LoggerPtr log;
 
     /// The order is important: `stage_sync` must be initialized after `with_retries` and `cleaner`.
