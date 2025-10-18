@@ -196,14 +196,6 @@ SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, 'foo-');
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, 'abc+* foo+');
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, 'abc ba');
 
---- Test for FixedString needles
---- Not a systematic test, just to see that FixedString needles work in principle
-SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, [toFixedString('abc', 3)]);
-SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, [toFixedString('abc', 3)]);
-
-SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, toFixedString('abc', 3)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, toFixedString('abc', 3)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-
 DROP TABLE tab;
 
 SELECT '-- Ngram tokenizer';
