@@ -653,6 +653,21 @@ void QueryAnalyzer::convertLimitOffsetExpression(QueryTreeNodePtr & expression_n
         }
     }
 
+    // If we are here, then the number is either negative or outside the supported range or float
+    // Consider the negative limit value case
+    {
+        Field converted_value = convertFieldToType(limit_offset_constant_node->getValue(), DataTypeInt64());
+
+        if (!converted_value.isNull())
+        {
+            auto result_constant_node = std::make_shared<ConstantNode>(std::move(converted_value), std::make_shared<DataTypeInt64>());
+            result_constant_node->getSourceExpression() = limit_offset_constant_node->getSourceExpression();
+
+            expression_node = std::move(result_constant_node);
+            return;
+        }
+    }
+
     {
         Field converted_value = convertFieldToType(limit_offset_constant_node->getValue(), DataTypeDecimal32(8, 7));
         if (!converted_value.isNull())
@@ -665,21 +680,6 @@ void QueryAnalyzer::convertLimitOffsetExpression(QueryTreeNodePtr & expression_n
                 expression_node = std::move(result_constant_node);
                 return;
             }
-        }
-    }
-
-    // If we are here, then the number is either negative or outside the supported range
-    // Consider the negative limit value case
-    {
-        Field converted_value = convertFieldToType(limit_offset_constant_node->getValue(), DataTypeInt64());
-
-        if (!converted_value.isNull())
-        {
-            auto result_constant_node = std::make_shared<ConstantNode>(std::move(converted_value), std::make_shared<DataTypeInt64>());
-            result_constant_node->getSourceExpression() = limit_offset_constant_node->getSourceExpression();
-
-            expression_node = std::move(result_constant_node);
-            return;
         }
     }
 
