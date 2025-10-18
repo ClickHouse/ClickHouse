@@ -1,4 +1,4 @@
-#include "HTTPDictionarySource.h"
+#include <Dictionaries/HTTPDictionarySource.h>
 #include <Common/HTTPHeaderFilter.h>
 #include <Core/ServerSettings.h>
 #include <Formats/formatBlock.h>
@@ -11,11 +11,10 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Common/logger_useful.h>
-#include "DictionarySourceFactory.h"
-#include "DictionarySourceHelpers.h"
-#include "DictionaryStructure.h"
+#include <Dictionaries/DictionarySourceFactory.h>
+#include <Dictionaries/DictionarySourceHelpers.h>
+#include <Dictionaries/DictionaryStructure.h>
 #include <Storages/NamedCollectionsHelpers.h>
-#include "registerDictionaries.h"
 
 
 namespace DB
@@ -207,7 +206,8 @@ std::string HTTPDictionarySource::toString() const
 
 void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
 {
-    auto create_table_source = [=](const DictionaryStructure & dict_struct,
+    auto create_table_source = [=](const String & /*name*/,
+                                   const DictionaryStructure & dict_struct,
                                    const Poco::Util::AbstractConfiguration & config,
                                    const std::string & config_prefix,
                                    Block & sample_block,
@@ -281,22 +281,24 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
         else if (!endpoint.empty() && !endpoint.starts_with('/'))
             url.push_back('/');
 
+
+        auto context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
+
+        auto uri = url + endpoint;
+        if (created_from_ddl)
+        {
+            context->getRemoteHostFilter().checkURL(Poco::URI(uri));
+            context->getHTTPHeaderFilter().checkAndNormalizeHeaders(header_entries);
+        }
+
         auto configuration = HTTPDictionarySource::Configuration
         {
-            .url = url + endpoint,
+            .url = uri,
             .format = format,
             .update_field = config.getString(settings_config_prefix + ".update_field", ""),
             .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1),
             .header_entries = std::move(header_entries)
         };
-
-        auto context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
-
-        if (created_from_ddl)
-        {
-            context->getRemoteHostFilter().checkURL(Poco::URI(configuration.url));
-            context->getHTTPHeaderFilter().checkHeaders(configuration.header_entries);
-        }
 
         return std::make_unique<HTTPDictionarySource>(dict_struct, configuration, credentials, sample_block, context);
     };

@@ -9,7 +9,6 @@
 #include <Access/EnabledRowPolicies.h>
 #include <Access/QuotaUsage.h>
 #include <Core/UUID.h>
-#include <Interpreters/ClientInfo.h>
 #include <base/scope_guard.h>
 #include <Common/SettingsChanges.h>
 
@@ -35,7 +34,6 @@ struct IAccessEntity;
 using ASTPtr = std::shared_ptr<IAST>;
 class Context;
 using ContextPtr = std::shared_ptr<const Context>;
-
 
 class ContextAccess : public std::enable_shared_from_this<ContextAccess>
 {
@@ -131,6 +129,13 @@ public:
     void checkGranteeIsAllowed(const UUID & grantee_id, const IAccessEntity & grantee) const;
     /// Checks if grantees are allowed for the current user, throws an exception if not.
     void checkGranteesAreAllowed(const std::vector<UUID> & grantee_ids) const;
+
+    /// Checks access of grants with parameter where a filter can be applied.
+    /// For example, for `GRANT READ ON S3('s3://foo.*') TO user` calling `checkAccess(READ, "S3")` will throw an error
+    /// because we are checking for `READ` permissions for all possible URLs.
+    ///
+    /// But calling `checkAccessWithFilter(READ, "S3", "s3://foo/bar.csv")` will succeed, because we have just enough rights.
+    void checkAccessWithFilter(const ContextPtr & context, const AccessFlags & flags, std::string_view parameter, std::string_view filter) const;
 
     static AccessRights addImplicitAccessRights(const AccessRights & access, const AccessControl & access_control);
 
@@ -311,6 +316,9 @@ public:
     ALWAYS_INLINE void checkGranteeIsAllowed(const UUID & grantee_id, const IAccessEntity & grantee) const { access->checkGranteeIsAllowed(grantee_id, grantee); }
     /// Checks if grantees are allowed for the current user, throws an exception if not.
     ALWAYS_INLINE void checkGranteesAreAllowed(const std::vector<UUID> & grantee_ids) const { access->checkGranteesAreAllowed(grantee_ids); }
+
+    /// Checks access of grants with parameter where a filter can be applied.
+    ALWAYS_INLINE void checkAccessWithFilter(const AccessFlags & flags, std::string_view parameter, std::string_view filter) const { access->checkAccessWithFilter(context, flags, parameter, filter); }
 
 private:
     ContextAccessPtr access;

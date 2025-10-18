@@ -1,7 +1,6 @@
 #include <Analyzer/Passes/AggregateFunctionsArithmericOperationsPass.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/IAggregateFunction.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>

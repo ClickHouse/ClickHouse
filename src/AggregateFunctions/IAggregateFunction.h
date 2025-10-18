@@ -4,14 +4,13 @@
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
-#include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
+#include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Field.h>
 #include <Core/IResolvedFunction.h>
 #include <Core/ValuesWithType.h>
 #include <Interpreters/Context_fwd.h>
 #include <base/types.h>
-#include <Common/Exception.h>
 #include <Common/ThreadPool_fwd.h>
 
 #include <IO/ReadBuffer.h>
@@ -32,11 +31,6 @@ namespace llvm
 namespace DB
 {
 struct Settings;
-
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
 
 class Arena;
 class ReadBuffer;
@@ -90,16 +84,17 @@ public:
     bool haveEqualArgumentTypes(const IAggregateFunction & rhs) const;
 
     /// Get type which will be used for prediction result in case if function is an ML method.
-    virtual DataTypePtr getReturnTypeToPredict() const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Prediction is not supported for {}", getName());
-    }
+    virtual DataTypePtr getReturnTypeToPredict() const;
 
     virtual bool isVersioned() const { return false; }
 
     virtual size_t getVersionFromRevision(size_t /* revision */) const { return 0; }
 
     virtual size_t getDefaultVersion() const { return 0; }
+
+    /// Some aggregate functions have more efficient implementation for merging final states.
+    /// See AggregateFunctionAny for example.
+    virtual AggregateFunctionPtr getAggregateFunctionForMergingFinal() const { return shared_from_this(); }
 
     ~IAggregateFunction() override = default;
 
@@ -148,10 +143,8 @@ public:
 
     constexpr static bool parallelizeMergeWithKey() { return false; }
 
-    virtual void parallelizeMergePrepare(AggregateDataPtrs & /*places*/, ThreadPool & /*thread_pool*/, std::atomic<bool> & /*is_cancelled*/) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "parallelizeMergePrepare() with thread pool parameter isn't implemented for {} ", getName());
-    }
+    virtual void
+    parallelizeMergePrepare(AggregateDataPtrs & /*places*/, ThreadPool & /*thread_pool*/, std::atomic<bool> & /*is_cancelled*/) const;
 
     /// Merges state (on which place points to) with other state of current aggregation function.
     virtual void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const = 0;
@@ -164,11 +157,12 @@ public:
     virtual bool canOptimizeEqualKeysRanges() const { return true; }
 
     /// Should be used only if isAbleToParallelizeMerge() returned true.
-    virtual void
-    merge(AggregateDataPtr __restrict /*place*/, ConstAggregateDataPtr /*rhs*/, ThreadPool & /*thread_pool*/, std::atomic<bool> & /*is_cancelled*/, Arena * /*arena*/) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "merge() with thread pool parameter isn't implemented for {} ", getName());
-    }
+    virtual void merge(
+        AggregateDataPtr __restrict /*place*/,
+        ConstAggregateDataPtr /*rhs*/,
+        ThreadPool & /*thread_pool*/,
+        std::atomic<bool> & /*is_cancelled*/,
+        Arena * /*arena*/) const;
 
     /// Merges states (on which src places points to) with other states (on which dst places points to) of current aggregation function
     /// then destroy states (on which src places points to).
@@ -201,13 +195,7 @@ public:
     /// but if we need to insert AggregateData into ColumnAggregateFunction we use special method
     /// insertInto that inserts default value and then performs merge with provided AggregateData
     /// instead of just copying pointer to this AggregateData. Used in WindowTransform.
-    virtual void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const
-    {
-        if (isState())
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} is marked as State but method insertMergeResultInto is not implemented", getName());
-
-        insertResultInto(place, to, arena);
-    }
+    virtual void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const;
 
     /// Used for machine learning methods. Predict result from trained model.
     /// Will insert result into `to` column for rows in range [offset, offset + limit).
@@ -217,10 +205,7 @@ public:
         const ColumnsWithTypeAndName & /*arguments*/,
         size_t /*offset*/,
         size_t /*limit*/,
-        ContextPtr /*context*/) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method predictValues is not supported for {}", getName());
-    }
+        ContextPtr /*context*/) const;
 
     /** Returns true for aggregate functions of type -State
       * They are executed as other aggregate functions, but not finalized (return an aggregation state that can be combined with another).
@@ -264,6 +249,8 @@ public:
         AggregateDataPtr * places,
         size_t place_offset,
         const AggregateDataPtr * rhs,
+        ThreadPool & thread_pool,
+        std::atomic<bool> & is_cancelled,
         Arena * arena) const = 0;
 
     /** The same for single place.
@@ -388,36 +375,21 @@ public:
     /// Description of AggregateFunction in form of name(parameters)(argument_types).
     String getDescription() const;
 
-#if USE_EMBEDDED_COMPILER
-
     /// Is function JIT compilable
     virtual bool isCompilable() const { return false; }
 
     /// compileCreate should generate code for initialization of aggregate function state in aggregate_data_ptr
-    virtual void compileCreate(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*aggregate_data_ptr*/) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
-    }
+    virtual void compileCreate(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*aggregate_data_ptr*/) const;
 
     /// compileAdd should generate code for updating aggregate function state stored in aggregate_data_ptr
-    virtual void compileAdd(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*aggregate_data_ptr*/, const ValuesWithType & /*arguments*/) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
-    }
+    virtual void compileAdd(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*aggregate_data_ptr*/, const ValuesWithType & /*arguments*/) const;
 
     /// compileMerge should generate code for merging aggregate function states stored in aggregate_data_dst_ptr and aggregate_data_src_ptr
-    virtual void compileMerge(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*aggregate_data_dst_ptr*/, llvm::Value * /*aggregate_data_src_ptr*/) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
-    }
+    virtual void compileMerge(
+        llvm::IRBuilderBase & /*builder*/, llvm::Value * /*aggregate_data_dst_ptr*/, llvm::Value * /*aggregate_data_src_ptr*/) const;
 
     /// compileGetResult should generate code for getting result value from aggregate function state stored in aggregate_data_ptr
-    virtual llvm::Value * compileGetResult(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*aggregate_data_ptr*/) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
-    }
-
-#endif
+    virtual llvm::Value * compileGetResult(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*aggregate_data_ptr*/) const;
 
 protected:
     DataTypes argument_types;
@@ -528,8 +500,9 @@ public:
         auto offset_it = column_sparse.getIterator(row_begin);
 
         for (size_t i = row_begin; i < row_end; ++i, ++offset_it)
-            static_cast<const Derived *>(this)->add(places[offset_it.getCurrentRow()] + place_offset,
-                                                    &values, offset_it.getValueIndex(), arena);
+            if (places[offset_it.getCurrentRow()])
+                static_cast<const Derived *>(this)->add(places[offset_it.getCurrentRow()] + place_offset,
+                                                        &values, offset_it.getValueIndex(), arena);
     }
 
     void mergeBatch(
@@ -538,11 +511,20 @@ public:
         AggregateDataPtr * places,
         size_t place_offset,
         const AggregateDataPtr * rhs,
+        ThreadPool & thread_pool,
+        std::atomic<bool> & is_cancelled,
         Arena * arena) const override
     {
         for (size_t i = row_begin; i < row_end; ++i)
+        {
             if (places[i])
-                static_cast<const Derived *>(this)->merge(places[i] + place_offset, rhs[i], arena);
+            {
+                if constexpr (Derived::parallelizeMergeWithKey())
+                    static_cast<const Derived *>(this)->merge(places[i] + place_offset, rhs[i], thread_pool, is_cancelled, arena);
+                else
+                    static_cast<const Derived *>(this)->merge(places[i] + place_offset, rhs[i], arena);
+            }
+        }
     }
 
     void mergeAndDestroyBatch(AggregateDataPtr * dst_places, AggregateDataPtr * rhs_places, size_t size, size_t offset, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override

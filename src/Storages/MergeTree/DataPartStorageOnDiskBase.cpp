@@ -1,6 +1,7 @@
 #include <string_view>
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
+#include <Disks/IDiskTransaction.h>
 #include <Disks/TemporaryFileOnDisk.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/ReadBufferFromString.h>
@@ -9,13 +10,14 @@
 #include <Common/formatReadable.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/Backup.h>
-#include <Backups/BackupEntryFromSmallFile.h>
 #include <Backups/BackupEntryFromImmutableFile.h>
 #include <Backups/BackupEntryWrappedWith.h>
 #include <Backups/BackupSettings.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+
+#include <fmt/ranges.h>
 
 namespace DB
 {
@@ -152,7 +154,7 @@ bool DataPartStorageOnDiskBase::looksLikeBrokenDetachedPartHasTheSameContent(con
 
     if (!original_checksums_content)
     {
-        auto in = storage_from_detached->readFile("checksums.txt", /* settings */ {}, /* read_hint */ {}, /* file_size */ {});
+        auto in = storage_from_detached->readFile("checksums.txt", /* settings */ {}, /* read_hint */ {});
         original_checksums_content.emplace();
         readStringUntilEOF(*original_checksums_content, *in);
     }
@@ -162,7 +164,7 @@ bool DataPartStorageOnDiskBase::looksLikeBrokenDetachedPartHasTheSameContent(con
 
     String detached_checksums_content;
     {
-        auto in = readFile("checksums.txt", /* settings */ {}, /* read_hint */ {}, /* file_size */ {});
+        auto in = readFile("checksums.txt", /* settings */ {}, /* read_hint */ {});
         readStringUntilEOF(detached_checksums_content, *in);
     }
 
@@ -232,7 +234,7 @@ std::string DataPartStorageOnDiskBase::getDiskName() const
 
 std::string DataPartStorageOnDiskBase::getDiskType() const
 {
-    return volume->getDisk()->getDataSourceDescription().toString();
+    return volume->getDisk()->getDataSourceDescription().name();
 }
 
 bool DataPartStorageOnDiskBase::isStoredOnRemoteDisk() const
@@ -265,16 +267,6 @@ bool DataPartStorageOnDiskBase::isBroken() const
 bool DataPartStorageOnDiskBase::isReadonly() const
 {
     return volume->getDisk()->isReadOnly() || volume->getDisk()->isWriteOnce();
-}
-
-void DataPartStorageOnDiskBase::syncRevision(UInt64 revision) const
-{
-    volume->getDisk()->syncRevision(revision);
-}
-
-UInt64 DataPartStorageOnDiskBase::getRevision() const
-{
-    return volume->getDisk()->getRevision();
 }
 
 std::string DataPartStorageOnDiskBase::getDiskPath() const
@@ -315,7 +307,7 @@ DataPartStorageOnDiskBase::getReplicatedFilesDescription(const NameSet & file_na
         file_desc.file_size = file_size;
         file_desc.input_buffer_getter = [disk, path, file_size, read_settings]
         {
-            return disk->readFile(path, read_settings.adjustBufferSize(file_size), file_size, file_size);
+            return disk->readFile(path, read_settings.adjustBufferSize(file_size), file_size);
         };
     }
 
@@ -370,7 +362,6 @@ void DataPartStorageOnDiskBase::backup(
     const NameSet & files_without_checksums,
     const String & path_in_backup,
     const BackupSettings & backup_settings,
-    const ReadSettings & read_settings,
     bool make_temporary_hard_links,
     BackupEntries & backup_entries,
     TemporaryFilesOnDisks * temp_dirs,
@@ -416,17 +407,13 @@ void DataPartStorageOnDiskBase::backup(
     files_to_backup = getActualFileNamesOnDisk(files_to_backup);
 
     bool copy_encrypted = !backup_settings.decrypt_files_from_encrypted_disks;
+    bool allow_checksums_from_remote_paths = backup_settings.allow_checksums_from_remote_paths;
 
     auto backup_file = [&](const String & filepath)
     {
         auto filepath_on_disk = part_path_on_disk / filepath;
         auto filepath_in_backup = part_path_in_backup / filepath;
 
-        if (files_without_checksums.contains(filepath))
-        {
-            backup_entries.emplace_back(filepath_in_backup, std::make_unique<BackupEntryFromSmallFile>(disk, filepath_on_disk, read_settings, copy_encrypted));
-            return;
-        }
         if (is_projection_part && allow_backup_broken_projection && !disk->existsFile(filepath_on_disk))
             return;
 
@@ -447,7 +434,8 @@ void DataPartStorageOnDiskBase::backup(
             file_hash = it->second.file_hash;
         }
 
-        BackupEntryPtr backup_entry = std::make_unique<BackupEntryFromImmutableFile>(disk, filepath_on_disk, copy_encrypted, file_size, file_hash);
+        BackupEntryPtr backup_entry = std::make_unique<BackupEntryFromImmutableFile>(
+            disk, filepath_on_disk, copy_encrypted, file_size, file_hash, allow_checksums_from_remote_paths);
 
         if (temp_dir_owner)
             backup_entry = wrapBackupEntryWith(std::move(backup_entry), temp_dir_owner);
@@ -836,7 +824,7 @@ void DataPartStorageOnDiskBase::remove(
                 try
                 {
                     MergeTreeDataPartChecksums tmp_checksums;
-                    auto in = projection_storage->readFile(checksums_name, {}, {}, {});
+                    auto in = projection_storage->readFile(checksums_name, {}, {});
                     tmp_checksums.read(*in);
 
                     clearDirectory(fs::path(to) / name, *can_remove_description, tmp_checksums, is_temp, log);
@@ -886,16 +874,12 @@ void DataPartStorageOnDiskBase::clearDirectory(
         /// Remove each expected file in directory, then remove directory itself.
         RemoveBatchRequest request;
         for (const auto & file : names_to_remove)
-        {
-            if (isGinFile(file) && (!disk->existsFile(fs::path(dir) / file)))
-                continue;
-
             request.emplace_back(fs::path(dir) / file);
-        }
         request.emplace_back(fs::path(dir) / "default_compression_codec.txt", true);
         request.emplace_back(fs::path(dir) / "delete-on-destroy.txt", true);
         request.emplace_back(fs::path(dir) / IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME, true);
         request.emplace_back(fs::path(dir) / "metadata_version.txt", true);
+        request.emplace_back(fs::path(dir) / IMergeTreeDataPart::COLUMNS_SUBSTREAMS_FILE_NAME, true);
 
         disk->removeSharedFiles(request, !can_remove_shared_data, names_not_to_remove);
         disk->removeDirectory(dir);

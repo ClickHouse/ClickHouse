@@ -5,7 +5,10 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 
 node1 = cluster.add_instance(
-    "node1", stay_alive=True, main_configs=["configs/store_cleanup.xml"]
+    "node1",
+    stay_alive=True,
+    main_configs=["configs/store_cleanup.xml"],
+    with_remote_database_disk=False,  # The test checks data on the local disk
 )
 
 path_to_data = "/var/lib/clickhouse/"

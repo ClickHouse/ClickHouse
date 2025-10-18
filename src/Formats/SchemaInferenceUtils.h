@@ -101,16 +101,22 @@ void transformFinalInferredJSONTypeIfNeeded(DataTypePtr & data_type, const Forma
 void transformInferredJSONTypesFromDifferentFilesIfNeeded(DataTypePtr & first, DataTypePtr & second, const FormatSettings & settings);
 
 /// Make type Nullable recursively:
-/// - Type -> Nullable(type)
-/// - Array(Type) -> Array(Nullable(Type))
-/// - Tuple(Type1, ..., TypeN) -> Tuple(Nullable(Type1), ..., Nullable(TypeN))
-/// - Map(KeyType, ValueType) -> Map(KeyType, Nullable(ValueType))
-/// - LowCardinality(Type) -> LowCardinality(Nullable(Type))
-DataTypePtr makeNullableRecursively(DataTypePtr type);
+///  - Type -> Nullable(type)
+///  - Array(Type) -> Array(Nullable(Type))
+///  - Tuple(Type1, ..., TypeN) -> Tuple(Nullable(Type1), ..., Nullable(TypeN))
+///  - Map(KeyType, ValueType) -> Map(KeyType, Nullable(ValueType))
+///  - LowCardinality(Type) -> LowCardinality(Nullable(Type))
+/// Does not recurse into types with custom name.
+/// E.g. type `Point` (aka `Tuple(Float64, Float64)`) stays unchanged as `Point`, it does not become
+/// `Tuple(Nullable(Float64), Nullable(Float64))`.
+/// But `Bool` becomes `Nullable(Bool)`.
+DataTypePtr makeNullableRecursively(DataTypePtr type, const FormatSettings & settings);
+
+DataTypePtr removeNullableRecursively(DataTypePtr type, const FormatSettings & settings);
 
 /// Call makeNullableRecursively for all types
 /// in the block and return names and types.
-NamesAndTypesList getNamesAndRecursivelyNullableTypes(const Block & header);
+NamesAndTypesList getNamesAndRecursivelyNullableTypes(const Block & header, const FormatSettings & settings);
 
 /// Check if type contains Nothing, like Array(Tuple(Nullable(Nothing), String))
 bool checkIfTypeIsComplete(const DataTypePtr & type);

@@ -1,7 +1,6 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/SingleValueData.h>
-#include <DataTypes/IDataType.h>
-#include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <base/defines.h>
@@ -13,7 +12,6 @@ struct Settings;
 
 namespace ErrorCodes
 {
-extern const int LOGICAL_ERROR;
 extern const int NOT_IMPLEMENTED;
 }
 
@@ -29,8 +27,26 @@ private:
 public:
     explicit AggregateFunctionAny(const DataTypes & argument_types_)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionAny<Data>>(argument_types_, {}, argument_types_[0])
-        , serialization(this->result_type->getDefaultSerialization())
     {
+        if constexpr (!std::is_same_v<Data, SingleValueReference>)
+            serialization = this->result_type->getDefaultSerialization();
+    }
+
+    using IAggregateFunction::argument_types;
+
+    AggregateFunctionPtr getAggregateFunctionForMergingFinal() const override
+    {
+        /// For types that are potentially large, we use SingleValueReference to avoid unnecessary memory allocations during merging final
+        /// Large types are: String, FixedString (N > 20), Array, Map, Object, Variant, Dynamic
+        const auto which = WhichDataType(argument_types[0]);
+        auto * type_fixed_string = typeid_cast<const DataTypeFixedString *>(argument_types[0].get());
+        if (which.isString() || which.isArray() || which.isMap() || which.isObject() || which.isVariant()
+            || which.isDynamic() || (type_fixed_string && type_fixed_string->getN() > 20))
+        {
+            return std::make_shared<AggregateFunctionAny<SingleValueReference>>(argument_types);
+        }
+
+        return IAggregateFunction::getAggregateFunctionForMergingFinal();
     }
 
     String getName() const override { return "any"; }
@@ -126,32 +142,14 @@ public:
 
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
-        this->data(place).read(buf, *serialization, arena);
+        this->data(place).read(buf, *serialization, this->result_type, arena);
     }
 
     bool allocatesMemoryInArena() const override { return Data::allocatesMemoryInArena(); }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        if (isEnum(this->argument_types[0]) && !this->data(place).has())
-        {
-            if (checkColumn<typename DataTypeEnum8::ColumnType>(&to))
-            {
-                const auto* type_enum8 = assert_cast<const DataTypeEnum8*>(this->argument_types[0].get());
-                type_enum8->insertDefaultInto(to);
-            }
-            else if (checkColumn<typename DataTypeEnum16::ColumnType>(&to))
-            {
-                const auto* type_enum16 = assert_cast<const DataTypeEnum16*>(this->argument_types[0].get());
-                type_enum16->insertDefaultInto(to);
-            }
-            else
-            {
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected enum type: {}", this->argument_types[0]->getName());
-            }
-        }
-        else
-            this->data(place).insertResultInto(to);
+        this->data(place).insertResultInto(to, this->result_type);
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -215,8 +213,26 @@ private:
 public:
     explicit AggregateFunctionAnyLast(const DataTypes & argument_types_)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionAnyLast<Data>>(argument_types_, {}, argument_types_[0])
-        , serialization(this->result_type->getDefaultSerialization())
     {
+        if constexpr (!std::is_same_v<Data, SingleValueReference>)
+            serialization = this->result_type->getDefaultSerialization();
+    }
+
+    using IAggregateFunction::argument_types;
+
+    AggregateFunctionPtr getAggregateFunctionForMergingFinal() const override
+    {
+        /// For types that are potentially large, we use SingleValueReference to avoid unnecessary memory allocations during merging final
+        /// Large types are: String, FixedString (N >= 20), Array, Map, Object, Variant, Dynamic
+        const auto which = WhichDataType(argument_types[0]);
+        auto * type_fixed_string = typeid_cast<const DataTypeFixedString *>(argument_types[0].get());
+        if (which.isString() || which.isArray() || which.isMap() || which.isObject() || which.isVariant()
+            || which.isDynamic() || (type_fixed_string && type_fixed_string->getN() >= 20))
+        {
+            return std::make_shared<AggregateFunctionAnyLast<SingleValueReference>>(argument_types);
+        }
+
+        return IAggregateFunction::getAggregateFunctionForMergingFinal();
     }
 
     String getName() const override { return "anyLast"; }
@@ -314,32 +330,14 @@ public:
 
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
-        this->data(place).read(buf, *serialization, arena);
+        this->data(place).read(buf, *serialization, this->result_type, arena);
     }
 
     bool allocatesMemoryInArena() const override { return Data::allocatesMemoryInArena(); }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        if (isEnum(this->argument_types[0]) && !this->data(place).has())
-        {
-            if (checkColumn<typename DataTypeEnum8::ColumnType>(&to))
-            {
-                const auto* type_enum8 = assert_cast<const DataTypeEnum8*>(this->argument_types[0].get());
-                type_enum8->insertDefaultInto(to);
-            }
-            else if (checkColumn<typename DataTypeEnum16::ColumnType>(&to))
-            {
-                const auto* type_enum16 = assert_cast<const DataTypeEnum16*>(this->argument_types[0].get());
-                type_enum16->insertDefaultInto(to);
-            }
-            else
-            {
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected enum type: {}", this->argument_types[0]->getName());
-            }
-        }
-        else
-            this->data(place).insertResultInto(to);
+        this->data(place).insertResultInto(to, this->result_type);
     }
 
 #if USE_EMBEDDED_COMPILER

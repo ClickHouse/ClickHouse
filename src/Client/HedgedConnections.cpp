@@ -1,9 +1,10 @@
-#include "Core/Protocol.h"
+#include <Core/Protocol.h>
 #if defined(OS_LINUX)
 
 #include <Client/HedgedConnections.h>
 #include <Common/ProfileEvents.h>
 #include <Core/Settings.h>
+#include <Core/ProtocolDefines.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context.h>
 
@@ -35,6 +36,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int SOCKET_TIMEOUT;
     extern const int ALL_CONNECTION_TRIES_FAILED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 HedgedConnections::HedgedConnections(
@@ -112,6 +114,23 @@ void HedgedConnections::sendScalarsData(Scalars & data)
                 send_scalars_data(replica);
 
     pipeline_for_new_replicas.add(send_scalars_data);
+}
+
+void HedgedConnections::sendQueryPlan(const QueryPlan & query_plan)
+{
+    std::lock_guard lock(cancel_mutex);
+
+    if (!sent_query)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot send query plan: query not yet sent.");
+
+    auto send_query_plan = [&query_plan](ReplicaState & replica) { replica.connection->sendQueryPlan(query_plan); };
+
+    for (auto & offset_state : offset_states)
+        for (auto & replica : offset_state.replicas)
+            if (replica.connection)
+                send_query_plan(replica);
+
+    pipeline_for_new_replicas.add(send_query_plan);
 }
 
 void HedgedConnections::sendExternalTablesData(std::vector<ExternalTablesData> & data)
@@ -339,6 +358,11 @@ Packet HedgedConnections::receivePacket()
 {
     std::lock_guard lock(cancel_mutex);
     return receivePacketUnlocked({});
+}
+
+UInt64 HedgedConnections::receivePacketTypeUnlocked(AsyncCallback)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'receivePacketTypeUnlocked()' not implemented for HedgedConnections");
 }
 
 Packet HedgedConnections::receivePacketUnlocked(AsyncCallback async_callback)

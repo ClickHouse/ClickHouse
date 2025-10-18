@@ -401,7 +401,7 @@ public:
                             for (size_t i = 0; i < size; ++i)
                             {
                                 vec_res[i] = StringUnaryOperationReduceImpl<Op<UInt8>>::vector(
-                                    chars.data() + offsets[i - 1], chars.data() + offsets[i] - 1);
+                                    chars.data() + offsets[i - 1], chars.data() + offsets[i]);
                             }
                             result_column = std::move(col_res);
                             return true;
@@ -542,9 +542,9 @@ public:
         return FunctionUnaryArithmeticMonotonicity<Name>::has();
     }
 
-    Monotonicity getMonotonicityForRange(const IDataType &, const Field & left, const Field & right) const override
+    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
     {
-        return FunctionUnaryArithmeticMonotonicity<Name>::get(left, right);
+        return FunctionUnaryArithmeticMonotonicity<Name>::get(type, left, right);
     }
 };
 
@@ -552,7 +552,7 @@ public:
 struct PositiveMonotonicity
 {
     static bool has() { return true; }
-    static IFunction::Monotonicity get(const Field &, const Field &)
+    static IFunction::Monotonicity get(const IDataType &, const Field &, const Field &)
     {
         return { .is_monotonic = true };
     }

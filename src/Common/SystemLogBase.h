@@ -7,9 +7,9 @@
 #include <base/types.h>
 
 #include <Interpreters/Context_fwd.h>
-#include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Common/ThreadPool_fwd.h>
+
 
 #define SYSTEM_LOG_ELEMENTS(M) \
     M(AsynchronousMetricLogElement) \
@@ -31,7 +31,16 @@
     M(AsynchronousInsertLogElement) \
     M(BackupLogElement) \
     M(BlobStorageLogElement) \
-    M(QueryMetricLogElement)
+    M(QueryMetricLogElement) \
+    M(DeadLetterQueueElement) \
+    M(ZooKeeperConnectionLogElement) \
+    M(IcebergMetadataLogElement) \
+    M(DeltaMetadataLogElement) \
+
+#define SYSTEM_LOG_ELEMENTS_CLOUD(M) \
+    M(DistributedCacheLogElement) \
+    M(DistributedCacheServerLogElement) \
+
 
 namespace Poco
 {
@@ -58,13 +67,16 @@ public:
 
     virtual String getName() const = 0;
 
+    /// For implementations that buffer data in memory and flush it to the log periodically,
+    /// this method forces an immediate write to the log.
+    virtual void flushBufferToLog(std::chrono::system_clock::time_point /* current_time */) {}
     /// Return the index of the latest added log element. That index no less than the flashed index.
     /// The flashed index is the index of the last log element which has been flushed successfully.
     /// Thereby all the records whose index is less than the flashed index are flushed already.
     virtual Index getLastLogIndex() = 0;
     /// Call this method to wake up the flush thread and flush the data in the background. It is non blocking call
     virtual void notifyFlush(Index expected_flushed_index, bool should_prepare_tables_anyway) = 0;
-    /// Call this method to wait intill the logs are flushed up to expected_flushed_index. It is blocking call.
+    /// Call this method to wait until the logs are flushed up to expected_flushed_index. It is blocking call.
     virtual void flush(Index expected_flushed_index, bool should_prepare_tables_anyway) = 0;
 
     virtual void prepareTable() = 0;
@@ -83,6 +95,8 @@ public:
     virtual ~ISystemLog();
 
     virtual void savingThreadFunction() = 0;
+
+    virtual bool mustBePreparedAtStartup() const { return false; }
 
 protected:
     std::mutex thread_mutex;
@@ -207,6 +221,7 @@ public:
 
     String getName() const override { return LogElement::name(); }
 
+    static const char * getDefaultPartitionBy() { return "toYYYYMM(event_date)"; }
     static const char * getDefaultOrderBy() { return "event_date, event_time"; }
     static consteval size_t getDefaultMaxSize() { return 1048576; }
     static consteval size_t getDefaultReservedSize() { return 8192; }

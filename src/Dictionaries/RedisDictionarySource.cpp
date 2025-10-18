@@ -1,7 +1,8 @@
-#include "RedisDictionarySource.h"
-#include "DictionarySourceFactory.h"
-#include "DictionaryStructure.h"
+#include <Dictionaries/RedisDictionarySource.h>
+#include <Dictionaries/DictionarySourceFactory.h>
+#include <Dictionaries/DictionaryStructure.h>
 
+#include <Columns/IColumn.h>
 #include <Interpreters/Context.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -9,7 +10,7 @@
 
 #include <IO/WriteHelpers.h>
 
-#include "RedisSource.h"
+#include <Dictionaries/RedisSource.h>
 
 namespace DB
 {
@@ -22,7 +23,8 @@ namespace DB
 
     void registerDictionarySourceRedis(DictionarySourceFactory & factory)
     {
-        auto create_table_source = [=](const DictionaryStructure & dict_struct,
+        auto create_table_source = [=](const String & /*name*/,
+                                    const DictionaryStructure & dict_struct,
                                     const Poco::Util::AbstractConfiguration & config,
                                     const String & config_prefix,
                                     Block & sample_block,
@@ -45,7 +47,7 @@ namespace DB
                 .pool_size = config.getUInt(redis_config_prefix + ".pool_size", DEFAULT_REDIS_POOL_SIZE),
             };
 
-            return std::make_unique<RedisDictionarySource>(dict_struct, configuration, sample_block);
+            return std::make_unique<RedisDictionarySource>(dict_struct, configuration, std::make_shared<const Block>(std::move(sample_block)));
         };
 
         factory.registerSource("redis", create_table_source);
@@ -54,7 +56,7 @@ namespace DB
     RedisDictionarySource::RedisDictionarySource(
         const DictionaryStructure & dict_struct_,
         const RedisConfiguration & configuration_,
-        const Block & sample_block_)
+        SharedHeader sample_block_)
         : dict_struct{dict_struct_}
         , configuration(configuration_)
         , pool(std::make_shared<RedisPool>(configuration.pool_size))
@@ -159,7 +161,7 @@ namespace DB
                 if (isInteger(type))
                     key << DB::toString(key_columns[i]->get64(row));
                 else if (isString(type))
-                    key << (*key_columns[i])[row].safeGet<const String &>();
+                    key << (*key_columns[i])[row].safeGet<String>();
                 else
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type of key in Redis dictionary");
             }

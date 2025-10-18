@@ -1,8 +1,22 @@
+#include <Server/HTTP/deferHTTP100Continue.h>
 #include <Server/HTTP/HTTPServerConnection.h>
 #include <Server/TCPServer.h>
 
 #include <Poco/Net/NetException.h>
+#include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
+
+
+namespace ProfileEvents
+{
+    extern const Event HTTPServerConnectionsCreated;
+    extern const Event HTTPServerConnectionsReused;
+    extern const Event HTTPServerConnectionsPreserved;
+    extern const Event HTTPServerConnectionsExpired;
+    extern const Event HTTPServerConnectionsClosed;
+    extern const Event HTTPServerConnectionsReset;
+}
+
 
 namespace DB
 {
@@ -25,8 +39,28 @@ void HTTPServerConnection::run()
     std::string server = params->getSoftwareVersion();
     Poco::Net::HTTPServerSession session(socket(), params);
 
-    while (!stopped && tcp_server.isOpen() && session.hasMoreRequests() && session.connected())
+    ProfileEvents::increment(ProfileEvents::HTTPServerConnectionsCreated);
+
+    while (!stopped && tcp_server.isOpen() && session.connected())
     {
+        const bool is_first_request = params->getMaxKeepAliveRequests() == session.getMaxKeepAliveRequests();
+
+        if (!session.hasMoreRequests())
+        {
+            if (is_first_request)
+                // it is strange to have a connection being opened but no request has been sent, account it as an error case
+                ProfileEvents::increment(ProfileEvents::HTTPServerConnectionsReset);
+            else
+                ProfileEvents::increment(ProfileEvents::HTTPServerConnectionsExpired);
+
+            return;
+        }
+        else
+        {
+            if (!is_first_request)
+                ProfileEvents::increment(ProfileEvents::HTTPServerConnectionsReused);
+        }
+
         try
         {
             std::lock_guard lock(mutex);
@@ -65,14 +99,42 @@ void HTTPServerConnection::run()
 
                     if (handler)
                     {
-                        if (request.getExpectContinue() && response.getStatus() == Poco::Net::HTTPResponse::HTTP_OK)
+                        if (!shouldDeferHTTP100Continue(request) && request.getExpectContinue() && response.getStatus() == Poco::Net::HTTPResponse::HTTP_OK)
                             response.sendContinue();
 
                         handler->handleRequest(request, response, write_event);
-                        session.setKeepAlive(params->getKeepAlive() && response.getKeepAlive() && session.canKeepAlive());
+
+                        bool keep_alive = false;
+                        if (!params->getKeepAlive() || !request.canKeepAlive())
+                        {
+                            /// Either server is not configured to keep connections alive or client did not ask it
+                            ProfileEvents::increment(ProfileEvents::HTTPServerConnectionsClosed);
+                        }
+                        else if (session.getMaxKeepAliveRequests() == 0 || !session.canKeepAlive())
+                        {
+                            /// connection is expired by max request count
+                            ProfileEvents::increment(ProfileEvents::HTTPServerConnectionsExpired);
+                        }
+                        else if (!response.getKeepAlive())
+                        {
+                            /// server decided to close connection
+                            /// usually it is related to the cases:
+                            /// - the request or response stream is not bounded or
+                            /// - not all data is read from them
+                            ProfileEvents::increment(ProfileEvents::HTTPServerConnectionsReset);
+                        }
+                        else
+                        {
+                            ProfileEvents::increment(ProfileEvents::HTTPServerConnectionsPreserved);
+                            keep_alive = true;
+                        }
+
+                        session.setKeepAlive(keep_alive);
                     }
                     else
+                    {
                         sendErrorResponse(session, Poco::Net::HTTPResponse::HTTP_NOT_IMPLEMENTED);
+                    }
                 }
                 catch (Poco::Exception &)
                 {
@@ -94,8 +156,9 @@ void HTTPServerConnection::run()
         {
             break;
         }
-        catch (const Poco::Net::MessageException &)
+        catch (const Poco::Net::MessageException & e)
         {
+            LOG_DEBUG(LogFrequencyLimiter(getLogger("HTTPServerConnection"), 10), "HTTP request failed: {}: {}", HTTPResponse::HTTP_REASON_BAD_REQUEST, e.displayText());
             sendErrorResponse(session, Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
         }
         catch (const Poco::Net::NetException & e)
@@ -133,6 +196,7 @@ void HTTPServerConnection::sendErrorResponse(Poco::Net::HTTPServerSession & sess
     response.setKeepAlive(false);
     response.send();
     session.setKeepAlive(false);
+    ProfileEvents::increment(ProfileEvents::HTTPServerConnectionsReset);
 }
 
 }

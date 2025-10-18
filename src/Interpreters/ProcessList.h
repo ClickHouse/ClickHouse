@@ -6,7 +6,8 @@
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/QueryPriorities.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
+#include <Interpreters/QuerySlot.h>
 #include <QueryPipeline/BlockIO.h>
 #include <QueryPipeline/ExecutionSpeedLimits.h>
 #include <Storages/IStorage_fwd.h>
@@ -14,7 +15,7 @@
 #include <Parsers/IAST.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
-#include <Common/LockGuard.h>
+#include <Common/UniqueLock.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
@@ -42,7 +43,6 @@ class QueryStatus;
 class ThreadStatus;
 class ProcessListEntry;
 
-
 enum CancelReason
 {
     UNDEFINED,
@@ -60,6 +60,7 @@ enum CancelReason
 struct QueryStatusInfo
 {
     String query;
+    UInt64 normalized_query_hash;
     IAST::QueryKind query_kind{};
     UInt64 elapsed_microseconds;
     size_t read_rows;
@@ -95,7 +96,11 @@ protected:
     friend struct ::GlobalOvercommitTracker;
 
     String query;
+    UInt64 normalized_query_hash;
     ClientInfo client_info;
+
+    /// Query slot scheduling for workloads
+    QuerySlotPtr query_slot;
 
     /// Info about all threads involved in query execution
     ThreadGroupPtr thread_group;
@@ -189,8 +194,10 @@ public:
     QueryStatus(
         ContextPtr context_,
         const String & query_,
+        UInt64 normalized_query_hash_,
         const ClientInfo & client_info_,
         QueryPriorities::Handle && priority_handle_,
+        QuerySlotPtr && query_slot_,
         ThreadGroupPtr && thread_group_,
         IAST::QueryKind query_kind_,
         const Settings & query_settings_,
@@ -228,7 +235,7 @@ public:
         progress_in.incrementPiecewiseAtomically(value);
 
         if (priority_handle)
-            priority_handle->waitIfNeed(std::chrono::seconds(1));        /// NOTE Could make timeout customizable.
+            priority_handle->waitIfNeed();
 
         return !is_killed.load(std::memory_order_relaxed);
     }
@@ -315,13 +322,12 @@ struct ProcessListForUser
     /// Clears MemoryTracker for the user.
     /// Sometimes it is important to reset the MemoryTracker, because it may accumulate skew
     ///  due to the fact that there are cases when memory can be allocated while processing the query, but released later.
-    /// Clears network bandwidth Throttler, so it will not count periods of inactivity.
     void resetTrackers()
     {
         /// TODO: should we drop user_temp_data_on_disk here?
         user_memory_tracker.reset();
-        if (user_throttler)
-            user_throttler.reset();
+
+        /// NOTE: we should not reset user_throttler here because TokenBucket throttling MUST account periods of inactivity for correct work
     }
 };
 
@@ -372,7 +378,7 @@ public:
 
     using Mutex = std::mutex;
     using Lock = std::unique_lock<Mutex>;
-    using LockAndBlocker = LockAndOverCommitTrackerBlocker<LockGuard, Mutex>;
+    using LockAndBlocker = LockAndOverCommitTrackerBlocker<UniqueLock, Mutex>;
 
 protected:
     friend class ProcessListEntry;
@@ -414,6 +420,9 @@ protected:
     /// limit for select. 0 means no limit. Otherwise, when limit exceeded, an exception is thrown.
     size_t max_select_queries_amount = 0;
 
+    /// timeout in millisecond for low priority query to wait
+    size_t low_priority_query_wait_time_ms = 0;
+
     /// amount of queries by query kind.
     QueryKindAmounts query_kind_amounts;
 
@@ -440,7 +449,7 @@ public:
       * If timeout is passed - throw an exception.
       * Don't count KILL QUERY queries or async insert flush queries
       */
-    EntryPtr insert(const String & query_, const IAST * ast, ContextMutablePtr query_context, UInt64 watch_start_nanoseconds);
+    EntryPtr insert(const String & query_, UInt64 normalized_query_hash, const IAST * ast, ContextMutablePtr query_context, UInt64 watch_start_nanoseconds);
 
     /// Number of currently executing queries.
     size_t size() const { return processes.size(); }
@@ -481,6 +490,18 @@ public:
     {
         Lock lock(mutex);
         return max_insert_queries_amount;
+    }
+
+    void setLowPriorityQueryWaitTimeMs(size_t low_priority_query_wait_time_ms_)
+    {
+        Lock lock(mutex);
+        low_priority_query_wait_time_ms = low_priority_query_wait_time_ms_;
+    }
+
+    size_t getLowPriorityQueryWaitTimeMs() const
+    {
+        Lock lock(mutex);
+        return low_priority_query_wait_time_ms;
     }
 
     void setMaxSelectQueriesAmount(size_t max_select_queries_amount_)

@@ -1,6 +1,10 @@
-#include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Processors/IProcessor.h>
 #include <IO/Operators.h>
+#include <Processors/IProcessor.h>
+#include <Processors/Port.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Common/CurrentThread.h>
+
+#include <fmt/format.h>
 
 namespace DB
 {
@@ -16,13 +20,13 @@ IQueryPlanStep::IQueryPlanStep()
     step_index = CurrentThread::isInitialized() ? CurrentThread::get().getNextPlanStepIndex() : 0;
 }
 
-void IQueryPlanStep::updateInputHeaders(Headers input_headers_)
+void IQueryPlanStep::updateInputHeaders(SharedHeaders input_headers_)
 {
     input_headers = std::move(input_headers_);
     updateOutputHeader();
 }
 
-void IQueryPlanStep::updateInputHeader(Header input_header, size_t idx)
+void IQueryPlanStep::updateInputHeader(SharedHeader input_header, size_t idx)
 {
     if (idx >= input_headers.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -33,12 +37,48 @@ void IQueryPlanStep::updateInputHeader(Header input_header, size_t idx)
     updateOutputHeader();
 }
 
-const Header & IQueryPlanStep::getOutputHeader() const
+bool IQueryPlanStep::hasCorrelatedExpressions() const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot check {} plan step for correlated expressions", getName());
+}
+
+const SharedHeader & IQueryPlanStep::getOutputHeader() const
 {
     if (!hasOutputHeader())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "QueryPlanStep {} does not have output stream.", getName());
 
-    return *output_header;
+    return output_header;
+}
+
+std::string_view IQueryPlanStep::getStepDescription() const
+{
+    if (std::holds_alternative<std::string_view>(step_description))
+        return std::get<std::string_view>(step_description);
+    if (std::holds_alternative<std::string>(step_description))
+        return std::get<std::string>(step_description);
+
+    return {};
+}
+
+void IQueryPlanStep::setStepDescription(std::string description, size_t limit)
+{
+    if (description.size() > limit)
+    {
+        description.resize(limit);
+        description.shrink_to_fit();
+    }
+
+    step_description = std::move(description);
+}
+
+void IQueryPlanStep::setStepDescription(const IQueryPlanStep & step)
+{
+    step_description = step.step_description;
+}
+
+QueryPlanStepPtr IQueryPlanStep::clone() const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot clone {} plan step", getName());
 }
 
 const SortDescription & IQueryPlanStep::getSortDescription() const
@@ -59,7 +99,7 @@ static void doDescribeHeader(const Block & header, size_t count, IQueryPlanStep:
 
     settings.out << prefix;
 
-    if (!header)
+    if (header.empty())
     {
         settings.out << " empty\n";
         return;
@@ -145,6 +185,11 @@ void IQueryPlanStep::describePipeline(const Processors & processors, FormatSetti
 void IQueryPlanStep::appendExtraProcessors(const Processors & extra_processors)
 {
     processors.insert(processors.end(), extra_processors.begin(), extra_processors.end());
+}
+
+String IQueryPlanStep::getUniqID() const
+{
+    return fmt::format("{}_{}", getName(), step_index);
 }
 
 void IQueryPlanStep::serialize(Serialization & /*ctx*/) const

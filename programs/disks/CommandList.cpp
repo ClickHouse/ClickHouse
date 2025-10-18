@@ -1,16 +1,16 @@
 #include <Interpreters/Context.h>
 #include <Common/TerminalSize.h>
-#include "DisksApp.h"
-#include "DisksClient.h"
-#include "ICommand.h"
-
+#include <DisksApp.h>
+#include <DisksClient.h>
+#include <ICommand.h>
+#include <Common/logger_useful.h>
 namespace DB
 {
 
 class CommandList final : public ICommand
 {
 public:
-    explicit CommandList() : ICommand()
+    explicit CommandList() : ICommand("CommandList")
     {
         command_name = "list";
         description = "List files at path[s]";
@@ -27,9 +27,15 @@ public:
         String path = getValueFromCommandLineOptionsWithDefault<String>(options, "path", ".");
 
         if (recursive)
+        {
+            LOG_INFO(log, "Listing directory '{}' recursively at disk '{}'", path, disk.getDisk()->getName());
             listRecursive(disk, path, show_hidden);
+        }
         else
+        {
+            LOG_INFO(log, "Listing directory '{}' at disk '{}'", path, disk.getDisk()->getName());
             list(disk, path, show_hidden);
+        }
     }
 
 private:

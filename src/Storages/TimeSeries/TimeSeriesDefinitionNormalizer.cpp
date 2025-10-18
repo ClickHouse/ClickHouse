@@ -97,7 +97,7 @@ void TimeSeriesDefinitionNormalizer::reorderColumns(ASTCreateQuery & create) con
     const Map & tags_to_columns = time_series_settings[TimeSeriesSetting::tags_to_columns];
     for (const auto & tag_name_and_column_name : tags_to_columns)
     {
-        const auto & tuple = tag_name_and_column_name.safeGet<const Tuple &>();
+        const auto & tuple = tag_name_and_column_name.safeGet<Tuple>();
         const auto & column_name = tuple.at(1).safeGet<String>();
         add_column_in_correct_order(column_name);
     }
@@ -210,7 +210,7 @@ void TimeSeriesDefinitionNormalizer::addMissingColumns(ASTCreateQuery & create) 
     const Map & tags_to_columns = time_series_settings[TimeSeriesSetting::tags_to_columns];
     for (const auto & tag_name_and_column_name : tags_to_columns)
     {
-        const auto & tuple = tag_name_and_column_name.safeGet<const Tuple &>();
+        const auto & tuple = tag_name_and_column_name.safeGet<Tuple>();
         const auto & column_name = tuple.at(1).safeGet<String>();
         if (!is_next_column_named(column_name))
             make_new_column(column_name, get_string_type());
@@ -302,7 +302,7 @@ ASTPtr TimeSeriesDefinitionNormalizer::chooseIDAlgorithm(const ASTColumnDeclarat
         const Map & tags_to_columns = time_series_settings[TimeSeriesSetting::tags_to_columns];
         for (const auto & tag_name_and_column_name : tags_to_columns)
         {
-            const auto & tuple = tag_name_and_column_name.safeGet<const Tuple &>();
+            const auto & tuple = tag_name_and_column_name.safeGet<Tuple>();
             const auto & column_name = tuple.at(1).safeGet<String>();
             arguments_for_hash_function.push_back(std::make_shared<ASTIdentifier>(column_name));
         }
@@ -423,7 +423,7 @@ void TimeSeriesDefinitionNormalizer::setInnerEngineByDefault(ViewTarget::Kind in
             if (!inner_storage_def.order_by && !inner_storage_def.primary_key && inner_storage_def.engine->name.ends_with("MergeTree"))
             {
                 inner_storage_def.set(inner_storage_def.order_by,
-                                      makeASTFunction("tuple",
+                                      makeASTOperator("tuple",
                                                       std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::ID),
                                                       std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Timestamp)));
             }

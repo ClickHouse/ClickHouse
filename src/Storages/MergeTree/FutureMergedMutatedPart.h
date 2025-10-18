@@ -22,25 +22,23 @@ struct FutureMergedMutatedPart
     MergeTreeDataPartFormat part_format;
     MergeTreePartInfo part_info;
     MergeTreeData::DataPartsVector parts;
-    std::vector<MergeTreePartInfo> blocking_parts_to_remove;
+    MergeTreeData::DataPartsVector patch_parts;
+    std::vector<std::string> blocking_parts_to_remove;
     MergeType merge_type = MergeType::Regular;
+    bool final = false;
 
     const MergeTreePartition & getPartition() const { return parts.front()->partition; }
+    bool isResultPatch() const { return !parts.empty() && parts.front()->info.isPatch();}
 
     FutureMergedMutatedPart() = default;
 
-    explicit FutureMergedMutatedPart(MergeTreeData::DataPartsVector parts_)
+    FutureMergedMutatedPart(MergeTreeData::DataPartsVector parts_, MergeTreeData::DataPartsVector patch_parts_)
     {
-        assign(std::move(parts_));
+        assign(std::move(parts_), std::move(patch_parts_));
     }
 
-    FutureMergedMutatedPart(MergeTreeData::DataPartsVector parts_, MergeTreeDataPartFormat future_part_format)
-    {
-        assign(std::move(parts_), future_part_format);
-    }
-
-    void assign(MergeTreeData::DataPartsVector parts_);
-    void assign(MergeTreeData::DataPartsVector parts_, MergeTreeDataPartFormat future_part_format);
+    void assign(MergeTreeData::DataPartsVector parts_, MergeTreeData::DataPartsVector patch_parts_);
+    void assign(MergeTreeData::DataPartsVector parts_, MergeTreeData::DataPartsVector patch_parts_, MergeTreeDataPartFormat future_part_format);
 
     void updatePath(const MergeTreeData & storage, const IReservation * reservation);
 };

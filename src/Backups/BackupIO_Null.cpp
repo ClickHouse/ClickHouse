@@ -76,7 +76,7 @@ std::unique_ptr<ReadBuffer> BackupWriterNull::readFile(const String & file_name,
     throw Exception(ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "Backup entry {} not found (Null backup is always empty)", file_name);
 }
 
-bool BackupWriterNull::fileContentsEqual(const String & file_name, const String & /* expected_file_contents */)
+bool BackupWriterNull::fileContentsEqual(const String & file_name, const String & /* expected_file_contents */, String & /* actual_file_contents */)
 {
     if (fs::path{file_name}.filename() == ".lock")
         return true; /// To pass the check for the ".lock" file in BackupImpl::checkLockFile().
@@ -98,18 +98,7 @@ void registerBackupEngineNull(BackupFactory & factory)
 
         auto writer = std::make_shared<BackupWriterNull>(params.read_settings, params.write_settings);
 
-        return std::make_unique<BackupImpl>(
-            params.backup_info,
-            BackupImpl::ArchiveParams{},
-            params.base_backup_info,
-            writer,
-            params.context,
-            params.is_internal_backup,
-            params.backup_coordination,
-            params.backup_uuid,
-            params.deduplicate_files,
-            params.use_same_s3_credentials_for_base_backup,
-            params.use_same_password_for_base_backup);
+        return std::make_unique<BackupImpl>(params, BackupImpl::ArchiveParams{}, writer);
     };
 
     factory.registerBackupEngine("Null", creator_fn);

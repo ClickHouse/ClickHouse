@@ -51,12 +51,13 @@ def exec(node, cmd, path):
             "bash",
             "-c",
             f"{cmd} {path}",
-        ]
+        ],
+        nothrow=True,
     )
 
 
 def wait_part_is_stuck(node, table_moving_path, moving_part):
-    num_tries = 5
+    num_tries = 10
     while q(node, "SELECT part_name FROM system.moves").strip() != moving_part:
         if num_tries == 0:
             raise Exception("Part has not started to move")

@@ -6,11 +6,11 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
-#include <Columns/IColumn.h>
+#include <Columns/IColumn_fwd.h>
 #include <Core/Types.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <IO/ReadBuffer.h>
-#include "ParquetDataBuffer.h"
+#include <Processors/Formats/Impl/Parquet/ParquetDataBuffer.h>
 
 namespace DB
 {

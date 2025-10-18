@@ -1,11 +1,13 @@
 #pragma once
 #include <Processors/IProcessor.h>
+#include <Processors/Port.h>
+#include <memory>
 
 namespace DB
 {
 
-
-class ThreadStatus;
+class ThreadGroup;
+using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
 
 /// Has one input and one output.
 /// Works similarly to ISimpleTransform, but with much care about exceptions.
@@ -54,8 +56,11 @@ protected:
     virtual void onFinish() {}
     virtual void onException(std::exception_ptr /* exception */) { }
 
+    virtual bool canGenerate() { return true; }
+    virtual GenerateResult getRemaining() { return {};}
+
 public:
-    ExceptionKeepingTransform(const Block & in_header, const Block & out_header, bool ignore_on_start_and_finish_ = true);
+    ExceptionKeepingTransform(SharedHeader in_header, SharedHeader out_header, bool ignore_on_start_and_finish_ = true);
 
     Status prepare() override;
     void work() override;
@@ -63,11 +68,10 @@ public:
     InputPort & getInputPort() { return input; }
     OutputPort & getOutputPort() { return output; }
 
-    void setRuntimeData(ThreadStatus * thread_status_, std::atomic_uint64_t * elapsed_counter_ms_);
+    void setRuntimeData(ThreadGroupPtr thread_group_);
 
 private:
-    ThreadStatus * thread_status = nullptr;
-    std::atomic_uint64_t * elapsed_counter_ms = nullptr;
+    ThreadGroupPtr thread_group = nullptr;
 };
 
 }

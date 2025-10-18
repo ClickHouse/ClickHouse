@@ -28,7 +28,13 @@
 <merge_tree>
     <min_bytes_for_wide_part>0</min_bytes_for_wide_part>
     <temporary_directories_lifetime>1</temporary_directories_lifetime>
+    <vertical_merge_algorithm_min_rows_to_activate>1</vertical_merge_algorithm_min_rows_to_activate>
+    <vertical_merge_algorithm_min_columns_to_activate>1</vertical_merge_algorithm_min_columns_to_activate>
 </merge_tree>
 <allow_remove_stale_moving_parts>true</allow_remove_stale_moving_parts>
+
+<!-- consume huge amout of memory in sanitizers builds when min_bytes_for_wide_part=0 -->
+<query_metric_log remove="remove"/>
+<metric_log remove="remove"/>
 
 </clickhouse>

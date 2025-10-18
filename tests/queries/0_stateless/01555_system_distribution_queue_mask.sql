@@ -17,8 +17,8 @@ system stop distributed sends dist_01555;
 
 insert into dist_01555 values (1)(2);
 -- since test_cluster_with_incorrect_pw contains incorrect password ignore error
-system flush distributed dist_01555; -- { serverError REQUIRED_PASSWORD }
-select length(splitByChar('*', data_path)), replaceRegexpOne(data_path, '^.*/([^/]*)/' , '\\1'), extract(last_exception, 'REQUIRED_PASSWORD'), dateDiff('s', last_exception_time, now()) < 3600 from system.distribution_queue where database = currentDatabase() and table = 'dist_01555' format CSV;
+system flush distributed dist_01555; -- { serverError AUTHENTICATION_FAILED }
+select length(splitByChar('*', data_path)), replaceRegexpOne(data_path, '^.*/([^/]*)/' , '\\1'), extract(last_exception, 'AUTHENTICATION_FAILED'), dateDiff('s', last_exception_time, now()) < 3600 from system.distribution_queue where database = currentDatabase() and table = 'dist_01555' format CSV;
 
 drop table dist_01555;
 
@@ -30,8 +30,8 @@ create table dist_01555 (key Int) Engine=Distributed(test_cluster_with_incorrect
 
 insert into dist_01555 values (1)(2);
 -- since test_cluster_with_incorrect_pw contains incorrect password ignore error
-system flush distributed dist_01555; -- { serverError REQUIRED_PASSWORD }
-select length(splitByChar('*', data_path)), replaceRegexpOne(data_path, '^.*/([^/]*)/' , '\\1'), extract(last_exception, 'REQUIRED_PASSWORD'), dateDiff('s', last_exception_time, now()) < 3600 from system.distribution_queue where database = currentDatabase() and table = 'dist_01555' format CSV;
+system flush distributed dist_01555; -- { serverError AUTHENTICATION_FAILED }
+select length(splitByChar('*', data_path)), replaceRegexpOne(data_path, '^.*/([^/]*)/' , '\\1'), extract(last_exception, 'AUTHENTICATION_FAILED'), dateDiff('s', last_exception_time, now()) < 3600 from system.distribution_queue where database = currentDatabase() and table = 'dist_01555' format CSV;
 
 drop table dist_01555;
 

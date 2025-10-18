@@ -8,7 +8,6 @@
 #include <Processors/QueryPlan/FillingStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/IntersectOrExceptStep.h>
-#include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
@@ -53,7 +52,7 @@ namespace
     DistinctColumns getDistinctColumns(const DistinctStep * distinct)
     {
         /// find non-const columns in DISTINCT
-        const ColumnsWithTypeAndName & distinct_columns = distinct->getOutputHeader().getColumnsWithTypeAndName();
+        const ColumnsWithTypeAndName & distinct_columns = distinct->getOutputHeader()->getColumnsWithTypeAndName();
         std::set<std::string_view> non_const_columns;
         std::unordered_set<std::string_view> column_names(cbegin(distinct->getColumnNames()), cend(distinct->getColumnNames()));
         for (const auto & column : distinct_columns)

@@ -56,10 +56,11 @@ HTTPSessionPtr makeHTTPSession(
     HTTPConnectionGroupType group,
     const Poco::URI & uri,
     const ConnectionTimeouts & timeouts,
-    const ProxyConfiguration & proxy_configuration)
+    const ProxyConfiguration & proxy_configuration,
+    UInt64 * connect_time)
 {
     auto connection_pool = HTTPConnectionPools::instance().getPool(group, uri, proxy_configuration);
-    return connection_pool->getConnection(timeouts);
+    return connection_pool->getConnection(timeouts, connect_time);
 }
 
 bool isRedirect(const Poco::Net::HTTPResponse::HTTPStatus status) { return status == Poco::Net::HTTPResponse::HTTP_MOVED_PERMANENTLY  || status == Poco::Net::HTTPResponse::HTTP_FOUND || status == Poco::Net::HTTPResponse::HTTP_SEE_OTHER  || status == Poco::Net::HTTPResponse::HTTP_TEMPORARY_REDIRECT; }

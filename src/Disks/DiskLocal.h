@@ -52,8 +52,6 @@ public:
 
     void createDirectories(const String & path) override;
 
-    void clearDirectory(const String & path) override;
-
     void moveDirectory(const String & from_path, const String & to_path) override;
 
     DirectoryIteratorPtr iterateDirectory(const String & path) const override;
@@ -81,8 +79,7 @@ public:
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
         const ReadSettings & settings,
-        std::optional<size_t> read_hint,
-        std::optional<size_t> file_size) const override;
+        std::optional<size_t> read_hint) const override;
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
@@ -91,6 +88,7 @@ public:
         const WriteSettings & settings) override;
 
     Strings getBlobPath(const String & path) const override;
+    bool areBlobPathsRandom() const override { return false; }
     void writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function) override;
 
     void removeFile(const String & path) override;
@@ -115,7 +113,7 @@ public:
 
     bool isSymlinkNoThrow(const String & path) const override;
 
-    void createDirectoriesSymlink(const String & target, const String & link) override;
+    void createDirectorySymlink(const String & target, const String & link) override;
 
     String readSymlink(const fs::path & path) const override;
 
@@ -139,7 +137,7 @@ public:
     bool isBroken() const override { return broken; }
     bool isReadOnly() const override { return readonly; }
 
-    void startupImpl(ContextPtr context) override;
+    void startupImpl() override;
 
     void shutdown() override;
 
@@ -154,6 +152,8 @@ public:
 
     bool supportsChmod() const override { return true; }
     void chmod(const String & path, mode_t mode) override;
+
+    ObjectStoragePtr getObjectStorage() override;
 
 protected:
     void checkAccessImpl(const String & path) override;

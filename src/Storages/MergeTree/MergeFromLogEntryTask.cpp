@@ -1,14 +1,19 @@
+
 #include <Storages/MergeTree/MergeFromLogEntryTask.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/Compaction/CompactionStatistics.h>
+#include <Storages/StorageReplicatedMergeTree.h>
+#include <Interpreters/Context.h>
 
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ProfileEventsScope.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/StorageReplicatedMergeTree.h>
-#include <pcg_random.hpp>
-#include <Common/randomSeed.h>
-#include <cmath>
+#include <Common/FailPoint.h>
+
+#include <Common/DateLUTImpl.h>
+
+#include <Core/BackgroundSchedulePool.h>
 
 namespace ProfileEvents
 {
@@ -28,7 +33,11 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 prefer_fetch_merged_part_size_threshold;
     extern const MergeTreeSettingsSeconds prefer_fetch_merged_part_time_threshold;
     extern const MergeTreeSettingsSeconds try_fetch_recompressed_part_timeout;
-    extern const MergeTreeSettingsUInt64 zero_copy_merge_mutation_min_parts_size_sleep_before_lock;
+}
+
+namespace FailPoints
+{
+    extern const char rmt_merge_task_sleep_in_prepare[];
 }
 
 namespace ErrorCodes
@@ -47,7 +56,6 @@ MergeFromLogEntryTask::MergeFromLogEntryTask(
         storage_,
         selected_entry_,
         task_result_callback_)
-    , rng(randomSeed())
 {
 }
 
@@ -56,6 +64,11 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
 {
     LOG_TRACE(log, "Executing log entry to merge parts {} to {}",
         fmt::join(entry.source_parts, ", "), entry.new_part_name);
+
+    fiu_do_on(FailPoints::rmt_merge_task_sleep_in_prepare,
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(3000));
+    });
 
     StorageMetadataPtr metadata_snapshot = storage.getInMemoryMetadataPtr();
     int32_t metadata_version = metadata_snapshot->getMetadataVersion();
@@ -116,6 +129,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
         }
     }
 
+    auto new_part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, storage.format_version);
 
     for (const String & source_part_name : entry.source_parts)
     {
@@ -144,7 +158,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
             constexpr auto fmt_string = "Part {} is covered by {} but should be merged into {}. This shouldn't happen often.";
             String message;
             LOG_WARNING(LogToStr(message, log), fmt_string, source_part_name, source_part_or_covering->name, entry.new_part_name);
-            if (!source_part_or_covering->info.contains(MergeTreePartInfo::fromPartName(entry.new_part_name, storage.format_version)))
+            if (!source_part_or_covering->info.contains(new_part_info))
                 throw Exception::createDeprecated(message, ErrorCodes::LOGICAL_ERROR);
 
             return PrepareResult{
@@ -167,6 +181,27 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
         }
 
         parts.push_back(source_part_or_covering);
+    }
+
+    for (const auto & patch_part_name : entry.patch_parts)
+    {
+        auto patch_part = storage.getActiveContainingPart(patch_part_name);
+
+        if (!patch_part || patch_part->name != patch_part_name)
+        {
+            /// We do not have one of source parts locally, try to take some already merged part from someone.
+            LOG_DEBUG(log, "Don't have all patch parts (at least {} is missing) for merge {}; "
+                "will try to fetch part instead. Either pool for fetches is starving, see background_fetches_pool_size, or none of active replicas has it",
+                patch_part_name, entry.new_part_name);
+
+            return PrepareResult{
+                .prepared_successfully = false,
+                .need_to_check_missing_part_in_fetch = true,
+                .part_log_writer = part_log_writer,
+            };
+        }
+
+        patch_parts.push_back(patch_part);
     }
 
     /// All source parts are found locally, we can execute merge
@@ -197,7 +232,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     }
 
     /// Start to make the main work
-    size_t estimated_space_for_merge = MergeTreeDataMergerMutator::estimateNeededDiskSpace(parts, true);
+    size_t estimated_space_for_merge = CompactionStatistics::estimateNeededDiskSpace(parts, true);
 
     /// Can throw an exception while reserving space.
     IMergeTreeDataPart::TTLInfos ttl_infos;
@@ -213,7 +248,9 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     /// It will live until the whole task is being destroyed
     table_lock_holder = storage.lockForShare(RWLockImpl::NO_QUERY, (*storage_settings_ptr)[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
 
-    auto future_merged_part = std::make_shared<FutureMergedMutatedPart>(parts, entry.new_part_format);
+    auto future_merged_part = std::make_shared<FutureMergedMutatedPart>();
+    future_merged_part->assign(parts, patch_parts, entry.new_part_format);
+
     if (future_merged_part->name != entry.new_part_name)
     {
         throw Exception(ErrorCodes::BAD_DATA_PART_NAME, "Future merged part name {} differs from part name in log entry: {}",
@@ -238,6 +275,8 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     future_merged_part->uuid = entry.new_part_uuid;
     future_merged_part->updatePath(storage, reserved_space.get());
     future_merged_part->merge_type = entry.merge_type;
+    /// If a merge is a cleanup merge we need to mark the future part as final as cleanup merges can only be performed when merging all parts in a partition down to a single part.
+    future_merged_part->final = entry.cleanup;
 
     if ((*storage_settings_ptr)[MergeTreeSetting::allow_remote_fs_zero_copy_replication])
     {
@@ -254,27 +293,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
                 };
             }
 
-            if ((*storage_settings_ptr)[MergeTreeSetting::zero_copy_merge_mutation_min_parts_size_sleep_before_lock] != 0 &&
-                estimated_space_for_merge >= (*storage_settings_ptr)[MergeTreeSetting::zero_copy_merge_mutation_min_parts_size_sleep_before_lock])
-            {
-                /// In zero copy replication only one replica execute merge/mutation, others just download merged parts metadata.
-                /// Here we are trying to mitigate the skew of merges execution because of faster/slower replicas.
-                /// Replicas can be slow because of different reasons like bigger latency for ZooKeeper or just slight step behind because of bigger queue.
-                /// In this case faster replica can pick up all merges execution, especially large merges while other replicas can just idle. And even in this case
-                /// the fast replica is not overloaded because amount of executing merges doesn't affect the ability to acquire locks for new merges.
-                ///
-                /// So here we trying to solve it with the simplest solution -- sleep random time up to 500ms for 1GB part and up to 7 seconds for 300GB part.
-                /// It can sound too much, but we are trying to acquire these locks in background tasks which can be scheduled each 5 seconds or so.
-                double start_to_sleep_seconds = std::logf((*storage_settings_ptr)[MergeTreeSetting::zero_copy_merge_mutation_min_parts_size_sleep_before_lock].value);
-                uint64_t right_border_to_sleep_ms = static_cast<uint64_t>((std::log(estimated_space_for_merge) - start_to_sleep_seconds + 0.5) * 1000);
-                uint64_t time_to_sleep_milliseconds = std::min<uint64_t>(10000UL, std::uniform_int_distribution<uint64_t>(1, 1 + right_border_to_sleep_ms)(rng));
-
-                LOG_INFO(log, "Merge size is {} bytes (it's more than sleep threshold {}) so will intentionally sleep for {} ms to allow other replicas to took this big merge",
-                    estimated_space_for_merge, (*storage_settings_ptr)[MergeTreeSetting::zero_copy_merge_mutation_min_parts_size_sleep_before_lock], time_to_sleep_milliseconds);
-
-                std::this_thread::sleep_for(std::chrono::milliseconds(time_to_sleep_milliseconds));
-            }
-
+            maybeSleepBeforeZeroCopyLock(estimated_space_for_merge);
             zero_copy_lock = storage.tryCreateZeroCopyExclusiveLock(entry.new_part_name, disk);
 
             if (!zero_copy_lock || !zero_copy_lock->isLocked())

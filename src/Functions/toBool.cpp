@@ -1,3 +1,5 @@
+#include <Columns/IColumn.h>
+#include <Core/Field.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/CastOverloadResolver.h>
@@ -62,7 +64,42 @@ namespace
 
 REGISTER_FUNCTION(ToBool)
 {
-    factory.registerFunction<FunctionToBool>();
+    FunctionDocumentation::Description description = R"(
+Converts an input value to a value of type Bool.
+    )";
+    FunctionDocumentation::Syntax syntax = "toBool(expr)";
+    FunctionDocumentation::Arguments arguments = {
+        {"expr", "Expression returning a number or a string. For strings, accepts 'true' or 'false' (case-insensitive).", {"(U)Int*", "Float*", "String", "Expression"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `true` or `false` based on evaluation of the argument.", {"Bool"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+SELECT
+    toBool(toUInt8(1)),
+    toBool(toInt8(-1)),
+    toBool(toFloat32(1.01)),
+    toBool('true'),
+    toBool('false'),
+    toBool('FALSE')
+FORMAT Vertical
+        )",
+        R"(
+toBool(toUInt8(1)):      true
+toBool(toInt8(-1)):      true
+toBool(toFloat32(1.01)): true
+toBool('true'):          true
+toBool('false'):         false
+toBool('FALSE'):         false
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 2};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionToBool>(documentation);
 }
 
 }

@@ -1,11 +1,9 @@
 #pragma once
 
-#include <atomic>
-#include <mutex>
-#include <vector>
+#include <Core/Names.h>
 #include <Processors/ISimpleTransform.h>
-#include <Poco/Logger.h>
-#include <Interpreters/Set.h>
+
+#include <vector>
 
 namespace DB
 {
@@ -13,7 +11,7 @@ namespace DB
 class ColumnPermuteTransform : public ISimpleTransform
 {
 public:
-    ColumnPermuteTransform(const Block & header_, const std::vector<size_t> & permutation_);
+    ColumnPermuteTransform(SharedHeader header_, const std::vector<size_t> & permutation_);
 
     String getName() const override { return "ColumnPermuteTransform"; }
 

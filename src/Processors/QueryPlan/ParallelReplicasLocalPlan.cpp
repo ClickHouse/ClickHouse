@@ -1,30 +1,28 @@
 #include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
 
+#include <base/sleep.h>
 #include <Common/checkStackSize.h>
-#include <Interpreters/ActionsDAG.h>
+#include <Common/FailPoint.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <Interpreters/StorageID.h>
 #include <Interpreters/TableJoin.h>
-#include <Parsers/ASTFunction.h>
 #include <Processors/QueryPlan/ConvertingActions.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/ISourceStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Processors/Sources/NullSource.h>
-#include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/Transforms/FilterTransform.h>
-#include <QueryPipeline/Pipe.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/RequestResponse.h>
 
 namespace DB
 {
 
-std::pair<std::unique_ptr<QueryPlan>, bool> createLocalPlanForParallelReplicas(
+namespace FailPoints
+{
+    extern const char slowdown_parallel_replicas_local_plan_read[];
+}
+
+std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
     const ASTPtr & query_ast,
     const Block & header,
     ContextPtr context,
@@ -67,8 +65,10 @@ std::pair<std::unique_ptr<QueryPlan>, bool> createLocalPlanForParallelReplicas(
         if (!node->children.empty())
         {
             // in case of RIGHT JOIN, - reading from right table is parallelized among replicas
-            const JoinStep * join = typeid_cast<JoinStep*>(node->step.get());
-            if (join && join->getJoin()->getTableJoin().kind() == JoinKind::Right)
+            const JoinStep * join = typeid_cast<JoinStep *>(node->step.get());
+            const JoinStepLogical * join_logical = typeid_cast<JoinStepLogical *>(node->step.get());
+            if ((join && join->getJoin()->getTableJoin().kind() == JoinKind::Right)
+             || (join_logical && join_logical->getJoinOperator().kind == JoinKind::Right))
                 node = node->children.at(1);
             else
                 node = node->children.at(0);
@@ -93,10 +93,16 @@ std::pair<std::unique_ptr<QueryPlan>, bool> createLocalPlanForParallelReplicas(
     { coordinator->handleInitialAllRangesAnnouncement(std::move(announcement)); };
 
     MergeTreeReadTaskCallback read_task_cb = [coordinator](ParallelReadRequest req) -> std::optional<ParallelReadResponse>
-    { return coordinator->handleRequest(std::move(req)); };
+    {
+        fiu_do_on(FailPoints::slowdown_parallel_replicas_local_plan_read,
+        {
+            sleepForMilliseconds(20);
+        });
+        return coordinator->handleRequest(std::move(req));
+    };
 
     auto read_from_merge_tree_parallel_replicas = reading->createLocalParallelReplicasReadingStep(
-        analyzed_result_ptr, std::move(all_ranges_cb), std::move(read_task_cb), replica_number);
+        context, analyzed_result_ptr, std::move(all_ranges_cb), std::move(read_task_cb), replica_number);
     node->step = std::move(read_from_merge_tree_parallel_replicas);
 
     addConvertingActions(*query_plan, header, /*has_missing_objects=*/false);

@@ -1,4 +1,4 @@
-#include <optional>
+#include <Columns/IColumn.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -7,6 +7,8 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/System/StorageSystemClusters.h>
 #include <Databases/DatabaseReplicated.h>
+
+#include <optional>
 
 namespace DB
 {
@@ -17,6 +19,7 @@ ColumnsDescription StorageSystemClusters::getColumnsDescription()
     {
         {"cluster", std::make_shared<DataTypeString>(), "The cluster name."},
         {"shard_num", std::make_shared<DataTypeUInt32>(), "The shard number in the cluster, starting from 1."},
+        {"shard_name", std::make_shared<DataTypeString>(), "The name of the shard in the cluster."},
         {"shard_weight", std::make_shared<DataTypeUInt32>(), "The relative weight of the shard when writing data."},
         {"internal_replication", std::make_shared<DataTypeUInt8>(), "Flag that indicates whether this host is a part on ensemble which can replicate the data on its own."},
         {"replica_num", std::make_shared<DataTypeUInt32>(), "The replica number in the shard, starting from 1."},
@@ -32,6 +35,7 @@ ColumnsDescription StorageSystemClusters::getColumnsDescription()
         {"database_shard_name", std::make_shared<DataTypeString>(), "The name of the `Replicated` database shard (for clusters that belong to a `Replicated` database)."},
         {"database_replica_name", std::make_shared<DataTypeString>(), "The name of the `Replicated` database replica (for clusters that belong to a `Replicated` database)."},
         {"is_active", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()), "The status of the Replicated database replica (for clusters that belong to a Replicated database): 1 means 'replica is online', 0 means 'replica is offline', NULL means 'unknown'."},
+           {"unsynced_after_recovery", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()), "Indicates if a Replicated database replica has replication lag more than max_replication_lag_to_enqueue after creating or recovering the replica."},
         {"replication_lag", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt32>()), "The replication lag of the `Replicated` database replica (for clusters that belong to a Replicated database)."},
         {"recovery_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The recovery time of the `Replicated` database replica (for clusters that belong to a Replicated database), in milliseconds."},
     };
@@ -48,7 +52,7 @@ void StorageSystemClusters::fillData(MutableColumns & res_columns, ContextPtr co
     for (const auto & name_and_cluster : context->getClusters())
         writeCluster(res_columns, columns_mask, name_and_cluster, /* replicated= */ nullptr);
 
-    const auto databases = DatabaseCatalog::instance().getDatabases();
+    const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
     for (const auto & name_and_database : databases)
     {
         if (const auto * replicated = typeid_cast<const DatabaseReplicated *>(name_and_database.second.get()))
@@ -72,9 +76,10 @@ void StorageSystemClusters::writeCluster(MutableColumns & res_columns, const std
 
     size_t recovery_time_column_idx = columns_mask.size() - 1;
     size_t replication_lag_column_idx = columns_mask.size() - 2;
-    size_t is_active_column_idx = columns_mask.size() - 3;
+    size_t is_unsynced_column_idx = columns_mask.size() - 3;
+    size_t is_active_column_idx = columns_mask.size() - 4;
     ReplicasInfo replicas_info;
-    if (replicated && (columns_mask[recovery_time_column_idx] || columns_mask[replication_lag_column_idx] || columns_mask[is_active_column_idx]))
+    if (replicated && (columns_mask[recovery_time_column_idx] || columns_mask[replication_lag_column_idx] || columns_mask[is_unsynced_column_idx] || columns_mask[is_active_column_idx]))
         replicas_info = replicated->tryGetReplicasInfo(name_and_cluster.second);
 
     size_t replica_idx = 0;
@@ -94,6 +99,8 @@ void StorageSystemClusters::writeCluster(MutableColumns & res_columns, const std
                 res_columns[res_index++]->insert(cluster_name);
             if (columns_mask[src_index++])
                 res_columns[res_index++]->insert(shard_info.shard_num);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(shard_info.name);
             if (columns_mask[src_index++])
                 res_columns[res_index++]->insert(shard_info.weight);
             if (columns_mask[src_index++])
@@ -126,7 +133,7 @@ void StorageSystemClusters::writeCluster(MutableColumns & res_columns, const std
             if (columns_mask[src_index++])
                 res_columns[res_index++]->insert(address.database_replica_name);
 
-            /// make sure these three columns remain the last ones
+            /// make sure these four columns remain the last ones, see is_active_column_idx, etc
             if (columns_mask[src_index++])
             {
                 if (replicas_info.empty())
@@ -135,6 +142,16 @@ void StorageSystemClusters::writeCluster(MutableColumns & res_columns, const std
                 {
                     const auto & replica_info = replicas_info[replica_idx];
                     res_columns[res_index++]->insert(replica_info.is_active);
+                }
+            }
+            if (columns_mask[src_index++])
+            {
+                if (replicas_info.empty())
+                    res_columns[res_index++]->insertDefault();
+                else
+                {
+                    const auto & replica_info = replicas_info[replica_idx];
+                    res_columns[res_index++]->insert(replica_info.unsynced_after_recovery);
                 }
             }
             if (columns_mask[src_index++])

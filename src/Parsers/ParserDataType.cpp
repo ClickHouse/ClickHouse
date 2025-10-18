@@ -42,7 +42,7 @@ private:
         if (!number_parser.parse(pos, number, expected))
             return false;
 
-        node = makeASTFunction("equals", identifier, number);
+        node = makeASTOperator("equals", identifier, number);
         return true;
     }
 };
@@ -99,7 +99,7 @@ private:
             if (!number_parser.parse(pos, number, expected))
                 return false;
 
-            argument->parameter = makeASTFunction("equals", identifier, number);
+            argument->parameter = makeASTOperator("equals", identifier, number);
             argument->children.push_back(argument->parameter);
             node = argument;
             return true;
@@ -268,7 +268,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             DynamicArgumentParser parser;
             parser.parse(pos, arg, expected);
         }
-        else if (type_name == "JSON")
+        else if (boost::to_lower_copy(type_name) == "json")
         {
             ObjectArgumentParser parser;
             parser.parse(pos, arg, expected);
