@@ -4612,7 +4612,8 @@ static void reloadZooKeeperIfChangedImpl(
 
         if (zk_concection_log)
         {
-            zk_concection_log->addDisconnected(keeper_name, *old_zk, reason);
+            if (old_zk)
+                zk_concection_log->addDisconnected(keeper_name, *old_zk, reason);
             zk_concection_log->addConnected(keeper_name, *zk, reason);
         }
 
