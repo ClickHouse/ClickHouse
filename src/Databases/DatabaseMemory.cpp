@@ -86,6 +86,7 @@ void DatabaseMemory::dropTable(
     std::lock_guard lock{mutex};
     table->is_dropped = true;
     create_queries.erase(table_name);
+    snapshot_detached_tables.erase(table_name);
     UUID table_uuid = table->getStorageID().uuid;
     if (table_uuid != UUIDHelpers::Nil)
         DatabaseCatalog::instance().removeUUIDMappingFinally(table_uuid);
