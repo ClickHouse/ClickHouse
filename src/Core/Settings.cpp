@@ -174,7 +174,7 @@ Squash blocks passed to the external table to a specified size in bytes, if bloc
     DECLARE(UInt64, max_joined_block_size_rows, DEFAULT_BLOCK_SIZE, R"(
 Maximum block size for JOIN result (if join algorithm supports it). 0 means unlimited.
 )", 0) \
-    DECLARE(UInt64, max_joined_block_size_bytes, 4 * 1024 * 1024, R"(
+    DECLARE(UInt64, max_joined_block_size_bytes, 4_MiB, R"(
 Maximum block size in bytes for JOIN result (if join algorithm supports it). 0 means unlimited.
 )", 0) \
     DECLARE(UInt64, min_joined_block_size_rows, DEFAULT_BLOCK_SIZE, R"(
@@ -186,6 +186,8 @@ Minimum block size in bytes for JOIN input and output blocks (if join algorithm 
     DECLARE(Bool, joined_block_split_single_row, false, R"(
 Allow to chunk hash join result by rows corresponding to single row from left table.
 This may reduce memory usage in case of row with many matches in right table, but may increase CPU usage.
+Note that `max_joined_block_size_rows != 0` is mandatory for this setting to have effect.
+The `max_joined_block_size_bytes` combined with this setting is helpful to avoid excessive memory usage in case of skewed data with some large rows having many matches in right table.
 )", 0) \
     DECLARE(UInt64, max_insert_threads, 0, R"(
 The maximum number of threads to execute the `INSERT SELECT` query.
