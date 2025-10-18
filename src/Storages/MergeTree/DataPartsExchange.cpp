@@ -872,7 +872,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
         MergeTreeDataPartBuilder builder(data, part_name, volume, part_relative_path, part_dir, getReadSettings());
         new_data_part = builder.withPartFormatFromDisk().build();
 
-        new_data_part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
+        new_data_part->version->setCreationTID(Tx::PrehistoricTID, nullptr);
         new_data_part->is_temp = true;
         /// In case of replicated merge tree with zero copy replication
         /// Here Clickhouse claims that this new part can be deleted in temporary state without unlocking the blobs
