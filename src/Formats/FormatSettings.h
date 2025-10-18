@@ -353,6 +353,8 @@ struct FormatSettings
         UInt64 fallback_to_vertical_min_columns = 5;
         UInt64 fallback_to_vertical_min_table_width = 250;
 
+        bool display_tuple_as_subcolumns = true;
+
         enum class Charset : uint8_t
         {
             UTF8,

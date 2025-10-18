@@ -68,6 +68,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"exclude_materialize_skip_indexes_on_insert", "", "", "New setting."},
             {"optimize_empty_string_comparisons", false, true, "A new setting."},
             {"query_plan_use_logical_join_step", true, true, "Added alias"},
+            {"pretty_display_tuple_as_subcolumns", false, true, "Allows to display tuple columns as subcolumns in pretty formats."},            {"output_format_native_use_flattened_dynamic_and_json_serialization", false, false, "Add flattened Dynamic/JSON serializations to Native format"},
             {"schema_inference_make_columns_nullable", 1, 3, "Take nullability information from Parquet/ORC/Arrow metadata by default, instead of making everything nullable."},
             {"materialized_views_squash_parallel_inserts", false, true, "Added setting to preserve old behavior if needed."},
         });
