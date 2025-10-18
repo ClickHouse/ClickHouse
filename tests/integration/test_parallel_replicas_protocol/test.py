@@ -88,8 +88,9 @@ def test_final_on_parallel_replicas(start_cluster):
         "CREATE TABLE t0 (c0 Int) ENGINE = SummingMergeTree() ORDER BY tuple()"
     )
     nodes[0].query("INSERT INTO t0 VALUES (1)")
+    nodes[0].query("OPTIMIZE TABLE t0 FINAL")
     resp = nodes[0].query(
-        "SELECT 1 FROM t0 RIGHT JOIN (SELECT c0 FROM t0 FINAL) tx ON TRUE GROUP BY c0",
+        "SELECT 1 FROM t0 RIGHT JOIN (SELECT c0 FROM t0) tx ON TRUE GROUP BY c0",
         settings={
             "allow_experimental_parallel_reading_from_replicas": 2,
             "cluster_for_parallel_replicas": "parallel_replicas",
