@@ -63,7 +63,6 @@
 
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/HashJoin/HashJoin.h>
