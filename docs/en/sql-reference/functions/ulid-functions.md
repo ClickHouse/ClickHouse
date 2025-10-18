@@ -1,12 +1,12 @@
 ---
-description: 'Documentation for functions used for working with ULID'
-sidebar_label: 'ULID'
+description: 'Documentation for functions used for working with ULIDs'
+sidebar_label: 'ULIDs'
 slug: /sql-reference/functions/ulid-functions
-title: 'Functions for working with ULID'
+title: 'Functions for working with ULIDs'
 doc_type: 'reference'
 ---
 
-# Functions for working with ULID
+# Functions for working with ULIDs
 
 :::note
 The documentation below is generated from the `system.functions` system table.
