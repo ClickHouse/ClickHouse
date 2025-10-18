@@ -4,6 +4,7 @@ sidebar_label: 'first_value'
 sidebar_position: 3
 slug: /sql-reference/window-functions/first_value
 title: 'first_value'
+doc_type: 'reference'
 ---
 
 # first_value

@@ -1,9 +1,9 @@
 import argparse
 import os
+import random
 import re
 import time
 from pathlib import Path
-import random
 
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
 from ci.jobs.scripts.functional_tests_results import FTResultsProcessor
@@ -139,7 +139,7 @@ def main():
     is_parallel_replicas = False
     runner_options = ""
     # optimal value for most of the jobs
-    nproc = int(Utils.cpu_count() * 0.8)
+    nproc = int(Utils.cpu_count() * 0.6)
     info = Info()
 
     for to in test_options:
@@ -179,8 +179,11 @@ def main():
     if is_database_replicated or is_shared_catalog or is_parallel_replicas:
         pass
     else:
-        if "binary" in args.options:
+        if "binary" in args.options and len(test_options) < 3:
+            # plain binary job works fast with high concurrency
             nproc = int(Utils.cpu_count() * 1.2)
+        elif is_database_replicated:
+            nproc = int(Utils.cpu_count() * 0.4)
         else:
             pass
 
@@ -281,7 +284,7 @@ def main():
                 link_to_master_head_binary = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/amd64/clickhouse"
             if not info.is_local_run or not (Path(temp_dir) / "clickhouse").exists():
                 print(
-                    f"NOTE: Clickhouse binary will be downloaded to [{temp_dir}] from [{link_to_master_head_binary}]"
+                    f"NOTE: ClickHouse binary will be downloaded to [{temp_dir}] from [{link_to_master_head_binary}]"
                 )
                 if info.is_local_run:
                     time.sleep(10)
@@ -290,6 +293,10 @@ def main():
                     f"wget -nv -P {temp_dir} {link_to_master_head_binary}",
                 )
             os.environ["GLOBAL_TAGS"] = "no-random-settings"
+
+        os.environ["MALLOC_CONF"] = (
+            f"prof_active:true,prof_prefix:{temp_dir}/jemalloc_profiles/clickhouse.jemalloc"
+        )
 
         commands.append(configure_log_export)
 
@@ -371,7 +378,7 @@ def main():
         if is_bugfix_validation:
             has_failure = False
             for r in results[-1].results:
-                if not r.is_ok():
+                if r.status == Result.StatusExtended.FAIL:
                     has_failure = True
                     break
             if not has_failure:
@@ -411,7 +418,7 @@ def main():
         print("Collect logs")
 
         def collect_logs():
-            CH.prepare_logs(all=test_result and not test_result.is_ok())
+            CH.prepare_logs(all=test_result and not test_result.is_ok(), info=info)
 
         results.append(
             Result.from_commands_run(
@@ -436,12 +443,15 @@ def main():
             )
             force_ok_exit = True
 
+    if test_result:
+        test_result.sort()
+
     Result.create_from(
         results=results,
         stopwatch=stop_watch,
         files=CH.logs + debug_files,
         info=job_info,
-    ).complete_job(force_ok_exit=force_ok_exit)
+    ).complete_job(do_not_block_pipeline_on_failure=force_ok_exit)
 
 
 if __name__ == "__main__":

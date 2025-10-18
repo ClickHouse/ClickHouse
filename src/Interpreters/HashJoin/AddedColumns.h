@@ -75,7 +75,13 @@ struct LazyOutput
         ++row_count;
     }
 
-    void buildOutput(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const;
+    [[nodiscard]] size_t buildOutput(size_t size_to_reserve,
+        MutableColumns & columns,
+        const UInt64 * row_refs_begin,
+        const UInt64 * row_refs_end,
+        size_t rows_offset,
+        size_t rows_limit) const;
+
     void buildJoinGetOutput(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const;
 
     /** Build output from the blocks that extract from `RowRef` or `RowRefList`, to avoid block cache miss which may cause performance slow down.
@@ -85,6 +91,10 @@ struct LazyOutput
     void buildOutputFromBlocks(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const;
 
     void buildOutputFromRowRefLists(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const;
+
+    [[nodiscard]] size_t buildOutputFromBlocksLimitAndOffset(
+        MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end,
+        size_t rows_offset, size_t rows_limit) const;
 };
 
 template <bool lazy>
@@ -167,10 +177,38 @@ public:
         return ColumnWithTypeAndName(std::move(columns[i]), lazy_output.type_name[i].type, lazy_output.type_name[i].name);
     }
 
-    void appendFromBlock(const RowRefList * row_ref_list, bool has_default);
+    void appendFromBlock(const RowRefList * row_ref_list, bool)
+    {
+        if constexpr (lazy)
+        {
+#ifndef NDEBUG
+            checkColumns(*row_ref_list->columns);
+#endif
+            if (has_columns_to_add)
+            {
+                lazy_output.addRowRefList(row_ref_list);
+            }
+        }
+        else
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "AddedColumns are not implemented for RowRefList in non-lazy mode");
+        }
+    }
+
     void appendFromBlock(const RowRef * row_ref, bool has_default);
 
-    void appendDefaultRow();
+    void appendDefaultRow()
+    {
+        if constexpr (!lazy)
+        {
+            ++lazy_defaults_count;
+        }
+        else
+        {
+            if (has_columns_to_add)
+                lazy_output.addDefault();
+        }
+    }
 
     void applyLazyDefaults();
 
@@ -190,6 +228,8 @@ public:
     MutableColumns columns;
     IColumn::Offsets offsets_to_replicate;
     IColumn::Filter filter;
+    /// For every row with a match, if we set filter[row] = 1, we also add this row to `matched_rows` for faster ScatteredBlock::filter().
+    IColumn::Offsets matched_rows;
 
     /// for lazy
     // The default row is represented by an empty RowRef, so that fixed-size blocks can be generated sequentially,

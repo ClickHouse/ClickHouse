@@ -4,6 +4,7 @@ description: 'Bitmap or Aggregate calculations from a unsigned integer column, r
 sidebar_position: 148
 slug: /sql-reference/aggregate-functions/reference/groupbitmap
 title: 'groupBitmap'
+doc_type: 'reference'
 ---
 
 # groupBitmap

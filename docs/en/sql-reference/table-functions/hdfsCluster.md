@@ -5,6 +5,7 @@ sidebar_label: 'hdfsCluster'
 sidebar_position: 81
 slug: /sql-reference/table-functions/hdfsCluster
 title: 'hdfsCluster'
+doc_type: 'reference'
 ---
 
 # hdfsCluster Table Function

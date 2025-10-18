@@ -23,6 +23,7 @@
 #include <Parsers/ASTSubquery.h>
 
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/FilterDescription.h>
@@ -36,6 +37,7 @@
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnMap.h>
@@ -129,7 +131,10 @@ static NamesAndTypesList getCommonVirtualsForFileLikeStorage()
             {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
             {"_size", makeNullable(std::make_shared<DataTypeUInt64>())},
             {"_time", makeNullable(std::make_shared<DataTypeDateTime>())},
-            {"_etag", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
+            {"_etag", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+            {"_data_lake_snapshot_version", makeNullable(std::make_shared<DataTypeUInt64>())},
+            {"_row_number", makeNullable(std::make_shared<DataTypeInt64>())}
+    };
 }
 
 NameSet getVirtualNamesForFileLikeStorage()
@@ -282,6 +287,34 @@ void addRequestedFileLikeStorageVirtualsToChunk(
                 chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), (*virtual_values.etag))->convertToFullColumnIfConst());
             else
                 chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
+        }
+        else if (virtual_column.name == "_data_lake_snapshot_version")
+        {
+            if (virtual_values.data_lake_snapshot_version)
+                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), *virtual_values.data_lake_snapshot_version)->convertToFullColumnIfConst());
+            else
+                chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
+        }
+        else if (virtual_column.name == "_row_number")
+        {
+#if USE_PARQUET
+            auto chunk_info = chunk.getChunkInfos().get<ChunkInfoRowNumbers>();
+            if (chunk_info)
+            {
+                size_t row_num_offset = chunk_info->row_num_offset;
+                const auto & applied_filter = chunk_info->applied_filter;
+                size_t num_indices = applied_filter.has_value() ? applied_filter->size() : chunk.getNumRows();
+                auto column = ColumnInt64::create();
+                for (size_t i = 0; i < num_indices; ++i)
+                    if (!applied_filter.has_value() || applied_filter.value()[i])
+                        column->insertValue(i + row_num_offset);
+                auto null_map = ColumnUInt8::create(chunk.getNumRows(), 0);
+                chunk.addColumn(ColumnNullable::create(std::move(column), std::move(null_map)));
+                return;
+            }
+#endif
+            /// Row numbers not known, _row_number = NULL.
+            chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
         }
     }
 }
