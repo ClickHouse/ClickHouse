@@ -982,26 +982,24 @@ def test_backup_restore_s3_plain():
 
     assert instance.query("SELECT count(*) FROM sample") == "100\n"
 
-    table_data_path = os.path.join(instance.path, f"database/store")
+    table_data_path = instance.query(f"SELECT data_paths[1] FROM system.tables WHERE name='sample' and database='default'").strip().replace("/var/lib/clickhouse/", "").strip("/")
     minio = cluster.minio_client
-    remote_blob_path = "data/disks/disk_s3_plain/store"
+    local_path = os.path.join(instance.path, "database")
+    source_table_path = f"{local_path}/{table_data_path}"
+    remote_blob_path = f"data/disks/disk_s3_plain/{table_data_path}"
+    print(f"Copying from {source_table_path} to {remote_blob_path}")
     remove_directory(minio, cluster.minio_bucket, remote_blob_path)
     upload_directory(
-        minio, cluster.minio_bucket, table_data_path, remote_blob_path, use_relpath=True
+        minio, cluster.minio_bucket, source_table_path, remote_blob_path, use_relpath=True
     )
 
-    table_uuid = instance.query(
-        f"""
-            SELECT uuid FROM system.tables WHERE name='sample' and database='default'
-            """
-    ).strip()
-
+    table_uuid = instance.query(f"SELECT uuid FROM system.tables WHERE name='sample' and database='default'").strip()
     instance.query(
         f"""
         DROP TABLE sample SYNC;
         ATTACH TABLE sample UUID '{table_uuid}' (key Int, value String)
         ENGINE = MergeTree() ORDER BY tuple()
-        SETTINGS storage_policy='policy_s3_plain'
+        SETTINGS storage_policy='policy_s3_plain', max_suspicious_broken_parts=0, max_suspicious_broken_parts_bytes=0
         """
     )
     assert instance.query("SELECT count(*) FROM sample") == "100\n"
