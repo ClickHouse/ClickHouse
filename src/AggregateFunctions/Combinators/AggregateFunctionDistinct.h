@@ -25,7 +25,7 @@ struct AggregateFunctionDistinctSingleNumericData
     Set history;
 
     /// Returns true if the value did not exist in the history before
-    bool add(const IColumn ** columns, size_t /* columns_num */, size_t row_num, Arena *)
+    bool add(const IColumn ** __restrict columns, size_t /* columns_num */, size_t row_num, Arena *)
     {
         const auto & vec = assert_cast<const ColumnVector<T> &>(*columns[0]).getData();
         const T value = vec[row_num];

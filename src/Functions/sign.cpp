@@ -11,12 +11,15 @@ struct SignImpl
     using ResultType = Int8;
     static constexpr bool allow_string_or_fixed_string = false;
 
-    static NO_SANITIZE_UNDEFINED ResultType apply(A a)
+    ALWAYS_INLINE static NO_SANITIZE_UNDEFINED ResultType apply(A a)
     {
         if constexpr (is_decimal<A> || is_floating_point<A>)
             return a < A(0) ? -1 : a == A(0) ? 0 : 1;
         else if constexpr (is_signed_v<A>)
-            return a < 0 ? -1 : a == 0 ? 0 : 1;
+        {
+            constexpr int shift = sizeof(A) * 8 - 1;
+            return static_cast<ResultType>((a >> shift) | (!!a));
+        }
         else if constexpr (is_unsigned_v<A>)
             return a == 0 ? 0 : 1;
     }
