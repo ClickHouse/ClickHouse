@@ -41,6 +41,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.10",
         {
+            {"min_count_to_compile_expression", 3, 1, "For ci tests"},
             {"show_data_lake_catalogs_in_system_tables", true, false, "Disable catalogs in system tables by default"},
             {"optimize_rewrite_like_perfect_affix", false, true, "New setting"},
             {"allow_dynamic_type_in_join_keys", true, false, "Disallow using Dynamic type in JOIN keys by default"},
@@ -180,7 +181,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"parallel_distributed_insert_select", 0, 2, "Enable parallel distributed insert select by default"},
             {"write_through_distributed_cache_buffer_size", 0, 0, "New cloud setting"},
             {"min_joined_block_size_rows", 0, DEFAULT_BLOCK_SIZE, "New setting."},
-            {"min_count_to_compile_expression", 3, 1, "For ci tests"},
             {"table_engine_read_through_distributed_cache", false, false, "New setting"},
             {"distributed_cache_alignment", 0, 0, "Rename of distributed_cache_read_alignment"},
             {"enable_scopes_for_with_statement", true, true, "New setting for backward compatibility with the old analyzer."},
