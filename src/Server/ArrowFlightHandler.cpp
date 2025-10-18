@@ -256,7 +256,7 @@ namespace
     /// We generate tickets with this prefix.
     /// Method DoGet() accepts a ticket which is either 1) a ticket with this prefix; or 2) a SQL query.
     /// A valid SQL query can't start with this prefix so method DoGet() can distinguish those cases.
-    const String TICKET_PREFIX = "--#TICKET-";
+    const String TICKET_PREFIX = "~TICKET-";
 
     bool hasTicketPrefix(const String & ticket)
     {
@@ -267,7 +267,7 @@ namespace
     /// Methods GetFlightInfo() and GetSchema() accept a flight descriptor which is either
     /// 1) a normal flight descriptor (a table name or a SQL query); or 2) a poll descriptor with this prefix.
     /// A valid SQL query can't start with this prefix so methods GetFlightInfo() and GetSchema() can distinguish those cases.
-    const String POLL_DESCRIPTOR_PREFIX = "--#POLL-";
+    const String POLL_DESCRIPTOR_PREFIX = "~POLL-";
 
     bool hasPollDescriptorPrefix(const String & poll_descriptor)
     {
@@ -393,8 +393,6 @@ public:
     {
     }
 
-    ~CallsData() = default;
-
     /// Creates a ticket for a specified block.
     std::shared_ptr<const TicketInfo> createTicket(ConstBlockPtr block, std::shared_ptr<const CHColumnToArrowColumn> ch_to_arrow_converter)
     {
@@ -428,15 +426,15 @@ public:
 
     /// Finds the expiration time for a specified ticket.
     /// If the ticket is not found it means it was expired and removed from the map.
-    TicketWithExpirationTime getTicketWithExpirationTime(const String & ticket) const
+    std::optional<Timestamp> getTicketExpirationTime(const String & ticket) const
     {
         if (!tickets_lifetime)
-            return TicketWithExpirationTime{.ticket = ticket, .expiration_time = std::nullopt};
+            return std::nullopt;
         std::lock_guard lock{mutex};
         auto it = tickets.find(ticket);
         if (it == tickets.end())
-            return TicketWithExpirationTime{.ticket = ticket, .expiration_time = ALREADY_EXPIRED};
-        return *it->second;
+            return ALREADY_EXPIRED;
+        return it->second->expiration_time;
     }
 
     /// Extends the expiration time of a ticket.
@@ -929,10 +927,9 @@ arrow::Status ArrowFlightHandler::GetFlightInfo(
             {
                 if (poll_info->ticket)
                 {
-                    auto ticket = calls_data->getTicketWithExpirationTime(*poll_info->ticket);
                     arrow::flight::FlightEndpoint endpoint;
-                    endpoint.ticket = arrow::flight::Ticket{.ticket = ticket.ticket};
-                    endpoint.expiration_time = ticket.expiration_time;
+                    endpoint.ticket = arrow::flight::Ticket{.ticket = *poll_info->ticket};
+                    endpoint.expiration_time = calls_data->getTicketExpirationTime(*poll_info->ticket);
                     endpoints.emplace_back(endpoint);
                 }
                 if (poll_info->rows)
@@ -1118,10 +1115,9 @@ arrow::Status ArrowFlightHandler::PollFlightInfo(
         {
             if (poll_info->ticket)
             {
-                auto ticket = calls_data->getTicketWithExpirationTime(*poll_info->ticket);
                 arrow::flight::FlightEndpoint endpoint;
-                endpoint.ticket = arrow::flight::Ticket{.ticket = ticket.ticket};
-                endpoint.expiration_time = ticket.expiration_time;
+                endpoint.ticket = arrow::flight::Ticket{.ticket = *poll_info->ticket};
+                endpoint.expiration_time = calls_data->getTicketExpirationTime(*poll_info->ticket);
                 endpoints.emplace_back(endpoint);
             }
             if (poll_info->rows)

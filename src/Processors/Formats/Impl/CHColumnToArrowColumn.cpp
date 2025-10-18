@@ -1073,14 +1073,16 @@ namespace DB
         : format_name(format_name_)
         , settings(settings_)
     {
+        if (settings.low_cardinality_as_dictionary)
+        {
+            header_columns = header_columns_;
+            return;
+        }
         header_columns.reserve(header_columns_.size());
         for (auto column : header_columns_)
         {
-            if (!settings.low_cardinality_as_dictionary)
-            {
-                column.type = recursiveRemoveLowCardinality(column.type);
-                column.column = recursiveRemoveLowCardinality(column.column);
-            }
+            column.type = recursiveRemoveLowCardinality(column.type);
+            column.column = recursiveRemoveLowCardinality(column.column);
             header_columns.emplace_back(std::move(column));
         }
     }
