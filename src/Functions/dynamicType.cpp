@@ -173,7 +173,7 @@ stored in that row of the Dynamic column (e.g., 'Int64', 'String', 'Array(Int64)
 CREATE TABLE test (d Dynamic) ENGINE = Memory;
 INSERT INTO test VALUES (NULL), (42), ('Hello, World!'), ([1, 2, 3]);
 SELECT d, dynamicType(d) FROM test;
-        )", 
+        )",
         R"(
 ┌─d─────────────┬─dynamicType(d)─┐
 │ ᴺᵁᴸᴸ          │ None           │
@@ -214,7 +214,7 @@ instead of being separated into individual typed subcolumns. This function ident
 CREATE TABLE test (d Dynamic(max_types=2)) ENGINE = Memory;
 INSERT INTO test VALUES (NULL), (42), ('Hello, World!'), ([1, 2, 3]);
 SELECT d, isDynamicElementInSharedData(d) FROM test;
-        )", 
+        )",
         R"(
 ┌─d─────────────┬─isDynamicElementInSharedData(d)─┐
 │ ᴺᵁᴸᴸ          │ false                           │
