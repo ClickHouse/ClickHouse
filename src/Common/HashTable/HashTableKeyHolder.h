@@ -76,7 +76,15 @@ struct ArenaKeyHolder
 {
     StringRef key;
     Arena & pool;
+    /// When key is not held by any external instance, then it is held by this unique_ptr.
+    std::unique_ptr<char[]> holder;
 
+    ArenaKeyHolder(const StringRef & key_, Arena & pool_, std::unique_ptr<char[]> holder_ = {})
+        : key(key_)
+        , pool(pool_)
+        , holder(std::move(holder_))
+    {
+    }
 };
 
 }
