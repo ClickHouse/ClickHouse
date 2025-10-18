@@ -14,6 +14,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/TableLockHolder.h>
 #include <QueryPipeline/Pipe.h>
+#include <base/BFloat16.h>
 
 namespace Poco
 {
@@ -134,6 +135,8 @@ public:
     {
         UInt64 limit_length{0};
         UInt64 limit_offset{0};
+        Float32 fractional_limit{0};
+        Float32 fractional_offset{0};
         bool is_limit_length_negative{false};
         bool is_limit_offset_negative{false};
     };

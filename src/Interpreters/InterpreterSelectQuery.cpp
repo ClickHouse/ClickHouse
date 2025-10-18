@@ -1,9 +1,15 @@
 #include <ranges>
+#include <tuple>
+#include <utility>
 #include <Access/AccessControl.h>
 
+#include <Core/Block.h>
+#include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeInterval.h>
 
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -47,6 +53,8 @@
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
 #include <Interpreters/Context.h>
 
+#include <Processors/QueryPlan/FractionalLimitStep.h>
+#include <Processors/QueryPlan/FractionalOffsetStep.h>
 #include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
@@ -98,6 +106,9 @@
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/IJoin.h>
 #include <QueryPipeline/SizeLimits.h>
+#include <base/Decimal.h>
+#include <base/types.h>
+#include <Common/Exception.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/NaNUtils.h>
@@ -205,7 +216,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_entries_for_hash_table_stats;
 }
 
-static std::pair<UInt64, bool> getLimitOffsetAbsAndSign(const ASTPtr & node, const ContextPtr & context, const std::string & expr);
+static std::tuple<UInt64, bool, Float32> getLimitOffsetAbsAndSignAndFraction(const ASTPtr & node, const ContextPtr & context, const std::string & expr);
 
 namespace ErrorCodes
 {
@@ -1472,7 +1483,7 @@ static SortDescription getSortDescriptionFromGroupBy(const ASTSelectQuery & quer
     return order_descr;
 }
 
-static std::pair<UInt64, bool> getLimitOffsetAbsAndSign(const ASTPtr & node, const ContextPtr & context, const std::string & expr)
+static std::tuple<UInt64, bool, Float32> getLimitOffsetAbsAndSignAndFraction(const ASTPtr & node, const ContextPtr & context, const std::string & expr)
 {
     const auto & [field, type] = evaluateConstantExpression(node, context);
 
@@ -1484,7 +1495,7 @@ static std::pair<UInt64, bool> getLimitOffsetAbsAndSign(const ASTPtr & node, con
     {
         const Field converted_value = convertFieldToType(field, DataTypeUInt64());
         if (!converted_value.isNull())
-            return {converted_value.safeGet<UInt64>(), false};
+            return {converted_value.safeGet<UInt64>(), false, 0};
     }
 
     {
@@ -1498,37 +1509,47 @@ static std::pair<UInt64, bool> getLimitOffsetAbsAndSign(const ASTPtr & node, con
             const UInt64 magnitude = (int_value == std::numeric_limits<Int64>::min())
                 ? (static_cast<UInt64>(std::numeric_limits<Int64>::max()) + 1ULL)
                 : static_cast<UInt64>(-int_value);
-            return {magnitude, true};
+            return {magnitude, true, 0};
+        }
+    }
+
+    {
+        Field converted_value = convertFieldToType(field, DataTypeDecimal32(8, 7));
+        if (!converted_value.isNull())
+        {
+            auto value = converted_value.safeGet<Decimal32>().getValue() / 10000000.0;
+            if (value < 1 && value > 0)
+                return {0, false, value};
         }
     }
 
     throw Exception(
         ErrorCodes::INVALID_LIMIT_EXPRESSION,
-        "The value {} of {} expression is not representable as UInt64 or Int64",
+        "The value {} of {} expression is not representable as UInt64 or Int64 or Float32 [0.1 to 0.9]",
         applyVisitor(FieldVisitorToString(), field),
         expr);
 }
 
 InterpreterSelectQuery::LimitInfo InterpreterSelectQuery::getLimitLengthAndOffset(const ASTSelectQuery & query, const ContextPtr & context_)
 {
-    // Holds the magnitude, sign of the limit, offset
+    // Holds the magnitude, sign, and fraction of limit and offset
     LimitInfo lim_info;
 
     if (query.limitLength())
     {
-        std::tie(lim_info.limit_length, lim_info.is_limit_length_negative)
-            = getLimitOffsetAbsAndSign(query.limitLength(), context_, "LIMIT");
+        std::tie(lim_info.limit_length, lim_info.is_limit_length_negative, lim_info.fractional_limit)
+            = getLimitOffsetAbsAndSignAndFraction(query.limitLength(), context_, "LIMIT");
 
-        if (query.limitOffset() && lim_info.limit_length)
+        if (query.limitOffset() && (lim_info.limit_length || lim_info.fractional_limit > 0))
         {
-            std::tie(lim_info.limit_offset, lim_info.is_limit_offset_negative)
-                = getLimitOffsetAbsAndSign(query.limitOffset(), context_, "OFFSET");
+            std::tie(lim_info.limit_offset, lim_info.is_limit_offset_negative, lim_info.fractional_offset)
+                = getLimitOffsetAbsAndSignAndFraction(query.limitOffset(), context_, "OFFSET");
         }
     }
     else if (query.limitOffset())
     {
-        std::tie(lim_info.limit_offset, lim_info.is_limit_offset_negative)
-            = getLimitOffsetAbsAndSign(query.limitOffset(), context_, "OFFSET");
+        std::tie(lim_info.limit_offset, lim_info.is_limit_offset_negative, lim_info.fractional_offset)
+            = getLimitOffsetAbsAndSignAndFraction(query.limitOffset(), context_, "OFFSET");
     }
     return lim_info;
 }
@@ -1536,12 +1557,12 @@ InterpreterSelectQuery::LimitInfo InterpreterSelectQuery::getLimitLengthAndOffse
 
 UInt64 InterpreterSelectQuery::getLimitForSorting(const ASTSelectQuery & query, const ContextPtr & context_)
 {
-    /// Partial sort can be done if there is LIMIT but no DISTINCT or LIMIT BY, neither ARRAY JOIN.
+    /// Partial sort can be done if there is LIMIT but no DISTINCT, LIMIT BY, ARRAY JOIN, FRACTIONAL OFFSET.
     if (!query.distinct && !query.limitBy() && !query.limit_with_ties && !query.arrayJoinExpressionList().first && query.limitLength())
     {
         const LimitInfo lim_info = getLimitLengthAndOffset(query, context_);
 
-        if (lim_info.is_limit_length_negative)
+        if (lim_info.is_limit_length_negative || lim_info.fractional_offset > 0)
             return 0;
 
         if (lim_info.limit_length > std::numeric_limits<UInt64>::max() - lim_info.limit_offset)
@@ -2526,6 +2547,8 @@ UInt64 InterpreterSelectQuery::maxBlockSizeByLimit() const
        && !query.join()
        && !query_analyzer->hasAggregation()
        && !query_analyzer->hasWindow()
+       && lim_info.fractional_limit == 0
+       && lim_info.fractional_offset == 0
        && query.limitLength()
        && lim_info.limit_length <= std::numeric_limits<UInt64>::max() - lim_info.limit_offset
        && !lim_info.is_limit_length_negative)
@@ -3203,7 +3226,13 @@ void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
 
         const Settings & settings = context->getSettingsRef();
 
-        if (!lim_info.is_limit_length_negative && !lim_info.is_limit_offset_negative) [[likely]]
+        // only one of limit_length or fractional_limit will have a value not both
+        // only one of limit_offset or fractional_offset will have a value
+        // if fractional_limit has value is_limit_length_negative should be always false
+        // if fractional_offset has value is_limit_offset_negative should be always false
+
+        if (!lim_info.is_limit_length_negative && !lim_info.is_limit_offset_negative
+            && lim_info.fractional_offset == 0 && lim_info.fractional_limit == 0) [[likely]]
         {
             auto limit = std::make_unique<LimitStep>(
                 query_plan.getCurrentHeader(), lim_info.limit_length, lim_info.limit_offset, settings[Setting::exact_rows_before_limit]);
@@ -3214,13 +3243,13 @@ void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
 
             query_plan.addStep(std::move(limit));
         }
-        else if (lim_info.is_limit_length_negative && lim_info.is_limit_offset_negative)
+        else if (lim_info.limit_length && lim_info.is_limit_length_negative && lim_info.is_limit_offset_negative)
         {
             auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), lim_info.limit_length, lim_info.limit_offset);
 
             query_plan.addStep(std::move(limit));
         }
-        else if (lim_info.is_limit_length_negative && !lim_info.is_limit_offset_negative)
+        else if (lim_info.limit_length && lim_info.is_limit_length_negative && !lim_info.is_limit_offset_negative)
         {
             auto offsets_step = std::make_unique<OffsetStep>(query_plan.getCurrentHeader(), lim_info.limit_offset);
             query_plan.addStep(std::move(offsets_step));
@@ -3228,7 +3257,7 @@ void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
             auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), lim_info.limit_length, 0);
             query_plan.addStep(std::move(limit));
         }
-        else // !is_limit_length_negative && is_limit_offset_negative
+        else if (lim_info.limit_length && !lim_info.is_limit_length_negative && lim_info.is_limit_offset_negative)
         {
             auto offsets_step = std::make_unique<NegativeOffsetStep>(query_plan.getCurrentHeader(), lim_info.limit_offset);
             query_plan.addStep(std::move(offsets_step));
@@ -3237,6 +3266,22 @@ void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
                 query_plan.getCurrentHeader(), lim_info.limit_length, 0, settings[Setting::exact_rows_before_limit]);
 
             query_plan.addStep(std::move(limit));
+        }
+        else if (lim_info.limit_length && lim_info.fractional_offset > 0)
+        {
+            auto fractional_offset_step = std::make_unique<FractionalOffsetStep>(query_plan.getCurrentHeader(), lim_info.fractional_offset);
+            query_plan.addStep(std::move(fractional_offset_step));
+
+            auto limit = std::make_unique<LimitStep>(
+                query_plan.getCurrentHeader(), lim_info.limit_length, 0, settings[Setting::exact_rows_before_limit]);
+            query_plan.addStep(std::move(limit));
+        }
+        else
+        {
+            // Else its fractional limit + fractional offset or normal offset
+            auto fractional_limit_step = std::make_unique<FractionalLimitStep>(
+                query_plan.getCurrentHeader(), lim_info.fractional_limit, lim_info.fractional_offset, lim_info.limit_offset);
+            query_plan.addStep(std::move(fractional_limit_step));
         }
     }
 }
@@ -3252,13 +3297,18 @@ void InterpreterSelectQuery::executeLimitBy(QueryPlan & query_plan)
     for (const auto & elem : query.limitBy()->children)
         columns.emplace_back(elem->getColumnName());
 
-    auto [limit_length, is_limit_length_negative] = getLimitOffsetAbsAndSign(query.limitByLength(), context, "LIMIT");
+    auto [limit_length, is_limit_length_negative, fractional_limit]
+        = getLimitOffsetAbsAndSignAndFraction(query.limitByLength(), context, "LIMIT");
 
-    auto [limit_offset, is_limit_offset_negative] = ((
-        query.limitByOffset() ? getLimitOffsetAbsAndSign(query.limitByOffset(), context, "OFFSET") : std::pair<UInt64, bool>{0, false}));
+    auto [limit_offset, is_limit_offset_negative, fractional_offset]
+        = (query.limitByOffset() ? getLimitOffsetAbsAndSignAndFraction(query.limitByOffset(), context, "OFFSET")
+                                 : std::tuple<UInt64, bool, Float32>{0, false, 0});
 
     if (is_limit_length_negative || is_limit_offset_negative)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Negative LIMIT/OFFSET with LIMIT BY is not supported yet");
+
+    if (fractional_limit > 0 || fractional_offset > 0)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Fractional LIMIT/OFFSET with LIMIT BY is not supported yet");
 
     auto limit_by = std::make_unique<LimitByStep>(query_plan.getCurrentHeader(), limit_length, limit_offset, columns);
     query_plan.addStep(std::move(limit_by));
@@ -3332,7 +3382,13 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Negative LIMIT WITH TIES is not supported yet");
         }
 
-        if (!lim_info.is_limit_length_negative && !lim_info.is_limit_offset_negative) [[likely]]
+        // only one of limit_length or fractional_limit will have a value not both
+        // only one of limit_offset or fractional_offset will have a value
+        // if fractional_limit has value is_limit_length_negative should be always false
+        // if fractional_offset has value is_limit_offset_negative should be always false
+
+        if (!lim_info.is_limit_length_negative && !lim_info.is_limit_offset_negative
+            && lim_info.fractional_offset == 0 && lim_info.fractional_limit == 0) [[likely]]
         {
             auto limit = std::make_unique<LimitStep>(
                 query_plan.getCurrentHeader(),
@@ -3347,13 +3403,13 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
 
             query_plan.addStep(std::move(limit));
         }
-        else if (lim_info.is_limit_length_negative && lim_info.is_limit_offset_negative)
+        else if (lim_info.limit_length && lim_info.is_limit_length_negative && lim_info.is_limit_offset_negative)
         {
             auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), lim_info.limit_length, lim_info.limit_offset);
 
             query_plan.addStep(std::move(limit));
         }
-        else if (lim_info.is_limit_length_negative && !lim_info.is_limit_offset_negative)
+        else if (lim_info.limit_length && lim_info.is_limit_length_negative && !lim_info.is_limit_offset_negative)
         {
             auto offsets_step = std::make_unique<OffsetStep>(query_plan.getCurrentHeader(), lim_info.limit_offset);
             query_plan.addStep(std::move(offsets_step));
@@ -3361,7 +3417,7 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
             auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), lim_info.limit_length, 0);
             query_plan.addStep(std::move(limit));
         }
-        else // !lim_info.is_limit_length_negative && lim_info.is_limit_offset_negative
+        else if (lim_info.limit_length && !lim_info.is_limit_length_negative && lim_info.is_limit_offset_negative)
         {
             auto offsets_step = std::make_unique<NegativeOffsetStep>(query_plan.getCurrentHeader(), lim_info.limit_offset);
             query_plan.addStep(std::move(offsets_step));
@@ -3373,6 +3429,27 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
                 limit->setStepDescription("LIMIT WITH TIES");
 
             query_plan.addStep(std::move(limit));
+        }
+        else if (lim_info.limit_length && lim_info.fractional_offset > 0)
+        {
+            auto fractional_offset_step = std::make_unique<FractionalOffsetStep>(query_plan.getCurrentHeader(), lim_info.fractional_offset);
+            query_plan.addStep(std::move(fractional_offset_step));
+
+            auto limit = std::make_unique<LimitStep>(
+                query_plan.getCurrentHeader(), lim_info.limit_length, 0, always_read_till_end, query.limit_with_ties, order_descr);
+            query_plan.addStep(std::move(limit));
+        }
+        else
+        {
+            // Else its fractional limit + fractional offset or normal offset
+            auto fractional_limit_step = std::make_unique<FractionalLimitStep>(
+                query_plan.getCurrentHeader(),
+                lim_info.fractional_limit,
+                lim_info.fractional_offset,
+                lim_info.limit_offset,
+                query.limit_with_ties,
+                order_descr);
+            query_plan.addStep(std::move(fractional_limit_step));
         }
     }
 }
@@ -3386,15 +3463,23 @@ void InterpreterSelectQuery::executeOffset(QueryPlan & query_plan)
     {
         const LimitInfo lim_info = getLimitLengthAndOffset(query, context);
 
+        // only one of limit_offset or fractional_offset will have a value
+        // if fractional_offset has value is_offset_negative should be always false
+
         if (lim_info.is_limit_offset_negative) [[unlikely]]
         {
             auto offsets_step = std::make_unique<NegativeOffsetStep>(query_plan.getCurrentHeader(), lim_info.limit_offset);
             query_plan.addStep(std::move(offsets_step));
         }
-        else
+        else if (lim_info.limit_offset) [[likely]]
         {
             auto offsets_step = std::make_unique<OffsetStep>(query_plan.getCurrentHeader(), lim_info.limit_offset);
             query_plan.addStep(std::move(offsets_step));
+        }
+        else // if (lim_info.fractiona_offset > 0)
+        {
+            auto fractional_offset_step = std::make_unique<FractionalOffsetStep>(query_plan.getCurrentHeader(), lim_info.fractional_offset);
+            query_plan.addStep(std::move(fractional_offset_step));
         }
     }
 }

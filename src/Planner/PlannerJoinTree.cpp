@@ -1,3 +1,5 @@
+#include <Core/DecimalFunctions.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Planner/PlannerJoinTree.h>
 
 #include <Core/Settings.h>
@@ -61,7 +63,6 @@
 
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/HashJoin/HashJoin.h>
@@ -79,6 +80,8 @@
 #include <Planner/Utils.h>
 #include <Planner/CollectSets.h>
 #include <Planner/CollectTableExpressionData.h>
+#include <base/BFloat16.h>
+#include <base/types.h>
 
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
@@ -664,7 +667,7 @@ UInt64 mainQueryNodeBlockSizeByLimit(const SelectQueryInfo & select_query_info)
     }
 
     /** If not specified DISTINCT, WHERE, GROUP BY, HAVING, ORDER BY, JOIN, LIMIT BY, LIMIT WITH TIES
-      * but LIMIT is specified, and limit + offset < max_block_size,
+      * but LIMIT is specified with UInt64 value, and limit + offset < max_block_size,
       * then as the block size we will use limit + offset (not to read more from the table than requested),
       * and also set the number of threads to 1.
       */
