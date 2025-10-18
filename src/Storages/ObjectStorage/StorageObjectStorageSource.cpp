@@ -47,7 +47,6 @@ namespace fs = std::filesystem;
 namespace ProfileEvents
 {
     extern const Event EngineFileLikeReadFiles;
-    extern const Event ObjectStorageCreatedReadBuffers;
 }
 
 namespace CurrentMetrics
@@ -467,7 +466,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     FormatFilterInfoPtr format_filter_info,
     bool need_only_count)
 {
-    std::cerr << "StorageObjectStorageSource::createReader\n";
     ObjectInfoPtr object_info;
     auto query_settings = configuration->getQuerySettings(context_);
 
@@ -551,7 +549,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         {
             compression_method = chooseCompressionMethod(object_info->getFileName(), configuration->compression_method);
             read_buf = createReadBuffer(*object_info, object_storage, context_, log);
-            ProfileEvents::increment(ProfileEvents::ObjectStorageCreatedReadBuffers);
         }
 
         Block initial_header = read_from_format_info.format_header;

@@ -55,10 +55,16 @@ struct ParquetFileBucketInfo : public FileBucketInfo
 {
     std::optional<std::vector<size_t>> row_group_ids;
 
-    ParquetFileBucketInfo(std::optional<std::vector<size_t>> row_group_ids_);
+    ParquetFileBucketInfo(const std::optional<std::vector<size_t>> & row_group_ids_);
     void serialize(WriteBuffer & buffer) override;
     void deserialize(ReadBuffer & buffer) override;
     String getIdentifier() const override;
+    String getFormatName() const override
+    {
+        return "PARQUET";
+    }
+    std::shared_ptr<FileBucketInfo> clone() const override;
+
     std::shared_ptr<FileBucketInfo> createFromBuckets(std::vector<size_t> buckets_ids) override;
 };
 using ParquetFileBucketInfoPtr = std::shared_ptr<ParquetFileBucketInfo>;

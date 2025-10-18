@@ -5,6 +5,7 @@
 #include <Processors/Formats/InputFormatErrorsLogger.h>
 #include <Common/PODArray.h>
 #include "IO/WriteBuffer.h"
+#include <base/types.h>
 #include <Core/BlockMissingValues.h>
 #include <Processors/ISource.h>
 
@@ -52,6 +53,8 @@ struct FileBucketInfo
     virtual void deserialize(ReadBuffer & buffer) = 0;
     virtual String getIdentifier() const = 0;
     virtual std::shared_ptr<FileBucketInfo> createFromBuckets(std::vector<size_t> buckets_ids) = 0;
+    virtual std::shared_ptr<FileBucketInfo> clone() const = 0;
+    virtual String getFormatName() const = 0;
 
     virtual ~FileBucketInfo() = default;
 };
@@ -64,8 +67,12 @@ public:
     FileBucketInfoFactory();
 
     FileBucketInfoPtr createFromBuckets(const String & format, const std::vector<size_t> & buckets);
+    void serializeType(FileBucketInfoPtr file_bucket_info, WriteBuffer & buffer);
+    void deserializeType(FileBucketInfoPtr & file_bucket_info, ReadBuffer & buffer);
 private:
     std::unordered_map<String, FileBucketInfoPtr> instances;
+    std::unordered_map<String, Int32> format_to_type;
+    std::unordered_map<Int32, String> type_to_format;
 };
 
 /** Input format is a source, that reads data from ReadBuffer.

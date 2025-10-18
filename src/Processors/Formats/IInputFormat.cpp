@@ -3,6 +3,8 @@
 #include <IO/ReadBuffer.h>
 #include <IO/WithFileName.h>
 #include <Common/Exception.h>
+#include <IO/VarInt.h>
+#include <Interpreters/Context_fwd.h>
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 
 namespace DB
@@ -81,13 +83,43 @@ void IInputFormat::onFinish()
 FileBucketInfoFactory::FileBucketInfoFactory()
 {
     registerParquetFileBucketInfo(instances);
+    Int32 total_count = 0;
+    for (const auto & [format_name, _] : instances)
+    {
+        format_to_type[format_name] = ++total_count;
+        type_to_format[total_count] = format_name;
+    }
 }
 
 FileBucketInfoPtr FileBucketInfoFactory::createFromBuckets(const String & format, const std::vector<size_t> & buckets)
 {
     if (!instances.contains(format))
-        return nullptr;
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Format {} not found", format);
     return instances.at(format)->createFromBuckets(buckets);
+}
+
+void FileBucketInfoFactory::serializeType(FileBucketInfoPtr file_bucket_info, WriteBuffer & buffer)
+{
+    if (!file_bucket_info)
+    {
+        writeVarInt(0, buffer);
+        return;
+    }
+    auto index = format_to_type[file_bucket_info->getFormatName()];
+    writeVarInt(index, buffer);
+}
+
+void FileBucketInfoFactory::deserializeType(FileBucketInfoPtr & file_bucket_info, ReadBuffer & buffer)
+{
+    Int32 type_index;
+    readVarInt(type_index, buffer);
+    if (type_index == 0)
+    {
+        file_bucket_info = nullptr;
+        return;
+    }
+    auto format = type_to_format[type_index];
+    file_bucket_info = instances.at(format)->clone();
 }
 
 void IInputFormat::setBucketsToRead(const FileBucketInfoPtr & /*buckets_to_read*/)

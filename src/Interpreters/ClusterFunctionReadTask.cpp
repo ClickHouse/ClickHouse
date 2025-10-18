@@ -9,6 +9,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
+#include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 
 namespace DB
 {
@@ -66,8 +67,12 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t protoc
             ActionsDAG().serialize(out, registry);
     }
 
-    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_METADATA_PARTITIONED_BY_ROWGROUPS && file_bucket_info)
-        file_bucket_info->serialize(out);
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_METADATA_PARTITIONED_BY_ROWGROUPS)
+    {
+        FileBucketInfoFactory().serializeType(file_bucket_info, out);
+        if (file_bucket_info)
+            file_bucket_info->serialize(out);
+    }
 }
 
 void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
@@ -95,8 +100,12 @@ void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
         }
     }
 
-    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_METADATA_PARTITIONED_BY_ROWGROUPS && file_bucket_info)
-        file_bucket_info->deserialize(in);
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_METADATA_PARTITIONED_BY_ROWGROUPS)
+    {
+        FileBucketInfoFactory().deserializeType(file_bucket_info, in);
+        if (file_bucket_info)
+            file_bucket_info->deserialize(in);
+    }
 }
 
 }
