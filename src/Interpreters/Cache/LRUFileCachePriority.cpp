@@ -584,7 +584,7 @@ void LRUFileCachePriority::LRUIterator::incrementSize(size_t size, const CacheSt
     assertValid();
 
     const auto & entry = *iterator;
-    bool elements = entry->size > 0 ? 0 : 1;
+    size_t elements = entry->size > 0 ? 0 : 1;
 
     if (!cache_priority->canFit(size, elements, lock))
     {

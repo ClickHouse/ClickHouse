@@ -143,7 +143,7 @@ public:
 
     QueueEntryType getType() const override { return is_protected ? QueueEntryType::SLRU_Protected : QueueEntryType::SLRU_Probationary; }
 
-    bool isMovable(const CacheStateGuard::Lock &) { return movable; }
+    bool isMovable(const CacheStateGuard::Lock &) const { return movable; }
     void disableMoving(const CacheStateGuard::Lock &) { chassert(movable); movable = false; }
     /// No lock required for re-enable the moving.
     void enableMoving() { chassert(!movable); movable = true; }
