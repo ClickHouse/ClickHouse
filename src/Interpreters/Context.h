@@ -118,6 +118,7 @@ class QueryViewsLog;
 class PartLog;
 class TextLog;
 class TraceLog;
+class XRayInstrumentationProfilingLog;
 class MetricLog;
 class TransposedMetricLog;
 class AsynchronousMetricLog;
@@ -1369,6 +1370,7 @@ public:
     std::shared_ptr<QueryThreadLog> getQueryThreadLog() const;
     std::shared_ptr<QueryViewsLog> getQueryViewsLog() const;
     std::shared_ptr<TraceLog> getTraceLog() const;
+    std::shared_ptr<XRayInstrumentationProfilingLog> getInstrumentationProfilingLog() const;
     std::shared_ptr<TextLog> getTextLog() const;
     std::shared_ptr<MetricLog> getMetricLog() const;
     std::shared_ptr<TransposedMetricLog> getTransposedMetricLog() const;
