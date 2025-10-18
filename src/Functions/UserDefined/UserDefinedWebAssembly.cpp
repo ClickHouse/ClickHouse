@@ -36,6 +36,7 @@
 #include <Poco/String.h>
 #include <Common/transformEndianness.h>
 #include <Columns/ColumnString.h>
+#include <base/extended_types.h>
 
 
 #include <QueryPipeline/Pipe.h>
@@ -161,7 +162,10 @@ public:
             || callable.template operator()<Int64>(args...)
             || callable.template operator()<UInt64>(args...)
             || callable.template operator()<Float32>(args...)
-            || callable.template operator()<Float64>(args...));
+            || callable.template operator()<Float64>(args...)
+            || callable.template operator()<Int128>(args...)
+            || callable.template operator()<UInt128>(args...)
+        );
     }
 
     static void checkDataTypeWithWasmValKind(const IDataType * type, WasmValKind kind)

@@ -13,13 +13,14 @@ namespace DB::WebAssembly
 using WasmPtr = uint32_t;
 using WasmSizeT = uint32_t;
 
-using WasmVal = std::variant<uint32_t, int64_t, float, double>;
+using WasmVal = std::variant<uint32_t, int64_t, float, double, Int128>;
 
 #define APPLY_FOR_WASM_TYPES(M) \
     M(I32)                      \
     M(I64)                      \
     M(F32)                      \
-    M(F64)
+    M(F64)                      \
+    M(V128)                     \
 
 enum class WasmValKind : uint8_t
 {

@@ -54,10 +54,9 @@ String toString(WebAssembly::WasmValKind kind)
 {
     switch (kind)
     {
-        case WebAssembly::WasmValKind::I32: return "I32";
-        case WebAssembly::WasmValKind::I64: return "I64";
-        case WebAssembly::WasmValKind::F32: return "F32";
-        case WebAssembly::WasmValKind::F64: return "F64";
+        #define M(T) case WebAssembly::WasmValKind::T: return #T;
+        APPLY_FOR_WASM_TYPES(M)
+        #undef M
     }
     UNREACHABLE();
 }

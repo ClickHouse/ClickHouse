@@ -45,8 +45,10 @@ auto wasmtimeToNative(const wasmtime::Val & val)
         return val.f32();
     else if constexpr (val_kind == WasmValKind::F64)
         return val.f64();
+    else if constexpr (val_kind == WasmValKind::V128)
+        return val.v128();
     else
-        static_assert(val_kind != val_kind, "Unsupported WasmValKind");
+        static_assert(false, "Unsupported WasmValKind");
 }
 
 wasmtime::ValKind toWasmTimeValKind(WasmValKind value)
@@ -94,7 +96,7 @@ wasmtime::Val toWasmTimeValue(WasmVal val)
         using Type = decltype(wasmtimeToNative<WasmValKind::T>(std::declval<wasmtime::Val>())); \
         constexpr auto Index = std::to_underlying(WasmValKind::T); \
         if (val.index() == Index) \
-            return wasmtime::Val(static_cast<Type>(std::get<Index>(val))); \
+            return wasmtime::Val(std::bit_cast<Type>(std::get<Index>(val))); \
     }
 
     APPLY_FOR_WASM_TYPES(M)

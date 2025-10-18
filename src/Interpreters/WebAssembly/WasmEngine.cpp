@@ -73,9 +73,10 @@ ResultType WasmCompartment::invoke(std::string_view function_name, const std::ve
 template void WasmCompartment::invoke<>(std::string_view, const std::vector<WasmVal> &);
 template WasmVal WasmCompartment::invoke<>(std::string_view, const std::vector<WasmVal> &);
 template std::optional<WasmVal> WasmCompartment::invoke<>(std::string_view, const std::vector<WasmVal> &);
-template std::variant_alternative_t<0, WasmVal> WasmCompartment::invoke<>(std::string_view, const std::vector<WasmVal> &);
-template std::variant_alternative_t<1, WasmVal> WasmCompartment::invoke<>(std::string_view, const std::vector<WasmVal> &);
-template std::variant_alternative_t<2, WasmVal> WasmCompartment::invoke<>(std::string_view, const std::vector<WasmVal> &);
-template std::variant_alternative_t<3, WasmVal> WasmCompartment::invoke<>(std::string_view, const std::vector<WasmVal> &);
+
+#define M(T) template std::variant_alternative_t<std::to_underlying(WasmValKind::T), WasmVal> WasmCompartment::invoke<>(std::string_view, const std::vector<WasmVal> &);
+APPLY_FOR_WASM_TYPES(M)
+#undef M
+
 
 }
