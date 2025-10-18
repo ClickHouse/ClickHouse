@@ -26,24 +26,27 @@ public:
 
     Type getType() const override { return Type::SLRU; }
 
-    size_t getSize(const CachePriorityGuard::Lock & lock) const override;
-
-    size_t getElementsCount(const CachePriorityGuard::Lock &) const override;
-
+    size_t getSize(const CacheStateGuard::Lock & lock) const override;
     size_t getSizeApprox() const override;
 
+    size_t getElementsCount(const CacheStateGuard::Lock &) const override;
     size_t getElementsCountApprox() const override;
 
-    std::string getStateInfoForLog(const CachePriorityGuard::Lock & lock) const override;
+    std::string getStateInfoForLog(const CacheStateGuard::Lock & lock) const override;
+    void check(const CacheStateGuard::Lock &) const override;
 
     double getSLRUSizeRatio() const override { return size_ratio; }
 
-    void check(const CachePriorityGuard::Lock &) const override;
+    EvictionInfoPtr collectEvictionInfo(
+        size_t size,
+        size_t elements,
+        IFileCachePriority::Iterator * reservee,
+        const CacheStateGuard::Lock &) override;
 
     bool canFit( /// NOLINT
         size_t size,
         size_t elements,
-        const CachePriorityGuard::Lock &,
+        const CacheStateGuard::Lock &,
         IteratorPtr reservee = nullptr,
         bool best_effort = false) const override;
 
@@ -52,40 +55,40 @@ public:
         size_t offset,
         size_t size,
         const UserInfo & user,
-        const CachePriorityGuard::Lock &,
+        const CachePriorityGuard::WriteLock &,
+        const CacheStateGuard::Lock *,
         bool is_startup = false) override;
 
     bool collectCandidatesForEviction(
-        size_t size,
-        size_t elements,
+        const EvictionInfo & eviction_info,
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
         IFileCachePriority::IteratorPtr reservee,
         bool continue_from_last_eviction_pos,
         const UserID & user_id,
-        const CachePriorityGuard::Lock &) override;
+        const CachePriorityGuard::ReadLock &) override;
 
-    CollectStatus collectCandidatesForEviction(
-        size_t desired_size,
-        size_t desired_elements_count,
-        size_t max_candidates_to_evict,
+    void iterate(
+        IterateFunc func,
         FileCacheReserveStat & stat,
-        EvictionCandidates & res,
-        const CachePriorityGuard::Lock &) override;
+        const CachePriorityGuard::ReadLock &) override;
 
-    void resetEvictionPos(const CachePriorityGuard::Lock &) override;
+    bool tryIncreasePriority(
+        Iterator & iterator_,
+        CachePriorityGuard & queue_guard,
+        CacheStateGuard & state_guard) override;
 
-    void iterate(IterateFunc func, const CachePriorityGuard::Lock &) override;
+    void shuffle(const CachePriorityGuard::WriteLock &) override;
 
-    void shuffle(const CachePriorityGuard::Lock &) override;
+    void resetEvictionPos(const CachePriorityGuard::ReadLock &) override;
 
-    PriorityDumpPtr dump(const CachePriorityGuard::Lock &) override;
+    PriorityDumpPtr dump(const CachePriorityGuard::ReadLock &) override;
 
     bool modifySizeLimits(
         size_t max_size_,
         size_t max_elements_,
         double size_ratio_,
-        const CachePriorityGuard::Lock &) override;
+        const CacheStateGuard::Lock &) override;
 
     FileCachePriorityPtr copy() const;
 
@@ -99,24 +102,22 @@ private:
     LRUFileCachePriority probationary_queue;
     LoggerPtr log;
 
-    void increasePriority(SLRUIterator & iterator, const CachePriorityGuard::Lock & lock);
-
-    void downgrade(IteratorPtr iterator, const CachePriorityGuard::Lock &);
+    void increasePriority(SLRUIterator & iterator, const CachePriorityGuard::WriteLock & lock);
 
     bool collectCandidatesForEvictionInProtected(
-        size_t size,
-        size_t elements,
+        const EvictionInfo & eviction_info,
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
         IFileCachePriority::IteratorPtr reservee,
         bool continue_from_last_eviction_pos,
         const UserID & user_id,
-        const CachePriorityGuard::Lock & lock);
+        const CachePriorityGuard::ReadLock & lock);
 
     LRUFileCachePriority::LRUIterator addOrThrow(
         EntryPtr entry,
         LRUFileCachePriority & queue,
-        const CachePriorityGuard::Lock & lock);
+        const CachePriorityGuard::WriteLock & lock,
+        const CacheStateGuard::Lock &);
 };
 
 class SLRUFileCachePriority::SLRUIterator : public IFileCachePriority::Iterator
@@ -130,27 +131,37 @@ public:
 
     EntryPtr getEntry() const override;
 
-    size_t increasePriority(const CachePriorityGuard::Lock &) override;
+    bool isValid(const CachePriorityGuard::WriteLock &) override;
 
-    void remove(const CachePriorityGuard::Lock &) override;
+    void remove(const CachePriorityGuard::WriteLock &) override;
 
     void invalidate() override;
 
-    void incrementSize(size_t size, const CachePriorityGuard::Lock &) override;
+    void incrementSize(size_t size, const CacheStateGuard::Lock &) override;
 
     void decrementSize(size_t size) override;
 
     QueueEntryType getType() const override { return is_protected ? QueueEntryType::SLRU_Protected : QueueEntryType::SLRU_Probationary; }
 
+    bool isMovable(const CacheStateGuard::Lock &) const { return movable; }
+    void disableMoving(const CacheStateGuard::Lock &) { chassert(movable); movable = false; }
+    /// No lock required for re-enable the moving.
+    void enableMoving() { chassert(!movable); movable = true; }
+
+    /// Can be called only once,
+    /// and only if iterator was previously created with an empty entry.
+    void setEntry(EntryPtr && entry_, const CacheStateGuard::Lock &);
+
 private:
-    void assertValid() const;
+    bool assertValid() const;
 
     SLRUFileCachePriority * cache_priority;
     LRUFileCachePriority::LRUIterator lru_iterator;
     /// Entry itself is stored by lru_iterator.entry.
     /// We have it as a separate field to use entry without requiring any lock
     /// (which will be required if we wanted to get entry from lru_iterator.getEntry()).
-    const std::weak_ptr<Entry> entry;
+    std::weak_ptr<Entry> entry TSA_GUARDED_BY(entry_mutex);
+    mutable std::mutex entry_mutex;
     /// Atomic,
     /// but needed only in order to do FileSegment::getInfo() without any lock,
     /// which is done for system tables and logging.
