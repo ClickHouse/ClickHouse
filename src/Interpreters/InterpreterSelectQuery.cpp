@@ -3308,7 +3308,7 @@ void InterpreterSelectQuery::executeLimitBy(QueryPlan & query_plan)
 
     auto [limit_length, is_limit_length_negative, fractional_limit] = getLimitOffsetAbsAndSignAndFraction(query.limitByLength(), context, "LIMIT");
 
-    [limit_offset, is_limit_offset_negative, fractional_offset] = getLimitOffsetAbsAndSignAndFraction(query.limitByOffset(), context, "OFFSET");
+    auto [limit_offset, is_limit_offset_negative, fractional_offset] = getLimitOffsetAbsAndSignAndFraction(query.limitByOffset(), context, "OFFSET");
 
     if (is_limit_length_negative || is_limit_offset_negative)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Negative LIMIT/OFFSET with LIMIT BY is not supported yet");
