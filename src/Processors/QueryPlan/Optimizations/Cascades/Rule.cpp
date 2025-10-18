@@ -3,24 +3,28 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
 #include <Core/Joins.h>
 #include <Core/Names.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
+#include "Core/SortDescription.h"
+#include "Processors/QueryPlan/Optimizations/Cascades/Properties.h"
+#include "Processors/QueryPlan/SortingStep.h"
 #include <memory>
 
 namespace DB
 {
 
-std::vector<GroupExpressionPtr> IOptimizationRule::apply(GroupExpressionPtr expression, Memo & memo) const
+std::vector<GroupExpressionPtr> IOptimizationRule::apply(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
 {
-    auto new_expressions = applyImpl(expression, memo);
-    expression->setApplied(*this);
+    auto new_expressions = applyImpl(expression, required_properties, memo);
+    expression->setApplied(*this, required_properties);
     return new_expressions;
 }
 
 #if 0
-bool JoinAssociativity::checkPattern(GroupExpressionPtr expression, const Memo & memo) const
+bool JoinAssociativity::checkPattern(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, const Memo & memo) const
 {
     if (expression->getName() != "Join")
         return false;
@@ -37,7 +41,7 @@ static NameSet namesToSet(const Names & names)
     return NameSet(names.begin(), names.end());
 }
 
-std::vector<GroupExpressionPtr> JoinAssociativity::applyImpl(GroupExpressionPtr expression, Memo & memo) const
+std::vector<GroupExpressionPtr> JoinAssociativity::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, Memo & memo)) const
 {
     auto log = getLogger("JoinAssociativity");
 
@@ -129,7 +133,7 @@ std::vector<GroupExpressionPtr> JoinAssociativity::applyImpl(GroupExpressionPtr 
 }
 #endif
 
-bool JoinCommutativity::checkPattern(GroupExpressionPtr expression, const Memo & /*memo*/) const
+bool JoinCommutativity::checkPattern(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, const Memo & /*memo*/) const
 {
     const auto * join_step = typeid_cast<JoinStepLogical*>(expression->getQueryPlanStep());
     if (!join_step)
@@ -177,7 +181,7 @@ std::unique_ptr<JoinStepLogical> cloneSwapped(const JoinStepLogical & join_step)
     return swapped_join_step;
 }
 
-std::vector<GroupExpressionPtr> JoinCommutativity::applyImpl(GroupExpressionPtr expression, Memo & memo) const
+std::vector<GroupExpressionPtr> JoinCommutativity::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, Memo & memo) const
 {
     chassert(expression->inputs.size() == 2);
     const auto * join_step = typeid_cast<JoinStepLogical*>(expression->getQueryPlanStep());
@@ -189,84 +193,247 @@ std::vector<GroupExpressionPtr> JoinCommutativity::applyImpl(GroupExpressionPtr 
     GroupExpressionPtr expression_with_swapped_inputs = std::make_shared<GroupExpression>(nullptr);
     expression_with_swapped_inputs->plan_step = std::move(swapped_join_step);
     expression_with_swapped_inputs->inputs = {expression->inputs[1], expression->inputs[0]};
-    expression_with_swapped_inputs->setApplied(*this);  /// Don't apply commutativity rule to the new expression
+    expression_with_swapped_inputs->setApplied(*this, {});  /// Don't apply commutativity rule to the new expression
     memo.getGroup(expression->group_id)->addLogicalExpression(expression_with_swapped_inputs);
 
     return {expression_with_swapped_inputs};
 }
 
 
-bool HashJoinImplementation::checkPattern(GroupExpressionPtr expression, const Memo & /*memo*/) const
+bool HashJoinImplementation::checkPattern(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, const Memo & /*memo*/) const
 {
-    return typeid_cast<JoinStepLogical *>(expression->getQueryPlanStep()) != nullptr;
+    return typeid_cast<JoinStepLogical *>(expression->getQueryPlanStep()) != nullptr &&
+        !expression->getQueryPlanStep()->getStepDescription().contains("IMPL:");
 }
 
-std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressionPtr expression, Memo & memo) const
+std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
 {
     /// TODO: create hash join step from JoinStepLogical
     auto * join_step = typeid_cast<JoinStepLogical *>(expression->getQueryPlanStep());
 
-//    QueryPlanOptimizationSettings optimization_settings(CurrentThread::get().getQueryContext());
-//
-//        JoinActionRef post_filter(nullptr);
-//    auto join_ptr = join_step->convertToPhysical(
-//        post_filter,
-//        /*keep_logical*/ false,
-//        optimization_settings.max_threads,
-//        optimization_settings.max_entries_for_hash_table_stats,
-//        optimization_settings.initial_query_id,
-//        optimization_settings.lock_acquire_timeout,
-//        optimization_settings.actions_settings,
-//        {});
-//
-//    chassert(!join_ptr->isFilled());
-//
-//    SharedHeader output_header = join_step->getOutputHeader();
-//
-//    const auto & join_expression_actions = join_step->getExpressionActions();
-//
-//    const auto & settings = join_step->getSettings();
-//
-//    auto required_output_from_join = join_expression_actions.post_join_actions->getRequiredColumnsNames();
-//    auto new_join_step = std::make_unique<JoinStep>(
-//        join_step->getInputHeaders()[0],
-//        join_step->getInputHeaders()[1],
-//        join_ptr,
-//        settings.max_block_size,
-//        settings.min_joined_block_size_rows,
-//        settings.min_joined_block_size_bytes,
-//        optimization_settings.max_threads,
-//        NameSet(required_output_from_join.begin(), required_output_from_join.end()),
-//        false /*optimize_read_in_order*/,
-//        true /*use_new_analyzer*/);
-
-
     auto new_join_step = join_step->clone();
 
-    new_join_step->setStepDescription(fmt::format("IMPL: {}", join_step->getStepDescription()), 200);
+    new_join_step->setStepDescription(fmt::format("HashJoin IMPL: {}", join_step->getStepDescription()), 200);
 
     GroupExpressionPtr hash_join_expression = std::make_shared<GroupExpression>(*expression);
     hash_join_expression->plan_step = std::move(new_join_step);
     chassert(hash_join_expression->inputs.size() == 2);
     memo.getGroup(expression->group_id)->addPhysicalExpression(hash_join_expression);
-    hash_join_expression->setApplied(*this);
+    hash_join_expression->setApplied(*this, required_properties);
     return {hash_join_expression};
 }
 
-bool DefaultImplementation::checkPattern(GroupExpressionPtr expression, const Memo & /*memo*/) const
+bool ShuffleHashJoinImplementation::checkPattern(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, const Memo & /*memo*/) const
 {
-    return typeid_cast<JoinStepLogical *>(expression->plan_step.get()) == nullptr &&
-        expression->original_node &&
-        !expression->plan_step;
+    const auto * join_step = typeid_cast<JoinStepLogical *>(expression->getQueryPlanStep());
+    return join_step != nullptr &&
+        !expression->getQueryPlanStep()->getStepDescription().contains("IMPL:") &&
+        !join_step->getJoinOperator().expression.empty();
 }
 
-std::vector<GroupExpressionPtr> DefaultImplementation::applyImpl(GroupExpressionPtr expression, Memo & memo) const
+std::vector<GroupExpressionPtr> ShuffleHashJoinImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
 {
-    auto implementation_expression = std::make_shared<GroupExpression>(nullptr);
-    implementation_expression->original_node = expression->original_node;
+    /// TODO: create hash join step from JoinStepLogical
+    auto * join_step = typeid_cast<JoinStepLogical *>(expression->getQueryPlanStep());
+
+    auto new_join_step = join_step->clone();
+
+    new_join_step->setStepDescription(fmt::format("ShuffleHashJoin IMPL: {}", join_step->getStepDescription()), 200);
+
+    GroupExpressionPtr hash_join_expression = std::make_shared<GroupExpression>(*expression);
+
+    DistributionColumns distribution_columns;
+    for (const auto & predicate : join_step->getJoinOperator().expression)
+    {
+        auto equality_predicate = predicate.asBinaryPredicate();
+        if (get<0>(equality_predicate) != JoinConditionOperator::Equals)
+            continue;
+
+        distribution_columns.push_back({
+            get<1>(equality_predicate).getColumnName(),
+            get<2>(equality_predicate).getColumnName()});
+    }
+
+    hash_join_expression->plan_step = std::move(new_join_step);
+
+    chassert(hash_join_expression->inputs.size() == 2);
+    /// Set required distribution by join keys to both inputs
+    /// TODO: handle swapped inputs
+    hash_join_expression->inputs[0].required_properties.distribution_columns = distribution_columns;
+    hash_join_expression->inputs[1].required_properties.distribution_columns = distribution_columns;
+
+    /// Output is also distibuted by join keys 
+    /// TODO: handle equivalent columns
+    hash_join_expression->properties.distribution_columns = distribution_columns;
+
+    memo.getGroup(expression->group_id)->addPhysicalExpression(hash_join_expression);
+    hash_join_expression->setApplied(*this, required_properties);
+    return {hash_join_expression};
+}
+
+bool BroadcastJoinImplementation::checkPattern(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, const Memo & /*memo*/) const
+{
+    return typeid_cast<JoinStepLogical *>(expression->getQueryPlanStep()) != nullptr &&
+        !expression->getQueryPlanStep()->getStepDescription().contains("IMPL:");
+}
+
+std::vector<GroupExpressionPtr> BroadcastJoinImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
+{
+    /// TODO: create hash join step from JoinStepLogical
+    auto * join_step = typeid_cast<JoinStepLogical *>(expression->getQueryPlanStep());
+
+    auto new_join_step = join_step->clone();
+
+    new_join_step->setStepDescription(fmt::format("BroadcastJoin IMPL: {}", join_step->getStepDescription()), 200);
+
+    GroupExpressionPtr hash_join_expression = std::make_shared<GroupExpression>(*expression);
+    hash_join_expression->plan_step = std::move(new_join_step);
+    chassert(hash_join_expression->inputs.size() == 2);
+    memo.getGroup(expression->group_id)->addPhysicalExpression(hash_join_expression);
+    hash_join_expression->setApplied(*this, required_properties);
+    return {hash_join_expression};
+}
+
+bool LocalAggregationImplementation::checkPattern(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, const Memo & /*memo*/) const
+{
+    return typeid_cast<AggregatingStep *>(expression->getQueryPlanStep()) != nullptr &&
+        !expression->getQueryPlanStep()->getStepDescription().contains("IMPL:");
+}
+
+std::vector<GroupExpressionPtr> LocalAggregationImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
+{
+    /// TODO: create hash join step from JoinStepLogical
+    auto * aggregating_step = typeid_cast<AggregatingStep *>(expression->getQueryPlanStep());
+
+    auto new_aggregating_step = aggregating_step->clone();
+
+    new_aggregating_step->setStepDescription(fmt::format("Local IMPL: {}", aggregating_step->getStepDescription()), 200);
+
+    GroupExpressionPtr aggreagation_expression = std::make_shared<GroupExpression>(*expression);
+    aggreagation_expression->plan_step = std::move(new_aggregating_step);
+    chassert(aggreagation_expression->inputs.size() == 1);
+    memo.getGroup(expression->group_id)->addPhysicalExpression(aggreagation_expression);
+    aggreagation_expression->setApplied(*this, required_properties);
+    return {aggreagation_expression};
+}
+
+
+bool ShuffleAggregationImplementation::checkPattern(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, const Memo & /*memo*/) const
+{
+    const auto * aggregating_step = typeid_cast<AggregatingStep *>(expression->getQueryPlanStep());
+
+    return aggregating_step != nullptr &&
+        !expression->getQueryPlanStep()->getStepDescription().contains("IMPL:") &&
+        aggregating_step->getParams().keys_size != 0;
+}
+
+std::vector<GroupExpressionPtr> ShuffleAggregationImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
+{
+    /// TODO: create hash join step from JoinStepLogical
+    auto * aggregating_step = typeid_cast<AggregatingStep *>(expression->getQueryPlanStep());
+
+    auto new_aggregating_step = aggregating_step->clone();
+
+    new_aggregating_step->setStepDescription(fmt::format("Shuffle IMPL: {}", aggregating_step->getStepDescription()), 200);
+
+    GroupExpressionPtr aggreagation_expression = std::make_shared<GroupExpression>(*expression);
+    aggreagation_expression->plan_step = std::move(new_aggregating_step);
+    chassert(aggreagation_expression->inputs.size() == 1);
+    memo.getGroup(expression->group_id)->addPhysicalExpression(aggreagation_expression);
+    aggreagation_expression->setApplied(*this, required_properties);
+    return {aggreagation_expression};
+}
+
+
+bool PartialDistributedAggregationImplementation::checkPattern(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, const Memo & /*memo*/) const
+{
+    return typeid_cast<AggregatingStep *>(expression->getQueryPlanStep()) != nullptr &&
+        !expression->getQueryPlanStep()->getStepDescription().contains("IMPL:");
+}
+
+std::vector<GroupExpressionPtr> PartialDistributedAggregationImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
+{
+    /// TODO: create hash join step from JoinStepLogical
+    auto * aggregating_step = typeid_cast<AggregatingStep *>(expression->getQueryPlanStep());
+
+    auto new_aggregating_step = aggregating_step->clone();
+
+    new_aggregating_step->setStepDescription(fmt::format("PartialDistributed IMPL: {}", aggregating_step->getStepDescription()), 200);
+
+    GroupExpressionPtr aggreagation_expression = std::make_shared<GroupExpression>(*expression);
+    aggreagation_expression->plan_step = std::move(new_aggregating_step);
+    chassert(aggreagation_expression->inputs.size() == 1);
+    memo.getGroup(expression->group_id)->addPhysicalExpression(aggreagation_expression);
+    aggreagation_expression->setApplied(*this, required_properties);
+    return {aggreagation_expression};
+}
+
+
+bool DefaultImplementation::checkPattern(GroupExpressionPtr /*expression*/, const ExpressionProperties & /*required_properties*/, const Memo & /*memo*/) const
+{
+    return true;
+//    return typeid_cast<JoinStepLogical *>(expression->plan_step.get()) == nullptr &&
+//        expression->original_node &&
+//        !expression->plan_step;
+}
+
+std::vector<GroupExpressionPtr> DefaultImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
+{
+    auto implementation_expression = std::make_shared<GroupExpression>(*expression);
+////    implementation_expression->original_node = expression->original_node;
+//    implementation_expression->inputs = expression->inputs;
+//    implementation_expression->applied_rules = expression->applied_rules;
+    implementation_expression->plan_step->setStepDescription(fmt::format("IMPL: {}", expression->plan_step->getStepDescription()), 200);
+    implementation_expression->setApplied(*this, required_properties);
+    memo.getGroup(expression->group_id)->addPhysicalExpression(implementation_expression);
+    return {implementation_expression};
+}
+
+bool DistributionEnforcer::checkPattern(GroupExpressionPtr expression, const ExpressionProperties & required_properties, const Memo & /*memo*/) const
+{
+    return expression->properties.distribution_columns != required_properties.distribution_columns;
+}
+
+std::vector<GroupExpressionPtr> DistributionEnforcer::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
+{
+    auto implementation_expression = std::make_shared<GroupExpression>(*expression);
+    /// TODO: add actual Shuffle step
+    SortDescription sort_description;
+//    for (const auto & column : required_properties.distribution_columns)
+//        sort_description.push_back(SortColumnDescription(*column.begin()));
+    auto sorting_step = std::make_unique<SortingStep>(
+        expression->getQueryPlanStep()->getOutputHeader(),
+        sort_description,
+        0,
+        SortingStep::Settings(65000)    /// TODO: construct from settings
+    );
+//    implementation_expression->property_enforcer_steps.push_back(std::move(sorting_step));
+    implementation_expression->properties.distribution_columns = required_properties.distribution_columns;
     implementation_expression->inputs = expression->inputs;
-    implementation_expression->applied_rules = expression->applied_rules;
-    implementation_expression->setApplied(*this);
+    implementation_expression->setApplied(*this, required_properties);
+    memo.getGroup(expression->group_id)->addPhysicalExpression(implementation_expression);
+    return {implementation_expression};
+}
+
+
+bool SortingEnforcer::checkPattern(GroupExpressionPtr expression, const ExpressionProperties & required_properties, const Memo & /*memo*/) const
+{
+    return expression->properties.sorting != required_properties.sorting;
+}
+
+std::vector<GroupExpressionPtr> SortingEnforcer::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
+{
+    auto implementation_expression = std::make_shared<GroupExpression>(*expression);
+    auto sorting_step = std::make_unique<SortingStep>(
+        expression->getQueryPlanStep()->getOutputHeader(),
+        required_properties.sorting,
+        0,
+        SortingStep::Settings(65000)    /// TODO: construct from settings
+    );
+    implementation_expression->property_enforcer_steps.push_back(std::move(sorting_step));
+    implementation_expression->properties.sorting = required_properties.sorting;
+    implementation_expression->inputs = expression->inputs;
+    implementation_expression->setApplied(*this, required_properties);
     memo.getGroup(expression->group_id)->addPhysicalExpression(implementation_expression);
     return {implementation_expression};
 }

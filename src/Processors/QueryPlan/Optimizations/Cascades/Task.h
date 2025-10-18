@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Cost.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/Properties.h>
 #include <memory>
 #include <base/types.h>
 #include <boost/core/noncopyable.hpp>
@@ -40,15 +41,17 @@ using OptimizationTaskPtr = std::shared_ptr<IOptimizationTask>;
 class OptimizeGroupTask final : public IOptimizationTask
 {
 public:
-    OptimizeGroupTask(GroupId group_id_, CostLimit cost_limit_)
+    OptimizeGroupTask(GroupId group_id_, ExpressionProperties required_properties_, CostLimit cost_limit_)
         : IOptimizationTask(cost_limit_)
         , group_id(group_id_)
+        , required_properties(required_properties_)
     {}
 
     void execute(OptimizerContext & optimizer_context) override;
 
 private:
     GroupId group_id;
+    ExpressionProperties required_properties;
 };
 
 
@@ -85,24 +88,27 @@ private:
 class OptimizeExpressionTask final : public IOptimizationTask
 {
 public:
-    OptimizeExpressionTask(GroupExpressionPtr expression_, CostLimit cost_limit_)
+    OptimizeExpressionTask(GroupExpressionPtr expression_, ExpressionProperties required_properties_, CostLimit cost_limit_)
         : IOptimizationTask(cost_limit_)
         , expression(expression_)
+        , required_properties(required_properties_)
     {}
 
     void execute(OptimizerContext & optimizer_context) override;
 
 private:
     GroupExpressionPtr expression;
+    ExpressionProperties required_properties;
 };
 
 
 class ApplyRuleTask final : public IOptimizationTask
 {
 public:
-    ApplyRuleTask(GroupExpressionPtr expression_, OptimizationRulePtr rule_, Promise promise_, CostLimit cost_limit_)
+    ApplyRuleTask(GroupExpressionPtr expression_, ExpressionProperties required_properties_, OptimizationRulePtr rule_, Promise promise_, CostLimit cost_limit_)
         : IOptimizationTask(cost_limit_)
         , expression(expression_)
+        , required_properties(required_properties_)
         , rule(rule_)
         , promise(promise_)
     {}
@@ -113,6 +119,7 @@ private:
     void updateMemo(const std::vector<GroupExpressionPtr> & new_expressions, OptimizerContext & optimizer_context);
 
     GroupExpressionPtr expression;
+    ExpressionProperties required_properties;
     OptimizationRulePtr rule;
     Promise promise;
 };

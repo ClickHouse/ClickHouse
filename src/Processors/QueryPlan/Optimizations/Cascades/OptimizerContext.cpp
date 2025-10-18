@@ -16,7 +16,14 @@ OptimizerContext::OptimizerContext(IOptimizerStatistics & statistics)
 //    addRule(std::make_shared<JoinAssociativity>());
     addRule(std::make_shared<JoinCommutativity>());
     addRule(std::make_shared<HashJoinImplementation>());
+    addRule(std::make_shared<ShuffleHashJoinImplementation>());
+    addRule(std::make_shared<BroadcastJoinImplementation>());
     addRule(std::make_shared<DefaultImplementation>());
+    addRule(std::make_shared<LocalAggregationImplementation>());
+    addRule(std::make_shared<ShuffleAggregationImplementation>());
+    addRule(std::make_shared<PartialDistributedAggregationImplementation>());
+    addRule(std::make_shared<DistributionEnforcer>());
+    addRule(std::make_shared<SortingEnforcer>());
 }
 
 void OptimizerContext::addRule(OptimizationRulePtr rule)
@@ -29,12 +36,12 @@ void OptimizerContext::addRule(OptimizationRulePtr rule)
 
 GroupId OptimizerContext::addGroup(QueryPlan::Node & node)
 {
-    auto group_expression = std::make_shared<GroupExpression>(&node);
+    auto group_expression = std::make_shared<GroupExpression>(std::move(node.step));
     auto group_id = memo.addGroup(group_expression);
     for (auto * child_node : node.children)
     {
         auto input_group_id = addGroup(*child_node);
-        group_expression->inputs.push_back(input_group_id);
+        group_expression->inputs.push_back({input_group_id, {}});
     }
 
     return group_id;
@@ -56,13 +63,9 @@ void OptimizerContext::updateBestPlan(GroupExpressionPtr expression)
     auto group = memo.getGroup(group_id);
     auto cost = cost_estimator.estimateCost(expression);
     expression->cost = cost;
-    LOG_TRACE(log, "Group {} expression '{}' cost {}",
+    LOG_TRACE(log, "group #{} expression '{}' cost {}",
         group_id, expression->getDescription(), cost.subtree_cost);
-    if (!group->best_implementation.expression || group->best_implementation.cost.subtree_cost > cost.subtree_cost)
-    {
-        group->best_implementation.expression = expression;
-        group->best_implementation.cost = cost;
-    }
+    group->updateBestImplementation(expression);
 }
 
 }
