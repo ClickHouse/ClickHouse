@@ -232,7 +232,7 @@ SELECT serverUUID();
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_serverUUID = {20, 1};
-    FunctionDocumentation::Category category_serverUUID = FunctionDocumentation::Category::UUID;
+    FunctionDocumentation::Category category_serverUUID = FunctionDocumentation::Category::Other;
     FunctionDocumentation documentation_serverUUID = {description_serverUUID, syntax_serverUUID, arguments_serverUUID, returned_value_serverUUID, examples_serverUUID, introduced_in_serverUUID, category_serverUUID};
 
     factory.registerFunction<FunctionServerUUID>(documentation_serverUUID);
