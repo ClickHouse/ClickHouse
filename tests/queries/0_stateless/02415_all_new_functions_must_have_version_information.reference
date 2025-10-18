@@ -15,14 +15,6 @@ countSubstrings
 countSubstringsCaseInsensitive
 countSubstringsCaseInsensitiveUTF8
 currentQueryID
-cutToFirstSignificantSubdomain
-cutToFirstSignificantSubdomainCustom
-cutToFirstSignificantSubdomainCustomRFC
-cutToFirstSignificantSubdomainCustomWithWWW
-cutToFirstSignificantSubdomainCustomWithWWWRFC
-cutToFirstSignificantSubdomainRFC
-cutToFirstSignificantSubdomainWithWWW
-cutToFirstSignificantSubdomainWithWWWRFC
 dateDiff
 dotProduct
 dynamicElement
@@ -140,7 +132,6 @@ toUInt256OrDefault
 toUInt32OrDefault
 toUInt64OrDefault
 toUInt8OrDefault
-toUUIDOrDefault
 tuple
 tupleNames
 validateNestedArraySizes
