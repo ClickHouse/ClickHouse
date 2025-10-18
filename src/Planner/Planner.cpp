@@ -1058,6 +1058,11 @@ void addPreliminaryLimitStep(QueryPlan & query_plan,
     const auto & query_context = planner_context->getQueryContext();
     const Settings & settings = query_context->getSettingsRef();
 
+    // only one of limit_length or fractional_limit will have a value not both
+    // only one of limit_offset or fractional_offset will have a value
+    // if fractional_limit has value is_limit_length_negative should be always false
+    // if fractional_offset has value is_limit_offset_negative should be always false
+
     if (limit_length && !is_limit_length_negative && !is_limit_offset_negative && fractional_offset == 0) [[likely]]
     {
         auto limit = std::make_unique<LimitStep>(
@@ -1330,6 +1335,12 @@ void addLimitStep(QueryPlan & query_plan,
     Float32 fractional_offset = query_analysis_result.fractional_offset;
     bool is_limit_length_negative = query_analysis_result.is_limit_length_negative;
     bool is_limit_offset_negative = query_analysis_result.is_limit_offset_negative;
+
+    // only one of limit_length or fractional_limit will have a value not both
+    // only one of limit_offset or fractional_offset will have a value
+    // if fractional_limit has value is_limit_length_negative should be always false
+    // if fractional_offset has value is_limit_offset_negative should be always false
+
     if (limit_length && fractional_offset == 0 && !is_limit_length_negative && !is_limit_offset_negative) [[likely]]
     {
         auto limit = std::make_unique<LimitStep>(
@@ -1421,6 +1432,10 @@ void addOffsetStep(QueryPlan & query_plan, const QueryAnalysisResult & query_ana
     if (!(query_analysis_result.limit_length && query_analysis_result.fractional_limit > 0) &&
         (query_analysis_result.limit_offset || query_analysis_result.fractional_offset > 0))
     {
+
+        // only one of limit_offset or fractional_offset will have a value
+        // if fractional_offset has value is_offset_negative should be always false
+
         if (query_analysis_result.is_limit_offset_negative) [[unlikely]]
         {
             auto offset_step = std::make_unique<NegativeOffsetStep>(query_plan.getCurrentHeader(), query_analysis_result.limit_offset);

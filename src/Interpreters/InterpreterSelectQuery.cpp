@@ -3225,6 +3225,11 @@ void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
 
         const Settings & settings = context->getSettingsRef();
 
+        // only one of limit_length or fractional_limit will have a value not both
+        // only one of limit_offset or fractional_offset will have a value
+        // if fractional_limit has value is_limit_length_negative should be always false
+        // if fractional_offset has value is_limit_offset_negative should be always false
+
         if (lim_info.limit_length && !lim_info.is_limit_length_negative && !lim_info.is_limit_offset_negative && lim_info.fractional_offset == 0) [[likely]]
         {
             auto limit = std::make_unique<LimitStep>(
@@ -3383,6 +3388,11 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Negative LIMIT WITH TIES is not supported yet");
         }
 
+        // only one of limit_length or fractional_limit will have a value not both
+        // only one of limit_offset or fractional_offset will have a value
+        // if fractional_limit has value is_limit_length_negative should be always false
+        // if fractional_offset has value is_limit_offset_negative should be always false
+
         if (lim_info.limit_length && !lim_info.is_limit_length_negative && !lim_info.is_limit_offset_negative && lim_info.fractional_offset  == 0) [[likely]]
         {
             auto limit = std::make_unique<LimitStep>(
@@ -3467,6 +3477,9 @@ void InterpreterSelectQuery::executeOffset(QueryPlan & query_plan)
     if (!query.limitLength() && query.limitOffset())
     {
         const LimitInfo lim_info = getLimitLengthAndOffset(query, context);
+
+        // only one of limit_offset or fractional_offset will have a value
+        // if fractional_offset has value is_offset_negative should be always false
 
         if (lim_info.is_limit_offset_negative) [[unlikely]]
         {
