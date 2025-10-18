@@ -1405,7 +1405,7 @@ SELECT toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AS uuid
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toUUID = {1, 1};
-    FunctionDocumentation::Category category_toUUID = FunctionDocumentation::Category::UUID;
+    FunctionDocumentation::Category category_toUUID = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toUUID = {description_toUUID, syntax_toUUID, arguments_toUUID, returned_value_toUUID, examples_toUUID, introduced_in_toUUID, category_toUUID};
 
     factory.registerFunction<detail::FunctionToUUID>(documentation_toUUID);
@@ -2680,7 +2680,7 @@ SELECT
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toUUIDOrZero = {20, 12};
-    FunctionDocumentation::Category category_toUUIDOrZero = FunctionDocumentation::Category::UUID;
+    FunctionDocumentation::Category category_toUUIDOrZero = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toUUIDOrZero = {description_toUUIDOrZero, syntax_toUUIDOrZero, arguments_toUUIDOrZero, returned_value_toUUIDOrZero, examples_toUUIDOrZero, introduced_in_toUUIDOrZero, category_toUUIDOrZero};
 
     factory.registerFunction<detail::FunctionToUUIDOrZero>(documentation_toUUIDOrZero);
