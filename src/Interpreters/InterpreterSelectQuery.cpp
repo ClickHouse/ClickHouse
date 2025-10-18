@@ -3231,8 +3231,8 @@ void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
         // if fractional_limit has value is_limit_length_negative should be always false
         // if fractional_offset has value is_limit_offset_negative should be always false
 
-        if (lim_info.limit_length && !lim_info.is_limit_length_negative && !lim_info.is_limit_offset_negative
-            && lim_info.fractional_offset == 0) [[likely]]
+        if (!lim_info.is_limit_length_negative && !lim_info.is_limit_offset_negative
+            && lim_info.fractional_offset == 0 && lim_info.fractional_limit == 0) [[likely]]
         {
             auto limit = std::make_unique<LimitStep>(
                 query_plan.getCurrentHeader(), lim_info.limit_length, lim_info.limit_offset, settings[Setting::exact_rows_before_limit]);
@@ -3387,8 +3387,8 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
         // if fractional_limit has value is_limit_length_negative should be always false
         // if fractional_offset has value is_limit_offset_negative should be always false
 
-        if (lim_info.limit_length && !lim_info.is_limit_length_negative && !lim_info.is_limit_offset_negative
-            && lim_info.fractional_offset == 0) [[likely]]
+        if (!lim_info.is_limit_length_negative && !lim_info.is_limit_offset_negative
+            && lim_info.fractional_offset == 0 && lim_info.fractional_limit == 0) [[likely]]
         {
             auto limit = std::make_unique<LimitStep>(
                 query_plan.getCurrentHeader(),

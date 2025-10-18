@@ -1074,7 +1074,8 @@ void addPreliminaryLimitStep(
     // if fractional_limit has value is_limit_length_negative should be always false
     // if fractional_offset has value is_limit_offset_negative should be always false
 
-    if (limit_length && !is_limit_length_negative && !is_limit_offset_negative && fractional_offset == 0) [[likely]]
+    if (!is_limit_length_negative && !is_limit_offset_negative
+            && fractional_offset == 0 && fractional_limit == 0) [[likely]]
     {
         auto limit = std::make_unique<LimitStep>(
             query_plan.getCurrentHeader(), limit_length, limit_offset, settings[Setting::exact_rows_before_limit]);
@@ -1345,7 +1346,8 @@ void addLimitStep(
     // if fractional_limit has value is_limit_length_negative should be always false
     // if fractional_offset has value is_limit_offset_negative should be always false
 
-    if (limit_length && fractional_offset == 0 && !is_limit_length_negative && !is_limit_offset_negative) [[likely]]
+    if (!is_limit_length_negative && !is_limit_offset_negative
+            && fractional_offset == 0 && fractional_limit == 0) [[likely]]
     {
         auto limit = std::make_unique<LimitStep>(
             query_plan.getCurrentHeader(),
