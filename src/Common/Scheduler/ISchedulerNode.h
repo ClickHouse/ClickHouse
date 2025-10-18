@@ -33,6 +33,7 @@ namespace ErrorCodes
 
 class ISchedulerNode;
 class EventQueue;
+class ResourceAllocation;
 using EventId = UInt64;
 
 inline const Poco::Util::AbstractConfiguration & emptyConfig()
@@ -184,6 +185,12 @@ public:
     /// Returns the first request to be executed as the first component of resulting pair.
     /// The second pair component is `true` iff node is still active after dequeueing.
     virtual std::pair<ResourceRequest *, bool> dequeueRequest() = 0;
+
+    /// Interface extension for resource allocations
+    virtual ResourceAllocation * getAllocationToReclaim()
+    {
+        return nullptr; // Default implementation does not support resource allocations
+    }
 
     /// Returns full path string using names of every parent
     String getPath() const
