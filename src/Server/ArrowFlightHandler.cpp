@@ -169,7 +169,7 @@ namespace
         auto prefix = ipv4 ? ipv4_prefix : ipv6_prefix;
         auto family = ipv4 ? Poco::Net::AddressFamily::Family::IPv4 : Poco::Net::AddressFamily::Family::IPv6;
 
-        uri_encoded_peer= uri_encoded_peer.substr(prefix.length());
+        uri_encoded_peer = uri_encoded_peer.substr(prefix.length());
 
         String peer;
         Poco::URI::decode(uri_encoded_peer, peer);
@@ -177,7 +177,7 @@ namespace
         return Poco::Net::SocketAddress{family, peer};
     }
 
-    /// Extracts an SQL queryt from a flight descriptor.
+    /// Extracts an SQL query from a flight descriptor.
     [[nodiscard]] arrow::Result<String> convertDescriptorToSQL(const arrow::flight::FlightDescriptor & descriptor, bool for_put_operation)
     {
         switch (descriptor.type)
@@ -316,17 +316,17 @@ namespace
         /// A success or error error.
         std::optional<arrow::Status> status;
 
-        /// A new ticket. Along with tickets from previous infos (previous->info, previous_info->previous_info, etc.)
+        /// A new ticket. Along with tickets from previous infos (previous_info, previous_info->previous_info, etc.)
         /// represents all tickets associated with this poll descriptor.
         /// Can be unset if there is no block; or it can specify an already expired ticket.
         std::optional<String> ticket;
 
-        /// Adds rows. Along with added rows from previous infos (previous->info, previous_info->previous_info, etc.)
+        /// Adds rows. Along with added rows from previous infos (previous_info, previous_info->previous_info, etc.)
         /// represents the total number of rows associated with this poll descriptor.
         /// Can be unset if there is no rows added.
         std::optional<size_t> rows;
 
-        /// Adds bytes. Along with added bytes from previous infos (previous->info, previous_info->previous_info, etc.)
+        /// Adds bytes. Along with added bytes from previous infos (previous_info, previous_info->previous_info, etc.)
         /// represents the total number of bytes associated with this poll descriptor.
         /// Can be unset if there is no bytes added.
         std::optional<size_t> bytes;
@@ -400,8 +400,7 @@ public:
     {
         String ticket = generateTicketName();
         LOG_DEBUG(log, "Creating ticket {}", ticket);
-        Timestamp current_time = now();
-        auto expiration_time = calculateTicketExpirationTime(current_time);
+        auto expiration_time = calculateTicketExpirationTime(now());
         auto info = std::make_shared<TicketInfo>();
         info->ticket = ticket;
         info->expiration_time = expiration_time;
@@ -445,14 +444,13 @@ public:
     {
         if (!tickets_lifetime)
             return arrow::Status::OK();
-        Timestamp current_time = now();
         std::lock_guard lock{mutex};
         auto it = tickets.find(ticket);
         if (it == tickets.end())
             return arrow::Status::KeyError("Ticket ", quoteString(ticket), " not found");
         auto info = it->second;
         auto old_expiration_time = info->expiration_time;
-        auto new_expiration_time = calculateTicketExpirationTime(current_time);
+        auto new_expiration_time = calculateTicketExpirationTime(now());
         auto new_info = std::make_shared<TicketInfo>(*info);
         new_info->expiration_time = new_expiration_time;
         it->second = new_info;
