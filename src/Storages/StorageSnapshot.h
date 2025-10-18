@@ -52,6 +52,13 @@ struct StorageSnapshot
         ColumnsDescription object_columns_,
         DataPtr data_);
 
+    StorageSnapshot(
+        const IStorage & storage_,
+        StorageMetadataPtr metadata_,
+        VirtualsDescriptionPtr virtual_columns_,
+        ColumnsDescription object_columns_,
+        DataPtr data_);
+
     std::shared_ptr<StorageSnapshot> clone(DataPtr data_) const;
 
     /// Get columns description
@@ -66,10 +73,6 @@ struct StorageSnapshot
     /// Get column with type according to options for requested name.
     std::optional<NameAndTypePair> tryGetColumn(const GetColumnsOptions & options, const String & column_name) const;
     NameAndTypePair getColumn(const GetColumnsOptions & options, const String & column_name) const;
-
-    CompressionCodecPtr getCodecOrDefault(const String & column_name, CompressionCodecPtr default_codec) const;
-    CompressionCodecPtr getCodecOrDefault(const String & column_name) const;
-    ASTPtr getCodecDescOrDefault(const String & column_name, CompressionCodecPtr default_codec) const;
 
     /// Block with ordinary + materialized + aliases + virtuals + subcolumns.
     Block getSampleBlockForColumns(const Names & column_names) const;

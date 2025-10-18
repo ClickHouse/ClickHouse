@@ -28,6 +28,7 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
 
+#include <fmt/format.h>
 #include <fmt/ranges.h>
 
 namespace DB
@@ -121,10 +122,12 @@ private:
 ClusterDiscovery::ClusterDiscovery(
     const Poco::Util::AbstractConfiguration & config,
     ContextPtr context_,
+    MultiVersion<Macros>::Version macros_,
     const String & config_prefix)
     : context(Context::createCopy(context_))
     , current_node_name(toString(ServerUUID::get()))
     , log(getLogger("ClusterDiscovery"))
+    , macros(macros_)
 {
     LOG_DEBUG(log, "Cluster discovery is enabled");
 
@@ -250,10 +253,10 @@ Strings ClusterDiscovery::getNodeNames(zkutil::ZooKeeperPtr & zk,
             auto res = get_nodes_callbacks.insert(std::make_pair(cluster_name, watch_dynamic_callback));
             callback = res.first;
         }
-        nodes = zk->getChildrenWatch(getShardsListPath(zk_root), &stat, *(callback->second));
+        nodes = zk->getChildrenWatch(getShardsListPath(zk_root), &stat, callback->second);
     }
     else
-        nodes = zk->getChildrenWatch(getShardsListPath(zk_root), &stat, Coordination::WatchCallback{});
+        nodes = zk->getChildren(getShardsListPath(zk_root), &stat);
 
     if (version)
         *version = stat.cversion;
@@ -481,7 +484,10 @@ void ClusterDiscovery::initialUpdate()
         zk->createAncestors(path->zk_path);
         zk->createIfNotExists(path->zk_path, "");
 
-        auto watch_callback = [path](auto) { path->need_update = true; };
+        auto watch_callback = zk->createWatchFromRawCallback(fmt::format("ClusterDiscovery({})", path->zk_path), [&] -> Coordination::WatchCallback
+        {
+            return [path](auto) { path->need_update = true; };
+        });
         zk->getChildrenWatch(path->zk_path, nullptr, watch_callback);
     }
 
@@ -735,7 +741,8 @@ bool ClusterDiscovery::runMainThread(std::function<void()> up_to_date_callback)
 ClusterPtr ClusterDiscovery::getCluster(const String & cluster_name) const
 {
     std::lock_guard lock(mutex);
-    auto it = cluster_impls.find(cluster_name);
+    auto expanded_cluster_name = macros->expand(cluster_name);
+    auto it = cluster_impls.find(expanded_cluster_name);
     if (it == cluster_impls.end())
         return nullptr;
     return it->second;

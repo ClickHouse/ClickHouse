@@ -158,6 +158,7 @@ static QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     /// We should not apply any query tree level optimizations on shards
     /// because it can lead to a changed header.
     if (select_query_options.ignore_ast_optimizations
+        || select_query_options.is_create_view
         || context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
         query_tree_pass_manager.runOnlyResolve(query_tree);
     else
@@ -209,7 +210,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
 {
 }
 
-Block InterpreterSelectQueryAnalyzer::getSampleBlock(const ASTPtr & query,
+SharedHeader InterpreterSelectQueryAnalyzer::getSampleBlock(const ASTPtr & query,
     const ContextPtr & context,
     const SelectQueryOptions & select_query_options)
 {
@@ -220,7 +221,7 @@ Block InterpreterSelectQueryAnalyzer::getSampleBlock(const ASTPtr & query,
     return interpreter.getSampleBlock();
 }
 
-std::pair<Block, PlannerContextPtr> InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext(const QueryTreeNodePtr & query_tree,
+std::pair<SharedHeader, PlannerContextPtr> InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext(const QueryTreeNodePtr & query_tree,
     const ContextPtr & context,
     const SelectQueryOptions & select_query_options)
 {
@@ -231,20 +232,20 @@ std::pair<Block, PlannerContextPtr> InterpreterSelectQueryAnalyzer::getSampleBlo
     return interpreter.getSampleBlockAndPlannerContext();
 }
 
-Block InterpreterSelectQueryAnalyzer::getSampleBlock(const QueryTreeNodePtr & query_tree,
+SharedHeader InterpreterSelectQueryAnalyzer::getSampleBlock(const QueryTreeNodePtr & query_tree,
     const ContextPtr & context,
     const SelectQueryOptions & select_query_options)
 {
     return getSampleBlockAndPlannerContext(query_tree, context, select_query_options).first;
 }
 
-Block InterpreterSelectQueryAnalyzer::getSampleBlock()
+SharedHeader InterpreterSelectQueryAnalyzer::getSampleBlock()
 {
     planner.buildQueryPlanIfNeeded();
     return planner.getQueryPlan().getCurrentHeader();
 }
 
-std::pair<Block, PlannerContextPtr> InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext()
+std::pair<SharedHeader, PlannerContextPtr> InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext()
 {
     planner.buildQueryPlanIfNeeded();
     return {planner.getQueryPlan().getCurrentHeader(), planner.getPlannerContext()};

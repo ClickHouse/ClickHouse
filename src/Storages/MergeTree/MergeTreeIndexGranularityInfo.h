@@ -12,13 +12,13 @@ class IDataPartStorage;
 
 
 /** Various types of mark files are stored in files with various extensions:
-  * .mrk, .mrk2, .mrk3, .cmrk, .cmrk2, .cmrk3.
+  * .mrk, .mrk2, .mrk3, .mrk4, .cmrk, .cmrk2, .cmrk3, .cmrk4.
   * This helper allows to obtain mark type from file extension and vice versa.
   */
 struct MarkType
 {
     explicit MarkType(std::string_view extension);
-    MarkType(bool adaptive_, bool compressed_, MergeTreeDataPartType::Value part_type_);
+    MarkType(bool adaptive_, bool compressed_, bool with_substreams_, MergeTreeDataPartType::Value part_type_);
 
     static bool isMarkFileExtension(std::string_view extension);
     std::string getFileExtension() const;
@@ -27,6 +27,9 @@ struct MarkType
 
     bool adaptive = false;
     bool compressed = false;
+    /// For Compact parts only.
+    /// If true, marks are written for each substream, not for each column.
+    bool with_substreams = false;
     MergeTreeDataPartType::Value part_type = MergeTreeDataPartType::Unknown;
 };
 

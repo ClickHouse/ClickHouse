@@ -30,6 +30,8 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Common/logger_useful.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/Sources/NullSource.h>
 
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ASTOrderByElement.h>
@@ -179,9 +181,9 @@ ColumnsDescription getColumnsDescriptionForView()
 class StorageSystemMetricLogView final : public IStorage
 {
 public:
-
     StorageSystemMetricLogView(const StorageID & table_id_, const StorageID & source_storage_id)
         : IStorage(table_id_)
+        , view_storage_id(source_storage_id)
         , internal_view(table_id_, getCreateQuery(source_storage_id), getColumnsDescriptionForView(), "")
     {
         StorageInMemoryMetadata storage_metadata;
@@ -208,12 +210,22 @@ public:
         size_t max_block_size,
         size_t num_streams) override
     {
+        Block full_output_header = getInMemoryMetadataPtr()->getSampleBlock();
+        /// If destination table is dropped return null source
+        if (!DatabaseCatalog::instance().isTableExist(view_storage_id, context))
+        {
+            Pipe pipe(std::make_shared<NullSource>(std::make_shared<const Block>(std::move(full_output_header))));
+            auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
+            read_from_pipe->setStepDescription("Read from NullSource");
+            query_plan.addStep(std::move(read_from_pipe));
+            return;
+        }
+
         std::shared_ptr<StorageSnapshot> snapshot_for_view = std::make_shared<StorageSnapshot>(internal_view, internal_view.getInMemoryMetadataPtr());
         Block input_header = snapshot_for_view->metadata->getSampleBlock();
 
         internal_view.read(query_plan, input_header.getNames(), snapshot_for_view, query_info, context, processed_stage, max_block_size, num_streams);
 
-        Block full_output_header = getInMemoryMetadataPtr()->getSampleBlock();
 
         /// Doesn't make sense to filter by metric, we will not filter out anything
         bool read_all_columns = full_output_header.columns() == column_names.size();
@@ -228,7 +240,7 @@ public:
         if (additional_name.has_value())
             output_header.insert(full_output_header.getByName(*additional_name));
 
-        query_plan.addStep(std::make_unique<CustomMetricLogViewStep>(input_header, output_header));
+        query_plan.addStep(std::make_unique<CustomMetricLogViewStep>(std::make_shared<const Block>(std::move(input_header)), std::make_shared<const Block>(std::move(output_header))));
     }
 
     std::optional<String> addFilterByMetricNameStep(QueryPlan & query_plan, const Names & column_names, ContextPtr context)
@@ -259,7 +271,7 @@ public:
         auto column_set = ColumnSet::create(1, std::move(future_set));
         ColumnWithTypeAndName set_for_dag(std::move(column_set), std::make_shared<DataTypeSet>(), "_filter");
 
-        ActionsDAG dag(query_plan.getCurrentHeader().getColumnsWithTypeAndName());
+        ActionsDAG dag(query_plan.getCurrentHeader()->getColumnsWithTypeAndName());
         const auto & metric_input = dag.findInOutputs(TransposedMetricLog::METRIC_NAME);
         const auto & filter_dag_column = dag.addColumn(set_for_dag);
         const auto & output = dag.addFunction(in_function, {&metric_input, &filter_dag_column}, "_special_filter_for_metric_log");
@@ -270,6 +282,7 @@ public:
     }
 
 private:
+    StorageID view_storage_id;
     StorageView internal_view;
 };
 
@@ -278,7 +291,7 @@ void TransposedMetricLogElement::appendToBlock(MutableColumns & columns) const
     size_t column_idx = 0;
 
     columns[column_idx++]->insert(getFQDNOrHostName());
-    columns[column_idx++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
+    columns[column_idx++]->insert(event_date);
     columns[column_idx++]->insert(event_time);
     columns[column_idx++]->insert(event_time_microseconds);
     columns[column_idx++]->insert(metric_name);
@@ -332,19 +345,17 @@ ColumnsDescription TransposedMetricLogElement::getColumnsDescription()
 
 void TransposedMetricLog::stepFunction(TimePoint current_time)
 {
-    /// Static lazy initialization to avoid polluting the header with implementation details
-    /// For differentiation of ProfileEvents counters.
-    static std::vector<ProfileEvents::Count> prev_profile_events(ProfileEvents::end());
+    std::lock_guard lock(previous_profile_events_mutex);
 
     TransposedMetricLogElement elem;
-    elem.event_date = DateLUT::instance().toDayNum(elem.event_time);
     elem.event_time = std::chrono::system_clock::to_time_t(current_time);
+    elem.event_date = DateLUT::instance().toDayNum(elem.event_time);
     elem.event_time_microseconds = timeInMicroseconds(current_time);
 
     for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
     {
         const ProfileEvents::Count new_value = ProfileEvents::global_counters[i].load(std::memory_order_relaxed);
-        auto & old_value = prev_profile_events[i];
+        auto & old_value = previous_profile_events[i];
 
         /// Profile event counters are supposed to be monotonic. However, at least the `NetworkReceiveBytes` can be inaccurate.
         /// So, since in the future the counter should always have a bigger value than in the past, we skip this event.
@@ -440,23 +451,32 @@ void TransposedMetricLog::prepareTable()
         auto database = DatabaseCatalog::instance().tryGetDatabase(storage_id.getDatabaseName());
         if (database)
         {
-            int suffix = 0;
-            while (true)
+            auto filter = [] (const String & name) { return name.starts_with(TABLE_NAME_WITH_VIEW); };
+            auto iterator = database->getTablesIterator(getContext(), filter);
+            while (iterator->isValid())
             {
                 /// Do for all existing transposed metric logs
-                auto log_table = database->tryGetTable(std::string{TABLE_NAME_WITH_VIEW} + "_" + toString(suffix), getContext());
+                const auto & name = iterator->name();
 
-                if (log_table != nullptr)
-                    prepareViewForTable(database, log_table->getStorageID(), view_name + "_" + toString(suffix), suffix);
-                else
-                    break;
+                std::vector<std::string> name_parts;
+                splitInto<'_'>(name_parts, name);
+                // ['transposed', 'metric', 'log', 'X']
+                if (name_parts.size() == 4)
+                {
+                    int suffix;
+                    /// Ignore weird tables like transposed_metric_log_aaa
+                    if (tryParse<Int32>(suffix, name_parts.back()))
+                        prepareViewForTable(database, iterator->table()->getStorageID(), view_name + "_" + toString(suffix), suffix);
+                }
+                else if (name_parts.size() == 3) // ['transposed', 'metric', 'log']
+                {
+                    prepareViewForTable(database, storage_id, view_name, 0);
+                }
+                /// All other non-standard names are intentionally ignored
 
-                suffix++;
+                iterator->next();
             }
-
-            prepareViewForTable(database, storage_id, view_name, 0);
         }
-
     }
 }
 

@@ -477,7 +477,7 @@ AccessEntityPtr DiskAccessStorage::readImpl(const UUID & id, bool throw_if_not_e
     if (it == entries_by_id.end())
     {
         if (throw_if_not_exists)
-            throwNotFound(id);
+            throwNotFound(id, getStorageName());
         else
             return nullptr;
     }
@@ -496,7 +496,7 @@ std::optional<std::pair<String, AccessEntityType>> DiskAccessStorage::readNameWi
     if (it == entries_by_id.end())
     {
         if (throw_if_not_exists)
-            throwNotFound(id);
+            throwNotFound(id, getStorageName());
         else
             return std::nullopt;
     }
@@ -531,7 +531,7 @@ bool DiskAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & ne
     {
         if (throw_if_exists)
         {
-            throwNameCollisionCannotInsert(type, name);
+            throwNameCollisionCannotInsert(type, name, getStorageName());
         }
         else
         {
@@ -548,7 +548,7 @@ bool DiskAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & ne
         if (throw_if_exists)
         {
             const auto & existing_entry = it_by_id->second;
-            throwIDCollisionCannotInsert(id, type, name, existing_entry.type, existing_entry.name);
+            throwIDCollisionCannotInsert(id, type, name, existing_entry.type, existing_entry.name, getStorageName());
         }
         else
         {
@@ -622,7 +622,7 @@ bool DiskAccessStorage::removeNoLock(const UUID & id, bool throw_if_not_exists, 
     if (it == entries_by_id.end())
     {
         if (throw_if_not_exists)
-            throwNotFound(id);
+            throwNotFound(id, getStorageName());
         else
             return false;
     }
@@ -663,7 +663,7 @@ bool DiskAccessStorage::updateNoLock(const UUID & id, const UpdateFunc & update_
     if (it == entries_by_id.end())
     {
         if (throw_if_not_exists)
-            throwNotFound(id);
+            throwNotFound(id, getStorageName());
         else
             return false;
     }
@@ -692,7 +692,7 @@ bool DiskAccessStorage::updateNoLock(const UUID & id, const UpdateFunc & update_
     if (name_changed)
     {
         if (entries_by_name.contains(new_name))
-            throwNameCollisionCannotRename(type, old_name, new_name);
+            throwNameCollisionCannotRename(type, old_name, new_name, getStorageName());
         if (write_on_disk)
             scheduleWriteLists(type);
     }

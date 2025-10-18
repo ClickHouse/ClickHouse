@@ -1,6 +1,6 @@
 set allow_experimental_dynamic_type=1;
 set enable_json_type=1;
-set allow_experimental_analyzer=1;
+SET enable_analyzer=1;
 
 select d.String from (select 'str'::Dynamic as d);
 select json.a from (select '{"a" : 42}'::JSON as json);

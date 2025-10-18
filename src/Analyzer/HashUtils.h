@@ -54,6 +54,11 @@ using QueryTreeNodeConstRawPtrWithHashSet = std::unordered_set<QueryTreeNodeCons
 template <typename Value>
 using QueryTreeNodePtrWithHashMap = std::unordered_map<QueryTreeNodePtrWithHash, Value>;
 
+class ColumnNode;
+using ColumnNodePtr = std::shared_ptr<ColumnNode>;
+using ColumnNodePtrWithHash = QueryTreeNodeWithHash<ColumnNodePtr>;
+using ColumnNodePtrWithHashSet = std::unordered_set<ColumnNodePtrWithHash>;
+
 }
 
 template <typename T, bool compare_aliases, bool compare_types>

@@ -94,9 +94,6 @@ option (ENABLE_BUZZHOUSE "Enable BuzzHouse fuzzer on the client" OFF)
 option (ENABLE_FUZZER_TEST "Build testing fuzzers in order to test libFuzzer functionality" OFF)
 
 if (ENABLE_FUZZING)
-    # Also set WITH_COVERAGE=1 for better fuzzing process
-    # By default this is disabled, because fuzzers are built in CI with the clickhouse itself.
-    # And we don't want to enable coverage for it.
     message (STATUS "Fuzzing instrumentation enabled")
     set (FUZZER "libfuzzer")
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -nostdlib++")
@@ -204,11 +201,6 @@ option(OMIT_HEAVY_DEBUG_SYMBOLS
     ${OMIT_HEAVY_DEBUG_SYMBOLS_DEFAULT})
 
 option(BUILD_STANDALONE_KEEPER "Build keeper as small standalone binary" OFF)
-if (NOT BUILD_STANDALONE_KEEPER)
-    option(CREATE_KEEPER_SYMLINK "Create symlink for clickhouse-keeper to main server binary" ON)
-else ()
-    option(CREATE_KEEPER_SYMLINK "Create symlink for clickhouse-keeper to main server binary" OFF)
-endif ()
 
 # Create BuildID when using lld. For other linkers it is created by default.
 # (NOTE: LINKER_NAME can be either path or name, and in different variants)
@@ -228,11 +220,14 @@ else ()
 endif ()
 
 # Optionally split binaries and debug symbols.
+option(DISABLE_ALL_DEBUG_SYMBOLS "Disable debug symbols, independently of which build type is used" OFF)
 option(SPLIT_DEBUG_SYMBOLS "Split binaries and debug symbols" OFF)
 if (SPLIT_DEBUG_SYMBOLS)
     message(STATUS "Will split binaries and debug symbols")
     set(SPLIT_DEBUG_SYMBOLS_DIR "stripped" CACHE STRING "A separate directory for stripped information")
 endif()
+
+option(BUILD_STRIPPED_BINARY "Build stripped binary (clickhouse-stripped)" OFF)
 
 cmake_host_system_information(RESULT AVAILABLE_PHYSICAL_MEMORY QUERY AVAILABLE_PHYSICAL_MEMORY) # Not available under freebsd
 
@@ -302,9 +297,8 @@ set (CMAKE_C_STANDARD_REQUIRED ON)
 # See https://reviews.llvm.org/D112921
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsized-deallocation")
 
-# falign-functions=32 prevents from random performance regressions with the code change. Thus, providing more stable
-# benchmarks.
-set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=32")
+# falign-functions=64 prevents from random performance regressions with the code change. Thus, providing more stable benchmarks.
+set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=64")
 
 if (ARCH_AMD64)
     # align branches within a 32-Byte boundary to avoid the potential performance loss when code layout change,
@@ -317,6 +311,9 @@ endif()
 set (COMPILER_FLAGS "${COMPILER_FLAGS} -ffp-contract=off")
 
 set (DEBUG_INFO_FLAGS "-g")
+if (DISABLE_ALL_DEBUG_SYMBOLS)
+    set (DEBUG_INFO_FLAGS "-g0")
+endif()
 
 # Disable omit frame pointer compiler optimization using -fno-omit-frame-pointer
 option(DISABLE_OMIT_FRAME_POINTER "Disable omit frame pointer compiler optimization" OFF)
@@ -373,6 +370,15 @@ elseif (ENABLE_THINLTO)
     message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot enable ThinLTO")
 endif ()
 
+if(COMPILER_PIPE)
+    set(MAX_COMPILER_MEMORY 2500)
+else()
+    set(MAX_COMPILER_MEMORY 1500)
+endif()
+set(MAX_LINKER_MEMORY 5000)
+include(cmake/limit_jobs.cmake)
+
+
 # Turns on all external libs like s3, kafka, ODBC, ...
 option(ENABLE_LIBRARIES "Enable all external libraries by default" ON)
 
@@ -393,15 +399,6 @@ elseif (OS_FREEBSD)
 endif ()
 link_libraries(global-group)
 target_link_libraries(global-group INTERFACE $<TARGET_PROPERTY:global-libs,INTERFACE_LINK_LIBRARIES>)
-
-option (ENABLE_GWP_ASAN "Enable Gwp-Asan" ON)
-# We use mmap for allocations more heavily in debug builds,
-# but GWP-ASan also wants to use mmap frequently,
-# and due to a large number of memory mappings,
-# it does not work together well.
-if ((NOT OS_LINUX AND NOT OS_ANDROID) OR (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG") OR SANITIZE)
-    set(ENABLE_GWP_ASAN OFF)
-endif ()
 
 option (ENABLE_LIBFIU "Enable libfiu" ON)
 
@@ -503,13 +500,32 @@ macro (clickhouse_add_executable target)
         add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc>)
     endif ()
 
+    # Wrap the malloc/free and other C-style functions with our own ones
+    # to inject memory tracking mechanism into them.
+    # Sanitizers have their own way of intercepting the
+    # allocations and deallocations, so we skip this step for them.
+    if (NOT (SANITIZE OR SANITIZE_COVERAGE OR OS_DARWIN OR OS_FREEBSD))
+        target_link_options(${target} PRIVATE
+            "LINKER:--wrap=malloc"
+            "LINKER:--wrap=free"
+            "LINKER:--wrap=calloc"
+            "LINKER:--wrap=realloc"
+            "LINKER:--wrap=aligned_alloc"
+            "LINKER:--wrap=posix_memalign"
+            "LINKER:--wrap=valloc"
+            "LINKER:--wrap=memalign"
+            "LINKER:--wrap=reallocarray"
+        )
+        if (NOT USE_MUSL)
+            target_link_options(${target} PRIVATE
+                "LINKER:--wrap=pvalloc"
+            )
+        endif()
+    endif()
+
     get_target_property (type ${target} TYPE)
     if (${type} STREQUAL EXECUTABLE)
-        # Disabled if memory tracking is disabled
-        if (TARGET clickhouse_new_delete)
-            # operator::new/delete for executables (MemoryTracker stuff)
-            target_link_libraries (${target} PRIVATE clickhouse_new_delete)
-        endif()
+        target_link_libraries (${target} PUBLIC clickhouse_new_delete)
 
         # In case of static jemalloc, because zone_register() is located in zone.c and
         # is never used outside (it is declared as constructor) it is omitted
@@ -581,6 +597,9 @@ option(CHECK_LARGE_OBJECT_SIZES "Check that there are no large object files afte
 
 add_subdirectory (base)
 add_subdirectory (src)
+if (LEXER_STANDALONE_BUILD)
+    add_subdirectory(tests/lexer)
+endif ()
 add_subdirectory (programs)
 add_subdirectory (utils)
 
@@ -618,9 +637,11 @@ endif()
 
 include (cmake/sanitize_targets.cmake)
 
-if (COMPILER_CACHE STREQUAL "chcache")
+if (COMPILER_CACHE STREQUAL "chcache" AND CHCACHE_EXECUTABLE_PATH STREQUAL "")
+    message(STATUS "Adding chcache as dependency to all other targets")
     get_all_targets(all_targets)
-    set (chcache_targets _cargo-build_chcache cargo-build_chcache cargo-prebuild_chcache)
+    set(chcache_targets _cargo-build_chcache cargo-build_chcache cargo-prebuild_chcache)
+
     foreach(target ${all_targets})
         if (target IN_LIST chcache_targets)
             continue()

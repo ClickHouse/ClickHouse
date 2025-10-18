@@ -4,7 +4,6 @@
 #include <Common/quoteString.h>
 
 #include <DataTypes/FieldToDataType.h>
-#include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTExpressionList.h>
@@ -47,21 +46,21 @@
 
 #include <Databases/IDatabase.h>
 
-#include <Interpreters/StorageID.h>
 #include <Interpreters/Context.h>
 
 
 namespace DB
 {
+
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_variant_type;
     extern const SettingsBool any_join_distinct_right_table_keys;
     extern const SettingsJoinStrictness join_default_strictness;
     extern const SettingsBool enable_order_by_all;
     extern const SettingsUInt64 limit;
     extern const SettingsUInt64 offset;
     extern const SettingsBool use_variant_as_common_type;
+    extern const SettingsString implicit_table_at_top_level;
 }
 
 
@@ -123,7 +122,7 @@ private:
 
     QueryTreeNodePtr buildWindow(const ASTPtr & window_definition, const ContextPtr & context) const;
 
-    QueryTreeNodePtr buildJoinTree(const ASTSelectQuery & select_query, const ContextPtr & context) const;
+    QueryTreeNodePtr buildJoinTree(bool is_subquery, const ASTSelectQuery & select_query, const ContextPtr & context) const;
 
     ColumnTransformersNodes buildColumnTransformers(const ASTPtr & matcher_expression, const ContextPtr & context) const;
 
@@ -239,7 +238,8 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectIntersectExceptQuery(const ASTPtr 
     return union_node;
 }
 
-QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_query,
+QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
+    const ASTPtr & select_query,
     bool is_subquery,
     const std::string & cte_name,
     const ASTPtr & aliases,
@@ -305,6 +305,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
     current_query_tree->setIsGroupByWithRollup(select_query_typed.group_by_with_rollup);
     current_query_tree->setIsGroupByWithGroupingSets(select_query_typed.group_by_with_grouping_sets);
     current_query_tree->setIsGroupByAll(select_query_typed.group_by_all);
+    current_query_tree->setIsLimitByAll(select_query_typed.limit_by_all);
     /// order_by_all flag in AST is set w/o consideration of `enable_order_by_all` setting
     /// since SETTINGS section has not been parsed yet, - so, check the setting here
     if (enable_order_by_all)
@@ -313,7 +314,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
 
     auto current_context = current_query_tree->getContext();
 
-    current_query_tree->getJoinTree() = buildJoinTree(select_query_typed, current_context);
+    current_query_tree->getJoinTree() = buildJoinTree(is_subquery, select_query_typed, current_context);
 
     auto select_with_list = select_query_typed.with();
     if (select_with_list)
@@ -620,7 +621,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
     {
         if (ast_literal->custom_type)
             result = std::make_shared<ConstantNode>(ast_literal->value, ast_literal->custom_type);
-        else if (context->getSettingsRef()[Setting::allow_experimental_variant_type] && context->getSettingsRef()[Setting::use_variant_as_common_type])
+        else if (context->getSettingsRef()[Setting::use_variant_as_common_type])
             result = std::make_shared<ConstantNode>(ast_literal->value, ast_literal->custom_type ? ast_literal->custom_type : applyVisitor(FieldToDataType<LeastSupertypeOnError::Variant>(), ast_literal->value));
         else
             result = std::make_shared<ConstantNode>(ast_literal->value);
@@ -669,7 +670,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
             const auto & lambda_expression = lambda_arguments_and_expression.at(1);
             auto lambda_expression_node = buildExpression(lambda_expression, context);
 
-            result = std::make_shared<LambdaNode>(std::move(lambda_arguments), std::move(lambda_expression_node));
+            result = std::make_shared<LambdaNode>(std::move(lambda_arguments), std::move(lambda_expression_node), function->is_operator);
         }
         else
         {
@@ -685,6 +686,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
             {
                 auto function_node = std::make_shared<FunctionNode>(function->name);
                 function_node->setNullsAction(function->nulls_action);
+                function_node->markAsOperator(function->is_operator);
 
                 if (function->parameters)
                 {
@@ -853,16 +855,23 @@ std::shared_ptr<TableFunctionNode> QueryTreeBuilder::buildTableFunction(const AS
     return node;
 }
 
-QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(const ASTSelectQuery & select_query, const ContextPtr & context) const
+QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSelectQuery & select_query, const ContextPtr & context) const
 {
     const auto & tables_in_select_query = select_query.tables();
     if (!tables_in_select_query)
     {
-        /** If no table is specified in SELECT query we substitute system.one table.
-          * SELECT * FROM system.one;
+        /** If no table is specified in SELECT query,
+          * if 'implicit_table_at_top_level' is set, we substitute it as a table,
+          * otherwise, we substitute the system.one table: SELECT * FROM system.one;
           */
-        Identifier storage_identifier("system.one");
-        return std::make_shared<IdentifierNode>(storage_identifier);
+        if (!is_subquery)
+        {
+            String implicit_table = context->getSettingsRef()[Setting::implicit_table_at_top_level];
+            if (!implicit_table.empty())
+                return std::make_shared<IdentifierNode>(Identifier(implicit_table));
+        }
+
+        return std::make_shared<IdentifierNode>(Identifier("system.one"));
     }
 
     auto & tables = tables_in_select_query->as<ASTTablesInSelectQuery &>();

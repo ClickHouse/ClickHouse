@@ -1,9 +1,10 @@
 SELECT
     count(),
-    count(),
-    count(),
-    count(),
-    count(NULL)
-SELECT sumOrNull(1)
+    count(1),
+    count(-1),
+    sum(1),
+    count(_CAST(NULL, \'Nullable(Nothing)\'))
+FROM system.one
+SELECT sum(1)
 FROM numbers(10)
 WHERE 0

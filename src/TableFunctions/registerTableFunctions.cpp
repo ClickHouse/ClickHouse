@@ -1,4 +1,4 @@
-#include "registerTableFunctions.h"
+#include <TableFunctions/registerTableFunctions.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
 namespace DB
@@ -26,7 +26,13 @@ void registerTableFunctions()
     registerTableFunctionMongoDB(factory);
 #endif
     registerTableFunctionRedis(factory);
+
+#if USE_ARROWFLIGHT
+    registerTableFunctionArrowFlight(factory);
+#endif
+
     registerTableFunctionMergeTreeIndex(factory);
+    registerTableFunctionMergeTreeProjection(factory);
     registerTableFunctionFuzzQuery(factory);
 #if USE_RAPIDJSON || USE_SIMDJSON
     registerTableFunctionFuzzJSON(factory);
@@ -64,6 +70,11 @@ void registerTableFunctions()
     registerTableFunctionObjectStorageCluster(factory);
     registerDataLakeTableFunctions(factory);
     registerDataLakeClusterTableFunctions(factory);
+
+#if USE_YTSAURUS
+    registerTableFunctionYTsaurus(factory);
+#endif
+
 }
 
 }

@@ -11,7 +11,6 @@
 #include <Core/Settings.h>
 #include <Core/PostgreSQL/Connection.h>
 
-#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -32,6 +31,7 @@
 #include <Interpreters/applyTableOverride.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterDropQuery.h>
+#include <Interpreters/Context.h>
 
 #include <Storages/StorageFactory.h>
 #include <Storages/ReadFinalForExternalReplicaStorage.h>
@@ -331,27 +331,11 @@ ASTPtr StorageMaterializedPostgreSQL::getColumnDeclaration(const DataTypePtr & d
     if (which.isArray())
         return makeASTDataType("Array", getColumnDeclaration(typeid_cast<const DataTypeArray *>(data_type.get())->getNestedType()));
 
-    /// getName() for decimal returns 'Decimal(precision, scale)', will get an error with it
-    if (which.isDecimal())
-    {
-        if (which.isDecimal32())
-            return makeASTDataType("Decimal32", std::make_shared<ASTLiteral>(getDecimalScale(*data_type)));
-
-        if (which.isDecimal64())
-            return makeASTDataType("Decimal64", std::make_shared<ASTLiteral>(getDecimalScale(*data_type)));
-
-        if (which.isDecimal128())
-            return makeASTDataType("Decimal128", std::make_shared<ASTLiteral>(getDecimalScale(*data_type)));
-
-        if (which.isDecimal256())
-            return makeASTDataType("Decimal256", std::make_shared<ASTLiteral>(getDecimalScale(*data_type)));
-    }
-
     if (which.isDateTime64())
         return makeASTDataType("DateTime64", std::make_shared<ASTLiteral>(static_cast<UInt32>(6)));
 
-    if (which.isFixedString())
-        return makeASTDataType("FixedString", std::make_shared<ASTLiteral>(assert_cast<const DataTypeFixedString &>(*data_type).getN()));
+    if (which.isDecimal())
+        return makeASTDataType("Decimal", std::make_shared<ASTLiteral>(getDecimalPrecision(*data_type)), std::make_shared<ASTLiteral>(getDecimalScale(*data_type)));
 
     return makeASTDataType(data_type->getName());
 }
@@ -615,7 +599,7 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
         StorageFactory::StorageFeatures{
             .supports_settings = true,
             .supports_sort_order = true,
-            .source_access_type = AccessType::POSTGRES,
+            .source_access_type = AccessTypeObjects::Source::POSTGRES,
             .has_builtin_setting_fn = MaterializedPostgreSQLSettings::hasBuiltin,
         });
 }
