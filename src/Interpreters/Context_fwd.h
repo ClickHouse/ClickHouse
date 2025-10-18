@@ -43,6 +43,11 @@ struct WithContextImpl
         return ptr;
     }
 
+    Shared tryGetContext() const
+    {
+        return context.lock();
+    }
+
 protected:
     Weak context;
 };
