@@ -150,6 +150,8 @@ node = cluster.add_instance(
     with_remote_database_disk=False,
     with_zookeeper=True,
     stay_alive=True,
+    mem_limit='12g',
+    cpu_limit='8'
 )
 
 

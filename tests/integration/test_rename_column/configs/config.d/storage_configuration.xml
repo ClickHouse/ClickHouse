@@ -5,10 +5,10 @@
         <default>
         </default>
         <internal>
-            <path>/internal/</path>
+            <path>/test_rename_column_internal/</path>
         </internal>
         <external>
-            <path>/external/</path>
+            <path>/test_rename_column_external/</path>
         </external>
     </disks>
     <policies>
