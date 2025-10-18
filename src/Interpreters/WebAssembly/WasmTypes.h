@@ -15,7 +15,19 @@ using WasmSizeT = uint32_t;
 
 using WasmVal = std::variant<uint32_t, int64_t, float, double>;
 
-enum class WasmValKind : uint8_t { I32, I64, F32, F64 };
+#define APPLY_FOR_WASM_TYPES(M) \
+    M(I32)                      \
+    M(I64)                      \
+    M(F32)                      \
+    M(F64)
+
+enum class WasmValKind : uint8_t
+{
+#define M(T) T,
+    APPLY_FOR_WASM_TYPES(M)
+#undef M
+};
+
 
 template <typename T, std::underlying_type_t<WasmValKind> index = 0>
 struct WasmValTypeToIndex

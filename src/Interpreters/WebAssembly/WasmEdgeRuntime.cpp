@@ -7,7 +7,6 @@
 
 #include <Interpreters/WebAssembly/HostApi.h>
 #include <Interpreters/WebAssembly/WasmMemory.h>
-#include <Interpreters/WebAssembly/TypeHelper.h>
 
 #include <Common/logger_useful.h>
 
@@ -38,55 +37,63 @@ namespace DB::ErrorCodes
 {
 extern const int TOO_LARGE_STRING_SIZE;
 extern const int WASM_ERROR;
+extern const int NOT_IMPLEMENTED;
 }
 
 namespace DB::WebAssembly
 {
 
-/** Maps WasmEdge API types to our wrapper types.
-  * This mapping is centralized here to keep the rest of the codebase decoupled from the WasmEdge API specifics.
-  * To support a new type, simply add a new specialization of `WasmEdgeValueTypeTrait` for the corresponding `WasmValKind`.
-  * This approach also allows statically check that all our types are covered by engine implementation.
-  */
-template <WasmValKind val_kind>
-struct WasmEdgeValueTypeTrait;
-
-#define WASM_EDGE_TYPE_TRAIT_SPECIALIZATION(T) \
-    template <> \
-    struct WasmEdgeValueTypeTrait<WasmValKind::T> \
-    { \
-        static WasmEdge_ValType type() { return WasmEdge_ValTypeGen##T(); } \
-        static bool is(WasmEdge_ValType val) { return WasmEdge_ValTypeIs##T(val); } \
-        static WasmEdge_Value to(auto val) { return WasmEdge_ValueGen##T(val); } \
-        static auto from(WasmEdge_Value val) { return WasmEdge_ValueGet##T(val); } \
-    };
-
-WASM_EDGE_TYPE_TRAIT_SPECIALIZATION(I32);
-WASM_EDGE_TYPE_TRAIT_SPECIALIZATION(I64);
-WASM_EDGE_TYPE_TRAIT_SPECIALIZATION(F32);
-WASM_EDGE_TYPE_TRAIT_SPECIALIZATION(F64);
-
-#undef WASM_EDGE_TYPE_TRAIT_SPECIALIZATION
-
-
 WasmValKind fromWasmEdgeValueType(WasmEdge_ValType val_type)
 {
-    return fromImplValueType<WasmEdgeValueTypeTrait>(val_type);
+#define M(T) \
+    if (WasmEdge_ValTypeIs##T(val_type)) \
+        return WasmValKind::T;
+
+    APPLY_FOR_WASM_TYPES(M)
+#undef M
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported wasm implementation type");
 }
 
 WasmVal fromWasmEdgeValue(WasmEdge_Value val)
 {
-    return fromWasmImplValue<WasmEdgeValueTypeTrait>(val, val.Type);
+    #define M(T) \
+        if (WasmEdge_ValTypeIs##T(val.Type)) \
+        {                                         \
+            constexpr auto Index = std::to_underlying(WasmValKind::T); \
+            using WasmType = std::variant_alternative_t<Index, WasmVal>; \
+            return std::bit_cast<WasmType>(WasmEdge_ValueGet##T(val)); \
+        }
+
+        APPLY_FOR_WASM_TYPES(M)
+    #undef M
+
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported wasm implementation type");
 }
 
 WasmEdge_ValType toWasmEdgeValueType(WasmValKind k)
 {
-    return toWasmImplValueType<WasmEdgeValueTypeTrait>(k);
+    #define M(T) \
+        if (k == WasmValKind::T) \
+            return WasmEdge_ValTypeGen##T();
+
+        APPLY_FOR_WASM_TYPES(M)
+    #undef M
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported wasm implementation type");
 }
 
 WasmEdge_Value toWasmEdgeValue(WasmVal val)
 {
-    return toWasmImplValue<WasmEdgeValueTypeTrait>(val);
+    #define M(T) \
+    { \
+        constexpr auto Index = std::to_underlying(WasmValKind::T); \
+        if (val.index() == Index) \
+            return WasmEdge_ValueGen##T(std::get<Index>(val)); \
+    }
+
+    APPLY_FOR_WASM_TYPES(M)
+    #undef M
+
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported wasm implementation type");
 }
 
 /// Mapping of WasmEdge API types to their deleter functions

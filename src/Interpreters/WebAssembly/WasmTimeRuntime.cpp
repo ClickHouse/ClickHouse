@@ -16,7 +16,6 @@
 #include <Interpreters/WebAssembly/HostApi.h>
 #include <Interpreters/WebAssembly/WasmEngine.h>
 #include <Interpreters/WebAssembly/WasmTypes.h>
-#include <Interpreters/WebAssembly/TypeHelper.h>
 
 #include <wasmtime.hh>
 
@@ -28,6 +27,7 @@ namespace ProfileEvents
 namespace DB::ErrorCodes
 {
     extern const int WASM_ERROR;
+    extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
 }
 
@@ -35,43 +35,71 @@ namespace DB::WebAssembly
 {
 
 template <WasmValKind val_kind>
-struct WasmTimeValueTypeTrait;
-
-#define WASM_TIME_TYPE_TRAIT_SPECIALIZATION(T, GETTER, CONSTRUCTOR_TYPE) \
-    template <> \
-    struct WasmTimeValueTypeTrait<WasmValKind::T> \
-    { \
-        static wasmtime::ValKind type() { return wasmtime::ValKind::T; } \
-        static bool is(wasmtime::ValKind val) { return val == wasmtime::ValKind::T; } \
-        static wasmtime::Val to(auto val) { return wasmtime::Val(static_cast<CONSTRUCTOR_TYPE>(val)); } \
-        static auto from(wasmtime::Val val) { return val.GETTER(); } \
-    };
-
-WASM_TIME_TYPE_TRAIT_SPECIALIZATION(I32, i32, int32_t);
-WASM_TIME_TYPE_TRAIT_SPECIALIZATION(I64, i64, int64_t);
-WASM_TIME_TYPE_TRAIT_SPECIALIZATION(F32, f32, float);
-WASM_TIME_TYPE_TRAIT_SPECIALIZATION(F64, f64, double);
-
-#undef WASM_TIME_TYPE_TRAIT_SPECIALIZATION
+auto wasmtimeToNative(const wasmtime::Val & val)
+{
+    if constexpr (val_kind == WasmValKind::I32)
+        return val.i32();
+    else if constexpr (val_kind == WasmValKind::I64)
+        return val.i64();
+    else if constexpr (val_kind == WasmValKind::F32)
+        return val.f32();
+    else if constexpr (val_kind == WasmValKind::F64)
+        return val.f64();
+    else
+        static_assert(val_kind != val_kind, "Unsupported WasmValKind");
+}
 
 wasmtime::ValKind toWasmTimeValKind(WasmValKind value)
 {
-    return toWasmImplValueType<WasmTimeValueTypeTrait>(value);
+    #define M(T) \
+        if (value == WasmValKind::T) \
+            return wasmtime::ValKind::T;
+
+    APPLY_FOR_WASM_TYPES(M)
+    #undef M
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported wasm implementation type");
 }
 
 WasmValKind fromWasmTimeValKind(wasmtime::ValKind val_type)
 {
-    return fromImplValueType<WasmTimeValueTypeTrait>(val_type);
+    #define M(T) \
+        if (wasmtime::ValKind::T == val_type) \
+            return WasmValKind::T;
+
+    APPLY_FOR_WASM_TYPES(M)
+    #undef M
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported wasm implementation type");
 }
 
 WasmVal fromWasmTimeValue(const wasmtime::Val & wasm_val)
 {
-    return fromWasmImplValue<WasmTimeValueTypeTrait>(wasm_val, wasm_val.kind());
+    #define M(T) \
+    { \
+        constexpr auto Index = std::to_underlying(WasmValKind::T); \
+        if (wasmtime::ValKind::T == wasm_val.kind()) \
+        { \
+            using WasmType = std::variant_alternative_t<Index, WasmVal>; \
+            return std::bit_cast<WasmType>(wasmtimeToNative<WasmValKind::T>(wasm_val)); \
+        } \
+    }
+    APPLY_FOR_WASM_TYPES(M)
+    #undef M
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported wasm implementation type");
 }
 
 wasmtime::Val toWasmTimeValue(WasmVal val)
 {
-    return toWasmImplValue<WasmTimeValueTypeTrait>(val);
+    #define M(T) \
+    { \
+        using Type = decltype(wasmtimeToNative<WasmValKind::T>(std::declval<wasmtime::Val>())); \
+        constexpr auto Index = std::to_underlying(WasmValKind::T); \
+        if (val.index() == Index) \
+            return wasmtime::Val(static_cast<Type>(std::get<Index>(val))); \
+    }
+
+    APPLY_FOR_WASM_TYPES(M)
+    #undef M
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported wasm implementation type");
 }
 
 wasmtime::FuncType toWasmFunctionType(WasmHostFunction * host_function_ptr)
