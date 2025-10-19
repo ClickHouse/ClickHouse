@@ -170,6 +170,8 @@ private:
 
     void expandOrderByAll(QueryNode & query_tree_node_typed, const Settings & settings);
 
+    static void expandLimitByAll(QueryNode & query_tree_node_typed);
+
     static std::string
     rewriteAggregateFunctionNameIfNeeded(const std::string & aggregate_function_name, NullsAction action, const ContextPtr & context);
 
