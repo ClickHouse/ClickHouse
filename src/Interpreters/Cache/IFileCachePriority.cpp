@@ -45,10 +45,13 @@ IFileCachePriority::Entry::Entry(const Entry & other)
 {
 }
 
-void IFileCachePriority::QueueEvictionInfo::releaseHoldSpace(const CacheStateGuard::Lock & lock) const
+void IFileCachePriority::QueueEvictionInfo::releaseHoldSpace(const CacheStateGuard::Lock & lock)
 {
     if (hold_space)
+    {
         hold_space->release(lock);
+        hold_space = {};
+    }
 }
 
 std::string IFileCachePriority::QueueEvictionInfo::formatForLog() const

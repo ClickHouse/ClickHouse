@@ -185,15 +185,18 @@ public:
         std::string formatForLog() const;
         bool requiresEviction() const { return size_to_evict || elements_to_evict; }
         bool hasHoldSpace() const { return hold_space != nullptr; }
-        void releaseHoldSpace(const CacheStateGuard::Lock & lock) const;
+        void releaseHoldSpace(const CacheStateGuard::Lock & lock);
     };
     using QueueID = size_t;
+
+    struct EvictionInfo;
+    using EvictionInfoPtr = std::unique_ptr<EvictionInfo>;
+
     struct EvictionInfo : public std::map<QueueID, QueueEvictionInfo>, private boost::noncopyable
     {
-        EvictionInfo() = default;
         explicit EvictionInfo(QueueID queue_id, QueueEvictionInfo && info)
         {
-            add(queue_id, std::move(info));
+            addImpl(queue_id, std::move(info));
         }
 
         ~EvictionInfo()
@@ -202,20 +205,18 @@ public:
                 on_finish_func();
         }
 
+        std::string formatForLog() const;
+
+        bool requiresEviction() const { return size_to_evict || elements_to_evict; }
+
         void setOnFinishFunc(std::function<void()> func) { on_finish_func = func; }
 
-        void add(QueueID queue_id, QueueEvictionInfo && info)
+        void add(EvictionInfoPtr && info)
         {
-            size_to_evict += info.size_to_evict;
-            elements_to_evict += info.elements_to_evict;
-            emplace(queue_id, std::move(info));
+            for (auto && [queue_id, info_] : *info)
+                addImpl(queue_id, std::move(info_));
         }
 
-        size_t size_to_evict = 0;
-        size_t elements_to_evict = 0;
-
-        std::string formatForLog() const;
-        bool requiresEviction() const { return size_to_evict || elements_to_evict; }
         bool hasHoldSpace() const
         {
             for (const auto & [_, elem] : *this)
@@ -224,15 +225,25 @@ public:
             return false;
         }
 
-        void releaseHoldSpace(const CacheStateGuard::Lock & lock) const
+        void releaseHoldSpace(const CacheStateGuard::Lock & lock)
         {
-            for (const auto & [_, elem] : *this)
+            for (auto & [_, elem] : *this)
                 elem.releaseHoldSpace(lock);
         }
 
+        size_t size_to_evict = 0;
+        size_t elements_to_evict = 0;
+
+    private:
         std::function<void()> on_finish_func;
+
+        void addImpl(const QueueID & queue_id, QueueEvictionInfo && info)
+        {
+            size_to_evict += info.size_to_evict;
+            elements_to_evict += info.elements_to_evict;
+            emplace(queue_id, std::move(info));
+        }
     };
-    using EvictionInfoPtr = std::unique_ptr<EvictionInfo>;
 
     virtual EvictionInfoPtr collectEvictionInfo(
         size_t size,

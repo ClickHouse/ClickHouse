@@ -207,9 +207,8 @@ IFileCachePriority::EvictionInfoPtr SLRUFileCachePriority::collectEvictionInfo(
 
         if (evict_size_from_protected || evict_elements_from_protected)
         {
-            auto protected_info = protected_queue.collectEvictionInfo(size, elements, reservee, is_total_space_cleanup, lock);
-            auto & [queue_id, info_] = *(protected_info->begin());
-            info->add(queue_id, std::move(info_));
+            info->add(protected_queue.collectEvictionInfo(
+                          size, elements, reservee, is_total_space_cleanup, lock));
         }
 
         return info;
@@ -239,9 +238,7 @@ IFileCachePriority::EvictionInfoPtr SLRUFileCachePriority::collectEvictionInfo(
                 reservee,
                 is_total_space_cleanup,
                 lock);
-            chassert(downgrade_info && downgrade_info->size() == 1);
-            auto & [queue_id, info_] = *(downgrade_info->begin());
-            info->add(queue_id, std::move(info_));
+            info->add(std::move(downgrade_info));
         }
     }
     else

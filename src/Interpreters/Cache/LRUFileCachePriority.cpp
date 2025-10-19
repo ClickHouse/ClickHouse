@@ -349,11 +349,17 @@ IFileCachePriority::EvictionInfoPtr LRUFileCachePriority::collectEvictionInfo(
 {
     QueueEvictionInfo info;
 
+    /// Total space cleanup is for keep_free_space_size(elements)_ratio feature.
+    if (is_total_space_cleanup)
+    {
+        info.size_to_evict = std::min(size, getSize(lock));
+        info.elements_to_evict = std::min(elements, getElementsCount(lock));
+        return std::make_unique<EvictionInfo>(queue_id, std::move(info));
+    }
+
     const size_t available_size = max_size.load() - state->getSize(lock);
     if (available_size < size)
-    {
         info.size_to_evict = size - available_size;
-    }
 
     const size_t available_elements = max_elements.load() - state->getElementsCount(lock);
     if (available_elements < elements)
@@ -370,9 +376,7 @@ IFileCachePriority::EvictionInfoPtr LRUFileCachePriority::collectEvictionInfo(
     size_t size_to_hold = info.size_to_evict ? available_size : size;
     size_t elements_to_hold = info.elements_to_evict ? available_elements : elements;
 
-    /// If this is a space cleanup, then we do not need to create any space holders.
-    /// Total space cleanup is for keep_free_space_size(elements)_ratio feature.
-    if (!is_total_space_cleanup && (size_to_hold || elements_to_hold))
+    if (size_to_hold || elements_to_hold)
     {
         info.hold_space = std::make_unique<IFileCachePriority::HoldSpace>(
             size_to_hold,
