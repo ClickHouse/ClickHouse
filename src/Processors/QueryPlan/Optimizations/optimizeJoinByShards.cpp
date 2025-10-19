@@ -410,9 +410,9 @@ void optimizeJoinByShards(QueryPlan::Node & root)
                 result->joins.common_prefix = std::min(result->joins.common_prefix, sharding.size());
                 result->joins.common_prefix = std::min(result->joins.common_prefix, frame.results.back()->joins.common_prefix);
 
+                result->joins.is_reverse_order = sharding.is_reverse_order;
                 result->joins.joins.emplace_back(join_step, std::move(sharding));
                 result->joins.joins.splice(result->joins.joins.end(), std::move(frame.results.back()->joins.joins));
-                result->joins.is_reverse_order = sharding.is_reverse_order;
                 result->joins.sources.splice(result->joins.sources.end(), std::move(frame.results.back()->joins.sources));
                 result->joins.sorting_steps.splice(result->joins.sorting_steps.end(), std::move(frame.results.back()->joins.sorting_steps));
                 result->joins.joins_to_keep_in_order.splice(result->joins.joins_to_keep_in_order.end(), std::move(frame.results.back()->joins.joins_to_keep_in_order));
