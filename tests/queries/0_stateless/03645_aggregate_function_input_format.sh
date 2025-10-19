@@ -102,12 +102,8 @@ INSERT INTO test_agg_single_${CLICKHOUSE_DATABASE} FORMAT TabSeparated"
 ${CLICKHOUSE_CLIENT} -q "SELECT user_id, avgMerge(avg_session_length) FROM test_agg_single_${CLICKHOUSE_DATABASE} WHERE user_id = 400 GROUP BY user_id;"
 
 echo "=== Test 9: Error handling - invalid format ==="
-out1="$(${CLICKHOUSE_CLIENT} -q "
-SET aggregate_function_input_format = 'invalid';
-TRUNCATE TABLE test_agg_single_${CLICKHOUSE_DATABASE};
-INSERT INTO test_agg_single_${CLICKHOUSE_DATABASE} VALUES (888, '456');
-" 2>&1)"
-echo "$out1" | grep -q "Invalid value for aggregate_function_input_format" && echo "Error validation works correctly" || echo "No validation error found"
+out1="$(${CLICKHOUSE_CLIENT} -q "SET aggregate_function_input_format = 'invalid';" 2>&1)"
+echo "$out1" | grep -q "Unexpected value of AggregateFunctionInputFormat" && echo "Error validation works correctly" || echo "No validation error found"
 
 echo "=== Test 10: Multiple inserts with different formats ==="
 ${CLICKHOUSE_CLIENT} -q "
