@@ -5,10 +5,12 @@
 namespace DB
 {
 
-/// Evictoin info, which contains information about
+/// Eviction info, which contains information about
 /// how much size/elements is needed to be evicted,
 /// plus holds "space holders", for space which was already available
 /// and will now be "hold" as reserved, while we are evicting remaining space.
+/// If releaseHoldSpace() is not called,
+/// hold space will be automatically released in destructor of HoldSpacePtr.
 struct QueueEvictionInfo
 {
     size_t size_to_evict = 0;

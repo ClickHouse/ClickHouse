@@ -103,53 +103,6 @@ public:
     };
     using IteratorPtr = std::shared_ptr<Iterator>;
 
-    struct UsageStat
-    {
-        size_t size;
-        size_t elements;
-    };
-    virtual std::unordered_map<std::string, UsageStat> getUsageStatPerClient();
-
-    /// A space holder implementation, which allows to take hold of
-    /// some space in cache given that this space was freed.
-    /// Takes hold of the space in constructor and releases it in destructor.
-    struct HoldSpace : private boost::noncopyable
-    {
-        HoldSpace(
-            size_t size_,
-            size_t elements_,
-            IFileCachePriority & priority_,
-            const CacheStateGuard::Lock & lock)
-            : size(size_), elements(elements_), priority(priority_)
-        {
-            priority.holdImpl(size, elements, lock);
-        }
-
-        void release(const CacheStateGuard::Lock &) { releaseUnlocked(); }
-
-        ~HoldSpace()
-        {
-            if (!released)
-                releaseUnlocked();
-        }
-
-        const size_t size;
-        const size_t elements;
-    private:
-        IFileCachePriority & priority;
-        bool released = false;
-
-        void releaseUnlocked()
-        {
-            if (released)
-                return;
-            released = true;
-            priority.releaseImpl(size, elements);
-        }
-    };
-    using HoldSpacePtr = std::unique_ptr<HoldSpace>;
-
-
     virtual ~IFileCachePriority() = default;
 
     enum class Type
@@ -273,6 +226,52 @@ public:
         IFileCachePriority::IteratorPtr iterator;
     };
     static void removeEntries(const std::vector<InvalidatedEntryInfo> & entries, const CachePriorityGuard::WriteLock &);
+
+    struct UsageStat
+    {
+        size_t size;
+        size_t elements;
+    };
+    virtual std::unordered_map<std::string, UsageStat> getUsageStatPerClient();
+
+    /// A space holder implementation, which allows to take hold of
+    /// some space in cache given that this space was freed.
+    /// Takes hold of the space in constructor and releases it in destructor.
+    struct HoldSpace : private boost::noncopyable
+    {
+        HoldSpace(
+            size_t size_,
+            size_t elements_,
+            IFileCachePriority & priority_,
+            const CacheStateGuard::Lock & lock)
+            : size(size_), elements(elements_), priority(priority_)
+        {
+            priority.holdImpl(size, elements, lock);
+        }
+
+        void release(const CacheStateGuard::Lock &) { releaseUnlocked(); }
+
+        ~HoldSpace()
+        {
+            if (!released)
+                releaseUnlocked();
+        }
+
+        const size_t size;
+        const size_t elements;
+    private:
+        IFileCachePriority & priority;
+        bool released = false;
+
+        void releaseUnlocked()
+        {
+            if (released)
+                return;
+            released = true;
+            priority.releaseImpl(size, elements);
+        }
+    };
+    using HoldSpacePtr = std::unique_ptr<HoldSpace>;
 
 protected:
     IFileCachePriority(size_t max_size_, size_t max_elements_);
