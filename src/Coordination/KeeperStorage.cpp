@@ -1714,7 +1714,7 @@ Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperCreateRe
     }
     else if (zk_request.not_exists)
         response = std::make_shared<Coordination::ZooKeeperCreateIfNotExistsResponse>();
-    else 
+    else
         response = std::make_shared<Coordination::ZooKeeperCreateResponse>();
 
     if (deltas.empty())

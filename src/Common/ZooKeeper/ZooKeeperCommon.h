@@ -239,10 +239,10 @@ struct ZooKeeperCreateRequest final : public CreateRequest, ZooKeeperRequest
     ZooKeeperCreateRequest() = default;
     explicit ZooKeeperCreateRequest(const CreateRequest & base) : CreateRequest(base) {}
 
-    OpNum getOpNum() const override 
+    OpNum getOpNum() const override
     {
         if (include_data)
-            return OpNum::Create2; 
+            return OpNum::Create2;
         return not_exists ? OpNum::CreateIfNotExists : OpNum::Create;
     }
 
