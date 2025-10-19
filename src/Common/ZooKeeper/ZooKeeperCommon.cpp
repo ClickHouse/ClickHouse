@@ -1166,7 +1166,7 @@ void ZooKeeperCreateResponse::fillLogElements(LogElements & elems, size_t idx) c
 
 void ZooKeeperCreate2Response::fillLogElements(LogElements & elems, size_t idx) const
 {
-    ZooKeeperResponse::fillLogElements(elems, idx);
+    Coordination::ZooKeeperCreateResponse::fillLogElements(elems, idx);
     auto & elem =  elems[idx];
     elem.path_created = path_created;
 }
