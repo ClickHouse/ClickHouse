@@ -1,4 +1,5 @@
 #include "config.h"
+#include <Access/Common/AccessFlags.h>
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/Context.h>
