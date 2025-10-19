@@ -1423,6 +1423,7 @@ auto callOnConcreteRequestType(const Coordination::ZooKeeperRequest & zk_request
         case Coordination::OpNum::Get:
             return function(static_cast<const Coordination::ZooKeeperGetRequest &>(zk_request));
         case Coordination::OpNum::Create:
+        case Coordination::OpNum::Create2:
         case Coordination::OpNum::CreateIfNotExists:
             return function(static_cast<const Coordination::ZooKeeperCreateRequest &>(zk_request));
         case Coordination::OpNum::Remove:
@@ -1691,6 +1692,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
     stat.cversion = 0;
     stat.ephemeralOwner = zk_request.is_ephemeral ? session_id : 0;
 
+    zk_request.setStats(stat);
     new_deltas.emplace_back(
         std::move(path_created),
         zxid,
@@ -1702,9 +1704,18 @@ std::list<KeeperStorageBase::Delta> preprocess(
 template <typename Storage>
 Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperCreateRequest & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas)
 {
-    std::shared_ptr<Coordination::ZooKeeperCreateResponse> response = zk_request.not_exists
-        ? std::make_shared<Coordination::ZooKeeperCreateIfNotExistsResponse>()
-        : std::make_shared<Coordination::ZooKeeperCreateResponse>();
+    std::shared_ptr<Coordination::ZooKeeperCreateResponse> response;
+
+    if (zk_request.include_data)
+    {
+        auto create2response = std::make_shared<Coordination::ZooKeeperCreate2Response>();
+        create2response->zstat = zk_request.zstat;
+        response = create2response;
+    }
+    else if (zk_request.not_exists)
+        response = std::make_shared<Coordination::ZooKeeperCreateIfNotExistsResponse>();
+    else 
+        response = std::make_shared<Coordination::ZooKeeperCreateResponse>();
 
     if (deltas.empty())
     {

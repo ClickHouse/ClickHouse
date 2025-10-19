@@ -622,6 +622,7 @@ void KeeperContext::setBlockACL(bool block_acl_)
 
 bool KeeperContext::isOperationSupported(Coordination::OpNum operation) const
 {
+    std::cerr << "isOperationSupported " << static_cast<Int32>(operation) << '\n';
     switch (operation)
     {
         case Coordination::OpNum::FilteredList:
@@ -639,6 +640,7 @@ bool KeeperContext::isOperationSupported(Coordination::OpNum operation) const
         case Coordination::OpNum::Close:
         case Coordination::OpNum::Error:
         case Coordination::OpNum::Create:
+        case Coordination::OpNum::Create2:
         case Coordination::OpNum::Remove:
         case Coordination::OpNum::Exists:
         case Coordination::OpNum::Get:

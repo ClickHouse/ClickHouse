@@ -10,6 +10,7 @@ static const std::unordered_set<int32_t> VALID_OPERATIONS =
     static_cast<int32_t>(OpNum::Close),
     static_cast<int32_t>(OpNum::Error),
     static_cast<int32_t>(OpNum::Create),
+    static_cast<int32_t>(OpNum::Create2),
     static_cast<int32_t>(OpNum::Remove),
     static_cast<int32_t>(OpNum::Exists),
     static_cast<int32_t>(OpNum::Get),
