@@ -1,7 +1,5 @@
 -- Tags: no-fasttest
 
-SET allow_experimental_json_type = 1;
-
 DROP TABLE IF EXISTS test_vertical_json;
 
 CREATE TABLE test_vertical_json
