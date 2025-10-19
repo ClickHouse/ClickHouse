@@ -342,6 +342,22 @@ public:
     /// Return QueryKind of this AST query.
     virtual QueryKind getQueryKind() const { return QueryKind::None; }
 
+    struct Location
+    {
+        UInt64 begin = 0;
+        UInt64 end = 0;
+    };
+
+    Location getLocation() const
+    {
+        return location;
+    }
+
+    void setLocation(UInt64 begin_, UInt64 end_)
+    {
+        location = {begin_, end_};
+    }
+
 protected:
     virtual void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
     {
@@ -367,6 +383,8 @@ private:
       */
     ASTPtr next_to_delete = nullptr;
     ASTPtr * next_to_delete_list_head = nullptr;
+
+    Location location;
 };
 
 }

@@ -1,4 +1,5 @@
 #include <Parsers/IParserBase.h>
+#include <Parsers/IAST.h>
 
 
 namespace DB
@@ -14,18 +15,24 @@ bool IParserBase::parse(Pos & pos, ASTPtr & node, Expected & expected)
         bool res = parseImpl(pos, node, expected);
         if (res)
         {
-            Highlight type = highlight();
-            if (pos->begin > begin && type != Highlight::none)
+            if (pos->begin > begin)
             {
                 Pos prev_token = pos;
                 --prev_token;
 
-                HighlightedRange range;
-                range.begin = begin;
-                range.end = prev_token->end;
-                range.highlight = type;
+                auto query_begin = pos.getQueryBegin();
+                node->setLocation(begin - query_begin, prev_token->end - query_begin);
 
-                expected.highlight(range);
+                Highlight type = highlight();
+                if (type != Highlight::none)
+                {
+                    HighlightedRange range;
+                    range.begin = begin;
+                    range.end = prev_token->end;
+                    range.highlight = type;
+
+                    expected.highlight(range);
+                }
             }
         }
         else

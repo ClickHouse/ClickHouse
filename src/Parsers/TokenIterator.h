@@ -22,12 +22,13 @@ class Tokens
 private:
     std::vector<Token> data;
     size_t max_pos = 0;
+    const char * query_begin;
     Lexer lexer;
     bool skip_insignificant;
 
 public:
     Tokens(const char * begin, const char * end, size_t max_query_size = 0, bool skip_insignificant_ = true)
-        : lexer(begin, end, max_query_size), skip_insignificant(skip_insignificant_)
+        : query_begin(begin), lexer(begin, end, max_query_size), skip_insignificant(skip_insignificant_)
     {
     }
 
@@ -59,6 +60,11 @@ public:
         if (data.empty())
             return (*this)[0];
         return data[max_pos];
+    }
+
+    const char * getQueryBegin() const
+    {
+        return query_begin;
     }
 
     void reset()
@@ -102,6 +108,8 @@ public:
 
     /// Rightmost token we had looked.
     ALWAYS_INLINE const Token & max() { return tokens->max(); }
+
+    ALWAYS_INLINE const char * getQueryBegin() const { return tokens->getQueryBegin(); }
 };
 
 
