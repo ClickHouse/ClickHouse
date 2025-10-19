@@ -2,7 +2,7 @@
 #include <Core/SettingsEnums.h>
 #include <base/EnumReflection.h>
 #include <Common/Exception.h>
-#include "Formats/FormatSettings.h"
+#include <Formats/FormatSettings.h>
 
 #include <boost/range/adaptor/map.hpp>
 
