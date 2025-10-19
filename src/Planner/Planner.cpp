@@ -1055,6 +1055,12 @@ void addPreliminaryLimitStep(
     bool is_limit_length_negative = query_analysis_result.is_limit_length_negative;
     bool is_limit_offset_negative = query_analysis_result.is_limit_offset_negative;
 
+    if (is_limit_length_negative && fractional_offset > 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Negative Limits can't have a fractional Offset");
+    
+    if (is_limit_offset_negative && fractional_limit > 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Fractional Limits can't have a negative Offset");
+
     if (do_not_skip_offset)
     {
         if (limit_length > std::numeric_limits<UInt64>::max() - limit_offset)
@@ -1083,13 +1089,13 @@ void addPreliminaryLimitStep(
             limit->setStepDescription("preliminary LIMIT (without OFFSET)");
         query_plan.addStep(std::move(limit));
     }
-    else if (limit_length && is_limit_length_negative && is_limit_offset_negative)
+    else if (is_limit_length_negative && is_limit_offset_negative)
     {
         auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), limit_length, limit_offset);
 
         query_plan.addStep(std::move(limit));
     }
-    else if (limit_length && is_limit_length_negative && !is_limit_offset_negative)
+    else if (is_limit_length_negative && !is_limit_offset_negative)
     {
         auto offset = std::make_unique<OffsetStep>(query_plan.getCurrentHeader(), limit_offset);
 
@@ -1098,7 +1104,7 @@ void addPreliminaryLimitStep(
         auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), limit_length, 0);
         query_plan.addStep(std::move(limit));
     }
-    else if (limit_length && !is_limit_length_negative && is_limit_offset_negative)
+    else if (!is_limit_length_negative && is_limit_offset_negative)
     {
         auto offset = std::make_unique<NegativeOffsetStep>(query_plan.getCurrentHeader(), limit_offset);
 
@@ -1108,7 +1114,7 @@ void addPreliminaryLimitStep(
             = std::make_unique<LimitStep>(query_plan.getCurrentHeader(), limit_length, 0, settings[Setting::exact_rows_before_limit]);
         query_plan.addStep(std::move(limit));
     }
-    else if (limit_length && fractional_offset > 0 && !is_limit_length_negative)
+    else if (limit_length && fractional_offset > 0)
     {
         auto fractional_offset_step = std::make_unique<FractionalOffsetStep>(query_plan.getCurrentHeader(), fractional_offset);
         query_plan.addStep(std::move(fractional_offset_step));
@@ -1337,8 +1343,14 @@ void addLimitStep(
     bool is_limit_length_negative = query_analysis_result.is_limit_length_negative;
     bool is_limit_offset_negative = query_analysis_result.is_limit_offset_negative;
 
+    if (is_limit_length_negative && fractional_offset > 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Negative Limits can't have a fractional Offset");
+    
+    if (is_limit_offset_negative && fractional_limit > 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Fractional Limits can't have a negative Offset");
+
     // only one of limit_length or fractional_limit will have a value not both
-    // only one of limit_offset or fractional_offset will have a value
+    // only one of limit_offset or fractional_offset will have a value not both
     // if fractional_limit has value is_limit_length_negative should be always false
     // if fractional_offset has value is_limit_offset_negative should be always false
 
@@ -1358,13 +1370,13 @@ void addLimitStep(
 
         query_plan.addStep(std::move(limit));
     }
-    else if (limit_length && is_limit_length_negative && is_limit_offset_negative)
+    else if (is_limit_length_negative && is_limit_offset_negative)
     {
         auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), limit_length, limit_offset);
 
         query_plan.addStep(std::move(limit));
     }
-    else if (limit_length && is_limit_length_negative && !is_limit_offset_negative)
+    else if (is_limit_length_negative && !is_limit_offset_negative)
     {
         auto offset = std::make_unique<OffsetStep>(query_plan.getCurrentHeader(), limit_offset);
 
@@ -1373,7 +1385,7 @@ void addLimitStep(
         auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), limit_length, 0);
         query_plan.addStep(std::move(limit));
     }
-    else if (limit_length && !is_limit_length_negative && is_limit_offset_negative)
+    else if (!is_limit_length_negative && is_limit_offset_negative)
     {
         auto offset = std::make_unique<NegativeOffsetStep>(query_plan.getCurrentHeader(), limit_offset);
 
@@ -1385,7 +1397,7 @@ void addLimitStep(
             limit->setStepDescription("LIMIT WITH TIES");
         query_plan.addStep(std::move(limit));
     }
-    else if (limit_length && fractional_offset > 0 && !is_limit_length_negative)
+    else if (limit_length && fractional_offset > 0)
     {
         auto fractional_offset_step
             = std::make_unique<FractionalOffsetStep>(query_plan.getCurrentHeader(), query_analysis_result.fractional_offset);
@@ -1394,7 +1406,7 @@ void addLimitStep(
         auto limit = std::make_unique<LimitStep>(
             query_plan.getCurrentHeader(),
             limit_length,
-            limit_offset,
+            0,
             always_read_till_end,
             limit_with_ties,
             limit_with_ties_sort_description);

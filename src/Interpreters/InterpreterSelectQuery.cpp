@@ -3215,6 +3215,12 @@ void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
     {
         LimitInfo lim_info = getLimitLengthAndOffset(query, context);
 
+        if (lim_info.is_limit_length_negative && lim_info.fractional_offset > 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Negative Limits can't have a fractional Offset");
+        
+        if (lim_info.is_limit_offset_negative && lim_info.fractional_limit > 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Fractional Limits can't have a negative Offset");
+
         if (do_not_skip_offset)
         {
             if (lim_info.limit_length > std::numeric_limits<UInt64>::max() - lim_info.limit_offset)
@@ -3382,6 +3388,12 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Negative LIMIT WITH TIES is not supported yet");
         }
 
+        if (lim_info.is_limit_length_negative && lim_info.fractional_offset > 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Negative Limits can't have a fractional Offset");
+        
+        if (lim_info.is_limit_offset_negative && lim_info.fractional_limit > 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Fractional Limits can't have a negative Offset");
+
         // only one of limit_length or fractional_limit will have a value not both
         // only one of limit_offset or fractional_offset will have a value
         // if fractional_limit has value is_limit_length_negative should be always false
@@ -3403,13 +3415,13 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
 
             query_plan.addStep(std::move(limit));
         }
-        else if (lim_info.limit_length && lim_info.is_limit_length_negative && lim_info.is_limit_offset_negative)
+        else if (lim_info.is_limit_length_negative && lim_info.is_limit_offset_negative)
         {
             auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), lim_info.limit_length, lim_info.limit_offset);
 
             query_plan.addStep(std::move(limit));
         }
-        else if (lim_info.limit_length && lim_info.is_limit_length_negative && !lim_info.is_limit_offset_negative)
+        else if (lim_info.is_limit_length_negative && !lim_info.is_limit_offset_negative)
         {
             auto offsets_step = std::make_unique<OffsetStep>(query_plan.getCurrentHeader(), lim_info.limit_offset);
             query_plan.addStep(std::move(offsets_step));
@@ -3417,7 +3429,7 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
             auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), lim_info.limit_length, 0);
             query_plan.addStep(std::move(limit));
         }
-        else if (lim_info.limit_length && !lim_info.is_limit_length_negative && lim_info.is_limit_offset_negative)
+        else if (!lim_info.is_limit_length_negative && lim_info.is_limit_offset_negative)
         {
             auto offsets_step = std::make_unique<NegativeOffsetStep>(query_plan.getCurrentHeader(), lim_info.limit_offset);
             query_plan.addStep(std::move(offsets_step));
