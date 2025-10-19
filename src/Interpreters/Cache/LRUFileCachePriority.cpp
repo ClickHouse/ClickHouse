@@ -344,6 +344,7 @@ IFileCachePriority::EvictionInfoPtr LRUFileCachePriority::collectEvictionInfo(
     size_t size,
     size_t elements,
     IFileCachePriority::Iterator *,
+    bool is_total_space_cleanup,
     const CacheStateGuard::Lock & lock)
 {
     QueueEvictionInfo info;
@@ -369,7 +370,9 @@ IFileCachePriority::EvictionInfoPtr LRUFileCachePriority::collectEvictionInfo(
     size_t size_to_hold = info.size_to_evict ? available_size : size;
     size_t elements_to_hold = info.elements_to_evict ? available_elements : elements;
 
-    if (size_to_hold || elements_to_hold)
+    /// If this is a space cleanup, then we do not need to create any space holders.
+    /// Total space cleanup is for keep_free_space_size(elements)_ratio feature.
+    if (!is_total_space_cleanup && (size_to_hold || elements_to_hold))
     {
         info.hold_space = std::make_unique<IFileCachePriority::HoldSpace>(
             size_to_hold,
@@ -386,28 +389,44 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
     EvictionCandidates & res,
     IFileCachePriority::IteratorPtr /* reservee */,
     bool continue_from_last_eviction_pos,
+    size_t max_candidates_size,
+    bool /* is_total_space_cleanup */,
     const UserID &,
     const CachePriorityGuard::ReadLock & lock)
 {
-    ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionTries);
-
     size_t size = eviction_info.at(queue_id).size_to_evict;
     size_t elements = eviction_info.at(queue_id).elements_to_evict;
 
+    if (!size && !elements)
+        return true;
+
+    ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionTries);
+
     auto start_pos = queue.begin();
-    LRUQueue::iterator current_eviction_pos;
-    {
-        std::lock_guard lk(eviction_pos_mutex);
-        current_eviction_pos = eviction_pos;
-    }
+    auto current_eviction_pos = getEvictionIterator();
     if (continue_from_last_eviction_pos && current_eviction_pos != queue.end() && start_pos != current_eviction_pos)
     {
         ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionReusedIterator);
         start_pos = current_eviction_pos;
     }
-    auto iteration_pos = iterateImpl(start_pos, [&](LockedKey & locked_key, const FileSegmentMetadataPtr & segment_metadata)
+
+    auto get_iteration_result = [&]()
     {
-        if ((!size || stat.total_stat.releasable_size >= size) && (!elements || stat.total_stat.releasable_count >= elements))
+        if ((!size || stat.total_stat.releasable_size >= size)
+            && (!elements || stat.total_stat.releasable_count >= elements))
+            return IterationResult::BREAK;
+
+        if (max_candidates_size && res.size() >= max_candidates_size)
+            return IterationResult::BREAK;
+
+        return IterationResult::CONTINUE;
+    };
+
+    auto iteration_pos = iterateImpl(
+        start_pos,
+        [&](LockedKey & locked_key, const FileSegmentMetadataPtr & segment_metadata)
+    {
+        if (get_iteration_result() == IterationResult::BREAK)
             return IterationResult::BREAK;
 
         const auto & file_segment = segment_metadata->file_segment;
@@ -420,27 +439,25 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
                 segment_metadata->size(),
                 file_segment->getKind(),
                 FileCacheReserveStat::State::Releasable);
+
+            return get_iteration_result();
         }
-        else
-        {
-            ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionSkippedFileSegments);
-            stat.update(
-                segment_metadata->size(),
-                file_segment->getKind(),
-                FileCacheReserveStat::State::NonReleasable);
-        }
+
+        ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionSkippedFileSegments);
+        stat.update(
+            segment_metadata->size(),
+            file_segment->getKind(),
+            FileCacheReserveStat::State::NonReleasable);
 
         return IterationResult::CONTINUE;
     }, stat, lock);
 
     if (continue_from_last_eviction_pos)
-    {
-        std::lock_guard lk(eviction_pos_mutex);
-        eviction_pos = iteration_pos;
-    }
+        setEvictionIterator(iteration_pos);
 
-    const bool success = (!size || stat.total_stat.releasable_size >= size)
-        && (!elements || stat.total_stat.releasable_count >= elements);
+    const bool success = (max_candidates_size && res.size() >= max_candidates_size)
+        || ((!size || stat.total_stat.releasable_size >= size)
+            && (!elements || stat.total_stat.releasable_count >= elements));
 
     if (!success)
     {
@@ -678,4 +695,15 @@ void LRUFileCachePriority::releaseImpl(size_t size, size_t elements)
     LOG_TEST(log, "Released {} by size and {} by elements", size, elements);
 }
 
+LRUFileCachePriority::LRUQueue::iterator LRUFileCachePriority::getEvictionIterator() const
+{
+    std::lock_guard lk(eviction_pos_mutex);
+    return eviction_pos;
+}
+
+void LRUFileCachePriority::setEvictionIterator(LRUQueue::iterator it)
+{
+    std::lock_guard lk(eviction_pos_mutex);
+    eviction_pos = it;
+}
 }

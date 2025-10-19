@@ -57,6 +57,7 @@ public:
         size_t size,
         size_t elements,
         IFileCachePriority::Iterator * reservee,
+        bool is_total_space_cleanup,
         const CacheStateGuard::Lock &) override;
 
     bool canFit( /// NOLINT
@@ -81,6 +82,8 @@ public:
         EvictionCandidates & res,
         IFileCachePriority::IteratorPtr reservee,
         bool continue_from_last_eviction_pos,
+        size_t max_candidates_size,
+        bool is_total_space_cleanup,
         const UserID & user_id,
         const CachePriorityGuard::ReadLock &) override;
 
@@ -132,7 +135,7 @@ private:
     LoggerPtr log;
     StatePtr state;
     LRUQueue::iterator eviction_pos TSA_GUARDED_BY(eviction_pos_mutex);
-    std::mutex eviction_pos_mutex;
+    mutable std::mutex eviction_pos_mutex;
     /// Id of the current priority queue.
     /// Used to find its eviction info in collected eviction info map
     /// (which contains eviction info for several priority queues).
@@ -179,6 +182,9 @@ private:
 
     void releaseImpl(size_t size, size_t elements) override;
     std::string getApproxStateInfoForLog() const;
+
+    LRUQueue::iterator getEvictionIterator() const;
+    void setEvictionIterator(LRUQueue::iterator it);
 };
 
 class LRUFileCachePriority::LRUIterator : public IFileCachePriority::Iterator

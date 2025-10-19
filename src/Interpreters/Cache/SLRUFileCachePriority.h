@@ -41,6 +41,7 @@ public:
         size_t size,
         size_t elements,
         IFileCachePriority::Iterator * reservee,
+        bool is_total_space_cleanup,
         const CacheStateGuard::Lock &) override;
 
     bool canFit( /// NOLINT
@@ -65,6 +66,8 @@ public:
         EvictionCandidates & res,
         IFileCachePriority::IteratorPtr reservee,
         bool continue_from_last_eviction_pos,
+        size_t max_candidates_size,
+        bool is_total_space_cleanup,
         const UserID & user_id,
         const CachePriorityGuard::ReadLock &) override;
 
@@ -110,6 +113,8 @@ private:
         EvictionCandidates & res,
         IFileCachePriority::IteratorPtr reservee,
         bool continue_from_last_eviction_pos,
+        size_t max_candidates_size,
+        bool is_total_space_cleanup,
         const UserID & user_id,
         const CachePriorityGuard::ReadLock & lock);
 

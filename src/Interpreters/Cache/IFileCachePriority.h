@@ -184,6 +184,7 @@ public:
 
         std::string formatForLog() const;
         bool requiresEviction() const { return size_to_evict || elements_to_evict; }
+        bool hasHoldSpace() const { return hold_space != nullptr; }
         void releaseHoldSpace(const CacheStateGuard::Lock & lock) const;
     };
     using QueueID = size_t;
@@ -215,6 +216,13 @@ public:
 
         std::string formatForLog() const;
         bool requiresEviction() const { return size_to_evict || elements_to_evict; }
+        bool hasHoldSpace() const
+        {
+            for (const auto & [_, elem] : *this)
+                if (elem.hasHoldSpace())
+                    return true;
+            return false;
+        }
 
         void releaseHoldSpace(const CacheStateGuard::Lock & lock) const
         {
@@ -230,6 +238,7 @@ public:
         size_t size,
         size_t elements,
         IFileCachePriority::Iterator * reservee,
+        bool is_total_space_cleanup,
         const CacheStateGuard::Lock &) = 0;
 
     enum class IterationResult : uint8_t
@@ -288,6 +297,8 @@ public:
         EvictionCandidates & res,
         IteratorPtr reservee,
         bool continue_from_last_eviction_pos,
+        size_t max_candidates_size,
+        bool is_total_space_cleanup,
         const UserID & user_id,
         const CachePriorityGuard::ReadLock &) = 0;
 

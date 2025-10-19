@@ -180,11 +180,44 @@ IFileCachePriority::EvictionInfoPtr SLRUFileCachePriority::collectEvictionInfo(
     size_t size,
     size_t elements,
     IFileCachePriority::Iterator * reservee,
+    bool is_total_space_cleanup,
     const CacheStateGuard::Lock & lock)
 {
+    /// Total space cleanup is for keep_free_space_size(elements)_ratio feature.
+    if (is_total_space_cleanup)
+    {
+        /// Remove everything from probationary first
+        /// and only if it's empty - remove from protected as well.
+        size_t evict_size_from_probationary = std::min(size, probationary_queue.getSize(lock));
+        size_t evict_elements_from_probationary = std::min(elements, probationary_queue.getElementsCount(lock));
+
+        chassert(evict_size_from_probationary || evict_elements_from_probationary);
+        size -= evict_size_from_probationary;
+        elements -= evict_elements_from_probationary;
+
+        size_t evict_size_from_protected = size ? std::min(size, protected_queue.getSize(lock)) : 0;
+        size_t evict_elements_from_protected = elements ? std::min(elements, protected_queue.getElementsCount(lock)) : 0;
+
+        auto info = probationary_queue.collectEvictionInfo(
+            evict_size_from_probationary,
+            evict_elements_from_probationary,
+            reservee,
+            is_total_space_cleanup,
+            lock);
+
+        if (evict_size_from_protected || evict_elements_from_protected)
+        {
+            auto protected_info = protected_queue.collectEvictionInfo(size, elements, reservee, is_total_space_cleanup, lock);
+            auto & [queue_id, info_] = *(protected_info->begin());
+            info->add(queue_id, std::move(info_));
+        }
+
+        return info;
+    }
+
     if (!reservee)
     {
-        return probationary_queue.collectEvictionInfo(size, elements, reservee, lock);
+        return probationary_queue.collectEvictionInfo(size, elements, reservee, is_total_space_cleanup, lock);
     }
 
     auto * slru_iterator = assert_cast<SLRUIterator *>(reservee->getNestedOrThis());
@@ -193,7 +226,7 @@ IFileCachePriority::EvictionInfoPtr SLRUFileCachePriority::collectEvictionInfo(
     if (slru_iterator->is_protected)
     {
         chassert(slru_iterator->lru_iterator.cache_priority == &protected_queue);
-        info = protected_queue.collectEvictionInfo(size, elements, reservee, lock);
+        info = protected_queue.collectEvictionInfo(size, elements, reservee, is_total_space_cleanup, lock);
 
         /// If protected queue required eviction, we need to "downgrade"
         /// its eviction candidates into probationary queue.
@@ -204,17 +237,17 @@ IFileCachePriority::EvictionInfoPtr SLRUFileCachePriority::collectEvictionInfo(
                 info->size_to_evict,
                 info->elements_to_evict,
                 reservee,
+                is_total_space_cleanup,
                 lock);
             chassert(downgrade_info && downgrade_info->size() == 1);
             auto & [queue_id, info_] = *(downgrade_info->begin());
             info->add(queue_id, std::move(info_));
         }
-
     }
     else
     {
         chassert(slru_iterator->lru_iterator.cache_priority == &probationary_queue);
-        info = probationary_queue.collectEvictionInfo(size, elements, reservee, lock);
+        info = probationary_queue.collectEvictionInfo(size, elements, reservee, is_total_space_cleanup, lock);
     }
 
     /// Make sure this queue element (our reservee) is not
@@ -234,9 +267,42 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
     EvictionCandidates & res,
     IFileCachePriority::IteratorPtr reservee,
     bool continue_from_last_eviction_pos,
+    size_t max_candidates_size,
+    bool is_total_space_cleanup,
     const UserID & user_id,
     const CachePriorityGuard::ReadLock & lock)
 {
+    if (is_total_space_cleanup)
+    {
+        auto success = probationary_queue.collectCandidatesForEviction(
+            eviction_info,
+            stat,
+            res,
+            reservee,
+            continue_from_last_eviction_pos,
+            max_candidates_size,
+            is_total_space_cleanup,
+            user_id,
+            lock);
+
+        if (success)
+            return true;
+
+        /// We do not use collectCandidatesForEvictionInProtected method,
+        /// because it will "downgrade" instead of remove,
+        /// but for total space cleanup we need remove.
+        return protected_queue.collectCandidatesForEviction(
+            eviction_info,
+            stat,
+            res,
+            reservee,
+            continue_from_last_eviction_pos,
+            max_candidates_size,
+            is_total_space_cleanup,
+            user_id,
+            lock);
+    }
+
     /// If `reservee` is nullptr, then it is the first space reservation attempt
     /// for a corresponding file segment, so it will be directly put into probationary queue.
     if (!reservee)
@@ -247,6 +313,8 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
             res,
             reservee,
             continue_from_last_eviction_pos,
+            max_candidates_size,
+            is_total_space_cleanup,
             user_id,
             lock);
     }
@@ -269,6 +337,8 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
             res,
             reservee,
             continue_from_last_eviction_pos,
+            max_candidates_size,
+            is_total_space_cleanup,
             user_id,
             lock);
     }
@@ -281,6 +351,8 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
             res,
             reservee,
             continue_from_last_eviction_pos,
+            max_candidates_size,
+            is_total_space_cleanup,
             user_id,
             lock);
     }
@@ -296,6 +368,8 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
     EvictionCandidates & res,
     IFileCachePriority::IteratorPtr reservee,
     bool continue_from_last_eviction_pos,
+    size_t max_candidates_size,
+    bool is_total_space_cleanup,
     const UserID & user_id,
     const CachePriorityGuard::ReadLock & lock)
 {
@@ -307,6 +381,8 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
         *downgrade_candidates,
         reservee,
         continue_from_last_eviction_pos,
+        max_candidates_size,
+        is_total_space_cleanup,
         user_id,
         lock))
     {
@@ -329,6 +405,8 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
         res,
         reservee,
         continue_from_last_eviction_pos,
+        max_candidates_size,
+        is_total_space_cleanup,
         user_id,
         lock))
     {
@@ -410,7 +488,7 @@ bool SLRUFileCachePriority::tryIncreasePriority(
             return probationary_queue.tryIncreasePriority(iterator.lru_iterator, queue_guard, state_guard);
         }
 
-        downgrade_info = protected_queue.collectEvictionInfo(entry->size, 1, /* reservee */nullptr, lock);
+        downgrade_info = protected_queue.collectEvictionInfo(entry->size, 1, /* reservee */nullptr, /* is_total_space_cleanup */false, lock);
     }
     /// FIXME: what if it becomes non-movable now.
 
@@ -433,6 +511,8 @@ bool SLRUFileCachePriority::tryIncreasePriority(
             downgrade_candidates,
             /* reservee */nullptr,
             /* continue_from_last_eviction_pos */false,
+            /* max_candidates_size */0,
+            /* is_total_space_cleanup */false,
             FileCache::getInternalUser().user_id,
             lock);
     }
