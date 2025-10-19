@@ -976,8 +976,8 @@ bool FileCache::doTryReserve(
     Priority * query_priority = nullptr;
     FileCacheQueryLimit::QueryContextPtr query_context;
 
-    std::unique_ptr<IFileCachePriority::EvictionInfo> main_eviction_info; /// Server scoped cache limits eviction info.
-    std::unique_ptr<IFileCachePriority::EvictionInfo> query_eviction_info; /// Query scoped cache limits eviction info.
+    std::unique_ptr<EvictionInfo> main_eviction_info; /// Server scoped cache limits eviction info.
+    std::unique_ptr<EvictionInfo> query_eviction_info; /// Query scoped cache limits eviction info.
 
     /// First collect "eviction info" under cache state lock, which will tell us
     /// how much do we need to evict in order to make sure we have enough space in cache.
@@ -1130,8 +1130,8 @@ bool FileCache::doTryReserve(
 }
 
 bool FileCache::doEviction(
-    const IFileCachePriority::EvictionInfo & main_eviction_info,
-    const IFileCachePriority::EvictionInfo * query_eviction_info,
+    const EvictionInfo & main_eviction_info,
+    const EvictionInfo * query_eviction_info,
     FileSegment & file_segment,
     const UserInfo & user,
     const IFileCachePriority::IteratorPtr & main_priority_iterator,
@@ -1140,9 +1140,9 @@ bool FileCache::doEviction(
     Priority * query_priority,
     std::string & failure_reason)
 {
-    LOG_TEST(log, "Main eviction info {}", main_eviction_info.formatForLog());
+    LOG_TEST(log, "Main eviction info {}", main_eviction_info.toString());
     if (query_priority)
-        LOG_TEST(log, "Query eviction info {}", main_eviction_info.formatForLog());
+        LOG_TEST(log, "Query eviction info {}", main_eviction_info.toString());
 
     if (!main_eviction_info.size_to_evict && !main_eviction_info.elements_to_evict)
         return true;
@@ -1259,7 +1259,7 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
 
     Stopwatch watch;
 
-    std::unique_ptr<IFileCachePriority::EvictionInfo> eviction_info;
+    std::unique_ptr<EvictionInfo> eviction_info;
     {
         auto lock = cache_state_guard.tryLock();
 

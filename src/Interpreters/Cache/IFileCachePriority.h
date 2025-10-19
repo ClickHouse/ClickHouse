@@ -15,6 +15,8 @@ namespace DB
 {
 struct FileCacheReserveStat;
 class EvictionCandidates;
+class EvictionInfo;
+using EvictionInfoPtr = std::unique_ptr<EvictionInfo>;
 
 class IFileCachePriority : private boost::noncopyable
 {
@@ -175,75 +177,6 @@ public:
 
     virtual std::string getStateInfoForLog(const CacheStateGuard::Lock &) const = 0;
     virtual void check(const CacheStateGuard::Lock &) const;
-
-    struct QueueEvictionInfo
-    {
-        size_t size_to_evict = 0;
-        size_t elements_to_evict = 0;
-        HoldSpacePtr hold_space;
-
-        std::string formatForLog() const;
-        bool requiresEviction() const { return size_to_evict || elements_to_evict; }
-        bool hasHoldSpace() const { return hold_space != nullptr; }
-        void releaseHoldSpace(const CacheStateGuard::Lock & lock);
-    };
-    using QueueID = size_t;
-
-    struct EvictionInfo;
-    using EvictionInfoPtr = std::unique_ptr<EvictionInfo>;
-
-    struct EvictionInfo : public std::map<QueueID, QueueEvictionInfo>, private boost::noncopyable
-    {
-        explicit EvictionInfo(QueueID queue_id, QueueEvictionInfo && info)
-        {
-            addImpl(queue_id, std::move(info));
-        }
-
-        ~EvictionInfo()
-        {
-            if (on_finish_func)
-                on_finish_func();
-        }
-
-        std::string formatForLog() const;
-
-        bool requiresEviction() const { return size_to_evict || elements_to_evict; }
-
-        void setOnFinishFunc(std::function<void()> func) { on_finish_func = func; }
-
-        void add(EvictionInfoPtr && info)
-        {
-            for (auto && [queue_id, info_] : *info)
-                addImpl(queue_id, std::move(info_));
-        }
-
-        bool hasHoldSpace() const
-        {
-            for (const auto & [_, elem] : *this)
-                if (elem.hasHoldSpace())
-                    return true;
-            return false;
-        }
-
-        void releaseHoldSpace(const CacheStateGuard::Lock & lock)
-        {
-            for (auto & [_, elem] : *this)
-                elem.releaseHoldSpace(lock);
-        }
-
-        size_t size_to_evict = 0;
-        size_t elements_to_evict = 0;
-
-    private:
-        std::function<void()> on_finish_func;
-
-        void addImpl(const QueueID & queue_id, QueueEvictionInfo && info)
-        {
-            size_to_evict += info.size_to_evict;
-            elements_to_evict += info.elements_to_evict;
-            emplace(queue_id, std::move(info));
-        }
-    };
 
     virtual EvictionInfoPtr collectEvictionInfo(
         size_t size,

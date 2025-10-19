@@ -176,7 +176,7 @@ void SLRUFileCachePriority::resetEvictionPos(const CachePriorityGuard::ReadLock 
     probationary_queue.resetEvictionPos(lock);
 }
 
-IFileCachePriority::EvictionInfoPtr SLRUFileCachePriority::collectEvictionInfo(
+EvictionInfoPtr SLRUFileCachePriority::collectEvictionInfo(
     size_t size,
     size_t elements,
     IFileCachePriority::Iterator * reservee,

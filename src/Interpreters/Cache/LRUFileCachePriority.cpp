@@ -340,7 +340,7 @@ bool LRUFileCachePriority::canFit(
             || current_elements_num + elements - released_elements_assumption <= (max_elements_ ? *max_elements_ : max_elements.load()));
 }
 
-IFileCachePriority::EvictionInfoPtr LRUFileCachePriority::collectEvictionInfo(
+EvictionInfoPtr LRUFileCachePriority::collectEvictionInfo(
     size_t size,
     size_t elements,
     IFileCachePriority::Iterator *,

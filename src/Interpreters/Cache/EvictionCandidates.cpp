@@ -25,6 +25,69 @@ namespace FailPoints
     extern const char file_cache_dynamic_resize_fail_to_evict[];
 }
 
+void QueueEvictionInfo::releaseHoldSpace(const CacheStateGuard::Lock & lock)
+{
+    if (hold_space)
+    {
+        hold_space->release(lock);
+        hold_space = {};
+    }
+}
+
+std::string QueueEvictionInfo::toString() const
+{
+    WriteBufferFromOwnString wb;
+    wb << "size to evict: " << size_to_evict << ", ";
+    wb << "elements to evict: " << elements_to_evict;
+    if (hold_space)
+    {
+        wb << ", " << "hold space size: " << size_to_evict << ", ";
+        wb << "hold space elements: " << elements_to_evict;
+    }
+    return wb.str();
+}
+
+std::string EvictionInfo::toString() const
+{
+    WriteBufferFromOwnString wb;
+    for (auto it = begin(); it != end(); ++it)
+    {
+        if (it != begin())
+            wb << ", ";
+        wb << "[queue id " << it->first << ", " << it->second.toString() << "]";
+    }
+    return wb.str();
+}
+
+bool EvictionInfo::hasHoldSpace() const
+{
+    for (const auto & [_, elem] : *this)
+        if (elem.hasHoldSpace())
+            return true;
+    return false;
+}
+
+void EvictionInfo::releaseHoldSpace(const CacheStateGuard::Lock & lock)
+{
+    for (auto & [_, elem] : *this)
+        elem.releaseHoldSpace(lock);
+}
+
+void EvictionInfo::add(EvictionInfoPtr && info)
+{
+    for (auto && [queue_id, info_] : *info)
+        addImpl(queue_id, std::move(info_));
+}
+
+void EvictionInfo::addImpl(const QueueID & queue_id, QueueEvictionInfo && info)
+{
+    size_to_evict += info.size_to_evict;
+    elements_to_evict += info.elements_to_evict;
+    const bool inserted = emplace(queue_id, std::move(info)).second;
+    if (!inserted)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Queue with id {} already exists", queue_id);
+}
+
 std::string EvictionCandidates::FailedCandidates::getFirstErrorMessage() const
 {
     if (failed_candidates_per_key.empty())
