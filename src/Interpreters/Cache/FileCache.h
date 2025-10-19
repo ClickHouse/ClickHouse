@@ -328,9 +328,9 @@ private:
         size_t max_elements = 0;
         double slru_size_ratio = 0;
     };
-    SizeLimits doDynamicResize(const SizeLimits & current_limits, const SizeLimits & desired_limits);
+    SizeLimits doDynamicResize(const SizeLimits & prev_limits, const SizeLimits & desired_limits);
     bool doDynamicResizeImpl(
-        const SizeLimits & current_limits,
+        const SizeLimits & prev_limits,
         const SizeLimits & desired_limits,
         SizeLimits & result_limits,
         CacheStateGuard::Lock &);

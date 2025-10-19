@@ -1920,9 +1920,9 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
     }
 }
 
-FileCache::SizeLimits FileCache::doDynamicResize(const SizeLimits & current_limits, const SizeLimits & desired_limits)
+FileCache::SizeLimits FileCache::doDynamicResize(const SizeLimits & prev_limits, const SizeLimits & desired_limits)
 {
-    if (current_limits.slru_size_ratio != desired_limits.slru_size_ratio)
+    if (prev_limits.slru_size_ratio != desired_limits.slru_size_ratio)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dynamic resize of size ratio is not allowed");
 
     struct ResizeHolder
@@ -1938,15 +1938,15 @@ FileCache::SizeLimits FileCache::doDynamicResize(const SizeLimits & current_limi
         ResizeHolder hold(cache_is_being_resized);
         auto cache_lock = cache_state_guard.lock();
 
-        if (current_limits.max_size != main_priority->getSizeLimit(cache_lock))
+        if (prev_limits.max_size != main_priority->getSizeLimit(cache_lock))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Current limits inconsistency in size");
 
-        if (current_limits.max_elements != main_priority->getElementsLimit(cache_lock))
+        if (prev_limits.max_elements != main_priority->getElementsLimit(cache_lock))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Current limits inconsistency in elements number");
 
         try
         {
-            modified_size_limit = doDynamicResizeImpl(current_limits, desired_limits, result_limits, cache_lock);
+            modified_size_limit = doDynamicResizeImpl(prev_limits, desired_limits, result_limits, cache_lock);
             chassert(result_limits.max_size && result_limits.max_elements);
         }
         catch (...)
@@ -1982,8 +1982,8 @@ FileCache::SizeLimits FileCache::doDynamicResize(const SizeLimits & current_limi
     if (modified_size_limit)
     {
         LOG_INFO(log, "Changed max_size from {} to {}, max_elements from {} to {}",
-                 current_limits.max_size, result_limits.max_size,
-                 current_limits.max_elements, result_limits.max_elements);
+                 prev_limits.max_size, result_limits.max_size,
+                 prev_limits.max_elements, result_limits.max_elements);
 
         chassert(result_limits.max_size == desired_limits.max_size);
         chassert(result_limits.max_elements == desired_limits.max_elements);
@@ -1995,8 +1995,8 @@ FileCache::SizeLimits FileCache::doDynamicResize(const SizeLimits & current_limi
             "`max_size` and `max_elements` settings will remain inconsistent with config.xml. "
             "Next attempt to update them will happen on the next config reload. "
             "You can trigger it with SYSTEM RELOAD CONFIG.",
-            current_limits.max_size, desired_limits.max_size,
-            current_limits.max_elements, desired_limits.max_elements);
+            prev_limits.max_size, desired_limits.max_size,
+            prev_limits.max_elements, desired_limits.max_elements);
     }
 
     chassert(main_priority->getSizeApprox() <= result_limits.max_size);
@@ -2013,10 +2013,10 @@ FileCache::SizeLimits FileCache::doDynamicResize(const SizeLimits & current_limi
 }
 
 bool FileCache::doDynamicResizeImpl(
-    const SizeLimits & current_limits,
+    const SizeLimits & prev_limits,
     const SizeLimits & desired_limits,
     SizeLimits & result_limits,
-    CacheStateGuard::Lock & lock)
+    CacheStateGuard::Lock & state_lock)
 {
     /// In order to not block cache for the duration of cache resize,
     /// we do:
@@ -2030,10 +2030,8 @@ bool FileCache::doDynamicResizeImpl(
     /// b. Release a cache lock.
     ///     1. Do actual eviction from filesystem.
 
-    EvictionCandidates eviction_candidates;
-
-    size_t current_size = main_priority->getSize(lock);
-    size_t current_elements_count = main_priority->getElementsCount(lock);
+    size_t current_size = main_priority->getSize(state_lock);
+    size_t current_elements_count = main_priority->getElementsCount(state_lock);
 
     size_t size_to_evict = current_size > desired_limits.max_size
         ? current_size - desired_limits.max_size
@@ -2042,34 +2040,17 @@ bool FileCache::doDynamicResizeImpl(
         ? current_elements_count - desired_limits.max_elements
         : 0;
 
-    auto eviction_info = main_priority->collectEvictionInfo(size_to_evict, elements_to_evict, nullptr, false, lock);
-    eviction_info->releaseHoldSpace(lock);
+    auto eviction_info = main_priority->collectEvictionInfo(
+        size_to_evict,
+        elements_to_evict,
+        /* reservee */nullptr,
+        /* is_total_space_cleanup */true,
+        state_lock);
 
-    if (size_to_evict || elements_to_evict)
-    {
-        lock.unlock();
+    chassert(!eviction_info->hasHoldSpace());
 
-        FileCacheReserveStat stat;
-        if (!main_priority->collectCandidatesForEviction(
-                *eviction_info,
-                stat,
-                eviction_candidates,
-                /* reservee */nullptr,
-                /* continue_from_last_eviction_pos */false,
-                /* max_candidates_size */0,
-                /* is_total_space_cleanup */false,
-                {},
-                cache_guard.readLock()))
-        {
-            result_limits = current_limits;
-            LOG_INFO(log, "Dynamic cache resize is not possible at the moment");
-            return false;
-        }
-
-        lock.lock();
-    }
-
-    if (eviction_candidates.size() == 0)
+    EvictionCandidates eviction_candidates;
+    if (!eviction_info->requiresEviction())
     {
         /// Nothing needs to be evicted,
         /// just modify the limits and we are done.
@@ -2078,7 +2059,7 @@ bool FileCache::doDynamicResizeImpl(
             desired_limits.max_size,
             desired_limits.max_elements,
             desired_limits.slru_size_ratio,
-            lock);
+            state_lock);
 
         result_limits = desired_limits;
 
@@ -2086,7 +2067,25 @@ bool FileCache::doDynamicResizeImpl(
         return true;
     }
 
-    lock.unlock();
+    state_lock.unlock();
+
+    FileCacheReserveStat stat;
+    if (!main_priority->collectCandidatesForEviction(
+            *eviction_info,
+            stat,
+            eviction_candidates,
+            /* reservee */nullptr,
+            /* continue_from_last_eviction_pos */false,
+            /* max_candidates_size */0,
+            /* is_total_space_cleanup */true,
+            {},
+            cache_guard.readLock()))
+    {
+        result_limits = prev_limits;
+        LOG_INFO(log, "Dynamic cache resize is not possible at the moment");
+        return false;
+    }
+
 
     {
         /// Remove only queue entries of eviction candidates.
@@ -2099,7 +2098,7 @@ bool FileCache::doDynamicResizeImpl(
         /// addition of the same file as part of a newly cached file segment.
     }
 
-    lock.lock();
+    state_lock.lock();
 
     /// Modify cache size limits.
     /// From this point cache eviction will follow them.
@@ -2107,29 +2106,18 @@ bool FileCache::doDynamicResizeImpl(
         desired_limits.max_size,
         desired_limits.max_elements,
         desired_limits.slru_size_ratio,
-        lock);
+        state_lock);
 
-    lock.unlock();
-
-    SCOPE_EXIT({
-        try
-        {
-            if (eviction_candidates.needFinalize())
-            {
-                eviction_candidates.afterEvictWrite(cache_guard.writeLock());
-            }
-        }
-        catch (...)
-        {
-            LOG_ERROR(
-                log, "Failed to finalize eviction candidates states: {}",
-                getCurrentExceptionMessage(true));
-            chassert(false);
-        }
-    });
+    state_lock.unlock();
 
     /// Do actual eviction from filesystem.
     eviction_candidates.evict();
+
+    {
+        auto lock = cache_guard.writeLock();
+        eviction_candidates.afterEvictWrite(lock);
+        IFileCachePriority::removeEntries(stat.total_stat.invalidated_entries, lock);
+    }
 
     auto failed_candidates = eviction_candidates.getFailedCandidates();
     if (failed_candidates.total_cache_size == 0)
@@ -2143,11 +2131,11 @@ bool FileCache::doDynamicResizeImpl(
     }
 
     result_limits.max_size = std::min(
-        current_limits.max_size,
+        prev_limits.max_size,
         desired_limits.max_size + failed_candidates.total_cache_size);
 
     result_limits.max_elements = std::min(
-        current_limits.max_elements,
+        prev_limits.max_elements,
         desired_limits.max_elements + failed_candidates.total_cache_elements);
 
     LOG_INFO(
@@ -2157,7 +2145,7 @@ bool FileCache::doDynamicResizeImpl(
         result_limits.max_size, result_limits.max_elements);
 
     auto cache_write_lock = cache_guard.writeLock();
-    lock.lock();
+    state_lock.lock();
 
     /// Increase the max size and max elements
     /// to the size and number of failed candidates.
@@ -2165,7 +2153,7 @@ bool FileCache::doDynamicResizeImpl(
         result_limits.max_size,
         result_limits.max_elements,
         result_limits.slru_size_ratio,
-        lock);
+        state_lock);
 
     /// Add failed candidates back to queue.
     for (const auto & [key_metadata, key_candidates, _] : failed_candidates.failed_candidates_per_key)
@@ -2198,7 +2186,7 @@ bool FileCache::doDynamicResizeImpl(
                 file_segment->getDownloadedSize(),
                 getCommonUser(),
                 cache_write_lock,
-                &lock,
+                &state_lock,
                 false);
 
             file_segment->setQueueIterator(main_priority_iterator);
