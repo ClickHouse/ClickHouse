@@ -294,15 +294,15 @@ void SerializationAggregateFunction::serializeTextEscaped(
 
 void SerializationAggregateFunction::deserializeBasedOnInput(IColumn & column, const FormatSettings & settings, String s) const
 {
-    if (settings.aggregate_function_input_format == DB::FormatSettings::AGGREGATE_FUNCTION_INPUT_FORMAT_STATE)
+    if (settings.aggregate_function_input_format == DB::FormatSettings::AggregateFunctionInputFormat::State)
     {
         deserializeFromString(function, column, s, version);
     }
-    else if (settings.aggregate_function_input_format == DB::FormatSettings::AGGREGATE_FUNCTION_INPUT_FORMAT_VALUE)
+    else if (settings.aggregate_function_input_format == DB::FormatSettings::AggregateFunctionInputFormat::Value)
     {
         deserializeFromValue(function, column, s, settings);
     }
-    else if (settings.aggregate_function_input_format == DB::FormatSettings::AGGREGATE_FUNCTION_INPUT_FORMAT_ARRAY)
+    else if (settings.aggregate_function_input_format == DB::FormatSettings::AggregateFunctionInputFormat::Array)
     {
         deserializeFromArray(function, column, s, settings);
     }
@@ -312,9 +312,9 @@ void SerializationAggregateFunction::deserializeBasedOnInput(IColumn & column, c
             ErrorCodes::BAD_ARGUMENTS,
             "Invalid value for aggregate_function_input_format: '{}'. Expected '{}', '{}', or '{}'",
             settings.aggregate_function_input_format,
-            DB::FormatSettings::AGGREGATE_FUNCTION_INPUT_FORMAT_STATE,
-            DB::FormatSettings::AGGREGATE_FUNCTION_INPUT_FORMAT_VALUE,
-            DB::FormatSettings::AGGREGATE_FUNCTION_INPUT_FORMAT_ARRAY);
+            DB::FormatSettings::AggregateFunctionInputFormat::State,
+            DB::FormatSettings::AggregateFunctionInputFormat::Value,
+            DB::FormatSettings::AggregateFunctionInputFormat::Array);
     }
 }
 void SerializationAggregateFunction::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const

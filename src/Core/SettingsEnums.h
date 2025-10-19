@@ -189,6 +189,8 @@ DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeOutputFormat, FormatSettings::DateTimeO
 
 DECLARE_SETTING_ENUM_WITH_RENAME(IntervalOutputFormat, FormatSettings::IntervalOutputFormat)
 
+DECLARE_SETTING_ENUM_WITH_RENAME(AggregateFunctionInputFormat, FormatSettings::AggregateFunctionInputFormat)
+
 DECLARE_SETTING_ENUM_WITH_RENAME(ParquetVersion, FormatSettings::ParquetVersion)
 
 DECLARE_SETTING_ENUM(LogsLevel)
