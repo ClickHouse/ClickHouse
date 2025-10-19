@@ -87,6 +87,7 @@
 #include <exception>
 #include <memory>
 #include <random>
+#include <filesystem>
 
 #include <boost/algorithm/string/predicate.hpp>
 
@@ -179,6 +180,7 @@ namespace Setting
     extern const SettingsString promql_database;
     extern const SettingsString promql_table;
     extern const SettingsFloatAuto promql_evaluation_time;
+    extern const SettingsBool into_outfile_create_parent_directories;
 }
 
 namespace ServerSetting
@@ -2037,6 +2039,8 @@ void executeQuery(
                 ? getIdentifierName(ast_query_with_output->format_ast)
                 : context->getDefaultFormat();
 
+            LOG_INFO(getLogger("executeQuery"), "Atleast inside the else if of function");
+
             WriteBuffer * out_buf = &ostr;
             if (ast_query_with_output && ast_query_with_output->out_file)
             {
@@ -2044,6 +2048,23 @@ void executeQuery(
                     throw Exception(ErrorCodes::INTO_OUTFILE_NOT_ALLOWED, "INTO OUTFILE is not allowed");
 
                 const auto & out_file = typeid_cast<const ASTLiteral &>(*ast_query_with_output->out_file).value.safeGet<std::string>();
+
+                const bool should_create_dirs = context->getSettingsRef()[Setting::into_outfile_create_parent_directories];
+                LOG_INFO(getLogger("executeQuery"), "INTO OUTFILE: file='{}', create_parent_directories={}", out_file, should_create_dirs);
+
+                if (should_create_dirs)
+                {
+                    std::filesystem::path file_path(out_file);
+                    std::filesystem::path parent_dir = file_path.parent_path();
+                    LOG_INFO(getLogger("executeQuery"), "Parent directory: '{}', exists={}", parent_dir.string(), std::filesystem::exists(parent_dir));
+
+                    if (!parent_dir.empty() && !std::filesystem::exists(parent_dir))
+                    {
+                        LOG_INFO(getLogger("executeQuery"), "Creating directories: '{}'", parent_dir.string());
+                        std::filesystem::create_directories(parent_dir);
+                        LOG_INFO(getLogger("executeQuery"), "Successfully created directories");
+                    }
+                }
 
                 std::string compression_method;
                 if (ast_query_with_output->compression)
