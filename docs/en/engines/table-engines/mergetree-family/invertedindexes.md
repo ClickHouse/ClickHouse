@@ -38,10 +38,8 @@ CREATE TABLE tab
     `str` String,
     INDEX text_idx(str) TYPE text(
                                 -- Mandatory parameters:
-                                tokenizer = 'default|ngram|split|no_op'
+                                tokenizer = splitByNonAlpha|splitByString(S)|ngrams(N)|array
                                 -- Optional parameters:
-                                [, ngram_size = N]
-                                [, separators = []]
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
                                 [, max_cardinality_for_embedded_postings = M]
@@ -54,17 +52,34 @@ ORDER BY key
 
 The `tokenizer` argument specifies the tokenizer:
 
-- `default` splits strings along non-alphanumeric ASCII characters.
-- `ngram` split strings into equally large n-grams.
-- `split` split strings along certain user-defined separator strings.
-- `no_op` performs no tokenization, i.e. every row value is a token.
+- `splitByNonAlpha` splits strings along non-alphanumeric ASCII characters (also see function [splitByNonAlpha](/sql-reference/functions/splitting-merging-functions.md/#splitByNonAlpha)).
+- `splitByString(S)` splits strings along certain user-defined separator strings `S` (also see function [splitByString](/sql-reference/functions/splitting-merging-functions.md/#splitByString)).
+  The separators can be specified using an optional parameter, for example, `tokenizer = splitByString([', ', '; ', '\n', '\\'])`.
+  Note that each string can consist of multiple characters (`', '` in the example).
+  The default separator list, if not specified explicitly (for example, `tokenizer = splitByString`), is a single whitespace `[' ']`.
+- `ngrams(N)` splits strings into equally large `N`-grams (also see function [ngrams](/sql-reference/functions/splitting-merging-functions.md/#ngrams)).
+  The ngram length can be specified using an optional integer parameter between 2 and 8, for example, `tokenizer = ngrams(3)`.
+  The default ngram size, if not specified explicitly (for example, `tokenizer = ngrams`), is 3.
+- `array` performs no tokenization, i.e. every row value is a token (also see function [array](/sql-reference/functions/array-functions.md/#array)).
+- `sparseGrams(MIN_N, MAX_N)` — splits a string into all possible N-grams with lengths ranging from `min_length` to `max_length`, inclusive.
+  Unlike `ngrams(N)`, which generates only fixed-length N-grams, `sparseGrams` produces a set of variable-length N-grams within the specified range, allowing for a more flexible representation of text context.
+  For example, `tokenizer = sparseGrams(2, 4)` will create all 2-, 3-, and 4-grams from the input string.
+
+:::note
+The `splitByString` tokenizer applies the split separators left-to-right.
+This can create ambiguities.
+For example, the separator strings `['%21', '%']` will cause `%21abc` to be tokenized as `['abc']`, whereas switching both separators strings `['%', '%21']` will output `['21abc']`.
+In the most cases, you want that matching prefers longer separators first.
+This can generally be done by passing the separator strings in order of descending length.
+If the separator strings happen to form a [prefix code](https://en.wikipedia.org/wiki/Prefix_code), they can be passed in arbitrary order.
+:::
 
 To test how the tokenizers split the input string, you can use ClickHouse's [tokens](/sql-reference/functions/splitting-merging-functions.md/#tokens) function:
 
 As an example,
 
 ```sql
-SELECT tokens('abc def', 'ngram', 3) AS tokens;
+SELECT tokens('abc def', 'ngrams', 3) AS tokens;
 ```
 
 returns
@@ -74,24 +89,6 @@ returns
 | ['abc','bc ','c d',' de','def'] |
 +---------------------------------+
 ```
-
-If you chose the `ngram` tokenizer, you can set the ngram length using the (optional) parameter `ngram_size`.
-If `ngram_size` is not specified, the default ngram size is 3.
-The smallest and largest possible ngram size are 2 and 8.
-
-If you chose the `split` tokenizer, you can set the separators using the (optional) parameter `separators`.
-The parameter expects a list of strings, for example, `separators = [', ', '; ', '\n', '\\']`.
-Note that each string can consist of multiple characters (`', '` in the example).
-If parameter `split` is not specified, a single whitespace `[' ']` is used by default.
-
-:::note
-The `split` tokenizer applies the split separators left-to-right.
-This can create ambiguities.
-For example, the separator strings `['%21', '%']` will cause `%21abc` to be tokenized as `['abc']`, whereas switching both separators strings `['%', '%21']` will output `['21abc']`.
-In the most cases, you want that matching prefers longer separators first.
-This can generally be done by passing the separator strings in order of descending length.
-If the separator strings happen to form a [prefix code](https://en.wikipedia.org/wiki/Prefix_code), they can be passed in arbitrary order.
-:::
 
 Text indexes in ClickHouse are implemented as [secondary indexes](/engines/table-engines/mergetree-family/mergetree.md/#skip-index-types).
 However, unlike other skipping indexes, text indexes have a default index GRANULARITY of 64.
@@ -118,7 +115,7 @@ Text indexes can be added to or removed from a column after the table has been c
 
 ```sql
 ALTER TABLE tab DROP INDEX text_idx;
-ALTER TABLE tab ADD INDEX text_idx(s) TYPE text(tokenizer = 'default');
+ALTER TABLE tab ADD INDEX text_idx(s) TYPE text(tokenizer = splitByNonAlpha);
 ```
 
 ## Using a Text Index {#using-a-text-index}
@@ -146,7 +143,7 @@ Example:
 SELECT * from tab WHERE str = 'Hello';
 ```
 
-The text index supports `=` and `!=`, yet equality and inequality search only make sense with the `no_op` tokenizer (which causes the index to store entire row values).
+The text index supports `=` and `!=`, yet equality and inequality search only make sense with the `array` tokenizer (which causes the index to store entire row values).
 
 #### `IN` and `NOT IN` {#functions-example-in-notin}
 
@@ -158,12 +155,12 @@ Example:
 SELECT * from tab WHERE str IN ('Hello', 'World');
 ```
 
-The same restrictions as for `=` and `!=` apply, i.e. `IN` and `NOT IN` only make sense in conjunction with the `no_op` tokenizer.
+The same restrictions as for `=` and `!=` apply, i.e. `IN` and `NOT IN` only make sense in conjunction with the `array` tokenizer.
 
 #### `LIKE`, `NOT LIKE` and `match` {#functions-example-like-notlike-match}
 
 :::note
-These functions currently use the text index for filtering only if the index tokenizer is either `default` or `ngram`.
+These functions currently use the text index for filtering only if the index tokenizer is either `splitByNonAlpha` or `ngrams`.
 :::
 
 In order to use `LIKE` [like](/sql-reference/functions/string-search-functions.md/#like), `NOT LIKE` ([notLike](/sql-reference/functions/string-search-functions.md/#notlike)), and the [match](/sql-reference/functions/string-search-functions.md/#match) function with text indexes, ClickHouse must be able to extract complete tokens from the search term.
@@ -224,18 +221,23 @@ SELECT count() FROM tab WHERE hasToken(comment, 'clickhouse');
 
 Functions `hasToken` and `hasTokenOrNull` are the most performant functions to use with the `text` index.
 
-#### `searchAny` and `searchAll` {#functions-example-searchany-searchall}
+#### `hasAnyTokens` and `hasAllTokens` {#functions-example-hasanytokens-hasalltokens}
 
-Functions [searchAny](/sql-reference/functions/string-search-functions.md/#searchany) and [searchAll](/sql-reference/functions/string-search-functions.md/#searchall) match against one or all of the given tokens.
+Functions [hasAnyTokens](/sql-reference/functions/string-search-functions.md/#hasanytokens) and [hasAllTokens](/sql-reference/functions/string-search-functions.md/#hasalltokens) match against one or all of the given tokens.
 
-Like `hasToken`, no tokenization of the search terms takes place.
+These two functions accept the search tokens as either a string which will be tokenized using the same tokenizer used for the index column, or as an array of already processed tokens to which no tokenization will be applied prior to searching.
+See the function documentation for more info.
 
 Example:
 
 ```sql
-SELECT count() FROM tab WHERE searchAny(comment, ['clickhouse', 'olap']);
+-- Search tokens passed as string argument
+SELECT count() FROM tab WHERE hasAnyTokens(comment, 'clickhouse olap');
+SELECT count() FROM tab WHERE hasAllTokens(comment, 'clickhouse olap');
 
-SELECT count() FROM tab WHERE searchAll(comment, ['clickhouse', 'olap']);
+-- Search tokens passed as Array(String)
+SELECT count() FROM tab WHERE hasAnyTokens(comment, ['clickhouse', 'olap']);
+SELECT count() FROM tab WHERE hasAllTokens(comment, ['clickhouse', 'olap']);
 ```
 
 #### `has` {#functions-example-has}
@@ -295,7 +297,7 @@ ORDER BY (post_id);
 Without a text index, finding posts with a specific keyword (e.g. `clickhouse`) requires scanning all entries:
 
 ```sql
-SELECT count() FROM posts WHERE has(keywords, 'clickhouse'); -- slow full-table scan - checks every keyword in every post 
+SELECT count() FROM posts WHERE has(keywords, 'clickhouse'); -- slow full-table scan - checks every keyword in every post
 ```
 
 As the platform grows, this becomes increasingly slow because the query must examine every keywords array in every row.
@@ -303,7 +305,7 @@ As the platform grows, this becomes increasingly slow because the query must exa
 To overcome this performance issue, we can define a text index for the `keywords` that creates a search-optimized structure that pre-processes all keywords, enabling instant lookups:
 
 ```sql
-ALTER TABLE posts ADD INDEX keywords_idx(keywords) TYPE text(tokenizer = 'default');
+ALTER TABLE posts ADD INDEX keywords_idx(keywords) TYPE text(tokenizer = splitByNonAlpha);
 ```
 
 :::note
@@ -352,13 +354,13 @@ The solution is creating a text index for the [Map](/sql-reference/data-types/ma
 Use [mapKeys](/sql-reference/functions/tuple-map-functions.md/#mapkeys) to create a text index when you need to find logs by field names or attribute types:
 
 ```sql
-ALTER TABLE logs ADD INDEX attributes_keys_idx mapKeys(attributes) TYPE text(tokenizer = 'no_op');
+ALTER TABLE logs ADD INDEX attributes_keys_idx mapKeys(attributes) TYPE text(tokenizer = array);
 ```
 
 Use [mapValues](/sql-reference/functions/tuple-map-functions.md/#mapvalues) to create a text index when you need to search within the actual content of attributes:
 
 ```sql
-ALTER TABLE logs ADD INDEX attributes_vals_idx mapValues(attributes) TYPE text(tokenizer = 'no_op');
+ALTER TABLE logs ADD INDEX attributes_vals_idx mapValues(attributes) TYPE text(tokenizer = array);
 ```
 
 :::note
@@ -413,8 +415,8 @@ If the cardinality of a posting list is less than 16 (configurable by parameter 
 
 ### Direct read {#direct-read}
 
-Certain types of text queries can be sped up significantly by an optimization called "direct read".
-More specifically, if the SELECT query does _not_ project from the text column, the optimization can be applied.
+Certain types of text queries can be speed up significantly by an optimization called "direct read".
+More specifically, the optimization can be applied if the SELECT query does _not_ project from the text column.
 
 Example:
 
@@ -424,7 +426,65 @@ FROM [...]
 WHERE string_search_function(column_with_text_index)
 ```
 
-#### Supported functions {#supported-functions}
+The direct read optimization in ClickHouse answers the query exclusively using the text index (i.e., text index lookups) without accessing the underlying text column.
+Text index lookups read relatively little data and are therefore much faster than usual skip indexes in ClickHouse (which do a skip index lookup, followed by loading and filtering surviving granules).
+
+Direct read is controlled by two settings:
+- Setting [query_plan_direct_read_from_text_index](../../../operations/settings/settings#query_plan_direct_read_from_text_index) (default: 1) which specifies if direct read is generally enabled.
+- Setting [use_skip_indexes_on_data_read](../../../operations/settings/settings#use_skip_indexes_on_data_read) (default: 1) which is another prerequisite for direct read. Note that on ClickHouse databases with [compatibility](../../../operations/settings/settings#compatibility) < 25.10, `use_skip_indexes_on_data_read` is disabled, so you either need to raise the compatibility setting value or `SET use_skip_indexes_on_data_read = 1` explicitly.
+
+**Supported functions**
+The direct read optimization supports functions `hasToken`, `hasAllTokens`, and `hasAnyTokens`.
+These functions can also be combined by AND, OR, and NOT operators.
+The WHERE clause can also contain additional non-text-search-functions filters (for text columns or other columns) - in that case, the direct read optimization will still be used but less effective (it only applies to the supported text search functions).
+
+To understand a query utilizes direct read, run the query with `EXPLAIN PLAN actions = 1`.
+As an example, a query with disabled direct read
+
+```sql
+EXPLAIN PLAN actions = 1
+SELECT count()
+FROM tab
+WHERE hasToken(col, 'some_token')
+SETTINGS query_plan_direct_read_from_text_index = 0;
+```
+
+returns
+
+```text
+[...]
+Filter ((WHERE + Change column names to column identifiers))
+Filter column: hasToken(__table1.col, 'some_token'_String) (removed)
+Actions: INPUT : 0 -> col String : 0
+         COLUMN Const(String) -> 'some_token'_String String : 1
+         FUNCTION hasToken(col :: 0, 'some_token'_String :: 1) -> hasToken(__table1.col, 'some_token'_String) UInt8 : 2
+[...]
+```
+
+whereas the same query run with `query_plan_direct_read_from_text_index = 1`
+
+```sql
+EXPLAIN PLAN actions = 1
+SELECT count()
+FROM tab
+WHERE hasToken(col, 'some_token')
+SETTINGS query_plan_direct_read_from_text_index = 1;
+```
+
+returns
+
+```text
+[...]
+Expression (Before GROUP BY)
+Positions:
+  Filter
+  Filter column: __text_index_idx_hasToken_94cc2a813036b453d84b6fb344a63ad3 (removed)
+  Actions: INPUT :: 0 -> __text_index_idx_hasToken_94cc2a813036b453d84b6fb344a63ad3 UInt8 : 0
+[...]
+```
+
+The second EXPLAIN PLAN output contains a virtual column `__text_index_<index_name>_<function_name>_<id>`.
+If this column is present, then direct read is used.
 
 ## Example: Hackernews dataset {#hacker-news-dataset}
 

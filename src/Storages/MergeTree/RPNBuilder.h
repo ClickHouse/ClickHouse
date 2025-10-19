@@ -198,93 +198,17 @@ public:
     using RPNElements = std::vector<RPNElement>;
     using ExtractAtomFromTreeFunction = std::function<bool (const RPNBuilderTreeNode & node, RPNElement & out)>;
 
-    explicit RPNBuilder(const ActionsDAG::Node * filter_actions_dag_node,
+    explicit RPNBuilder(
+        const ActionsDAG::Node * filter_actions_dag_node,
         ContextPtr query_context_,
-        const ExtractAtomFromTreeFunction & extract_atom_from_tree_function_)
-        : extract_atom_from_tree_function(extract_atom_from_tree_function_)
-    {
-        RPNBuilderTreeContext tree_context(query_context_);
-        traverseTree(RPNBuilderTreeNode(filter_actions_dag_node, tree_context));
-    }
+        const ExtractAtomFromTreeFunction & extract_atom_from_tree_function_);
 
-    explicit RPNBuilder(const RPNBuilderTreeNode & node,
-        const ExtractAtomFromTreeFunction & extract_atom_from_tree_function_)
-        : extract_atom_from_tree_function(extract_atom_from_tree_function_)
-    {
-        traverseTree(node);
-    }
-
-    RPNElements && extractRPN() && { return std::move(rpn_elements); }
+    explicit RPNBuilder(const RPNBuilderTreeNode & node, const ExtractAtomFromTreeFunction & extract_atom_from_tree_function_);
+    RPNElements && extractRPN() &&;
 
 private:
-    void traverseTree(const RPNBuilderTreeNode & node)
-    {
-        RPNElement element;
-
-        if (node.isFunction())
-        {
-            auto function_node = node.toFunctionNode();
-
-            if (extractLogicalOperatorFromTree(function_node, element))
-            {
-                size_t arguments_size = function_node.getArgumentsSize();
-
-                for (size_t argument_index = 0; argument_index < arguments_size; ++argument_index)
-                {
-                    auto function_node_argument = function_node.getArgumentAt(argument_index);
-                    traverseTree(function_node_argument);
-
-                    /** The first part of the condition is for the correct support of `and` and `or` functions of arbitrary arity
-                      * - in this case `n - 1` elements are added (where `n` is the number of arguments).
-                      */
-                    if (argument_index != 0 || element.function == RPNElement::FUNCTION_NOT)
-                        rpn_elements.emplace_back(std::move(element)); /// NOLINT(bugprone-use-after-move,hicpp-invalid-access-moved)
-                }
-
-                if (arguments_size == 0 && function_node.getFunctionName() == "indexHint")
-                {
-                    element.function = RPNElement::ALWAYS_TRUE;
-                    rpn_elements.emplace_back(std::move(element));
-                }
-
-                return;
-            }
-        }
-
-        if (!extract_atom_from_tree_function(node, element))
-            element.function = RPNElement::FUNCTION_UNKNOWN;
-
-        rpn_elements.emplace_back(std::move(element));
-    }
-
-    bool extractLogicalOperatorFromTree(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out)
-    {
-        /** Functions AND, OR, NOT.
-          * Also a special function `indexHint` - works as if instead of calling a function there are just parentheses
-          * (or, the same thing - calling the function `and` from one argument).
-          */
-
-        auto function_name = function_node.getFunctionName();
-        if (function_name == "not")
-        {
-            if (function_node.getArgumentsSize() != 1)
-                return false;
-
-            out.function = RPNElement::FUNCTION_NOT;
-        }
-        else
-        {
-            if (function_name == "and" || function_name == "indexHint")
-                out.function = RPNElement::FUNCTION_AND;
-            else if (function_name == "or")
-                out.function = RPNElement::FUNCTION_OR;
-            else
-                return false;
-        }
-
-        return true;
-    }
-
+    void traverseTree(const RPNBuilderTreeNode & node);
+    bool extractLogicalOperatorFromTree(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out);
     const ExtractAtomFromTreeFunction & extract_atom_from_tree_function;
     RPNElements rpn_elements;
 };

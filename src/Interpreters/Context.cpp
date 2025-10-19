@@ -4077,6 +4077,14 @@ BackgroundSchedulePool & Context::getMessageBrokerSchedulePool() const
     return *shared->message_broker_schedule_pool;
 }
 
+void Context::configureServerWideThrottling()
+{
+    if (shared->application_type == ApplicationType::LOCAL || shared->application_type == ApplicationType::SERVER || shared->application_type == ApplicationType::DISKS)
+        shared->server_settings.loadSettingsFromConfig(Poco::Util::Application::instance().config());
+    if (shared->application_type == ApplicationType::SERVER)
+        shared->configureServerWideThrottling();
+}
+
 ThrottlerPtr Context::getReplicatedFetchesThrottler() const
 {
     return shared->replicated_fetches_throttler;
@@ -4403,6 +4411,16 @@ UInt32 Context::getZooKeeperSessionUptime() const
     if (!shared->zookeeper || shared->zookeeper->expired())
         return 0;
     return shared->zookeeper->getSessionUptime();
+}
+
+void Context::reconnectZooKeeper(const String & reason) const
+{
+    std::lock_guard lock(shared->zookeeper_mutex);
+    if (shared->zookeeper)
+    {
+        shared->zookeeper->finalize(reason);
+        LOG_INFO(shared->log, "ZooKeeper connection closed: {}", reason);
+    }
 }
 
 void Context::handleSystemZooKeeperConnectionLogAfterInitializationIfNeeded()
@@ -5031,18 +5049,22 @@ void Context::initializeTraceCollector()
 /// Call after unexpected crash happen.
 void Context::handleCrash() const
 {
-    std::lock_guard<std::mutex> lock(mutex_shared_context);
-    if (!shared)
-        return;
-
     std::optional<SystemLogs> system_logs;
     {
-        SharedLockGuard lock2(shared->mutex);
-        if (!shared->system_logs)
+        std::lock_guard<std::mutex> lock(mutex_shared_context);
+        if (!shared)
             return;
-        system_logs.emplace(*shared->system_logs);
+
+        {
+            SharedLockGuard lock2(shared->mutex);
+            if (!shared->system_logs)
+                return;
+            system_logs.emplace(*shared->system_logs);
+        }
     }
 
+    /// Must be called without mutex_shared_context to avoid deadlock:
+    /// handleCrash() -> SystemLog<...>::prepareTable -> keeper -> Context::getZooKeeperLog() -> mutex_shared_context
     system_logs->handleCrash();
 }
 
@@ -5864,8 +5886,6 @@ void Context::setApplicationType(ApplicationType type)
     if (type == ApplicationType::LOCAL || type == ApplicationType::SERVER || type == ApplicationType::DISKS)
         shared->server_settings.loadSettingsFromConfig(Poco::Util::Application::instance().config());
 
-    if (type == ApplicationType::SERVER)
-        shared->configureServerWideThrottling();
 }
 
 void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & config)
