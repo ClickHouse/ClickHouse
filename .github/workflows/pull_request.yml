@@ -48,6 +48,11 @@ jobs:
         run: |
           echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
+
+          echo "-------------"
+          cat ./ci/tmp/workflow_status.json
+          echo "-------------"
+
           set -o pipefail
           if command -v ts &> /dev/null; then
             python3 -m praktika run 'Config Workflow' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
