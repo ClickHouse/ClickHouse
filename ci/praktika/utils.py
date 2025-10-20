@@ -609,6 +609,7 @@ class Utils:
 
     @staticmethod
     def traverse_path(path, file_suffixes=None, sorted=False, not_exists_ok=False):
+        print(f"traverse_path {path}")
         res = []
 
         def is_valid_file(file):

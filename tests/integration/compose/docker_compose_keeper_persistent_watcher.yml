@@ -1,0 +1,5 @@
+services:
+  keeper_java:
+    image: clickhouse/keeper-persistent-watcher
+    # to keep container running
+    command: sleep infinity

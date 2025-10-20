@@ -331,6 +331,13 @@ def check_postgresql_java_client_is_available(postgresql_java_client_id):
     p.communicate()
     return p.returncode == 0
 
+def check_keeper_persistent_watcher_is_available(keeper_persistent_watcher_id):
+    p = subprocess.Popen(
+        docker_exec(keeper_persistent_watcher_id, "java", "-version"),
+        stdout=subprocess.PIPE,
+    )
+    p.communicate()
+    return p.returncode == 0
 
 def check_mysql_dotnet_client_is_available(postgresql_java_client_id):
     p = subprocess.Popen(
@@ -631,6 +638,7 @@ class ClickHouseCluster:
         self.with_postgres = False
         self.with_postgres_cluster = False
         self.with_postgresql_java_client = False
+        self.with_keeper_persistent_watcher = False
         self.with_mysql_dotnet_client = False
         self.with_kafka = False
         self.with_kafka_sasl = False
@@ -797,6 +805,10 @@ class ClickHouseCluster:
         self.mysql_dotnet_client_host = "dotnet"
         self.mysql_dotnet_client_docker_id = self.get_instance_docker_id(
             self.mysql_dotnet_client_host
+        )
+
+        self.keeper_persistent_watcher_docker_id = self.get_instance_docker_id(
+            "keeper_java"
         )
 
         # available when with_mysql_client == True
@@ -1430,6 +1442,25 @@ class ClickHouseCluster:
             p.join(docker_compose_yml_dir, "docker_compose_postgresql_java_client.yml"),
         )
 
+    def setup_keeper_persistent_watcher_cmd(
+        self, instance, env_variables, docker_compose_yml_dir
+    ):
+        self.with_keeper_persistent_watcher = True
+        self.base_cmd.extend(
+            [
+                "--file",
+                p.join(
+                    docker_compose_yml_dir, "docker_compose_keeper_persistent_watcher.yml"
+                ),
+            ]
+        )
+        self.base_keeper_persistent_watcher_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_keeper_persistent_watcher.yml"),
+        )
+
     def setup_mysql_dotnet_client_cmd(
         self, instance, env_variables, docker_compose_yml_dir
     ):
@@ -1916,6 +1947,7 @@ class ClickHouseCluster:
         with_postgres=False,
         with_postgres_cluster=False,
         with_postgresql_java_client=False,
+        with_keeper_persistent_watcher=False,
         with_mysql_dotnet_client=False,
         clickhouse_log_file=CLICKHOUSE_LOG_FILE,
         clickhouse_error_log_file=CLICKHOUSE_ERROR_LOG_FILE,
@@ -2083,6 +2115,7 @@ class ClickHouseCluster:
             with_postgres=with_postgres,
             with_postgres_cluster=with_postgres_cluster,
             with_postgresql_java_client=with_postgresql_java_client,
+            with_keeper_persistent_watcher=with_keeper_persistent_watcher,
             with_mysql_dotnet_client=with_mysql_dotnet_client,
             clickhouse_start_command=clickhouse_start_command,
             clickhouse_start_extra_args=extra_args,
@@ -2196,6 +2229,13 @@ class ClickHouseCluster:
         if with_mysql_dotnet_client and not self.with_mysql_dotnet_client:
             cmds.append(
                 self.setup_mysql_dotnet_client_cmd(
+                    instance, env_variables, docker_compose_yml_dir
+                )
+            )
+
+        if with_keeper_persistent_watcher and not self.with_keeper_persistent_watcher:
+            cmds.append(
+                self.setup_keeper_persistent_watcher_cmd(
                     instance, env_variables, docker_compose_yml_dir
                 )
             )
@@ -2876,6 +2916,21 @@ class ClickHouseCluster:
                 time.sleep(0.5)
         raise Exception("Cannot wait PostgreSQL Java Client container")
 
+    def wait_keeper_persistent_watcher(self, timeout=180):
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                if check_keeper_persistent_watcher_is_available(
+                    self.keeper_persistent_watcher_id
+                ):
+                    logging.debug("Keeper Persistent Watcher is available")
+                    return True
+                time.sleep(0.5)
+            except Exception as ex:
+                logging.debug("Can't find Keeper Persistent Watcher " + str(ex))
+                time.sleep(0.5)
+        raise Exception("Cannot wait Keeper Persistent Watcher container")
+
     def wait_mysql_dotnet_client(self, timeout=30):
         start = time.time()
         while time.time() - start < timeout:
@@ -3549,6 +3604,14 @@ class ClickHouseCluster:
                 self.up_called = True
                 self.wait_postgresql_java_client()
 
+            if self.with_keeper_persistent_watcher and self.base_keeper_persistent_watcher_cmd:
+                logging.debug("Setup Keeper Persistent Watches")
+                subprocess_check_call(
+                    self.base_keeper_persistent_watcher_cmd + common_opts
+                )
+                self.up_called = True
+                self.wait_keeper_persistent_watcher()
+
             if (
                 self.with_mysql_dotnet_client
                 and self.base_mysql_dotnet_client_cmd
@@ -4170,6 +4233,7 @@ class ClickHouseInstance:
         with_postgres,
         with_postgres_cluster,
         with_postgresql_java_client,
+        with_keeper_persistent_watcher,
         with_mysql_dotnet_client,
         clickhouse_start_command=CLICKHOUSE_START_COMMAND,
         clickhouse_start_extra_args="",
@@ -4248,6 +4312,7 @@ class ClickHouseInstance:
         self.with_postgres = with_postgres
         self.with_postgres_cluster = with_postgres_cluster
         self.with_postgresql_java_client = with_postgresql_java_client
+        self.with_keeper_persistent_watcher = with_keeper_persistent_watcher
         self.with_mysql_dotnet_client = with_mysql_dotnet_client
         self.with_kafka = with_kafka
         self.with_kafka_sasl = with_kafka_sasl
