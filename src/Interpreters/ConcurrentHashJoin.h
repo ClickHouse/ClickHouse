@@ -100,7 +100,6 @@ public:
         std::mutex mutex;
         std::unique_ptr<HashJoin> data;
         bool space_was_preallocated = false;
-        std::atomic<bool> has_non_joined_rows{false};
     };
 
     friend class NotJoinedHash;
