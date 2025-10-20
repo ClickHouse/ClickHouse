@@ -3217,7 +3217,7 @@ void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
 
         if (lim_info.is_limit_length_negative && lim_info.fractional_offset > 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Negative Limits can't have a fractional Offset");
-        
+
         if (lim_info.is_limit_offset_negative && lim_info.fractional_limit > 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Fractional Limits can't have a negative Offset");
 
@@ -3390,7 +3390,7 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
 
         if (lim_info.is_limit_length_negative && lim_info.fractional_offset > 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Negative Limits can't have a fractional Offset");
-        
+
         if (lim_info.is_limit_offset_negative && lim_info.fractional_limit > 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Fractional Limits can't have a negative Offset");
 

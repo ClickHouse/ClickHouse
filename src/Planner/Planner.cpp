@@ -1057,7 +1057,7 @@ void addPreliminaryLimitStep(
 
     if (is_limit_length_negative && fractional_offset > 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Negative Limits can't have a fractional Offset");
-    
+
     if (is_limit_offset_negative && fractional_limit > 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Fractional Limits can't have a negative Offset");
 
@@ -1345,7 +1345,7 @@ void addLimitStep(
 
     if (is_limit_length_negative && fractional_offset > 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Negative Limits can't have a fractional Offset");
-    
+
     if (is_limit_offset_negative && fractional_limit > 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Fractional Limits can't have a negative Offset");
 
