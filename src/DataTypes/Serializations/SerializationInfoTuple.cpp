@@ -28,7 +28,7 @@ SerializationInfoTuple::SerializationInfoTuple(MutableSerializationInfos elems_,
 
 bool SerializationInfoTuple::hasCustomSerialization() const
 {
-    return std::any_of(elems.begin(), elems.end(), [](const auto & elem) { return elem->hasCustomSerialization(); });
+    return SerializationInfo::hasCustomSerialization() || std::any_of(elems.begin(), elems.end(), [](const auto & elem) { return elem->hasCustomSerialization(); });
 }
 
 bool SerializationInfoTuple::structureEquals(const SerializationInfo & rhs) const

@@ -12,6 +12,8 @@
 #include <algorithm>
 #include <bit>
 
+#include "ColumnReplicated.h"
+
 
 namespace DB
 {
@@ -908,6 +910,9 @@ ColumnPtr recursiveRemoveSparse(const ColumnPtr & column)
 {
     if (!column)
         return column;
+
+    if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(column.get()))
+        return ColumnReplicated::create(recursiveRemoveSparse(column_replicated->getNestedColumn()), column_replicated->getIndexesColumn());
 
     if (const auto * column_tuple = typeid_cast<const ColumnTuple *>(column.get()))
     {

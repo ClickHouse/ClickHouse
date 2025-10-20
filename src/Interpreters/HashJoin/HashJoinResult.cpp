@@ -75,7 +75,7 @@ static ColumnWithTypeAndName copyLeftKeyColumnToRight(
 
 static void replicateColumnLazily(ColumnPtr & column, const IColumn::Offsets & offsets, const ColumnPtr & indexes)
 {
-    if (column->isConst())
+    if (column->isConst() || column->isReplicated())
         column = column->replicate(offsets);
     else
         column = ColumnReplicated::create(column, indexes);
@@ -143,8 +143,6 @@ static void appendRightColumns(
         auto columns_to_replicate = block.getColumns();
         if (properties.enable_lazy_columns_replication)
         {
-            LOG_DEBUG(getLogger("JOIN"), "Replicate columns lazily");
-
             ColumnPtr indexes = convertOffsetsToIndexes(offsets);
             for (size_t i = 0; i < existing_columns; ++i)
                 replicateColumnLazily(columns_to_replicate[i], offsets, indexes);
@@ -153,7 +151,6 @@ static void appendRightColumns(
         }
         else
         {
-            LOG_DEBUG(getLogger("JOIN"), "Replicate columns");
             for (size_t i = 0; i < existing_columns; ++i)
                 columns_to_replicate[i] = columns_to_replicate[i]->replicate(offsets);
             for (size_t pos : right_keys_to_replicate)

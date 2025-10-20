@@ -42,6 +42,15 @@ MergeSorter::MergeSorter(SharedHeader header, Chunks chunks_, SortDescription & 
         /// Convert to full column, because some cursors expect non-contant columns
         convertToFullIfConst(chunk);
 
+        size_t num_rows = chunk.getNumRows();
+        auto columns = chunk.detachColumns();
+        for (const auto & column_desc : description)
+        {
+            size_t column_number = header->getPositionByName(column_desc.column_name);
+            columns[column_number] = columns[column_number]->convertToFullColumnIfReplicated();
+        }
+        chunk.setColumns(std::move(columns), num_rows);
+
         cursors.emplace_back(*header, chunk.getColumns(), chunk.getNumRows(), description, chunk_index);
         has_collation |= cursors.back().has_collation;
 

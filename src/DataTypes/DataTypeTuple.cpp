@@ -25,6 +25,8 @@
 
 #include <ranges>
 
+#include "Serializations/SerializationReplicated.h"
+
 namespace DB
 {
 
@@ -210,6 +212,9 @@ MutableColumnPtr DataTypeTuple::createColumn(const ISerialization & serializatio
     while (const auto * serialization_wrapper = dynamic_cast<const SerializationWrapper *>(current_serialization))
         current_serialization = serialization_wrapper->getNested().get();
 
+    if (const auto * serialization_replicated = typeid_cast<const SerializationReplicated *>(current_serialization))
+        return ColumnReplicated::create(createColumn(*serialization_replicated->getNested()), ColumnUInt8::create());
+
     const auto * serialization_tuple = typeid_cast<const SerializationTuple *>(current_serialization);
     if (!serialization_tuple)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected serialization to create column of type Tuple");
@@ -374,7 +379,7 @@ SerializationPtr DataTypeTuple::getSerialization(const SerializationInfo & info)
         serializations[i] = std::make_shared<SerializationNamed>(serialization, elem_name, SubstreamType::TupleElement);
     }
 
-    return std::make_shared<SerializationTuple>(std::move(serializations), has_explicit_names);
+    return IDataType::getSerialization(info.getKindStack(), std::make_shared<SerializationTuple>(std::move(serializations), has_explicit_names));
 }
 
 MutableSerializationInfoPtr DataTypeTuple::createSerializationInfo(const SerializationInfoSettings & settings) const

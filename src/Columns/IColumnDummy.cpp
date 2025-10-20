@@ -83,7 +83,7 @@ ColumnPtr IColumnDummy::index(const IColumn & indexes, size_t limit) const
     if (indexes.size() < limit)
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of indexes is less than required.");
 
-    return cloneDummy(limit ? limit : s);
+    return cloneDummy(limit ? limit : indexes.size());
 }
 
 void IColumnDummy::getPermutation(IColumn::PermutationSortDirection /*direction*/, IColumn::PermutationSortStability /*stability*/,

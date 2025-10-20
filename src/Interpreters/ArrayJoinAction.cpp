@@ -151,7 +151,8 @@ ArrayJoinResultIterator::ArrayJoinResultIterator(const ArrayJoinAction * array_j
     const auto & function_array_resize = array_join->function_array_resize;
     const auto & function_builder = array_join->function_builder;
 
-    any_array_map_ptr = block.getByName(*columns.begin()).column->convertToFullColumnIfConst();
+    /// TODO: avoid convertToFullColumnIfReplicated
+    any_array_map_ptr = block.getByName(*columns.begin()).column->convertToFullColumnIfConst()->convertToFullColumnIfReplicated();
     any_array = getArrayJoinColumnRawPtr(any_array_map_ptr);
     if (!any_array)
         throw Exception(ErrorCodes::TYPE_MISMATCH, "ARRAY JOIN requires array or map argument");
@@ -284,7 +285,7 @@ Block ArrayJoinResultIterator::next()
         }
         else
         {
-            if (enable_lazy_columns_replication && !current.column->isConst())
+            if (enable_lazy_columns_replication && !current.column->isConst() && !current.column->isReplicated())
             {
                 if (!indexes_for_lazy_replication)
                     indexes_for_lazy_replication = convertOffsetsToIndexes(cut_any_array->getOffsets());

@@ -13,6 +13,13 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+ColumnReplicated::ColumnReplicated(MutableColumnPtr && nested_column_)
+    : nested_column(std::move(nested_column_))
+{
+    indexes.insertIndexesRange(0, nested_column->size());
+    LOG_DEBUG(getLogger("ColumnReplicated"), "Create over {}", nested_column->getName());
+}
+
 ColumnReplicated::ColumnReplicated(MutableColumnPtr && nested_column_, MutableColumnPtr && indexes_)
     : nested_column(std::move(nested_column_))
     , indexes(std::move(indexes_))
@@ -117,7 +124,7 @@ StringRef ColumnReplicated::getDataAt(size_t n) const
 
 ColumnPtr ColumnReplicated::convertToFullColumnIfReplicated() const
 {
-    LOG_DEBUG(getLogger("ColumnReplicated"), "Convert to full");
+    LOG_DEBUG(getLogger("ColumnReplicated"), "Convert {} to full", nested_column->getName());
     return nested_column->index(*indexes.getIndexes(), 0);
 }
 
@@ -180,14 +187,14 @@ void ColumnReplicated::doInsertRangeFrom(const IColumn & src, size_t start, size
 
     if (const auto * src_replicated = typeid_cast<const ColumnReplicated *>(&src))
     {
-        std::unordered_map<size_t, size_t> src_index_to_new_index;
+        auto & indexes_match = insertion_cache[src_replicated];
         auto insert = [&](size_t, size_t src_index)
         {
-            auto it = src_index_to_new_index.find(src_index);
-            if (it == src_index_to_new_index.end())
+            auto it = indexes_match.find(src_index);
+            if (it == indexes_match.end())
             {
                 nested_column->insertFrom(*src_replicated->nested_column, src_index);
-                it = src_index_to_new_index.emplace(src_index, nested_column->size() - 1).first;
+                it = indexes_match.emplace(src_index, nested_column->size() - 1).first;
             }
 
             indexes.insertIndex(it->second);
@@ -227,11 +234,23 @@ void ColumnReplicated::doInsertFrom(const IColumn & src, size_t n)
 #endif
 {
     if (const auto * src_replicated = typeid_cast<const ColumnReplicated *>(&src))
-        nested_column->insertFrom(*src_replicated->nested_column, src_replicated->indexes.getIndexAt(n));
-    else
-        nested_column->insertFrom(src, n);
+    {
+        auto & indexes_match = insertion_cache[src_replicated];
+        auto src_index = src_replicated->indexes.getIndexAt(n);
+        auto it = indexes_match.find(src_index);
+        if (it == indexes_match.end())
+        {
+            nested_column->insertFrom(*src_replicated->nested_column, src_index);
+            it = indexes_match.emplace(src_index, nested_column->size() - 1).first;
+        }
 
-    indexes.insertIndex(nested_column->size() - 1);
+        indexes.insertIndex(it->second);
+    }
+    else
+    {
+        nested_column->insertFrom(src, n);
+        indexes.insertIndex(nested_column->size() - 1);
+    }
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -241,11 +260,23 @@ void ColumnReplicated::doInsertManyFrom(const IColumn & src, size_t n, size_t le
 #endif
 {
     if (const auto * src_replicated = typeid_cast<const ColumnReplicated *>(&src))
-        nested_column->insertFrom(*src_replicated->nested_column, src_replicated->indexes.getIndexAt(n));
-    else
-        nested_column->insertFrom(src, n);
+    {
+        auto & indexes_match = insertion_cache[src_replicated];
+        auto src_index = src_replicated->indexes.getIndexAt(n);
+        auto it = indexes_match.find(src_index);
+        if (it == indexes_match.end())
+        {
+            nested_column->insertFrom(*src_replicated->nested_column, src_index);
+            it = indexes_match.emplace(src_index, nested_column->size() - 1).first;
+        }
 
-    indexes.insertManyIndexes(nested_column->size() - 1, length);
+        indexes.insertManyIndexes(it->second, length);
+    }
+    else
+    {
+        nested_column->insertFrom(src, n);
+        indexes.insertManyIndexes(nested_column->size() - 1, length);
+    }
 }
 
 void ColumnReplicated::insertDefault()
@@ -594,7 +625,7 @@ bool ColumnReplicated::structureEquals(const IColumn & rhs) const
 {
     if (const auto * rhs_replicated = typeid_cast<const ColumnReplicated *>(&rhs))
         return nested_column->structureEquals(*rhs_replicated->nested_column);
-    return nested_column->structureEquals(rhs);
+    return false;
 }
 
 void ColumnReplicated::takeDynamicStructureFromSourceColumns(const Columns & source_columns)

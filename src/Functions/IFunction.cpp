@@ -441,6 +441,7 @@ ColumnPtr IExecutableFunction::execute(
     {
         ColumnPtr common_replicated_indexes;
         bool has_full_columns = false;
+        size_t nested_column_size = 0;
         for (const auto & argument : arguments)
         {
             if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(argument.column.get()))
@@ -448,6 +449,7 @@ ColumnPtr IExecutableFunction::execute(
                 if (!common_replicated_indexes)
                 {
                     common_replicated_indexes = column_replicated->getIndexesColumn();
+                    nested_column_size = column_replicated->getNestedColumn()->size();
                 }
                 else if (common_replicated_indexes != column_replicated->getIndexesColumn())
                 {
@@ -475,8 +477,12 @@ ColumnPtr IExecutableFunction::execute(
                 argument.column = column_replicated->getNestedColumn();
         }
 
-        auto result = executeWithoutReplicatedColumns(arguments_without_replicated, result_type, input_rows_count, dry_run);
-        return ColumnReplicated::create(result, common_replicated_indexes);
+        auto result = executeWithoutReplicatedColumns(arguments_without_replicated, result_type, nested_column_size, dry_run);
+
+        ColumnPtr resized_indexes = input_rows_count == common_replicated_indexes->size() ? common_replicated_indexes : common_replicated_indexes->cloneResized(input_rows_count);
+        if (isColumnConst(*result))
+            return result->index(*resized_indexes, 0);
+        return ColumnReplicated::create(result, resized_indexes);
     }
 
     return executeWithoutReplicatedColumns(arguments, result_type, input_rows_count, dry_run);

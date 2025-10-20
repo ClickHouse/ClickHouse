@@ -18,6 +18,7 @@ class ColumnReplicated final : public COWHelper<IColumnHelper<ColumnReplicated>,
 private:
     friend class COWHelper<IColumnHelper<ColumnReplicated>, ColumnReplicated>;
 
+    ColumnReplicated(MutableColumnPtr && nested_column_);
     ColumnReplicated(MutableColumnPtr && nested_column_, MutableColumnPtr && indexes_);
     ColumnReplicated(MutableColumnPtr && nested_column_, ColumnIndex && indexes_);
     ColumnReplicated(const ColumnReplicated &) = default;
@@ -31,9 +32,19 @@ public:
         return Base::create(nested_column_->assumeMutable(), indexes_->assumeMutable());
     }
 
+    static Ptr create(const ColumnPtr & nested_column_)
+    {
+        return Base::create(nested_column_->assumeMutable());
+    }
+
     static MutablePtr create(MutableColumnPtr && nested_column_, MutableColumnPtr && indexes_)
     {
         return Base::create(std::move(nested_column_), std::move(indexes_));
+    }
+
+    static MutablePtr create(MutableColumnPtr && nested_column_)
+    {
+        return Base::create(std::move(nested_column_));
     }
 
     static MutablePtr create(MutableColumnPtr && nested_column_, ColumnIndex && indexes_)
@@ -184,6 +195,8 @@ public:
 private:
     WrappedPtr nested_column;
     ColumnIndex indexes;
+
+    std::unordered_map<const ColumnReplicated *, std::unordered_map<size_t, size_t>> insertion_cache;
 };
 
 ColumnPtr recursiveRemoveReplicated(const ColumnPtr & column);

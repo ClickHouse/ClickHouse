@@ -91,12 +91,7 @@ static const IColumnFilter & unpackOrConvertFilter(ColumnPtr & column, std::opti
 
 FilterDescription::FilterDescription(const IColumn & column_)
 {
-    ColumnPtr column = column_.getPtr();
-    if (column_.isSparse())
-        column = column_.convertToFullColumnIfSparse();
-
-    if (column_.lowCardinality())
-        column = column_.convertToFullColumnIfLowCardinality();
+    ColumnPtr column = removeSpecialRepresentations(column_.getPtr())->convertToFullColumnIfLowCardinality();
 
     ColumnPtr null_map_column;
     if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(column.get()))

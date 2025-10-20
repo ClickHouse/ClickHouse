@@ -315,7 +315,7 @@ void ColumnFunction::appendArgument(const ColumnWithTypeAndName & column)
                         "got {}, but {} is expected.", argument_types.size(), column.type->getName(), argument_types[index]->getName());
 
     auto captured_column = column;
-    captured_column.column = captured_column.column->convertToFullColumnIfSparse();
+    captured_column.column = captured_column.column->convertToFullColumnIfReplicated()->convertToFullColumnIfSparse();
     captured_columns.push_back(std::move(captured_column));
 }
 
