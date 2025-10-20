@@ -210,10 +210,10 @@ private:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const auto * str1 = reinterpret_cast<const char *>(str1_data.data() + str1_data_offset + str1_offset);
-            size_t str1_length = str1_offsets[i] - str1_data_offset - 1;
+            size_t str1_length = str1_offsets[i] - str1_data_offset;
 
             const auto * str2 = reinterpret_cast<const char *>(str2_data.data() + str2_data_offset + str2_offset);
-            size_t str2_length = str2_offsets[i] - str2_data_offset - 1;
+            size_t str2_length = str2_offsets[i] - str2_data_offset;
 
             if (!isOverflowComparison<false>(str1_length, str1_offset, str2_length, str2_offset, result[i]))
             {
@@ -248,7 +248,7 @@ private:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            size_t str1_length = str1_offsets[i] - str1_data_offset - 1;
+            size_t str1_length = str1_offsets[i] - str1_data_offset;
             if (!isOverflowComparison<reverse>(str1_length, str1_offset, str2.size(), str2_offset, result[i]))
             {
                 const auto * str1 = reinterpret_cast<const char *>(str1_data.data() + str1_data_offset + str1_offset);
@@ -326,7 +326,7 @@ private:
             auto str1_adjusted_length = std::min(num_bytes, str1_length - str1_offset);
 
             const auto * str2 = reinterpret_cast<const char *>(str2_data.data() + str2_data_offset + str2_offset);
-            size_t str2_length = str2_offsets[i] - str2_data_offset - 1;
+            size_t str2_length = str2_offsets[i] - str2_data_offset;
 
             if (!isOverflowComparison<reverse>(str1_length, str1_offset, str2_length, str2_offset, result[i]))
             {
@@ -375,29 +375,40 @@ private:
 
 REGISTER_FUNCTION(CompareSubstrings)
 {
-    factory.registerFunction<FunctionCompareSubstrings>(FunctionDocumentation{
-        .description = R"(
-                This function compares parts of two strings directly, without the need to copy the parts of the string into new columns.
-                )",
-        .syntax = R"(
-        compareSubstrings(str1, str2, str1_off, str2_off, num_bytes)
-        )",
-        .arguments
-        = {{"string1", "Required. The string to compare."},
-           {"string2", "Required. The string to compare."},
-           {"string1_offset", "Positive number. The starting position (zero-based index) in `str1` from which the comparison begins."},
-           {"string2_offset", "Positive number. The starting position (zero-based index) in `str2` from which the comparison begins."},
-           {"num_bytes", "The number of bytes to compare in both strings, starting from their respective offsets."}},
-        .returned_value
-        = R"(-1 if the substring from str1 is lexicographically smaller than the substring from str2, 0 if the substrings are equal, 1 if the substring from str1 is lexicographically greater than the substring from str2.)",
-        .examples{
-            {"typical",
-             "SELECT compareSubstrings('123', '123', 0, 0, 3)",
-             R"(
-                ┌─compareSubtr⋯', 0, 0, 3)─┐
-             1. │                        0 │
-                └──────────────────────────┘
-                )"}},
-        .category = FunctionDocumentation::Category::String});
+    FunctionDocumentation::Description description = R"(
+Compares two strings lexicographically.
+)";
+    FunctionDocumentation::Syntax syntax = "compareSubstrings(s1, s2, s1_offset, s2_offset, num_bytes)";
+    FunctionDocumentation::Arguments arguments = {
+        {"s1", "The first string to compare.", {"String"}},
+        {"s2", "The second string to compare.", {"String"}},
+        {"s1_offset", "The position (zero-based) in `s1` from which the comparison starts.", {"UInt*"}},
+        {"s2_offset", "The position (zero-based index) in `s2` from which the comparison starts.", {"UInt*"}},
+        {"num_bytes", "The maximum number of bytes to compare in both strings. If `s1_offset` (or `s2_offset`) + `num_bytes` exceeds the end of an input string, `num_bytes` will be reduced accordingly.", {"UInt*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {R"(
+Returns:
+- `-1` if `s1`[`s1_offset` : `s1_offset` + `num_bytes`] < `s2`[`s2_offset` : `s2_offset` + `num_bytes`].
+- `0` if `s1`[`s1_offset` : `s1_offset` + `num_bytes`] = `s2`[`s2_offset` : `s2_offset` + `num_bytes`].
+- `1` if `s1`[`s1_offset` : `s1_offset` + `num_bytes`] > `s2`[`s2_offset` : `s2_offset` + `num_bytes`].
+    )",
+    {"Int8"}
+    };
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        "SELECT compareSubstrings('Saxony', 'Anglo-Saxon', 0, 6, 5) AS result",
+        R"(
+┌─result─┐
+│      0 │
+└────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 2};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionCompareSubstrings>(documentation);
 }
 }

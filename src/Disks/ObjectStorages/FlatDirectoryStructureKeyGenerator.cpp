@@ -1,4 +1,4 @@
-#include "FlatDirectoryStructureKeyGenerator.h"
+#include <Disks/ObjectStorages/FlatDirectoryStructureKeyGenerator.h>
 #include <Disks/ObjectStorages/InMemoryDirectoryPathMap.h>
 #include <Common/ObjectStorageKey.h>
 #include <Common/getRandomASCIIString.h>

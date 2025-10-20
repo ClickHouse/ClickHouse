@@ -1,4 +1,4 @@
-#include "QueryFuzzer.h"
+#include <Common/QueryFuzzer.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDynamic.h>
@@ -646,8 +646,8 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
         for (const auto & element : type_tuple->getElements())
             elements.push_back(fuzzDataType(element));
 
-        return type_tuple->haveExplicitNames() ? std::make_shared<DataTypeTuple>(elements, type_tuple->getElementNames())
-                                               : std::make_shared<DataTypeTuple>(elements);
+        return type_tuple->hasExplicitNames() ? std::make_shared<DataTypeTuple>(elements, type_tuple->getElementNames())
+                                              : std::make_shared<DataTypeTuple>(elements);
     }
 
     const auto * type_map = typeid_cast<const DataTypeMap *>(type.get());
@@ -719,7 +719,7 @@ DataTypePtr QueryFuzzer::getRandomType()
            TypeIndex::FixedString, TypeIndex::Enum8,          TypeIndex::Enum16,   TypeIndex::Decimal32,  TypeIndex::Decimal64,
            TypeIndex::Decimal128,  TypeIndex::Decimal256,     TypeIndex::UUID,     TypeIndex::Array,      TypeIndex::Tuple,
            TypeIndex::Nullable,    TypeIndex::LowCardinality, TypeIndex::Map,      TypeIndex::IPv4,       TypeIndex::IPv6,
-           TypeIndex::Variant,     TypeIndex::Dynamic};
+           TypeIndex::Variant,     TypeIndex::Dynamic,        TypeIndex::Time,     TypeIndex::Time64};
     const auto type_id = pickRandomly(fuzz_rand, random_types);
 
 /// NOLINTBEGIN(bugprone-macro-parentheses)
@@ -871,7 +871,7 @@ void QueryFuzzer::fuzzExplainSettings(ASTSetQuery & settings_ast, ASTExplainQuer
 
     static const std::unordered_map<ASTExplainQuery::ExplainKind, std::vector<String>> settings_by_kind
         = {{ASTExplainQuery::ExplainKind::ParsedAST, {"graph", "optimize"}},
-           {ASTExplainQuery::ExplainKind::AnalyzedSyntax, {}},
+           {ASTExplainQuery::ExplainKind::AnalyzedSyntax, {"oneline", "query_tree_passes"}},
            {ASTExplainQuery::QueryTree, {"run_passes", "dump_passes", "dump_ast", "passes"}},
            {ASTExplainQuery::ExplainKind::QueryPlan, {"header, description", "actions", "indexes", "optimize", "json", "sorting"}},
            {ASTExplainQuery::ExplainKind::QueryPipeline, {"header", "graph=1", "compact"}},
@@ -1090,8 +1090,7 @@ struct ScopedIncrement
 void QueryFuzzer::checkIterationLimit()
 {
     if (++iteration_count > iteration_limit)
-        throw Exception(ErrorCodes::TOO_DEEP_RECURSION,
-            "AST complexity limit exceeded while fuzzing ({})", iteration_count);
+        throw Exception(ErrorCodes::TOO_DEEP_RECURSION, "AST complexity limit exceeded while fuzzing ({})", iteration_count);
 }
 
 static const Strings comparison_comparators

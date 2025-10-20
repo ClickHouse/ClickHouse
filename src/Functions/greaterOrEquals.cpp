@@ -13,7 +13,28 @@ extern template class FunctionComparison<EqualsOp, NameEquals>;
 
 REGISTER_FUNCTION(GreaterOrEquals)
 {
-    factory.registerFunction<FunctionGreaterOrEquals>();
+    // Documentation for greaterOrEquals
+    FunctionDocumentation::Description description = "Compares two values for greater-than-or-equal-to relation.";
+    FunctionDocumentation::Syntax syntax = R"(
+    greaterOrEquals(a, b)
+    -- a >= b
+)";
+    FunctionDocumentation::Arguments arguments = {
+        {"a", "First value.<sup>[*](#comparison-rules)</sup>"},
+        {"b", "Second value.<sup>[*](#comparison-rules)</sup>"}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if `a` is greater than or equal to `b`, otherwise `0`", {"UInt8"}};
+    FunctionDocumentation::Examples examples = {
+        {"Usage example", "SELECT 2 >= 1, 2 >= 2, 1 >= 2;", R"(
+┌─greaterOrEquals(2, 1)─┬─greaterOrEquals(2, 2)─┬─greaterOrEquals(1, 2)─┐
+│                     1 │                     1 │                     0 │
+└───────────────────────┴───────────────────────┴───────────────────────┘
+)"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Comparison;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionGreaterOrEquals>(documentation);
 }
 
 template <>

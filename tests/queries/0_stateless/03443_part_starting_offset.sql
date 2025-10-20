@@ -13,8 +13,8 @@ insert into test select number, 10 - number from numbers(5);
 insert into test select number, 10 - number from numbers(5);
 
 -- verify _part_starting_offset and _part_offset in parent part and projection
-select _part, _part_starting_offset, _part_offset from test order by _part;
-select _part, _part_starting_offset, _part_offset from test where j = 8 order by _part;
+select _part, _part_starting_offset, _part_offset from test order by all;
+select _part, _part_starting_offset, _part_offset from test where j = 8 order by all;
 
 -- make sure key analysis works correctly
 select *, _part_starting_offset + _part_offset from test where _part_starting_offset + _part_offset = 8 settings parallel_replicas_local_plan = 0, max_rows_to_read = 1;

@@ -33,8 +33,11 @@ public:
         SizeLimits size_limits;
         size_t max_bytes_before_remerge = 0;
         float remerge_lowered_memory_bytes_ratio = 0;
-        size_t min_external_sort_block_bytes = 0;
-        size_t max_bytes_before_external_sort = 0;
+
+        double max_bytes_ratio_before_external_sort = 0.;
+        size_t max_bytes_in_block_before_external_sort = 0;
+        size_t max_bytes_in_query_before_external_sort = 0;
+
         size_t min_free_disk_space = 0;
         size_t max_block_bytes = 0;
         size_t read_in_order_use_buffering = 0;
@@ -44,11 +47,13 @@ public:
         explicit Settings(const QueryPlanSerializationSettings & settings);
 
         void updatePlanSettings(QueryPlanSerializationSettings & settings) const;
+
+        bool operator==(const Settings & other) const = default;
     };
 
     /// Full
     SortingStep(
-        const Header & input_header,
+        const SharedHeader & input_header,
         SortDescription description_,
         UInt64 limit_,
         const Settings & settings_,
@@ -56,7 +61,7 @@ public:
 
     /// Full with partitioning
     SortingStep(
-        const Header & input_header,
+        const SharedHeader & input_header,
         const SortDescription & description_,
         const SortDescription & partition_by_description_,
         UInt64 limit_,
@@ -64,7 +69,7 @@ public:
 
     /// FinishSorting
     SortingStep(
-        const Header & input_header,
+        const SharedHeader & input_header,
         SortDescription prefix_description_,
         SortDescription result_description_,
         size_t max_block_size_,
@@ -72,7 +77,7 @@ public:
 
     /// MergingSorted
     SortingStep(
-        const Header & input_header,
+        const SharedHeader & input_header,
         SortDescription sort_description_,
         size_t max_block_size_,
         UInt64 limit_ = 0,

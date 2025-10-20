@@ -8,8 +8,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e
 
-config="${BASH_SOURCE[0]/.sh/.xml}"
-
 # Create a table on S3 disk with Array column and wide parts
 # Insert a row with empty Array-s so that arr.bin file is empty
 $CLICKHOUSE_CLIENT -m -q "
