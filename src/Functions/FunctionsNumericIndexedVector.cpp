@@ -379,6 +379,96 @@ SELECT
         FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionNumericIndexedVectorPointwiseGreaterEqual>(documentation);
     }
+    /// numericIndexedVectorPointwiseMax
+    {
+        FunctionDocumentation::Description description = R"(
+Performs a pointwise maximum between two numericIndexedVector objects. For each key: if it appears in both, the larger value is kept; if it appears in only one side, that side's value is used.
+        )";
+
+        FunctionDocumentation::Syntax syntax = "numericIndexedVectorPointwiseMax(v1, v2)";
+
+        FunctionDocumentation::Arguments arguments = {
+            {"v1", "", {"numericIndexedVector"}},
+            {"v2", "Another numericIndexedVector object.", {"numericIndexedVector"}}
+        };
+
+        FunctionDocumentation::ReturnedValue returned_value = {
+            "Returns a new numericIndexedVector object.",
+            {"numericIndexedVector"}
+        };
+
+        FunctionDocumentation::Examples examples = {
+            {
+                "Usage example",
+                R"(
+WITH
+    numericIndexedVectorBuild(
+        mapFromArrays([1, 2, 3], arrayMap(x -> toInt32(x), [10, 20, 30]))
+    ) AS vec1,
+    numericIndexedVectorBuild(
+        mapFromArrays([2, 3, 4], arrayMap(x -> toInt32(x), [15, 25, 5]))
+    ) AS vec2
+SELECT
+    numericIndexedVectorToMap(numericIndexedVectorPointwiseMax(vec1, vec2)) AS res;
+                )",
+                R"(
+┌─res───────────────────┐
+│ {1:10,2:20,3:30,4:5}  │
+└───────────────────────┘
+                )"
+            }
+        };
+
+        FunctionDocumentation::IntroducedIn introduced_in = {25, 11};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::NumericIndexedVector;
+        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        factory.registerFunction<FunctionNumericIndexedVectorPointwiseMax>(documentation);
+    }
+    /// numericIndexedVectorPointwiseMin
+    {
+        FunctionDocumentation::Description description = R"(
+Performs a pointwise minimum between two numericIndexedVector objects. For each key: if it appears in both, the smaller value is kept; if it appears in only one side, that side's value is used.
+        )";
+
+        FunctionDocumentation::Syntax syntax = "numericIndexedVectorPointwiseMin(v1, v2)";
+
+        FunctionDocumentation::Arguments arguments = {
+            {"v1", "", {"numericIndexedVector"}},
+            {"v2", "Another numericIndexedVector object.", {"numericIndexedVector"}}
+        };
+
+        FunctionDocumentation::ReturnedValue returned_value = {
+            "Returns a new numericIndexedVector object.",
+            {"numericIndexedVector"}
+        };
+
+        FunctionDocumentation::Examples examples = {
+            {
+                "Usage example",
+                R"(
+WITH
+    numericIndexedVectorBuild(
+        mapFromArrays([1, 2, 3], arrayMap(x -> toInt32(x), [10, 20, 30]))
+    ) AS vec1,
+    numericIndexedVectorBuild(
+        mapFromArrays([2, 3, 4], arrayMap(x -> toInt32(x), [15, 25, 5]))
+    ) AS vec2
+SELECT
+    numericIndexedVectorToMap(numericIndexedVectorPointwiseMin(vec1, vec2)) AS res;
+                )",
+                R"(
+┌─res───────────────────┐
+│ {1:10,2:15,3:25,4:5}  │
+└───────────────────────┘
+                )"
+            }
+        };
+
+        FunctionDocumentation::IntroducedIn introduced_in = {25, 11};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::NumericIndexedVector;
+        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        factory.registerFunction<FunctionNumericIndexedVectorPointwiseMin>(documentation);
+    }
     /// numericIndexedVectorGetValue
     {
         FunctionDocumentation::Description description = R"(
@@ -407,6 +497,62 @@ SELECT numericIndexedVectorGetValue(numericIndexedVectorBuild(mapFromArrays([1, 
         FunctionDocumentation::Category category = FunctionDocumentation::Category::NumericIndexedVector;
         FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionNumericIndexedVectorGetValueImpl>(documentation);
+    }
+    /// numericIndexedVectorGetMaxValue
+    {
+        FunctionDocumentation::Description description = R"(
+Returns the maximum value stored in a numericIndexedVector. The comparison respects the vector's value type (signed/unsigned) and fixed-point fractional bits.
+        )";
+        FunctionDocumentation::Syntax syntax = "numericIndexedVectorGetMaxValue(v)";
+        FunctionDocumentation::Arguments arguments = {
+            {"v", "", {"numericIndexedVector"}},
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {"A numeric value with the same type as the value type of NumericIndexedVector.", {"(U)Int*", "Float*"}};
+        FunctionDocumentation::Examples examples = {
+        {
+            "Usage example",
+            R"(
+SELECT numericIndexedVectorGetMaxValue(numericIndexedVectorBuild(mapFromArrays([1, 2, 3], [10, 20, 30]))) AS res;
+            )",
+            R"(
+┌─res─┐
+│  30 │
+└─────┘
+            )"
+        }
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {25, 11};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::NumericIndexedVector;
+        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        factory.registerFunction<FunctionNumericIndexedVectorGetMaxValue>(documentation);
+    }
+    /// numericIndexedVectorGetMinValue
+    {
+        FunctionDocumentation::Description description = R"(
+Returns the minimum value stored in a numericIndexedVector. The comparison respects the vector's value type (signed/unsigned) and fixed-point fractional bits.
+        )";
+        FunctionDocumentation::Syntax syntax = "numericIndexedVectorGetMinValue(v)";
+        FunctionDocumentation::Arguments arguments = {
+            {"v", "", {"numericIndexedVector"}},
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {"A numeric value with the same type as the value type of NumericIndexedVector.", {"(U)Int*", "Float*"}};
+        FunctionDocumentation::Examples examples = {
+        {
+            "Usage example",
+            R"(
+SELECT numericIndexedVectorGetMinValue(numericIndexedVectorBuild(mapFromArrays([1, 2, 3], [10, 20, 30]))) AS res;
+            )",
+            R"(
+┌─res─┐
+│  10 │
+└─────┘
+            )"
+        }
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {25, 11};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::NumericIndexedVector;
+        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        factory.registerFunction<FunctionNumericIndexedVectorGetMinValue>(documentation);
     }
     /// numericIndexedVectorCardinality
     {
