@@ -5,6 +5,7 @@
 #if USE_SNAPPY
 
 #include <memory>
+#include <vector>
 #include <IO/ReadBuffer.h>
 #include <IO/CompressedReadBufferWrapper.h>
 
@@ -32,7 +33,10 @@ public:
         TOO_LARGE_COMPRESSED_BLOCK = 4,
     };
 
-    HadoopSnappyDecoder() = default;
+    HadoopSnappyDecoder()
+    {
+        buffer.reserve(DBMS_DEFAULT_BUFFER_SIZE);
+    }
     ~HadoopSnappyDecoder() = default;
 
     Status readBlock(size_t * avail_in, const char ** next_in, size_t * avail_out, char ** next_out);
@@ -52,6 +56,7 @@ private:
     inline static bool checkAvailIn(size_t avail_in, int min);
 
     inline void copyToBuffer(size_t * avail_in, const char ** next_in);
+    inline void ensureBufferCapacity(size_t required_size);
 
     inline static uint32_t readLength(const char * in);
     inline Status readLength(size_t * avail_in, const char ** next_in, int * length);
@@ -59,7 +64,7 @@ private:
     inline Status readCompressedLength(size_t * avail_in, const char ** next_in);
     inline Status readCompressedData(size_t * avail_in, const char ** next_in, size_t * avail_out, char ** next_out);
 
-    char buffer[DBMS_DEFAULT_BUFFER_SIZE] = {0};
+    std::vector<char> buffer;
     int buffer_length = 0;
 
     int block_length = -1;

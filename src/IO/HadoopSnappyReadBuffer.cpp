@@ -23,7 +23,7 @@ namespace ErrorCodes
 
 inline bool HadoopSnappyDecoder::checkBufferLength(int max) const
 {
-    return buffer_length >= 0 && buffer_length < max;
+    return buffer_length >= 0 && buffer_length < max && buffer_length < static_cast<int>(buffer.size());
 }
 
 inline bool HadoopSnappyDecoder::checkAvailIn(size_t avail_in, int min)
@@ -31,11 +31,20 @@ inline bool HadoopSnappyDecoder::checkAvailIn(size_t avail_in, int min)
     return avail_in >= static_cast<size_t>(min);
 }
 
+inline void HadoopSnappyDecoder::ensureBufferCapacity(size_t required_size)
+{
+    if (buffer.size() < required_size)
+    {
+        buffer.resize(required_size);
+    }
+}
+
 inline void HadoopSnappyDecoder::copyToBuffer(size_t * avail_in, const char ** next_in)
 {
-    assert(*avail_in + buffer_length <= sizeof(buffer));
+    ensureBufferCapacity(buffer_length + *avail_in);
+    assert(*avail_in + buffer_length <= buffer.size());
 
-    memcpy(buffer + buffer_length, *next_in, *avail_in);
+    memcpy(buffer.data() + buffer_length, *next_in, *avail_in);
 
     buffer_length += *avail_in;
     *next_in += *avail_in;
@@ -60,7 +69,7 @@ inline HadoopSnappyDecoder::Status HadoopSnappyDecoder::readLength(size_t * avai
 
     if (!checkBufferLength(4))
         return Status::INVALID_INPUT;
-    memcpy(tmp, buffer, buffer_length);
+    memcpy(tmp, buffer.data(), buffer_length);
 
     if (!checkAvailIn(*avail_in, 4 - buffer_length))
     {
@@ -90,8 +99,11 @@ inline HadoopSnappyDecoder::Status HadoopSnappyDecoder::readCompressedLength(siz
     if (compressed_length < 0)
     {
         auto status = readLength(avail_in, next_in, &compressed_length);
-        if (unlikely(compressed_length > 0 && static_cast<size_t>(compressed_length) > sizeof(buffer)))
-            return Status::TOO_LARGE_COMPRESSED_BLOCK;
+        if (unlikely(compressed_length > 0))
+        {
+            // Dynamically grow buffer to accommodate the compressed block
+            ensureBufferCapacity(compressed_length);
+        }
 
         return status;
     }
@@ -113,8 +125,8 @@ HadoopSnappyDecoder::readCompressedData(size_t * avail_in, const char ** next_in
     const char * compressed = nullptr;
     if (buffer_length > 0)
     {
-        compressed = buffer;
-        memcpy(buffer + buffer_length, *next_in, compressed_length - buffer_length);
+        compressed = buffer.data();
+        memcpy(buffer.data() + buffer_length, *next_in, compressed_length - buffer_length);
     }
     else
     {
