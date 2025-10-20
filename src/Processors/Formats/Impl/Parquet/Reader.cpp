@@ -657,25 +657,22 @@ void Reader::preparePrewhere()
     {
         for (const auto & col : step.actions.getRequiredColumnsWithTypes())
         {
-            for (const auto & col : step.actions.getRequiredColumnsWithTypes())
+            size_t idx_in_output_block = extended_sample_block.getPositionByName(col.name, /* case_insensitive= */ false);
+            const auto & output_idx = sample_block_to_output_columns_idx.at(idx_in_output_block);
+            if (!output_idx.has_value())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "PREWHERE appears to use its own output as input");
+            OutputColumnInfo & output_info = output_columns[output_idx.value()];
+
+            output_info.use_prewhere = true;
+            bool only_for_prewhere = idx_in_output_block >= sample_block->columns();
+
+            for (size_t primitive_idx = output_info.primitive_start; primitive_idx < output_info.primitive_end; ++primitive_idx)
             {
-                size_t idx_in_output_block = extended_sample_block.getPositionByName(col.name, /* case_insensitive= */ false);
-                const auto & output_idx = sample_block_to_output_columns_idx.at(idx_in_output_block);
-                if (!output_idx.has_value())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "PREWHERE appears to use its own output as input");
-                OutputColumnInfo & output_info = output_columns[output_idx.value()];
-
-                output_info.use_prewhere = true;
-                bool only_for_prewhere = idx_in_output_block >= sample_block->columns();
-
-                for (size_t primitive_idx = output_info.primitive_start; primitive_idx < output_info.primitive_end; ++primitive_idx)
-                {
-                    primitive_columns[primitive_idx].use_prewhere = true;
-                    primitive_columns[primitive_idx].only_for_prewhere = only_for_prewhere;
-                }
-
-                step.input_column_idxs.push_back(output_idx.value());
+                primitive_columns[primitive_idx].use_prewhere = true;
+                primitive_columns[primitive_idx].only_for_prewhere = only_for_prewhere;
             }
+
+            step.input_column_idxs.push_back(output_idx.value());
         }
     }
 
