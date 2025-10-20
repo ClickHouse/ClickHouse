@@ -413,7 +413,7 @@ namespace HistogramMetrics
 
 std::vector<MetricFamily *> keeper_histograms
 {
-#define M(NAME) &NAME,
+#define M(NAME) &(NAME),
     APPLY_FOR_KEEPER_HISTOGRAMS(M)
 #undef M
 };
