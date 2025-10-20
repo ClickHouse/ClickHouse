@@ -57,7 +57,7 @@ ColumnWithTypeAndName convertArrayJoinColumn(const ColumnWithTypeAndName & src_c
     ColumnWithTypeAndName array_col;
     array_col.name = src_col.name;
     array_col.type = getArrayJoinDataType(src_col.type);
-    array_col.column = getArrayJoinColumn(src_col.column->convertToFullColumnIfConst());
+    array_col.column = getArrayJoinColumn(src_col.column->convertToFullColumnIfConst()->convertToFullColumnIfReplicated());
     return array_col;
 }
 

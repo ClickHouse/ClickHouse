@@ -32,10 +32,10 @@ void MergedData::initialize(const Block & header, const IMergingAlgorithm::Input
 
     for (size_t i = 0; i != columns.size(); ++i)
     {
-        if (columns[i]->hasDynamicStructure())
-            columns[i]->takeDynamicStructureFromSourceColumns(source_columns[i]);
         if (is_replicated[i])
             columns[i] = ColumnReplicated::create(std::move(columns[i]));
+        if (columns[i]->hasDynamicStructure())
+            columns[i]->takeDynamicStructureFromSourceColumns(source_columns[i]);
     }
 }
 

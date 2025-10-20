@@ -18,7 +18,7 @@ class ColumnReplicated final : public COWHelper<IColumnHelper<ColumnReplicated>,
 private:
     friend class COWHelper<IColumnHelper<ColumnReplicated>, ColumnReplicated>;
 
-    ColumnReplicated(MutableColumnPtr && nested_column_);
+    explicit ColumnReplicated(MutableColumnPtr && nested_column_);
     ColumnReplicated(MutableColumnPtr && nested_column_, MutableColumnPtr && indexes_);
     ColumnReplicated(MutableColumnPtr && nested_column_, ColumnIndex && indexes_);
     ColumnReplicated(const ColumnReplicated &) = default;
