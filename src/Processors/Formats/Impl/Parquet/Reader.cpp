@@ -671,7 +671,7 @@ void Reader::preparePrewhere()
             [&](const PrewhereStep & step) { return step.idx_in_output_block == i; });
         if (is_prewhere_output > 1 ||
             /// Column must appear in exactly one of {output_columns, prewhere output}.
-            sample_block_to_output_columns_idx[i].has_value() == (is_prewhere_output == 1))
+            sample_block_to_output_columns_idx[i].has_value() != !is_prewhere_output)
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column in sample block: {}", extended_sample_block.getByPosition(i).name);
         }

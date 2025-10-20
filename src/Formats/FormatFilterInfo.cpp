@@ -20,6 +20,7 @@ namespace ErrorCodes
 
 void ColumnMapper::setStorageColumnEncoding(std::unordered_map<String, Int64> && storage_encoding_)
 {
+    chassert(storage_encoding.empty());
     storage_encoding = std::move(storage_encoding_);
     for (const auto & [column_name, field_id] : storage_encoding)
         if (!field_id_to_clickhouse_name.emplace(field_id, column_name).second)
