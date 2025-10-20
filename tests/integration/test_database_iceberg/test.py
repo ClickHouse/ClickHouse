@@ -578,7 +578,7 @@ def test_drop_table(started_cluster):
     assert len(catalog.list_tables(root_namespace)) == 0
 
 
-def test_table_tith_slash(started_cluster):
+def test_table_with_slash(started_cluster):
     node = started_cluster.instances["node1"]
 
     # pyiceberg at current moment (version 0.9.1) has a bug with table names with slashes
