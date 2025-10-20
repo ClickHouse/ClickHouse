@@ -36,6 +36,7 @@ using EvictionInfoPtr = std::unique_ptr<EvictionInfo>;
 class EvictionInfo : public std::map<QueueID, QueueEvictionInfo>, private boost::noncopyable
 {
 public:
+    EvictionInfo() = default;
     explicit EvictionInfo(QueueID queue_id, QueueEvictionInfo && info)
     {
         addImpl(queue_id, std::move(info));
