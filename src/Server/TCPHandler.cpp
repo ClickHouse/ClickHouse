@@ -12,6 +12,7 @@
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionFactory.h>
 #include <Core/ExternalTable.h>
+#include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
@@ -73,7 +74,6 @@
 #endif
 
 #include <Core/Protocol.h>
-#include <Core/ProtocolDefines.h>
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Interpreters/ClientInfo.h>
 
@@ -159,6 +159,7 @@ namespace DB::ErrorCodes
     extern const int ABORTED;
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int AUTHENTICATION_FAILED;
+    extern const int BAD_ARGUMENTS;
     extern const int CLIENT_HAS_CONNECTED_TO_WRONG_PORT;
     extern const int CLIENT_INFO_DOES_NOT_MATCH;
     extern const int LOGICAL_ERROR;
@@ -174,6 +175,7 @@ namespace DB::ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int UNKNOWN_TABLE;
     extern const int TCP_CONNECTION_LIMIT_REACHED;
+    extern const int MEMORY_LIMIT_EXCEEDED;
 
     // We have to distinguish the case when query is killed by `KILL QUERY` statement
     // and when it is killed by `Protocol::Client::Cancel` packet.
@@ -735,6 +737,9 @@ void TCPHandler::runImpl()
                         getFormatSettings(query_state->query_context));
                 });
 
+            if (client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_OUT_OF_ORDER_BUCKETS_IN_AGGREGATION)
+                query_state->query_context->setSetting("enable_producing_buckets_out_of_order_in_aggregation", false);
+
             /// Processing Query
             std::tie(query_state->parsed_query, query_state->io) = executeQuery(query_state->query, query_state->query_context, QueryFlags{}, query_state->stage);
 
@@ -894,23 +899,55 @@ void TCPHandler::runImpl()
                 /// Try to send logs to client, but it could be risky too
                 /// Assume that we can't break output here
                 sendLogs(query_state.value());
+            }
+            catch (const Exception & e)
+            {
+                if (e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED)
+                {
+                    tryLogCurrentException(log, "Can't send logs to client. But we will try to send the exception.");
+                }
+                else
+                {
+                    query_state->cancelOut(out);
+                    return;
+                }
+            }
+            catch (...)
+            {
+                query_state->cancelOut(out);
+                tryLogCurrentException(log, "Can't send logs to client. Close connection.");
+                return;
+            }
+
+            try
+            {
+                std::lock_guard lock(callback_mutex);
 
                 if (exception_code == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT)
                     sendEndOfStream(query_state.value());
                 else
                     sendException(*exception, send_exception_with_stack_trace);
+            }
+            catch (...)
+            {
+                query_state->cancelOut(out);
+                tryLogCurrentException(log, "Can't send exception to client. Close connection.");
+                return;
+            }
+
+            try
+            {
+                std::lock_guard lock(callback_mutex);
 
                 /// A query packet is always followed by one or more data packets.
                 /// If some of those data packets are left, try to skip them.
                 if (!query_state->read_all_data)
                     skipData(query_state.value());
-
-                LOG_TRACE(log, "Logs and exception has been sent. The connection is preserved.");
             }
             catch (...)
             {
                 query_state->cancelOut(out);
-                tryLogCurrentException(log, "Can't send logs or exception to client. Close connection.");
+                tryLogCurrentException(log, "Can't skip excessive input packets after the exception. Close connection.");
                 return;
             }
 
@@ -920,6 +957,10 @@ void TCPHandler::runImpl()
                 LOG_DEBUG(log, "Going to close connection due to exception: {}", exception->message());
                 query_state->finalizeOut(out);
                 return;
+            }
+            else
+            {
+                LOG_TRACE(log, "Logs and exception has been sent. The connection is preserved.");
             }
         }
 
@@ -1509,7 +1550,6 @@ void TCPHandler::sendTotals(QueryState & state, const Block & totals)
 
     state.block_out->write(totals);
     state.maybe_compressed_out->next();
-
     out->finishChunk();
     out->next();
 }
@@ -1527,7 +1567,6 @@ void TCPHandler::sendExtremes(QueryState & state, const Block & extremes)
 
     state.block_out->write(extremes);
     state.maybe_compressed_out->next();
-
     out->finishChunk();
     out->next();
 }
@@ -1545,7 +1584,7 @@ void TCPHandler::sendProfileEvents(QueryState & state)
         writeStringBinary("", *out);
 
         state.profile_events_block_out->write(block);
-
+        state.profile_events_block_out->flush();
         out->finishChunk();
         out->next();
 
@@ -2024,7 +2063,7 @@ std::optional<ParallelReadResponse> TCPHandler::receivePartitionMergeTreeReadTas
         case Protocol::Client::MergeTreeReadTaskResponse:
         {
             ParallelReadResponse response;
-            response.deserialize(*in);
+            response.deserialize(*in, client_parallel_replicas_protocol_version);
             return response;
         }
 
@@ -2436,6 +2475,16 @@ CompressionCodecPtr TCPHandler::getCompressionCodec(const Settings & query_setti
 {
     std::string method = Poco::toUpper(query_settings[Setting::network_compression_method].toString());
     std::optional<int> level;
+
+    /// Bad custom logic
+    /// We only allow any of following generic codecs. CompressionCodecFactory will happily return other
+    /// codecs (e.g. T64) but these may be specialized and not support all data types, i.e. SELECT 'abc' may
+    /// be broken afterwards.
+    if (method != "NONE" && method != "ZSTD" && method != "LZ4" && method != "LZ4HC")
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Setting 'network_compression_method' must be NONE, ZSTD, LZ4 or LZ4HC");
+
+    /// More bad custom logic
     if (method == "ZSTD")
         level = query_settings[Setting::network_zstd_compression_level];
 
@@ -2456,19 +2505,26 @@ CompressionCodecPtr TCPHandler::getCompressionCodec(const Settings & query_setti
 }
 
 
+void TCPHandler::initMaybeCompressedOut(QueryState & state)
+{
+    const Settings & query_settings = state.query_context->getSettingsRef();
+    if (!state.maybe_compressed_out)
+    {
+        if (auto codec = getCompressionCodec(query_settings, state.compression))
+            state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(*out, codec);
+        else
+            state.maybe_compressed_out = out;
+    }
+}
+
+
 void TCPHandler::initBlockOutput(QueryState & state, const Block & block)
 {
     if (!state.block_out)
     {
-        const Settings & query_settings = state.query_context->getSettingsRef();
-        if (!state.maybe_compressed_out)
-        {
-            if (auto codec = getCompressionCodec(query_settings, state.compression))
-                state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(*out, codec);
-            else
-                state.maybe_compressed_out = out;
-        }
+        initMaybeCompressedOut(state);
 
+        const Settings & query_settings = state.query_context->getSettingsRef();
         state.block_out = std::make_unique<NativeWriter>(
             *state.maybe_compressed_out,
             client_tcp_protocol_version,
@@ -2483,10 +2539,17 @@ void TCPHandler::initLogsBlockOutput(QueryState & state, const Block & block)
 {
     if (!state.logs_block_out)
     {
+        WriteBuffer * logs_buf = out.get();
+        if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COMPRESSED_LOGS_PROFILE_EVENTS_COLUMNS)
+        {
+            initMaybeCompressedOut(state);
+            logs_buf = state.maybe_compressed_out.get();
+        }
+
         /// Use uncompressed stream since log blocks usually contain only one row
         const Settings & query_settings = state.query_context->getSettingsRef();
         state.logs_block_out = std::make_unique<NativeWriter>(
-            *out, client_tcp_protocol_version, std::make_shared<const Block>(block.cloneEmpty()), getFormatSettings(state.query_context), !query_settings[Setting::low_cardinality_allow_in_native_format]);
+            *logs_buf, client_tcp_protocol_version, std::make_shared<const Block>(block.cloneEmpty()), getFormatSettings(state.query_context), !query_settings[Setting::low_cardinality_allow_in_native_format]);
     }
 }
 
@@ -2495,9 +2558,16 @@ void TCPHandler::initProfileEventsBlockOutput(QueryState & state, const Block & 
 {
     if (!state.profile_events_block_out)
     {
+        WriteBuffer * profile_events_buf = out.get();
+        if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COMPRESSED_LOGS_PROFILE_EVENTS_COLUMNS)
+        {
+            initMaybeCompressedOut(state);
+            profile_events_buf = state.maybe_compressed_out.get();
+        }
+
         const Settings & query_settings = state.query_context->getSettingsRef();
         state.profile_events_block_out = std::make_unique<NativeWriter>(
-            *out, client_tcp_protocol_version, std::make_shared<const Block>(block.cloneEmpty()), getFormatSettings(state.query_context), !query_settings[Setting::low_cardinality_allow_in_native_format]);
+            *profile_events_buf, client_tcp_protocol_version, std::make_shared<const Block>(block.cloneEmpty()), getFormatSettings(state.query_context), !query_settings[Setting::low_cardinality_allow_in_native_format]);
     }
 }
 
@@ -2638,20 +2708,28 @@ void TCPHandler::sendLogData(QueryState & state, const Block & block)
     writeStringBinary("", *out);
 
     state.logs_block_out->write(block);
-
+    state.logs_block_out->flush();
     out->finishChunk();
     out->next();
 }
 
 
-void TCPHandler::sendTableColumns(QueryState &, const ColumnsDescription & columns)
+void TCPHandler::sendTableColumns(QueryState & state, const ColumnsDescription & columns)
 {
     writeVarUInt(Protocol::Server::TableColumns, *out);
 
-    /// Send external table name (empty name is the main table)
-    writeStringBinary("", *out);
-    writeStringBinary(columns.toString(), *out);
+    WriteBuffer * columns_buf = out.get();
+    if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COMPRESSED_LOGS_PROFILE_EVENTS_COLUMNS)
+    {
+        initMaybeCompressedOut(state);
+        columns_buf = state.maybe_compressed_out.get();
+    }
 
+    /// Send external table name (empty name is the main table)
+    writeStringBinary("", *columns_buf);
+    writeStringBinary(columns.toString(/* include_comments = */ false), *columns_buf);
+
+    columns_buf->next();
     out->finishChunk();
     out->next();
 }

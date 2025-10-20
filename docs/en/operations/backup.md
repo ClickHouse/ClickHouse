@@ -4,6 +4,7 @@ sidebar_label: 'Backup and restore'
 sidebar_position: 10
 slug: /operations/backup
 title: 'Backup and restore'
+doc_type: 'guide'
 ---
 
 # Backup and restore
@@ -18,16 +19,17 @@ title: 'Backup and restore'
 ```bash
  BACKUP|RESTORE
   TABLE [db.]table_name [AS [db.]table_name_in_backup]
-    [PARTITION[S] partition_expr [,...]] |
+    [PARTITION[S] partition_expr [, ...]] |
   DICTIONARY [db.]dictionary_name [AS [db.]name_in_backup] |
   DATABASE database_name [AS database_name_in_backup]
     [EXCEPT TABLES ...] |
   TEMPORARY TABLE table_name [AS table_name_in_backup] |
   VIEW view_name [AS view_name_in_backup] |
-  ALL [EXCEPT {TABLES|DATABASES}...] } [,...]
+  ALL [EXCEPT {TABLES|DATABASES}...] } [, ...]
   [ON CLUSTER 'cluster_name']
   TO|FROM File('<path>/<filename>') | Disk('<disk_name>', '<path>/') | S3('<S3 endpoint>/<path>', '<Access key ID>', '<Secret access key>')
   [SETTINGS base_backup = File('<path>/<filename>') | Disk(...) | S3('<S3 endpoint>/<path>', '<Access key ID>', '<Secret access key>')]
+  [SYNC|ASYNC]
 
 ```
 
@@ -37,7 +39,7 @@ Prior to version 23.4 of ClickHouse, `ALL` was only applicable to the `RESTORE` 
 
 ## Background {#background}
 
-While [replication](../engines/table-engines/mergetree-family/replication.md) provides protection from hardware failures, it does not protect against human errors: accidental deletion of data, deletion of the wrong table or a table on the wrong cluster, and software bugs that result in incorrect data processing or data corruption. In many cases mistakes like these will affect all replicas. ClickHouse has built-in safeguards to prevent some types of mistakes — for example, by default [you can't just drop tables with a MergeTree-like engine containing more than 50 Gb of data](/operations/settings/settings#max_table_size_to_drop). However, these safeguards do not cover all possible cases and can be circumvented.
+While [replication](../engines/table-engines/mergetree-family/replication.md) provides protection from hardware failures, it does not protect against human errors: accidental deletion of data, deletion of the wrong table or a table on the wrong cluster, and software bugs that result in incorrect data processing or data corruption. In many cases, mistakes like these will affect all replicas. ClickHouse has built-in safeguards to prevent some types of mistakes — for example, by default [you can't just drop tables with a MergeTree-like engine containing more than 50 Gb of data](/operations/settings/settings#max_table_size_to_drop). However, these safeguards do not cover all possible cases and can be circumvented.
 
 In order to effectively mitigate possible human errors, you should carefully prepare a strategy for backing up and restoring your data **in advance**.
 
@@ -82,7 +84,8 @@ The BACKUP and RESTORE statements take a list of DATABASE and TABLE names, a des
 - ASYNC: backup or restore asynchronously
 - PARTITIONS: a list of partitions to restore
 - SETTINGS:
-  - `id`: id of backup or restore operation, randomly generated UUID is used, if not specified manually. If there is already running operation with the same `id` exception is thrown.
+  - `id`: the identifier of a backup or restore operation. If it's unset or empty then a randomly generated UUID will be used.
+  If it's explicitly set to a nonempty string then it should be different each time. This `id` is used to find rows in table `system.backups` related to a specific backup or restore operation.
   - [`compression_method`](/sql-reference/statements/create/table#column_compression_codec) and compression_level
   - `password` for the file on disk
   - `base_backup`: the destination of the previous backup of this source.  For example, `Disk('backups', '1.zip')`
@@ -435,7 +438,7 @@ RESTORE TABLE data AS data_restored FROM Disk('s3_plain', 'cloud_backup');
 :::note
 But keep in mind that:
 - This disk should not be used for `MergeTree` itself, only for `BACKUP`/`RESTORE`
-- If your tables are backed by S3 storage and types of the disks are different, it doesn't use `CopyObject` calls to copy parts to the destination bucket, instead, it downloads and uploads them, which is very inefficient. Prefer to use `BACKUP ... TO S3(<endpoint>)` syntax for this use-case.
+- If your tables are backed by S3 storage, then it will try to use the S3 server-side copy with `CopyObject` calls to copy parts to the destination bucket using its credentials. If an authentication error occurs, it will fallback to the copy with buffer method (download parts and upload them) which is very inefficient. In this case, you may want to ensure you have `read` permissions on the source bucket with the credentials of the destination bucket.
 :::
 
 ## Using named collections {#using-named-collections}

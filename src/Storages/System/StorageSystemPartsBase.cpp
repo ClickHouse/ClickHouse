@@ -118,7 +118,7 @@ StoragesInfoStream::StoragesInfoStream(std::optional<ActionsDAG> filter_by_datab
     const bool check_access_for_tables = !access->isGranted(AccessType::SHOW_TABLES);
 
     {
-        Databases databases = DatabaseCatalog::instance().getDatabases();
+        Databases databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
 
         /// Add column 'database'.
         MutableColumnPtr database_column_mut = ColumnString::create();
@@ -126,7 +126,7 @@ StoragesInfoStream::StoragesInfoStream(std::optional<ActionsDAG> filter_by_datab
         {
             /// Check if database can contain MergeTree tables,
             /// if not it's unnecessary to load all tables of database just to filter all of them.
-            if (database.second->canContainMergeTreeTables())
+            if (!database.second->isExternal())
                 database_column_mut->insert(database.first);
         }
         block_to_filter.insert(ColumnWithTypeAndName(
@@ -151,7 +151,7 @@ StoragesInfoStream::StoragesInfoStream(std::optional<ActionsDAG> filter_by_datab
                 String database_name = (*database_column_for_filter)[i].safeGet<String>();
                 const DatabasePtr & database = databases.at(database_name);
 
-                offsets[i] = i ? offsets[i - 1] : 0;
+                offsets[i] = offsets[i - 1];
                 for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
                 {
                     String table_name = iterator->name();
