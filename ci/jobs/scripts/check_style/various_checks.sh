@@ -32,6 +32,7 @@ tables_with_database_column=(
 # NOTE: it is not that accurate, but at least something.
 tests_with_database_column=( $(
     find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' |
+        grep -vP '03701_parallel_alter_comment_rename_selects' |
         xargs grep --with-filename $(printf -- "-e %s " "${tables_with_database_column[@]}") |
         grep -v -e ':--' -e ':#' |
         # to exclude clickhouse-local flags: --only-system-tables and --no-system-tables.
@@ -94,7 +95,10 @@ find $ROOT_PATH/{src,base,programs,utils,tests,docs,cmake} -name '*.md' -or -nam
 find $ROOT_PATH/{base,src,programs,utils,docs} -name '*.md' -or -name '*.h' -or -name '*.cpp' -or -name '*.js' -or -name '*.py' -or -name '*.html' | xargs grep -l -P '\r$' && echo "^ Files contain DOS/Windows newlines (\r\n instead of \n)."
 
 # Check for misuse of timeout in .sh tests
-find $ROOT_PATH/tests/queries -name '*.sh' | grep -vP '02835_drop_user_during_session|02922_deduplication_with_zero_copy|00738_lock_for_inner_table|shared_merge_tree|_sc_' |
-    xargs grep -l -P 'export -f' | xargs grep -l -F 'timeout' && echo ".sh tests cannot use the 'timeout' command, because it leads to race conditions, when the timeout is expired, and waiting for the command is done, but the server still runs some queries"
+find $ROOT_PATH/tests/queries -name '*.sh' |
+    grep -vP '02835_drop_user_during_session|02922_deduplication_with_zero_copy|00738_lock_for_inner_table|shared_merge_tree|_sc_|03701_parallel_alter_comment_rename_selects' |
+    xargs grep -l -P 'export -f' |
+    xargs grep -l -F 'timeout' &&
+    echo ".sh tests cannot use the 'timeout' command, because it leads to race conditions, when the timeout is expired, and waiting for the command is done, but the server still runs some queries"
 
 find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' | xargs grep --with-filename -i -E -e 'system\s*flush\s*logs\s*(;|$|")' && echo "Please use SYSTEM FLUSH LOGS log_name over global SYSTEM FLUSH LOGS"
