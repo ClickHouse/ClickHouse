@@ -627,16 +627,18 @@ void ConfigProcessor::doIncludesRecursive(
 
     if (attr_nodes["from_hashicorp_vault"] && HashiCorpVault::instance().isLoaded())
     {
-        const NodePtr hashicorp_vault_key_node = node->attributes()->getNamedItem("hashicorp_vault_key");
+        std::string hashicorp_vault_key_value;
+        if (static_cast<Poco::XML::Element*>(node)->hasAttribute("hashicorp_vault_key"))
+            hashicorp_vault_key_value = static_cast<Poco::XML::Element*>(node)->getAttribute("hashicorp_vault_key");
 
-        if (!hashicorp_vault_key_node || hashicorp_vault_key_node->getNodeValue().empty())
+        if (hashicorp_vault_key_value.empty())
             throw Poco::Exception("Element <" + node->nodeName() + "> has 'from_hashicorp_vault' attribute and does not have valid 'hashicorp_vault_key' attribute");
 
         XMLDocumentPtr vault_document;
 
         auto get_vault_node = [&](const std::string & name) -> const Node *
         {
-            String vault_val = HashiCorpVault::instance().readSecret(name, hashicorp_vault_key_node->getNodeValue());
+            String vault_val = HashiCorpVault::instance().readSecret(name, hashicorp_vault_key_value);
 
             vault_document = dom_parser.parseString("<from_hashicorp_vault>" + vault_val + "</from_hashicorp_vault>");
 
