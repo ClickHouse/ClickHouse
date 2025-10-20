@@ -44,6 +44,19 @@ StorageAlias::StorageAlias(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Alias table cannot refer to itself");
 }
 
+StoragePtr StorageAlias::getTargetTable(std::optional<TargetAccess> access_check) const
+{
+    if (access_check)
+    {
+        if (access_check->column_names.empty())
+            access_check->context->checkAccess(access_check->access_type, target_database, target_table);
+        else
+            access_check->context->checkAccess(access_check->access_type, target_database, target_table, access_check->column_names);
+    }
+
+    return DatabaseCatalog::instance().getTable(StorageID(target_database, target_table), getContext());
+}
+
 void StorageAlias::read(
     QueryPlan & query_plan,
     const Names & column_names,
@@ -54,9 +67,7 @@ void StorageAlias::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    local_context->checkAccess(AccessType::SELECT, target_database, target_table, column_names);
-
-    auto target_storage = getTargetTable();
+    auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::SELECT, column_names});
     auto lock = target_storage->lockForShare(
         local_context->getCurrentQueryId(),
         local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
@@ -84,9 +95,7 @@ SinkToStoragePtr StorageAlias::write(
     ContextPtr local_context,
     bool async_insert)
 {
-    local_context->checkAccess(AccessType::INSERT, target_database, target_table);
-
-    auto target_storage = getTargetTable();
+    auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::INSERT});
     auto lock = target_storage->lockForShare(
         local_context->getCurrentQueryId(),
         local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
@@ -103,9 +112,7 @@ void StorageAlias::alter(
     ContextPtr local_context,
     AlterLockHolder & table_lock_holder)
 {
-    local_context->checkAccess(AccessType::ALTER, target_database, target_table);
-
-    auto target_storage = getTargetTable();
+    auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::ALTER});
     target_storage->alter(params, local_context, table_lock_holder);
 }
 
@@ -115,9 +122,7 @@ void StorageAlias::truncate(
     ContextPtr local_context,
     TableExclusiveLockHolder & table_lock_holder)
 {
-    local_context->checkAccess(AccessType::TRUNCATE, target_database, target_table);
-
-    auto target_storage = getTargetTable();
+    auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::TRUNCATE});
     auto target_metadata = target_storage->getInMemoryMetadataPtr();
     target_storage->truncate(query, target_metadata, local_context, table_lock_holder);
 }
@@ -132,9 +137,7 @@ bool StorageAlias::optimize(
     bool cleanup,
     ContextPtr local_context)
 {
-    local_context->checkAccess(AccessType::OPTIMIZE, target_database, target_table);
-
-    auto target_storage = getTargetTable();
+    auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::OPTIMIZE});
     auto target_metadata = target_storage->getInMemoryMetadataPtr();
     return target_storage->optimize(query, target_metadata, partition, final, deduplicate,
                                     deduplicate_by_columns, cleanup, local_context);
@@ -145,9 +148,7 @@ Pipe StorageAlias::alterPartition(
     const PartitionCommands & commands,
     ContextPtr local_context)
 {
-    local_context->checkAccess(AccessType::ALTER, target_database, target_table);
-
-    auto target_storage = getTargetTable();
+    auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::ALTER});
     auto target_metadata = target_storage->getInMemoryMetadataPtr();
     return target_storage->alterPartition(target_metadata, commands, local_context);
 }
@@ -165,17 +166,13 @@ void StorageAlias::checkAlterPartitionIsPossible(
 
 void StorageAlias::mutate(const MutationCommands & commands, ContextPtr local_context)
 {
-    local_context->checkAccess(AccessType::ALTER, target_database, target_table);
-
-    auto target_storage = getTargetTable();
+    auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::ALTER});
     target_storage->mutate(commands, local_context);
 }
 
 QueryPipeline StorageAlias::updateLightweight(const MutationCommands & commands, ContextPtr local_context)
 {
-    local_context->checkAccess(AccessType::ALTER, target_database, target_table);
-
-    auto target_storage = getTargetTable();
+    auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::ALTER});
     return target_storage->updateLightweight(commands, local_context);
 }
 
@@ -206,9 +203,7 @@ void StorageAlias::updateExternalDynamicMetadataIfExists(ContextPtr local_contex
 
 std::optional<QueryPipeline> StorageAlias::distributedWrite(const ASTInsertQuery & query, ContextPtr local_context)
 {
-    local_context->checkAccess(AccessType::INSERT, target_database, target_table);
-
-    return getTargetTable()->distributedWrite(query, local_context);
+    return getTargetTable(TargetAccess{local_context, AccessType::INSERT})->distributedWrite(query, local_context);
 }
 
 StorageSnapshotPtr StorageAlias::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const

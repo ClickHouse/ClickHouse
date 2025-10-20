@@ -2,7 +2,8 @@
 
 #include <Storages/IStorage.h>
 #include <Interpreters/DatabaseCatalog.h>
-
+#include <Access/Common/AccessType.h>
+#include <optional>
 
 namespace DB
 {
@@ -10,6 +11,13 @@ namespace DB
 class StorageAlias final : public IStorage, WithContext
 {
 public:
+    struct TargetAccess
+    {
+        ContextPtr context;
+        AccessType access_type;
+        Names column_names = {};
+    };
+
     StorageAlias(
         const StorageID & table_id_,
         ContextPtr context_,
@@ -19,7 +27,7 @@ public:
     std::string getName() const override { return "Alias"; }
 
     /// Get the target storage this alias points to
-    StoragePtr getTargetTable() const { return DatabaseCatalog::instance().getTable(StorageID(target_database, target_table), getContext()); }
+    StoragePtr getTargetTable(std::optional<TargetAccess> access_check = std::nullopt) const;
 
     /// Read from target table
     void read(
