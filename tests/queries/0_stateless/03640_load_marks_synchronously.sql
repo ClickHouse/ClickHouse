@@ -10,7 +10,7 @@ attach table data;
 select * from data settings load_marks_asynchronously=1 format Null /* 1 */;
 select * from data settings load_marks_asynchronously=1 format Null /* 2 */;
 
-system flush logs;
+system flush logs query_log;
 select query, ProfileEvents['BackgroundLoadingMarksTasks']>0 async, ProfileEvents['MarksTasksFromCache']>0 sync
 from system.query_log
 where current_database = currentDatabase() and query_kind = 'Select' and type != 'QueryStart'
