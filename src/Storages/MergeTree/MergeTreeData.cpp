@@ -9850,6 +9850,8 @@ StorageSnapshotPtr MergeTreeData::createStorageSnapshot(const StorageMetadataPtr
     }
 
     auto snapshot_data = std::make_unique<SnapshotData>();
+    snapshot_data->storage = shared_from_this();
+
     ColumnsDescription object_columns_copy;
 
     DataPartsVector parts;
