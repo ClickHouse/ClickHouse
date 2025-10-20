@@ -23,7 +23,7 @@ for max_threads in 1 3; do
 
   ${CLICKHOUSE_CLIENT} --query "ALTER TABLE table_for_freeze_replicated FREEZE PARTITION '3' WITH NAME 'test_03612_single_part' $FREEZE_QUERY_PARAMS;" \
     | ${CLICKHOUSE_LOCAL} --structure "$ALTER_OUT_STRUCTURE, $FREEZE_OUT_STRUCTURE" \
-        --query "SELECT command_type, partition_id, part_name, backup_name FROM table ORDER BY partition_id FORMAT  TSVWithNames"
+        --query "SELECT command_type, partition_id, part_name, backup_name FROM table ORDER BY partition_id FORMAT TSVWithNames"
 
   ${CLICKHOUSE_CLIENT} --query "ALTER TABLE table_for_freeze_replicated DETACH PARTITION '3';"
   ${CLICKHOUSE_CLIENT} --insert_keeper_fault_injection_probability=0 --query "INSERT INTO table_for_freeze_replicated VALUES (3, '3');"
