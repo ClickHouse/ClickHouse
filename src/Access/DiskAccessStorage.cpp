@@ -567,10 +567,12 @@ bool DiskAccessStorage::updateNoLock(const UUID & id, const UpdateFunc & update_
         return false;
 
     AccessEntityPtr new_entity = memory_storage.read(id, throw_if_not_exists);
-    if (old_entity->getName() != new_entity->getName() && write_on_disk)
-        scheduleWriteLists(new_entity->getType());
     if (write_on_disk)
-        writeAccessEntityToDisk(id, *new_entity);
+    {
+        if (old_entity->getName() != new_entity->getName())
+            scheduleWriteLists(new_entity->getType());
+         writeAccessEntityToDisk(id, *new_entity);
+    }
 
     return true;
 }
