@@ -1,4 +1,6 @@
 #pragma once
+
+#include <base/UUID.h>
 #include <Storages/MergeTree/MergeTreeWriterStream.h>
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Formats/MarkInCompressedFile.h>
@@ -49,7 +51,7 @@ struct MergeTreeIndexDeserializationState
 {
     MergeTreeIndexVersion version;
     const IMergeTreeIndexCondition * condition;
-    String path_to_data_part;
+    UUID table_id;
     String index_name;
     size_t index_mark;
 };

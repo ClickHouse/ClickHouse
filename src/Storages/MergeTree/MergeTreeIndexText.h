@@ -3,12 +3,10 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Columns/IColumn.h>
-#include <Common/LRUResourceCache.h>
 #include <Common/Logger.h>
 #include <Formats/MarkInCompressedFile.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/StringHashMap.h>
-#include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/BloomFilter.h>
 #include <Interpreters/ITokenExtractor.h>
@@ -18,14 +16,10 @@
 
 #include <vector>
 
-namespace ProfileEvents
-{
-    extern const Event TextIndexDictionaryBlockCacheHits;
-    extern const Event TextIndexDictionaryBlockCacheMisses;
-}
-
 namespace DB
 {
+
+class TextIndexDictionaryBlockCache;
 
 /**
   * Implementation of inverted index for text search.
@@ -195,20 +189,6 @@ struct DictionarySparseIndex : public DictionaryBlockBase
     ColumnPtr offsets_in_file;
 };
 
-class ImmutableDictionaryBlock
-{
-public:
-    ImmutableDictionaryBlock() = default;
-    ImmutableDictionaryBlock(ColumnPtr tokens_, std::vector<TokenPostingsInfo> token_infos_);
-
-    TokenPostingsInfo * getTokenInfo(const StringRef & token);
-
-private:
-    absl::flat_hash_map<String, TokenPostingsInfo> token_infos;
-};
-
-using ImmutableDictionaryBlockPtr = std::shared_ptr<ImmutableDictionaryBlock>;
-
 struct DictionaryBlock : public DictionaryBlockBase
 {
     DictionaryBlock() = default;
@@ -217,42 +197,13 @@ struct DictionaryBlock : public DictionaryBlockBase
     std::vector<TokenPostingsInfo> token_infos;
 };
 
-class MergeTreeIndexGranuleTextDictionaryBlockCache : public CacheBase<UInt128, ImmutableDictionaryBlock, UInt128TrivialHash>
-{
-public:
-    static MergeTreeIndexGranuleTextDictionaryBlockCache & instance()
-    {
-        static MergeTreeIndexGranuleTextDictionaryBlockCache cache;
-        return cache;
-    }
-
-    template <typename LoadFunc>
-    ImmutableDictionaryBlockPtr getOrSet(UInt128 key, LoadFunc && load_func)
-    {
-        auto [cache_entry, inserted] = CacheBase::getOrSet(key, load_func);
-
-        if (inserted)
-            ProfileEvents::increment(ProfileEvents::TextIndexDictionaryBlockCacheMisses);
-        else
-            ProfileEvents::increment(ProfileEvents::TextIndexDictionaryBlockCacheHits);
-
-        return std::move(cache_entry);
-    }
-
-private:
-    MergeTreeIndexGranuleTextDictionaryBlockCache()
-        : CacheBase(CurrentMetrics::end(), CurrentMetrics::end(), std::numeric_limits<uint64_t>::max()) /// TODO(ahmadov): make it configurable
-    {
-    }
-};
-
 /// Text index granule created on reading of the index.
 struct MergeTreeIndexGranuleText final : public IMergeTreeIndexGranule
 {
 public:
     using TokenToPostingsInfosMap = absl::flat_hash_map<StringRef, TokenPostingsInfo>;
 
-    explicit MergeTreeIndexGranuleText(MergeTreeIndexTextParams params_);
+    explicit MergeTreeIndexGranuleText(MergeTreeIndexTextParams params_, ContextPtr context_ = Context::getGlobalContextInstance());
     ~MergeTreeIndexGranuleText() override = default;
 
     void serializeBinary(WriteBuffer & ostr) const override;
@@ -277,6 +228,7 @@ private:
     /// Reads dictionary blocks and analyzes them for tokens remaining after bloom filter analysis.
     void analyzeDictionary(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
 
+    TextIndexDictionaryBlockCache * dictionary_block_cache;
     MergeTreeIndexTextParams params;
     size_t num_tokens = 0;
     BloomFilter bloom_filter;

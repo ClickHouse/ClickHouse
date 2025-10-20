@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/MergeTreeWriterStream.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
+#include <Storages/MergeTree/TextIndexCache.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
@@ -109,22 +110,6 @@ DictionaryBlock::DictionaryBlock(ColumnPtr tokens_, std::vector<TokenPostingsInf
 {
 }
 
-ImmutableDictionaryBlock::ImmutableDictionaryBlock(ColumnPtr tokens_, std::vector<TokenPostingsInfo> token_infos_)
-{
-    const auto & tokens = assert_cast<const ColumnString &>(*tokens_);
-    auto num_tokens = tokens.size();
-    token_infos.reserve(num_tokens);
-    for (size_t i = 0; i < num_tokens; ++i)
-        token_infos.emplace(tokens.getDataAt(i), std::move(token_infos_[i]));
-}
-
-TokenPostingsInfo* ImmutableDictionaryBlock::getTokenInfo(const StringRef & token)
-{
-    if (auto it = token_infos.find(token.toString()); it != token_infos.end())
-        return &it->second;
-    return {};
-}
-
 UInt64 PostingsSerialization::serialize(UInt64 header, PostingListBuilder && postings, WriteBuffer & ostr)
 {
     UInt64 written_bytes = 0;
@@ -195,8 +180,9 @@ PostingList PostingsSerialization::deserialize(UInt64 header, UInt32 cardinality
     return PostingList::read(buf.data());
 }
 
-MergeTreeIndexGranuleText::MergeTreeIndexGranuleText(MergeTreeIndexTextParams params_)
-    : params(std::move(params_))
+MergeTreeIndexGranuleText::MergeTreeIndexGranuleText(MergeTreeIndexTextParams params_, ContextPtr context_)
+    : dictionary_block_cache(context_->getTextIndexDictionaryBlockCache().get())
+    , params(std::move(params_))
     , bloom_filter(params.bloom_filter_bits_per_row, params.bloom_filter_num_hashes, 0)
 {
 }
@@ -358,7 +344,7 @@ void MergeTreeIndexGranuleText::analyzeBloomFilter(const IMergeTreeIndexConditio
 
 namespace
 {
-ImmutableDictionaryBlockPtr deserializeDictionaryBlock(ReadBuffer & istr)
+TextIndexDictionaryBlockCacheEntryPtr deserializeDictionaryBlock(ReadBuffer & istr)
 {
     ProfileEvents::increment(ProfileEvents::TextIndexReadDictionaryBlocks);
 
@@ -405,7 +391,7 @@ ImmutableDictionaryBlockPtr deserializeDictionaryBlock(ReadBuffer & istr)
         }
     }
 
-    return std::make_shared<ImmutableDictionaryBlock>(std::move(tokens_column), std::move(token_infos));
+    return std::make_shared<TextIndexDictionaryBlockCacheEntry>(std::move(tokens_column), std::move(token_infos));
 }
 }
 
@@ -431,17 +417,11 @@ void MergeTreeIndexGranuleText::analyzeDictionary(MergeTreeIndexReaderStream & s
     auto * data_buffer = stream.getDataBuffer();
     auto * compressed_buffer = stream.getCompressedDataBuffer();
 
-    auto & dictionary_block_cache =  MergeTreeIndexGranuleTextDictionaryBlockCache::instance();
     for (const auto & [block_idx, tokens] : block_to_tokens)
     {
-        SipHash block_hasher;
-        block_hasher.update(state.path_to_data_part);
-        block_hasher.update(state.index_name);
-        block_hasher.update(state.index_mark);
-        block_hasher.update(block_idx);
-
-        auto dictionary_block = dictionary_block_cache.getOrSet(
-            block_hasher.get128(),
+        auto block_key = TextIndexDictionaryBlockCache::hash(state.table_id, state.index_name, state.index_mark, block_idx);
+        auto dictionary_block = dictionary_block_cache->getOrSet(
+            block_key,
             [&]
             {
                 UInt64 offset_in_file = sparse_index.getOffsetInFile(block_idx);
