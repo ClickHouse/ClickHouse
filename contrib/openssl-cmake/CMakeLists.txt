@@ -1248,7 +1248,14 @@ elseif(ARCH_RISCV64)
     set(CRYPTO_SRC ${CRYPTO_SRC}
         asm/crypto/aes/aes-riscv64-zkn.S
         asm/crypto/modes/ghash-riscv64.S
+        asm/crypto/modes/ghash-riscv64-zvkg.S
+        asm/crypto/modes/ghash-riscv64-zvkb-zvbc.S
+        asm/crypto/aes/aes-riscv64-zvkned.S
+        asm/crypto/aes/aes-riscv64-zvbb-zvkg-zvkned.S
+        asm/crypto/aes/aes-riscv64-zvkb-zvkned.S
+        asm/crypto/modes/aes-gcm-riscv64-zvkb-zvkg-zvkned.S
         asm/crypto/riscv64cpuid.S
+        asm/crypto/sm4/sm4-riscv64-zvksed.S
         ${OPENSSL_SOURCE_DIR}/crypto/aes/aes_cbc.c
         ${OPENSSL_SOURCE_DIR}/crypto/aes/aes_core.c
         ${OPENSSL_SOURCE_DIR}/crypto/bn/bn_asm.c

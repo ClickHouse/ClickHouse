@@ -96,7 +96,14 @@ declare -a jobs=(
     # ARCH_RISCV64
     "crypto/riscv64cpuid.pl crypto/riscv64cpuid.S linux64"
     "crypto/aes/asm/aes-riscv64-zkn.pl crypto/aes/aes-riscv64-zkn.S linux64"
+    "crypto/aes/asm/aes-riscv64-zvkned.pl crypto/aes/aes-riscv64-zvkned.S linux64"
+    "crypto/aes/asm/aes-riscv64-zvkb-zvkned.pl crypto/aes/aes-riscv64-zvkb-zvkned.S linux64"
+    "crypto/aes/asm/aes-riscv64-zvbb-zvkg-zvkned.pl crypto/aes/aes-riscv64-zvbb-zvkg-zvkned.S linux64"
+    "crypto/modes/asm/aes-gcm-riscv64-zvkb-zvkg-zvkned.pl crypto/modes/aes-gcm-riscv64-zvkb-zvkg-zvkned.S linux64"
     "crypto/modes/asm/ghash-riscv64.pl crypto/modes/ghash-riscv64.S linux64"
+    "crypto/modes/asm/ghash-riscv64-zvkg.pl crypto/modes/ghash-riscv64-zvkg.S linux64"
+    "crypto/modes/asm/ghash-riscv64-zvkb-zvbc.pl crypto/modes/ghash-riscv64-zvkb-zvbc.S linux64"
+    "crypto/sm4/asm/sm4-riscv64-zvksed.pl crypto/sm4/sm4-riscv64-zvksed.S linux64"
 
     # ARCH_LOONGARCH64
     "crypto/loongarch64cpuid.pl crypto/loongarch64cpuid.S linux64"
