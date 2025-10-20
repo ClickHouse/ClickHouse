@@ -205,7 +205,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     auto db_num_limit = getContext()->getGlobalContext()->getServerSettings()[ServerSetting::max_database_num_to_throw].value;
     if (db_num_limit > 0 && !internal)
     {
-        size_t db_count = DatabaseCatalog::instance().getDatabases().size();
+        size_t db_count = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true}).size();
         std::initializer_list<std::string_view> system_databases =
         {
             DatabaseCatalog::TEMPORARY_DATABASE,
@@ -304,16 +304,6 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         /// b) `RESTORE from backup` query generated it to ensure the same UUIDs are used on different hosts.
         create.uuid = UUIDHelpers::Nil;
         metadata_path = metadata_dir_path / database_name_escaped;
-    }
-
-    if (create.storage->engine->name == "Replicated" && !internal && !create.attach && create.storage->engine->arguments)
-    {
-        /// Fill in default parameters
-        if (create.storage->engine->arguments->children.size() == 1)
-            create.storage->engine->arguments->children.push_back(std::make_shared<ASTLiteral>("{shard}"));
-
-        if (create.storage->engine->arguments->children.size() == 2)
-            create.storage->engine->arguments->children.push_back(std::make_shared<ASTLiteral>("{replica}"));
     }
 
     if (create.storage->engine->name == "MaterializedPostgreSQL"
@@ -498,7 +488,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
             column_declaration->children.push_back(column_declaration->codec);
         }
 
-        if (!column.statistics.empty())
+        if (column.statistics.hasExplicitStatistics())
         {
             column_declaration->statistics_desc = column.statistics.getAST();
             column_declaration->children.push_back(column_declaration->statistics_desc);
@@ -709,7 +699,8 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
             if (!skip_checks && !context_->getSettingsRef()[Setting::allow_experimental_statistics])
                 throw Exception(
                     ErrorCodes::INCORRECT_QUERY, "Create table with statistics is now disabled. Turn on allow_experimental_statistics");
-            column.statistics = ColumnStatisticsDescription::fromColumnDeclaration(col_decl, column.type);
+
+            column.statistics = ColumnStatisticsDescription::fromStatisticsDescriptionAST(col_decl.statistics_desc, column.name, column.type);
         }
 
         if (col_decl.ttl)
@@ -1760,6 +1751,30 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     return fillTableIfNeeded(create);
 }
 
+namespace
+{
+
+void checkForUnsupportedColumns(const IStorage & storage, LoadingStrictnessLevel mode)
+{
+    if (mode <= LoadingStrictnessLevel::CREATE && hasDynamicSubcolumnsDeprecated(storage.getInMemoryMetadataPtr()->getColumns()) && !storage.supportsDynamicSubcolumnsDeprecated())
+    {
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+            "Cannot create table with column of type Object, "
+            "because storage {} doesn't support dynamic subcolumns",
+            storage.getName());
+    }
+
+    if (mode <= LoadingStrictnessLevel::CREATE && hasDynamicSubcolumns(storage.getInMemoryMetadataPtr()->getColumns()) && !storage.supportsDynamicSubcolumns())
+    {
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+            "Cannot create table with column of type Dynamic or JSON, "
+            "because storage {} doesn't support dynamic subcolumns",
+            storage.getName());
+    }
+}
+
+}
+
 bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                                            const InterpreterCreateQuery::TableProperties & properties,
                                            DDLGuardPtr & ddl_guard, LoadingStrictnessLevel mode)
@@ -1774,7 +1789,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         String temporary_table_name = create.getTable();
         auto creator = [&](const StorageID & table_id)
         {
-            return StorageFactory::instance().get(create,
+            auto res = StorageFactory::instance().get(create,
                 database->getTableDataPath(table_id.getTableName()),
                 getContext(),
                 getContext()->getGlobalContext(),
@@ -1782,6 +1797,9 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                 properties.constraints,
                 mode,
                 is_restore_from_backup);
+            validateVirtualColumns(*res);
+            checkForUnsupportedColumns(*res, mode);
+            return res;
         };
         auto temporary_table = TemporaryTableHolder(getContext(), creator, query_ptr);
 
@@ -1970,22 +1988,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     }
 
     validateVirtualColumns(*res);
-
-    if (mode <= LoadingStrictnessLevel::CREATE && hasDynamicSubcolumnsDeprecated(res->getInMemoryMetadataPtr()->getColumns()) && !res->supportsDynamicSubcolumnsDeprecated())
-    {
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-            "Cannot create table with column of type Object, "
-            "because storage {} doesn't support dynamic subcolumns",
-            res->getName());
-    }
-
-    if (mode <= LoadingStrictnessLevel::CREATE && hasDynamicSubcolumns(res->getInMemoryMetadataPtr()->getColumns()) && !res->supportsDynamicSubcolumns())
-    {
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-            "Cannot create table with column of type Dynamic or JSON, "
-            "because storage {} doesn't support dynamic subcolumns",
-            res->getName());
-    }
+    checkForUnsupportedColumns(*res, mode);
 
     if (!create.attach && getContext()->getSettingsRef()[Setting::database_replicated_allow_only_replicated_engine])
     {

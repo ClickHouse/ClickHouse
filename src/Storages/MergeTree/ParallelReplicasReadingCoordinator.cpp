@@ -897,7 +897,9 @@ class InOrderCoordinator : public ParallelReplicasReadingCoordinator::ImplInterf
 public:
     InOrderCoordinator([[maybe_unused]] size_t replicas_count_, CoordinationMode mode_)
         : ParallelReplicasReadingCoordinator::ImplInterface(replicas_count_, mode_)
-    {}
+    {
+        chassert(mode_ == CoordinationMode::WithOrder || mode_ == CoordinationMode::ReverseOrder);
+    }
     ~InOrderCoordinator() override
     {
         LOG_TRACE(log, "Coordination done: {}", toString(stats));
@@ -1120,6 +1122,14 @@ void ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(Init
 
         LOG_DEBUG(getLogger("ParallelReplicasReadingCoordinator"), "Using snapshot from replica num {}", snapshot_replica_num.value());
     }
+
+    if (announcement.mode != pimpl->getCoordinationMode())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Replica {} decided to read in {} mode, not in {}. This is a bug",
+            announcement.replica_num,
+            magic_enum::enum_name(announcement.mode),
+            magic_enum::enum_name(pimpl->getCoordinationMode()));
 
     pimpl->handleInitialAllRangesAnnouncement(std::move(announcement));
 }

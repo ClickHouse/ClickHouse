@@ -189,12 +189,26 @@ void MergeTreeIndexReader::read(size_t mark, size_t current_granule_num, MergeTr
         stream->seekToMark(mark);
 
     granules->deserializeBinary(current_granule_num, *stream->getDataBuffer(), version);
+    stream_mark = mark + 1;
 }
 
 void MergeTreeIndexReader::adjustRightMark(size_t right_mark)
 {
     for (const auto & stream : stream_holders)
         stream->adjustRightMark(right_mark);
+}
+
+void MergeTreeIndexReader::prefetchBeginOfRange(size_t from_mark, Priority priority)
+{
+    initStreamIfNeeded();
+
+    for (const auto & stream : stream_holders)
+    {
+        stream->seekToMark(from_mark);
+        stream->getDataBuffer()->prefetch(priority);
+    }
+
+    stream_mark = from_mark;
 }
 
 }

@@ -451,4 +451,10 @@ void ColumnMap::takeDynamicStructureFromSourceColumns(const Columns & source_col
     nested->takeDynamicStructureFromSourceColumns(nested_source_columns);
 }
 
+void ColumnMap::takeDynamicStructureFromColumn(const ColumnPtr & source_column)
+{
+    nested->takeDynamicStructureFromColumn(assert_cast<const ColumnMap &>(*source_column).getNestedColumnPtr());
+}
+
+
 }

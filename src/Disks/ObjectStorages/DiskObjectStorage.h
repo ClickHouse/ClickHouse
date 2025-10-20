@@ -118,8 +118,6 @@ public:
 
     void createDirectories(const String & path) override;
 
-    void clearDirectory(const String & path) override;
-
     void moveDirectory(const String & from_path, const String & to_path) override;
 
     void removeDirectory(const String & path) override;
