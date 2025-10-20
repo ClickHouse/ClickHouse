@@ -1830,5 +1830,7 @@ void HashJoin::onBuildPhaseFinish()
         all_join_was_promoted_to_right_any = true;
         LOG_DEBUG(log, "Promoting join strictness to RightAny, because all values in the right table are unique");
     }
+
+    LOG_TRACE(log, "{}Join data is built, {} and {} rows in hash table", instance_log_id, ReadableSize(getTotalByteCount()), getTotalRowCount());
 }
 }
