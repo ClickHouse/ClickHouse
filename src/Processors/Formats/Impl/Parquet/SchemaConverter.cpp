@@ -1045,7 +1045,7 @@ void SchemaConverter::processPrimitiveColumn(
         if (precision > max_precision)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet decimal type precision or scale is too big ({} digits) for physical type {}", precision, thriftToString(type));
 
-        out_inferred_type = createDecimal<DataTypeDecimal>(max_precision, scale);
+        out_inferred_type = createDecimal<DataTypeDecimal>(precision, scale);
         size_t output_size = out_inferred_type->getSizeOfValueInMemory();
         out_decoder.allow_stats = is_output_type_decimal(output_size, scale);
 
@@ -1097,6 +1097,8 @@ void SchemaConverter::processPrimitiveColumn(
             out_inferred_type = DataTypeFactory::instance().get("Bool");
             auto converter = std::make_shared<IntConverter>();
             converter->input_size = 1;
+            converter->input_signed = false;
+            converter->field_signed = false;
             out_decoder.allow_stats = dispatch_int_stats_converter(/*allow_datetime_and_ipv4=*/ false, *converter);
             out_decoder.fixed_size_converter = std::move(converter);
             return;

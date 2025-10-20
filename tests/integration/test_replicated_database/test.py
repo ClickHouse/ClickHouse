@@ -1877,3 +1877,62 @@ def test_implicit_index(started_cluster):
         "CREATE DATABASE implicit_index ENGINE = Replicated('/clickhouse/databases/implicit_index', 'shard1', 'replica2');"
         "SYSTEM SYNC DATABASE REPLICA implicit_index;"
     )
+
+
+def test_timeseries(started_cluster):
+    for node in [competing_node, main_node, dummy_node]:
+        node.query("DROP DATABASE IF EXISTS ts_db SYNC")
+
+    competing_node.query(
+        "CREATE DATABASE ts_db ENGINE = Replicated('/clickhouse/databases/ts_db', '{shard}', '{replica}');"
+    )
+
+    main_node.query(
+        """
+        CREATE DATABASE ts_db ENGINE = Replicated('/clickhouse/databases/ts_db', '{shard}', '{replica}');
+        CREATE TABLE ts_db.table ENGINE = TimeSeries SETTINGS store_min_time_and_max_time = false
+        DATA ENGINE = ReplicatedMergeTree ORDER BY (id, timestamp)
+        TAGS ENGINE = ReplicatedAggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id)
+        METRICS ENGINE = ReplicatedReplacingMergeTree ORDER BY metric_family_name;
+        """,
+        settings={"allow_experimental_time_series_table": 1}
+    )
+
+    dummy_node.query(
+        "CREATE DATABASE ts_db ENGINE = Replicated('/clickhouse/databases/ts_db', '{shard}', '{replica}');"
+    )
+
+    for node in [competing_node, main_node, dummy_node]:
+        assert node.query(
+            """
+            SYSTEM SYNC DATABASE REPLICA ts_db;
+            SELECT count() FROM system.tables WHERE database='ts_db';
+            """, timeout=10
+        ) == "4\n", f"Node {node.name} failed"
+
+
+def test_mv_false_cyclic_dependency(started_cluster):
+    main_node.query(
+        """
+        DROP DATABASE default;
+        CREATE DATABASE default ENGINE = Replicated('/clickhouse/databases/default', '{shard}', '{replica}');
+        CREATE TABLE default.table_1 (id Int32) ENGINE = MergeTree ORDER BY id;
+        CREATE MATERIALIZED VIEW default.table_2 (id Int32) ENGINE = MergeTree ORDER BY id AS WITH table_3 AS (SELECT id AS id FROM table_1) SELECT * FROM table_3;
+        CREATE MATERIALIZED VIEW default.table_3 (id Int32) ENGINE = MergeTree ORDER BY id AS SELECT id AS id FROM table_2;
+        """
+    )
+    dummy_node.query(
+        """
+        DROP DATABASE default;
+        CREATE DATABASE default ENGINE = Replicated('/clickhouse/databases/default', '{shard}', '{replica}');
+        SYSTEM SYNC DATABASE REPLICA default;
+        DROP DATABASE default SYNC;
+        CREATE DATABASE default;
+        """
+    )
+    main_node.query(
+        """
+        DROP DATABASE default SYNC;
+        CREATE DATABASE default;
+        """
+    )

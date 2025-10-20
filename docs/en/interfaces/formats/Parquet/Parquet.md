@@ -6,6 +6,7 @@ keywords: ['Parquet']
 output_format: true
 slug: /interfaces/formats/Parquet
 title: 'Parquet'
+doc_type: 'reference'
 ---
 
 | Input | Output | Alias |

@@ -1,9 +1,23 @@
+#include <Functions/FunctionsLogical.h>
 #include <Functions/isNotDistinctFrom.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsLogical.h>
 
 namespace DB
 {
+
+template <>
+ColumnPtr FunctionComparison<IsNotDistinctFromOp, NameFunctionIsNotDistinctFrom>::executeTupleImpl(
+    const ColumnsWithTypeAndName & x, const ColumnsWithTypeAndName & y, size_t tuple_size, size_t input_rows_count) const
+{
+    FunctionOverloadResolverPtr func_builder_is_not_distinct_from
+        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionIsNotDistinctFrom>());
+
+    FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
+
+    return executeTupleEqualityImpl(func_builder_is_not_distinct_from, func_builder_and, x, y, tuple_size, input_rows_count);
+}
+
 
 REGISTER_FUNCTION(IsNotDistinctFrom)
 {

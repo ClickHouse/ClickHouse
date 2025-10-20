@@ -40,9 +40,6 @@ public:
 
     String getMetadataPath() const override { return metadata_path; }
 
-    bool canContainMergeTreeTables() const override { return false; }
-    bool canContainDistributedTables() const override { return false; }
-    bool canContainRocksDBTables() const override { return false; }
     bool shouldBeEmptyOnDetach() const override { return false; }
 
     ASTPtr getCreateDatabaseQuery() const override;
