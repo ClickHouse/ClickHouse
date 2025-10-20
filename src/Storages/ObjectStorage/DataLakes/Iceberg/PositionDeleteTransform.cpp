@@ -116,7 +116,7 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
             context->getSettingsRef()[DB::Setting::max_block_size],
             format_settings,
             std::make_shared<FormatParserSharedResources>(context->getSettingsRef(), 1),
-            std::make_shared<FormatFilterInfo>(actions_dag_ptr, context, nullptr),
+            std::make_shared<FormatFilterInfo>(actions_dag_ptr, context, nullptr, nullptr, nullptr),
             true /* is_remote_fs */,
             compression_method);
 
