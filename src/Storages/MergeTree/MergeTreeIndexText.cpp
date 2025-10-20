@@ -1260,6 +1260,7 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
 
     /// No validation for max_cardinality_for_embedded_postings.
     extractOption<UInt64>(options, ARGUMENT_MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS);
+    auto preprocessor_str = extractOption<String>(options, ARGUMENT_PREPROCESSOR, false);
 
     if (!options.empty())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Unexpected text index arguments: {}", fmt::join(std::views::keys(options), ", "));
@@ -1287,7 +1288,9 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
             "Text index must be created on columns of type `String`, `FixedString`, `LowCardinality(String)`, `LowCardinality(FixedString)`, `Array(String)` or `Array(FixedString)`");
     }
 
-    if (auto preprocessor_str = extractOption<String>(options, ARGUMENT_PREPROCESSOR, false); preprocessor_str)
+    /// check preprocessor_str now, after data_type and column_names and index.data_types were already checked because we want to get
+    /// accurate error messages.
+    if (preprocessor_str.has_value())
     {
         /// For very strict validation of the expression we fully parse it here.  However it will be parsed again for index construction,
         /// generally immediately after this call.
