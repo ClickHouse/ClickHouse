@@ -419,7 +419,7 @@ void MergeTreeIndexGranuleText::analyzeDictionary(MergeTreeIndexReaderStream & s
 
     for (const auto & [block_idx, tokens] : block_to_tokens)
     {
-        auto block_key = TextIndexDictionaryBlockCache::hash(state.table_id, state.index_name, state.index_mark, block_idx);
+        auto block_key = TextIndexDictionaryBlockCache::hash(state.path_to_data_part, state.index_name, state.index_mark, block_idx);
         auto dictionary_block = dictionary_block_cache->getOrSet(
             block_key,
             [&]
