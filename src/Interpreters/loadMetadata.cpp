@@ -558,7 +558,7 @@ void convertDatabasesEnginesIfNeed(const LoadTaskPtrs & load_metadata, ContextMu
     // Wait for all table to be loaded and started
     waitLoad(TablesLoaderForegroundPoolId, load_metadata);
 
-    for (const auto & [name, _] : DatabaseCatalog::instance().getDatabases())
+    for (const auto & [name, _] : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
         if (name != DatabaseCatalog::SYSTEM_DATABASE)
             maybeConvertOrdinaryDatabaseToAtomic(context, name);
 

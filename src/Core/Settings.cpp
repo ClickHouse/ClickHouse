@@ -6563,7 +6563,7 @@ Query Iceberg table using the snapshot that was current at a specific timestamp.
     DECLARE(Int64, iceberg_snapshot_id, 0, R"(
 Query Iceberg table using the specific snapshot id.
 )", 0) \
-    DECLARE(Bool, show_data_lake_catalogs_in_system_tables, true, R"(
+    DECLARE(Bool, show_data_lake_catalogs_in_system_tables, false, R"(
 Enables showing data lake catalogs in system tables.
 )", 0) \
     DECLARE(Bool, delta_lake_enable_expression_visitor_logging, false, R"(
