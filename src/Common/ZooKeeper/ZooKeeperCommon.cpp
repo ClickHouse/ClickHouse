@@ -605,6 +605,264 @@ void ZooKeeperGetACLResponse::readImpl(ReadBuffer & in)
     Coordination::read(stat, in);
 }
 
+void ZooKeeperCheckWatchRequest::readImpl(ReadBuffer & in)
+{
+    Coordination::read(path, in);
+
+    int32_t type_representation;
+    Coordination::read(type_representation, in);
+    type = static_cast<CheckWatchType>(type_representation);
+}
+
+void ZooKeeperCheckWatchRequest::writeImpl(WriteBuffer & out) const
+{
+    Coordination::write(path, out);
+    Coordination::write(static_cast<Int32>(type), out);
+}
+
+size_t ZooKeeperCheckWatchRequest::sizeImpl() const
+{
+    return sizeof(type) + Coordination::size(path);
+}
+
+std::string ZooKeeperCheckWatchRequest::toStringImpl(bool /*short_format*/) const
+{
+    String result = std::format("path: {}\n", path);
+    result += std::format("type: {}\n", static_cast<Int32>(type));
+    return result;
+}
+
+ZooKeeperResponsePtr ZooKeeperCheckWatchRequest::makeResponse() const
+{
+    return std::make_shared<ZooKeeperAddWatchResponse>();
+}
+
+void ZooKeeperCheckWatchResponse::readImpl(ReadBuffer &)
+{
+}
+
+void ZooKeeperCheckWatchResponse::writeImpl(WriteBuffer &) const
+{
+}
+
+size_t ZooKeeperCheckWatchResponse::sizeImpl() const
+{
+    return 0;
+}
+
+void ZooKeeperRemoveWatchRequest::readImpl(ReadBuffer & in)
+{
+    Coordination::read(path, in);
+    int32_t type_representation;
+    Coordination::read(type_representation, in);
+    type = static_cast<WatchType>(type_representation);
+}
+
+void ZooKeeperRemoveWatchRequest::writeImpl(WriteBuffer & out) const
+{
+    Coordination::write(path, out);
+    Coordination::write(static_cast<Int32>(type), out);
+}
+
+size_t ZooKeeperRemoveWatchRequest::sizeImpl() const
+{
+    return sizeof(type) + Coordination::size(path);
+}
+
+std::string ZooKeeperRemoveWatchRequest::toStringImpl(bool /*short_format*/) const
+{
+    String result = std::format("path: {}\n", path);
+    result += std::format("type: {}\n", static_cast<Int32>(type));
+    return result;
+}
+
+ZooKeeperResponsePtr ZooKeeperRemoveWatchRequest::makeResponse() const
+{
+    return std::make_shared<ZooKeeperAddWatchResponse>();
+}
+
+void ZooKeeperRemoveWatchResponse::readImpl(ReadBuffer &)
+{
+}
+
+void ZooKeeperRemoveWatchResponse::writeImpl(WriteBuffer &) const
+{
+}
+
+size_t ZooKeeperRemoveWatchResponse::sizeImpl() const
+{
+    return 0;
+}
+
+void ZooKeeperAddWatchRequest::readImpl(ReadBuffer & in)
+{
+    Coordination::read(path, in);
+    int32_t mode_representation;
+    Coordination::read(mode_representation, in);
+    mode = static_cast<AddWatchMode>(mode_representation);
+}
+
+void ZooKeeperAddWatchRequest::writeImpl(WriteBuffer & out) const
+{
+    Coordination::write(path, out);
+    Coordination::write(static_cast<Int32>(mode), out);
+}
+
+size_t ZooKeeperAddWatchRequest::sizeImpl() const
+{
+    return sizeof(mode) + Coordination::size(path);
+}
+
+std::string ZooKeeperAddWatchRequest::toStringImpl(bool /*short_format*/) const
+{
+    String result = std::format("path: {}\n", path);
+    result += std::format("mode: {}\n", static_cast<Int32>(mode));
+    return result;
+}
+
+ZooKeeperResponsePtr ZooKeeperAddWatchRequest::makeResponse() const
+{
+    return std::make_shared<ZooKeeperAddWatchResponse>();
+}
+
+void ZooKeeperAddWatchResponse::readImpl(ReadBuffer &)
+{
+}
+
+void ZooKeeperAddWatchResponse::writeImpl(WriteBuffer &) const
+{
+}
+
+size_t ZooKeeperAddWatchResponse::sizeImpl() const
+{
+    return 0;
+}
+
+void ZooKeeperSetWatchRequest::readImpl(ReadBuffer & in)
+{
+    Coordination::read(zxid, in);
+
+    Coordination::read(data_watches, in);
+    Coordination::read(exist_watches, in);
+    Coordination::read(child_watches, in);
+}
+
+void ZooKeeperSetWatchRequest::writeImpl(WriteBuffer & out) const
+{
+    Coordination::write(zxid, out);
+
+    Coordination::write(data_watches, out);
+    Coordination::write(exist_watches, out);
+    Coordination::write(child_watches, out);
+}
+
+size_t ZooKeeperSetWatchRequest::sizeImpl() const
+{
+    return sizeof(zxid) + Coordination::size(data_watches) + Coordination::size(exist_watches) + Coordination::size(child_watches);
+}
+
+std::string ZooKeeperSetWatchRequest::toStringImpl(bool /*short_format*/) const
+{
+    String result = std::format("zxid: {}\n", zxid);
+
+    for (const auto & elem : data_watches)
+        result += std::format("data_watch: {}\n", elem);
+
+    for (const auto & elem : exist_watches)
+        result += std::format("exist_watch: {}\n", elem);
+
+    for (const auto & elem : child_watches)
+        result += std::format("child_watch: {}\n", elem);
+    return result;
+}
+
+ZooKeeperResponsePtr ZooKeeperSetWatchRequest::makeResponse() const
+{
+    return std::make_shared<ZooKeeperSetWatchResponse>();
+}
+
+void ZooKeeperSetWatch2Request::readImpl(ReadBuffer & in)
+{
+    Coordination::read(zxid, in);
+
+    Coordination::read(data_watches, in);
+    Coordination::read(exist_watches, in);
+    Coordination::read(child_watches, in);
+
+    Coordination::read(persistent_watches, in);
+    Coordination::read(persistent_recursive_watches, in);
+}
+
+void ZooKeeperSetWatch2Request::writeImpl(WriteBuffer & out) const
+{
+    Coordination::write(zxid, out);
+
+    Coordination::write(data_watches, out);
+    Coordination::write(exist_watches, out);
+    Coordination::write(child_watches, out);
+
+    Coordination::write(persistent_watches, out);
+    Coordination::write(persistent_recursive_watches, out);
+}
+
+size_t ZooKeeperSetWatch2Request::sizeImpl() const
+{
+    return sizeof(zxid) + Coordination::size(data_watches) + Coordination::size(exist_watches) + Coordination::size(child_watches) + Coordination::size(persistent_watches) + Coordination::size(persistent_recursive_watches);
+}
+
+std::string ZooKeeperSetWatch2Request::toStringImpl(bool /*short_format*/) const
+{
+    String result = std::format("zxid: {}\n", zxid);
+
+    for (const auto & elem : data_watches)
+        result += std::format("data_watch: {}\n", elem);
+
+    for (const auto & elem : exist_watches)
+        result += std::format("exist_watch: {}\n", elem);
+
+    for (const auto & elem : child_watches)
+        result += std::format("child_watch: {}\n", elem);
+
+    for (const auto & elem : persistent_watches)
+        result += std::format("persistent_watches: {}\n", elem);
+
+    for (const auto & elem : persistent_recursive_watches)
+        result += std::format("persistent_recursive_watches: {}\n", elem);
+
+    return result;
+}
+
+ZooKeeperResponsePtr ZooKeeperSetWatch2Request::makeResponse() const
+{
+    return std::make_shared<ZooKeeperSetWatch2Response>();
+}
+
+void ZooKeeperSetWatchResponse::readImpl(ReadBuffer &)
+{
+}
+
+void ZooKeeperSetWatchResponse::writeImpl(WriteBuffer &) const
+{
+}
+
+size_t ZooKeeperSetWatchResponse::sizeImpl() const
+{
+    return 0;
+}
+
+void ZooKeeperSetWatch2Response::readImpl(ReadBuffer &)
+{
+}
+
+void ZooKeeperSetWatch2Response::writeImpl(WriteBuffer &) const
+{
+}
+
+size_t ZooKeeperSetWatch2Response::sizeImpl() const
+{
+    return 0;
+}
+
 OpNum ZooKeeperCheckRequest::getOpNum() const
 {
     if (not_exists)
