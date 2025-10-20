@@ -100,6 +100,7 @@
 #include <boost/algorithm/string/split.hpp>
 
 #include <Common/config_version.h>
+#include <Common/XDGBaseDirectories.h>
 #include <base/find_symbols.h>
 
 
@@ -3472,15 +3473,16 @@ void ClientBase::runInteractive()
     if (!isEmbeeddedClient())
     {
         /// Load command history if present.
+        bool should_create_parent_directories = false;
         if (getClientConfiguration().has("history_file"))
             history_file = getClientConfiguration().getString("history_file");
         else
         {
-            auto * history_file_from_env = getenv("CLICKHOUSE_HISTORY_FILE"); // NOLINT(concurrency-mt-unsafe)
-            if (history_file_from_env)
-                history_file = history_file_from_env;
-            else if (!home_path.empty())
-                history_file = home_path + "/.clickhouse-client-history";
+            history_file = getHistoryFilePath();
+
+            /// Avoid creating parent directories
+            /// if history file path was specified explicitly in config.
+            should_create_parent_directories = true;
         }
 
         if (!history_file.empty() && !fs::exists(history_file))
@@ -3488,6 +3490,9 @@ void ClientBase::runInteractive()
             /// Avoid TOCTOU issue.
             try
             {
+                if (should_create_parent_directories && history_file.has_parent_path())
+                    fs::create_directories(history_file.parent_path());
+
                 FS::createFile(history_file);
             }
             catch (const ErrnoException & e)
@@ -3728,6 +3733,31 @@ void ClientBase::runNonInteractive()
         else
             processQueryText(text);
     }
+}
+
+fs::path ClientBase::getHistoryFilePath()
+{
+    auto * history_file_from_env = getenv("CLICKHOUSE_HISTORY_FILE"); // NOLINT(concurrency-mt-unsafe)
+    if (history_file_from_env)
+        return history_file_from_env;
+
+    /// Client query history was stored in ~/.clickhouse-client-history
+    /// before moving to $XDG_STATE_HOME/clickhouse/client-query-history.
+    /// We'll pick up the old file and use it if it is already present.
+    auto * home_path = getenv("HOME"); // NOLINT(concurrency-mt-unsafe)
+    if (home_path)
+    {
+        auto path_in_home_dir = fs::path(home_path) / ".clickhouse-client-history";
+
+        if (fs::exists(path_in_home_dir))
+            return path_in_home_dir;
+    }
+
+    auto xdg_state_home = XDGBaseDirectories::getStateHome();
+    if (!xdg_state_home.empty())
+        return xdg_state_home / "client-query-history";
+
+    throw Exception(ErrorCodes::CANNOT_OPEN_FILE, "Neither $CLICKHOUSE_HISTORY_FILE, $HOME nor $XDG_STATE_HOME is set; cannot place history file.");
 }
 
 

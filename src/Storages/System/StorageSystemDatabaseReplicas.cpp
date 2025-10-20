@@ -291,7 +291,7 @@ void StorageSystemDatabaseReplicas::read(
     const bool need_to_check_access_for_databases = !access->isGranted(AccessType::SHOW_DATABASES);
 
     std::map<String, DatabasePtr> replicated_databases;
-    for (const auto & [db_name, db_data] : DatabaseCatalog::instance().getDatabases())
+    for (const auto & [db_name, db_data] : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
     {
         if (!dynamic_cast<const DatabaseReplicated *>(db_data.get()))
             continue;

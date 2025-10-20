@@ -121,7 +121,7 @@ REGISTER_FUNCTION(RegexpQuoteMeta)
 Adds a backslash before these characters with special meaning in regular expressions: `\0`, `\\`, `|`, `(`, `)`, `^`, `$`, `.`, `[`, `]`, `?`, `*`, `+`, `{`, `:`, `-`.
 This implementation slightly differs from re2::RE2::QuoteMeta.
 It escapes zero byte as `\0` instead of `\x00` and it escapes only required characters.
-)";
+    )";
     FunctionDocumentation::Syntax syntax = "regexpQuoteMeta(s)";
     FunctionDocumentation::Arguments arguments = {
         {"s", "The input string containing characters to be escaped for regex.", {"String"}}
@@ -139,7 +139,7 @@ It escapes zero byte as `\0` instead of `\x00` and it escapes only required char
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::StringReplacement;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionRegexpQuoteMeta>(documentation);
