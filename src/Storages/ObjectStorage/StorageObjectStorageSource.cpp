@@ -697,16 +697,9 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         && modified_read_settings.remote_fs_method == RemoteFSReadMethod::threadpool
         && modified_read_settings.remote_fs_prefetch;
 
-    bool use_async_buffer = false;
-    ReadSettings nested_buffer_read_settings = modified_read_settings;
-    if (use_prefetch || use_filesystem_cache || use_distributed_cache)
-    {
-        nested_buffer_read_settings.remote_read_buffer_use_external_buffer = true;
-
-        /// FIXME: Use async buffer if use_cache,
-        /// because CachedOnDiskReadBufferFromFile does not work as an independent buffer currently.
-        use_async_buffer = true;
-    }
+    /// FIXME: Use async buffer if use_cache,
+    /// because CachedOnDiskReadBufferFromFile does not work as an independent buffer currently.
+    bool use_async_buffer = use_prefetch || use_filesystem_cache || use_distributed_cache;
 
     std::unique_ptr<ReadBufferFromFileBase> impl;
 #if ENABLE_DISTRIBUTED_CACHE
@@ -749,7 +742,11 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
             const auto cache_key = FileCacheKey::fromKey(hash.get128());
             auto cache = FileCacheFactory::instance().get(filesystem_cache_name);
 
-            auto read_buffer_creator = [path = object_info.getPath(), object_size, nested_buffer_read_settings, object_storage]()
+            auto read_buffer_creator = [
+                path = object_info.getPath(),
+                nested_buffer_read_settings = modified_read_settings.withNestedBuffer(/* seekable */false),
+                object_size,
+                object_storage]()
             {
                 return object_storage->readObject(StoredObject(path, "", object_size), nested_buffer_read_settings);
             };
@@ -760,7 +757,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
                 cache,
                 FileCache::getCommonUser(),
                 read_buffer_creator,
-                use_async_buffer ? nested_buffer_read_settings : modified_read_settings,
+                use_async_buffer ? modified_read_settings.withNestedBuffer(/* seekable */true) : modified_read_settings,
                 std::string(CurrentThread::getQueryId()),
                 object_size,
                 /* allow_seeks */true,
@@ -779,7 +776,11 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     }
 
     if (!impl)
-        impl = object_storage->readObject(StoredObject(object_info.getPath(), "", object_size), nested_buffer_read_settings);
+    {
+        impl = object_storage->readObject(
+            StoredObject(object_info.getPath(), "", object_size),
+            use_async_buffer ? modified_read_settings.withNestedBuffer(/* seekable */true) : modified_read_settings);
+    }
 
     if (!use_async_buffer)
         return impl;

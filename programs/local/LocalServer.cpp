@@ -312,7 +312,13 @@ static DatabasePtr createClickHouseLocalDatabaseOverlay(const String & name_, Co
 
     fs::path existing_path_symlink = fs::weakly_canonical(context->getPath()) / "metadata" / "default";
     if (FS::isSymlinkNoThrow(existing_path_symlink))
-        default_database_uuid = parse<UUID>(FS::readSymlink(existing_path_symlink).filename());
+    {
+        auto symlink_path = FS::readSymlink(existing_path_symlink);
+        /// If symlink ends with '/':
+        if (!symlink_path.has_filename() && symlink_path.has_parent_path())
+            symlink_path = symlink_path.parent_path();
+        default_database_uuid = parse<UUID>(symlink_path.filename());
+    }
     else
         default_database_uuid = UUIDHelpers::generateV4();
 

@@ -85,7 +85,7 @@ std::unordered_map<String, CHSetting> performanceSettings
                 }
                 else
                 {
-                    const uint32_t nalgo = (rg.nextMediumNumber() % static_cast<uint32_t>(choices.size())) + 1;
+                    const uint32_t nalgo = rg.randomInt<uint32_t>(0, static_cast<uint32_t>(choices.size()));
 
                     std::shuffle(choices.begin(), choices.end(), rg.generator);
                     for (uint32_t i = 0; i < nalgo; i++)
@@ -147,6 +147,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"optimize_respect_aliases", trueOrFalseSetting},
        {"optimize_rewrite_aggregate_function_with_if", trueOrFalseSetting},
        {"optimize_rewrite_array_exists_to_has", trueOrFalseSetting},
+       {"optimize_rewrite_like_perfect_affix", trueOrFalseSetting},
        {"optimize_rewrite_regexp_functions", trueOrFalseSetting},
        {"optimize_rewrite_sum_if_to_count_if", trueOrFalseSetting},
        {"optimize_skip_merged_partitions", trueOrFalseSetting},
@@ -469,7 +470,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
          {
              String res;
              std::vector<uint32_t> choices = {0, 1, 2, 3, 4};
-             const uint32_t nchoices = (rg.nextMediumNumber() % static_cast<uint32_t>(choices.size())) + 1;
+             const uint32_t nchoices = rg.randomInt<uint32_t>(0, static_cast<uint32_t>(choices.size()));
 
              std::shuffle(choices.begin(), choices.end(), rg.generator);
              for (uint32_t i = 0; i < nchoices; i++)

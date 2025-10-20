@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Columns/IColumn.h>
+#include <Common/Logger.h>
 #include <Formats/MarkInCompressedFile.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/StringHashMap.h>
@@ -124,7 +125,7 @@ struct PostingsSerialization
         EmbeddedPostings = 1ULL << 1,
     };
 
-    static void serialize(UInt64 header, PostingListBuilder && postings, WriteBuffer & ostr);
+    static UInt64 serialize(UInt64 header, PostingListBuilder && postings, WriteBuffer & ostr);
     static PostingList deserialize(UInt64 header, UInt32 cardinality, ReadBuffer & istr);
 };
 
@@ -268,6 +269,7 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
     TokenToPostingsMap tokens_map;
     std::list<PostingList> posting_lists;
     std::unique_ptr<Arena> arena;
+    LoggerPtr logger;
 };
 
 struct MergeTreeIndexTextGranuleBuilder
@@ -319,6 +321,7 @@ public:
 
     ~MergeTreeIndexText() override = default;
 
+    bool supportsReadingOnParallelReplicas() const override { return true; }
     MergeTreeIndexSubstreams getSubstreams() const override;
     MergeTreeIndexFormat getDeserializedFormat(const IDataPartStorage & data_part_storage, const std::string & path_prefix) const override;
 

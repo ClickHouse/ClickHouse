@@ -142,6 +142,7 @@ CREATE TABLE system.databases
     `uuid` UUID,
     `engine_full` String,
     `comment` String,
+    `is_external` UInt8,
     `database` String ALIAS name
 )
 ENGINE = SystemDatabases
@@ -598,6 +599,10 @@ CREATE TABLE system.parts_columns
     `column_modification_time` Nullable(DateTime),
     `column_ttl_min` Nullable(DateTime),
     `column_ttl_max` Nullable(DateTime),
+    `statistics` Array(String),
+    `estimates.min` Nullable(Float64),
+    `estimates.max` Nullable(Float64),
+    `estimates.cardinality` Nullable(UInt64),
     `serialization_kind` String,
     `substreams` Array(String),
     `filenames` Array(String),
@@ -608,7 +613,6 @@ CREATE TABLE system.parts_columns
     `subcolumns.data_compressed_bytes` Array(UInt64),
     `subcolumns.data_uncompressed_bytes` Array(UInt64),
     `subcolumns.marks_bytes` Array(UInt64),
-    `statistics` String,
     `bytes` UInt64 ALIAS bytes_on_disk,
     `marks_size` UInt64 ALIAS marks_bytes,
     `part_name` String ALIAS name

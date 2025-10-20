@@ -4,7 +4,6 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Merges/MergingSortedTransform.h>
-#include <Disks/TemporaryFileOnDisk.h>
 
 
 namespace ProfileEvents

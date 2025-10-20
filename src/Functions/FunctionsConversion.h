@@ -4794,7 +4794,6 @@ private:
         const size_t arrays_count = offsets.size();
         const size_t bytes_per_fixedstring = DataTypeQBit::bitsToBytes(n);
         const size_t padded_dimension = bytes_per_fixedstring * 8;
-        constexpr size_t element_size = sizeof(Word) * 8;
 
         /// Verify array size matches expected QBit size
         size_t prev_offset = 0;
@@ -4830,21 +4829,25 @@ private:
         prev_offset = 0;
         for (auto off : offsets)
         {
-            /// The input array might have elements count not divisible by 8. We need to pad it with zeros to avoid reading uninitialized memory.
-            std::vector<FloatType> value_floats(padded_dimension);
-            memcpy(value_floats.data(), &data.data()[prev_offset], n * sizeof(FloatType));
-
-            /// Transpose the data
-            std::vector<char> transposed_bytes(bytes_per_fixedstring * element_size);
-
-            SerializationQBit::transposeBits<Word>(
-                reinterpret_cast<const Word *>(value_floats.data()), reinterpret_cast<Word *>(transposed_bytes.data()), bytes_per_fixedstring * 8);
-
-            /// Insert the transposed data into columns
+            /// Insert default values for each FixedString column and keep pointers to them
+            std::vector<char *> row_ptrs(size);
             for (size_t j = 0; j < size; ++j)
             {
                 auto & fixed_string_column = assert_cast<ColumnFixedString &>(*tuple_columns[j]);
-                fixed_string_column.insertData(transposed_bytes.data() + j * bytes_per_fixedstring, bytes_per_fixedstring);
+                fixed_string_column.insertDefault();
+                auto & chars = fixed_string_column.getChars();
+                row_ptrs[j] = reinterpret_cast<char *>(&chars[chars.size() - bytes_per_fixedstring]);
+            }
+
+            /// Transpose bits right inside the FixedStrings
+            for (size_t i = 0; i < n; ++i)
+            {
+                Word w = 0;
+
+                FloatType v = data[prev_offset + i];
+                std::memcpy(&w, &v, sizeof(Word));
+
+                SerializationQBit::transposeBits<Word>(w, i, padded_dimension, row_ptrs.data());
             }
 
             prev_offset = off;

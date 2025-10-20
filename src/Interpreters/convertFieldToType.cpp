@@ -568,20 +568,28 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
             auto transpose_bits = [&]<typename Word, typename FloatType>()
             {
-                /// Read field values into contiguous memory. Use padded_dimension as we want all memory used for transposition to be initialised
-                std::vector<FloatType> value_floats(padded_dimension);
-                for (size_t i = 0; i < dst_dimension; ++i)
-                    value_floats[i] = static_cast<const FloatType>(src_container[i].template safeGet<FloatType>());
-
-                /// Transpose the data
-                std::vector<char> transposed_bytes(bytes_per_fixedstring * dst_element_size);
-
-                SerializationQBit::transposeBits<Word>(
-                    reinterpret_cast<const Word *>(value_floats.data()), reinterpret_cast<Word *>(transposed_bytes.data()), padded_dimension);
-
-                /// Extract the transposed data into result tuple
+                /// Prepare output tuple buffers
+                std::vector<std::string> out(dst_element_size, std::string(bytes_per_fixedstring, '\0'));
+                std::vector<char *> plane(dst_element_size);
                 for (size_t i = 0; i < dst_element_size; ++i)
-                    res[i] = Field(String(transposed_bytes.data() + i * bytes_per_fixedstring, bytes_per_fixedstring));
+                    plane[i] = reinterpret_cast<char *>(out[i].data());
+
+                /// Transpose
+                for (size_t i = 0; i < padded_dimension; ++i)
+                {
+                    Word w = 0;
+                    if (i < dst_dimension)
+                    {
+                        FloatType v = static_cast<const FloatType>(src_container[i].template safeGet<FloatType>());
+                        std::memcpy(&w, &v, sizeof(Word));
+                    }
+
+                    SerializationQBit::transposeBits<Word>(w, i, padded_dimension, plane.data());
+                }
+
+                /// Move into Fields
+                for (size_t i = 0; i < dst_element_size; ++i)
+                    res[i] = Field(std::move(out[i]));
             };
 
             if (dst_element_size == 16)

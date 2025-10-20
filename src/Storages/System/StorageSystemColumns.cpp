@@ -27,6 +27,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsBool show_data_lake_catalogs_in_system_tables;
 }
 namespace ErrorCodes
 {
@@ -441,7 +442,9 @@ void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, 
         /// Add `database` column.
         MutableColumnPtr database_column_mut = ColumnString::create();
 
-        const auto databases = DatabaseCatalog::instance().getDatabases();
+        const auto & context = getContext();
+        const auto & settings = context->getSettingsRef();
+        const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = settings[Setting::show_data_lake_catalogs_in_system_tables]});
         for (const auto & [database_name, database] : databases)
         {
             if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)

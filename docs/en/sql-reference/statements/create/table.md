@@ -82,28 +82,6 @@ If the table already exists and `IF NOT EXISTS` is specified, the query won't do
 
 There can be other clauses after the `ENGINE` clause in the query. See detailed documentation on how to create tables in the descriptions of [table engines](/engines/table-engines).
 
-:::tip
-In ClickHouse Cloud please split this into two steps:
-1. Create the table structure
-
-  ```sql
-  CREATE TABLE t1
-  ENGINE = MergeTree
-  ORDER BY ...
-  -- highlight-next-line
-  EMPTY AS
-  SELECT ...
-  ```
-
-2. Populate the table
-
-  ```sql
-  INSERT INTO t1
-  SELECT ...
-  ```
-
-:::
-
 **Example**
 
 Query:

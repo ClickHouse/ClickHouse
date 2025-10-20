@@ -313,7 +313,7 @@ class Runner:
             for p_ in [path, path_1]:
                 if p_ and Path(p_).exists() and p_.startswith("/"):
                     extra_mounts += f" --volume {p_}:{p_}"
-            cmd = f"docker run {tty} --rm --name praktika {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONPATH='.:./ci' --volume ./:{current_dir} {extra_mounts} --workdir={current_dir} {' '.join(settings)} {docker} {job.command}"
+            cmd = f"docker run {tty} --rm --name praktika {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONUNBUFFERED=1 -e PYTHONPATH='.:./ci' --volume ./:{current_dir} {extra_mounts} --workdir={current_dir} {' '.join(settings)} {docker} {job.command}"
         else:
             cmd = job.command
             python_path = os.getenv("PYTHONPATH", ":")
@@ -340,7 +340,7 @@ class Runner:
         print(f"--- Run command [{cmd}]")
 
         with TeePopen(
-            cmd, timeout=job.timeout, preserve_stdio=preserve_stdio
+            cmd, timeout=job.timeout, preserve_stdio=preserve_stdio, timeout_shell_cleanup=job.timeout_shell_cleanup
         ) as process:
             start_time = Utils.timestamp()
 
@@ -555,6 +555,29 @@ class Runner:
                 error = f"ERROR: Failed to insert data into CI DB, exception [{ex}]"
                 print(error)
                 info_errors.append(error)
+
+            try:
+                test_cases_result = result.get_sub_result_by_name(
+                    name=job.result_name_for_cidb
+                )
+                if test_cases_result and not test_cases_result.is_ok() and ci_db:
+                    for test_case_result in test_cases_result.results:
+                        if not test_case_result.is_ok():
+                            test_case_result.set_clickable_label(
+                                "cidb",
+                                ci_db.get_link_to_test_case_statistics(
+                                    test_case_result.name,
+                                    url=Settings.CI_DB_READ_URL,
+                                    user=Settings.CI_DB_READ_USER,
+                                ),
+                            )
+                    result.dump()
+            except Exception as ex:
+                if not info_errors:
+                    traceback.print_exc()
+                    error = f"ERROR: Failed to set clickable label for test cases, exception [{ex}]"
+                    print(error)
+                    info_errors.append(error)
 
         if env.TRACEBACKS:
             result.set_info("===\n" + "---\n".join(env.TRACEBACKS))

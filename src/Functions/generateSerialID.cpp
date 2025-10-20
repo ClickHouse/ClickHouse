@@ -6,6 +6,7 @@
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/IDataType.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -60,7 +61,8 @@ public:
     }
 
     String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 1; }
+    size_t getNumberOfArguments() const override { return 0; }
+    bool isVariadic() const override { return true; }
     bool isStateful() const override { return true; }
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return false; }
@@ -69,6 +71,7 @@ public:
     bool useDefaultImplementationForNothing() const override { return false; }
     bool canBeExecutedOnDefaultArguments() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -76,13 +79,18 @@ public:
         {
             {"series_identifier", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
         };
-        validateFunctionArguments(*this, arguments, mandatory_args);
+
+        FunctionArgumentDescriptors optional_args{
+            {"start_value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt), &isColumnConst, "const UInt*"}
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
 
         return std::make_shared<DataTypeUInt64>();
     }
 
     /// Increments the counter and returns the old counter.
-    [[nodiscard]] UInt64 update(String series_name, size_t & current_series, UInt64 increment, zkutil::ZooKeeperPtr & keeper) const
+    [[nodiscard]] UInt64 update(String series_name, UInt64 start_value, size_t & current_series, UInt64 increment, zkutil::ZooKeeperPtr & keeper) const
     {
         if (series_name.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The first argument of function {} (the series name) cannot be empty", name);
@@ -94,7 +102,8 @@ public:
 
         if (current_series < max_series)
         {
-            auto code = keeper->tryCreate(serial_path, "0", zkutil::CreateMode::Persistent);
+            const auto initial_value = toString(start_value);
+            auto code = keeper->tryCreate(serial_path, initial_value, zkutil::CreateMode::Persistent);
             if (code == Coordination::Error::ZOK)
                 ++current_series;
             else if (code != Coordination::Error::ZNODEEXISTS)
@@ -135,6 +144,11 @@ public:
         typename ColumnUInt64::Container & vec_to = col_res->getData();
         vec_to.resize(input_rows_count);
 
+        UInt64 start_value = 0;
+        const auto has_start_value = arguments.size() >= 2;
+        if (has_start_value)
+            start_value = arguments[1].column->getUInt(0);
+
         zkutil::ZooKeeperPtr keeper = context->getZooKeeper();
 
         Coordination::Stat stat;
@@ -153,7 +167,7 @@ public:
         if (const auto * column_const = typeid_cast<const ColumnConst *>(arguments[0].column.get()))
         {
             String series_name = column_const->getValue<String>();
-            UInt64 counter = update(series_name, current_series, input_rows_count, keeper);
+            UInt64 counter = update(series_name, start_value, current_series, input_rows_count, keeper);
 
             for (auto & val : vec_to)
             {
@@ -176,7 +190,7 @@ public:
 
             /// Update counters in Keeper:
             for (auto & [series_name, values] : series)
-                values.old_value = update(series_name.toString(), current_series, values.num_rows, keeper);
+                values.old_value = update(series_name.toString(), start_value, current_series, values.num_rows, keeper);
 
             /// Populate the result:
             for (size_t i = 0; i < input_rows_count; ++i)
@@ -195,14 +209,16 @@ REGISTER_FUNCTION(Serial)
     {
         .description=R"(
 Generates and returns sequential numbers starting from the previous counter value.
-This function takes a string argument - a series identifier.
+This function takes a string argument - a series identifier, and an optional starting value.
 
 The server should be configured with Keeper.
 The series are stored in Keeper nodes under the path, which can be configured in `series_keeper_path` in the server configuration.
 )",
-        .syntax = "generateSerialID('series_identifier')",
+        .syntax = "generateSerialID('series_identifier'[, start_value])",
         .arguments{
-            {"series_identifier", "Series identifier, (a short constant String)"}
+            {"series_identifier", "Series identifier, (a short constant String)"},
+            {"start_value", "Optional starting value for the counter. Defaults to 0. Note: this value is only used when creating a new series and is ignored if the series already exists"}
+
         },
         .returned_value = {"Returns sequential numbers starting from the previous counter value."},
         .examples{
@@ -222,7 +238,15 @@ The series are stored in Keeper nodes under the path, which can be configured in
 │         1 │      5 │   5 │                        6 │
 │         1 │      4 │   4 │                        7 │
 └───────────┴────────┴─────┴──────────────────────────┘
-                  )"}},
+                  )"},
+            {"with start value", "SELECT generateSerialID('id2', 100)", R"(
+┌─generateSerialID('id2', 100)──┐
+│                           100 │
+└───────────────────────────────┘)"},
+            {"with start value second call", "SELECT generateSerialID('id2', 100)", R"(
+┌─generateSerialID('id2', 100)──┐
+│                           101 │
+└───────────────────────────────┘)"}},
         .category = FunctionDocumentation::Category::Other
     });
 }

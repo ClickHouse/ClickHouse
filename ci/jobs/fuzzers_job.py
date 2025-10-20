@@ -2,6 +2,7 @@ from praktika.result import Result
 from praktika.utils import Shell, Utils
 
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
+from ci.praktika.info import Info
 
 temp_dir = f"{Utils.cwd()}/ci/tmp/"
 
@@ -11,6 +12,7 @@ def main():
     results = []
     stop_watch = Utils.Stopwatch()
     ch = ClickHouseProc()
+    info = Info()
 
     if res:
         print("Install ClickHouse")
@@ -53,7 +55,7 @@ def main():
     )
 
     Result.create_from(
-        results=results, stopwatch=stop_watch, files=[ch.prepare_logs()]
+        results=results, stopwatch=stop_watch, files=[ch.prepare_logs(info=info)]
     ).complete_job()
 
 

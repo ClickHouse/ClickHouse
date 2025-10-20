@@ -53,6 +53,8 @@ class Job:
 
         timeout: int = 5 * 3600
 
+        timeout_shell_cleanup: Optional[str] = None
+
         digest_config: Optional["Job.CacheDigestConfig"] = None
 
         run_in_docker: str = ""
@@ -174,6 +176,11 @@ class Job:
             res.runs_on = runs_on
             return res
 
+        def set_command(self, command):
+            res = copy.deepcopy(self)
+            res.command = command
+            return res
+
         def unset_provides(self, artifact_keyword):
             """
             removes artifact matching artifact_keyword
@@ -246,3 +253,10 @@ class Job:
                     print(f"Warning: failed to check git submodules: {e}")
 
             return False
+
+        def __post_init__(self):
+            if self.timeout_shell_cleanup:
+                return
+            if self.run_in_docker:
+                # the container name is always the same (praktika) for every image
+                self.timeout_shell_cleanup = "docker rm -f praktika"

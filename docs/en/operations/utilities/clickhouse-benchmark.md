@@ -65,10 +65,11 @@ clickhouse-benchmark [keys] < queries_file;
 - `--stacktrace` — Stack traces output. When the key is set, `clickhouse-bencmark` outputs stack traces of exceptions.
 - `--stage=WORD` — Query processing stage at server. ClickHouse stops query processing and returns an answer to `clickhouse-benchmark` at the specified stage. Possible values: `complete`, `fetch_columns`, `with_mergeable_state`. Default value: `complete`.
 - `--roundrobin` — Instead of comparing queries for different `--host`/`--port` just pick one random `--host`/`--port` for every query and send query to it.
-- `--reconnect=N` - Control reconnection behaviour. Possible values 0 (never reconnect), 1 (reconnect for every query), or N (reconnect after every N queries). Default value: 0.
+- `--reconnect=N` — Control reconnection behaviour. Possible values 0 (never reconnect), 1 (reconnect for every query), or N (reconnect after every N queries). Default value: 0.
 - `--max-consecutive-errors=N` — Number of allowed consecutive errors. Default value: 0.
 - `--ignore-error`,`--continue_on_errors` — Continue testing even if queries failed.
 - `--client-side-time` — Display the time including network communication instead of server-side time; Note that for server versions before 22.8 we always display client-side time.
+- `--proto-caps` — Enable/disable chunking in data transfer. choices (can be comma-separated): `chunked_optional`, `notchunked`, `notchunked_optional`, `send_chunked`, `send_chunked_optional`, `send_notchunked`, `send_notchunked_optional`, `recv_chunked`, `recv_chunked_optional`, `recv_notchunked`, `recv_notchunked_optional`. Default value: `notchunked`.
 - `--help` — Shows the help message.
 - `--verbose` — Increase help message verbosity.
 

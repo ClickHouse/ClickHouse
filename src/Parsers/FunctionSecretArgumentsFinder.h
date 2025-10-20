@@ -104,7 +104,8 @@ protected:
         }
         else if ((function->name() == "s3") || (function->name() == "cosn") || (function->name() == "oss") ||
                  (function->name() == "deltaLake") || (function->name() == "hudi") || (function->name() == "iceberg") ||
-                 (function->name() == "gcs") || (function->name() == "icebergS3"))
+                 (function->name() == "gcs") || (function->name() == "icebergS3") || (function->name() == "paimon") ||
+                 (function->name() == "paimonS3"))
         {
             /// s3('url', 'aws_access_key_id', 'aws_secret_access_key', ...)
             findS3FunctionSecretArguments(/* is_cluster_function= */ false);
@@ -117,7 +118,7 @@ protected:
             findS3FunctionSecretArguments(/* is_cluster_function= */ true);
         }
         else if ((function->name() == "azureBlobStorage") || (function->name() == "deltaLakeAzure") ||
-                 (function->name() == "icebergAzure"))
+                 (function->name() == "icebergAzure") || (function->name() == "paimonAzure"))
         {
             /// azureBlobStorage(connection_string|storage_account_url, container_name, blobpath, account_name, account_key, format, compression, structure)
             findAzureBlobStorageFunctionSecretArguments(/* is_cluster_function= */ false);

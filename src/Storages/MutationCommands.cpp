@@ -30,6 +30,25 @@ bool MutationCommand::isBarrierCommand() const
     return type == RENAME_COLUMN;
 }
 
+bool MutationCommand::isPureMetadataCommand() const
+{
+    return type == ALTER_WITHOUT_MUTATION;
+}
+
+bool MutationCommand::isEmptyCommand() const
+{
+    return type == EMPTY;
+}
+
+bool MutationCommand::isDropOrRename() const
+{
+    return type == Type::DROP_COLUMN
+        || type == Type::DROP_INDEX
+        || type == Type::DROP_PROJECTION
+        || type == Type::DROP_STATISTICS
+        || type == Type::RENAME_COLUMN;
+}
+
 bool MutationCommand::affectsAllColumns() const
 {
     return type == DELETE
@@ -37,8 +56,16 @@ bool MutationCommand::affectsAllColumns() const
         || type == REWRITE_PARTS;
 }
 
-std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command, bool parse_alter_commands)
+std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command, bool parse_alter_commands, bool with_pure_metadata_commands)
 {
+    if (with_pure_metadata_commands)
+    {
+        MutationCommand res;
+        res.ast = command->ptr();
+        res.type = ALTER_WITHOUT_MUTATION;
+        return res;
+    }
+
     if (command->type == ASTAlterCommand::DELETE)
     {
         MutationCommand res;
@@ -180,9 +207,10 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         res.type = MutationCommand::Type::DROP_STATISTICS;
         if (command->partition)
             res.partition = command->partition->clone();
-        if (command->clear_index)
+        if (command->clear_statistics)
             res.clear = true;
-        res.statistics_columns = command->statistics_decl->as<ASTStatisticsDeclaration &>().getColumnNames();
+        if (command->statistics_decl)
+            res.statistics_columns = command->statistics_decl->as<ASTStatisticsDeclaration &>().getColumnNames();
         return res;
     }
     if (parse_alter_commands && command->type == ASTAlterCommand::DROP_PROJECTION)
@@ -237,7 +265,7 @@ std::shared_ptr<ASTExpressionList> MutationCommands::ast(bool with_pure_metadata
     auto res = std::make_shared<ASTExpressionList>();
     for (const MutationCommand & command : *this)
     {
-        if (command.type != MutationCommand::ALTER_WITHOUT_MUTATION || with_pure_metadata_commands)
+        if (!command.isPureMetadataCommand() || with_pure_metadata_commands)
             res->children.push_back(command.ast->clone());
     }
     return res;
@@ -249,7 +277,7 @@ void MutationCommands::writeText(WriteBuffer & out, bool with_pure_metadata_comm
     writeEscapedString(ast(with_pure_metadata_commands)->formatWithSecretsOneLine(), out);
 }
 
-void MutationCommands::readText(ReadBuffer & in)
+void MutationCommands::readText(ReadBuffer & in, bool with_pure_metadata_commands)
 {
     String commands_str;
     readEscapedString(commands_str, in);
@@ -261,16 +289,16 @@ void MutationCommands::readText(ReadBuffer & in)
     for (const auto & child : commands_ast->children)
     {
         auto * command_ast = child->as<ASTAlterCommand>();
-        auto command = MutationCommand::parse(command_ast, true);
+        auto command = MutationCommand::parse(command_ast, true, with_pure_metadata_commands);
         if (!command)
             throw Exception(ErrorCodes::UNKNOWN_MUTATION_COMMAND, "Unknown mutation command type: {}", DB::toString<int>(command_ast->type));
         push_back(std::move(*command));
     }
 }
 
-std::string MutationCommands::toString() const
+std::string MutationCommands::toString(bool with_pure_metadata_commands) const
 {
-    return ast()->formatWithSecretsOneLine();
+    return ast(with_pure_metadata_commands)->formatWithSecretsOneLine();
 }
 
 
@@ -278,7 +306,7 @@ bool MutationCommands::hasNonEmptyMutationCommands() const
 {
     for (const auto & command : *this)
     {
-        if (command.type != MutationCommand::Type::EMPTY && command.type != MutationCommand::Type::ALTER_WITHOUT_MUTATION)
+        if (!command.isEmptyCommand() && !command.isPureMetadataCommand())
             return true;
     }
     return false;

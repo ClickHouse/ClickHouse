@@ -1050,9 +1050,10 @@ DataTypePtr HashJoin::joinGetCheckAndGetReturnType(const DataTypes & data_types,
     if (right_table_keys.columns() != num_keys)
         throw Exception(
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Number of arguments for function joinGet{} doesn't match: passed, should be equal to {}",
+            "Number of join_keys and number of right table key columns for function joinGet{} don't match: passed {}, should be equal to {}",
             toString(or_null ? "OrNull" : ""),
-            toString(num_keys));
+            toString(num_keys),
+            toString(right_table_keys.columns()));
 
     for (size_t i = 0; i < num_keys; ++i)
     {
@@ -1829,5 +1830,7 @@ void HashJoin::onBuildPhaseFinish()
         all_join_was_promoted_to_right_any = true;
         LOG_DEBUG(log, "Promoting join strictness to RightAny, because all values in the right table are unique");
     }
+
+    LOG_TRACE(log, "{}Join data is built, {} and {} rows in hash table", instance_log_id, ReadableSize(getTotalByteCount()), getTotalRowCount());
 }
 }
