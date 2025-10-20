@@ -337,27 +337,22 @@ void DatabaseWithAltersOnDiskBase::alterDatabaseComment(const AlterCommand & com
     if (!command.comment)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unable to obtain database comment from query");
 
-    ASTPtr create_query;
-    String old_comment;
-    String database_name_;
-    {
-        std::lock_guard lock{mutex};
-        old_comment = comment;
-        comment = command.comment.value();
-        create_query = getCreateDatabaseQueryImpl();
-        database_name_ = database_name;
-    }
+    std::lock_guard lock{mutex};
+
+    const String old_comment = comment;
+    comment = command.comment.value();
+
+    const ASTPtr create_query = getCreateDatabaseQueryImpl();
     if (!create_query)
-        throw Exception(ErrorCodes::THERE_IS_NO_QUERY, "Unable to show the create query of database {}", backQuoteIfNeed(database_name_));
+        throw Exception(ErrorCodes::THERE_IS_NO_QUERY, "Unable to show the create query of database {}", backQuoteIfNeed(database_name));
 
     try
     {
-        // TODO: maybe it makes sense to hold mutex here?
-        DatabaseCatalog::instance().updateMetadataFile(database_name_, create_query);
+        DatabaseCatalog::instance().updateMetadataFile(database_name, create_query);
     }
     catch (...)
     {
-        setDatabaseComment(old_comment);
+        comment = old_comment;
         throw;
     }
 }
