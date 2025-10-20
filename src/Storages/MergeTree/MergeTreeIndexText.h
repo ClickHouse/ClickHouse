@@ -1,5 +1,5 @@
 #pragma once
-#include <vector>
+
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Columns/IColumn.h>
@@ -8,12 +8,21 @@
 #include <Formats/MarkInCompressedFile.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/StringHashMap.h>
+#include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/BloomFilter.h>
 #include <Interpreters/ITokenExtractor.h>
 #include <absl/container/flat_hash_map.h>
 
 #include <roaring.hh>
+
+#include <vector>
+
+namespace ProfileEvents
+{
+    extern const Event TextIndexDictionaryBlockCacheHits;
+    extern const Event TextIndexDictionaryBlockCacheMisses;
+}
 
 namespace DB
 {
@@ -198,12 +207,43 @@ private:
     absl::flat_hash_map<String, TokenPostingsInfo> token_infos;
 };
 
+using ImmutableDictionaryBlockPtr = std::shared_ptr<ImmutableDictionaryBlock>;
+
 struct DictionaryBlock : public DictionaryBlockBase
 {
     DictionaryBlock() = default;
     DictionaryBlock(ColumnPtr tokens_, std::vector<TokenPostingsInfo> token_infos_);
 
     std::vector<TokenPostingsInfo> token_infos;
+};
+
+class MergeTreeIndexGranuleTextDictionaryBlockCache : public CacheBase<UInt128, ImmutableDictionaryBlock, UInt128TrivialHash>
+{
+public:
+    static MergeTreeIndexGranuleTextDictionaryBlockCache & instance()
+    {
+        static MergeTreeIndexGranuleTextDictionaryBlockCache cache;
+        return cache;
+    }
+
+    template <typename LoadFunc>
+    ImmutableDictionaryBlockPtr getOrSet(UInt128 key, LoadFunc && load_func)
+    {
+        auto [cache_entry, inserted] = CacheBase::getOrSet(key, load_func);
+
+        if (inserted)
+            ProfileEvents::increment(ProfileEvents::TextIndexDictionaryBlockCacheMisses);
+        else
+            ProfileEvents::increment(ProfileEvents::TextIndexDictionaryBlockCacheHits);
+
+        return std::move(cache_entry);
+    }
+
+private:
+    MergeTreeIndexGranuleTextDictionaryBlockCache()
+        : CacheBase(CurrentMetrics::end(), CurrentMetrics::end(), std::numeric_limits<uint64_t>::max()) /// TODO(ahmadov): make it configurable
+    {
+    }
 };
 
 /// Text index granule created on reading of the index.
@@ -243,8 +283,6 @@ private:
     DictionarySparseIndex sparse_index;
     /// Tokens that are in the index granule after analysis.
     TokenToPostingsInfosMap remaining_tokens;
-
-    DB::LRUResourceCache<UInt64, ImmutableDictionaryBlock> block_cache;
 };
 
 /// Save BulkContext to optimize consecutive insertions into the posting list.

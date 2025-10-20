@@ -118,7 +118,6 @@ ImmutableDictionaryBlock::ImmutableDictionaryBlock(ColumnPtr tokens_, std::vecto
         token_infos.emplace(tokens.getDataAt(i), std::move(token_infos_[i]));
 }
 
-
 TokenPostingsInfo* ImmutableDictionaryBlock::getTokenInfo(const StringRef & token)
 {
     if (auto it = token_infos.find(token.toString()); it != token_infos.end())
@@ -199,7 +198,6 @@ PostingList PostingsSerialization::deserialize(UInt64 header, UInt32 cardinality
 MergeTreeIndexGranuleText::MergeTreeIndexGranuleText(MergeTreeIndexTextParams params_)
     : params(std::move(params_))
     , bloom_filter(params.bloom_filter_bits_per_row, params.bloom_filter_num_hashes, 0)
-    , block_cache(std::numeric_limits<UInt64>::max(), 1024) /// TODO(ahmadov): find better size
 {
 }
 
@@ -360,7 +358,7 @@ void MergeTreeIndexGranuleText::analyzeBloomFilter(const IMergeTreeIndexConditio
 
 namespace
 {
-std::unique_ptr<ImmutableDictionaryBlock> deserializeDictionaryBlock(ReadBuffer & istr)
+ImmutableDictionaryBlockPtr deserializeDictionaryBlock(ReadBuffer & istr)
 {
     ProfileEvents::increment(ProfileEvents::TextIndexReadDictionaryBlocks);
 
@@ -407,7 +405,7 @@ std::unique_ptr<ImmutableDictionaryBlock> deserializeDictionaryBlock(ReadBuffer 
         }
     }
 
-    return std::make_unique<ImmutableDictionaryBlock>(std::move(tokens_column), std::move(token_infos));
+    return std::make_shared<ImmutableDictionaryBlock>(std::move(tokens_column), std::move(token_infos));
 }
 }
 
@@ -433,10 +431,17 @@ void MergeTreeIndexGranuleText::analyzeDictionary(MergeTreeIndexReaderStream & s
     auto * data_buffer = stream.getDataBuffer();
     auto * compressed_buffer = stream.getCompressedDataBuffer();
 
+    auto & dictionary_block_cache =  MergeTreeIndexGranuleTextDictionaryBlockCache::instance();
     for (const auto & [block_idx, tokens] : block_to_tokens)
     {
-        auto dictionary_block = block_cache.getOrSet(
-            block_idx,
+        SipHash block_hasher;
+        block_hasher.update(state.path_to_data_part);
+        block_hasher.update(state.index_name);
+        block_hasher.update(state.index_mark);
+        block_hasher.update(block_idx);
+
+        auto dictionary_block = dictionary_block_cache.getOrSet(
+            block_hasher.get128(),
             [&]
             {
                 UInt64 offset_in_file = sparse_index.getOffsetInFile(block_idx);
@@ -448,7 +453,7 @@ void MergeTreeIndexGranuleText::analyzeDictionary(MergeTreeIndexReaderStream & s
         {
             auto it = remaining_tokens.find(token);
             chassert(it != remaining_tokens.end());
-            auto* token_info = dictionary_block->value().getTokenInfo(token);
+            auto* token_info = dictionary_block->getTokenInfo(token);
 
             if (token_info)
             {
