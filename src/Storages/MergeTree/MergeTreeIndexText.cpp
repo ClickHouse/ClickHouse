@@ -1239,11 +1239,6 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
         }
     }
 
-    if (auto preprocessor_str = extractOption<String>(options, ARGUMENT_PREPROCESSOR, false); preprocessor_str)
-    {
-        // TODO(JAM): Validation here
-    }
-
     double bloom_filter_false_positive_rate = extractOption<double>(options, ARGUMENT_BLOOM_FILTER_FALSE_POSITIVE_RATE).value_or(DEFAULT_BLOOM_FILTER_FALSE_POSITIVE_RATE);
 
     if (!std::isfinite(bloom_filter_false_positive_rate) || bloom_filter_false_positive_rate <= 0.0 || bloom_filter_false_positive_rate >= 1.0)
@@ -1291,6 +1286,22 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
             ErrorCodes::INCORRECT_QUERY,
             "Text index must be created on columns of type `String`, `FixedString`, `LowCardinality(String)`, `LowCardinality(FixedString)`, `Array(String)` or `Array(FixedString)`");
     }
+
+    if (auto preprocessor_str = extractOption<String>(options, ARGUMENT_PREPROCESSOR, false); preprocessor_str)
+    {
+        /// For very strict validation of the expression we fully parse it here.  However it will be parsed again for index construction,
+        /// generally immediately after this call.
+        /// This is a bit redundant but I won't expect that this impact performance anyhow because the expression is intended to be simple
+        /// enough.  But if this redundant construction represents an issue we could simple build the "intermediate" ASTPtr and use it for
+        /// validation. That way we skip the ActionsDAG and ExpressionActions constructions.
+        ExpressionActions expression = MergeTreePreprocessor::parseExpression(index, preprocessor_str.value());
+
+        const Names required_columns = expression.getRequiredColumns();
+
+        if (required_columns.size() != 1 || required_columns.front() != index.column_names.front())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index preprocessor expression must depend only of column: {}", index.column_names.front());
+    }
+
 }
 
 /// Static helper functions here.
@@ -1434,7 +1445,6 @@ String MergeTreePreprocessor::processString(const String &input) const
     expression.execute(block, nrows);
 
     return block.safeGetByPosition(0).column->getDataAt(0).toString();
-
 }
 
 ExpressionActions MergeTreePreprocessor::parseExpression(const IndexDescription & index_description, const String & expression)

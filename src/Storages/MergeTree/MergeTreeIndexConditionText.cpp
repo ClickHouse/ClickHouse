@@ -368,8 +368,8 @@ bool traverseArrayFunctionNode(const RPNBuilderTreeNode & index_column_node, con
     }
     return false;
 }
-}
 
+}
 
 
 std::vector<String> MergeTreeIndexConditionText::stringToTokens(const Field & field) const

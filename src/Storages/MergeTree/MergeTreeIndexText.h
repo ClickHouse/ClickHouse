@@ -307,13 +307,12 @@ struct MergeTreeIndexTextGranuleBuilder
 
 class MergeTreePreprocessor
 {
-    static ExpressionActions parseExpression(const IndexDescription & index, const String & expression);
-
 public:
     MergeTreePreprocessor(const String & expression, const IndexDescription & index_description);
-    std::pair<ColumnPtr,size_t> processColumn(const ColumnWithTypeAndName & column, size_t start_row, size_t n_rows) const;
+    std::pair<ColumnPtr,size_t> processColumn(const ColumnWithTypeAndName & index_column_with_type_and_name, size_t start_row, size_t n_rows) const;
     String processString(const String &input) const;
 
+    static ExpressionActions parseExpression(const IndexDescription & index, const String & expression);
 private:
     ExpressionActions expression;
     DataTypePtr column_type;
