@@ -168,7 +168,7 @@ Ignore case when matching ORC columns with CH columns.
 Ignore case when matching Parquet columns with CH columns.
 )", 0) \
     DECLARE(Bool, input_format_parquet_preserve_order, false, R"(
-Avoid reordering rows when reading from Parquet files. Usually makes it much slower. Not recommended as row ordering is generally not guaranteed, and other parts of query pipeline may break it.
+Avoid reordering rows when reading from Parquet files. Not recommended as row ordering is generally not guaranteed, and other parts of query pipeline may break it. Use `ORDER BY _row_number` instead.
 )", 0) \
     DECLARE(Bool, input_format_parquet_filter_push_down, true, R"(
 When reading Parquet files, skip whole row groups based on the WHERE/PREWHERE expressions and min/max statistics in the Parquet metadata.
@@ -1195,7 +1195,7 @@ Method to write Errors to text output.
     DECLARE(String, format_schema_source, "file", R"(
 Define the source of `format_schema`.
 Possible values:
-- 'file' (default):: The `format_schema` is the name of a schema file located in the `format_schemas` directory.
+- 'file' (default): The `format_schema` is the name of a schema file located in the `format_schemas` directory.
 - 'string': The `format_schema` is the literal content of the schema.
 - 'query': The `format_schema` is a query to retrieve the schema.
 When `format_schema_source` is set to 'query', the following conditions apply:

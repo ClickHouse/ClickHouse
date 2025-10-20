@@ -66,6 +66,14 @@ namespace CurrentMetrics
     extern const Metric AzureRequests;
 }
 
+namespace HistogramMetrics
+{
+    extern MetricFamily & AzureBlobConnect;
+    extern MetricFamily & DiskAzureConnect;
+    extern MetricFamily & AzureFirstByte;
+    extern MetricFamily & DiskAzureFirstByte;
+}
+
 namespace DB
 {
 
@@ -178,28 +186,17 @@ PocoAzureHTTPClient::AzureMetricKind PocoAzureHTTPClient::getMetricKind(const st
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported request method: {}", method);
 }
 
-void PocoAzureHTTPClient::observeLatency(const std::string & method, AzureLatencyType type, Histogram::Value latency) const
+void PocoAzureHTTPClient::observeLatency(const std::string & method, AzureLatencyType type, HistogramMetrics::Value latency) const
 {
     if (type == AzureLatencyType::Connect)
     {
-        const Histogram::Buckets connect_buckets = {100, 1000, 10000, 100000, 200000, 300000, 500000, 1000000, 1500000};
-        static Histogram::MetricFamily & azure_blob_connect = Histogram::Factory::instance().registerMetric(
-            "azure_connect_microseconds",
-            "Time to establish connection with Azure Blob Storage, in microseconds.",
-            connect_buckets,
-            {}
-        );
-        azure_blob_connect.withLabels({}).observe(latency);
+        static HistogramMetrics::Metric & azure_connect_metric = HistogramMetrics::AzureBlobConnect.withLabels({});
+        azure_connect_metric.observe(latency);
 
         if (for_disk_azure)
         {
-            static Histogram::MetricFamily & disk_azure_connect = Histogram::Factory::instance().registerMetric(
-                "disk_azure_connect_microseconds",
-                "Time to establish connection with DiskAzure, in microseconds.",
-                connect_buckets,
-                {}
-            );
-            disk_azure_connect.withLabels({}).observe(latency);
+            static HistogramMetrics::Metric & disk_azure_connect_metric = HistogramMetrics::DiskAzureConnect.withLabels({});
+            disk_azure_connect_metric.observe(latency);
         }
         return;
     }
@@ -215,28 +212,15 @@ void PocoAzureHTTPClient::observeLatency(const std::string & method, AzureLatenc
         }
     }(type);
 
-    const Histogram::Buckets first_byte_buckets = {100, 1000, 10000, 100000, 300000, 500000, 1000000, 2000000, 5000000, 10000000, 15000000, 20000000, 25000000, 30000000, 35000000};
-    const Histogram::Labels first_byte_labels = {"http_method", "attempt"};
-    const Histogram::LabelValues first_byte_label_values = {method, attempt_label};
+    const HistogramMetrics::LabelValues first_byte_label_values = {method, attempt_label};
 
-    static Histogram::MetricFamily & azure_first_byte = Histogram::Factory::instance().registerMetric(
-        "azure_first_byte_microseconds",
-        "Time to receive the first byte from an Azure Blob Storage request, in microseconds.",
-        first_byte_buckets,
-        first_byte_labels
-    );
-    azure_first_byte.withLabels(first_byte_label_values).observe(latency);
-
+    HistogramMetrics::observe(
+        HistogramMetrics::AzureFirstByte, first_byte_label_values, latency);
 
     if (for_disk_azure)
     {
-        static Histogram::MetricFamily & disk_azure_first_byte = Histogram::Factory::instance().registerMetric(
-            "disk_azure_first_byte_microseconds",
-            "Time to receive the first byte from a DiskAzure request, in microseconds.",
-            first_byte_buckets,
-            first_byte_labels
-        );
-        disk_azure_first_byte.withLabels(first_byte_label_values).observe(latency);
+        HistogramMetrics::observe(
+            HistogramMetrics::DiskAzureFirstByte, first_byte_label_values, latency);
     }
 }
 
