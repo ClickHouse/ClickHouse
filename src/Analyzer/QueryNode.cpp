@@ -9,6 +9,7 @@
 
 #include <Core/NamesAndTypes.h>
 
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
 
 #include <IO/WriteBuffer.h>
@@ -143,7 +144,24 @@ DataTypePtr QueryNode::getResultType() const
     {
         if (projection_columns.size() == 1)
         {
-            return projection_columns[0].type;
+            /// Scalar correlated subquery must return nullable result,
+            /// because it must return NULL value if subquery produces an empty result set.
+            ///
+            /// Example:
+            ///
+            /// SELECT
+            ///     *
+            /// FROM partsupp as ps
+            /// WHERE ps.ps_availqty > (
+            ///         SELECT 0.5 * sum(l.l_quantity)
+            ///         FROM lineitem as l
+            ///         WHERE (l.l_partkey = ps.ps_partkey) AND (l.l_suppkey = ps.ps_suppkey)
+            ///     )
+            ///
+            /// In this case, if the subquery returns a non-nullable value, it'll be evaluate to `0` for empty result set.
+            /// It will lead to incorrect result, because the condition `ps.ps_availqty > 0` will be true.
+            /// To avoid this, we return Null value here and the condition will evaluate to false.
+            return makeNullableOrLowCardinalityNullableSafe(projection_columns[0].type);
         }
         else
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
@@ -183,6 +201,9 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
 
     if (is_order_by_all)
         buffer << ", is_order_by_all: " << is_order_by_all;
+
+    if (is_limit_by_all)
+        buffer << ", is_limit_by_all: " << is_limit_by_all;
 
     std::string group_by_type;
     if (is_group_by_with_rollup)
@@ -336,6 +357,7 @@ bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions options) 
         is_group_by_with_grouping_sets == rhs_typed.is_group_by_with_grouping_sets &&
         is_group_by_all == rhs_typed.is_group_by_all &&
         is_order_by_all == rhs_typed.is_order_by_all &&
+        is_limit_by_all == rhs_typed.is_limit_by_all &&
         projection_columns == rhs_typed.projection_columns &&
         settings_changes == rhs_typed.settings_changes;
 }
@@ -363,9 +385,7 @@ void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions options) co
         state.update(projection_column.name.size());
         state.update(projection_column.name);
 
-        auto projection_column_type_name = projection_column.type->getName();
-        state.update(projection_column_type_name.size());
-        state.update(projection_column_type_name);
+        projection_column.type->updateHash(state);
     }
 
     for (const auto & projection_alias : projection_aliases_to_override)
@@ -383,6 +403,7 @@ void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions options) co
     state.update(is_group_by_with_grouping_sets);
     state.update(is_group_by_all);
     state.update(is_order_by_all);
+    state.update(is_limit_by_all);
 
     state.update(settings_changes.size());
 
@@ -412,6 +433,7 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
     result_query_node->is_group_by_with_grouping_sets = is_group_by_with_grouping_sets;
     result_query_node->is_group_by_all = is_group_by_all;
     result_query_node->is_order_by_all = is_order_by_all;
+    result_query_node->is_limit_by_all = is_limit_by_all;
     result_query_node->cte_name = cte_name;
     result_query_node->projection_columns = projection_columns;
     result_query_node->settings_changes = settings_changes;
@@ -432,6 +454,7 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
     select_query->group_by_with_grouping_sets = is_group_by_with_grouping_sets;
     select_query->group_by_all = is_group_by_all;
     select_query->order_by_all = is_order_by_all;
+    select_query->limit_by_all = is_limit_by_all;
 
     if (hasWith())
     {
@@ -552,7 +575,8 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
     if (is_subquery)
     {
         auto subquery = std::make_shared<ASTSubquery>(std::move(result_select_query));
-        subquery->cte_name = cte_name;
+        if (options.set_subquery_cte_name)
+            subquery->cte_name = cte_name;
         return subquery;
     }
 

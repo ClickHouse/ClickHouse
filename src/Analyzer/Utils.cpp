@@ -251,11 +251,11 @@ bool isCorrelatedQueryOrUnionNode(const QueryTreeNodePtr & node)
 }
 
 bool checkCorrelatedColumn(
-    IdentifierResolveScope * scope_to_check,
+    const IdentifierResolveScope * scope_to_check,
     const QueryTreeNodePtr & column
 )
 {
-    auto * current_scope = scope_to_check;
+    const auto * current_scope = scope_to_check;
     chassert(column->getNodeType() == QueryTreeNodeType::COLUMN);
     auto * column_node = column->as<ColumnNode>();
     auto column_source = column_node->getColumnSource();
@@ -272,7 +272,13 @@ bool checkCorrelatedColumn(
 
     while (scope_to_check != nullptr)
     {
+        /// Check if column source is in the FROM section of the current scope (query).
         if (scope_to_check->registered_table_expression_nodes.contains(column_source))
+            break;
+
+        /// Previous check wouldn't work in the case of resolution of alias columns.
+        /// In that case table expression is not registered yet and table expression data is being computed.
+        if (scope_to_check->table_expressions_in_resolve_process.contains(column_source.get()))
             break;
 
         if (isQueryOrUnionNode(scope_to_check->scope_node))
@@ -366,7 +372,10 @@ std::optional<bool> tryExtractConstantFromConditionNode(const QueryTreeNodePtr &
     return predicate_value > 0;
 }
 
-static ASTPtr convertIntoTableExpressionAST(const QueryTreeNodePtr & table_expression_node)
+static ASTPtr convertIntoTableExpressionAST(
+    const QueryTreeNodePtr & table_expression_node,
+    const ConvertToASTOptions & convert_to_ast_options
+)
 {
     ASTPtr table_expression_node_ast;
     auto node_type = table_expression_node->getNodeType();
@@ -389,7 +398,7 @@ static ASTPtr convertIntoTableExpressionAST(const QueryTreeNodePtr & table_expre
     }
     else
     {
-        table_expression_node_ast = table_expression_node->toAST();
+        table_expression_node_ast = table_expression_node->toAST(convert_to_ast_options);
     }
 
     auto result_table_expression = std::make_shared<ASTTableExpression>();
@@ -440,7 +449,11 @@ static ASTPtr convertIntoTableExpressionAST(const QueryTreeNodePtr & table_expre
     return result_table_expression;
 }
 
-void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_query_ast, const QueryTreeNodePtr & table_expression, const IQueryTreeNode::ConvertToASTOptions & convert_to_ast_options)
+void addTableExpressionOrJoinIntoTablesInSelectQuery(
+    ASTPtr & tables_in_select_query_ast,
+    const QueryTreeNodePtr & table_expression,
+    const ConvertToASTOptions & convert_to_ast_options
+)
 {
     auto table_expression_node_type = table_expression->getNodeType();
 
@@ -456,7 +469,7 @@ void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_q
             [[fallthrough]];
         case QueryTreeNodeType::TABLE_FUNCTION:
         {
-            auto table_expression_ast = convertIntoTableExpressionAST(table_expression);
+            auto table_expression_ast = convertIntoTableExpressionAST(table_expression, convert_to_ast_options);
 
             auto tables_in_select_query_element_ast = std::make_shared<ASTTablesInSelectQueryElement>();
             tables_in_select_query_element_ast->children.push_back(std::move(table_expression_ast));
@@ -1109,7 +1122,9 @@ bool hasUnknownColumn(const QueryTreeNodePtr & node, QueryTreeNodePtr table_expr
             {
                 auto * column_node = current->as<ColumnNode>();
                 auto source = column_node->getColumnSourceOrNull();
-                if (source && table_expression && !source->isEqual(*table_expression))
+                /// Column source can be nullptr if JOIN node was replaced with a table expression.
+                /// In that case column is not from the specified table expression.
+                if (source != table_expression)
                     return true;
                 break;
             }
@@ -1323,6 +1338,8 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
             size_t end = shared_data_offsets[row];
             auto dynamic_type = std::make_shared<DataTypeDynamic>();
             auto dynamic_serialization = dynamic_type->getDefaultSerialization();
+
+            FormatSettings format_settings;
             for (size_t i = start; i != end; ++i)
             {
                 String path = shared_paths->getDataAt(i).toString();
@@ -1330,7 +1347,7 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
                 ReadBufferFromMemory buf(value_data.data, value_data.size);
                 auto tmp_column = dynamic_type->createColumn();
                 tmp_column->reserve(1);
-                dynamic_serialization->deserializeBinary(*tmp_column, buf, {});
+                dynamic_serialization->deserializeBinary(*tmp_column, buf, format_settings);
                 object[path] = getFieldFromColumnForASTLiteralImpl(std::move(tmp_column), 0, dynamic_type, true);
             }
 

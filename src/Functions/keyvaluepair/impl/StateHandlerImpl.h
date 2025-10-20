@@ -13,11 +13,15 @@
 #include <string_view>
 #include <string>
 #include <vector>
-#include <absl/container/flat_hash_map.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 namespace extractKV
 {
@@ -43,10 +47,11 @@ public:
          * */
         NeedleFactory<WITH_ESCAPING> needle_factory;
 
-        wait_needles = needle_factory.getWaitNeedles(configuration);
+        wait_key_needles = needle_factory.getWaitKeyNeedles(configuration);
         read_key_needles = needle_factory.getReadKeyNeedles(configuration);
         read_value_needles = needle_factory.getReadValueNeedles(configuration);
         read_quoted_needles = needle_factory.getReadQuotedNeedles(configuration);
+        wait_pair_delimiter_needles = needle_factory.getWaitPairDelimiterNeedles(configuration);
     }
 
     /*
@@ -54,7 +59,7 @@ public:
      * */
     [[nodiscard]] NextState waitKey(std::string_view file) const
     {
-        if (const auto * p = find_first_not_symbols_or_null(file, wait_needles))
+        if (const auto * p = find_first_not_symbols_or_null(file, wait_key_needles))
         {
             const size_t character_position = p - file.data();
             if (isQuotingCharacter(*p))
@@ -109,7 +114,17 @@ public:
             }
             else if (isQuotingCharacter(*p))
             {
-                return {next_pos, State::READING_QUOTED_KEY};
+                switch (configuration.unexpected_quoting_character_strategy)
+                {
+                    case Configuration::UnexpectedQuotingCharacterStrategy::INVALID:
+                        return {next_pos, State::WAITING_KEY};
+                    case Configuration::UnexpectedQuotingCharacterStrategy::PROMOTE:
+                        return {next_pos, State::READING_QUOTED_KEY};
+                    case Configuration::UnexpectedQuotingCharacterStrategy::ACCEPT:
+                        // The quoting character should not be added to the search symbols list in case strategy = Configuration::UnexpectedQuotingCharacterStrategy::ACCEPT
+                        // See `NeedleFactory`
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to handle unexpected quoting character. This is a bug");
+                }
             }
 
             pos = next_pos;
@@ -245,6 +260,20 @@ public:
 
                 return {next_pos, State::FLUSH_PAIR};
             }
+            else if (isQuotingCharacter(*p))
+            {
+                switch (configuration.unexpected_quoting_character_strategy)
+                {
+                    case Configuration::UnexpectedQuotingCharacterStrategy::INVALID:
+                        return {next_pos, State::WAITING_KEY};
+                    case Configuration::UnexpectedQuotingCharacterStrategy::PROMOTE:
+                        return {next_pos, State::READING_QUOTED_VALUE};
+                    case Configuration::UnexpectedQuotingCharacterStrategy::ACCEPT:
+                        // The quoting character should not be added to the search symbols list in case strategy = Configuration::UnexpectedQuotingCharacterStrategy::ACCEPT
+                        // See `NeedleFactory`
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to handle unexpected quoting character. This is a bug");
+                }
+            }
 
             pos = next_pos;
         }
@@ -285,7 +314,7 @@ public:
             {
                 pair_writer.appendValue(file.data() + pos, file.data() + character_position);
 
-                return {next_pos, State::FLUSH_PAIR};
+                return {next_pos, State::FLUSH_PAIR_AFTER_QUOTED_VALUE};
             }
 
             pos = next_pos;
@@ -294,13 +323,43 @@ public:
         return {file.size(), State::END};
     }
 
+    [[nodiscard]] NextState flushPair(std::string_view file, auto & pair_writer) const
+    {
+        pair_writer.commitKey();
+        pair_writer.commitValue();
+
+        return {0, file.empty() ? State::END : State::WAITING_KEY};
+    }
+
+    [[nodiscard]] NextState flushPairAfterQuotedValue(std::string_view file, auto & pair_writer) const
+    {
+        pair_writer.commitKey();
+        pair_writer.commitValue();
+
+        return {0, file.empty() ? State::END : State::WAITING_PAIR_DELIMITER};
+    }
+
+    [[nodiscard]] NextState waitPairDelimiter(std::string_view file) const
+    {
+        if (const auto * p = find_first_symbols_or_null(file, wait_pair_delimiter_needles))
+        {
+            const size_t character_position = p - file.data();
+            size_t next_pos = character_position + 1u;
+
+            return {next_pos, State::WAITING_KEY};
+        }
+
+        return {file.size(), State::END};
+    }
+
     const Configuration configuration;
 
 private:
-    SearchSymbols wait_needles;
+    SearchSymbols wait_key_needles;
     SearchSymbols read_key_needles;
     SearchSymbols read_value_needles;
     SearchSymbols read_quoted_needles;
+    SearchSymbols wait_pair_delimiter_needles;
 
     /*
      * Helper method to copy bytes until `character_pos` and process possible escape sequence. Returns a pair containing a boolean
@@ -577,13 +636,13 @@ struct ReferencesMapStateHandler : public StateHandlerImpl<false>
      * */
     class PairWriter
     {
-        absl::flat_hash_map<std::string_view, std::string_view> & map;
+        std::map<std::string_view, std::string_view> & map;
 
         std::string_view key;
         std::string_view value;
 
     public:
-        explicit PairWriter(absl::flat_hash_map<std::string_view, std::string_view> & map_)
+        explicit PairWriter(std::map<std::string_view, std::string_view> & map_)
             : map(map_)
         {}
 

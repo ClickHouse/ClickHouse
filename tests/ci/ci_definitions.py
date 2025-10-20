@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import Any, Iterable, List, Literal, Optional, Union
 
 from ci_utils import WithIter
-from integration_test_images import IMAGES
 
 
 class Labels:
@@ -14,6 +13,7 @@ class Labels:
     DO_NOT_TEST = "do not test"
     MUST_BACKPORT = "pr-must-backport"
     MUST_BACKPORT_CLOUD = "pr-must-backport-cloud"
+    MUST_BACKPORT_SYNCED = "pr-must-backport-synced"
     JEPSEN_TEST = "jepsen-test"
     SKIP_MERGEABLE_CHECK = "skip mergeable check"
     PR_BACKPORT = "pr-backport"
@@ -155,7 +155,7 @@ class JobNames(metaclass=WithIter):
         "Stateless tests (release, ParallelReplicas, s3 storage)"
     )
     STATELESS_TEST_ASYNC_INSERT_DEBUG = (
-        "Stateless tests (debug, AsyncInsert, s3 storage)"
+        "Stateless tests (amd_debug, AsyncInsert, s3 storage)"
     )
     STATELESS_TEST_S3_DEBUG_DISTRIBUTED_PLAN = (
         "Stateless tests (debug, distributed plan, s3 storage)"
@@ -227,7 +227,7 @@ class JobNames(metaclass=WithIter):
     BUILD_CHECK = "Builds"
 
     DOCS_CHECK = "Docs check"
-    BUGFIX_VALIDATE = "Bugfix validation"
+    BUGFIX_VALIDATE = "Bugfix validation (integration tests)"
 
 
 # hack to concatenate Build and non-build jobs under JobNames class
@@ -467,7 +467,6 @@ class CommonJobConfigs:
                 "./tests/integration/",
             ],
             exclude_files=[".md"],
-            docker=IMAGES.copy(),
         ),
         run_command='integration_test_check.py "$CHECK_NAME"',
         runner_type=Runners.FUNC_TESTER,

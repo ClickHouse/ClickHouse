@@ -4,6 +4,7 @@ keywords: ['groupArrayArray', 'array_concat_agg']
 sidebar_position: 111
 slug: /sql-reference/aggregate-functions/reference/grouparrayarray
 title: 'groupArrayArray'
+doc_type: 'reference'
 ---
 
 # groupArrayArray

@@ -35,7 +35,7 @@ public:
     Self & withPartStorageType(MergeTreeDataPartStorageType storage_type_);
     Self & withPartFormat(MergeTreeDataPartFormat format_);
     Self & withPartFormatFromDisk();
-    Self & withBytesAndRows(size_t bytes_uncompressed, size_t rows_count);
+    Self & withBytesAndRows(size_t bytes_uncompressed, size_t rows_count, UInt32 part_level);
 
     using PartStorageAndMarkType = std::pair<MutableDataPartStoragePtr, std::optional<MarkType>>;
 

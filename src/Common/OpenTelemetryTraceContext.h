@@ -3,6 +3,7 @@
 #include <Common/OpenTelemetryTracingContext.h>
 #include <Core/Field.h>
 
+#include <chrono>
 #include <exception>
 
 namespace DB

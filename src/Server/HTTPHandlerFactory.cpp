@@ -7,13 +7,13 @@
 
 #include <Poco/Util/AbstractConfiguration.h>
 
-#include "HTTPHandler.h"
-#include "StaticRequestHandler.h"
-#include "ReplicasStatusHandler.h"
-#include "InterserverIOHTTPHandler.h"
-#include "WebUIRequestHandler.h"
+#include <Server/HTTPHandler.h>
+#include <Server/StaticRequestHandler.h>
+#include <Server/ReplicasStatusHandler.h>
+#include <Server/InterserverIOHTTPHandler.h>
+#include <Server/IndexRequestHandler.h>
+#include <Server/WebUIRequestHandler.h>
 
-#include <iostream>
 
 namespace DB
 {
@@ -69,7 +69,8 @@ HTTPRequestHandlerFactoryPtr createRedirectHandlerFactory(
 }
 
 
-static void addCommonDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IServer & server);
+static void addCommonDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IServer & server, const Poco::Util::AbstractConfiguration & config);
+
 static void addDefaultHandlersFactory(
     HTTPRequestHandlerFactoryMain & factory,
     IServer & server,
@@ -90,7 +91,7 @@ static auto createPingHandlerFactory(IServer & server)
 static auto createPingHandlerFactory(IServer & server, const Poco::Util::AbstractConfiguration & config, const String & config_prefix,
                                      std::unordered_map<String, String> common_headers)
 {
-    auto creator = [&server,&config,config_prefix,common_headers]() -> std::unique_ptr<StaticRequestHandler>
+    auto creator = [&server, &config, config_prefix, common_headers]() -> std::unique_ptr<StaticRequestHandler>
     {
         constexpr auto ping_response_expression = "Ok.\n";
 
@@ -106,7 +107,7 @@ template <typename UIRequestHandler>
 static auto createWebUIHandlerFactory(IServer & server, const Poco::Util::AbstractConfiguration & config, const String & config_prefix,
                                       std::unordered_map<String, String> common_headers)
 {
-    auto creator = [&server,&config,config_prefix,common_headers]() -> std::unique_ptr<UIRequestHandler>
+    auto creator = [&server, &config, config_prefix, common_headers]() -> std::unique_ptr<UIRequestHandler>
     {
         auto headers = parseHTTPResponseHeadersWithCommons(config, config_prefix, "text/html; charset=UTF-8", common_headers);
         return std::make_unique<UIRequestHandler>(server, headers);
@@ -185,6 +186,13 @@ static inline auto createHandlersFactoryFromConfig(
                 handler->addFiltersFromConfig(config, config_prefix);
                 main_handler_factory->addHandler(std::move(handler));
             }
+            else if (handler_type == "index")
+            {
+                const String config_prefix = prefix + "." + key;
+                auto handler = createWebUIHandlerFactory<IndexRequestHandler>(server, config, prefix + "." + key, common_headers_override);
+                handler->addFiltersFromConfig(config, config_prefix);
+                main_handler_factory->addHandler(std::move(handler));
+            }
             else if (handler_type == "play")
             {
                 auto handler = createWebUIHandlerFactory<PlayWebUIRequestHandler>(server, config, prefix + "." + key, common_headers_override);
@@ -250,10 +258,10 @@ createHTTPHandlerFactory(IServer & server, const Poco::Util::AbstractConfigurati
     return factory;
 }
 
-static inline HTTPRequestHandlerFactoryPtr createInterserverHTTPHandlerFactory(IServer & server, const std::string & name)
+static inline HTTPRequestHandlerFactoryPtr createInterserverHTTPHandlerFactory(IServer & server, const std::string & name, const Poco::Util::AbstractConfiguration & config)
 {
     auto factory = std::make_shared<HTTPRequestHandlerFactoryMain>(name);
-    addCommonDefaultHandlersFactory(*factory, server);
+    addCommonDefaultHandlersFactory(*factory, server, config);
 
     auto main_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<InterserverIOHTTPHandler>>(server);
     main_handler->allowPostAndGetParamsAndOptionsRequest();
@@ -268,7 +276,7 @@ HTTPRequestHandlerFactoryPtr createHandlerFactory(IServer & server, const Poco::
     if (name == "HTTPHandler-factory" || name == "HTTPSHandler-factory")
         return createHTTPHandlerFactory(server, config, name, async_metrics);
     if (name == "InterserverIOHTTPHandler-factory" || name == "InterserverIOHTTPSHandler-factory")
-        return createInterserverHTTPHandlerFactory(server, name);
+        return createInterserverHTTPHandlerFactory(server, name, config);
     if (name == "PrometheusHandler-factory")
         return createPrometheusHandlerFactory(server, config, async_metrics, name);
 
@@ -276,18 +284,29 @@ HTTPRequestHandlerFactoryPtr createHandlerFactory(IServer & server, const Poco::
 }
 
 
-void addCommonDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IServer & server)
+void addCommonDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IServer & server, const Poco::Util::AbstractConfiguration & config)
 {
-    auto root_creator = [&server]() -> std::unique_ptr<StaticRequestHandler>
+    if (config.has("http_server_default_response"))
     {
-        constexpr auto root_response_expression = "config://http_server_default_response";
-        return std::make_unique<StaticRequestHandler>(
+        auto root_creator = [&server]() -> std::unique_ptr<StaticRequestHandler>
+        {
+            constexpr auto root_response_expression = "config://http_server_default_response";
+            return std::make_unique<StaticRequestHandler>(
             server, root_response_expression, parseHTTPResponseHeaders("text/html; charset=UTF-8"));
-    };
-    auto root_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<StaticRequestHandler>>(std::move(root_creator));
-    root_handler->attachStrictPath("/");
-    root_handler->allowGetAndHeadRequest();
-    factory.addHandler(root_handler);
+        };
+        auto root_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<StaticRequestHandler>>(std::move(root_creator));
+        root_handler->attachStrictPath("/");
+        root_handler->allowGetAndHeadRequest();
+        factory.addHandler(root_handler);
+    }
+    else
+    {
+        /// Use the default landing page / ping handler.
+        auto root_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<IndexRequestHandler>>(server);
+        root_handler->attachStrictPath("/");
+        root_handler->allowGetAndHeadRequest();
+        factory.addHandler(root_handler);
+    }
 
     auto ping_handler = createPingHandlerFactory(server);
     ping_handler->attachStrictPath("/ping");
@@ -337,7 +356,7 @@ void addDefaultHandlersFactory(
     const Poco::Util::AbstractConfiguration & config,
     AsynchronousMetrics & async_metrics)
 {
-    addCommonDefaultHandlersFactory(factory, server);
+    addCommonDefaultHandlersFactory(factory, server, config);
 
     auto dynamic_creator = [&server] () -> std::unique_ptr<DynamicQueryHandler>
     {

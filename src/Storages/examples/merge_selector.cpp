@@ -8,6 +8,7 @@
 
 #include <iomanip>
 #include <iostream>
+#include <vector>
 
 /** This program tests merge-selecting algorithm.
   * Usage:
@@ -53,12 +54,13 @@ int main(int, char **)
 
     size_t sum_size_written = sum_parts_size;
     size_t num_merges = 1;
+    const std::vector<size_t> max_merge_sizes = {100ULL * 1024 * 1024 * 1024};
 
     while (parts.size() > 1)
     {
-        PartsRange selected_parts = selector.select(ranges, 0, nullptr);
+        PartsRanges selected_ranges = selector.select(ranges, max_merge_sizes, nullptr);
 
-        if (selected_parts.empty())
+        if (selected_ranges.empty())
         {
             // std::cout << '.';
             // for (auto & part : parts)
@@ -67,6 +69,8 @@ int main(int, char **)
 
             break;
         }
+
+        PartsRange selected_parts = std::move(selected_ranges[0]);
 
         size_t sum_merged_size = 0;
         int64_t min_block = 0;

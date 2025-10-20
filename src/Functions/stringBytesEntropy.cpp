@@ -54,29 +54,30 @@ using FunctionStringBytesEntropy = FunctionStringBytes<StringBytesEntropyImpl, N
 
 REGISTER_FUNCTION(StringBytesEntropy)
 {
-    FunctionDocumentation::Description description = "Calculates Shannon's entropy of byte distribution in a string.";
-    FunctionDocumentation::Syntax syntax = "stringBytesEntropy(s);";
+    FunctionDocumentation::Description description = R"(
+Calculates Shannon's entropy of byte distribution in a string.
+)";
+    FunctionDocumentation::Syntax syntax = "stringBytesEntropy(s)";
     FunctionDocumentation::Arguments arguments = {
-        {"s", "The string to analyze. [String](../../sql-reference/data-types/string.md))"}
+        {"s", "The string to analyze.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = "The Shannon entropy of the byte distribution. [Float64](../../sql-reference/data-types/float.md).";
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns Shannon's entropy of byte distribution in the string.", {"Float64"}};
     FunctionDocumentation::Examples examples = {
-        {"Example", "SELECT stringBytesEntropy('Hello, world!');", "3.180832987205441"}
+    {
+        "Usage example",
+        "SELECT stringBytesEntropy('Hello, world!')",
+        R"(
+┌─stringBytesEntropy('Hello, world!')─┐
+│                         3.07049960  │
+└─────────────────────────────────────┘
+        )"
+    }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {25, 5};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    FunctionDocumentation function_documentation = {
-        .description = description,
-        .syntax = syntax,
-        .arguments = arguments,
-        .returned_value = returned_value,
-        .examples = examples,
-        .introduced_in = introduced_in,
-        .category = category
-    };
-
-    factory.registerFunction<FunctionStringBytesEntropy>(function_documentation);
+    factory.registerFunction<FunctionStringBytesEntropy>(documentation);
 }
 
 }

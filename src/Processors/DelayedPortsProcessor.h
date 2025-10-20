@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Block_fwd.h>
 #include <Processors/IProcessor.h>
 
 #include <vector>
@@ -15,7 +16,7 @@ class Block;
 class DelayedPortsProcessor final : public IProcessor
 {
 public:
-    DelayedPortsProcessor(const Block & header, size_t num_ports, const PortNumbers & delayed_ports, bool assert_main_ports_empty = false);
+    DelayedPortsProcessor(SharedHeader header, size_t num_ports, const PortNumbers & delayed_ports, bool assert_main_ports_empty = false);
 
     String getName() const override { return "DelayedPorts"; }
 

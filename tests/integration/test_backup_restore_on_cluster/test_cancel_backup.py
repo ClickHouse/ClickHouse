@@ -9,6 +9,7 @@ from helpers.cluster import ClickHouseCluster
 from helpers.config_manager import ConfigManager
 from helpers.network import PartitionManager
 from helpers.test_tools import TSV
+from helpers.utility import format_current_time
 
 cluster = ClickHouseCluster(__file__)
 
@@ -245,7 +246,7 @@ def kill_query(
     id = backup_id if backup_id is not None else restore_id
     query_kind = "Backup" if backup_id is not None else "Restore"
     operation_name = "backup" if backup_id is not None else "restore"
-    print(f"{get_node_name(node)}: Cancelling {operation_name} {id}")
+    print(f"{get_node_name(node)}: Cancelling {operation_name} {id} at {format_current_time()}")
     filter_for_is_initial_query = (
         f" AND (is_initial_query = {is_initial_query})"
         if is_initial_query is not None
@@ -261,26 +262,6 @@ def kill_query(
     )
     if timeout is not None:
         assert waited < timeout
-
-
-# Stops all ZooKeeper servers.
-def stop_zookeeper_servers(zoo_nodes):
-    print(f"Stopping ZooKeeper servers {zoo_nodes}")
-    old_time = time.monotonic()
-    cluster.stop_zookeeper_nodes(zoo_nodes)
-    print(
-        f"Stopped ZooKeeper servers {zoo_nodes} in {time.monotonic() - old_time} seconds"
-    )
-
-
-# Starts all ZooKeeper servers back.
-def start_zookeeper_servers(zoo_nodes):
-    print(f"Starting ZooKeeper servers {zoo_nodes}")
-    old_time = time.monotonic()
-    cluster.start_zookeeper_nodes(zoo_nodes)
-    print(
-        f"Started ZooKeeper servers {zoo_nodes} in {time.monotonic() - old_time} seconds"
-    )
 
 
 # Sleeps for random amount of time.
@@ -461,7 +442,7 @@ def test_cancel_backup():
         )
 
         print(
-            f"Cancelling on {'initiator' if cancel_as_initiator else 'node'} {get_node_name(node_to_cancel)}"
+            f"Cancelling on {'initiator' if cancel_as_initiator else 'node'} {get_node_name(node_to_cancel)} at {format_current_time()}"
         )
 
         time_before_kill_query = time.monotonic()
@@ -516,7 +497,7 @@ def test_cancel_restore():
         )
 
         print(
-            f"Cancelling on {'initiator' if cancel_as_initiator else 'node'} {get_node_name(node_to_cancel)}"
+            f"Cancelling on {'initiator' if cancel_as_initiator else 'node'} {get_node_name(node_to_cancel)} at {format_current_time()}"
         )
 
         time_before_kill_query = time.monotonic()
@@ -655,7 +636,7 @@ def test_long_disconnection_stops_backup():
 
             node_to_drop_zk_connection = random_node()
             print(
-                f"Dropping connection between {get_node_name(node_to_drop_zk_connection)} and ZooKeeper"
+                f"Dropping connection between {get_node_name(node_to_drop_zk_connection)} and ZooKeeper at {format_current_time()}"
             )
             pm.drop_instance_zk_connections(node_to_drop_zk_connection)
 
@@ -702,12 +683,12 @@ def test_short_disconnection_doesnt_stop_backup():
             random_sleep(4)
             node_to_drop_zk_connection = random_node()
             print(
-                f"Dropping connection between {get_node_name(node_to_drop_zk_connection)} and ZooKeeper"
+                f"Dropping connection between {get_node_name(node_to_drop_zk_connection)} and ZooKeeper at {format_current_time()}"
             )
             pm.drop_instance_zk_connections(node_to_drop_zk_connection)
             random_sleep(4)
             print(
-                f"Restoring connection between {get_node_name(node_to_drop_zk_connection)} and ZooKeeper"
+                f"Restoring connection between {get_node_name(node_to_drop_zk_connection)} and ZooKeeper at {format_current_time()}"
             )
 
         # Backup must be successful.
@@ -756,12 +737,12 @@ def test_short_disconnection_doesnt_stop_restore():
             random_sleep(3)
             node_to_drop_zk_connection = random_node()
             print(
-                f"Dropping connection between {get_node_name(node_to_drop_zk_connection)} and ZooKeeper"
+                f"Dropping connection between {get_node_name(node_to_drop_zk_connection)} and ZooKeeper at {format_current_time()}"
             )
             pm.drop_instance_zk_connections(node_to_drop_zk_connection)
             random_sleep(3)
             print(
-                f"Restoring connection between {get_node_name(node_to_drop_zk_connection)} and ZooKeeper"
+                f"Restoring connection between {get_node_name(node_to_drop_zk_connection)} and ZooKeeper at {format_current_time()}"
             )
 
         # Restore must be successful.

@@ -1,5 +1,5 @@
-#include "PolygonDictionaryImplementations.h"
-#include "DictionaryFactory.h"
+#include <Dictionaries/PolygonDictionaryImplementations.h>
+#include <Dictionaries/DictionaryFactory.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>

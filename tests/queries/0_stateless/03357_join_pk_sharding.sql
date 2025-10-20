@@ -52,7 +52,6 @@ select * from tab_l l inner join tab_m m on l.d = m.a inner join tab_r r on l.a 
 select explain e from (explain actions = 1 select * from tab_l l inner join tab_m m on l.d = m.a inner join tab_r r on l.a * 2 = r.a * 2 and l.b + l.c = r.c * 2 and l.d = r.d)
 where e like '%ReadFromMergeTree%' or e like '%Expression%' or e like '%Join%' or e like '%Clauses%' or e like '%Sharding%';
 
---- join_use_nulls is not supported. Here we check that is not broken in general.
 set join_use_nulls=1;
 
 -- two tables

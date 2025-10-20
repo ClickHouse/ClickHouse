@@ -71,7 +71,7 @@ bool isCorrelatedQueryOrUnionNode(const QueryTreeNodePtr & node);
  * in corresponding QueryNode or UnionNode.
  */
 bool checkCorrelatedColumn(
-    IdentifierResolveScope * scope_to_check,
+    const IdentifierResolveScope * scope_to_check,
     const QueryTreeNodePtr & column
 );
 
@@ -92,7 +92,7 @@ std::optional<bool> tryExtractConstantFromConditionNode(const QueryTreeNodePtr &
 /** Add table expression in tables in select query children.
   * If table expression node is not of identifier node, table node, query node, table function node, join node or array join node type throws logical error exception.
   */
-void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_query_ast, const QueryTreeNodePtr & table_expression, const IQueryTreeNode::ConvertToASTOptions & convert_to_ast_options);
+void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_query_ast, const QueryTreeNodePtr & table_expression, const ConvertToASTOptions & convert_to_ast_options);
 
 /// Extract all TableNodes from the query tree.
 QueryTreeNodes extractAllTableReferences(const QueryTreeNodePtr & tree);

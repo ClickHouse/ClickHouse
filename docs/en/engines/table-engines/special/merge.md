@@ -5,43 +5,36 @@ sidebar_label: 'Merge'
 sidebar_position: 30
 slug: /engines/table-engines/special/merge
 title: 'Merge Table Engine'
+doc_type: 'reference'
 ---
 
-# Merge Table Engine
+# Merge table engine
 
 The `Merge` engine (not to be confused with `MergeTree`) does not store data itself, but allows reading from any number of other tables simultaneously.
 
 Reading is automatically parallelized. Writing to a table is not supported. When reading, the indexes of tables that are actually being read are used, if they exist.
 
-## Creating a Table {#creating-a-table}
+## Creating a table {#creating-a-table}
 
 ```sql
-CREATE TABLE ... Engine=Merge(db_name, tables_regexp [, table_to_write])
+CREATE TABLE ... Engine=Merge(db_name, tables_regexp)
 ```
 
-## Engine Parameters {#engine-parameters}
+## Engine parameters {#engine-parameters}
 
-### db_name {#db_name}
+### `db_name` {#db_name}
 
 `db_name` — Possible values:
     - database name,
     - constant expression that returns a string with a database name, for example, `currentDatabase()`,
     - `REGEXP(expression)`, where `expression` is a regular expression to match the DB names.
 
-### tables_regexp {#tables_regexp}
+### `tables_regexp` {#tables_regexp}
 
 `tables_regexp` — A regular expression to match the table names in the specified DB or DBs.
 
 Regular expressions — [re2](https://github.com/google/re2) (supports a subset of PCRE), case-sensitive.
 See the notes about escaping symbols in regular expressions in the "match" section.
-
-### table_to_write {#table_to_write}
-
-`table_to_write` - Table name to write during inserts into `Merge` table.
-Possible values:
-    - `'db_name.table_name'` - insert into the specific table in the specific database.
-    - `'table_name'` - insert into table `db_name.table_name`. Allowed only when the first parameter `db_name` is not a regular expression.
-    - `auto` - insert into the last table passed to `tables_regexp` in lexicographical order. Allowed only when the first parameter `db_name` is not a regular expression.
 
 ## Usage {#usage}
 
@@ -73,7 +66,7 @@ CREATE TABLE WatchLog_new(date Date, UserId Int64, EventType String, Cnt UInt64)
     ENGINE=MergeTree PARTITION BY date ORDER BY (UserId, EventType) SETTINGS index_granularity=8192;
 INSERT INTO WatchLog_new VALUES ('2018-01-02', 2, 'hit', 3);
 
-CREATE TABLE WatchLog as WatchLog_old ENGINE=Merge(currentDatabase(), '^WatchLog', 'WatchLog_new');
+CREATE TABLE WatchLog AS WatchLog_old ENGINE=Merge(currentDatabase(), '^WatchLog');
 
 SELECT * FROM WatchLog;
 ```
@@ -87,23 +80,7 @@ SELECT * FROM WatchLog;
 └────────────┴────────┴───────────┴─────┘
 ```
 
-Insert to table `WatchLog` is going into table `WatchLog_new`
-```sql
-INSERT INTO WatchLog VALUES ('2018-01-03', 3, 'hit', 3);
-
-SELECT * FROM WatchLog_New;
-```
-
-```text
-┌───────date─┬─UserId─┬─EventType─┬─Cnt─┐
-│ 2018-01-02 │      2 │ hit       │   3 │
-└────────────┴────────┴───────────┴─────┘
-┌───────date─┬─UserId─┬─EventType─┬─Cnt─┐
-│ 2018-01-03 │      3 │ hit       │   3 │
-└────────────┴────────┴───────────┴─────┘
-```
-
-## Virtual Columns {#virtual-columns}
+## Virtual columns {#virtual-columns}
 
 - `_table` — Contains the name of the table from which data was read. Type: [String](../../../sql-reference/data-types/string.md).
 
