@@ -4,6 +4,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/FilterDescription.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Interpreters/castColumn.h>
@@ -268,10 +269,13 @@ void Reader::prefilterAndInitRowGroups()
     for (const auto & col : format_filter_info->additional_columns)
         extended_sample_block.insert(col);
     extended_sample_block_data_types = extended_sample_block.getDataTypes();
-    PrewhereInfoPtr prewhere_info = format_filter_info->prewhere_info;
+    const auto & row_level_filter = format_filter_info->row_level_filter;
+    const auto & prewhere_info = format_filter_info->prewhere_info;
 
     /// Process schema.
     SchemaConverter schemer(file_metadata, options, &extended_sample_block);
+    if (row_level_filter && !row_level_filter->do_remove_column)
+        schemer.external_columns.push_back(row_level_filter->column_name);
     if (prewhere_info && !prewhere_info->remove_prewhere_column)
         schemer.external_columns.push_back(prewhere_info->prewhere_column_name);
     schemer.prepareForReading();
@@ -305,6 +309,7 @@ void Reader::prefilterAndInitRowGroups()
     }
 
     /// Populate row_groups. Skip row groups based on column chunk min/max statistics.
+    size_t total_rows = 0;
     for (size_t row_group_idx = 0; row_group_idx < file_metadata.row_groups.size(); ++row_group_idx)
     {
         const auto * meta = &file_metadata.row_groups[row_group_idx];
@@ -312,6 +317,8 @@ void Reader::prefilterAndInitRowGroups()
             throw Exception(ErrorCodes::INCORRECT_DATA, "Row group {} has <= 0 rows: {}", row_group_idx, meta->num_rows);
         if (meta->columns.size() != total_primitive_columns_in_file)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Row group {} has unexpected number of columns: {} != {}", row_group_idx, meta->columns.size(), total_primitive_columns_in_file);
+
+        total_rows += size_t(meta->num_rows); // before potentially skipping the row group
 
         Hyperrectangle hyperrectangle(extended_sample_block.columns(), Range::createWholeUniverse());
         if (options.format.parquet.filter_push_down && format_filter_info->key_condition)
@@ -325,6 +332,7 @@ void Reader::prefilterAndInitRowGroups()
         RowGroup & row_group = row_groups.emplace_back();
         row_group.meta = meta;
         row_group.row_group_idx = row_group_idx;
+        row_group.start_global_row_idx = total_rows - size_t(meta->num_rows);
         row_group.columns.resize(primitive_columns.size());
         row_group.hyperrectangle = std::move(hyperrectangle);
 
@@ -451,7 +459,7 @@ void Reader::prepareBloomFilterCondition()
 
 void Reader::initializePrefetches()
 {
-    bool use_offset_index = options.format.parquet.use_offset_index || format_filter_info->prewhere_info
+    bool use_offset_index = options.format.parquet.use_offset_index || format_filter_info->prewhere_info || format_filter_info->row_level_filter
         || std::any_of(primitive_columns.begin(), primitive_columns.end(), [](const auto & c) { return c.column_index_condition; });
     bool need_to_find_bloom_filter_lengths_the_hard_way = false;
 
@@ -597,8 +605,9 @@ void Reader::initializePrefetches()
 
 void Reader::preparePrewhere()
 {
-    PrewhereInfoPtr prewhere_info = format_filter_info->prewhere_info;
-    if (!prewhere_info)
+    const auto & row_level_filter = format_filter_info->row_level_filter;
+    const auto & prewhere_info = format_filter_info->prewhere_info;
+    if (!prewhere_info && !row_level_filter)
         return;
 
     /// TODO [parquet]: We currently run prewhere after reading all prewhere columns of the row
@@ -609,25 +618,30 @@ void Reader::preparePrewhere()
 
     /// Convert ActionsDAG to ExpressionActions.
     ExpressionActionsSettings actions_settings;
-    if (prewhere_info->row_level_filter.has_value())
+    if (row_level_filter)
     {
-        ExpressionActions actions(prewhere_info->row_level_filter->clone(), actions_settings);
+        ExpressionActions actions(row_level_filter->actions.clone(), actions_settings);
+        prewhere_steps.push_back(PrewhereStep
+        {
+            .actions = std::move(actions),
+            .result_column_name = row_level_filter->column_name,
+        });
+
+        if (!row_level_filter->do_remove_column)
+            prewhere_steps.back().idx_in_output_block = sample_block->getPositionByName(row_level_filter->column_name);
+    }
+    if (prewhere_info)
+    {
+        ExpressionActions actions(prewhere_info->prewhere_actions.clone(), actions_settings);
         prewhere_steps.push_back(PrewhereStep
             {
                 .actions = std::move(actions),
-                .result_column_name = prewhere_info->row_level_column_name
+                .result_column_name = prewhere_info->prewhere_column_name,
+                .need_filter = prewhere_info->need_filter,
             });
+        if (!prewhere_info->remove_prewhere_column)
+            prewhere_steps.back().idx_in_output_block = sample_block->getPositionByName(prewhere_info->prewhere_column_name);
     }
-    ExpressionActions actions(prewhere_info->prewhere_actions.clone(), actions_settings);
-    prewhere_steps.push_back(PrewhereStep
-        {
-            .actions = std::move(actions),
-            .result_column_name = prewhere_info->prewhere_column_name,
-            .need_filter = prewhere_info->need_filter,
-        });
-    if (!prewhere_info->remove_prewhere_column)
-        prewhere_steps.back().idx_in_output_block = sample_block->getPositionByName(prewhere_info->prewhere_column_name);
-
     /// Look up expression inputs in extended_sample_block.
     for (PrewhereStep & step : prewhere_steps)
     {
@@ -1941,22 +1955,7 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup)
         if (!step.need_filter)
             continue;
 
-        filter_column = filter_column->convertToFullIfNeeded();
-        if (filter_column->isNullable())
-        {
-            /// Calculate `filter->nested & !filter->null_map`.
-            auto col = IColumn::mutate(std::move(filter_column));
-            auto & nullable = typeid_cast<ColumnNullable &>(*col);
-            const auto & null_map = nullable.getNullMapData();
-            auto nested_col = IColumn::mutate(std::move(nullable.getNestedColumnPtr()));
-            auto & nested_data = typeid_cast<ColumnUInt8 &>(*nested_col).getData();
-            chassert(nested_data.size() == null_map.size());
-            for (size_t i = 0; i < nested_data.size(); ++i)
-                nested_data[i] &= !null_map[i];
-            nullable.getNullMapColumnPtr().reset();
-            filter_column = std::move(nested_col);
-        }
-
+        filter_column = FilterDescription::preprocessFilterColumn(std::move(filter_column));
         const IColumnFilter & filter = typeid_cast<const ColumnUInt8 &>(*filter_column).getData();
         chassert(filter.size() == row_subgroup.filter.rows_pass);
 

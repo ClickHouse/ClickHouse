@@ -89,7 +89,6 @@ RUN set -x \
   && echo 'dockremap:165536:65536' >> /etc/subgid
 
 COPY modprobe.sh /usr/local/bin/modprobe
-COPY dockerd-entrypoint.sh /usr/local/bin/
 COPY misc/ /misc/
 
 COPY --from=clickhouse/cctools:859fb360308eb8ac47ad /opt/gdb /opt/gdb
@@ -103,6 +102,7 @@ COPY --from=clickhouse/cctools:859fb360308eb8ac47ad \
   /etc/ssl/
 
 EXPOSE 2375
-ENTRYPOINT ["dockerd-entrypoint.sh"]
-# To pass additional arguments (i.e. list of tests) use PYTEST_ADDOPTS
-CMD ["sh", "-c", "pytest"]
+
+ENV SPARK_HOME="/spark-3.5.5-bin-hadoop3" \
+    PATH="${SPARK_HOME}/bin:${PATH}" \
+    JAVA_TOOL_OPTIONS="-Djdk.attach.allowAttachSelf=true"

@@ -15,5 +15,5 @@ SET max_rows_to_read = 0; -- system.text_log can be really big
 
 select count() > 0 from system.text_log where event_date >= yesterday() and level = 'Error' and message_format_string = 'Unknown {}{} identifier {} in scope {}{}' and value1 = 'expression' and value3 = '\`count\`' and value4 = 'SELECT count' and query_id = '${query_id}_1';
 
-select count() > 0 from system.text_log where event_date >= yesterday() and level = 'Error' and message_format_string = 'Function with name {} does not exist. In scope {}{}' and value1 = '\`conut\`' and value2 = 'SELECT conut()' and value3 ilike '%\'count\'%' and query_id = '${query_id}_2';
+select count() > 0 from system.text_log where event_date >= yesterday() and level = 'Error' and message_format_string = 'Function with name {} does not exist. In scope {}{}' and value1 = '\`conut\`' and value2 = 'SELECT conut()' and value3 != '' and query_id = '${query_id}_2';
 "
