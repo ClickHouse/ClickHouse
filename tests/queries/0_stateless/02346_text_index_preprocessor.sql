@@ -10,7 +10,6 @@ CREATE TABLE tab
 (
     key UInt64,
     str String,
-    -- INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(str))
     INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(str))
 )
 ENGINE = MergeTree
