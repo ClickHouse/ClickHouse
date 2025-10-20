@@ -31,7 +31,7 @@ TTLColumnAlgorithm::TTLColumnAlgorithm(
 
 void TTLColumnAlgorithm::execute(Block & block)
 {
-    if (!block)
+    if (block.empty())
         return;
 
     /// If we read not all table columns. E.g. while mutation.

@@ -202,7 +202,7 @@ protected:
         std::atomic<Data *> data;
     };
 
-    const ConstBlockPtr header;
+    const SharedHeader header;
     std::shared_ptr<State> state;
 
     /// This object is only used for data exchange between port and shared state.
@@ -217,7 +217,7 @@ public:
     using Data = State::Data;
 
 
-    Port(ConstBlockPtr header_) : header(std::move(header_)) { } // NOLINT(google-explicit-constructor)
+    Port(SharedHeader header_) : header(std::move(header_)) { } // NOLINT(google-explicit-constructor)
     Port(Block && header_) : header(std::make_shared<const Block>(std::move(header_))) { } // NOLINT(google-explicit-constructor)
     Port(const Block & header_) : header(std::make_shared<const Block>(header_)) { } // NOLINT(google-explicit-constructor)
     Port(Block header_, IProcessor * processor_) : header(std::make_shared<const Block>(std::move(header_))), processor(processor_) { }
@@ -225,7 +225,7 @@ public:
     void setUpdateInfo(UpdateInfo * info) { update_info = info; }
 
     const Block & getHeader() const { return *header; }
-    const ConstBlockPtr & getHeaderPtr() const { return header; }
+    const SharedHeader & getSharedHeader() const { return header; }
     bool ALWAYS_INLINE isConnected() const { return state != nullptr; }
 
     void ALWAYS_INLINE assumeConnected() const

@@ -126,7 +126,7 @@ protected:
 
     virtual bool buzzHouse()
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Clickhouse was compiled without BuzzHouse enabled");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ClickHouse was compiled without BuzzHouse enabled");
     }
 
     virtual void connect() = 0;
@@ -159,6 +159,10 @@ protected:
 
 #if USE_CLIENT_AI
     void initAIProvider();
+
+    /// Check if AI provider usage needs acknowledgment from user
+    /// Returns false if user declined, true otherwise
+    bool checkAIProviderAcknowledgment();
 #endif
 
     using ProgramOptionsDescription = boost::program_options::options_description;
@@ -205,6 +209,7 @@ protected:
     /// Used to check certain things that are considered unsafe for the embedded client
     virtual bool isEmbeeddedClient() const = 0;
 
+    static fs::path getHistoryFilePath();
 private:
     void receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, bool partial_result_on_first_cancel);
     bool receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_);
@@ -212,7 +217,7 @@ private:
     bool receiveSampleBlock(Block & out, ColumnsDescription & columns_description, ASTPtr parsed_query);
     bool receiveEndOfQueryForInsert();
     void cancelQuery();
-    void sendCancel(std::exception_ptr exception_ptr = nullptr);
+    bool sendCancel(std::exception_ptr exception_ptr = nullptr);
 
     void onProgress(const Progress & value);
     void onTimezoneUpdate(const String & tz);
@@ -380,8 +385,8 @@ protected:
     std::unique_ptr<WriteBufferFromFileDescriptor> tty_buf;
     std::mutex tty_mutex;
 
-    String home_path;
-    String history_file; /// Path to a file containing command history.
+    fs::path home_path;
+    fs::path history_file; /// Path to a file containing command history.
     UInt32 history_max_entries; /// Maximum number of entries in the history file.
 
     UInt64 server_revision = 0;
@@ -432,6 +437,12 @@ protected:
 #if USE_CLIENT_AI
     /// Cached AI SQL generator
     std::unique_ptr<AISQLGenerator> ai_generator;
+    /// Whether the user has acknowledged AI provider usage
+    bool ai_provider_acknowledged = false;
+    /// Whether the AI API key was inferred from environment
+    bool ai_inferred_from_env = false;
+    /// The AI provider name (e.g., "openai", "anthropic")
+    std::string ai_provider_name;
 #endif
 
     struct

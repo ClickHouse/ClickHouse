@@ -95,7 +95,7 @@ Columns DirectDictionary<dictionary_key_type>::getColumns(
     size_t rows_num = 0;
     while (executor.pull(block))
     {
-        if (!block)
+        if (block.empty())
             continue;
 
         ++block_num;
@@ -331,7 +331,7 @@ class SourceFromQueryPipeline : public ISource
 {
 public:
     explicit SourceFromQueryPipeline(QueryPipeline pipeline_)
-        : ISource(pipeline_.getHeader())
+        : ISource(pipeline_.getSharedHeader())
         , pipeline(std::move(pipeline_))
         , executor(pipeline)
     {

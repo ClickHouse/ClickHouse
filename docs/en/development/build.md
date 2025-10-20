@@ -4,6 +4,7 @@ sidebar_label: 'Build on Linux'
 sidebar_position: 10
 slug: /development/build
 title: 'How to Build ClickHouse on Linux'
+doc_type: 'guide'
 ---
 
 # How to Build ClickHouse on Linux
@@ -96,6 +97,10 @@ Also, internal exceptions of type `LOGICAL_ERROR` crash immediately instead of f
 ```sh
 cmake -D CMAKE_BUILD_TYPE=Debug ..
 ```
+
+:::note
+If you wish to use a debugger such as gdb, add `-D DEBUG_O_LEVEL="0"` to the above command to remove all compiler optimizations, which can interfere with gdb's ability to view/access variables.
+:::
 
 Run ninja to build:
 
@@ -216,5 +221,3 @@ and runs the build script inside it: `./ci/jobs/build_clickhouse.py`
 The build output will be placed in `./ci/tmp/`.
 
 It works on both AMD and ARM architectures and requires no additional dependencies other than Docker.
-
-

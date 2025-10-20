@@ -34,7 +34,7 @@ namespace DB
                 StoragePtr inner_storage_,
                 size_t max_block_size_,
                 size_t num_streams_)
-                : ISource(storage_snapshot_->getSampleBlockForColumns(column_names_))
+                : ISource(std::make_shared<const Block>(storage_snapshot_->getSampleBlockForColumns(column_names_)))
                 , column_names(column_names_)
                 , query_info(query_info_)
                 , storage_snapshot(storage_snapshot_)
@@ -143,7 +143,7 @@ namespace DB
             size_t max_block_size_,
             size_t num_streams_)
             : SourceStepWithFilter(
-            storage_snapshot_->getSampleBlockForColumns(column_names_),
+            std::make_shared<const Block>(storage_snapshot_->getSampleBlockForColumns(column_names_)),
             column_names_,
             query_info_,
             storage_snapshot_,
@@ -168,8 +168,8 @@ namespace DB
 
         if (pipe.empty())
         {
-            assert(output_header != std::nullopt);
-            pipe = Pipe(std::make_shared<NullSource>(*output_header));
+            chassert(output_header != nullptr);
+            pipe = Pipe(std::make_shared<NullSource>(output_header));
         }
 
         pipeline.init(std::move(pipe));

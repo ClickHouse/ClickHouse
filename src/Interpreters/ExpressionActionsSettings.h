@@ -18,20 +18,19 @@ enum class CompileExpressions: uint8_t
 
 struct ExpressionActionsSettings
 {
-    ExpressionActionsSettings(); /// TODO Remove this constructor. ExpressionActionsSettings should only be initializable from Settings or
-                                 /// ContextPtr (i.e. the other two constructors).
+    ExpressionActionsSettings() = default;
     explicit ExpressionActionsSettings(const Settings & from, CompileExpressions compile_expressions_ = CompileExpressions::no);
     explicit ExpressionActionsSettings(ContextPtr from, CompileExpressions compile_expressions_ = CompileExpressions::no);
 
-    bool can_compile_expressions;
-    size_t min_count_to_compile_expression;
+    bool can_compile_expressions = false;
+    size_t min_count_to_compile_expression = 0;
 
-    size_t max_temporary_columns;
-    size_t max_temporary_non_const_columns;
+    size_t max_temporary_columns = 0;
+    size_t max_temporary_non_const_columns = 0;
 
-    CompileExpressions compile_expressions;
+    CompileExpressions compile_expressions = CompileExpressions::no;
 
-    ShortCircuitFunctionEvaluation short_circuit_function_evaluation;
+    ShortCircuitFunctionEvaluation short_circuit_function_evaluation = ShortCircuitFunctionEvaluation::DISABLE;
 };
 
 }
