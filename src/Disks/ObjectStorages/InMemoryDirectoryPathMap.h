@@ -174,16 +174,17 @@ public:
         return true;
     }
 
-    size_t removeOutdatedPaths(std::set<std::string> actual_set_of_remote_directories)
+    size_t removeOutdatedPaths(const std::set<std::string> & actual_set_of_remote_directories)
     {
-        /// Do not remove root folder - it is pure logical.
-        actual_set_of_remote_directories.insert("");
-
         size_t num_removed = 0;
         std::lock_guard lock(mutex);
         for (auto it = map.begin(); it != map.end();)
         {
-            if (actual_set_of_remote_directories.contains(it->second.path))
+            /// Do not remove root folder - it is pure logical.
+            const bool is_root_folder = it->second.path == "";
+            const bool is_folder_exists = actual_set_of_remote_directories.contains(it->second.path);
+
+            if (is_root_folder || is_folder_exists)
             {
                 ++it;
             }
