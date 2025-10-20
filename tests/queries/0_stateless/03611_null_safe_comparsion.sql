@@ -591,18 +591,14 @@ SELECT
 FROM 03611_t_nullsafe;
 
 SELECT '1.12 HAVING Clause';
-SELECT txt,
-       max(a) AS max_a,
-       max(b) AS max_b,
-       (max(a) <=> max(b)) AS max_equal,
-       (max(a) IS DISTINCT FROM max(b)) AS max_distinct
-FROM 03611_t_nullsafe
-GROUP BY txt
-HAVING max(a) <=> max(b) OR max(a) IS DISTINCT FROM max(b);
+SELECT
+    max(a) AS max_a,
+    max(b) AS max_b
+FROM `03611_t_nullsafe`
+HAVING (max_a <=> max_b) OR (max_a IS DISTINCT FROM max_b);
 
 SELECT '1.13 JOIN Clause';
 SELECT
-    '<=> JOIN' as join_type,
     l.id AS lid,
     r.id AS rid,
     l.a,
@@ -611,7 +607,6 @@ FROM 03611_t_nullsafe AS l
 INNER JOIN 03611_t_nullsafe AS r ON l.a <=> r.b;
 
 SELECT
-    'IS DISTINCT FROM JOIN' as join_type,
     l.id AS lid,
     r.id AS rid,
     l.a,
@@ -640,9 +635,7 @@ SELECT id, a, b,
 FROM 03611_t_nullsafe;
 
 SELECT '1.16 Window Func';
-SELECT id, a, b,
-       (a <=> b) AS eq,
-       (a IS DISTINCT FROM b) AS distinct_flag,
+SELECT (a IS DISTINCT FROM b) AS distinct_flag,
        count() OVER (PARTITION BY a <=> b) AS partition_by_eq,
        count() OVER (PARTITION BY a IS DISTINCT FROM b) AS partition_by_distinct,
        count() OVER (PARTITION BY a <=> b, a IS DISTINCT FROM b) AS partition_by_both

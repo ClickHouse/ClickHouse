@@ -59,7 +59,7 @@ SELECT
 
     FunctionDocumentation::IntroducedIn introduced_in = {25, 9};
 
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Logical;
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Comparison;
 
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
