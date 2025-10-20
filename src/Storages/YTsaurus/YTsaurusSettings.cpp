@@ -8,6 +8,7 @@
 #include <Storages/YTsaurus/YTsaurusSettings.h>
 #include <Common/Exception.h>
 #include <Common/NamedCollections/NamedCollections.h>
+#include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
 {
@@ -18,7 +19,7 @@ namespace ErrorCodes
 }
 
 #define LIST_OF_YTSAURUS_SETTINGS(DECLARE, ALIAS) \
-    DECLARE(Bool, check_table_schema, true, "Check the ClickHouse and YTsaurus table schema for compatibility", 0) \
+    DECLARE(Bool, check_table_schema, true, "Check the ClickHouse and YTsaurus table schema for compatibility.", 0) \
     DECLARE(Bool, skip_unknown_columns, true, "Skip columns with unknown type", 0) \
     DECLARE(Bool, force_read_table, false, "Force the use of read table instead of lookups for dynamic tables.", 0) \
     DECLARE(Bool, encode_utf8, false, "Enable the utf8 encoding in ytsaurus responses.", 0) \
@@ -61,11 +62,6 @@ void YTsaurusSettings::loadFromQuery(const ASTSetQuery & settings_def)
     impl->applyChanges(settings_def.changes);
 }
 
-YTsaurusSettings YTsaurusSettings::createFromQuery(const ASTSetQuery & settings_def) {
-    YTsaurusSettings settings;
-    settings.loadFromQuery(settings_def);
-    return settings;
-}
 
 void YTsaurusSettings::loadFromQuery(ASTStorage & storage_def)
 {
@@ -84,10 +80,18 @@ void YTsaurusSettings::loadFromQuery(ASTStorage & storage_def)
     }
 }
 
-YTsaurusSettings YTsaurusSettings::createFromQuery(ASTStorage & storage_def) {
-    YTsaurusSettings settings;
-    settings.loadFromQuery(storage_def);
-    return settings;
+
+void YTsaurusSettings::loadFromConfig(const Poco::Util::AbstractConfiguration & config, const String & prefix)
+{
+    for (const auto & setting : impl->all())
+    {
+        const auto & setting_name = setting.getName();
+        const auto & config_path = prefix + "." + setting_name;
+        if (config.has(config_path))
+        {
+            set(setting_name, config.getString(config_path));
+        }
+    }
 }
 
 std::vector<std::string_view> YTsaurusSettings::getAllRegisteredNames() const
