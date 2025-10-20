@@ -9,6 +9,7 @@ node1 = cluster.add_instance(
     main_configs=["configs/config.xml"],
     with_zookeeper=True,
     macros={"replica": "node1"},
+    stay_alive=True,
 )
 
 node2 = cluster.add_instance(
@@ -16,6 +17,7 @@ node2 = cluster.add_instance(
     main_configs=["configs/config.xml"],
     with_zookeeper=True,
     macros={"replica": "node2"},
+    stay_alive=True,
 )
 
 
