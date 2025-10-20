@@ -1,7 +1,7 @@
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
-#include "Columns/ColumnReplicated.h"
+#include <Columns/ColumnReplicated.h>
 #include <Common/logger_useful.h>
 
 namespace DB

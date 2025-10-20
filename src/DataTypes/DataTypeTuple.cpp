@@ -13,6 +13,7 @@
 #include <DataTypes/Serializations/SerializationNamed.h>
 #include <DataTypes/Serializations/SerializationInfoTuple.h>
 #include <DataTypes/Serializations/SerializationWrapper.h>
+#include <DataTypes/Serializations/SerializationReplicated.h>
 #include <DataTypes/NestedUtils.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTNameTypePair.h>
@@ -24,8 +25,6 @@
 #include <boost/algorithm/string.hpp>
 
 #include <ranges>
-
-#include "Serializations/SerializationReplicated.h"
 
 namespace DB
 {

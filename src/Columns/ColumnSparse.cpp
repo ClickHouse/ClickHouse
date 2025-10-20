@@ -4,6 +4,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnReplicated.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>
 #include <Common/WeakHash.h>
@@ -11,8 +12,6 @@
 
 #include <algorithm>
 #include <bit>
-
-#include "ColumnReplicated.h"
 
 
 namespace DB
