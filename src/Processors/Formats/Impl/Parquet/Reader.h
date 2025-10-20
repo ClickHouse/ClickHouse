@@ -24,6 +24,7 @@ namespace DB::Parquet
 {
 
 // TODO [parquet]:
+//  * either multistage PREWHERE or make query optimizer selectively move parts of the condition to prewhere instead of the whole condition
 //  * test on files from https://github.com/apache/parquet-testing
 //  * check fields for false sharing, add cacheline padding as needed
 //  * make sure userspace page cache read buffer supports readBigAt
