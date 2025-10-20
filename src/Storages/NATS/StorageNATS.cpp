@@ -710,7 +710,7 @@ bool StorageNATS::streamToViews()
 
     auto new_context = Context::createCopy(nats_context);
 
-    /// Create a fresh query context from filelog_context, discarding any caches attached to the previous context to
+    /// Create a fresh query context from nats_context, discarding any caches attached to the previous context to
     /// ensure no stale state is reused.
     new_context->makeQueryContext();
 
