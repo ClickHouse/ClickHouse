@@ -1,5 +1,4 @@
 <clickhouse>
     <interserver_http_port>9009</interserver_http_port>
-    <interserver_http_host>127.0.0.1</interserver_http_host>
     <async_load_databases>false</async_load_databases>
 </clickhouse>

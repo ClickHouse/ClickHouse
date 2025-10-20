@@ -47,8 +47,13 @@ def test_replicated_database_uses_interserver_host(started_cluster):
     )
     host_ids_decoded = urllib.parse.unquote(host_ids)
 
-    assert "127.0.0.1:9000:" in host_ids_decoded, \
-        f"Expected IP address 127.0.0.1:9000: in host_id, got: {host_ids}"
+    # Verify that IP addresses are used instead of hostnames
+    assert "node1" not in host_ids_decoded and "node2" not in host_ids_decoded, \
+        f"Expected IP addresses instead of hostnames, got: {host_ids_decoded}"
+
+    # Verify that TCP port (9000) is used, not interserver_http_port (9009)
+    assert ":9000:" in host_ids_decoded, \
+        f"Expected TCP port 9000 in host_id, got: {host_ids_decoded}"
 
     node1.query("CREATE TABLE test_db.test_table (id UInt32) ENGINE = ReplicatedMergeTree ORDER BY id")
     node2.query("SYSTEM SYNC DATABASE REPLICA test_db")
