@@ -333,7 +333,6 @@ TEST_F(MetadataPlainRewritableDiskTest, RemoveDirectoryRecursive)
         tx->commit();
     }
 
-    /// This is a bug. Logical tree is broken.
     EXPECT_FALSE(metadata->existsDirectory("root/A"));
     EXPECT_FALSE(metadata->existsDirectory("root/A/B"));
     EXPECT_FALSE(metadata->existsDirectory("root/A/C"));
@@ -345,6 +344,9 @@ TEST_F(MetadataPlainRewritableDiskTest, RemoveDirectoryRecursive)
         auto inodes = std::filesystem::recursive_directory_iterator("./RemoveDirectoryRecursive")
                         | std::views::transform([](const auto & dir) { return dir.path(); })
                         | std::ranges::to<std::vector<std::string>>();
+
+        /// Left nodes example: '/__meta', '/__meta/cixdezesimoamhzozymbalencsyqaakx', '/__meta/cixdezesimoamhzozymbalencsyqaakx/prefix.path'
+        /// It is the directory 'root/'
         EXPECT_EQ(inodes.size(), 3);
     }
 }
