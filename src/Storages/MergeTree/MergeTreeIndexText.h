@@ -10,7 +10,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/StringHashMap.h>
 #include <Common/logger_useful.h>
-#include "Core/ColumnWithTypeAndName.h"
+#include <Core/ColumnWithTypeAndName.h>
 #include <Interpreters/BloomFilter.h>
 #include <Interpreters/ITokenExtractor.h>
 #include <absl/container/flat_hash_map.h>

@@ -12,8 +12,8 @@
 #include <Common/HashTable/HashSet.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
-#include "Core/ColumnWithTypeAndName.h"
-#include "Interpreters/ActionsDAG.h"
+#include <Core/ColumnWithTypeAndName.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ITokenExtractor.h>
 #include <base/range.h>
 #include <fmt/ranges.h>
@@ -1412,7 +1412,7 @@ std::pair<ColumnPtr,size_t> MergeTreePreprocessor::processColumn(const ColumnWit
     if (start_row != 0 || n_rows != index_column->size())
         index_column = index_column->cut(start_row, n_rows);
 
-    Block block( {ColumnWithTypeAndName(index_column, index_column_with_type_and_name.type, index_column_with_type_and_name.name) } );
+    Block block({ColumnWithTypeAndName(index_column, index_column_with_type_and_name.type, index_column_with_type_and_name.name)});
 
     expression.execute(block, n_rows);
 
