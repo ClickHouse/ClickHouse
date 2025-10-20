@@ -1,0 +1,17 @@
+Test 1: Check that X-ClickHouse-Exception-Tag header is present when enabled
+X-ClickHouse-Exception-Tag:
+Test 2: Check that X-ClickHouse-Exception-Tag header is NOT present when disabled (default)
+0
+Test 3: Verify exception tag is alphanumeric when enabled
+Tag is 8-char alphanumeric: OK
+Test 4: Check exception marker format on error when enabled
+Tagged exception marker found: OK
+Test 5: Check reverse marker format (length + tag + __exception__)
+Reverse marker found: OK
+Test 6: Verify exception is truncated to 256 bytes
+Exception truncated to ~256 bytes: OK
+Test 7: Verify legacy format when exception tagging is disabled
+Legacy exception format: OK
+Test 8: Verify per-query parameter works (enables for single query)
+Per-query parameter works: OK
+

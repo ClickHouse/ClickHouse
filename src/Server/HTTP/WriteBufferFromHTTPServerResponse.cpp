@@ -8,6 +8,7 @@
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <Common/StackTrace.h>
+#include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 #include <DataTypes/IDataType.h>
 #include <Server/HTTP/sendExceptionToHTTPClient.h>
@@ -104,6 +105,9 @@ void WriteBufferFromHTTPServerResponse::finishSendHeaders()
     if (add_cors_header)
         response.set("Access-Control-Allow-Origin", "*");
 
+    if (exception_tagging_enabled)
+        response.set("X-ClickHouse-Exception-Tag", exception_tag);
+
     writeHeaderSummary();
     writeExceptionCode();
 
@@ -139,6 +143,8 @@ WriteBufferFromHTTPServerResponse::WriteBufferFromHTTPServerResponse(
 {
     if (response.getChunkedTransferEncoding())
         setChunked();
+
+    exception_tag = getRandomASCIIString(EXCEPTION_TAG_LENGTH);
 }
 
 
@@ -322,12 +328,40 @@ bool WriteBufferFromHTTPServerResponse::cancelWithException(HTTPServerRequest & 
             }
 
             auto & out = use_compression_buffer ? *compression_buffer : *this;
-            writeString(EXCEPTION_MARKER, out);
-            writeCString("\r\n", out);
-            writeString(message, out);
-            if (!message.ends_with('\n'))
-                writeChar('\n', out);
 
+            if(exception_tagging_enabled)
+            {
+                // Write the exception block in response in new format as follows
+                // __exception__<TAG>
+                // <error message of max 255 bytes>
+                // <message_length> <TAG>__exception__
+
+                writeString(EXCEPTION_MARKER, out);
+                writeString(exception_tag, out);
+                writeCString("\r\n", out);
+
+                std::string limited_message = message;
+                if (limited_message.size() > MAX_EXCEPTION_SIZE)
+                    limited_message = limited_message.substr(0, MAX_EXCEPTION_SIZE);
+
+                writeString(limited_message, out);
+                if (!limited_message.ends_with('\n'))
+                    writeChar('\n', out);
+
+                writeIntText(limited_message.size() + (limited_message.ends_with('\n') ? 0 : 1), out);
+                writeChar(' ', out);
+                writeString(exception_tag, out);
+                writeString(EXCEPTION_MARKER, out);
+                writeCString("\r\n", out);
+
+            }
+            else {
+                writeString(EXCEPTION_MARKER, out);
+                writeCString("\r\n", out);
+                writeString(message, out);
+                if (!message.ends_with('\n'))
+                    writeChar('\n', out);
+            }
 
             // this finish chunk with the error message in case of Transfer-Encoding: chunked
             if (use_compression_buffer)

@@ -26,6 +26,8 @@ class WriteBufferFromHTTPServerResponse final : public HTTPWriteBuffer
 {
 public:
     static constexpr std::string_view EXCEPTION_MARKER = "__exception__";
+    static constexpr size_t EXCEPTION_TAG_LENGTH = 8;
+    static constexpr size_t MAX_EXCEPTION_SIZE= 256;
 
     WriteBufferFromHTTPServerResponse(
         HTTPServerResponse & response_,
@@ -64,6 +66,10 @@ public:
     void setExceptionCode(int code);
 
     bool cancelWithException(HTTPServerRequest & request, int exception_code_, const std::string & message, WriteBuffer * compression_buffer) noexcept;
+
+    const std::string& getExceptionTag() const {return exception_tag;}
+
+    void setExceptionTaggingEnabled(bool enabled) {exception_tagging_enabled = enabled;}
 
 private:
     /// Send at least HTTP headers if no data has been sent yet.
@@ -109,6 +115,9 @@ private:
     CompressionMethod compression_method = CompressionMethod::None;
 
     int exception_code = 0;
+
+    std::string exception_tag;
+    bool exception_tagging_enabled = false; /// If true, exception tagging mechanism in response is enabled.
 
     std::mutex mutex;    /// progress callback could be called from different threads.
 };
