@@ -4,6 +4,7 @@ sidebar_label: 'ClickHouse Client'
 sidebar_position: 17
 slug: /interfaces/cli
 title: 'ClickHouse Client'
+doc_type: 'reference'
 ---
 
 import Image from '@theme/IdealImage';
@@ -187,7 +188,8 @@ In interactive mode, by default whatever was entered is run when you press `Ente
 
 You can start the client with the `-m, --multiline` parameter. To enter a multiline query, enter a backslash `\` before the line feed. After you press `Enter`, you will be asked to enter the next line of the query. To run the query, end it with a semicolon and press `Enter`.
 
-ClickHouse Client is based on `replxx` (similar to `readline`) so it uses familiar keyboard shortcuts and keeps a history. The history is written to `~/.clickhouse-client-history` by default.
+ClickHouse Client is based on `replxx` (similar to `readline`) so it uses familiar keyboard shortcuts and keeps a history. The history is written to `~/.local/state/clickhouse/client-query-history`, in accordance with the [XDG Base Directories specification](https://specifications.freedesktop.org/basedir-spec/latest/index.html).
+For compatibility reasons, if `~/.clickhouse-client-history` is already present, it will be used instead.
 
 To exit the client, press `Ctrl+D`, or enter one of the following instead of a query: `exit`, `quit`, `logout`, `exit;`, `quit;`, `logout;`, `q`, `Q`, `:q`.
 
@@ -643,6 +645,15 @@ Example XML syntax:
     <user>username</user>
     <password>password</password>
     <secure>true</secure>
+    <host>hostname</host>
+    <connections_credentials>
+      <connection>
+        <name>cloud</name>
+        <hostname>abc.clickhouse.cloud</hostname>
+        <user>username</user>
+        <password>password</password>
+      </connection>
+    </connections_credentials>
     <openSSL>
       <client>
         <caConfig>/etc/ssl/cert.pem</caConfig>
@@ -657,10 +668,97 @@ The same configuration in YAML format:
 user: username
 password: 'password'
 secure: true
+connections_credentials:
+  connection:
+    - name: cloud
+      hostname: abc.clickhouse.cloud
+      user: username
+      password: 'password'
 openSSL:
   client:
     caConfig: '/etc/ssl/cert.pem'
 ```
+
+## Client Configuration Resolution {#config_resolution}
+
+The configuration of the client follows the following pattern:
+
+1.  Parameters passed via [Command-line options](#command-line-options) take
+    the highest priority.
+2.  For parameters not passed via the command-line, [Environment variable
+    options](#environment-variable-options) will be used.
+3.  Other connection options will be drawn from one or more `connection`
+    objects under the `connections_credentials` key in the configuration file,
+    where `connection.name` matches the connection name. That name is
+    determined by the value of `--connection`, the root `connection`
+    parameter, the `--host` option or root `host` parameter, or "default". All
+    `connections` matching the name will be evaluated in the order in which
+    they appear. The supported keys in each `connection` object are:
+    *   `name`
+    *   `hostname`
+    *   `port`
+    *   `secure`
+    *   `user`
+    *   `password`
+    *   `database`
+    *   `history_file`
+    *   `history_max_entries`
+    *   `accept-invalid-certificate`
+    *   `prompt`
+4.  Finally, parameters set at the root level of the configuration apply.
+    These include:
+    *   `connection`
+    *   `secure` and `no-secure`
+    *   `bind_host`
+    *   `host`
+    *   `port`
+    *   `user`
+    *   `password`
+    *   `database`
+    *   `history_file`
+    *   `history_max_entries`
+    *   `accept-invalid-certificate`
+    *   `prompt`
+    *   `jwt`
+    *   `ssh-key-file`
+    *   `ssh-key-passphrase`
+    *   `ask-password`
+
+## Additional Configuration Parameters {#additional_configuration}
+
+These additional parameters may also be set at the root level of the
+configuration, and are not overridden by other means:
+
+*   `quota_key`
+*   `compression`
+*   `connect_timeout`
+*   `send_timeout`
+*   `receive_timeout`
+*   `tcp_keep_alive_timeout`
+*   `handshake_timeout_ms`
+*   `sync_request_timeout`
+*   `tcp_port`
+*   `tcp_port_secure`
+
+### Secure Connections {#secure_connections}
+
+The `openSSL` object determines TLS encryption and authentication behavior.
+See
+[OpenSSL](https://clickhouse.com/docs/operations/server-configuration-parameters/settings#openssl)
+for details.
+
+The `openSSL` object and other parameters also impact the determination of
+whether to use a secure connection, as follows:
+
+*   If `--secure` has been passed or the `secure` root or `connection`
+    configuration parameter has been set, the connection will use encryption.
+*   If `--no-secure` has been passed or the root `no-secure` parameter is
+    true, the connection will not be encrypted.
+*   If the host name has resoled to a subdomain of `clickhouse.cloud`, the
+    connection will use encryption.
+*   If the [port](https://clickhouse.com/docs/guides/sre/network-ports) has
+    resolved to the Native protocol SSL/TLS port, `9440`, the connection will
+    use encryption.
 
 ## Environment variable options {#environment-variable-options}
 
@@ -768,6 +866,17 @@ The database user to connect as.
 Default value: default
 
 Instead of the `--host`, `--port`, `--user` and `--password` options, the client also supports [connection strings](#connection_string).
+
+**`--proto-caps <value>`**  
+
+Enable/disable chunking in data transfer.  
+
+choices: `chunked_optional`, `notchunked`, `notchunked_optional`, `send_chunked`, `send_chunked_optional`, `send_notchunked`, `send_notchunked_optional`, `recv_chunked`, `recv_chunked_optional`, `recv_notchunked`, `recv_notchunked_optional`.  
+
+To have different options for send and receive, choices can be comma-separated:
+```bash
+$ clickhouse-client --proto-caps send_chunked_optional,recv_notchunked --query "SELECT 1"
+```
 
 ### Query options {#command-line-options-query}
 
