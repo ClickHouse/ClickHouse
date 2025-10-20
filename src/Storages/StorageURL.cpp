@@ -185,24 +185,19 @@ IStorageURLBase::IStorageURLBase(
         storage_metadata.setColumns(columns_);
     }
 
+    supports_prewhere = FormatFactory::instance().checkIfFormatSupportsPrewhere(format_name, context_, format_settings);
+
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
 
     auto & storage_columns = storage_metadata.columns;
 
-    if (context_->getSettingsRef()[Setting::use_hive_partitioning])
-    {
-        HivePartitioningUtils::extractPartitionColumnsFromPathAndEnrichStorageColumns(
-            storage_columns,
-            hive_partition_columns_to_read_from_file_path,
-            getSampleURI(uri, context_),
-            columns_.empty(),
-            format_settings,
-            context_);
-    }
-
-    /// If the `partition_strategy` argument is ever implemented for URL storage, this must be updated
-    file_columns = storage_columns.getAllPhysical();
+    std::tie(hive_partition_columns_to_read_from_file_path, file_columns) = HivePartitioningUtils::setupHivePartitioningForFileURLLikeStorage(
+        storage_columns,
+        getSampleURI(uri, context_),
+        columns_.empty(),
+        format_settings,
+        context_);
 
     auto virtual_columns_desc = VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns);
     if (!storage_metadata.getColumns().has("_headers"))
@@ -329,7 +324,8 @@ StorageURLSource::StorageURLSource(
     UInt64 max_block_size,
     const ConnectionTimeouts & timeouts,
     CompressionMethod compression_method,
-    FormatParserGroupPtr parser_group_,
+    FormatParserSharedResourcesPtr parser_shared_resources_,
+    FormatFilterInfoPtr format_filter_info_,
     const HTTPHeaderEntries & headers_,
     const URIParams & params,
     bool glob_url,
@@ -345,7 +341,8 @@ StorageURLSource::StorageURLSource(
     , uri_iterator(uri_iterator_)
     , format(format_)
     , format_settings(format_settings_)
-    , parser_group(std::move(parser_group_))
+    , parser_shared_resources(std::move(parser_shared_resources_))
+    , format_filter_info(std::move(format_filter_info_))
     , headers(getHeaders(headers_))
     , need_only_count(need_only_count_)
     , hive_partition_columns_to_read_from_file_path(info.hive_partition_columns_to_read_from_file_path)
@@ -412,7 +409,8 @@ StorageURLSource::StorageURLSource(
                 getContext(),
                 max_block_size,
                 format_settings,
-                parser_group,
+                parser_shared_resources,
+                format_filter_info,
                 /* is_remote_ fs */ true,
                 compression_method,
                 need_only_count);
@@ -474,16 +472,9 @@ Chunk StorageURLSource::generate()
                 chunk_size = input_format->getApproxBytesReadForChunk();
 
             progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
-            VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
-                chunk,
-                requested_virtual_columns,
-                {
-                    .path = curr_uri.getPath(),
-                    .size = current_file_size,
-                },
-                getContext());
 
-            // The order is important, hive partition columns must be added after virtual columns
+            /// The order is important, hive partition columns must be added before virtual columns
+            /// because they are part of the schema
             if (!hive_partition_columns_to_read_from_file_path.empty())
             {
                 const auto path = curr_uri.getPath();
@@ -492,6 +483,15 @@ Chunk StorageURLSource::generate()
                     hive_partition_columns_to_read_from_file_path,
                     path);
             }
+
+            VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
+                chunk,
+                requested_virtual_columns,
+                {
+                    .path = curr_uri.getPath(),
+                    .size = current_file_size,
+                },
+                getContext());
 
             chassert(dynamic_cast<ReadWriteBufferFromHTTP *>(read_buf.get()));
             if (need_headers_virtual_column)
@@ -511,8 +511,8 @@ Chunk StorageURLSource::generate()
             return chunk;
         }
 
-        if (input_format && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files] &&
-            !parser_group->hasFilter())
+        if (input_format && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files]
+            && (!format_filter_info || !format_filter_info->hasFilter()))
             addNumRowsToCache(curr_uri.toString(), total_rows_in_file);
 
         pipeline->reset();
@@ -1084,6 +1084,26 @@ bool IStorageURLBase::supportsSubsetOfColumns(const ContextPtr & context) const
     return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name, context, format_settings);
 }
 
+bool IStorageURLBase::supportsPrewhere() const
+{
+    return supports_prewhere;
+}
+
+bool IStorageURLBase::canMoveConditionsToPrewhere() const
+{
+    return supports_prewhere;
+}
+
+std::optional<NameSet> IStorageURLBase::supportedPrewhereColumns() const
+{
+    return getInMemoryMetadataPtr()->getColumnsWithoutDefaultExpressions();
+}
+
+IStorage::ColumnSizeByName IStorageURLBase::getColumnSizes() const
+{
+    return getInMemoryMetadataPtr()->getFakeColumnSizes();
+}
+
 bool IStorageURLBase::prefersLargeBlocks() const
 {
     return FormatFactory::instance().checkIfOutputFormatPrefersLargeBlocks(format_name);
@@ -1100,6 +1120,7 @@ public:
     std::string getName() const override { return "ReadFromURL"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
+    void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
 
     ReadFromURL(
         const Names & column_names_,
@@ -1159,6 +1180,13 @@ void ReadFromURL::applyFilters(ActionDAGNodes added_filter_nodes)
     createIterator(predicate);
 }
 
+void ReadFromURL::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
+{
+    info = updateFormatPrewhereInfo(info, query_info.row_level_filter, prewhere_info_value);
+    query_info.prewhere_info = prewhere_info_value;
+    output_header = std::make_shared<const Block>(info.source_header);
+}
+
 void IStorageURLBase::read(
     QueryPlan & query_plan,
     const Names & column_names,
@@ -1175,9 +1203,13 @@ void IStorageURLBase::read(
         storage_snapshot,
         local_context,
         supportsSubsetOfColumns(local_context),
+        /*supports_tuple_elements=*/ supports_prewhere,
         PrepareReadingFromFormatHiveParams {file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap()});
 
-    bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
+    if (query_info.prewhere_info || query_info.row_level_filter)
+        read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.row_level_filter, query_info.prewhere_info);
+
+    bool need_only_count = (query_info.optimize_trivial_count || (read_from_format_info.requested_columns.empty() && !read_from_format_info.prewhere_info && !read_from_format_info.row_level_filter))
         && local_context->getSettingsRef()[Setting::optimize_count_from_files];
 
     auto read_post_data_callback = getReadPOSTDataCallback(
@@ -1289,7 +1321,8 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
     Pipes pipes;
     pipes.reserve(num_streams);
 
-    auto parser_group = std::make_shared<FormatParserGroup>(settings, num_streams, filter_actions_dag, context);
+    auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(settings, num_streams);
+    auto format_filter_info = std::make_shared<FormatFilterInfo>(filter_actions_dag, context, nullptr, query_info.row_level_filter, query_info.prewhere_info);
 
     for (size_t i = 0; i < num_streams; ++i)
     {
@@ -1305,7 +1338,8 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
             max_block_size,
             getHTTPTimeouts(context),
             storage->compression_method,
-            parser_group,
+            parser_shared_resources,
+            format_filter_info,
             storage->headers,
             read_uri_params,
             is_url_with_globs,
@@ -1349,9 +1383,13 @@ void StorageURLWithFailover::read(
         storage_snapshot,
         local_context,
         supportsSubsetOfColumns(local_context),
+        /*supports_tuple_elements=*/ supports_prewhere,
         PrepareReadingFromFormatHiveParams {file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap()});
 
-    bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
+    if (query_info.prewhere_info || query_info.row_level_filter)
+        read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.row_level_filter, query_info.prewhere_info);
+
+    bool need_only_count = (query_info.optimize_trivial_count || (read_from_format_info.requested_columns.empty() && !read_from_format_info.prewhere_info && !read_from_format_info.row_level_filter))
         && local_context->getSettingsRef()[Setting::optimize_count_from_files];
 
     auto read_post_data_callback = getReadPOSTDataCallback(
@@ -1489,7 +1527,7 @@ StorageURL::StorageURL(
         distributed_processing_)
 {
     context_->getRemoteHostFilter().checkURL(Poco::URI(uri));
-    context_->getHTTPHeaderFilter().checkHeaders(headers);
+    context_->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers);
 }
 
 
@@ -1686,6 +1724,7 @@ void registerStorageURL(StorageFactory & factory)
             ASTs & engine_args = args.engine_args;
             auto configuration = StorageURL::getConfiguration(engine_args, args.getLocalContext());
             auto format_settings = StorageURL::getFormatSettingsFromArgs(args);
+            auto context = args.getLocalContext();
 
             ASTPtr partition_by;
             if (args.storage_def->partition_by)
@@ -1699,7 +1738,7 @@ void registerStorageURL(StorageFactory & factory)
                 args.columns,
                 args.constraints,
                 args.comment,
-                args.getContext(),
+                context,
                 configuration.compression_method,
                 configuration.headers,
                 configuration.http_method,

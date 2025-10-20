@@ -5,6 +5,7 @@ sidebar_label: 'mergeTreeIndex'
 sidebar_position: 77
 slug: /sql-reference/table-functions/mergeTreeIndex
 title: 'mergeTreeIndex'
+doc_type: 'reference'
 ---
 
 # mergeTreeIndex Table Function
@@ -14,7 +15,7 @@ Represents the contents of index and marks files of MergeTree tables. It can be 
 ## Syntax {#syntax}
 
 ```sql
-mergeTreeIndex(database, table [, with_marks = true | with_minmax = true])
+mergeTreeIndex(database, table [, with_marks = true] [, with_minmax = true])
 ```
 
 ## Arguments {#arguments}
@@ -25,10 +26,6 @@ mergeTreeIndex(database, table [, with_marks = true | with_minmax = true])
 | `table`       | The table name to read index and marks from.      |
 | `with_marks`  | Whether include columns with marks to the result. |
 | `with_minmax` | Whether include min-max index to the result.      |
-
-:::note
-This function takes either 2 or 3 arguments
-:::
 
 ## Returned value {#returned_value}
 

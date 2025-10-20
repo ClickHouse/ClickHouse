@@ -18,6 +18,7 @@ enum class DumpOracleStrategy
 class QueryOracle
 {
 private:
+    static const std::vector<std::vector<OutFormat>> oracleFormats;
     const FuzzConfig & fc;
     const std::filesystem::path qcfile, qsfile, qfile_peer;
 
@@ -34,8 +35,7 @@ private:
 
     bool findTablesWithPeersAndReplace(RandomGenerator & rg, google::protobuf::Message & mes, StatementGenerator & gen, bool replace);
     void addLimitOrOffset(RandomGenerator & rg, StatementGenerator & gen, uint32_t ncols, SelectStatementCore * ssc) const;
-    void
-    insertOnTableOrCluster(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, bool remote, TableOrFunction * tof) const;
+    void insertOnTableOrCluster(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, bool peer, TableOrFunction * tof) const;
     void generateExportQuery(RandomGenerator & rg, StatementGenerator & gen, bool test_content, const SQLTable & t, SQLQuery & sq2);
     void
     generateImportQuery(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, const SQLQuery & sq2, SQLQuery & sq4) const;
