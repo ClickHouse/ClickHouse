@@ -14,6 +14,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Common/Macros.h>
 #include <Common/typeid_cast.h>
+#include <Core/Settings.h>
 
 
 namespace DB
@@ -229,8 +230,20 @@ BlockIO InterpreterShowTablesQuery::execute()
 
         return res;
     }
+    auto rewritten_query = getRewrittenQuery();
+    String database = getContext()->resolveDatabase(query.getFrom());
+    if (DatabaseCatalog::instance().isDatalakeCatalog(database))
+    {
+        auto context_copy = Context::createCopy(getContext());
+        /// HACK To always show them in explicit "SHOW TABLES" queries
+        context_copy->setSetting("show_data_lake_catalogs_in_system_tables", true);
+        return executeQuery(rewritten_query, context_copy, QueryFlags{ .internal = true }).second;
+    }
+    else
+    {
+        return executeQuery(rewritten_query, getContext(), QueryFlags{ .internal = true }).second;
+    }
 
-    return executeQuery(getRewrittenQuery(), getContext(), QueryFlags{ .internal = true }).second;
 }
 
 /// (*) Sorting is strictly speaking not necessary but 1. it is convenient for users, 2. SQL currently does not allow to

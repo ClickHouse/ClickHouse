@@ -830,6 +830,7 @@ class TeePopen:
         log_file: Union[str, Path] = "",
         env: Optional[dict] = None,
         timeout: Optional[int] = None,
+        timeout_shell_cleanup: Optional[str] = None,
         preserve_stdio: bool = False,
     ):
         self.command = command
@@ -838,6 +839,7 @@ class TeePopen:
         self.env = env or os.environ.copy()
         self.process = None  # type: Optional[subprocess.Popen]
         self.timeout = timeout
+        self.timeout_shell_cleanup = timeout_shell_cleanup
         self.timeout_exceeded = False
         self.terminated_by_sigterm = False
         self.terminated_by_sigkill = False
@@ -848,18 +850,26 @@ class TeePopen:
         if self.timeout is None:
             return
         time.sleep(self.timeout)
-        print(
-            f"WARNING: Timeout exceeded [{self.timeout}], send SIGTERM to [{self.process.pid}] and give a chance for graceful termination"
-        )
-        self.send_signal(signal.SIGTERM)
-        time_wait = 0
-        self.terminated_by_sigterm = True
+        print(f"WARNING: Timeout exceeded [{self.timeout}] for [{self.process.pid}]")
         self.timeout_exceeded = True
+
+        if self.timeout_shell_cleanup:
+            Shell.check(self.timeout_shell_cleanup, verbose=True)
+            return
+
+        self.send_signal(signal.SIGTERM)
+        print(f"Send SIGTERM to [{self.process.pid}]")
+        time_wait = 0
+
         while self.process.poll() is None and time_wait < 100:
             print("wait...")
             wait = 5
             time.sleep(wait)
             time_wait += wait
+
+        self.terminated_by_sigterm = True
+
+        print(f"Graceful termination timeout, send SIGKILL to [{self.process.pid}]")
         while self.process.poll() is None:
             print(f"WARNING: Still running, send SIGKILL to [{self.process.pid}]")
             self.send_signal(signal.SIGKILL)

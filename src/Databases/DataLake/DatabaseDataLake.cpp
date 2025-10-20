@@ -574,13 +574,9 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIterator(
 DatabaseTablesIteratorPtr DatabaseDataLake::getLightweightTablesIterator(
     ContextPtr context_,
     const FilterByNameFunction & filter_by_table_name,
-    bool skip_not_loaded,
-    bool skip_data_lake_catalog) const
+    bool skip_not_loaded) const
 {
     Tables tables;
-
-    if (skip_data_lake_catalog)
-        return std::make_unique<DatabaseTablesSnapshotIterator>(tables, getDatabaseName());
 
     auto catalog = getCatalog();
     DB::Names iceberg_tables;

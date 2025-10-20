@@ -70,7 +70,8 @@ namespace ErrorCodes
     DECLARE(UInt64, log_slow_total_threshold_ms, 5000, "Requests for which the total latency is larger than this settings will be logged", 0) \
     DECLARE(UInt64, log_slow_cpu_threshold_ms, 100, "Requests for which the CPU (preprocessing and processing) latency is larger than this settings will be logged", 0) \
     DECLARE(UInt64, log_slow_connection_operation_threshold_ms, 1000, "Log message if a certain operation took too long inside a single connection", 0) \
-    DECLARE(Bool, use_xid_64, false, "Enable 64-bit XID. It is disabled by default because of backward compatibility", 0)
+    DECLARE(Bool, use_xid_64, false, "Enable 64-bit XID. It is disabled by default because of backward compatibility", 0) \
+    DECLARE(Bool, check_node_acl_on_remove, false, "When trying to remove a node, check ACLs from both the node itself and the parent node. If disabled, default behaviour will be used where only ACL from the parent node is checked", 0) \
 
 DECLARE_SETTINGS_TRAITS(CoordinationSettingsTraits, LIST_OF_COORDINATION_SETTINGS)
 IMPLEMENT_SETTINGS_TRAITS(CoordinationSettingsTraits, LIST_OF_COORDINATION_SETTINGS)
@@ -280,6 +281,11 @@ void KeeperConfigurationAndSettings::dump(WriteBufferFromOwnString & buf) const
     write_int(coordination_settings[CoordinationSetting::log_slow_cpu_threshold_ms]);
     writeText("log_slow_connection_operation_threshold_ms=", buf);
     write_int(coordination_settings[CoordinationSetting::log_slow_connection_operation_threshold_ms]);
+
+    writeText("use_xid_64=", buf);
+    write_bool(coordination_settings[CoordinationSetting::use_xid_64]);
+    writeText("check_node_acl_on_remove=", buf);
+    write_bool(coordination_settings[CoordinationSetting::check_node_acl_on_remove]);
 }
 
 KeeperConfigurationAndSettingsPtr

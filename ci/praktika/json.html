@@ -1183,8 +1183,8 @@
     const columnSymbols = {
         // name: '🗂️',
         // status: '✅',
-        start_time: 'start',
-        duration: 'dur',
+        start_time: 'start time',
+        duration: 'duration',
         // info: '📝',
         files: '📎'
     };
@@ -1195,21 +1195,26 @@
             const thead = document.createElement('thead');
             const tbody = document.createElement('tbody');
 
+            let existing_columns = {};
+            columns.forEach(column => {
+                existing_columns[column] = results.some(result => result[column]);
+            });
+
             // Create table headers based on the fixed columns
             const headerRow = document.createElement('tr');
-            columns.forEach(column => {
+            existing_columns.forEach(column => {
                 const th = document.createElement('th');
                 th.textContent = columnSymbols[column] || column;
                 th.style.cursor = 'pointer';
                 th.style.textDecoration = 'underline';
                 th.setAttribute('data-sort-direction', 'asc'); // Default sort direction
-                th.addEventListener('click', () => sortTable(results, column, columnSymbols[column] || column, tbody, nest_level));
+                th.addEventListener('click', () => sortTable(results, column, columnSymbols[column] || column, tbody, nest_level, existing_columns));
                 headerRow.appendChild(th);
             });
             thead.appendChild(headerRow);
 
             // Create table rows
-            populateTableRows(tbody, results, nest_level);
+            populateTableRows(tbody, results, nest_level, existing_columns);
 
             table.appendChild(thead);
             table.appendChild(tbody);
@@ -1219,7 +1224,7 @@
         return null;
     }
 
-    function populateTableRows(tbody, results, nest_level) {
+    function populateTableRows(tbody, results, nest_level, existing_columns) {
         const currentUrl = new URL(window.location.href);
         // Clear existing rows
         tbody.innerHTML = '';
@@ -1230,7 +1235,7 @@
             const labels = result?.ext?.labels;
             const linklabels = result?.ext?.hlabels;
 
-            columns.forEach(column => {
+            existing_columns.forEach(column => {
                 const td = document.createElement('td');
                 const value = result[column];
                     
@@ -1433,7 +1438,7 @@
         }
     }
 
-    function sortTable(results, column, key, tbody, nest_level) {
+    function sortTable(results, column, key, tbody, nest_level, existing_columns) {
         // Find the table header element for the given key
         const tableHeaders = document.querySelectorAll('th');
         let th = Array.from(tableHeaders).find(header => header.textContent === key);
@@ -1456,7 +1461,7 @@
         tbody.innerHTML = '';
 
         // Re-populate the table with sorted data
-        populateTableRows(tbody, results, nest_level);
+        populateTableRows(tbody, results, nest_level, existing_columns);
     }
 
     async function fetchJson(path, lastModifiedTime = null, eTag = null) {

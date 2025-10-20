@@ -35,7 +35,7 @@ ColumnsDescription StorageSystemGraphite::getColumnsDescription()
  */
 static StorageSystemGraphite::Configs getConfigs(ContextPtr context)
 {
-    const Databases databases = DatabaseCatalog::instance().getDatabases();
+    const Databases databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
     StorageSystemGraphite::Configs graphite_configs;
 
     for (const auto & db : databases)

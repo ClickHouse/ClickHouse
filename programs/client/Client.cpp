@@ -259,7 +259,7 @@ void Client::initialize(Poco::Util::Application & self)
         {
             auto history_file = overrides.history_file.value();
             if (history_file.starts_with("~") && !home_path.empty())
-                history_file = home_path + "/" + history_file.substr(1);
+                history_file = home_path / history_file.substr(1);
             configuration.setString("history_file", history_file);
         }
         if (overrides.history_max_entries.has_value())
@@ -916,13 +916,7 @@ void Client::processConfig()
         if (config().has("history_file"))
             history_file = config().getString("history_file");
         else
-        {
-            auto * history_file_from_env = getenv("CLICKHOUSE_HISTORY_FILE"); // NOLINT(concurrency-mt-unsafe)
-            if (history_file_from_env)
-                history_file = history_file_from_env;
-            else if (!home_path.empty())
-                history_file = home_path + "/.clickhouse-client-history";
-        }
+            history_file = ClientBase::getHistoryFilePath();
     }
 
     pager = config().getString("pager", "");

@@ -22,7 +22,7 @@ private:
     size_t dimension;
 
     /// Helper template for serialization from Field tuple. Untransposes tuple data and writes floats
-    template <typename Word, typename Val>
+    template <typename FloatType>
     void serializeFloatsFromQBitTuple(const Tuple & tuple, WriteBuffer & ostr) const;
 
     /// Helper template for deserialization to Field tuple. Reads floats and transposes to tuple
@@ -31,12 +31,19 @@ private:
 
     /// Helper template for serialization. Untransposes QBit data and writes floats. The writer function allows to write in any format
     /// wanted (i.e. comma-separated for text serialization, binary for binary serialization)
-    template <typename Word, typename Val, typename WriteFunc>
+    template <typename FloatType, typename WriteFunc>
     void serializeFloatsFromQBit(const IColumn & column, size_t row_num, WriteFunc && write_func) const;
 
     /// Helper template for deserialization. Reads floats and transposes to QBit format
     template <typename FloatType, typename ReadFunc>
-    void deserializeFloatsToQBit(IColumn & column, ReadFunc && read_func) const;
+    void deserializeFloatsToQBit(IColumn & column, ReadFunc read) const;
+
+    /// Helper function to validate and read QBit size from buffer for binary deserialization
+    size_t validateAndReadQBitSize(ReadBuffer & istr, const FormatSettings & settings) const;
+
+    /// Helper function to dispatch based on element_size to the appropriate float type
+    template <typename Func>
+    void dispatchByElementSize(Func && func) const;
 
 
 public:
@@ -49,11 +56,11 @@ public:
 
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const override;
 
-    void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const override;
+    void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const override;
 
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
 
-    void deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+    void deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
 
@@ -88,21 +95,37 @@ public:
         DeserializeBinaryBulkStatePtr & state,
         SubstreamsCache * cache) const override;
 
-    /** Does bit transposition. This is how the bits are mapped
+    /** Does bit transposition. This is general (inaccurate) idea of how the bits are mapped
       *     1st bit of 1st element -> 1st bit of 1st word
       *     1st bit of 2nd element -> 2nd bit of 1st word
       *     ...
       *     1st bit of 16th element -> 16th bit of 1st word
-      *     2nd bit of 1st element -> 1st bit of 2nd word
-      *     etc
-      * out_values is 0-ed out in the function, thus 0 initialising it outside is not necessary.
-      * The input Floats are little-endian, the output is big-endian s.t. we save correct bits in the correct FixedString streams later.
-      * TODO: needs a separate implementation for big-endian machines (Float inputs).
+      *     2nd bit of 1st element  -> 1st bit of 2nd word
+      *     etc.
+      *
+      * In practice, this is what happens
+      *
+      *   f_{i,j} = bit j of float i
+      *
+      *       ◄── First FixedString Column ──►   ◄── Second FixedString Column ──►
+      *                                        │
+      *     ╔════════════════╤════════════════╗ ╔════════════════╤════════════════╗
+      *     ║  Upper Byte    │  Lower Byte    ║ ║  Upper Byte    │  Lower Byte    ║
+      * ... ╟────────────────┼────────────────╢ ╟────────────────┼────────────────╢ ...
+      *     ║ f₀,₈ ... f₀,₁₅ │ f₀,₀ ... f₀,₇  ║ ║ f₁,₈ ... f₁,₁₅ │ f₁,₀ ... f₁,₇  ║
+      *     ╚════════════════╧════════════════╝ ╚════════════════╧════════════════╝
+      *
+      * Notes:
+      *  - transposeBits() is a per-value kernel: it maps one float at row i into the bit planes.
+      *  - FixedString columns are MSB first, so first column contains the most significant bits of all Floats.
+      *  - Bit planes are emitted MSB→LSB overall (higher j first).
+      *  - Within each 8-row pack the row order is flipped (…, 16..23, 8..15, 0..7).
+      *  - Motivation: this is faster to unpack in the scalar algorithm.
       */
-    template <typename T>
-    static void transposeBits(const T * __restrict src, T * __restrict dst, size_t length);
+    template <class Word>
+    static void transposeBits(Word src, size_t row_i, size_t total_bits, char * const * __restrict dst);
 
-    /** For a given row of a FixedString column, reads the packed bytes of that column’s bit-plane and “scatters” each bit into the
+    /** For a given FixedString column, reads the packed bytes of that column’s bit plane and “scatters” each bit into the
       * correct positions of the dst buffer, reconstructing the original row-wise bit layout across all elements.
       * The bit_mask T(1) << (sizeof(T) * 8 - 1 - bit) selects which bit in each T to set.
       */

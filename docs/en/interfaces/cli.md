@@ -188,7 +188,8 @@ In interactive mode, by default whatever was entered is run when you press `Ente
 
 You can start the client with the `-m, --multiline` parameter. To enter a multiline query, enter a backslash `\` before the line feed. After you press `Enter`, you will be asked to enter the next line of the query. To run the query, end it with a semicolon and press `Enter`.
 
-ClickHouse Client is based on `replxx` (similar to `readline`) so it uses familiar keyboard shortcuts and keeps a history. The history is written to `~/.clickhouse-client-history` by default.
+ClickHouse Client is based on `replxx` (similar to `readline`) so it uses familiar keyboard shortcuts and keeps a history. The history is written to `~/.local/state/clickhouse/client-query-history`, in accordance with the [XDG Base Directories specification](https://specifications.freedesktop.org/basedir-spec/latest/index.html).
+For compatibility reasons, if `~/.clickhouse-client-history` is already present, it will be used instead.
 
 To exit the client, press `Ctrl+D`, or enter one of the following instead of a query: `exit`, `quit`, `logout`, `exit;`, `quit;`, `logout;`, `q`, `Q`, `:q`.
 

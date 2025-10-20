@@ -11,8 +11,14 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 
+#include <Common/TargetSpecific.h>
+
 #include <base/BFloat16.h>
 #include <base/types.h>
+
+#if USE_MULTITARGET_CODE
+#    include <immintrin.h>
+#endif
 
 
 namespace DB
@@ -22,6 +28,7 @@ namespace ErrorCodes
 {
 extern const int SERIALIZATION_ERROR;
 extern const int SIZES_OF_COLUMNS_IN_TUPLE_DOESNT_MATCH;
+extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 static const ColumnTuple & extractNestedColumn(const IColumn & column)
@@ -105,13 +112,48 @@ static ReturnType addElementSafe(size_t num_elems, IColumn & column, F && impl)
     return ReturnType(true);
 }
 
-template <typename Word, typename Val>
+size_t SerializationQBit::validateAndReadQBitSize(ReadBuffer & istr, const FormatSettings & settings) const
+{
+    size_t size;
+    readVarUInt(size, istr);
+
+    if (settings.binary.max_binary_array_size && size > settings.binary.max_binary_array_size)
+        throw Exception(
+            ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+            "Too large array size: {}. The maximum is: {}. To increase the maximum, use setting "
+            "format_binary_max_array_size",
+            size,
+            settings.binary.max_binary_array_size);
+
+    if (size != dimension)
+        throw Exception(
+            ErrorCodes::SERIALIZATION_ERROR, "Dimension of the read QBit {} doesn't match expected dimension {}", size, dimension);
+
+    return size;
+}
+
+template <typename Func>
+void SerializationQBit::dispatchByElementSize(Func && func) const
+{
+    if (element_size == 16)
+        func.template operator()<BFloat16>();
+    else if (element_size == 32)
+        func.template operator()<Float32>();
+    else if (element_size == 64)
+        func.template operator()<Float64>();
+    else
+        throw Exception(ErrorCodes::SERIALIZATION_ERROR, "Unsupported size for QBit: {}. Only 16, 32, and 64 are supported", element_size);
+}
+
+template <typename FloatType>
 void SerializationQBit::serializeFloatsFromQBitTuple(const Tuple & tuple, WriteBuffer & ostr) const
 {
+    using Word = std::conditional_t<sizeof(FloatType) == 2, UInt16, std::conditional_t<sizeof(FloatType) == 4, UInt32, UInt64>>;
+
     constexpr size_t bits = sizeof(Word) * 8;
     const size_t slice_size = DataTypeQBit::bitsToBytes(dimension);
     const size_t slice_size_bits = slice_size * 8;
-    std::vector<Val> dst(slice_size_bits, Val{});
+    std::vector<FloatType> dst(slice_size_bits, FloatType{});
 
     for (size_t bit = 0; bit < bits; ++bit)
     {
@@ -121,6 +163,8 @@ void SerializationQBit::serializeFloatsFromQBitTuple(const Tuple & tuple, WriteB
         SerializationQBit::untransposeBitPlane(src, reinterpret_cast<Word *>(dst.data()), slice_size_bits, mask);
     }
 
+    /// We untransposed QBit and might have trailing zero floats at the tail if dimension % 8 != 0. Remove them
+    dst.resize(dimension);
     writeVectorBinary(dst, ostr);
 }
 
@@ -130,38 +174,42 @@ Tuple SerializationQBit::deserializeFloatsToQBitTuple(ReadBuffer & istr) const
     using Word = std::conditional_t<sizeof(FloatType) == 2, UInt16, std::conditional_t<sizeof(FloatType) == 4, UInt32, UInt64>>;
 
     const size_t bytes_per_fixedstring = DataTypeQBit::bitsToBytes(dimension);
-    const size_t padded_n = bytes_per_fixedstring * 8;
+    const size_t total_bits = bytes_per_fixedstring * 8;
 
-    std::vector<FloatType> value_floats(padded_n);
-    readVectorBinary(value_floats, istr);
+    std::vector<std::string> planes(element_size, std::string(bytes_per_fixedstring, '\0'));
+    std::vector<char *> plane_ptrs(element_size);
+    for (size_t col_idx = 0; col_idx < element_size; ++col_idx)
+        plane_ptrs[col_idx] = reinterpret_cast<char *>(planes[col_idx].data());
 
-    const char * value_bytes = reinterpret_cast<const char *>(value_floats.data());
+    Word w;
+    FloatType v;
 
-    /// Transpose data
-    std::vector<char> transposed_bytes(bytes_per_fixedstring * element_size);
-    transposeBits<Word>(reinterpret_cast<const Word *>(value_bytes), reinterpret_cast<Word *>(transposed_bytes.data()), padded_n);
+    for (size_t i = 0; i < dimension; i++)
+    {
+        readFloatBinary(v, istr);
+        std::memcpy(&w, &v, sizeof(Word));
+        transposeBits<Word>(w, i, total_bits, plane_ptrs.data());
+    }
 
-    /// Create tuple of FixedStrings
     Tuple tuple_elements;
     tuple_elements.reserve(element_size);
 
     for (size_t col_idx = 0; col_idx < element_size; ++col_idx)
-    {
-        String fixed_string(transposed_bytes.data() + col_idx * bytes_per_fixedstring, bytes_per_fixedstring);
-        tuple_elements.push_back(Field(std::move(fixed_string)));
-    }
+        tuple_elements.push_back(Field(std::move(planes[col_idx])));
 
     return tuple_elements;
 }
 
-template <typename Word, typename Val, typename WriteFunc>
+template <typename FloatType, typename WriteFunc>
 void SerializationQBit::serializeFloatsFromQBit(const IColumn & column, size_t row_num, WriteFunc && write_func) const
 {
+    using Word = std::conditional_t<sizeof(FloatType) == 2, UInt16, std::conditional_t<sizeof(FloatType) == 4, UInt32, UInt64>>;
+
     constexpr size_t bits = sizeof(Word) * 8;
     const size_t slice_size = DataTypeQBit::bitsToBytes(dimension);
     const size_t slice_size_bits = slice_size * 8;
 
-    std::vector<Val> dst(slice_size_bits, Val{});
+    std::vector<FloatType> dst(slice_size_bits, FloatType{});
 
     for (size_t bit = 0; bit < bits; ++bit)
     {
@@ -171,36 +219,38 @@ void SerializationQBit::serializeFloatsFromQBit(const IColumn & column, size_t r
         SerializationQBit::untransposeBitPlane(src, reinterpret_cast<Word *>(dst.data()), slice_size_bits, mask);
     }
 
+    /// We untransposed QBit and might have trailing zero floats at the tail if dimension % 8 != 0. Remove them
+    dst.resize(dimension);
     write_func(dst);
 }
 
 template <typename FloatType, typename ReadFunc>
-void SerializationQBit::deserializeFloatsToQBit(IColumn & column, ReadFunc && read_func) const
+void SerializationQBit::deserializeFloatsToQBit(IColumn & column, ReadFunc read_one) const
 {
+    using Word = std::conditional_t<sizeof(FloatType) == 2, UInt16, std::conditional_t<sizeof(FloatType) == 4, UInt32, UInt64>>;
+
     const size_t bytes_per_fixedstring = DataTypeQBit::bitsToBytes(dimension);
-    const size_t padded_n = bytes_per_fixedstring * 8;
+    const size_t total_bits = bytes_per_fixedstring * 8;
 
-    std::vector<FloatType> value_floats(padded_n);
-    read_func(value_floats);
-
-    const char * value_bytes = reinterpret_cast<const char *>(value_floats.data());
-
-    /// Transpose the data
-    std::vector<char> transposed_bytes(bytes_per_fixedstring * element_size);
-
-    if (element_size == 16)
-        transposeBits<UInt16>(reinterpret_cast<const UInt16 *>(value_bytes), reinterpret_cast<UInt16 *>(transposed_bytes.data()), padded_n);
-    else if (element_size == 32)
-        transposeBits<UInt32>(reinterpret_cast<const UInt32 *>(value_bytes), reinterpret_cast<UInt32 *>(transposed_bytes.data()), padded_n);
-    else if (element_size == 64)
-        transposeBits<UInt64>(reinterpret_cast<const UInt64 *>(value_bytes), reinterpret_cast<UInt64 *>(transposed_bytes.data()), padded_n);
-
-    /// Insert the transposed data into columns
+    /// Insert 0 in each FixedString column and prepare pointers to the newly inserted rows to directly write into them during transposition
+    std::vector<char *> column_data_ptrs(element_size);
     for (size_t col_idx = 0; col_idx < element_size; ++col_idx)
     {
-        auto & element_column = extractElementColumn(column, col_idx);
-        auto & fixed_string_column = assert_cast<ColumnFixedString &>(element_column);
-        fixed_string_column.insertData(transposed_bytes.data() + col_idx * bytes_per_fixedstring, bytes_per_fixedstring);
+        auto & fixed_string_column = assert_cast<ColumnFixedString &>(extractElementColumn(column, col_idx));
+        fixed_string_column.insertDefault();
+        auto & chars = fixed_string_column.getChars();
+        column_data_ptrs[col_idx] = reinterpret_cast<char *>(&chars[chars.size() - bytes_per_fixedstring]);
+    }
+
+    for (size_t i = 0; i < dimension; ++i)
+    {
+        FloatType value;
+        read_one(value, i);
+
+        Word word_value;
+        std::memcpy(&word_value, &value, sizeof(Word));
+
+        transposeBits<Word>(word_value, i, total_bits, column_data_ptrs.data());
     }
 }
 
@@ -213,26 +263,14 @@ void SerializationQBit::serializeBinary(const Field & field, WriteBuffer & ostr,
         throw Exception(
             ErrorCodes::SERIALIZATION_ERROR, "QBit tuple size {} doesn't match expected element_size {}", tuple.size(), element_size);
 
-    if (element_size == 16)
-        serializeFloatsFromQBitTuple<UInt16, BFloat16>(tuple, ostr);
-    else if (element_size == 32)
-        serializeFloatsFromQBitTuple<UInt32, Float32>(tuple, ostr);
-    else if (element_size == 64)
-        serializeFloatsFromQBitTuple<UInt64, Float64>(tuple, ostr);
-    else
-        throw Exception(ErrorCodes::SERIALIZATION_ERROR, "Unsupported QBit element size {}", element_size);
+    dispatchByElementSize([&]<typename FloatType>() { serializeFloatsFromQBitTuple<FloatType>(tuple, ostr); });
 }
 
-void SerializationQBit::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const
+void SerializationQBit::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    if (element_size == 16)
-        field = deserializeFloatsToQBitTuple<BFloat16>(istr);
-    else if (element_size == 32)
-        field = deserializeFloatsToQBitTuple<Float32>(istr);
-    else if (element_size == 64)
-        field = deserializeFloatsToQBitTuple<Float64>(istr);
-    else
-        throw Exception(ErrorCodes::SERIALIZATION_ERROR, "Unsupported QBit element size {}", element_size);
+    validateAndReadQBitSize(istr, settings);
+
+    dispatchByElementSize([&]<typename FloatType>() { field = deserializeFloatsToQBitTuple<FloatType>(istr); });
 }
 
 void SerializationQBit::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
@@ -240,32 +278,18 @@ void SerializationQBit::serializeBinary(const IColumn & column, size_t row_num, 
     /// Lambda to write the vector of floats to the output buffer
     auto write_binary = [&ostr](const auto & dst) { writeVectorBinary(dst, ostr); };
 
-    if (element_size == 16)
-        serializeFloatsFromQBit<UInt16, BFloat16>(column, row_num, write_binary);
-    else if (element_size == 32)
-        serializeFloatsFromQBit<UInt32, Float32>(column, row_num, write_binary);
-    else if (element_size == 64)
-        serializeFloatsFromQBit<UInt64, Float64>(column, row_num, write_binary);
-    else
-        throw Exception(ErrorCodes::SERIALIZATION_ERROR, "Unsupported QBit size {}. Only 16, 32, and 64 are supported", element_size);
+    dispatchByElementSize([&]<typename FloatType>() { serializeFloatsFromQBit<FloatType>(column, row_num, write_binary); });
 }
 
-void SerializationQBit::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+void SerializationQBit::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    /// Lambda to read the vector of floats from the buffer
-    auto read_binary = [&istr](auto & value_floats) { readVectorBinary(value_floats, istr); };
+    validateAndReadQBitSize(istr, settings);
+
+    auto read_binary = [&]<typename FloatType>(FloatType & v, size_t) { readBinary(v, istr); };
 
     auto deserialize = [&]() -> bool
     {
-        if (element_size == 16)
-            deserializeFloatsToQBit<BFloat16>(column, read_binary);
-        else if (element_size == 32)
-            deserializeFloatsToQBit<Float32>(column, read_binary);
-        else if (element_size == 64)
-            deserializeFloatsToQBit<Float64>(column, read_binary);
-        else
-            throw Exception(
-                ErrorCodes::SERIALIZATION_ERROR, "Unsupported size for QBit: {}. Only 16, 32, and 64 are supported", element_size);
+        dispatchByElementSize([&]<typename FloatType>() { deserializeFloatsToQBit<FloatType>(column, read_binary); });
         return true;
     };
 
@@ -286,32 +310,22 @@ void SerializationQBit::serializeText(const IColumn & column, size_t row_num, Wr
     };
 
     writeChar('[', ostr);
-    if (element_size == 16)
-        serializeFloatsFromQBit<UInt16, BFloat16>(column, row_num, write_text);
-    else if (element_size == 32)
-        serializeFloatsFromQBit<UInt32, Float32>(column, row_num, write_text);
-    else if (element_size == 64)
-        serializeFloatsFromQBit<UInt64, Float64>(column, row_num, write_text);
-    else
-        throw Exception(ErrorCodes::SERIALIZATION_ERROR, "Unsupported QBit size {}. Only 16, 32, and 64 are supported", element_size);
+    dispatchByElementSize([&]<typename FloatType>() { serializeFloatsFromQBit<FloatType>(column, row_num, write_text); });
     writeChar(']', ostr);
 }
 
 void SerializationQBit::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const
 {
     /// Lambda to read comma-separated floats from the buffer
-    auto read_with_comma = [this, &istr](auto & value_floats)
+    auto read_with_comma = [&]<typename FloatType>(FloatType & v, size_t i)
     {
-        for (size_t i = 0; i < dimension; ++i)
+        if (i != 0)
         {
-            if (i != 0)
-            {
-                skipWhitespaceIfAny(istr);
-                assertChar(',', istr);
-                skipWhitespaceIfAny(istr);
-            }
-            readText(value_floats[i], istr);
+            skipWhitespaceIfAny(istr);
+            assertChar(',', istr);
+            skipWhitespaceIfAny(istr);
         }
+        readText(v, istr);
     };
 
     auto deserialize = [&]() -> bool
@@ -319,15 +333,7 @@ void SerializationQBit::deserializeText(IColumn & column, ReadBuffer & istr, con
         assertChar('[', istr);
         skipWhitespaceIfAny(istr);
 
-        if (element_size == 16)
-            deserializeFloatsToQBit<BFloat16>(column, read_with_comma);
-        else if (element_size == 32)
-            deserializeFloatsToQBit<Float32>(column, read_with_comma);
-        else if (element_size == 64)
-            deserializeFloatsToQBit<Float64>(column, read_with_comma);
-        else
-            throw Exception(
-                ErrorCodes::SERIALIZATION_ERROR, "Unsupported size for QBit: {}. Only 16, 32, and 64 are supported", element_size);
+        dispatchByElementSize([&]<typename FloatType>() { deserializeFloatsToQBit<FloatType>(column, read_with_comma); });
 
         skipWhitespaceIfAny(istr);
         assertChar(']', istr);
@@ -389,78 +395,205 @@ void SerializationQBit::deserializeBinaryBulkWithMultipleStreams(
     nested->deserializeBinaryBulkWithMultipleStreams(tuple, rows_offset, limit, settings, state, cache);
 }
 
-template <typename T>
-void SerializationQBit::transposeBits(const T * src, T * dst, std::size_t length)
+template <typename Word>
+void SerializationQBit::transposeBits(Word src, const size_t row_i, const size_t total_bits, char * const * __restrict dst)
 {
-    constexpr std::size_t w = sizeof(T) * 8;
+    /// Fast out on common all-zeros case
+    if (!src)
+        return;
 
-    std::fill(dst, dst + length, T{0});
+    /// (row_i ^ 7) maps 0 -> 7, 1 -> 6, ..., 7 -> 0. Same with higher numbers: 15 -> 8, etc. Required for our row ordering
+    const size_t bit_index = (total_bits - 1) - (row_i ^ 7);
+    const size_t byte_pos = bit_index / 8;
+    const uint8_t bit_mask = static_cast<uint8_t>(1u << (bit_index % 8));
+    constexpr size_t bits_per_word_minus_one = sizeof(Word) * 8 - 1;
 
-    constexpr std::size_t logw = (w == 16) ? 4 : (w == 32) ? 5 : 6; /// log2(w)
-    constexpr std::size_t maskw = w - 1;
-    const std::size_t total_bits = w * length;
-
-    for (std::size_t bit = 0; bit < w; ++bit)
+    /// Process only the set bits
+    while (src)
     {
-        for (std::size_t row = 0; row < length; ++row)
+        /// Index of the lowest set bit
+        auto trailing_zeros = std::countr_zero(src);
+        size_t col_idx = bits_per_word_minus_one - trailing_zeros;
+        dst[col_idx][byte_pos] |= bit_mask;
+        /// Clear that bit
+        src &= src - 1;
+    }
+}
+
+/// CPU Dispatch for untransposeBitPlane
+DECLARE_DEFAULT_CODE(
+    template <typename T>
+    ALWAYS_INLINE inline void untransposeBitPlaneImpl(const UInt8 * __restrict src, T * __restrict dst, size_t stride_len, T bit_mask) {
+        const size_t bytes_per_fs = stride_len / 8;
+        ssize_t row_base = stride_len - 1;
+
+        for (size_t b = 0; b < bytes_per_fs; ++b, row_base -= 8)
         {
-            T v = (src[row] >> bit) & T{1};
+            const uint8_t v = src[b];
 
-            std::size_t dst_index = total_bits - 1 - (bit * length + row);
+            /// Fast out on common all-zeros case
+            if (!v)
+                continue;
 
-            std::size_t dst_word = dst_index >> logw;
-            std::size_t dst_offset = dst_index & maskw;
-
-            dst[dst_word] |= (v << dst_offset);
+            for (int i = 0; i < 8; ++i)
+            {
+                /// Mask is 0...0 if current bit is 0, 1...1 if it is 1. Use it to avoid a branch
+                T mask = -T((v >> i) & 1);
+                dst[row_base - 7 + i] |= (mask & bit_mask);
+            }
         }
-    }
-}
+    })
+
+/// Do not inline target specific implementations to avoid code bloat on all targets
+DECLARE_AVX512F_SPECIFIC_CODE(
+    void untransposeBitPlaneFloat64Impl(const UInt8 * __restrict src, UInt64 * __restrict dst, size_t stride_len, UInt64 bit_mask) {
+        const size_t bytes_per_fs = stride_len / 8;
+        ssize_t row_base = stride_len - 1;
+
+        const __m512i bmask = _mm512_set1_epi64(bit_mask);
+
+        for (size_t b = 0; b < bytes_per_fs; ++b, row_base -= 8)
+        {
+            uint8_t v = src[b];
+            if (!v)
+                continue;
+
+            __mmask8 k = v;
+            uint64_t * row_ptr = dst + row_base - 7;
+
+            __m512i cur = _mm512_loadu_si512(reinterpret_cast<const __m512i *>(row_ptr));
+            __m512i upd = _mm512_or_si512(cur, bmask);
+            cur = _mm512_mask_mov_epi64(cur, k, upd);
+            _mm512_storeu_si512(reinterpret_cast<__m512i *>(row_ptr), cur);
+        }
+    })
+
+DECLARE_AVX512VL_SPECIFIC_CODE(
+    void untransposeBitPlaneFloat32Impl(const UInt8 * __restrict src, UInt32 * __restrict dst, size_t stride_len, UInt32 bit_mask) {
+        const size_t bytes_per_fs = stride_len / 8;
+        ssize_t row_base = stride_len - 1;
+
+        const __m512i bmask = _mm512_set1_epi32(bit_mask);
+
+        size_t b = 0;
+
+        for (; b + 4 <= bytes_per_fs; b += 4, row_base -= 32)
+        {
+            uint32_t v32;
+            std::memcpy(&v32, src + b, 4);
+
+            if (!v32)
+                continue;
+
+            /// Bytes within uint32_t are stored in big-endian format. Swap to little-endian for _cvtu32_mask32.
+            v32 = __builtin_bswap32(v32);
+            __mmask32 k32 = _cvtu32_mask32(v32);
+
+            __mmask16 k_lo = static_cast<__mmask16>(k32 & 0xFFFF);
+            __mmask16 k_hi = static_cast<__mmask16>(k32 >> 16);
+
+            uint32_t * row_ptr = dst + row_base - 31;
+
+            __m512i cur = _mm512_loadu_si512(row_ptr);
+            __m512i upd = _mm512_or_si512(cur, bmask);
+            cur = _mm512_mask_mov_epi32(cur, k_lo, upd);
+            _mm512_storeu_si512(row_ptr, cur);
+
+            cur = _mm512_loadu_si512(row_ptr + 16);
+            upd = _mm512_or_si512(cur, bmask);
+            cur = _mm512_mask_mov_epi32(cur, k_hi, upd);
+            _mm512_storeu_si512(row_ptr + 16, cur);
+        }
+
+        for (; b < bytes_per_fs; ++b, row_base -= 8)
+        {
+            __mmask8 v = src[b];
+            if (!v)
+                continue;
+
+            uint32_t * rp = dst + row_base - 7; // rows [‑7 … 0]
+
+            __m256i cur256 = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(rp));
+            __m256i upd256 = _mm256_or_si256(cur256, _mm256_set1_epi32(bit_mask));
+            cur256 = _mm256_mask_mov_epi32(cur256, v, upd256);
+            _mm256_storeu_si256(reinterpret_cast<__m256i *>(rp), cur256);
+        }
+    })
+
+DECLARE_AVX512VL_SPECIFIC_CODE(
+    void untransposeBitPlaneBFloat16Impl(const UInt8 * __restrict src, UInt16 * __restrict dst, size_t stride_len, UInt16 bit_mask) {
+        const size_t bytes_per_fs = stride_len / 8;
+        const __m512i bmask = _mm512_set1_epi16(bit_mask);
+        ssize_t row_base = stride_len - 1;
+
+        /// Process 4 bytes at a time
+        size_t b = 0;
+        for (; b + 4 <= bytes_per_fs; b += 4, row_base -= 32)
+        {
+            uint32_t v32;
+            std::memcpy(&v32, src + b, 4);
+
+            if (!v32)
+                continue;
+
+            /// Bytes within uint32_t are stored in big-endian format. Swap to little-endian for _cvtu32_mask32.
+            v32 = __builtin_bswap32(v32);
+            __mmask32 k = _cvtu32_mask32(v32);
+
+            uint16_t * row_ptr = dst + row_base - 31;
+
+            __m512i cur = _mm512_loadu_si512(row_ptr);
+            __m512i upd = _mm512_or_si512(cur, bmask);
+            cur = _mm512_mask_mov_epi16(cur, k, upd);
+            _mm512_storeu_si512(row_ptr, cur);
+        }
+
+        /// Process remaining rows
+        for (; b < bytes_per_fs; ++b, row_base -= 8)
+        {
+            uint8_t v = src[b];
+            if (!v)
+                continue;
+
+            __mmask8 k8 = v;
+            uint16_t * rp = dst + row_base - 7;
+
+            __m128i cur = _mm_loadu_si128(reinterpret_cast<__m128i *>(rp));
+            __m128i upd = _mm_or_si128(cur, _mm_set1_epi16(bit_mask));
+            cur = _mm_mask_mov_epi16(cur, k8, upd);
+            _mm_storeu_si128(reinterpret_cast<__m128i *>(rp), cur);
+        }
+    })
 
 template <typename T>
-ALWAYS_INLINE void SerializationQBit::untransposeBitPlane(const UInt8 * __restrict src, T * __restrict dst, size_t stride_len, T bit_mask)
+void SerializationQBit::untransposeBitPlane(const UInt8 * __restrict src, T * __restrict dst, size_t stride_len, T bit_mask)
 {
-    const size_t bytes_per_slice = stride_len / 8;
-
-    for (size_t b = 0; b < bytes_per_slice; ++b)
+#if USE_MULTITARGET_CODE
+    if constexpr (std::is_same_v<T, UInt64>)
     {
-        uint8_t v = src[b];
-
-        /// Eealy out for common all-0 case
-        if (!v)
-            continue;
-
-        ssize_t row_base = static_cast<ssize_t>(stride_len - 1 - (b * 8));
-        T * d = dst + row_base;
-
-        /** Map     LSB → row_base
-          *         …   → …
-          *         MSB → row_base-7
-          */
-        if (v & 0x01)
-            d[0] |= bit_mask;
-        if (v & 0x02)
-            d[-1] |= bit_mask;
-        if (v & 0x04)
-            d[-2] |= bit_mask;
-        if (v & 0x08)
-            d[-3] |= bit_mask;
-        if (v & 0x10)
-            d[-4] |= bit_mask;
-        if (v & 0x20)
-            d[-5] |= bit_mask;
-        if (v & 0x40)
-            d[-6] |= bit_mask;
-        if (v & 0x80)
-            d[-7] |= bit_mask;
+        if (isArchSupported(TargetArch::AVX512F))
+            return TargetSpecific::AVX512F::untransposeBitPlaneFloat64Impl(src, dst, stride_len, bit_mask);
     }
+    else if constexpr (std::is_same_v<T, UInt32>)
+    {
+        if (isArchSupported(TargetArch::AVX512VL))
+            return TargetSpecific::AVX512VL::untransposeBitPlaneFloat32Impl(src, dst, stride_len, bit_mask);
+    }
+    else if constexpr (std::is_same_v<T, UInt16>)
+    {
+        if (isArchSupported(TargetArch::AVX512VL))
+            return TargetSpecific::AVX512VL::untransposeBitPlaneBFloat16Impl(src, dst, stride_len, bit_mask);
+    }
+#endif
+    return TargetSpecific::Default::untransposeBitPlaneImpl(src, dst, stride_len, bit_mask);
 }
 
 
-template void SerializationQBit::transposeBits<UInt16>(const UInt16 *, UInt16 *, size_t);
-template void SerializationQBit::transposeBits<UInt32>(const UInt32 *, UInt32 *, size_t);
-template void SerializationQBit::transposeBits<UInt64>(const UInt64 *, UInt64 *, size_t);
+template void SerializationQBit::transposeBits(UInt16 src, const size_t row_i, const size_t total_bits, char * const * dst);
+template void SerializationQBit::transposeBits(UInt32 src, const size_t row_i, const size_t total_bits, char * const * dst);
+template void SerializationQBit::transposeBits(UInt64 src, const size_t row_i, const size_t total_bits, char * const * dst);
 
-template void SerializationQBit::untransposeBitPlane(const UInt8 * src, UInt16 * dst, size_t stride_len, UInt16 bit_mask);
-template void SerializationQBit::untransposeBitPlane(const UInt8 * src, UInt32 * dst, size_t stride_len, UInt32 bit_mask);
 template void SerializationQBit::untransposeBitPlane(const UInt8 * src, UInt64 * dst, size_t stride_len, UInt64 bit_mask);
+template void SerializationQBit::untransposeBitPlane(const UInt8 * src, UInt32 * dst, size_t stride_len, UInt32 bit_mask);
+template void SerializationQBit::untransposeBitPlane(const UInt8 * src, UInt16 * dst, size_t stride_len, UInt16 bit_mask);
 }

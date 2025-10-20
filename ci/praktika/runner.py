@@ -313,7 +313,7 @@ class Runner:
             for p_ in [path, path_1]:
                 if p_ and Path(p_).exists() and p_.startswith("/"):
                     extra_mounts += f" --volume {p_}:{p_}"
-            cmd = f"docker run {tty} --rm --name praktika {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONPATH='.:./ci' --volume ./:{current_dir} {extra_mounts} --workdir={current_dir} {' '.join(settings)} {docker} {job.command}"
+            cmd = f"docker run {tty} --rm --name praktika {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONUNBUFFERED=1 -e PYTHONPATH='.:./ci' --volume ./:{current_dir} {extra_mounts} --workdir={current_dir} {' '.join(settings)} {docker} {job.command}"
         else:
             cmd = job.command
             python_path = os.getenv("PYTHONPATH", ":")
@@ -340,7 +340,7 @@ class Runner:
         print(f"--- Run command [{cmd}]")
 
         with TeePopen(
-            cmd, timeout=job.timeout, preserve_stdio=preserve_stdio
+            cmd, timeout=job.timeout, preserve_stdio=preserve_stdio, timeout_shell_cleanup=job.timeout_shell_cleanup
         ) as process:
             start_time = Utils.timestamp()
 

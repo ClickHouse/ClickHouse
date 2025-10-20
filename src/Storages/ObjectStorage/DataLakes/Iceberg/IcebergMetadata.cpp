@@ -5,6 +5,7 @@
 #include <memory>
 #include <optional>
 #include <sstream>
+#include <fmt/format.h>
 #include <Columns/ColumnSet.h>
 #include <DataTypes/DataTypeSet.h>
 #include <Formats/FormatFilterInfo.h>
@@ -28,6 +29,7 @@
 
 #include <Databases/DataLake/Common.h>
 #include <Disks/DiskType.h>
+#include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Settings.h>
 #include <Core/NamesAndTypes.h>
 #include <Databases/DataLake/ICatalog.h>
@@ -861,6 +863,7 @@ StorageInMemoryMetadata IcebergMetadata::getStorageSnapshotMetadata(ContextPtr l
     result.setColumns(
         ColumnsDescription{*persistent_components.schema_processor->getClickhouseTableSchemaById(actual_table_state_snapshot.schema_id)});
     result.setDataLakeTableState(actual_table_state_snapshot);
+    result.sorting_key = getSortingKey(local_context, actual_table_state_snapshot);
     return result;
 }
 
@@ -1048,6 +1051,64 @@ ColumnMapperPtr IcebergMetadata::getColumnMapperForCurrentSchema(StorageMetadata
     }
     return persistent_components.schema_processor->getColumnMapperById(iceberg_table_state->schema_id);
 }
+
+KeyDescription IcebergMetadata::getSortingKey(ContextPtr local_context, TableStateSnapshot actual_table_state_snapshot) const
+{
+    auto metadata_object = getMetadataJSONObject(
+        actual_table_state_snapshot.metadata_file_path,
+        object_storage,
+        getConfiguration(),
+        persistent_components.metadata_cache,
+        local_context,
+        log,
+        persistent_components.metadata_compression_method);
+
+
+    auto sort_order_id = metadata_object->getValue<Int64>(f_default_sort_order_id);
+    Poco::JSON::Array::Ptr sort_orders = metadata_object->getArray(f_sort_orders);
+    std::unordered_map<Int64, String> source_id_to_column_name;
+    auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
+
+    auto mapper = createColumnMapper(schema)->getStorageColumnEncoding();
+    for (const auto & [col_name, source_id] : mapper)
+    {
+        source_id_to_column_name[source_id] = col_name;
+    }
+
+    KeyDescription key_description;
+    auto ch_schema = persistent_components.schema_processor->getClickhouseTableSchemaById(current_schema_id);
+    ColumnsDescription column_description;
+    for (size_t i = 0; i < ch_schema->size(); ++i)
+        column_description.add(ColumnDescription(ch_schema->getNames()[i], ch_schema->getTypes()[i]));
+
+    String order_by_str;
+
+    for (UInt32 i = 0; i < sort_orders->size(); ++i)
+    {
+        auto sort_order = sort_orders->getObject(i);
+        if (sort_order->getValue<Int64>(f_order_id) != sort_order_id)
+            continue;
+        auto fields = sort_order->getArray(f_fields);
+        for (UInt32 field_index = 0; field_index < fields->size(); ++field_index)
+        {
+            auto field = fields->getObject(field_index);
+            auto source_id = field->getValue<Int64>(f_source_id);
+            auto column_name = source_id_to_column_name[source_id];
+            int direction = field->getValue<String>(f_direction) == "asc" ? 1 : -1;
+
+            if (direction == 1)
+                order_by_str += fmt::format("{} ASC,", column_name);
+            else
+                order_by_str += fmt::format("{} DESC,", column_name);
+        }
+        break;
+    }
+    if (order_by_str.empty())
+        return KeyDescription{};
+    order_by_str.pop_back();
+    return KeyDescription::parse(order_by_str, column_description, local_context, true);
+}
+
 }
 
 #endif

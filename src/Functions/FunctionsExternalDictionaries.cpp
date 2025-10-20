@@ -90,7 +90,7 @@ REGISTER_FUNCTION(ExternalDictionaries)
         FunctionDocumentation::ReturnedValue returned_value =
 {R"(
 Returns the value of the dictionary attribute that corresponds to id_expr if the key is found.
-If the key is not found, returns the content of the <null_value> element specified for the attribute in the dictionary configuration.
+If the key is not found, returns the content of the `<null_value>` element specified for the attribute in the dictionary configuration.
 )"};
         FunctionDocumentation::Examples examples = {
             {
