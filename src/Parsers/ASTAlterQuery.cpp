@@ -228,7 +228,12 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
     {
         ostr << (clear_statistics ? "CLEAR " : "DROP ") << "STATISTICS "
                       << (if_exists ? "IF EXISTS " : "");
-        statistics_decl->format(ostr, settings, state, frame);
+
+        if (statistics_decl)
+            statistics_decl->format(ostr, settings, state, frame);
+        else
+            ostr << " ALL";
+
         if (partition)
         {
             ostr << " IN PARTITION ";
@@ -238,19 +243,27 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
     else if (type == ASTAlterCommand::MATERIALIZE_STATISTICS)
     {
         ostr << "MATERIALIZE STATISTICS ";
-        statistics_decl->format(ostr, settings, state, frame);
-        if (partition)
+        if (statistics_decl)
         {
-            ostr << " IN PARTITION ";
-            partition->format(ostr, settings, state, frame);
+            statistics_decl->format(ostr, settings, state, frame);
+            if (partition)
+            {
+                ostr << " IN PARTITION ";
+                partition->format(ostr, settings, state, frame);
+            }
         }
+        else
+            ostr << " ALL";
     }
     else if (type == ASTAlterCommand::UNLOCK_SNAPSHOT)
     {
         ostr << "UNLOCK SNAPSHOT ";
         ostr << quoteString(snapshot_name);
-        ostr << "FROM ";
-        snapshot_desc->format(ostr, settings, state, frame);
+        if (snapshot_desc != nullptr)
+        {
+            ostr << "FROM ";
+            snapshot_desc->format(ostr, settings, state, frame);
+        }
     }
     else if (type == ASTAlterCommand::ADD_CONSTRAINT)
     {
@@ -456,6 +469,15 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
     else if (type == ASTAlterCommand::MATERIALIZE_TTL)
     {
         ostr << "MATERIALIZE TTL";
+        if (partition)
+        {
+            ostr << " IN PARTITION ";
+            partition->format(ostr, settings, state, frame);
+        }
+    }
+    else if (type == ASTAlterCommand::REWRITE_PARTS)
+    {
+        ostr << "REWRITE PARTS";
         if (partition)
         {
             ostr << " IN PARTITION ";

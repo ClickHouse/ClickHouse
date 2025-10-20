@@ -6,6 +6,7 @@ keywords: ['RowBinaryWithDefaults']
 output_format: false
 slug: /interfaces/formats/RowBinaryWithDefaults
 title: 'RowBinaryWithDefaults'
+doc_type: 'reference'
 ---
 
 import RowBinaryFormatSettings from './_snippets/common-row-binary-format-settings.md'
@@ -37,5 +38,3 @@ SELECT * FROM FORMAT('RowBinaryWithDefaults', 'x UInt32 default 42, y UInt32', x
 ## Format settings {#format-settings}
 
 <RowBinaryFormatSettings/>
-
-

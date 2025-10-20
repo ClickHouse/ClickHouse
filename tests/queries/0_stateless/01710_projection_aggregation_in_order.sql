@@ -26,7 +26,14 @@ INSERT INTO normal SELECT
     number
 FROM numbers(100000);
 
-SET optimize_use_projections=1, optimize_aggregation_in_order=1, force_optimize_projection=1;
+SET force_optimize_projection=1;
+SET optimize_use_projections=1, optimize_aggregation_in_order=1, enable_parallel_replicas=0;
+
+WITH toStartOfHour(ts) AS a SELECT sum(value) v FROM normal WHERE ts > '2021-12-06 22:00:00' GROUP BY a ORDER BY v LIMIT 5;
+WITH toStartOfHour(ts) AS a SELECT sum(value) v FROM normal WHERE ts > '2021-12-06 22:00:00' GROUP BY toStartOfHour(ts), a ORDER BY v LIMIT 5;
+
+SET optimize_aggregation_in_order=0;
+SET enable_parallel_replicas=1, parallel_replicas_local_plan=1, parallel_replicas_support_projection=1, parallel_replicas_for_non_replicated_merge_tree=1, max_parallel_replicas=3, cluster_for_parallel_replicas='test_cluster_one_shard_three_replicas_localhost';
 
 WITH toStartOfHour(ts) AS a SELECT sum(value) v FROM normal WHERE ts > '2021-12-06 22:00:00' GROUP BY a ORDER BY v LIMIT 5;
 WITH toStartOfHour(ts) AS a SELECT sum(value) v FROM normal WHERE ts > '2021-12-06 22:00:00' GROUP BY toStartOfHour(ts), a ORDER BY v LIMIT 5;
@@ -58,7 +65,13 @@ INSERT INTO agg SELECT
     number
 FROM numbers(100000);
 
-SET optimize_use_projections=1, optimize_aggregation_in_order=1, force_optimize_projection = 1;
+SET optimize_use_projections=1, optimize_aggregation_in_order=1, enable_parallel_replicas=0;
+
+WITH toStartOfHour(ts) AS a SELECT sum(value) v FROM agg WHERE ts > '2021-12-06 22:00:00' GROUP BY a ORDER BY v LIMIT 5;
+WITH toStartOfHour(ts) AS a SELECT sum(value) v FROM agg WHERE ts > '2021-12-06 22:00:00' GROUP BY toStartOfHour(ts), a ORDER BY v LIMIT 5;
+
+SET optimize_aggregation_in_order=0;
+SET enable_parallel_replicas=1, parallel_replicas_local_plan=1, parallel_replicas_support_projection=1, parallel_replicas_for_non_replicated_merge_tree=1, max_parallel_replicas=3, cluster_for_parallel_replicas='test_cluster_one_shard_three_replicas_localhost';
 
 WITH toStartOfHour(ts) AS a SELECT sum(value) v FROM agg WHERE ts > '2021-12-06 22:00:00' GROUP BY a ORDER BY v LIMIT 5;
 WITH toStartOfHour(ts) AS a SELECT sum(value) v FROM agg WHERE ts > '2021-12-06 22:00:00' GROUP BY toStartOfHour(ts), a ORDER BY v LIMIT 5;

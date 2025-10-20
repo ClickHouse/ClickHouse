@@ -6,6 +6,7 @@ keywords: ['JSONCompactColumns']
 output_format: true
 slug: /interfaces/formats/JSONCompactColumns
 title: 'JSONCompactColumns'
+doc_type: 'reference'
 ---
 
 | Input | Output | Alias |
@@ -69,4 +70,3 @@ The output will be in JSON format:
 Columns that are not present in the block will be filled with default values (you can use [`input_format_defaults_for_omitted_fields`](/operations/settings/settings-formats.md/#input_format_defaults_for_omitted_fields) setting here)
 
 ## Format settings {#format-settings}
-

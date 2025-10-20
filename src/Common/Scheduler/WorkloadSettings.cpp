@@ -221,7 +221,7 @@ void WorkloadSettings::initFromChanges(CostUnit unit_, const ASTCreateWorkloadQu
     max_burst_bytes = get_value(specific.max_burst_bytes, regular.max_burst_bytes, max_burst_bytes);
 
     // CPU throttling
-    if (specific.max_cpus || regular.max_cpus)
+    if (specific.max_cpus || regular.max_cpus || specific.max_cpu_share || regular.max_cpu_share)
     {
         // Compute max_cpus as minimum of two possible values: (1) exact limit and (2) share limit.
         Float64 limit = 0;
@@ -232,7 +232,7 @@ void WorkloadSettings::initFromChanges(CostUnit unit_, const ASTCreateWorkloadQu
         if (share_limit > 0)
         {
             Float64 value = share_limit * getNumberOfCPUCoresToUse();
-            if (value > 0 && value < limit)
+            if (value > 0 && (limit == 0 || value < limit))
                 limit = value;
         }
         max_cpus = limit;

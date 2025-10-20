@@ -40,7 +40,7 @@ void updateProfileEvents(TemporaryDataBuffer::Stat stat)
 
 TemporaryBlockStreamHolder flushBlockToFile(const TemporaryDataOnDiskScopePtr & tmp_data, const Block & block)
 {
-    TemporaryBlockStreamHolder stream_holder(std::make_shared<const Block>(block.cloneEmpty()), tmp_data.get());
+    TemporaryBlockStreamHolder stream_holder(std::make_shared<const Block>(block.cloneEmpty()), tmp_data);
     stream_holder->write(block);
 
     auto stat = stream_holder.finishWriting();
@@ -52,7 +52,7 @@ TemporaryBlockStreamHolder flushBlockToFile(const TemporaryDataOnDiskScopePtr & 
 
 TemporaryBlockStreamHolder flushToFile(const TemporaryDataOnDiskScopePtr & tmp_data, const Block & header, QueryPipelineBuilder pipeline)
 {
-    TemporaryBlockStreamHolder stream_holder(std::make_shared<const Block>(header), tmp_data.get());
+    TemporaryBlockStreamHolder stream_holder(std::make_shared<const Block>(header), tmp_data);
 
     auto exec_pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline));
     PullingPipelineExecutor executor(exec_pipeline);

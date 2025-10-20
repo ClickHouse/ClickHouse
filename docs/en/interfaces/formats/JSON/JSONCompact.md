@@ -6,6 +6,7 @@ keywords: ['JSONCompact']
 output_format: true
 slug: /interfaces/formats/JSONCompact
 title: 'JSONCompact'
+doc_type: 'reference'
 ---
 
 | Input | Output | Alias |
@@ -155,4 +156,3 @@ The output will be in JSON format:
 ```
 
 ## Format settings {#format-settings}
-

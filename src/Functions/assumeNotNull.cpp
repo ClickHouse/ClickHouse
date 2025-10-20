@@ -64,7 +64,45 @@ public:
 
 REGISTER_FUNCTION(AssumeNotNull)
 {
-    factory.registerFunction<FunctionAssumeNotNull>();
+    FunctionDocumentation::Description description = R"(
+Returns the corresponding non-`Nullable` value for a value of type [`Nullable`](../data-types/nullable.md).
+If the original value is `NULL`, an arbitrary result can be returned.
+
+See also: functions [`ifNull`](#ifNull) and [`coalesce`](#coalesce).
+    )";
+    FunctionDocumentation::Syntax syntax = "assumeNotNull(x)";
+    FunctionDocumentation::Arguments arguments = {
+        {"x", "The original value of any nullable type.", {"Nullable(T)"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the non-nullable value, if the original value was not `NULL`, otherwise an arbitrary value, if the input value is `NULL`.", {"Any"}};
+    FunctionDocumentation::Examples examples = {
+        {"Usage example",
+         R"(
+CREATE TABLE t_null (x Int8, y Nullable(Int8))
+ENGINE=MergeTree()
+ORDER BY x;
+
+INSERT INTO t_null VALUES (1, NULL), (2, 3);
+
+SELECT assumeNotNull(y) FROM table;
+SELECT toTypeName(assumeNotNull(y)) FROM t_null;
+        )",
+         R"(
+┌─assumeNotNull(y)─┐
+│                0 │
+│                3 │
+└──────────────────┘
+┌─toTypeName(assumeNotNull(y))─┐
+│ Int8                         │
+│ Int8                         │
+└──────────────────────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in{1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Null;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionAssumeNotNull>(documentation);
 }
 
 }
