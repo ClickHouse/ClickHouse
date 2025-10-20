@@ -131,9 +131,7 @@
 
     https://github.com/ClickHouse/clickhouse-private/issues/11670
     Actual WithMergeableState
-02477_analyzer_array_join_with_join
 01483_merge_table_join_and_group_by
-03130_analyzer_array_join_prefer_column
 01147_partial_merge_full_join
 01010_partial_merge_join
 02789_filesystem_cache_alignment
