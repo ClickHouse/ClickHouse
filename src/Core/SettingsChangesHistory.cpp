@@ -80,6 +80,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_cache_receive_timeout_ms", 3000, 3000, "New setting"},
             {"distributed_cache_send_timeout_ms", 3000, 3000, "New setting"},
             {"distributed_cache_tcp_keep_alive_timeout_ms", 2900, 2900, "New setting"},
+            {"input_format_parquet_use_native_reader_v3", false, true, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.9",
         {
@@ -131,7 +132,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_cache_connect_max_tries", 20, 5, "Changed setting value"},
             {"opentelemetry_trace_cpu_scheduling", false, false, "New setting to trace `cpu_slot_preemption` feature."},
             {"output_format_parquet_max_dictionary_size", 1024 * 1024, 1024 * 1024, "New setting"},
-            {"input_format_parquet_use_native_reader_v3", false, true, "New setting"},
+            {"input_format_parquet_use_native_reader_v3", false, false, "New setting"},
             {"input_format_parquet_memory_low_watermark", 2ul << 20, 2ul << 20, "New setting"},
             {"input_format_parquet_memory_high_watermark", 4ul << 30, 4ul << 30, "New setting"},
             {"input_format_parquet_page_filter_push_down", true, true, "New setting (no effect when input_format_parquet_use_native_reader_v3 is disabled)"},
