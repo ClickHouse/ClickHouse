@@ -5045,6 +5045,10 @@ CONV_FN(SystemCommand, cmd)
             ret += "DROP ICEBERG METADATA CACHE";
             can_set_cluster = true;
             break;
+        case CmdType::kReconnectKeeper:
+            ret += "RECONNECT ZOOKEEPER";
+            can_set_cluster = true;
+            break;
         default:
             ret += "FLUSH LOGS";
     }
