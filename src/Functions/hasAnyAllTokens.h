@@ -31,7 +31,7 @@ struct HasAllTokensTraits
 }
 
 /// Map needle into a position (for bitmap operations).
-using Needles = absl::flat_hash_map<String, UInt64>;
+using Tokens = absl::flat_hash_map<String, UInt64>;
 
 template <class HasTokensTraits>
 class FunctionHasAnyAllTokens : public IFunction
@@ -47,8 +47,8 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    void setTokenExtractor(std::unique_ptr<ITokenExtractor> new_token_extractor_);
-    void setSearchTokens(const std::vector<String> & tokens);
+    void setTokenExtractor(std::unique_ptr<ITokenExtractor> new_token_extractor);
+    void setSearchTokens(const std::vector<String> & new_search_tokens);
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
@@ -56,7 +56,7 @@ public:
 private:
     const bool allow_experimental_full_text_index;
     std::unique_ptr<ITokenExtractor> token_extractor;
-    std::optional<Needles> needles;
+    std::optional<Tokens> search_tokens;
 
     inline static const std::unique_ptr<ITokenExtractor> token_default_extractor = std::make_unique<DefaultTokenExtractor>();
 };
