@@ -77,12 +77,16 @@ struct LazyOutput
         ++row_count;
     }
 
-    [[nodiscard]] size_t buildOutput(size_t size_to_reserve,
+    [[nodiscard]] size_t buildOutput(
+        size_t size_to_reserve,
+        const Block & left_block,
+        const IColumn::Offsets & left_offsets,
         MutableColumns & columns,
         const UInt64 * row_refs_begin,
         const UInt64 * row_refs_end,
         size_t rows_offset,
-        size_t rows_limit) const;
+        size_t rows_limit,
+        size_t bytes_limit) const;
 
     void buildJoinGetOutput(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const;
 
@@ -96,7 +100,8 @@ struct LazyOutput
 
     [[nodiscard]] size_t buildOutputFromBlocksLimitAndOffset(
         MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end,
-        size_t rows_offset, size_t rows_limit) const;
+        const PaddedPODArray<UInt64> & left_sizes, const IColumn::Offsets & left_offsets,
+        size_t rows_offset, size_t rows_limit, size_t bytes_limit) const;
 };
 
 template <bool lazy>

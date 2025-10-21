@@ -17,19 +17,34 @@ JoinOnKeyColumns::JoinOnKeyColumns(
 {
 }
 
-size_t LazyOutput::buildOutput(size_t size_to_reserve,
+size_t LazyOutput::buildOutput(
+    size_t size_to_reserve,
+    const Block & left_block,
+    const IColumn::Offsets & left_offsets,
     MutableColumns & columns,
     const UInt64 * row_refs_begin,
     const UInt64 * row_refs_end,
     size_t rows_offset,
-    size_t rows_limit) const
+    size_t rows_limit,
+    size_t bytes_limit) const
 {
     if (!output_by_row_list)
         buildOutputFromBlocks<false>(size_to_reserve, columns, row_refs_begin, row_refs_end);
     else
     {
         if (rows_limit)
-            return buildOutputFromBlocksLimitAndOffset(columns, row_refs_begin, row_refs_end, rows_offset, rows_limit);
+        {
+            PaddedPODArray<UInt64> left_sizes;
+            if (bytes_limit)
+            {
+                for (const auto & col : left_block)
+                    col.column->collectSerializedValueSizes(left_sizes, nullptr);
+            }
+            return buildOutputFromBlocksLimitAndOffset(
+                columns, row_refs_begin, row_refs_end,
+                left_sizes, left_offsets,
+                rows_offset, rows_limit, bytes_limit);
+        }
         if (!join_data_sorted && join_data_avg_perkey_rows < output_by_row_list_threshold)
             buildOutputFromBlocks<true>(size_to_reserve, columns, row_refs_begin, row_refs_end);
         else
@@ -75,7 +90,8 @@ void LazyOutput::buildJoinGetOutput(size_t size_to_reserve, MutableColumns & col
 /// Returns how many rows were added to columns, up to rows_limit
 size_t LazyOutput::buildOutputFromBlocksLimitAndOffset(
     MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end,
-    size_t rows_offset, size_t rows_limit) const
+    const PaddedPODArray<UInt64> & left_sizes, const IColumn::Offsets & left_offsets,
+    size_t rows_offset, size_t rows_limit, size_t bytes_limit) const
 {
     if (columns.empty())
         return rows_limit;
@@ -84,6 +100,9 @@ size_t LazyOutput::buildOutputFromBlocksLimitAndOffset(
     many_columns.reserve(rows_limit);
     row_nums.reserve(rows_limit);
 
+    size_t row_idx = 0;
+    size_t total_byte_size = 0;
+    size_t left_idx = 0; /// position in non-replicated left block
     for (const UInt64 * row_ref_i = row_refs_begin; rows_limit > 0 && row_ref_i != row_refs_end; ++row_ref_i)
     {
         if (*row_ref_i)
@@ -91,26 +110,47 @@ size_t LazyOutput::buildOutputFromBlocksLimitAndOffset(
             const RowRefList * row_ref_list = reinterpret_cast<const RowRefList *>(*row_ref_i);
             for (auto it = row_ref_list->begin(); rows_limit > 0 && it.ok(); ++it)
             {
-                if (rows_offset)
+                if (row_idx < rows_offset)
                 {
-                    --rows_offset;
+                    ++row_idx;
                     continue;
                 }
+
+                if (bytes_limit)
+                {
+                    /// Check if we are still in the same left row or moved to next one
+                    while (row_idx >= left_offsets[left_idx])
+                        ++left_idx;
+                    chassert(left_sizes.size() > left_idx);
+                    total_byte_size += left_sizes[left_idx];
+
+                    /// Add size of right matched rows
+                    for (const auto & col: *it->columns)
+                        total_byte_size += col->byteSizeAt(it->row_num);
+                }
+
+                ++row_idx;
+                --rows_limit;
                 many_columns.emplace_back(it->columns);
                 row_nums.emplace_back(it->row_num);
-                --rows_limit;
+
+                if (bytes_limit && total_byte_size > bytes_limit)
+                    rows_limit = 0;
             }
         }
         else
         {
-            if (rows_offset)
+            if (row_idx < rows_offset)
             {
-                --rows_offset;
+                ++row_idx;
                 continue;
             }
             many_columns.emplace_back(nullptr);
             row_nums.emplace_back(0);
+            ++row_idx;
             --rows_limit;
+            /// Here we do not account byte size, since limit targets to avoid only huge blocks with large strings being replicated many times.
+            /// In case of non-matched rows, left row is added only once and right columns are filled with defaults which have fixed small size.
         }
     }
 

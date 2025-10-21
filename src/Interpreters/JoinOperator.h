@@ -87,6 +87,7 @@ struct JoinSettings
     /* Full sorting merge join settings */
     UInt64 max_rows_in_set_to_optimize_join;
     String temporary_files_codec;
+    UInt64 temporary_files_buffer_size;
 
     /* Hash/Parallel hash join settings */
     bool collect_hash_table_stats_during_joins;
