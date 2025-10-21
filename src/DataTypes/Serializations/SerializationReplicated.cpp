@@ -160,7 +160,7 @@ void SerializationReplicated::deserializeBinaryBulkWithMultipleStreams(
     SubstreamsCache * cache) const
 {
     /// For now we support only writing and reading in Native format.
-    /// To be able to write and read in MergeTree part  we need to support:
+    /// To be able to write and read in MergeTree part we need to support:
     /// - reading of multiple granules at once
     /// - reading into non-empty column (it requires adjustments of deserialized indexes)
     /// - usage of substreams cache
