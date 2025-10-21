@@ -421,10 +421,6 @@ if (TARGET ch_contrib::jwt-cpp)
     target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::jwt-cpp)
 endif()
 
-if (TARGET ch_contrib::jwt-cpp)
-    target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::jwt-cpp)
-endif()
-
 if (TARGET ch_contrib::ssh)
     target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::ssh)
 endif()
