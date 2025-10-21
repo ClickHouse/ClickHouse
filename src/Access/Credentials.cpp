@@ -173,7 +173,7 @@ JWTCredentials::JWTCredentials(const String & token_)
     : token(token_)
 {
     user_name = jwtGetUser(token);
-    is_ready = true; // FIXME
+    is_ready = !user_name.empty();
 }
 
 JWTCredentials::JWTCredentials(const String & token_, const String & jwks_)
@@ -181,7 +181,7 @@ JWTCredentials::JWTCredentials(const String & token_, const String & jwks_)
     , jwks(jwks_)
 {
     user_name = jwtGetUser(token);
-    is_ready = true; // FIXME
+    is_ready = !user_name.empty();
 }
 
 bool JWTCredentials::verify()
