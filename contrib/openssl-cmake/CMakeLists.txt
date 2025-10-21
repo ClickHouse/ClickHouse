@@ -74,7 +74,7 @@ elseif(ARCH_LOONGARCH64)
     add_definitions(-DOPENSSL_CPUID_OBJ -DL_ENDIAN)
 endif()
 
-file(STRINGS "${PLATFORM_DIRECTORY}/include/openssl/opensslv.h" OPENSSL_VERSION_STR
+file(STRINGS "common/include/openssl/opensslv.h" OPENSSL_VERSION_STR
     REGEX "^#[\t ]*define[\t ]+OPENSSL_VERSION_STR[\t ]+\"([0-9])+\\.([0-9])+\\.([0-9])+\".*")
 string(REGEX REPLACE "^.*OPENSSL_VERSION_STR[\t ]+\"([0-9]+\\.[0-9]+\\.[0-9]+)\".*$"
     "\\1" OPENSSL_VERSION_STR "${OPENSSL_VERSION_STR}")
@@ -110,17 +110,17 @@ if(NOT ARCH_S390X)
 endif()
 
 set(CRYPTO_SRC
-    der_digests_gen.c
-    der_dsa_gen.c
-    der_ec_gen.c
-    der_ecx_gen.c
-    der_ml_dsa_gen.c
-    der_rsa_gen.c
-    der_slh_dsa_gen.c
-    der_sm2_gen.c
-    der_wrap_gen.c
+    common/providers/der_digests_gen.c
+    common/providers/der_dsa_gen.c
+    common/providers/der_ec_gen.c
+    common/providers/der_ecx_gen.c
+    common/providers/der_ml_dsa_gen.c
+    common/providers/der_rsa_gen.c
+    common/providers/der_slh_dsa_gen.c
+    common/providers/der_sm2_gen.c
+    common/providers/der_wrap_gen.c
 
-    ${PLATFORM_DIRECTORY}/params_idx.c
+    common/params_idx.c
 
     ${OPENSSL_SOURCE_DIR}/crypto/aes/aes_cfb.c
     ${OPENSSL_SOURCE_DIR}/crypto/aes/aes_ecb.c
@@ -1172,7 +1172,7 @@ elseif(ARCH_AARCH64)
         )
     else()
         set(CRYPTO_SRC ${CRYPTO_SRC}
-            ${PLATFORM_DIRECTORY}/params_idx.c
+            common/params_idx.c
 
             asm/crypto/aes/aesv8-armx.S
             asm/crypto/aes/bsaes-armv8.S
@@ -1419,7 +1419,7 @@ endif()
 
 
 target_include_directories(crypto
-    SYSTEM PUBLIC "${PLATFORM_DIRECTORY}/include"
+    SYSTEM PUBLIC "common/include"
     PRIVATE "${PLATFORM_DIRECTORY}/include_private")
 
 target_include_directories(crypto
