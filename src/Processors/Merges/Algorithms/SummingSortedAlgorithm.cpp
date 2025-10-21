@@ -4,7 +4,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnTuple.h>
-#include "Common/Exception.h"
+#include <Common/Exception.h>
 #include <Common/AlignedBuffer.h>
 #include <Common/Arena.h>
 #include <Common/FieldVisitorSum.h>
