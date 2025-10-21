@@ -1,14 +1,15 @@
 #include <string>
-#include <Common/Exception.h>
-#include <Common/HashiCorpVault.h>
-#include <Interpreters/Context.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
+#include <Interpreters/Context.h>
+#include <base/JSON.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Parser.h>
 #include <Poco/URI.h>
+#include <Common/Exception.h>
+#include <Common/HashiCorpVault.h>
 
 namespace DB
 {
@@ -16,6 +17,8 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int CANNOT_PARSE_JSON;
+extern const int INVALID_JSON_STRUCTURE;
 }
 
 HashiCorpVault & HashiCorpVault::instance()
@@ -79,17 +82,34 @@ String HashiCorpVault::readSecret(const String & secret, const String & key)
     }
 
     Poco::JSON::Parser parser;
-    Poco::Dynamic::Var res_json = parser.parse(json_str);
-    const Poco::JSON::Object::Ptr & root = res_json.extract<Poco::JSON::Object::Ptr>();
-    const Poco::JSON::Object::Ptr & data = root->getObject("data");
-    const Poco::JSON::Object::Ptr & kv = data->getObject("data");
+    json_str = "{data: 100";
+    Poco::Dynamic::Var res_json;
+    try
+    {
+        res_json = parser.parse(json_str);
+    }
+    catch (const Poco::Exception &)
+    {
+        throw Exception(ErrorCodes::CANNOT_PARSE_JSON, "Cannot parse JSON response from vault.");
+    }
 
-    if (!kv->has(key))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Key {} not found in secret {} of vault.", key, secret);
+    try
+    {
+        const Poco::JSON::Object::Ptr & root = res_json.extract<Poco::JSON::Object::Ptr>();
+        const Poco::JSON::Object::Ptr & data = root->getObject("data");
+        const Poco::JSON::Object::Ptr & kv = data->getObject("data");
 
-    const auto value = kv->get(key).extract<String>();
+        if (!kv->has(key))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Key {} not found in secret {} of vault.", key, secret);
 
-    return value;
+        const auto value = kv->get(key).extract<String>();
+
+        return value;
+    }
+    catch (const Poco::Exception &)
+    {
+        throw Exception(ErrorCodes::INVALID_JSON_STRUCTURE, "Invalid JSON structure in response from vault.");
+    }
 }
 
 }
