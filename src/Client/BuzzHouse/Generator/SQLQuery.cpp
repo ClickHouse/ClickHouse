@@ -1959,19 +1959,26 @@ void StatementGenerator::generateLimit(RandomGenerator & rg, const bool has_orde
     ls->set_with_ties(has_order_by && (!this->allow_not_deterministic || rg.nextSmallNumber() < 7));
     if (ncols && !ls->with_ties() && rg.nextSmallNumber() < 4)
     {
-        Expr * expr = ls->mutable_limit_by();
-
-        if (this->depth >= this->fc.max_depth || rg.nextSmallNumber() < 8)
+        if (rg.nextSmallNumber() < 8)
         {
-            LiteralValue * lv = expr->mutable_lit_val();
+            Expr * expr = ls->mutable_by_expr();
 
-            lv->mutable_int_lit()->set_uint_lit(rg.randomInt<uint32_t>(1, ncols));
+            if (this->depth >= this->fc.max_depth || rg.nextSmallNumber() < 8)
+            {
+                LiteralValue * lv = expr->mutable_lit_val();
+
+                lv->mutable_int_lit()->set_uint_lit(rg.randomInt<uint32_t>(1, ncols));
+            }
+            else
+            {
+                this->depth++;
+                generateExpression(rg, expr);
+                this->depth--;
+            }
         }
         else
         {
-            this->depth++;
-            generateExpression(rg, expr);
-            this->depth--;
+            ls->set_lall(true);
         }
     }
 }

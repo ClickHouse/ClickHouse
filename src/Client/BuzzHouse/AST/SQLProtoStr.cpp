@@ -2692,10 +2692,17 @@ CONV_FN(LimitStatement, ls)
     {
         ret += " WITH TIES";
     }
-    if (ls.has_limit_by())
+    if (ls.has_by_expr() || ls.lall())
     {
         ret += " BY ";
-        ExprToString(ret, ls.limit_by());
+        if (ls.has_by_expr())
+        {
+            ExprToString(ret, ls.by_expr());
+        }
+        else
+        {
+            ret += "ALL";
+        }
     }
 }
 

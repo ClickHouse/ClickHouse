@@ -2808,7 +2808,10 @@ message LimitStatement {
     required Expr limit = 1;
     optional Expr offset = 2;
     optional bool with_ties = 3;
-    optional Expr limit_by = 4;
+    oneof limit_by_oneof {
+        Expr by_expr = 4;
+        bool lall = 5;
+    }
 }
 
 message FetchStatement {
