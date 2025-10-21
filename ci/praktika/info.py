@@ -235,3 +235,9 @@ class Info:
                 print(f"Job [{subresult.name}] is not ok, status [{subresult.status}]")
                 return False
         return True
+
+    def docker_tag(self, image_name):
+        runconfig = self.get_kv_data("workflow_config")
+        if runconfig:
+            return runconfig.get("digest_dockers", None).get(image_name, None)
+        return None

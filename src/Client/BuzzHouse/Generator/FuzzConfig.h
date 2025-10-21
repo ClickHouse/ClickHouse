@@ -116,7 +116,7 @@ class ServerCredentials
 public:
     String client_hostname, server_hostname, container;
     uint32_t port, mysql_port;
-    String unix_socket, user, password, database, named_collection;
+    String unix_socket, user, password, secret, database, named_collection;
     std::filesystem::path user_files_dir, query_log_file;
     std::optional<Catalog> glue_catalog, hive_catalog, rest_catalog, unity_catalog;
 
@@ -138,6 +138,7 @@ public:
         const String & unix_socket_,
         const String & user_,
         const String & password_,
+        const String & secret_,
         const String & database_,
         const String & named_collection_,
         const std::filesystem::path & user_files_dir_,
@@ -154,6 +155,7 @@ public:
         , unix_socket(unix_socket_)
         , user(user_)
         , password(password_)
+        , secret(secret_)
         , database(database_)
         , named_collection(named_collection_)
         , user_files_dir(user_files_dir_)
@@ -257,7 +259,8 @@ public:
     String host = "localhost", keeper_map_path_prefix;
     bool read_log = false, fuzz_floating_points = true, test_with_fill = true, compare_success_results = false, measure_performance = false,
          allow_infinite_tables = false, compare_explains = false, allow_memory_tables = true, allow_client_restarts = false,
-         enable_fault_injection_settings = false, enable_force_settings = false, allow_hardcoded_inserts = true;
+         enable_fault_injection_settings = false, enable_force_settings = false, allow_hardcoded_inserts = true,
+         allow_async_requests = false;
     uint64_t seed = 0, min_insert_rows = 1, max_insert_rows = 1000, min_nested_rows = 0, max_nested_rows = 10, flush_log_wait_time = 1000,
              type_mask = std::numeric_limits<uint64_t>::max(), engine_mask = std::numeric_limits<uint64_t>::max();
     uint32_t max_depth = 3, max_width = 3, max_databases = 4, max_functions = 4, max_tables = 10, max_views = 5, max_dictionaries = 5,
@@ -265,8 +268,7 @@ public:
              use_dump_table_oracle = 2, max_reconnection_attempts = 3, time_to_sleep_between_reconnects = 3000, min_string_length = 0,
              max_string_length = 1009;
     std::filesystem::path log_path = std::filesystem::temp_directory_path() / "out.sql",
-                          client_file_path = std::filesystem::temp_directory_path() / "db",
-                          server_file_path = std::filesystem::temp_directory_path() / "db",
+                          client_file_path = "/var/lib/clickhouse/user_files", server_file_path = "/var/lib/clickhouse/user_files",
                           fuzz_client_out = client_file_path / "fuzz.data", fuzz_server_out = server_file_path / "fuzz.data",
                           lakes_path = "/var/lib/clickhouse/user_files/lakehouses";
 
@@ -296,6 +298,8 @@ public:
     bool hasMutations();
 
     String getRandomMutation(uint64_t rand_val);
+
+    String getRandomIcebergHistoryValue(const String & property);
 
     bool tableHasPartitions(bool detached, const String & database, const String & table);
 
