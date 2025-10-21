@@ -52,6 +52,8 @@ class Workflow:
         enable_dockers_manifest_merge: bool = False
         # If latest tag shpuld be added for merged docker manifest, enable with .enable_dockers_manifest_merge
         set_latest_for_docker_merged_manifest: bool = False
+        # if enabled, Finish job will fetch flaky check catalog and match failed tests with them
+        enable_flaky_tests_catalog: bool = False
         # Job aliases for easy job reference with `praktika run job_alias --test TEST_NAME` in local environment
         job_aliases: Dict[str, str] = field(default_factory=dict)
 
