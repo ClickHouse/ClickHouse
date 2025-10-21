@@ -164,20 +164,6 @@ size_t ColumnIndex::getIndexAt(size_t row) const
     return index;
 }
 
-size_t ColumnIndex::getMaxIndex() const
-{
-    size_t max_index;
-    auto get_max_index = [&](auto type)
-    {
-        using CurIndexType = decltype(type);
-        const auto & data = getIndexesData<CurIndexType>();
-        max_index = *std::max_element(data.begin(), data.end());
-    };
-
-    callForType(std::move(get_max_index), size_of_type);
-    return max_index;
-}
-
 
 void ColumnIndex::insertIndex(size_t index)
 {

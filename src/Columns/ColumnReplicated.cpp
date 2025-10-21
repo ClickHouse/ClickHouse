@@ -48,10 +48,7 @@ MutableColumnPtr ColumnReplicated::cloneResized(size_t new_size) const
         return create(std::move(new_nested_column), std::move(new_indexes));
     }
 
-    auto new_indexes = ColumnIndex(indexes.getIndexes()->cloneResized(new_size));
-    auto max_index = new_indexes.getMaxIndex();
-    auto new_nested_column = nested_column->cloneResized(max_index + 1);
-    return create(std::move(new_nested_column), std::move(new_indexes));
+    return create(mutate(nested_column), indexes.getIndexes()->cloneResized(new_size));
 }
 
 MutableColumnPtr ColumnReplicated::cloneEmpty() const
@@ -290,9 +287,6 @@ void ColumnReplicated::insertManyDefaults(size_t length)
 void ColumnReplicated::popBack(size_t n)
 {
     indexes.popBack(n);
-    size_t max_index = indexes.getMaxIndex();
-    if (max_index != nested_column->size() - 1)
-        nested_column->popBack(nested_column->size() - 1 - max_index);
 }
 
 ColumnPtr ColumnReplicated::filter(const Filter & filt, ssize_t result_size_hint) const
@@ -322,23 +316,23 @@ ColumnPtr ColumnReplicated::index(const IColumn & res_indexes, size_t limit) con
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
-int ColumnReplicated::compareAt(size_t n, size_t m, const IColumn & rhs, int null_direction_hint) const
+int ColumnReplicated::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
 #else
-int ColumnReplicated::doCompareAt(size_t n, size_t m, const IColumn & rhs, int null_direction_hint) const
+int ColumnReplicated::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
 #endif
 {
     if (const auto * rhs_replicated = typeid_cast<const ColumnReplicated *>(&rhs))
-        return nested_column->compareAt(indexes.getIndexAt(n), rhs_replicated->indexes.getIndexAt(m), *rhs_replicated->nested_column, null_direction_hint);
+        return nested_column->compareAt(indexes.getIndexAt(n), rhs_replicated->indexes.getIndexAt(m), *rhs_replicated->nested_column, nan_direction_hint);
 
-    return nested_column->compareAt(indexes.getIndexAt(n), m, rhs, null_direction_hint);
+    return nested_column->compareAt(indexes.getIndexAt(n), m, rhs, nan_direction_hint);
 }
 
-int ColumnReplicated::compareAtWithCollation(size_t n, size_t m, const IColumn & rhs, int null_direction_hint, const Collator & collator) const
+int ColumnReplicated::compareAtWithCollation(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator & collator) const
 {
     if (const auto * rhs_replicated = typeid_cast<const ColumnReplicated *>(&rhs))
-        return nested_column->compareAtWithCollation(indexes.getIndexAt(n), rhs_replicated->indexes.getIndexAt(m), *rhs_replicated->nested_column, null_direction_hint, collator);
+        return nested_column->compareAtWithCollation(indexes.getIndexAt(n), rhs_replicated->indexes.getIndexAt(m), *rhs_replicated->nested_column, nan_direction_hint, collator);
 
-    return nested_column->compareAtWithCollation(indexes.getIndexAt(n), m, rhs, null_direction_hint, collator);
+    return nested_column->compareAtWithCollation(indexes.getIndexAt(n), m, rhs, nan_direction_hint, collator);
 }
 
 bool ColumnReplicated::hasEqualValues() const

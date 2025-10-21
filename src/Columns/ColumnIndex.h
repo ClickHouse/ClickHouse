@@ -21,7 +21,6 @@ public:
     IColumn::WrappedPtr & getIndexesPtr() { return indexes; }
     const IColumn::WrappedPtr & getIndexesPtr() const { return indexes; }
     size_t getIndexAt(size_t row) const;
-    size_t getMaxIndex() const;
     void insertIndex(size_t index);
     void insertManyIndexes(size_t index, size_t length);
     void insertIndexesRange(const IColumn & column, size_t offset, size_t limit);

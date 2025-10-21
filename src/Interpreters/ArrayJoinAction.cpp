@@ -285,7 +285,7 @@ Block ArrayJoinResultIterator::next()
         }
         else
         {
-            if (enable_lazy_columns_replication && !current.column->isConst() && !current.column->isReplicated())
+            if (enable_lazy_columns_replication && !current.column->isConst() && !current.column->isReplicated() && !current.column->lowCardinality())
             {
                 if (!indexes_for_lazy_replication)
                     indexes_for_lazy_replication = convertOffsetsToIndexes(cut_any_array->getOffsets());

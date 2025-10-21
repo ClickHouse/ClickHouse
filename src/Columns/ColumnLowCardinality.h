@@ -371,7 +371,7 @@ private:
 
     template <typename IndexColumn>
     void updatePermutationWithIndexType(
-        IColumn::PermutationSortStability stability, size_t limit, const PaddedPODArray<UInt64> & index_by_index,
+        IColumn::PermutationSortStability stability, size_t limit, const PaddedPODArray<UInt64> & position_by_index,
         IColumn::Permutation & res, EqualRanges & equal_ranges) const;
 };
 

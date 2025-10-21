@@ -479,10 +479,9 @@ ColumnPtr IExecutableFunction::execute(
 
         auto result = executeWithoutReplicatedColumns(arguments_without_replicated, result_type, nested_column_size, dry_run);
 
-        ColumnPtr resized_indexes = input_rows_count == common_replicated_indexes->size() ? common_replicated_indexes : common_replicated_indexes->cloneResized(input_rows_count);
         if (isColumnConst(*result))
-            return result->index(*resized_indexes, 0);
-        return ColumnReplicated::create(result, resized_indexes);
+            return result->cloneResized(common_replicated_indexes->size());
+        return ColumnReplicated::create(result, common_replicated_indexes);
     }
 
     return executeWithoutReplicatedColumns(arguments, result_type, input_rows_count, dry_run);
