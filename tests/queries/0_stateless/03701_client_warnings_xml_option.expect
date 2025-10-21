@@ -1,0 +1,73 @@
+# Tags: no-fasttest
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0 # suppress normal output
+set timeout 60
+match_max 100000
+
+# (1) out of the box
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file"
+expect {
+    "Warnings:" {}
+    ":) " { exit 1 }
+}
+expect ":) "
+send "quit\n"
+expect eof
+
+# (2) with --no-warnings
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY --no-warnings \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file"
+expect {
+    "Warnings:" { exit 1 }
+    ":)" {}
+}
+send "quit\n"
+expect eof
+
+# (3) <warnings>true</warnings>
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY --config <(echo '<config><warnings>true</warnings></config>') \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file"
+expect {
+    "Warnings:" {}
+    ":) " { exit 1 }
+}
+expect ":) "
+send "quit\n"
+expect eof
+
+# (4) <warnings>true</warnings> with --no-warnings
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY --config <(echo '<config><warnings>true</warnings></config>') \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file"
+expect {
+    "Warnings:" {}
+    ":) " { exit 1 }
+}
+expect ":) "
+send "quit\n"
+expect eof
+
+# (5) <warnings>false</warnings>
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY --config <(echo '<config><warnings>false</warnings></config>') \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file"
+expect {
+    "Warnings:" { exit 1 }
+    ":)" {}
+}
+send "quit\n"
+expect eof
+
+# (6) <warnings>false</warnings> with --no-warnings
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY --config <(echo '<config><warnings>false</warnings></config>') \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file"
+expect {
+    "Warnings:" { exit 1 }
+    ":)" {}
+}
+send "quit\n"
+expect eof
