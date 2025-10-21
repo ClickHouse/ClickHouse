@@ -1,0 +1,7 @@
+All tokens between text_000 -> text_0127 are in the same dictionary block.
+--- the first query misses cache.
+1
+cache_hits = 0, cache_misses = 1
+--- the second query hits cache.
+1
+cache_hits = 1, cache_misses = 0
