@@ -505,6 +505,22 @@ SELECT json.a.b[].^k FROM test
 └──────────────────────────────────────┘
 ```
 
+## Handling JSON keys with NULL {#handling-json-keys-with-nulls}
+
+In our JSON implementation `null` and absence of the value are considered equivalent:
+
+```sql title="Query"
+SELECT '{}'::JSON AS json1, '{"a" : null}'::JSON AS json2, json1 = json2
+```
+
+```text title="Response"
+┌─json1─┬─json2─┬─equals(json1, json2)─┐
+│ {}    │ {}    │                    1 │
+└───────┴───────┴──────────────────────┘
+```
+
+It means that it's impossible to determine whether the original JSON data contained some path with the NULL value or didn't contain it at all.
+
 ## Handling JSON keys with dots {#handling-json-keys-with-dots}
 
 Internally JSON column stores all paths and values in a flattened form. It means that by default these 2 objects are considered as the same:
