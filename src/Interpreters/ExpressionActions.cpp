@@ -715,7 +715,7 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
             if (!action.arguments.front().needed_later)
                 columns[array_join_key_pos] = {};
 
-            array_join_key.column = array_join_key.column->convertToFullColumnIfConst();
+            array_join_key.column = array_join_key.column->convertToFullColumnIfConst()->convertToFullColumnIfReplicated();
 
             const auto * array = getArrayJoinColumnRawPtr(array_join_key.column);
             if (!array)

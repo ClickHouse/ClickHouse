@@ -79,7 +79,7 @@ private:
     {
         const ColumnPtr indexes;
 
-        SubcolumnCreator(const ColumnPtr & indexes_) : indexes(indexes_) {}
+        explicit SubcolumnCreator(const ColumnPtr & indexes_) : indexes(indexes_) {}
 
         DataTypePtr create(const DataTypePtr & prev) const override { return prev; }
         SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override;

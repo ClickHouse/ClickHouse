@@ -2,7 +2,6 @@
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnConst.h>
 #include <Common/WeakHash.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -17,14 +16,12 @@ ColumnReplicated::ColumnReplicated(MutableColumnPtr && nested_column_)
     : nested_column(std::move(nested_column_))
 {
     indexes.insertIndexesRange(0, nested_column->size());
-    LOG_DEBUG(getLogger("ColumnReplicated"), "Create over {}", nested_column->getName());
 }
 
 ColumnReplicated::ColumnReplicated(MutableColumnPtr && nested_column_, MutableColumnPtr && indexes_)
     : nested_column(std::move(nested_column_))
     , indexes(std::move(indexes_))
 {
-    LOG_DEBUG(getLogger("ColumnReplicated"), "Create over {}", nested_column->getName());
 }
 
 ColumnReplicated::ColumnReplicated(MutableColumnPtr && nested_column_, ColumnIndex && indexes_)
@@ -124,7 +121,6 @@ StringRef ColumnReplicated::getDataAt(size_t n) const
 
 ColumnPtr ColumnReplicated::convertToFullColumnIfReplicated() const
 {
-    LOG_DEBUG(getLogger("ColumnReplicated"), "Convert {} to full", nested_column->getName());
     return nested_column->index(*indexes.getIndexes(), 0);
 }
 
