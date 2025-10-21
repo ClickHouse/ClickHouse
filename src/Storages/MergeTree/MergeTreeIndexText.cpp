@@ -1307,10 +1307,9 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
 
 Tuple MergeTreeIndexText::parseNamedArgumentFromAST(const ASTFunction * ast_equal_function)
 {
-    if (ast_equal_function == nullptr)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Text index arguments: '{}' is not a key-value pair", ast_equal_function->formatForLogging());
-
-    if (ast_equal_function->name != "equals" || ast_equal_function->arguments->children.size() != 2)
+    if (ast_equal_function == nullptr
+        || ast_equal_function->name != "equals"
+        || ast_equal_function->arguments->children.size() != 2)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot mix key-value pair and single argument as text index arguments");
 
     Tuple result;
