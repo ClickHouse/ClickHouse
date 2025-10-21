@@ -406,7 +406,7 @@ extern const std::vector<Metric> keeper_metrics
 
 namespace HistogramMetrics
 {
-#define M(NAME) extern MetricFamily & NAME;
+#define M(NAME) extern MetricFamily &(NAME);
     APPLY_FOR_KEEPER_HISTOGRAMS(M)
 #undef M
 
