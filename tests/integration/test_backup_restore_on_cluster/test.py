@@ -1228,8 +1228,6 @@ def test_mutation(key_prefix_length):
     node1.query(
         f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} {format_settings(backup_settings)}"
     )
-    list_backup(backup_name)
-    # assert False
 
     # mutation #0000000000: "UPDATE x=x+1 WHERE 1" could already finish before starting the backup
     # mutation #0000000001: "UPDATE x=x+1+sleep(3) WHERE 1"
