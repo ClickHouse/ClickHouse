@@ -12,7 +12,7 @@
 #include <tmmintrin.h>
 #endif
 
-#ifdef __aarch64__
+#if defined(__aarch64__) && defined(__ARM_NEON)
 #include <arm_neon.h>
 #endif
 
@@ -22,7 +22,7 @@ namespace LZ4
 namespace
 {
 
-inline UInt16 LZ4_readLE16(const void* mem_ptr)
+ALWAYS_INLINE UInt16 LZ4_readLE16(const void * mem_ptr)
 {
     const UInt8* p = reinterpret_cast<const UInt8*>(mem_ptr);
     return static_cast<UInt16>(p[0]) + (p[1] << 8);
@@ -173,7 +173,7 @@ template <>
 
     match += masks[offset];
 
-#elifdef __aarch64__
+#elif defined(__aarch64__) && defined(__ARM_NEON)
 
     static constexpr UInt8 __attribute__((__aligned__(8))) masks[] =
     {
@@ -244,7 +244,7 @@ template <>
     /// MSAN does not recognize the store as initializing the memory
     __msan_unpoison(op, 16);
 
-#elifdef __aarch64__
+#elif defined(__aarch64__) && defined(__ARM_NEON)
 
     static constexpr UInt8 __attribute__((__aligned__(16))) masks[] =
     {

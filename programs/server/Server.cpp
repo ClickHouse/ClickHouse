@@ -1595,6 +1595,7 @@ try
         }
     }
 
+    /// Inject and enable failpoints declared in the configuration
     {
         auto & conf = config();
         String root_key = "fail_points_active";
