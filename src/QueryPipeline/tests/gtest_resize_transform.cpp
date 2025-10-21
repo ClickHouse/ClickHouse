@@ -1,4 +1,6 @@
 #include <gtest/gtest.h>
+
+#include <base/defines.h>
 #include <Core/Block.h>
 #include <Columns/ColumnVector.h>
 #include <Processors/Sources/BlocksListSource.h>
@@ -106,6 +108,9 @@ static void testSplitResizeTransform(size_t instreams, size_t outstreams, size_t
 
 TEST(ResizeTransformTest, SplitResizeTest)
 {
+#if defined(THREAD_SANITIZER) || defined(MEMORY_SANITIZER) || defined(ADDRESS_SANITIZER)
+    GTEST_SKIP() << "Too slow with heavy sanitizers. Ok in release or UBSan";
+#else
     for (size_t instreams = 2; instreams < 100; ++instreams)
     {
         for (size_t outstreams = 1; outstreams < 100; ++outstreams)
@@ -120,4 +125,5 @@ TEST(ResizeTransformTest, SplitResizeTest)
             }
         }
     }
+#endif
 }
