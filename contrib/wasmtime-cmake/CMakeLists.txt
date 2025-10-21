@@ -45,7 +45,8 @@ file(COPY "${WASMTIME_HEADER_SRC}/" DESTINATION "${WASMTIME_HEADER_DST}" FILES_M
 
 clickhouse_import_crate(
     MANIFEST_PATH "${WASMTIME_SOURCE_DIR}/crates/c-api/Cargo.toml"
-    FEATURES "addr2line, async, cache, coredump, cranelift, debug-builtins, demangle, gc, gc-drc, gc-null, logging, parallel-compilation, profiling, threads, wasi, wat, winch"
+    FEATURES "addr2line, async, cache, coredump, cranelift, debug-builtins, demangle, gc, gc-drc, gc-null, logging, parallel-compilation, profiling, threads, wat, winch"
+    # Disabled: wasi
 )
 clickhouse_config_crate_flags(wasmtime)
 
