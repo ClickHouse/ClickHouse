@@ -762,6 +762,112 @@ private:
     uint64_t failed_tries_count = 0;
 };
 
+class CPMVROperation
+{
+    constexpr static UInt64 kTryLimit = 1000;
+
+    struct TreeNode
+    {
+        std::string subpath;
+        std::string data;
+        int32_t version;
+    };
+
+    std::vector<TreeNode> collectSubtree()
+    {
+        std::vector<TreeNode> subtree_nodes;
+        std::queue<std::string> queue;
+        queue.push(src);
+
+        while (!queue.empty())
+        {
+            std::string next_path = std::move(queue.front());
+            std::string subpath = next_path.substr(src.size());
+            queue.pop();
+
+            for (const auto & child : client->zookeeper->getChildren(next_path))
+                queue.emplace(fs::path(next_path) / child);
+
+            Coordination::Stat stat;
+            std::string data = client->zookeeper->get(next_path, &stat);
+            subtree_nodes.emplace_back(std::move(subpath), std::move(data), stat.version);
+        }
+
+        return subtree_nodes;
+    }
+
+public:
+    CPMVROperation(String src_, String dest_, bool remove_src_, KeeperClient * client_)
+        : src(std::move(src_)), dest(std::move(dest_)), remove_src(remove_src_), client(client_)
+    {
+    }
+
+    bool isTryLimitReached() const { return failed_tries_count >= kTryLimit; }
+
+    bool isCompleted() const { return is_completed; }
+
+    void perform()
+    {
+        auto subtree_nodes = collectSubtree();
+        Coordination::Requests ops;
+
+        for (const auto & [subpath, _, version] : subtree_nodes | std::views::reverse)
+        {
+            if (remove_src)
+                ops.push_back(zkutil::makeRemoveRequest(src + subpath, version));
+            else
+                ops.push_back(zkutil::makeCheckRequest(src + subpath, version));
+        }
+
+        for (const auto & [subpath, data, version] : subtree_nodes)
+            ops.push_back(zkutil::makeCreateRequest(dest + subpath, data, zkutil::CreateMode::Persistent));
+
+        Coordination::Responses responses;
+        auto code = client->zookeeper->tryMulti(ops, responses);
+
+        switch (code)
+        {
+            case Coordination::Error::ZOK:
+            {
+                is_completed = true;
+                return;
+            }
+            case Coordination::Error::ZBADVERSION:
+            {
+                ++failed_tries_count;
+
+                if (isTryLimitReached())
+                    zkutil::KeeperMultiException::check(code, ops, responses);
+
+                return;
+            }
+            case Coordination::Error::ZNONODE:
+            {
+                ++failed_tries_count;
+
+                zkutil::KeeperMultiException error(code, ops, responses);
+                if (isTryLimitReached() || error.getPathForFirstFailedOp() == src)
+                    error.rethrow();
+
+                return;
+            }
+            default:
+                zkutil::KeeperMultiException::check(code, ops, responses);
+        }
+
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unreachable");
+    }
+
+private:
+    String src;
+    String dest;
+    bool remove_src = false;
+    KeeperClient * client = nullptr;
+
+    bool is_completed = false;
+    uint64_t failed_tries_count = 0;
+};
+
 }
 
 bool CPCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, [[maybe_unused]] Expected & expected) const
@@ -790,6 +896,32 @@ void CPCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) con
         operation.perform();
 }
 
+bool CPRCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
+{
+    String src_path;
+    if (!parseKeeperPath(pos, expected, src_path))
+        return false;
+    node->args.push_back(std::move(src_path));
+
+    String to_path;
+    if (!parseKeeperPath(pos, expected, to_path))
+        return false;
+    node->args.push_back(std::move(to_path));
+
+    return true;
+}
+
+void CPRCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) const
+{
+    auto src = client->getAbsolutePath(query->args[0].safeGet<String>());
+    auto dest = client->getAbsolutePath(query->args[1].safeGet<String>());
+
+    CPMVROperation operation(std::move(src), std::move(dest), /*remove_src_=*/false, /*client_=*/client);
+
+    while (!operation.isTryLimitReached() && !operation.isCompleted())
+        operation.perform();
+}
+
 bool MVCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
 {
     String src_path;
@@ -811,6 +943,32 @@ void MVCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) con
     auto dest = client->getAbsolutePath(query->args[1].safeGet<String>());
 
     CPMVOperation operation(std::move(src), std::move(dest), /*remove_src_=*/true, /*client_=*/client);
+
+    while (!operation.isTryLimitReached() && !operation.isCompleted())
+        operation.perform();
+}
+
+bool MVRCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
+{
+    String src_path;
+    if (!parseKeeperPath(pos, expected, src_path))
+        return false;
+    node->args.push_back(std::move(src_path));
+
+    String to_path;
+    if (!parseKeeperPath(pos, expected, to_path))
+        return false;
+    node->args.push_back(std::move(to_path));
+
+    return true;
+}
+
+void MVRCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) const
+{
+    auto src = client->getAbsolutePath(query->args[0].safeGet<String>());
+    auto dest = client->getAbsolutePath(query->args[1].safeGet<String>());
+
+    CPMVROperation operation(std::move(src), std::move(dest), /*remove_src_=*/true, /*client_=*/client);
 
     while (!operation.isTryLimitReached() && !operation.isCompleted())
         operation.perform();
