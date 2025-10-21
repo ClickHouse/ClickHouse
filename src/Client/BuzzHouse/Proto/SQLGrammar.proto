@@ -1739,9 +1739,13 @@ message SpecialVal {
         MAX_DATETIME = 44;
         MIN_DATETIME64 = 45;
         MAX_DATETIME64 = 46;
-        VAL_NULL_CHAR = 47;
-        VAL_DEFAULT = 48;
-        VAL_STAR = 49;
+        MIN_DOUBLE = 47;
+        MAX_DOUBLE = 48;
+        DENORM_MIN_DOUBLE = 49;
+        LOWEST_DOUBLE = 50;
+        VAL_NULL_CHAR = 51;
+        VAL_DEFAULT = 52;
+        VAL_STAR = 53;
     }
     required SpecialValEnum val = 1;
     optional bool paren = 2;
@@ -2908,6 +2912,7 @@ message DatabaseEngineParam {
         string svalue = 1;
         Database database = 2;
         BackupDisk disk = 3;
+        Expr expr = 4;
     }
 }
 
@@ -2919,10 +2924,11 @@ message DatabaseEngine {
 message CreateDatabase {
     optional bool if_not_exists = 1;
     required Database database = 2;
-    optional Cluster cluster = 3;
-    required DatabaseEngine dengine = 4;
-    optional SettingValues setting_values = 5;
-    optional string comment = 6;
+    optional string uuid = 3;
+    optional Cluster cluster = 4;
+    required DatabaseEngine dengine = 5;
+    optional SettingValues setting_values = 6;
+    optional string comment = 7;
 }
 
 message CreateFunction {
@@ -3356,15 +3362,16 @@ message CreateTable {
     optional bool is_temp = 2;
     optional bool if_not_exists = 3;
     required ExprSchemaTable est = 4;
-    optional Cluster cluster = 5;
+    optional string uuid = 5;
+    optional Cluster cluster = 6;
     oneof create_table_oneof {
-        TableDef table_def = 6;
-        CreateTableAs table_as = 7;
+        TableDef table_def = 7;
+        CreateTableAs table_as = 8;
     }
-    required TableEngine engine = 8;
-    optional TTLExpr ttl_expr = 9;
-    optional CreateTableSelect as_select_stmt = 10;
-    optional string comment = 11;
+    required TableEngine engine = 9;
+    optional TTLExpr ttl_expr = 10;
+    optional CreateTableSelect as_select_stmt = 11;
+    optional string comment = 12;
 }
 
 enum SQLObject {
@@ -3522,10 +3529,11 @@ message OptimizeTable {
     required ExprSchemaTable est = 1;
     optional Cluster cluster = 2;
     optional SinglePartitionExpr single_partition = 3;
-    optional bool final = 4;
-    optional DeduplicateExpr dedup = 5;
-    optional bool cleanup = 6;
-    optional SettingValues setting_values = 7;
+    optional bool use_force = 4;
+    optional bool final = 5;
+    optional DeduplicateExpr dedup = 6;
+    optional bool cleanup = 7;
+    optional SettingValues setting_values = 8;
 }
 
 message Exchange {
@@ -3634,6 +3642,11 @@ message RefreshInterval {
     required RefreshUnit unit = 2;
 }
 
+message DependsList {
+    required ExprSchemaTable est = 1;
+    repeated ExprSchemaTable other_est = 2;
+}
+
 message RefreshableView {
     enum RefreshPolicy {
         EVERY = 1;
@@ -3643,7 +3656,9 @@ message RefreshableView {
     required RefreshInterval interval = 2;
     optional RefreshInterval offset = 3;
     required RefreshInterval randomize = 4;
-    optional bool append = 5;
+    optional DependsList depends = 5;
+    optional SettingValues setting_values = 6;
+    optional bool append = 7;
 }
 
 message CreateMatViewTo {
@@ -3657,14 +3672,15 @@ message CreateView {
     optional bool if_not_exists = 3;
     optional bool materialized = 4;
     required ExprSchemaTable est = 5;
-    optional Cluster cluster = 6;
-    optional RefreshableView refresh = 7;
-    optional CreateMatViewTo to = 8;
-    optional TableEngine engine = 9;
-    optional bool populate = 10;
-    optional bool empty = 11;
-    required SelectParen select = 12;
-    optional string comment = 13;
+    optional string uuid = 6;
+    optional Cluster cluster = 7;
+    optional RefreshableView refresh = 8;
+    optional CreateMatViewTo to = 9;
+    optional TableEngine engine = 10;
+    optional bool populate = 11;
+    optional bool empty = 12;
+    required SelectParen select = 13;
+    optional string comment = 14;
 }
 
 message DictionaryColumn {
@@ -3742,16 +3758,17 @@ message CreateDictionary {
     required CreateReplaceOption create_opt = 1;
     optional bool if_not_exists = 2;
     required ExprSchemaTable est = 3;
-    optional Cluster cluster = 4;
-    required DictionaryColumn col = 5;
-    repeated DictionaryColumn other_cols = 6;
-    required TableKey primary_key = 7;
-    optional DictionarySource source = 8;
-    required DictionaryLayout layout = 9;
-    optional DictionaryRange range = 10;
-    optional DictionaryLifetime lifetime = 11;
-    optional SettingValues setting_values = 12;
-    optional string comment = 13;
+    optional string uuid = 4;
+    optional Cluster cluster = 5;
+    required DictionaryColumn col = 6;
+    repeated DictionaryColumn other_cols = 7;
+    required TableKey primary_key = 8;
+    optional DictionarySource source = 9;
+    required DictionaryLayout layout = 10;
+    optional DictionaryRange range = 11;
+    optional DictionaryLifetime lifetime = 12;
+    optional SettingValues setting_values = 13;
+    optional string comment = 14;
 }
 
 message OptionalPartitionExpr {
@@ -3855,9 +3872,10 @@ message Alter {
 message Attach {
     required SQLObject sobject = 1;
     required SQLObjectName object = 2;
-    optional Cluster cluster = 3;
-    optional bool as_replicated = 4;
-    optional SettingValues setting_values = 5;
+    optional string uuid = 3;
+    optional Cluster cluster = 4;
+    optional bool as_replicated = 5;
+    optional SettingValues setting_values = 6;
 }
 
 message Detach {
@@ -3924,25 +3942,24 @@ enum FailPoint {
     lazy_pipe_fds_fail_close = 42;
     infinite_sleep = 43;
     stop_moving_part_before_swap_with_active = 44;
-    slowdown_index_analysis = 45;
-    replicated_merge_tree_all_replicas_stale = 46;
-    zero_copy_lock_zk_fail_before_op = 47;
-    zero_copy_lock_zk_fail_after_op = 48;
-    plain_object_storage_write_fail_on_directory_create = 49;
-    plain_object_storage_write_fail_on_directory_move = 50;
-    zero_copy_unlock_zk_fail_before_op = 51;
-    zero_copy_unlock_zk_fail_after_op = 52;
-    plain_rewritable_object_storage_azure_not_found_on_init = 53;
-    storage_merge_tree_background_clear_old_parts_pause = 54;
-    database_replicated_startup_pause = 55;
-    parallel_replicas_wait_for_unused_replicas = 56;
-    plain_object_storage_copy_fail_on_file_move = 57;
-    plain_object_storage_copy_temp_source_file_fail_on_file_move = 58;
-    plain_object_storage_copy_temp_target_file_fail_on_file_move = 59;
-    slowdown_parallel_replicas_local_plan_read = 60;
-    iceberg_writes_cleanup = 61;
-    smt_commit_exception_before_op = 62;
-    //keeper_leader_sets_invalid_digest = 60; The server aborts legitimately, can't be used
+    replicated_merge_tree_all_replicas_stale = 45;
+    zero_copy_lock_zk_fail_before_op = 46;
+    zero_copy_lock_zk_fail_after_op = 47;
+    plain_object_storage_write_fail_on_directory_create = 48;
+    plain_object_storage_write_fail_on_directory_move = 49;
+    zero_copy_unlock_zk_fail_before_op = 50;
+    zero_copy_unlock_zk_fail_after_op = 51;
+    plain_rewritable_object_storage_azure_not_found_on_init = 52;
+    storage_merge_tree_background_clear_old_parts_pause = 53;
+    database_replicated_startup_pause = 54;
+    parallel_replicas_wait_for_unused_replicas = 55;
+    plain_object_storage_copy_fail_on_file_move = 56;
+    plain_object_storage_copy_temp_source_file_fail_on_file_move = 57;
+    plain_object_storage_copy_temp_target_file_fail_on_file_move = 58;
+    slowdown_parallel_replicas_local_plan_read = 59;
+    iceberg_writes_cleanup = 60;
+    smt_commit_exception_before_op = 61;
+    //keeper_leader_sets_invalid_digest = 62; The server aborts legitimately, can't be used
 }
 
 message SystemCommand {

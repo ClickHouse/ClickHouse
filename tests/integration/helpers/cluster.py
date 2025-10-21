@@ -864,7 +864,7 @@ class ClickHouseCluster:
         self.prometheus_remote_write_handlers = []
         self.prometheus_remote_read_handlers = []
 
-        self.ytsaurus_port = 80
+        self._ytsaurus_port = None
 
         self.docker_client: docker.DockerClient = None
         self.is_up = False
@@ -978,6 +978,12 @@ class ClickHouseCluster:
             return self._nats_port
         self._nats_port = self.port_pool.get_port()
         return self._nats_port
+
+    @property
+    def ytsaurus_port(self):
+        if not self._ytsaurus_port:
+            self._ytsaurus_port = self.port_pool.get_port()
+        return self._ytsaurus_port
 
     def print_all_docker_pieces(self):
         res_networks = subprocess.check_output(
@@ -1923,19 +1929,16 @@ class ClickHouseCluster:
             with_remote_database_disk = False
 
         if with_remote_database_disk is None:
-            # FIXME: https://github.com/ClickHouse/ClickHouse/issues/87656
-            #
-            # if ClickHouseInstance.is_local_server_asan_build == None:
-            #     build_opts = subprocess.check_output(
-            #         f"""{self.server_bin_path} local -q "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'" """,
-            #         stderr=subprocess.STDOUT,
-            #         shell=True,
-            #     ).decode()
-            #     ClickHouseInstance.is_local_server_asan_build = (
-            #         "-fsanitize=address" in build_opts
-            #     )
-            # with_remote_database_disk = ClickHouseInstance.is_local_server_asan_build
-            with_remote_database_disk = False
+            if ClickHouseInstance.is_local_server_asan_build == None:
+                build_opts = subprocess.check_output(
+                    f"""{self.server_bin_path} local -q "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'" """,
+                    stderr=subprocess.STDOUT,
+                    shell=True,
+                ).decode()
+                ClickHouseInstance.is_local_server_asan_build = (
+                    "-fsanitize=address" in build_opts
+                )
+            with_remote_database_disk = ClickHouseInstance.is_local_server_asan_build
 
         if with_remote_database_disk:
             logging.debug(f"Instance {name}, with_remote_database_disk enabled")
@@ -3162,7 +3165,6 @@ class ClickHouseCluster:
 
     def wait_arrowflight_to_start(self):
         time.sleep(5) # TODO
-
 
     def start(self):
         pytest_xdist_logging_to_separate_files.setup()
@@ -5328,18 +5330,6 @@ class ClickHouseInstance:
         version_parts = self.tag.split(".")
         if version_parts[0].isdigit() and version_parts[1].isdigit():
             version = {"major": int(version_parts[0]), "minor": int(version_parts[1])}
-
-        # async replication is only supported in version 23.9+
-        # for tags that don't specify a version we assume it has a version of ClickHouse
-        # that supports async replication if a test for it is present
-        if not self.with_dolor and (
-            version == None
-            or version["major"] > 23
-            or (version["major"] == 23 and version["minor"] >= 9)
-        ):
-            write_embedded_config(
-                "0_common_enable_keeper_async_replication.xml", self.config_d_dir
-            )
 
         logging.debug("Generate and write macros file")
         macros = self.macros.copy()
