@@ -346,6 +346,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 iceberg_catalog_threadpool_queue_size;
     extern const ServerSettingsBool dictionaries_lazy_load;
     extern const ServerSettingsInt32 os_threads_nice_value_zookeeper_client_send_receive;
+    extern const ServerSettingsBool allow_experimental_webassembly_udf;
 }
 
 namespace ErrorCodes
@@ -3391,10 +3392,12 @@ WasmModuleManager * Context::initWasmModuleManager()
     if (shared->wasm_module_manager)
         return shared->wasm_module_manager.get();
 
-    const auto & config = shared->getConfigRefWithLock(lock);
-    if (!ConfigHelper::getBool(config, "allow_experimental_webassembly_udf"))
+    if (!shared->server_settings[ServerSetting::allow_experimental_webassembly_udf])
         return nullptr;
 
+    LOG_DEBUG(shared->log, "Experimental WebAssembly UDF support is enabled");
+
+    const auto & config = shared->getConfigRefWithLock(lock);
     auto engine_name = config.getString("webassembly_udf_engine", "wasmtime");
 
     auto user_scripts_disk = std::make_shared<DiskLocal>("user_scripts", shared->user_scripts_path);
