@@ -82,7 +82,6 @@ String HashiCorpVault::readSecret(const String & secret, const String & key)
     }
 
     Poco::JSON::Parser parser;
-    json_str = "{data: 100";
     Poco::Dynamic::Var res_json;
     try
     {
