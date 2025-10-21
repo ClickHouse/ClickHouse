@@ -1419,7 +1419,7 @@ void GeoConverter::convertColumn(std::span<const char> chars, const UInt64 * off
 {
     col.reserve(col.size() + num_values);
     chassert(chars.size() >= offsets[num_values - 1]);
-    for (size_t i = 0; i < num_values; ++i)
+    for (ssize_t i = 0; i < ssize_t(num_values); ++i)
     {
         char * ptr = const_cast<char*>(chars.data() + offsets[i - 1]);
         size_t length = offsets[i] - offsets[i - 1] - separator_bytes;
