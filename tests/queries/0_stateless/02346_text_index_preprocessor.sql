@@ -32,7 +32,7 @@ DROP TABLE tab;
 -- Basic test preprocessor validation
 SELECT 'Test preprocessor validations.';
 
--- Dependency on indexed column
+-- Dependency only on indexed column
 CREATE TABLE tab
 (
     key UInt64,

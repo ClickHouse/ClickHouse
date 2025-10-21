@@ -66,7 +66,32 @@ The `tokenizer` argument specifies the tokenizer:
   Unlike `ngrams(N)`, which generates only fixed-length N-grams, `sparseGrams` produces a set of variable-length N-grams within the specified range, allowing for a more flexible representation of text context.
   For example, `tokenizer = sparseGrams(2, 4)` will create all 2-, 3-, and 4-grams from the input string.
 
-The `preprocessor` optional argument is intended to be an expression that transforms the input string into another one before
+:::note
+The `splitByString` tokenizer applies the split separators left-to-right.
+This can create ambiguities.
+For example, the separator strings `['%21', '%']` will cause `%21abc` to be tokenized as `['abc']`, whereas switching both separators strings `['%', '%21']` will output `['21abc']`.
+In the most cases, you want that matching prefers longer separators first.
+This can generally be done by passing the separator strings in order of descending length.
+If the separator strings happen to form a [prefix code](https://en.wikipedia.org/wiki/Prefix_code), they can be passed in arbitrary order.
+:::
+
+To test how the tokenizers split the input string, you can use ClickHouse's [tokens](/sql-reference/functions/splitting-merging-functions.md/#tokens) function:
+
+As an example,
+
+```sql
+SELECT tokens('abc def', 'ngrams', 3) AS tokens;
+```
+
+returns
+
+```result
++-tokens--------------------------+
+| ['abc','bc ','c d',' de','def'] |
++---------------------------------+
+```
+
+Optional parameter `preprocessor` is intended to be an expression that transforms the input string into another one before
 tokenization. The main purposes for this argument are:
 1. Perform some transformations to the string to generate indices with specific purposes (i.e. case insensitive indices)
 2. Cleanup the data (i.e remove HTML tags)
@@ -78,7 +103,7 @@ types mentioned above ([String](/sql-reference/data-types/string.md), [FixedStri
 expressed as a function of the index column name and should not depend of any other column. When using a `preprocessor` the index argument
 for construction will be limited only to the column name for simplicity in the interface and to avoid potential corner cases.
 
-The preprocessor expression is also used to tranform the input before performing function comparisons. This means that:
+The preprocessor expression is also used to transform the input before performing function comparisons. This means that:
 
 ```sql
 CREATE TABLE tab
@@ -112,31 +137,9 @@ ORDER BY tuple();
 SELECT count() FROM tab WHERE hasToken(str, lower('Foo'));
 ```
 
-
 :::note
-The `splitByString` tokenizer applies the split separators left-to-right.
-This can create ambiguities.
-For example, the separator strings `['%21', '%']` will cause `%21abc` to be tokenized as `['abc']`, whereas switching both separators strings `['%', '%21']` will output `['21abc']`.
-In the most cases, you want that matching prefers longer separators first.
-This can generally be done by passing the separator strings in order of descending length.
-If the separator strings happen to form a [prefix code](https://en.wikipedia.org/wiki/Prefix_code), they can be passed in arbitrary order.
+User Defined Functions [UDFs](sql-reference/functions/udf.md) are not supported in the preprocessor expression.
 :::
-
-To test how the tokenizers split the input string, you can use ClickHouse's [tokens](/sql-reference/functions/splitting-merging-functions.md/#tokens) function:
-
-As an example,
-
-```sql
-SELECT tokens('abc def', 'ngrams', 3) AS tokens;
-```
-
-returns
-
-```result
-+-tokens--------------------------+
-| ['abc','bc ','c d',' de','def'] |
-+---------------------------------+
-```
 
 Text indexes in ClickHouse are implemented as [secondary indexes](/engines/table-engines/mergetree-family/mergetree.md/#skip-index-types).
 However, unlike other skipping indexes, text indexes have a default index GRANULARITY of 64.
