@@ -7120,6 +7120,10 @@ Using the text index dictionary block cache can significantly reduce latency and
 Whether to use a cache of deserialized text index header.
 Using the text index header cache can significantly reduce latency and increase throughput when working with a large number of text index queries.
 )", 0) \
+    DECLARE(Bool, use_text_index_postings_cache, false, R"(
+Whether to use a cache of deserialized text index posting lists.
+Using the text index postings cache can significantly reduce latency and increase throughput when working with a large number of text index queries.
+)", 0) \
     DECLARE(Bool, allow_experimental_window_view, false, R"(
 Enable WINDOW VIEW. Not mature enough.
 )", EXPERIMENTAL) \

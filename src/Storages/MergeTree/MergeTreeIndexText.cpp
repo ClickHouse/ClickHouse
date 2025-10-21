@@ -73,8 +73,8 @@ UInt32 TokenPostingsInfo::getCardinality() const
 {
     return std::visit([]<typename T>(const T & arg) -> UInt32
     {
-        if constexpr (std::is_same_v<T, PostingList>)
-            return arg.cardinality();
+        if constexpr (std::is_same_v<T, PostingListPtr>)
+            return arg->cardinality();
         else
             return arg.cardinality;
     }, postings);
@@ -161,7 +161,7 @@ UInt64 PostingsSerialization::serialize(UInt64 header, PostingListBuilder && pos
     return written_bytes;
 }
 
-PostingList PostingsSerialization::deserialize(UInt64 header, UInt32 cardinality, ReadBuffer & istr)
+PostingListPtr PostingsSerialization::deserialize(UInt64 header, UInt32 cardinality, ReadBuffer & istr)
 {
     if (header & Flags::RawPostings)
     {
@@ -169,8 +169,8 @@ PostingList PostingsSerialization::deserialize(UInt64 header, UInt32 cardinality
         for (size_t i = 0; i < cardinality; ++i)
             readVarUInt(values[i], istr);
 
-        PostingList postings;
-        postings.addMany(cardinality, values.data());
+        auto postings = std::make_shared<PostingList>();
+        postings->addMany(cardinality, values.data());
         return postings;
     }
 
@@ -179,13 +179,11 @@ PostingList PostingsSerialization::deserialize(UInt64 header, UInt32 cardinality
 
     /// If the posting list is completely in the buffer, avoid copying.
     if (istr.position() && istr.position() + num_bytes <= istr.buffer().end())
-    {
-        return PostingList::read(istr.position());
-    }
+        return std::make_shared<PostingList>(PostingList::read(istr.position()));
 
     std::vector<char> buf(num_bytes);
     istr.readStrict(buf.data(), num_bytes);
-    return PostingList::read(buf.data());
+    return std::make_shared<PostingList>(PostingList::read(buf.data()));
 }
 
 MergeTreeIndexGranuleText::MergeTreeIndexGranuleText(MergeTreeIndexTextParams params_)
@@ -376,7 +374,7 @@ void MergeTreeIndexGranuleText::analyzeBloomFilter(const IMergeTreeIndexConditio
 
 namespace
 {
-DictionaryBlock deserializeDictionaryBlock(ReadBuffer & istr)
+DictionaryBlock deserializeDictionaryBlock(ReadBuffer & istr, const MergeTreeIndexDeserializationState & state)
 {
     ProfileEvents::increment(ProfileEvents::TextIndexReadDictionaryBlocks);
 
@@ -419,7 +417,13 @@ DictionaryBlock deserializeDictionaryBlock(ReadBuffer & istr)
         {
             UInt64 offset_in_file;
             readVarUInt(offset_in_file, istr);
-            token_infos.emplace_back(TokenPostingsInfo::FuturePostings{header, cardinality, offset_in_file});
+            token_infos.emplace_back(
+                TokenPostingsInfo::FuturePostings{
+                    .state = state,
+                    .header = header,
+                    .offset_in_file = offset_in_file,
+                    .cardinality = cardinality,
+                });
         }
     }
 
@@ -456,7 +460,7 @@ void MergeTreeIndexGranuleText::analyzeDictionary(MergeTreeIndexReaderStream & s
         {
             UInt64 offset_in_file = header->sparseIndex().getOffsetInFile(block_id);
             compressed_buffer->seek(offset_in_file, 0);
-            return std::make_shared<TextIndexDictionaryBlockCacheEntry>(deserializeDictionaryBlock(*data_buffer));
+            return std::make_shared<TextIndexDictionaryBlockCacheEntry>(deserializeDictionaryBlock(*data_buffer, state));
         };
 
         if (condition_text.useDictionaryBlockCache())
