@@ -139,6 +139,7 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/crypto/slh_dsa/slh_params.c
     ${OPENSSL_SOURCE_DIR}/crypto/slh_dsa/slh_wots.c
     ${OPENSSL_SOURCE_DIR}/crypto/slh_dsa/slh_xmss.c
+    ${OPENSSL_SOURCE_DIR}/crypto/ssl_err.c
     ${OPENSSL_SOURCE_DIR}/crypto/asn1/a_bitstr.c
     ${OPENSSL_SOURCE_DIR}/crypto/asn1/a_d2i_fp.c
     ${OPENSSL_SOURCE_DIR}/crypto/asn1/a_digest.c
@@ -485,6 +486,8 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/crypto/evp/pmeth_check.c
     ${OPENSSL_SOURCE_DIR}/crypto/evp/pbe_scrypt.c
     ${OPENSSL_SOURCE_DIR}/crypto/evp/signature.c
+    ${OPENSSL_SOURCE_DIR}/crypto/evp/s_lib.c
+    ${OPENSSL_SOURCE_DIR}/crypto/evp/skeymgmt_meth.c
     ${OPENSSL_SOURCE_DIR}/crypto/evp/ctrl_params_translate.c
     ${OPENSSL_SOURCE_DIR}/crypto/evp/dh_ctrl.c
     ${OPENSSL_SOURCE_DIR}/crypto/evp/dh_support.c
@@ -1307,7 +1310,6 @@ set(SSL_SRC
     ${OPENSSL_SOURCE_DIR}/ssl/ssl_cert_comp.c
     ${OPENSSL_SOURCE_DIR}/ssl/ssl_ciph.c
     ${OPENSSL_SOURCE_DIR}/ssl/ssl_conf.c
-    ${OPENSSL_SOURCE_DIR}/crypto/ssl_err.c
     ${OPENSSL_SOURCE_DIR}/ssl/ssl_err_legacy.c
     ${OPENSSL_SOURCE_DIR}/ssl/ssl_init.c
     ${OPENSSL_SOURCE_DIR}/ssl/ssl_lib.c
