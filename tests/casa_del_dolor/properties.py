@@ -1356,6 +1356,7 @@ keeper_settings = {
     "coordination_settings": {
         "async_replication": true_false_lambda,
         "auto_forwarding": true_false_lambda,
+        "check_node_acl_on_remove": true_false_lambda,
         "commit_logs_cache_size_threshold": threshold_generator(
             0.2, 0.2, 0, 1000 * 1024 * 1024
         ),

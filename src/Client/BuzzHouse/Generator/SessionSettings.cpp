@@ -1322,6 +1322,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
           "prefetch_buffer_size",
           "query_cache_max_size_in_bytes",
           "remote_read_min_bytes_for_seek",
+          "temporary_files_buffer_size",
           "write_through_distributed_cache_buffer_size"})
     {
         performanceSettings.insert({{entry, CHSetting(bytesRange, {"32768", "65536", "1048576", "4194304", "33554432", "'10M'"}, false)}});
@@ -1362,6 +1363,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
              {"min_free_disk_ratio_to_perform_insert", CHSetting(probRange, {}, false)},
              {"min_free_disk_space_for_temporary_data", CHSetting(bytesRange, {}, false)},
              {"postgresql_fault_injection_probability", CHSetting(probRange, {}, false)},
+             {"s3queue_keeper_fault_injection_probablility", CHSetting(probRange, {}, false)},
              {"unknown_packet_in_send_data",
               CHSetting(
                   [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.1, 0.1, 0, 16384)); },
