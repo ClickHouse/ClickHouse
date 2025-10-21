@@ -2,16 +2,18 @@
 # Documentation : https://clickhouse.com/docs/engines/table-engines/mergetree-family/annindexes
 
 import os
-import sys
-import traceback
-import clickhouse_connect
 import random
-import time
+import sys
 import threading
+import time
+import traceback
+
+import clickhouse_connect
 import numpy as np
-from ci.praktika.result import Result
+
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
 from ci.praktika.info import Info
+from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
 
 temp_dir = f"{Utils.cwd()}/ci/tmp/"
@@ -41,29 +43,26 @@ RECALL_K = "recall_k"
 NEW_TRUTH_SET_FILE = "new_truth_set_file"
 CONCURRENCY_TEST = "concurrency_test"
 
-dataset_hackernews = {
-    TABLE: "hackernews",
-    S3_URLS: "..",
+dataset_hackernews_openai = {
+    TABLE: "hackernews_openai",
+    S3_URLS: [
+        "https://clickhouse-datasets.s3.amazonaws.com/hackernews-openai/hackernews_openai_part_1_of_1.parquet",
+    ],
     SCHEMA: """
-        id            String,
-        doc_id        String,
-        text          String,
-        vector        Array(Float32),
-        node_info     Tuple(start Nullable(Int64), end Nullable(Int64)),
-        metadata      String,
+        id            UInt32,
         type          Enum8('story' = 1, 'comment' = 2, 'poll' = 3, 'pollopt' = 4, 'job' = 5),
-        by            LowCardinality(String),
         time          DateTime,
+        update_time   DateTime,
+        url           String,
         title         String,
-        post_score    Int32,
-        dead          UInt8,
-        deleted       UInt8,
-        length        UInt32
+        text          String,
+        vector        Array(Float32)
      """,
-    ID_COLUMN: "doc_id",
+    ID_COLUMN: "id",
     VECTOR_COLUMN: "vector",
     DISTANCE_METRIC: "cosineDistance",
-    DIMENSION: 384,
+    DIMENSION: 1536,
+    SOURCE_SELECT_LIST: None,
 }
 
 # The full 100M vectors - will take hours to run
@@ -157,6 +156,25 @@ test_params_laion_5b_1m = {
     TRUTH_SET_COUNT: 10000,  # Quick test! 10000 or 1000 is a good value
     RECALL_K: 100,
     NEW_TRUTH_SET_FILE: "laion_1m_10k",
+    MERGE_TREE_SETTINGS: None,
+    OTHER_SETTINGS: None,
+    CONCURRENCY_TEST: True,
+}
+
+test_params_hackernews_10m = {
+    LIMIT_N: None,
+    TRUTH_SET_FILES: [
+        "https://clickhouse-datasets.s3.amazonaws.com/hackernews-openai/hackernews_openai_10m_1k.tar"
+    ],
+    QUANTIZATION: "bf16",
+    HNSW_M: 64,
+    HNSW_EF_CONSTRUCTION: 256,
+    HNSW_EF_SEARCH: None,
+    VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: None,
+    GENERATE_TRUTH_SET: False,
+    NEW_TRUTH_SET_FILE: None,
+    TRUTH_SET_COUNT: 1000,
+    RECALL_K: 100,
     MERGE_TREE_SETTINGS: None,
     OTHER_SETTINGS: None,
     CONCURRENCY_TEST: True,
@@ -578,7 +596,12 @@ TESTS_TO_RUN = [
         "Test using the laion dataset",
         dataset_laion_5b_mini_for_quick_test,
         test_params_laion_5b_1m,
-    )
+    ),
+    (
+        "Test using the hackernews dataset",
+        dataset_hackernews_openai,
+        test_params_hackernews_10m,
+    ),
 ]
 
 
