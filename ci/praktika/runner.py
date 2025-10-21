@@ -340,7 +340,10 @@ class Runner:
         print(f"--- Run command [{cmd}]")
 
         with TeePopen(
-            cmd, timeout=job.timeout, preserve_stdio=preserve_stdio, timeout_shell_cleanup=job.timeout_shell_cleanup
+            cmd,
+            timeout=job.timeout,
+            preserve_stdio=preserve_stdio,
+            timeout_shell_cleanup=job.timeout_shell_cleanup,
         ) as process:
             start_time = Utils.timestamp()
 

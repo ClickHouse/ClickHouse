@@ -168,9 +168,24 @@ void IColumn::batchSerializeValueIntoMemoryWithNull(std::vector<char *> & /* mem
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method batchSerializeValueIntoMemoryWithNull is not supported for {}", getName());
 }
 
-void IColumn::collectSerializedValueSizes(PaddedPODArray<UInt64> & /* sizes */, const UInt8 * /* is_null */) const
+void IColumn::collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method collectSerializedValueSizes is not supported for {}", getName());
+    size_t rows = size();
+    if (sizes.empty())
+        sizes.resize_fill(rows);
+    else if (sizes.size() != rows)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of sizes: {} doesn't match rows_num: {}. It is a bug", sizes.size(), rows);
+
+    if (is_null)
+    {
+        for (size_t i = 0; i < rows; ++i)
+            sizes[i] += 1 + !is_null[i] * byteSizeAt(i);
+    }
+    else
+    {
+        for (size_t i = 0; i < rows; ++i)
+            sizes[i] += byteSizeAt(i);
+    }
 }
 
 void IColumn::updateAt(const IColumn &, size_t, size_t)
