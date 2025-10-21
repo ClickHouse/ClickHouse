@@ -17,7 +17,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 DATA_DIR=$CUR_DIR/data_parquet
 
-# TODO: Known issues to investigate:
+# TODO [parquet]: Known issues to investigate:
 
 # ClickHouse Parquet reader doesn't support such complex types, so I didn't burrow into the issue.
 # There is failure due parsing nested arrays or nested maps with NULLs:
@@ -46,8 +46,8 @@ for NAME in $(find "$DATA_DIR"/*.parquet -print0 | xargs -0 -n 1 basename | LC_A
     # pseudorandomly chosen rows. We use a dummy GROUP BY WITH TOTALS for that.
     # (Maybe the unnecessary GROUP BY could be expensive if there are lots of rows, but these test
     #  files don't have lots of rows or they would be too big to check into git.)
-    # TODO: Delete the input_format_parquet_enable_json_parsing=0 when cityHash64 supports JSON:
-    #       https://github.com/ClickHouse/ClickHouse/issues/87734
+    # TODO [parquet]: Delete the input_format_parquet_enable_json_parsing=0 when cityHash64
+    #                 supports JSON: https://github.com/ClickHouse/ClickHouse/issues/87734
     ${CLICKHOUSE_LOCAL} --query="
         SELECT _row_number, *, count(), sum(cityHash64(_row_number, *)) FROM file('$DATA_DIR/$NAME') GROUP BY all WITH TOTALS ORDER BY cityHash64(_row_number) LIMIT 20 SETTINGS input_format_parquet_enable_json_parsing=0;" 2>&1
 done

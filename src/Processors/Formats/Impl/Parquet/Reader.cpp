@@ -222,7 +222,7 @@ parq::FileMetaData Reader::readFileMetaData(Prefetcher & prefetcher)
     ///   data_page_offset = dictionary_page_offset
     ///   dictionary_page_offset.reset()
     /// Note: newer versions of DuckDB include version number in the `created_by` string, so this
-    /// `if` only applies to relatively old versions.
+    /// `if` only applies to relatively old versions. Newer versions don't have this bug.
     if (file_metadata.created_by == "DuckDB")
     {
         for (auto & rg : file_metadata.row_groups)
