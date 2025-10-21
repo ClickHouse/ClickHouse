@@ -184,7 +184,7 @@ public:
     {
         if (per_offset_flags.empty())
             return true;
-        for (size_t i = 1, n = per_offset_flags.size(); i < n; ++i)
+        for (size_t i = 0, n = per_offset_flags.size(); i < n; ++i)
             if (!per_offset_flags[i].load(std::memory_order_relaxed))
                 return false;
         return true;
