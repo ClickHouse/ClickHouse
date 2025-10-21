@@ -165,7 +165,7 @@ Chunk Squashing::squash(std::vector<Chunk> && input_chunks, Chunk::ChunkInfoColl
     {
         if (!have_same_serialization[i])
         {
-            mutable_columns[i] = removeSpecialRepresentations(std::move(mutable_columns[i]->convertToFullColumnIfConst()))->assumeMutable();
+            mutable_columns[i] = removeSpecialRepresentations(mutable_columns[i]->convertToFullColumnIfConst())->assumeMutable();
             for (auto & column : source_columns_list[i])
                 column = removeSpecialRepresentations(column->convertToFullColumnIfConst());
         }

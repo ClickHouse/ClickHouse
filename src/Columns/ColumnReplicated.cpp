@@ -76,7 +76,7 @@ Field ColumnReplicated::operator[](size_t n) const
 
 void ColumnReplicated::get(size_t n, Field & res) const
 {
-    return nested_column->get(indexes.getIndexAt(n), res);
+    nested_column->get(indexes.getIndexAt(n), res);
 }
 
 std::pair<String, DataTypePtr> ColumnReplicated::getValueNameAndType(size_t n) const
@@ -152,14 +152,14 @@ std::optional<size_t> ColumnReplicated::getSerializedValueSize(size_t n) const
 
 const char * ColumnReplicated::deserializeAndInsertFromArena(const char * pos)
 {
-    auto res = nested_column->deserializeAndInsertFromArena(pos);
+    const auto * res = nested_column->deserializeAndInsertFromArena(pos);
     indexes.insertIndex(nested_column->size() - 1);
     return res;
 }
 
 const char * ColumnReplicated::deserializeAndInsertAggregationStateValueFromArena(const char * pos)
 {
-    auto res = nested_column->deserializeAndInsertAggregationStateValueFromArena(pos);
+    const auto * res = nested_column->deserializeAndInsertAggregationStateValueFromArena(pos);
     indexes.insertIndex(nested_column->size() - 1);
     return res;
 }

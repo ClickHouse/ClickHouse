@@ -128,6 +128,7 @@ namespace Setting
     extern const SettingsString promql_database;
     extern const SettingsString promql_table;
     extern const SettingsFloatAuto promql_evaluation_time;
+    extern const SettingsBool allow_special_serialization_kinds_in_output_formats;
 }
 
 namespace ErrorCodes
@@ -539,7 +540,10 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
 
     try
     {
-        output_format->write(materializeBlock(block, !output_format->supportsSpecialSerializationKinds()));
+        output_format->write(materializeBlock(
+            block,
+            !client_context->getSettingsRef()[Setting::allow_special_serialization_kinds_in_output_formats]
+                || !output_format->supportsSpecialSerializationKinds()));
         written_first_block = true;
     }
     catch (const NetException &)

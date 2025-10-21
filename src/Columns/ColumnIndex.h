@@ -13,6 +13,7 @@ class ColumnIndex
 public:
     ColumnIndex();
     ColumnIndex(const ColumnIndex & other) = default;
+    ColumnIndex(ColumnIndex && other) = default;
     explicit ColumnIndex(MutableColumnPtr && indexes_);
     explicit ColumnIndex(ColumnPtr indexes_);
 

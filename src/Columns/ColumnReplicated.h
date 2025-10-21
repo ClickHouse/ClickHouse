@@ -110,12 +110,12 @@ public:
     ColumnPtr index(const IColumn & res_indexes, size_t limit) const override;
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
-    int compareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const override;
+    int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override;
 #else
-    int doCompareAt(size_t n, size_t m, const IColumn & rhs, int null_direction_hint) const override;
+    int doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
 #endif
 
-    int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs, int null_direction_hint, const Collator & collator) const override;
+    int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator & collator) const override;
     bool hasEqualValues() const override;
 
 
@@ -136,16 +136,16 @@ public:
     using ComparatorCollationEqual = ComparatorEqualImpl<ComparatorCollationBase>;
 
     void getPermutation(PermutationSortDirection direction, PermutationSortStability stability,
-                        size_t limit, int null_direction_hint, Permutation & res) const override;
+                        size_t limit, int nan_direction_hint, Permutation & res) const override;
 
     void updatePermutation(PermutationSortDirection direction, PermutationSortStability stability,
-                        size_t limit, int null_direction_hint, Permutation & res, EqualRanges & equal_ranges) const override;
+                        size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_ranges) const override;
 
     void getPermutationWithCollation(const Collator & collator, PermutationSortDirection direction, PermutationSortStability stability,
-                        size_t limit, int null_direction_hint, Permutation & res) const override;
+                        size_t limit, int nan_direction_hint, Permutation & res) const override;
 
     void updatePermutationWithCollation(const Collator & collator, PermutationSortDirection direction, PermutationSortStability stability,
-                        size_t limit, int null_direction_hint, Permutation & res, EqualRanges& equal_ranges) const override;
+                        size_t limit, int nan_direction_hint, Permutation & res, EqualRanges& equal_ranges) const override;
 
     size_t byteSize() const override;
     size_t byteSizeAt(size_t n) const override;
