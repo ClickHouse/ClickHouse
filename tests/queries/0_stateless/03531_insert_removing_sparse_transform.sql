@@ -1,6 +1,3 @@
--- Tags: no-debug, no-debug, no-asan, no-tsan, no-msan, no-ubsan, no-sanitize-coverage, no-parallel-replicas
--- - debug build adds CheckTokenTransform
--- - no-parallel-replicas - has --replace-log-memory-with-mergetree switch
 
 drop table if exists t_log;
 drop table if exists t_mt;
