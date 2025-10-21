@@ -122,7 +122,10 @@ class Result(MetaClasses.Serializable):
                     Result.StatusExtended.SKIPPED,
                 ):
                     continue
-                elif result.status == Result.Status.ERROR:
+                elif result.status in (
+                    Result.Status.ERROR,
+                    Result.StatusExtended.ERROR,
+                ):
                     result_status = Result.Status.ERROR
                     break
                 elif result.status in (
@@ -1132,8 +1135,108 @@ class ResultTranslator:
                             session_exitstatus = entry.get("exitstatus")
                             continue
 
+                        # NEW: Handle collection-time reports (import errors, syntax errors, etc.)
+                        if entry.get("$report_type") == "CollectReport":
+                            node_id = entry.get("nodeid") or ""
+                            outcome = entry.get("outcome")
+                            # Only surface failed collection items to avoid noise
+                            if outcome in ("failed", "error"):
+                                # Build info from longrepr and optional sections
+                                info_parts = []
+                                longrepr = entry.get("longrepr")
+                                if isinstance(longrepr, str) and longrepr:
+                                    info_parts.append(longrepr)
+                                elif isinstance(longrepr, dict) and longrepr:
+                                    # Best-effort: mirror traceback builder from TestReport for dict shape
+                                    try:
+                                        lr_txt = ""
+                                        crash = (
+                                            longrepr.get("reprcrash")
+                                            if isinstance(longrepr, dict)
+                                            else None
+                                        )
+                                        if isinstance(crash, dict):
+                                            p = crash.get("path")
+                                            ln = crash.get("lineno")
+                                            msg = crash.get("message")
+                                            seg = []
+                                            if p is not None and ln is not None:
+                                                seg.append(f"File: {p}:{ln}")
+                                            if msg:
+                                                seg.append(str(msg))
+                                            if seg:
+                                                lr_txt += "\n".join(seg)
+                                        rt = (
+                                            longrepr.get("reprtraceback")
+                                            if isinstance(longrepr, dict)
+                                            else None
+                                        )
+                                        if isinstance(rt, dict) and "reprentries" in rt:
+                                            composed = []
+                                            for re_entry in rt.get("reprentries", []):
+                                                dd = re_entry.get("data", {})
+                                                fileloc = (
+                                                    dd.get("reprfileloc", {})
+                                                    if isinstance(dd, dict)
+                                                    else {}
+                                                )
+                                                fpath = fileloc.get("path")
+                                                flineno = fileloc.get("lineno")
+                                                fmsg = fileloc.get("message")
+                                                header_parts = []
+                                                if (
+                                                    fpath is not None
+                                                    and flineno is not None
+                                                ):
+                                                    header_parts.append(
+                                                        f"File: {fpath}:{flineno}"
+                                                    )
+                                                if fmsg:
+                                                    header_parts.append(str(fmsg))
+                                                if header_parts:
+                                                    composed.append(
+                                                        " - ".join(header_parts)
+                                                    )
+                                                if isinstance(dd, dict) and dd.get(
+                                                    "lines"
+                                                ):
+                                                    composed.extend(dd["lines"])
+                                            if composed:
+                                                if lr_txt:
+                                                    lr_txt += "\n"
+                                                lr_txt += "\n".join(composed)
+                                        if lr_txt:
+                                            info_parts.append(lr_txt)
+                                    except Exception:
+                                        pass
+                                # Sections (captured output) if any
+                                sections = entry.get("sections", [])
+                                try:
+                                    sec_chunks = []
+                                    for sec in sections:
+                                        if isinstance(sec, list) and len(sec) == 2:
+                                            title, content = sec
+                                            if content:
+                                                sec_chunks.append(
+                                                    f"===== {title} =====\n{content}"
+                                                )
+                                    if sec_chunks:
+                                        info_parts.append("\n".join(sec_chunks))
+                                except Exception:
+                                    pass
+
+                                # Create a result for the module/node that failed to collect
+                                test_results[node_id or "<collection>"] = Result(
+                                    name=node_id or "<collection>",
+                                    status=Result.StatusExtended.ERROR,
+                                    duration=None,
+                                    info="\n".join([p for p in info_parts if p]),
+                                )
+                            # Skip successful collection entries
+                            continue
+
                         # Process based on event type
-                        if entry.get("$report_type") == "TestReport":
+                        if entry.get("$report_type") in ("TestReport",):
                             node_id = entry.get("nodeid")
                             outcome = entry.get("outcome")
                             duration = entry.get("duration")
@@ -1324,7 +1427,6 @@ class ResultTranslator:
                                     duration=duration,
                                     info=traceback_str,
                                 )
-                                test_result.ext["when"] = when
                                 test_results[node_id] = test_result
                             else:
                                 # Always override with a failure, or keep existing failure
@@ -1394,9 +1496,9 @@ class ResultTranslator:
             if session_exitstatus == 1:
                 if R.status == Result.Status.SUCCESS:
                     print(
-                        f"WARNING: Tests are all OK, but exit code is 1; timeout or other runner issue - reset overall status to [{Result.Status.FAILED}]"
+                        f"WARNING: Tests are all OK, but exit code is 1; timeout or other runner issue - reset overall status to [{Result.Status.ERROR}]"
                     )
-                    R.status = Result.Status.FAILED
+                    R.status = Result.Status.ERROR
             elif session_exitstatus == 0:
                 assert (
                     R.status == Result.Status.SUCCESS

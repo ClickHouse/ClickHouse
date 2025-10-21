@@ -68,6 +68,7 @@ namespace Setting
     extern const SettingsBool distributed_aggregation_memory_efficient;
     extern const SettingsBool use_join_disjunctions_push_down;
     extern const SettingsBool enable_join_runtime_filters;
+    extern const SettingsUInt64 join_runtime_filter_exact_values_limit;
     extern const SettingsUInt64 join_runtime_bloom_filter_bytes;
     extern const SettingsUInt64 join_runtime_bloom_filter_hash_functions;
     extern const SettingsBool query_plan_direct_read_from_text_index;
@@ -185,6 +186,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     actions_settings = std::move(actions_settings_);
 
     enable_join_runtime_filters = from[Setting::query_plan_enable_optimizations] && from[Setting::enable_join_runtime_filters];
+    join_runtime_filter_exact_values_limit = from[Setting::join_runtime_filter_exact_values_limit];
     join_runtime_bloom_filter_bytes = from[Setting::join_runtime_bloom_filter_bytes];
     join_runtime_bloom_filter_hash_functions = from[Setting::join_runtime_bloom_filter_hash_functions];
 
