@@ -15,18 +15,8 @@ countSubstrings
 countSubstringsCaseInsensitive
 countSubstringsCaseInsensitiveUTF8
 currentQueryID
-cutToFirstSignificantSubdomain
-cutToFirstSignificantSubdomainCustom
-cutToFirstSignificantSubdomainCustomRFC
-cutToFirstSignificantSubdomainCustomWithWWW
-cutToFirstSignificantSubdomainCustomWithWWWRFC
-cutToFirstSignificantSubdomainRFC
-cutToFirstSignificantSubdomainWithWWW
-cutToFirstSignificantSubdomainWithWWWRFC
 dateDiff
 dotProduct
-dynamicElement
-dynamicType
 extractKeyValuePairs
 extractKeyValuePairsWithEscaping
 firstSignificantSubdomain
@@ -56,7 +46,6 @@ hasTokenCaseInsensitiveOrNull
 ilike
 in
 inIgnoreSet
-isDynamicElementInSharedData
 like
 moduloLegacy
 multiFuzzyMatchAllIndices
@@ -114,7 +103,6 @@ regexpExtract
 sigmoid
 sin
 structureToCapnProtoSchema
-structureToProtobufSchema
 svg
 toDate32OrDefault
 toDateOrDefault
@@ -141,7 +129,6 @@ toUInt256OrDefault
 toUInt32OrDefault
 toUInt64OrDefault
 toUInt8OrDefault
-toUUIDOrDefault
 tuple
 tupleNames
 validateNestedArraySizes
