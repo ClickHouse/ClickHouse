@@ -4,6 +4,20 @@ if (NOT ENABLE_WASMEDGE)
     return()
 endif()
 
+if (ARCH_PPC64LE OR USE_MUSL)
+    if (ARCH_PPC64LE)
+        message(FATAL_ERROR "WasmEdge does not support PPC64LE architecture")
+    endif()
+    if (USE_MUSL)
+        # For some reason, WasmEdge build fails with MUSL libc like below error:
+        # contrib/wasmedge/lib/host/wasi/inode-linux.cpp:666:31: error: use of undeclared identifier 'O_SYMLINK'
+        #   666 |   const int OFlags = O_PATH | O_SYMLINK;
+        # Should be possible to fix, but for now let's rely on WasmTime, since it probably will be main engine.
+        message(FATAL_ERROR "WasmEdge does not support MUSL libc")
+    endif()
+    return()
+endif()
+
 
 set (SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/wasmedge")
 set (CURRENT_DIR_BINARY "${ClickHouse_BINARY_DIR}/contrib/wasmedge")

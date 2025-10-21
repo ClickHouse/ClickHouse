@@ -1,6 +1,14 @@
 option(ENABLE_WASMTIME "Enable WasmTime engine" ${ENABLE_LIBRARIES})
-if (NOT ENABLE_WASMTIME OR NOT ENABLE_RUST)
-    message (STATUS "Not using wasmtime")
+
+if (NOT ENABLE_WASMTIME OR NOT ENABLE_RUST OR OS_FREEBSD OR NO_ARMV81_OR_HIGHER)
+
+    if (OS_FREEBSD)
+        message (STATUS "Wasmtime is not supported on FreeBSD")
+    elseif (NO_ARMV81_OR_HIGHER)
+        message (STATUS "Wasmtime requires ARMv8.1 or higher")
+    else()
+        message (STATUS "Not using wasmtime")
+    endif()
     return()
 endif()
 
