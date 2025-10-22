@@ -2,6 +2,7 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/SerializationAggregateFunction.h>
+#include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
@@ -12,7 +13,7 @@
 #include <Common/Arena.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
-#include <Formats/FormatFactory.h>
+#include <DataTypes/DataTypeTuple.h>
 
 namespace DB
 {
@@ -159,31 +160,12 @@ static void deserializeFromValue(const AggregateFunctionPtr & function, IColumn 
         else
         {
             // Multiple arguments - parse as tuple
+            auto arg_types = DataTypeTuple(function->getArgumentTypes());
+            auto tmp_column = arg_types.createColumn();
             ReadBufferFromString buf(value_str);
-            // Parse tuple manually - expect format like (val1,val2,val3)
-            if (buf.eof() || *buf.position() != '(')
-                throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED,
-                    "Expected tuple format for multi-argument aggregate function, got: '{}'", value_str);
-            ++buf.position(); // skip '('
-            std::vector<MutableColumnPtr> temp_columns;
-            for (size_t i = 0; i < argument_types.size(); ++i)
-            {
-                if (i > 0)
-                {
-                    if (buf.eof() || *buf.position() != ',')
-                        throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED,
-                            "Expected comma in tuple, got: '{}'", value_str);
-                    ++buf.position(); // skip ','
-                }
-                temp_columns.push_back(argument_types[i]->createColumn());
-                argument_types[i]->getDefaultSerialization()->deserializeTextCSV(*temp_columns.back(), buf, settings);
-            }
-            if (buf.eof() || *buf.position() != ')')
-                throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED,
-                    "Expected closing parenthesis in tuple, got: '{}'", value_str);
-            // Add the values to the aggregate state
+            arg_types.getDefaultSerialization()->deserializeWholeText(*tmp_column, buf, settings);
             std::vector<const IColumn *> columns_ptrs;
-            for (const auto & col : temp_columns)
+            for (const auto & col : assert_cast<ColumnTuple*>(tmp_column.get())->getColumns())
                 columns_ptrs.push_back(col.get());
             function->add(place, columns_ptrs.data(), 0, &arena);
         }
@@ -217,14 +199,18 @@ static void deserializeFromArray(const AggregateFunctionPtr & function, IColumn 
                 "Expected array format starting with '[', got: '{}'", array_str);
         ++buf.position(); // skip '['
         size_t row = 0;
-        while (!buf.eof() && *buf.position() != ']')
+        while (!buf.eof())
         {
+            skipWhitespaceIfAny(buf);
+            if (*buf.position() == ']')
+                break;
             if (row > 0)
             {
                 if (buf.eof() || *buf.position() != ',')
                     throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED,
                         "Expected comma in array, got: '{}'", array_str);
                 ++buf.position(); // skip ','
+                skipWhitespaceIfAny(buf);
             }
             if (argument_types.size() == 1)
             {
@@ -237,34 +223,16 @@ static void deserializeFromArray(const AggregateFunctionPtr & function, IColumn 
             else
             {
                 // Multiple arguments - parse as tuple
-                if (buf.eof() || *buf.position() != '(')
-                    throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED,
-                        "Expected tuple format for multi-argument aggregate function in array, got: '{}'", array_str);
-                ++buf.position(); // skip '('
-                std::vector<MutableColumnPtr> temp_columns;
-                for (size_t i = 0; i < argument_types.size(); ++i)
-                {
-                    if (i > 0)
-                    {
-                        if (buf.eof() || *buf.position() != ',')
-                            throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED,
-                                "Expected comma in tuple within array, got: '{}'", array_str);
-                        ++buf.position(); // skip ','
-                    }
-                    temp_columns.push_back(argument_types[i]->createColumn());
-                    argument_types[i]->getDefaultSerialization()->deserializeTextCSV(*temp_columns.back(), buf, settings);
-                }
-                if (buf.eof() || *buf.position() != ')')
-                    throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED,
-                        "Expected closing parenthesis in tuple within array, got: '{}'", array_str);
-                ++buf.position(); // skip ')'
-                // Add the values to the aggregate state
+                auto arg_types = DataTypeTuple(argument_types);
+                auto tmp_column = arg_types.createColumn();
+                arg_types.getDefaultSerialization()->deserializeTextQuoted(*tmp_column, buf, settings);
                 std::vector<const IColumn *> columns_ptrs;
-                for (const auto & col : temp_columns)
+                for (const auto & col : assert_cast<const ColumnTuple*>(tmp_column.get())->getColumns())
                     columns_ptrs.push_back(col.get());
                 function->add(place, columns_ptrs.data(), 0, &arena);
             }
             ++row;
+            skipWhitespaceIfAny(buf);
         }
         if (buf.eof() || *buf.position() != ']')
             throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED,
