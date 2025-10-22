@@ -707,7 +707,7 @@ inline void StorageWindowView::fire(UInt32 watermark)
         StoragePtr target_table = getTargetTable();
         auto insert = std::make_shared<ASTInsertQuery>();
         insert->table_id = target_table->getStorageID();
-        auto context = getContext();
+        auto context = Context::createCopy(getContext());
         InterpreterInsertQuery interpreter(
             insert,
             context,
