@@ -1,6 +1,5 @@
 import requests
 from helpers.cluster import ClickHouseCluster
-import logging
 
 
 def vault_startup_command(cluster):
