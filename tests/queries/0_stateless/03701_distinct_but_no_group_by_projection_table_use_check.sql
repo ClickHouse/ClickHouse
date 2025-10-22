@@ -1,3 +1,6 @@
+-- Tags: no-replicated-database
+-- no-replicated-database: explain output differs for replicated database.
+
 SELECT 'Simple:';
 
 DROP TABLE IF EXISTS tab;
