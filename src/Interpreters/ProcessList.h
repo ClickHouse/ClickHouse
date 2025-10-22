@@ -280,6 +280,11 @@ public:
 
     /// Get the reference for the start of the query. Used to synchronize with other Stopwatches
     UInt64 getQueryCPUStartTime() { return watch.getStart(); }
+
+    bool isInternal() const
+    {
+        return is_internal;
+    }
 };
 
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;
@@ -318,9 +323,6 @@ struct ProcessListForUser
     /// Count network usage for all simultaneously running queries of single user.
     ThrottlerPtr user_throttler;
 
-    /// Number of queries waiting on load jobs
-    std::atomic<UInt64> waiting_queries_amount{0};
-
     ProcessListForUserInfo getInfo(bool get_profile_events = false) const;
 
     /// Clears MemoryTracker for the user.
@@ -332,6 +334,19 @@ struct ProcessListForUser
         user_memory_tracker.reset();
 
         /// NOTE: we should not reset user_throttler here because TokenBucket throttling MUST account periods of inactivity for correct work
+    }
+
+    size_t countNonInternalProcesses() const
+    {
+        size_t result = 0;
+        for (auto & [_, query_status] : queries)
+        {
+            if (!query_status->isInternal())
+            {
+                ++result;
+            }
+        }
+        return result;
     }
 };
 
@@ -427,23 +442,16 @@ protected:
     /// timeout in millisecond for low priority query to wait
     size_t low_priority_query_wait_time_ms = 0;
 
-    /// amount of queries by query kind.
+    /// amount of queries by query kind, excludes internal queries
     QueryKindAmounts query_kind_amounts;
 
     /// limit for waiting queries. 0 means no limit. Otherwise, when limit exceeded, an exception is thrown.
     std::atomic<UInt64> max_waiting_queries_amount{0};
 
-    /// amounts of waiting queries
-    std::atomic<UInt64> waiting_queries_amount{0};
-    std::atomic<UInt64> waiting_insert_queries_amount{0};
-    std::atomic<UInt64> waiting_select_queries_amount{0};
-
+    /// WARNING: for non-internal queries only
     void increaseQueryKindAmount(const IAST::QueryKind & query_kind);
     void decreaseQueryKindAmount(const IAST::QueryKind & query_kind);
     QueryAmount getQueryKindAmount(const IAST::QueryKind & query_kind) const;
-
-    void increaseWaitingQueryAmount(const QueryStatusPtr & status);
-    void decreaseWaitingQueryAmount(const QueryStatusPtr & status);
 
 public:
     using EntryPtr = std::shared_ptr<ProcessListEntry>;
@@ -456,6 +464,7 @@ public:
     EntryPtr insert(const String & query_, UInt64 normalized_query_hash, const IAST * ast, ContextMutablePtr query_context, UInt64 watch_start_nanoseconds, bool is_internal);
 
     /// Number of currently executing queries.
+    /// WARNING: includes internal queries (e.g. those executed by dictionaries, RMVs, async inserts).
     size_t size() const { return processes.size(); }
 
     /// Get current state of process list.
@@ -531,15 +540,24 @@ public:
         return max_waiting_queries_amount.load();
     }
 
-    // Handlers for AsyncLoader waiters
-    void incrementWaiters();
-    void decrementWaiters();
-
     /// Try call cancel() for input and output streams of query with specified id and user
     CancellationCode sendCancelToQuery(const String & current_query_id, const String & current_user);
     CancellationCode sendCancelToQuery(QueryStatusPtr elem);
 
     void killAllQueries();
+
+    size_t countNonInternalProcesses() const
+    {
+        size_t result = 0;
+        for (auto & query_status : processes)
+        {
+            if (!query_status->isInternal())
+            {
+                ++result;
+            }
+        }
+        return result;
+    }
 };
 
 }
