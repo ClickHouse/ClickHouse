@@ -6,7 +6,7 @@ This directory contains the CI (Continuous Integration) system for ClickHouse ba
 
 - Get help `python3 -m ci.praktika --help`
 
-- Run a workflow `python3 -m ci.praktika run workflow_name [--test test_name]`
+- Run a workflow, for example `python3 -m ci.praktika run "Style check" --test various`
 
 - Generate yaml `python3 -m ci.praktika yaml`
 
