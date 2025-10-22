@@ -129,7 +129,7 @@ void BackupCoordinationFileInfos::prepare() const
         for (size_t i = 0; i != file_infos_for_all_hosts.size(); ++i)
         {
             auto & info = *(file_infos_for_all_hosts[i]);
-            info.data_file_name = keys_gen->generate(info.file_name, false, {}).serialize();
+            info.data_file_name = info.file_name;
             info.data_file_index = i;
             info.base_size = 0; /// Base backup must not be used while creating a plain backup.
             info.base_checksum = 0;
@@ -194,7 +194,7 @@ void BackupCoordinationFileInfos::prepare() const
                 if (inserted)
                 {
                     /// Found a new file.
-                    info.data_file_name = keys_gen->generate(info.file_name, false, {}).serialize();
+                    info.data_file_name = getDataFileName(info);
                     info.data_file_index = i;
                     ++num_files;
                     total_size_of_files += info.size - info.base_size;
@@ -228,6 +228,14 @@ size_t BackupCoordinationFileInfos::getTotalSizeOfFiles() const
 {
     prepare();
     return total_size_of_files;
+}
+
+String BackupCoordinationFileInfos::getDataFileName(const BackupFileInfo & file_info) const
+{
+    if (plain_backup)
+        return file_info.file_name;
+    else
+        return data_file_name_gen->generate(file_info);
 }
 
 }

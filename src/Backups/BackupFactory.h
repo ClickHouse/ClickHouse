@@ -15,6 +15,8 @@
 namespace DB
 {
 class IBackupCoordination;
+class IBackupDataFileNameGenerator;
+using BackupDataFileNameGeneratorPtr = std::shared_ptr<IBackupDataFileNameGenerator>;
 class Context;
 using ContextPtr = std::shared_ptr<const Context>;
 
@@ -36,6 +38,7 @@ public:
         ContextPtr context;
         bool is_internal_backup = false;
         bool is_lightweight_snapshot = false;
+        BackupDataFileNameGeneratorPtr data_file_name_gen;
         std::shared_ptr<IBackupCoordination> backup_coordination;
         std::optional<UUID> backup_uuid;
         bool deduplicate_files = true;

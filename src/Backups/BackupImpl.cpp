@@ -4,6 +4,7 @@
 #include <Backups/BackupIO.h>
 #include <Backups/IBackupEntry.h>
 #include <Backups/BackupIO_S3.h>
+#include <Backups/getBackupDataFileNameGenerator.h>
 #include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/StringUtils.h>
@@ -124,6 +125,7 @@ BackupImpl::BackupImpl(
     , archive_params(archive_params_)
     , open_mode(OpenMode::WRITE)
     , writer(std::move(writer_))
+    , data_file_name_gen(params.data_file_name_gen)
     , coordination(params.backup_coordination)
     , uuid(params.backup_uuid)
     , version(CURRENT_BACKUP_VERSION)
@@ -354,6 +356,7 @@ void BackupImpl::writeBackupMetadata()
     *out << "<deduplicate_files>" << params.deduplicate_files << "</deduplicate_files>";
     *out << "<timestamp>" << toString(LocalDateTime{timestamp}) << "</timestamp>";
     *out << "<uuid>" << toString(*uuid) << "</uuid>";
+    *out << "<data_file_name_generator>" << data_file_name_gen->getName() << "</data_file_name_generator>";
 
     auto all_file_infos = coordination->getFileInfosForAllHosts();
 
@@ -421,7 +424,7 @@ void BackupImpl::writeBackupMetadata()
         }
 
         total_size += info.size;
-        bool has_entry = !params.deduplicate_files || (info.size && (info.size != info.base_size) && (info.data_file_name.empty() || info.data_file_name.ends_with(info.file_name)));
+        bool has_entry = !params.deduplicate_files || (info.size && (info.size != info.base_size) && (info.data_file_name.empty() || info.data_file_name == data_file_name_gen->generate(info)));
         if (has_entry)
         {
             ++num_entries;
@@ -488,6 +491,13 @@ void BackupImpl::readBackupMetadata()
     if (config_root->getNodeByPath("original_namespace"))
         original_namespace = getString(config_root, "original_namespace");
 
+    std::string data_file_name_gen_name = "default";
+    if (config_root->getNodeByPath("data_file_name_generator"))
+        data_file_name_gen_name = getString(config_root, "data_file_name_generator");
+
+    chassert(!data_file_name_gen);
+    data_file_name_gen = getBackupDataFileNameGenerator(data_file_name_gen_name);
+
     num_files = 0;
     total_size = 0;
     num_entries = 0;
@@ -553,7 +563,7 @@ void BackupImpl::readBackupMetadata()
 
             ++num_files;
             total_size += info.size;
-            bool has_entry = !params.deduplicate_files || (info.size && (info.size != info.base_size) && (info.data_file_name.empty() || info.data_file_name.ends_with(info.file_name)));
+            bool has_entry = !params.deduplicate_files || (info.size && (info.size != info.base_size) && (info.data_file_name.empty() || info.data_file_name == data_file_name_gen->generate(info)));
             if (has_entry)
             {
                 ++num_entries;
