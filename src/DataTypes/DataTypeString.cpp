@@ -104,3 +104,5 @@ void registerDataTypeString(DataTypeFactory & factory)
     factory.registerAlias("VARBINARY", "String", DataTypeFactory::Case::Insensitive);
 
 }
+
+}
