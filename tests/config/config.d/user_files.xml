@@ -1,3 +1,0 @@
-<clickhouse>
-    <user_files_path replace="replace">/etc/clickhouse-server/user_files/</user_files_path>
-</clickhouse>

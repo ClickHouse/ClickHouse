@@ -1,5 +1,12 @@
--- Tags: no-fasttest
-SET allow_experimental_analyzer = 1;
+#!/usr/bin/env bash
+# Tags: no-fasttest
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+
+${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=1 << EOF
 
 DROP FUNCTION IF EXISTS add3_i64;
 DROP FUNCTION IF EXISTS add3_i32;
@@ -19,7 +26,19 @@ DROP FUNCTION IF EXISTS add3_csv;
 
 DELETE FROM system.webassembly_modules WHERE name = 'clickhouse_wasm_example';
 
-INSERT INTO system.webassembly_modules (name, code) SELECT replaceOne(_file, '.wasm', '') AS name, raw_blob AS code FROM file('*.wasm', 'RawBlob') ORDER BY name;
+EOF
+
+cat ${CUR_DIR}/wasm/clickhouse_wasm_example.wasm.gz | gunzip | ${CLICKHOUSE_CLIENT} --query "
+INSERT INTO system.webassembly_modules (name, code, hash)
+SELECT
+    'clickhouse_wasm_example' AS name,
+    raw_blob AS code,
+    toUInt256('109512041981872266840431839764139570488964022093810554932159840724338894707416') as hash
+FROM input('raw_blob String') FORMAT RawBlob
+"
+
+
+${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=1 << EOF
 
 CREATE OR REPLACE FUNCTION add3_i64 LANGUAGE WASM ABI PLAIN FROM 'clickhouse_wasm_example' ARGUMENTS (UInt64, UInt64, UInt64) RETURNS UInt64;
 CREATE OR REPLACE FUNCTION add3_i32 LANGUAGE WASM ABI PLAIN FROM 'clickhouse_wasm_example' ARGUMENTS (UInt32, UInt32, UInt32) RETURNS UInt32;
@@ -75,7 +94,7 @@ SELECT
     toDateTime(toUInt64OrZero(m['not_before']), 'Europe/London') as not_before,
     toDateTime(toUInt64OrZero(m['not_after']), 'Europe/London') as not_after
 FROM (
-    -- Command to get certificate: `openssl s_client -connect clickhouse.com:443 </dev/null | openssl x509 -outform PEM`
+    -- Command to get certificate: "openssl s_client -connect clickhouse.com:443 </dev/null | openssl x509 -outform PEM"
     SELECT parse_pem(concat(
         '-----BEGIN CERTIFICATE-----', '\n',
         'MIIDsDCCA1agAwIBAgIRAKs4Xe4kUlfQDWpx0zRcEqwwCgYIKoZIzj0EAwIwOzELMAkGA1UEBhMCVVMxHjAcBgNVBAoTFUdvb2dsZSBUcnVzdCBTZXJ2aWNlczEMMAoG',
@@ -89,5 +108,6 @@ FROM (
         'NL2kPTBI1/urAAABkZ3WBGMAAAQDAEcwRQIhALqJt9Y33HXkwMxa6vBjPtb1hFt8bnih8I4MVQwssw63AiAkUsBgPRbvdVdUsYL6TG2OLDbqsYDWam01ktFpQQoaSjAK',
         'BggqhkjOPQQDAgNIADBFAiBH4WNNpPaoCt+K8zcafamSvtMKmg7bJg+2T/Cs4+zC9wIhAK+yb2CTZOKxsMUkP6s3QW7tKBLC0BWMIgmO4iGRssZ2', '\n',
         '-----END CERTIFICATE-----')) as m
-)
-;
+);
+
+EOF
