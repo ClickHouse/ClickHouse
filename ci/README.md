@@ -2,6 +2,14 @@
 
 This directory contains the CI (Continuous Integration) system for ClickHouse based on the `praktika` framework. The CI system is responsible for automated building, testing, and deployment of ClickHouse.
 
+## Getting Started
+
+- Get help `python3 -m ci.praktika --help`
+
+- Run a workflow `python3 -m ci.praktika run workflow_name [--test test_name]`
+
+- Generate yaml `python3 -m ci.praktika yaml`
+
 ## Directory Structure
 
 - `./ci/praktika/` - Core praktika module that provides generic CI functionality. This module is designed to be reusable and must not include any ClickHouse-specific logic.
@@ -28,8 +36,3 @@ The new praktika-based system is gradually replacing the legacy CI scripts in `.
    ```
 
 2. Configuration consistency is critical - job names in the legacy configuration (`./tests/ci/ci_config.py`) must match exactly with the new praktika configuration (`./ci/workflows/*`) for proper operation.
-
-## Getting Started
-
-# TODO
-To run CI jobs locally or understand how to interact with the system, see the documentation in `./ci/praktika/docs/` or consult the online documentation.
