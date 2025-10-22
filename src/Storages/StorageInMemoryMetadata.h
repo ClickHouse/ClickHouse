@@ -296,7 +296,7 @@ struct StorageInMemoryMetadata
     std::unordered_map<std::string, ColumnSize> getFakeColumnSizes() const;
 
     /// Elements of `columns` that have `default_desc.expression == nullptr`.
-    NameSet getColumnsWithoutDefaultExpressions() const;
+    NameSet getColumnsWithoutDefaultExpressions(const NamesAndTypesList & exclude) const;
 };
 
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
