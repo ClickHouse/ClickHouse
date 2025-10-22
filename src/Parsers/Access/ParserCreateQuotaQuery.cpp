@@ -98,7 +98,11 @@ namespace
                 UInt8 prefix = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), value_ast->as<ASTLiteral &>().value);
 
                 if (prefix > max_bits)
-                    throw Exception(ErrorCodes::SYNTAX_ERROR, "{} prefix must be between 0 and {}", keyword, max_bits);
+                    throw Exception(
+                        ErrorCodes::SYNTAX_ERROR,
+                        "{} prefix must be between 0 and {}",
+                        keyword,
+                        static_cast<unsigned>(max_bits));
 
                 prefix_bits = prefix;
 
