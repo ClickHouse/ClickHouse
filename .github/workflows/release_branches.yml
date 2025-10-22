@@ -4,7 +4,7 @@ name: ReleaseBranchCI
 
 on:
   push:
-    branches: ['['2[1-9].[1-9][0-9]', '2[1-9].[1-9]']']
+    branches: ['2[1-9].[1-9][0-9]', '2[1-9].[1-9]']
 
 env:
   # Force the stdout and stderr streams to be unbuffered
