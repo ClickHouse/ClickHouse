@@ -48,6 +48,8 @@ jobs:
         run: |
           echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
+
+
           set -o pipefail
           if command -v ts &> /dev/null; then
             python3 -m praktika run 'Config Workflow' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
@@ -86,6 +88,14 @@ jobs:
         run: |
           echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
+
+          echo job.check_run_id  ${{ job.check_run_id }}
+
+          echo "------------- TTT"
+          cat ./ci/tmp/workflow_status.json
+          echo "-------------"
+          exit 1
+
           set -o pipefail
           if command -v ts &> /dev/null; then
             python3 -m praktika run 'Dockers Build (amd)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
