@@ -46,6 +46,18 @@ public:
         const MergeTreeReadTask::BlockSizeParams & params_,
         const ContextPtr & context_);
 
+    /// Simplified c'tor for MergeTreeReadPoolProjectionIndex
+    MergeTreeReadPoolBase(
+        MutationsSnapshotPtr mutations_snapshot_,
+        const StorageSnapshotPtr & storage_snapshot_,
+        const PrewhereInfoPtr & prewhere_info_,
+        const ExpressionActionsSettings & actions_settings_,
+        const MergeTreeReaderSettings & reader_settings_,
+        const Names & column_names_,
+        const PoolSettings & pool_settings_,
+        const MergeTreeReadTask::BlockSizeParams & block_size_params_,
+        const ContextPtr & context_);
+
     Block getHeader() const override { return header; }
 
 protected:
@@ -66,6 +78,8 @@ protected:
     const UncompressedCachePtr owned_uncompressed_cache;
     const PatchJoinCachePtr patch_join_cache;
     const Block header;
+
+    MergeTreeReadTaskInfo buildReadTaskInfo(const RangesInDataPart & part_with_ranges, const Settings & settings) const;
 
     void fillPerPartInfos(const Settings & settings);
     std::vector<size_t> getPerPartSumMarks() const;
