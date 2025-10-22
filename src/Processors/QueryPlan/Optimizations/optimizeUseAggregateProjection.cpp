@@ -533,12 +533,16 @@ std::optional<String> optimizeUseAggregateProjections(
 {
     if (node.children.size() != 1)
         return {};
-
+      
     auto * aggregating = typeid_cast<AggregatingStep *>(node.step.get());
-    if (!aggregating)
+    
+    auto * distinct = typeid_cast<DistinctStep *>(node.step.get());
+
+    /// In the event there is DISTINCT but no GROUP BY, we still want to use aggregate projections.
+    if (!aggregating && !distinct)
         return {};
 
-    if (!aggregating->canUseProjection())
+    if (aggregating && !aggregating->canUseProjection())
         return {};
 
     QueryPlan::Node * reading_node = findReadingStep(*node.children.front());
@@ -554,7 +558,9 @@ std::optional<String> optimizeUseAggregateProjections(
 
     PartitionIdToMaxBlockPtr max_added_blocks = getMaxAddedBlocks(reading);
 
-    auto candidates = getAggregateProjectionCandidates(node, *aggregating, *reading, max_added_blocks, allow_implicit_projections);
+    auto candidates
+        = (distinct ? getAggregateProjectionCandidates(node, *distinct, *reading)
+                    : getAggregateProjectionCandidates(node, *aggregating, *reading, max_added_blocks, allow_implicit_projections));
 
     auto logger = getLogger("optimizeUseAggregateProjections");
     const auto & query_info = reading->getQueryInfo();
@@ -922,15 +928,31 @@ std::optional<String> optimizeUseAggregateProjections(
         aggregate_projection_node = &projection_reading_node;
     }
 
+    const auto & projection_header = aggregate_projection_node->step->getOutputHeader();
+
     if (has_parent_parts)
     {
-        node.step = aggregating->convertToAggregatingProjection(aggregate_projection_node->step->getOutputHeader());
+        if (aggregating)
+        {
+            node.step = aggregating->convertToAggregatingProjection(projection_header);
+        }
+        else
+        {
+            node.step->updateInputHeader(projection_header);
+        }
         node.children.push_back(aggregate_projection_node);
     }
     else
     {
         /// All parts are taken from projection
-        aggregating->requestOnlyMergeForAggregateProjection(aggregate_projection_node->step->getOutputHeader());
+        if (aggregating)
+        {
+            aggregating->requestOnlyMergeForAggregateProjection(projection_header);
+        }
+        else
+        {
+            node.step->updateInputHeader(projection_header);
+        }
         node.children.front() = aggregate_projection_node;
     }
 
