@@ -33,7 +33,7 @@ PLAIN_FUNCTIONAL_TEST_JOB = [
 workflow = Workflow.Config(
     name="PR",
     event=Workflow.Event.PULL_REQUEST,
-    base_branches=[BASE_BRANCH, '!2[1-9].[1-9][0-9]', '!2[1-9].[1-9]'],
+    base_branches=[BASE_BRANCH] + ["!" + b for b in Workflow.RELEASE_GLOB],
     jobs=[
         JobConfigs.style_check,
         JobConfigs.docs_job,

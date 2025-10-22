@@ -8,6 +8,8 @@ from .utils import Utils
 
 
 class Workflow:
+    RELEASE_GLOB = ["2[1-9].[1-9][0-9]", "2[1-9].[1-9]"]
+
     class Event:
         PULL_REQUEST = "pull_request"
         PUSH = "push"
