@@ -44,7 +44,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"show_data_lake_catalogs_in_system_tables", true, false, "Disable catalogs in system tables by default"},
             {"optimize_rewrite_like_perfect_affix", false, true, "New setting"},
             {"allow_dynamic_type_in_join_keys", true, false, "Disallow using Dynamic type in JOIN keys by default"},
-            {"use_skip_indexes_on_data_read", false, true, "Enabled skip index usage in read phase by default"},
             {"s3queue_keeper_fault_injection_probablility", 0, 0, "New setting."},
             {"enable_join_runtime_filters", false, false, "New setting"},
             {"join_runtime_filter_exact_values_limit", 10000, 10000, "New setting"},
@@ -52,6 +51,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"join_runtime_bloom_filter_hash_functions", 3, 3, "New setting"},
             {"use_join_disjunctions_push_down", false, false, "New setting."},
             {"joined_block_split_single_row", false, false, "New setting"},
+            {"temporary_files_buffer_size", DBMS_DEFAULT_BUFFER_SIZE, DBMS_DEFAULT_BUFFER_SIZE, "New setting"},
             {"rewrite_in_to_join", false, false, "New experimental setting"},
             {"iceberg_insert_max_rows_in_data_file", 100000, 1000000, "New setting."},
             {"iceberg_insert_max_bytes_in_data_file", 100000000, 100000000, "New setting."},
@@ -71,6 +71,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"schema_inference_make_columns_nullable", 1, 3, "Take nullability information from Parquet/ORC/Arrow metadata by default, instead of making everything nullable."},
             {"materialized_views_squash_parallel_inserts", false, true, "Added setting to preserve old behavior if needed."},
             {"aggregate_function_input_format", "state", "state", "New setting to control AggregateFunction input format during INSERT operations"},
+            {"distributed_cache_connect_timeout_ms", 50, 50, "New setting"},
+            {"distributed_cache_receive_timeout_ms", 3000, 3000, "New setting"},
+            {"distributed_cache_send_timeout_ms", 3000, 3000, "New setting"},
+            {"distributed_cache_tcp_keep_alive_timeout_ms", 2900, 2900, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.9",
         {
