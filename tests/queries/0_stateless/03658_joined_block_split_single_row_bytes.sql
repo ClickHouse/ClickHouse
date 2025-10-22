@@ -27,6 +27,7 @@ INSERT INTO t1 SELECT rand(), 2, repeat('aaa', 1_000_000);
 INSERT INTO t2 SELECT rand(), 2, repeat('bbb', 1_000_000) from numbers(10);
 
 SELECT
-    if(max(size) < 10_000_000, 'Ok', format('Error: max_size={} rows={}', max(size), argMax(rows, size)))
+    -- limit is 4M but minimum block size is 6Mb, so it will be single row block
+    if(argMax(rows, size) = 1 AND max(size) < 10_000_000, 'Ok', format('Error: max_size={} rows={}', max(size), argMax(rows, size)))
 FROM ( SELECT blockNumber() as bn, sum(byteSize(*)) as size, count() as rows FROM t1 INNER JOIN t2 ON t1.key = t2.key GROUP BY bn )
 SETTINGS joined_block_split_single_row = 1, max_joined_block_size_bytes = '4M';
