@@ -45,9 +45,11 @@
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/Logger.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/escapeForFileName.h>
+#include <Common/logger_useful.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Names.h>
 
@@ -279,6 +281,7 @@ void StorageMergeTree::read(
     if (local_context->canUseParallelReplicasOnInitiator() && settings[Setting::parallel_replicas_for_non_replicated_merge_tree]
         && !settings[Setting::allow_experimental_analyzer])
     {
+        LOG_DEBUG(getLogger("test-parr"), "executeQueryWithParallelReplicas");
         ClusterProxy::executeQueryWithParallelReplicas(
             query_plan, getStorageID(), processed_stage, query_info.query, local_context, query_info.storage_limits);
         return;
