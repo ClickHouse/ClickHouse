@@ -406,9 +406,9 @@ def main():
         #     )
         #     print(f"Fetching packages from [{repo_urls}]")
         else:
-            assert False, (
-                "--sha, --bucket_prefix or --allow-build-reuse (to fetch packages from build report) must be provided"
-            )
+            assert (
+                False
+            ), "--sha, --bucket_prefix or --allow-build-reuse (to fetch packages from build report) must be provided"
 
     if push:
         docker_login()
