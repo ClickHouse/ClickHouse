@@ -88,6 +88,9 @@ public:
 
     static void removeReplicatedFromSortingColumns(Input & input, const SortDescriptionWithPositions & description)
     {
+        if (!input.chunk)
+            return;
+
         size_t num_rows = input.chunk.getNumRows();
         auto columns = input.chunk.detachColumns();
         for (const auto & column_desc : description)

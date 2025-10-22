@@ -258,6 +258,58 @@ void ColumnIndex::callForIndexes(std::function<void(size_t, size_t)> && callback
     callForType(std::move(callback_for_type), size_of_type);
 }
 
+ColumnPtr ColumnIndex::removeUnusedRowsInIndexedData(const ColumnPtr & indexed_data)
+{
+    IColumn::Filter filter(indexed_data->size(), 0);
+    auto create_filter = [&](auto cur_type)
+    {
+        using CurIndexType = decltype(cur_type);
+        const auto & data = getIndexesData<CurIndexType>();
+        for (size_t i = 0; i != data.size(); ++i)
+            filter[data[i]] = 1;
+    };
+
+    callForType(std::move(create_filter), size_of_type);
+
+    size_t result_size_hint = 0;
+    auto reindex = [&](auto cur_type)
+    {
+        using CurIndexType = decltype(cur_type);
+        PaddedPODArray<CurIndexType> indexes_remapping(indexed_data->size());
+        size_t new_index = 0;
+        for (size_t i = 0; i != filter.size(); ++i)
+        {
+            if (filter[i])
+                indexes_remapping[i] = new_index++;
+        }
+        auto & data = getIndexesData<CurIndexType>();
+        for (size_t i = 0; i != data.size(); ++i)
+            data[i] = indexes_remapping[data[i]];
+
+        result_size_hint = new_index;
+    };
+
+    callForType(std::move(reindex), size_of_type);
+    return indexed_data->filter(filter, result_size_hint);
+}
+
+void ColumnIndex::getIndexesByMask(IColumn::Offsets & result_indexes, const PaddedPODArray<UInt8> & mask, size_t start, size_t end) const
+{
+    auto create_filter = [&](auto cur_type)
+    {
+        using CurIndexType = decltype(cur_type);
+        const auto & data = getIndexesData<CurIndexType>();
+        for (size_t i = start; i != end; ++i)
+        {
+            if (mask[data[i]])
+                result_indexes.push_back(i);
+        }
+    };
+
+    callForType(std::move(create_filter), size_of_type);
+}
+
+
 void ColumnIndex::insertIndexesRange(size_t start, size_t length)
 {
     size_t max_index = start + length - 1;

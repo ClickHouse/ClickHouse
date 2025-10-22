@@ -52,6 +52,11 @@ public:
         return Base::create(std::move(nested_column_), std::move(indexes_));
     }
 
+    static Ptr create(ColumnPtr & nested_column_, ColumnIndex && indexes_)
+    {
+        return Base::create(nested_column_->assumeMutable(), std::move(indexes_));
+    }
+
     bool isReplicated() const override { return true; }
     const char * getFamilyName() const override { return "Replicated"; }
     std::string getName() const override { return "Replicated(" + nested_column->getName() + ")"; }
@@ -195,8 +200,11 @@ public:
 private:
     WrappedPtr nested_column;
     ColumnIndex indexes;
+    UInt64 id;
 
-    std::unordered_map<const ColumnReplicated *, std::unordered_map<size_t, size_t>> insertion_cache;
+    std::unordered_map<UInt64, std::unordered_map<size_t, size_t>> insertion_cache;
+
+    static std::atomic<UInt64> global_id_counter;
 };
 
 ColumnPtr recursiveRemoveReplicated(const ColumnPtr & column);

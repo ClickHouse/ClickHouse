@@ -1371,9 +1371,9 @@ Chain InsertDependenciesBuilder::createSelect(StorageIDPrivate view_id) const
         }
     }
 
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    result.addSource(std::make_shared<DeduplicationToken::CheckTokenTransform>("Right after Inner query", output_header));
-#endif
+// #ifdef DEBUG_OR_SANITIZER_BUILD
+//     result.addSource(std::make_shared<DeduplicationToken::CheckTokenTransform>("Right after Inner query", output_header));
+// #endif
 
     auto counting = std::make_shared<CountingTransform>(output_header, insert_context->getQuota());
     counting->setProcessListElement(insert_context->getProcessListElement());
@@ -1413,9 +1413,9 @@ Chain InsertDependenciesBuilder::createSelect(StorageIDPrivate view_id) const
         result.addSource(std::move(executing_inner_query));
     }
 
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    result.addSource(std::make_shared<DeduplicationToken::CheckTokenTransform>("Right before Inner query", input_header));
-#endif
+// #ifdef DEBUG_OR_SANITIZER_BUILD
+//     result.addSource(std::make_shared<DeduplicationToken::CheckTokenTransform>("Right before Inner query", input_header));
+// #endif
 
     return result;
 }

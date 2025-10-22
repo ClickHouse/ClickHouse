@@ -12,8 +12,10 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+std::atomic<UInt64> ColumnReplicated::global_id_counter = 0;
+
 ColumnReplicated::ColumnReplicated(MutableColumnPtr && nested_column_)
-    : nested_column(std::move(nested_column_))
+    : nested_column(std::move(nested_column_)), id(global_id_counter.fetch_add(1))
 {
     indexes.insertIndexesRange(0, nested_column->size());
 }
@@ -21,12 +23,14 @@ ColumnReplicated::ColumnReplicated(MutableColumnPtr && nested_column_)
 ColumnReplicated::ColumnReplicated(MutableColumnPtr && nested_column_, MutableColumnPtr && indexes_)
     : nested_column(std::move(nested_column_))
     , indexes(std::move(indexes_))
+    , id(global_id_counter.fetch_add(1))
 {
 }
 
 ColumnReplicated::ColumnReplicated(MutableColumnPtr && nested_column_, ColumnIndex && indexes_)
     : nested_column(std::move(nested_column_))
     , indexes(std::move(indexes_))
+    , id(global_id_counter.fetch_add(1))
 {
 }
 
@@ -48,7 +52,9 @@ MutableColumnPtr ColumnReplicated::cloneResized(size_t new_size) const
         return create(std::move(new_nested_column), std::move(new_indexes));
     }
 
-    return create(mutate(nested_column), indexes.getIndexes()->cloneResized(new_size));
+    auto res = create(nested_column->cloneEmpty());
+    res->insertRangeFrom(*this, 0, new_size);
+    return res;
 }
 
 MutableColumnPtr ColumnReplicated::cloneEmpty() const
@@ -180,7 +186,7 @@ void ColumnReplicated::doInsertRangeFrom(const IColumn & src, size_t start, size
 
     if (const auto * src_replicated = typeid_cast<const ColumnReplicated *>(&src))
     {
-        auto & indexes_match = insertion_cache[src_replicated];
+        auto & indexes_match = insertion_cache[src_replicated->id];
         auto insert = [&](size_t, size_t src_index)
         {
             auto it = indexes_match.find(src_index);
@@ -228,7 +234,7 @@ void ColumnReplicated::doInsertFrom(const IColumn & src, size_t n)
 {
     if (const auto * src_replicated = typeid_cast<const ColumnReplicated *>(&src))
     {
-        auto & indexes_match = insertion_cache[src_replicated];
+        auto & indexes_match = insertion_cache[src_replicated->id];
         auto src_index = src_replicated->indexes.getIndexAt(n);
         auto it = indexes_match.find(src_index);
         if (it == indexes_match.end())
@@ -254,7 +260,7 @@ void ColumnReplicated::doInsertManyFrom(const IColumn & src, size_t n, size_t le
 {
     if (const auto * src_replicated = typeid_cast<const ColumnReplicated *>(&src))
     {
-        auto & indexes_match = insertion_cache[src_replicated];
+        auto & indexes_match = insertion_cache[src_replicated->id];
         auto src_index = src_replicated->indexes.getIndexAt(n);
         auto it = indexes_match.find(src_index);
         if (it == indexes_match.end())
@@ -287,6 +293,7 @@ void ColumnReplicated::insertManyDefaults(size_t length)
 void ColumnReplicated::popBack(size_t n)
 {
     indexes.popBack(n);
+    nested_column = indexes.removeUnusedRowsInIndexedData(std::move(nested_column));
 }
 
 ColumnPtr ColumnReplicated::filter(const Filter & filt, ssize_t result_size_hint) const
@@ -294,7 +301,9 @@ ColumnPtr ColumnReplicated::filter(const Filter & filt, ssize_t result_size_hint
     if (size() != filt.size())
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), size());
 
-    return create(nested_column, indexes.getIndexes()->filter(filt, result_size_hint));
+    auto filtered_indexes = ColumnIndex(indexes.getIndexes()->filter(filt, result_size_hint));
+    auto filtered_nested_column = filtered_indexes.removeUnusedRowsInIndexedData(nested_column);
+    return create(filtered_nested_column, std::move(filtered_indexes));
 }
 
 void ColumnReplicated::expand(const Filter & mask, bool inverted)
@@ -307,12 +316,16 @@ ColumnPtr ColumnReplicated::permute(const Permutation & perm, size_t limit) cons
     if (size() != perm.size())
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of permutation ({}) doesn't match size of column ({})", perm.size(), size());
 
-    return create(nested_column, indexes.getIndexes()->permute(perm, limit));
+    auto permuted_indexes = ColumnIndex(indexes.getIndexes()->permute(perm, limit));
+    auto filtered_nested_column = permuted_indexes.removeUnusedRowsInIndexedData(nested_column);
+    return create(filtered_nested_column, std::move(permuted_indexes));
 }
 
 ColumnPtr ColumnReplicated::index(const IColumn & res_indexes, size_t limit) const
 {
-    return create(nested_column, indexes.getIndexes()->index(res_indexes, limit));
+    auto indexed_indexes = ColumnIndex(indexes.getIndexes()->index(res_indexes, limit));
+    auto filtered_nested_column = indexed_indexes.removeUnusedRowsInIndexedData(nested_column);
+    return create(filtered_nested_column, std::move(indexed_indexes));
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -484,7 +497,9 @@ void ColumnReplicated::protect()
 
 ColumnPtr ColumnReplicated::replicate(const Offsets & offsets) const
 {
-    return create(nested_column, indexes.getIndexes()->replicate(offsets));
+    auto replicated_indexes = ColumnIndex(indexes.getIndexes()->replicate(offsets));
+    auto filtered_nested_column = replicated_indexes.removeUnusedRowsInIndexedData(nested_column);
+    return create(filtered_nested_column, std::move(replicated_indexes));
 }
 
 void ColumnReplicated::updateHashWithValue(size_t n, SipHash & hash) const
@@ -512,23 +527,12 @@ void ColumnReplicated::getExtremes(Field & min, Field & max) const
 
 void ColumnReplicated::getIndicesOfNonDefaultRows(Offsets & result_indexes, size_t from, size_t limit) const
 {
-    std::unordered_set<size_t> indexes_of_default_values;
+    PaddedPODArray<UInt8> default_values_mask(nested_column->size());
     for (size_t i = 0; i != nested_column->size(); ++i)
-    {
-        if (nested_column->isDefaultAt(i))
-            indexes_of_default_values.insert(i);
-    }
+        default_values_mask[i] = !nested_column->isDefaultAt(i);
 
     size_t to = limit && from + limit < size() ? from + limit : size();
-    result_indexes.reserve_exact(result_indexes.size() + to - from);
-
-    auto insert = [&](size_t row, size_t index)
-    {
-        if (!indexes_of_default_values.contains(index))
-            result_indexes.push_back(row);
-    };
-
-    indexes.callForIndexes(std::move(insert), from, to);
+    indexes.getIndexesByMask(result_indexes, default_values_mask, from, to);
 }
 
 UInt64 ColumnReplicated::getNumberOfDefaultRows() const

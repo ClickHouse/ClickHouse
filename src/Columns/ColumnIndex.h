@@ -29,6 +29,7 @@ public:
     void popBack(size_t n) { indexes->popBack(n); }
     void reserve(size_t n) { indexes->reserve(n); }
     void resizeAssumeReserve(size_t n);
+    size_t size() const { return indexes->size(); }
     size_t capacity() const { return indexes->capacity(); }
     void shrinkToFit() { indexes->shrinkToFit(); }
 
@@ -51,6 +52,10 @@ public:
     void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const PaddedPODArray<UInt64> & dict_sizes) const;
 
     void callForIndexes(std::function<void(size_t, size_t)> && callback, size_t start, size_t end) const;
+
+    ColumnPtr removeUnusedRowsInIndexedData(const ColumnPtr & indexed_data);
+
+    void getIndexesByMask(IColumn::Offsets & result_indexes, const PaddedPODArray<UInt8> & mask, size_t start, size_t end) const;
 
 private:
     template <typename Callback>

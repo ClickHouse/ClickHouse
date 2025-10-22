@@ -492,6 +492,20 @@ void IColumnHelper<Derived, Parent>::getIndicesOfNonDefaultRows(IColumn::Offsets
 template <bool row_refs_are_ranges, typename ColumnType>
 static void fillColumnFromRowRefs(ColumnType * col, const DataTypePtr & type, const size_t source_column_index_in_block, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, bool source_columns_might_be_replicated)
 {
+    bool is_source_column_replicated = false;
+    if (source_columns_might_be_replicated)
+    {
+        for (const UInt64 * row_ref = row_refs_begin; row_ref != row_refs_end; ++row_ref)
+        {
+            if (*row_ref)
+            {
+                const RowRefList * row_ref_list = reinterpret_cast<const RowRefList *>(*row_ref);
+                is_source_column_replicated = (*row_ref_list->columns)[source_column_index_in_block]->isReplicated();
+                break;
+            }
+        }
+    }
+
     for (const UInt64 * row_ref = row_refs_begin; row_ref != row_refs_end; ++row_ref)
     {
         if (*row_ref)
@@ -501,7 +515,7 @@ static void fillColumnFromRowRefs(ColumnType * col, const DataTypePtr & type, co
             {
                 row_ref_list->assertIsRange();
                 const auto & source_column = (*row_ref_list->columns)[source_column_index_in_block];
-                if (source_columns_might_be_replicated && source_column->isReplicated())
+                if (is_source_column_replicated)
                 {
                     const auto & source_replicated = assert_cast<const ColumnReplicated &>(*source_column);
                     const auto & source_nested_column = source_replicated.getNestedColumn();
@@ -516,20 +530,13 @@ static void fillColumnFromRowRefs(ColumnType * col, const DataTypePtr & type, co
             }
             else
             {
-                if (source_columns_might_be_replicated)
+                if (is_source_column_replicated)
                 {
                     for (auto it = row_ref_list->begin(); it.ok(); ++it)
                     {
                         const auto & source_column = (*it->columns)[source_column_index_in_block];
-                        if (source_column->isReplicated())
-                        {
-                            const auto & source_replicated = assert_cast<const ColumnReplicated &>(*source_column);
-                            col->insertFrom(*source_replicated.getNestedColumn(), source_replicated.getIndexes().getIndexAt(it->row_num));
-                        }
-                        else
-                        {
-                            col->insertFrom(*source_column, it->row_num);
-                        }
+                        const auto & source_replicated = assert_cast<const ColumnReplicated &>(*source_column);
+                        col->insertFrom(*source_replicated.getNestedColumn(), source_replicated.getIndexes().getIndexAt(it->row_num));
                     }
                 }
                 else
@@ -570,12 +577,25 @@ template <typename ColumnType>
 static void fillColumnFromBlocksAndRowNumbers(ColumnType * col, const DataTypePtr & type, size_t source_column_index_in_block, const std::vector<const Columns *> & columns, const std::vector<UInt32> & row_nums, bool source_columns_might_be_replicated)
 {
     chassert(columns.size() == row_nums.size());
+    bool is_source_column_replicated = false;
+    if (source_columns_might_be_replicated)
+    {
+        for (size_t j = 0; j < columns.size(); ++j)
+        {
+            if (columns[j])
+            {
+                is_source_column_replicated = (*columns[j])[source_column_index_in_block]->isReplicated();
+                break;
+            }
+        }
+    }
+
     col->reserve(col->size() + columns.size());
     for (size_t j = 0; j < columns.size(); ++j)
     {
         if (columns[j])
         {
-            if (source_columns_might_be_replicated && (*columns[j])[source_column_index_in_block]->isReplicated())
+            if (is_source_column_replicated)
             {
                 const auto & source_replicated = assert_cast<const ColumnReplicated &>(*(*columns[j])[source_column_index_in_block]);
                 col->insertFrom(*source_replicated.getNestedColumn(), source_replicated.getIndexes().getIndexAt(row_nums[j]));
