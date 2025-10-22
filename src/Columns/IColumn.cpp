@@ -580,11 +580,11 @@ static void fillColumnFromBlocksAndRowNumbers(ColumnType * col, const DataTypePt
     bool is_source_column_replicated = false;
     if (source_columns_might_be_replicated)
     {
-        for (size_t j = 0; j < columns.size(); ++j)
+        for (auto columns_list : columns)
         {
-            if (columns[j])
+            if (columns_list)
             {
-                is_source_column_replicated = (*columns[j])[source_column_index_in_block]->isReplicated();
+                is_source_column_replicated = (*columns_list)[source_column_index_in_block]->isReplicated();
                 break;
             }
         }

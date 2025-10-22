@@ -475,6 +475,8 @@ ColumnPtr IExecutableFunction::execute(
         {
             if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(argument.column.get()))
                 argument.column = column_replicated->getNestedColumn();
+            else if (const auto * column_const = checkAndGetColumn<ColumnConst>(argument.column.get()))
+                argument.column = ColumnConst::create(column_const->getDataColumnPtr(), nested_column_size);
         }
 
         auto result = executeWithoutReplicatedColumns(arguments_without_replicated, result_type, nested_column_size, dry_run);
