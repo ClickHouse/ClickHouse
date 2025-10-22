@@ -203,6 +203,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int INCORRECT_QUERY;
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_CREATE_DIRECTORY;
 }
 
 namespace FailPoints
@@ -2039,8 +2040,6 @@ void executeQuery(
                 ? getIdentifierName(ast_query_with_output->format_ast)
                 : context->getDefaultFormat();
 
-            LOG_INFO(getLogger("executeQuery"), "Atleast inside the else if of function");
-
             WriteBuffer * out_buf = &ostr;
             if (ast_query_with_output && ast_query_with_output->out_file)
             {
@@ -2050,19 +2049,27 @@ void executeQuery(
                 const auto & out_file = typeid_cast<const ASTLiteral &>(*ast_query_with_output->out_file).value.safeGet<std::string>();
 
                 const bool should_create_dirs = context->getSettingsRef()[Setting::into_outfile_create_parent_directories];
-                LOG_INFO(getLogger("executeQuery"), "INTO OUTFILE: file='{}', create_parent_directories={}", out_file, should_create_dirs);
+                LOG_DEBUG(getLogger("executeQuery"), "INTO OUTFILE: file='{}', create_parent_directories={}", out_file, should_create_dirs);
 
                 if (should_create_dirs)
                 {
                     std::filesystem::path file_path(out_file);
                     std::filesystem::path parent_dir = file_path.parent_path();
-                    LOG_INFO(getLogger("executeQuery"), "Parent directory: '{}', exists={}", parent_dir.string(), std::filesystem::exists(parent_dir));
-
+                    
                     if (!parent_dir.empty() && !std::filesystem::exists(parent_dir))
                     {
-                        LOG_INFO(getLogger("executeQuery"), "Creating directories: '{}'", parent_dir.string());
-                        std::filesystem::create_directories(parent_dir);
-                        LOG_INFO(getLogger("executeQuery"), "Successfully created directories");
+                        try
+                        {
+                            LOG_DEBUG(getLogger("executeQuery"), "Creating parent directories for INTO OUTFILE: '{}'", parent_dir.string());
+                            std::filesystem::create_directories(parent_dir);
+                            LOG_DEBUG(getLogger("executeQuery"), "Successfully created directories: '{}'", parent_dir.string());
+                        }
+                        catch (const std::filesystem::filesystem_error & e)
+                        {
+                            throw Exception(ErrorCodes::CANNOT_CREATE_DIRECTORY, 
+                                "Cannot create parent directories for INTO OUTFILE '{}': {}", 
+                                parent_dir.string(), e.what());
+                        }
                     }
                 }
 
