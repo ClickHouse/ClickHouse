@@ -465,16 +465,6 @@ namespace
         auto quota = std::make_shared<Quota>();
         quota->setName(quota_name);
 
-        String quota_config = "quotas." + quota_name;
-        if (config.has(quota_config + ".keyed_by_ip"))
-            quota->key_type = QuotaKeyType::IP_ADDRESS;
-        else if (config.has(quota_config + ".keyed_by_forwarded_ip"))
-            quota->key_type = QuotaKeyType::FORWARDED_IP_ADDRESS;
-        else if (config.has(quota_config + ".keyed"))
-            quota->key_type = QuotaKeyType::CLIENT_KEY_OR_USER_NAME;
-        else
-            quota->key_type = QuotaKeyType::USER_NAME;
-
         auto parse_prefix_bits = [&](const String & path, UInt8 max_bits) -> std::optional<MaskBits>
         {
             if (!config.has(path))
@@ -484,13 +474,23 @@ namespace
             if (raw_value > max_bits)
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
-                    "Quota {}: {} must be between 0 and {}", quota_name, path, max_bits);
+                    "Quota {}: {} must be between 0 and {}", quota_name, path, static_cast<unsigned>(max_bits));
 
             return MaskBits{static_cast<UInt8>(raw_value)};
         };
 
-        const auto quota_ipv4_prefix = parse_prefix_bits(quota_config + ".ipv4_prefix_bits", 32);
-        const auto quota_ipv6_prefix = parse_prefix_bits(quota_config + ".ipv6_prefix_bits", 128);
+        String quota_config = "quotas." + quota_name;
+        if (config.has(quota_config + ".keyed_by_ip")) {
+            quota->key_type = QuotaKeyType::IP_ADDRESS;
+            quota->ipv4_prefix_bits = parse_prefix_bits(quota_config + ".ipv4_prefix_bits", 32);
+            quota->ipv6_prefix_bits = parse_prefix_bits(quota_config + ".ipv6_prefix_bits", 128);
+        }
+        else if (config.has(quota_config + ".keyed_by_forwarded_ip"))
+            quota->key_type = QuotaKeyType::FORWARDED_IP_ADDRESS;
+        else if (config.has(quota_config + ".keyed"))
+            quota->key_type = QuotaKeyType::CLIENT_KEY_OR_USER_NAME;
+        else
+            quota->key_type = QuotaKeyType::USER_NAME;
 
         Poco::Util::AbstractConfiguration::Keys interval_keys;
         config.keys(quota_config, interval_keys);
@@ -518,8 +518,6 @@ namespace
                     limits.max[static_cast<size_t>(quota_type)] = type_info.stringToValue(value);
             }
         }
-        quota->ipv4_prefix_bits = quota_ipv4_prefix;
-        quota->ipv6_prefix_bits = quota_ipv6_prefix;
 
         quota->to_roles.add(user_ids);
         return quota;
