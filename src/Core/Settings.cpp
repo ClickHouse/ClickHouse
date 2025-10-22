@@ -2069,7 +2069,7 @@ Write exception in output format to produce valid output. Works with JSON and XM
 The number of bytes to buffer in the server memory before sending a HTTP response to the client or flushing to disk (when http_wait_end_of_query is enabled).
 )", 0) \
     DECLARE(Bool, http_exception_tagging, false, R"(
-Enable exception tagging mechanism for HTTP interface. When enabled, each response from the server includes X-ClickHouse-Exception-Tag header with a random token, and exceptions in the body of the response are maked with tagged markers for the efficient and uniform client side detection. Default false (disabled).
+Enable exception tagging mechanism for HTTP interface. When enabled, each response from the server includes X-ClickHouse-Exception-Tag header with a random token, and exceptions in the body of the response are marked with tagged markers for the efficient and uniform client side detection. Default false (disabled).
 )", 0) \
     \
     DECLARE(Bool, fsync_metadata, true, R"(

@@ -251,7 +251,7 @@ bool WriteBufferFromHTTPServerResponse::cancelWithException(HTTPServerRequest & 
             discarded_data = rejectBufferedDataSave();
 
         bool is_response_sent = response.sent();
-        // proper senging bad http code
+        // proper sending bad http code
         if (!is_response_sent)
         {
             drainRequestIfNeeded(request, response);
@@ -329,7 +329,7 @@ bool WriteBufferFromHTTPServerResponse::cancelWithException(HTTPServerRequest & 
 
             auto & out = use_compression_buffer ? *compression_buffer : *this;
 
-            if(exception_tagging_enabled)
+            if (exception_tagging_enabled)
             {
                 // Write the exception block in response in new format as follows
                 // __exception__<TAG>
@@ -337,6 +337,7 @@ bool WriteBufferFromHTTPServerResponse::cancelWithException(HTTPServerRequest & 
                 // <message_length> <TAG>__exception__
 
                 writeString(EXCEPTION_MARKER, out);
+                writeCString("\r\n", out);
                 writeString(exception_tag, out);
                 writeCString("\r\n", out);
 
@@ -351,11 +352,13 @@ bool WriteBufferFromHTTPServerResponse::cancelWithException(HTTPServerRequest & 
                 writeIntText(limited_message.size() + (limited_message.ends_with('\n') ? 0 : 1), out);
                 writeChar(' ', out);
                 writeString(exception_tag, out);
+                writeCString("\r\n", out);
                 writeString(EXCEPTION_MARKER, out);
                 writeCString("\r\n", out);
 
             }
-            else {
+            else
+            {
                 writeString(EXCEPTION_MARKER, out);
                 writeCString("\r\n", out);
                 writeString(message, out);
