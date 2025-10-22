@@ -533,9 +533,9 @@ std::optional<String> optimizeUseAggregateProjections(
 {
     if (node.children.size() != 1)
         return {};
-      
+
     auto * aggregating = typeid_cast<AggregatingStep *>(node.step.get());
-    
+
     auto * distinct = typeid_cast<DistinctStep *>(node.step.get());
 
     /// In the event there is DISTINCT but no GROUP BY, we still want to use aggregate projections.
