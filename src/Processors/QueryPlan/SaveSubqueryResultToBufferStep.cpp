@@ -9,6 +9,13 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+
+extern const int NOT_IMPLEMENTED;
+
+}
+
 namespace
 {
 
@@ -64,5 +71,10 @@ void SaveSubqueryResultToBufferStep::transformPipeline(QueryPipelineBuilder & pi
 CommonSubplanStep::CommonSubplanStep(const SharedHeader & header_)
     : ITransformingStep(header_, header_, getTraits())
 {}
+
+void CommonSubplanStep::transformPipeline(QueryPipelineBuilder &, const BuildQueryPipelineSettings &)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Subplan cannot be used to build pipeline");
+}
 
 }

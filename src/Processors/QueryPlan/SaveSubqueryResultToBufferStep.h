@@ -54,10 +54,7 @@ public:
 
     String getName() const override { return "CommonSubplan"; }
 
-    void transformPipeline(QueryPipelineBuilder &, const BuildQueryPipelineSettings &) override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Subplan cannot be used to build pipeline");
-    }
+    void transformPipeline(QueryPipelineBuilder &, const BuildQueryPipelineSettings &) override;
 
     void updateOutputHeader() override
     {

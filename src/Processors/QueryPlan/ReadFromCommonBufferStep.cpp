@@ -7,6 +7,13 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+
+extern const int NOT_IMPLEMENTED;
+
+}
+
 ReadFromCommonBufferStep::ReadFromCommonBufferStep(
     const SharedHeader & header_,
     ChunkBufferPtr chunk_buffer_,
@@ -27,6 +34,11 @@ void ReadFromCommonBufferStep::initializePipeline(QueryPipelineBuilder & pipelin
     }
 
     pipeline.init(Pipe::unitePipes(std::move(pipes)));
+}
+
+void CommonSubplanReferenceStep::initializePipeline(QueryPipelineBuilder &, const BuildQueryPipelineSettings &)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "CommonSubplanReference cannot be used to build pipeline");
 }
 
 }

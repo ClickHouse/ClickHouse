@@ -1,14 +1,20 @@
-#include <memory>
+#include <Common/typeid_cast.h>
+#include <Planner/Utils.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
-#include "Common/typeid_cast.h"
-#include "Interpreters/ActionsDAG.h"
-#include "Planner/Utils.h"
-#include "Processors/QueryPlan/ExpressionStep.h"
-#include "Processors/QueryPlan/QueryPlan.h"
-#include "Processors/QueryPlan/ReadFromCommonBufferStep.h"
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/ReadFromCommonBufferStep.h>
+
+#include <memory>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+
+extern const int LOGICAL_ERROR;
+
+}
 
 namespace QueryPlanOptimizations
 {

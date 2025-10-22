@@ -37,10 +37,7 @@ public:
 
     String getName() const override { return "CommonSubplanReference"; }
 
-    void initializePipeline(QueryPipelineBuilder &, const BuildQueryPipelineSettings &) override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "CommonSubplanReference cannot be used to build pipeline");
-    }
+    void initializePipeline(QueryPipelineBuilder &, const BuildQueryPipelineSettings &) override;
 
     QueryPlanStepPtr clone() const override
     {
