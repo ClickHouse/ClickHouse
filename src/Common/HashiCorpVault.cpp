@@ -105,6 +105,10 @@ String HashiCorpVault::readSecret(const String & secret, const String & key)
 
         return value;
     }
+    catch (const Exception &)
+    {
+        throw;
+    }
     catch (const Poco::Exception &)
     {
         throw Exception(ErrorCodes::INVALID_JSON_STRUCTURE, "Invalid JSON structure in response from vault.");
