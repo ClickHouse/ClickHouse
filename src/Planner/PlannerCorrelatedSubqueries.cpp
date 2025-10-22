@@ -196,36 +196,6 @@ struct DecorrelationContext
     std::vector<EquivalenceClasses> equivalence_class_stack;
 };
 
-namespace
-{
-
-void projectCorrelatedColumns(
-    QueryPlan & query_plan,
-    const ColumnIdentifiers & correlated_column_identifiers)
-{
-    ActionsDAG project_only_correlated_columns_actions;
-
-    NameSet correlated_column_identifiers_set(correlated_column_identifiers.begin(), correlated_column_identifiers.end());
-
-    const auto & lhs_plan_header = query_plan.getCurrentHeader();
-
-    auto & outputs = project_only_correlated_columns_actions.getOutputs();
-    for (const auto & column : lhs_plan_header->getColumnsWithTypeAndName())
-    {
-        const auto * input_node = &project_only_correlated_columns_actions.addInput(column);
-        if (correlated_column_identifiers_set.contains(column.name))
-        {
-            outputs.push_back(input_node);
-        }
-    }
-
-    query_plan.addStep(std::make_unique<ExpressionStep>(
-        lhs_plan_header,
-        std::move(project_only_correlated_columns_actions)));
-}
-
-}
-
 /// Correlated subquery is represented by implicit dependent join operator.
 /// This function builds a query plan to evaluate correlated subquery by
 /// pushing dependent join down and replacing it with CROSS JOIN.
@@ -287,38 +257,17 @@ QueryPlan decorrelateQueryPlan(
         QueryPlan rhs_plan;
 
         auto default_join_kind = settings[Setting::correlated_subqueries_default_join_kind];
-        if (settings[Setting::correlated_subqueries_use_input_buffer] && default_join_kind == DecorrelationJoinKind::RIGHT)
-        {
-            ColumnsDescription columns_description;
-            for (const auto & correlated_column_identifier : context.correlated_subquery.correlated_column_identifiers)
-            {
-                const auto column = context.query_plan.getCurrentHeader()->getByName(correlated_column_identifier);
-                columns_description.add(ColumnDescription(column.name, column.type));
-            }
+        context.query_plan.addStep(std::make_unique<CommonSubplanStep>(context.query_plan.getCurrentHeader()));
 
-            /// Save the correlated subquery input stream to the temporary table.
-            auto buffer = std::make_shared<ChunkBuffer>();
-            context.query_plan.addStep(std::make_unique<SaveSubqueryResultToBufferStep>(
-                context.query_plan.getCurrentHeader(),
-                context.correlated_subquery.correlated_column_identifiers,
-                buffer));
+        auto buffer_header = std::make_shared<Block>();
+        for (const auto & column : context.correlated_subquery.correlated_column_identifiers)
+            buffer_header->insert(context.query_plan.getCurrentHeader()->getByName(column));
 
-            size_t max_streams = settings[Setting::max_threads];
-
-            auto buffer_header = std::make_shared<Block>();
-            for (const auto & column : context.correlated_subquery.correlated_column_identifiers)
-            {
-                buffer_header->insert(context.query_plan.getCurrentHeader()->getByName(column));
-            }
-
-            rhs_plan.addStep(std::make_unique<ReadFromCommonBufferStep>(buffer_header, buffer, max_streams));
-        }
-        else
-        {
-            rhs_plan = context.query_plan.clone();
-            /// Remove all columns except used in correlated subquery.
-            projectCorrelatedColumns(rhs_plan, context.correlated_subquery.correlated_column_identifiers);
-        }
+        rhs_plan.addStep(std::make_unique<CommonSubplanReferenceStep>(
+            buffer_header,
+            context.query_plan.getRootNode(),
+            context.correlated_subquery.correlated_column_identifiers));
+        rhs_plan.getRootNode()->step->setStepDescription("Input for " + context.correlated_subquery.action_node_name, 100);
 
         if (default_join_kind == DecorrelationJoinKind::LEFT)
             std::swap(lhs_plan, rhs_plan);

@@ -45,4 +45,29 @@ private:
     ChunkBufferPtr chunk_buffer;
 };
 
+class CommonSubplanStep : public ITransformingStep
+{
+public:
+    explicit CommonSubplanStep(const SharedHeader & header_);
+
+    CommonSubplanStep(const CommonSubplanStep &) = default;
+
+    String getName() const override { return "CommonSubplan"; }
+
+    void transformPipeline(QueryPipelineBuilder &, const BuildQueryPipelineSettings &) override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Subplan cannot be used to build pipeline");
+    }
+
+    void updateOutputHeader() override
+    {
+        output_header = input_headers.front();
+    }
+
+    QueryPlanStepPtr clone() const override
+    {
+        return std::make_unique<CommonSubplanStep>(*this);
+    }
+};
+
 }

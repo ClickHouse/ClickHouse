@@ -61,4 +61,8 @@ void SaveSubqueryResultToBufferStep::transformPipeline(QueryPipelineBuilder & pi
         });
 }
 
+CommonSubplanStep::CommonSubplanStep(const SharedHeader & header_)
+    : ITransformingStep(header_, header_, getTraits())
+{}
+
 }

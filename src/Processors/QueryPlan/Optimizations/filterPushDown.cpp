@@ -784,6 +784,9 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
     if (auto updated_steps = simplePushDownOverStep<SaveSubqueryResultToBufferStep>(parent_node, false, nodes, child))
         return updated_steps;
 
+    if (auto updated_steps = simplePushDownOverStep<CommonSubplanStep>(parent_node, false, nodes, child))
+        return updated_steps;
+
     return 0;
 }
 
