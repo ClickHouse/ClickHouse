@@ -775,7 +775,7 @@ hasAnyTokens(input, ['needle1', 'needle2', ..., 'needleN'])
 - `needles` — Tokens to be searched. Supports at most 64 tokens. [Array](../data-types/array.md)([String](../data-types/string.md)).
 
 :::note
-Column `input` must have a [text index][../../engines/table-engines/mergetree-family/invertedindexes.md].
+Column `input` must have a [text index](../../engines/table-engines/mergetree-family/invertedindexes.md).
 :::
 
 The `input` string is tokenized by the tokenizer from the index definition.
@@ -848,7 +848,7 @@ hasAllTokens(input, ['needle1', 'needle2', ..., 'needleN'])
 - `needles` — Tokens to be searched. Supports at most 64 tokens. [Array](../data-types/array.md)([String](../data-types/string.md)).
 
 :::note
-Column `input` must have a [text index][../../engines/table-engines/mergetree-family/invertedindexes.md].
+Column `input` must have a [text index](../../engines/table-engines/mergetree-family/invertedindexes.md).
 :::
 
 The `input` string is tokenized by the tokenizer from the index definition.

@@ -356,6 +356,8 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
         }
         case ReadStage::MainData:
         {
+            row_subgroup.stage.store(ReadStage::Deliver, std::memory_order::relaxed);
+
             /// Must add to delivery_queue before advancing read_ptr to deliver subgroups in order.
             /// (If we advanced read_ptr first, another thread could start and finish reading the
             ///  next subgroup before we add this one to delivery_queue, and ReadManager::read could
@@ -368,7 +370,6 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
             size_t prev = row_group.read_ptr.exchange(row_subgroup_idx + 1);
             chassert(prev == row_subgroup_idx);
             advanced_read_ptr = prev + 1;
-            row_subgroup.stage.store(ReadStage::Deliver, std::memory_order::relaxed);
             delivery_cv.notify_one();
             break; // proceed to advancing read_ptr
         }

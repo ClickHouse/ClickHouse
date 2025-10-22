@@ -82,7 +82,7 @@ bool isStringOrArrayOfStringType(const IDataType & type)
     if (array_type)
     {
         const DataTypePtr & nested_type = array_type->getNestedType();
-        return isString(nested_type) || isFixedString(nested_type) || isNothing(nested_type);
+        return isString(nested_type) || isNothing(nested_type);
     }
 
     return false;
@@ -144,10 +144,10 @@ void executeHasAnyTokens(
 {
     for (size_t i = 0; i < input_rows_count; ++i)
     {
-        std::string_view value = col_input.getDataAt(i).toView();
+        std::string_view input = col_input.getDataAt(i).toView();
         col_result[i] = false;
 
-        forEachTokenPadded(*token_extractor, value.data(), value.size(), [&](const char * token_start, size_t token_len)
+        forEachTokenPadded(*token_extractor, input.data(), input.size(), [&](const char * token_start, size_t token_len)
         {
             if (needles.contains(std::string_view(token_start, token_len)))
             {
@@ -174,11 +174,11 @@ void executeHasAllTokens(
     UInt64 mask;
     for (size_t i = 0; i < input_rows_count; ++i)
     {
-        std::string_view value = col_input.getDataAt(i).toView();
+        std::string_view input = col_input.getDataAt(i).toView();
         col_result[i] = false;
         mask = 0;
 
-        forEachTokenPadded(*token_extractor, value.data(), value.size(), [&](const char * token_start, size_t token_len)
+        forEachTokenPadded(*token_extractor, input.data(), input.size(), [&](const char * token_start, size_t token_len)
         {
             if (auto it = needles.find(std::string_view(token_start, token_len)); it != needles.end())
             {

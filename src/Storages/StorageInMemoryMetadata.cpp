@@ -808,11 +808,12 @@ std::unordered_map<std::string, ColumnSize> StorageInMemoryMetadata::getFakeColu
     return sizes;
 }
 
-NameSet StorageInMemoryMetadata::getColumnsWithoutDefaultExpressions() const
+NameSet StorageInMemoryMetadata::getColumnsWithoutDefaultExpressions(const NamesAndTypesList & exclude) const
 {
+    auto exclude_map = exclude.getNameToTypeMap();
     NameSet names;
     for (const auto & col : columns)
-        if (!col.default_desc.expression)
+        if (!col.default_desc.expression && !exclude_map.contains(col.name))
             names.insert(col.name);
     return names;
 }

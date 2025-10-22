@@ -4,7 +4,6 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ITokenExtractor.h>
 #include <absl/container/flat_hash_map.h>
-#include <base/StringRef.h>
 
 namespace DB
 {

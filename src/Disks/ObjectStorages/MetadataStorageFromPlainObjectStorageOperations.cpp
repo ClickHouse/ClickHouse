@@ -27,6 +27,7 @@ extern const int FILE_DOESNT_EXIST;
 extern const int FILE_ALREADY_EXISTS;
 extern const int INCORRECT_DATA;
 extern const int FAULT_INJECTED;
+extern const int LOGICAL_ERROR;
 };
 
 namespace FailPoints
@@ -48,6 +49,28 @@ ObjectStorageKey createMetadataObjectKey(const std::string & object_key_prefix, 
     auto prefix = std::filesystem::path(metadata_key_prefix) / object_key_prefix;
     return ObjectStorageKey::createAsRelative(prefix.string(), PREFIX_PATH_FILE_NAME);
 }
+
+std::vector<std::string> listDirectoryRecursive(const InMemoryDirectoryPathMap & path_map, const std::string & root)
+{
+    std::vector<std::string> subdirs = {""};
+    std::queue<std::string> unlisted_nodes;
+    unlisted_nodes.push(root);
+
+    while (!unlisted_nodes.empty())
+    {
+        std::string next_to_list = std::move(unlisted_nodes.front());
+        unlisted_nodes.pop();
+
+        for (const auto & child : path_map.listSubdirectories(next_to_list))
+        {
+            subdirs.push_back((next_to_list + child).substr(root.size()));
+            unlisted_nodes.push(next_to_list + child);
+        }
+    }
+
+    return subdirs;
+}
+
 }
 
 MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::MetadataStorageFromPlainObjectStorageCreateDirectoryOperation(
@@ -182,23 +205,7 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::executeMoveImp
 {
     LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageMoveDirectoryOperation"), "Moving directory '{}' to '{}'", from, to);
 
-    std::vector<std::string> subdirs = {""};
-    std::queue<std::string> unlisted_nodes;
-    unlisted_nodes.push(from);
-
-    while (!unlisted_nodes.empty())
-    {
-        std::string next_to_list = std::move(unlisted_nodes.front());
-        unlisted_nodes.pop();
-
-        for (const auto & child : path_map.listSubdirectories(next_to_list))
-        {
-            subdirs.push_back((next_to_list + child).substr(from.string().size()));
-            unlisted_nodes.push(next_to_list + child);
-        }
-    }
-
-    for (const auto & subdir : subdirs)
+    for (const auto & subdir : listDirectoryRecursive(path_map, from))
     {
         auto sub_path_to = to / subdir;
         auto sub_path_from = from / subdir;
@@ -559,4 +566,86 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::finalize()
     if (moved_existing_target_file)
         object_storage->removeObjectIfExists(StoredObject(tmp_remote_path_to));
 }
+
+MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation(
+    /// path_ must end with a trailing '/'.
+    std::filesystem::path && path_,
+    InMemoryDirectoryPathMap & path_map_,
+    ObjectStoragePtr object_storage_,
+    ObjectMetadataCachePtr object_metadata_cache_,
+    const std::string & metadata_key_prefix_)
+    : path(std::move(path_))
+    , path_map(path_map_)
+    , object_storage(std::move(object_storage_))
+    , object_metadata_cache(std::move(object_metadata_cache_))
+    , metadata_key_prefix(metadata_key_prefix_)
+    , log(getLogger("MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation"))
+{
+    std::string base_path = path;
+    if (base_path.ends_with('/'))
+        base_path.pop_back();
+
+    path = base_path;
+    tmp_path = "remove_recursive." + getRandomASCIIString(16);
+    move_to_tmp_op = std::make_unique<MetadataStorageFromPlainObjectStorageMoveDirectoryOperation>(path / "", tmp_path / "", path_map, object_storage, metadata_key_prefix);
+}
+
+void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::execute()
+{
+    if (path_map.existsLocalPath(path))
+    {
+        move_tried = true;
+        move_to_tmp_op->execute();
+    }
+}
+
+void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::undo()
+{
+    if (move_tried)
+    {
+        move_to_tmp_op->undo();
+    }
+}
+
+void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::finalize()
+{
+    if (!move_tried)
+        return;
+
+    StoredObjects objects_to_remove;
+    for (const auto & subdir : listDirectoryRecursive(path_map, tmp_path / ""))
+    {
+        auto subdir_path = tmp_path / subdir;
+        LOG_TRACE(log, "Removing directory '{}'", subdir_path);
+
+        /// Info should exist since it's lifetime is bounded to execution of this operation, because tmp path is unique.
+        auto directory_info = path_map.getRemotePathInfoIfExists(subdir_path.parent_path()).value();
+        auto metadata_object_key = createMetadataObjectKey(directory_info.path, metadata_key_prefix);
+        objects_to_remove.emplace_back(metadata_object_key.serialize(), path / PREFIX_PATH_FILE_NAME);
+
+        /// We also need to remove all files inside each of the subdirectories.
+        for (const auto & file : path_map.listFiles(subdir_path))
+        {
+            auto file_path = subdir_path / file;
+            LOG_TRACE(log, "Removing file '{}'", file_path);
+
+            auto file_object_key = object_storage->generateObjectKeyForPath(file_path, std::nullopt).serialize();
+            objects_to_remove.emplace_back(file_object_key, file_path);
+
+            if (object_metadata_cache)
+            {
+                SipHash hash;
+                hash.update(file_object_key);
+                object_metadata_cache->remove(hash.get128());
+            }
+        }
+
+        const bool is_removed = path_map.removePathIfExists(subdir_path.parent_path());
+        if (!is_removed)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't remove '{}' path from in memory map. Probably it does not exist. It is a bug.", subdir_path);
+    }
+
+    object_storage->removeObjectsIfExist(objects_to_remove);
+}
+
 }
