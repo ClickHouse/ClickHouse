@@ -113,7 +113,7 @@ private:
 
     /// Sorted unique tokens from all RPN elements.
     std::vector<String> all_search_tokens;
-    /// Search qieries from all RPN elements.s
+    /// Search queries from all RPN elements
     std::unordered_map<UInt128, TextSearchQueryPtr> all_search_queries;
     /// Mapping from virtual column (optimized for direct read from text index) to search query.
     std::unordered_map<String, TextSearchQueryPtr> virtual_column_to_search_query;
