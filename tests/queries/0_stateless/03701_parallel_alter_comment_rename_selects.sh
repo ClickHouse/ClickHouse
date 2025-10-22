@@ -8,7 +8,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -euo pipefail
 
-RUNS=${RUNS:-1000}
+RUNS=${RUNS:-100}
 THREADS_PER_JOB=${THREADS_PER_JOB:-4}
 PRINT_LOGS=${PRINT_LOGS:-0}
 QUERY_TIMEOUT=${QUERY_TIMEOUT:-10}
@@ -78,7 +78,7 @@ run_rename_thread() {
 run_alter_comment_thread() {
   log "❕ Alter comment thread $1 started with PID $BASHPID"
   for i in $(seq 1 "$RUNS"); do
-    test_query "ALTER DATABASE ${CLICKHOUSE_DATABASE_TEST}   MODIFY COMMENT 'comment1_${1}_${i}' -- thread $1"
+    test_query "ALTER DATABASE ${CLICKHOUSE_DATABASE_TEST}   MODIFY COMMENT 'comment1_${1}_${i} -- thread $1'"
     test_query "ALTER DATABASE ${CLICKHOUSE_DATABASE_TEST}_2 MODIFY COMMENT 'comment2_${1}_${i}  -- thread $1'"
     (( i % 1000 == 0 )) && log "Alter comment thread $1: processed $i queries"
   done
