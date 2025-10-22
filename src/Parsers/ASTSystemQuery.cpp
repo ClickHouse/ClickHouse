@@ -2,10 +2,10 @@
 #include <Parsers/IAST.h>
 #include <Parsers/IAST_erase.h>
 #include <Parsers/ASTSystemQuery.h>
+#include <Poco/String.h>
 #include <Common/quoteString.h>
 #include <IO/WriteBuffer.h>
 #include <IO/Operators.h>
-
 
 namespace DB
 {
@@ -468,6 +468,72 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             }
             break;
         }
+
+#if USE_XRAY
+        case Type::INSTRUMENT_ADD:
+        {
+            if (!instrumentation_function_name.empty())
+            {
+                ostr << ' ';
+                print_identifier(instrumentation_function_name);
+            }
+
+            if (!instrumentation_handler_name.empty())
+            {
+                ostr << ' ';
+                print_identifier(Poco::toUpper(instrumentation_handler_name));
+            }
+
+            if (instrumentation_entry_type.has_value())
+            {
+                switch (instrumentation_entry_type.value())
+                {
+                    case XRayEntryType::ENTRY:
+                        ostr << " ENTRY"; break;
+                    case XRayEntryType::EXIT:
+                        ostr << " EXIT"; break;
+                    default:
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown entry type: {}", instrumentation_entry_type.value());
+                }
+            }
+
+            if (instrumentation_parameters && !instrumentation_parameters->empty())
+            {
+                bool comma = false;
+                for (const auto & param : *instrumentation_parameters)
+                {
+                    if (comma)
+                        ostr << ',';
+                    else
+                        comma = true;
+                    std::visit([&](const auto & value)
+                    {
+                        using T = std::decay_t<decltype(value)>;
+                        if constexpr (std::is_same_v<T, String>)
+                            ostr << ' ' << quoteString(value);
+                        else
+                            ostr << ' ' << value;
+                    }, param);
+                }
+            }
+            break;
+        }
+        case Type::INSTRUMENT_REMOVE:
+        {
+            if (instrumentation_point_id)
+            {
+                if (std::holds_alternative<bool>(instrumentation_point_id.value()))
+                    ostr << " ALL";
+                else
+                    ostr << ' ' << std::get<UInt64>(instrumentation_point_id.value());
+            }
+            break;
+        }
+#else
+        case Type::INSTRUMENT_ADD:
+        case Type::INSTRUMENT_REMOVE:
+#endif
+
         case Type::KILL:
         case Type::SHUTDOWN:
         case Type::DROP_DNS_CACHE:
