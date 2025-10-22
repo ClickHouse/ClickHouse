@@ -638,7 +638,7 @@ ColumnPtr ColumnLowCardinality::countKeys() const
     size_t dict_size = nested_column->size();
 
     auto counter = ColumnUInt64::create(dict_size, 0);
-    idx.countKeys(counter->getData());
+    idx.countRowsInIndexedData(counter->getData());
     return counter;
 }
 

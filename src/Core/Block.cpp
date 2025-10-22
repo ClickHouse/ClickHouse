@@ -50,15 +50,14 @@ static ReturnType onError(int code [[maybe_unused]],
 static const IColumn * getActualColumn(const IColumn * column)
 {
     const IColumn * actual_column = column;
-    /// We can have only nesting Const -> Replicated -> Sparse;
     if (const auto * column_const = typeid_cast<const ColumnConst *>(column))
-        actual_column = &column_const->getDataColumn();
+        return getActualColumn(&column_const->getDataColumn());
 
     if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(column))
-        actual_column = column_replicated->getNestedColumn().get();
+        return getActualColumn(column_replicated->getNestedColumn().get());
 
     if (const auto * column_sparse = typeid_cast<const ColumnSparse *>(column))
-        actual_column = &column_sparse->getValuesColumn();
+        return getActualColumn(&column_sparse->getValuesColumn());
 
     return actual_column;
 }

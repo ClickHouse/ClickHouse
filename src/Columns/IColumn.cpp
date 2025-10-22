@@ -492,6 +492,9 @@ void IColumnHelper<Derived, Parent>::getIndicesOfNonDefaultRows(IColumn::Offsets
 template <bool row_refs_are_ranges, typename ColumnType>
 static void fillColumnFromRowRefs(ColumnType * col, const DataTypePtr & type, const size_t source_column_index_in_block, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, bool source_columns_might_be_replicated)
 {
+    /// First, check if source column is actually ColumnReplicated.
+    /// We don't want to convert it to full to avoid high memory usage,
+    /// so we process it separately here.
     bool is_source_column_replicated = false;
     if (source_columns_might_be_replicated)
     {
@@ -577,6 +580,9 @@ template <typename ColumnType>
 static void fillColumnFromBlocksAndRowNumbers(ColumnType * col, const DataTypePtr & type, size_t source_column_index_in_block, const std::vector<const Columns *> & columns, const std::vector<UInt32> & row_nums, bool source_columns_might_be_replicated)
 {
     chassert(columns.size() == row_nums.size());
+    /// First, check if source column is actually ColumnReplicated.
+    /// We don't want to convert it to full to avoid high memory usage,
+    /// so we process it separately here.
     bool is_source_column_replicated = false;
     if (source_columns_might_be_replicated)
     {

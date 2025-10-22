@@ -186,6 +186,8 @@ void ColumnReplicated::doInsertRangeFrom(const IColumn & src, size_t start, size
 
     if (const auto * src_replicated = typeid_cast<const ColumnReplicated *>(&src))
     {
+        /// Use insertion_cache to avoid copying of values from source nested column if
+        /// we already inserted them earlier and can use indexes of already inserted values.
         auto & indexes_match = insertion_cache[src_replicated->id];
         auto insert = [&](size_t, size_t src_index)
         {
@@ -234,6 +236,8 @@ void ColumnReplicated::doInsertFrom(const IColumn & src, size_t n)
 {
     if (const auto * src_replicated = typeid_cast<const ColumnReplicated *>(&src))
     {
+        /// Use insertion_cache to avoid copying of values from source nested column if
+        /// we already inserted them earlier and can use indexes of already inserted values.
         auto & indexes_match = insertion_cache[src_replicated->id];
         auto src_index = src_replicated->indexes.getIndexAt(n);
         auto it = indexes_match.find(src_index);
@@ -260,6 +264,8 @@ void ColumnReplicated::doInsertManyFrom(const IColumn & src, size_t n, size_t le
 {
     if (const auto * src_replicated = typeid_cast<const ColumnReplicated *>(&src))
     {
+        /// Use insertion_cache to avoid copying of values from source nested column if
+        /// we already inserted them earlier and can use indexes of already inserted values.
         auto & indexes_match = insertion_cache[src_replicated->id];
         auto src_index = src_replicated->indexes.getIndexAt(n);
         auto it = indexes_match.find(src_index);

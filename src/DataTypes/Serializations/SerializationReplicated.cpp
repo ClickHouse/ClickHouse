@@ -99,6 +99,13 @@ void SerializationReplicated::serializeBinaryBulkWithMultipleStreams(
     if (!indexes_stream)
         return;
 
+    /// We write ColumnReplicated data in the following format:
+    /// - number of rows in column
+    /// - size of indexes type
+    /// - indexes data
+    /// - number of rows in the nested column
+    /// - data of nested column
+
     writeVarUInt(UInt64(limit), *indexes_stream);
     auto size_of_indexes_type = column_replicated.getIndexes().getSizeOfIndexType();
     writeBinaryLittleEndian(UInt8(size_of_indexes_type), *indexes_stream);

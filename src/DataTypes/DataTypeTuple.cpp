@@ -211,6 +211,7 @@ MutableColumnPtr DataTypeTuple::createColumn(const ISerialization & serializatio
     while (const auto * serialization_wrapper = dynamic_cast<const SerializationWrapper *>(current_serialization))
         current_serialization = serialization_wrapper->getNested().get();
 
+    /// We can have Replicated serialization over Tuple.
     if (const auto * serialization_replicated = typeid_cast<const SerializationReplicated *>(current_serialization))
         return ColumnReplicated::create(createColumn(*serialization_replicated->getNested()), ColumnUInt8::create());
 

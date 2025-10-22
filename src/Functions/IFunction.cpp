@@ -439,6 +439,9 @@ ColumnPtr IExecutableFunction::execute(
 
     if (useDefaultImplementationForReplicatedColumns())
     {
+        /// If we have only constants and replicated columns with the same indexes
+        /// we can execute function on nested columns and create replicated column
+        /// from the result using common indexes.
         ColumnPtr common_replicated_indexes;
         bool has_full_columns = false;
         size_t nested_column_size = 0;
@@ -473,8 +476,10 @@ ColumnPtr IExecutableFunction::execute(
 
         for (auto & argument : arguments_without_replicated)
         {
+            /// Replace replicated columns to their nested columns.
             if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(argument.column.get()))
                 argument.column = column_replicated->getNestedColumn();
+            /// Change size for constants.
             else if (const auto * column_const = checkAndGetColumn<ColumnConst>(argument.column.get()))
                 argument.column = ColumnConst::create(column_const->getDataColumnPtr(), nested_column_size);
         }

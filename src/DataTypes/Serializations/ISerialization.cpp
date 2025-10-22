@@ -68,6 +68,9 @@ static String kindToString(ISerialization::Kind kind)
 String ISerialization::kindStackToString(const KindStack & kind_stack)
 {
     chassert(!kind_stack.empty() && kind_stack.front() == Kind::DEFAULT);
+    /// For compatibility, names are formed like this:
+    /// [Default] -> "Default"
+    /// [Default, Kind1, Kind2, Kind3] -> Kind3OverKind2OverKind1
     String result;
     if (kind_stack.size() == 1)
         return kindToString(kind_stack.front());

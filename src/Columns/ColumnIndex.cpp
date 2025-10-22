@@ -260,6 +260,7 @@ void ColumnIndex::callForIndexes(std::function<void(size_t, size_t)> && callback
 
 ColumnPtr ColumnIndex::removeUnusedRowsInIndexedData(const ColumnPtr & indexed_data)
 {
+    /// First, create a filter for indexed data to filter out all unused rows.
     IColumn::Filter filter(indexed_data->size(), 0);
     auto create_filter = [&](auto cur_type)
     {
@@ -271,8 +272,9 @@ ColumnPtr ColumnIndex::removeUnusedRowsInIndexedData(const ColumnPtr & indexed_d
 
     callForType(std::move(create_filter), size_of_type);
 
+    /// Second, adjust indexes.
     size_t result_size_hint = 0;
-    auto reindex = [&](auto cur_type)
+    auto adjust_indexes = [&](auto cur_type)
     {
         using CurIndexType = decltype(cur_type);
         PaddedPODArray<CurIndexType> indexes_remapping(indexed_data->size());
@@ -289,7 +291,7 @@ ColumnPtr ColumnIndex::removeUnusedRowsInIndexedData(const ColumnPtr & indexed_d
         result_size_hint = new_index;
     };
 
-    callForType(std::move(reindex), size_of_type);
+    callForType(std::move(adjust_indexes), size_of_type);
     return indexed_data->filter(filter, result_size_hint);
 }
 
@@ -350,7 +352,7 @@ void ColumnIndex::checkSizeOfType()
                         8 * size_of_type, indexes->getName());
 }
 
-void ColumnIndex::countKeys(ColumnUInt64::Container & counts) const
+void ColumnIndex::countRowsInIndexedData(ColumnUInt64::Container & counts) const
 {
     auto counter = [&](auto x)
     {

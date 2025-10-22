@@ -264,7 +264,7 @@ private:
 
 ColumnPtr recursiveRemoveSparse(const ColumnPtr & column);
 
-/// Remove all special representations including Sparse.
+/// Remove all special representations (for now Sparse and Replicated).
 ColumnPtr removeSpecialRepresentations(const ColumnPtr & column);
 
 }

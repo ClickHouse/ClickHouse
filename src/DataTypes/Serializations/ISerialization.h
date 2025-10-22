@@ -67,6 +67,11 @@ public:
         REPLICATED = 3,
     };
 
+    /// We can have multiple serialization kinds created over each other.
+    /// For example:
+    ///  - Detached over Sparse over Default
+    ///  - Detached over Replicated over Default
+    ///  - etc
     using KindStack = std::vector<Kind>;
 
     virtual KindStack getKindStack() const { return {Kind::DEFAULT}; }
@@ -75,6 +80,7 @@ public:
     static KindStack getKindStack(const IColumn & column);
     static String kindStackToString(const KindStack & kind);
     static KindStack stringToKindStack(const String & str);
+    /// Check if provided kind stack contains specific kind.
     static bool hasKind(const KindStack & kind_stack, Kind kind);
 
     /** Binary serialization for range of values in column - for writing to disk/network, etc.

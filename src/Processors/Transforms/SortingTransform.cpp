@@ -44,6 +44,8 @@ MergeSorter::MergeSorter(SharedHeader header, Chunks chunks_, SortDescription & 
 
         size_t num_rows = chunk.getNumRows();
         auto columns = chunk.detachColumns();
+        /// We don't support sorting by replicated columns for now,
+        /// because it requires special code for them in the cursors.
         for (const auto & column_desc : description)
         {
             size_t column_number = header->getPositionByName(column_desc.column_name);

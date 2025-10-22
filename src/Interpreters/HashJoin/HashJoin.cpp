@@ -86,9 +86,11 @@ Block materializeColumnsFromRightBlock(Block block, const Block & sample_block, 
             /// There's no optimization for right side const columns. Remove constness if any.
             column.column = column.column->convertToFullColumnIfConst();
             auto actual_column = column.column;
+            /// We support replicated columns on the right side.
             const auto * replicated_column = typeid_cast<const ColumnReplicated *>(actual_column.get());
             if (replicated_column)
                 actual_column = replicated_column->getNestedColumn();
+            /// Sparse columns are not supported on the right side.
             actual_column = recursiveRemoveSparse(actual_column);
 
             if (actual_column->lowCardinality() && !sample_column.column->lowCardinality())
