@@ -438,12 +438,16 @@ Block InterpreterKillQueryQuery::getSelectResult(const String & columns, const S
     query_context->setCurrentQueryId("");
 
     auto io = executeQuery(select_query, std::move(query_context), QueryFlags{ .internal = true }).second;
-    PullingPipelineExecutor executor(io.pipeline);
-    Block res;
-    while (res.empty() && executor.pull(res));
 
+    Block res;
     Block tmp_block;
-    while (executor.pull(tmp_block));
+    io.executeWithCallbacks([&]()
+    {
+        PullingPipelineExecutor executor(io.pipeline);
+        while (res.empty() && executor.pull(res));
+
+        while (executor.pull(tmp_block));
+    });
 
     if (!tmp_block.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected one block from input stream");
