@@ -69,6 +69,9 @@ namespace HistogramMetrics
         {10, 100, 150, 225, 337, 500, 750},
         {"operation_type"}
     );
+    Metric & KeeperResponseTimeReadonly = KeeperResponseTime.withLabels({"readonly"});
+    Metric & KeeperResponseTimeWrite = KeeperResponseTime.withLabels({"write"});
+    Metric & KeeperResponseTimeMulti = KeeperResponseTime.withLabels({"multi"});
 
     Metric & KeeperClientQueueDuration = Factory::instance().registerMetric(
         "keeper_client_queue_duration_milliseconds",
