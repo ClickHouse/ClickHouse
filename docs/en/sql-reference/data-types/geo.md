@@ -142,7 +142,7 @@ Result:
 
 ## Geometry {#geometry}
 
-`Geometry` is common type for all types above. It is equals to Variant of those types.
+`Geometry` is a common type for all the types above. It is equivalent to a Variant of those types.
 
 **Example**
 
