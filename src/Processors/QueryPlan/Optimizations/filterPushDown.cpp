@@ -8,12 +8,12 @@
 
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
+#include <Processors/QueryPlan/CommonSubplanStep.h>
 #include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/CubeStep.h>
 #include <Processors/QueryPlan/CustomMetricLogViewStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
-#include <Processors/QueryPlan/SaveSubqueryResultToBufferStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>

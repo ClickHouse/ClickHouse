@@ -1,4 +1,4 @@
-#include <Processors/QueryPlan/ReadFromCommonBufferStep.h>
+#include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
 
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>

@@ -1,4 +1,4 @@
-#include <Processors/QueryPlan/SaveSubqueryResultToBufferStep.h>
+#include <Processors/QueryPlan/CommonSubplanStep.h>
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/QueryPlan/ITransformingStep.h>

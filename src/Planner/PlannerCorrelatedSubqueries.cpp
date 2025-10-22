@@ -28,12 +28,12 @@
 #include <Planner/Utils.h>
 
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
+#include <Processors/QueryPlan/CommonSubplanStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/LimitStep.h>
-#include <Processors/QueryPlan/ReadFromCommonBufferStep.h>
-#include <Processors/QueryPlan/SaveSubqueryResultToBufferStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 
 #include <Storages/ColumnsDescription.h>

@@ -1,9 +1,9 @@
 #include <Common/typeid_cast.h>
 #include <Planner/Utils.h>
+#include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
+#include <Processors/QueryPlan/CommonSubplanStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/ReadFromCommonBufferStep.h>
-#include <Processors/QueryPlan/SaveSubqueryResultToBufferStep.h>
 
 #include <memory>
 
