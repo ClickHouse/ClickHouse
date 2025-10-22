@@ -2248,13 +2248,13 @@ void StatementGenerator::generateSelect(
             generateOrderBy(rg, ncols, (allowed_clauses & allow_orderby_settings), false, ssc->mutable_orderby());
             this->depth--;
         }
-        if ((allowed_clauses & allow_limit) && rg.nextSmallNumber() < 4)
+        if ((allowed_clauses & allow_limit) && (ssc->has_orderby() || this->allow_not_deterministic) && rg.nextSmallNumber() < 4)
         {
             if (rg.nextBool())
             {
                 generateLimit(rg, ssc->has_orderby(), ncols, ssc->mutable_limit());
             }
-            else if (ssc->has_orderby() || this->allow_not_deterministic)
+            else
             {
                 generateOffset(rg, ssc->has_orderby(), ssc->mutable_offset());
             }
