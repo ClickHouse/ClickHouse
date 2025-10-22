@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 testAlias+=(
-	[clickhouse / clickhouse - server]='clickhouse'
+	[clickhouse/clickhouse-server]='clickhouse'
 )
 
 # Get current file directory
