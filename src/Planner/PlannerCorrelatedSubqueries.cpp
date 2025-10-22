@@ -61,7 +61,6 @@ namespace Setting
 {
 
 extern const SettingsBool correlated_subqueries_substitute_equivalent_expressions;
-extern const SettingsBool correlated_subqueries_use_input_buffer;
 extern const SettingsDecorrelationJoinKind correlated_subqueries_default_join_kind;
 extern const SettingsBool join_use_nulls;
 extern const SettingsMaxThreads max_threads;

@@ -5641,11 +5641,6 @@ Serialize query plan for distributed processing
     DECLARE(Bool, correlated_subqueries_substitute_equivalent_expressions, true, R"(
 Use filter expressions to inference equivalent expressions and substitute them instead of creating a CROSS JOIN.
 )", 0) \
-    DECLARE(Bool, correlated_subqueries_use_input_buffer, true, R"(
-Use in-memory buffer for correlated subquery input. If disabled, input subplan will be executed separately for correlated subquery result evaluation.
-
-This setting doesn't affect decorrelated plan if `correlated_subqueries_default_join_kind` is set to `left`.
-)", 0) \
     DECLARE(DecorrelationJoinKind, correlated_subqueries_default_join_kind, DecorrelationJoinKind::RIGHT, R"(
 Controls the kind of joins in the decorrelated query plan. The default value is `right`, which means that decorrelated plan will contain RIGHT JOINs with subquery input on the right side.
 
