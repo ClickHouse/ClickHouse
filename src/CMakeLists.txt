@@ -722,6 +722,8 @@ if (TARGET ch_contrib::wasmedge)
 endif()
 
 if (TARGET ch_contrib::wasmtime)
+    # FIXME: same as for ch_rust::delta_kernel_rs above
+    target_link_libraries(clickhouse_common_io PRIVATE ch_contrib::wasmtime)
     target_link_libraries(dbms PRIVATE ch_contrib::wasmtime)
 endif()
 
