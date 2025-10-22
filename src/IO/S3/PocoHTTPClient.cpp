@@ -92,6 +92,14 @@ namespace DB::ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace HistogramMetrics
+{
+    extern MetricFamily & S3Connect;
+    extern MetricFamily & DiskS3Connect;
+    extern MetricFamily & S3FirstByte;
+    extern MetricFamily & DiskS3FirstByte;
+}
+
 namespace DB::S3
 {
 
@@ -319,31 +327,20 @@ void PocoHTTPClient::addMetric(const Aws::Http::HttpRequest & request, S3MetricT
         ProfileEvents::increment(disk_s3_events_map[static_cast<unsigned int>(type)][static_cast<unsigned int>(kind)], amount);
 }
 
-void PocoHTTPClient::observeLatency(const Aws::Http::HttpRequest & request, S3LatencyType type, Histogram::Value latency) const
+void PocoHTTPClient::observeLatency(const Aws::Http::HttpRequest & request, S3LatencyType type, HistogramMetrics::Value latency) const
 {
     if (latency == 0)
         return;
 
     if (type == S3LatencyType::Connect)
     {
-        const Histogram::Buckets connect_buckets = {100, 1000, 10000, 100000, 200000, 300000, 500000, 1000000, 1500000};
-        static Histogram::MetricFamily & s3_connect = Histogram::Factory::instance().registerMetric(
-            "s3_connect_microseconds",
-            "Time to establish connection with S3, in microseconds.",
-            connect_buckets,
-            {}
-        );
-        s3_connect.withLabels({}).observe(latency);
+        static HistogramMetrics::Metric & s3_connect_metric = HistogramMetrics::S3Connect.withLabels({});
+        s3_connect_metric.observe(latency);
 
         if (for_disk_s3)
         {
-            static Histogram::MetricFamily & disk_s3_connect = Histogram::Factory::instance().registerMetric(
-                "disk_s3_connect_microseconds",
-                "Time to establish connection with DiskS3, in microseconds.",
-                connect_buckets,
-                {}
-            );
-            disk_s3_connect.withLabels({}).observe(latency);
+            static HistogramMetrics::Metric & disk_s3_connect_metric = HistogramMetrics::DiskS3Connect.withLabels({});
+            disk_s3_connect_metric.observe(latency);
         }
         return;
     }
@@ -375,27 +372,15 @@ void PocoHTTPClient::observeLatency(const Aws::Http::HttpRequest & request, S3La
         }
     }(request.GetMethod());
 
-    const Histogram::Buckets first_byte_buckets = {100, 1000, 10000, 100000, 300000, 500000, 1000000, 2000000, 5000000, 10000000, 15000000, 20000000, 25000000, 30000000, 35000000};
-    const Histogram::Labels first_byte_labels = {"http_method", "attempt"};
-    const Histogram::LabelValues first_byte_label_values = {http_method_label, attempt_label};
+    const HistogramMetrics::LabelValues first_byte_label_values = {http_method_label, attempt_label};
 
-    static Histogram::MetricFamily & s3_first_byte = Histogram::Factory::instance().registerMetric(
-        "s3_first_byte_microseconds",
-        "Time to receive the first byte from an S3 request, in microseconds.",
-        first_byte_buckets,
-        first_byte_labels
-    );
-    s3_first_byte.withLabels(first_byte_label_values).observe(latency);
+    HistogramMetrics::observe(
+        HistogramMetrics::S3FirstByte, first_byte_label_values, latency);
 
     if (for_disk_s3)
     {
-        static Histogram::MetricFamily & disk_s3_first_byte = Histogram::Factory::instance().registerMetric(
-            "disk_s3_first_byte_microseconds",
-            "Time to receive the first byte from a DiskS3 request, in microseconds.",
-            first_byte_buckets,
-            first_byte_labels
-        );
-        disk_s3_first_byte.withLabels(first_byte_label_values).observe(latency);
+        HistogramMetrics::observe(
+            HistogramMetrics::DiskS3FirstByte, first_byte_label_values, latency);
     }
 }
 

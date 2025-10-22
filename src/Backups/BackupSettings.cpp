@@ -169,6 +169,7 @@ ASTPtr BackupSettings::Util::clusterHostIDsToAST(const std::vector<Strings> & cl
 
     auto res = std::make_shared<ASTFunction>();
     res->name = "array";
+    res->is_operator = true;
     auto res_replicas = std::make_shared<ASTExpressionList>();
     res->arguments = res_replicas;
     res->children.push_back(res_replicas);
