@@ -10,11 +10,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 class IDictionarySource;
 using DictionarySourcePtr = std::shared_ptr<IDictionarySource>;
 

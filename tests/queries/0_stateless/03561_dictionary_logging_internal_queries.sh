@@ -14,34 +14,34 @@ SIMPLE_KEY_LAYOUTS=("FLAT()" "HASHED()" "HASHED_ARRAY()" "SPARSE_HASHED()")
 
 for layout in "${SIMPLE_KEY_LAYOUTS[@]}"; do
 
-    $CLICKHOUSE_CLIENT --query "
-    CREATE DICTIONARY ${CLICKHOUSE_DATABASE}.test_logging_internal_queries_dict
-    (
-        name String,
-        value Float64
+$CLICKHOUSE_CLIENT --query "
+CREATE DICTIONARY ${CLICKHOUSE_DATABASE}.test_logging_internal_queries_dict
+(
+    name String,
+    value Float64
+)
+PRIMARY KEY name
+SOURCE(
+    CLICKHOUSE(
+        QUERY 'SELECT toString(number) AS name, toFloat64(number) AS value FROM numbers(10) WHERE ''$layout-$RUN_ID'' != '''''
     )
-    PRIMARY KEY name
-    SOURCE(
-        CLICKHOUSE(
-            QUERY 'SELECT toString(number) AS name, toFloat64(number) AS value FROM numbers(10) WHERE ''$layout-$RUN_ID'' != '''''
-        )
-    )
-    LIFETIME(30)
-    LAYOUT($layout)"
+)
+LIFETIME(30)
+LAYOUT($layout)"
 
-    $CLICKHOUSE_CLIENT --query "SYSTEM RELOAD DICTIONARY ${CLICKHOUSE_DATABASE}.test_logging_internal_queries_dict"
+$CLICKHOUSE_CLIENT --query "SYSTEM RELOAD DICTIONARY ${CLICKHOUSE_DATABASE}.test_logging_internal_queries_dict"
 
-    $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS"
+$CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS"
 
-    $CLICKHOUSE_CLIENT --query "
-    SELECT countIf(type = 'QueryStart'), countIf(type = 'QueryFinish')
-    FROM system.query_log
-    WHERE 1
-        AND is_internal = 1
-        AND query = 'SELECT toString(number) AS name, toFloat64(number) AS value FROM numbers(10) WHERE ''$layout-$RUN_ID'' != '''''
-        AND current_database IN ['default', currentDatabase()]"
+$CLICKHOUSE_CLIENT --query "
+SELECT countIf(type = 'QueryStart'), countIf(type = 'QueryFinish')
+FROM system.query_log
+WHERE 1
+    AND is_internal = 1
+    AND query = 'SELECT toString(number) AS name, toFloat64(number) AS value FROM numbers(10) WHERE ''$layout-$RUN_ID'' != '''''
+    AND current_database IN ['default', currentDatabase()]"
 
-    $CLICKHOUSE_CLIENT --query "DROP DICTIONARY ${CLICKHOUSE_DATABASE}.test_logging_internal_queries_dict"
+$CLICKHOUSE_CLIENT --query "DROP DICTIONARY ${CLICKHOUSE_DATABASE}.test_logging_internal_queries_dict"
 done
 
 
