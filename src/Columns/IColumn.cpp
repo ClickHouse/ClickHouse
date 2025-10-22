@@ -580,7 +580,7 @@ static void fillColumnFromBlocksAndRowNumbers(ColumnType * col, const DataTypePt
     bool is_source_column_replicated = false;
     if (source_columns_might_be_replicated)
     {
-        for (auto columns_list : columns)
+        for (const auto * columns_list : columns)
         {
             if (columns_list)
             {
