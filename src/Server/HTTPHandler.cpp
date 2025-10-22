@@ -60,7 +60,6 @@ namespace Setting
     extern const SettingsBool add_http_cors_header;
     extern const SettingsBool cancel_http_readonly_queries_on_client_close;
     extern const SettingsBool enable_http_compression;
-    extern const SettingsBool http_exception_tagging;
     extern const SettingsUInt64 http_headers_progress_interval_ms;
     extern const SettingsUInt64 http_max_request_param_data_size;
     extern const SettingsBool http_native_compression_disable_checksumming_on_decompress;
@@ -349,7 +348,6 @@ void HTTPHandler::processQuery(
             response,
             request.getMethod() == HTTPRequest::HTTP_HEAD,
             write_event);
-    used_output.out_holder->setExceptionTaggingEnabled(settings[Setting::http_exception_tagging]);
     used_output.out_maybe_compressed = used_output.out_holder;
     used_output.out = used_output.out_holder;
 

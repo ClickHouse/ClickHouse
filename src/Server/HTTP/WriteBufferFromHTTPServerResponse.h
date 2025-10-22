@@ -69,8 +69,6 @@ public:
 
     const std::string& getExceptionTag() const {return exception_tag;}
 
-    void setExceptionTaggingEnabled(bool enabled) {exception_tagging_enabled = enabled;}
-
 private:
     /// Send at least HTTP headers if no data has been sent yet.
     /// Use after the data has possibly been sent and no error happened (and thus you do not plan
@@ -117,7 +115,6 @@ private:
     int exception_code = 0;
 
     std::string exception_tag;
-    bool exception_tagging_enabled = false; /// If true, exception tagging mechanism in response is enabled.
 
     std::mutex mutex;    /// progress callback could be called from different threads.
 };
