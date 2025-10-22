@@ -4,6 +4,7 @@ sidebar_label: 'Query Profiling'
 sidebar_position: 54
 slug: /operations/optimizing-performance/sampling-query-profiler
 title: 'Sampling query profiler'
+doc_type: 'reference'
 ---
 
 import SelfManaged from '@site/docs/_snippets/_self_managed_only_no_roadmap.md';

@@ -272,9 +272,24 @@ public:
       */
     virtual StringRef serializeValueIntoArena(size_t /* n */, Arena & /* arena */, char const *& /* begin */) const;
 
+    /// The same as serializeValueIntoArena but is used to store values inside aggregation states.
+    /// It's used in generic implementation of some aggregate functions.
+    /// serializeValueIntoArena is used for in-memory value representations, so it's implementation can be changed.
+    /// This method must respect compatibility with older versions because aggregation states may be serialized/deserialized
+    /// by servers with different versions.
+    virtual StringRef serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+    {
+        return serializeValueIntoArena(n, arena, begin);
+    }
+
     /// Same as above but serialize into already allocated continuous memory.
     /// Return pointer to the end of the serialization data.
     virtual char * serializeValueIntoMemory(size_t /* n */, char * /* memory */) const;
+
+    /// Returns size in bytes required to serialize value into memory using the previous method.
+    /// If size cannot be calculated in advance, return nullopt. In this case serializeValueIntoMemory
+    /// cannot be used and serializeValueIntoArena should be used instead,
+    virtual std::optional<size_t> getSerializedValueSize(size_t n) const { return byteSizeAt(n); }
 
     virtual void batchSerializeValueIntoMemory(std::vector<char *> & /* memories */) const;
 
@@ -295,6 +310,13 @@ public:
     /// Deserializes a value that was serialized using IColumn::serializeValueIntoArena method.
     /// Returns pointer to the position after the read data.
     [[nodiscard]] virtual const char * deserializeAndInsertFromArena(const char * pos) = 0;
+
+    /// Deserializes a value that was serialized using IColumn::serializeAggregationStateValueIntoArena method.
+    /// Returns pointer to the position after the read data.
+    [[nodiscard]] virtual const char * deserializeAndInsertAggregationStateValueFromArena(const char * pos)
+    {
+        return deserializeAndInsertFromArena(pos);
+    }
 
     /// Skip previously serialized value that was serialized using IColumn::serializeValueIntoArena method.
     /// Returns a pointer to the position after the deserialized data.
@@ -344,11 +366,11 @@ public:
       * Is used in sorting.
       *
       * If one of element's value is NaN or NULLs, then:
-      * - if nan_direction_hint == -1, NaN and NULLs are considered as least than everything other;
-      * - if nan_direction_hint ==  1, NaN and NULLs are considered as greatest than everything other.
+      * - if nan_direction_hint == -1, NaN and NULLs are considered as less than everything other;
+      * - if nan_direction_hint ==  1, NaN and NULLs are considered as greater than everything other.
       * For example, if nan_direction_hint == -1 is used by descending sorting, NaNs will be at the end.
       *
-      * For non Nullable and non floating point types, nan_direction_hint is ignored.
+      * For non-Nullable and non-floating point types, nan_direction_hint is ignored.
       */
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
     [[nodiscard]] virtual int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const = 0;
@@ -646,6 +668,8 @@ public:
     /// For columns with dynamic subcolumns this method takes dynamic structure from source columns
     /// and creates proper resulting dynamic structure in advance for merge of these source columns.
     virtual void takeDynamicStructureFromSourceColumns(const std::vector<Ptr> & /*source_columns*/) {}
+    /// For columns with dynamic subcolumns this method takes the exact dynamic structure from provided column.
+    virtual void takeDynamicStructureFromColumn(const ColumnPtr & /*source_column*/) {}
 
     /** Some columns can contain another columns inside.
       * So, we have a tree of columns. But not all combinations are possible.

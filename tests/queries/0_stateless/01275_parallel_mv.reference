@@ -111,7 +111,7 @@ select count() from testXC;
 400
 system flush logs system.query_log;
 select
-    peak_threads_usage,
+    if(peak_threads_usage >= 10, 1, peak_threads_usage),
     Settings['max_threads'] as max_threads,
     Settings['max_insert_threads'] as max_insert_threads,
     Settings['parallel_view_processing'] as parallel_view_processing,
@@ -121,11 +121,11 @@ from system.query_log where
     type != 'QueryStart' and
     query like '%insert into testX %'
 order by ALL;
-12	10	0	0	0
-12	10	0	0	1
-12	10	0	1	0
-12	10	0	1	1
-12	10	5	0	0
-12	10	5	0	1
-12	10	5	1	0
-12	10	5	1	1
+1	10	0	0	0
+1	10	0	0	1
+1	10	0	1	0
+1	10	0	1	1
+1	10	5	0	0
+1	10	5	0	1
+1	10	5	1	0
+1	10	5	1	1

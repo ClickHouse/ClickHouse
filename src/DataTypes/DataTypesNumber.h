@@ -25,7 +25,7 @@ public:
     bool canBeUsedAsVersion() const override { return true; }
     bool isSummable() const override { return true; }
     bool canBeUsedInBitOperations() const override { return true; }
-    bool canBeUsedInBooleanContext() const override { return true; }
+    bool canBeUsedInBooleanContext() const override { return WhichDataType(TypeToTypeIndex<T>).isNativeNumber(); }
     bool canBeInsideNullable() const override { return true; }
 
     bool canBePromoted() const override { return true; }

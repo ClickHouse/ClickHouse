@@ -36,7 +36,12 @@ impl Config {
             .unwrap();
 
         let mut env_vars_available = true;
-        let required_env_vars = vec!["CH_HOSTNAME", "CH_USER", "CH_PASSWORD", "CH_USE_LOCAL_CACHE"];
+        let required_env_vars = vec![
+            "CH_HOSTNAME",
+            "CH_USER",
+            "CH_PASSWORD",
+            "CH_USE_LOCAL_CACHE",
+        ];
         for var in required_env_vars {
             if std::env::var(var).is_ok() {
                 continue;

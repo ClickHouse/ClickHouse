@@ -134,27 +134,6 @@ ProjectionIndexBitmapPtr ProjectionIndexBitmap::create64()
     return std::make_shared<ProjectionIndexBitmap>(BitmapType::Bitmap64);
 }
 
-template <typename Offset>
-ProjectionIndexBitmapPtr ProjectionIndexBitmap::createFromRange(std::type_identity_t<Offset> start, std::type_identity_t<Offset> end)
-{
-    static_assert(
-        std::is_same_v<Offset, UInt32> || std::is_same_v<Offset, UInt64>,
-        "ProjectionIndexBitmap::createFromRange<> only supports UInt32 and UInt64");
-
-    ProjectionIndexBitmapPtr bitmap;
-    if constexpr (std::is_same_v<Offset, UInt32>)
-    {
-        bitmap = create32();
-        roaring_bitmap_add_range_closed(bitmap->data.bitmap32, start, end - 1);
-    }
-    else
-    {
-        bitmap = create64();
-        roaring64_bitmap_add_range_closed(bitmap->data.bitmap64, start, end - 1);
-    }
-    return bitmap;
-}
-
 void ProjectionIndexBitmap::intersectWith(const ProjectionIndexBitmap & other) // NOLINT
 {
     chassert(type == other.type);
@@ -215,6 +194,29 @@ void ProjectionIndexBitmap::add(std::type_identity_t<Offset> value)
     {
         chassert(type == BitmapType::Bitmap64);
         roaring64_bitmap_add(data.bitmap64, value);
+    }
+}
+
+template <typename Offset>
+void ProjectionIndexBitmap::addBulk(const std::type_identity_t<Offset> * values, size_t size)
+{
+    static_assert(
+        std::is_same_v<Offset, UInt32> || std::is_same_v<Offset, UInt64>,
+        "ProjectionIndexBitmap::addBulk<> supports only UInt32 or UInt64");
+
+    if constexpr (std::is_same_v<Offset, UInt32>)
+    {
+        chassert(type == BitmapType::Bitmap32);
+        roaring::api::roaring_bulk_context_t context{};
+        for (size_t i = 0; i < size; ++i)
+            roaring_bitmap_add_bulk(data.bitmap32, &context, values[i]);
+    }
+    else
+    {
+        chassert(type == BitmapType::Bitmap64);
+        roaring::api::roaring64_bulk_context_t context{};
+        for (size_t i = 0; i < size; ++i)
+            roaring64_bitmap_add_bulk(data.bitmap64, &context, values[i]);
     }
 }
 
@@ -307,14 +309,14 @@ bool ProjectionIndexBitmap::appendToFilter(PaddedPODArray<UInt8> & filter, size_
     }
 }
 
-template ProjectionIndexBitmapPtr ProjectionIndexBitmap::createFromRange<UInt32>(UInt32 start, UInt32 end);
-template ProjectionIndexBitmapPtr ProjectionIndexBitmap::createFromRange<UInt64>(UInt64 start, UInt64 end);
-
 template bool ProjectionIndexBitmap::contains<UInt32>(UInt32 value);
 template bool ProjectionIndexBitmap::contains<UInt64>(UInt64 value);
 
 template void ProjectionIndexBitmap::add<UInt32>(UInt32 value);
 template void ProjectionIndexBitmap::add<UInt64>(UInt64 value);
+
+template void ProjectionIndexBitmap::addBulk<UInt32>(const UInt32 * values, size_t size);
+template void ProjectionIndexBitmap::addBulk<UInt64>(const UInt64 * values, size_t size);
 
 SingleProjectionIndexReader::SingleProjectionIndexReader(
     std::shared_ptr<MergeTreeReadPoolProjectionIndex> pool,
@@ -325,8 +327,10 @@ SingleProjectionIndexReader::SingleProjectionIndexReader(
     , processor(std::make_unique<MergeTreeSelectProcessor>(
           std::static_pointer_cast<IMergeTreeReadPool>(projection_index_read_pool),
           std::make_unique<MergeTreeProjectionIndexSelectAlgorithm>(),
+          nullptr /*row_level_filter*/,
           std::move(prewhere_info),
           nullptr /*lazily_read_info*/,
+          IndexReadTasks{} /*index_read_tasks*/,
           actions_settings,
           reader_settings))
 {
@@ -383,9 +387,9 @@ ProjectionIndexBitmapPtr SingleProjectionIndexReader::read(const RangesInDataPar
 
     /// If the read was cancelled, return nullptr to avoid using an incomplete index bitmap.
     if (processor->is_cancelled)
-        return nullptr;
-    else
-        return res;
+        res = nullptr;
+
+    return res;
 }
 
 void SingleProjectionIndexReader::cancel() noexcept

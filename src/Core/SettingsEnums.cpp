@@ -329,6 +329,18 @@ IMPLEMENT_SETTING_ENUM(
      {"lon_lat", GeoToH3ArgumentOrder::LON_LAT}})
 
 IMPLEMENT_SETTING_ENUM(
+    MergeTreeSerializationInfoVersion,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"default", MergeTreeSerializationInfoVersion::DEFAULT},
+     {"with_types", MergeTreeSerializationInfoVersion::WITH_TYPES}})
+
+IMPLEMENT_SETTING_ENUM(
+    MergeTreeStringSerializationVersion,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"default", MergeTreeStringSerializationVersion::DEFAULT},
+     {"with_size_stream", MergeTreeStringSerializationVersion::WITH_SIZE_STREAM}})
+
+IMPLEMENT_SETTING_ENUM(
     MergeTreeObjectSerializationVersion,
     ErrorCodes::BAD_ARGUMENTS,
     {{"v1", MergeTreeObjectSerializationVersion::V1},
@@ -356,4 +368,13 @@ IMPLEMENT_SETTING_ENUM(
      {"local", SearchOrphanedPartsDisks::LOCAL},
      {"none", SearchOrphanedPartsDisks::NONE}})
 
+IMPLEMENT_SETTING_ENUM(
+    IcebergMetadataLogLevel,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"none", IcebergMetadataLogLevel::None},
+     {"metadata", IcebergMetadataLogLevel::Metadata},
+     {"manifest_list_metadata", IcebergMetadataLogLevel::ManifestListMetadata},
+     {"manifest_list_entry", IcebergMetadataLogLevel::ManifestListEntry},
+     {"manifest_file_metadata", IcebergMetadataLogLevel::ManifestFileMetadata},
+     {"manifest_file_entry", IcebergMetadataLogLevel::ManifestFileEntry}})
 }

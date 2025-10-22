@@ -91,7 +91,7 @@ MergeTreeWriterSettings::MergeTreeWriterSettings(
 {
 }
 
-MergeTreeReaderSettings MergeTreeReaderSettings::create(const ContextPtr & context, const SelectQueryInfo & query_info)
+MergeTreeReaderSettings MergeTreeReaderSettings::create(const ContextPtr & context, const MergeTreeSettings & /*storage_settings*/, const SelectQueryInfo & query_info)
 {
     const auto & settings = context->getSettingsRef();
     return {
@@ -112,6 +112,7 @@ MergeTreeReaderSettings MergeTreeReaderSettings::create(const ContextPtr & conte
         .merge_tree_min_bytes_for_seek = settings[Setting::merge_tree_min_bytes_for_seek],
         .merge_tree_min_rows_for_seek = settings[Setting::merge_tree_min_rows_for_seek],
         .filesystem_prefetches_limit = settings[Setting::filesystem_prefetches_limit],
+        .enable_analyzer = settings[Setting::allow_experimental_analyzer],
     };
 }
 

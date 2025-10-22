@@ -1,10 +1,10 @@
 #pragma once
 
+#include <Common/SharedMutex.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 
 #include <roaring.hh>
-#include <shared_mutex>
 
 namespace DB
 {
@@ -76,9 +76,6 @@ struct ProjectionIndexBitmap
     static ProjectionIndexBitmapPtr create32();
     static ProjectionIndexBitmapPtr create64();
 
-    template <typename Offset>
-    static ProjectionIndexBitmapPtr createFromRange(std::type_identity_t<Offset> start, std::type_identity_t<Offset> end);
-
     void intersectWith(const ProjectionIndexBitmap & other);
     size_t cardinality() const;
     bool empty() const;
@@ -88,6 +85,9 @@ struct ProjectionIndexBitmap
 
     template <typename Offset>
     void add(std::type_identity_t<Offset> value);
+
+    template <typename Offset>
+    void addBulk(const std::type_identity_t<Offset> * values, size_t size);
 
     /// Checks whether the bitmap has no bits set in the range [begin, end).
     bool rangeAllZero(size_t begin, size_t end) const;
@@ -201,7 +201,7 @@ private:
 
     /// Stores MergeTreeIndexReadResult instances per part to avoid redundant construction.
     std::unordered_map<const IMergeTreeDataPart *, IndexReadResultEntry> index_read_result_registry;
-    std::shared_mutex index_read_result_registry_mutex;
+    SharedMutex index_read_result_registry_mutex;
 };
 
 using MergeTreeIndexReadResultPoolPtr = std::shared_ptr<MergeTreeIndexReadResultPool>;

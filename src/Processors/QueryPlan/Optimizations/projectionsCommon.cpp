@@ -153,17 +153,16 @@ bool QueryDAG::buildImpl(QueryPlan::Node & node, ActionsDAG::NodeRawConstPtrs & 
     IQueryPlanStep * step = node.step.get();
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(step))
     {
+        if (const auto & row_level_filter = reading->getRowLevelFilter())
+        {
+            appendExpression(row_level_filter->actions);
+            if (const auto * filter_expression = findInOutputs(*dag, row_level_filter->column_name, row_level_filter->do_remove_column))
+                filter_nodes.push_back(filter_expression);
+            else
+                return false;
+        }
         if (const auto & prewhere_info = reading->getPrewhereInfo())
         {
-            if (prewhere_info->row_level_filter)
-            {
-                appendExpression(*prewhere_info->row_level_filter);
-                if (const auto * filter_expression = findInOutputs(*dag, prewhere_info->row_level_column_name, false))
-                    filter_nodes.push_back(filter_expression);
-                else
-                    return false;
-            }
-
             appendExpression(prewhere_info->prewhere_actions);
             if (const auto * filter_expression
                 = findInOutputs(*dag, prewhere_info->prewhere_column_name, prewhere_info->remove_prewhere_column))
@@ -351,7 +350,6 @@ void filterPartsAndCollectProjectionCandidates(
     const ActionsDAG::Node * filter_node,
     const ContextPtr & context)
 {
-    static Names required_column_names = {"_parent_part_offset"};
     RangesInDataParts projection_parts;
     std::unordered_set<const IMergeTreeDataPart *> valid_parts;
 
@@ -388,6 +386,10 @@ void filterPartsAndCollectProjectionCandidates(
         return;
 
     auto projection_marks_to_read = projection_parts.getMarksCountAllParts();
+
+    /// Always request `_parent_part_offset` for projection analysis, even if the column does not exist. This does not
+    /// affect the analysis itself. Later code will not use it as an index if the column is missing.
+    static Names required_column_names = {"_parent_part_offset"};
     auto projection_result_ptr = reader.estimateNumMarksToRead(
         std::move(projection_parts),
         empty_mutations_snapshot,
@@ -409,7 +411,7 @@ void filterPartsAndCollectProjectionCandidates(
     for (auto & part : projection_result_ptr->parts_with_ranges)
     {
         valid_parts.emplace(part.data_part->getParentPart());
-        if (part.getRowsCount() <= max_projection_rows_to_use_projection_index
+        if (projection.sample_block.has("_parent_part_offset") && part.getRowsCount() <= max_projection_rows_to_use_projection_index
             && part.parent_ranges.total_rows >= min_table_rows_to_use_projection_index)
         {
             desc.read_ranges[part.part_index_in_query].push_back(std::move(part));

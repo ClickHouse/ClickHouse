@@ -5,6 +5,7 @@
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
 
@@ -14,7 +15,7 @@ namespace Setting
 {
     extern const SettingsBool merge_tree_determine_task_size_by_prewhere_columns;
     extern const SettingsUInt64 merge_tree_min_bytes_per_task_for_remote_reading;
-    extern const SettingsUInt64 merge_tree_min_read_task_size;
+    extern const SettingsNonZeroUInt64 merge_tree_min_read_task_size;
     extern const SettingsBool apply_deleted_mask;
     extern const SettingsNonZeroUInt64 apply_patch_parts_join_cache_buckets;
 }
@@ -28,7 +29,9 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     RangesInDataParts && parts_,
     MutationsSnapshotPtr mutations_snapshot_,
     VirtualFields shared_virtual_fields_,
+    const IndexReadTasks & index_read_tasks_,
     const StorageSnapshotPtr & storage_snapshot_,
+    const FilterDAGInfoPtr & row_level_filter_,
     const PrewhereInfoPtr & prewhere_info_,
     const ExpressionActionsSettings & actions_settings_,
     const MergeTreeReaderSettings & reader_settings_,
@@ -40,7 +43,9 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     , parts_ranges(std::move(parts_))
     , mutations_snapshot(std::move(mutations_snapshot_))
     , shared_virtual_fields(std::move(shared_virtual_fields_))
+    , index_read_tasks(index_read_tasks_)
     , storage_snapshot(storage_snapshot_)
+    , row_level_filter(row_level_filter_)
     , prewhere_info(prewhere_info_)
     , actions_settings(actions_settings_)
     , reader_settings(reader_settings_)
@@ -87,11 +92,26 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
 
 static size_t getSizeOfColumns(const IMergeTreeDataPart & part, const Names & columns_to_read)
 {
-    ColumnSize columns_size{};
-    for (const auto & col_name : columns_to_read)
-        columns_size.add(part.getColumnSize(col_name));
     /// For compact parts we don't know individual column sizes, let's use whole part size as approximation
-    return columns_size.data_compressed ? columns_size.data_compressed : part.getBytesOnDisk();
+    if (part.getType() == MergeTreeDataPartType::Compact)
+        return part.getBytesOnDisk();
+
+    size_t data_compressed_size = 0;
+    for (const auto & col_name : columns_to_read)
+        data_compressed_size += part.getColumnSize(col_name).data_compressed;
+
+    if (!data_compressed_size)
+    {
+        auto all_columns_sizes = part.getColumnSizes();
+
+        for (const auto & [_, size] : all_columns_sizes)
+        {
+            if (size.data_compressed && (!data_compressed_size || size.data_compressed < data_compressed_size))
+                data_compressed_size = size.data_compressed;
+        }
+    }
+
+    return data_compressed_size ? data_compressed_size : part.getBytesOnDisk();
 }
 
 /// Columns from different prewhere steps are read independently, so it makes sense to use the heaviest set of columns among them as an estimation.
@@ -138,6 +158,7 @@ calculateMinMarksPerTask(
             const auto heuristic_min_marks = std::min<size_t>(
                 pool_settings.sum_marks / (pool_settings.threads * pool_settings.total_query_nodes) / 2,
                 min_bytes_per_task / avg_mark_bytes);
+
             if (heuristic_min_marks > min_marks_per_task)
             {
                 LOG_TEST(
@@ -159,7 +180,7 @@ calculateMinMarksPerTask(
 }
 
 MergeTreeReadTaskInfo
-MergeTreeReadPoolBase::buildReadTaskInfo(const RangesInDataPart & part_with_ranges, const Settings & settings)
+MergeTreeReadPoolBase::buildReadTaskInfo(const RangesInDataPart & part_with_ranges, const Settings & settings) const
 {
     MergeTreeReadTaskInfo read_task_info;
 
@@ -206,8 +227,10 @@ MergeTreeReadPoolBase::buildReadTaskInfo(const RangesInDataPart & part_with_rang
         part_info,
         storage_snapshot,
         column_names,
+        row_level_filter,
         prewhere_info,
         read_task_info.mutation_steps,
+        index_read_tasks,
         actions_settings,
         reader_settings,
         /*with_subcolumns=*/ true);
@@ -225,10 +248,9 @@ MergeTreeReadPoolBase::buildReadTaskInfo(const RangesInDataPart & part_with_rang
             read_task_info.patch_parts,
             all_read_columns,
             has_lightweight_delete);
-
-        ranges_in_patch_parts.addPart(part_with_ranges.data_part, read_task_info.patch_parts, part_with_ranges.ranges);
     }
 
+    read_task_info.index_read_tasks = index_read_tasks;
     read_task_info.const_virtual_fields = shared_virtual_fields;
     read_task_info.const_virtual_fields.emplace("_part_index", read_task_info.part_index_in_query);
     read_task_info.const_virtual_fields.emplace("_part_starting_offset", read_task_info.part_starting_offset_in_query);
@@ -247,12 +269,11 @@ MergeTreeReadPoolBase::buildReadTaskInfo(const RangesInDataPart & part_with_rang
         read_task_info.shared_size_predictor = std::make_unique<MergeTreeBlockSizePredictor>(
             read_task_info.data_part,
             Names(all_column_names.begin(), all_column_names.end()),
-            header);
+            storage_snapshot->metadata->getSampleBlock());
     }
 
     read_task_info.deserialization_prefixes_cache = std::make_shared<DeserializationPrefixesCache>();
 
-    is_part_on_remote_disk.push_back(part_with_ranges.data_part->isStoredOnRemoteDisk());
     std::tie(read_task_info.min_marks_per_task, read_task_info.approx_size_of_mark)
         = calculateMinMarksPerTask(part_with_ranges, column_names, read_task_info.task_columns.pre_columns, pool_settings, settings);
     return read_task_info;
@@ -269,8 +290,10 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
         assertSortedAndNonIntersecting(part_with_ranges.ranges);
 #endif
         MergeTreeReadTaskInfo read_task_info = buildReadTaskInfo(part_with_ranges, settings);
-        per_part_infos.push_back(std::make_shared<MergeTreeReadTaskInfo>(std::move(read_task_info)));
+        if (!read_task_info.patch_parts.empty())
+            ranges_in_patch_parts.addPart(part_with_ranges.data_part, read_task_info.patch_parts, part_with_ranges.ranges);
         is_part_on_remote_disk.push_back(part_with_ranges.data_part->isStoredOnRemoteDisk());
+        per_part_infos.push_back(std::make_shared<MergeTreeReadTaskInfo>(std::move(read_task_info)));
     }
 
     ranges_in_patch_parts.optimize();
@@ -355,6 +378,7 @@ MergeTreeReadTaskPtr MergeTreeReadPoolBase::createTask(
     else
     {
         task_readers = previous_task->releaseReaders();
+        task_readers.updateAllMarkRanges(ranges);
     }
 
     return createTask(read_info, std::move(task_readers), std::move(ranges), std::move(patches_ranges));

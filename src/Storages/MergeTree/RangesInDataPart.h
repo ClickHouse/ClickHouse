@@ -5,7 +5,9 @@
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
-#include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Storages/MergeTree/VectorSearchUtils.h>
+
+#include <deque>
 
 namespace DB
 {
@@ -60,12 +62,18 @@ struct PartOffsetRanges : public std::vector<PartOffsetRange>
     /// Each range is treated as a half-open interval: [begin, end)
     bool contains(UInt64 offset) const
     {
-        for (const auto & range : *this)
-        {
-            if (offset >= range.begin && offset < range.end)
-                return true;
-        }
-        return false;
+        if (empty())
+            return false;
+
+        /// Binary search for the first range whose 'begin' is greater than offset.
+        auto it = std::upper_bound(begin(), end(), offset, [](UInt64 value, const auto & range) { return value < range.begin; });
+
+        if (it == begin())
+            return false;
+
+        /// The range before 'it' might contain the offset.
+        --it;
+        return offset < it->end;
     }
 };
 

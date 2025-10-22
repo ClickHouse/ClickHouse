@@ -3,7 +3,7 @@ services:
     image: nats
     ports:
       - "${NATS_EXTERNAL_PORT:-4444}:${NATS_INTERNAL_PORT:-4444}"
-    command: "-p 4444 --user click --pass house --tls --tlscert=/etc/certs/server-cert.pem --tlskey=/etc/certs/server-key.pem"
+    command: "-p 4444 --user '${NATS_USER:-}' --pass '${NATS_PASSWORD:-}' --jetstream --tls --tlscert=/etc/certs/server-cert.pem --tlskey=/etc/certs/server-key.pem"
     volumes:
       - type: bind
         source: "${NATS_CERT_DIR:-}/nats"

@@ -24,50 +24,6 @@ TEST(ProjectionIndexBitmapTest, Create64)
     EXPECT_EQ(bitmap->cardinality(), 0);
 }
 
-// Test createFromRange for 32-bit bitmaps
-TEST(ProjectionIndexBitmapTest, CreateFromRange32)
-{
-    UInt32 start = 10;
-    UInt32 end = 20;
-    auto bitmap = ProjectionIndexBitmap::createFromRange<UInt32>(start, end);
-
-    ASSERT_NE(bitmap, nullptr);
-    EXPECT_EQ(bitmap->type, ProjectionIndexBitmap::BitmapType::Bitmap32);
-    EXPECT_FALSE(bitmap->empty());
-    EXPECT_EQ(bitmap->cardinality(), end - start);
-
-    // Check all elements in range are present
-    for (UInt32 i = start; i < end; ++i) {
-        EXPECT_TRUE(bitmap->contains<UInt32>(i)) << "Value " << i << " should be in bitmap";
-    }
-
-    // Check boundaries
-    EXPECT_FALSE(bitmap->contains<UInt32>(start - 1));
-    EXPECT_FALSE(bitmap->contains<UInt32>(end));
-}
-
-// Test createFromRange for 64-bit bitmaps
-TEST(ProjectionIndexBitmapTest, CreateFromRange64)
-{
-    UInt64 start = 10000000000ULL;
-    UInt64 end = 10000000100ULL;
-    auto bitmap = ProjectionIndexBitmap::createFromRange<UInt64>(start, end);
-
-    ASSERT_NE(bitmap, nullptr);
-    EXPECT_EQ(bitmap->type, ProjectionIndexBitmap::BitmapType::Bitmap64);
-    EXPECT_FALSE(bitmap->empty());
-    EXPECT_EQ(bitmap->cardinality(), end - start);
-
-    // Check all elements in range are present
-    for (UInt64 i = start; i < end; ++i) {
-        EXPECT_TRUE(bitmap->contains<UInt64>(i)) << "Value " << i << " should be in bitmap";
-    }
-
-    // Check boundaries
-    EXPECT_FALSE(bitmap->contains<UInt64>(start - 1));
-    EXPECT_FALSE(bitmap->contains<UInt64>(end));
-}
-
 // Test add and contains for 32-bit bitmap
 TEST(ProjectionIndexBitmapTest, AddContains32)
 {
