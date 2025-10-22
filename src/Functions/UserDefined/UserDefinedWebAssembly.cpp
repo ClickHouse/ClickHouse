@@ -55,30 +55,6 @@ extern const Event WasmDeserializationMicroseconds;
 namespace DB
 {
 
-
-namespace
-{
-
-/// Check if the string doesn't mix upper and lower case.
-/// String may start with upper case letter, but all other letters should have the same case.
-/// Examples:
-/// Allowed: Foobar, FOOBAR, foobar
-/// Not allowed: fOOBAR, FooBAR, FOObar
-bool isCaseConstrained(std::string_view str)
-{
-    if (str.size() < 2)
-        return true;
-    bool is_lower = std::islower(str[0]) || std::islower(str[1]);
-    for (size_t i = 1; i < str.size(); ++i)
-    {
-        if (is_lower != std::islower(str[i]))
-            return false;
-    }
-    return true;
-}
-
-}
-
 using namespace WebAssembly;
 
 namespace ErrorCodes
@@ -240,7 +216,7 @@ struct WasmBuffer
 static_assert(sizeof(WasmBuffer) == 8, "WasmBuffer size must be 8 bytes");
 static_assert(alignof(WasmBuffer) == 4, "WasmBuffer alignment must be 4 bytes");
 
-class WasmMemoryManagerV1 final : public WasmMemoryManager
+class WasmMemoryManagerV01 final : public WasmMemoryManager
 {
 public:
     constexpr static std::string_view allocate_function_name = "clickhouse_create_buffer";
@@ -249,7 +225,7 @@ public:
     static WasmFunctionDeclaration allocateFunctionDeclaration() { return {allocate_function_name, {WasmValKind::I32}, WasmValKind::I32}; }
     static WasmFunctionDeclaration deallocateFunctionDeclaration() { return {deallocate_function_name, {WasmValKind::I32}, std::nullopt}; }
 
-    explicit WasmMemoryManagerV1(WasmCompartment * compartment_) : compartment(compartment_) { }
+    explicit WasmMemoryManagerV01(WasmCompartment * compartment_) : compartment(compartment_) { }
 
     WasmPtr createBuffer(WasmSizeT size) const override { return compartment->invoke<WasmPtr>(allocate_function_name, {size}); }
     void destroyBuffer(WasmPtr handle) const override { compartment->invoke<void>(deallocate_function_name, {handle}); }
@@ -481,11 +457,11 @@ public:
     }
 };
 
-class UserDefinedWebAssemblyFunctionV1 : public UserDefinedWebAssemblyFunction
+class UserDefinedWebAssemblyFunctionV01 : public UserDefinedWebAssemblyFunction
 {
 public:
     template <typename... Args>
-    explicit UserDefinedWebAssemblyFunctionV1(Args &&... args) : UserDefinedWebAssemblyFunction(std::forward<Args>(args)...)
+    explicit UserDefinedWebAssemblyFunctionV01(Args &&... args) : UserDefinedWebAssemblyFunction(std::forward<Args>(args)...)
     {
         checkSignature();
     }
@@ -502,8 +478,8 @@ public:
     void checkSignature() const
     {
         checkFunction(WasmFunctionDeclaration(function_name, {WasmValKind::I32, WasmValKind::I32}, WasmValKind::I32));
-        checkFunction(WasmMemoryManagerV1::allocateFunctionDeclaration());
-        checkFunction(WasmMemoryManagerV1::deallocateFunctionDeclaration());
+        checkFunction(WasmMemoryManagerV01::allocateFunctionDeclaration());
+        checkFunction(WasmMemoryManagerV01::deallocateFunctionDeclaration());
     }
 
     static void readSingleBlock(std::unique_ptr<PullingPipelineExecutor> pipeline_executor, Block & result_block)
@@ -544,7 +520,7 @@ public:
         if (num_rows >= std::numeric_limits<WasmSizeT>::max())
             throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large number of rows: {}", num_rows);
 
-        auto wmm = std::make_unique<WasmMemoryManagerV1>(compartment);
+        auto wmm = std::make_unique<WasmMemoryManagerV01>(compartment);
 
         WasmMemoryGuard wasm_data = nullptr;
         if (!block.empty())
@@ -593,7 +569,7 @@ public:
                 throw Exception(ErrorCodes::WASM_ERROR,
                     "Cannot allocate buffer of size {}, got {} "
                     "Maybe '{}' function implementation in WebAssembly module is incorrect",
-                    input_data.size(), wasm_mem.size(), WasmMemoryManagerV1::allocate_function_name);
+                    input_data.size(), wasm_mem.size(), WasmMemoryManagerV01::allocate_function_name);
 
             std::copy(input_data.data(), input_data.data() + input_data.size(), wasm_mem.begin());
         }
@@ -659,12 +635,12 @@ std::unique_ptr<UserDefinedWebAssemblyFunction> UserDefinedWebAssemblyFunction::
         case WasmAbiVersion::Plain:
             return std::make_unique<UserDefinedWebAssemblyFunctionSimple>(
                 wasm_module_, function_name_, argument_names_, arguments_, result_type_, std::move(function_settings));
-        case WasmAbiVersion::V1:
-            return std::make_unique<UserDefinedWebAssemblyFunctionV1>(
+        case WasmAbiVersion::UnstableV01:
+            return std::make_unique<UserDefinedWebAssemblyFunctionV01>(
                 wasm_module_, function_name_, argument_names_, arguments_, result_type_, std::move(function_settings));
     }
     throw Exception(
-        ErrorCodes::LOGICAL_ERROR, "Unknown WebAssembly ABI version: {}", static_cast<std::underlying_type_t<WasmAbiVersion>>(abi_type));
+        ErrorCodes::LOGICAL_ERROR, "Unknown WebAssembly ABI version: {}", std::to_underlying(abi_type));
 }
 
 String toString(WasmAbiVersion abi_type)
@@ -673,19 +649,18 @@ String toString(WasmAbiVersion abi_type)
     {
         case WasmAbiVersion::Plain:
             return "PLAIN";
-        case WasmAbiVersion::V1:
-            return "V1";
+        case WasmAbiVersion::UnstableV01:
+            return "UNSTABLE_V0_1";
+        // case WasmAbiVersion::V1:
+        //     return "V1";
     }
     throw Exception(
-        ErrorCodes::LOGICAL_ERROR, "Unknown WebAssembly ABI version: {}", static_cast<std::underlying_type_t<WasmAbiVersion>>(abi_type));
+        ErrorCodes::LOGICAL_ERROR, "Unknown WebAssembly ABI version: {}", std::to_underlying(abi_type));
 }
 
 WasmAbiVersion getWasmAbiFromString(const String & str)
 {
-    if (!isCaseConstrained(str))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected value for WebAssembly ABI version: '{}'", str);
-
-    for (auto abi_type : {WasmAbiVersion::Plain, WasmAbiVersion::V1})
+    for (auto abi_type : {WasmAbiVersion::Plain, WasmAbiVersion::UnstableV01})
         if (Poco::toUpper(str) == toString(abi_type))
             return abi_type;
 
@@ -997,7 +972,7 @@ struct WebAssemblyFunctionSettingsConstraits : public IHints<>
         {"max_fuel", SettingUInt64Range{1'000, std::numeric_limits<UInt64>::max()}.withDefault(100'000'000)},
         /// Memory limit for a single instance
         {"max_memory", SettingUInt64Range{64_KiB, 4_GiB}.withDefault(100_MiB)},
-        /// Serialization format for input/output data for ABI V1
+        /// Serialization format for input/output data for ABI what uses serialization
         {"serialization_format",
          SettingStringFromSet{{"MsgPack", "JSONEachRow", "CSV", "TSV", "TSVRaw", "RowBinary"}}.withDefault("MsgPack")},
         /// Limit for the number of rows in a single block

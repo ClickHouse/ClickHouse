@@ -109,7 +109,7 @@ INSERT INTO system.webassembly_modules (name, code) SELECT 'export_incorrect_mal
     'MDAuMTQ0KQAsD3RhcmdldF9mZWF0dXJlcwIrD211dGFibGUtZ2xvYmFscysIc2lnbi1leHQ='
 ));
 
-CREATE FUNCTION export_incorrect_malloc LANGUAGE WASM ABI V1 FROM 'export_incorrect_malloc' :: 'test_func' ARGUMENTS (UInt32) RETURNS UInt32; -- { serverError BAD_ARGUMENTS }
+CREATE FUNCTION export_incorrect_malloc LANGUAGE WASM ABI UNSTABLE_V0_1 FROM 'export_incorrect_malloc' :: 'test_func' ARGUMENTS (UInt32) RETURNS UInt32; -- { serverError BAD_ARGUMENTS }
 DELETE FROM system.webassembly_modules WHERE name = 'export_incorrect_malloc';
 
 INSERT INTO system.webassembly_modules (name, code) SELECT 'export_faulty_malloc', base64Decode(concat(
@@ -125,6 +125,6 @@ INSERT INTO system.webassembly_modules (name, code) SELECT 'export_faulty_malloc
     'CHNpZ24tZXh0'
 ));
 
-CREATE FUNCTION export_faulty_malloc LANGUAGE WASM ABI V1 FROM 'export_faulty_malloc' :: 'test_func' ARGUMENTS (UInt32) RETURNS UInt32;
+CREATE FUNCTION export_faulty_malloc LANGUAGE WASM ABI UNSTABLE_V0_1 FROM 'export_faulty_malloc' :: 'test_func' ARGUMENTS (UInt32) RETURNS UInt32;
 
 SELECT export_faulty_malloc(1 :: UInt32); -- { serverError WASM_ERROR }

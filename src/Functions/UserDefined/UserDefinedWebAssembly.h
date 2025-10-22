@@ -17,7 +17,7 @@ namespace DB
 enum class WasmAbiVersion : uint8_t
 {
     Plain,
-    V1,
+    UnstableV01,
 };
 
 String toString(WasmAbiVersion abi_type);

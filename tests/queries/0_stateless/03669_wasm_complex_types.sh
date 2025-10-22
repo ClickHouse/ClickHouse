@@ -44,8 +44,8 @@ CREATE OR REPLACE FUNCTION add3_i64 LANGUAGE WASM ABI PLAIN FROM 'clickhouse_was
 CREATE OR REPLACE FUNCTION add3_i32 LANGUAGE WASM ABI PLAIN FROM 'clickhouse_wasm_example' ARGUMENTS (UInt32, UInt32, UInt32) RETURNS UInt32;
 CREATE OR REPLACE FUNCTION add3_f32 LANGUAGE WASM ABI PLAIN FROM 'clickhouse_wasm_example' ARGUMENTS (Float32, Float32, Float32) RETURNS Float32;
 CREATE OR REPLACE FUNCTION add3_f64 LANGUAGE WASM ABI PLAIN FROM 'clickhouse_wasm_example' ARGUMENTS (Float64, Float64, Float64) RETURNS Float64;
-CREATE OR REPLACE FUNCTION vadd3_u64 LANGUAGE WASM ABI V1 FROM 'clickhouse_wasm_example' ARGUMENTS (UInt64, UInt64, UInt64) RETURNS UInt64;
-CREATE OR REPLACE FUNCTION add3_csv LANGUAGE WASM ABI V1 FROM 'clickhouse_wasm_example' ARGUMENTS (UInt64, UInt64, UInt64) RETURNS UInt64 SETTINGS serialization_format  = 'CSV';
+CREATE OR REPLACE FUNCTION vadd3_u64 LANGUAGE WASM ABI UNSTABLE_V0_1 FROM 'clickhouse_wasm_example' ARGUMENTS (UInt64, UInt64, UInt64) RETURNS UInt64;
+CREATE OR REPLACE FUNCTION add3_csv LANGUAGE WASM ABI UNSTABLE_V0_1 FROM 'clickhouse_wasm_example' ARGUMENTS (UInt64, UInt64, UInt64) RETURNS UInt64 SETTINGS serialization_format  = 'CSV';
 
 SELECT
     number AS a,
@@ -68,27 +68,27 @@ SELECT round(golden_ratio(), 3) AS golden_ratio;
 CREATE OR REPLACE FUNCTION simple_counter LANGUAGE WASM ABI PLAIN FROM 'clickhouse_wasm_example' :: 'simple_counter' ARGUMENTS () RETURNS UInt64 SETTINGS max_instances = 1;
 SELECT simple_counter() AS val from numbers_mt(4) ORDER BY ALL SETTINGS max_block_size = 2;
 
-CREATE OR REPLACE FUNCTION complex_data_type LANGUAGE WASM ABI V1 FROM 'clickhouse_wasm_example' ARGUMENTS (Map(String, UInt64), Array(String)) RETURNS UInt64;
+CREATE OR REPLACE FUNCTION complex_data_type LANGUAGE WASM ABI UNSTABLE_V0_1 FROM 'clickhouse_wasm_example' ARGUMENTS (Map(String, UInt64), Array(String)) RETURNS UInt64;
 
 SELECT complex_data_type(map('a', 20 :: UInt64, 'b', 100 :: UInt64, 'c', 20 + number :: UInt64), ['a', 'c']) FROM numbers(4);
 
-CREATE OR REPLACE FUNCTION always_returns_ten_rows LANGUAGE WASM ABI V1 FROM 'clickhouse_wasm_example' ARGUMENTS (value UInt64) RETURNS UInt64 SETTINGS serialization_format  = 'CSV';
+CREATE OR REPLACE FUNCTION always_returns_ten_rows LANGUAGE WASM ABI UNSTABLE_V0_1 FROM 'clickhouse_wasm_example' ARGUMENTS (value UInt64) RETURNS UInt64 SETTINGS serialization_format  = 'CSV';
 SELECT always_returns_ten_rows(number) FROM numbers(1); -- { serverError WASM_ERROR }
 
-CREATE OR REPLACE FUNCTION hello_csv LANGUAGE WASM ABI V1 FROM 'clickhouse_wasm_example' ARGUMENTS () RETURNS Nullable(String) SETTINGS serialization_format  = 'CSV';
+CREATE OR REPLACE FUNCTION hello_csv LANGUAGE WASM ABI UNSTABLE_V0_1 FROM 'clickhouse_wasm_example' ARGUMENTS () RETURNS Nullable(String) SETTINGS serialization_format  = 'CSV';
 SELECT hello_csv() like 'Hello, ClickHouse 2%!' FROM numbers(2);
 
-CREATE OR REPLACE FUNCTION hello_csv_wrong LANGUAGE WASM ABI V1 FROM 'clickhouse_wasm_example' :: 'hello_csv' ARGUMENTS () RETURNS UInt64 SETTINGS serialization_format  = 'CSV';
+CREATE OR REPLACE FUNCTION hello_csv_wrong LANGUAGE WASM ABI UNSTABLE_V0_1 FROM 'clickhouse_wasm_example' :: 'hello_csv' ARGUMENTS () RETURNS UInt64 SETTINGS serialization_format  = 'CSV';
 SELECT hello_csv_wrong() FROM numbers(1); -- { serverError CANNOT_PARSE_INPUT_ASSERTION_FAILED }
 
-CREATE OR REPLACE FUNCTION wasm_get_block_size2 LANGUAGE WASM ABI V1 FROM 'clickhouse_wasm_example' :: 'get_block_size' ARGUMENTS (value UInt64) RETURNS UInt64 SETTINGS serialization_format  = 'CSV', max_input_block_size = 2;
+CREATE OR REPLACE FUNCTION wasm_get_block_size2 LANGUAGE WASM ABI UNSTABLE_V0_1 FROM 'clickhouse_wasm_example' :: 'get_block_size' ARGUMENTS (value UInt64) RETURNS UInt64 SETTINGS serialization_format  = 'CSV', max_input_block_size = 2;
 SELECT min(wasm_get_block_size2(number) AS v), max(v) FROM numbers(10000) SETTINGS max_block_size = 65000;
 
-CREATE OR REPLACE FUNCTION wasm_get_block_size15 LANGUAGE WASM ABI V1 FROM 'clickhouse_wasm_example' :: 'get_block_size' ARGUMENTS (value UInt64) RETURNS UInt64 SETTINGS serialization_format  = 'CSV', max_input_block_size = 15;
+CREATE OR REPLACE FUNCTION wasm_get_block_size15 LANGUAGE WASM ABI UNSTABLE_V0_1 FROM 'clickhouse_wasm_example' :: 'get_block_size' ARGUMENTS (value UInt64) RETURNS UInt64 SETTINGS serialization_format  = 'CSV', max_input_block_size = 15;
 SELECT min(wasm_get_block_size15(number) AS v), max(v) FROM numbers(10000) SETTINGS max_block_size = 65000;
 SELECT min(wasm_get_block_size15(number) AS v), max(v) FROM numbers(8) SETTINGS max_block_size = 65000;
 
-CREATE OR REPLACE FUNCTION parse_pem LANGUAGE WASM ABI V1 FROM 'clickhouse_wasm_example' ARGUMENTS (s String) RETURNS Map(String, String);
+CREATE OR REPLACE FUNCTION parse_pem LANGUAGE WASM ABI unstable_v0_1 FROM 'clickhouse_wasm_example' ARGUMENTS (s String) RETURNS Map(String, String);
 SELECT
     m['subject'] as subject,
     toDateTime(toUInt64OrZero(m['not_before']), 'Europe/London') as not_before,

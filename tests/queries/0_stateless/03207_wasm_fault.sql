@@ -111,14 +111,14 @@ INSERT INTO system.webassembly_modules (name, code) SELECT 'test_faulty_abiv1', 
     'MTQ0KQAsD3RhcmdldF9mZWF0dXJlcwIrD211dGFibGUtZ2xvYmFscysIc2lnbi1leHQ='
 ));
 
-CREATE OR REPLACE FUNCTION returns_out_of_bounds LANGUAGE WASM ABI V1 FROM 'test_faulty_abiv1' ARGUMENTS (UInt32) RETURNS Int32;
+CREATE OR REPLACE FUNCTION returns_out_of_bounds LANGUAGE WASM ABI UNSTABLE_V0_1 FROM 'test_faulty_abiv1' ARGUMENTS (UInt32) RETURNS Int32;
 SELECT returns_out_of_bounds(0 :: UInt32); -- { serverError WASM_ERROR }
 
-CREATE OR REPLACE FUNCTION returns_out_of_bounds2 LANGUAGE WASM ABI V1 FROM 'test_faulty_abiv1' ARGUMENTS (UInt32) RETURNS Int32;
+CREATE OR REPLACE FUNCTION returns_out_of_bounds2 LANGUAGE WASM ABI UNSTABLE_V0_1 FROM 'test_faulty_abiv1' ARGUMENTS (UInt32) RETURNS Int32;
 SELECT returns_out_of_bounds2(0 :: UInt32); -- { serverError WASM_ERROR }
 
 -- module itself is ok, test properly defined function from it
-CREATE OR REPLACE FUNCTION test_func LANGUAGE WASM ABI V1 FROM 'test_faulty_abiv1' ARGUMENTS (UInt64) RETURNS UInt64 SETTINGS serialization_format = 'CSV';
+CREATE OR REPLACE FUNCTION test_func LANGUAGE WASM ABI UNSTABLE_V0_1 FROM 'test_faulty_abiv1' ARGUMENTS (UInt64) RETURNS UInt64 SETTINGS serialization_format = 'CSV';
 SELECT test_func(456 :: UInt64), test_func(materialize(521 :: UInt64));
 
 DROP FUNCTION IF EXISTS test_func;
