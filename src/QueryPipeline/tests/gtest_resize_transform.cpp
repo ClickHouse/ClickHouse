@@ -37,7 +37,8 @@ static Pipe getInputStreams(const std::vector<std::string> & column_names, size_
     return Pipe::unitePipes(std::move(pipes));
 }
 
-static void testSplitResizeTransform(size_t instreams, size_t outstreams, size_t min_outstreams_per_resize_after_split, bool strict)
+[[maybe_unused]] static void
+testSplitResizeTransform(size_t instreams, size_t outstreams, size_t min_outstreams_per_resize_after_split, bool strict)
 {
     constexpr size_t rows_per_stream = 10;
 
