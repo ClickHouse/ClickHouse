@@ -25,7 +25,8 @@ namespace DB::Parquet
 
 // TODO [parquet]:
 //  * either multistage PREWHERE or make query optimizer selectively move parts of the condition to prewhere instead of the whole condition
-//  * test on files from https://github.com/apache/parquet-testing
+//  * test on files from https://github.com/apache/parquet-testing and https://www.timestored.com/data/sample/parquet
+//  * look at issues in 00900_long_parquet_load.sh
 //  * check fields for false sharing, add cacheline padding as needed
 //  * make sure userspace page cache read buffer supports readBigAt
 //  * support newer parquet versions: https://github.com/apache/parquet-format/blob/master/CHANGES.md

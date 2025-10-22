@@ -71,6 +71,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_use_logical_join_step", true, true, "Added alias"},
             {"schema_inference_make_columns_nullable", 1, 3, "Take nullability information from Parquet/ORC/Arrow metadata by default, instead of making everything nullable."},
             {"materialized_views_squash_parallel_inserts", false, true, "Added setting to preserve old behavior if needed."},
+            {"input_format_parquet_use_native_reader_v3", false, true, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.9",
         {
@@ -122,7 +123,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_cache_connect_max_tries", 20, 5, "Changed setting value"},
             {"opentelemetry_trace_cpu_scheduling", false, false, "New setting to trace `cpu_slot_preemption` feature."},
             {"output_format_parquet_max_dictionary_size", 1024 * 1024, 1024 * 1024, "New setting"},
-            {"input_format_parquet_use_native_reader_v3", false, true, "New setting"},
+            {"input_format_parquet_use_native_reader_v3", false, false, "New setting"},
             {"input_format_parquet_memory_low_watermark", 2ul << 20, 2ul << 20, "New setting"},
             {"input_format_parquet_memory_high_watermark", 4ul << 30, 4ul << 30, "New setting"},
             {"input_format_parquet_page_filter_push_down", true, true, "New setting (no effect when input_format_parquet_use_native_reader_v3 is disabled)"},
