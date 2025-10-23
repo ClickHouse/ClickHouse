@@ -2056,7 +2056,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNodeLegacy(
                 continue;
 
             const auto & cast_type = it->second;
-            output_node = &cast_actions_dag.addCast(*output_node, cast_type, output_node->result_name);
+            output_node = &cast_actions_dag.addCast(*output_node, cast_type, output_node->result_name, planner_context->getQueryContext());
         }
 
         cast_actions_dag.appendInputsForUnusedColumns(*plan_to_add_cast.getCurrentHeader());

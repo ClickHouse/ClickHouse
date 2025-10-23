@@ -217,10 +217,10 @@ buildJoinUsingCondition(const QueryTreeNodePtr & node, JoinOperatorBuildContext 
                 using_column_node.getColumnName(), node->dumpTree());
 
         const auto & result_type = using_column_node.getResultType();
-        auto cast_to_super = [&result_type, &changed_types](auto & dag, const auto & nodes)
+        auto cast_to_super = [&result_type, &changed_types, &builder_context](auto & dag, const auto & nodes)
         {
             auto arg = nodes.at(0);
-            const auto & casted = dag.addCast(*arg, result_type, {});
+            const auto & casted = dag.addCast(*arg, result_type, {}, builder_context.planner_context->getQueryContext());
             changed_types[arg->result_name] = &dag.addAlias(casted, arg->result_name);
             return arg;
         };

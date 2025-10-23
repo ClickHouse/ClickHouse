@@ -386,7 +386,8 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const 
                             /* from */std::move(left_column),
                             /* to */column_node->result_type,
                             DB::CastType::nonAccurate,
-                            std::move(diagnostic));
+                            std::move(diagnostic),
+                            nullptr);
 
                         DB::ActionsDAG::NodeRawConstPtrs children = { left_arg, right_arg };
                         literal_node = &dag.addFunction(func_base_cast, std::move(children), {});

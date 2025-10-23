@@ -372,7 +372,7 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
         all_const);
 }
 
-const ActionsDAG::Node & ActionsDAG::addCast(const Node & node_to_cast, const DataTypePtr & cast_type, std::string result_name)
+const ActionsDAG::Node & ActionsDAG::addCast(const Node & node_to_cast, const DataTypePtr & cast_type, std::string result_name, ContextPtr context)
 {
     Field cast_type_constant_value(cast_type->getName());
 
@@ -383,7 +383,7 @@ const ActionsDAG::Node & ActionsDAG::addCast(const Node & node_to_cast, const Da
 
     const auto * cast_type_constant_node = &addColumn(column);
     ActionsDAG::NodeRawConstPtrs children = {&node_to_cast, cast_type_constant_node};
-    auto func_base_cast = createInternalCast(ColumnWithTypeAndName{node_to_cast.result_type, node_to_cast.result_name}, cast_type, CastType::nonAccurate, {});
+    auto func_base_cast = createInternalCast(ColumnWithTypeAndName{node_to_cast.result_type, node_to_cast.result_name}, cast_type, CastType::nonAccurate, {}, context);
 
     return addFunction(func_base_cast, std::move(children), result_name);
 }
@@ -1730,7 +1730,7 @@ ActionsDAG ActionsDAG::makeConvertingActions(
 
             CastDiagnostic diagnostic = {dst_node->result_name, res_elem.name};
             ColumnWithTypeAndName left_column{nullptr, dst_node->result_type, {}};
-            auto func_base_cast = createInternalCast(std::move(left_column), res_elem.type, CastType::nonAccurate, std::move(diagnostic));
+            auto func_base_cast = createInternalCast(std::move(left_column), res_elem.type, CastType::nonAccurate, std::move(diagnostic), nullptr);
 
             NodeRawConstPtrs children = { left_arg, right_arg };
             dst_node = &actions_dag.addFunction(func_base_cast, std::move(children), {});
