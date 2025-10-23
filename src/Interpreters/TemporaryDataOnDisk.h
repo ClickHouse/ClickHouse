@@ -85,19 +85,25 @@ public:
     explicit TemporaryDataOnDiskScope(TemporaryDataOnDiskSettings settings_, Args &&... storage_args)
         : file_provider(createTemporaryFileProvider(std::forward<Args>(storage_args)...))
         , settings(std::move(settings_))
-    {}
+    {
+        validateSettings(settings);
+    }
 
 
     TemporaryDataOnDiskScope(TemporaryDataOnDiskScopePtr parent_, TemporaryDataOnDiskSettings settings_)
         : parent(std::move(parent_))
         , file_provider(parent->file_provider)
         , settings(std::move(settings_))
-    {}
+    {
+        validateSettings(settings);
+    }
 
     TemporaryDataOnDiskScopePtr childScope(CurrentMetrics::Metric current_metric, UInt64 buffer_size_ = 0);
 
     const TemporaryDataOnDiskSettings & getSettings() const { return settings; }
 protected:
+    static void validateSettings(const TemporaryDataOnDiskSettings & settings);
+
     friend class TemporaryDataBuffer;
 
     void deltaAllocAndCheck(ssize_t compressed_delta, ssize_t uncompressed_delta);

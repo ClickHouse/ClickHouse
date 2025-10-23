@@ -65,6 +65,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_ENOUGH_SPACE;
     extern const int TOO_MANY_ROWS_OR_BYTES;
+    extern const int INVALID_SETTING_VALUE;
 }
 
 namespace
@@ -357,6 +358,12 @@ TemporaryFileProvider createTemporaryFileProvider(DistributedCacheTag)
     };
 }
 #endif
+
+void TemporaryDataOnDiskScope::validateSettings(const TemporaryDataOnDiskSettings & settings)
+{
+    if (settings.buffer_size == 0)
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Temporary data on disk buffer size cannot be zero");
+}
 
 TemporaryDataOnDiskScopePtr TemporaryDataOnDiskScope::childScope(CurrentMetrics::Metric current_metric, UInt64 buffer_size_)
 {
