@@ -1,4 +1,4 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-parallel
 SET allow_experimental_analyzer = 1;
 
 DROP FUNCTION IF EXISTS huge_allocate;

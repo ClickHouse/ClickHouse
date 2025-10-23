@@ -1,4 +1,4 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-parallel
 
 -- Checks general functionality of managing WebAssembly modules and functions (adding modules, creating functions, etc)
 -- And basic wasm engine functionality, such as calling simple functions
