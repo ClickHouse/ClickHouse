@@ -594,7 +594,6 @@ SETTINGS query_plan_direct_read_from_text_index = 1, use_skip_indexes_on_data_re
 ```
 The direct read query is over 45 times faster (0.362s vs 0.008s) and processes significantly less data (9.51 GB vs 3.15 MB) by reading from the index alone.
 
-
 ### 2. Using `hasAnyTokens` {#using-hasAnyTokens}
 
 `hasAnyTokens` checks if the text contains at least one of the given tokens.
@@ -631,7 +630,6 @@ SETTINGS query_plan_direct_read_from_text_index = 1, use_skip_indexes_on_data_re
 ```
 The speedup is even more dramatic for this common "OR" search.
 The query is nearly 89 times faster (1.329s vs 0.015s) by avoiding the full column scan.
-
 
 ### 3. Using `hasAllTokens` {#using-hasAllTokens}
 
