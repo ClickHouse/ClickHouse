@@ -1201,7 +1201,8 @@ public:
      * bitmap can treat as a vector with all value of keys equal to 1.
      * The result is stored in the res.
      */
-    static void pointwiseMultiply(const BSINumericIndexedVector & lhs, const AggregateFunctionGroupBitmapData<IT> & rhs, BSINumericIndexedVector & res)
+    static void
+    pointwiseMultiply(const BSINumericIndexedVector & lhs, const AggregateFunctionGroupBitmapData<IT> & rhs, BSINumericIndexedVector & res)
     {
         lhs.andBitmap(rhs.roaring_bitmap_with_small_set, res);
     }
@@ -1239,8 +1240,8 @@ public:
         pointwiseRawBinaryOperate(lhs, rhs, divide_op_code, res);
     }
 
-    static std::shared_ptr<Roaring> pointwiseEqualWithinScope(
-        const BSINumericIndexedVector &lhs, const BSINumericIndexedVector &rhs, Roaring &scope)
+    static std::shared_ptr<Roaring>
+    pointwiseEqualWithinScope(const BSINumericIndexedVector & lhs, const BSINumericIndexedVector & rhs, Roaring & scope)
     {
         BSINumericIndexedVector lhs_ref;
         lhs_ref.shallowCopyFrom(lhs);
@@ -1381,8 +1382,8 @@ public:
     }
 
     /// lhs < rhs with unsigned.
-    static std::shared_ptr<Roaring> pointwiseLessUnsignedWithinScope(
-        const BSINumericIndexedVector &lhs, const BSINumericIndexedVector &rhs, const Roaring &scope)
+    static std::shared_ptr<Roaring>
+    pointwiseLessUnsignedWithinScope(const BSINumericIndexedVector & lhs, const BSINumericIndexedVector & rhs, const Roaring & scope)
     {
         if (scope.size() == 0)
             return std::make_shared<Roaring>();
@@ -1457,8 +1458,8 @@ public:
     }
 
     /// A < B (signed two's complement)
-    static std::shared_ptr<Roaring> pointwiseLessSignedWithinScope(
-        const BSINumericIndexedVector & lhs, const BSINumericIndexedVector & rhs, Roaring &scope)
+    static std::shared_ptr<Roaring>
+    pointwiseLessSignedWithinScope(const BSINumericIndexedVector & lhs, const BSINumericIndexedVector & rhs, Roaring & scope)
     {
         if (scope.size() == 0)
             return std::make_shared<Roaring>();
@@ -1673,7 +1674,11 @@ public:
     /// pointwise select helper: choose L or R per-key using (lhs < rhs) mask on `both`.
     /// pick_lhs_when_lt = false  => max semantics (equal -> lhs).
     /// pick_lhs_when_lt = true   => min semantics (equal -> lhs).
-    static void pointwiseSelectWithLTMask(const BSINumericIndexedVector & lhs, const BSINumericIndexedVector & rhs, const bool pick_lhs_when_lt, BSINumericIndexedVector & res)
+    static void pointwiseSelectWithLTMask(
+        const BSINumericIndexedVector & lhs,
+        const BSINumericIndexedVector & rhs,
+        const bool pick_lhs_when_lt,
+        BSINumericIndexedVector & res)
     {
         if (lhs.isValueTypeSigned() != rhs.isValueTypeSigned())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "lhs and rhs isValueTypeSigned must be same");
@@ -1720,7 +1725,6 @@ public:
 
         if (both.size() > 0)
         {
-
             std::shared_ptr<Roaring> lt_mask;
             if (!lhs_ref.isValueTypeSigned())
                 lt_mask = pointwiseLessUnsignedWithinScope(lhs_ref, rhs_ref, both);
@@ -1941,8 +1945,10 @@ public:
     Int64 signExtendFromTotalBits(UInt64 x) const
     {
         const UInt32 tb = getTotalBitNum();
-        if (tb == 0) return 0;
-        if (tb >= 64) return static_cast<Int64>(x);
+        if (tb == 0)
+            return 0;
+        if (tb >= 64)
+            return static_cast<Int64>(x);
         const UInt64 sign_mask = 1ULL << (tb - 1);
         if (x & sign_mask)
         {
@@ -2042,14 +2048,14 @@ public:
             neg.rb_or(*getDataArrayAt(sign_bit));
             if (neg.size() > 0)
             {
-                /// Exists negtive numbers.
+                /// Exists negative numbers.
                 UInt64 scaled = (1ULL << sign_bit);
                 scaled |= greedyAccumulateBits(neg, sign_bit - 1, /*prefer_one=*/false);
                 return materializeValueSigned(scaled);
             }
             else
             {
-                /// All non-negtive numbers.
+                /// All non-negative numbers.
                 Roaring nonneg;
                 nonneg.rb_or(*all_idx_ptr);
                 const UInt64 scaled = greedyAccumulateBits(nonneg, sign_bit - 1, /*prefer_one=*/false);
