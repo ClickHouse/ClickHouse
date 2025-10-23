@@ -29,7 +29,7 @@ def test_table_function():
     )
     
     # test that dataset_name is being sent correctly to the arrowflight server
-    result = node.query(f"SELECT * FROM arrowFlight('arrowlight1:5005', 'XYZ')")
+    result = node.query(f"SELECT * FROM arrowFlight('arrowflight1:5005', 'XYZ')")
     assert result == TSV(
         [
             ["1", "4"],
