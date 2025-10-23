@@ -23,12 +23,12 @@ SOURCE(
 LAYOUT(DIRECT())"
 
 # this starts an internal query
-$CLICKHOUSE_CLIENT --query "SELECT * FROM ${CLICKHOUSE_DATABASE}.slow_dict WHERE key = 1 FORMAT Null" &
+$CLICKHOUSE_CLIENT --query "SELECT * FROM ${CLICKHOUSE_DATABASE}.slow_dict FORMAT Null" &
 ASYNC_DICT_QUERY_PID=$!
 
 # wait for the internal query to start
 for _ in {1..10}; do
-    $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS"
+    $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
     $CLICKHOUSE_CLIENT --query "
     SELECT
         count()

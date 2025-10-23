@@ -18,7 +18,7 @@ $CLICKHOUSE_CLIENT --user ${TEST_USER} --query "SHOW FUNCTIONS LIKE 'plus' FORMA
 $CLICKHOUSE_CLIENT --user ${TEST_USER} --query "SHOW SETTING max_threads FORMAT Null"
 $CLICKHOUSE_CLIENT --user ${TEST_USER} --query "KILL QUERY WHERE query_id = 'nonexistent' SYNC" &>/dev/null
 
-$CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS"
+$CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
 
 $CLICKHOUSE_CLIENT --query "
 SELECT
