@@ -1054,10 +1054,10 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
             resolved_from_cache = true;
             alias_node = cached_it->second;
         }
-        else
+        else {
             alias_node = original_alias_node->clone();
-    } else if (!identifier_lookup.isTableExpressionLookup())
-        scope_to_resolve_alias_expression->aliases.node_to_remove_aliases.push_back(alias_node);
+        }
+    }
 
     /* Do not use alias to resolve identifier when it's part of aliased expression. This is required to support queries like:
      * 1. SELECT dummy + 1 AS dummy
@@ -1076,6 +1076,12 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
 
     if (!resolved_from_cache)
     {
+        if (!identifier_lookup.isTableExpressionLookup())
+        {
+            alias_node = original_alias_node->clone();
+            scope_to_resolve_alias_expression->aliases.node_to_remove_aliases.push_back(alias_node);
+        }
+
         /// Resolve expression if necessary
         if (node_type == QueryTreeNodeType::IDENTIFIER)
         {
