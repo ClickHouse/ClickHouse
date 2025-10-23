@@ -5,6 +5,8 @@
 #include <Common/Exception.h>
 #include <Common/config_version.h>
 #include <Common/logger_useful.h>
+#include <Common/thread_local_rng.h>
+#include <random>
 
 
 namespace DB::ErrorCodes
@@ -36,6 +38,15 @@ Int64 wasmExportServerVer(WasmCompartment *)
     std::string_view data(reinterpret_cast<const char *>(host_ptr), size);
     throw Exception(ErrorCodes::WASM_ERROR, "WebAssembly UDF terminated with error: {}", data);
 }
+
+void wasmExportRandom(WasmCompartment * compartment, WasmPtr wasm_ptr, WasmSizeT size)
+{
+    auto * host_ptr = compartment->getMemory(wasm_ptr, size);
+    std::uniform_int_distribution<> dist(std::numeric_limits<UInt8>::max(), std::numeric_limits<UInt8>::max());
+    for (WasmSizeT i = 0; i < size; ++i)
+        host_ptr[i] = static_cast<UInt8>(dist(thread_local_rng));
+}
+
 }
 
 template <typename ReturnType, typename... Args>
@@ -103,6 +114,7 @@ std::unique_ptr<WasmHostFunction> getHostFunction(std::string_view function_name
         makeHostFunction("clickhouse_server_version", wasmExportServerVer),
         makeHostFunction("clickhouse_terminate", wasmExportTerminate),
         makeHostFunction("clickhouse_log", wasmExportAlert),
+        makeHostFunction("clickhouse_random", wasmExportRandom),
     };
     for (auto && function : exported_functions)
     {
