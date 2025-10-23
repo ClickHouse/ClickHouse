@@ -75,6 +75,12 @@ void Client::shutdown()
 
 std::optional<VersionedCertificate> Client::requestCertificate() const
 {
+    if (!initialized)
+    {
+        LOG_TRACE(log, "requestCertificate() called ahead of client initialization completion.");
+        return std::nullopt;
+    }
+
     auto context = Context::getGlobalContextInstance();
     auto zk = context->getZooKeeper();
 
@@ -157,6 +163,8 @@ void Client::initialize(const Poco::Util::AbstractConfiguration & config)
 
     if (!private_acme_key)
         refresh_key_task->activateAndSchedule();
+
+    initialized = true;
 }
 
 void Client::refresh_certificates_fn(const Poco::Util::AbstractConfiguration & config)
@@ -213,8 +221,13 @@ void Client::refresh_certificates_fn(const Poco::Util::AbstractConfiguration & c
         auto active_order_path = fs::path(ZOOKEEPER_BASE_PATH) / acme_hostname / "active_order";
         if ((!lock || !lock->isLocked()) && zk->exists(active_order_path))
         {
-            LOG_DEBUG(log, "Certificate order is in progress by another replica, skipping");
-            refresh_certificates_task->scheduleAfter(refresh_certificates_task_interval);
+            LOG_DEBUG(
+                log,
+                "Certificate order lock {} is active; retrying after {}ms",
+                std::string(active_order_path),
+                REFRESH_TASK_AFTER_ERROR_MS
+            );
+            refresh_certificates_task->scheduleAfter(REFRESH_TASK_AFTER_ERROR_MS);
             return;
         }
 

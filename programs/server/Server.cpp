@@ -2280,11 +2280,10 @@ try
             global_context->updateQueryResultCacheConfiguration(*config);
             global_context->updateQueryConditionCacheConfiguration(*config);
 
-            CompressionCodecEncrypted::Configuration::instance().tryLoad(*config, "encryption_codecs");
 #if USE_SSL
-            ACME::Client::instance().initialize(*config);
             CertificateReloader::instance().tryReloadAll(*config);
 #endif
+            CompressionCodecEncrypted::Configuration::instance().tryLoad(*config, "encryption_codecs");
             NamedCollectionFactory::instance().reloadFromConfig(*config);
             FileCacheFactory::instance().updateSettingsFromConfig(*config);
 
@@ -2471,6 +2470,13 @@ try
             LOG_INFO(log, "Listening for {}", server.getDescription());
         }
     }
+
+#if USE_SSL
+    /// ACME client is necessary for CertificateReloader to work in case Let's Encrypt is configured,
+    /// but can not start before Keeper server can be initialized (in case of embedded Keeper).
+    /// Let's try deferring until servers are started.
+    ACME::Client::instance().initialize(config());
+#endif
 
     const auto & cache_disk_name = server_settings[ServerSetting::temporary_data_in_cache].value;
 
