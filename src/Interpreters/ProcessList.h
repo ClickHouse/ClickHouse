@@ -339,7 +339,7 @@ struct ProcessListForUser
     size_t countNonInternalProcesses() const
     {
         size_t result = 0;
-        for (auto & [_, query_status] : queries)
+        for (const auto & [_, query_status] : queries)
         {
             if (!query_status->isInternal())
             {
@@ -549,7 +549,7 @@ public:
     size_t countNonInternalProcesses() const
     {
         size_t result = 0;
-        for (auto & query_status : processes)
+        for (const auto & query_status : processes)
         {
             if (!query_status->isInternal())
             {
