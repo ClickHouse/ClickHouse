@@ -694,12 +694,13 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
 
         /// IllegalLocationConstraintException may indicate that we are working with an opt-in region (e.g. me-south-1)
         /// In that case, we need to update the region and try again
-        if (error.GetResponseCode() != Aws::Http::HttpResponseCode::MOVED_PERMANENTLY && error.GetExceptionName() != "IllegalLocationConstraintException")
+        bool is_illegal_constraint_exception = error.GetExceptionName() == "IllegalLocationConstraintException";
+        if (error.GetResponseCode() != Aws::Http::HttpResponseCode::MOVED_PERMANENTLY && !is_illegal_constraint_exception)
             return result;
 
         // maybe we detect a correct region
         bool new_region_detected = false;
-        if (!detect_region || error.GetExceptionName() == "IllegalLocationConstraintException")
+        if (!detect_region || is_illegal_constraint_exception)
         {
             if (auto region = GetErrorMarshaller()->ExtractRegion(error); !region.empty() && region != explicit_region)
             {
@@ -711,7 +712,7 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
         }
 
         /// special handling for opt-in regions
-        if (new_region_detected && error.GetExceptionName() == "IllegalLocationConstraintException" && initial_endpoint.substr(11) == "amazonaws.com")
+        if (new_region_detected && is_illegal_constraint_exception && initial_endpoint.substr(11) == "amazonaws.com")
         {
             S3::URI new_uri(initial_endpoint);
             new_uri.addRegionToURI(request.getRegionOverride());
