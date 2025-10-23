@@ -4,6 +4,7 @@ Content-Type: text/tab-separated-values; charset=UTF-8
 Access-Control-Expose-Headers: X-ClickHouse-Query-Id,X-ClickHouse-Summary,X-ClickHouse-Server-Display-Name,X-ClickHouse-Format,X-ClickHouse-Timezone,X-ClickHouse-Exception-Code
 Transfer-Encoding: chunked
 Keep-Alive: timeout=10, max=?
+X-ClickHouse-Exception-Tag: ?
 
 HTTP/1.1 200 OK
 Connection: Keep-Alive
@@ -11,4 +12,4 @@ Content-Type: text/tab-separated-values; charset=UTF-8
 Access-Control-Expose-Headers: X-ClickHouse-Query-Id,X-ClickHouse-Summary,X-ClickHouse-Server-Display-Name,X-ClickHouse-Format,X-ClickHouse-Timezone,X-ClickHouse-Exception-Code
 Transfer-Encoding: chunked
 Keep-Alive: timeout=10, max=?
-
+X-ClickHouse-Exception-Tag: ?
