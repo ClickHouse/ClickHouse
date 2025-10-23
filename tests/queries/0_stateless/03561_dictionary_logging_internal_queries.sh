@@ -7,30 +7,28 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # Test that internal queries from dictionaries are logged correctly
 # We test multiple dictionary layouts that use the ClickHouse source.
 
-# Generate a unique run ID for this test execution
 RUN_ID="run_${RANDOM}_${RANDOM}_$$"
 
 SIMPLE_KEY_LAYOUTS=("FLAT()" "HASHED()" "HASHED_ARRAY()" "SPARSE_HASHED()")
 
 for layout in "${SIMPLE_KEY_LAYOUTS[@]}"; do
-
-$CLICKHOUSE_CLIENT --query "
-CREATE DICTIONARY ${CLICKHOUSE_DATABASE}.test_logging_internal_queries_dict
-(
-    name String,
-    value Float64
-)
-PRIMARY KEY name
-SOURCE(
-    CLICKHOUSE(
-        QUERY 'SELECT toString(number) AS name, toFloat64(number) AS value FROM numbers(10) WHERE ''$layout-$RUN_ID'' != '''''
+    $CLICKHOUSE_CLIENT --query "
+    CREATE DICTIONARY ${CLICKHOUSE_DATABASE}.test_logging_internal_queries_dict
+    (
+        name String,
+        value Float64
     )
-)
-LIFETIME(MIN 100500 MAX 100500)
-LAYOUT($layout)"
+    PRIMARY KEY name
+    SOURCE(
+        CLICKHOUSE(
+            QUERY 'SELECT toString(number) AS name, toFloat64(number) AS value FROM numbers(10) WHERE ''$layout-$RUN_ID'' != '''''
+        )
+    )
+    LIFETIME(MIN 100500 MAX 100500)
+    LAYOUT($layout)"
 
-$CLICKHOUSE_CLIENT --query "SYSTEM RELOAD DICTIONARY ${CLICKHOUSE_DATABASE}.test_logging_internal_queries_dict"
-$CLICKHOUSE_CLIENT --query "DROP DICTIONARY ${CLICKHOUSE_DATABASE}.test_logging_internal_queries_dict"
+    $CLICKHOUSE_CLIENT --query "SYSTEM RELOAD DICTIONARY ${CLICKHOUSE_DATABASE}.test_logging_internal_queries_dict"
+    $CLICKHOUSE_CLIENT --query "DROP DICTIONARY ${CLICKHOUSE_DATABASE}.test_logging_internal_queries_dict"
 done
 
 
@@ -98,8 +96,8 @@ $CLICKHOUSE_CLIENT --query "
 SELECT
     countIf(query LIKE '%FLAT()-%' AND type = 'QueryStart'),
     countIf(query LIKE '%FLAT()-%' AND type = 'QueryFinish'),
-    countIf(query LIKE '%HASHED()-%' AND type = 'QueryStart'),
-    countIf(query LIKE '%HASHED()-%' AND type = 'QueryFinish'),
+    countIf(query LIKE '%''HASHED()-%' AND type = 'QueryStart'),
+    countIf(query LIKE '%''HASHED()-%' AND type = 'QueryFinish'),
     countIf(query LIKE '%HASHED_ARRAY()-%' AND type = 'QueryStart'),
     countIf(query LIKE '%HASHED_ARRAY()-%' AND type = 'QueryFinish'),
     countIf(query LIKE '%SPARSE_HASHED()-%' AND type = 'QueryStart'),
