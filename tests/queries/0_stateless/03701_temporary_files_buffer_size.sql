@@ -3,4 +3,4 @@ INSERT INTO TABLE t0 (c0) VALUES (1);
 SELECT c0 FROM t0 GROUP BY c0
 SETTINGS max_bytes_before_external_group_by = 1
     , temporary_files_buffer_size = 0
-    , group_by_two_level_threshold = 1; -- { serverError INVALID_SETTING_VALUE}
+    , group_by_two_level_threshold = 1; -- { serverError BAD_ARGUMENTS }
