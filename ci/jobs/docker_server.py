@@ -298,7 +298,7 @@ def test_docker_library(test_results) -> None:
         logging.info("Cloning %s repository to run tests for 'clickhouse' image", repo)
         repo_path = temp_path / repo
         config_override = (
-            Utils.cwd() / "ci" / "jobs" / "scripts" / "docker_server" / "config.sh"
+            Utils.cwd() / "ci/jobs/scripts/docker_server/config.sh"
         ).absolute()
         Shell.check(f"{GIT_PREFIX} clone {GITHUB_SERVER_URL}/{repo} {repo_path}")
         run_sh = (repo_path / "test/run.sh").absolute()
