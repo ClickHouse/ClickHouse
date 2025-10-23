@@ -29,5 +29,5 @@ SELECT '';
 
 select number as id, udf_type_of_int(id or id = 1) from numbers(5);
 
--- DROP FUNCTION udf_type_of_int;
--- DROP TABLE dict;
+DROP FUNCTION udf_type_of_int;
+DROP TABLE dict;
