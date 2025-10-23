@@ -152,14 +152,14 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const Act
 bool ConditionSelectivityEstimator::isStale(const std::vector<DataPartPtr> & data_parts) const
 {
     if (data_parts.size() != parts_names.size())
-        return false;
+        return true;
     size_t idx = 0;
     for (const auto & data_part : data_parts)
     {
         if (parts_names[idx++] != data_part->name)
-            return false;
+            return true;
     }
-    return true;
+    return false;
 }
 
 bool ConditionSelectivityEstimator::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out) const
