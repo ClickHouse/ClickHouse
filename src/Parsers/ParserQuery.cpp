@@ -4,12 +4,15 @@
 #include <Parsers/ParserCreateResourceQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserCreateIndexQuery.h>
+#include <Parsers/ParserCreateRewriteRuleQuery.h>
 #include <Parsers/ParserDropFunctionQuery.h>
 #include <Parsers/ParserDropWorkloadQuery.h>
 #include <Parsers/ParserDropResourceQuery.h>
 #include <Parsers/ParserDropIndexQuery.h>
 #include <Parsers/ParserDropNamedCollectionQuery.h>
+#include <Parsers/ParserDropRewriteRuleQuery.h>
 #include <Parsers/ParserAlterNamedCollectionQuery.h>
+#include <Parsers/ParserAlterRewriteRuleQuery.h>
 #include <Parsers/ParserDropQuery.h>
 #include <Parsers/ParserParallelWithQuery.h>
 #include <Parsers/ParserInsertQuery.h>
@@ -75,6 +78,9 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserDeleteQuery delete_p;
     ParserUpdateQuery update_p;
     ParserCopyQuery copy_p;
+    ParserCreateRewriteRuleQuery create_rewrite_rule_p(end, allow_settings_after_format_in_insert);
+    ParserAlterRewriteRuleQuery alter_rewrite_rule_p(end, allow_settings_after_format_in_insert);
+    ParserDropRewriteRuleQuery drop_rewrite_rule_p;
 
     bool res = query_with_output_p.parse(pos, node, expected)
         || insert_p.parse(pos, node, expected)
@@ -105,7 +111,10 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         || transaction_control_p.parse(pos, node, expected)
         || delete_p.parse(pos, node, expected)
         || update_p.parse(pos, node, expected)
-        || copy_p.parse(pos, node, expected);
+        || copy_p.parse(pos, node, expected)
+        || create_rewrite_rule_p.parse(pos, node, expected)
+        || alter_rewrite_rule_p.parse(pos, node, expected)
+        || drop_rewrite_rule_p.parse(pos, node, expected);
 
     if (res && allow_in_parallel_with)
     {

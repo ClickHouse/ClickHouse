@@ -1,0 +1,12 @@
+today	1337
+today	1337
+Row 1:
+──────
+name: rule_1
+rule: CREATE RULE rule_1 AS ( SELECT date , sum ( hits ) FROM stats WHERE date = { name2 : String } AND page = { name : String } GROUP BY date ) REWRITE TO ( SELECT date , hits FROM totals WHERE page = { name : String } AND date = { name2 : String } ) ;
+
+Row 2:
+──────
+name: rule_2
+rule: CREATE RULE rule_2 AS ( SELECT date , hits FROM totals WHERE page = { name : String } AND date = { name2 : String } ) REWRITE TO ( SELECT date FROM totals WHERE date = { name : String } ) ;
+today	1337

@@ -80,6 +80,7 @@ public:
      *  useful for common subexpression elimination. Set 'ignore_aliases = false' if you don't want that behavior.
       */
     IASTHash getTreeHash(bool ignore_aliases) const;
+    IASTHash getCurrentNodeHash(bool ignore_aliases) const;
     void updateTreeHash(SipHash & hash_state, bool ignore_aliases) const;
     virtual void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const;
 
