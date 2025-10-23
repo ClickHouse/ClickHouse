@@ -54,8 +54,8 @@
 
 #include <base/Decimal_fwd.h>
 #include <base/types.h>
+
 #include <boost/algorithm/string/predicate.hpp>
-#include <ranges>
 
 namespace DB
 {
@@ -1010,6 +1010,30 @@ std::string QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(
   * 6. Save aliased expression result type for typo correction.
   * 7. If identifier is compound and identifier lookup is in expression context, use `tryResolveIdentifierFromCompoundExpression`.
   */
+
+/** Check if a node or any of its children contain a QUERY or UNION node.
+  * This is used to determine if an alias should be cached, since expressions
+  * containing subqueries may be transformed differently depending on context.
+  */
+static bool nodeContainsQueryOrUnion(const QueryTreeNodePtr & node)
+{
+    if (!node)
+        return false;
+
+    auto node_type = node->getNodeType();
+    if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
+        return true;
+
+    // Recursively check all children
+    for (const auto & child : node->getChildren())
+    {
+        if (nodeContainsQueryOrUnion(child))
+            return true;
+    }
+
+    return false;
+}
+
 IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const IdentifierLookup & identifier_lookup,
     IdentifierResolveScope & scope,
     IdentifierResolveContext identifier_resolve_context)
@@ -1039,23 +1063,21 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
     auto node_type = alias_node->getNodeType();
 
     auto & aliased_expression_cache = scope_to_resolve_alias_expression->aliases.alias_name_to_resolved_expression_node;
-    bool use_aliased_expression_cache = identifier_lookup.isExpressionLookup()
-        // If there's an aggregate function in the stack don't use alias cache
-        // because expressions in aggregate functions can have different transformations
-        // applied to them - IE - conversion to Nullable.
-        && !scope.expressions_in_resolve_process_stack.hasAggregateFunction();
+
+    bool can_use_aliased_expression_cache = identifier_lookup.isExpressionLookup()
+        && !scope.expressions_in_resolve_process_stack.hasAggregateFunction()
+        // don't cache aliases that contain queries or unions to avoid issues with different contexts
+        // where we do things like rewrite subqueries or IN to JOIN transformations
+        && !nodeContainsQueryOrUnion(original_alias_node);
 
     bool resolved_from_cache = false;
-    if (use_aliased_expression_cache)
+    if (can_use_aliased_expression_cache)
     {
         auto cached_it = aliased_expression_cache.find(identifier_bind_part);
         if (cached_it != aliased_expression_cache.end() && cached_it->second)
         {
             resolved_from_cache = true;
-            alias_node = cached_it->second;
-        }
-        else {
-            alias_node = original_alias_node->clone();
+            alias_node = cached_it->second; // we don't clone here to reuse already resolved expression
         }
     }
 
@@ -1152,7 +1174,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
         }
     }
 
-    if (!resolved_from_cache && use_aliased_expression_cache)
+    if (!resolved_from_cache && can_use_aliased_expression_cache)
     {
         if (!resolved_from_cache && !aliased_expression_cache.contains(identifier_bind_part))
             aliased_expression_cache.emplace(identifier_bind_part, alias_node);
