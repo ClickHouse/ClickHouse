@@ -45,10 +45,8 @@ void ColumnIndex::updateIndexesDataPtr()
         case sizeof(UInt64):
             indexes_data_ptr = static_cast<void *>(&assert_cast<ColumnUInt64 &>(*indexes).getData());
             break;
-        default: {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type: {}",
-                            size_of_type);
-        }
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type: {}", size_of_type);
     }
 }
 
@@ -138,6 +136,7 @@ void ColumnIndex::convertIndexes()
                 new_data[i] = static_cast<CurIndexType>(data[i]);
 
             indexes = std::move(new_indexes);
+            indexes_data_ptr = static_cast<void *>(&assert_cast<ColumnVector<IndexType> &>(*indexes).getData());
             size_of_type = sizeof(IndexType);
         }
     };
@@ -145,7 +144,6 @@ void ColumnIndex::convertIndexes()
     callForType(std::move(convert), size_of_type);
 
     checkSizeOfType();
-    updateIndexesDataPtr();
 }
 
 void ColumnIndex::expandType()
@@ -438,6 +436,12 @@ void ColumnIndex::collectSerializedValueSizes(
             sizes[i] += dict_sizes[data[i]];
     };
     callForType(std::move(func), size_of_type);
+}
+
+void ColumnIndex::expand(const IColumn::Filter & mask, bool inverted)
+{
+    indexes->expand(mask, inverted);
+    updateIndexesDataPtr();
 }
 
 }

@@ -18,7 +18,6 @@ public:
     explicit ColumnIndex(ColumnPtr indexes_);
 
     const ColumnPtr & getIndexes() const { return indexes; }
-    IColumn::WrappedPtr & getIndexesPtr() { return indexes; }
     const IColumn::WrappedPtr & getIndexesPtr() const { return indexes; }
     size_t getIndexAt(size_t row) const;
     void insertIndex(size_t index);
@@ -57,6 +56,8 @@ public:
 
     /// Collect rows where mask[index] is 1.
     void getIndexesByMask(IColumn::Offsets & result_indexes, const PaddedPODArray<UInt8> & mask, size_t start, size_t end) const;
+
+    void expand(const IColumn::Filter & mask, bool inverted);
 
 private:
     size_t getMaxIndexForCurrentType() const;

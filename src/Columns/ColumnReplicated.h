@@ -191,7 +191,6 @@ public:
     ColumnIndex & getIndexes() { return indexes; }
 
     const ColumnPtr & getIndexesColumn() const { return indexes.getIndexes(); }
-    WrappedPtr & getIndexesColumn() { return indexes.getIndexesPtr(); }
 
     const ColumnPtr & getNestedColumn() const { return nested_column; }
     WrappedPtr & getNestedColumn() { return nested_column; }

@@ -130,7 +130,7 @@ public:
 
     void expand(const Filter & mask, bool inverted) override
     {
-        idx.getIndexesPtr()->expand(mask, inverted);
+        idx.expand(mask, inverted);
     }
 
     ColumnPtr permute(const Permutation & perm, size_t limit) const override
@@ -200,7 +200,9 @@ public:
 
     void forEachMutableSubcolumn(MutableColumnCallback callback) override
     {
-        callback(idx.getIndexesPtr());
+        WrappedPtr indexes = idx.detachIndexes();
+        callback(indexes);
+        idx.attachIndexes(mutate(std::move(indexes)));
 
         /// Column doesn't own dictionary if it's shared.
         if (!dictionary.isShared())
@@ -229,8 +231,10 @@ public:
 
     void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
     {
-        callback(*idx.getIndexesPtr());
-        idx.getIndexesPtr()->forEachMutableSubcolumnRecursively(callback);
+        auto indexes = idx.detachIndexes();
+        callback(*indexes);
+        indexes->forEachMutableSubcolumnRecursively(callback);
+        idx.attachIndexes(std::move(indexes));
 
         /// Column doesn't own dictionary if it's shared.
         if (!dictionary.isShared())

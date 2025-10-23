@@ -1,7 +1,8 @@
-#include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnReplicated.h>
 #include <Common/WeakHash.h>
+#include "boost/qvm/vec_access.hpp"
 
 namespace DB
 {
@@ -314,7 +315,7 @@ ColumnPtr ColumnReplicated::filter(const Filter & filt, ssize_t result_size_hint
 
 void ColumnReplicated::expand(const Filter & mask, bool inverted)
 {
-    indexes.getIndexesPtr()->expand(mask, inverted);
+    indexes.expand(mask, inverted);
 }
 
 ColumnPtr ColumnReplicated::permute(const Permutation & perm, size_t limit) const
@@ -497,7 +498,9 @@ size_t ColumnReplicated::allocatedBytes() const
 
 void ColumnReplicated::protect()
 {
-    indexes.getIndexesPtr()->protect();
+    auto indexes_column = indexes.detachIndexes();
+    indexes_column->protect();
+    indexes.attachIndexes(std::move(indexes_column));
     nested_column->protect();
 }
 
@@ -596,15 +599,19 @@ void ColumnReplicated::rollback(const ColumnCheckpoint & checkpoint)
 void ColumnReplicated::forEachMutableSubcolumn(MutableColumnCallback callback)
 {
     callback(nested_column);
-    callback(indexes.getIndexesPtr());
+    WrappedPtr indexes_column = indexes.detachIndexes();
+    callback(indexes_column);
+    indexes.attachIndexes(mutate(std::move(indexes_column)));
 }
 
 void ColumnReplicated::forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback)
 {
     callback(*nested_column);
     nested_column->forEachMutableSubcolumnRecursively(callback);
-    callback(*indexes.getIndexesPtr());
-    indexes.getIndexesPtr()->forEachMutableSubcolumnRecursively(callback);
+    auto indexes_column = indexes.detachIndexes();
+    callback(*indexes_column);
+    indexes_column->forEachMutableSubcolumnRecursively(callback);
+    indexes.attachIndexes(std::move(indexes_column));
 }
 
 void ColumnReplicated::forEachSubcolumn(ColumnCallback callback) const
