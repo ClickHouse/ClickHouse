@@ -119,11 +119,7 @@
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/ProxyV1HandlerFactory.h>
 #include <Server/TLSHandlerFactory.h>
-#include <Server/ProtocolServerAdapter.h>
-#include <Server/KeeperReadinessHandler.h>
 #include <Server/ArrowFlightHandler.h>
-#include <Server/HTTP/HTTPServer.h>
-#include <Server/CloudPlacementInfo.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 
 #include <filesystem>
