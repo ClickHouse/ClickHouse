@@ -2,7 +2,6 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnReplicated.h>
 #include <Common/WeakHash.h>
-#include "boost/qvm/vec_access.hpp"
 
 namespace DB
 {
