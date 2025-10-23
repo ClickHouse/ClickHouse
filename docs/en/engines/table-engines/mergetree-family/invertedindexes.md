@@ -7,12 +7,12 @@ title: 'Full-text Search using Text Indexes'
 doc_type: 'reference'
 ---
 
-import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
+import PrivatePreviewBadge from '@theme/badges/PrivatePreviewBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 # Full-text search using text indexes
 
-<ExperimentalBadge/>
+<PrivatePreviewBadge/>
 <CloudNotSupportedBadge/>
 
 Text indexes in ClickHouse (also known as ["inverted indexes"](https://en.wikipedia.org/wiki/Inverted_index)) provide fast full-text capabilities on string data.
