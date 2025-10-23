@@ -303,7 +303,7 @@ def test_docker_library(test_results) -> None:
         Shell.check(f"{GIT_PREFIX} clone {GITHUB_SERVER_URL}/{repo} {repo_path}")
         run_sh = (repo_path / "test/run.sh").absolute()
         for image in check_images:
-            cmd = f"{run_sh} {image} -c {repo_path / 'config.sh'} -c {config_override}"
+            cmd = f"{run_sh} {image} -c {repo_path / 'test/config.sh'} -c {config_override}"
             test_results.append(Result.from_commands_run(name=test_name, command=cmd))
 
     except Exception as e:
