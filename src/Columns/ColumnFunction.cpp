@@ -218,7 +218,7 @@ ColumnPtr ColumnFunction::index(const IColumn & indexes, size_t limit) const
         column.column = column.column->index(indexes, limit);
 
     return ColumnFunction::create(
-        limit,
+        limit == 0 ? indexes.size() : limit,
         function,
         capture,
         is_short_circuit_argument,
