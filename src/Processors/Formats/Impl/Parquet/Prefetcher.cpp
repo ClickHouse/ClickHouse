@@ -74,7 +74,7 @@ void Prefetcher::determineReadModeAndFileSize(ReadBuffer * reader_, const ReadOp
         if (!reader_->eof() && reader_->available() >= expected_prefix.size() &&
             memcmp(reader_->position(), expected_prefix.data(), expected_prefix.size()) != 0)
         {
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Not a parquet file (wrong magic bytes at the start)");
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Not a Parquet file (wrong magic bytes at the start)");
         }
 
         WriteBufferFromVector<PaddedPODArray<char>> out(entire_file);

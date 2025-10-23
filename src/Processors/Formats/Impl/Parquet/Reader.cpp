@@ -177,7 +177,7 @@ parq::FileMetaData Reader::readFileMetaData(Prefetcher & prefetcher)
     prefetcher.readSync(buf.data(), initial_read_size, file_size - initial_read_size);
 
     if (memcmp(buf.data() + initial_read_size - 4, "PAR1", 4) != 0)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Not a parquet file (wrong magic bytes at the end of file)");
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Not a Parquet file (wrong magic bytes at the end of file)");
 
     int32_t metadata_size_i32;
     memcpy(&metadata_size_i32, buf.data() + initial_read_size - 8, 4);
