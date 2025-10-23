@@ -145,6 +145,7 @@ void ColumnIndex::convertIndexes()
     callForType(std::move(convert), size_of_type);
 
     checkSizeOfType();
+    updateIndexesDataPtr();
 }
 
 void ColumnIndex::expandType()
@@ -162,7 +163,6 @@ void ColumnIndex::expandType()
     };
 
     callForType(std::move(expand), size_of_type);
-    updateIndexesDataPtr();
 }
 
 size_t ColumnIndex::getMaxIndexForCurrentType() const
