@@ -722,7 +722,7 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
 
         // we possibly got new location, need to try with that one
         auto new_uri = getURIFromError(error);
-        if (!new_uri && !new_region_detected)
+        if (!new_uri)
             return result;
 
         if (initial_endpoint.substr(11) == "amazonaws.com") // Check if user didn't mention any region
