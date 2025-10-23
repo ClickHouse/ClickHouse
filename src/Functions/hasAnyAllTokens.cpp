@@ -39,7 +39,7 @@ FunctionHasAnyAllTokens<HasTokensTraits>::FunctionHasAnyAllTokens(ContextPtr con
 }
 
 template <class HasTokensTraits>
-void FunctionHasAnyAllTokens<HasTokensTraits>::setTokenExtractor(std::unique_ptr<ITokenExtractor> new_token_extractor_)
+void FunctionHasAnyAllTokens<HasTokensTraits>::setTokenExtractor(std::unique_ptr<ITokenExtractor> new_token_extractor)
 {
     /// Index parameters can be set multiple times.
     /// This happens exactly in a case that same hasAnyTokens/hasAllTokens query is used again.
@@ -47,24 +47,24 @@ void FunctionHasAnyAllTokens<HasTokensTraits>::setTokenExtractor(std::unique_ptr
     if (token_extractor != nullptr)
         return;
 
-    token_extractor = std::move(new_token_extractor_);
+    token_extractor = std::move(new_token_extractor);
 }
 
 template <class HasTokensTraits>
-void FunctionHasAnyAllTokens<HasTokensTraits>::setSearchTokens(const std::vector<String> & tokens)
+void FunctionHasAnyAllTokens<HasTokensTraits>::setSearchTokens(const std::vector<String> & new_search_tokens)
 {
-    static constexpr size_t supported_number_of_needles = 64;
+    static constexpr size_t max_number_of_tokens = 64;
 
-    if (needles.has_value())
+    if (search_tokens.has_value())
         return;
 
-    needles = Needles();
-    for (UInt64 pos = 0; const auto & token : tokens)
-        if (auto [_, inserted] = needles->emplace(token, pos); inserted)
+    search_tokens = Tokens();
+    for (UInt64 pos = 0; const auto & new_search_token : new_search_tokens)
+        if (auto [_, inserted] = search_tokens->emplace(new_search_token, pos); inserted)
             ++pos;
 
-    if (needles->size() > supported_number_of_needles)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function '{}' supports a max of {} needles", name, supported_number_of_needles);
+    if (search_tokens->size() > max_number_of_tokens)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function '{}' supports a max of {} search tokens", name, max_number_of_tokens);
 }
 
 namespace
@@ -82,30 +82,30 @@ bool isStringOrArrayOfStringType(const IDataType & type)
     if (array_type)
     {
         const DataTypePtr & nested_type = array_type->getNestedType();
-        return isString(nested_type) || isFixedString(nested_type) || isNothing(nested_type);
+        return isString(nested_type) || isNothing(nested_type);
     }
 
     return false;
 }
 
 
-Needles extractNeedlesFromString(std::string_view needle_str)
+Tokens extractTokensFromString(std::string_view value)
 {
     DefaultTokenExtractor default_token_extractor;
 
     size_t cur = 0;
     size_t token_start = 0;
     size_t token_len = 0;
-    size_t length = needle_str.size();
+    size_t length = value.size();
     size_t pos = 0;
 
-    Needles needles;
-    while (cur < length && default_token_extractor.nextInStringPadded(static_cast<const char *>(needle_str.data()), length, &cur, &token_start, &token_len))
+    Tokens tokens;
+    while (cur < length && default_token_extractor.nextInStringPadded(static_cast<const char *>(value.data()), length, &cur, &token_start, &token_len))
     {
-        needles.emplace(std::string{needle_str.data() + token_start, token_len}, pos);
+        tokens.emplace(std::string{value.data() + token_start, token_len}, pos);
         ++pos;
     }
-    return needles;
+    return tokens;
 }
 
 }
@@ -139,24 +139,24 @@ void executeHasAnyTokens(
     const ITokenExtractor * token_extractor,
     const StringColumnType auto & col_input,
     size_t input_rows_count,
-    const Needles & needles,
+    const Tokens & tokens,
     PaddedPODArray<UInt8> & col_result)
 {
-    std::vector<std::string_view> tokens;
     for (size_t i = 0; i < input_rows_count; ++i)
     {
-        const std::string_view value = col_input.getDataAt(i).toView();
+        std::string_view input = col_input.getDataAt(i).toView();
         col_result[i] = false;
 
-        tokens = token_extractor->getTokensView(value.data(), value.size());
-        for (const auto & token : tokens)
+        forEachTokenPadded(*token_extractor, input.data(), input.size(), [&](const char * token_start, size_t token_len)
         {
-            if (needles.contains(token))
+            if (tokens.contains(std::string_view(token_start, token_len)))
             {
                 col_result[i] = true;
-                break;
+                return true;
             }
-        }
+
+            return false;
+        });
     }
 }
 
@@ -164,7 +164,7 @@ void executeHasAllTokens(
     const ITokenExtractor * token_extractor,
     const StringColumnType auto & col_input,
     size_t input_rows_count,
-    const Needles & needles,
+    const Tokens & needles,
     PaddedPODArray<UInt8> & col_result)
 {
     const size_t ns = needles.size();
@@ -172,25 +172,27 @@ void executeHasAllTokens(
     const UInt64 expected_mask = ((1ULL << (ns - 1)) + ((1ULL << (ns - 1)) - 1));
 
     UInt64 mask;
-    std::vector<std::string_view> tokens;
     for (size_t i = 0; i < input_rows_count; ++i)
     {
-        const std::string_view value = col_input.getDataAt(i).toView();
+        std::string_view input = col_input.getDataAt(i).toView();
         col_result[i] = false;
-
         mask = 0;
-        tokens = token_extractor->getTokensView(value.data(), value.size());
-        for (const auto & token : tokens)
+
+        forEachTokenPadded(*token_extractor, input.data(), input.size(), [&](const char * token_start, size_t token_len)
         {
-            if (auto it = needles.find(token); it != needles.end())
+            if (auto it = needles.find(std::string_view(token_start, token_len)); it != needles.end())
+            {
                 mask |= (1ULL << it->second);
+            }
 
             if (mask == expected_mask)
             {
                 col_result[i] = true;
-                break;
+                return true;
             }
-        }
+
+            return false;
+        });
     }
 }
 
@@ -199,7 +201,7 @@ void execute(
     const ITokenExtractor * token_extractor,
     const StringColumnType auto & col_input,
     size_t input_rows_count,
-    const Needles & needles,
+    const Tokens & needles,
     PaddedPODArray<UInt8> & col_result)
 {
     if (needles.empty())
@@ -237,26 +239,26 @@ ColumnPtr FunctionHasAnyAllTokens<HasTokensTraits>::executeImpl(
     /// If token_extractor == nullptr, we do a brute force scan on a column without index
     if (token_extractor == nullptr)
     {
-        chassert(!needles.has_value());
+        chassert(!search_tokens.has_value());
 
         /// Populate needles from function arguments
-        Needles needles_tmp;
+        Tokens search_tokens_from_args;
         const ColumnPtr col_needles = arguments[arg_needles].column;
 
         if (const ColumnConst * col_needles_str_const = checkAndGetColumnConst<ColumnString>(col_needles.get()))
         {
-            needles_tmp = extractNeedlesFromString(col_needles_str_const->getDataAt(0).toView());
+            search_tokens_from_args = extractTokensFromString(col_needles_str_const->getDataAt(0).toView());
         }
         else if (const ColumnString * col_needles_str = checkAndGetColumn<ColumnString>(col_needles.get()))
         {
-            needles_tmp = extractNeedlesFromString(col_needles_str->getDataAt(0).toView());
+            search_tokens_from_args = extractTokensFromString(col_needles_str->getDataAt(0).toView());
         }
         else if (const ColumnConst * col_needles_array_const = checkAndGetColumnConst<ColumnArray>(col_needles.get()))
         {
             const Array & array = col_needles_array_const->getValue<Array>();
 
             for (size_t i = 0; i < array.size(); ++i)
-                needles_tmp.emplace(array.at(i).safeGet<String>(), i);
+                search_tokens_from_args.emplace(array.at(i).safeGet<String>(), i);
         }
         else if (const ColumnArray * col_needles_array = checkAndGetColumn<ColumnArray>(col_needles.get()))
         {
@@ -266,7 +268,7 @@ ColumnPtr FunctionHasAnyAllTokens<HasTokensTraits>::executeImpl(
             const ColumnString & needles_data_string = checkAndGetColumn<ColumnString>(array_data);
 
             for (size_t i = 0; i < array_offsets[0]; ++i)
-                needles_tmp.emplace(needles_data_string.getDataAt(i).toView(), i);
+                search_tokens_from_args.emplace(needles_data_string.getDataAt(i).toView(), i);
         }
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Needles argument for function '{}' has unsupported type", getName());
@@ -274,18 +276,18 @@ ColumnPtr FunctionHasAnyAllTokens<HasTokensTraits>::executeImpl(
         DefaultTokenExtractor default_token_extractor;
 
         if (const auto * col_input_string = checkAndGetColumn<ColumnString>(col_input.get()))
-            execute<HasTokensTraits>(&default_token_extractor, *col_input_string, input_rows_count, needles_tmp, col_result->getData());
+            execute<HasTokensTraits>(&default_token_extractor, *col_input_string, input_rows_count, search_tokens_from_args, col_result->getData());
         else if (const auto * col_input_fixedstring = checkAndGetColumn<ColumnFixedString>(col_input.get()))
-            execute<HasTokensTraits>(&default_token_extractor, *col_input_fixedstring, input_rows_count, needles_tmp, col_result->getData());
+            execute<HasTokensTraits>(&default_token_extractor, *col_input_fixedstring, input_rows_count, search_tokens_from_args, col_result->getData());
     }
     else
     {
         /// If token_extractor != nullptr, a text index exists and we are doing text index lookups
         /// This path is only entered for parts that have no materialized text index
         if (const auto * col_input_string = checkAndGetColumn<ColumnString>(col_input.get()))
-            execute<HasTokensTraits>(token_extractor.get(), *col_input_string, input_rows_count, needles.value(), col_result->getData());
+            execute<HasTokensTraits>(token_extractor.get(), *col_input_string, input_rows_count, search_tokens.value(), col_result->getData());
         else if (const auto * col_input_fixedstring = checkAndGetColumn<ColumnFixedString>(col_input.get()))
-            execute<HasTokensTraits>(token_extractor.get(), *col_input_fixedstring, input_rows_count, needles.value(), col_result->getData());
+            execute<HasTokensTraits>(token_extractor.get(), *col_input_fixedstring, input_rows_count, search_tokens.value(), col_result->getData());
     }
 
     return col_result;
