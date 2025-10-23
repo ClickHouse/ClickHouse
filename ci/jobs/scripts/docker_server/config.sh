@@ -8,7 +8,7 @@ testAlias+=(
 currentDir="${PWD}/ci/jobs/scripts/docker_server"
 
 # interate over all directories in current path
-imageTestsDefinition = '
+imageTestsDefinition='
 	'
 for testDir in ${currentDir}/tests/*/; do
 	customTestName = basename "${testDir}"
