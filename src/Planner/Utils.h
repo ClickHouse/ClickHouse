@@ -64,8 +64,12 @@ std::pair<ActionsDAG, CorrelatedSubtrees> buildActionsDAGFromExpressionNode(
     const ColumnNodePtrWithHashSet & correlated_columns_set,
     bool use_column_identifier_as_action_node_name = true);
 
-/// Returns true if prefix sort description is prefix of full sort descriptor, false otherwise
-bool sortDescriptionIsPrefix(const SortDescription & prefix, const SortDescription & full);
+/// Returns true if `prefix` sort description is prefix of `full` sort description, false otherwise
+bool isSortDescriptionPrefix(const SortDescription & prefix, const SortDescription & full);
+
+/// Returns true if `prefix` columns are prefix of `full` sort description, false otherwise.
+/// This functions doesn't take sort order into account.
+bool isSortDescriptionPrefix(const Names & prefix, const SortDescription & full);
 
 /// Returns true if query node JOIN TREE contains ARRAY JOIN node, false otherwise
 bool queryHasArrayJoinInJoinTree(const QueryTreeNodePtr & query_node);

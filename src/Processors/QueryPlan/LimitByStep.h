@@ -8,9 +8,7 @@ namespace DB
 class LimitByStep : public ITransformingStep
 {
 public:
-    explicit LimitByStep(
-            const SharedHeader & input_header_,
-            size_t group_length_, size_t group_offset_, Names columns_);
+    explicit LimitByStep(const SharedHeader & input_header_, size_t group_length_, size_t group_offset_, bool in_order_, Names columns_);
 
     String getName() const override { return "LimitBy"; }
 
@@ -32,6 +30,9 @@ private:
 
     size_t group_length;
     size_t group_offset;
+
+    bool in_order;
+
     Names columns;
 };
 
