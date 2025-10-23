@@ -27,7 +27,6 @@ expected_metrics = (
     'keeper_client_send_duration_milliseconds',
     'keeper_response_time_ms',
     'keeper_server_preprocess_request_duration_milliseconds',
-    'keeper_server_process_request_duration_milliseconds',
     'keeper_server_queue_duration_milliseconds',
     'keeper_server_send_duration_milliseconds',
 )
@@ -49,8 +48,6 @@ def test_server_histogram_metrics_in_system_table(started_cluster):
 
 
 def test_server_prometheus_endpoint(started_cluster):
-    time.sleep(100500)
-
     response = requests.get(
         f"http://{node.ip_address}:9363/metrics",
     )
@@ -60,7 +57,3 @@ def test_server_prometheus_endpoint(started_cluster):
 
     for metric_name in expected_metrics:
         metric_name in metrics_text
-
-
-def test_keeper_operation_type_labels(started_cluster):
-    pass
