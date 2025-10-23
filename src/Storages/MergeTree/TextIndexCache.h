@@ -25,13 +25,13 @@ class TextIndexDictionaryBlockCacheEntry
 {
 public:
     TextIndexDictionaryBlockCacheEntry() = default;
-    TextIndexDictionaryBlockCacheEntry(ColumnPtr tokens_, std::vector<TokenPostingsInfo> token_infos_)
+    explicit TextIndexDictionaryBlockCacheEntry(DictionaryBlock && dictionary_block)
     {
-        const auto & tokens = assert_cast<const ColumnString &>(*tokens_);
+        const auto & tokens = assert_cast<const ColumnString &>(*dictionary_block.tokens);
         auto num_tokens = tokens.size();
         token_infos.reserve(num_tokens);
         for (size_t i = 0; i < num_tokens; ++i)
-            token_infos.emplace(tokens.getDataAt(i), std::move(token_infos_[i]));
+            token_infos.emplace(tokens.getDataAt(i), std::move(dictionary_block.token_infos[i]));
     }
 
     TokenPostingsInfo * getTokenInfo(const StringRef & token)
@@ -42,10 +42,10 @@ public:
     }
 
 private:
+    /// TokenPostingsInfo contains either an offset of a larger posting list or an array of rows directly in case of a posting list is small enough.
+    /// In the latter case, the posting list will be cached as well.
     absl::flat_hash_map<String, TokenPostingsInfo> token_infos;
 };
-
-using TextIndexDictionaryBlockCacheEntryPtr = std::shared_ptr<TextIndexDictionaryBlockCacheEntry>;
 
 class TextIndexDictionaryBlockCache : public CacheBase<UInt128, TextIndexDictionaryBlockCacheEntry, UInt128TrivialHash>
 {
@@ -63,7 +63,7 @@ public:
     }
 
     template <typename LoadFunc>
-    TextIndexDictionaryBlockCacheEntryPtr getOrSet(UInt128 key, LoadFunc && load_func)
+    MappedPtr getOrSet(UInt128 key, LoadFunc && load_func)
     {
         auto [cache_entry, inserted] = CacheBase::getOrSet(key, load_func);
         if (inserted)

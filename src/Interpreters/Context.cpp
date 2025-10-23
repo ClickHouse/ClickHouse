@@ -494,7 +494,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::unique_ptr<ThreadPool> build_vector_similarity_index_threadpool; /// Threadpool for vector-similarity index creation.
     mutable UncompressedCachePtr index_uncompressed_cache TSA_GUARDED_BY(mutex);      /// The cache of decompressed blocks for MergeTree indices.
     mutable VectorSimilarityIndexCachePtr vector_similarity_index_cache TSA_GUARDED_BY(mutex);         /// Cache of deserialized secondary index granules.
-    mutable TextIndexDictionaryBlockCachePtr text_index_dictionary_block_cache TSA_GUARDED_BY(mutex);  /// Cache of deserialized secondary index granules.
+    mutable TextIndexDictionaryBlockCachePtr text_index_dictionary_block_cache TSA_GUARDED_BY(mutex);  /// Cache of deserialized text index dictionary blocks.
     mutable QueryConditionCachePtr query_condition_cache TSA_GUARDED_BY(mutex);       /// Cache of matching marks for predicates
     mutable QueryResultCachePtr query_result_cache TSA_GUARDED_BY(mutex);             /// Cache of query results.
     mutable MarkCachePtr index_mark_cache TSA_GUARDED_BY(mutex);                      /// Cache of marks in compressed files of MergeTree indices.
@@ -3783,11 +3783,10 @@ std::shared_ptr<TextIndexDictionaryBlockCache> Context::getTextIndexDictionaryBl
 
 void Context::clearTextIndexDictionaryBlockCache() const
 {
-    auto cache = getTextIndexDictionaryBlockCache();
+    std::lock_guard lock(shared->mutex);
 
-    /// Clear the cache without holding context mutex to avoid blocking context for a long time
-    if (cache)
-        cache->clear();
+    if (shared->text_index_dictionary_block_cache)
+        shared->text_index_dictionary_block_cache->clear();
 }
 
 void Context::setMMappedFileCache(size_t max_cache_size_in_num_entries)
@@ -3968,6 +3967,10 @@ void Context::clearCaches() const
     if (!shared->vector_similarity_index_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Vector similarity index cache was not created yet.");
     shared->vector_similarity_index_cache->clear();
+
+    if (!shared->text_index_dictionary_block_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index dictionary block cache was not created yet.");
+    shared->text_index_dictionary_block_cache->clear();
 
     if (!shared->mmap_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mmapped file cache was not created yet.");
