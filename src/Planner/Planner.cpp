@@ -935,7 +935,8 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
                 {
                     interpolate_expression = &interpolate_actions_dag.addCast(*interpolate_expression,
                         expression_to_interpolate->result_type,
-                        interpolate_expression->result_name);
+                        interpolate_expression->result_name,
+                        planner_context->getQueryContext());
                 }
 
                 const auto * alias_node = &interpolate_actions_dag.addAlias(*interpolate_expression, expression_to_interpolate_name);
