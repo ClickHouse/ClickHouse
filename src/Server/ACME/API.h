@@ -71,7 +71,7 @@ struct Directory
             &Poco::Logger::get("ACME::Directory"),
             "Directory: newAccount: {}, newOrder: {}, newNonce: {}",
             dir.new_account.toString(),
-            dir.new_account.toString(),
+            dir.new_order.toString(),
             dir.new_nonce.toString()
         );
 
