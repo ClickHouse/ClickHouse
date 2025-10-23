@@ -1576,9 +1576,8 @@ void Planner::buildPlanForUnionNode()
     }
 
     Block union_common_header = buildCommonHeaderForUnion(query_plans_headers, union_mode);
-    addConvertingToCommonHeaderActionsIfNeeded(query_plans, union_common_header, query_plans_headers);
-
     const auto & query_context = planner_context->getQueryContext();
+    addConvertingToCommonHeaderActionsIfNeeded(query_plans, union_common_header, query_plans_headers, query_context);
     const auto & settings = query_context->getSettingsRef();
     auto max_threads = settings[Setting::max_threads];
 

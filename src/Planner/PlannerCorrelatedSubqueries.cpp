@@ -399,7 +399,7 @@ QueryPlan decorrelateQueryPlan(
         child_plans.emplace_back(std::make_unique<QueryPlan>(std::move(decorrelated_rhs_plan)));
 
         Block union_common_header = buildCommonHeaderForUnion(query_plans_headers, SelectUnionMode::UNION_ALL); // Union mode doesn't matter here
-        addConvertingToCommonHeaderActionsIfNeeded(child_plans, union_common_header, query_plans_headers);
+        addConvertingToCommonHeaderActionsIfNeeded(child_plans, union_common_header, query_plans_headers, context.planner_context->getQueryContext());
 
         union_step->updateInputHeaders(std::move(query_plans_headers));
 
