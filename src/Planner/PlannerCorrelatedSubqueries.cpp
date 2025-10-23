@@ -55,6 +55,7 @@ namespace Setting
 
 extern const SettingsBool join_use_nulls;
 extern const SettingsBool correlated_subqueries_substitute_equivalent_expressions;
+extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
 
 }
 
@@ -660,6 +661,11 @@ void buildQueryPlanForCorrelatedSubquery(
     auto * query_node = correlated_subquery.query_tree->as<QueryNode>();
     auto * union_node = correlated_subquery.query_tree->as<UnionNode>();
     chassert(query_node != nullptr && query_node->isCorrelated() || union_node != nullptr && union_node->isCorrelated());
+
+    if (query_node)
+        query_node->getMutableContext()->setSetting("allow_experimental_parallel_reading_from_replicas", String("0"));
+    if (union_node)
+        union_node->getMutableContext()->setSetting("allow_experimental_parallel_reading_from_replicas", String("0"));
 
     switch (correlated_subquery.kind)
     {
