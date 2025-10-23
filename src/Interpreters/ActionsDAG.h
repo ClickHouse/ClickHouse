@@ -337,7 +337,8 @@ public:
         MatchColumnsMode mode,
         bool ignore_constant_values = false,
         bool add_cast_columns = false,
-        NameToNameMap * new_names = nullptr);
+        NameToNameMap * new_names = nullptr,
+        ContextPtr context = nullptr);
 
     /// Create expression which add const column and then materialize it.
     static ActionsDAG makeAddingColumnActions(ColumnWithTypeAndName column);

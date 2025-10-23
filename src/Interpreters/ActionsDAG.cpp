@@ -1637,7 +1637,8 @@ ActionsDAG ActionsDAG::makeConvertingActions(
     MatchColumnsMode mode,
     bool ignore_constant_values,
     bool add_cast_columns,
-    NameToNameMap * new_names)
+    NameToNameMap * new_names,
+    ContextPtr context)
 {
     size_t num_input_columns = source.size();
     size_t num_result_columns = result.size();
@@ -1730,7 +1731,7 @@ ActionsDAG ActionsDAG::makeConvertingActions(
 
             CastDiagnostic diagnostic = {dst_node->result_name, res_elem.name};
             ColumnWithTypeAndName left_column{nullptr, dst_node->result_type, {}};
-            auto func_base_cast = createInternalCast(std::move(left_column), res_elem.type, CastType::nonAccurate, std::move(diagnostic), nullptr);
+            auto func_base_cast = createInternalCast(std::move(left_column), res_elem.type, CastType::nonAccurate, std::move(diagnostic), context);
 
             NodeRawConstPtrs children = { left_arg, right_arg };
             dst_node = &actions_dag.addFunction(func_base_cast, std::move(children), {});
