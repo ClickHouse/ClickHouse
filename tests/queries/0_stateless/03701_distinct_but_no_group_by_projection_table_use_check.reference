@@ -60,6 +60,22 @@ Expression (Project names)
     Distinct (Preliminary DISTINCT)
       Expression ((Projection + Change column names to column identifiers))
         ReadFromMergeTree (default.tab)
+Filter present:
+1	0
+1	1
+1	2
+1	3
+1	4
+2	0
+2	1
+2	2
+2	3
+2	4
+Expression (Project names)
+  Distinct (DISTINCT)
+    Distinct (Preliminary DISTINCT)
+      Filter
+        ReadFromMergeTree (p)
 Expression in select:
 Projection cols used:
 0	0

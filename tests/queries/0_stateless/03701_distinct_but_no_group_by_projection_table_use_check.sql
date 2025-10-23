@@ -34,6 +34,11 @@ SELECT DISTINCT x, y FROM tab;
 
 EXPLAIN SELECT DISTINCT x, y FROM tab;
 
+SELECT 'Filter present:';
+SELECT DISTINCT x, z FROM tab WHERE x IN (1, 2) AND z < 5;
+
+EXPLAIN SELECT DISTINCT x, z FROM tab WHERE x IN (1, 2) AND z < 5;
+
 SELECT 'Expression in select:';
 
 DROP TABLE IF EXISTS tab;
