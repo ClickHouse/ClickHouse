@@ -1,5 +1,6 @@
--- Tags: no-replicated-database
--- no-replicated-database: explain output differs for replicated database.
+-- Tags: no-replicated-database, no-parallel-replicas
+-- no-replicated-database: EXPLAIN output differs for replicated database.
+-- no-parallel-replicas: EXPLAIN output differs for parallel replicas.
 
 SELECT 'Simple:';
 
