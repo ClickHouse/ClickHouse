@@ -1,15 +1,21 @@
 #!/usr/bin/env bash
 
 testAlias+=(
-	[clickhouse/clickhouse-server]='clickhouse'
+	[clickhouse / clickhouse - server]='clickhouse'
 )
 
 # Get current file directory
 currentDir="${PWD}/ci/jobs/scripts/docker_server"
 
 # interate over all directories in current path
+imageTestsDefinition = '
+	'
 for testDir in ${currentDir}/tests/*/; do
 	customTestName = basename "${testDir}"
-	imageTests["cliclhouse"]="${imageTests["clickhouse"]}	${customTestName}
+	imageTestsDefinition="${imageTestsDefinition}	${customTestName}
 	"
 done
+
+testAlias+=(
+	[clickhouse]="${imageTestsDefinition}"
+)
