@@ -41,7 +41,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.11",
         {
-
+            {"use_statistics_cache", 0, 0, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.10",
         {
@@ -917,7 +917,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "25.11",
         {
-
+            {"refresh_statistics_interval", 0, 0, "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.10",
         {
