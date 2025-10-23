@@ -13,6 +13,8 @@ private:
 public:
     explicit SerializationNullable(const SerializationPtr & nested_) : nested(nested_) {}
 
+    const SerializationPtr & getNested() const { return nested; }
+
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
         const StreamCallback & callback,

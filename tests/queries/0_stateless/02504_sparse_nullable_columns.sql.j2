@@ -1,0 +1,32 @@
+{% for (min_bytes, default_ratio) in [(0, 1.0), (1000000000, 0.9), (0, 0.9)] -%}
+
+    DROP TABLE IF EXISTS t_sparse_nullable;
+
+    CREATE TABLE t_sparse_nullable (id UInt64, n Nullable(UInt64), s Nullable(String))
+    ENGINE = MergeTree ORDER BY id
+    SETTINGS min_bytes_for_wide_part = {{ min_bytes }}, ratio_of_defaults_for_sparse_serialization = {{ default_ratio }};
+
+    SET max_insert_block_size = 100000;
+    SET min_insert_block_size_rows = 100000;
+
+    INSERT INTO t_sparse_nullable
+    SELECT
+        number,
+        if (number % 101 = 0, number, NULL),
+        if (number % 103 = 0, toString(number), NULL)
+    FROM numbers(1000000);
+
+    OPTIMIZE TABLE t_sparse_nullable FINAL;
+
+    SELECT column, serialization_kind FROM system.parts_columns
+    WHERE database = currentDatabase() AND table = 't_sparse_nullable' AND active
+    ORDER BY column;
+
+    SELECT count() FROM t_sparse_nullable WHERE NOT isNull(n);
+    SELECT count() FROM t_sparse_nullable WHERE NOT isNull(s);
+    SELECT count() FROM t_sparse_nullable WHERE NOT isNull(s) AND NOT isNull(n);
+
+    SELECT sum(n), uniqExact(n), uniqExact(s) FROM t_sparse_nullable;
+    SELECT id % 10 AS key, sum(n), uniqExact(s) FROM t_sparse_nullable GROUP BY key ORDER BY key;
+
+{% endfor -%}
