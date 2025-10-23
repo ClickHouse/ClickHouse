@@ -7,11 +7,9 @@
 #include <Interpreters/StorageID.h>
 #include <base/types.h>
 #include <boost/circular_buffer.hpp>
-#include <optional>
 #include <cppkafka/configuration.h>
 #include <cppkafka/cppkafka.h>
 #include <cppkafka/topic_partition.h>
-#include <fmt/format.h>
 #include <fmt/ostream.h>
 #include <librdkafka/rdkafka.h>
 #include <Common/SettingsChanges.h>
@@ -93,7 +91,7 @@ size_t eraseMessageErrors(Messages & messages, const LoggerPtr & log, ErrorHandl
 
 SettingsChanges createSettingsAdjustments(KafkaSettings & kafka_settings, const String & schema_name);
 
-std::optional<String> checkDependencies(const StorageID & table_id, const ContextPtr & context);
+bool checkDependencies(const StorageID & table_id, const ContextPtr& context);
 
 VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode);
 }

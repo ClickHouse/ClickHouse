@@ -1001,13 +1001,8 @@ void StorageKafka2::threadFunc(size_t idx)
             while (!task->stream_cancelled && num_created_consumers > 0)
             {
                 maybe_stall_reason.reset();
-                if (auto err = StorageKafkaUtils::checkDependencies(table_id, getContext()))
-                {
-                    auto safe_consumers = getSafeConsumers();
-                    for (auto const & consumer_ptr : safe_consumers.consumers)
-                        consumer_ptr->setExceptionInfo(*err, false);
+                if (!StorageKafkaUtils::checkDependencies(table_id, getContext()))
                     break;
-                }
 
                 LOG_DEBUG(log, "Started streaming to {} attached views", num_views);
 

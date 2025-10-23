@@ -1,6 +1,4 @@
 #include <Storages/Kafka/StorageKafkaUtils.h>
-#include <optional>
-#include <fmt/format.h>
 
 
 #include <Core/Settings.h>
@@ -531,34 +529,27 @@ SettingsChanges createSettingsAdjustments(KafkaSettings & kafka_settings, const 
     return result;
 }
 
-std::optional<String> checkDependencies(const StorageID & table_id, const ContextPtr & context)
+bool checkDependencies(const StorageID & table_id, const ContextPtr& context)
 {
-    bool mv_attached = false;
-
     // Check if all dependencies are attached
     auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);
+    if (view_ids.empty())
+        return false;
 
-    // Check that dependencies are ready
+    // Check the dependencies are ready?
     for (const auto & view_id : view_ids)
     {
         auto view = DatabaseCatalog::instance().tryGetTable(view_id, context);
         if (!view)
-            return fmt::format("dependent view {} is not attached", view_id.getNameForLogs());
+            return false;
 
-        // If it materialized view, check it is ready
+        // If it materialized view, check it's target table
         auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get());
-        if (materialized_view)
-        {
-            if (!materialized_view->tryGetTargetTable())
-                return fmt::format("Materialized view {} is not ready", view_id.getNameForLogs());
-            mv_attached = true;
-        }
+        if (materialized_view && !materialized_view->tryGetTargetTable())
+            return false;
     }
 
-    if (mv_attached)
-        return {};
-    else
-        return "No attached views";
+    return true;
 }
 
 VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode)

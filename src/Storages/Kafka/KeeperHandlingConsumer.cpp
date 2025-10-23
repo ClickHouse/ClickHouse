@@ -655,10 +655,4 @@ void KeeperHandlingConsumer::appendToAssignedTopicPartitions(const TopicPartitio
     for (const auto & [topic_partition, info] : locks)
         assigned_topic_partitions.push_back(topic_partition);
 }
-
-void KeeperHandlingConsumer::setExceptionInfo(const std::string & text, bool with_stacktrace)
-{
-    kafka_consumer->setExceptionInfo(text, with_stacktrace);
-}
-
 }

@@ -87,16 +87,34 @@ def test_missing_mv_target(kafka_cluster, create_query_generator):
         """
     )
 
-    def has_error(res):
-        return "Materialized view test.mv1 is not ready\n" == res
-
-    instance.query_with_retry(
-        "SELECT exceptions.text[1] FROM system.kafka_consumers WHERE database='test' and table='kafka'",
-        check_callback=has_error,
+    skc = instance.query(
+        "SELECT dependencies_database, dependencies_table, missing_dependencies_database, missing_dependencies_table FROM system.kafka_consumers FORMAT Vertical"
+    )
+    assert (
+        skc == """Row 1:
+──────
+dependencies_database:         ['test','test']
+dependencies_table:            ['mv2','mv1']
+missing_dependencies_database: ['test']
+missing_dependencies_table:    ['mv1']
+"""
     )
 
     instance.query(
         "CREATE TABLE test.target1 (a UInt64, b String) ENGINE = MergeTree() ORDER BY a"
+    )
+
+    skc = instance.query(
+        "SELECT dependencies_database, dependencies_table, missing_dependencies_database, missing_dependencies_table FROM system.kafka_consumers FORMAT Vertical"
+    )
+    assert (
+        skc == """Row 1:
+──────
+dependencies_database:         ['test','test']
+dependencies_table:            ['mv2','mv1']
+missing_dependencies_database: []
+missing_dependencies_table:    []
+"""
     )
 
     k.kafka_produce(kafka_cluster, topic, ["1|foo", "2|bar"])
