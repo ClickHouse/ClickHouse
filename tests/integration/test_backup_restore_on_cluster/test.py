@@ -1231,7 +1231,7 @@ def test_mutation(key_prefix_length):
 
     # mutation #0000000000: "UPDATE x=x+1 WHERE 1" could already finish before starting the backup
     # mutation #0000000001: "UPDATE x=x+1+sleep(3) WHERE 1"
-    key_prefix_template = f"[a-z]{{{key_prefix_length}}}" if key_prefix_length else ""
+    key_prefix_template = f"[a-f0-9]{{{key_prefix_length}}}" if key_prefix_length else ""
     assert has_mutation_in_backup(
         "0000000001",
         backup_name,

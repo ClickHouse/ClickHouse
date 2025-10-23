@@ -32,7 +32,7 @@ constexpr size_t DEFAULT_BACKUP_PREFIX_LENGTH = 0;
 class BackupDataFileNameGeneratorWithChecksumHexPrefix : public DB::IBackupDataFileNameGenerator
 {
 public:
-    BackupDataFileNameGeneratorWithChecksumHexPrefix(size_t prefix_length_)
+    explicit BackupDataFileNameGeneratorWithChecksumHexPrefix(size_t prefix_length_)
         : prefix_length(prefix_length_)
     {
         /// TODO: better validation
@@ -43,7 +43,7 @@ public:
     std::string generate(const DB::BackupFileInfo & file_info) override
     {
         if (file_info.file_name.empty())
-            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Backup file name shoud not be empty");
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Backup file name should not be empty");
 
         if (file_info.checksum == 0)
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Backup checksum should not be zero {}", file_info.file_name);
