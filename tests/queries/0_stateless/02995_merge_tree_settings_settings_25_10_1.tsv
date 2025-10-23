@@ -19,6 +19,7 @@ apply_patches_on_merge	1
 assign_part_uuids	0
 async_block_ids_cache_update_wait_ms	100
 async_insert	0
+auto_statistics_types	
 background_task_preferred_step_execution_time_ms	50
 cache_populated_by_fetch	0
 cache_populated_by_fetch_filename_regexp	
@@ -57,6 +58,7 @@ enable_the_endpoint_id_with_zookeeper_name_prefix	0
 enable_vertical_merge_algorithm	1
 enforce_index_structure_match_on_partition_manipulation	0
 exclude_deleted_rows_for_part_size_in_merge	0
+exclude_materialize_skip_indexes_on_merge	
 execute_merges_on_single_replica_time_threshold	0
 fault_probability_after_part_commit	0
 fault_probability_before_part_commit	0
@@ -97,8 +99,8 @@ max_merge_delayed_streams_for_parallel_write	40
 max_merge_selecting_sleep_ms	60000
 max_number_of_merges_with_ttl_in_pool	2
 max_number_of_mutations_for_replica	0
-max_part_loading_threads	\'auto(32)\'
-max_part_removal_threads	\'auto(32)\'
+max_part_loading_threads	\'auto(12)\'
+max_part_removal_threads	\'auto(12)\'
 max_partitions_to_read	-1
 max_parts_in_total	100000
 max_parts_to_merge_at_once	100
@@ -150,6 +152,8 @@ min_delay_to_mutate_ms	10
 min_free_disk_bytes_to_perform_insert	0
 min_free_disk_ratio_to_perform_insert	0
 min_index_granularity_bytes	1024
+min_level_for_full_part_storage	0
+min_level_for_wide_part	0
 min_marks_to_honor_max_concurrent_queries	0
 min_merge_bytes_to_use_direct_io	10737418240
 min_parts_to_merge_at_once	0
@@ -202,7 +206,7 @@ replace_long_file_name_to_hash	1
 replicated_can_become_leader	1
 replicated_deduplication_window	10000
 replicated_deduplication_window_for_async_inserts	10000
-replicated_deduplication_window_seconds	604800
+replicated_deduplication_window_seconds	3600
 replicated_deduplication_window_seconds_for_async_inserts	604800
 replicated_fetches_http_connection_timeout	0
 replicated_fetches_http_receive_timeout	0
@@ -215,6 +219,8 @@ replicated_max_parallel_sends	0
 replicated_max_parallel_sends_for_table	0
 replicated_max_ratio_of_wrong_parts	0.5
 search_orphaned_parts_disks	any
+serialization_info_version	default
+shared_merge_tree_activate_coordinated_merges_tasks	0
 shared_merge_tree_create_per_replica_metadata_nodes	1
 shared_merge_tree_disable_merges_and_mutations_assignment	0
 shared_merge_tree_empty_partition_lifetime	86400
@@ -238,7 +244,7 @@ shared_merge_tree_max_suspicious_broken_parts	0
 shared_merge_tree_max_suspicious_broken_parts_bytes	0
 shared_merge_tree_memo_ids_remove_timeout_seconds	1800
 shared_merge_tree_merge_coordinator_election_check_period_ms	30000
-shared_merge_tree_merge_coordinator_factor	2
+shared_merge_tree_merge_coordinator_factor	1.1
 shared_merge_tree_merge_coordinator_fetch_fresh_metadata_period_ms	10000
 shared_merge_tree_merge_coordinator_max_merge_request_size	20
 shared_merge_tree_merge_coordinator_max_period_ms	10000
@@ -263,6 +269,7 @@ simultaneous_parts_removal_limit	0
 sleep_before_commit_local_part_in_replicated_table_ms	0
 sleep_before_loading_outdated_parts_ms	0
 storage_policy	default
+string_serialization_version	default
 table_disk	0
 temporary_directories_lifetime	86400
 try_fetch_recompressed_part_timeout	7200
