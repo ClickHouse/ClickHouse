@@ -3,7 +3,6 @@
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 #include <Common/PODArray.h>
-#include "AggregateFunctions/AggregateFunctionGroupBitmapData.h"
 
 /// Include this last — see the reason inside
 #include <AggregateFunctions/AggregateFunctionGroupNumericIndexedVectorDataBSI.h>
@@ -93,7 +92,7 @@ public:
         VectorImpl::pointwiseMultiply(lhs.impl, rhs, res.impl);
     }
 
-    // TODO: multiply numeric indexed vector with a bitmap
+    // Multiply numeric indexed vector with a bitmap
     static void
     pointwiseMultiply(const NumericIndexedVector & lhs, const AggregateFunctionGroupBitmapData<IndexType> & rhs, NumericIndexedVector & res)
     {
