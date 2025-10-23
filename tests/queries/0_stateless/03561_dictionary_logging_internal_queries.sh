@@ -26,21 +26,10 @@ SOURCE(
         QUERY 'SELECT toString(number) AS name, toFloat64(number) AS value FROM numbers(10) WHERE ''$layout-$RUN_ID'' != '''''
     )
 )
-LIFETIME(30)
+LIFETIME(MIN 100500 MAX 100500)
 LAYOUT($layout)"
 
 $CLICKHOUSE_CLIENT --query "SYSTEM RELOAD DICTIONARY ${CLICKHOUSE_DATABASE}.test_logging_internal_queries_dict"
-
-$CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS"
-
-$CLICKHOUSE_CLIENT --query "
-SELECT countIf(type = 'QueryStart'), countIf(type = 'QueryFinish')
-FROM system.query_log
-WHERE 1
-    AND is_internal = 1
-    AND query = 'SELECT toString(number) AS name, toFloat64(number) AS value FROM numbers(10) WHERE ''$layout-$RUN_ID'' != '''''
-    AND current_database IN ['default', currentDatabase()]"
-
 $CLICKHOUSE_CLIENT --query "DROP DICTIONARY ${CLICKHOUSE_DATABASE}.test_logging_internal_queries_dict"
 done
 
@@ -59,21 +48,10 @@ SOURCE(
         QUERY 'SELECT toString(number) AS key1, number AS key2, toFloat64(number) AS value FROM numbers(10) WHERE ''COMPLEX_KEY_HASHED()-$RUN_ID'' != '''''
     )
 )
-LIFETIME(30)
+LIFETIME(MIN 100500 MAX 100500)
 LAYOUT(COMPLEX_KEY_HASHED())"
 
 $CLICKHOUSE_CLIENT --query "SYSTEM RELOAD DICTIONARY ${CLICKHOUSE_DATABASE}.test_logging_internal_queries_dict"
-
-$CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS"
-
-$CLICKHOUSE_CLIENT --query "
-SELECT countIf(type = 'QueryStart'), countIf(type = 'QueryFinish')
-FROM system.query_log
-WHERE 1
-    AND is_internal = 1
-    AND query = 'SELECT toString(number) AS key1, number AS key2, toFloat64(number) AS value FROM numbers(10) WHERE ''COMPLEX_KEY_HASHED()-$RUN_ID'' != '''''
-    AND current_database IN ['default', currentDatabase()]"
-
 $CLICKHOUSE_CLIENT --query "DROP DICTIONARY ${CLICKHOUSE_DATABASE}.test_logging_internal_queries_dict"
 
 
@@ -93,17 +71,6 @@ SOURCE(
 LAYOUT(DIRECT())"
 
 $CLICKHOUSE_CLIENT --query "SELECT * FROM ${CLICKHOUSE_DATABASE}.test_logging_internal_queries_dict FORMAT Null"
-
-$CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS"
-
-$CLICKHOUSE_CLIENT --query "
-SELECT countIf(type = 'QueryStart'), countIf(type = 'QueryFinish')
-FROM system.query_log
-WHERE 1
-    AND is_internal = 1
-    AND query = 'SELECT toString(number) AS name, toFloat64(number) AS value FROM numbers(10) WHERE ''DIRECT()-$RUN_ID'' != '''''
-    AND current_database IN ['default', currentDatabase()]"
-
 $CLICKHOUSE_CLIENT --query "DROP DICTIONARY ${CLICKHOUSE_DATABASE}.test_logging_internal_queries_dict"
 
 
@@ -122,15 +89,27 @@ SOURCE(
 LAYOUT(DIRECT())"
 
 $CLICKHOUSE_CLIENT --query "SELECT * FROM ${CLICKHOUSE_DATABASE}.test_logging_internal_queries_dict FORMAT Null" 2>/dev/null
+$CLICKHOUSE_CLIENT --query "DROP DICTIONARY ${CLICKHOUSE_DATABASE}.test_logging_internal_queries_dict"
+
 
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS"
 
 $CLICKHOUSE_CLIENT --query "
-SELECT countIf(type = 'ExceptionWhileProcessing')
+SELECT
+    countIf(query LIKE '%FLAT()-%' AND type = 'QueryStart'),
+    countIf(query LIKE '%FLAT()-%' AND type = 'QueryFinish'),
+    countIf(query LIKE '%HASHED()-%' AND type = 'QueryStart'),
+    countIf(query LIKE '%HASHED()-%' AND type = 'QueryFinish'),
+    countIf(query LIKE '%HASHED_ARRAY()-%' AND type = 'QueryStart'),
+    countIf(query LIKE '%HASHED_ARRAY()-%' AND type = 'QueryFinish'),
+    countIf(query LIKE '%SPARSE_HASHED()-%' AND type = 'QueryStart'),
+    countIf(query LIKE '%SPARSE_HASHED()-%' AND type = 'QueryFinish'),
+    countIf(query LIKE '%COMPLEX_KEY_HASHED()-%' AND type = 'QueryStart'),
+    countIf(query LIKE '%COMPLEX_KEY_HASHED()-%' AND type = 'QueryFinish'),
+    countIf(query LIKE '%DIRECT()-%' AND type = 'QueryStart'),
+    countIf(query LIKE '%DIRECT()-%' AND type = 'QueryFinish'),
+    countIf(query LIKE '%DIRECT()-%' AND type = 'ExceptionWhileProcessing')
 FROM system.query_log
-WHERE 1
-    AND is_internal = 1
-    AND query = 'SELECT number FROM numbers(1) WHERE throwIf(number = 0, ''ERROR'') AND ''DIRECT()-$RUN_ID'' != '''''
+WHERE is_internal = 1
+    AND query LIKE '%$RUN_ID%'
     AND current_database IN ['default', currentDatabase()]"
-
-$CLICKHOUSE_CLIENT --query "DROP DICTIONARY ${CLICKHOUSE_DATABASE}.test_logging_internal_queries_dict"

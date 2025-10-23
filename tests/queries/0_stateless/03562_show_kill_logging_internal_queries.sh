@@ -33,6 +33,6 @@ SELECT
     countIf(query LIKE '%system.processes%' AND type = 'QueryStart'),
     countIf(query LIKE '%system.processes%' AND type = 'QueryFinish')
 FROM system.query_log
-WHERE is_internal = 1 AND user = '${TEST_USER}'"
+WHERE is_internal = 1 AND user = '${TEST_USER}' AND current_database = currentDatabase()"
 
 $CLICKHOUSE_CLIENT --query "DROP USER ${TEST_USER}"
