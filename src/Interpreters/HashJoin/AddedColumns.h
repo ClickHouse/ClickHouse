@@ -75,12 +75,16 @@ struct LazyOutput
         ++row_count;
     }
 
-    [[nodiscard]] size_t buildOutput(size_t size_to_reserve,
+    [[nodiscard]] size_t buildOutput(
+        size_t size_to_reserve,
+        const Block & left_block,
+        const IColumn::Offsets & left_offsets,
         MutableColumns & columns,
         const UInt64 * row_refs_begin,
         const UInt64 * row_refs_end,
         size_t rows_offset,
-        size_t rows_limit) const;
+        size_t rows_limit,
+        size_t bytes_limit) const;
 
     void buildJoinGetOutput(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const;
 
@@ -94,7 +98,8 @@ struct LazyOutput
 
     [[nodiscard]] size_t buildOutputFromBlocksLimitAndOffset(
         MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end,
-        size_t rows_offset, size_t rows_limit) const;
+        const PaddedPODArray<UInt64> & left_sizes, const IColumn::Offsets & left_offsets,
+        size_t rows_offset, size_t rows_limit, size_t bytes_limit) const;
 };
 
 template <bool lazy>
@@ -177,7 +182,24 @@ public:
         return ColumnWithTypeAndName(std::move(columns[i]), lazy_output.type_name[i].type, lazy_output.type_name[i].name);
     }
 
-    void appendFromBlock(const RowRefList * row_ref_list, bool has_default);
+    void appendFromBlock(const RowRefList * row_ref_list, bool)
+    {
+        if constexpr (lazy)
+        {
+#ifndef NDEBUG
+            checkColumns(*row_ref_list->columns);
+#endif
+            if (has_columns_to_add)
+            {
+                lazy_output.addRowRefList(row_ref_list);
+            }
+        }
+        else
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "AddedColumns are not implemented for RowRefList in non-lazy mode");
+        }
+    }
+
     void appendFromBlock(const RowRef * row_ref, bool has_default);
 
     void appendDefaultRow()
