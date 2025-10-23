@@ -44,7 +44,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"show_data_lake_catalogs_in_system_tables", true, false, "Disable catalogs in system tables by default"},
             {"optimize_rewrite_like_perfect_affix", false, true, "New setting"},
             {"allow_dynamic_type_in_join_keys", true, false, "Disallow using Dynamic type in JOIN keys by default"},
-            {"use_skip_indexes_on_data_read", false, true, "Enabled skip index usage in read phase by default"},
             {"s3queue_keeper_fault_injection_probablility", 0, 0, "New setting."},
             {"enable_join_runtime_filters", false, false, "New setting"},
             {"join_runtime_filter_exact_values_limit", 10000, 10000, "New setting"},
@@ -71,6 +70,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_use_logical_join_step", true, true, "Added alias"},
             {"schema_inference_make_columns_nullable", 1, 3, "Take nullability information from Parquet/ORC/Arrow metadata by default, instead of making everything nullable."},
             {"materialized_views_squash_parallel_inserts", false, true, "Added setting to preserve old behavior if needed."},
+            {"distributed_cache_connect_timeout_ms", 50, 50, "New setting"},
+            {"distributed_cache_receive_timeout_ms", 3000, 3000, "New setting"},
+            {"distributed_cache_send_timeout_ms", 3000, 3000, "New setting"},
+            {"distributed_cache_tcp_keep_alive_timeout_ms", 2900, 2900, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.9",
         {
