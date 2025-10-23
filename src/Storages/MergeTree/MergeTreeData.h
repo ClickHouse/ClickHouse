@@ -582,6 +582,9 @@ public:
     /// and mutations required to be applied at the moment of the start of query.
     struct SnapshotData : public StorageSnapshot::Data
     {
+        /// Hold a reference to the storage since the snapshot cache in query context
+        /// may outlive the storage and delay destruction of data parts.
+        ConstStoragePtr storage;
         RangesInDataParts parts;
         MutationsSnapshotPtr mutations_snapshot;
     };
@@ -1767,6 +1770,13 @@ protected:
 
     BackgroundSchedulePoolTaskHolder refresh_parts_task;
 
+    BackgroundSchedulePoolTaskHolder refresh_stats_task;
+
+    mutable std::mutex stats_mutex;
+    ConditionSelectivityEstimatorPtr cached_estimator;
+
+    void refreshStatistics(UInt64 interval_seconds);
+
     static void incrementInsertedPartsProfileEvent(MergeTreeDataPartType type);
     static void incrementMergedPartsProfileEvent(MergeTreeDataPartType type);
 
@@ -1916,6 +1926,8 @@ private:
     ///   on disks that are not a part of storage policy of the table).
     /// Sometimes it is better to bypass a disk e.g. to avoid interactions with a remote storage
     bool isDiskEligibleForOrphanedPartsSearch(DiskPtr disk) const;
+
+    ConditionSelectivityEstimatorPtr cached_selectivity_estimator;
 };
 
 /// RAII struct to record big parts that are submerging or emerging.
