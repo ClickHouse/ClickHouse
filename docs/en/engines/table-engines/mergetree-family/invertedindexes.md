@@ -554,7 +554,7 @@ ALTER TABLE hackernews MATERIALIZE INDEX comment_idx SETTINGS mutations_sync = 2
 
 Now, let's run queries using `hasToken`, `hasAnyTokens`, and `hasAllTokens` functions. The following examples will show the dramatic performance difference between a standard index scan and the direct read optimization.
 
-### 1. Using `hasToken`
+### 1. Using `hasToken` (#using-hasToken)
 `hasToken` checks if the text contains a specific single token. We'll search for the case-sensitive token 'ClickHouse'.
 
 **Direct read disabled (Standard scan)**
@@ -591,7 +591,7 @@ SETTINGS query_plan_direct_read_from_text_index = 1, use_skip_indexes_on_data_re
 The direct read query is over 45 times faster (0.362s vs 0.008s) and processes significantly less data (9.51 GB vs 3.15 MB) by reading from the index alone.
 
 
-### 2. Using `hasAnyTokens`
+### 2. Using `hasAnyTokens` (#using-hasAnyTokens)
 `hasAnyTokens` checks if the text contains at least one of the given tokens. We'll search for comments containing either 'love' or 'ClickHouse'.
 
 **Direct read disabled (Standard scan)**
@@ -625,7 +625,7 @@ SETTINGS query_plan_direct_read_from_text_index = 1, use_skip_indexes_on_data_re
 The speedup is even more dramatic for this common "OR" search. The query is nearly 89 times faster (1.329s vs 0.015s) by avoiding the full column scan.
 
 
-### 3. Using `hasAllTokens`
+### 3. Using `hasAllTokens` (#using-hasAllTokens)
 `hasAllTokens` checks if the text contains all of the given tokens. We'll search for comments containing both 'love' and 'ClickHouse'.
 
 **Direct read disabled (Standard scan)**
@@ -662,7 +662,7 @@ SETTINGS query_plan_direct_read_from_text_index = 1, use_skip_indexes_on_data_re
 For this "AND" search, the direct read optimization is over 26 times faster (0.184s vs 0.007s) than the standard skip index scan.
 
 
-### 4. Compound search: OR, AND, NOT, ...
+### 4. Compound search: OR, AND, NOT, ... (#compound-search)
 The direct read optimization also applies to compound boolean expressions. Here, we'll perform a case-insensitive search for 'ClickHouse' OR 'clickhouse'.
 
 **Direct read disabled (Standard scan)**
