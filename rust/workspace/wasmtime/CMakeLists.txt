@@ -40,16 +40,16 @@ set(WASMTIME_HEADER_DST ${WASMTIME_BINARY_DIR}/include)
 set(WASMTIME_HEADER_SRC ${WASMTIME_SOURCE_DIR}/crates/c-api/include)
 target_include_directories(_ch_wasmtime SYSTEM INTERFACE ${WASMTIME_HEADER_DST})
 
+# block()
+# set(CMAKE_INSTALL_MESSAGE NEVER)
+# file(INSTALL "${WASMTIME_HEADER_SRC}/" DESTINATION "${WASMTIME_HEADER_DST}" FILES_MATCHING REGEX "\\.hh?$")
+# endblock()
+
 configure_file("${WASMTIME_HEADER_SRC}/wasmtime/conf.h.in" "${WASMTIME_HEADER_DST}/wasmtime/conf.h" NEWLINE_STYLE CRLF)
 file(COPY "${WASMTIME_HEADER_SRC}/" DESTINATION "${WASMTIME_HEADER_DST}" FILES_MATCHING REGEX "\\.hh?$")
 
-clickhouse_import_crate(
-    MANIFEST_PATH "${WASMTIME_SOURCE_DIR}/crates/c-api/Cargo.toml"
-    FEATURES "addr2line, async, cache, coredump, cranelift, debug-builtins, demangle, gc, gc-drc, gc-null, logging, parallel-compilation, profiling, threads, wat, winch"
-    # Disabled: wasi
-)
-clickhouse_config_crate_flags(wasmtime)
+clickhouse_config_crate_flags(_ch_rust_wasmtime)
 
-target_link_libraries(_ch_wasmtime INTERFACE wasmtime)
+target_link_libraries(_ch_wasmtime INTERFACE _ch_rust_wasmtime)
 
-add_library(ch_contrib::wasmtime ALIAS _ch_wasmtime)
+add_library(ch_rust::wasmtime ALIAS _ch_wasmtime)

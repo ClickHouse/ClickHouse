@@ -721,10 +721,10 @@ if (TARGET ch_contrib::wasmedge)
     target_link_libraries(dbms PRIVATE ch_contrib::wasmedge)
 endif()
 
-if (TARGET ch_contrib::wasmtime)
+if (TARGET ch_rust::wasmtime)
     # FIXME: same as for ch_rust::delta_kernel_rs above
-    target_link_libraries(clickhouse_common_io PRIVATE ch_contrib::wasmtime)
-    target_link_libraries(dbms PRIVATE ch_contrib::wasmtime)
+    target_link_libraries(clickhouse_common_io PRIVATE ch_rust::wasmtime)
+    target_link_libraries(dbms PRIVATE ch_rust::wasmtime)
 endif()
 
 if (ENABLE_TESTS)

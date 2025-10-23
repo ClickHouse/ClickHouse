@@ -92,7 +92,6 @@ add_contrib (corrosion-cmake corrosion)
 add_contrib (delta-kernel-rs-cmake delta-kernel-rs)
 add_contrib (chdig-cmake chdig)
 add_contrib (wasmedge-cmake wasmedge)
-add_contrib (wasmtime-cmake wasmtime)
 
 if (ENABLE_FUZZING)
     add_contrib (libprotobuf-mutator-cmake libprotobuf-mutator)
