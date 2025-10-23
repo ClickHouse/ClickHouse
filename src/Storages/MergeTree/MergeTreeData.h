@@ -582,6 +582,9 @@ public:
     /// and mutations required to be applied at the moment of the start of query.
     struct SnapshotData : public StorageSnapshot::Data
     {
+        /// Hold a reference to the storage since the snapshot cache in query context
+        /// may outlive the storage and delay destruction of data parts.
+        ConstStoragePtr storage;
         RangesInDataParts parts;
         MutationsSnapshotPtr mutations_snapshot;
     };

@@ -1257,6 +1257,7 @@ class MergeTreeSettingsRandomizer:
         "auto_statistics_types": auto_statistics_generator(),
         "serialization_info_version": lambda: random.choice(["default", "with_types"]),
         "string_serialization_version": lambda: random.choice(["default", "with_size_stream"]),
+        "enable_shared_storage_snapshot_in_query": lambda: random.randint(0, 1),
     }
 
     @staticmethod
