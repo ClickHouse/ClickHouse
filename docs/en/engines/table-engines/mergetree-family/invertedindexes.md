@@ -491,7 +491,8 @@ If this column is present, then direct read is used.
 ## Example: Hackernews dataset {#hacker-news-dataset}
 
 Let's look at the performance improvements of text indexes on a large dataset with lots of text.
-We will use 28.7M rows of comments on the popular Hacker News website. Here is the table without text index:
+We will use 28.7M rows of comments on the popular Hacker News website.
+Here is the table without text index:
 
 ```sql
 CREATE TABLE hackernews (
@@ -545,20 +546,23 @@ We will use `ALTER TABLE` and add a text index on comment column, then materiali
 
 ```sql
 -- Add the index
-ALTER TABLE hackernews
-     ADD INDEX comment_idx(comment) TYPE text(tokenizer = splitByNonAlpha);
+ALTER TABLE hackernews ADD INDEX comment_idx(comment) TYPE text(tokenizer = splitByNonAlpha);
 
 -- Materialize the index for existing data
 ALTER TABLE hackernews MATERIALIZE INDEX comment_idx SETTINGS mutations_sync = 2;
 ```
 
-Now, let's run queries using `hasToken`, `hasAnyTokens`, and `hasAllTokens` functions. The following examples will show the dramatic performance difference between a standard index scan and the direct read optimization.
+Now, let's run queries using `hasToken`, `hasAnyTokens`, and `hasAllTokens` functions.
+The following examples will show the dramatic performance difference between a standard index scan and the direct read optimization.
 
-### 1. Using `hasToken` (#using-hasToken)
-`hasToken` checks if the text contains a specific single token. We'll search for the case-sensitive token 'ClickHouse'.
+### 1. Using `hasToken` {#using-hasToken}
+
+`hasToken` checks if the text contains a specific single token.
+We'll search for the case-sensitive token 'ClickHouse'.
 
 **Direct read disabled (Standard scan)**
-By default, ClickHouse uses the skip index to filter granules and then reads the column data for those granules. We can simulate this behavior by disabling direct read.
+By default, ClickHouse uses the skip index to filter granules and then reads the column data for those granules.
+We can simulate this behavior by disabling direct read.
 
 ```sql
 SELECT count()
@@ -591,10 +595,13 @@ SETTINGS query_plan_direct_read_from_text_index = 1, use_skip_indexes_on_data_re
 The direct read query is over 45 times faster (0.362s vs 0.008s) and processes significantly less data (9.51 GB vs 3.15 MB) by reading from the index alone.
 
 
-### 2. Using `hasAnyTokens` (#using-hasAnyTokens)
-`hasAnyTokens` checks if the text contains at least one of the given tokens. We'll search for comments containing either 'love' or 'ClickHouse'.
+### 2. Using `hasAnyTokens` {#using-hasAnyTokens}
+
+`hasAnyTokens` checks if the text contains at least one of the given tokens.
+We'll search for comments containing either 'love' or 'ClickHouse'.
 
 **Direct read disabled (Standard scan)**
+
 ```sql
 SELECT count()
 FROM hackernews
@@ -622,14 +629,18 @@ SETTINGS query_plan_direct_read_from_text_index = 1, use_skip_indexes_on_data_re
 
 1 row in set. Elapsed: 0.015 sec. Processed 27.99 million rows, 27.99 MB
 ```
-The speedup is even more dramatic for this common "OR" search. The query is nearly 89 times faster (1.329s vs 0.015s) by avoiding the full column scan.
+The speedup is even more dramatic for this common "OR" search.
+The query is nearly 89 times faster (1.329s vs 0.015s) by avoiding the full column scan.
 
 
-### 3. Using `hasAllTokens` (#using-hasAllTokens)
-`hasAllTokens` checks if the text contains all of the given tokens. We'll search for comments containing both 'love' and 'ClickHouse'.
+### 3. Using `hasAllTokens` {#using-hasAllTokens}
+
+`hasAllTokens` checks if the text contains all of the given tokens.
+We'll search for comments containing both 'love' and 'ClickHouse'.
 
 **Direct read disabled (Standard scan)**
-Even with direct read disabled, the standard skip index is still effective. It filters down the 28.7M rows to just 147.46K rows, but it still must read 57.03 MB from the column.
+Even with direct read disabled, the standard skip index is still effective.
+It filters down the 28.7M rows to just 147.46K rows, but it still must read 57.03 MB from the column.
 
 ```sql
 SELECT count()
@@ -659,13 +670,15 @@ SETTINGS query_plan_direct_read_from_text_index = 1, use_skip_indexes_on_data_re
 
 1 row in set. Elapsed: 0.007 sec. Processed 147.46 thousand rows, 147.46 KB
 ```
+
 For this "AND" search, the direct read optimization is over 26 times faster (0.184s vs 0.007s) than the standard skip index scan.
 
-
-### 4. Compound search: OR, AND, NOT, ... (#compound-search)
-The direct read optimization also applies to compound boolean expressions. Here, we'll perform a case-insensitive search for 'ClickHouse' OR 'clickhouse'.
+### 4. Compound search: OR, AND, NOT, ... {#compound-search}
+The direct read optimization also applies to compound boolean expressions.
+Here, we'll perform a case-insensitive search for 'ClickHouse' OR 'clickhouse'.
 
 **Direct read disabled (Standard scan)**
+
 ```sql
 SELECT count()
 FROM hackernews
@@ -680,6 +693,7 @@ SETTINGS query_plan_direct_read_from_text_index = 0, use_skip_indexes_on_data_re
 ```
 
 **Direct read enabled (Fast index read)**
+
 ```sql
 SELECT count()
 FROM hackernews
@@ -693,7 +707,8 @@ SETTINGS query_plan_direct_read_from_text_index = 1, use_skip_indexes_on_data_re
 1 row in set. Elapsed: 0.013 sec. Processed 25.87 million rows, 51.73 MB
 ```
 
-By combining the results from the index, the direct read query is 34 times faster (0.450s vs 0.013s) and avoids reading the 9.58 GB of column data. For this specific case, `hasAnyTokens(comment, ['ClickHouse', 'clickhouse'])` would be the preferred, more efficient syntax.
+By combining the results from the index, the direct read query is 34 times faster (0.450s vs 0.013s) and avoids reading the 9.58 GB of column data.
+For this specific case, `hasAnyTokens(comment, ['ClickHouse', 'clickhouse'])` would be the preferred, more efficient syntax.
 
 ## Related content {#related-content}
 
