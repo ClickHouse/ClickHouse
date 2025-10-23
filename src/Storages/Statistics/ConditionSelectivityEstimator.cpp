@@ -156,7 +156,7 @@ bool ConditionSelectivityEstimator::isStale(const std::vector<DataPartPtr> & dat
     size_t idx = 0;
     for (const auto & data_part : data_parts)
     {
-        if (parts_names[idx] != data_part->name)
+        if (parts_names[idx++] != data_part->name)
             return false;
     }
     return true;
