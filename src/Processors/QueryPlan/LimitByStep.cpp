@@ -24,12 +24,11 @@ static ITransformingStep::Traits getTraits()
     };
 }
 
-LimitByStep::LimitByStep(
-    const SharedHeader & input_header_,
-    size_t group_length_, size_t group_offset_, Names columns_)
+LimitByStep::LimitByStep(const SharedHeader & input_header_, size_t group_length_, size_t group_offset_, bool in_order_, Names columns_)
     : ITransformingStep(input_header_, input_header_, getTraits())
     , group_length(group_length_)
     , group_offset(group_offset_)
+    , in_order(in_order_)
     , columns(std::move(columns_))
 {
 }
@@ -44,7 +43,7 @@ void LimitByStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
         if (stream_type != QueryPipelineBuilder::StreamType::Main)
             return nullptr;
 
-        return std::make_shared<LimitByTransform>(header, group_length, group_offset, columns);
+        return std::make_shared<LimitByTransform>(header, group_length, group_offset, in_order, columns);
     });
 }
 
@@ -90,10 +89,14 @@ void LimitByStep::serialize(Serialization & ctx) const
     writeVarUInt(group_length, ctx.out);
     writeVarUInt(group_offset, ctx.out);
 
-
     writeVarUInt(columns.size(), ctx.out);
     for (const auto & column : columns)
         writeStringBinary(column, ctx.out);
+
+    UInt8 flags = 0;
+    if (in_order)
+        flags |= 1;
+    writeIntBinary(flags, ctx.out);
 }
 
 std::unique_ptr<IQueryPlanStep> LimitByStep::deserialize(Deserialization & ctx)
@@ -110,7 +113,12 @@ std::unique_ptr<IQueryPlanStep> LimitByStep::deserialize(Deserialization & ctx)
     for (auto & column : columns)
         readStringBinary(column, ctx.in);
 
-    return std::make_unique<LimitByStep>(ctx.input_headers.front(), group_length, group_offset, std::move(columns));
+    UInt8 flags;
+    readIntBinary(flags, ctx.in);
+
+    bool in_order = bool(flags & 1);
+
+    return std::make_unique<LimitByStep>(ctx.input_headers.front(), group_length, group_offset, in_order, std::move(columns));
 }
 
 void registerLimitByStep(QueryPlanStepRegistry & registry)

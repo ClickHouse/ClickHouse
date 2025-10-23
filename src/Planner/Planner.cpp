@@ -987,7 +987,11 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
 }
 
 void addLimitByStep(
-    QueryPlan & query_plan, const LimitByAnalysisResult & limit_by_analysis_result, const QueryNode & query_node, bool do_not_skip_offset)
+    QueryPlan & query_plan,
+    const LimitByAnalysisResult & limit_by_analysis_result,
+    const QueryAnalysisResult & query_analysis_result,
+    const QueryNode & query_node,
+    bool do_not_skip_offset)
 {
     /// Constness of LIMIT BY limit is validated during query analysis stage
     UInt64 limit_by_limit = query_node.getLimitByLimit()->as<ConstantNode &>().getValue().safeGet<UInt64>();
@@ -1008,9 +1012,12 @@ void addLimitByStep(
         limit_by_offset = 0;
     }
 
+    const bool limit_by_in_order = isSortDescriptionPrefix(limit_by_analysis_result.limit_by_column_names, query_analysis_result.sort_description);
+
     auto limit_by_step = std::make_unique<LimitByStep>(query_plan.getCurrentHeader(),
         limit_by_limit,
         limit_by_offset,
+        limit_by_in_order,
         limit_by_analysis_result.limit_by_column_names);
     query_plan.addStep(std::move(limit_by_step));
 }
@@ -1166,7 +1173,7 @@ void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(
         /// We don't apply LIMIT BY on remote nodes at all in the old infrastructure.
         /// https://github.com/ClickHouse/ClickHouse/blob/67c1e89d90ef576e62f8b1c68269742a3c6f9b1e/src/Interpreters/InterpreterSelectQuery.cpp#L1697-L1705
         /// Let's be optimistic and only don't skip offset (it will be skipped on the initiator).
-        addLimitByStep(query_plan, limit_by_analysis_result, query_node, true /*do_not_skip_offset*/);
+        addLimitByStep(query_plan, limit_by_analysis_result, query_analysis_result, query_node, true /*do_not_skip_offset*/);
     }
 
     /// Do not apply PreLimit at first stage for LIMIT BY and `exact_rows_before_limit`,
@@ -1212,8 +1219,9 @@ void addWindowSteps(QueryPlan & query_plan,
         bool need_sort = !window_description.full_sort_description.empty();
         if (need_sort && i != 0)
         {
-            need_sort = !sortDescriptionIsPrefix(window_description.full_sort_description, window_descriptions[i - 1].full_sort_description)
-                || (settings[Setting::max_threads] != 1 && window_description.partition_by.size() != window_descriptions[i - 1].partition_by.size());
+            need_sort = !isSortDescriptionPrefix(window_description.full_sort_description, window_descriptions[i - 1].full_sort_description)
+                || (settings[Setting::max_threads] != 1
+                    && window_description.partition_by.size() != window_descriptions[i - 1].partition_by.size());
         }
         if (need_sort)
         {
@@ -2058,7 +2066,7 @@ void Planner::buildPlanForQueryNode()
                 select_query_options,
                 "Before LIMIT BY",
                 useful_sets);
-            addLimitByStep(query_plan, limit_by_analysis_result, query_node, false /*do_not_skip_offset*/);
+            addLimitByStep(query_plan, limit_by_analysis_result, query_analysis_result, query_node, false /*do_not_skip_offset*/);
         }
 
         if (query_node.hasOrderBy())
