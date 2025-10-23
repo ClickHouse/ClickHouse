@@ -12,17 +12,46 @@ namespace ErrorCodes
 }
 
 
-ColumnIndex::ColumnIndex() : indexes(ColumnUInt8::create()), size_of_type(sizeof(UInt8)) {}
+ColumnIndex::ColumnIndex() : indexes(ColumnUInt8::create()), size_of_type(sizeof(UInt8))
+{
+    updateIndexesDataPtr();
+}
 
 ColumnIndex::ColumnIndex(MutableColumnPtr && indexes_) : indexes(std::move(indexes_))
 {
     updateSizeOfType();
+    updateIndexesDataPtr();
 }
 
 ColumnIndex::ColumnIndex(ColumnPtr indexes_) : indexes(std::move(indexes_))
 {
     updateSizeOfType();
+    updateIndexesDataPtr();
 }
+
+void ColumnIndex::updateIndexesDataPtr()
+{
+    switch (size_of_type)
+    {
+        case sizeof(UInt8):
+            indexes_data_ptr = static_cast<void *>(&assert_cast<ColumnUInt8 &>(*indexes).getData());
+            break;
+        case sizeof(UInt16):
+            indexes_data_ptr = static_cast<void *>(&assert_cast<ColumnUInt16 &>(*indexes).getData());
+            break;
+        case sizeof(UInt32):
+            indexes_data_ptr = static_cast<void *>(&assert_cast<ColumnUInt32 &>(*indexes).getData());
+            break;
+        case sizeof(UInt64):
+            indexes_data_ptr = static_cast<void *>(&assert_cast<ColumnUInt64 &>(*indexes).getData());
+            break;
+        default: {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type: {}",
+                            size_of_type);
+        }
+    }
+}
+
 
 template <typename Callback>
 void ColumnIndex::callForType(Callback && callback, size_t size_of_type)
@@ -71,28 +100,19 @@ void ColumnIndex::attachIndexes(MutableColumnPtr indexes_)
 {
     indexes = std::move(indexes_);
     updateSizeOfType();
+    updateIndexesDataPtr();
 }
 
 template <typename IndexType>
 typename ColumnVector<IndexType>::Container & ColumnIndex::getIndexesData()
 {
-    auto * indexes_ptr = typeid_cast<ColumnVector<IndexType> *>(indexes->assumeMutable().get());
-    if (!indexes_ptr)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid indexes type for ColumnLowCardinality. Expected UInt{}, got {}",
-                        8 * sizeof(IndexType), indexes->getName());
-
-    return indexes_ptr->getData();
+    return *static_cast<ColumnVector<IndexType>::Container *>(indexes_data_ptr);
 }
 
 template <typename IndexType>
 const typename ColumnVector<IndexType>::Container & ColumnIndex::getIndexesData() const
 {
-    const auto * indexes_ptr = typeid_cast<const ColumnVector<IndexType> *>(indexes.get());
-    if (!indexes_ptr)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid indexes type for ColumnLowCardinality. Expected UInt{}, got {}",
-                        8 * sizeof(IndexType), indexes->getName());
-
-    return indexes_ptr->getData();
+    return *static_cast<ColumnVector<IndexType>::Container *>(indexes_data_ptr);
 }
 
 template <typename IndexType>
@@ -142,6 +162,7 @@ void ColumnIndex::expandType()
     };
 
     callForType(std::move(expand), size_of_type);
+    updateIndexesDataPtr();
 }
 
 size_t ColumnIndex::getMaxIndexForCurrentType() const
@@ -172,9 +193,7 @@ void ColumnIndex::insertIndex(size_t index)
 
     auto insert = [&](auto cur_type)
     {
-        using CurIndexType = decltype(cur_type);
-        auto & indexes_data = getIndexesData<CurIndexType>();
-        indexes_data.push_back(index);
+        getIndexesData<decltype(cur_type)>().push_back(index);
     };
 
     callForType(std::move(insert), size_of_type);

@@ -61,6 +61,8 @@ public:
 private:
     size_t getMaxIndexForCurrentType() const;
 
+    void updateIndexesDataPtr();
+
     void checkSizeOfType();
 
     template <typename Callback>
@@ -79,6 +81,8 @@ private:
     void convertIndexes();
 
     IColumn::WrappedPtr indexes;
+    /// Pointer to the data inside indexes column.
+    void * indexes_data_ptr = nullptr;
     size_t size_of_type = 0;
 };
 
