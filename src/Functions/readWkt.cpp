@@ -5,6 +5,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/geometryConverters.h>
+#include <boost/algorithm/string/case_conv.hpp>
 
 #include <string>
 #include <memory>
@@ -125,19 +126,17 @@ public:
 
         auto discriminators_column = ColumnVariant::ColumnDiscriminators::create();
 
-        auto try_deserialize_type = [&](const std::function<void()> & func, WKTTypes type) -> bool
+        auto try_deserialize_type = [&] (const std::function<void()> & deserialize_func, const String & data, const String & target_prefix, WKTTypes type) -> bool
         {
-            try
+            auto lower_data = boost::to_lower_copy(data);
+            if (lower_data.starts_with(target_prefix))
             {
-                func();
+                deserialize_func();
                 UInt8 converted_type = static_cast<UInt8>(type);
                 discriminators_column->insertValue(converted_type);
                 return true;
             }
-            catch (...)
-            {
-                return false;
-            }
+            return false;
         };
         for (size_t i = 0; i < input_rows_count; ++i)
         {
@@ -149,7 +148,7 @@ public:
                         boost::geometry::read_wkt(str, point);
                         point_serializer.add(point);
                     },
-                    WKTTypes::Point))
+                    str, "point", WKTTypes::Point))
                 continue;
 
             if (try_deserialize_type(
@@ -159,7 +158,7 @@ public:
                         boost::geometry::read_wkt(str, linestring);
                         linestring_serializer.add(linestring);
                     },
-                    WKTTypes::LineString))
+                    str, "linestring", WKTTypes::LineString))
                 continue;
 
             if (try_deserialize_type(
@@ -169,7 +168,7 @@ public:
                         boost::geometry::read_wkt(str, polygon);
                         polygon_serializer.add(polygon);
                     },
-                    WKTTypes::Polygon))
+                    str, "polygon", WKTTypes::Polygon))
                 continue;
 
             if (try_deserialize_type(
@@ -179,7 +178,7 @@ public:
                         boost::geometry::read_wkt(str, multilinestring);
                         multilinestring_serializer.add(multilinestring);
                     },
-                    WKTTypes::MultiLineString))
+                    str, "multilinestring", WKTTypes::MultiLineString))
                 continue;
 
             if (try_deserialize_type(
@@ -189,7 +188,7 @@ public:
                         boost::geometry::read_wkt(str, multipolygon);
                         multipolygon_serializer.add(multipolygon);
                     },
-                    WKTTypes::MultiPolygon))
+                    str, "multipolygon", WKTTypes::MultiPolygon))
                 continue;
 
             if (try_deserialize_type(
@@ -199,7 +198,7 @@ public:
                         boost::geometry::read_wkt(str, ring);
                         ring_serializer.add(ring);
                     },
-                    WKTTypes::Ring))
+                    str, "ring", WKTTypes::Ring))
                 continue;
 
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect WKT format value: {}", str);

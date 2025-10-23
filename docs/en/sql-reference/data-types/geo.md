@@ -146,7 +146,6 @@ Result:
 
 **Example**
 
-
 ```sql
 CREATE TABLE IF NOT EXISTS geo (geom Geometry) ENGINE = Memory();
 INSERT INTO geo VALUES ((1, 2));
@@ -186,7 +185,6 @@ Result:
 5. │ [[(1,0),(10,0),(10,10),(0,10),(1,0)],[(4,4),(5,4),(5,5),(4,5),(4,4)]]                                            │
    └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
-
 
 ## Related Content {#related-content}
 
