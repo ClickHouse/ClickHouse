@@ -6,6 +6,7 @@
 #include <Common/HTTPConnectionPool.h>
 #include <Common/JSONWebKey.h>
 #include <Common/OpenSSLHelpers.h>
+#include <Common/ProfileEvents.h>
 #include <Disks/IO/ReadBufferFromWebServer.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ReadHelpers.h>
@@ -15,14 +16,20 @@
 #include <Poco/StreamCopier.h>
 
 
-namespace DB
-{
-
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
+
+namespace ProfileEvents
+{
+    extern const Event ACMECertificateOrders;
+    extern const Event ACMEAPIRequests;
+}
+
+namespace DB
+{
 
 namespace ACME
 {
@@ -143,6 +150,8 @@ std::string API::doJWSRequest(
 
     auto session = makeHTTPSession(HTTPConnectionGroupType::HTTP, url, connection_timeout_settings, proxy_configuration);
 
+    ProfileEvents::increment(ProfileEvents::ACMEAPIRequests);
+
     auto & ostream = session->sendRequest(r);
     ostream << request_data;
 
@@ -217,6 +226,8 @@ std::string API::order(const Domains & domains, OrderCallback callback) const
 
     auto http_response = std::make_shared<Poco::Net::HTTPResponse>();
     auto json = doJWSRequestExpectingJSON(directory->new_order, payload_from_domains, http_response);
+
+    ProfileEvents::increment(ProfileEvents::ACMECertificateOrders);
 
     auto status = json->getValue<std::string>("status");
     auto expires = json->getValue<std::string>("expires");

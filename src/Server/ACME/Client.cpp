@@ -5,6 +5,7 @@
 #include <Common/Exception.h>
 #include <Common/HTTPConnectionPool.h>
 #include <Common/OpenSSLHelpers.h>
+#include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -30,8 +31,8 @@
 #include <Poco/String.h>
 #include <Poco/Timespan.h>
 #include <Poco/URI.h>
-#include <Server/CertificateReloader.h>
 #include <Server/ACME/Client.h>
+#include <Server/CertificateReloader.h>
 
 #include <fmt/core.h>
 #include <fmt/ranges.h>
@@ -41,13 +42,18 @@
 #include <mutex>
 
 
-namespace DB
+namespace ProfileEvents
 {
+    extern const Event ACMECertificateOrders;
+}
 
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
+
+namespace DB
+{
 
 namespace ACME
 {
