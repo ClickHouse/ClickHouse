@@ -42,10 +42,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "25.11",
         {
             {"use_statistics_cache", 0, 0, "New setting"},
+            {"enable_shared_storage_snapshot_in_query", false, true, "Better consistency guarantees."},
         });
         addSettingsChanges(settings_changes_history, "25.10",
         {
-            {"enable_shared_storage_snapshot_in_query", false, true, "Better consistency guarantees."},
             {"show_data_lake_catalogs_in_system_tables", true, false, "Disable catalogs in system tables by default"},
             {"optimize_rewrite_like_perfect_affix", false, true, "New setting"},
             {"allow_dynamic_type_in_join_keys", true, false, "Disallow using Dynamic type in JOIN keys by default"},
