@@ -263,6 +263,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool enable_block_offset_column;
     extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
     extern const MergeTreeSettingsSeconds refresh_parts_interval;
+    extern const MergeTreeSettingsBool exclude_deleted_rows_for_part_size_in_merge;
+    extern const MergeTreeSettingsBool load_existing_rows_count_for_old_parts;
     extern const MergeTreeSettingsBool remove_unused_patch_parts;
     extern const MergeTreeSettingsSearchOrphanedPartsDisks search_orphaned_parts_disks;
     extern const MergeTreeSettingsBool allow_part_offset_column_in_projections;
@@ -8190,7 +8192,10 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         for (const auto & part : real_parts)
         {
             auto & column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns.back());
-            insert(column, part->rows_count);
+            if ((*getSettings())[MergeTreeSetting::exclude_deleted_rows_for_part_size_in_merge] && (*getSettings())[MergeTreeSetting::load_existing_rows_count_for_old_parts] && part->existing_rows_count.has_value())
+                insert(column, part->existing_rows_count.value());
+            else
+                insert(column, part->rows_count);
         }
     }
 
