@@ -11,6 +11,7 @@
 #include <variant>
 #include <fmt/core.h>
 #include <fmt/ranges.h>
+#include <base/MemorySanitizer.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/WebAssembly/HostApi.h>
@@ -405,15 +406,18 @@ public:
                 "env",
                 host_function_ptr->getName(),
                 toWasmFunctionType(host_function_ptr.get()),
-                [&host_function_ptr](
+                [host_function_raw_ptr = host_function_ptr.get()](
                     wasmtime::Caller caller,
                     wasmtime::Span<const wasmtime::Val> params,
                     wasmtime::Span<wasmtime::Val> results) -> wasmtime::Result<std::monostate, wasmtime::Trap>
                 {
+                    /// False positive (?)
+                    /// FIXME: try making a small repro
+                    /// https://github.com/bytecodealliance/wasmtime/issues/7935#issuecomment-1944027164
+                    __msan_unpoison(params.data(), params.size_bytes());
                     auto * compartment_ptr = std::any_cast<WasmTimeCompartment *>(caller.context().get_data());
-                    return callHostFunction(compartment_ptr, host_function_ptr.get(), params, results);
+                    return callHostFunction(compartment_ptr, host_function_raw_ptr, params, results);
                 }
-
             );
             if (!add_host_func_result)
             {
