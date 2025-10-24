@@ -193,7 +193,7 @@ std::optional<AggregateFunctionMatches> matchAggregateFunctions(
                     break;
 
                 const auto & node_match = mt->second;
-                if (node_match.node != proj_node || node_match.monotonicity)
+                if (node_match.node != proj_node || (node_match.monotonicity && !node_match.monotonicity->identity))
                     break;
 
                 argument_types.push_back(query_node->result_type);
@@ -258,7 +258,7 @@ std::optional<ActionsDAG> analyzeAggregateProjection(
 {
     auto proj_index = buildDAGIndex(*info.before_aggregation);
 
-    MatchedTrees::Matches matches = matchTrees(info.before_aggregation->getOutputs(), *query.dag, false /* check_monotonicity */);
+    MatchedTrees::Matches matches = matchTrees(info.before_aggregation->getOutputs(), *query.dag, true /* check_monotonicity */);
     auto matched_aggregates = matchAggregateFunctions(info, aggregates, matches, query_index, proj_index);
     if (!matched_aggregates)
         return {};
