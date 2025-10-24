@@ -326,11 +326,18 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
         has_tasks.notify_one();
 
         {
+            Stopwatch watch_on_completed;
             ALLOW_ALLOCATIONS_IN_SCOPE;
             /// In a situation of a lack of memory this method can throw an exception,
             /// because it may interact somehow with BackgroundSchedulePool, which may allocate memory
             /// But it is rather safe, because we have try...catch block here, and another one in ThreadPool.
             item_->task->onCompleted();
+
+            if (watch_on_completed.elapsedMilliseconds() > 1000)
+            {
+                LOG_WARNING(log, "Execution of callback took {} ms for thread {} in [{}], Stack trace (when copying this message, always include the lines below): \n {}",
+                    watch_on_completed.elapsedMilliseconds(), CurrentThread::get().thread_id, __PRETTY_FUNCTION__, StackTrace().toString());
+            }
         }
 
         release_task(std::move(item_));
