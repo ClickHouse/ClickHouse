@@ -140,13 +140,16 @@ void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, Cr
     }
     if (newt.has_table_def())
     {
-        const TableDef & def = newt.table_def();
+        std::vector<TableDefItem> items_to_keep;
+        TableDef & def = const_cast<TableDef &>(newt.table_def());
 
         for (int i = 0; i < def.table_defs_size(); i++)
         {
-            if (def.table_defs(i).has_col_def())
+            const auto & next = def.table_defs(i);
+
+            if (next.has_col_def())
             {
-                ColumnDef & cdef = const_cast<ColumnDef &>(def.table_defs(i).col_def());
+                ColumnDef & cdef = const_cast<ColumnDef &>(next.col_def());
                 TopTypeName & ttn = const_cast<TopTypeName &>(cdef.type().type());
 
                 if (cdef.has_codecs() && rg.nextBool())
@@ -197,7 +200,18 @@ void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, Cr
                         }
                     }
                 }
+                /// Keep all columns
+                items_to_keep.emplace_back(next);
             }
+            else if (rg.nextSmallNumber() < 8)
+            {
+                items_to_keep.emplace_back(next);
+            }
+        }
+        def.clear_table_defs();
+        for (const auto & item : items_to_keep)
+        {
+            *def.add_table_defs() = std::move(item);
         }
     }
     if (newt.has_cluster() && rg.nextSmallNumber() < 4)
@@ -367,7 +381,8 @@ bool MySQLIntegration::optimizeTableForOracle(const PeerTableDatabase pt, const 
     if (is_clickhouse && t.isMergeTreeFamily())
     {
         /// Sometimes the optimize step doesn't have to do anything, then throws error. Ignore it
-        const auto u = performQueryOnServerOrRemote(pt, fmt::format("ALTER TABLE {} APPLY DELETED MASK;", getTableName(t.db, t.tname)));
+        const auto u = performQueryOnServerOrRemote(
+            pt, fmt::format("ALTER TABLE {} APPLY DELETED MASK SETTINGS mutations_sync = 2;", getTableName(t.db, t.tname)));
         const auto v = performQueryOnServerOrRemote(
             pt, fmt::format("OPTIMIZE TABLE {}{};", getTableName(t.db, t.tname), t.supportsFinal() ? " FINAL" : ""));
         UNUSED(u);
