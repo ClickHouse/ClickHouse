@@ -107,6 +107,7 @@ IndexDescription::IndexDescription(const IndexDescription & other)
     , data_types(other.data_types)
     , sample_block(other.sample_block)
     , granularity(other.granularity)
+    , is_implicitly_created(other.is_implicitly_created)
 {
     if (other.expression)
         expression = other.expression->clone();
@@ -141,10 +142,11 @@ IndexDescription & IndexDescription::operator=(const IndexDescription & other)
     data_types = other.data_types;
     sample_block = other.sample_block;
     granularity = other.granularity;
+    is_implicitly_created = other.is_implicitly_created;
     return *this;
 }
 
-IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr context)
+IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, bool is_implicitly_created, ContextPtr context)
 {
     const auto * index_definition = definition_ast->as<ASTIndexDeclaration>();
     if (!index_definition)
@@ -165,6 +167,7 @@ IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast
     result.name = index_definition->name;
     result.type = Poco::toLower(index_type->name);
     result.granularity = index_definition->granularity;
+    result.is_implicitly_created = is_implicitly_created;
 
     ASTPtr expr_list;
     if (auto index_expression = index_definition->getExpression())
@@ -219,7 +222,7 @@ IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast
 
 void IndexDescription::recalculateWithNewColumns(const ColumnsDescription & new_columns, ContextPtr context)
 {
-    *this = getIndexFromAST(definition_ast, new_columns, context);
+    *this = getIndexFromAST(definition_ast, new_columns, /* is_implicitly_created */ false, context);
 }
 
 bool IndicesDescription::has(const String & name) const
@@ -261,7 +264,7 @@ IndicesDescription IndicesDescription::parse(const String & str, const ColumnsDe
     ASTPtr list = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
     for (const auto & index : list->children)
-        result.emplace_back(IndexDescription::getIndexFromAST(index, columns, context));
+        result.emplace_back(IndexDescription::getIndexFromAST(index, columns, /* is_implicitly_created */ false, context));
 
     return result;
 }
@@ -302,7 +305,7 @@ ASTPtr createImplicitMinMaxIndexAST(const String & column_name)
 IndexDescription createImplicitMinMaxIndexDescription(const String & column_name, const ColumnsDescription & columns, ContextPtr context)
 {
     auto index_ast = createImplicitMinMaxIndexAST(column_name);
-    return IndexDescription::getIndexFromAST(index_ast, columns, context);
+    return IndexDescription::getIndexFromAST(index_ast, columns, /* is_implicitly_created */ true, context);
 }
 
 }
