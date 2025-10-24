@@ -1944,7 +1944,6 @@ class TestCase:
                     self.stdout_file,
                 ],
                 stdout=PIPE,
-                universal_newlines=True,
             ) as diff_proc:
                 if self.show_whitespaces_in_diff:
                     with Popen(
@@ -1952,11 +1951,10 @@ class TestCase:
                         stdin=diff_proc.stdout,
                         stdout=PIPE,
                     ) as sed_proc:
-                        diff = sed_proc.communicate()[0].decode(
-                            "utf-8", errors="ignore"
-                        )
+                        diff = sed_proc.communicate()[0]
                 else:
                     diff = diff_proc.communicate()[0]
+            diff = diff.decode("utf-8", errors="ignore")
 
             if diff.startswith("Binary files "):
                 diff += "Content of stdout:\n===================\n"
