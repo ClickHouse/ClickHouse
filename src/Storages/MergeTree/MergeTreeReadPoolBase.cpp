@@ -5,6 +5,7 @@
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
 
@@ -63,11 +64,26 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
 
 static size_t getSizeOfColumns(const IMergeTreeDataPart & part, const Names & columns_to_read)
 {
-    ColumnSize columns_size{};
-    for (const auto & col_name : columns_to_read)
-        columns_size.add(part.getColumnSize(col_name));
     /// For compact parts we don't know individual column sizes, let's use whole part size as approximation
-    return columns_size.data_compressed ? columns_size.data_compressed : part.getBytesOnDisk();
+    if (part.getType() == MergeTreeDataPartType::Compact)
+        return part.getBytesOnDisk();
+
+    size_t data_compressed_size = 0;
+    for (const auto & col_name : columns_to_read)
+        data_compressed_size += part.getColumnSize(col_name).data_compressed;
+
+    if (!data_compressed_size)
+    {
+        auto all_columns_sizes = part.getColumnSizes();
+
+        for (const auto & [_, size] : all_columns_sizes)
+        {
+            if (size.data_compressed && (!data_compressed_size || size.data_compressed < data_compressed_size))
+                data_compressed_size = size.data_compressed;
+        }
+    }
+
+    return data_compressed_size ? data_compressed_size : part.getBytesOnDisk();
 }
 
 /// Columns from different prewhere steps are read independently, so it makes sense to use the heaviest set of columns among them as an estimation.
@@ -114,6 +130,7 @@ calculateMinMarksPerTask(
             const auto heuristic_min_marks = std::min<size_t>(
                 pool_settings.sum_marks / (pool_settings.threads * pool_settings.total_query_nodes) / 2,
                 min_bytes_per_task / avg_mark_bytes);
+
             if (heuristic_min_marks > min_marks_per_task)
             {
                 LOG_TEST(

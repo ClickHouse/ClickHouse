@@ -32,10 +32,6 @@ protected:
     bool buzzHouse() override;
     bool processASTFuzzerStep(const String & query_to_execute, const ASTPtr & parsed_query);
 
-#if USE_JWT_CPP && USE_SSL
-    void login();
-#endif
-
     void connect() override;
 
     void processError(std::string_view query) const override;
@@ -75,9 +71,5 @@ private:
     std::vector<String> loadWarningMessages();
 
     std::optional<CurrentThread::QueryScope> query_scope;
-
-#if USE_JWT_CPP && USE_SSL
-    std::shared_ptr<JWTProvider> jwt_provider;
-#endif
 };
 }
