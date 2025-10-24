@@ -1,5 +1,5 @@
 #pragma once
-
+#include <boost/dynamic_bitset.hpp>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -87,7 +87,7 @@ public:
         UncompressedCache * uncompressed_cache,
         VectorSimilarityIndexCache * vector_similarity_index_cache,
         bool support_disjuncts,
-        std::unordered_map<size_t, std::vector<bool>> & partial_eval_results_for_disjuncts,
+        boost::dynamic_bitset<> & partial_eval_results_for_disjuncts,
         LoggerPtr log);
 
     static MarkRanges filterMarksUsingMergedIndex(
@@ -100,6 +100,8 @@ public:
         UncompressedCache * uncompressed_cache,
         VectorSimilarityIndexCache * vector_similarity_index_cache,
         LoggerPtr log);
+
+    static constexpr size_t BITS_FOR_RPN_EVALUATION_RESULTS = 32;
 
 private:
     const MergeTreeData & data;
@@ -247,7 +249,7 @@ public:
         MergeTreeData::DataPartPtr part,
         const MarkRanges & ranges,
         const KeyCondition & rpn_template_for_eval_result,
-        const std::unordered_map<size_t, std::vector<bool>> & partial_eval_results,
+        const boost::dynamic_bitset<> & partial_eval_results,
         MergeTreeReaderSettings reader_settings,
         LoggerPtr log);
 };

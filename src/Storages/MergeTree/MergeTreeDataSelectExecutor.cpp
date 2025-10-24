@@ -747,7 +747,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         num_threads = std::min<size_t>(num_streams, settings[Setting::max_threads_for_indexes]);
     }
 
-    const bool support_disjuncts = is_support_disjuncts && !use_skip_indexes_on_data_read;
+    const bool support_disjuncts = is_support_disjuncts && !settings[Setting::use_skip_indexes_on_data_read];
     auto is_index_supported_on_data_read = [&](const MergeTreeIndexPtr & index) -> bool
     {
         /// Vector similarity indexes are not applicable on data reads.
@@ -845,7 +845,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                 const auto num_indexes = skip_indexes.useful_indices.size();
 
-                std::unordered_map<size_t, std::vector<bool>> partial_eval_results;
+                boost::dynamic_bitset<> partial_eval_results;
+                if (support_disjuncts)
+                    partial_eval_results.resize(ranges.data_part->index_granularity->getMarksCountWithoutFinal() * BITS_FOR_RPN_EVALUATION_RESULTS, 1);
 
                 for (size_t idx = 0; idx < num_indexes; ++idx)
                 {
@@ -1762,7 +1764,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     UncompressedCache * uncompressed_cache,
     VectorSimilarityIndexCache * vector_similarity_index_cache,
     bool support_disjuncts,
-    std::unordered_map<size_t, std::vector<bool>> & partial_eval_results_for_disjuncts,
+    boost::dynamic_bitset<> & partial_eval_results_for_disjuncts,
     LoggerPtr log)
 {
     if (!index_helper->getDeserializedFormat(part->getDataPartStorage(), index_helper->getFileName()))
@@ -1923,18 +1925,14 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                 else
                 {
                     bool result = true;
-                    if (support_disjuncts)
+                    if (support_disjuncts && key_condition_rpn_template)
                     {
                         auto range_begin = std::max(ranges[i].begin, index_mark * index_granularity);
-                        const size_t rpn_expr_length =  key_condition_rpn_template.value().getRPN().size();
-
-                        auto [it, inserted] = partial_eval_results_for_disjuncts.emplace(range_begin, std::vector<bool>(rpn_expr_length, true));
-                        auto & result_rpn_of_range = it->second;
 
                         auto support_disjunct_callback = [&](size_t position, bool element_result, bool is_unknown)
                         {
                             if (!is_unknown)
-                                result_rpn_of_range[position] = element_result;
+                                partial_eval_results_for_disjuncts[(range_begin * BITS_FOR_RPN_EVALUATION_RESULTS) + position] = element_result;
                         };
                         result = condition->mayBeTrueOnGranule(granule, support_disjunct_callback);
                     }
@@ -2238,7 +2236,7 @@ MarkRanges MergeTreeDataSelectExecutor::finalSetOfRangesForConditionWithORs(
     MergeTreeData::DataPartPtr part,
     const MarkRanges & ranges,
     const KeyCondition & rpn_template_for_eval_result,
-    const std::unordered_map<size_t, std::vector<bool>> & partial_eval_results,
+    const boost::dynamic_bitset<> & partial_eval_results,
     MergeTreeReaderSettings reader_settings,
     LoggerPtr log)
 {
@@ -2261,9 +2259,6 @@ MarkRanges MergeTreeDataSelectExecutor::finalSetOfRangesForConditionWithORs(
     {
         for (auto range_begin = range.begin; range_begin < range.end; range_begin++)
         {
-            auto range_result = partial_eval_results.find(range_begin);
-            auto range_found = range_result != partial_eval_results.end();
-
             std::vector<bool> rpn_stack;
 
             size_t position = 0;
@@ -2271,10 +2266,7 @@ MarkRanges MergeTreeDataSelectExecutor::finalSetOfRangesForConditionWithORs(
             {
                 if (element.function == KeyCondition::RPNElement::FUNCTION_UNKNOWN)
                 {
-                    if (range_found)
-                        rpn_stack.emplace_back(range_result->second[position]);
-                    else
-                        rpn_stack.emplace_back(true);
+                    rpn_stack.emplace_back(partial_eval_results[(range_begin * BITS_FOR_RPN_EVALUATION_RESULTS) + position]);
                 }
                 else if (element.function == KeyCondition::RPNElement::FUNCTION_NOT)
                 {

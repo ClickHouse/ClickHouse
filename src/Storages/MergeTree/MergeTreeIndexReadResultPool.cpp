@@ -41,7 +41,9 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
 
     auto ranges = part.ranges;
     size_t ending_mark = ranges.empty() ? 0 : ranges.back().end;
-    std::unordered_map<size_t, std::vector<bool>> partial_eval_results;
+    boost::dynamic_bitset<> partial_eval_results;
+    if (support_disjuncts)
+        partial_eval_results.resize(part.data_part->index_granularity->getMarksCountWithoutFinal() * MergeTreeDataSelectExecutor::BITS_FOR_RPN_EVALUATION_RESULTS, 1);
     for (const auto & index_and_condition : skip_indexes.useful_indices)
     {
         if (is_cancelled)
