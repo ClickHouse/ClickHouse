@@ -96,7 +96,7 @@ public:
         auto dimension_constant = std::make_shared<ConstantNode>(qbit->getDimension());
 
         /// If the precision node was nullable, the result needs to be nullable too. As this pass removes precision_node, we force
-        /// the nullability on the dimension constant (if former was te case) to preserve the nullability of the result
+        /// the nullability on the dimension constant (if former was the case) to preserve the nullability of the result
         if (precision_node->getResultType()->isNullable())
             dimension_constant->convertToNullable();
 
