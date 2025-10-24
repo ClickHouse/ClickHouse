@@ -168,8 +168,7 @@ private:
             && !(isDictGetFunction(arguments[1], dictget_call) && isConstantNode(arguments[0], value_expr_node)))
             return;
 
-        String dict_id_col_name;
-        DataTypePtr dict_id_col_type;
+        std::vector<NameAndTypePair> key_cols;
         DataTypePtr dict_attr_col_type;
 
         try
@@ -186,12 +185,21 @@ private:
 
             const auto & dict_structure = dict->getStructure();
 
-            // TODO: handle complex keys
-            if (!dict_structure.id)
+            if (dict_structure.id)
+            {
+                key_cols.emplace_back(dict_structure.id->name, dict_structure.id->type);
+            }
+            else if (dict_structure.key)
+            {
+                for (const auto & id : *dict_structure.key)
+                {
+                    key_cols.emplace_back(id.name, id.type);
+                }
+            }
+            else
+            {
                 return;
-
-            dict_id_col_name = dict_structure.id->name;
-            dict_id_col_type = dict_structure.id->type;
+            }
 
             assert(dict_structure.hasAttribute(dictget_call.attr_col_name) && "Attribute not found in dictionary structure of dictionary");
 
@@ -209,8 +217,11 @@ private:
         NameAndTypePair attr_col{dictget_call.attr_col_name, dict_attr_col_type};
         auto attr_col_node = std::make_shared<ColumnNode>(attr_col, dict_table_function);
 
-        NameAndTypePair key_col{dict_id_col_name, dict_id_col_type};
-        auto key_col_node = std::make_shared<ColumnNode>(key_col, dict_table_function);
+        QueryTreeNodes key_col_nodes;
+        for (const auto & key_col : key_cols)
+        {
+            key_col_nodes.push_back(std::make_shared<ColumnNode>(key_col, dict_table_function));
+        }
 
         auto comparison_function_node = std::make_shared<FunctionNode>(comparison_function_name);
         comparison_function_node->markAsOperator();
@@ -224,8 +235,9 @@ private:
         subquery_node->getWhere() = comparison_function_node;
 
         /// This is a good place to support dictGetString and others, just need to wrap key_col_node into properCastFunction
-        subquery_node->getProjection().getNodes().push_back(std::move(key_col_node));
-        subquery_node->resolveProjectionColumns({key_col});
+        for (const auto & key_col_node : key_col_nodes)
+            subquery_node->getProjection().getNodes().push_back(key_col_node);
+        subquery_node->resolveProjectionColumns(key_cols);
         resolveNode(subquery_node, getContext());
 
         auto in_function_node = std::make_shared<FunctionNode>("in");
