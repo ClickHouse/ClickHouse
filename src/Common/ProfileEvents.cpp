@@ -144,6 +144,9 @@
     M(S3GetRequestThrottlerSleepMicroseconds, "Total time a query was sleeping to conform S3 GET and SELECT request throttling.", ValueType::Microseconds) \
     M(S3PutRequestThrottlerCount, "Number of S3 PUT, COPY, POST and LIST requests passed through throttler.", ValueType::Number) \
     M(S3PutRequestThrottlerSleepMicroseconds, "Total time a query was sleeping to conform S3 PUT, COPY, POST and LIST request throttling.", ValueType::Microseconds) \
+    /* ACME profile events */ \
+    M(ACMEAPIRequests, "Number of ACME API requests issued.", ValueType::Number) \
+    M(ACMECertificateOrders, "Number of ACME certificate orders issued.", ValueType::Number) \
     /* Azure profile events */ \
     M(DiskAzureReadMicroseconds, "Total time spent waiting for Azure disk read requests.", ValueType::Microseconds) \
     M(DiskAzureReadRequestsCount, "Number of Azure disk read requests.", ValueType::Number) \
