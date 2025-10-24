@@ -43,6 +43,12 @@ struct JoinOnKeyColumns
 struct LazyOutput
 {
     PaddedPODArray<UInt64> row_refs;
+    /// We support Replicated columns in the right tables during JOIN.
+    /// We need to collect which columns in each block from right table
+    /// are Replicated and use this information during insertion into
+    /// result columns to process Replicated columns separately to avoid
+    /// converting them to full columns.
+    std::unordered_map<const Columns *, std::vector<const ColumnReplicated *>> block_to_replicated_columns;
     size_t row_count = 0;   /// Total number of rows in all RowRef-s and RowRefList-s
 
     std::vector<size_t> right_indexes;
@@ -52,7 +58,7 @@ struct LazyOutput
     bool output_by_row_list = false;
     size_t output_by_row_list_threshold = 0;
     size_t join_data_avg_perkey_rows = 0;
-    bool enable_lazy_columns_replication = false;
+    bool is_lazy_columns_replication_enabled = false;
 
     const PaddedPODArray<UInt64> & getRowRefs() const { return row_refs; }
     size_t getRowCount() const { return row_count; }
@@ -62,12 +68,16 @@ struct LazyOutput
     void addRowRef(const RowRef * row_ref)
     {
         row_refs.emplace_back(reinterpret_cast<UInt64>(row_ref));
+        findAndSaveReplicatedColumns(row_ref->columns);
         ++row_count;
+
     }
 
     void addRowRefList(const RowRefList * row_ref_list)
     {
         row_refs.emplace_back(reinterpret_cast<UInt64>(row_ref_list));
+        for (auto it = row_ref_list->begin(); it.ok(); ++it)
+            findAndSaveReplicatedColumns(it->columns);
         row_count += row_ref_list->rows;
     }
 
@@ -102,6 +112,22 @@ struct LazyOutput
         MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end,
         const PaddedPODArray<UInt64> & left_sizes, const IColumn::Offsets & left_offsets,
         size_t rows_offset, size_t rows_limit, size_t bytes_limit) const;
+
+private:
+    void findAndSaveReplicatedColumns(const Columns * columns)
+    {
+        if (!is_lazy_columns_replication_enabled || !columns)
+            return;
+
+        auto it = block_to_replicated_columns.find(columns);
+        if (it != block_to_replicated_columns.end())
+            return;
+
+        std::vector<const ColumnReplicated *> replicated_columns(columns->size());
+        for (size_t i = 0; i != columns->size(); ++i)
+            replicated_columns[i] = typeid_cast<const ColumnReplicated *>((*columns)[i].get());
+        block_to_replicated_columns[columns] = std::move(replicated_columns);
+    }
 };
 
 template <bool lazy>
@@ -143,7 +169,7 @@ public:
         lazy_output.output_by_row_list_threshold = join.getTableJoin().outputByRowListPerkeyRowsThreshold();
         lazy_output.join_data_sorted = join.getJoinedData()->sorted;
         lazy_output.join_data_avg_perkey_rows = join.getJoinedData()->avgPerKeyRows();
-        lazy_output.enable_lazy_columns_replication = join.enableLazyColumnsReplication();
+        lazy_output.is_lazy_columns_replication_enabled = join.enableLazyColumnsReplication();
 
         for (const auto & src_column : block_with_columns_to_add)
         {

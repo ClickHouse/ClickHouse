@@ -75,10 +75,10 @@ static ColumnWithTypeAndName copyLeftKeyColumnToRight(
 
 static void replicateColumnLazily(ColumnPtr & column, const IColumn::Offsets & offsets, const ColumnPtr & indexes)
 {
-    if (column->isConst() || column->isReplicated() || column->lowCardinality())
-        column = column->replicate(offsets);
-    else
+    if (isLazyReplicationUseful(column))
         column = ColumnReplicated::create(column, indexes);
+    else
+        column = column->replicate(offsets);
 }
 
 static void appendRightColumns(

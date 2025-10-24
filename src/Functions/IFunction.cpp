@@ -486,9 +486,10 @@ ColumnPtr IExecutableFunction::execute(
 
         auto result = executeWithoutReplicatedColumns(arguments_without_replicated, result_type, nested_column_size, dry_run);
 
-        if (isColumnConst(*result))
-            return result->cloneResized(common_replicated_indexes->size());
-        return ColumnReplicated::create(result, common_replicated_indexes);
+        if (isLazyReplicationUseful(result))
+            return ColumnReplicated::create(result, common_replicated_indexes);
+
+        return result->index(*common_replicated_indexes, 0);
     }
 
     return executeWithoutReplicatedColumns(arguments, result_type, input_rows_count, dry_run);

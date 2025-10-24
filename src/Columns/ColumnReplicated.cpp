@@ -685,4 +685,10 @@ ColumnPtr convertOffsetsToIndexes(const IColumn::Offsets & offsets)
     return convertOffsetsToIndexesImpl<UInt64>(offsets);
 }
 
+bool isLazyReplicationUseful(const ColumnPtr & column)
+{
+    return !column->isConst() && !column->isReplicated() && !column->lowCardinality() && (!column->isFixedAndContiguous() || column->sizeOfValueIfFixed() > 8);
+}
+
+
 }

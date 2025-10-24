@@ -634,10 +634,10 @@ static void replicateColumnsLazily(ColumnsWithTypeAndName & columns, const IColu
     {
         if (column.column)
         {
-            if (column.column->isConst() || column.column->isReplicated() || column.column->lowCardinality())
-                column.column = column.column->replicate(offsets);
-            else
+            if (isLazyReplicationUseful(column.column))
                 column.column = ColumnReplicated::create(column.column, indexes);
+            else
+                column.column = column.column->replicate(offsets);
         }
     }
 }

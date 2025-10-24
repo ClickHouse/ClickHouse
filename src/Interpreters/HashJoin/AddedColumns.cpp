@@ -60,7 +60,7 @@ void LazyOutput::buildOutputFromRowRefLists(size_t size_to_reserve, MutableColum
     {
         auto & col = columns[i];
         col->reserve(col->size() + size_to_reserve);
-        col->fillFromRowRefs(type_name[i].type, right_indexes[i], row_refs_begin, row_refs_end, join_data_sorted, enable_lazy_columns_replication);
+        col->fillFromRowRefs(type_name[i].type, right_indexes[i], row_refs_begin, row_refs_end, join_data_sorted, is_lazy_columns_replication_enabled ? &block_to_replicated_columns : nullptr);
     }
 }
 
@@ -156,7 +156,7 @@ size_t LazyOutput::buildOutputFromBlocksLimitAndOffset(
 
     for (size_t i = 0; i < columns.size(); ++i)
     {
-        columns[i]->fillFromBlocksAndRowNumbers(type_name[i].type, right_indexes[i], many_columns, row_nums, enable_lazy_columns_replication);
+        columns[i]->fillFromBlocksAndRowNumbers(type_name[i].type, right_indexes[i], many_columns, row_nums, is_lazy_columns_replication_enabled ? &block_to_replicated_columns : nullptr);
     }
     return row_nums.size();
 }
@@ -199,7 +199,7 @@ void LazyOutput::buildOutputFromBlocks(size_t size_to_reserve, MutableColumns & 
     }
     for (size_t i = 0; i < columns.size(); ++i)
     {
-        columns[i]->fillFromBlocksAndRowNumbers(type_name[i].type, right_indexes[i], many_columns, row_nums, enable_lazy_columns_replication);
+        columns[i]->fillFromBlocksAndRowNumbers(type_name[i].type, right_indexes[i], many_columns, row_nums, is_lazy_columns_replication_enabled ? &block_to_replicated_columns : nullptr);
     }
 }
 
