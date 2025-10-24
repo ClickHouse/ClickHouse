@@ -57,11 +57,6 @@ IcebergDataObjectInfo::IcebergDataObjectInfo(Iceberg::ManifestFileEntry data_man
     }
 }
 
-IcebergDataObjectInfo::IcebergDataObjectInfo(String path)
-    : RelativePathWithMetadata(path)
-{
-}
-
 std::shared_ptr<ISimpleTransform> IcebergDataObjectInfo::getPositionDeleteTransformer(
     ObjectStoragePtr object_storage,
     const SharedHeader & header,
