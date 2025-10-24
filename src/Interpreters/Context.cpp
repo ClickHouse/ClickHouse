@@ -169,6 +169,26 @@ namespace ProfileEvents
     extern const Event QueryRemoteWriteThrottlerSleepMicroseconds;
     extern const Event QueryBackupThrottlerBytes;
     extern const Event QueryBackupThrottlerSleepMicroseconds;
+
+    extern const Event MergeMutateBackgroundExecutorTaskExecuteStepMicroseconds;
+    extern const Event MergeMutateBackgroundExecutorTaskCancelMicroseconds;
+    extern const Event MergeMutateBackgroundExecutorTaskResetMicroseconds;
+    extern const Event MergeMutateBackgroundExecutorWaitMicroseconds;
+
+    extern const Event MoveBackgroundExecutorTaskExecuteStepMicroseconds;
+    extern const Event MoveBackgroundExecutorTaskCancelMicroseconds;
+    extern const Event MoveBackgroundExecutorTaskResetMicroseconds;
+    extern const Event MoveBackgroundExecutorWaitMicroseconds;
+
+    extern const Event FetchBackgroundExecutorTaskExecuteStepMicroseconds;
+    extern const Event FetchBackgroundExecutorTaskCancelMicroseconds;
+    extern const Event FetchBackgroundExecutorTaskResetMicroseconds;
+    extern const Event FetchBackgroundExecutorWaitMicroseconds;
+
+    extern const Event CommonBackgroundExecutorTaskExecuteStepMicroseconds;
+    extern const Event CommonBackgroundExecutorTaskCancelMicroseconds;
+    extern const Event CommonBackgroundExecutorTaskResetMicroseconds;
+    extern const Event CommonBackgroundExecutorWaitMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -6457,6 +6477,10 @@ void Context::initializeBackgroundExecutorsIfNeeded()
         /*max_tasks_count*/background_pool_max_tasks_count,
         CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
         CurrentMetrics::BackgroundMergesAndMutationsPoolSize,
+        ProfileEvents::MergeMutateBackgroundExecutorTaskExecuteStepMicroseconds,
+        ProfileEvents::MergeMutateBackgroundExecutorTaskCancelMicroseconds,
+        ProfileEvents::MergeMutateBackgroundExecutorTaskResetMicroseconds,
+        ProfileEvents::MergeMutateBackgroundExecutorWaitMicroseconds,
         background_merges_mutations_scheduling_policy
     );
     LOG_INFO(shared->log, "Initialized background executor for merges and mutations with num_threads={}, num_tasks={}, scheduling_policy={}",
@@ -6468,7 +6492,11 @@ void Context::initializeBackgroundExecutorsIfNeeded()
         background_move_pool_size,
         background_move_pool_size,
         CurrentMetrics::BackgroundMovePoolTask,
-        CurrentMetrics::BackgroundMovePoolSize
+        CurrentMetrics::BackgroundMovePoolSize,
+        ProfileEvents::MoveBackgroundExecutorTaskExecuteStepMicroseconds,
+        ProfileEvents::MoveBackgroundExecutorTaskCancelMicroseconds,
+        ProfileEvents::MoveBackgroundExecutorTaskResetMicroseconds,
+        ProfileEvents::MoveBackgroundExecutorWaitMicroseconds
     );
     LOG_INFO(shared->log, "Initialized background executor for move operations with num_threads={}, num_tasks={}", background_move_pool_size, background_move_pool_size);
 
@@ -6478,7 +6506,11 @@ void Context::initializeBackgroundExecutorsIfNeeded()
         background_fetches_pool_size,
         background_fetches_pool_size,
         CurrentMetrics::BackgroundFetchesPoolTask,
-        CurrentMetrics::BackgroundFetchesPoolSize
+        CurrentMetrics::BackgroundFetchesPoolSize,
+        ProfileEvents::FetchBackgroundExecutorTaskExecuteStepMicroseconds,
+        ProfileEvents::FetchBackgroundExecutorTaskCancelMicroseconds,
+        ProfileEvents::FetchBackgroundExecutorTaskResetMicroseconds,
+        ProfileEvents::FetchBackgroundExecutorWaitMicroseconds
     );
     LOG_INFO(shared->log, "Initialized background executor for fetches with num_threads={}, num_tasks={}", background_fetches_pool_size, background_fetches_pool_size);
 
@@ -6488,7 +6520,11 @@ void Context::initializeBackgroundExecutorsIfNeeded()
         background_common_pool_size,
         background_common_pool_size,
         CurrentMetrics::BackgroundCommonPoolTask,
-        CurrentMetrics::BackgroundCommonPoolSize
+        CurrentMetrics::BackgroundCommonPoolSize,
+        ProfileEvents::CommonBackgroundExecutorTaskExecuteStepMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorTaskCancelMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorTaskResetMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorWaitMicroseconds
     );
     LOG_INFO(shared->log, "Initialized background executor for common operations (e.g. clearing old parts) with num_threads={}, num_tasks={}", background_common_pool_size, background_common_pool_size);
 
