@@ -21,6 +21,7 @@ public:
     InMemoryDirectoryPathMap(CurrentMetrics::Metric metric_directories_name, CurrentMetrics::Metric metric_files_name)
         : metric_directories(metric_directories_name, 0), metric_files(metric_files_name, 0)
     {
+        addOrReplacePath("", RemotePathInfo{ .path = "", .etag = "INVALID", .files = {} });
     }
 
     /// Breadth-first order.
@@ -179,7 +180,11 @@ public:
         std::lock_guard lock(mutex);
         for (auto it = map.begin(); it != map.end();)
         {
-            if (actual_set_of_remote_directories.contains(it->second.path))
+            /// Do not remove root folder - it is pure logical.
+            const bool is_root_folder = it->second.path == "";
+            const bool is_folder_exists = actual_set_of_remote_directories.contains(it->second.path);
+
+            if (is_root_folder || is_folder_exists)
             {
                 ++it;
             }
