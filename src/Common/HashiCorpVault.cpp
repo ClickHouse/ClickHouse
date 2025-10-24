@@ -41,9 +41,26 @@ void HashiCorpVault::load(const Poco::Util::AbstractConfiguration & config, cons
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "url is not given for vault.");
 
         token = config.getString(config_prefix + ".token", "");
+        username = config.getString(config_prefix + ".userpass.username", "");
+        password = config.getString(config_prefix + ".userpass.password", "");
 
-        if (token.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "token is not given for vault.");
+        if (!password.empty() && username.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "username is not given for vault.");
+
+        if (!username.empty())
+        {
+            // userpass auth
+            auth_method = HashiCorpVaultAuthMethod::Userpass;
+        }
+        else
+        {
+            // token auth
+            auth_method = HashiCorpVaultAuthMethod::Token;
+            if (token.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "token is not given for vault.");
+        }
+
+
 
         loaded = true;
     }
@@ -54,6 +71,7 @@ String HashiCorpVault::readSecret(const String & secret, const String & key)
     LOG_DEBUG(log, "readSecret {} {}", secret, key);
 
     DB::HTTPHeaderEntries headers;
+
     headers.emplace_back("X-Vault-Token", token);
     Poco::URI uri = Poco::URI(fmt::format("{}/v1/secret/data/{}", url, secret));
     Poco::Net::HTTPBasicCredentials credentials{};
@@ -85,6 +103,7 @@ String HashiCorpVault::readSecret(const String & secret, const String & key)
     Poco::Dynamic::Var res_json;
     try
     {
+        // json_str = "{data=";
         res_json = parser.parse(json_str);
     }
     catch (const Poco::Exception &)

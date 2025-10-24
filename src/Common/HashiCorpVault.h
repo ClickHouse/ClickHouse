@@ -8,6 +8,11 @@
 namespace DB
 {
 
+enum class HashiCorpVaultAuthMethod {
+    Token,
+    Userpass
+};
+
 class HashiCorpVault
 {
 public:
@@ -31,12 +36,19 @@ private:
     {
         url = "";
         token = "";
+        username = "";
+        password = "";
+        client_token = "";
         loaded = false;
     }
     LoggerPtr log;
     bool loaded = false;
     String url;
     String token;
+    String username;
+    String password;
+    String client_token;
+    HashiCorpVaultAuthMethod auth_method;
     ContextPtr context;
 };
 
