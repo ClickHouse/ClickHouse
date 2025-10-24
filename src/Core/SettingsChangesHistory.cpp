@@ -39,6 +39,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
+        addSettingsChanges(settings_changes_history, "25.11",
+        {
+            {"use_statistics_cache", 0, 0, "New setting"},
+        });
         addSettingsChanges(settings_changes_history, "25.10",
         {
             {"correlated_subqueries_default_join_kind", "left", "right", "New setting. Default join kind for decorrelated query plan."},
@@ -912,6 +916,10 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "25.11",
+        {
+            {"refresh_statistics_interval", 0, 0, "New setting"},
+        });
         addSettingsChanges(merge_tree_settings_changes_history, "25.10",
         {
             {"auto_statistics_types", "", "", "New setting"},
