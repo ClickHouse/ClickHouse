@@ -4,6 +4,7 @@ sidebar_label: 'VIEW'
 sidebar_position: 37
 slug: /sql-reference/statements/create/view
 title: 'CREATE VIEW'
+doc_type: 'reference'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';

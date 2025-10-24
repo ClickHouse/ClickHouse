@@ -3,6 +3,7 @@ description: 'System table containing information about and status of replicated
 keywords: ['system table', 'database_replicas']
 slug: /operations/system-tables/database_replicas
 title: 'system.database_replicas'
+doc_type: 'reference'
 ---
 
 Contains information of each Replicated database replicas.
@@ -19,6 +20,8 @@ Columns:
 - `max_log_ptr` ([UInt32](../../sql-reference/data-types/int-uint.md)) - Maximum entry number in the log of general activity.
 
 - `zookeeper_path` ([String](../../sql-reference/data-types/string.md)) - Path to database data in ClickHouse Keeper.
+
+- `shard_name` ([String](../../sql-reference/data-types/string.md)) — The name of the shard in the cluster.
 
 - `replica_name` ([String](../../sql-reference/data-types/string.md)) - Replica name in ClickHouse Keeper.
 
