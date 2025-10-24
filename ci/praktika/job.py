@@ -65,6 +65,8 @@ class Job:
 
         enable_commit_status: bool = False
 
+        enable_gh_auth: bool = False
+
         # If a job Result contains multiple sub-results, and only a specific sub-result should be sent to CIDB, set its name here.
         result_name_for_cidb: str = ""
 
