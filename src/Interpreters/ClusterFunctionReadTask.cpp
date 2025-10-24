@@ -6,6 +6,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Common/logger_useful.h>
 
@@ -29,6 +30,9 @@ ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr o
     if (object->data_lake_metadata.has_value())
         data_lake_metadata = object->data_lake_metadata.value();
 
+    if (object->iceberg_metadata.has_value())
+        iceberg_metadata = object->iceberg_metadata.value();
+
     const bool send_over_whole_archive = !context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes];
     path = send_over_whole_archive ? object->getPathOrPathToArchiveIfArchive() : object->getPath();
 }
@@ -45,6 +49,8 @@ ObjectInfoPtr ClusterFunctionReadTaskResponse::getObjectInfo() const
 
     auto object = std::make_shared<ObjectInfo>(path);
     object->data_lake_metadata = data_lake_metadata;
+    object->iceberg_metadata = iceberg_metadata;
+
     return object;
 }
 
@@ -61,6 +67,9 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t protoc
         else
             ActionsDAG().serialize(out, registry);
     }
+
+    if (!path.empty() && protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_METADATA)
+        iceberg_metadata.serialize(out);
 }
 
 void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
@@ -87,6 +96,8 @@ void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
             data_lake_metadata.transform = std::move(transform);
         }
     }
+    if (!path.empty() && protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_METADATA)
+        iceberg_metadata.deserialize(in);
 }
 
 }

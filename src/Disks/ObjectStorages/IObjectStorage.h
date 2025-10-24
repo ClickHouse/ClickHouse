@@ -29,6 +29,7 @@
 
 #include <Processors/ISimpleTransform.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeObjectMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/IcebergObjectMetadata.h>
 
 #include <Interpreters/Context_fwd.h>
 #include "config.h"
@@ -115,6 +116,8 @@ struct RelativePathWithMetadata
     std::optional<ObjectMetadata> metadata;
     /// Delta lake related object metadata.
     std::optional<DataLakeObjectMetadata> data_lake_metadata;
+    // Iceberg related object metadata.
+    std::optional<IcebergObjectMetadata> iceberg_metadata;
 
     RelativePathWithMetadata() = default;
 
