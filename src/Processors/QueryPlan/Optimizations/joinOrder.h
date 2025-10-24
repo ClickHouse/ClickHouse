@@ -4,6 +4,7 @@
 #include <Core/Joins.h>
 #include <Interpreters/JoinOperator.h>
 #include <Interpreters/JoinExpressionActions.h>
+#include <Storages/Statistics/ConditionSelectivityEstimator.h>
 
 namespace DB
 {
@@ -49,11 +50,6 @@ struct DPJoinEntry
     bool isLeaf() const;
 
     String dump() const;
-};
-
-struct ColumnStats
-{
-    UInt64 num_distinct_values;
 };
 
 struct RelationStats

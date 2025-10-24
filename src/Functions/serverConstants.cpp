@@ -211,7 +211,31 @@ SELECT hostName()
 
 REGISTER_FUNCTION(ServerUUID)
 {
-    factory.registerFunction<FunctionServerUUID>();
+    FunctionDocumentation::Description description_serverUUID = R"(
+Returns the random and unique UUID (v4) generated when the server is first started.
+The UUID is persisted, i.e. the second, third, etc. server start return the same UUID.
+    )";
+    FunctionDocumentation::Syntax syntax_serverUUID = "serverUUID()";
+    FunctionDocumentation::Arguments arguments_serverUUID = {};
+    FunctionDocumentation::ReturnedValue returned_value_serverUUID = {"Returns the random UUID of the server.", {"UUID"}};
+    FunctionDocumentation::Examples examples_serverUUID = {
+    {
+        "Usage example",
+        R"(
+SELECT serverUUID();
+        )",
+        R"(
+┌─serverUUID()─────────────────────────────┐
+│ 7ccc9260-000d-4d5c-a843-5459abaabb5f     │
+└──────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_serverUUID = {20, 1};
+    FunctionDocumentation::Category category_serverUUID = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_serverUUID = {description_serverUUID, syntax_serverUUID, arguments_serverUUID, returned_value_serverUUID, examples_serverUUID, introduced_in_serverUUID, category_serverUUID};
+
+    factory.registerFunction<FunctionServerUUID>(documentation_serverUUID);
 }
 
 REGISTER_FUNCTION(TCPPort)

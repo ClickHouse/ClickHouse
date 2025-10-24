@@ -9,6 +9,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnFunction.h>
 #include <Common/FieldVisitorConvertToNumber.h>
+#include <Columns/FilterDescription.h>
 #include <Columns/MaskOperations.h>
 #include <Common/typeid_cast.h>
 #include <Columns/IColumn.h>
@@ -174,35 +175,6 @@ MutableColumnPtr buildColumnFromTernaryData(const UInt8Container & ternary_data,
         null_column->getData()[i] = (ternary_data[i] == Ternary::Null);
 
     return ColumnNullable::create(std::move(new_column), std::move(null_column));
-}
-
-template <typename T>
-bool tryConvertColumnToBool(const IColumn * column, UInt8Container & res)
-{
-    const auto column_typed = checkAndGetColumn<ColumnVector<T>>(column);
-    if (!column_typed)
-        return false;
-
-    auto & data = column_typed->getData();
-    size_t data_size = data.size();
-    for (size_t i = 0; i < data_size; ++i)
-        res[i] = static_cast<bool>(data[i]);
-
-    return true;
-}
-
-void convertAnyColumnToBool(const IColumn * column, UInt8Container & res)
-{
-    if (!tryConvertColumnToBool<Int8>(column, res) &&
-        !tryConvertColumnToBool<Int16>(column, res) &&
-        !tryConvertColumnToBool<Int32>(column, res) &&
-        !tryConvertColumnToBool<Int64>(column, res) &&
-        !tryConvertColumnToBool<UInt16>(column, res) &&
-        !tryConvertColumnToBool<UInt32>(column, res) &&
-        !tryConvertColumnToBool<UInt64>(column, res) &&
-        !tryConvertColumnToBool<Float32>(column, res) &&
-        !tryConvertColumnToBool<Float64>(column, res))
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected type of column: {}", column->getName());
 }
 
 
@@ -606,8 +578,9 @@ ColumnPtr basicExecuteImpl(ColumnRawPtrs arguments, size_t input_rows_count)
         }
         else
         {
-            auto converted_column = ColumnUInt8::create(input_rows_count);
-            convertAnyColumnToBool(column, converted_column->getData());
+            auto converted_column = ColumnUInt8::create();
+            if (!tryConvertAnyColumnToBool(*column, converted_column->getData()))
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected type of column: {}", column->getName());
             uint8_args.push_back(converted_column.get());
             converted_columns_holder.emplace_back(std::move(converted_column));
         }

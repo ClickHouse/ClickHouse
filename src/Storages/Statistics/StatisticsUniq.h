@@ -21,6 +21,7 @@ public:
 
     UInt64 estimateCardinality() const override;
 
+    String getNameForLogs() const override { return "Uniq : " + std::to_string(estimateCardinality()); }
 private:
     std::unique_ptr<Arena> arena;
     AggregateFunctionPtr collector;
@@ -28,7 +29,7 @@ private:
 
 };
 
-void uniqStatisticsValidator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
+bool uniqStatisticsValidator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
 StatisticsPtr uniqStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
 
 }
