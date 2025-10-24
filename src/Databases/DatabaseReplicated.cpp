@@ -129,8 +129,9 @@ ZooKeeperPtr DatabaseReplicated::getZooKeeper() const
 
 static inline String getHostID(ContextPtr global_context, const UUID & db_uuid, bool secure)
 {
+    auto host_port = global_context->getInterserverIOAddress();
     UInt16 port = secure ? global_context->getTCPPortSecure().value_or(DBMS_DEFAULT_SECURE_PORT) : global_context->getTCPPort();
-    return Cluster::Address::toString(getFQDNOrHostName(), port) + ':' + toString(db_uuid);
+    return Cluster::Address::toString(host_port.first, port) + ':' + toString(db_uuid);
 }
 
 static inline UInt64 getMetadataHash(const String & table_name, const String & metadata)
@@ -1700,6 +1701,16 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     /// It's a very rare case, and it's okay if some queries throw TIMEOUT_EXCEEDED when waiting for all replicas
     if (first_entry_to_mark_finished)
     {
+        /// Skip non-existing entries that were removed a long time ago (if the replica was offline for a long time)
+        Strings all_nodes = current_zookeeper->getChildren(fs::path(zookeeper_path) / "log");
+        std::erase_if(all_nodes, [] (const String & s) { return !startsWith(s, "query-"); });
+        auto oldest_node = std::min_element(all_nodes.begin(), all_nodes.end());
+        if (oldest_node != all_nodes.end())
+        {
+            UInt32 oldest_entry = DDLTaskBase::getLogEntryNumber(*oldest_node);
+            first_entry_to_mark_finished = std::max(oldest_entry, first_entry_to_mark_finished);
+        }
+
         /// If the replica is new and some of the queries applied during recovery
         /// where issued after the replica was created, then other nodes might be
         /// waiting for this node to notify them that the query was applied.

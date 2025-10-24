@@ -7,13 +7,11 @@ title: 'Full-text Search using Text Indexes'
 doc_type: 'reference'
 ---
 
-import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+import PrivatePreviewBadge from '@theme/badges/PrivatePreviewBadge';
 
 # Full-text search using text indexes
 
-<ExperimentalBadge/>
-<CloudNotSupportedBadge/>
+<PrivatePreviewBadge/>
 
 Text indexes in ClickHouse (also known as ["inverted indexes"](https://en.wikipedia.org/wiki/Inverted_index)) provide fast full-text capabilities on string data.
 The index maps each token in the column to the rows which contain the token.
@@ -433,6 +431,8 @@ Direct read is controlled by two settings:
 - Setting [query_plan_direct_read_from_text_index](../../../operations/settings/settings#query_plan_direct_read_from_text_index) (default: 1) which specifies if direct read is generally enabled.
 - Setting [use_skip_indexes_on_data_read](../../../operations/settings/settings#use_skip_indexes_on_data_read) (default: 1) which is another prerequisite for direct read. Note that on ClickHouse databases with [compatibility](../../../operations/settings/settings#compatibility) < 25.10, `use_skip_indexes_on_data_read` is disabled, so you either need to raise the compatibility setting value or `SET use_skip_indexes_on_data_read = 1` explicitly.
 
+Also, the text index must be fully materialized to use direct reading (use `ALTER TABLE ... MATERIALIZE INDEX` for that).
+
 **Supported functions**
 The direct read optimization supports functions `hasToken`, `hasAllTokens`, and `hasAnyTokens`.
 These functions can also be combined by AND, OR, and NOT operators.
@@ -489,7 +489,8 @@ If this column is present, then direct read is used.
 ## Example: Hackernews dataset {#hacker-news-dataset}
 
 Let's look at the performance improvements of text indexes on a large dataset with lots of text.
-We will use 28.7M rows of comments on the popular Hacker News website. Here is the table without an text index:
+We will use 28.7M rows of comments on the popular Hacker News website.
+Here is the table without text index:
 
 ```sql
 CREATE TABLE hackernews (
@@ -539,64 +540,171 @@ INSERT INTO hackernews
     descendants UInt32');
 ```
 
-Consider the following simple search for the term `ClickHouse` (and its varied upper and lower cases) in the `comment` column:
+We will use `ALTER TABLE` and add a text index on comment column, then materialize it:
+
+```sql
+-- Add the index
+ALTER TABLE hackernews ADD INDEX comment_idx(comment) TYPE text(tokenizer = splitByNonAlpha);
+
+-- Materialize the index for existing data
+ALTER TABLE hackernews MATERIALIZE INDEX comment_idx SETTINGS mutations_sync = 2;
+```
+
+Now, let's run queries using `hasToken`, `hasAnyTokens`, and `hasAllTokens` functions.
+The following examples will show the dramatic performance difference between a standard index scan and the direct read optimization.
+
+### 1. Using `hasToken` {#using-hasToken}
+
+`hasToken` checks if the text contains a specific single token.
+We'll search for the case-sensitive token 'ClickHouse'.
+
+**Direct read disabled (Standard scan)**
+By default, ClickHouse uses the skip index to filter granules and then reads the column data for those granules.
+We can simulate this behavior by disabling direct read.
 
 ```sql
 SELECT count()
 FROM hackernews
-WHERE hasToken(lower(comment), 'clickhouse');
-```
+WHERE hasToken(comment, 'ClickHouse')
+SETTINGS query_plan_direct_read_from_text_index = 0, use_skip_indexes_on_data_read = 0;
 
-Notice it takes 3 seconds to execute the query:
-
-```response
 ┌─count()─┐
-│    1145 │
+│     516 │
 └─────────┘
 
-1 row in set. Elapsed: 3.001 sec. Processed 28.74 million rows, 9.75 GB (9.58 million rows/s., 3.25 GB/s.)
+1 row in set. Elapsed: 0.362 sec. Processed 24.90 million rows, 9.51 GB
 ```
 
-We will use `ALTER TABLE` and add an text index on the lowercase of the `comment` column, then materialize it (which can take a while - wait for it to materialize):
-
-```sql
-ALTER TABLE hackernews
-     ADD INDEX comment_lowercase(lower(comment)) TYPE text;
-
-ALTER TABLE hackernews MATERIALIZE INDEX comment_lowercase;
-```
-
-We run the same query...
+**Direct read enabled (Fast index read)**
+Now we run the same query with direct read enabled (the default).
 
 ```sql
 SELECT count()
 FROM hackernews
-WHERE hasToken(lower(comment), 'clickhouse')
-```
+WHERE hasToken(comment, 'ClickHouse')
+SETTINGS query_plan_direct_read_from_text_index = 1, use_skip_indexes_on_data_read = 1;
 
-...and notice the query executes 4x faster:
-
-```response
 ┌─count()─┐
-│    1145 │
+│     516 │
 └─────────┘
 
-1 row in set. Elapsed: 0.747 sec. Processed 4.49 million rows, 1.77 GB (6.01 million rows/s., 2.37 GB/s.)
+1 row in set. Elapsed: 0.008 sec. Processed 3.15 million rows, 3.15 MB
 ```
+The direct read query is over 45 times faster (0.362s vs 0.008s) and processes significantly less data (9.51 GB vs 3.15 MB) by reading from the index alone.
 
-We can also search for one or all of multiple terms, i.e., disjunctions or conjunctions:
+### 2. Using `hasAnyTokens` {#using-hasAnyTokens}
+
+`hasAnyTokens` checks if the text contains at least one of the given tokens.
+We'll search for comments containing either 'love' or 'ClickHouse'.
+
+**Direct read disabled (Standard scan)**
 
 ```sql
--- multiple OR'ed terms
-SELECT count(*)
+SELECT count()
 FROM hackernews
-WHERE hasToken(lower(comment), 'avx') OR hasToken(lower(comment), 'sve');
+WHERE hasAnyTokens(comment, 'love ClickHouse')
+SETTINGS query_plan_direct_read_from_text_index = 0, use_skip_indexes_on_data_read = 0;
 
--- multiple AND'ed terms
-SELECT count(*)
-FROM hackernews
-WHERE hasToken(lower(comment), 'avx') AND hasToken(lower(comment), 'sve');
+┌─count()─┐
+│  408426 │
+└─────────┘
+
+1 row in set. Elapsed: 1.329 sec. Processed 28.74 million rows, 9.72 GB
 ```
+
+**Direct read enabled (Fast index read)**
+
+```sql
+SELECT count()
+FROM hackernews
+WHERE hasAnyTokens(comment, 'love ClickHouse')
+SETTINGS query_plan_direct_read_from_text_index = 1, use_skip_indexes_on_data_read = 1;
+
+┌─count()─┐
+│  408426 │
+└─────────┘
+
+1 row in set. Elapsed: 0.015 sec. Processed 27.99 million rows, 27.99 MB
+```
+The speedup is even more dramatic for this common "OR" search.
+The query is nearly 89 times faster (1.329s vs 0.015s) by avoiding the full column scan.
+
+### 3. Using `hasAllTokens` {#using-hasAllTokens}
+
+`hasAllTokens` checks if the text contains all of the given tokens.
+We'll search for comments containing both 'love' and 'ClickHouse'.
+
+**Direct read disabled (Standard scan)**
+Even with direct read disabled, the standard skip index is still effective.
+It filters down the 28.7M rows to just 147.46K rows, but it still must read 57.03 MB from the column.
+
+```sql
+SELECT count()
+FROM hackernews
+WHERE hasAllTokens(comment, 'love ClickHouse')
+SETTINGS query_plan_direct_read_from_text_index = 0, use_skip_indexes_on_data_read = 0;
+
+┌─count()─┐
+│      11 │
+└─────────┘
+
+1 row in set. Elapsed: 0.184 sec. Processed 147.46 thousand rows, 57.03 MB
+```
+
+**Direct read enabled (Fast index read)**
+Direct read answers the query by operating on the index data, reading only 147.46 KB.
+
+```sql
+SELECT count()
+FROM hackernews
+WHERE hasAllTokens(comment, 'love ClickHouse')
+SETTINGS query_plan_direct_read_from_text_index = 1, use_skip_indexes_on_data_read = 1;
+
+┌─count()─┐
+│      11 │
+└─────────┘
+
+1 row in set. Elapsed: 0.007 sec. Processed 147.46 thousand rows, 147.46 KB
+```
+
+For this "AND" search, the direct read optimization is over 26 times faster (0.184s vs 0.007s) than the standard skip index scan.
+
+### 4. Compound search: OR, AND, NOT, ... {#compound-search}
+The direct read optimization also applies to compound boolean expressions.
+Here, we'll perform a case-insensitive search for 'ClickHouse' OR 'clickhouse'.
+
+**Direct read disabled (Standard scan)**
+
+```sql
+SELECT count()
+FROM hackernews
+WHERE hasToken(comment, 'ClickHouse') OR hasToken(comment, 'clickhouse')
+SETTINGS query_plan_direct_read_from_text_index = 0, use_skip_indexes_on_data_read = 0;
+
+┌─count()─┐
+│     769 │
+└─────────┘
+
+1 row in set. Elapsed: 0.450 sec. Processed 25.87 million rows, 9.58 GB
+```
+
+**Direct read enabled (Fast index read)**
+
+```sql
+SELECT count()
+FROM hackernews
+WHERE hasToken(comment, 'ClickHouse') OR hasToken(comment, 'clickhouse')
+SETTINGS query_plan_direct_read_from_text_index = 1, use_skip_indexes_on_data_read = 1;
+
+┌─count()─┐
+│     769 │
+└─────────┘
+
+1 row in set. Elapsed: 0.013 sec. Processed 25.87 million rows, 51.73 MB
+```
+
+By combining the results from the index, the direct read query is 34 times faster (0.450s vs 0.013s) and avoids reading the 9.58 GB of column data.
+For this specific case, `hasAnyTokens(comment, ['ClickHouse', 'clickhouse'])` would be the preferred, more efficient syntax.
 
 ## Related content {#related-content}
 
