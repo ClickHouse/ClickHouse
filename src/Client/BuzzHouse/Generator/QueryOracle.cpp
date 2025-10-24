@@ -794,7 +794,7 @@ void QueryOracle::swapQuery(RandomGenerator & rg, google::protobuf::Message & me
         }
         else if (tos.has_joined_query())
         {
-            return swapQuery(rg, const_cast<JoinedQuery &>(tos.joined_query()));
+            swapQuery(rg, const_cast<JoinedQuery &>(tos.joined_query()));
         }
     }
     else if (mes.GetTypeName() == "BuzzHouse.TableFunction")

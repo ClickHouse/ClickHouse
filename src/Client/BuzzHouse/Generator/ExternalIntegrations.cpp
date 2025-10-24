@@ -1584,7 +1584,7 @@ void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabas
         if (add_type && nopt < (add_type + 1))
         {
             sv->set_property("catalog_type");
-            sv->set_value("'" + std::move(catalog_str) + "'");
+            sv->set_value("'" + catalog_str + "'");
             added_type++;
         }
         else if (add_warehouse && nopt < (add_type + add_warehouse + 1))
@@ -1676,8 +1676,8 @@ void DolorIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTabl
     else
     {
         const Catalog * cat = nullptr;
-        String catalog_url = "";
-        String catalog_str = "";
+        String catalog_url;
+        String catalog_str;
         SettingValues * svs = te->mutable_setting_values();
 
         switch (catalog)
@@ -1745,7 +1745,7 @@ void DolorIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTabl
             if (add_sct && nopt < (add_sct + 1))
             {
                 sv->set_property("storage_catalog_type");
-                sv->set_value("'" + std::move(catalog_str) + "'");
+                sv->set_value("'" + catalog_str + "'");
                 added_sct++;
             }
             else if (add_warehouse && nopt < (add_sct + add_warehouse + 1))
@@ -1783,7 +1783,7 @@ void DolorIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTabl
             else if (add_url && nopt < (add_sct + add_warehouse + add_endpoint + add_region + add_url + 1))
             {
                 sv->set_property("storage_catalog_url");
-                sv->set_value("'" + std::move(catalog_url) + "'");
+                sv->set_value("'" + catalog_url + "'");
                 added_url++;
             }
             else
