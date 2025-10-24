@@ -44,8 +44,6 @@ public:
     /// Returns the total size of files after deduplication and excluding empty files.
     size_t getTotalSizeOfFiles() const;
 
-    String getDataFileName(const BackupFileInfo & file_info) const;
-
 private:
     void prepare() const;
 

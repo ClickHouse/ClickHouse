@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Backups/IBackupCoordination.h>
+#include <Backups/IBackupDataFileNameGenerator.h>
 #include <Backups/BackupConcurrencyCheck.h>
 #include <Backups/BackupCoordinationFileInfos.h>
 #include <Backups/BackupCoordinationReplicatedAccess.h>

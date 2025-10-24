@@ -194,7 +194,7 @@ void BackupCoordinationFileInfos::prepare() const
                 if (inserted)
                 {
                     /// Found a new file.
-                    info.data_file_name = getDataFileName(info);
+                    info.data_file_name = data_file_name_gen->generate(info);
                     info.data_file_index = i;
                     ++num_files;
                     total_size_of_files += info.size - info.base_size;
@@ -228,14 +228,6 @@ size_t BackupCoordinationFileInfos::getTotalSizeOfFiles() const
 {
     prepare();
     return total_size_of_files;
-}
-
-String BackupCoordinationFileInfos::getDataFileName(const BackupFileInfo & file_info) const
-{
-    if (plain_backup)
-        return file_info.file_name;
-    else
-        return data_file_name_gen->generate(file_info);
 }
 
 }
