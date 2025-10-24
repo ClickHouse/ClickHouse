@@ -31,6 +31,8 @@ struct DictGetFunctionInfo
     String dict_name;
     String attr_col_name;
     QueryTreeNodePtr key_expr_node;
+
+    /// Necessary for type casting for functions like `dictGetString`, `dictGetInt32`, etc.
     DataTypePtr return_type;
 };
 
@@ -89,7 +91,7 @@ bool tryGetConstantNode(const QueryTreeNodePtr & node, QueryTreeNodePtr & out)
     return false;
 }
 
-bool isInMemoryDictionary(const String & type_name)
+bool isInMemoryLayout(const String & type_name)
 {
     return type_name == "Flat" || type_name == "Hashed" || type_name == "ComplexKeyHashed" || type_name == "RangeHashed";
 }
@@ -175,7 +177,7 @@ private:
 
             const String dict_type_name = dict->getTypeName();
 
-            if (!isInMemoryDictionary(dict_type_name))
+            if (!isInMemoryLayout(dict_type_name))
                 return;
 
             const auto & dict_structure = dict->getStructure();
