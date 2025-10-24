@@ -54,7 +54,7 @@ struct SummingSortedAlgorithm::AggregateDescription
     bool is_agg_func_type = false;
     bool is_simple_agg_func_type = false;
     bool remove_default_values;
-    bool aggregate_all_columns;
+    bool aggregate_all_columns = false;
 
     String sum_function_map_name;
 
@@ -594,11 +594,7 @@ void SummingSortedAlgorithm::SummingMergedData::initialize(const DB::Block & hea
         {
             if (desc.aggregate_all_columns)
             {
-                if (!desc.real_type)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Real type is unknown");
                 auto column = desc.real_type->createColumn();
-                if (!column)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not create column from real type");
                 size_t tuple_size = static_cast<const ColumnTuple &>(*column).tupleSize();
                 MutableColumns tuple_columns(tuple_size);
                 for (size_t i = 0; i < tuple_size; ++i)
