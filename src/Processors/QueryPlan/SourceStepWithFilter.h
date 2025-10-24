@@ -4,6 +4,7 @@
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageSnapshot.h>
+#include "Common/logger_useful.h"
 
 namespace DB
 {
@@ -40,8 +41,10 @@ public:
     }
     SourceStepWithFilterBase(SourceStepWithFilterBase &&) = default;
 
-    void addFilter(ActionsDAG filter_dag, std::string column_name)
+    virtual void addFilter(ActionsDAG filter_dag, std::string column_name)
     {
+        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "column_name={}\n{}", column_name, filter_dag.dumpDAG());
+
         filter_nodes.nodes.push_back(&filter_dag.findInOutputs(column_name));
         filter_dags.push_back(std::move(filter_dag));
     }
