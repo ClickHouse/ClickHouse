@@ -157,6 +157,7 @@ protected:
 
     /// Checks and cleanups queue's nodes
     void cleanupQueue(Int64 current_time_seconds, const ZooKeeperPtr & zookeeper);
+    void cleanupStaleReplicas(Int64 current_time_seconds, const ZooKeeperPtr & zookeeper);
     virtual bool canRemoveQueueEntry(const String & entry_name, const Coordination::Stat & stat);
 
     /// Init task node
