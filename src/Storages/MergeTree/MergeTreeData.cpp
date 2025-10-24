@@ -155,6 +155,7 @@ namespace ProfileEvents
     extern const Event LoadedDataPartsMicroseconds;
     extern const Event RestorePartsSkippedFiles;
     extern const Event RestorePartsSkippedBytes;
+    extern const Event LoadedStatisticsMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -199,6 +200,7 @@ namespace Setting
     extern const SettingsUInt64 min_insert_block_size_bytes;
     extern const SettingsBool apply_patch_parts;
     extern const SettingsUInt64 max_table_size_to_drop;
+    extern const SettingsBool use_statistics_cache;
 }
 
 namespace MergeTreeSetting
@@ -263,6 +265,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool enable_block_offset_column;
     extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
     extern const MergeTreeSettingsSeconds refresh_parts_interval;
+    extern const MergeTreeSettingsSeconds refresh_statistics_interval;
     extern const MergeTreeSettingsBool remove_unused_patch_parts;
     extern const MergeTreeSettingsSearchOrphanedPartsDisks search_orphaned_parts_disks;
     extern const MergeTreeSettingsBool allow_part_offset_column_in_projections;
@@ -794,16 +797,22 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
     if (parts.empty())
         return {};
 
-    ASTPtr expression_ast;
+    {
+        std::lock_guard<std::mutex> lock(stats_mutex);
+        if (local_context->getSettingsRef()[Setting::use_statistics_cache]
+            && cached_estimator)
+            return cached_estimator;
+    }
 
+    LOG_DEBUG(log, "Loading statistics");
     ConditionSelectivityEstimatorBuilder estimator_builder(local_context);
-
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::LoadedStatisticsMicroseconds);
     for (const auto & part : parts)
     {
         try
         {
             auto stats = part.data_part->loadStatistics();
-            estimator_builder.incrementRowCount(part.data_part->rows_count);
+            estimator_builder.markDataPart(part.data_part);
             for (const auto & stat : stats)
                 estimator_builder.addStatistics(stat);
         }
@@ -2415,6 +2424,16 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
 
         refresh_parts_task->scheduleAfter(refresh_parts_interval);
     }
+
+    auto refresh_statistics_seconds = (*settings)[MergeTreeSetting::refresh_statistics_interval].totalSeconds();
+    if (refresh_statistics_seconds && !refresh_stats_task)
+    {
+        refresh_stats_task = getContext()->getSchedulePool().createTask(
+            "MergeTreeData::refreshStatistics",
+            [this, refresh_statistics_seconds] { refreshStatistics(refresh_statistics_seconds); });
+
+        refresh_stats_task->activateAndSchedule();
+    }
 }
 
 void MergeTreeData::refreshDataParts(UInt64 interval_milliseconds)
@@ -2515,6 +2534,49 @@ catch (...)
     tryLogCurrentException(log, "Failed to refresh parts");
 }
 
+void MergeTreeData::refreshStatistics(UInt64 interval_seconds)
+try
+{
+    DataPartsVector data_parts = getDataPartsVectorForInternalUsage();
+    if (cached_estimator)
+    {
+        if (!cached_estimator->isStale(data_parts))
+        {
+            LOG_DEBUG(log, "The parts in this storage does not change, will not refresh statistics");
+            if (interval_seconds)
+                refresh_stats_task->scheduleAfter(interval_seconds * 1000);
+            return;
+        }
+    }
+    LOG_DEBUG(log, "Refreshing statistics");
+    ConditionSelectivityEstimatorBuilder estimator_builder(getContext());
+    for (const DataPartPtr & data_part : data_parts)
+    {
+        try
+        {
+            auto stats = data_part->loadStatistics();
+            estimator_builder.markDataPart(data_part);
+            for (const auto & stat : stats)
+                estimator_builder.addStatistics(stat);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, fmt::format("while loading statistics on part {}", data_part->info.getPartNameV1()));
+        }
+    }
+    std::lock_guard<std::mutex> lock(stats_mutex);
+    cached_estimator = estimator_builder.getEstimator();
+    if (interval_seconds)
+        refresh_stats_task->scheduleAfter(interval_seconds * 1000);
+}
+catch (...)
+{
+    tryLogCurrentException(log, "Failed to refresh statistics");
+    if (interval_seconds)
+        refresh_stats_task->scheduleAfter(interval_seconds * 1000);
+    else
+        throw;
+}
 
 void MergeTreeData::loadUnexpectedDataParts()
 try
@@ -9850,6 +9912,8 @@ StorageSnapshotPtr MergeTreeData::createStorageSnapshot(const StorageMetadataPtr
     }
 
     auto snapshot_data = std::make_unique<SnapshotData>();
+    snapshot_data->storage = shared_from_this();
+
     ColumnsDescription object_columns_copy;
 
     DataPartsVector parts;

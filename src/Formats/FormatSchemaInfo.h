@@ -26,7 +26,8 @@ public:
         const String & format,
         bool require_message,
         bool is_server,
-        const String & format_schema_path);
+        const String & format_schema_path,
+        bool generated_ = false);
     FormatSchemaInfo(const FormatSettings & settings, const String & format, bool require_message);
 
     inline static const String CACHE_DIR_NAME = "__cache__";
@@ -40,6 +41,9 @@ public:
 
     /// Returns name of the message type.
     const String & messageName() const { return message_name; }
+
+    /// Returns whether this schema info is auto-generated.
+    bool isGenerated() const { return generated; }
 
 private:
     void handleSchemaFile(
@@ -56,6 +60,8 @@ private:
     String schema_path;
     String schema_directory;
     String message_name;
+
+    bool generated = false;
 
     LoggerPtr log;
 };
