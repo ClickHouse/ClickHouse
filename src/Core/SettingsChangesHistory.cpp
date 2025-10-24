@@ -42,6 +42,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "25.11",
         {
             {"use_statistics_cache", 0, 0, "New setting"},
+            {"show_processlist_include_internal", false, false, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.10",
         {
@@ -78,7 +79,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_cache_receive_timeout_ms", 3000, 3000, "New setting"},
             {"distributed_cache_send_timeout_ms", 3000, 3000, "New setting"},
             {"distributed_cache_tcp_keep_alive_timeout_ms", 2900, 2900, "New setting"},
-            {"show_processlist_include_internal", false, false, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.9",
         {
