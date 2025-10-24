@@ -96,8 +96,8 @@ static bool isClickhouseApp(std::string_view app_suffix, std::vector<char *> & a
 /// We absolutely discourage the ancient technique of loading
 /// 3rd-party uncontrolled dangerous libraries into the process address space,
 /// because it is insane.
-
-#if !defined(USE_MUSL)
+/// OpenSSL FIPS mode requires dlopen to load the validated fips.so.
+#if !(defined(USE_MUSL) || USE_OPENSSL_FIPS)
 extern "C"
 {
     void * dlopen(const char *, int)
