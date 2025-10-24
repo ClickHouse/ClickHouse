@@ -36,8 +36,7 @@ INSERT INTO system.webassembly_modules (name, code, hash)
         reinterpretAsUInt256(unhex('369f6098ed1ac69a97735c26039f090ab78c31d729e8110f086b2ea13611c57d'))
     FROM wasm_data;
 
-SELECT name FROM system.webassembly_modules WHERE name = 'module1';
-SELECT code FROM system.webassembly_modules WHERE name = 'module1'; -- { serverError BAD_ARGUMENTS }
+SELECT name, code == '' FROM system.webassembly_modules WHERE name = 'module1';
 
 -- inserting existing module
 -- idempotent

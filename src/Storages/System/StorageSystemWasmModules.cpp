@@ -38,7 +38,7 @@ ColumnsDescription StorageSystemWasmModules::getColumnsDescription()
             "Name of the WebAssembly module"},
         {"code", std::make_shared<DataTypeString>(),
             "Binary WebAssembly module code in raw format. "
-            "This column is write-only and cannot be selected directly"},
+            "This column is write-only and contains empty values when read."},
         {"hash", std::make_shared<DataTypeUInt256>(),
             "SHA256 hash of the module's binary code, used for integrity verification. "
             "Contains zero if the module exists on disk but is not currently loaded into memory"},
@@ -108,8 +108,9 @@ void StorageSystemWasmModules::fillData(MutableColumns & res_columns, ContextPtr
         if (columns_mask[0])
             res_columns[column_idx++]->insert(module_name);
 
+        /// 'code' column is write-only, insert default value
         if (columns_mask[1])
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Selecting `code` from `system.wasm_modules` is not supported, use `SELECT * EXCEPT code FROM system.wasm_modules`");
+            res_columns[column_idx++]->insertDefault();
 
         if (columns_mask[2])
             res_columns[column_idx++]->insert(module_hash);
