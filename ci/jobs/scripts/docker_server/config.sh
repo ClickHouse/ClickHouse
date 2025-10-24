@@ -16,6 +16,6 @@ for testDir in ${currentDir}/tests/*/; do
 	"
 done
 
-testAlias+=(
+imageTests+=(
 	[clickhouse]="${imageTestsDefinition}"
 )

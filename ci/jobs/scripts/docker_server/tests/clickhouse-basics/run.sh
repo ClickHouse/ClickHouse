@@ -1,11 +1,11 @@
 #!/bin/bash
 set -eo pipefail
 
-dir="$(dirname "$(readlink -f "$BASH_SOURCE")")"
+lib_dir="$(realpath "$(dirname "$(readlink -f "$BASH_SOURCE")")/../../../../../tmp/docker-library/official-images/test")"
 
 image="$1"
 
-CLICKHOUSE_TEST_SLEEP=3
+CLICKHOUSE_TEST_SLEEP=2
 CLICKHOUSE_TEST_TRIES=5
 
 export CLICKHOUSE_USER='my_cool_ch_user'
@@ -35,6 +35,9 @@ chCli() {
     --query "$(echo "${args}")"
 }
 
-. "$dir/../../retry.sh" --tries "$CLICKHOUSE_TEST_TRIES" --sleep "$CLICKHOUSE_TEST_SLEEP" chCli SELECT 1
+. "$lib_dir/retry.sh" \
+  --tries "$CLICKHOUSE_TEST_TRIES" \
+  --sleep "$CLICKHOUSE_TEST_SLEEP" \
+  chCli SELECT 1
 
 chCli SHOW DATABASES | grep '^system$' >/dev/null
