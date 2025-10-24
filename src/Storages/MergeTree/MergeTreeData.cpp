@@ -2484,15 +2484,11 @@ try
         }
         else
         {
+            Transaction transaction(*this, nullptr);
             {
                 auto part_lock = lockParts();
-                Transaction transaction(*this, nullptr);
                 preparePartForCommit(res.part, transaction, part_lock, false, false);
-<<<<<<< HEAD
-                transaction.commit();
-=======
                 transaction.commit(&part_lock);
->>>>>>> 9ab8c0bd58f (fix lock)
             }
 
             bool is_adaptive = res.part->index_granularity_info.mark_type.adaptive;
