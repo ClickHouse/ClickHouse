@@ -182,8 +182,6 @@ public:
     /// Are all offset flags set? (index 0 is skipped as it is a service index)
     bool allOffsetFlagsSet() const noexcept
     {
-        if (per_offset_flags.empty())
-            return true;
         for (const auto & per_offset_flag : per_offset_flags)
             if (!per_offset_flag.load(std::memory_order_relaxed))
                 return false;

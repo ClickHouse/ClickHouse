@@ -7,9 +7,9 @@
     <parallel_hash_join_threshold>1</parallel_hash_join_threshold>
   </settings>
 
-  <query tag='RIGHT_100_1e8_LR'>SELECT * FROM numbers_mt(100) AS l RIGHT JOIN numbers_mt(100000000) AS r USING (number) FORMAT Null</query>
-  <query tag='FULL_100_1e8_LR'>SELECT * FROM numbers_mt(100) AS l FULL JOIN numbers_mt(100000000) AS r USING (number) FORMAT Null</query>
-  <query tag='RIGHT_1e8_1e8'>SELECT * FROM numbers_mt(100000000) AS l RIGHT JOIN numbers_mt(100000000) AS r USING (number) FORMAT Null</query>
-  <query tag='FULL_1e8_1e8'>SELECT * FROM numbers_mt(100000000) AS l FULL JOIN numbers_mt(100000000) AS r USING (number) FORMAT Null</query>
+  <query tag='RIGHT_100_1e7_LR'>SELECT * FROM numbers_mt(100) AS l RIGHT JOIN numbers_mt(10000000) AS r USING (number) FORMAT Null</query>
+  <query tag='FULL_100_1e7_LR'>SELECT * FROM numbers_mt(100) AS l FULL JOIN numbers_mt(10000000) AS r USING (number) FORMAT Null</query>
+  <query tag='RIGHT_1e7_1e7'>SELECT * FROM numbers_mt(10000000) AS l RIGHT JOIN numbers_mt(10000000) AS r USING (number) FORMAT Null</query>
+  <query tag='FULL_1e7_1e7'>SELECT * FROM numbers_mt(10000000) AS l FULL JOIN numbers_mt(10000000) AS r USING (number) FORMAT Null</query>
 
 </test>

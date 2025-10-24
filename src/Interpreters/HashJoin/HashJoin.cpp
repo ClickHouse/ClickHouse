@@ -276,9 +276,9 @@ size_t HashJoin::NullMapHolder::allocatedBytes() const
     size_t rows = column->size();
     if (rows == 0)
         return 0;
-    // selector_rows is cached at construction
-    size_t sel = std::min(selector_rows, rows);
-    return column->allocatedBytes() * sel / rows;
+    if (rows < selector_rows)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The column size is smaller than the cached size")
+    return column->allocatedBytes() * selector_rows / rows;
 }
 
 static HashJoin::Type chooseMethod(JoinKind kind, const ColumnRawPtrs & key_columns, Sizes & key_sizes)
