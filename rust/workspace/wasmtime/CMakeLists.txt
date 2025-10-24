@@ -1,14 +1,12 @@
 option(ENABLE_WASMTIME "Enable WasmTime engine" ${ENABLE_LIBRARIES})
 
-if (NOT ENABLE_WASMTIME OR NOT ENABLE_RUST OR OS_FREEBSD OR NO_ARMV81_OR_HIGHER)
+if (NOT ENABLE_WASMTIME OR NOT ENABLE_RUST)
+    message (STATUS "Not using wasmtime")
+    return()
+endif()
 
-    if (OS_FREEBSD)
-        message (STATUS "Wasmtime is not supported on FreeBSD")
-    elseif (NO_ARMV81_OR_HIGHER)
-        message (STATUS "Wasmtime requires ARMv8.1 or higher")
-    else()
-        message (STATUS "Not using wasmtime")
-    endif()
+if (OS_FREEBSD OR NO_ARMV81_OR_HIGHER OR ARCH_S390X)
+    message (STATUS "Unsupported architecture for WasmTime")
     return()
 endif()
 
@@ -29,7 +27,9 @@ set(WASMTIME_FEATURE_GC_NULL ON)
 set(WASMTIME_FEATURE_PROFILING OFF)
 set(WASMTIME_FEATURE_CACHE OFF)
 set(WASMTIME_FEATURE_PARALLEL_COMPILATION OFF)
-set(WASMTIME_FEATURE_WASI ON) # wasi is not enabled, but otherwise wasmtime/linker.hh won't compile
+# wasi is not enabled, but otherwise wasmtime/linker.hh won't compile
+# https://github.com/bytecodealliance/wasmtime/pull/11928
+set(WASMTIME_FEATURE_WASI ON)
 set(WASMTIME_FEATURE_LOGGING OFF)
 set(WASMTIME_FEATURE_DISABLE_LOGGING ON)
 set(WASMTIME_FEATURE_THREADS OFF)
