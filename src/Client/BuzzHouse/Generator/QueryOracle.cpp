@@ -745,7 +745,7 @@ void QueryOracle::swapQuery(RandomGenerator & rg, google::protobuf::Message & me
     {
         auto & ssc = static_cast<SelectStatementCore &>(mes);
 
-        if ((ssc.has_pre_where() || ssc.has_where()) && rg.nextSmallNumber() < 4)
+        if ((ssc.has_pre_where() || ssc.has_where()) && rg.nextSmallNumber() < 5)
         {
             /// Swap WHERE and PREWHERE
             auto * prewhere = ssc.release_pre_where();
@@ -828,10 +828,14 @@ void QueryOracle::swapQuery(RandomGenerator & rg, google::protobuf::Message & me
 void QueryOracle::maybeUpdateOracleSelectQuery(RandomGenerator & rg, const SQLQuery & sq1, SQLQuery & sq2)
 {
     sq2.CopyFrom(sq1);
-    const SQLQueryInner & sq2inner = sq2.single_query().explain().inner_query();
-    Select & nsel = const_cast<Select &>(measure_performance ? sq2inner.select().sel() : sq2inner.insert().select().select());
-    /// Replace references
-    swapQuery(rg, nsel);
+    if (rg.nextBool())
+    {
+        /// Swap query parts
+        const SQLQueryInner & sq2inner = sq2.single_query().explain().inner_query();
+        Select & nsel = const_cast<Select &>(measure_performance ? sq2inner.select().sel() : sq2inner.insert().select().select());
+
+        swapQuery(rg, nsel);
+    }
 }
 
 bool QueryOracle::findTablesWithPeersAndReplace(
