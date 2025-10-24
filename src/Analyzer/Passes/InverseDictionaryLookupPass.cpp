@@ -158,12 +158,29 @@ private:
         if (arguments.size() != 2)
             return;
 
+        enum class Side
+        {
+            LHS,
+            RHS,
+            NONE
+        };
+
+        Side dict_side = Side::NONE;
         DictGetFunctionInfo dictget_function_info{};
         QueryTreeNodePtr const_value_expr_node{};
 
-        if (!(tryParseDictFunctionCall(arguments[0], dictget_function_info) && tryGetConstantNode(arguments[1], const_value_expr_node))
-            && !(tryParseDictFunctionCall(arguments[1], dictget_function_info) && tryGetConstantNode(arguments[0], const_value_expr_node)))
+        if (tryParseDictFunctionCall(arguments[0], dictget_function_info) && tryGetConstantNode(arguments[1], const_value_expr_node))
+        {
+            dict_side = Side::LHS;
+        }
+        else if (tryParseDictFunctionCall(arguments[1], dictget_function_info) && tryGetConstantNode(arguments[0], const_value_expr_node))
+        {
+            dict_side = Side::RHS;
+        }
+        else
+        {
             return;
+        }
 
         std::vector<NameAndTypePair> key_cols;
         DataTypePtr dict_attr_col_type;
@@ -232,7 +249,14 @@ private:
 
         auto attr_comparison_function_node = std::make_shared<FunctionNode>(attr_comparison_function_name);
         attr_comparison_function_node->markAsOperator();
-        attr_comparison_function_node->getArguments().getNodes() = {attr_col_node_casted, const_value_expr_node};
+        if (dict_side == Side::LHS)
+        {
+            attr_comparison_function_node->getArguments().getNodes() = {attr_col_node_casted, const_value_expr_node};
+        }
+        else
+        {
+            attr_comparison_function_node->getArguments().getNodes() = {const_value_expr_node, attr_col_node_casted};
+        }
         resolveOrdinaryFunctionNodeByName(*attr_comparison_function_node, attr_comparison_function_name, getContext());
 
         /// SELECT key_col FROM dictionary(dict_name) WHERE attr_name = const_value
