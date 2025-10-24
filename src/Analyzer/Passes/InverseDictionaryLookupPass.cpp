@@ -26,6 +26,11 @@
 namespace DB
 {
 
+namespace Setting
+{
+extern const SettingsBool optimize_inverse_dictionary_lookup;
+}
+
 namespace
 {
 
@@ -103,6 +108,9 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
+        if (!getSettings()[Setting::optimize_inverse_dictionary_lookup])
+            return;
+
         if (auto * q = node->as<QueryNode>())
         {
             if (q->hasWhere())
