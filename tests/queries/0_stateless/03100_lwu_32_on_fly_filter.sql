@@ -1,4 +1,4 @@
-SET enable_lightweight_update=1;
+SET allow_experimental_lightweight_update=1;
 
 DROP TABLE IF EXISTS lwu_on_fly;
 

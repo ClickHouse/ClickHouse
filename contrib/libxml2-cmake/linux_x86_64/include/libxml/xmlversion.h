@@ -15,7 +15,7 @@
  *
  * the version string like "1.2.3"
  */
-#define LIBXML_DOTTED_VERSION "2.14.5"
+#define LIBXML_DOTTED_VERSION "2.14.3"
 
 /**
  * LIBXML_VERSION:
@@ -304,7 +304,7 @@
  *
  * the string suffix used by dynamic modules (usually shared libraries)
  */
-#define LIBXML_MODULE_EXTENSION ".so"
+#define LIBXML_MODULE_EXTENSION ".so" 
 #endif
 
 /**

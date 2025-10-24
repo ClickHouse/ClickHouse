@@ -423,32 +423,11 @@ ResourceLink WorkloadResourceManager::Classifier::get(const String & resource_na
     }
 }
 
-WorkloadSettings WorkloadResourceManager::Classifier::getWorkloadSettings(const String & resource_name) const
-{
-    std::unique_lock lock{mutex};
-    auto iter = attachments.find(resource_name);
-    if (iter != attachments.end())
-    {
-        // Extract settings from the attached resource
-        return iter->second.settings;
-    }
-    return {};
-}
-
-void WorkloadResourceManager::Classifier::attach(const ResourcePtr & resource, const VersionPtr & version, UnifiedSchedulerNode * node)
+void WorkloadResourceManager::Classifier::attach(const ResourcePtr & resource, const VersionPtr & version, ResourceLink link)
 {
     std::unique_lock lock{mutex};
     chassert(!attachments.contains(resource->getName()));
-    ResourceLink link;
-    WorkloadSettings wl_settings{};
-    if (node)
-    {
-        auto queue = node->getQueue();
-        if (queue)
-            link = ResourceLink{.queue = queue.get()};
-        wl_settings = node->getSettings();
-    }
-    attachments[resource->getName()] = Attachment{.resource = resource, .version = version, .link = link, .settings = wl_settings};
+    attachments[resource->getName()] = Attachment{.resource = resource, .version = version, .link = link};
 }
 
 void WorkloadResourceManager::Resource::updateResource(const ASTPtr & new_resource_entity)
@@ -468,12 +447,11 @@ std::future<void> WorkloadResourceManager::Resource::attachClassifier(Classifier
         {
             if (auto iter = node_for_workload.find(workload_name); iter != node_for_workload.end())
             {
-                auto nodePtr = iter->second;
                 auto queue = iter->second->getQueue();
                 if (!queue)
                     throw Exception(ErrorCodes::INVALID_SCHEDULER_NODE, "Unable to use workload '{}' that have children for resource '{}'",
                         workload_name, resource_name);
-                classifier.attach(shared_from_this(), current_version, nodePtr.get());
+                classifier.attach(shared_from_this(), current_version, ResourceLink{.queue = queue.get()});
             }
             else
             {

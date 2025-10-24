@@ -2,6 +2,16 @@
 
 #include <Access/ContextAccess.h>
 
+#include <Common/assert_cast.h>
+#include <Common/checkStackSize.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/Exception.h>
+#include <Common/filesystemHelpers.h>
+#include <Common/logger_useful.h>
+#include <Common/noexcept_scope.h>
+#include <Common/quoteString.h>
+#include <Common/ThreadPool.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -9,30 +19,20 @@
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/IDatabase.h>
 #include <Disks/IDisk.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/executeQuery.h>
+#include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/loadMetadata.h>
+#include <Interpreters/TableNameHints.h>
 #include <IO/ReadHelpers.h>
 #include <IO/SharedThreadPools.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/InterpreterCreateQuery.h>
-#include <Interpreters/TableNameHints.h>
-#include <Interpreters/executeQuery.h>
+#include <Poco/DirectoryIterator.h>
+#include <Poco/Util/AbstractConfiguration.h>
 #include <Storages/IStorage.h>
 #include <Storages/MemorySettings.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageMemory.h>
-#include <Poco/DirectoryIterator.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/Exception.h>
-#include <Common/ThreadPool.h>
-#include <Common/UniqueLock.h>
-#include <Common/assert_cast.h>
-#include <Common/checkStackSize.h>
-#include <Common/filesystemHelpers.h>
-#include <Common/getRandomASCIIString.h>
-#include <Common/logger_useful.h>
-#include <Common/noexcept_scope.h>
-#include <Common/quoteString.h>
-#include <Common/threadPoolCallbackRunner.h>
 
 #include <algorithm>
 #include <mutex>
@@ -44,8 +44,7 @@
 #include <boost/range/adaptor/map.hpp>
 #include <fmt/ranges.h>
 
-#include <config.h>
-#include <base/sleep.h>
+#include "config.h"
 
 #if USE_LIBPQXX
 #    include <Databases/PostgreSQL/DatabaseMaterializedPostgreSQL.h>
@@ -83,17 +82,11 @@ namespace ErrorCodes
     extern const int UNFINISHED;
     extern const int INFINITE_LOOP;
     extern const int THERE_IS_NO_QUERY;
-    extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace Setting
 {
     extern const SettingsBool fsync_metadata;
-}
-
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsSearchOrphanedPartsDisks search_orphaned_parts_disks;
 }
 
 class DatabaseNameHints : public IHints<>
@@ -115,7 +108,7 @@ public:
         const bool need_to_check_access_for_databases = !access->isGranted(AccessType::SHOW_DATABASES);
 
         Names result;
-        auto databases_list = database_catalog.getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true});
+        auto databases_list = database_catalog.getDatabases();
         for (const auto & database_name : databases_list | boost::adaptors::map_keys)
         {
             if (need_to_check_access_for_databases && !access->isGranted(AccessType::SHOW_DATABASES, database_name))
@@ -341,10 +334,7 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
         auto it = std::find_if(elem.map.begin(), elem.map.end(), not_empty_mapping);
         return it != elem.map.end();
     }) == uuid_map.end());
-
     databases.clear();
-    databases_without_datalake_catalogs.clear();
-
     referential_dependencies.clear();
     loading_dependencies.clear();
     view_dependencies.clear();
@@ -579,18 +569,6 @@ void DatabaseCatalog::assertDatabaseExists(const String & database_name) const
     }
 }
 
-bool DatabaseCatalog::hasDatalakeCatalogs() const
-{
-    std::lock_guard lock{databases_mutex};
-    return databases.size() != databases_without_datalake_catalogs.size();
-}
-
-bool DatabaseCatalog::isDatalakeCatalog(const String & database_name) const
-{
-    std::lock_guard lock{databases_mutex};
-    return databases.contains(database_name) && !databases_without_datalake_catalogs.contains(database_name);
-}
-
 void DatabaseCatalog::assertDatabaseDoesntExist(const String & database_name) const
 {
     std::lock_guard lock{databases_mutex};
@@ -609,9 +587,6 @@ void DatabaseCatalog::attachDatabase(const String & database_name, const Databas
     std::lock_guard lock{databases_mutex};
     assertDatabaseDoesntExistUnlocked(database_name);
     databases.emplace(database_name, database);
-    if (!database->isDatalakeCatalog())
-        databases_without_datalake_catalogs.emplace(database_name, database);
-
     NOEXCEPT_SCOPE({
         UUID db_uuid = database->getUUID();
         if (db_uuid != UUIDHelpers::Nil)
@@ -636,9 +611,8 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
             if (db_uuid != UUIDHelpers::Nil)
                 removeUUIDMapping(db_uuid);
             databases.erase(database_name);
+
         }
-        if (auto it = databases_without_datalake_catalogs.find(database_name); it != databases_without_datalake_catalogs.end())
-            databases_without_datalake_catalogs.erase(it);
     }
     if (!db)
     {
@@ -670,24 +644,17 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
             throw;
         }
     }
+
     db->shutdown();
 
     if (drop)
     {
         UUID db_uuid = db->getUUID();
+
+        /// Delete the database.
+        db->drop(local_context);
+
         auto default_db_disk = getContext()->getDatabaseDisk();
-
-        try
-        {
-            /// Delete the database.
-            db->drop(local_context);
-        }
-        catch (...)
-        {
-            attachDatabase(database_name, db);
-            throw;
-        }
-
         /// Old ClickHouse versions did not store database.sql files
         /// Remove metadata dir (if exists) to avoid recreation of .sql file on server startup
         fs::path database_metadata_dir = fs::path("metadata") / escapeForFileName(database_name);
@@ -711,13 +678,7 @@ void DatabaseCatalog::updateDatabaseName(const String & old_name, const String &
     databases.erase(it);
     databases.emplace(new_name, db);
 
-    auto no_catalogs_it = databases_without_datalake_catalogs.find(old_name);
-    if (no_catalogs_it != databases_without_datalake_catalogs.end())
-    {
-        databases_without_datalake_catalogs.erase(no_catalogs_it);
-        databases_without_datalake_catalogs.emplace(new_name, db);
-    }
-
+    /// Update dependencies.
     for (const auto & table_name : tables_in_database)
     {
         auto removed_ref_deps = referential_dependencies.removeDependencies(StorageID{old_name, table_name}, /* remove_isolated_tables= */ true);
@@ -838,13 +799,10 @@ bool DatabaseCatalog::isDatabaseExist(const String & database_name) const
     return databases.end() != databases.find(database_name);
 }
 
-Databases DatabaseCatalog::getDatabases(GetDatabasesOptions options) const
+Databases DatabaseCatalog::getDatabases() const
 {
     std::lock_guard lock{databases_mutex};
-    if (options.with_datalake_catalogs)
-        return databases;
-
-    return databases_without_datalake_catalogs;
+    return databases;
 }
 
 bool DatabaseCatalog::isTableExist(const DB::StorageID & table_id, ContextPtr context_) const
@@ -1110,7 +1068,7 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
     std::map<String, std::pair<StorageID, DiskPtr>> dropped_metadata;
     String path = fs::path("metadata_dropped") / "";
 
-    auto db_map = getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true});
+    auto db_map = getDatabases();
     std::set<DiskPtr> metadata_disk_list;
     for (const auto & [_, db] : db_map)
     {
@@ -1520,29 +1478,11 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
         table.table->drop();
     }
 
-    /// Check if we are interested in a particular disk
-    ///   or it is better to bypass it e.g. to avoid interactions with a remote storage
-    auto is_disk_eligible_for_search = [this](DiskPtr disk, std::shared_ptr<MergeTreeData> storage)
-    {
-        bool is_disk_eligible = !disk->isReadOnly();
-
-        /// Disk is not actually used by MergeTree table
-        if (is_disk_eligible && storage && !storage->getStoragePolicy()->tryGetVolumeIndexByDiskName(disk->getName()).has_value())
-        {
-            SearchOrphanedPartsDisks mode = (*storage->getSettings())[MergeTreeSetting::search_orphaned_parts_disks];
-            is_disk_eligible = mode == SearchOrphanedPartsDisks::ANY || (mode == SearchOrphanedPartsDisks::LOCAL && !disk->isRemote());
-        }
-
-        LOG_TRACE(log, "is disk {} eligible for search: {}", disk->getName(), is_disk_eligible);
-        return is_disk_eligible;
-    };
-
     /// Even if table is not loaded, try remove its data from disks.
     for (const auto & [disk_name, disk] : getContext()->getDisksMap())
     {
         String data_path = "store/" + getPathForUUID(table.table_id.uuid);
-        auto table_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(table.table);
-        if (!is_disk_eligible_for_search(disk, table_merge_tree) || !disk->existsDirectory(data_path))
+        if (disk->isReadOnly() || !disk->existsDirectory(data_path))
             continue;
 
         LOG_INFO(log, "Removing data directory {} of dropped table {} from disk {}", data_path, table.table_id.getNameForLogs(), disk_name);
@@ -1568,13 +1508,14 @@ void DatabaseCatalog::waitTableFinallyDropped(const UUID & uuid)
         return;
 
     LOG_DEBUG(log, "Waiting for table {} to be finally dropped", toString(uuid));
-    UniqueLock lock{tables_marked_dropped_mutex};
-    wait_table_finally_dropped.wait(lock.getUnderlyingLock(), [&]() TSA_REQUIRES(tables_marked_dropped_mutex) -> bool
+    std::unique_lock lock{tables_marked_dropped_mutex};
+    wait_table_finally_dropped.wait(lock, [&]() TSA_REQUIRES(tables_marked_dropped_mutex) -> bool
     {
         return !tables_marked_dropped_ids.contains(uuid) || is_shutting_down;
     });
 
-    const bool has_table = tables_marked_dropped_ids.contains(uuid);
+    /// TSA doesn't support unique_lock
+    const bool has_table = TSA_SUPPRESS_WARNING_FOR_READ(tables_marked_dropped_ids).contains(uuid);
     LOG_DEBUG(log, "Done waiting for the table {} to be dropped. The outcome: {}", toString(uuid), has_table ? "table still exists" : "table dropped successfully");
 
     if (has_table)
@@ -1999,7 +1940,7 @@ void DatabaseCatalog::reloadDisksTask()
         disks.swap(disks_to_reload);
     }
 
-    for (auto & database : getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
+    for (auto & database : getDatabases())
     {
         // WARNING: In case of `async_load_databases = true` getTablesIterator() call wait for all table in the database to be loaded.
         // WARNING: It means that no database will be able to update configuration until all databases are fully loaded.
@@ -2092,31 +2033,12 @@ DDLGuard::DDLGuard(Map & map_, SharedMutex & db_mutex_, std::unique_lock<std::mu
     is_database_guard = elem.empty();
     if (!is_database_guard)
     {
-        static constexpr int MAX_TRY = 10;
-        static constexpr UInt64 INTERVAL_MS = 100;
-        bool acquired_db_mutex_lock = false;
-        for (int i = 0; i < MAX_TRY; ++i)
-        {
-            acquired_db_mutex_lock = db_mutex.try_lock_shared();
-            if (acquired_db_mutex_lock)
-                break;
 
-            if (!DatabaseCatalog::instance().isDatabaseExist(database_name))
-            {
-                releaseTableLock();
-                throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} is currently dropped or renamed", database_name);
-            }
-
-            sleepForMilliseconds(INTERVAL_MS);
-        }
-        if (!acquired_db_mutex_lock)
+        bool locked_database_for_read = db_mutex.try_lock_shared();
+        if (!locked_database_for_read)
         {
             releaseTableLock();
-            throw Exception(
-                ErrorCodes::TIMEOUT_EXCEEDED,
-                "Unable to acquire the database lock of {} after {} ms",
-                database_name,
-                MAX_TRY * INTERVAL_MS);
+            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} is currently dropped or renamed", database_name);
         }
     }
 }
@@ -2154,8 +2076,7 @@ std::pair<String, String> TableNameHints::getExtendedHintForTable(const String &
 {
     /// load all available databases from the DatabaseCatalog instance
     auto & database_catalog = DatabaseCatalog::instance();
-    /// NOTE Skip datalake catalogs to avoid unnecessary access to remote catalogs (can be expensive)
-    auto all_databases = database_catalog.getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
+    auto all_databases = database_catalog.getDatabases();
 
     for (const auto & [db_name, db] : all_databases)
     {

@@ -13,6 +13,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
+    extern const int ILLEGAL_COLUMN;
 }
 
 JSONAsRowInputFormat::JSONAsRowInputFormat(SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_) :
@@ -189,6 +190,11 @@ Chunk JSONAsObjectRowInputFormat::getChunkForCount(size_t rows)
 
 JSONAsObjectExternalSchemaReader::JSONAsObjectExternalSchemaReader(const FormatSettings & settings_) : settings(settings_)
 {
+    if (!settings.json.allow_deprecated_object_type && !settings.json.allow_json_type)
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN,
+            "Cannot infer the data structure in JSONAsObject format because experimental JSON type is not allowed. Set setting "
+            "enable_json_type = 1 in order to allow it");
 }
 
 void registerInputFormatJSONAsString(FormatFactory & factory)

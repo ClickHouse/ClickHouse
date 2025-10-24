@@ -10,7 +10,6 @@
 #include <IO/ConcatReadBuffer.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferFromTrackedString.h>
 #include <IO/copyData.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/AsynchronousInsertLog.h>
@@ -387,20 +386,10 @@ void AsynchronousInsertQueue::preprocessInsertQuery(const ASTPtr & query, const 
 AsynchronousInsertQueue::PushResult
 AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query_context)
 {
-    {
-        /// we clone query to avoid modifying the original one
-        /// but we move tail buffer to the new query
-        auto copy_ptr = query;
-        query = query->clone();
-        if (auto * insert_query = copy_ptr->as<ASTInsertQuery>())
-        {
-            if (insert_query->tail)
-                insert_query->tail.reset();
-        }
-    }
+    query = query->clone();
     preprocessInsertQuery(query, query_context);
 
-    TrackedString bytes;
+    String bytes;
     {
         /// Read at most 'async_insert_max_data_size' bytes of data.
         /// If limit is exceeded we will fallback to synchronous insert
@@ -425,7 +414,7 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
         }
 
         {
-            WriteBufferFromTrackedString write_buf(bytes);
+            WriteBufferFromString write_buf(bytes);
             copyData(limit_buf, write_buf);
         }
 

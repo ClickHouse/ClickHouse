@@ -34,7 +34,7 @@ struct DatabaseDataLakeSettings
 
     DATABASE_ICEBERG_SETTINGS_SUPPORTED_TYPES(DatabaseDataLakeSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 
-    void loadFromQuery(const ASTStorage & storage_def, bool is_attach);
+    void loadFromQuery(const ASTStorage & storage_def);
 
     void applyChanges(const SettingsChanges & changes);
 

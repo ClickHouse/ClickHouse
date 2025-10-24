@@ -4,7 +4,6 @@ sidebar_label: 'Query Profiling'
 sidebar_position: 54
 slug: /operations/optimizing-performance/sampling-query-profiler
 title: 'Sampling query profiler'
-doc_type: 'reference'
 ---
 
 import SelfManaged from '@site/docs/_snippets/_self_managed_only_no_roadmap.md';
@@ -64,8 +63,8 @@ In this example we:
 
 - Using introspection functions, we will get a report of:
 
-  - Names of symbols and corresponding source code functions.
-  - Source code locations of these functions.
+    - Names of symbols and corresponding source code functions.
+    - Source code locations of these functions.
 
 <!-- -->
 

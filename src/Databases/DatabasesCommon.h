@@ -13,7 +13,7 @@ namespace DB
 
 class IDisk;
 
-void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemoryMetadata & metadata, ContextPtr context, bool validate_new_create_query = true);
+void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemoryMetadata & metadata, ContextPtr context);
 ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & ast_storage, bool only_ordinary,
     uint32_t max_parser_depth, uint32_t max_parser_backtracks, bool throw_on_error);
 
@@ -29,8 +29,6 @@ void updateDatabaseCommentWithMetadataFile(DatabasePtr db, const AlterCommand & 
 class DatabaseWithOwnTablesBase : public IDatabase, protected WithContext
 {
 public:
-    bool isExternal() const override { return false; }
-
     bool isTableExist(const String & table_name, ContextPtr context) const override;
 
     StoragePtr tryGetTable(const String & table_name, ContextPtr context) const override;

@@ -6,7 +6,6 @@ keywords: ['JSONStrings']
 output_format: true
 slug: /interfaces/formats/JSONStrings
 title: 'JSONStrings'
-doc_type: 'reference'
 ---
 
 | Input | Output | Alias |
@@ -394,3 +393,4 @@ The output will be in JSON format:
 ```
 
 ## Format settings {#format-settings}
+

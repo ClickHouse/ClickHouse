@@ -22,7 +22,11 @@ public:
 
     String getEngineName() const override { return "Lazy"; }
 
-    bool isExternal() const override { return false; }
+    bool canContainMergeTreeTables() const override { return false; }
+
+    bool canContainDistributedTables() const override { return false; }
+
+    bool canContainRocksDBTables() const override { return false; }
 
     void loadStoredObjects(ContextMutablePtr context, LoadingStrictnessLevel /*mode*/) override;
 
@@ -48,8 +52,7 @@ public:
     void alterTable(
         ContextPtr context,
         const StorageID & table_id,
-        const StorageInMemoryMetadata & metadata,
-        bool validate_new_create_query) override;
+        const StorageInMemoryMetadata & metadata) override;
 
     time_t getObjectMetadataModificationTime(const String & table_name) const override;
 

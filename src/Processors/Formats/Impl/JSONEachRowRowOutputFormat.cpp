@@ -105,8 +105,7 @@ void registerOutputFormatJSONEachRow(FormatFactory & factory)
         factory.registerOutputFormat(format, [serialize_as_strings, pretty_json](
             WriteBuffer & buf,
             const Block & sample,
-            const FormatSettings & _format_settings,
-            FormatFilterInfoPtr /*format_filter_info*/)
+            const FormatSettings & _format_settings)
         {
             FormatSettings settings = _format_settings;
             settings.json.serialize_as_strings = serialize_as_strings;

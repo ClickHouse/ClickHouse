@@ -455,11 +455,4 @@ void ColumnFixedString::updateAt(const IColumn & src, size_t dst_pos, size_t src
     memcpy(chars.data() + dst_pos * n, src_fixed.chars.data() + src_pos * n, n);
 }
 
-std::span<char> ColumnFixedString::insertRawUninitialized(size_t count)
-{
-    size_t start = chars.size();
-    chars.resize(start + count * n);
-    return {reinterpret_cast<char *>(chars.data() + start), count * n};
-}
-
 }

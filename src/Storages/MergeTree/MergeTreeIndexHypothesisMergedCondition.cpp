@@ -23,7 +23,7 @@ MergeTreeIndexhypothesisMergedCondition::MergeTreeIndexhypothesisMergedCondition
     const auto & select = query.query->as<ASTSelectQuery &>();
 
     if (select.where() && select.prewhere())
-        expression_ast = makeASTOperator(
+        expression_ast = makeASTFunction(
             "and",
             select.where()->clone(),
             select.prewhere()->clone());

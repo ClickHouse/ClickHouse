@@ -241,23 +241,21 @@ private:
         /// NOTE: It is called from query threads (possibly multiple)
         bool has(const String & resource_name) override;
         ResourceLink get(const String & resource_name) override;
-        WorkloadSettings getWorkloadSettings(const String & resource_name) const override;
 
         /// Attaches/detaches a specific resource
         /// NOTE: It is called from scheduler threads (possibly multiple)
-        void attach(const ResourcePtr & resource, const VersionPtr & version, UnifiedSchedulerNode * node);
+        void attach(const ResourcePtr & resource, const VersionPtr & version, ResourceLink link);
         void detach(const ResourcePtr & resource);
 
     private:
         const ClassifierSettings settings;
         WorkloadResourceManager * resource_manager;
-        mutable std::mutex mutex;
+        std::mutex mutex;
         struct Attachment
         {
             ResourcePtr resource;
             VersionPtr version;
             ResourceLink link;
-            WorkloadSettings settings;
         };
         std::unordered_map<String, Attachment> attachments; // TSA_GUARDED_BY(mutex);
     };

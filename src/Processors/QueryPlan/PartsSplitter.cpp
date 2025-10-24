@@ -1176,8 +1176,7 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
     if (max_layers <= 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "max_layer should be greater than 1");
 
-    auto split_ranges = splitIntersectingPartsRangesIntoLayers(
-        intersecting_parts_ranges, max_layers, primary_key.column_names.size(), in_reverse_order, logger);
+    auto split_ranges = splitIntersectingPartsRangesIntoLayers(intersecting_parts_ranges, max_layers, primary_key.column_names.size(), in_reverse_order, logger);
     result.merging_pipes = readByLayers(std::move(split_ranges), primary_key, create_merging_pipe, in_reverse_order, context);
     return result;
 }

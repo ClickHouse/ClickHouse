@@ -128,7 +128,7 @@ TEST(Executor, Simple)
 
     String schedule; // mutex is not required because we have a single worker
     String expected_schedule = "ABCDEABCDABCDBCDCDD";
-    std::barrier<std::__empty_completion> barrier(2);
+    std::barrier barrier(2);
     auto task = [&] (const String & name, size_t)
     {
         schedule += name;
@@ -218,7 +218,7 @@ TEST(Executor, RemoveTasksStress)
         ProfileEvents::CommonBackgroundExecutorWaitMicroseconds
     );
 
-    std::barrier<std::__empty_completion> barrier(schedulers_count + removers_count);
+    std::barrier barrier(schedulers_count + removers_count);
 
     auto scheduler_routine = [&] ()
     {
@@ -275,7 +275,7 @@ TEST(Executor, UpdatePolicy)
 
     String schedule; // mutex is not required because we have a single worker
     String expected_schedule = "ABCDEDDDDDCCBACBACB";
-    std::barrier<std::__empty_completion> barrier(2);
+    std::barrier barrier(2);
     auto task = [&] (const String & name, size_t)
     {
         schedule += name;

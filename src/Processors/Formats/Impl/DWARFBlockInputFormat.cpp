@@ -1007,15 +1007,17 @@ void registerInputFormatDWARF(FormatFactory & factory)
     factory.registerRandomAccessInputFormat(
         "DWARF",
         [](ReadBuffer & buf,
-           const Block & sample,
-           const FormatSettings & settings,
-           const ReadSettings &,
-           bool /* is_remote_fs */,
-           FormatParserSharedResourcesPtr parser_shared_resources,
-           FormatFilterInfoPtr) -> InputFormatPtr
+            const Block & sample,
+            const FormatSettings & settings,
+            const ReadSettings &,
+            bool /* is_remote_fs */,
+            FormatParserGroupPtr parser_group)
         {
             return std::make_shared<DWARFBlockInputFormat>(
-                buf, std::make_shared<const Block>(sample), settings, parser_shared_resources->getParsingThreadsPerReader());
+                buf,
+                std::make_shared<const Block>(sample),
+                settings,
+                parser_group->getParsingThreadsPerReader());
         });
     factory.markFormatSupportsSubsetOfColumns("DWARF");
 }

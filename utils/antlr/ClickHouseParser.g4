@@ -9,8 +9,6 @@ options {
 queryStmt
     : query (INTO OUTFILE stringLiteral)? (FORMAT identifierOrNull)? (SEMICOLON)?  # QueryStmtQuery
     | insertStmt                                                                   # QueryStmtInsert
-    | deleteStmt                                                                   # QueryStmtDelete
-    | updateStmt                                                                   # QueryStmtUpdate
     ;
 
 query
@@ -213,7 +211,7 @@ insertStmt: INSERT INTO TABLE? (tableIdentifier | FUNCTION tableFunctionExpr) co
 columnsClause: LPAREN nestedIdentifier (COMMA nestedIdentifier)* RPAREN;
 dataClause
     : FORMAT identifier                                                         # DataClauseFormat
-    | VALUES assignmentValues (COMMA assignmentValues)*                         # DataClauseValues
+    | VALUES  assignmentValues (COMMA assignmentValues)*                       # DataClauseValues
     | selectUnionStmt SEMICOLON? EOF                                            # DataClauseSelect
     ;
 
@@ -223,22 +221,6 @@ assignmentValues
     ;
 assignmentValue
     : literal
-    ;
-
-// DELETE statement
-
-deleteStmt
-    : DELETE FROM nestedIdentifier clusterClause? inPartitionClause? whereClause
-    ;
-
-inPartitionClause
-    : IN PARTITION columnExpr
-    ;
-
-// UPDATE statement
-
-updateStmt
-    : UPDATE nestedIdentifier SET assignmentExprList clusterClause? inPartitionClause? whereClause
     ;
 
 // KILL statement
@@ -253,13 +235,7 @@ optimizeStmt: OPTIMIZE TABLE tableIdentifier clusterClause? partitionClause? FIN
 
 // RENAME statement
 
-renameStmt: RENAME renameEntityClause clusterClause?;
-
-renameEntityClause
-    : TABLE? tableIdentifier TO tableIdentifier (COMMA tableIdentifier TO tableIdentifier)*
-    | DATABASE databaseIdentifier TO databaseIdentifier (COMMA databaseIdentifier TO databaseIdentifier)*
-    | DICTIONARY dictionaryIdentifier TO dictionaryIdentifier (COMMA dictionaryIdentifier TO dictionaryIdentifier)*
-    ;
+renameStmt: RENAME TABLE tableIdentifier TO tableIdentifier (COMMA tableIdentifier TO tableIdentifier)* clusterClause?;
 
 // PROJECTION SELECT statement
 
@@ -532,10 +508,6 @@ tableArgExpr
 // Databases
 
 databaseIdentifier: identifier;
-
-// Dictionaries
-
-dictionaryIdentifier: (databaseIdentifier DOT)? identifier;
 
 // Basics
 
