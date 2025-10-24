@@ -11,7 +11,7 @@ currentDir="${PWD}/ci/jobs/scripts/docker_server"
 imageTestsDefinition='
 	'
 for testDir in ${currentDir}/tests/*/; do
-	customTestName = basename "${testDir}"
+  customTestName=$(basename "${testDir}")
 	imageTestsDefinition="${imageTestsDefinition}	${customTestName}
 	"
 done
