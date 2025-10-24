@@ -847,7 +847,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                 boost::dynamic_bitset<> partial_eval_results;
                 if (support_disjuncts)
-                    partial_eval_results.resize(ranges.data_part->index_granularity->getMarksCountWithoutFinal() * BITS_FOR_RPN_EVALUATION_RESULTS, 1);
+                    partial_eval_results.resize(ranges.data_part->index_granularity->getMarksCountWithoutFinal() * BITS_FOR_RPN_EVALUATION_RESULTS, true);
 
                 for (size_t idx = 0; idx < num_indexes; ++idx)
                 {
