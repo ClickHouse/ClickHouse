@@ -1,7 +1,6 @@
 #pragma once
 #include "config.h"
 
-#if USE_AVRO
 #include <Core/Field.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteObject.h>
 
@@ -23,4 +22,3 @@ struct IcebergObjectMetadata
 
 }
 
-#endif
