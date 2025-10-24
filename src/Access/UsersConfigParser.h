@@ -25,11 +25,11 @@ public:
     std::vector<AccessEntityPtr> parseUsers(
         const Poco::Util::AbstractConfiguration & config,
         const std::unordered_set<UUID> & allowed_profile_ids,
-        const std::unordered_set<UUID> & allowed_role_ids) const;
+        const std::unordered_set<UUID> & role_ids_from_users_config) const;
 
     std::vector<AccessEntityPtr> parseRoles(
         const Poco::Util::AbstractConfiguration & config,
-        const std::unordered_set<UUID> & allowed_role_ids) const;
+        const std::unordered_set<UUID> & role_ids_from_users_config) const;
 
     std::vector<AccessEntityPtr> parseQuotas(const Poco::Util::AbstractConfiguration & config) const;
     std::vector<AccessEntityPtr> parseRowPolicies(const Poco::Util::AbstractConfiguration & config) const;
@@ -48,6 +48,7 @@ public:
 
 private:
     AccessControl & access_control;
+    LoggerPtr log;
 };
 
 }
