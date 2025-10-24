@@ -4,6 +4,7 @@
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <QueryPipeline/StreamLocalLimits.h>
+#include <Interpreters/Context_fwd.h>
 
 #include <functional>
 
@@ -142,7 +143,7 @@ public:
 
     /// For pulling pipeline, convert structure to expected.
     /// Trash, need to remove later.
-    void convertStructureTo(const ColumnsWithTypeAndName & columns);
+    void convertStructureTo(const ColumnsWithTypeAndName & columns, const ContextPtr & context);
 
     void reset();
     void cancel() noexcept;

@@ -398,7 +398,8 @@ void StorageNATS::read(
         auto converting_dag = ActionsDAG::makeConvertingActions(
             nats_source->getPort().getHeader().getColumnsWithTypeAndName(),
             sample_block.getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Name);
+            ActionsDAG::MatchColumnsMode::Name,
+            local_context);
 
         auto converting = std::make_shared<ExpressionActions>(std::move(converting_dag));
         auto converting_transform = std::make_shared<ExpressionTransform>(nats_source->getPort().getSharedHeader(), std::move(converting));

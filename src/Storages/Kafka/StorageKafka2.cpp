@@ -1197,7 +1197,8 @@ std::optional<size_t> StorageKafka2::streamFromConsumer(KeeperHandlingConsumer &
     auto converting_dag = ActionsDAG::makeConvertingActions(
         blocks.front().cloneEmpty().getColumnsWithTypeAndName(),
         block_io.pipeline.getHeader().getColumnsWithTypeAndName(),
-        ActionsDAG::MatchColumnsMode::Name);
+        ActionsDAG::MatchColumnsMode::Name,
+        modified_context);
 
     auto converting_actions = std::make_shared<ExpressionActions>(std::move(converting_dag));
 

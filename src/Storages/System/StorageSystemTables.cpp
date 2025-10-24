@@ -97,7 +97,7 @@ ColumnPtr getFilteredTables(
     MutableColumnPtr uuid_column;
     MutableColumnPtr engine_column;
 
-    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &sample);
+    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &sample, context);
     if (dag)
     {
         bool filter_by_engine = false;

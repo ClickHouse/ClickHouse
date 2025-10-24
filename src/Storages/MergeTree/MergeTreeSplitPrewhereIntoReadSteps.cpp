@@ -160,7 +160,7 @@ const ActionsDAG::Node & addCast(
     if (node_to_cast.result_type->equals(*to_type))
         return node_to_cast;  /// NOLINT(bugprone-return-const-ref-from-parameter)
 
-    const auto & new_node = dag->addCast(node_to_cast, to_type, {});
+    const auto & new_node = dag->addCast(node_to_cast, to_type, {}, nullptr);
     return new_node;
 }
 

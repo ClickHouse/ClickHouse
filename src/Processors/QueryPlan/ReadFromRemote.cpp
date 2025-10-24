@@ -82,14 +82,14 @@ namespace FailPoints
     extern const char parallel_replicas_wait_for_unused_replicas[];
 }
 
-static void addConvertingActions(Pipe & pipe, const Block & header, bool use_positions_to_match = false)
+static void addConvertingActions(Pipe & pipe, const Block & header, const ContextPtr & context, bool use_positions_to_match = false)
 {
     if (blocksHaveEqualStructure(pipe.getHeader(), header))
         return;
 
     auto match_mode = use_positions_to_match ? ActionsDAG::MatchColumnsMode::Position : ActionsDAG::MatchColumnsMode::Name;
 
-    auto get_converting_dag = [mode = match_mode](const Block & block_, const Block & header_)
+    auto get_converting_dag = [mode = match_mode, context](const Block & block_, const Block & header_)
     {
         /// Convert header structure to expected.
         /// Also we ignore constants from result and replace it with constants from header.
@@ -98,6 +98,7 @@ static void addConvertingActions(Pipe & pipe, const Block & header, bool use_pos
             block_.getColumnsWithTypeAndName(),
             header_.getColumnsWithTypeAndName(),
             mode,
+            context,
             true);
     };
 
@@ -612,7 +613,7 @@ void ReadFromRemote::addLazyPipe(
     };
 
     pipes.emplace_back(createDelayedPipe(shard.header, lazily_create_stream, add_totals, add_extremes));
-    addConvertingActions(pipes.back(), *out_header, shard.has_missing_objects);
+    addConvertingActions(pipes.back(), *out_header, context, shard.has_missing_objects);
 }
 
 void ReadFromRemote::addPipe(
@@ -699,7 +700,7 @@ void ReadFromRemote::addPipe(
 
             pipes.emplace_back(
                 createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending, parallel_marshalling_threads));
-            addConvertingActions(pipes.back(), *output_header, shard.has_missing_objects);
+            addConvertingActions(pipes.back(), *output_header, context, shard.has_missing_objects);
         }
     }
     else
@@ -734,7 +735,7 @@ void ReadFromRemote::addPipe(
 
         pipes.emplace_back(
             createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending, parallel_marshalling_threads));
-        addConvertingActions(pipes.back(), *out_header, shard.has_missing_objects);
+        addConvertingActions(pipes.back(), *out_header, context, shard.has_missing_objects);
     }
 }
 
@@ -1005,7 +1006,7 @@ Pipe ReadFromParallelRemoteReplicasStep::createPipeForSingeReplica(
 
     Pipe pipe
         = createRemoteSourcePipe(std::move(remote_query_executor), add_agg_info, add_totals, add_extremes, async_read, async_query_sending, parallel_marshalling_threads);
-    addConvertingActions(pipe, *out_header);
+    addConvertingActions(pipe, *out_header, context);
     return pipe;
 }
 

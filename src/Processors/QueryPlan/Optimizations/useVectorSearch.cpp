@@ -386,7 +386,7 @@ bool optimizeVectorSearchSecondPass(QueryPlan::Node & /*root*/, Stack & stack, Q
             const auto * distance_node = &expression.addInput("_distance",std::make_shared<DataTypeFloat32>());
 
             if (need_cast)
-                distance_node = &expression.addCast(*distance_node, result_type, "_CAST_distance");
+                distance_node = &expression.addCast(*distance_node, result_type, "_CAST_distance", nullptr);
 
             const auto * new_output = &expression.addAlias(*distance_node, sort_column);
             expression.getOutputs().push_back(new_output);

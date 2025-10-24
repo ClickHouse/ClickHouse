@@ -133,7 +133,7 @@ const ActionsDAG::Node & createResultPredicate(
 {
     if (!original_predicate->result_type->equals(*new_predicate_expr->result_type))
     {
-        return filter_dag.addCast(*new_predicate_expr, original_predicate->result_type, original_predicate->result_name);
+        return filter_dag.addCast(*new_predicate_expr, original_predicate->result_type, original_predicate->result_name, nullptr);
     }
     else
     {

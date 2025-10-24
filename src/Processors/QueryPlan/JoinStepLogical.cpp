@@ -454,7 +454,7 @@ void predicateOperandsToCommonType(JoinActionRef & left_node, JoinActionRef & ri
         auto mapped_it = planning_context.actions_after_join_map.find(arg->result_name);
         if (mapped_it != planning_context.actions_after_join_map.end() && mapped_it->second->result_type->equals(*common_type))
             return mapped_it->second;
-        return &dag.addCast(*arg, common_type, {});
+        return &dag.addCast(*arg, common_type, {}, nullptr);
     };
     if (!left_type->equals(*common_type))
         left_node = JoinActionRef::transform({left_node}, cast_transform);

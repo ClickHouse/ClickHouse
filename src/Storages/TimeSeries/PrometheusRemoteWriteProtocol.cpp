@@ -134,7 +134,8 @@ namespace
         auto convert_actions_dag = ActionsDAG::makeConvertingActions(
             pipe.getHeader().getColumnsWithTypeAndName(),
             header_with_id.getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Position);
+            ActionsDAG::MatchColumnsMode::Position,
+            context);
         auto actions = std::make_shared<ExpressionActions>(
             std::move(convert_actions_dag),
             ExpressionActionsSettings(context, CompileExpressions::yes));

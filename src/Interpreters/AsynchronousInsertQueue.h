@@ -284,6 +284,7 @@ private:
     static Chunk processPreprocessedEntries(
         const InsertDataPtr & data,
         const Block & header,
+        const ContextPtr & context_,
         LogFunc && add_to_async_insert_log);
 
     template <typename E>

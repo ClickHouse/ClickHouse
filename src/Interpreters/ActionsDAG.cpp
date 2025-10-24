@@ -1635,10 +1635,10 @@ ActionsDAG ActionsDAG::makeConvertingActions(
     const ColumnsWithTypeAndName & source,
     const ColumnsWithTypeAndName & result,
     MatchColumnsMode mode,
+    ContextPtr context,
     bool ignore_constant_values,
     bool add_cast_columns,
-    NameToNameMap * new_names,
-    ContextPtr context)
+    NameToNameMap * new_names)
 {
     size_t num_input_columns = source.size();
     size_t num_result_columns = result.size();
@@ -2997,11 +2997,11 @@ void ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions
                     DataTypePtr cast_type = DataTypeFactory::instance().get("Bool");
                     if (isNullableOrLowCardinalityNullable(child->result_type))
                         cast_type = std::make_shared<DataTypeNullable>(std::move(cast_type));
-                    child = &addCast(*child, cast_type, {});
+                    child = &addCast(*child, cast_type, {}, nullptr);
                 }
 
                 if (!child->result_type->equals(*predicate->result_type))
-                    child = &addCast(*child, predicate->result_type, {});
+                    child = &addCast(*child, predicate->result_type, {}, nullptr);
             }
 
             Node node;

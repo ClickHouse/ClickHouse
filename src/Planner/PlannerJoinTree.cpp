@@ -1439,10 +1439,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 query_plan.getCurrentHeader()->getColumnsWithTypeAndName(),
                 expected_block.getColumnsWithTypeAndName(),
                 ActionsDAG::MatchColumnsMode::Position,
+                planner_context->getQueryContext(),
                 true /*ignore_constant_values*/,
                 false /*add_cast_columns*/,
-                nullptr /*new_names*/,
-                planner_context->getQueryContext());
+                nullptr /*new_names*/);
             auto rename_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(rename_actions_dag));
             if (table_expression_data.isRemote())
                 rename_step->setStepDescription("Change remote column names to local column names");

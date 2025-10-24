@@ -423,7 +423,7 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
                 }
                 else if (allowPrimitiveTypeConversion(old_type, new_type))
                 {
-                    node = &dag->addCast(*old_node, getFieldType(field, f_type, required), name);
+                    node = &dag->addCast(*old_node, getFieldType(field, f_type, required), name, nullptr);
                 }
                 outputs.push_back(node);
             }

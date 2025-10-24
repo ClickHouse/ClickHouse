@@ -407,7 +407,7 @@ void ReadFromSystemColumns::applyFilters(ActionDAGNodes added_filter_nodes)
         block_to_filter.insert(ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "database"));
         block_to_filter.insert(ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "table"));
 
-        virtual_columns_filter = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter);
+        virtual_columns_filter = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter, context);
 
         /// Must prepare sets here, initializePipeline() would be too late, see comment on FutureSetFromSubquery.
         if (virtual_columns_filter)
