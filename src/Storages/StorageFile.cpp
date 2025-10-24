@@ -1070,28 +1070,23 @@ StorageFile::StorageFile(int table_fd_, CommonArguments args)
     setStorageMetadata(args);
 }
 
-StorageFile::StorageFile(const std::string & table_path_, const std::string & user_files_path, CommonArguments args)
+StorageFile::StorageFile(FileSource file_source_, CommonArguments args)
     : StorageFile(args)
 {
-    if (!args.path_to_archive.empty())
-        archive_info = getArchiveInfo(args.path_to_archive, table_path_, user_files_path, args.getContext(), total_bytes_to_read);
-    else
-        paths = getPathsList(table_path_, user_files_path, args.getContext(), total_bytes_to_read);
+    paths = std::move(file_source_.paths);
+    is_path_with_globs = file_source_.with_globs;
+    path_for_partitioned_write = std::move(file_source_.path_for_partitioned_write);
+    archive_info = std::move(file_source_.archive_info);
 
     is_db_table = false;
-    is_path_with_globs = paths.size() > 1;
-    if (!paths.empty())
-        path_for_partitioned_write = paths.front();
-    else
-        path_for_partitioned_write = table_path_;
 
     file_renamer = FileRenamer(args.rename_after_processing);
 
     setStorageMetadata(args);
 }
 
-StorageFile::StorageFile(const std::string & table_path_, const std::string & user_files_path, bool distributed_processing_, CommonArguments args)
-    : StorageFile(table_path_, user_files_path, args)
+StorageFile::StorageFile(FileSource file_source_, bool distributed_processing_, CommonArguments args)
+    : StorageFile(std::move(file_source_), args)
 {
     distributed_processing = distributed_processing_;
 }
@@ -2251,7 +2246,6 @@ void registerStorageFile(StorageFactory & factory)
                 factory_args.constraints,
                 factory_args.comment,
                 {},
-                {},
             };
 
             ASTs & engine_args_ast = factory_args.engine_args;
@@ -2286,7 +2280,7 @@ void registerStorageFile(StorageFactory & factory)
 
             /// Will use FD if engine_args[1] is int literal or identifier with std* name
             int source_fd = -1;
-            String source_path;
+            std::optional<StorageFile::FileSource> file_source;
 
             if (auto opt_name = tryGetIdentifierName(engine_args_ast[1]))
             {
@@ -2308,11 +2302,7 @@ void registerStorageFile(StorageFactory & factory)
                 else if (type == Field::Types::UInt64)
                     source_fd = static_cast<int>(literal->value.safeGet<UInt64>());
                 else if (type == Field::Types::String)
-                    StorageFile::parseFileSource(
-                        literal->value.safeGet<String>(),
-                        source_path,
-                        storage_args.path_to_archive,
-                        factory_args.getLocalContext()->getSettingsRef()[Setting::allow_archive_path_syntax]);
+                    file_source = StorageFile::parseFileSource(literal->value.safeGet<String>(), factory_args.getLocalContext());
                 else
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument must be path or file descriptor");
             }
@@ -2329,7 +2319,7 @@ void registerStorageFile(StorageFactory & factory)
                 return std::make_shared<StorageFile>(source_fd, storage_args);
 
             /// User's file
-            return std::make_shared<StorageFile>(source_path, context->getUserFilesPath(), false, storage_args);
+            return std::make_shared<StorageFile>(*file_source, storage_args);
         },
         storage_features);
 }
@@ -2340,20 +2330,58 @@ SchemaCache & StorageFile::getSchemaCache(const ContextPtr & context)
     return schema_cache;
 }
 
-void StorageFile::parseFileSource(String source, String & filename, String & path_to_archive, bool allow_archive_path_syntax)
+StorageFile::FileSource StorageFile::parseFileSource(const String & source, const ContextPtr & context)
+{
+    bool allow_archive_path_syntax = context->getSettingsRef()[Setting::allow_archive_path_syntax];
+    auto [path_to_archive, filename] = splitToArchivePathAndPathInArchive(source, allow_archive_path_syntax);
+
+    FileSource res;
+    String user_files_path = context->getUserFilesPath();
+
+    if (!path_to_archive.empty())
+        res.archive_info = getArchiveInfo(path_to_archive, filename, user_files_path, context, res.total_bytes_to_read);
+    else
+        res.paths = getPathsList(filename, user_files_path, context, res.total_bytes_to_read);
+
+    res.with_globs = res.paths.size() > 1;
+
+    if (res.archive_info)
+    {
+        res.format_from_filenames = FormatFactory::instance().tryGetFormatFromFileName(res.archive_info->path_in_archive);
+    }
+    else
+    {
+        for (const String & path : res.paths)
+        {
+            auto single_file_format = FormatFactory::instance().tryGetFormatFromFileName(path);
+            if (!res.format_from_filenames)
+            {
+                res.format_from_filenames = single_file_format;
+            }
+            else if (res.format_from_filenames != single_file_format)
+            {
+                res.format_from_filenames = {};
+                break;
+            }
+        }
+    }
+
+    if (!res.paths.empty())
+        res.path_for_partitioned_write = res.paths.front();
+    else
+        res.path_for_partitioned_write = filename;
+
+    return res;
+}
+
+std::pair<String, String> StorageFile::splitToArchivePathAndPathInArchive(const String & source, bool allow_archive_path_syntax)
 {
     if (!allow_archive_path_syntax)
-    {
-        filename = std::move(source);
-        return;
-    }
+        return {{}, source};
 
     size_t pos = source.find("::");
     if (pos == String::npos)
-    {
-        filename = std::move(source);
-        return;
-    }
+        return {{}, source};
 
     std::string_view path_to_archive_view = std::string_view{source}.substr(0, pos);
     while (path_to_archive_view.ends_with(' '))
@@ -2369,12 +2397,10 @@ void StorageFile::parseFileSource(String source, String & filename, String & pat
     if (filename_view.empty() || path_to_archive_view.empty()
         || (!hasSupportedArchiveExtension(path_to_archive_view) && path_to_archive_view.find_first_of("*?{") == std::string_view::npos))
     {
-        filename = std::move(source);
-        return;
+        return {{}, source};
     }
 
-    path_to_archive = path_to_archive_view;
-    filename = filename_view;
+    return {String{path_to_archive_view}, String{filename_view}};
 }
 
 StorageFile::ArchiveInfo StorageFile::getArchiveInfo(
