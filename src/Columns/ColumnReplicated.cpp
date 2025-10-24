@@ -697,7 +697,7 @@ ColumnPtr convertOffsetsToIndexes(const IColumn::Offsets & offsets)
 
 bool isLazyReplicationUseful(const ColumnPtr & column)
 {
-    return !column->isConst() && !column->isReplicated() && !column->lowCardinality();
+    return !column->isConst() && !column->isReplicated() && !column->lowCardinality() && (!column->isFixedAndContiguous() || column->sizeOfValueIfFixed() > 8);
 }
 
 
