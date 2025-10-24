@@ -2,7 +2,6 @@
 
 #include <Core/Field.h>
 #include <DataTypes/IDataType.h>
-#include <IO/WriteHelpers.h>
 
 
 namespace DB

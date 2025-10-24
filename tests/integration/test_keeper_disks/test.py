@@ -7,6 +7,10 @@ from minio.deleteobjects import DeleteObject
 import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster, is_arm
 
+import time
+
+import logging
+
 if is_arm():
     pytestmark = pytest.mark.skip
 
@@ -18,7 +22,6 @@ node_logs = cluster.add_instance(
     main_configs=["configs/enable_keeper.xml"],
     stay_alive=True,
     with_minio=True,
-    with_hdfs=True,
 )
 
 node_snapshot = cluster.add_instance(
@@ -26,10 +29,7 @@ node_snapshot = cluster.add_instance(
     main_configs=["configs/enable_keeper_snapshot.xml"],
     stay_alive=True,
     with_minio=True,
-    with_hdfs=True,
 )
-
-from kazoo.client import KazooClient, KazooState
 
 
 @pytest.fixture(scope="module")
@@ -43,11 +43,7 @@ def started_cluster():
 
 
 def get_fake_zk(nodename, timeout=30.0):
-    _fake_zk_instance = KazooClient(
-        hosts=cluster.get_instance_ip(nodename) + ":9181", timeout=timeout
-    )
-    _fake_zk_instance.start()
-    return _fake_zk_instance
+    return keeper_utils.get_fake_zk(cluster, nodename, timeout=timeout)
 
 
 def stop_zk(zk):
@@ -97,7 +93,11 @@ def setup_storage(cluster, node, storage_config, cleanup_disks):
         storage_config,
     )
     node.start_clickhouse()
-    keeper_utils.wait_until_connected(cluster, node)
+    # complete readiness checks that the sessions can be established,
+    # but it creates sesssion for this, which will create one more record in log,
+    # but this test is very strict on number of entries in the log,
+    # so let's avoid this extra check and rely on retry policy
+    keeper_utils.wait_until_connected(cluster, node, wait_complete_readiness=False)
 
 
 def setup_local_storage(cluster, node):
@@ -135,12 +135,6 @@ def get_local_snapshots(node):
     return get_local_files("/var/lib/clickhouse/coordination/snapshots", node)
 
 
-def test_supported_disk_types(started_cluster):
-    node_logs.stop_clickhouse()
-    node_logs.start_clickhouse()
-    node_logs.contains_in_log("Disk type 'hdfs' is not supported for Keeper")
-
-
 def test_logs_with_disks(started_cluster):
     setup_local_storage(started_cluster, node_logs)
 
@@ -149,6 +143,8 @@ def test_logs_with_disks(started_cluster):
         node_zk.create("/test")
         for _ in range(30):
             node_zk.create("/test/somenode", b"somedata", sequence=True)
+
+        node_logs.wait_for_log_line("Removed changelog changelog_25_27.bin because of compaction")
 
         stop_zk(node_zk)
 
@@ -163,12 +159,25 @@ def test_logs_with_disks(started_cluster):
             cleanup_disks=False,
         )
 
+        node_logs.wait_for_log_line("KeeperLogStore: Continue to write into changelog_34_36.bin")
+
+        def get_single_local_log_file():
+            local_log_files = get_local_logs(node_logs)
+            start_time = time.time()
+            while len(local_log_files) != 1:
+                logging.debug(f"Local log files: {local_log_files}")
+                assert (
+                    time.time() - start_time < 60
+                ), "local_log_files size is not equal to 1 after 60s"
+                time.sleep(1)
+                local_log_files = get_local_logs(node_logs)
+            return local_log_files
+
         # all but the latest log should be on S3
+        local_log_files = get_single_local_log_file()
+        assert local_log_files[0] == previous_log_files[-1]
         s3_log_files = list_s3_objects(started_cluster, "logs/")
         assert set(s3_log_files) == set(previous_log_files[:-1])
-        local_log_files = get_local_logs(node_logs)
-        assert len(local_log_files) == 1
-        assert local_log_files[0] == previous_log_files[-1]
 
         previous_log_files = s3_log_files + local_log_files
 
@@ -179,9 +188,8 @@ def test_logs_with_disks(started_cluster):
 
         stop_zk(node_zk)
 
+        local_log_files = get_single_local_log_file()
         log_files = list_s3_objects(started_cluster, "logs/")
-        local_log_files = get_local_logs(node_logs)
-        assert len(local_log_files) == 1
 
         log_files.extend(local_log_files)
         assert set(log_files) != previous_log_files
@@ -221,9 +229,7 @@ def test_snapshots_with_disks(started_cluster):
         stop_zk(node_zk)
 
         snapshot_idx = keeper_utils.send_4lw_cmd(cluster, node_snapshot, "csnp")
-        node_snapshot.wait_for_log_line(
-            f"Created persistent snapshot {snapshot_idx}", look_behind_lines=1000
-        )
+        node_snapshot.wait_for_log_line(f"Created persistent snapshot {snapshot_idx}")
 
         previous_snapshot_files = get_local_snapshots(node_snapshot)
 
@@ -253,9 +259,7 @@ def test_snapshots_with_disks(started_cluster):
         stop_zk(node_zk)
 
         snapshot_idx = keeper_utils.send_4lw_cmd(cluster, node_snapshot, "csnp")
-        node_snapshot.wait_for_log_line(
-            f"Created persistent snapshot {snapshot_idx}", look_behind_lines=1000
-        )
+        node_snapshot.wait_for_log_line(f"Created persistent snapshot {snapshot_idx}")
 
         snapshot_files = list_s3_objects(started_cluster, "snapshots/")
         local_snapshot_files = get_local_snapshots(node_snapshot)

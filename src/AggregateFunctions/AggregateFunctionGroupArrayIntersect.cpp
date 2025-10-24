@@ -192,7 +192,7 @@ struct AggregateFunctionGroupArrayIntersectGenericData
  *  For such columns GroupArrayIntersect() can be implemented more efficiently (especially for small numeric arrays).
  */
 template <bool is_plain_column = false>
-class AggregateFunctionGroupArrayIntersectGeneric
+class AggregateFunctionGroupArrayIntersectGeneric final
     : public IAggregateFunctionDataHelper<AggregateFunctionGroupArrayIntersectGenericData,
         AggregateFunctionGroupArrayIntersectGeneric<is_plain_column>>
 {
@@ -235,7 +235,7 @@ public:
                 else
                 {
                     const char * begin = nullptr;
-                    StringRef serialized = data_column->serializeValueIntoArena(offset + i, *arena, begin);
+                    StringRef serialized = data_column->serializeAggregationStateValueIntoArena(offset + i, *arena, begin);
                     chassert(serialized.data != nullptr);
                     set.emplace(SerializedKeyHolder{serialized, *arena}, it, inserted);
                 }
@@ -255,7 +255,7 @@ public:
                 else
                 {
                     const char * begin = nullptr;
-                    StringRef serialized = data_column->serializeValueIntoArena(offset + i, *arena, begin);
+                    StringRef serialized = data_column->serializeAggregationStateValueIntoArena(offset + i, *arena, begin);
                     chassert(serialized.data != nullptr);
                     it = set.find(serialized);
 
@@ -344,7 +344,7 @@ public:
             if constexpr (is_plain_column)
                 data_to.insertData(elem.getValue().data, elem.getValue().size);
             else
-                std::ignore = data_to.deserializeAndInsertFromArena(elem.getValue().data);
+                std::ignore = data_to.deserializeAndInsertAggregationStateValueFromArena(elem.getValue().data);
         }
     }
 };
@@ -353,7 +353,7 @@ namespace
 {
 
 /// Substitute return type for Date and DateTime
-class AggregateFunctionGroupArrayIntersectDate : public AggregateFunctionGroupArrayIntersect<DataTypeDate::FieldType>
+class AggregateFunctionGroupArrayIntersectDate final : public AggregateFunctionGroupArrayIntersect<DataTypeDate::FieldType>
 {
 public:
     explicit AggregateFunctionGroupArrayIntersectDate(const DataTypePtr & argument_type, const Array & parameters_)
@@ -361,7 +361,7 @@ public:
     static DataTypePtr createResultType() { return std::make_shared<DataTypeArray>(std::make_shared<DataTypeDate>()); }
 };
 
-class AggregateFunctionGroupArrayIntersectDateTime : public AggregateFunctionGroupArrayIntersect<DataTypeDateTime::FieldType>
+class AggregateFunctionGroupArrayIntersectDateTime final : public AggregateFunctionGroupArrayIntersect<DataTypeDateTime::FieldType>
 {
 public:
     explicit AggregateFunctionGroupArrayIntersectDateTime(const DataTypePtr & argument_type, const Array & parameters_)
@@ -369,7 +369,7 @@ public:
     static DataTypePtr createResultType() { return std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()); }
 };
 
-class AggregateFunctionGroupArrayIntersectDate32 : public AggregateFunctionGroupArrayIntersect<DataTypeDate32::FieldType>
+class AggregateFunctionGroupArrayIntersectDate32 final : public AggregateFunctionGroupArrayIntersect<DataTypeDate32::FieldType>
 {
 public:
     explicit AggregateFunctionGroupArrayIntersectDate32(const DataTypePtr & argument_type, const Array & parameters_)

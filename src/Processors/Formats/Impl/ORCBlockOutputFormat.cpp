@@ -23,6 +23,8 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
+#include <Processors/Port.h>
+
 namespace DB
 {
 
@@ -77,12 +79,12 @@ void ORCOutputStream::write(const void* buf, size_t length)
     out.write(static_cast<const char *>(buf), length);
 }
 
-ORCBlockOutputFormat::ORCBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
+ORCBlockOutputFormat::ORCBlockOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_)
     : IOutputFormat(header_, out_)
     , format_settings{format_settings_}
     , output_stream(out_)
 {
-    for (const auto & type : header_.getDataTypes())
+    for (const auto & type : header_->getDataTypes())
         data_types.push_back(recursiveRemoveLowCardinality(type));
 }
 
@@ -241,7 +243,7 @@ template <typename ColumnType>
 void ORCBlockOutputFormat::writeStrings(
         orc::ColumnVectorBatch & orc_column,
         const IColumn & column,
-        const PaddedPODArray<UInt8> * /*null_bytemap*/)
+        const PaddedPODArray<UInt8> * null_bytemap)
 {
     orc::StringVectorBatch & string_orc_column = dynamic_cast<orc::StringVectorBatch &>(orc_column);
     const auto & string_column = assert_cast<const ColumnType &>(column);
@@ -251,7 +253,7 @@ void ORCBlockOutputFormat::writeStrings(
     for (size_t i = 0; i != string_column.size(); ++i)
     {
         const std::string_view & string = string_column.getDataAt(i).toView();
-        string_orc_column.data[i] = const_cast<char *>(string.data());
+        string_orc_column.data[i] = (null_bytemap && (*null_bytemap)[i]) ? nullptr : const_cast<char *>(string.data());
         string_orc_column.length[i] = string.size();
     }
 }
@@ -568,6 +570,8 @@ void ORCBlockOutputFormat::prepareWriter()
     options.setCompression(getORCCompression(format_settings.orc.output_compression_method));
     options.setRowIndexStride(format_settings.orc.output_row_index_stride);
     options.setDictionaryKeySizeThreshold(format_settings.orc.output_dictionary_key_size_threshold);
+    options.setCompressionBlockSize(format_settings.orc.output_compression_block_size);
+    options.setTimezoneName(format_settings.orc.writer_time_zone_name);
     size_t columns_count = header.columns();
     for (size_t i = 0; i != columns_count; ++i)
         schema->addStructField(header.safeGetByPosition(i).name, getORCType(recursiveRemoveLowCardinality(data_types[i])));
@@ -579,12 +583,15 @@ void registerOutputFormatORC(FormatFactory & factory)
     factory.registerOutputFormat("ORC", [](
             WriteBuffer & buf,
             const Block & sample,
-            const FormatSettings & format_settings)
+            const FormatSettings & format_settings,
+            FormatFilterInfoPtr /*format_filter_info*/)
     {
-        return std::make_shared<ORCBlockOutputFormat>(buf, sample, format_settings);
+        return std::make_shared<ORCBlockOutputFormat>(buf, std::make_shared<const Block>(sample), format_settings);
     });
     factory.markFormatHasNoAppendSupport("ORC");
     factory.markOutputFormatPrefersLargeBlocks("ORC");
+    factory.markOutputFormatNotTTYFriendly("ORC");
+    factory.setContentType("ORC", "application/octet-stream");
 }
 
 }

@@ -1,11 +1,9 @@
 #pragma once
 
-#include <IO/S3/Client.h>
 #include <IO/HTTPHeaderEntries.h>
+#include <IO/S3/Client.h>
 #include <base/types.h>
 #include <Common/Exception.h>
-
-#include <unordered_set>
 
 #include "config.h"
 
@@ -32,9 +30,8 @@ public:
 
     // Format message with fmt::format, like the logging functions.
     template <typename... Args>
-    S3Exception(Aws::S3::S3Errors code_, fmt::format_string<Args...> fmt, Args &&... args)
-        : Exception(fmt::format(fmt, std::forward<Args>(args)...), ErrorCodes::S3_ERROR)
-        , code(code_)
+    S3Exception(Aws::S3::S3Errors code_, FormatStringHelper<Args...> fmt, Args &&... args)
+        : Exception(PreformattedMessage{fmt.format(std::forward<Args>(args)...)}, ErrorCodes::S3_ERROR), code(code_)
     {
     }
 
@@ -69,7 +66,7 @@ struct ProxyConfigurationResolver;
 namespace S3
 {
 
-HTTPHeaderEntries getHTTPHeaders(const std::string & config_elem, const Poco::Util::AbstractConfiguration & config);
+HTTPHeaderEntries getHTTPHeaders(const std::string & config_elem, const Poco::Util::AbstractConfiguration & config, std::string header_key = "header");
 ServerSideEncryptionKMSConfig getSSEKMSConfig(const std::string & config_elem, const Poco::Util::AbstractConfiguration & config);
 
 }

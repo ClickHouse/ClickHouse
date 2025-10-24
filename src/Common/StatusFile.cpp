@@ -1,4 +1,4 @@
-#include "StatusFile.h"
+#include <Common/StatusFile.h>
 
 #include <sys/file.h>
 #include <fcntl.h>
@@ -42,8 +42,8 @@ StatusFile::FillFunction StatusFile::write_full_info = [](WriteBuffer & out)
 };
 
 
-StatusFile::StatusFile(std::string path_, FillFunction fill_)
-    : path(std::move(path_)), fill(std::move(fill_))
+StatusFile::StatusFile(std::string path_, FillFunction fill)
+    : path(std::move(path_))
 {
     /// If file already exists. NOTE Minor race condition.
     if (fs::exists(path))
@@ -51,7 +51,7 @@ StatusFile::StatusFile(std::string path_, FillFunction fill_)
         std::string contents;
         {
             ReadBufferFromFile in(path, 1024);
-            LimitReadBuffer limit_in(in, 1024, /* throw_exception */ false, /* exact_limit */ {});
+            LimitReadBuffer limit_in(in, {.read_no_more = 1024});
             readStringUntilEOF(contents, limit_in);
         }
 
@@ -86,14 +86,13 @@ StatusFile::StatusFile(std::string path_, FillFunction fill_)
         WriteBufferFromFileDescriptor out(fd, 1024);
         try
         {
+            LOG_INFO(getLogger("StatusFile"), "Writing pid {} to {}", getpid(), path);
             fill(out);
-            /// Finalize here to avoid throwing exceptions in destructor.
             out.finalize();
         }
         catch (...)
         {
-            /// Finalize in case of exception to avoid throwing exceptions in destructor
-            out.finalize();
+            out.cancel();
             throw;
         }
     }

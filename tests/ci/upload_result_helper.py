@@ -64,6 +64,7 @@ def upload_results(
     s3_client: S3Helper,
     pr_number: int,
     commit_sha: str,
+    branch_name: str,
     test_results: TestResults,
     additional_files: Union[Sequence[Path], Sequence[str]],
     check_name: str,
@@ -80,8 +81,7 @@ def upload_results(
         process_logs(s3_client, additional_files, s3_path_prefix, test_results)
     )
 
-    branch_url = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/commits/master"
-    branch_name = "master"
+    branch_url = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/commits/{branch_name}"
     if pr_number != 0:
         branch_name = f"PR #{pr_number}"
         branch_url = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/pull/{pr_number}"

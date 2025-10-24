@@ -8,10 +8,6 @@ namespace DB
 
 namespace BackupCoordinationStage
 {
-    /// This stage is set after concurrency check so ensure we dont start other backup/restores
-    /// when concurrent backup/restores are not allowed
-    constexpr const char * SCHEDULED_TO_START = "scheduled to start";
-
     /// Finding all tables and databases which we're going to put to the backup and collecting their metadata.
     constexpr const char * GATHERING_METADATA = "gathering metadata";
 
@@ -44,12 +40,11 @@ namespace BackupCoordinationStage
     /// Inserting restored data to tables.
     constexpr const char * INSERTING_DATA_TO_TABLES = "inserting data to tables";
 
+    /// Unpausing refreshable materialized views.
+    constexpr const char * FINALIZING_TABLES = "finalizing tables";
+
     /// Coordination stage meaning that a host finished its work.
     constexpr const char * COMPLETED = "completed";
-
-    /// Coordination stage meaning that backup/restore has failed due to an error
-    /// Check '/error' for the error message
-    constexpr const char * ERROR = "error";
 }
 
 }

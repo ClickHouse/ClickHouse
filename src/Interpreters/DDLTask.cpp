@@ -1,23 +1,26 @@
-#include <Interpreters/DDLTask.h>
-#include <base/sort.h>
-#include <Common/DNSResolver.h>
-#include <Common/isLocalAddress.h>
+#include <Core/ServerSettings.h>
+#include <Core/ServerUUID.h>
 #include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
-#include <Interpreters/DatabaseCatalog.h>
-#include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
-#include <Poco/Net/NetException.h>
-#include <Common/logger_useful.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/DDLTask.h>
+#include <Interpreters/DDLWorker.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
-#include <Parsers/ParserQuery.h>
-#include <Parsers/formatAST.h>
-#include <Parsers/parseQuery.h>
-#include <Parsers/queryToString.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
-
+#include <Parsers/ParserQuery.h>
+#include <Parsers/parseQuery.h>
+#include <base/sort.h>
+#include <Poco/Net/NetException.h>
+#include <Common/DNSResolver.h>
+#include <Common/OpenTelemetryTraceContext.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/isLocalAddress.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -30,7 +33,7 @@ namespace Setting
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_query_size;
-}
+    }
 
 namespace ErrorCodes
 {
@@ -54,7 +57,27 @@ bool HostID::isLocalAddress(UInt16 clickhouse_port) const
 {
     try
     {
-        return DB::isLocalAddress(DNSResolver::instance().resolveAddress(host_name, port), clickhouse_port);
+        auto address = DNSResolver::instance().resolveAddress(host_name, port);
+        return DB::isLocalAddress(address, clickhouse_port);
+    }
+    catch (const DB::NetException &)
+    {
+        /// Avoid "Host not found" exceptions
+        return false;
+    }
+    catch (const Poco::Net::NetException &)
+    {
+        /// Avoid "Host not found" exceptions
+        return false;
+    }
+}
+
+bool HostID::isLoopbackHost() const
+{
+    try
+    {
+        auto address = DNSResolver::instance().resolveAddress(host_name, port);
+        return address.host().isLoopback();
     }
     catch (const DB::NetException &)
     {
@@ -120,7 +143,7 @@ String DDLLogEntry::toString() const
         ASTSetQuery ast;
         ast.is_standalone = false;
         ast.changes = *settings;
-        wb << "settings: " << serializeAST(ast) << "\n";
+        wb << "settings: " << ast.formatWithSecretsOneLine() << "\n";
     }
 
     if (version >= OPENTELEMETRY_ENABLED_VERSION)
@@ -243,7 +266,7 @@ void DDLTaskBase::parseQueryFromEntry(ContextPtr context)
 void DDLTaskBase::formatRewrittenQuery(ContextPtr context)
 {
     /// Convert rewritten AST back to string.
-    query_str = queryToString(*query);
+    query_str = query->formatWithSecretsOneLine();
     query_for_logging = query->formatForLogging(context->getSettingsRef()[Setting::log_queries_cut_to_length]);
 }
 
@@ -269,10 +292,7 @@ bool DDLTask::findCurrentHostID(ContextPtr global_context, LoggerPtr log, const 
 
     if (config_host_name)
     {
-        bool is_local_port = (maybe_secure_port && HostID(*config_host_name, *maybe_secure_port).isLocalAddress(*maybe_secure_port)) ||
-                             HostID(*config_host_name, port).isLocalAddress(port);
-
-        if (!is_local_port)
+        if (!IsSelfHostname(*config_host_name, maybe_secure_port, port))
             throw Exception(
                 ErrorCodes::DNS_ERROR,
                 "{} is not a local address. Check parameter 'host_name' in the configuration",
@@ -297,12 +317,28 @@ bool DDLTask::findCurrentHostID(ContextPtr global_context, LoggerPtr log, const 
 
         try
         {
-            /// The port is considered local if it matches TCP or TCP secure port that the server is listening.
-            bool is_local_port
-                = (maybe_secure_port && host.isLocalAddress(*maybe_secure_port)) || host.isLocalAddress(port);
-
-            if (!is_local_port)
+            if (!IsSelfHostID(host, maybe_secure_port, port))
                 continue;
+
+            if (host.isLoopbackHost())
+            {
+                String current_host_id_str = host.toString();
+                String active_id = toString(ServerUUID::get());
+                String active_path = fs::path(global_context->getDDLWorker().getReplicasDir()) / current_host_id_str / "active";
+                String content;
+                Coordination::Stat stat;
+                if (!zookeeper->tryGet(active_path, content, &stat))
+                {
+                    LOG_TRACE(log, "HostID {} is a loopback host which has not been claimed by any replica", current_host_id_str);
+                    continue;
+                }
+
+                if (content != active_id)
+                {
+                    LOG_TRACE(log, "HostID {} is a loopback host which is claimed by another replica {}", current_host_id_str, content);
+                    continue;
+                }
+            }
         }
         catch (const Exception & e)
         {
@@ -505,6 +541,20 @@ String DDLTask::getShardID() const
     return res;
 }
 
+bool DDLTask::IsSelfHostID(const HostID & checking_host_id, std::optional<UInt16> maybe_self_secure_port, UInt16 self_port)
+{
+    // If the checking_host_id has a loopback address, it is not considered as the self host_id.
+    // Because all replicas will try to claim it as their own hosts.
+    return (maybe_self_secure_port && checking_host_id.isLocalAddress(*maybe_self_secure_port))
+        || checking_host_id.isLocalAddress(self_port);
+}
+
+bool DDLTask::IsSelfHostname(const String & checking_host_name, std::optional<UInt16> maybe_self_secure_port, UInt16 self_port)
+{
+    return (maybe_self_secure_port && HostID(checking_host_name, *maybe_self_secure_port).isLocalAddress(*maybe_self_secure_port))
+        || HostID(checking_host_name, self_port).isLocalAddress(self_port);
+}
+
 DatabaseReplicatedTask::DatabaseReplicatedTask(const String & name, const String & path, DatabaseReplicated * database_)
     : DDLTaskBase(name, path)
     , database(database_)
@@ -599,6 +649,12 @@ void ZooKeeperMetadataTransaction::commit()
     state = FAILED;
     current_zookeeper->multi(ops, /* check_session_valid */ true);
     state = COMMITTED;
+
+    if (finalizer)
+    {
+        finalizer();
+        finalizer = FinalizerCallback();
+    }
 }
 
 ClusterPtr tryGetReplicatedDatabaseCluster(const String & cluster_name)

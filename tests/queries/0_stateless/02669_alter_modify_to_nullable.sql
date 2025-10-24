@@ -22,7 +22,7 @@ ORDER BY name;
 
 SELECT count(s), countIf(s != ''), arraySort(groupUniqArray(s)) FROM t_modify_to_nullable;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS part_log;
 
 SELECT part_name, read_rows FROM system.part_log
 WHERE database = currentDatabase() AND table = 't_modify_to_nullable' AND event_type = 'MutatePart'

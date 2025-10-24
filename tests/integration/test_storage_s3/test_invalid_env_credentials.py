@@ -6,6 +6,7 @@ import pytest
 
 import helpers.client
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from helpers.config_cluster import minio_secret_key
 from helpers.mock_servers import start_mock_servers
 
 MINIO_INTERNAL_PORT = 9001
@@ -85,6 +86,7 @@ def started_cluster():
         cluster.add_instance(
             "s3_with_invalid_environment_credentials",
             with_minio=True,
+            stay_alive=True,
             env_variables={
                 "AWS_ACCESS_KEY_ID": "aws",
                 "AWS_SECRET_ACCESS_KEY": "aws123",
@@ -92,6 +94,7 @@ def started_cluster():
             main_configs=[
                 "configs/use_environment_credentials.xml",
                 "configs/named_collections.xml",
+                "configs/s3_no_sign_request.xml",
             ],
             user_configs=["configs/users.xml"],
         )
@@ -113,8 +116,9 @@ def test_with_invalid_environment_credentials(started_cluster):
     instance = started_cluster.instances["s3_with_invalid_environment_credentials"]
 
     for bucket, auth in [
-        (started_cluster.minio_restricted_bucket, "'minio', 'minio123'"),
+        (started_cluster.minio_restricted_bucket, f"'minio', '{minio_secret_key}'"),
         (started_cluster.minio_bucket, "NOSIGN"),
+        (started_cluster.minio_bucket, "no_sign = 1"),
     ]:
         instance.query(
             f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache4.jsonl', {auth}) select * from numbers(100) settings s3_truncate_on_insert=1"
@@ -154,3 +158,62 @@ def test_no_sign_named_collections(started_cluster):
         assert "HTTP response code: 403" in ei.value.stderr
 
     assert "100" == instance.query(f"select count() from s3(s3_json_no_sign)").strip()
+
+
+def test_no_sign_config(started_cluster):
+    instance = started_cluster.instances["s3_with_invalid_environment_credentials"]
+
+    bucket = started_cluster.minio_bucket
+
+    instance.query(
+        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache5.jsonl', NOSIGN) select * from numbers(100) settings s3_truncate_on_insert=1"
+    )
+
+    with pytest.raises(helpers.client.QueryRuntimeException) as ei:
+        instance.query(
+            f"select count() from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache5.jsonl')"
+        )
+
+    assert ei.value.returncode == 243
+    assert "HTTP response code: 403" in ei.value.stderr
+
+    def assert_nosign_works():
+        assert (
+            "100"
+            == instance.query(
+                f"select count() from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache5.jsonl')"
+            ).strip()
+        )
+
+    with instance.with_replace_config(
+        "/etc/clickhouse-server/config.d/s3_no_sign_request.xml",
+        """
+<clickhouse>
+    <s3>
+        <no_sign_request>1</no_sign_request>
+    </s3>
+</clickhouse>
+""",
+    ):
+        instance.restart_clickhouse()
+
+        assert_nosign_works()
+
+    with instance.with_replace_config(
+        "/etc/clickhouse-server/config.d/s3_no_sign_request.xml",
+        f"""
+<clickhouse>
+    <s3>
+        <endpoint_no_sign>
+            <endpoint>http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache5.jsonl</endpoint>
+            <no_sign_request>1</no_sign_request>
+        </endpoint_no_sign>
+    </s3>
+</clickhouse>
+""",
+    ):
+        instance.restart_clickhouse()
+
+        assert_nosign_works()
+
+    instance.restart_clickhouse()

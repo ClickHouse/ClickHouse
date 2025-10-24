@@ -5,7 +5,6 @@
 #if USE_PARQUET || USE_ORC
 
 #include <unordered_map>
-#include <Core/Block.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
@@ -17,7 +16,6 @@
 #include <Common/Exception.h>
 #include <parquet/metadata.h>
 
-
 namespace arrow
 {
     class Schema;
@@ -28,6 +26,8 @@ namespace arrow
 
 namespace DB
 {
+
+class Block;
 
 namespace ErrorCodes
 {
@@ -79,7 +79,8 @@ public:
     std::vector<ClickHouseIndexToParquetIndex> findRequiredIndices(
         const Block & header,
         const arrow::Schema & schema,
-        const parquet::FileMetaData & file)
+        const parquet::FileMetaData & file,
+        const std::optional<std::unordered_map<String, String>> & clickhouse_to_parquet_names)
     {
         std::vector<ClickHouseIndexToParquetIndex> required_indices;
         std::unordered_set<int> added_indices;
@@ -89,9 +90,18 @@ public:
         {
             const auto & named_col = header.getByPosition(i);
             std::string col_name = named_col.name;
+            String transformed_name = col_name;
+            if (clickhouse_to_parquet_names)
+            {
+                if (auto it = clickhouse_to_parquet_names->find(col_name); it != clickhouse_to_parquet_names->end())
+                    transformed_name = it->second;
+            }
             if (ignore_case)
+            {
                 boost::to_lower(col_name);
-            findRequiredIndices(col_name, i, named_col.type, fields_indices, added_indices, required_indices, file);
+                boost::to_lower(transformed_name);
+            }
+            findRequiredIndices(col_name, transformed_name, i, named_col.type, fields_indices, added_indices, required_indices, file, clickhouse_to_parquet_names);
         }
         return required_indices;
     }
@@ -169,7 +179,7 @@ private:
             const auto * map_type = static_cast<arrow::MapType *>(field_type.get());
             auto index_snapshot = current_start_index;
             current_start_index += countIndicesForType(map_type->key_type());
-            calculateFieldIndices(*map_type->item_field(), field_name, current_start_index, result, name_prefix);
+            calculateFieldIndices(*map_type->item_field(), Nested::concatenateName(field_name, "value"), current_start_index, result, name_prefix);
             index_info.first = index_snapshot;
         }
         else
@@ -181,17 +191,19 @@ private:
 
     void findRequiredIndices(
         const String & name,
+        const String & transformed_name,
         std::size_t header_index,
         DataTypePtr data_type,
         const std::unordered_map<std::string, std::pair<int, int>> & field_indices,
         std::unordered_set<int> & added_indices,
         std::vector<ClickHouseIndexToParquetIndex> & required_indices,
-        const parquet::FileMetaData & file)
+        const parquet::FileMetaData & file,
+        const std::optional<std::unordered_map<String, String>> & clickhouse_to_parquet_names)
     {
         auto nested_type = removeNullable(data_type);
         if (const DB::DataTypeTuple * type_tuple = typeid_cast<const DB::DataTypeTuple *>(nested_type.get()))
         {
-            if (type_tuple->haveExplicitNames())
+            if (type_tuple->hasExplicitNames())
             {
                 auto field_names = type_tuple->getElementNames();
                 auto field_types = type_tuple->getElements();
@@ -201,23 +213,32 @@ private:
                     if (ignore_case)
                         boost::to_lower(field_name);
                     const auto & field_type = field_types[i];
-                    findRequiredIndices(Nested::concatenateName(name, field_name), header_index, field_type, field_indices, added_indices, required_indices, file);
+                    auto full_name = Nested::concatenateName(name, field_name);
+                    if (clickhouse_to_parquet_names)
+                    {
+                        if (auto it = clickhouse_to_parquet_names->find(full_name); it != clickhouse_to_parquet_names->end())
+                        {
+                            full_name = it->second;
+                        }
+                    }
+
+                    findRequiredIndices(Nested::concatenateName(name, field_name), full_name, header_index, field_type, field_indices, added_indices, required_indices, file, clickhouse_to_parquet_names);
                 }
                 return;
             }
         }
         else if (const auto * type_array = typeid_cast<const DB::DataTypeArray *>(nested_type.get()))
         {
-            findRequiredIndices(name, header_index, type_array->getNestedType(), field_indices, added_indices, required_indices, file);
+            findRequiredIndices(name, transformed_name, header_index, type_array->getNestedType(), field_indices, added_indices, required_indices, file, clickhouse_to_parquet_names);
             return;
         }
         else if (const auto * type_map = typeid_cast<const DB::DataTypeMap *>(nested_type.get()))
         {
-            findRequiredIndices(name, header_index, type_map->getKeyType(), field_indices, added_indices, required_indices, file);
-            findRequiredIndices(name, header_index, type_map->getValueType(), field_indices, added_indices, required_indices, file);
+            findRequiredIndices(name, transformed_name, header_index, type_map->getKeyType(), field_indices, added_indices, required_indices, file, clickhouse_to_parquet_names);
+            findRequiredIndices(Nested::concatenateName(name, "value"), Nested::concatenateName(transformed_name, "value"), header_index, type_map->getValueType(), field_indices, added_indices, required_indices, file, clickhouse_to_parquet_names);
             return;
         }
-        auto it = field_indices.find(name);
+        auto it = field_indices.find(transformed_name);
         if (it == field_indices.end())
         {
             if (!allow_missing_columns)

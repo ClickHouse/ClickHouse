@@ -1,5 +1,6 @@
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 
+#include <Common/SipHash.h>
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/CompressionFactory.h>
@@ -122,6 +123,11 @@ protected:
     bool isCompression() const override { return true; }
     bool isGenericCompression() const override { return false; }
     bool isFloatingPointTimeSeriesCodec() const override { return true; }
+
+    String getDescription() const override
+    {
+        return "Calculates XOR between current and previous value; suitable for slowly changing numbers.";
+    }
 
 private:
     const UInt8 data_bytes_size;
@@ -358,7 +364,7 @@ UInt8 getDataBytesSize(const IDataType * column_type)
 CompressionCodecGorilla::CompressionCodecGorilla(UInt8 data_bytes_size_)
     : data_bytes_size(data_bytes_size_)
 {
-    setCodecDescription("Gorilla");
+    setCodecDescription("Gorilla", {std::make_shared<ASTLiteral>(static_cast<UInt64>(data_bytes_size))});
 }
 
 uint8_t CompressionCodecGorilla::getMethodByte() const

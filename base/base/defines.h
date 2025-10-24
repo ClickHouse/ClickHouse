@@ -107,6 +107,7 @@
 #    if defined(DEBUG_OR_SANITIZER_BUILD)
         // clang-format off
         #include <base/types.h>
+        #include <stdlib.h>
         namespace DB
         {
             [[noreturn]] void abortOnFailedAssertion(const String & description);
@@ -145,6 +146,7 @@
 #define TSA_TRY_ACQUIRE_SHARED(...) __attribute__((try_acquire_shared_capability(__VA_ARGS__)))  /// function tries to acquire a shared capability and returns a boolean value indicating success or failure
 #define TSA_RELEASE_SHARED(...) __attribute__((release_shared_capability(__VA_ARGS__)))          /// function releases the given shared capability
 #define TSA_SCOPED_LOCKABLE __attribute__((scoped_lockable)) /// object of a class has scoped lockable capability
+#define TSA_RETURN_CAPABILITY(...) __attribute__((lock_returned(__VA_ARGS__)))             /// to return capabilities in functions
 
 /// Macros for suppressing TSA warnings for specific reads/writes (instead of suppressing it for the whole function)
 /// They use a lambda function to apply function attribute to a single statement. This enable us to suppress warnings locally instead of

@@ -1,5 +1,6 @@
 #include <Interpreters/ProcessList.h>
 #include <Core/Settings.h>
+#include <Interpreters/CancellationChecker.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -8,10 +9,14 @@
 #include <Parsers/IAST.h>
 #include <Parsers/queryNormalization.h>
 #include <Processors/Executors/PipelineExecutor.h>
+#include <base/scope_guard.h>
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
+#include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
+#include <Common/Scheduler/IResourceManager.h>
 #include <Common/logger_useful.h>
 #include <chrono>
+#include <memory>
 
 
 namespace CurrentMetrics
@@ -45,8 +50,10 @@ namespace Setting
     extern const SettingsBool replace_running_query;
     extern const SettingsMilliseconds replace_running_query_max_wait_ms;
     extern const SettingsString temporary_files_codec;
+    extern const SettingsUInt64 temporary_files_buffer_size;
     extern const SettingsOverflowMode timeout_overflow_mode;
     extern const SettingsBool trace_profile_events;
+    extern const SettingsMilliseconds low_priority_query_wait_time_ms;
 }
 
 namespace ErrorCodes
@@ -55,6 +62,7 @@ namespace ErrorCodes
     extern const int QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING;
     extern const int LOGICAL_ERROR;
     extern const int QUERY_WAS_CANCELLED;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 
@@ -91,9 +99,12 @@ static bool isUnlimitedQuery(const IAST * ast)
     return false;
 }
 
-
-ProcessList::EntryPtr
-ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr query_context, UInt64 watch_start_nanoseconds)
+ProcessList::EntryPtr ProcessList::insert(
+    const String & query_,
+    UInt64 normalized_query_hash,
+    const IAST * ast,
+    ContextMutablePtr query_context,
+    UInt64 watch_start_nanoseconds)
 {
     EntryPtr res;
 
@@ -104,11 +115,26 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query id cannot be empty");
 
     bool is_unlimited_query = isUnlimitedQuery(ast);
+    std::shared_ptr<QueryStatus> query;
+
+    // Acquire a query slot from resource scheduler if necessary.
+    // NOTE: There is a separate independent limit for the whole server `max_concurrent_queries`.
+    // NOTE: If that limit is exhausted, the query will be later blocked and wait while holding a query slot.
+    QuerySlotPtr query_slot;
+    if (!is_unlimited_query)
+    {
+        String query_resource_name = query_context->getWorkloadEntityStorage().getQueryResourceName();
+        if (!query_resource_name.empty())
+        {
+            if (ResourceLink link = query_context->getWorkloadClassifier()->get(query_resource_name))
+                query_slot = std::make_unique<QuerySlot>(link);
+        }
+    }
 
     {
-        LockAndOverCommitTrackerBlocker<std::unique_lock, Mutex> locker(mutex); // To avoid deadlock in case of OOM
+        LockAndOverCommitTrackerBlocker<std::unique_lock, Mutex> locker(mutex); /// To avoid deadlock in case of OOM
         auto & lock = locker.getUnderlyingLock();
-        IAST::QueryKind query_kind = ast->getQueryKind();
+        IAST::QueryKind query_kind = ast ? ast->getQueryKind() : IAST::QueryKind::Select;
 
         const auto queue_max_wait_ms = settings[Setting::queue_max_wait_ms].totalMilliseconds();
         UInt64 waiting_queries = waiting_queries_amount.load();
@@ -255,7 +281,8 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
                 TemporaryDataOnDiskSettings temporary_data_on_disk_settings
                 {
                     .max_size_on_disk = settings[Setting::max_temporary_data_on_disk_size_for_query],
-                    .compression_codec = settings[Setting::temporary_files_codec]
+                    .compression_codec = settings[Setting::temporary_files_codec],
+                    .buffer_size = settings[Setting::temporary_files_buffer_size],
                 };
                 query_context->setTempDataOnDisk(std::make_shared<TemporaryDataOnDiskScope>(
                     user_process_list.user_temp_data_on_disk, std::move(temporary_data_on_disk_settings)));
@@ -276,7 +303,7 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
                 thread_group->performance_counters.setTraceProfileEvents(settings[Setting::trace_profile_events]);
             }
 
-            thread_group->memory_tracker.setDescription("(for query)");
+            thread_group->memory_tracker.setDescription("Query");
             if (settings[Setting::memory_tracker_fault_probability] > 0.0)
                 thread_group->memory_tracker.setFaultProbability(settings[Setting::memory_tracker_fault_probability]);
 
@@ -286,17 +313,25 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
             ///  since allocation and deallocation could happen in different threads
         }
 
+        query = std::make_shared<QueryStatus>(
+            query_context,
+            query_,
+            normalized_query_hash,
+            client_info,
+            priorities.insert(
+                settings[Setting::priority],
+                std::chrono::milliseconds(settings[Setting::low_priority_query_wait_time_ms].totalMilliseconds())),
+            std::move(query_slot),
+            std::move(thread_group),
+            query_kind,
+            settings,
+            watch_start_nanoseconds);
+
         auto process_it = processes.emplace(
             processes.end(),
-            std::make_shared<QueryStatus>(
-                query_context,
-                query_,
-                client_info,
-                priorities.insert(settings[Setting::priority]),
-                std::move(thread_group),
-                query_kind,
-                settings,
-                watch_start_nanoseconds));
+            query);
+
+        CancellationChecker::getInstance().appendTask(query, query_context->getSettingsRef()[Setting::max_execution_time].totalMilliseconds(), query_context->getSettingsRef()[Setting::timeout_overflow_mode]);
 
         increaseQueryKindAmount(query_kind);
 
@@ -311,7 +346,7 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
         /// Track memory usage for all simultaneously running queries from single user.
         user_process_list.user_memory_tracker.setOrRaiseHardLimit(settings[Setting::max_memory_usage_for_user]);
         user_process_list.user_memory_tracker.setSoftLimit(settings[Setting::memory_overcommit_ratio_denominator_for_user]);
-        user_process_list.user_memory_tracker.setDescription("(for user)");
+        user_process_list.user_memory_tracker.setDescription("User");
 
         if (!total_network_throttler && settings[Setting::max_network_bandwidth_for_all_users])
         {
@@ -368,6 +403,8 @@ ProcessListEntry::~ProcessListEntry()
     if (auto query_user = parent.queries_to_user.find(query_id); query_user != parent.queries_to_user.end())
         parent.queries_to_user.erase(query_user);
 
+    CancellationChecker::getInstance().appendDoneTasks(*it);
+
     /// This removes the memory_tracker of one request.
     parent.processes.erase(it);
 
@@ -381,28 +418,30 @@ ProcessListEntry::~ProcessListEntry()
 
     parent.have_space.notify_all();
 
-    /// If there are no more queries for the user, then we will reset memory tracker and network throttler.
+    /// If there are no more queries for the user, then we will reset memory tracker.
     if (user_process_list.queries.empty())
         user_process_list.resetTrackers();
 
-    /// Reset throttler, similarly (see above).
-    if (parent.processes.empty())
-        parent.total_network_throttler.reset();
+    /// NOTE: Do not reset parent.total_network_throttler, it MUST account for periods of inactivity for correct work.
 }
 
 
 QueryStatus::QueryStatus(
     ContextPtr context_,
     const String & query_,
+    UInt64 normalized_query_hash_,
     const ClientInfo & client_info_,
     QueryPriorities::Handle && priority_handle_,
+    QuerySlotPtr && query_slot_,
     ThreadGroupPtr && thread_group_,
     IAST::QueryKind query_kind_,
     const Settings & query_settings_,
     UInt64 watch_start_nanoseconds)
     : WithContext(context_)
     , query(query_)
+    , normalized_query_hash(normalized_query_hash_)
     , client_info(client_info_)
+    , query_slot(std::move(query_slot_))
     , thread_group(std::move(thread_group_))
     , watch(CLOCK_MONOTONIC, watch_start_nanoseconds, true)
     , priority_handle(std::move(priority_handle_))
@@ -447,12 +486,20 @@ void QueryStatus::ExecutorHolder::remove()
     executor = nullptr;
 }
 
-CancellationCode QueryStatus::cancelQuery(bool)
+CancellationCode QueryStatus::cancelQuery(CancelReason reason, std::exception_ptr exception)
 {
-    if (is_killed.load())
-        return CancellationCode::CancelSent;
+    {
+        std::lock_guard<std::mutex> lock(cancel_mutex);
 
-    is_killed.store(true);
+        if (is_killed)
+            return CancellationCode::CancelSent;
+
+        LOG_TRACE(getLogger("ProcessList"), "Cancelling the query (reason: {})", reason);
+
+        is_killed = true;
+        cancel_reason = reason;
+        cancellation_exception = exception;
+    }
 
     std::vector<ExecutorHolderPtr> executors_snapshot;
 
@@ -480,13 +527,30 @@ CancellationCode QueryStatus::cancelQuery(bool)
     return CancellationCode::CancelSent;
 }
 
+void QueryStatus::throwProperExceptionIfNeeded(const UInt64 & max_execution_time_ms, const UInt64 & elapsed_ns)
+{
+    {
+        std::lock_guard<std::mutex> lock(cancel_mutex);
+        if (is_killed)
+        {
+            String additional_error_part;
+            if (elapsed_ns)
+                additional_error_part = fmt::format("elapsed {} ms, ", static_cast<double>(elapsed_ns) / 1000000ULL);
+
+            if (cancel_reason == CancelReason::TIMEOUT)
+                throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: {}maximum: {} ms", additional_error_part, max_execution_time_ms);
+            throwQueryWasCancelled();
+        }
+    }
+}
+
 void QueryStatus::addPipelineExecutor(PipelineExecutor * e)
 {
     /// In case of asynchronous distributed queries it is possible to call
     /// addPipelineExecutor() from the cancelQuery() context, and this will
     /// lead to deadlock.
-    if (is_killed.load())
-        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+    UInt64 max_exec_time = getContext()->getSettingsRef()[Setting::max_execution_time].totalMilliseconds();
+    throwProperExceptionIfNeeded(max_exec_time, 0);
 
     std::lock_guard lock(executors_mutex);
     assert(!executors.contains(e));
@@ -511,10 +575,18 @@ void QueryStatus::removePipelineExecutor(PipelineExecutor * e)
 
 bool QueryStatus::checkTimeLimit()
 {
-    if (is_killed.load())
-        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+    auto elapsed_ns = watch.elapsed();
+    throwProperExceptionIfNeeded(limits.max_execution_time.totalMilliseconds(), elapsed_ns);
 
-    return limits.checkTimeLimit(watch, overflow_mode);
+    return limits.checkTimeLimit(elapsed_ns, overflow_mode);
+}
+
+void QueryStatus::throwQueryWasCancelled() const
+{
+    if (cancellation_exception)
+        std::rethrow_exception(cancellation_exception);
+    else
+        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 }
 
 bool QueryStatus::checkTimeLimitSoft()
@@ -522,9 +594,8 @@ bool QueryStatus::checkTimeLimitSoft()
     if (is_killed.load())
         return false;
 
-    return limits.checkTimeLimit(watch, OverflowMode::BREAK);
+    return limits.checkTimeLimit(watch.elapsedNanoseconds(), OverflowMode::BREAK);
 }
-
 
 void QueryStatus::setUserProcessList(ProcessListForUser * user_process_list_)
 {
@@ -572,7 +643,7 @@ QueryStatusPtr ProcessList::tryGetProcessListElement(const String & current_quer
 }
 
 
-CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id, const String & current_user, bool kill)
+CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id, const String & current_user)
 {
     QueryStatusPtr elem;
 
@@ -604,11 +675,11 @@ CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id,
         cancelled_cv.notify_all();
     });
 
-    return elem->cancelQuery(kill);
+    return elem->cancelQuery(CancelReason::CANCELLED_BY_USER);
 }
 
 
-CancellationCode ProcessList::sendCancelToQuery(QueryStatusPtr elem, bool kill)
+CancellationCode ProcessList::sendCancelToQuery(QueryStatusPtr elem)
 {
     /// Cancelling the query should be done without the lock.
     /// So here we first set is_cancelling, and later reset it.
@@ -626,7 +697,7 @@ CancellationCode ProcessList::sendCancelToQuery(QueryStatusPtr elem, bool kill)
         cancelled_cv.notify_all();
     });
 
-    return elem->cancelQuery(kill);
+    return elem->cancelQuery(CancelReason::CANCELLED_BY_USER);
 }
 
 
@@ -652,7 +723,7 @@ void ProcessList::killAllQueries()
     }
 
     for (auto & cancelled_process : cancelled_processes)
-        cancelled_process->cancelQuery(true);
+        cancelled_process->cancelQuery(CancelReason::CANCELLED_BY_USER);
 
 }
 
@@ -662,6 +733,7 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
     QueryStatusInfo res{};
 
     res.query             = query;
+    res.normalized_query_hash = normalized_query_hash;
     res.query_kind        = query_kind;
     res.client_info       = client_info;
     res.elapsed_microseconds = watch.elapsedMicroseconds();
@@ -756,7 +828,8 @@ ProcessListForUser::ProcessListForUser(ContextPtr global_context, ProcessList * 
         TemporaryDataOnDiskSettings temporary_data_on_disk_settings
         {
             .max_size_on_disk = settings[Setting::max_temporary_data_on_disk_size_for_user],
-            .compression_codec = settings[Setting::temporary_files_codec]
+            .compression_codec = settings[Setting::temporary_files_codec],
+            .buffer_size = settings[Setting::temporary_files_buffer_size],
         };
 
         user_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(global_context->getSharedTempDataOnDisk(),

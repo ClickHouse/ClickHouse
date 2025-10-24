@@ -1,8 +1,11 @@
 ---
-slug: /en/sql-reference/data-types/geo
+description: 'Documentation for geometric data types in ClickHouse used for representing
+  geographical objects and locations'
+sidebar_label: 'Geo'
 sidebar_position: 54
-sidebar_label: Geo
-title: "Geometric"
+slug: /sql-reference/data-types/geo
+title: 'Geometric'
+doc_type: 'reference'
 ---
 
 ClickHouse supports data types for representing geographical objects — locations, lands, etc.
@@ -10,7 +13,7 @@ ClickHouse supports data types for representing geographical objects — locatio
 **See Also**
 - [Representing simple geographical features](https://en.wikipedia.org/wiki/GeoJSON).
 
-## Point
+## Point {#point}
 
 `Point` is represented by its X and Y coordinates, stored as a [Tuple](tuple.md)([Float64](float.md), [Float64](float.md)).
 
@@ -25,13 +28,13 @@ SELECT p, toTypeName(p) FROM geo_point;
 ```
 Result:
 
-``` text
+```text
 ┌─p───────┬─toTypeName(p)─┐
 │ (10,10) │ Point         │
 └─────────┴───────────────┘
 ```
 
-## Ring
+## Ring {#ring}
 
 `Ring` is a simple polygon without holes stored as an array of points: [Array](array.md)([Point](#point)).
 
@@ -46,13 +49,13 @@ SELECT r, toTypeName(r) FROM geo_ring;
 ```
 Result:
 
-``` text
+```text
 ┌─r─────────────────────────────┬─toTypeName(r)─┐
 │ [(0,0),(10,0),(10,10),(0,10)] │ Ring          │
 └───────────────────────────────┴───────────────┘
 ```
 
-## LineString
+## LineString {#linestring}
 
 `LineString` is a line stored as an array of points: [Array](array.md)([Point](#point)).
 
@@ -67,13 +70,13 @@ SELECT l, toTypeName(l) FROM geo_linestring;
 ```
 Result:
 
-``` text
+```text
 ┌─r─────────────────────────────┬─toTypeName(r)─┐
 │ [(0,0),(10,0),(10,10),(0,10)] │ LineString    │
 └───────────────────────────────┴───────────────┘
 ```
 
-## MultiLineString
+## MultiLineString {#multilinestring}
 
 `MultiLineString` is multiple lines stored as an array of `LineString`: [Array](array.md)([LineString](#linestring)).
 
@@ -88,13 +91,13 @@ SELECT l, toTypeName(l) FROM geo_multilinestring;
 ```
 Result:
 
-``` text
+```text
 ┌─l───────────────────────────────────────────────────┬─toTypeName(l)───┐
 │ [[(0,0),(10,0),(10,10),(0,10)],[(1,1),(2,2),(3,3)]] │ MultiLineString │
 └─────────────────────────────────────────────────────┴─────────────────┘
 ```
 
-## Polygon
+## Polygon {#polygon}
 
 `Polygon` is a polygon with holes stored as an array of rings: [Array](array.md)([Ring](#ring)). First element of outer array is the outer shape of polygon and all the following elements are holes.
 
@@ -110,13 +113,13 @@ SELECT pg, toTypeName(pg) FROM geo_polygon;
 
 Result:
 
-``` text
+```text
 ┌─pg────────────────────────────────────────────────────────────┬─toTypeName(pg)─┐
 │ [[(20,20),(50,20),(50,50),(20,50)],[(30,30),(50,50),(50,30)]] │ Polygon        │
 └───────────────────────────────────────────────────────────────┴────────────────┘
 ```
 
-## MultiPolygon
+## MultiPolygon {#multipolygon}
 
 `MultiPolygon` consists of multiple polygons and is stored as an array of polygons: [Array](array.md)([Polygon](#polygon)).
 
@@ -131,12 +134,58 @@ SELECT mpg, toTypeName(mpg) FROM geo_multipolygon;
 ```
 Result:
 
-``` text
+```text
 ┌─mpg─────────────────────────────────────────────────────────────────────────────────────────────┬─toTypeName(mpg)─┐
 │ [[[(0,0),(10,0),(10,10),(0,10)]],[[(20,20),(50,20),(50,50),(20,50)],[(30,30),(50,50),(50,30)]]] │ MultiPolygon    │
 └─────────────────────────────────────────────────────────────────────────────────────────────────┴─────────────────┘
 ```
 
-## Related Content
+## Geometry {#geometry}
+
+`Geometry` is a common type for all the types above. It is equivalent to a Variant of those types.
+
+**Example**
+
+```sql
+CREATE TABLE IF NOT EXISTS geo (geom Geometry) ENGINE = Memory();
+INSERT INTO geo VALUES ((1, 2));
+SELECT * FROM geo;
+```
+Result:
+
+```text
+   ┌─geom──┐
+1. │ (1,2) │
+   └───────┘
+```
+
+<!-- -->
+
+```sql
+CREATE TABLE IF NOT EXISTS geo_dst (geom Geometry) ENGINE = Memory();
+
+CREATE TABLE IF NOT EXISTS geo (geom String, id Int) ENGINE = Memory();
+INSERT INTO geo VALUES ('POLYGON((1 0,10 0,10 10,0 10,1 0),(4 4,5 4,5 5,4 5,4 4))', 1);
+INSERT INTO geo VALUES ('POINT(0 0)', 2);
+INSERT INTO geo VALUES ('MULTIPOLYGON(((1 0,10 0,10 10,0 10,1 0),(4 4,5 4,5 5,4 5,4 4)),((-10 -10,-10 -9,-9 10,-10 -10)))', 3);
+INSERT INTO geo VALUES ('LINESTRING(1 0,10 0,10 10,0 10,1 0)', 4);
+INSERT INTO geo VALUES ('MULTILINESTRING((1 0,10 0,10 10,0 10,1 0),(4 4,5 4,5 5,4 5,4 4))', 5);
+INSERT INTO geo_dst SELECT readWkt(geom) FROM geo ORDER BY id;
+
+SELECT * FROM geo_dst;
+```
+Result:
+
+```text
+   ┌─geom─────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+1. │ [[(1,0),(10,0),(10,10),(0,10),(1,0)],[(4,4),(5,4),(5,5),(4,5),(4,4)]]                                            │
+2. │ (0,0)                                                                                                            │
+3. │ [[[(1,0),(10,0),(10,10),(0,10),(1,0)],[(4,4),(5,4),(5,5),(4,5),(4,4)]],[[(-10,-10),(-10,-9),(-9,10),(-10,-10)]]] │
+4. │ [(1,0),(10,0),(10,10),(0,10),(1,0)]                                                                              │
+5. │ [[(1,0),(10,0),(10,10),(0,10),(1,0)],[(4,4),(5,4),(5,5),(4,5),(4,4)]]                                            │
+   └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+## Related Content {#related-content}
 
 - [Exploring massive, real-world data sets: 100+ Years of Weather Records in ClickHouse](https://clickhouse.com/blog/real-world-data-noaa-climate-data)

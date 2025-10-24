@@ -139,7 +139,7 @@ public:
     }
 };
 
-AggregateFunctionPtr createAggregateFunctionDistinctDynamicTypes(
+static AggregateFunctionPtr createAggregateFunctionDistinctDynamicTypes(
     const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
 {
     assertNoParameters(name, parameters);

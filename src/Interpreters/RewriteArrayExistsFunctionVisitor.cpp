@@ -6,6 +6,12 @@
 
 namespace DB
 {
+
+namespace ErrorCode
+{
+extern const int LOGICAL_ERROR;
+}
+
 void RewriteArrayExistsFunctionMatcher::visit(ASTPtr & ast, Data & data)
 {
     if (auto * func = ast->as<ASTFunction>())
@@ -20,21 +26,21 @@ void RewriteArrayExistsFunctionMatcher::visit(ASTPtr & ast, Data & data)
         if (join->using_expression_list)
         {
             auto * it = std::find(join->children.begin(), join->children.end(), join->using_expression_list);
+            if (it == join->children.end())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not find join->using_expression_list in '{}'", join->formatForLogging());
 
             visit(join->using_expression_list, data);
-
-            if (it && *it != join->using_expression_list)
-                *it = join->using_expression_list;
+            *it = join->using_expression_list;
         }
 
         if (join->on_expression)
         {
             auto * it = std::find(join->children.begin(), join->children.end(), join->on_expression);
+            if (it == join->children.end())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not find join->on_expression in '{}'", join->formatForLogging());
 
             visit(join->on_expression, data);
-
-            if (it && *it != join->on_expression)
-                *it = join->on_expression;
+            *it = join->on_expression;
         }
     }
 }

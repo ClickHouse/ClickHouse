@@ -3,6 +3,7 @@
 
 #include <Columns/ColumnAggregateFunction.h>
 
+#include <Common/SipHash.h>
 #include <Common/AlignedBuffer.h>
 #include <Common/FieldVisitorToString.h>
 
@@ -129,7 +130,7 @@ MutableColumnPtr DataTypeAggregateFunction::createColumn() const
 Field DataTypeAggregateFunction::getDefault() const
 {
     Field field = AggregateFunctionStateData();
-    field.safeGet<AggregateFunctionStateData &>().name = getName();
+    field.safeGet<AggregateFunctionStateData>().name = getName();
 
     AlignedBuffer place_buffer(function->sizeOfData(), function->alignOfData());
     AggregateDataPtr place = place_buffer.data();
@@ -138,7 +139,7 @@ Field DataTypeAggregateFunction::getDefault() const
 
     try
     {
-        WriteBufferFromString buffer_from_field(field.safeGet<AggregateFunctionStateData &>().data);
+        WriteBufferFromString buffer_from_field(field.safeGet<AggregateFunctionStateData>().data);
         function->serialize(place, buffer_from_field, version);
     }
     catch (...)
@@ -178,6 +179,19 @@ bool DataTypeAggregateFunction::strictEquals(const DataTypePtr & lhs_state_type,
             return false;
 
     return true;
+}
+
+void DataTypeAggregateFunction::updateHashImpl(SipHash & hash) const
+{
+    hash.update(getFunctionName());
+    hash.update(parameters.size());
+    for (const auto & param : parameters)
+        hash.update(param.getType());
+    hash.update(argument_types.size());
+    for (const auto & arg_type : argument_types)
+        arg_type->updateHash(hash);
+    if (version)
+        hash.update(*version);
 }
 
 bool DataTypeAggregateFunction::equals(const IDataType & rhs) const
@@ -302,6 +316,19 @@ void setVersionToAggregateFunctions(DataTypePtr & type, bool if_empty, std::opti
 void registerDataTypeAggregateFunction(DataTypeFactory & factory)
 {
     factory.registerDataType("AggregateFunction", create);
+}
+
+bool hasAggregateFunctionType(const DataTypePtr & type)
+{
+    auto result = false;
+    auto check = [&](const IDataType & t)
+    {
+        result |= WhichDataType(t).isAggregateFunction();
+    };
+
+    check(*type);
+    type->forEachChild(check);
+    return result;
 }
 
 }

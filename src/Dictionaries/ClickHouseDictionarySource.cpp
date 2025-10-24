@@ -1,26 +1,29 @@
-#include "ClickHouseDictionarySource.h"
+#include <Dictionaries/ClickHouseDictionarySource.h>
 #include <memory>
 #include <Client/ConnectionPool.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/RemoteHostFilter.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Interpreters/ActionsDAG.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/Context.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Common/isLocalAddress.h>
 #include <Common/logger_useful.h>
-#include "DictionarySourceFactory.h"
-#include "DictionaryStructure.h"
-#include "ExternalQueryBuilder.h"
-#include "readInvalidateQuery.h"
-#include "DictionaryFactory.h"
-#include "DictionarySourceHelpers.h"
+#include <Parsers/ParserQuery.h>
+#include <Parsers/parseQuery.h>
+#include <Dictionaries/DictionarySourceFactory.h>
+#include <Dictionaries/DictionaryStructure.h>
+#include <Dictionaries/ExternalQueryBuilder.h>
+#include <Dictionaries/readInvalidateQuery.h>
+#include <Dictionaries/DictionaryFactory.h>
+#include <Dictionaries/DictionarySourceHelpers.h>
 
 namespace DB
 {
@@ -28,6 +31,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_QUERY;
 }
 
 namespace
@@ -59,7 +63,8 @@ namespace
             "", /* cluster_secret */
             "ClickHouseDictionarySource",
             Protocol::Compression::Enable,
-            configuration.secure ? Protocol::Secure::Enable : Protocol::Secure::Disable));
+            configuration.secure ? Protocol::Secure::Enable : Protocol::Secure::Disable,
+            "" /* bind_host */));
 
         return std::make_shared<ConnectionPoolWithFailover>(pools, LoadBalancing::RANDOM);
     }
@@ -161,16 +166,24 @@ QueryPipeline ClickHouseDictionarySource::createStreamForQuery(const String & qu
     QueryPipeline pipeline;
 
     /// Sample block should not contain first row default values
-    auto empty_sample_block = sample_block.cloneEmpty();
+    auto empty_sample_block = std::make_shared<const Block>(sample_block.cloneEmpty());
 
     /// Copy context because results of scalar subqueries potentially could be cached
     auto context_copy = Context::createCopy(context);
     context_copy->makeQueryContext();
 
+    const char * query_begin = query.data();
+    const char * query_end = query.data() + query.size();
+    ParserQuery parser(query_end);
+    ASTPtr ast = parseQuery(parser, query_begin, query_end, "Query for ClickHouse dictionary", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+
+    if (!ast || ast->getQueryKind() != IAST::QueryKind::Select)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT query can be used as a dictionary source");
+
     if (configuration.is_local)
     {
         pipeline = executeQuery(query, context_copy, QueryFlags{ .internal = true }).second.pipeline;
-        pipeline.convertStructureTo(empty_sample_block.getColumnsWithTypeAndName());
+        pipeline.convertStructureTo(empty_sample_block->getColumnsWithTypeAndName());
     }
     else
     {
@@ -195,7 +208,7 @@ std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & re
     }
 
     /// We pass empty block to RemoteQueryExecutor, because we don't know the structure of the result.
-    Block invalidate_sample_block;
+    auto invalidate_sample_block = std::make_shared<const Block>(Block{});
     QueryPipeline pipeline(std::make_shared<RemoteSource>(
         std::make_shared<RemoteQueryExecutor>(pool, request, invalidate_sample_block, context_copy), false, false, false));
     return readInvalidateQuery(std::move(pipeline));
@@ -203,7 +216,8 @@ std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & re
 
 void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
 {
-    auto create_table_source = [=](const DictionaryStructure & dict_struct,
+    auto create_table_source = [=](const String & /*name*/,
+                                 const DictionaryStructure & dict_struct,
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,

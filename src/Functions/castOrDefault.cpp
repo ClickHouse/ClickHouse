@@ -320,7 +320,61 @@ private:
 
 REGISTER_FUNCTION(CastOrDefault)
 {
-    factory.registerFunction<FunctionCastOrDefault>();
+    /// accurateCastOrDefault documentation
+    FunctionDocumentation::Description accurateCastOrDefault_description = R"(
+Converts a value to a specified data type.
+Like [`accurateCast`](#accurateCast), but returns a default value instead of throwing an exception if the conversion cannot be performed accurately.
+
+If a default value is provided as the second argument, it must be of the target type.
+If no default value is provided, the default value of the target type is used.
+    )";
+    FunctionDocumentation::Syntax accurateCastOrDefault_syntax = "accurateCastOrDefault(x, T[, default_value])";
+    FunctionDocumentation::Arguments accurateCastOrDefault_arguments = {
+        {"x", "A value to convert.", {"Any"}},
+        {"T", "The target data type name.", {"const String"}},
+        {"default_value", "Optional. Default value to return if conversion fails.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue accurateCastOrDefault_returned_value = {"Returns the converted value with the target data type, or the default value if conversion is not possible.", {"Any"}};
+    FunctionDocumentation::Examples accurateCastOrDefault_examples = {
+    {
+        "Successful conversion",
+        R"(
+SELECT accurateCastOrDefault(42, 'String')
+        )",
+        R"(
+┌─accurateCastOrDefault(42, 'String')─┐
+│ 42                                  │
+└─────────────────────────────────────┘
+        )"
+    },
+    {
+        "Failed conversion with explicit default",
+        R"(
+SELECT accurateCastOrDefault('abc', 'UInt32', 999::UInt32)
+        )",
+        R"(
+┌─accurateCastOrDefault('abc', 'UInt32', 999)─┐
+│                                         999 │
+└─────────────────────────────────────────────┘
+        )"
+    },
+    {
+        "Failed conversion with implicit default",
+        R"(
+SELECT accurateCastOrDefault('abc', 'UInt32')
+        )",
+        R"(
+┌─accurateCastOrDefault('abc', 'UInt32')─┐
+│                                      0 │
+└────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn accurateCastOrDefault_introduced_in = {21, 1};
+    FunctionDocumentation::Category accurateCastOrDefault_category = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation accurateCastOrDefault_documentation = {accurateCastOrDefault_description, accurateCastOrDefault_syntax, accurateCastOrDefault_arguments, accurateCastOrDefault_returned_value, accurateCastOrDefault_examples, accurateCastOrDefault_introduced_in, accurateCastOrDefault_category};
+
+    factory.registerFunction<FunctionCastOrDefault>(accurateCastOrDefault_documentation);
 
     factory.registerFunction("toUInt8OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toUInt8OrDefault", std::make_shared<DataTypeUInt8>()); });
@@ -342,7 +396,7 @@ If the default value is not provided in the second argument, it is assumed to be
                 {"Successful conversion", "SELECT toUInt128OrDefault('1', 2::UInt128)", "1"},
                 {"Default value", "SELECT toUInt128OrDefault('upyachka', 123456789012345678901234567890::UInt128)", "123456789012345678901234567890"},
                 {"Implicit default value", "SELECT toUInt128OrDefault('upyachka')", "0"}},
-            .categories{"ConversionFunctions"}
+            .category = FunctionDocumentation::Category::TypeConversion
         });
     factory.registerFunction("toUInt256OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toUInt256OrDefault", std::make_shared<DataTypeUInt256>()); });
@@ -383,12 +437,128 @@ If the default value is not provided in the second argument, it is assumed to be
     factory.registerFunction("toDecimal256OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toDecimal256OrDefault", createDecimalMaxPrecision<Decimal256>(0)); });
 
+    FunctionDocumentation::Description toUUIDOrDefault_description = R"(
+Converts a String value to UUID type. If the conversion fails, returns a default UUID value instead of throwing an error.
+
+This function attempts to parse a string of 36 characters in the standard UUID format (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx).
+If the string cannot be converted to a valid UUID, the function returns the provided default UUID value.
+    )";
+    FunctionDocumentation::Syntax toUUIDOrDefault_syntax = "toUUIDOrDefault(string, default)";
+    FunctionDocumentation::Arguments toUUIDOrDefault_arguments = {
+        {"string", "String of 36 characters or FixedString(36) to be converted to UUID."},
+        {"default", "UUID value to be returned if the first argument cannot be converted to UUID type."}
+    };
+    FunctionDocumentation::ReturnedValue toUUIDOrDefault_returned_value = {
+        "Returns the converted UUID if successful, or the default UUID if conversion fails.",
+        {"UUID"}
+    };
+    FunctionDocumentation::Examples toUUIDOrDefault_examples = {
+    {
+        "Successful conversion returns the parsed UUID",
+        R"(
+SELECT toUUIDOrDefault('61f0c404-5cb3-11e7-907b-a6006ad3dba0', toUUID('59f0c404-5cb3-11e7-907b-a6006ad3dba0'));
+        )",
+        R"(
+┌─toUUIDOrDefault('61f0c404-5cb3-11e7-907b-a6006ad3dba0', toUUID('59f0c404-5cb3-11e7-907b-a6006ad3dba0'))─┐
+│ 61f0c404-5cb3-11e7-907b-a6006ad3dba0                                                                     │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+        )"
+    },
+    {
+        "Failed conversion returns the default UUID",
+        R"(
+SELECT toUUIDOrDefault('-----61f0c404-5cb3-11e7-907b-a6006ad3dba0', toUUID('59f0c404-5cb3-11e7-907b-a6006ad3dba0'));
+        )",
+        R"(
+┌─toUUIDOrDefault('-----61f0c404-5cb3-11e7-907b-a6006ad3dba0', toUUID('59f0c404-5cb3-11e7-907b-a6006ad3dba0'))─┐
+│ 59f0c404-5cb3-11e7-907b-a6006ad3dba0                                                                          │
+└───────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn toUUIDOrDefault_introduced_in = {21, 1};
+    FunctionDocumentation::Category toUUIDOrDefault_category = FunctionDocumentation::Category::UUID;
+    FunctionDocumentation toUUIDOrDefault_documentation = {toUUIDOrDefault_description, toUUIDOrDefault_syntax, toUUIDOrDefault_arguments, toUUIDOrDefault_returned_value, toUUIDOrDefault_examples, toUUIDOrDefault_introduced_in, toUUIDOrDefault_category};
+
     factory.registerFunction("toUUIDOrDefault", [](ContextPtr context)
-        { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toUUIDOrDefault", std::make_shared<DataTypeUUID>()); });
+        { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toUUIDOrDefault", std::make_shared<DataTypeUUID>()); }, toUUIDOrDefault_documentation);
+
+
+    FunctionDocumentation::Description toIPv4OrDefault_description = R"(
+Converts a string or a UInt32 form of an IPv4 address to [`IPv4`](../data-types/ipv4.md) type.
+If the IPv4 address has an invalid format, it returns `0.0.0.0` (0 IPv4), or the provided IPv4 default.
+    )";
+    FunctionDocumentation::Syntax toIPv4OrDefault_syntax = "toIPv4OrDefault(string[, default])";
+    FunctionDocumentation::Arguments toIPv4OrDefault_arguments = {
+        {"string", "IP address string to convert.", {"String"}},
+        {"default", "Optional. The value to return if string is an invalid IPv4 address.", {"IPv4"}}
+    };
+    FunctionDocumentation::ReturnedValue toIPv4OrDefault_returned_value = {"Returns a string converted to the current IPv4 address, or the default value if conversion fails.", {"IPv4"}};
+    FunctionDocumentation::Examples toIPv4OrDefault_examples = {
+    {
+        "Valid and invalid IPv4 strings",
+        R"(
+WITH
+    '192.168.1.1' AS valid_IPv4_string,
+    '999.999.999.999' AS invalid_IPv4_string,
+    'not_an_ip' AS malformed_string
+SELECT
+    toIPv4OrDefault(valid_IPv4_string) AS valid,
+    toIPv4OrDefault(invalid_IPv4_string) AS default_value,
+    toIPv4OrDefault(malformed_string, toIPv4('8.8.8.8')) AS provided_default;
+        )",
+        R"(
+┌─valid─────────┬─default_value─┬─provided_default─┐
+│ 192.168.1.1   │ 0.0.0.0       │ 8.8.8.8          │
+└───────────────┴───────────────┴──────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn toIPv4OrDefault_introduced_in = {22, 3};
+    FunctionDocumentation::Category toIPv4OrDefault_category = FunctionDocumentation::Category::IPAddress;
+    FunctionDocumentation toIPv4OrDefault_documentation = {toIPv4OrDefault_description, toIPv4OrDefault_syntax, toIPv4OrDefault_arguments, toIPv4OrDefault_returned_value, toIPv4OrDefault_examples, toIPv4OrDefault_introduced_in, toIPv4OrDefault_category};
+
     factory.registerFunction("toIPv4OrDefault", [](ContextPtr context)
-        { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toIPv4OrDefault", std::make_shared<DataTypeIPv4>()); });
+        { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toIPv4OrDefault", std::make_shared<DataTypeIPv4>()); },
+        toIPv4OrDefault_documentation);
+
+    FunctionDocumentation::Description toIPv6OrDefault_description = R"(
+Converts a string or a UInt128 form of IPv6 address to [`IPv6`](../data-types/ipv6.md) type.
+If the IPv6 address has an invalid format, it returns `::` (0 IPv6) or the provided IPv6 default.
+    )";
+    FunctionDocumentation::Syntax toIPv6OrDefault_syntax = "toIPv6OrDefault(string[, default])";
+    FunctionDocumentation::Arguments toIPv6OrDefault_arguments = {
+        {"string", "IP address string to convert."},
+        {"default", "Optional. The value to return if string has an invalid format."}
+    };
+    FunctionDocumentation::ReturnedValue toIPv6OrDefault_returned_value = {"Returns the IPv6 address, otherwise `::` or the provided optional default if argument `string` has an invalid format.", {"IPv6"}};
+    FunctionDocumentation::Examples toIPv6OrDefault_examples = {
+    {
+        "Valid and invalid IPv6 strings",
+        R"(
+WITH
+    '2001:0db8:85a3:0000:0000:8a2e:0370:7334' AS valid_IPv6_string,
+    '2001:0db8:85a3::8a2e:370g:7334' AS invalid_IPv6_string,
+    'not_an_ipv6' AS malformed_string
+SELECT
+    toIPv6OrDefault(valid_IPv6_string) AS valid,
+    toIPv6OrDefault(invalid_IPv6_string) AS default_value,
+    toIPv6OrDefault(malformed_string, toIPv6('::1')) AS provided_default;
+        )",
+        R"(
+┌─valid──────────────────────────────────┬─default_value─┬─provided_default─┐
+│ 2001:db8:85a3::8a2e:370:7334           │ ::            │ ::1              │
+└────────────────────────────────────────┴───────────────┴──────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn toIPv6OrDefault_introduced_in = {22, 3};
+    FunctionDocumentation::Category toIPv6OrDefault_category = FunctionDocumentation::Category::IPAddress;
+    FunctionDocumentation toIPv6OrDefault_documentation = {toIPv6OrDefault_description, toIPv6OrDefault_syntax, toIPv6OrDefault_arguments, toIPv6OrDefault_returned_value, toIPv6OrDefault_examples, toIPv6OrDefault_introduced_in, toIPv6OrDefault_category};
+
     factory.registerFunction("toIPv6OrDefault", [](ContextPtr context)
-        { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toIPv6OrDefault", std::make_shared<DataTypeIPv6>()); });
+        { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toIPv6OrDefault", std::make_shared<DataTypeIPv6>()); },
+        toIPv6OrDefault_documentation);
 }
 
 }

@@ -35,6 +35,14 @@ public:
                 "Illegal type {} of argument of aggregate function {} because the values of that data type are not comparable",
                 this->result_type->getName(),
                 getName());
+
+        if (isDynamic(this->result_type) || isVariant(this->result_type))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument of aggregate function {} because the column of that type can contain values with different "
+                "data types. Consider using typed subcolumns or cast column to a specific data type",
+                this->result_type->getName(),
+                getName());
     }
 
     String getName() const override
@@ -124,14 +132,14 @@ public:
 
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
-        this->data(place).read(buf, *serialization, arena);
+        this->data(place).read(buf, *serialization, this->result_type, arena);
     }
 
     bool allocatesMemoryInArena() const override { return Data::allocatesMemoryInArena(); }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        this->data(place).insertResultInto(to);
+        this->data(place).insertResultInto(to, this->result_type);
     }
 
 #if USE_EMBEDDED_COMPILER

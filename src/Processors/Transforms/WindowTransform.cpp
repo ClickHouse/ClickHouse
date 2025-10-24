@@ -9,13 +9,12 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionHelpers.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Processors/Transforms/WindowTransform.h>
 #include <base/arithmeticOverflow.h>
 #include <Common/Arena.h>
 #include <Common/FieldVisitorConvertToNumber.h>
-#include <Common/FieldVisitorsAccurateComparison.h>
+#include <Common/FieldAccurateComparison.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
 #include <DataTypes/DataTypeString.h>
@@ -269,14 +268,14 @@ else \
         demangle(typeid(*column).name())); \
 }
 
-WindowTransform::WindowTransform(const Block & input_header_,
-        const Block & output_header_,
+WindowTransform::WindowTransform(SharedHeader input_header_,
+        SharedHeader output_header_,
         const WindowDescription & window_description_,
         const std::vector<WindowFunctionDescription> & functions)
     : IProcessor({input_header_}, {output_header_})
     , input(inputs.front())
     , output(outputs.front())
-    , input_header(input_header_)
+    , input_header(*input_header_)
     , window_description(window_description_)
 {
     // Materialize all columns in header, because we materialize all columns
@@ -366,8 +365,7 @@ WindowTransform::WindowTransform(const Block & input_header_,
                 window_description.frame.begin_offset,
                 *entry.type);
 
-            if (applyVisitor(FieldVisitorAccurateLess{},
-                window_description.frame.begin_offset, Field(0)))
+            if (accurateLess(window_description.frame.begin_offset, Field(0)))
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Window frame start offset must be nonnegative, {} given",
@@ -381,8 +379,7 @@ WindowTransform::WindowTransform(const Block & input_header_,
                 window_description.frame.end_offset,
                 *entry.type);
 
-            if (applyVisitor(FieldVisitorAccurateLess{},
-                window_description.frame.end_offset, Field(0)))
+            if (accurateLess(window_description.frame.end_offset, Field(0)))
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Window frame start offset must be nonnegative, {} given",
@@ -1153,7 +1150,7 @@ void WindowTransform::appendChunk(Chunk & chunk)
         // Initialize output columns.
         for (auto & ws : workspaces)
         {
-            block.casted_columns.push_back(ws.window_function_impl ? ws.window_function_impl->castColumn(block.input_columns, ws.argument_column_indices) : nullptr);
+            block.cast_columns.push_back(ws.window_function_impl ? ws.window_function_impl->castColumn(block.input_columns, ws.argument_column_indices) : nullptr);
 
             block.output_columns.push_back(ws.aggregate_function->getResultType()
                 ->createColumn());
@@ -1535,7 +1532,7 @@ namespace recurrent_detail
 {
     template<typename T> T getValue(const WindowTransform * /*transform*/, size_t /*function_index*/, size_t /*column_index*/, RowNumber /*row*/)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "recurrent_detail::getValue() is not implemented for {} type", typeid(T).name());
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "recurrent_detail::getValue is not implemented for {} type", typeid(T).name());
     }
 
     template<> Float64 getValue<Float64>(const WindowTransform * transform, size_t function_index, size_t column_index, RowNumber row)
@@ -1548,7 +1545,7 @@ namespace recurrent_detail
     template<typename T> void setValueToOutputColumn(const WindowTransform * /*transform*/, size_t /*function_index*/, T /*value*/)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "recurrent_detail::setValueToOutputColumn() is not implemented for {} type", typeid(T).name());
+                        "recurrent_detail::setValueToOutputColumn is not implemented for {} type", typeid(T).name());
     }
 
     template<> void setValueToOutputColumn<Float64>(const WindowTransform * transform, size_t function_index, Float64 value)
@@ -2350,7 +2347,7 @@ struct WindowFunctionLagLeadInFrame final : public StatelessWindowFunction
             }
         };
 
-        return func_cast->execute(arguments, argument_types[0], columns[idx[2]]->size());
+        return func_cast->execute(arguments, argument_types[0], columns[idx[2]]->size(), /* dry_run = */ false);
     }
 
     static DataTypePtr createResultType(const DataTypes & argument_types_, const std::string & name_)
@@ -2401,8 +2398,8 @@ struct WindowFunctionLagLeadInFrame final : public StatelessWindowFunction
             {
                 // Column with default values is specified.
                 const IColumn & default_column =
-                    current_block.casted_columns[function_index] ?
-                        *current_block.casted_columns[function_index].get() :
+                    current_block.cast_columns[function_index] ?
+                        *current_block.cast_columns[function_index].get() :
                         *current_block.input_columns[workspace.argument_column_indices[2]].get();
 
                 to.insert(default_column[transform->current_row.row]);
@@ -2705,12 +2702,26 @@ void registerWindowFunctions(AggregateFunctionFactory & factory)
                 name, argument_types, parameters);
         }, properties});
 
+    factory.registerFunction("lag", {[](const std::string & name,
+            const DataTypes & argument_types, const Array & parameters, const Settings *)
+        {
+            return std::make_shared<WindowFunctionLagLeadInFrame<false>>(
+                name, argument_types, parameters);
+        }, properties}, AggregateFunctionFactory::Case::Insensitive);
+
     factory.registerFunction("leadInFrame", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionLagLeadInFrame<true>>(
                 name, argument_types, parameters);
         }, properties});
+
+    factory.registerFunction("lead", {[](const std::string & name,
+            const DataTypes & argument_types, const Array & parameters, const Settings *)
+        {
+            return std::make_shared<WindowFunctionLagLeadInFrame<true>>(
+                name, argument_types, parameters);
+        }, properties}, AggregateFunctionFactory::Case::Insensitive);
 
     factory.registerFunction("exponentialTimeDecayedSum", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)

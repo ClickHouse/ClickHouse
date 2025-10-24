@@ -12,6 +12,8 @@
 
 namespace DB
 {
+struct AlterCommand;
+
 class DatabaseSQLite final : public IDatabase, WithContext
 {
 public:
@@ -21,10 +23,6 @@ public:
                    bool is_attach_, const String & database_path_);
 
     String getEngineName() const override { return "SQLite"; }
-
-    bool canContainMergeTreeTables() const override { return false; }
-
-    bool canContainDistributedTables() const override { return false; }
 
     bool shouldBeEmptyOnDetach() const override { return false; }
 
@@ -39,6 +37,8 @@ public:
     ASTPtr getCreateDatabaseQuery() const override;
 
     void shutdown() override {}
+
+    void alterDatabaseComment(const AlterCommand & command) override;
 
 protected:
     ASTPtr getCreateTableQueryImpl(const String & table_name, ContextPtr context, bool throw_on_error) const override;

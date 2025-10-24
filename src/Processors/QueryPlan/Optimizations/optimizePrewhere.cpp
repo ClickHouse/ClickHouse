@@ -1,14 +1,17 @@
 #include <Core/Settings.h>
-#include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Functions/FunctionsLogical.h>
+#include <Functions/IFunctionAdaptors.h>
+#include <Interpreters/ActionsDAG.h>
+#include <Interpreters/Context.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/optimizePrewhere.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageMerge.h>
-#include <Interpreters/ActionsDAG.h>
-#include <Functions/FunctionsLogical.h>
-#include <Functions/IFunctionAdaptors.h>
 
 namespace DB
 {
@@ -16,6 +19,7 @@ namespace Setting
 {
     extern const SettingsBool optimize_move_to_prewhere;
     extern const SettingsBool optimize_move_to_prewhere_if_final;
+    extern const SettingsBool vector_search_with_rescoring;
 }
 
 namespace QueryPlanOptimizations
@@ -35,101 +39,28 @@ static void removeFromOutput(ActionsDAG & dag, const std::string name)
     }
 }
 
-void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
+ActionsDAG splitAndFillPrewhereInfo(
+    PrewhereInfoPtr & prewhere_info,
+    bool remove_prewhere_column,
+    ActionsDAG filter_expression,
+    const String & filter_column_name,
+    const std::unordered_set<const ActionsDAG::Node *> & prewhere_nodes,
+    const std::list<const ActionsDAG::Node *> & prewhere_nodes_list)
 {
-    if (stack.size() < 2)
-        return;
-
-    auto & frame = stack.back();
-
-    /** Assume that on stack there are at least 3 nodes:
-      *
-      * 1. SomeNode
-      * 2. FilterNode
-      * 3. SourceStepWithFilterNode
-      */
-    auto * source_step_with_filter = dynamic_cast<SourceStepWithFilter *>(frame.node->step.get());
-    if (!source_step_with_filter)
-        return;
-
-    if (typeid_cast<ReadFromMerge *>(frame.node->step.get()))
-        return;
-
-    const auto & storage_snapshot = source_step_with_filter->getStorageSnapshot();
-    const auto & storage = storage_snapshot->storage;
-    if (!storage.canMoveConditionsToPrewhere())
-        return;
-
-    const auto & storage_prewhere_info = source_step_with_filter->getPrewhereInfo();
-    if (storage_prewhere_info)
-        return;
-
-    /// TODO: We can also check for UnionStep, such as StorageBuffer and local distributed plans.
-    QueryPlan::Node * filter_node = (stack.rbegin() + 1)->node;
-    auto * filter_step = typeid_cast<FilterStep *>(filter_node->step.get());
-    if (!filter_step)
-        return;
-
-    const auto & context = source_step_with_filter->getContext();
-    const auto & settings = context->getSettingsRef();
-
-    bool is_final = source_step_with_filter->isQueryWithFinal();
-    bool optimize = settings[Setting::optimize_move_to_prewhere] && (!is_final || settings[Setting::optimize_move_to_prewhere_if_final]);
-    if (!optimize)
-        return;
-
-    const auto & storage_metadata = storage_snapshot->metadata;
-    auto column_sizes = storage.getColumnSizes();
-    if (column_sizes.empty())
-        return;
-
-    /// Extract column compressed sizes
-    std::unordered_map<std::string, UInt64> column_compressed_sizes;
-    for (const auto & [name, sizes] : column_sizes)
-        column_compressed_sizes[name] = sizes.data_compressed;
-
-    Names queried_columns = source_step_with_filter->requiredSourceColumns();
-
-    const auto & source_filter_actions_dag = source_step_with_filter->getFilterActionsDAG();
-    MergeTreeWhereOptimizer where_optimizer{
-        std::move(column_compressed_sizes),
-        storage_metadata,
-        storage.getConditionSelectivityEstimatorByPredicate(storage_snapshot, source_filter_actions_dag ? &*source_filter_actions_dag : nullptr, context),
-        queried_columns,
-        storage.supportedPrewhereColumns(),
-        getLogger("QueryPlanOptimizePrewhere")};
-
-    auto optimize_result = where_optimizer.optimize(filter_step->getExpression(),
-        filter_step->getFilterColumnName(),
-        source_step_with_filter->getContext(),
-        is_final);
-
-    if (optimize_result.prewhere_nodes.empty())
-        return;
-
-    PrewhereInfoPtr prewhere_info;
-    if (storage_prewhere_info)
-        prewhere_info = storage_prewhere_info->clone();
-    else
-        prewhere_info = std::make_shared<PrewhereInfo>();
-
     prewhere_info->need_filter = true;
-    prewhere_info->remove_prewhere_column = optimize_result.fully_moved_to_prewhere && filter_step->removesFilterColumn();
-
-    auto filter_expression = std::move(filter_step->getExpression());
-    const auto & filter_column_name = filter_step->getFilterColumnName();
+    prewhere_info->remove_prewhere_column = remove_prewhere_column;
 
     if (prewhere_info->remove_prewhere_column)
     {
         removeFromOutput(filter_expression, filter_column_name);
         auto & outputs = filter_expression.getOutputs();
         size_t size = outputs.size();
-        outputs.insert(outputs.end(), optimize_result.prewhere_nodes.begin(), optimize_result.prewhere_nodes.end());
+        outputs.insert(outputs.end(), prewhere_nodes.begin(), prewhere_nodes.end());
         filter_expression.removeUnusedActions(false);
         outputs.resize(size);
     }
 
-    auto split_result = filter_expression.split(optimize_result.prewhere_nodes, true, true);
+    auto split_result = filter_expression.split(prewhere_nodes, true, true);
 
     /// This is the leak of abstraction.
     /// Splited actions may have inputs which are needed only for PREWHERE.
@@ -160,11 +91,10 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
 
     ActionsDAG::NodeRawConstPtrs conditions;
     conditions.reserve(split_result.split_nodes_mapping.size());
-    for (const auto * condition : optimize_result.prewhere_nodes_list)
+    for (const auto * condition : prewhere_nodes_list)
         conditions.push_back(split_result.split_nodes_mapping.at(condition));
 
     prewhere_info->prewhere_actions = std::move(split_result.first);
-    prewhere_info->remove_prewhere_column = optimize_result.fully_moved_to_prewhere && filter_step->removesFilterColumn();
 
     if (conditions.size() == 1)
     {
@@ -182,23 +112,114 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
         prewhere_info->prewhere_actions.getOutputs().push_back(node);
     }
 
+    return std::move(split_result.second);
+}
+
+void optimizePrewhere(QueryPlan::Node & parent_node)
+{
+    /// Assume that there are at least 2 nodes:
+    /// 1. FilterNode - parent_node
+    /// 2. SourceStepWithFilterNode - child_node
+
+    /// TODO: We can also check for UnionStep, such as StorageBuffer and local distributed plans.
+    auto * filter_step = typeid_cast<FilterStep *>(parent_node.step.get());
+    if (!filter_step)
+        return;
+
+    if (parent_node.children.size() != 1)
+        return;
+
+    auto * child_node = parent_node.children.front();
+
+    auto * source_step_with_filter = dynamic_cast<SourceStepWithFilter *>(child_node->step.get());
+    if (!source_step_with_filter)
+        return;
+
+    if (typeid_cast<ReadFromMerge *>(child_node->step.get()))
+        return;
+
+    const auto & storage_snapshot = source_step_with_filter->getStorageSnapshot();
+    const auto & storage = storage_snapshot->storage;
+    if (!storage.canMoveConditionsToPrewhere())
+        return;
+
+    if (source_step_with_filter->getPrewhereInfo())
+        return;
+
+    const auto & context = source_step_with_filter->getContext();
+    const auto & settings = context->getSettingsRef();
+
+    bool is_final = source_step_with_filter->isQueryWithFinal();
+    bool optimize = settings[Setting::optimize_move_to_prewhere] && (!is_final || settings[Setting::optimize_move_to_prewhere_if_final]);
+    if (!optimize)
+        return;
+
+    auto column_sizes = storage.getColumnSizes();
+    if (column_sizes.empty())
+        return;
+
+    /// These two optimizations conflict:
+    /// - vector search lookups with disabled rescoring
+    /// - PREWHERE
+    /// The former is more impactful, therefore disable PREWHERE if both may be used.
+    auto * read_from_merge_tree_step = typeid_cast<ReadFromMergeTree *>(child_node->step.get());
+    if (read_from_merge_tree_step && read_from_merge_tree_step->getVectorSearchParameters().has_value() && !settings[Setting::vector_search_with_rescoring])
+        return;
+
+    /// Extract column compressed sizes
+    std::unordered_map<std::string, UInt64> column_compressed_sizes;
+    for (const auto & [name, sizes] : column_sizes)
+        column_compressed_sizes[name] = sizes.data_compressed;
+
+    Names queried_columns = source_step_with_filter->requiredSourceColumns();
+
+    MergeTreeWhereOptimizer where_optimizer{
+        std::move(column_compressed_sizes),
+        storage_snapshot,
+        read_from_merge_tree_step ? read_from_merge_tree_step->getConditionSelectivityEstimator() : nullptr,
+        queried_columns,
+        storage.supportedPrewhereColumns(),
+        getLogger("QueryPlanOptimizePrewhere")};
+
+    auto optimize_result = where_optimizer.optimize(filter_step->getExpression(),
+        filter_step->getFilterColumnName(),
+        source_step_with_filter->getContext(),
+        is_final);
+
+    if (optimize_result.prewhere_nodes.empty())
+        return;
+
+    PrewhereInfoPtr prewhere_info = std::make_shared<PrewhereInfo>();
+
+    auto remaining_expr = splitAndFillPrewhereInfo(
+        prewhere_info,
+        optimize_result.fully_moved_to_prewhere && filter_step->removesFilterColumn(),
+        std::move(filter_step->getExpression()),
+        filter_step->getFilterColumnName(),
+        optimize_result.prewhere_nodes,
+        optimize_result.prewhere_nodes_list);
+
     source_step_with_filter->updatePrewhereInfo(prewhere_info);
 
+    QueryPlanStepPtr new_step;
     if (!optimize_result.fully_moved_to_prewhere)
     {
-        filter_node->step = std::make_unique<FilterStep>(
+        new_step = std::make_unique<FilterStep>(
             source_step_with_filter->getOutputHeader(),
-            std::move(split_result.second),
+            std::move(remaining_expr),
             filter_step->getFilterColumnName(),
             filter_step->removesFilterColumn());
     }
     else
     {
         /// Have to keep this expression to change column names to column identifiers
-        filter_node->step = std::make_unique<ExpressionStep>(
+        new_step = std::make_unique<ExpressionStep>(
             source_step_with_filter->getOutputHeader(),
-            std::move(split_result.second));
+            std::move(remaining_expr));
     }
+
+    new_step->setStepDescription(*filter_step);
+    parent_node.step = std::move(new_step);
 }
 
 }

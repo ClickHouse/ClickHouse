@@ -1,7 +1,7 @@
 #pragma once
 
-#include <set>
-#include <string>
+#include <Common/VersionNumber.h>
+#include <base/types.h>
 #include <vector>
 
 
@@ -17,7 +17,7 @@ namespace DB
   * - the documentation can be extracted by external tools such as SQL editors
   *   in machine-readable form and presented in human readable form;
   * - the documentation can be generated in various formats;
-  * - it is easy to generate a documentation with information about the version when the feature appeared or changed;
+  * - it is easy to generate documentation with information about the version when the feature appeared or changed;
   * - it is easy to point to the source code from the documentation;
   * - it is easy to point to the tests that covered every component, and order the tests by relevance;
   * - it is easy to point to the authors of every feature;
@@ -31,7 +31,7 @@ namespace DB
   * The documentation can contain:
   * - description (the main text);
   * - examples (queries that can be referenced from the text by names);
-  * - categories - one or a few text strings like {"Mathematical", "Array Processing"};
+  * - a category (for example "Mathematical" or "Array Processing");
   *
   * The description should be represented in Markdown (or just plaintext).
   * Some extensions for Markdown are added:
@@ -42,42 +42,114 @@ namespace DB
   */
 struct FunctionDocumentation
 {
-    using Description = std::string;
+    using Description = String;
 
-    using Syntax = std::string;
+    using Syntax = String;
 
     struct Argument
     {
-        std::string name;
-        std::string description;
+        String name;                     /// E.g. "y"
+        String description;              /// E.g. "The divisor."
+        std::vector<String> types = {};  /// E.g. {"(U)Int*", "Float*"}
+                                         /// Default initialized only during a transition period, see 'argumentsAsString'.
     };
-    using Arguments = std::vector<Argument>;
 
-    using ReturnedValue = std::string;
+    using Arguments = std::vector<Argument>;  /// For all functions
+    using Parameters = std::vector<Argument>; /// For aggregate functions
+
+    struct ReturnedValue
+    {
+        String description;              /// E.g. "Returns the remainder of the division."
+        std::vector<String> types = {};  /// E.g. {"Float32"}
+                                         /// Default initialized only during a transition period
+    };
 
     struct Example
     {
-        std::string name;
-        std::string query;
-        std::string result;
+        String name;
+        String query;
+        String result;
     };
     using Examples = std::vector<Example>;
 
-    using Category = std::string;
-    using Categories = std::set<Category>;
+    using IntroducedIn = VersionNumber;
+    static constexpr VersionNumber VERSION_UNKNOWN;
 
-    using Related = std::string;
+    enum class Category : uint8_t
+    {
+        /// Default category
+        Unknown,
 
-    Description description;        /// E.g. "Returns the position (in bytes, starting at 1) of a substring needle in a string haystack."
-    Syntax syntax = {};             /// E.g. "position(haystack, needle)"
-    Arguments arguments {};         /// E.g. ["haystack — String in which the search is performed. String.", "needle — Substring to be searched. String."]
-    ReturnedValue returned_value {};/// E.g. "Starting position in bytes and counting from 1, if the substring was found."
-    Examples examples {};           ///
-    Categories categories {};       /// E.g. {"String Search"}
+        /// Regular functions
+        Arithmetic,
+        Array,
+        Bit,
+        Bitmap,
+        Comparison,
+        Conditional,
+        DateAndTime,
+        Decimal,
+        Dictionary,
+        Dynamic,
+        Distance,
+        EmbeddedDictionary,
+        Geo,
+        Encoding,
+        Encryption,
+        Financial,
+        Hash,
+        IPAddress,
+        Introspection,
+        JSON,
+        Logical,
+        MachineLearning,
+        Map,
+        Mathematical,
+        NLP,
+        Null,
+        NumericIndexedVector,
+        Other,
+        QBit,
+        RandomNumber,
+        Rounding,
+        StringReplacement,
+        StringSearch,
+        StringSplitting,
+        String,
+        TimeSeries,
+        TimeWindow,
+        Tuple,
+        TypeConversion,
+        ULID,
+        URL,
+        UUID,
+        UniqTheta,
+        Variant,
 
-    std::string argumentsAsString() const;
-    std::string examplesAsString() const;
-    std::string categoriesAsString() const;
+        /// Other types of functions
+        AggregateFunction,
+        TableFunction
+    };
+
+    using Related = std::vector<String>;
+
+    /// TODO Fields with {} initialization are optional. We should make all fields non-optional.
+    Description description;                      /// E.g. "Returns the position (in bytes, starting at 1) of a substring needle in a string haystack."
+    Syntax syntax {};                             /// E.g. "position(haystack, needle)"
+    Arguments arguments {};                       /// E.g. {{"haystack", "String in which the search is performed.", {"String"}},
+                                                  ///       {"needle", "Substring to be searched.", {"String"}}}
+    /// Parameters parameters {};
+    ReturnedValue returned_value {};              /// E.g. {"Starting position in bytes and counting from 1, if the substring was found.", {"(U)Int*"}}
+    Examples examples {};                         ///
+    IntroducedIn introduced_in {VERSION_UNKNOWN}; /// E.g. {25, 5}
+    Category category;                            /// E.g. Category::DatesAndTimes
+
+    String syntaxAsString() const;
+    String argumentsAsString() const;
+    String parametersAsString() const;
+    String returnedValueAsString() const;
+    String examplesAsString() const;
+    String introducedInAsString() const;
+    String categoryAsString() const;
 };
-
 }

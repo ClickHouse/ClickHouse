@@ -16,17 +16,8 @@ public:
 
 protected:
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const final
-    {
-        checkFunctionArgumentSizes(arguments, input_rows_count);
-        return function->executeImpl(arguments, result_type, input_rows_count);
-    }
-
-    ColumnPtr executeDryRunImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const final
-    {
-        checkFunctionArgumentSizes(arguments, input_rows_count);
-        return function->executeImplDryRun(arguments, result_type, input_rows_count);
-    }
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const final;
+    ColumnPtr executeDryRunImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const final;
 
     bool useDefaultImplementationForNulls() const final { return function->useDefaultImplementationForNulls(); }
     bool useDefaultImplementationForNothing() const final { return function->useDefaultImplementationForNothing(); }
@@ -101,7 +92,7 @@ public:
         return function->getMonotonicityForRange(type, left, right);
     }
 
-    OptionalFieldInterval getPreimage(const IDataType & type, const Field & point) const override
+    FieldIntervalPtr getPreimage(const IDataType & type, const Field & point) const override
     {
         return function->getPreimage(type, point);
     }

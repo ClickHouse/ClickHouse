@@ -34,8 +34,7 @@ public:
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
         const ReadSettings & read_settings,
-        std::optional<size_t> read_hint = {},
-        std::optional<size_t> file_size = {}) const override;
+        std::optional<size_t> read_hint = {}) const override;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
     std::unique_ptr<WriteBufferFromFileBase> writeObject( /// NOLINT
@@ -44,10 +43,6 @@ public:
         std::optional<ObjectAttributes> attributes = {},
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         const WriteSettings & write_settings = {}) override;
-
-    void removeObject(const StoredObject & object) override;
-
-    void removeObjects(const StoredObjects & objects) override;
 
     void removeObjectIfExists(const StoredObject & object) override;
 
@@ -68,15 +63,11 @@ public:
         IObjectStorage & object_storage_to,
         std::optional<ObjectAttributes> object_to_attributes = {}) override;
 
-    std::unique_ptr<IObjectStorage> cloneObjectStorage(
-        const std::string & new_namespace,
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_prefix,
-        ContextPtr context) override;
-
     void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override;
 
     ObjectMetadata getObjectMetadata(const std::string & path) const override;
+
+    std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path) const override;
 
     void shutdown() override;
 
@@ -96,6 +87,8 @@ public:
 
     ObjectStorageKey
     generateObjectKeyPrefixForDirectoryPath(const std::string & path, const std::optional<std::string> & key_prefix) const override;
+
+    bool areObjectKeysRandom() const override;
 
     void setKeysGenerator(ObjectStorageKeysGeneratorPtr gen) override { object_storage->setKeysGenerator(gen); }
 
@@ -122,9 +115,14 @@ public:
     const FileCacheSettings & getCacheSettings() const { return cache_settings; }
 
 #if USE_AZURE_BLOB_STORAGE
-    std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> getAzureBlobStorageClient() const override
+    std::shared_ptr<const AzureBlobStorage::ContainerClient> getAzureBlobStorageClient() const override
     {
         return object_storage->getAzureBlobStorageClient();
+    }
+
+    AzureBlobStorage::AuthMethod getAzureBlobStorageAuthMethod() const override
+    {
+        return object_storage->getAzureBlobStorageAuthMethod();
     }
 #endif
 

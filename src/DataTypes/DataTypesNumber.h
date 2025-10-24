@@ -25,7 +25,7 @@ public:
     bool canBeUsedAsVersion() const override { return true; }
     bool isSummable() const override { return true; }
     bool canBeUsedInBitOperations() const override { return true; }
-    bool canBeUsedInBooleanContext() const override { return true; }
+    bool canBeUsedInBooleanContext() const override { return WhichDataType(TypeToTypeIndex<T>).isNativeNumber(); }
     bool canBeInsideNullable() const override { return true; }
 
     bool canBePromoted() const override { return true; }
@@ -63,6 +63,7 @@ extern template class DataTypeNumber<Int8>;
 extern template class DataTypeNumber<Int16>;
 extern template class DataTypeNumber<Int32>;
 extern template class DataTypeNumber<Int64>;
+extern template class DataTypeNumber<BFloat16>;
 extern template class DataTypeNumber<Float32>;
 extern template class DataTypeNumber<Float64>;
 
@@ -79,6 +80,7 @@ using DataTypeInt8 = DataTypeNumber<Int8>;
 using DataTypeInt16 = DataTypeNumber<Int16>;
 using DataTypeInt32 = DataTypeNumber<Int32>;
 using DataTypeInt64 = DataTypeNumber<Int64>;
+using DataTypeBFloat16 = DataTypeNumber<BFloat16>;
 using DataTypeFloat32 = DataTypeNumber<Float32>;
 using DataTypeFloat64 = DataTypeNumber<Float64>;
 
@@ -88,5 +90,9 @@ using DataTypeUInt256 = DataTypeNumber<UInt256>;
 using DataTypeInt256 = DataTypeNumber<Int256>;
 
 bool isUInt64ThatCanBeInt64(const DataTypePtr & type);
+
+/// Function helper to create a type for column that contains indexes.
+/// It chooses the smallest numeric type based on the desired number of indexes.
+DataTypePtr getSmallestIndexesType(size_t num_indexes);
 
 }

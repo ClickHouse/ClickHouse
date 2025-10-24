@@ -20,7 +20,7 @@ shard_configs = {
 nodes = {
     node_name: cluster.add_instance(
         node_name,
-        main_configs=[shard_config],
+        main_configs=[shard_config, "config/config_discovery_path.xml", "config/macros.xml"],
         stay_alive=True,
         with_zookeeper=True,
     )
@@ -74,7 +74,7 @@ def test_cluster_discovery_startup_and_stop(start_cluster):
         int(
             nodes["node_observer"]
             .query(
-                "SELECT sum(x) FROM clusterAllReplicas(test_auto_cluster, default.tbl)"
+                "SELECT sum(x) FROM clusterAllReplicas(test_auto_cluster, default.tbl) settings serialize_query_plan=0"
             )
             .strip()
         )
@@ -119,3 +119,21 @@ def test_cluster_discovery_startup_and_stop(start_cluster):
     check_nodes_count(
         [nodes["node1"], nodes["node2"]], 2, cluster_name="two_shards", retries=1
     )
+
+    # cleanup
+    nodes["node0"].query("DROP TABLE tbl ON CLUSTER 'test_auto_cluster' SYNC")
+
+
+def test_cluster_discovery_macros(start_cluster):
+    # wait for all nodes to be started
+    check_nodes_count = functools.partial(
+        check_on_cluster, what="count()", msg="Wrong nodes count in cluster"
+    )
+    total_nodes = len(nodes) - 1
+    check_nodes_count([nodes["node_observer"]], total_nodes)
+
+    # check macros
+    res = nodes["node_observer"].query(
+        "SELECT sum(number) FROM clusterAllReplicas('{autocluster}', system.numbers) WHERE number=1"
+    )
+    assert res.strip() == "5"

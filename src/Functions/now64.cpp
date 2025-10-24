@@ -1,16 +1,12 @@
-#include <DataTypes/DataTypeDateTime64.h>
-
-#include <Core/DecimalFunctions.h>
-#include <Core/Settings.h>
-#include <Functions/IFunction.h>
-#include <Functions/FunctionFactory.h>
-#include <Functions/extractTimeZoneFromFunctionArguments.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <Interpreters/Context.h>
-
 #include <Common/assert_cast.h>
-
-#include <ctime>
+#include <Core/Settings.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/IFunction.h>
+#include <Functions/extractTimeZoneFromFunctionArguments.h>
+#include <Functions/nowSubsecond.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -23,36 +19,11 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int CANNOT_CLOCK_GETTIME;
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 
 namespace
 {
-
-Field nowSubsecond(UInt32 scale)
-{
-    static constexpr Int32 fractional_scale = 9;
-
-    timespec spec{};
-    if (clock_gettime(CLOCK_REALTIME, &spec))
-        throw ErrnoException(ErrorCodes::CANNOT_CLOCK_GETTIME, "Cannot clock_gettime");
-
-    DecimalUtils::DecimalComponents<DateTime64> components{spec.tv_sec, spec.tv_nsec};
-
-    // clock_gettime produces subsecond part in nanoseconds, but decimalFromComponents fractional is scale-dependent.
-    // Andjust fractional to scale, e.g. for 123456789 nanoseconds:
-    //   if scale is  6 (miscoseconds) => divide by 9 - 6 = 3 to get 123456 microseconds
-    //   if scale is 12 (picoseconds)  => multiply by abs(9 - 12) = 3 to get 123456789000 picoseconds
-    const auto adjust_scale = fractional_scale - static_cast<Int32>(scale);
-    if (adjust_scale < 0)
-        components.fractional *= intExp10(std::abs(adjust_scale));
-    else if (adjust_scale > 0)
-        components.fractional /= intExp10(adjust_scale);
-
-    return DecimalField(DecimalUtils::decimalFromComponents<DateTime64>(components, scale),
-                        scale);
-}
 
 /// Get the current time. (It is a constant, it is evaluated once for the entire query.)
 class ExecutableFunctionNow64 : public IExecutableFunction
@@ -175,7 +146,32 @@ private:
 
 REGISTER_FUNCTION(Now64)
 {
-    factory.registerFunction<Now64OverloadResolver>({}, FunctionFactory::Case::Insensitive);
+    FunctionDocumentation::Description description = R"(
+Returns the current date and time with sub-second precision at the moment of query analysis. The function is a constant expression.
+    )";
+    FunctionDocumentation::Syntax syntax = R"(
+now64([scale], [timezone])
+    )";
+    FunctionDocumentation::Arguments arguments = {
+        {"scale", "Optional. Tick size (precision): 10^-precision seconds. Valid range: [0 : 9]. Typically, are used - 3 (default) (milliseconds), 6 (microseconds), 9 (nanoseconds).", {"UInt8"}},
+        {"timezone", "Optional. Timezone name for the returned value.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns current date and time with sub-second precision.", {"DateTime64"}};
+    FunctionDocumentation::Examples examples = {
+        {"Query with default and custom precision", R"(
+SELECT now64(), now64(9, 'Asia/Istanbul')
+        )",
+        R"(
+┌─────────────────now64()─┬─────now64(9, 'Asia/Istanbul')─┐
+│ 2022-08-21 19:34:26.196 │ 2022-08-21 22:34:26.196542766 │
+└─────────────────────────┴───────────────────────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<Now64OverloadResolver>(documentation, FunctionFactory::Case::Insensitive);
 }
 
 }

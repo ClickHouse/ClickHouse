@@ -6,6 +6,8 @@
 
 #include "config.h"
 
+#if USE_LIBFIU
+
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdocumentation"
 #pragma clang diagnostic ignored "-Wreserved-macro-identifier"
@@ -13,7 +15,20 @@
 #  include <fiu-control.h>
 #pragma clang diagnostic pop
 
+#else // USE_LIBFIU
+
+// stubs from fiu-local.h
+#define fiu_init(flags) 0
+#define fiu_fail(name) 0
+#define fiu_failinfo() NULL
+#define fiu_do_on(name, action)
+#define fiu_exit_on(name)
+#define fiu_return_on(name, retval)
+
+#endif // USE_LIBFIU
+
 #include <unordered_map>
+
 
 namespace DB
 {
@@ -27,6 +42,7 @@ namespace DB
 /// 3. in test file, we can use system failpoint enable/disable 'failpoint_name'
 
 class FailPointChannel;
+
 class FailPointInjection
 {
 public:

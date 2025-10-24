@@ -65,11 +65,9 @@ public:
         String variable_name = assert_cast<const ColumnConst &>(*col.column).getValue<String>();
         auto variable = global_variable_map.find(Poco::toLower(variable_name));
 
-        Field val = 0;
         if (variable != global_variable_map.end())
-            val = variable->second.value;
-
-        return result_type->createColumnConst(input_rows_count, val);
+            return result_type->createColumnConst(input_rows_count, variable->second.value);
+        return result_type->createColumnConstWithDefaultValue(input_rows_count);
     }
 
 private:
@@ -78,19 +76,37 @@ private:
         DataTypePtr type;
         Field value;
     };
-    std::unordered_map<String, TypeAndValue> global_variable_map
-        = {{"max_allowed_packet", {std::make_shared<DataTypeInt32>(), 67108864}},
-           {"version", {std::make_shared<DataTypeString>(), "5.7.30"}},
-           {"version_comment", {std::make_shared<DataTypeString>(), ""}},
-           {"transaction_isolation", {std::make_shared<DataTypeString>(), "READ-UNCOMMITTED"}}};
+    std::unordered_map<String, TypeAndValue> global_variable_map =
+    {
+        {"max_allowed_packet", {std::make_shared<DataTypeInt32>(), 67108864}},
+        {"version", {std::make_shared<DataTypeString>(), "5.7.30"}},
+        {"version_comment", {std::make_shared<DataTypeString>(), ""}},
+        {"transaction_isolation", {std::make_shared<DataTypeString>(), "READ-UNCOMMITTED"}},
+        {"session_track_system_variables", {std::make_shared<DataTypeString>(), ""}},
+        {"sql_mode", {std::make_shared<DataTypeString>(), "ALLOW_INVALID_DATES,ANSI_QUOTES,IGNORE_SPACE,NO_AUTO_VALUE_ON_ZERO,NO_DIR_IN_CREATE,ONLY_FULL_GROUP_BY,PAD_CHAR_TO_FULL_LENGTH,PIPES_AS_CONCAT,REAL_AS_FLOAT"}},
+    };
 };
 
 }
 
 REGISTER_FUNCTION(GlobalVariable)
 {
-    factory.registerFunction<FunctionGlobalVariable>();
+    FunctionDocumentation::Description description = R"(
+Takes a constant string argument and returns the value of the global variable with that name. This function is intended for compatibility with MySQL and not needed or useful for normal operation of ClickHouse. Only few dummy global variables are defined.
+    )";
+    FunctionDocumentation::Syntax syntax = "globalVariable(name)";
+    FunctionDocumentation::Arguments arguments = {
+        {"name", "Global variable name.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the value of variable `name`.", {"Any"}};
+    FunctionDocumentation::Examples examples = {
+        {"globalVariable", "SELECT globalVariable('max_allowed_packet')", "67108864"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 5};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionGlobalVariable>(documentation);
 }
 
 }
-

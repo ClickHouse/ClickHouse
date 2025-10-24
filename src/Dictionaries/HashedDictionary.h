@@ -12,7 +12,7 @@
 #include <Dictionaries/HashedDictionaryCollectionTraits.h>
 #include <Dictionaries/HashedDictionaryParallelLoader.h>
 
-#include <Core/Block.h>
+#include <Core/Block_fwd.h>
 #include <Core/Defines.h>
 
 #include <Common/ArenaUtils.h>
@@ -25,10 +25,9 @@
 
 #include <DataTypes/DataTypesDecimal.h>
 
-#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/MaskOperations.h>
-#include <Functions/FunctionHelpers.h>
 
 #include <atomic>
 #include <memory>
@@ -334,22 +333,19 @@ HashedDictionary<dictionary_key_type, sparse, sharded>::~HashedDictionary()
         if (container.empty())
             return;
 
-        pool.trySchedule([&container, thread_group = CurrentThread::getGroup()]
+        if (!pool.trySchedule([&container, thread_group = CurrentThread::getGroup()]
+            {
+                ThreadGroupSwitcher switcher(thread_group, "HashedDictDtor");
+
+                /// Do not account memory that was occupied by the dictionaries for the query/user context.
+                MemoryTrackerBlockerInThread memory_blocker;
+
+                clearContainer(container);
+            }))
         {
-            SCOPE_EXIT_SAFE(
-                if (thread_group)
-                    CurrentThread::detachFromGroupIfNotDetached();
-            );
-
-            /// Do not account memory that was occupied by the dictionaries for the query/user context.
             MemoryTrackerBlockerInThread memory_blocker;
-
-            if (thread_group)
-                CurrentThread::attachToGroupIfDetached(thread_group);
-            setThreadName("HashedDictDtor");
-
             clearContainer(container);
-        });
+        }
 
         ++hash_tables_count;
     };
@@ -897,7 +893,7 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::updateData()
 
             /// We are using this to keep saved data if input stream consists of multiple blocks
             if (!update_field_loaded_block)
-                update_field_loaded_block = std::make_shared<DB::Block>(block.cloneEmpty());
+                update_field_loaded_block = std::make_shared<Block>(block.cloneEmpty());
 
             for (size_t attribute_index = 0; attribute_index < block.columns(); ++attribute_index)
             {
@@ -910,10 +906,10 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::updateData()
     else
     {
         auto pipe = source_ptr->loadUpdatedAll();
-        mergeBlockWithPipe<dictionary_key_type>(
+        update_field_loaded_block = std::make_shared<Block>(mergeBlockWithPipe<dictionary_key_type>(
             dict_struct.getKeysSize(),
             *update_field_loaded_block,
-            std::move(pipe));
+            std::move(pipe)));
     }
 
     if (update_field_loaded_block)

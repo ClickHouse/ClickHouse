@@ -2,7 +2,6 @@
 #include <cstring>
 
 #include <base/types.h>
-#include <base/unaligned.h>
 #include <base/defines.h>
 
 #include <IO/WriteHelpers.h>
@@ -13,6 +12,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
 
 void CompressedWriteBuffer::nextImpl()
 {
@@ -69,6 +73,7 @@ void CompressedWriteBuffer::finalizeImpl()
     /// Don't try to resize buffer in nextImpl.
     use_adaptive_buffer_size = false;
     next();
+    BufferWithOwnMemory<WriteBuffer>::finalizeImpl();
 }
 
 CompressedWriteBuffer::CompressedWriteBuffer(
@@ -79,13 +84,24 @@ CompressedWriteBuffer::CompressedWriteBuffer(
     , use_adaptive_buffer_size(use_adaptive_buffer_size_)
     , adaptive_buffer_max_size(buf_size)
 {
+    if (!codec)
+        codec = CompressionCodecFactory::instance().getDefaultCodec();
 }
 
-CompressedWriteBuffer::~CompressedWriteBuffer()
+void CompressedWriteBuffer::cancelImpl() noexcept
 {
-    if (!canceled)
-        finalize();
+    BufferWithOwnMemory<WriteBuffer>::cancelImpl();
+    out.cancel();
 }
 
+void CompressedWriteBuffer::setCodec(CompressionCodecPtr codec_)
+{
+    // Flush all the pending data that was supposed to be compressed with the old codec.
+    next();
+    if (offset() != 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "CompressedWriteBuffer: offset() is not zero");
 
+    chassert(codec_);
+    codec = std::move(codec_);
+}
 }

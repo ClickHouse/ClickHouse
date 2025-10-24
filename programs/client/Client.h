@@ -3,6 +3,12 @@
 #include <Client/ClientApplicationBase.h>
 
 
+namespace BuzzHouse
+{
+    class FuzzConfig;
+    class ExternalIntegrations;
+};
+
 namespace DB
 {
 
@@ -11,30 +17,30 @@ class Client : public ClientApplicationBase
 public:
     using Arguments = ClientApplicationBase::Arguments;
 
-    Client()
-    {
-        fuzzer = QueryFuzzer(randomSeed(), &std::cout, &std::cerr);
-    }
+    Client();
+    ~Client() override;
 
     void initialize(Poco::Util::Application & self) override;
 
     int main(const std::vector<String> & /*args*/) override;
 
+    bool tryToReconnect(uint32_t max_reconnection_attempts, uint32_t time_to_sleep_between) override;
 protected:
     Poco::Util::LayeredConfiguration & getClientConfiguration() override;
 
-    bool processWithFuzzing(const String & full_query) override;
-    std::optional<bool> processFuzzingStep(const String & query_to_execute, const ASTPtr & parsed_query);
+    bool processWithASTFuzzer(std::string_view full_query) override;
+    bool buzzHouse() override;
+    bool processASTFuzzerStep(const String & query_to_execute, const ASTPtr & parsed_query);
 
     void connect() override;
 
-    void processError(const String & query) const override;
+    void processError(std::string_view query) const override;
 
     String getName() const override { return "client"; }
 
-    void printHelpMessage(const OptionsDescription & options_description, bool verbose) override;
+    void printHelpMessage(const OptionsDescription & options_description) override;
 
-    void addOptions(OptionsDescription & options_description) override;
+    void addExtraOptions(OptionsDescription & options_description) override;
 
     void processOptions(
         const OptionsDescription & options_description,
@@ -54,7 +60,16 @@ protected:
 private:
     void printChangedSettings() const;
     void showWarnings();
-    void parseConnectionsCredentials(Poco::Util::AbstractConfiguration & config, const std::string & connection_name);
+#if USE_BUZZHOUSE
+    std::unique_ptr<BuzzHouse::FuzzConfig> fuzz_config;
+    std::unique_ptr<BuzzHouse::ExternalIntegrations> external_integrations;
+
+    bool logAndProcessQuery(std::ofstream & outf, const String & full_query);
+    bool processBuzzHouseQuery(const String & full_query);
+    bool fuzzLoopReconnect();
+#endif
     std::vector<String> loadWarningMessages();
+
+    std::optional<CurrentThread::QueryScope> query_scope;
 };
 }

@@ -203,7 +203,7 @@ struct AggregateFunctionTopKGenericData
  *  For such columns topK() can be implemented more efficiently (especially for small numeric arrays).
  */
 template <bool is_plain_column, bool is_weighted>
-class AggregateFunctionTopKGeneric
+class AggregateFunctionTopKGeneric final
     : public IAggregateFunctionDataHelper<AggregateFunctionTopKGenericData, AggregateFunctionTopKGeneric<is_plain_column, is_weighted>>
 {
 private:
@@ -279,7 +279,7 @@ public:
                 size,
                 getName(),
                 TOP_K_MAX_SIZE);
-        set.resize(size);
+        set.resize(std::min(size + 1, size_t(reserved)));
         for (size_t i = 0; i < size; ++i)
         {
             auto ref = readStringBinaryInto(*arena, buf);
@@ -310,7 +310,7 @@ public:
         else
         {
             const char * begin = nullptr;
-            StringRef str_serialized = columns[0]->serializeValueIntoArena(row_num, *arena, begin);
+            StringRef str_serialized = columns[0]->serializeAggregationStateValueIntoArena(row_num, *arena, begin);
             if constexpr (is_weighted)
                 set.insert(str_serialized, columns[1]->getUInt(row_num));
             else
@@ -367,7 +367,7 @@ public:
 
 /// Substitute return type for Date and DateTime
 template <bool is_weighted>
-class AggregateFunctionTopKDate : public AggregateFunctionTopK<DataTypeDate::FieldType, is_weighted>
+class AggregateFunctionTopKDate final : public AggregateFunctionTopK<DataTypeDate::FieldType, is_weighted>
 {
 public:
     using AggregateFunctionTopK<DataTypeDate::FieldType, is_weighted>::AggregateFunctionTopK;
@@ -384,7 +384,7 @@ public:
 };
 
 template <bool is_weighted>
-class AggregateFunctionTopKDateTime : public AggregateFunctionTopK<DataTypeDateTime::FieldType, is_weighted>
+class AggregateFunctionTopKDateTime final : public AggregateFunctionTopK<DataTypeDateTime::FieldType, is_weighted>
 {
 public:
     using AggregateFunctionTopK<DataTypeDateTime::FieldType, is_weighted>::AggregateFunctionTopK;
@@ -401,7 +401,7 @@ public:
 };
 
 template <bool is_weighted>
-class AggregateFunctionTopKIPv4 : public AggregateFunctionTopK<DataTypeIPv4::FieldType, is_weighted>
+class AggregateFunctionTopKIPv4 final : public AggregateFunctionTopK<DataTypeIPv4::FieldType, is_weighted>
 {
 public:
     using AggregateFunctionTopK<DataTypeIPv4::FieldType, is_weighted>::AggregateFunctionTopK;
@@ -497,7 +497,7 @@ AggregateFunctionPtr createAggregateFunctionTopK(const std::string & name, const
 
         }
 
-        if (!is_approx_top_k)
+        if (!is_approx_top_k || params.size() == 1)
         {
             reserved = threshold * load_factor;
         }

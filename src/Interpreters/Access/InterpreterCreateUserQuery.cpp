@@ -8,6 +8,7 @@
 #include <Common/logger_useful.h>
 #include <Core/ServerSettings.h>
 #include <Interpreters/Access/InterpreterSetRoleQuery.h>
+#include <Interpreters/Access/getValidUntilFromAST.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/removeOnClusterClauseIfNeeded.h>
@@ -42,9 +43,9 @@ namespace
         const std::vector<AuthenticationData> authentication_methods,
         const std::shared_ptr<ASTUserNameWithHost> & override_name,
         const std::optional<RolesOrUsersSet> & override_default_roles,
-        const std::optional<SettingsProfileElements> & override_settings,
+        const std::optional<AlterSettingsProfileElements> & override_settings,
         const std::optional<RolesOrUsersSet> & override_grantees,
-        const std::optional<time_t> & valid_until,
+        const std::optional<time_t> & global_valid_until,
         bool reset_authentication_methods,
         bool replace_authentication_methods,
         bool allow_implicit_no_password,
@@ -57,7 +58,7 @@ namespace
         else if (query.new_name)
             user.setName(*query.new_name);
         else if (query.names->size() == 1)
-            user.setName(query.names->front()->toString());
+            user.setName(query.names->toStrings().at(0));
 
         if (!query.attach && !query.alter && authentication_methods.empty() && !allow_implicit_no_password)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -105,12 +106,20 @@ namespace
             user.authentication_methods.emplace_back(authentication_method);
         }
 
-        bool has_no_password_authentication_method = std::find_if(user.authentication_methods.begin(),
-                                                                  user.authentication_methods.end(),
-                                                                  [](const AuthenticationData & authentication_data)
-                                                                  {
-                                                                      return authentication_data.getType() == AuthenticationType::NO_PASSWORD;
-                                                                  }) != user.authentication_methods.end();
+        bool has_no_password_authentication_method = false;
+
+        for (auto & authentication_method : user.authentication_methods)
+        {
+            if (global_valid_until)
+            {
+                authentication_method.setValidUntil(*global_valid_until);
+            }
+
+            if (authentication_method.getType() == AuthenticationType::NO_PASSWORD)
+            {
+                has_no_password_authentication_method = true;
+            }
+        }
 
         if (has_no_password_authentication_method && user.authentication_methods.size() > 1)
         {
@@ -133,13 +142,10 @@ namespace
             }
         }
 
-        if (valid_until)
-            user.valid_until = *valid_until;
-
-        if (override_name && !override_name->host_pattern.empty())
+        if (override_name && !override_name->getHostPattern().empty())
         {
             user.allowed_client_hosts = AllowedClientHosts{};
-            user.allowed_client_hosts.addLikePattern(override_name->host_pattern);
+            user.allowed_client_hosts.addLikePattern(override_name->getHostPattern());
         }
         else if (query.hosts)
             user.allowed_client_hosts = *query.hosts;
@@ -166,42 +172,16 @@ namespace
             user.default_database = query.default_database->database_name;
 
         if (override_settings)
-            user.settings = *override_settings;
+            user.settings.applyChanges(*override_settings);
+        else if (query.alter_settings)
+            user.settings.applyChanges(AlterSettingsProfileElements{*query.alter_settings});
         else if (query.settings)
-            user.settings = *query.settings;
+            user.settings.applyChanges(AlterSettingsProfileElements{*query.settings});
 
         if (override_grantees)
             user.grantees = *override_grantees;
         else if (query.grantees)
             user.grantees = *query.grantees;
-    }
-
-    time_t getValidUntilFromAST(ASTPtr valid_until, ContextPtr context)
-    {
-        if (context)
-            valid_until = evaluateConstantExpressionAsLiteral(valid_until, context);
-
-        const String valid_until_str = checkAndGetLiteralArgument<String>(valid_until, "valid_until");
-
-        if (valid_until_str == "infinity")
-            return 0;
-
-        time_t time = 0;
-        ReadBufferFromString in(valid_until_str);
-
-        if (context)
-        {
-            const auto & time_zone = DateLUT::instance("");
-            const auto & utc_time_zone = DateLUT::instance("UTC");
-
-            parseDateTimeBestEffort(time, in, time_zone, utc_time_zone);
-        }
-        else
-        {
-            readDateTimeText(time, in);
-        }
-
-        return time;
     }
 }
 
@@ -212,7 +192,13 @@ BlockIO InterpreterCreateUserQuery::execute()
 
     auto & access_control = getContext()->getAccessControl();
     auto access = getContext()->getAccess();
-    access->checkAccess(query.alter ? AccessType::ALTER_USER : AccessType::CREATE_USER);
+
+    for (const auto & name : query.names->toStrings())
+        access->checkAccess(query.alter ? AccessType::ALTER_USER : AccessType::CREATE_USER, name);
+
+    if (query.new_name && !query.alter)
+        access->checkAccess(AccessType::CREATE_USER, *query.new_name);
+
     bool implicit_no_password_allowed = access_control.isImplicitNoPasswordAllowed();
     bool no_password_allowed = access_control.isNoPasswordAllowed();
     bool plaintext_password_allowed = access_control.isPlaintextPasswordAllowed();
@@ -226,9 +212,9 @@ BlockIO InterpreterCreateUserQuery::execute()
         }
     }
 
-    std::optional<time_t> valid_until;
-    if (query.valid_until)
-        valid_until = getValidUntilFromAST(query.valid_until, getContext());
+    std::optional<time_t> global_valid_until;
+    if (query.global_valid_until)
+        global_valid_until = getValidUntilFromAST(query.global_valid_until, getContext());
 
     std::optional<RolesOrUsersSet> default_roles_from_query;
     if (query.default_roles)
@@ -241,14 +227,14 @@ BlockIO InterpreterCreateUserQuery::execute()
         }
     }
 
-    std::optional<SettingsProfileElements> settings_from_query;
-    if (query.settings)
-    {
-        settings_from_query = SettingsProfileElements{*query.settings, access_control};
+    std::optional<AlterSettingsProfileElements> settings_from_query;
+    if (query.alter_settings)
+        settings_from_query = AlterSettingsProfileElements{*query.alter_settings, access_control};
+    else if (query.settings)
+        settings_from_query = AlterSettingsProfileElements{*query.settings, access_control};
 
-        if (!query.attach)
-            getContext()->checkSettingsConstraints(*settings_from_query, SettingSource::USER);
-    }
+    if (settings_from_query && !query.attach)
+        getContext()->checkSettingsConstraints(*settings_from_query, SettingSource::USER);
 
     if (!query.cluster.empty())
         return executeDDLQueryOnCluster(updated_query_ptr, getContext());
@@ -274,7 +260,7 @@ BlockIO InterpreterCreateUserQuery::execute()
             auto updated_user = typeid_cast<std::shared_ptr<User>>(entity->clone());
             updateUserFromQueryImpl(
                 *updated_user, query, authentication_methods, {}, default_roles_from_query, settings_from_query, grantees_from_query,
-                valid_until, query.reset_authentication_methods_to_new, query.replace_authentication_methods,
+                global_valid_until, query.reset_authentication_methods_to_new, query.replace_authentication_methods,
                 implicit_no_password_allowed, no_password_allowed,
                 plaintext_password_allowed, getContext()->getServerSettings()[ServerSetting::max_authentication_methods_per_user]);
             return updated_user;
@@ -294,9 +280,10 @@ BlockIO InterpreterCreateUserQuery::execute()
         for (const auto & name : *query.names)
         {
             auto new_user = std::make_shared<User>();
+            const auto & name_with_host = typeid_cast<std::shared_ptr<ASTUserNameWithHost>>(name);
             updateUserFromQueryImpl(
-                *new_user, query, authentication_methods, name, default_roles_from_query, settings_from_query, RolesOrUsersSet::AllTag{},
-                valid_until, query.reset_authentication_methods_to_new, query.replace_authentication_methods,
+                *new_user, query, authentication_methods, name_with_host, default_roles_from_query, settings_from_query, RolesOrUsersSet::AllTag{},
+                global_valid_until, query.reset_authentication_methods_to_new, query.replace_authentication_methods,
                 implicit_no_password_allowed, no_password_allowed,
                 plaintext_password_allowed, getContext()->getServerSettings()[ServerSetting::max_authentication_methods_per_user]);
             new_users.emplace_back(std::move(new_user));
@@ -351,9 +338,9 @@ void InterpreterCreateUserQuery::updateUserFromQuery(
         }
     }
 
-    std::optional<time_t> valid_until;
-    if (query.valid_until)
-        valid_until = getValidUntilFromAST(query.valid_until, {});
+    std::optional<time_t> global_valid_until;
+    if (query.global_valid_until)
+        global_valid_until = getValidUntilFromAST(query.global_valid_until, {});
 
     updateUserFromQueryImpl(
         user,
@@ -363,7 +350,7 @@ void InterpreterCreateUserQuery::updateUserFromQuery(
         {},
         {},
         {},
-        valid_until,
+        global_valid_until,
         query.reset_authentication_methods_to_new,
         query.replace_authentication_methods,
         allow_no_password,

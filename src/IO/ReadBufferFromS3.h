@@ -8,11 +8,10 @@
 #include <memory>
 
 #include <IO/HTTPCommon.h>
-#include <IO/ParallelReadBuffer.h>
-#include <IO/ReadBuffer.h>
+#include <IO/S3/ReadBufferFromGetObjectResult.h>
 #include <IO/ReadSettings.h>
 #include <IO/ReadBufferFromFileBase.h>
-#include <IO/WithFileName.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 
 #include <aws/s3/model/GetObjectResult.h>
 
@@ -35,9 +34,10 @@ private:
     /// from separate thread other than the one which uses the buffer for s3 reading.
     std::atomic<off_t> offset = 0;
     std::atomic<off_t> read_until_position = 0;
+    std::string stop_reason;
+    std::string release_reason;
 
-    std::optional<Aws::S3::Model::GetObjectResult> read_result;
-    std::unique_ptr<ReadBuffer> impl;
+    std::unique_ptr<S3::ReadBufferFromGetObjectResult> impl;
 
     LoggerPtr log = getLogger("ReadBufferFromS3");
 
@@ -78,8 +78,16 @@ public:
 
     bool supportsReadAt() override { return true; }
 
+    /// Buffer may issue several requests, so theoretically metadata may be different for different requests.
+    /// This method returns metadata from the last request. If there were no requests, it will throw exception.
+    ObjectMetadata getObjectMetadataFromTheLastRequest() const;
+
+    size_t getReadUntilPosition() const { return read_until_position; }
+
+    std::string getStopReason() const { return stop_reason; }
+
 private:
-    std::unique_ptr<ReadBuffer> initialize(size_t attempt);
+    std::unique_ptr<S3::ReadBufferFromGetObjectResult> initialize(size_t attempt);
 
     /// If true, if we destroy impl now, no work was wasted. Just for metrics.
     bool atEndOfRequestedRangeGuess();

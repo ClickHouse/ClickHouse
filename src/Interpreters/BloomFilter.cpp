@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <libdivide.h>
 
 
 namespace DB
@@ -39,7 +40,8 @@ BloomFilter::BloomFilter(const BloomFilterParameters & params)
 }
 
 BloomFilter::BloomFilter(size_t size_, size_t hashes_, size_t seed_)
-    : size(size_), hashes(hashes_), seed(seed_), words((size + sizeof(UnderType) - 1) / sizeof(UnderType)), filter(words, 0)
+    : size(size_), hashes(hashes_), seed(seed_), words((size + sizeof(UnderType) - 1) / sizeof(UnderType)),
+      modulus(8 * size_), divider(modulus), filter(words, 0)
 {
     chassert(size != 0);
     chassert(hashes != 0);
@@ -49,19 +51,25 @@ void BloomFilter::resize(size_t size_)
 {
     size = size_;
     words = ((size + sizeof(UnderType) - 1) / sizeof(UnderType));
+    modulus = 8 * size;
+    divider = libdivide::divider<size_t, libdivide::BRANCHFREE>(modulus);
     filter.resize(words);
 }
 
-bool BloomFilter::find(const char * data, size_t len)
+bool BloomFilter::find(const char * data, size_t len) const
 {
     size_t hash1 = CityHash_v1_0_2::CityHash64WithSeed(data, len, seed);
     size_t hash2 = CityHash_v1_0_2::CityHash64WithSeed(data, len, SEED_GEN_A * seed + SEED_GEN_B);
 
+    size_t acc = hash1;
     for (size_t i = 0; i < hashes; ++i)
     {
-        size_t pos = (hash1 + i * hash2 + i * i) % (8 * size);
-        if (!(filter[pos / (8 * sizeof(UnderType))] & (1ULL << (pos % (8 * sizeof(UnderType))))))
+        /// It accumulates in the loop as follows:
+        /// pos = (hash1 + hash2 * i + i * i) % (8 * size)
+        size_t pos = fastMod(acc + i * i);
+        if (!(filter[pos / word_bits] & (1ULL << (pos % word_bits))))
             return false;
+        acc += hash2;
     }
     return true;
 }
@@ -71,10 +79,14 @@ void BloomFilter::add(const char * data, size_t len)
     size_t hash1 = CityHash_v1_0_2::CityHash64WithSeed(data, len, seed);
     size_t hash2 = CityHash_v1_0_2::CityHash64WithSeed(data, len, SEED_GEN_A * seed + SEED_GEN_B);
 
+    size_t acc = hash1;
     for (size_t i = 0; i < hashes; ++i)
     {
-        size_t pos = (hash1 + i * hash2 + i * i) % (8 * size);
-        filter[pos / (8 * sizeof(UnderType))] |= (1ULL << (pos % (8 * sizeof(UnderType))));
+        /// It accumulates in the loop as follows:
+        /// pos = (hash1 + hash2 * i + i * i) % (8 * size)
+        size_t pos = fastMod(acc + i * i);
+        filter[pos / word_bits] |= (1ULL << (pos % word_bits));
+        acc += hash2;
     }
 }
 
@@ -101,6 +113,11 @@ UInt64 BloomFilter::isEmpty() const
     return true;
 }
 
+size_t BloomFilter::memoryUsageBytes() const
+{
+    return filter.capacity() * sizeof(UnderType);
+}
+
 bool operator== (const BloomFilter & a, const BloomFilter & b)
 {
     for (size_t i = 0; i < a.words; ++i)
@@ -111,14 +128,14 @@ bool operator== (const BloomFilter & a, const BloomFilter & b)
 
 void BloomFilter::addHashWithSeed(const UInt64 & hash, const UInt64 & hash_seed)
 {
-    size_t pos = CityHash_v1_0_2::Hash128to64(CityHash_v1_0_2::uint128(hash, hash_seed)) % (8 * size);
-    filter[pos / (8 * sizeof(UnderType))] |= (1ULL << (pos % (8 * sizeof(UnderType))));
+    size_t pos = fastMod(CityHash_v1_0_2::Hash128to64(CityHash_v1_0_2::uint128(hash, hash_seed)));
+    filter[pos / word_bits] |= (1ULL << (pos % word_bits));
 }
 
-bool BloomFilter::findHashWithSeed(const UInt64 & hash, const UInt64 & hash_seed)
+bool BloomFilter::findHashWithSeed(const UInt64 & hash, const UInt64 & hash_seed) const
 {
-    size_t pos = CityHash_v1_0_2::Hash128to64(CityHash_v1_0_2::uint128(hash, hash_seed)) % (8 * size);
-    return bool(filter[pos / (8 * sizeof(UnderType))] & (1ULL << (pos % (8 * sizeof(UnderType)))));
+    size_t pos = fastMod(CityHash_v1_0_2::Hash128to64(CityHash_v1_0_2::uint128(hash, hash_seed)));
+    return bool(filter[pos / word_bits] & (1ULL << (pos % word_bits)));
 }
 
 DataTypePtr BloomFilter::getPrimitiveType(const DataTypePtr & data_type)

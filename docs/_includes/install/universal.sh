@@ -96,9 +96,6 @@ echo
 echo "Successfully downloaded the ClickHouse binary, you can run it as:
     ./${clickhouse}"
 
-if [ "${OS}" = "Linux" ]
-then
-    echo
-    echo "You can also install it:
-    sudo ./${clickhouse} install"
-fi
+echo
+echo "You can also install it:
+sudo ./${clickhouse} install"

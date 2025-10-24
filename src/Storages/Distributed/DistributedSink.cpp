@@ -8,10 +8,10 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <Parsers/queryToString.h>
 
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
+#include <Compression/CompressionFactory.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ConnectionTimeouts.h>
@@ -28,12 +28,12 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
-#include <Common/escapeForFileName.h>
 #include <Common/CurrentThread.h>
 #include <Common/createHardLink.h>
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
 #include <Core/Settings.h>
+#include <Core/ProtocolDefines.h>
 
 #include <base/range.h>
 
@@ -63,6 +63,7 @@ namespace Setting
     extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsMilliseconds distributed_background_insert_sleep_time_ms;
     extern const SettingsBool distributed_insert_skip_read_only_replicas;
+    extern const SettingsBool enable_deflate_qpl_codec;
     extern const SettingsBool enable_zstd_qat_codec;
     extern const SettingsBool insert_allow_materialized_columns;
     extern const SettingsBool insert_distributed_one_random_shard;
@@ -85,6 +86,7 @@ namespace DistributedSetting
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int TIMEOUT_EXCEEDED;
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
@@ -142,12 +144,12 @@ DistributedSink::DistributedSink(
     bool insert_sync_,
     UInt64 insert_timeout_,
     const Names & columns_to_send_)
-    : SinkToStorage(metadata_snapshot_->getSampleBlock())
+    : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
     , context(Context::createCopy(context_))
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , query_ast(createInsertToRemoteTableQuery(storage.remote_storage.database_name, storage.remote_storage.table_name, columns_to_send_))
-    , query_string(queryToString(query_ast))
+    , query_string(query_ast->formatWithSecretsOneLine())
     , cluster(cluster_)
     , insert_sync(insert_sync_)
     , allow_materialized(context->getSettingsRef()[Setting::insert_allow_materialized_columns])
@@ -331,15 +333,9 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
         if (isCancelled())
             throw Exception(ErrorCodes::ABORTED, "Writing job was cancelled");
 
-        SCOPE_EXIT_SAFE(
-            if (thread_group)
-                CurrentThread::detachFromGroupIfNotDetached();
-        );
-        OpenTelemetry::SpanHolder span(__PRETTY_FUNCTION__);
+        ThreadGroupSwitcher switcher(thread_group, "DistrOutStrProc");
 
-        if (thread_group)
-            CurrentThread::attachToGroupIfDetached(thread_group);
-        setThreadName("DistrOutStrProc");
+        OpenTelemetry::SpanHolder span(__PRETTY_FUNCTION__);
 
         ++job.blocks_started;
 
@@ -454,9 +450,9 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
                     copy_query_ast,
                     job.local_context,
                     allow_materialized,
-                    /* no_squash */ false,
-                    /* no_destination */ false,
-                    /* async_isnert */ false);
+                    /* no_squash= */ false,
+                    /* no_destination= */ false,
+                    /* async_insert_= */ false);
                 auto block_io = interp.execute();
 
                 job.pipeline = std::move(block_io.pipeline);
@@ -599,12 +595,7 @@ void DistributedSink::onFinish()
                     {
                         pool->scheduleOrThrowOnError([&job, thread_group = CurrentThread::getGroup()]()
                         {
-                            SCOPE_EXIT_SAFE(
-                                if (thread_group)
-                                    CurrentThread::detachFromGroupIfNotDetached();
-                            );
-                            if (thread_group)
-                                CurrentThread::attachToGroupIfDetached(thread_group);
+                            ThreadGroupSwitcher switcher(thread_group, "");
 
                             job.executor->finish();
                         });
@@ -684,31 +675,31 @@ Blocks DistributedSink::splitBlock(const Block & block)
     /// Split block to num_shard smaller block, using 'selector'.
 
     const size_t num_shards = cluster->getShardsInfo().size();
-    Blocks splitted_blocks(num_shards);
+    Blocks split_blocks(num_shards);
 
     for (size_t shard_idx = 0; shard_idx < num_shards; ++shard_idx)
-        splitted_blocks[shard_idx] = block.cloneEmpty();
+        split_blocks[shard_idx] = block.cloneEmpty();
 
     size_t columns_in_block = block.columns();
     for (size_t col_idx_in_block = 0; col_idx_in_block < columns_in_block; ++col_idx_in_block)
     {
-        MutableColumns splitted_columns = block.getByPosition(col_idx_in_block).column->scatter(num_shards, selector);
+        MutableColumns split_columns = block.getByPosition(col_idx_in_block).column->scatter(num_shards, selector);
         for (size_t shard_idx = 0; shard_idx < num_shards; ++shard_idx)
-            splitted_blocks[shard_idx].getByPosition(col_idx_in_block).column = std::move(splitted_columns[shard_idx]);
+            split_blocks[shard_idx].getByPosition(col_idx_in_block).column = std::move(split_columns[shard_idx]);
     }
 
-    return splitted_blocks;
+    return split_blocks;
 }
 
 
 void DistributedSink::writeSplitAsync(const Block & block)
 {
-    Blocks splitted_blocks = splitBlock(block);
-    const size_t num_shards = splitted_blocks.size();
+    Blocks split_blocks = splitBlock(block);
+    const size_t num_shards = split_blocks.size();
 
     for (size_t shard_idx = 0; shard_idx < num_shards; ++shard_idx)
-        if (splitted_blocks[shard_idx].rows())
-            writeAsyncImpl(splitted_blocks[shard_idx], shard_idx);
+        if (split_blocks[shard_idx].rows())
+            writeAsyncImpl(split_blocks[shard_idx], shard_idx);
 
     ++inserted_blocks;
 }
@@ -766,9 +757,9 @@ void DistributedSink::writeToLocal(const Cluster::ShardInfo & shard_info, const 
             query_ast,
             context,
             allow_materialized,
-            /* no_squash */ false,
-            /* no_destination */ false,
-            /* async_isnert */ false);
+            /* no_squash= */ false,
+            /* no_destination= */ false,
+            /* async_insert_= */ false);
 
         auto block_io = interp.execute();
         PushingPipelineExecutor executor(block_io.pipeline);
@@ -799,6 +790,15 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
     std::string compression_method = Poco::toUpper(settings[Setting::network_compression_method].toString());
     std::optional<int> compression_level;
 
+    /// Bad custom logic
+    /// We only allow any of following generic codecs. CompressionCodecFactory will happily return other
+    /// codecs (e.g. T64) but these may be specialized and not support all data types, i.e. SELECT 'abc' may
+    /// be broken afterwards.
+    if (compression_method != "NONE" && compression_method != "ZSTD" && compression_method != "LZ4" && compression_method != "LZ4HC")
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Setting 'network_compression_method' must be NONE, ZSTD, LZ4 or LZ4HC");
+
+    /// More bad custom logic
     if (compression_method == "ZSTD")
         compression_level = settings[Setting::network_zstd_compression_level];
 
@@ -807,6 +807,7 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
         compression_level,
         !settings[Setting::allow_suspicious_codecs],
         settings[Setting::allow_experimental_codecs],
+        settings[Setting::enable_deflate_qpl_codec],
         settings[Setting::enable_zstd_qat_codec]);
     CompressionCodecPtr compression_codec = CompressionCodecFactory::instance().get(compression_method, compression_level);
 
@@ -853,7 +854,7 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
 
             WriteBufferFromFile out{first_file_tmp_path};
             CompressedWriteBuffer compress{out, compression_codec};
-            NativeWriter stream{compress, DBMS_TCP_PROTOCOL_VERSION, block.cloneEmpty()};
+            NativeWriter stream{compress, DBMS_TCP_PROTOCOL_VERSION, std::make_shared<const Block>(block.cloneEmpty())};
 
             /// Prepare the header.
             /// See also DistributedAsyncInsertHeader::read() in DistributedInsertQueue (for reading side)
@@ -883,7 +884,7 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
             /// Write block header separately in the batch header.
             /// It is required for checking does conversion is required or not.
             {
-                NativeWriter header_stream{header_buf, DBMS_TCP_PROTOCOL_VERSION, block.cloneEmpty()};
+                NativeWriter header_stream{header_buf, DBMS_TCP_PROTOCOL_VERSION, std::make_shared<const Block>(block.cloneEmpty())};
                 header_stream.write(block.cloneEmpty());
             }
 

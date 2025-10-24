@@ -1,13 +1,17 @@
 #include <IO/Archives/ZipArchiveWriter.h>
 
 #if USE_MINIZIP
-#include <IO/WriteBufferFromFileBase.h>
-#include <Common/quoteString.h>
-#include <base/errnoToString.h>
-#include <zip.h>
-#include <boost/algorithm/string/predicate.hpp>
 #include <Common/logger_useful.h>
+#include <Common/quoteString.h>
+#include <IO/WriteBufferFromFileBase.h>
+#include <base/errnoToString.h>
+
 #include <Poco/Logger.h>
+
+#include <boost/algorithm/string/predicate.hpp>
+
+#include <zip.h>
+#include <mz.h>
 
 
 namespace DB
@@ -203,12 +207,12 @@ private:
 
     static long seekFunc(void *, void *, ZPOS64_T, int) // NOLINT(google-runtime-int)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "StreamInfo::seek() is not implemented");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "StreamInfo::seek is not implemented");
     }
 
     static unsigned long readFileFunc(void *, void *, void *, unsigned long) // NOLINT(google-runtime-int)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "StreamInfo::readFile() is not implemented");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "StreamInfo::readFile is not implemented");
     }
 
     std::unique_ptr<WriteBuffer> write_buffer;
@@ -308,6 +312,25 @@ void ZipArchiveWriter::finalize()
     }
 
     finalized = true;
+}
+
+void ZipArchiveWriter::cancel() noexcept
+{
+    std::lock_guard lock{mutex};
+    if (finalized)
+        return;
+
+    if (zip_handle)
+    {
+        zipClose(zip_handle, /* global_comment= */ nullptr);
+        zip_handle = nullptr;
+    }
+
+    if (stream_info)
+    {
+        stream_info->getWriteBuffer().cancel();
+        stream_info.reset();
+    }
 }
 
 void ZipArchiveWriter::setCompression(const String & compression_method_, int compression_level_)

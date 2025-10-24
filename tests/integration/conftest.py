@@ -48,7 +48,6 @@ def pdb_history(request):
 @pytest.fixture(autouse=True, scope="session")
 def tune_local_port_range():
     # Lots of services uses non privileged ports:
-    # - hdfs -- 50020/50070/...
     # - minio
     #
     # NOTE: 5K is not enough, and sometimes leads to EADDRNOTAVAIL error.
@@ -90,8 +89,6 @@ def cleanup_environment():
                     nothrow=True,
                 )
                 logging.debug("Unstopped containers killed")
-                r = run_and_check(["docker", "compose", "ps", "--services", "--all"])
-                logging.debug("Docker ps before start:%s", r.stdout)
         else:
             logging.debug("No running containers")
 
@@ -115,40 +112,10 @@ def pytest_addoption(parser):
     )
 
 
-def get_unique_free_ports(total):
-    ports = []
-    for port in range(30000, 55000):
-        if is_port_free(port) and port not in ports:
-            ports.append(port)
-
-        if len(ports) == total:
-            return ports
-
-    raise Exception(f"Can't collect {total} ports. Collected: {len(ports)}")
-
-
 def pytest_configure(config):
     os.environ["INTEGRATION_TESTS_RUN_ID"] = config.option.run_id
 
-    # When running tests without pytest-xdist,
-    # the `pytest_xdist_setupnodes` hook is not executed
-    worker_ports = os.getenv("WORKER_FREE_PORTS", None)
-    if worker_ports is None:
-        master_ports = get_unique_free_ports(PORTS_PER_WORKER)
-        os.environ["WORKER_FREE_PORTS"] = " ".join([str(p) for p in master_ports])
 
-
-def pytest_xdist_setupnodes(config, specs):
-    # Find {PORTS_PER_WORKER} * {number of xdist workers} ports and
-    # allocate pool of {PORTS_PER_WORKER} ports to each worker
-
-    # Get number of xdist workers
-    num_workers = len(specs)
-    # Get free ports which will be distributed across workers
-    ports = get_unique_free_ports(num_workers * PORTS_PER_WORKER)
-
-    # Iterate over specs of workers and add allocated ports to env variable
-    for i, spec in enumerate(specs):
-        start_range = i * PORTS_PER_WORKER
-        per_workrer_ports = ports[start_range : start_range + PORTS_PER_WORKER]
-        spec.env["WORKER_FREE_PORTS"] = " ".join([str(p) for p in per_workrer_ports])
+if hasattr(pytest, "xdist_plugin"):
+    def pytest_xdist_setupnodes(config, specs):
+        pass

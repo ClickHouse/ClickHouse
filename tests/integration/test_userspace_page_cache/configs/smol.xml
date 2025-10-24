@@ -1,0 +1,6 @@
+<clickhouse>
+    <page_cache_min_size>10000000</page_cache_min_size>
+    <max_server_memory_usage>3000000000</max_server_memory_usage>
+    <page_cache_history_window_ms>0</page_cache_history_window_ms>
+    <memory_worker_use_cgroup>false</memory_worker_use_cgroup>
+</clickhouse>

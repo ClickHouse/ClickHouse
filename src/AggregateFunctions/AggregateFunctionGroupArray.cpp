@@ -4,11 +4,11 @@
 #include <Interpreters/Context.h>
 #include <Core/ServerSettings.h>
 
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
+#include <IO/Operators_pcg_random.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
+#include <IO/WriteHelpers.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
@@ -26,7 +26,7 @@
 
 #include <type_traits>
 
-#define AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ELEMENT_SIZE 0xFFFFFF
+constexpr size_t AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ELEMENT_SIZE = 0xFFFFFF;
 
 
 namespace DB
@@ -79,7 +79,7 @@ template <typename T>
 struct GroupArraySamplerData
 {
     /// For easy serialization.
-    static_assert(std::has_unique_object_representations_v<T> || std::is_floating_point_v<T>);
+    static_assert(std::has_unique_object_representations_v<T> || is_floating_point<T>);
 
     // Switch to ordinary Allocator after 4096 bytes to avoid fragmentation and trash in Arena
     using Allocator = MixedAlignedArenaAllocator<alignof(T), 4096>;
@@ -95,7 +95,7 @@ struct GroupArraySamplerData
 
         /// With a large number of values, we will generate random numbers several times slower.
         if (lim <= static_cast<UInt64>(pcg32_fast::max()))
-            return rng() % lim;
+            return rng() % lim;  /// NOLINT(clang-analyzer-core.DivideZero)
         return (static_cast<UInt64>(rng()) * (static_cast<UInt64>(pcg32::max()) + 1ULL) + static_cast<UInt64>(rng())) % lim;
     }
 
@@ -120,7 +120,7 @@ template <typename T>
 struct GroupArrayNumericData<T, false>
 {
     /// For easy serialization.
-    static_assert(std::has_unique_object_representations_v<T> || std::is_floating_point_v<T>);
+    static_assert(std::has_unique_object_representations_v<T> || is_floating_point<T>);
 
     // Switch to ordinary Allocator after 4096 bytes to avoid fragmentation and trash in Arena
     using Allocator = MixedAlignedArenaAllocator<alignof(T), 4096>;
@@ -456,7 +456,7 @@ struct GroupArrayNodeGeneral : public GroupArrayNodeBase<GroupArrayNodeGeneral>
     static Node * allocate(const IColumn & column, size_t row_num, Arena * arena)
     {
         const char * begin = arena->alignedAlloc(sizeof(Node), alignof(Node));
-        StringRef value = column.serializeValueIntoArena(row_num, *arena, begin);
+        StringRef value = column.serializeAggregationStateValueIntoArena(row_num, *arena, begin);
 
         Node * node = reinterpret_cast<Node *>(const_cast<char *>(begin));
         node->size = value.size;
@@ -464,7 +464,7 @@ struct GroupArrayNodeGeneral : public GroupArrayNodeBase<GroupArrayNodeGeneral>
         return node;
     }
 
-    void insertInto(IColumn & column) { std::ignore = column.deserializeAndInsertFromArena(data()); }
+    void insertInto(IColumn & column) { std::ignore = column.deserializeAndInsertAggregationStateValueFromArena(data()); }
 };
 
 template <typename Node, bool has_sampler>
@@ -494,7 +494,7 @@ class GroupArrayGeneralImpl final
 {
     static constexpr bool limit_num_elems = Trait::has_limit;
     using Data = GroupArrayGeneralData<Node, Trait::sampler != Sampler::NONE>;
-    static Data & data(AggregateDataPtr __restrict place) { return *reinterpret_cast<Data *>(place); }
+    static Data & data(AggregateDataPtr __restrict place) { return *reinterpret_cast<Data *>(place); }  /// NOLINT(readability-non-const-parameter)
     static const Data & data(ConstAggregateDataPtr __restrict place) { return *reinterpret_cast<const Data *>(place); }
 
     DataTypePtr & data_type;
@@ -676,17 +676,16 @@ public:
     {
         UInt64 elems;
         readVarUInt(elems, buf);
-
-        if (unlikely(elems == 0))
-            return;
-
         checkArraySize(elems, max_elems);
 
-        auto & value = data(place).value;
+        if (likely(elems > 0))
+        {
+            auto & value = data(place).value;
 
-        value.resize_exact(elems, arena);
-        for (UInt64 i = 0; i < elems; ++i)
-            value[i] = Node::read(buf, arena);
+            value.resize_exact(elems, arena);
+            for (UInt64 i = 0; i < elems; ++i)
+                value[i] = Node::read(buf, arena);
+        }
 
         if constexpr (Trait::last)
             readBinaryLittleEndian(data(place).total_values, buf);
@@ -785,7 +784,7 @@ AggregateFunctionPtr createAggregateFunctionGroupArray(
         if (type != Field::Types::Int64 && type != Field::Types::UInt64)
                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should be positive number", name);
 
-        if ((type == Field::Types::Int64 && parameters[0].safeGet<Int64>() < 0) ||
+        if ((type == Field::Types::Int64 && parameters[0].safeGet<Int64>() <= 0) ||
             (type == Field::Types::UInt64 && parameters[0].safeGet<UInt64>() == 0))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should be positive number", name);
 
@@ -821,7 +820,7 @@ AggregateFunctionPtr createAggregateFunctionGroupArraySample(
         if (type != Field::Types::Int64 && type != Field::Types::UInt64)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should be positive number", name);
 
-        if ((type == Field::Types::Int64 && parameters[i].safeGet<Int64>() < 0) ||
+        if ((type == Field::Types::Int64 && parameters[i].safeGet<Int64>() <= 0) ||
                 (type == Field::Types::UInt64 && parameters[i].safeGet<UInt64>() == 0))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should be positive number", name);
 

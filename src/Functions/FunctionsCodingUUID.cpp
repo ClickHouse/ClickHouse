@@ -4,8 +4,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnVector.h>
-#include <Common/BitHelpers.h>
-#include <base/hex.h>
+#include <Common/intExp10.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -15,9 +14,9 @@
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/castColumn.h>
 
 #include <span>
+
 
 namespace DB::ErrorCodes
 {
@@ -79,7 +78,7 @@ public:
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "{} is not handled yet", magic_enum::enum_name(variant));
     }
 
-    void deserialize(const UInt8 * src16, UInt8 * dst36) const
+    void serialize(const UInt8 * src16, UInt8 * dst36) const
     {
         formatHex({src16, 4}, &dst36[0], first_half_binary_representation);
         dst36[8] = '-';
@@ -92,7 +91,7 @@ public:
         formatHex({src16 + 10, 6}, &dst36[24], Representation::BigEndian);
     }
 
-    void serialize(const UInt8 * src36, UInt8 * dst16) const
+    void deserialize(const UInt8 * src36, UInt8 * dst16) const
     {
         /// If string is not like UUID - implementation specific behaviour.
         parseHex(&src36[0], {dst16 + 0, 4}, first_half_binary_representation);
@@ -200,7 +199,7 @@ public:
 
             ColumnString::Chars & vec_res = col_res->getChars();
             ColumnString::Offsets & offsets_res = col_res->getOffsets();
-            vec_res.resize(input_rows_count * (uuid_text_length + 1));
+            vec_res.resize(input_rows_count * uuid_text_length);
             offsets_res.resize(input_rows_count);
 
             size_t src_offset = 0;
@@ -209,11 +208,9 @@ public:
             const UUIDSerializer uuid_serializer(variant);
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                uuid_serializer.deserialize(&vec_in[src_offset], &vec_res[dst_offset]);
+                uuid_serializer.serialize(&vec_in[src_offset], &vec_res[dst_offset]);
                 src_offset += uuid_bytes_length;
                 dst_offset += uuid_text_length;
-                vec_res[dst_offset] = 0;
-                ++dst_offset;
                 offsets_res[i] = dst_offset;
             }
 
@@ -284,8 +281,8 @@ public:
                 /// If string has correct length but contains something not like UUID - implementation specific behaviour.
 
                 size_t string_size = offsets_in[i] - src_offset;
-                if (string_size == uuid_text_length + 1)
-                    uuid_serializer.serialize(&vec_in[src_offset], &vec_res[dst_offset]);
+                if (string_size == uuid_text_length)
+                    uuid_serializer.deserialize(&vec_in[src_offset], &vec_res[dst_offset]);
                 else
                     memset(&vec_res[dst_offset], 0, uuid_bytes_length);
 
@@ -318,7 +315,7 @@ public:
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                uuid_serializer.serialize(&vec_in[src_offset], &vec_res[dst_offset]);
+                uuid_serializer.deserialize(&vec_in[src_offset], &vec_res[dst_offset]);
                 src_offset += uuid_text_length;
                 dst_offset += uuid_bytes_length;
             }
@@ -468,7 +465,7 @@ public:
                 const uint64_t hiBytes = DB::UUIDHelpers::getHighBytes(uuids[i]);
                 const uint64_t ms = ((hiBytes & 0xf000) == 0x7000) ? (hiBytes >> 16) : 0;
 
-                vec_res[i] = DecimalUtils::decimalFromComponents<DateTime64>(ms / intExp10(datetime_scale), ms % intExp10(datetime_scale), datetime_scale);
+                vec_res[i] = DecimalUtils::dateTimeFromComponents(ms / intExp10(datetime_scale), ms % intExp10(datetime_scale), datetime_scale);
             }
 
             return col_res;
@@ -480,36 +477,178 @@ public:
 
 REGISTER_FUNCTION(CodingUUID)
 {
-    factory.registerFunction<FunctionUUIDNumToString>();
-    factory.registerFunction<FunctionUUIDStringToNum>();
-    factory.registerFunction<FunctionUUIDToNum>(
-        FunctionDocumentation{
-            .description = R"(
-This function accepts a UUID and returns a FixedString(16) as its binary representation, with its format optionally specified by variant (Big-endian by default).
-)",
-            .examples{
-                {"uuid",
-                 "select toUUID(UUIDNumToString(toFixedString('a/<@];!~p{jTj={)', 16))) as uuid, UUIDToNum(uuid) as uuidNum, "
-                 "UUIDToNum(uuid, 2) as uuidMsNum",
-                 R"(
-┌─uuid─────────────────────────────────┬─uuidNum──────────┬─uuidMsNum────────┐
-│ 612f3c40-5d3b-217e-707b-6a546a3d7b29 │ a/<@];!~p{jTj={) │ @</a];!~p{jTj={) │
-└──────────────────────────────────────┴──────────────────┴──────────────────┘
-)"}},
-            .categories{"UUID"}});
+    /// UUIDNumToString documentation
+    FunctionDocumentation::Description description_UUIDNumToString = R"(
+Takes a binary representation of a UUID, with its format optionally specified by `variant` (`Big-endian` by default), and returns a string containing 36 characters in text format.
+    )";
+    FunctionDocumentation::Syntax syntax_UUIDNumToString = "UUIDNumToString(binary[, variant])";
+    FunctionDocumentation::Arguments arguments_UUIDNumToString = {
+        {"binary", "Binary representation of a UUID.", {"FixedString(16)"}},
+        {"variant", "Variant as specified by [RFC4122](https://datatracker.ietf.org/doc/html/rfc4122#section-4.1.1). 1 = `Big-endian` (default), 2 = `Microsoft`.", {"(U)Int*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_UUIDNumToString = {"Returns the UUID as a string.", {"String"}};
+    FunctionDocumentation::Examples examples_UUIDNumToString = {
+    {
+        "Usage example",
+        R"(
+SELECT
+    'a/<@];!~p{jTj={)' AS bytes,
+    UUIDNumToString(toFixedString(bytes, 16)) AS uuid
+        )",
+        R"(
+┌─bytes────────────┬─uuid─────────────────────────────────┐
+│ a/<@];!~p{jTj={) │ 612f3c40-5d3b-217e-707b-6a546a3d7b29 │
+└──────────────────┴──────────────────────────────────────┘
+        )"
+    },
+    {
+        "Microsoft variant",
+        R"(
+SELECT
+    '@</a;]~!p{jTj={)' AS bytes,
+    UUIDNumToString(toFixedString(bytes, 16), 2) AS uuid
+        )",
+        R"(
+┌─bytes────────────┬─uuid─────────────────────────────────┐
+│ @</a;]~!p{jTj={) │ 612f3c40-5d3b-217e-707b-6a546a3d7b29 │
+└──────────────────┴──────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_UUIDNumToString = {1, 1};
+    FunctionDocumentation::Category category_UUIDNumToString = FunctionDocumentation::Category::UUID;
+    FunctionDocumentation documentation_UUIDNumToString = {description_UUIDNumToString, syntax_UUIDNumToString, arguments_UUIDNumToString, returned_value_UUIDNumToString, examples_UUIDNumToString, introduced_in_UUIDNumToString, category_UUIDNumToString};
 
+    factory.registerFunction<FunctionUUIDNumToString>(documentation_UUIDNumToString);
 
-    factory.registerFunction<FunctionUUIDv7ToDateTime>(
-        FunctionDocumentation{
-            .description = R"(
-This function extracts the timestamp from a UUID and returns it as a DateTime64(3) typed value.
-The function expects the UUID having version 7 to be provided as the first argument.
-An optional second argument can be passed to specify a timezone for the timestamp.
-)",
-            .examples{
-                {"uuid","select UUIDv7ToDateTime(generateUUIDv7())", ""},
-                {"uuid","select generateUUIDv7() as uuid, UUIDv7ToDateTime(uuid), UUIDv7ToDateTime(uuid, 'America/New_York')", ""}},
-            .categories{"UUID"}});
+    /// UUIDStringToNum documentation
+    FunctionDocumentation::Description description_UUIDStringToNum = R"(
+Accepts a string containing 36 characters in the format `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`, and returns a [FixedString(16)](../data-types/fixedstring.md) as its binary representation, with its format optionally specified by `variant` (`Big-endian` by default).
+    )";
+    FunctionDocumentation::Syntax syntax_UUIDStringToNum = "UUIDStringToNum(string[, variant = 1])";
+    FunctionDocumentation::Arguments arguments_UUIDStringToNum = {
+        {"string", "A string or fixed-string of 36 characters)", {"String", "FixedString(36)"}},
+        {"variant", "Variant as specified by [RFC4122](https://datatracker.ietf.org/doc/html/rfc4122#section-4.1.1). 1 = `Big-endian` (default), 2 = `Microsoft`.", {"(U)Int*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_UUIDStringToNum = {"Returns the binary representation of `string`.", {"FixedString(16)"}};
+    FunctionDocumentation::Examples examples_UUIDStringToNum = {
+    {
+        "Usage example",
+        R"(
+SELECT
+    '612f3c40-5d3b-217e-707b-6a546a3d7b29' AS uuid,
+    UUIDStringToNum(uuid) AS bytes
+        )",
+        R"(
+┌─uuid─────────────────────────────────┬─bytes────────────┐
+│ 612f3c40-5d3b-217e-707b-6a546a3d7b29 │ a/<@];!~p{jTj={) │
+└──────────────────────────────────────┴──────────────────┘
+        )"
+    },
+    {
+        "Microsoft variant",
+        R"(
+SELECT
+    '612f3c40-5d3b-217e-707b-6a546a3d7b29' AS uuid,
+    UUIDStringToNum(uuid, 2) AS bytes
+        )",
+        R"(
+┌─uuid─────────────────────────────────┬─bytes────────────┐
+│ 612f3c40-5d3b-217e-707b-6a546a3d7b29 │ @</a;]~!p{jTj={) │
+└──────────────────────────────────────┴──────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_UUIDStringToNum = {1, 1};
+    FunctionDocumentation::Category category_UUIDStringToNum = FunctionDocumentation::Category::UUID;
+    FunctionDocumentation documentation_UUIDStringToNum = {description_UUIDStringToNum, syntax_UUIDStringToNum, arguments_UUIDStringToNum, returned_value_UUIDStringToNum, examples_UUIDStringToNum, introduced_in_UUIDStringToNum, category_UUIDStringToNum};
+
+    factory.registerFunction<FunctionUUIDStringToNum>(documentation_UUIDStringToNum);
+
+    /// UUIDToNum documentation
+    FunctionDocumentation::Description description_UUIDToNum = R"(
+Accepts a [UUID](../data-types/uuid.md) and returns its binary representation as a [FixedString(16)](../data-types/fixedstring.md), with its format optionally specified by `variant` (`Big-endian` by default).
+This function replaces calls to two separate functions `UUIDStringToNum(toString(uuid))` so no intermediate conversion from UUID to string is required to extract bytes from a UUID.
+    )";
+    FunctionDocumentation::Syntax syntax_UUIDToNum = "UUIDToNum(uuid[, variant = 1])";
+    FunctionDocumentation::Arguments arguments_UUIDToNum = {
+        {"uuid", "UUID.", {"String", "FixedString"}},
+        {"variant", "Variant as specified by [RFC4122](https://datatracker.ietf.org/doc/html/rfc4122#section-4.1.1). 1 = `Big-endian` (default), 2 = `Microsoft`.", {"(U)Int*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_UUIDToNum = {"Returns a binary representation of the UUID.", {"FixedString(16)"}};
+    FunctionDocumentation::Examples examples_UUIDToNum = {
+    {
+        "Usage example",
+        R"(
+SELECT
+    toUUID('612f3c40-5d3b-217e-707b-6a546a3d7b29') AS uuid,
+    UUIDToNum(uuid) AS bytes
+        )",
+        R"(
+┌─uuid─────────────────────────────────┬─bytes────────────┐
+│ 612f3c40-5d3b-217e-707b-6a546a3d7b29 │ a/<@];!~p{jTj={) │
+└──────────────────────────────────────┴──────────────────┘
+        )"
+    },
+    {
+        "Microsoft variant",
+        R"(
+SELECT
+    toUUID('612f3c40-5d3b-217e-707b-6a546a3d7b29') AS uuid,
+    UUIDToNum(uuid, 2) AS bytes
+        )",
+        R"(
+┌─uuid─────────────────────────────────┬─bytes────────────┐
+│ 612f3c40-5d3b-217e-707b-6a546a3d7b29 │ @</a;]~!p{jTj={) │
+└──────────────────────────────────────┴──────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_UUIDToNum = {24, 5};
+    FunctionDocumentation::Category category_UUIDToNum = FunctionDocumentation::Category::UUID;
+    FunctionDocumentation documentation_UUIDToNum = {description_UUIDToNum, syntax_UUIDToNum, arguments_UUIDToNum, returned_value_UUIDToNum, examples_UUIDToNum, introduced_in_UUIDToNum, category_UUIDToNum};
+
+    factory.registerFunction<FunctionUUIDToNum>(documentation_UUIDToNum);
+
+    /// UUIDv7ToDateTime documentation
+    FunctionDocumentation::Description description_UUIDv7ToDateTime = R"(
+Returns the timestamp component of a UUID version 7.
+    )";
+    FunctionDocumentation::Syntax syntax_UUIDv7ToDateTime = "UUIDv7ToDateTime(uuid[, timezone])";
+    FunctionDocumentation::Arguments arguments_UUIDv7ToDateTime = {
+        {"uuid", "A UUID version 7.", {"String"}},
+        {"timezone", "Optional. [Timezone name](../../operations/server-configuration-parameters/settings.md#timezone) for the returned value.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_UUIDv7ToDateTime = {"Returns a timestamp with milliseconds precision. If the UUID is not a valid version 7 UUID, it returns `1970-01-01 00:00:00.000`.", {"DateTime64(3)"}};
+    FunctionDocumentation::Examples examples_UUIDv7ToDateTime = {
+    {
+        "Usage example",
+        R"(
+SELECT UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'))
+        )",
+        R"(
+┌─UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'))─┐
+│                                          2024-04-22 15:30:29.048 │
+└──────────────────────────────────────────────────────────────────┘
+        )"
+    },
+    {
+        "With timezone",
+        R"(
+SELECT UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'), 'America/New_York')
+        )",
+        R"(
+┌─UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'), 'America/New_York')─┐
+│                                                             2024-04-22 11:30:29.048 │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_UUIDv7ToDateTime = {24, 5};
+    FunctionDocumentation::Category category_UUIDv7ToDateTime = FunctionDocumentation::Category::UUID;
+    FunctionDocumentation documentation_UUIDv7ToDateTime = {description_UUIDv7ToDateTime, syntax_UUIDv7ToDateTime, arguments_UUIDv7ToDateTime, returned_value_UUIDv7ToDateTime, examples_UUIDv7ToDateTime, introduced_in_UUIDv7ToDateTime, category_UUIDv7ToDateTime};
+
+    factory.registerFunction<FunctionUUIDv7ToDateTime>(documentation_UUIDv7ToDateTime);
 }
 
 }

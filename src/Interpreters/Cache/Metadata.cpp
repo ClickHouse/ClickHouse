@@ -2,6 +2,7 @@
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileSegment.h>
 #include <Interpreters/Context.h>
+#include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <filesystem>
@@ -12,12 +13,14 @@ namespace CurrentMetrics
 {
     extern const Metric FilesystemCacheDownloadQueueElements;
     extern const Metric FilesystemCacheDelayedCleanupElements;
+    extern const Metric FilesystemCacheKeys;
 }
 
 namespace ProfileEvents
 {
     extern const Event FilesystemCacheLockKeyMicroseconds;
     extern const Event FilesystemCacheLockMetadataMicroseconds;
+    extern const Event FilesystemCacheCreatedKeyDirectories;
 }
 
 namespace DB
@@ -120,32 +123,39 @@ LockedKeyPtr KeyMetadata::lockNoStateCheck()
 
 bool KeyMetadata::createBaseDirectory(bool throw_if_failed)
 {
-    if (!created_base_directory.exchange(true))
+    if (created_base_directory.load())
+        return true;
+
+    std::shared_lock lock(cache_metadata->key_prefix_directory_mutex);
+
+    if (created_base_directory.load(std::memory_order_relaxed))
+        return true;
+
+    try
     {
-        try
-        {
-            std::shared_lock lock(cache_metadata->key_prefix_directory_mutex);
-            fs::create_directories(getPath());
-        }
-        catch (const fs::filesystem_error & e)
-        {
-            created_base_directory = false;
-
-            if (!throw_if_failed &&
-                (e.code() == std::errc::no_space_on_device
-                 || e.code() == std::errc::read_only_file_system
-                 || e.code() == std::errc::permission_denied
-                 || e.code() == std::errc::too_many_files_open
-                 || e.code() == std::errc::operation_not_permitted))
-            {
-                LOG_TRACE(cache_metadata->log, "Failed to create base directory for key {}, "
-                          "because no space left on device", key);
-
-                return false;
-            }
-            throw;
-        }
+        fs::create_directories(getPath());
+        created_base_directory.store(true);
+        ProfileEvents::increment(ProfileEvents::FilesystemCacheCreatedKeyDirectories);
     }
+    catch (const fs::filesystem_error & e)
+    {
+        created_base_directory = false;
+
+        if (!throw_if_failed &&
+            (e.code() == std::errc::no_space_on_device
+                || e.code() == std::errc::read_only_file_system
+                || e.code() == std::errc::permission_denied
+                || e.code() == std::errc::too_many_files_open
+                || e.code() == std::errc::operation_not_permitted))
+        {
+            LOG_TRACE(cache_metadata->log, "Failed to create base directory for key {}, "
+                        "because no space left on device", key);
+
+            return false;
+        }
+        throw;
+    }
+
     return true;
 }
 
@@ -285,6 +295,8 @@ KeyMetadataPtr CacheMetadata::getKeyMetadata(
 
         it = bucket.emplace(
             key, std::make_shared<KeyMetadata>(key, user, this, is_initial_load)).first;
+
+        CurrentMetrics::add(CurrentMetrics::FilesystemCacheKeys);
     }
 
     it->second->assertAccess(user.user_id);
@@ -334,7 +346,10 @@ void CacheMetadata::removeAllKeys(bool if_releasable, const UserID & user_id)
         for (auto it = bucket.begin(); it != bucket.end();)
         {
             if (!it->second->checkAccess(user_id))
+            {
+                ++it;
                 continue;
+            }
 
             auto locked_key = it->second->lockNoStateCheck();
             if (locked_key->getKeyState() == KeyMetadata::KeyState::ACTIVE)
@@ -393,7 +408,9 @@ CacheMetadata::removeEmptyKey(
     locked_key.markAsRemoved();
     auto next_it = bucket.erase(it);
 
-    LOG_DEBUG(log, "Key {} is removed from metadata", key);
+    CurrentMetrics::sub(CurrentMetrics::FilesystemCacheKeys);
+
+    LOG_TEST(log, "Key {} is removed from metadata", key);
 
     const fs::path key_directory = getKeyPath(key, locked_key.getKeyMetadata()->user);
     const fs::path key_prefix_directory = key_directory.parent_path();
@@ -637,6 +654,7 @@ void CacheMetadata::downloadThreadFunc(const bool & stop_flag)
                 chassert(file_segment.assertCorrectness());
 
                 downloadImpl(file_segment, memory);
+                holder->completeAndPopFront(/*allow_background_download=*/false, /*force_shrink_to_downloaded_size=*/false);
             }
             catch (...)
             {
@@ -676,13 +694,17 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
         log, "Downloading {} bytes for file segment {}",
         file_segment.range().size() - file_segment.getDownloadedSize(), file_segment.getInfoForLog());
 
+    size_t size_to_download = file_segment.getSizeForBackgroundDownload();
+    if (!size_to_download)
+        return;
+
     auto reader = file_segment.getRemoteFileReader();
     if (!reader)
     {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR, "No reader. "
-            "File segment should not have been submitted for background download ({})",
-            file_segment.getInfoForLog());
+        LOG_TEST(log, "No reader in {}:{} (state: {}, range: {}, downloaded size: {})",
+                 file_segment.key(), file_segment.offset(), file_segment.state(),
+                 file_segment.range().toString(), file_segment.getDownloadedSize());
+        return;
     }
 
     /// If remote_fs_read_method == 'threadpool',
@@ -690,7 +712,7 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
     if (reader->internalBuffer().empty())
     {
         if (!memory)
-            memory.emplace(DBMS_DEFAULT_BUFFER_SIZE);
+            memory.emplace(std::min(size_t(DBMS_DEFAULT_BUFFER_SIZE), size_to_download));
         reader->set(memory->data(), memory->size());
     }
 
@@ -701,9 +723,13 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
     if (offset != static_cast<size_t>(reader->getPosition()))
         reader->seek(offset, SEEK_SET);
 
-    while (!reader->eof())
+    while (size_to_download && !reader->eof())
     {
-        auto size = reader->available();
+        const auto available = reader->available();
+        chassert(available);
+
+        const auto size = std::min(available, size_to_download);
+        size_to_download -= size;
 
         std::string failure_reason;
         if (!file_segment.reserve(size, reserve_space_lock_wait_timeout_milliseconds, failure_reason))
@@ -713,7 +739,7 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
                 "for {}:{} (downloaded size: {}/{})",
                 file_segment.key(), file_segment.offset(),
                 file_segment.getDownloadedSize(), file_segment.range().size());
-            return;
+            break;
         }
 
         try
@@ -728,11 +754,16 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
             if (code == /* No space left on device */28 || code == /* Quota exceeded */122)
             {
                 LOG_INFO(log, "Insert into cache is skipped due to insufficient disk space. ({})", e.displayText());
-                return;
+                break;
             }
             throw;
         }
     }
+
+    /// Reset reader to avoid
+    /// Logical error: 'remote_fs_segment_reader->getFileOffsetOfBufferEnd() == file_segment.getCurrentWriteOffset()'
+    file_segment.resetRemoteFileReader();
+    file_segment.completePartAndResetDownloader();
 
     LOG_TEST(log, "Downloaded file segment: {}", file_segment.getInfoForLog());
 }
@@ -900,6 +931,16 @@ bool LockedKey::removeAllFileSegments(bool if_releasable)
     return removed_all;
 }
 
+KeyMetadata::iterator LockedKey::removeFileSegmentIfExists(size_t offset, bool can_be_broken, bool invalidate_queue_entry)
+{
+    auto it = key_metadata->find(offset);
+    if (it == key_metadata->end())
+        return {};
+
+    auto file_segment = it->second->file_segment;
+    return removeFileSegmentImpl(it, file_segment->lock(), can_be_broken, invalidate_queue_entry);
+}
+
 KeyMetadata::iterator LockedKey::removeFileSegment(size_t offset, bool can_be_broken, bool invalidate_queue_entry)
 {
     auto it = key_metadata->find(offset);
@@ -933,14 +974,23 @@ KeyMetadata::iterator LockedKey::removeFileSegmentImpl(
 
     LOG_TEST(
         key_metadata->logger(), "Remove from cache. Key: {}, offset: {}, size: {}",
-        getKey(), file_segment->offset(), file_segment->reserved_size);
+        getKey(), file_segment->offset(), file_segment->reserved_size.load());
 
     chassert(can_be_broken || file_segment->assertCorrectnessUnlocked(segment_lock));
 
     if (file_segment->queue_iterator && invalidate_queue_entry)
         file_segment->queue_iterator->invalidate();
 
-    file_segment->detach(segment_lock, *this);
+    try
+    {
+        file_segment->detach(segment_lock, *this);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        chassert(false);
+        /// Do not rethrow, we must delete the file below.
+    }
 
     try
     {
@@ -979,42 +1029,6 @@ KeyMetadata::iterator LockedKey::removeFileSegmentImpl(
     }
 
     return key_metadata->erase(it);
-}
-
-void LockedKey::shrinkFileSegmentToDownloadedSize(
-    size_t offset,
-    const FileSegmentGuard::Lock & segment_lock)
-{
-    /**
-     * In case file was partially downloaded and it's download cannot be continued
-     * because of no space left in cache, we need to be able to cut file segment's size to downloaded_size.
-     */
-
-    auto metadata = getByOffset(offset);
-    const auto & file_segment = metadata->file_segment;
-    chassert(file_segment->assertCorrectnessUnlocked(segment_lock));
-
-    const size_t downloaded_size = file_segment->getDownloadedSize();
-    if (downloaded_size == file_segment->range().size())
-    {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Nothing to reduce, file segment fully downloaded: {}",
-            file_segment->getInfoForLogUnlocked(segment_lock));
-    }
-
-    chassert(file_segment->reserved_size >= downloaded_size);
-    int64_t diff = file_segment->reserved_size - downloaded_size;
-
-    metadata->file_segment = std::make_shared<FileSegment>(
-        getKey(), offset, downloaded_size, FileSegment::State::DOWNLOADED,
-        CreateFileSegmentSettings(file_segment->getKind()), false,
-        file_segment->cache, key_metadata, file_segment->queue_iterator);
-
-    if (diff)
-        metadata->getQueueIterator()->decrementSize(diff);
-
-    chassert(file_segment->assertCorrectnessUnlocked(segment_lock));
 }
 
 bool LockedKey::addToDownloadQueue(size_t offset, const FileSegmentGuard::Lock &)
@@ -1146,7 +1160,7 @@ std::vector<FileSegment::Info> LockedKey::sync()
             actual_size, expected_size, file_segment->getInfoForLog());
 
         broken.push_back(FileSegment::getInfo(file_segment));
-        it = removeFileSegment(file_segment->offset(), file_segment->lock(), /* can_be_broken */false);
+        it = removeFileSegment(file_segment->offset(), file_segment->lock(), /* can_be_broken */true);
     }
     return broken;
 }

@@ -1,4 +1,4 @@
-#include "insertPostgreSQLValue.h"
+#include <Core/PostgreSQL/insertPostgreSQLValue.h>
 
 #if USE_LIBPQXX
 #include <Columns/ColumnNullable.h>
@@ -128,7 +128,9 @@ void insertPostgreSQLValue(
             pqxx::array_parser parser{value};
             std::pair<pqxx::array_parser::juncture, std::string> parsed = parser.get_next();
 
-            size_t dimension = 0, max_dimension = 0, expected_dimensions = array_info.at(idx).num_dimensions;
+            size_t dimension = 0;
+            size_t max_dimension = 0;
+            size_t expected_dimensions = array_info.at(idx).num_dimensions;
             const auto parse_value = array_info.at(idx).pqxx_parser;
             std::vector<Row> dimensions(expected_dimensions + 1);
 

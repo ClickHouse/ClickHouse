@@ -11,6 +11,7 @@
             <session_timeout_ms>10000</session_timeout_ms>
             <snapshot_distance>75</snapshot_distance>
             <raft_logs_level>trace</raft_logs_level>
+            <startup_timeout>1000</startup_timeout>
         </coordination_settings>
 
         <raft_configuration>
