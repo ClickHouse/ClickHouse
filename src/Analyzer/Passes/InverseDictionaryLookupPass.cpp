@@ -277,10 +277,7 @@ private:
         in_function_node->getArguments().getNodes() = {dictget_function_info.key_expr_node, querytree_subquery_node};
         resolveOrdinaryFunctionNodeByName(*in_function_node, "in", getContext());
 
-        if (!node_function->getResultType()->equals(*in_function_node->getResultType()))
-            node = createCastFunction(in_function_node, node_function->getResultType(), getContext());
-        else
-            node = std::move(in_function_node);
+        node = std::move(in_function_node);
     }
 };
 
