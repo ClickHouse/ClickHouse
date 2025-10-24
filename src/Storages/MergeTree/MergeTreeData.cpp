@@ -2484,9 +2484,12 @@ try
         }
         else
         {
-            Transaction transaction(*this, nullptr);
-            preparePartForCommit(res.part, transaction, part_lock, false, false);
-            transaction.commit();
+            {
+                auto part_lock = lockParts();
+                Transaction transaction(*this, nullptr);
+                preparePartForCommit(res.part, transaction, part_lock, false, false);
+                transaction.commit();
+            }
 
             bool is_adaptive = res.part->index_granularity_info.mark_type.adaptive;
             have_non_adaptive_parts |= !is_adaptive;
