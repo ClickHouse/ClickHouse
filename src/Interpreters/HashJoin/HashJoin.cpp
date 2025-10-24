@@ -277,7 +277,7 @@ size_t HashJoin::NullMapHolder::allocatedBytes() const
     if (rows == 0)
         return 0;
     if (rows < selector_rows)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The column size is smaller than the cached size")
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The column size is smaller than the cached size");
     return column->allocatedBytes() * selector_rows / rows;
 }
 
