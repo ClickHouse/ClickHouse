@@ -185,7 +185,7 @@ private:
         std::vector<NameAndTypePair> key_cols;
         DataTypePtr dict_attr_col_type;
 
-        /// Type of the attribute and key columns are not present in the query. So, we have to fetch dictionary and get the key column types.
+        /// Type of the attribute and key columns are not present in the query. So, we have to fetch dictionary and get the column types.
         try
         {
             const auto & loader = getContext()->getExternalDictionariesLoader();
