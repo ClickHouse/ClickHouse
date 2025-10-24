@@ -19,9 +19,3 @@ done
 imageTests+=(
 	[clickhouse]="${imageTestsDefinition}"
 )
-
-imageTests+=(
-	[clickhouse/clickhouse-server]='
-		clickhouse-basics
-		clickhouse-initdb
-	'
