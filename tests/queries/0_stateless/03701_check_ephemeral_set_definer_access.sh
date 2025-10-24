@@ -19,7 +19,7 @@ CREATE TABLE $db.source (x Int64) ENGINE = MergeTree() ORDER BY x;
 EOF
 
 ${CLICKHOUSE_CLIENT} --user $user <<EOF
-CREATE MATERIALIZE VIEW $db.test_view
+CREATE MATERIALIZED VIEW $db.test_view
 (
     x Int64
 )
