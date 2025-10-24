@@ -185,7 +185,7 @@ def test_list_tables(started_cluster):
     assert (
         "\n".join(sorted(tables_list))
         == node.query(
-            f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' and name ILIKE '{namespace_prefix}%' ORDER BY name"
+            f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' and name ILIKE '{namespace_prefix}%' ORDER BY name SETTINGS show_data_lake_catalogs_in_system_tables = true"
         ).strip()
     )
 
