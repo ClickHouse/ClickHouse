@@ -3,7 +3,6 @@
 #include <Processors/Transforms/SortingTransform.h>
 #include <Core/SortDescription.h>
 #include <Common/filesystemHelpers.h>
-#include <Disks/TemporaryFileOnDisk.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 
 
