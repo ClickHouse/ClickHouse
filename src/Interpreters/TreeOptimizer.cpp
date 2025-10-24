@@ -23,7 +23,6 @@
 #include <Interpreters/RewriteArrayExistsFunctionVisitor.h>
 #include <Interpreters/RewriteSumFunctionWithSumAndCountVisitor.h>
 #include <Interpreters/OptimizeDateOrDateTimeConverterWithPreimageVisitor.h>
-#include <Interpreters/OptimizeDictGetEqualsVisitor.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -598,14 +597,7 @@ void optimizeOrLikeChain(ASTPtr & query)
     ConvertFunctionOrLikeVisitor(data).visit(query);
 }
 
-void optimizeDictGetEquals(ASTPtr & query)
-{
-    OptimizeDictGetEqualsVisitor::Data data{};
-    OptimizeDictGetEqualsVisitor(data).visit(query);
 }
-
-}
-
 
 void TreeOptimizer::optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_to_multiif, bool multiif_to_if)
 {
@@ -743,10 +735,6 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     {
         optimizeOrLikeChain(query);
     }
-
-    /// Rewrite dictGet(‘dict’, ´dictField’ , tableField) = 'literal' into
-    /// tableField IN (SELECT groupArray(dictId) FROM dictionary('dict') WHERE dictField = 'literal')
-    optimizeDictGetEquals(query);
 }
 
 }
