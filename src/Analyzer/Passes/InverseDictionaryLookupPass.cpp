@@ -84,6 +84,16 @@ bool isDictGetFunction(const QueryTreeNodePtr & node, DictGetCall & out)
     return true;
 }
 
+bool isConstantNode(const QueryTreeNodePtr & node, QueryTreeNodePtr & out)
+{
+    if (node->as<ConstantNode>())
+    {
+        out = node;
+        return true;
+    }
+    return false;
+}
+
 bool isInMemoryDictionary(const String & type_name)
 {
     return type_name == "Flat" || type_name == "Hashed" || type_name == "ComplexKeyHashed" || type_name == "RangeHashed";
@@ -152,10 +162,10 @@ private:
             return;
 
         DictGetCall dictget_call{};
-        String literal;
+        QueryTreeNodePtr value_expr_node{};
 
-        if (!(isDictGetFunction(arguments[0], dictget_call) && isStringLiteral(arguments[1], literal))
-            && !(isDictGetFunction(arguments[1], dictget_call) && isStringLiteral(arguments[0], literal)))
+        if (!(isDictGetFunction(arguments[0], dictget_call) && isConstantNode(arguments[1], value_expr_node))
+            && !(isDictGetFunction(arguments[1], dictget_call) && isConstantNode(arguments[0], value_expr_node)))
             return;
 
         String dict_id_col_name;
@@ -198,7 +208,6 @@ private:
 
         NameAndTypePair attr_col{dictget_call.attr_col_name, dict_attr_col_type};
         auto attr_col_node = std::make_shared<ColumnNode>(attr_col, dict_table_function);
-        auto literal_node = std::make_shared<ConstantNode>(literal, dict_attr_col_type);
 
         NameAndTypePair key_col{dict_id_col_name, dict_id_col_type};
         auto key_col_node = std::make_shared<ColumnNode>(key_col, dict_table_function);
@@ -206,7 +215,7 @@ private:
         auto comparison_function_node = std::make_shared<FunctionNode>(comparison_function_name);
         comparison_function_node->markAsOperator();
         comparison_function_node->getArguments().getNodes()
-            = {attr_col_node, literal_node}; // literal node needs to be more general cannot be string
+            = {attr_col_node, value_expr_node}; // literal node needs to be more general cannot be string
         resolveOrdinaryFunctionNodeByName(*comparison_function_node, comparison_function_name, getContext());
 
         // SELECT id FROM dictionary('colors') WHERE name = <literal>
