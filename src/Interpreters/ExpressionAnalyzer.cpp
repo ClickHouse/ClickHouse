@@ -1204,14 +1204,14 @@ JoinPtr SelectQueryExpressionAnalyzer::makeJoin(
             original_right_column_names.push_back(pr.first);
 
         auto right_columns = storage->getRightSampleBlock().getColumnsWithTypeAndName();
-        std::tie(left_convert_actions, right_convert_actions) = analyzed_join->createConvertingActions(left_columns, right_columns);
+        std::tie(left_convert_actions, right_convert_actions) = analyzed_join->createConvertingActions(left_columns, right_columns, getContext());
         return storage->getJoinLocked(analyzed_join, getContext(), original_right_column_names);
     }
 
     joined_plan = buildJoinedPlan(getContext(), getPreparedSets(), join_element, *analyzed_join, query_options);
 
     const ColumnsWithTypeAndName & right_columns = joined_plan->getCurrentHeader()->getColumnsWithTypeAndName();
-    std::tie(left_convert_actions, right_convert_actions) = analyzed_join->createConvertingActions(left_columns, right_columns);
+    std::tie(left_convert_actions, right_convert_actions) = analyzed_join->createConvertingActions(left_columns, right_columns, getContext());
     if (right_convert_actions)
     {
         auto converting_step = std::make_unique<ExpressionStep>(joined_plan->getCurrentHeader(), std::move(*right_convert_actions));
@@ -1552,7 +1552,7 @@ void SelectQueryExpressionAnalyzer::appendGroupByModifiers(ActionsDAG & before_a
     ExpressionActionsChainSteps::Step & step = chain.addStep(before_aggregation.getNamesAndTypesList());
     step.required_output = std::move(required_output);
 
-    step.actions()->dag = ActionsDAG::makeConvertingActions(source_columns, result_columns, ActionsDAG::MatchColumnsMode::Position);
+    step.actions()->dag = ActionsDAG::makeConvertingActions(source_columns, result_columns, ActionsDAG::MatchColumnsMode::Position, getContext());
 }
 
 void SelectQueryExpressionAnalyzer::appendSelectSkipWindowExpressions(ExpressionActionsChainSteps::Step & step, ASTPtr const & node)
@@ -2153,6 +2153,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                         actual_header.getColumnsWithTypeAndName(),
                         expected_header.getColumnsWithTypeAndName(),
                         ActionsDAG::MatchColumnsMode::Name,
+                        context,
                         true);
 
                     auto & step = chain.lastStep(query_analyzer.aggregated_columns);

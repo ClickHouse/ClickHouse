@@ -1137,7 +1137,8 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
         ActionsDAG::makeConvertingActions(
             input_columns,
             output_columns,
-            ActionsDAG::MatchColumnsMode::Position
+            ActionsDAG::MatchColumnsMode::Position,
+            getContext()
         );
     }
 }

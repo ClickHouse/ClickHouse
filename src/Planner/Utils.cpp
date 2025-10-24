@@ -155,10 +155,10 @@ void addConvertingToCommonHeaderActionsIfNeeded(
             query_node_plan->getCurrentHeader()->getColumnsWithTypeAndName(),
             union_common_header.getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Position,
+            context,
             false /*ignore_constant_values*/,
             false /*add_cast_columns*/,
-            nullptr /*new_names*/,
-            context);
+            nullptr /*new_names*/);
         auto converting_step = std::make_unique<ExpressionStep>(query_node_plan->getCurrentHeader(), std::move(actions_dag));
         converting_step->setStepDescription("Conversion before UNION");
         query_node_plan->addStep(std::move(converting_step));

@@ -164,7 +164,7 @@ public:
         const FunctionBasePtr & function_base,
         NodeRawConstPtrs children,
         std::string result_name);
-    const Node & addCast(const Node & node_to_cast, const DataTypePtr & cast_type, std::string result_name, ContextPtr context = nullptr);
+    const Node & addCast(const Node & node_to_cast, const DataTypePtr & cast_type, std::string result_name, ContextPtr context);
     const Node & addPlaceholder(std::string name, DataTypePtr type);
 
     /// Find first column by name in output nodes. This search is linear.
@@ -335,10 +335,10 @@ public:
         const ColumnsWithTypeAndName & source,
         const ColumnsWithTypeAndName & result,
         MatchColumnsMode mode,
+        ContextPtr context,
         bool ignore_constant_values = false,
         bool add_cast_columns = false,
-        NameToNameMap * new_names = nullptr,
-        ContextPtr context = nullptr);
+        NameToNameMap * new_names = nullptr);
 
     /// Create expression which add const column and then materialize it.
     static ActionsDAG makeAddingColumnActions(ColumnWithTypeAndName column);
