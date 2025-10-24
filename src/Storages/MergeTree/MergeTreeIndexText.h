@@ -203,7 +203,7 @@ struct MergeTreeIndexGranuleText final : public IMergeTreeIndexGranule
 public:
     using TokenToPostingsInfosMap = absl::flat_hash_map<StringRef, TokenPostingsInfo>;
 
-    explicit MergeTreeIndexGranuleText(MergeTreeIndexTextParams params_);
+    explicit MergeTreeIndexGranuleText(MergeTreeIndexTextParams params_, ContextPtr context = Context::getGlobalContextInstance());
     ~MergeTreeIndexGranuleText() override = default;
 
     void serializeBinary(WriteBuffer & ostr) const override;
@@ -228,13 +228,15 @@ private:
     /// Reads dictionary blocks and analyzes them for tokens remaining after bloom filter analysis.
     void analyzeDictionary(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
 
-    TextIndexDictionaryBlockCache * dictionary_block_cache;
     MergeTreeIndexTextParams params;
     size_t num_tokens = 0;
     BloomFilter bloom_filter;
     DictionarySparseIndex sparse_index;
     /// Tokens that are in the index granule after analysis.
     TokenToPostingsInfosMap remaining_tokens;
+    TextIndexDictionaryBlockCache * text_index_dictionary_cache;
+    bool use_text_index_dictionary_cache;
+
 };
 
 /// Save BulkContext to optimize consecutive insertions into the posting list.

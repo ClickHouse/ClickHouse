@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 
+#include <Core/Settings.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/MergeTreeWriterStream.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
@@ -29,6 +30,11 @@ namespace ProfileEvents
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool use_text_index_dictionary_cache;
+}
 
 namespace ErrorCodes
 {
@@ -180,10 +186,11 @@ PostingList PostingsSerialization::deserialize(UInt64 header, UInt32 cardinality
     return PostingList::read(buf.data());
 }
 
-MergeTreeIndexGranuleText::MergeTreeIndexGranuleText(MergeTreeIndexTextParams params_)
-    : dictionary_block_cache(Context::getGlobalContextInstance()->getTextIndexDictionaryBlockCache().get())
-    , params(std::move(params_))
+MergeTreeIndexGranuleText::MergeTreeIndexGranuleText(MergeTreeIndexTextParams params_, ContextPtr context)
+    : params(std::move(params_))
     , bloom_filter(params.bloom_filter_bits_per_row, params.bloom_filter_num_hashes, 0)
+    , text_index_dictionary_cache(context->getTextIndexDictionaryBlockCache().get())
+    , use_text_index_dictionary_cache(context->getSettingsRef()[Setting::use_text_index_dictionary_cache])
 {
 }
 
@@ -417,18 +424,26 @@ void MergeTreeIndexGranuleText::analyzeDictionary(MergeTreeIndexReaderStream & s
     auto * data_buffer = stream.getDataBuffer();
     auto * compressed_buffer = stream.getCompressedDataBuffer();
 
+    /// Either retrieves a dictionary block from cache or from disk when cache is disabled.
+    const auto get_dictionary_block = [&](size_t block_id)
+    {
+        const auto dictionary_block_key = TextIndexDictionaryBlockCache::hash(state.path_to_data_part, state.index_name, state.index_mark, block_id);
+        const auto load_dictionary_block = [&] -> TextIndexDictionaryBlockCacheEntryPtr
+        {
+            UInt64 offset_in_file = sparse_index.getOffsetInFile(block_id);
+            compressed_buffer->seek(offset_in_file, 0);
+            return std::make_shared<TextIndexDictionaryBlockCacheEntry>(deserializeDictionaryBlock(*data_buffer));
+        };
+
+        if (use_text_index_dictionary_cache)
+            return text_index_dictionary_cache->getOrSet(dictionary_block_key, load_dictionary_block);
+
+        return load_dictionary_block();
+    };
+
     for (const auto & [block_idx, tokens] : block_to_tokens)
     {
-        auto block_key = TextIndexDictionaryBlockCache::hash(state.path_to_data_part, state.index_name, state.index_mark, block_idx);
-        auto dictionary_block = dictionary_block_cache->getOrSet(
-            block_key,
-            [&]
-            {
-                UInt64 offset_in_file = sparse_index.getOffsetInFile(block_idx);
-                compressed_buffer->seek(offset_in_file, 0);
-                return std::make_shared<TextIndexDictionaryBlockCacheEntry>(deserializeDictionaryBlock(*data_buffer));
-            });
-
+        const auto dictionary_block = get_dictionary_block(block_idx);
         for (const auto & token : tokens)
         {
             auto it = remaining_tokens.find(token);

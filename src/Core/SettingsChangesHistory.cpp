@@ -42,6 +42,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "25.11",
         {
             {"use_statistics_cache", 0, 0, "New setting"},
+            {"use_text_index_dictionary_cache", true, true, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.10",
         {

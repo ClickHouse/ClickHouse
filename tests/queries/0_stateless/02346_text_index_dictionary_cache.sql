@@ -4,9 +4,11 @@
 
 SET enable_analyzer = 1;
 SET allow_experimental_full_text_index = 1;
+SET use_skip_indexes_on_data_read = 1;
+SET query_plan_direct_read_from_text_index = 1;
+SET use_text_index_dictionary_cache = 1;
 SET log_queries = 1;
 
-SYSTEM DROP TEXT INDEX CACHE;
 DROP TABLE IF EXISTS tab;
 CREATE TABLE tab
 (
@@ -56,4 +58,27 @@ SELECT count() FROM tab WHERE hasAnyTokens(message, ['text_127']);
 SYSTEM FLUSH LOGS query_log;
 SELECT * FROM text_index_cache_stats(filter = 'text_127');
 
+SELECT '--- no profile events when cache is disabled.';
+SELECT count() FROM tab WHERE hasAnyTokens(message, ['text_126']) SETTINGS use_text_index_dictionary_cache = 0;
+
+SYSTEM FLUSH LOGS query_log;
+SELECT * FROM text_index_cache_stats(filter = 'text_126');
+
+SELECT 'Clear text index cache';
+
+SYSTEM DROP TEXT INDEX CACHE;
+
+SELECT '--- cache miss on the first dictionary block.';
+SELECT count() FROM tab WHERE hasAnyTokens(message, ['text_125']);
+
+SYSTEM FLUSH LOGS query_log;
+SELECT * FROM text_index_cache_stats(filter = 'text_125');
+
+SELECT '--- cache miss on the second dictionary block.';
+SELECT count() FROM tab WHERE hasAnyTokens(message, ['text_129']);
+
+SYSTEM FLUSH LOGS query_log;
+SELECT * FROM text_index_cache_stats(filter = 'text_129');
+
+SYSTEM DROP TEXT INDEX CACHE;
 DROP TABLE tab;
