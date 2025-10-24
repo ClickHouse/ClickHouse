@@ -1517,7 +1517,7 @@ static const DB::Strings & catalogs = {"glue", "hive", "rest", "unity"};
 
 void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabase & d, DatabaseEngine * de, SettingValues * svs)
 {
-    String catalog_str = "";
+    String catalog_str;
     const Catalog * cat = nullptr;
 
     chassert(d.storage == LakeStorage::S3);

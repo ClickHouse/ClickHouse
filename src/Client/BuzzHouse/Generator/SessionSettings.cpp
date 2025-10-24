@@ -1383,7 +1383,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
              {"min_free_disk_ratio_to_perform_insert", CHSetting(probRange, {}, false)},
              {"min_free_disk_space_for_temporary_data", CHSetting(bytesRange, {}, false)},
              {"postgresql_fault_injection_probability", CHSetting(probRange, {}, false)},
-             {"s3queue_keeper_fault_injection_probablility", CHSetting(probRange, {}, false)},
+             {"s3queue_keeper_fault_injection_probability", CHSetting(probRange, {}, false)},
              {"unknown_packet_in_send_data",
               CHSetting(
                   [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.1, 0.1, 0, 16384)); },
