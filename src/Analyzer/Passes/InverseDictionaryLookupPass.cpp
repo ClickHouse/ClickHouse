@@ -147,8 +147,8 @@ private:
             return;
         }
 
-        static std::unordered_set<String> allowed_comparison_functions
-            = {"equals", "notEquals", "less", "lessOrEquals", "greater", "greaterOrEquals", "like", "notLike", "ilike", "notILike"};
+        static std::unordered_set<String> allowed_comparison_functions = {
+            "equals", "notEquals", "less", "lessOrEquals", "greater", "greaterOrEquals", "like", "notLike", "ilike", "notILike", "match"};
 
         const String attr_comparison_function_name = node_function->getFunctionName();
         if (!allowed_comparison_functions.contains(attr_comparison_function_name))
