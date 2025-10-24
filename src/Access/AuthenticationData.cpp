@@ -28,6 +28,13 @@
 #     include <bcrypt.h>
 #endif
 
+namespace CurrentMetrics
+{
+    extern const Metric BcryptCacheBytes;
+    extern const Metric BcryptCacheSize;
+}
+
+
 namespace DB
 {
 
@@ -110,11 +117,12 @@ bool AuthenticationData::Util::checkPasswordBcrypt(std::string_view password [[m
     /// To avoid storing plaintext passwords in memory we only store SHA256 of the password from the user.
     /// We store a mapping of the pair of SHA256 of the password and bcrypt hash to the result of the comparison.
     using SimpleCacheBase = DB::CacheBase<std::string, bool>;
-    static auto bcrypt_cache = SimpleCacheBase("LRU", CurrentMetrics::end(), CurrentMetrics::end(), /*max_size_in_bytes*/ 1024, /*max_count*/ 1024, /*size_ratio*/ 0.5);
+    static auto bcrypt_cache = SimpleCacheBase("LRU", CurrentMetrics::BcryptCacheBytes, CurrentMetrics::BcryptCacheSize, /*max_size_in_bytes*/ 1024, /*max_count*/ 1024, /*size_ratio*/ 0.5);
 
     auto password_digest = encodeSHA256(password);
+    /// Both `password_digest` and `password_bcrypt` are fixed length, so we don't need a separator.
     auto cache_key = fmt::format(
-        "{}:{}",
+        "{}{}",
         std::string_view{reinterpret_cast<const char *>(password_digest.data()), password_digest.size()},
         std::string_view{reinterpret_cast<const char *>(password_bcrypt.data()), password_bcrypt.size()});
 
