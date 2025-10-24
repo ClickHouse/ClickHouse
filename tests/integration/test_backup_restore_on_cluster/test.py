@@ -2,6 +2,7 @@ import os.path
 import random
 import re
 import string
+import xml.etree.ElementTree as ET
 
 import pytest
 
@@ -1165,35 +1166,41 @@ def test_table_in_replicated_database_with_not_synced_def():
     ) == TSV([["x", "String"], ["y", "String"]])
 
 
-def has_mutation_in_backup(
-    mutation_id, backup_name, database, table, key_prefix_template=""
-):
-    if key_prefix_template:
-        replica = "[1-3]"
-        pattern = f"{key_prefix_template}/shards/1/replicas/{replica}/data/{database}/{table}/mutations/{mutation_id}.txt"
-        regex = re.compile(pattern)
-        for dirpath, dirnames, filenames in os.walk(get_path_to_backup(backup_name)):
-            for d in dirnames:
-                full_path = os.path.join(dirpath, d)
-                if regex.search(full_path):
-                    return True
-            for f in filenames:
-                full_path = os.path.join(dirpath, f)
-                print(full_path)
-                print(pattern)
-                if regex.search(full_path):
-                    return True
-        return False
-    else:
-        for replica in [1, 2, 3]:
-            if os.path.exists(
-                os.path.join(
-                    get_path_to_backup(backup_name),
-                    f"shards/1/replicas/{replica}/data/{database}/{table}/mutations/{mutation_id}.txt",
-                )
-            ):
-                return True
-            return False
+def has_mutation_in_backup(mutation_id, backup_name, database, table):
+    metadata_path = os.path.join(get_path_to_backup(backup_name), ".backup")
+    with open(metadata_path, "r") as f:
+        xml_root = ET.fromstring(f.read())
+
+    data_file_name_generator_elem = xml_root.find("data_file_name_generator")
+    data_file_name_generator = (
+        data_file_name_generator_elem.text
+        if data_file_name_generator_elem is not None
+        else "default"
+    )
+
+    contents = xml_root.find("contents")
+    file_map = {}
+    if contents is not None:
+        for file_elem in contents.findall("file"):
+            name_elem = file_elem.find("name")
+            data_elem = file_elem.find("data_file")
+            if name_elem is not None and data_elem is not None:
+                file_map[name_elem.text] = data_elem.text
+
+    for replica in [1, 2, 3]:
+        file_name = f"shards/1/replicas/{replica}/data/{database}/{table}/mutations/{mutation_id}.txt"
+        data_file_name = (
+            file_name
+            if data_file_name_generator == "default"
+            else file_map.get(file_name)
+        )
+
+        if data_file_name and os.path.exists(
+            os.path.join(get_path_to_backup(backup_name), data_file_name)
+        ):
+            return True
+
+    return False
 
 
 @pytest.mark.parametrize(
@@ -1231,13 +1238,11 @@ def test_mutation(key_prefix_length):
 
     # mutation #0000000000: "UPDATE x=x+1 WHERE 1" could already finish before starting the backup
     # mutation #0000000001: "UPDATE x=x+1+sleep(3) WHERE 1"
-    key_prefix_template = f"[a-f0-9]{{{key_prefix_length}}}" if key_prefix_length else ""
     assert has_mutation_in_backup(
         "0000000001",
         backup_name,
         "default",
         "tbl",
-        key_prefix_template=key_prefix_template,
     )
     # mutation #0000000002: "UPDATE x=x+1+sleep(3) WHERE 1"
     assert has_mutation_in_backup(
@@ -1245,7 +1250,6 @@ def test_mutation(key_prefix_length):
         backup_name,
         "default",
         "tbl",
-        key_prefix_template=key_prefix_template,
     )
     # mutation #0000000003: not expected
     assert not has_mutation_in_backup(
@@ -1253,7 +1257,6 @@ def test_mutation(key_prefix_length):
         backup_name,
         "default",
         "tbl",
-        key_prefix_template=key_prefix_template,
     )
 
     node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
