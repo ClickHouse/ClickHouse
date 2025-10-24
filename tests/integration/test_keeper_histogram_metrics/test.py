@@ -35,11 +35,10 @@ expected_metrics = (
 def test_server_histogram_metrics_in_system_table(started_cluster):
     result = node.query(
         """
-        SELECT
+        SELECT DISTINCT
             metric
         FROM system.histogram_metrics
         WHERE metric LIKE '%keeper_%'
-        GROUP BY metric
         """
     )
 
