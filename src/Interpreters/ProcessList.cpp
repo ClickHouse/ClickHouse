@@ -406,6 +406,11 @@ ProcessListEntry::~ProcessListEntry()
 
     CancellationChecker::getInstance().appendDoneTasks(*it);
 
+    if (!(*it)->isInternal())
+    {
+        parent.decreaseQueryKindAmount(query_kind);
+    }
+
     /// This removes the memory_tracker of one request.
     parent.processes.erase(it);
 
@@ -413,11 +418,6 @@ ProcessListEntry::~ProcessListEntry()
     {
         LOG_ERROR(getLogger("ProcessList"), "Cannot find query by query_id and pointer to ProcessListElement in ProcessListForUser");
         std::terminate();
-    }
-
-    if (!(*it)->isInternal())
-    {
-        parent.decreaseQueryKindAmount(query_kind);
     }
 
     parent.have_space.notify_all();
