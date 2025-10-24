@@ -354,7 +354,7 @@ public:
                 context->expression_schema,
                 context->enable_expression_visitor_logging);
 
-            object->data_lake_metadata = DB::DataLakeObjectMetadata{ .transform = parsed_transform, .position_deletes_objects = {} };
+            object->data_lake_metadata = DB::DataLakeObjectMetadata{ .transform = parsed_transform };
 
             LOG_TEST(
                 context->log,

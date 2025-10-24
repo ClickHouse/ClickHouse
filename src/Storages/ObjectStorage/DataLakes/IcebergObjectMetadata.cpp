@@ -3,20 +3,14 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/SetSerialization.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeObjectMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/IcebergObjectMetadata.h>
 #include <Common/logger_useful.h>
 
 
 namespace DB
 {
-void DataLakeObjectMetadata::serialize(WriteBuffer & out) const
+void IcebergObjectMetadata::serialize(WriteBuffer & out) const
 {
-    SerializedSetsRegistry registry;
-    if (transform)
-        transform->serialize(out, registry);
-    else
-        ActionsDAG().serialize(out, registry);
-
     writeVarUInt(position_deletes_objects.size(), out);
     for (const auto & pos_delete_obj : position_deletes_objects)
     {
@@ -38,16 +32,8 @@ void DataLakeObjectMetadata::serialize(WriteBuffer & out) const
     writeVarInt(sequence_number, out);
 }
 
-void DataLakeObjectMetadata::deserialize(ReadBuffer & in, bool path_empty)
+void IcebergObjectMetadata::deserialize(ReadBuffer & in)
 {
-    DeserializedSetsRegistry registry;
-    auto new_transform = std::make_shared<ActionsDAG>(ActionsDAG::deserialize(in, registry, Context::getGlobalContextInstance()));
-
-    if (!path_empty && !new_transform->getInputs().empty())
-    {
-        transform = std::move(new_transform);
-    }
-
     size_t pos_delete_obj_size = 0;
     readVarUInt(pos_delete_obj_size, in);
     position_deletes_objects.resize(pos_delete_obj_size);

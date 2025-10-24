@@ -30,16 +30,9 @@ ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr o
     if (object->data_lake_metadata.has_value())
         data_lake_metadata = object->data_lake_metadata.value();
 
-    auto iceberg_object_info = std::dynamic_pointer_cast<IcebergDataObjectInfo>(object);
-
-    if (iceberg_object_info)
-    {
-        data_lake_metadata.position_deletes_objects = iceberg_object_info->position_deletes_objects;
-        data_lake_metadata.data_object_file_path_key = iceberg_object_info->data_object_file_path_key;
-        data_lake_metadata.sequence_number = iceberg_object_info->sequence_number;
-        data_lake_metadata.underlying_format_read_schema_id = iceberg_object_info->underlying_format_read_schema_id;
+    if (object->iceberg_metadata.has_value()) {
+        iceberg_metadata = object->iceberg_metadata.value();
     }
-
 
     const bool send_over_whole_archive = !context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes];
     path = send_over_whole_archive ? object->getPathOrPathToArchiveIfArchive() : object->getPath();
@@ -55,20 +48,9 @@ ObjectInfoPtr ClusterFunctionReadTaskResponse::getObjectInfo() const
     if (isEmpty())
         return {};
 
-    auto object = data_lake_metadata.position_deletes_objects.empty()
-        ? std::make_shared<ObjectInfo>(path)
-        : std::make_shared<IcebergDataObjectInfo>(path);
-
-    if (!data_lake_metadata.position_deletes_objects.empty())
-    {
-        auto iceberg_object = std::static_pointer_cast<IcebergDataObjectInfo>(object);
-        iceberg_object->data_object_file_path_key = data_lake_metadata.data_object_file_path_key;
-        iceberg_object->position_deletes_objects = data_lake_metadata.position_deletes_objects;
-        iceberg_object->sequence_number = data_lake_metadata.sequence_number;
-        iceberg_object->underlying_format_read_schema_id = data_lake_metadata.underlying_format_read_schema_id;
-    }
-
+    auto object = std::make_shared<ObjectInfo>(path);
     object->data_lake_metadata = data_lake_metadata;
+    object->iceberg_metadata = iceberg_metadata;
 
     return object;
 }
@@ -80,7 +62,16 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t protoc
 
     if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_METADATA)
     {
-        data_lake_metadata.serialize(out);
+        SerializedSetsRegistry registry;
+        if (data_lake_metadata.transform)
+            data_lake_metadata.transform->serialize(out, registry);
+        else
+            ActionsDAG().serialize(out, registry);
+    }
+
+    if (!path.empty() && protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_METADATA)
+    {
+        iceberg_metadata.serialize(out);
     }
 }
 
@@ -100,7 +91,17 @@ void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
     readStringBinary(path, in);
     if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_METADATA)
     {
-        data_lake_metadata.deserialize(in, path.empty());
+        DeserializedSetsRegistry registry;
+        auto transform = std::make_shared<ActionsDAG>(ActionsDAG::deserialize(in, registry, Context::getGlobalContextInstance()));
+
+        if (!path.empty() && !transform->getInputs().empty())
+        {
+            data_lake_metadata.transform = std::move(transform);
+        }
+    }
+    if (!path.empty() && protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_METADATA)
+    {
+        iceberg_metadata.deserialize(in);
     }
 }
 

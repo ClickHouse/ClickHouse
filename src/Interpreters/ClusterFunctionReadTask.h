@@ -20,6 +20,8 @@ struct ClusterFunctionReadTaskResponse
     String path;
     /// Object metadata path, in case of data lake object.
     DataLakeObjectMetadata data_lake_metadata;
+    /// Iceberg object metadata
+    IcebergObjectMetadata iceberg_metadata;
 
     /// Convert received response into ObjectInfo.
     ObjectInfoPtr getObjectInfo() const;
