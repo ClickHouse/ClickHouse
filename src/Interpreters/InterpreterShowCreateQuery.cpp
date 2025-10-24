@@ -101,6 +101,13 @@ QueryPipeline InterpreterShowCreateQuery::executeImpl()
             create.targets->resetInnerUUIDs();
     }
 
+    // TODO It's possible to create option to display UUIDs of columns similar to show_table_uuid_in_table_create_query_if_not_nil
+    if (query_ptr->as<ASTShowCreateTableQuery>())
+    {
+        auto & create = create_query->as<ASTCreateQuery &>();
+        create.resetColumnUUIDs();
+    }
+
     MutableColumnPtr column = ColumnString::create();
     column->insert(format(
     {
