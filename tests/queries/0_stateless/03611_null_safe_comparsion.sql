@@ -392,8 +392,8 @@ SELECT
     c_dynamic IS DISTINCT FROM NULL AS dynamic_vs_null_distinct,
     NULL IS DISTINCT FROM c_dynamic AS null_vs_dynamic_distinct
 
-FROM 03611_nscmp_tbl;
-
+FROM 03611_nscmp_tbl
+SETTINGS parallel_replicas_for_non_replicated_merge_tree = 0;
 
 -- 1.6 UUID / IPv4 / IPv6
 SELECT '1.6 UUID / IPv4 / IPv6 comparisons';
