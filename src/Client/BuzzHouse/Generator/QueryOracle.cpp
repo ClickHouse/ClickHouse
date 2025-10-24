@@ -1,6 +1,7 @@
 #include <cstdio>
 
 #include <Client/BuzzHouse/Generator/QueryOracle.h>
+#include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -1109,7 +1110,11 @@ void QueryOracle::processSecondOracleQueryResult(const int errcode, ExternalInte
                     == fc.oracle_ignore_error_codes.end()))
         {
             throw DB::Exception(
-                DB::ErrorCodes::BUZZHOUSE, "{}: failed with different success results: {} vs {}", oracle_name, first_errcode, errcode);
+                DB::ErrorCodes::BUZZHOUSE,
+                "{}: failed with different success results: {} vs {}",
+                oracle_name,
+                DB::ErrorCodes::getName(first_errcode),
+                DB::ErrorCodes::getName(errcode));
         }
         if (!first_errcode && !errcode)
         {
