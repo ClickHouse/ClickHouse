@@ -130,16 +130,16 @@ public:
     }
 
 private:
-    [[maybe_unused]] void rewriteDictGetPredicateRecursively(QueryTreeNodePtr & node)
+    void rewriteDictGetPredicateRecursively(QueryTreeNodePtr & node)
     {
         auto * node_function = node->as<FunctionNode>();
 
         if (!node_function)
             return;
 
-        /// If its and/or/not, recurse into arguments
         const auto & function_name = node_function->getFunctionName();
 
+        /// Some arguments might themselves be dictGet* calls, so we need to recurse into AND/OR/NOT
         if (function_name == "and" || function_name == "or" || function_name == "not")
         {
             for (auto & argument : node_function->getArguments().getNodes())
@@ -168,6 +168,7 @@ private:
         std::vector<NameAndTypePair> key_cols;
         DataTypePtr dict_attr_col_type;
 
+        /// Type of the attribute and key columns are not present in the query. So, we have to fetch dictionary and get the key column types.
         try
         {
             const auto & loader = getContext()->getExternalDictionariesLoader();
@@ -186,7 +187,7 @@ private:
             {
                 key_cols.emplace_back(dict_structure.id->name, dict_structure.id->type);
             }
-            else if (dict_structure.key)
+            else if (dict_structure.key) /// composite key
             {
                 for (const auto & id : *dict_structure.key)
                 {
@@ -216,6 +217,7 @@ private:
         NameAndTypePair attr_col{dictget_function_info.attr_col_name, dict_attr_col_type};
         auto attr_col_node = std::make_shared<ColumnNode>(attr_col, dict_table_function);
 
+        /// Needed for dictGet functions like `dictGetString`, `dictGetInt32`, etc.
         QueryTreeNodePtr attr_col_node_casted = attr_col_node;
         if (!attr_col_node->getResultType()->equals(*dictget_function_info.return_type))
         {
@@ -230,11 +232,10 @@ private:
 
         auto attr_comparison_function_node = std::make_shared<FunctionNode>(attr_comparison_function_name);
         attr_comparison_function_node->markAsOperator();
-        attr_comparison_function_node->getArguments().getNodes()
-            = {attr_col_node_casted, const_value_expr_node}; // literal node needs to be more general cannot be string
+        attr_comparison_function_node->getArguments().getNodes() = {attr_col_node_casted, const_value_expr_node};
         resolveOrdinaryFunctionNodeByName(*attr_comparison_function_node, attr_comparison_function_name, getContext());
 
-        // SELECT id FROM dictionary('colors') WHERE name = <literal>
+        /// SELECT key_col FROM dictionary(dict_name) WHERE attr_name = const_value
         auto subquery_node = std::make_shared<QueryNode>(Context::createCopy(getContext()));
         subquery_node->getJoinTree() = dict_table_function;
         subquery_node->getWhere() = attr_comparison_function_node;
