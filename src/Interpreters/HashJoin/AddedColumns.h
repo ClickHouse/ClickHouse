@@ -43,12 +43,6 @@ struct JoinOnKeyColumns
 struct LazyOutput
 {
     PaddedPODArray<UInt64> row_refs;
-    /// We support Replicated columns in the right tables during JOIN.
-    /// We need to collect which columns in each block from right table
-    /// are Replicated and use this information during insertion into
-    /// result columns to process Replicated columns separately to avoid
-    /// converting them to full columns.
-    std::unordered_map<const Columns *, std::vector<const ColumnReplicated *>> block_to_replicated_columns;
     size_t row_count = 0;   /// Total number of rows in all RowRef-s and RowRefList-s
 
     std::vector<size_t> right_indexes;
@@ -68,16 +62,12 @@ struct LazyOutput
     void addRowRef(const RowRef * row_ref)
     {
         row_refs.emplace_back(reinterpret_cast<UInt64>(row_ref));
-        findAndSaveReplicatedColumns(row_ref->columns);
         ++row_count;
-
     }
 
     void addRowRefList(const RowRefList * row_ref_list)
     {
         row_refs.emplace_back(reinterpret_cast<UInt64>(row_ref_list));
-        for (auto it = row_ref_list->begin(); it.ok(); ++it)
-            findAndSaveReplicatedColumns(it->columns);
         row_count += row_ref_list->rows;
     }
 
@@ -114,20 +104,6 @@ struct LazyOutput
         size_t rows_offset, size_t rows_limit, size_t bytes_limit) const;
 
 private:
-    void findAndSaveReplicatedColumns(const Columns * columns)
-    {
-        if (!is_lazy_columns_replication_enabled || !columns)
-            return;
-
-        auto it = block_to_replicated_columns.find(columns);
-        if (it != block_to_replicated_columns.end())
-            return;
-
-        std::vector<const ColumnReplicated *> replicated_columns(columns->size());
-        for (size_t i = 0; i != columns->size(); ++i)
-            replicated_columns[i] = typeid_cast<const ColumnReplicated *>((*columns)[i].get());
-        block_to_replicated_columns[columns] = std::move(replicated_columns);
-    }
 };
 
 template <bool lazy>
