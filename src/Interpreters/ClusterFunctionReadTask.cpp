@@ -30,9 +30,8 @@ ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr o
     if (object->data_lake_metadata.has_value())
         data_lake_metadata = object->data_lake_metadata.value();
 
-    if (object->iceberg_metadata.has_value()) {
+    if (object->iceberg_metadata.has_value())
         iceberg_metadata = object->iceberg_metadata.value();
-    }
 
     const bool send_over_whole_archive = !context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes];
     path = send_over_whole_archive ? object->getPathOrPathToArchiveIfArchive() : object->getPath();
@@ -70,9 +69,7 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t protoc
     }
 
     if (!path.empty() && protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_METADATA)
-    {
         iceberg_metadata.serialize(out);
-    }
 }
 
 void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
@@ -100,9 +97,7 @@ void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
         }
     }
     if (!path.empty() && protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_METADATA)
-    {
         iceberg_metadata.deserialize(in);
-    }
 }
 
 }
