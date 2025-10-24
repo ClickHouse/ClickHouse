@@ -46,6 +46,7 @@ struct DictGetCall
     String dict_name;
     String attr_col_name;
     QueryTreeNodePtr key_expr;
+    DataTypePtr result_type;
 };
 
 bool isStringLiteral(const QueryTreeNodePtr & node, String & out)
@@ -62,10 +63,18 @@ bool isStringLiteral(const QueryTreeNodePtr & node, String & out)
     return false;
 }
 
-bool isDictGetFunction(const QueryTreeNodePtr & node, DictGetCall & out)
+bool isDictGetFamily(const String & name)
+{
+    if (!name.starts_with("dictGet"))
+        return false;
+
+    return name.find("OrDefault") == String::npos;
+}
+
+bool parseDictGetLike(const QueryTreeNodePtr & node, DictGetCall & out)
 {
     const auto * function_node = node->as<FunctionNode>();
-    if (!function_node || function_node->getFunctionName() != "dictGet")
+    if (!function_node || !isDictGetFamily(function_node->getFunctionName()))
         return false;
 
     const auto & arguments = function_node->getArguments().getNodes();
@@ -81,6 +90,7 @@ bool isDictGetFunction(const QueryTreeNodePtr & node, DictGetCall & out)
     out.dict_name = std::move(dict_name);
     out.attr_col_name = std::move(attr_col_name);
     out.key_expr = arguments[2];
+    out.result_type = function_node->getResultType();
     return true;
 }
 
@@ -164,8 +174,8 @@ private:
         DictGetCall dictget_call{};
         QueryTreeNodePtr value_expr_node{};
 
-        if (!(isDictGetFunction(arguments[0], dictget_call) && isConstantNode(arguments[1], value_expr_node))
-            && !(isDictGetFunction(arguments[1], dictget_call) && isConstantNode(arguments[0], value_expr_node)))
+        if (!(parseDictGetLike(arguments[0], dictget_call) && isConstantNode(arguments[1], value_expr_node))
+            && !(parseDictGetLike(arguments[1], dictget_call) && isConstantNode(arguments[0], value_expr_node)))
             return;
 
         std::vector<NameAndTypePair> key_cols;
@@ -217,6 +227,12 @@ private:
         NameAndTypePair attr_col{dictget_call.attr_col_name, dict_attr_col_type};
         auto attr_col_node = std::make_shared<ColumnNode>(attr_col, dict_table_function);
 
+        QueryTreeNodePtr querytree_attr_col_node = attr_col_node;
+        if (!attr_col_node->getResultType()->equals(*dictget_call.result_type))
+        {
+            querytree_attr_col_node = createCastFunction(attr_col_node, dictget_call.result_type, getContext());
+        }
+
         QueryTreeNodes key_col_nodes;
         for (const auto & key_col : key_cols)
         {
@@ -226,7 +242,7 @@ private:
         auto comparison_function_node = std::make_shared<FunctionNode>(comparison_function_name);
         comparison_function_node->markAsOperator();
         comparison_function_node->getArguments().getNodes()
-            = {attr_col_node, value_expr_node}; // literal node needs to be more general cannot be string
+            = {querytree_attr_col_node, value_expr_node}; // literal node needs to be more general cannot be string
         resolveOrdinaryFunctionNodeByName(*comparison_function_node, comparison_function_name, getContext());
 
         // SELECT id FROM dictionary('colors') WHERE name = <literal>
@@ -234,9 +250,10 @@ private:
         subquery_node->getJoinTree() = dict_table_function;
         subquery_node->getWhere() = comparison_function_node;
 
-        /// This is a good place to support dictGetString and others, just need to wrap key_col_node into properCastFunction
         for (const auto & key_col_node : key_col_nodes)
+        {
             subquery_node->getProjection().getNodes().push_back(key_col_node);
+        }
         subquery_node->resolveProjectionColumns(key_cols);
         resolveNode(subquery_node, getContext());
 
