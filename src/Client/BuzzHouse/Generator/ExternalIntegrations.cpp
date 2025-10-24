@@ -211,7 +211,7 @@ void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, Cr
         def.clear_table_defs();
         for (const auto & item : items_to_keep)
         {
-            *def.add_table_defs() = std::move(item);
+            *def.add_table_defs() = item;
         }
     }
     if (newt.has_cluster() && rg.nextSmallNumber() < 4)
