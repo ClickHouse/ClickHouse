@@ -7,25 +7,9 @@
     <parallel_hash_join_threshold>1</parallel_hash_join_threshold>
   </settings>
 
-  <create_query>CREATE TABLE l100 (a UInt64) ENGINE = MergeTree ORDER BY tuple()</create_query>
-  <create_query>CREATE TABLE r100 (a UInt64) ENGINE = MergeTree ORDER BY tuple()</create_query>
-  <create_query>CREATE TABLE l1e8 (a UInt64) ENGINE = MergeTree ORDER BY tuple()</create_query>
-  <create_query>CREATE TABLE r1e8 (a UInt64) ENGINE = MergeTree ORDER BY tuple()</create_query>
+  <query tag='RIGHT_100_1e8_LR'>SELECT * FROM numbers_mt(100) AS l RIGHT JOIN numbers_mt(100000000) AS r USING (number) FORMAT Null</query>
+  <query tag='FULL_100_1e8_LR'>SELECT * FROM numbers_mt(100) AS l FULL JOIN numbers_mt(100000000) AS r USING (number) FORMAT Null</query>
+  <query tag='RIGHT_1e8_1e8'>SELECT * FROM numbers_mt(100000000) AS l RIGHT JOIN numbers_mt(100000000) AS r USING (number) FORMAT Null</query>
+  <query tag='FULL_1e8_1e8'>SELECT * FROM numbers_mt(100000000) AS l FULL JOIN numbers_mt(100000000) AS r USING (number) FORMAT Null</query>
 
-  <fill_query>INSERT INTO l100 SELECT * FROM numbers_mt(100)</fill_query>
-  <fill_query>INSERT INTO r100 SELECT * FROM numbers_mt(100)</fill_query>
-  <fill_query>INSERT INTO l1e8 SELECT * FROM numbers_mt(100000000)</fill_query>
-  <fill_query>INSERT INTO r1e8 SELECT * FROM numbers_mt(100000000)</fill_query>
-
-  <query tag='RIGHT_1e8_100_LR'>SELECT * FROM l1e8 AS l RIGHT JOIN r100 AS r USING (a) FORMAT Null</query>
-  <query tag='FULL_1e8_100_LR'>SELECT * FROM l1e8 AS l FULL JOIN r100 AS r USING (a) FORMAT Null</query>
-  <query tag='RIGHT_100_1e8_LR'>SELECT * FROM l100 AS l RIGHT JOIN r1e8 AS r USING (a) FORMAT Null</query>
-  <query tag='FULL_100_1e8_LR'>SELECT * FROM l100 AS l FULL JOIN r1e8 AS r USING (a) FORMAT Null</query>
-  <query tag='RIGHT_1e8_1e8'>SELECT * FROM l1e8 AS l RIGHT JOIN r1e8 AS r USING (a) FORMAT Null</query>
-  <query tag='FULL_1e8_1e8'>SELECT * FROM l1e8 AS l FULL JOIN r1e8 AS r USING (a) FORMAT Null</query>
-
-  <drop_query>DROP TABLE IF EXISTS l100</drop_query>
-  <drop_query>DROP TABLE IF EXISTS r100</drop_query>
-  <drop_query>DROP TABLE IF EXISTS l1e8</drop_query>
-  <drop_query>DROP TABLE IF EXISTS r1e8</drop_query>
 </test>
