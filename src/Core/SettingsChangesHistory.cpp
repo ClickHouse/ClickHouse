@@ -42,6 +42,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "25.11",
         {
             {"use_statistics_cache", 0, 0, "New setting"},
+            {"enable_shared_storage_snapshot_in_query", false, true, "Better consistency guarantees."},
         });
         addSettingsChanges(settings_changes_history, "25.10",
         {
