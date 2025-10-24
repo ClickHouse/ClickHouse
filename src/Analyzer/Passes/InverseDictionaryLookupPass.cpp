@@ -26,22 +26,15 @@ extern const SettingsBool optimize_inverse_dictionary_lookup;
 namespace
 {
 
-
-/** Optimize single `dictGet = LITERAL` into `IN [array keys where value = LITERAL]` subquery
-  *
-  * Example: SELECT col FROM tab WHERE dictGet(DICT_NAME, DICT_VAL_COL, col) = LITERAL;
-  * Result: SELECT col FROM t WHERE col IN (SELECT DICT_KEY_COL FROM dictionary(DICT_NAME) WHERE DICT_VAL_COL = LITERAL);
-  */
-
-struct DictGetCall
+struct DictGetFunctionInfo
 {
     String dict_name;
     String attr_col_name;
-    QueryTreeNodePtr key_expr;
-    DataTypePtr result_type;
+    QueryTreeNodePtr key_expr_node;
+    DataTypePtr return_type;
 };
 
-bool isStringLiteral(const QueryTreeNodePtr & node, String & out)
+bool tryGetStringLiteral(const QueryTreeNodePtr & node, String & out)
 {
     if (const auto * constant_node = node->as<ConstantNode>())
     {
@@ -55,7 +48,7 @@ bool isStringLiteral(const QueryTreeNodePtr & node, String & out)
     return false;
 }
 
-bool isDictGetFamily(const String & name)
+bool isDictGetWithoutDefault(const String & name)
 {
     if (!name.starts_with("dictGet"))
         return false;
@@ -63,10 +56,10 @@ bool isDictGetFamily(const String & name)
     return name.find("OrDefault") == String::npos;
 }
 
-bool parseDictGetLike(const QueryTreeNodePtr & node, DictGetCall & out)
+bool tryParseDictFunctionCall(const QueryTreeNodePtr & node, DictGetFunctionInfo & out)
 {
     const auto * function_node = node->as<FunctionNode>();
-    if (!function_node || !isDictGetFamily(function_node->getFunctionName()))
+    if (!function_node || !isDictGetWithoutDefault(function_node->getFunctionName()))
         return false;
 
     const auto & arguments = function_node->getArguments().getNodes();
@@ -76,17 +69,17 @@ bool parseDictGetLike(const QueryTreeNodePtr & node, DictGetCall & out)
 
     String dict_name;
     String attr_col_name;
-    if (!isStringLiteral(arguments[0], dict_name) || !isStringLiteral(arguments[1], attr_col_name))
+    if (!tryGetStringLiteral(arguments[0], dict_name) || !tryGetStringLiteral(arguments[1], attr_col_name))
         return false;
 
     out.dict_name = std::move(dict_name);
     out.attr_col_name = std::move(attr_col_name);
-    out.key_expr = arguments[2];
-    out.result_type = function_node->getResultType();
+    out.key_expr_node = arguments[2];
+    out.return_type = function_node->getResultType();
     return true;
 }
 
-bool isConstantNode(const QueryTreeNodePtr & node, QueryTreeNodePtr & out)
+bool tryGetConstantNode(const QueryTreeNodePtr & node, QueryTreeNodePtr & out)
 {
     if (node->as<ConstantNode>())
     {
@@ -126,16 +119,16 @@ public:
         if (auto * q = node->as<QueryNode>())
         {
             if (q->hasWhere())
-                recursivelyRewriteDictGetEqual(q->getWhere());
+                rewriteDictGetPredicateRecursively(q->getWhere());
             if (q->hasPrewhere())
-                recursivelyRewriteDictGetEqual(q->getPrewhere());
+                rewriteDictGetPredicateRecursively(q->getPrewhere());
             if (q->hasQualify())
-                recursivelyRewriteDictGetEqual(q->getQualify());
+                rewriteDictGetPredicateRecursively(q->getQualify());
         }
     }
 
 private:
-    [[maybe_unused]] void recursivelyRewriteDictGetEqual(QueryTreeNodePtr & node)
+    [[maybe_unused]] void rewriteDictGetPredicateRecursively(QueryTreeNodePtr & node)
     {
         auto * node_function = node->as<FunctionNode>();
 
@@ -148,26 +141,26 @@ private:
         if (function_name == "and" || function_name == "or" || function_name == "not")
         {
             for (auto & argument : node_function->getArguments().getNodes())
-                recursivelyRewriteDictGetEqual(argument);
+                rewriteDictGetPredicateRecursively(argument);
             return;
         }
 
         static std::unordered_set<String> allowed_comparison_functions
             = {"equals", "notEquals", "less", "lessOrEquals", "greater", "greaterOrEquals", "like", "notLike", "ilike", "notILike"};
 
-        const String comparison_function_name = node_function->getFunctionName();
-        if (!allowed_comparison_functions.contains(comparison_function_name))
+        const String attr_comparison_function_name = node_function->getFunctionName();
+        if (!allowed_comparison_functions.contains(attr_comparison_function_name))
             return;
 
         auto & arguments = node_function->getArguments().getNodes();
         if (arguments.size() != 2)
             return;
 
-        DictGetCall dictget_call{};
-        QueryTreeNodePtr value_expr_node{};
+        DictGetFunctionInfo dictget_function_info{};
+        QueryTreeNodePtr const_value_expr_node{};
 
-        if (!(parseDictGetLike(arguments[0], dictget_call) && isConstantNode(arguments[1], value_expr_node))
-            && !(parseDictGetLike(arguments[1], dictget_call) && isConstantNode(arguments[0], value_expr_node)))
+        if (!(tryParseDictFunctionCall(arguments[0], dictget_function_info) && tryGetConstantNode(arguments[1], const_value_expr_node))
+            && !(tryParseDictFunctionCall(arguments[1], dictget_function_info) && tryGetConstantNode(arguments[0], const_value_expr_node)))
             return;
 
         std::vector<NameAndTypePair> key_cols;
@@ -176,7 +169,7 @@ private:
         try
         {
             const auto & loader = getContext()->getExternalDictionariesLoader();
-            auto dict = loader.getDictionary(dictget_call.dict_name, getContext());
+            auto dict = loader.getDictionary(dictget_function_info.dict_name, getContext());
             if (!dict)
                 return;
 
@@ -203,9 +196,11 @@ private:
                 return;
             }
 
-            assert(dict_structure.hasAttribute(dictget_call.attr_col_name) && "Attribute not found in dictionary structure of dictionary");
+            assert(
+                dict_structure.hasAttribute(dictget_function_info.attr_col_name)
+                && "Attribute not found in dictionary structure of dictionary");
 
-            dict_attr_col_type = dict_structure.getAttribute(dictget_call.attr_col_name).type;
+            dict_attr_col_type = dict_structure.getAttribute(dictget_function_info.attr_col_name).type;
         }
         catch (...)
         {
@@ -213,16 +208,16 @@ private:
         }
 
         auto dict_table_function = std::make_shared<TableFunctionNode>("dictionary");
-        dict_table_function->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(dictget_call.dict_name));
+        dict_table_function->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(dictget_function_info.dict_name));
         resolveNode(dict_table_function, getContext());
 
-        NameAndTypePair attr_col{dictget_call.attr_col_name, dict_attr_col_type};
+        NameAndTypePair attr_col{dictget_function_info.attr_col_name, dict_attr_col_type};
         auto attr_col_node = std::make_shared<ColumnNode>(attr_col, dict_table_function);
 
-        QueryTreeNodePtr querytree_attr_col_node = attr_col_node;
-        if (!attr_col_node->getResultType()->equals(*dictget_call.result_type))
+        QueryTreeNodePtr attr_col_node_casted = attr_col_node;
+        if (!attr_col_node->getResultType()->equals(*dictget_function_info.return_type))
         {
-            querytree_attr_col_node = createCastFunction(attr_col_node, dictget_call.result_type, getContext());
+            attr_col_node_casted = createCastFunction(attr_col_node, dictget_function_info.return_type, getContext());
         }
 
         QueryTreeNodes key_col_nodes;
@@ -231,16 +226,16 @@ private:
             key_col_nodes.push_back(std::make_shared<ColumnNode>(key_col, dict_table_function));
         }
 
-        auto comparison_function_node = std::make_shared<FunctionNode>(comparison_function_name);
-        comparison_function_node->markAsOperator();
-        comparison_function_node->getArguments().getNodes()
-            = {querytree_attr_col_node, value_expr_node}; // literal node needs to be more general cannot be string
-        resolveOrdinaryFunctionNodeByName(*comparison_function_node, comparison_function_name, getContext());
+        auto attr_comparison_function_node = std::make_shared<FunctionNode>(attr_comparison_function_name);
+        attr_comparison_function_node->markAsOperator();
+        attr_comparison_function_node->getArguments().getNodes()
+            = {attr_col_node_casted, const_value_expr_node}; // literal node needs to be more general cannot be string
+        resolveOrdinaryFunctionNodeByName(*attr_comparison_function_node, attr_comparison_function_name, getContext());
 
         // SELECT id FROM dictionary('colors') WHERE name = <literal>
         auto subquery_node = std::make_shared<QueryNode>(Context::createCopy(getContext()));
         subquery_node->getJoinTree() = dict_table_function;
-        subquery_node->getWhere() = comparison_function_node;
+        subquery_node->getWhere() = attr_comparison_function_node;
 
         for (const auto & key_col_node : key_col_nodes)
         {
@@ -252,7 +247,7 @@ private:
         auto in_function_node = std::make_shared<FunctionNode>("in");
         in_function_node->markAsOperator();
         QueryTreeNodePtr querytree_subquery_node = subquery_node;
-        in_function_node->getArguments().getNodes() = {dictget_call.key_expr, querytree_subquery_node};
+        in_function_node->getArguments().getNodes() = {dictget_function_info.key_expr_node, querytree_subquery_node};
         resolveOrdinaryFunctionNodeByName(*in_function_node, "in", getContext());
 
         if (!node_function->getResultType()->equals(*in_function_node->getResultType()))
