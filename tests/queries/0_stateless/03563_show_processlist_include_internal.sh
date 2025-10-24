@@ -17,10 +17,11 @@ CREATE DICTIONARY ${CLICKHOUSE_DATABASE}.slow_dict
 PRIMARY KEY key
 SOURCE(
     CLICKHOUSE(
-        QUERY 'SELECT number AS key, toString(number) AS value FROM numbers(10) WHERE sleep(1) = 0 AND ''$RUN_ID'' != '''''
+        QUERY 'SELECT number AS key, toString(number) AS value FROM numbers(10) WHERE sleep(3600) = 0 AND ''$RUN_ID'' != '''''
     )
 )
-LAYOUT(DIRECT())"
+LAYOUT(DIRECT())
+SETTINGS(function_sleep_max_microseconds_per_block = 3600000000)"
 
 # this starts an internal query
 $CLICKHOUSE_CLIENT --query "SELECT * FROM ${CLICKHOUSE_DATABASE}.slow_dict FORMAT Null" &
@@ -46,5 +47,5 @@ done
 $CLICKHOUSE_CLIENT --query "SHOW PROCESSLIST" | grep -c "$RUN_ID"
 $CLICKHOUSE_CLIENT --query "SHOW PROCESSLIST SETTINGS show_processlist_include_internal = 1" | grep -c "$RUN_ID"
 
-wait $ASYNC_DICT_QUERY_PID
+kill $ASYNC_DICT_QUERY_PID
 $CLICKHOUSE_CLIENT --query "DROP DICTIONARY ${CLICKHOUSE_DATABASE}.slow_dict"
