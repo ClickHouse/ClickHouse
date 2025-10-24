@@ -9,7 +9,7 @@ endif()
 #   contrib/wasmedge/lib/host/wasi/inode-linux.cpp:666:31: error: use of undeclared identifier 'O_SYMLINK'
 #     666 |   const int OFlags = O_PATH | O_SYMLINK;
 #   Should be possible to fix, but for now let's rely on WasmTime, since it probably will be main engine.
-if (ARCH_PPC64LE OR USE_MUSL OR OS_DARWIN OR ARCH_S390X)
+if (USE_MUSL OR ARCH_PPC64LE OR OS_DARWIN OR ARCH_S390X OR OS_FREEBSD OR ARCH_LOONGARCH64)
     message (STATUS "Unsupported architecture for WasmEdge")
     return()
 endif()

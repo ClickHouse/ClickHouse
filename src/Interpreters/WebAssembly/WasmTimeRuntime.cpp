@@ -246,6 +246,7 @@ public:
         }
 
         returns.clear();
+        __msan_unpoison(returns_values.data(), returns_values.size() * sizeof(wasmtime::Val));
         std::transform(returns_values.begin(), returns_values.end(), std::back_inserter(returns), fromWasmTimeValue);
     }
 

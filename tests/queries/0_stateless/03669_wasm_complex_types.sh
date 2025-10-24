@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel
+# Tags: no-fasttest, no-parallel, long
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -36,7 +36,6 @@ SELECT
     toUInt256('109512041981872266840431839764139570488964022093810554932159840724338894707416') as hash
 FROM input('raw_blob String') FORMAT RawBlob
 "
-
 
 ${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=1 << EOF
 
