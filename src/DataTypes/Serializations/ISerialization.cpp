@@ -278,7 +278,7 @@ String getNameForSubstreamPath(
         else if (it->type == Substream::SparseOffsets)
             stream_name += ".sparse.idx";
         else if (it->type == Substream::ReplicatedElements)
-            stream_name += ".replicated_elements";
+            stream_name += ".replicate_elements";
         else if (it->type == Substream::ReplicatedIndexes)
             stream_name += ".replicated_indexes";
         else if (Substream::named_types.contains(it->type))

@@ -359,7 +359,7 @@ public:
 
     struct ScatteredColumns
     {
-        Columns columns;
+        ColumnsInfo columns_info;
         ScatteredBlock::Selector selector;
 
         size_t allocatedBytes() const;

@@ -192,7 +192,7 @@ public:
         if constexpr (lazy)
         {
 #ifndef NDEBUG
-            checkColumns(*row_ref_list->columns);
+            checkColumns(row_ref_list->columns_info->columns);
 #endif
             if (has_columns_to_add)
             {
@@ -328,5 +328,7 @@ public:
     void appendFromBlock(const RowRef * row_ref, bool /* has_default */) { this->emplace_back(row_ref); }
     static constexpr bool isLazy() { return false; }
 };
+
+std::pair<const IColumn *, size_t> getBlockColumnAndRow(const RowRef * row_ref, size_t column_index);
 
 }

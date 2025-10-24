@@ -269,15 +269,15 @@ HashJoin::HashJoin(
 
 size_t HashJoin::ScatteredColumns::allocatedBytes() const
 {
-    if (columns.empty())
+    if (columns_info.columns.empty())
         return 0;
 
-    size_t rows = columns.front()->size();
+    size_t rows = columns_info.columns.front()->size();
     if (rows == 0)
         return 0;
 
     size_t res = 0;
-    for (const auto & column : columns)
+    for (const auto & column : columns_info.columns)
         res += column->allocatedBytes();
     return res * selector.size() / rows;
 }
@@ -449,7 +449,7 @@ size_t HashJoin::getTotalRowCount() const
     if (data->type == Type::CROSS)
     {
         for (const auto & columns : data->columns)
-            res += columns.columns.at(0)->size();
+            res += columns.columns_info.columns.at(0)->size();
     }
     else
     {
@@ -711,7 +711,7 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
         }
 
         doDebugAsserts();
-        data->columns.emplace_back(block_to_save.getColumns(), std::move(selector));
+        data->columns.emplace_back(ColumnsInfo(block_to_save.getColumns()), std::move(selector));
         const auto * stored_columns = &data->columns.back();
         size_t data_allocated_bytes = stored_columns->allocatedBytes();
         data->allocated_size += data_allocated_bytes;
@@ -778,7 +778,7 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
                             map,
                             key_columns,
                             key_sizes[onexpr_idx],
-                            &stored_columns->columns,
+                            &stored_columns->columns_info,
                             stored_columns->selector,
                             null_map,
                             join_mask_col,
@@ -787,7 +787,7 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
                             all_values_unique);
 
                         if (flag_per_row)
-                            used_flags->reinit<kind_, strictness_, std::is_same_v<std::decay_t<decltype(map)>, MapsAll>>(&stored_columns->columns);
+                            used_flags->reinit<kind_, strictness_, std::is_same_v<std::decay_t<decltype(map)>, MapsAll>>(&stored_columns->columns_info.columns);
                     });
             }
 
@@ -863,7 +863,7 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_
 
         size_t old_size = stored_columns.allocatedBytes();
 
-        for (auto & column : stored_columns.columns)
+        for (auto & column : stored_columns.columns_info.columns)
             column = column->cloneResized(column->size());
 
         size_t new_size = stored_columns.allocatedBytes();
@@ -999,14 +999,14 @@ IJoinResult::JoinResultBlock CrossJoinResult::next()
             /// The following statement cannot be substituted with `process_right_block(!have_compressed ? block_right : block_right.decompress())`
             /// because it will lead to copying of `block_right` even if its branch is taken (because common type of `block_right` and `block_right.decompress()` is `Block`).
             if (!join.have_compressed)
-                process_right_block(scattered_columns.columns);
+                process_right_block(scattered_columns.columns_info.columns);
             else
             {
-                chassert(scattered_columns.selector.size() == scattered_columns.columns.at(0)->size()); /// Compression only happens for cross join and scattering only for concurrent hash
+                chassert(scattered_columns.selector.size() == scattered_columns.columns_info.columns.at(0)->size()); /// Compression only happens for cross join and scattering only for concurrent hash
 
                 Columns new_columns;
-                new_columns.reserve(scattered_columns.columns.size());
-                for (const auto & column : scattered_columns.columns)
+                new_columns.reserve(scattered_columns.columns_info.columns.size());
+                for (const auto & column : scattered_columns.columns_info.columns)
                     new_columns.emplace_back(column->decompress());
 
                 process_right_block(new_columns);
@@ -1282,7 +1282,7 @@ struct AdderNonJoined
         {
             for (size_t j = 0; j < columns_right.size(); ++j)
             {
-                const auto & mapped_column = (*mapped.columns)[j];
+                const auto & mapped_column = mapped.columns_info->columns[j];
                 columns_right[j]->insertFrom(*mapped_column, mapped.row_num);
             }
 
@@ -1294,7 +1294,7 @@ struct AdderNonJoined
             {
                 for (size_t j = 0; j < columns_right.size(); ++j)
                 {
-                    const auto & mapped_column = (*it->columns)[j];
+                    const auto & mapped_column = it->columns_info->columns[j];
                     columns_right[j]->insertFrom(*mapped_column, it->row_num);
                 }
 
@@ -1367,10 +1367,10 @@ private:
         size_t rows_added = 0;
         for (; block_it != end; ++block_it)
         {
-            size_t rows_from_block = std::min<size_t>(max_block_size - rows_added, block_it->columns.at(0)->size() - current_block_start);
+            size_t rows_from_block = std::min<size_t>(max_block_size - rows_added, block_it->columns_info.columns.at(0)->size() - current_block_start);
             for (size_t j = 0; j < columns_right.size(); ++j)
             {
-                const auto & col = block_it->columns[j];
+                const auto & col = block_it->columns_info.columns[j];
                 columns_right[j]->insertRangeFrom(*col, current_block_start, rows_from_block);
             }
             rows_added += rows_from_block;
@@ -1379,7 +1379,7 @@ private:
             {
                 /// How many rows have been read
                 current_block_start += rows_from_block;
-                if (block_it->columns.at(0)->size() <= current_block_start)
+                if (block_it->columns_info.columns.at(0)->size() <= current_block_start)
                 {
                     /// current block was fully read
                     ++block_it;
@@ -1422,15 +1422,15 @@ private:
             for (auto & it = *used_position; it != end && rows_added < max_block_size; ++it)
             {
                 const auto & mapped_block = *it;
-                size_t rows = mapped_block.columns.at(0)->size();
+                size_t rows = mapped_block.columns_info.columns.at(0)->size();
 
                 for (size_t row = 0; row < rows; ++row)
                 {
-                    if (!parent.isUsed(&mapped_block.columns, row))
+                    if (!parent.isUsed(&mapped_block.columns_info.columns, row))
                     {
                         for (size_t colnum = 0; colnum < columns_keys_and_right.size(); ++colnum)
                         {
-                            columns_keys_and_right[colnum]->insertFrom(*mapped_block.columns[colnum], row);
+                            columns_keys_and_right[colnum]->insertFrom(*mapped_block.columns_info.columns[colnum], row);
                         }
 
                         ++rows_added;
@@ -1484,13 +1484,13 @@ private:
             if (it->column)
                 nullmap = &assert_cast<const ColumnUInt8 &>(*it->column).getData();
 
-            size_t rows = columns->columns.at(0)->size();
+            size_t rows = columns->columns_info.columns.at(0)->size();
             for (size_t row = 0; row < rows; ++row)
             {
                 if (nullmap && (*nullmap)[row])
                 {
                     for (size_t col = 0; col < columns_keys_and_right.size(); ++col)
-                        columns_keys_and_right[col]->insertFrom(*columns->columns[col], row);
+                        columns_keys_and_right[col]->insertFrom(*columns->columns_info.columns[col], row);
                     ++rows_added;
                 }
             }
@@ -1570,7 +1570,7 @@ BlocksList HashJoin::releaseJoinedBlocks(bool restructure [[maybe_unused]])
     {
         BlocksList result;
         for (auto & columns : columns_list)
-            result.emplace_back(sample_block.cloneWithColumns(columns.columns));
+            result.emplace_back(sample_block.cloneWithColumns(columns.columns_info.columns));
         return result;
     };
 
@@ -1606,7 +1606,7 @@ BlocksList HashJoin::releaseJoinedBlocks(bool restructure [[maybe_unused]])
         for (size_t i = 0; i < positions.size(); ++i)
         {
             auto column = data->sample_block.getByPosition(positions[i]);
-            column.column = saved_columns.columns[positions[i]];
+            column.column = saved_columns.columns_info.columns[positions[i]];
             correctNullabilityInplace(column, is_nullable[i]);
             restored_block.insert(column);
         }
@@ -1700,29 +1700,29 @@ void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
             if (!it.ok())
                 return;
 
-            if (columns_list.empty() || columns_list.back().columns.at(0)->size() >= DEFAULT_BLOCK_SIZE)
+            if (columns_list.empty() || columns_list.back().columns_info.columns.at(0)->size() >= DEFAULT_BLOCK_SIZE)
             {
                 Columns columns;
-                columns.reserve(it->columns->size());
-                for (const auto & col : *(*it)->columns)
+                columns.reserve(it->columns_info->columns.size());
+                for (const auto & col : (*it)->columns_info->columns)
                     columns.push_back(col->cloneEmpty());
-                columns_list.emplace_back(std::move(columns), ScatteredBlock::Selector());
+                columns_list.emplace_back(ColumnsInfo(std::move(columns)), ScatteredBlock::Selector());
             }
 
-            auto & columns = columns_list.back().columns;
-            size_t start_row = columns.at(0)->size();
+            auto & columns_info = columns_list.back().columns_info;
+            size_t start_row = columns_info.columns.at(0)->size();
             for (; it.ok(); ++it)
             {
-                for (size_t i = 0; i < columns.size(); ++i)
+                for (size_t i = 0; i < columns_info.columns.size(); ++i)
                 {
-                    auto & col = columns[i]->assumeMutableRef();
-                    col.insertFrom(*((*it->columns)[i]), it->row_num);
+                    auto & col = columns_info.columns[i]->assumeMutableRef();
+                    col.insertFrom(*(it->columns_info->columns[i]), it->row_num);
                 }
             }
-            size_t new_rows = columns.at(0)->size();
+            size_t new_rows = columns_info.columns.at(0)->size();
             if (new_rows > start_row)
             {
-                RowRefList new_rows_ref(&columns, start_row, new_rows - start_row);
+                RowRefList new_rows_ref(&columns_info, start_row, new_rows - start_row);
                 rows_ref = std::move(new_rows_ref);
             }
         };
@@ -1749,7 +1749,7 @@ void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
         size_t new_blocks_allocated_size = 0;
         for (auto & columns : data->columns)
         {
-            columns.selector = ScatteredBlock::Selector(columns.columns.at(0)->size());
+            columns.selector = ScatteredBlock::Selector(columns.columns_info.columns.at(0)->size());
             new_blocks_allocated_size += columns.allocatedBytes();
         }
         data->allocated_size = new_blocks_allocated_size;

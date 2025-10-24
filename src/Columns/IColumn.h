@@ -33,6 +33,7 @@ class ColumnConst;
 class ColumnReplicated;
 class IDataType;
 class Block;
+struct ColumnsInfo;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 using IColumnPermutation = PaddedPODArray<size_t>;
 using IColumnFilter = PaddedPODArray<UInt8>;
@@ -643,7 +644,7 @@ public:
 
     /// Fills column values from list of blocks and row numbers
     /// `blocks` and `row_nums` must have same size
-    virtual void fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const std::vector<const Columns *> & columns, const std::vector<UInt32> & row_nums, bool source_columns_might_be_replicated);
+    virtual void fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const std::vector<const ColumnsInfo *> & columns, const std::vector<UInt32> & row_nums, bool source_columns_might_be_replicated);
 
     /// Some columns may require finalization before using of other operations.
     virtual void finalize() {}
@@ -902,7 +903,7 @@ private:
 
     /// Fills column values from list of columns and row numbers
     /// `columns` and `row_nums` must have same size
-    void fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const std::vector<const Columns *> & columns, const std::vector<UInt32> & row_nums, bool source_columns_might_be_replicated) override;
+    void fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const std::vector<const ColumnsInfo *> & columns, const std::vector<UInt32> & row_nums, bool source_columns_might_be_replicated) override;
 
     /// Move common implementations into the same translation unit to ensure they are properly inlined.
     char * serializeValueIntoMemoryWithNull(size_t n, char * memory, const UInt8 * is_null) const override;

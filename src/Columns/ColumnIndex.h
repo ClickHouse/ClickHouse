@@ -23,6 +23,7 @@ public:
     void insertIndex(size_t index);
     void insertManyIndexes(size_t index, size_t length);
     void insertIndexesRange(const IColumn & column, size_t offset, size_t limit);
+    void insertIndexesRangeWithShift(const IColumn & column, size_t offset, size_t limit, size_t shift, size_t max_result_index);
     void insertIndexesRange(size_t start, size_t length);
 
     void popBack(size_t n) { indexes->popBack(n); }

@@ -262,6 +262,47 @@ void ColumnIndex::insertIndexesRange(const IColumn & column, size_t offset, size
     checkSizeOfType();
 }
 
+void ColumnIndex::insertIndexesRangeWithShift(const IColumn & column, size_t offset, size_t limit, size_t shift, size_t max_result_index)
+{
+    while (max_result_index > getMaxIndexForCurrentType())
+        expandType();
+
+    auto insert_for_type = [&](auto type)
+    {
+        using ColumnType = decltype(type);
+        const auto * column_ptr = typeid_cast<const ColumnVector<ColumnType> *>(&column);
+
+        if (!column_ptr)
+            return false;
+
+        auto copy = [&](auto cur_type)
+        {
+            using CurIndexType = decltype(cur_type);
+            auto & indexes_data = getIndexesData<CurIndexType>();
+            const auto & column_data = column_ptr->getData();
+
+            size_t size = indexes_data.size();
+            indexes_data.resize(size + limit);
+
+            for (size_t i = 0; i < limit; ++i)
+                indexes_data[size + i] = static_cast<CurIndexType>(column_data[offset + i]) + shift;
+        };
+
+        callForType(std::move(copy), size_of_type);
+
+        return true;
+    };
+
+    if (!insert_for_type(UInt8()) &&
+        !insert_for_type(UInt16()) &&
+        !insert_for_type(UInt32()) &&
+        !insert_for_type(UInt64()))
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Invalid column for ColumnLowCardinality index. Expected UInt, got {}",
+                        column.getName());
+
+    checkSizeOfType();
+}
+
 void ColumnIndex::callForIndexes(std::function<void(size_t, size_t)> && callback, size_t start, size_t end) const
 {
     auto callback_for_type = [&](auto cur_type)

@@ -186,22 +186,32 @@ void ColumnReplicated::doInsertRangeFrom(const IColumn & src, size_t start, size
 
     if (const auto * src_replicated = typeid_cast<const ColumnReplicated *>(&src))
     {
-        /// Use insertion_cache to avoid copying of values from source nested column if
-        /// we already inserted them earlier and can use indexes of already inserted values.
-        auto & indexes_match = insertion_cache[src_replicated->id];
-        auto insert = [&](size_t, size_t src_index)
+        /// Optimization for case when we insert the whole column (may happen in squashing).
+        if (start == 0 && length == src_replicated->size())
         {
-            auto it = indexes_match.find(src_index);
-            if (it == indexes_match.end())
+            indexes.insertIndexesRangeWithShift(*src_replicated->getIndexesColumn(), start, length, nested_column->size(), nested_column->size() + src_replicated->getNestedColumn()->size());
+            nested_column->insertRangeFrom(*src_replicated->getNestedColumn(), 0, src_replicated->getNestedColumn()->size());
+        }
+        else
+        {
+            /// Use insertion_cache to avoid copying of values from source nested column if
+            /// we already inserted them earlier and can use indexes of already inserted values.
+            auto & indexes_match = insertion_cache[src_replicated->id];
+
+            auto insert = [&](size_t, size_t src_index)
             {
-                nested_column->insertFrom(*src_replicated->nested_column, src_index);
-                it = indexes_match.emplace(src_index, nested_column->size() - 1).first;
-            }
+                auto it = indexes_match.find(src_index);
+                if (it == indexes_match.end())
+                {
+                    nested_column->insertFrom(*src_replicated->nested_column, src_index);
+                    it = indexes_match.emplace(src_index, nested_column->size() - 1).first;
+                }
 
-            indexes.insertIndex(it->second);
-        };
+                indexes.insertIndex(it->second);
+            };
 
-        src_replicated->indexes.callForIndexes(std::move(insert), start, start + length);
+            src_replicated->indexes.callForIndexes(std::move(insert), start, start + length);
+        }
     }
     else
     {
@@ -687,7 +697,7 @@ ColumnPtr convertOffsetsToIndexes(const IColumn::Offsets & offsets)
 
 bool isLazyReplicationUseful(const ColumnPtr & column)
 {
-    return !column->isConst() && !column->isReplicated() && !column->lowCardinality() && (!column->isFixedAndContiguous() || column->sizeOfValueIfFixed() > 8);
+    return !column->isConst() && !column->isReplicated() && !column->lowCardinality();
 }
 
 
