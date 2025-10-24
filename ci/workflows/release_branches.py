@@ -13,7 +13,7 @@ builds_for_release_branch = [
 workflow = Workflow.Config(
     name="ReleaseBranchCI",
     event=Workflow.Event.PUSH,
-    branches=["2[1-9].[1-9][0-9]", "2[1-9].[1-9]"],
+    branches=Workflow.RELEASE_GLOB,
     jobs=[
         *builds_for_release_branch,
         *[
