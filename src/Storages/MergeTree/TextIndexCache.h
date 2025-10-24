@@ -25,6 +25,7 @@ class TextIndexDictionaryBlockCacheEntry
 {
 public:
     TextIndexDictionaryBlockCacheEntry() = default;
+
     explicit TextIndexDictionaryBlockCacheEntry(DictionaryBlock && dictionary_block)
     {
         const auto & tokens = assert_cast<const ColumnString &>(*dictionary_block.tokens);
@@ -34,16 +35,16 @@ public:
             token_infos.emplace(tokens.getDataAt(i), std::move(dictionary_block.token_infos[i]));
     }
 
-    TokenPostingsInfo * getTokenInfo(const StringRef & token)
+    TokenPostingsInfo * getTokenInfo(std::string_view token)
     {
-        if (auto it = token_infos.find(token.toString()); it != token_infos.end())
+        if (auto it = token_infos.find(token); it != token_infos.end())
             return &it->second;
         return {};
     }
 
 private:
-    /// TokenPostingsInfo contains either an offset of a larger posting list or an array of rows directly in case of a posting list is small enough.
-    /// In the latter case, the posting list will be cached as well.
+    /// TokenPostingsInfo contains either an offset of a larger posting list or an array of rows directly in case
+    /// of a posting list is small enough. In the latter case, the posting list will be cached as well.
     absl::flat_hash_map<String, TokenPostingsInfo> token_infos;
 };
 

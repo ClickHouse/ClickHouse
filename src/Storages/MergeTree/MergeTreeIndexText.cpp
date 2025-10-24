@@ -180,8 +180,8 @@ PostingList PostingsSerialization::deserialize(UInt64 header, UInt32 cardinality
     return PostingList::read(buf.data());
 }
 
-MergeTreeIndexGranuleText::MergeTreeIndexGranuleText(MergeTreeIndexTextParams params_, ContextPtr context_)
-    : dictionary_block_cache(context_->getTextIndexDictionaryBlockCache().get())
+MergeTreeIndexGranuleText::MergeTreeIndexGranuleText(MergeTreeIndexTextParams params_)
+    : dictionary_block_cache(Context::getGlobalContextInstance()->getTextIndexDictionaryBlockCache().get())
     , params(std::move(params_))
     , bloom_filter(params.bloom_filter_bits_per_row, params.bloom_filter_num_hashes, 0)
 {
@@ -433,7 +433,7 @@ void MergeTreeIndexGranuleText::analyzeDictionary(MergeTreeIndexReaderStream & s
         {
             auto it = remaining_tokens.find(token);
             chassert(it != remaining_tokens.end());
-            auto * token_info = dictionary_block->getTokenInfo(token);
+            auto * token_info = dictionary_block->getTokenInfo(token.toView());
 
             if (token_info)
             {

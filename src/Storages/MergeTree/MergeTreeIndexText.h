@@ -203,7 +203,7 @@ struct MergeTreeIndexGranuleText final : public IMergeTreeIndexGranule
 public:
     using TokenToPostingsInfosMap = absl::flat_hash_map<StringRef, TokenPostingsInfo>;
 
-    explicit MergeTreeIndexGranuleText(MergeTreeIndexTextParams params_, ContextPtr context_ = Context::getGlobalContextInstance());
+    explicit MergeTreeIndexGranuleText(MergeTreeIndexTextParams params_);
     ~MergeTreeIndexGranuleText() override = default;
 
     void serializeBinary(WriteBuffer & ostr) const override;
