@@ -5,7 +5,7 @@
 namespace DB
 {
 
-/** Optimize `dictGetFamily = CONSTEXPR` into `IN SELECT ... FROM dictionary WHERE ... = CONSTEXPR` subquery
+/** Optimize `WHERE dictGetFamily(..., ATTR_COL, COL) = CONSTEXPR` into `COL IN (SELECT ... FROM dictionary WHERE ATTR_COL = CONSTEXPR)`
   *
   * Example: SELECT col FROM tab WHERE dictGet(DICT_NAME, DICT_ATTRIBUTE_COL, col) = CONSTEXPR;
   * Result: SELECT col FROM t WHERE col IN (SELECT DICT_KEY_COL FROM dictionary(DICT_NAME) WHERE DICT_ATTRIBUTE_COL = CONSTEXPR);
@@ -20,9 +20,13 @@ namespace DB
 class InverseDictionaryLookupPass final : public IQueryTreePass
 {
 public:
-    String getName() override { return "CountDistinct"; }
+    String getName() override { return "InverseDictionaryLookupPass"; }
 
-    String getDescription() override { return "Optimize single dictGet to IN subquery"; }
+    String getDescription() override
+    {
+        return "Optimize `WHERE dictGetFamily(..., ATTR_COL, COL) = CONSTEXPR` into `COL IN (SELECT ... FROM dictionary WHERE ATTR_COL = "
+               "CONSTEXPR)`";
+    }
 
     void run(QueryTreeNodePtr & query_tree_node, ContextPtr context) override;
 
