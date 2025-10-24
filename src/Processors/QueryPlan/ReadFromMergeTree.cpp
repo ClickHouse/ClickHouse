@@ -2118,7 +2118,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             is_parallel_reading_from_replicas_);
 
         if (indexes->use_skip_indexes && !indexes->skip_indexes.empty() && query_info_.isFinal()
-            && settings[Setting::use_skip_indexes_if_final_exact_mode])
+            && settings[Setting::use_skip_indexes_if_final_exact_mode]
+            && !areSkipIndexColumnsInPrimaryKey(primary_key_column_names, indexes->skip_indexes))
         {
             result.parts_with_ranges
                 = findPKRangesForFinalAfterSkipIndex(primary_key, metadata_snapshot->getSortingKey(), result.parts_with_ranges, log);
@@ -3316,6 +3317,24 @@ void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & sk
 ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstimator() const
 {
     return data.getConditionSelectivityEstimator(getParts(), getContext());
+}
+
+
+/// Are columns of all skip indexes part of the primary key also
+bool ReadFromMergeTree::areSkipIndexColumnsInPrimaryKey(const Names & primary_key_columns, const UsefulSkipIndexes & skip_indexes)
+{
+    NameSet primary_key_columns_set(primary_key_columns.begin(), primary_key_columns.end());
+
+    for (const auto & skip_index : skip_indexes.useful_indices)
+    {
+        for (const auto & column : skip_index.index->index.column_names)
+        {
+            if (primary_key_columns_set.find(column) == primary_key_columns_set.end())
+                return false;
+        }
+    }
+
+    return true;
 }
 
 }
