@@ -52,7 +52,6 @@ struct LazyOutput
     bool output_by_row_list = false;
     size_t output_by_row_list_threshold = 0;
     size_t join_data_avg_perkey_rows = 0;
-    bool is_lazy_columns_replication_enabled = false;
 
     const PaddedPODArray<UInt64> & getRowRefs() const { return row_refs; }
     size_t getRowCount() const { return row_count; }
@@ -145,7 +144,6 @@ public:
         lazy_output.output_by_row_list_threshold = join.getTableJoin().outputByRowListPerkeyRowsThreshold();
         lazy_output.join_data_sorted = join.getJoinedData()->sorted;
         lazy_output.join_data_avg_perkey_rows = join.getJoinedData()->avgPerKeyRows();
-        lazy_output.is_lazy_columns_replication_enabled = join.enableLazyColumnsReplication();
 
         for (const auto & src_column : block_with_columns_to_add)
         {
