@@ -263,7 +263,7 @@ Block ArrayJoinResultIterator::next()
                 {
                     array_ptr = (is_left && !is_unaligned) ? non_empty_array_columns[current.name]->cut(current_row, next_row - current_row)
                                                            : current.column;
-                    array_ptr = array_ptr->convertToFullColumnIfConst();
+                    array_ptr = array_ptr->convertToFullColumnIfConst()->convertToFullColumnIfReplicated();
                 }
                 else
                 {
