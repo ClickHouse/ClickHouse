@@ -5,10 +5,16 @@
 namespace DB
 {
 
-/** Optimize single `dictGet = LITERAL` into `IN [array keys where value = LITERAL]` subquery
+/** Optimize `dictGetFamily = CONSTEXPR` into `IN SELECT ... FROM dictionary WHERE ... = CONSTEXPR` subquery
   *
-  * Example: SELECT col FROM tab WHERE dictGet(DICT_NAME, DICT_VAL_COL, col) = LITERAL;
-  * Result: SELECT col FROM t WHERE col IN (SELECT DICT_KEY_COL FROM dictionary(DICT_NAME) WHERE DICT_VAL_COL = LITERAL);
+  * Example: SELECT col FROM tab WHERE dictGet(DICT_NAME, DICT_ATTRIBUTE_COL, col) = CONSTEXPR;
+  * Result: SELECT col FROM t WHERE col IN (SELECT DICT_KEY_COL FROM dictionary(DICT_NAME) WHERE DICT_ATTRIBUTE_COL = CONSTEXPR);
+  *
+  * Example: SELECT (col1, col2) FROM tab WHERE dictGet(DICT_NAME, DICT_ATTRIBUTE_COL, (col1, col2)) = CONSTEXPR;
+  * Result: SELECT (col1, col2) FROM t WHERE (col1, col2) IN (SELECT (DICT_KEY_COL1, DICT_KEY_COL2) FROM dictionary(DICT_NAME) WHERE DICT_ATTRIBUTE_COL = CONSTEXPR);
+  *
+  * Supported comparison operators: =, !=, <, <=, >, >=, LIKE, ILIKE and their negations.
+  * NOTE: Does not support `dictGet*OrDefault` functions. Supports all other `dictGet*` functions that has 3 arguments.
   */
 
 class InverseDictionaryLookupPass final : public IQueryTreePass
