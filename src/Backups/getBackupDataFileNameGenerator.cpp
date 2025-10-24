@@ -18,6 +18,7 @@ namespace DB
 namespace ErrorCodes
 {
 
+extern const int ARGUMENT_OUT_OF_BOUND;
 extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 
@@ -35,7 +36,8 @@ public:
     explicit BackupDataFileNameGeneratorWithChecksumHexPrefix(size_t prefix_length_)
         : prefix_length(prefix_length_)
     {
-        /// TODO: better validation
+        if (prefix_length > 32)
+            throw DB::Exception(DB::ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Prefix length {} out of bound", prefix_length);
     }
 
     std::string getName() const override { return std::string("checksum_hex_") + std::to_string(prefix_length); }
@@ -50,7 +52,7 @@ public:
 
         auto checksum_hex = getHexUIntLowercase(file_info.checksum);
 
-        return fs::path(checksum_hex.substr(0, prefix_length)) / file_info.file_name;
+        return fs::path(checksum_hex.substr(0, prefix_length)) / checksum_hex.substr(prefix_length);
     }
 
 private:
@@ -77,19 +79,15 @@ getBackupDataFileNameGenerator(const Poco::Util::AbstractConfiguration & config,
     if (!backup_settings.deduplicate_files)
         return std::make_shared<BackupDataFileNameGeneratorDefault>();
 
-    size_t prefix_length = 0;
-    if (backup_settings.key_prefix_length != 0)
-        prefix_length = backup_settings.key_prefix_length;
+    size_t prefix_length = backup_settings.key_prefix_length;
 
     if (prefix_length == 0)
-    {
-        String config_prefix = "backups";
-        prefix_length = config.getUInt64(config_prefix + ".key_prefix_length", DEFAULT_BACKUP_PREFIX_LENGTH);
-    }
+        prefix_length = config.getUInt64("backups.key_prefix_length", DEFAULT_BACKUP_PREFIX_LENGTH);
+
     if (prefix_length == 0)
         return std::make_shared<BackupDataFileNameGeneratorDefault>();
-    else
-        return std::make_shared<BackupDataFileNameGeneratorWithChecksumHexPrefix>(prefix_length);
+
+    return std::make_shared<BackupDataFileNameGeneratorWithChecksumHexPrefix>(prefix_length);
 }
 
 BackupDataFileNameGeneratorPtr getBackupDataFileNameGenerator(const std::string & generator_name)
