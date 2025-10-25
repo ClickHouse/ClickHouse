@@ -1,4 +1,5 @@
 #include <Common/SipHash.h>
+#include <Core/Settings.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/System/StorageSystemPartsBase.h>
 #include <Common/escapeForFileName.h>
@@ -12,12 +13,10 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/StorageMaterializedMySQL.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Access/ContextAccess.h>
 #include <Databases/IDatabase.h>
-#include <Parsers/queryToString.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/Pipe.h>
@@ -35,6 +34,15 @@ constexpr auto * storage_uuid_column_name = "storage_uuid";
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsSeconds lock_acquire_timeout;
+}
+
+StoragesInfoStreamBase::StoragesInfoStreamBase(ContextPtr context)
+    : query_id(context->getCurrentQueryId()), lock_timeout(context->getSettingsRef()[Setting::lock_acquire_timeout]), next_row(0), rows(0)
+{
+}
 
 bool StorageSystemPartsBase::hasStateColumn(const Names & column_names, const StorageSnapshotPtr & storage_snapshot)
 {
@@ -60,16 +68,18 @@ MergeTreeData::DataPartsVector
 StoragesInfo::getParts(MergeTreeData::DataPartStateVector & state, bool has_state_column) const
 {
     using State = MergeTreeData::DataPartState;
+    using Kind = MergeTreeData::DataPartKind;
+
     if (need_inactive_parts)
     {
         /// If has_state_column is requested, return all states.
         if (!has_state_column)
-            return data->getDataPartsVectorForInternalUsage({State::Active, State::Outdated}, &state);
+            return data->getDataPartsVectorForInternalUsage({State::Active, State::Outdated}, {Kind::Regular, Kind::Patch}, &state);
 
         return data->getAllDataPartsVector(&state);
     }
 
-    return data->getDataPartsVectorForInternalUsage({State::Active}, &state);
+    return data->getDataPartsVectorForInternalUsage({State::Active}, {Kind::Regular, Kind::Patch}, &state);
 }
 
 MergeTreeData::ProjectionPartsVector
@@ -108,7 +118,7 @@ StoragesInfoStream::StoragesInfoStream(std::optional<ActionsDAG> filter_by_datab
     const bool check_access_for_tables = !access->isGranted(AccessType::SHOW_TABLES);
 
     {
-        Databases databases = DatabaseCatalog::instance().getDatabases();
+        Databases databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
 
         /// Add column 'database'.
         MutableColumnPtr database_column_mut = ColumnString::create();
@@ -116,7 +126,7 @@ StoragesInfoStream::StoragesInfoStream(std::optional<ActionsDAG> filter_by_datab
         {
             /// Check if database can contain MergeTree tables,
             /// if not it's unnecessary to load all tables of database just to filter all of them.
-            if (database.second->canContainMergeTreeTables())
+            if (!database.second->isExternal())
                 database_column_mut->insert(database.first);
         }
         block_to_filter.insert(ColumnWithTypeAndName(
@@ -139,9 +149,9 @@ StoragesInfoStream::StoragesInfoStream(std::optional<ActionsDAG> filter_by_datab
             for (size_t i = 0; i < rows; ++i)
             {
                 String database_name = (*database_column_for_filter)[i].safeGet<String>();
-                const DatabasePtr database = databases.at(database_name);
+                const DatabasePtr & database = databases.at(database_name);
 
-                offsets[i] = i ? offsets[i - 1] : 0;
+                offsets[i] = offsets[i - 1];
                 for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
                 {
                     String table_name = iterator->name();
@@ -159,13 +169,6 @@ StoragesInfoStream::StoragesInfoStream(std::optional<ActionsDAG> filter_by_datab
                         storage_uuid = hash.get128();
                     }
 
-#if USE_MYSQL
-                    if (auto * proxy = dynamic_cast<StorageMaterializedMySQL *>(storage.get()))
-                    {
-                        auto nested = proxy->getNested();
-                        storage.swap(nested);
-                    }
-#endif
                     if (!dynamic_cast<MergeTreeData *>(storage.get()))
                         continue;
 
@@ -225,7 +228,7 @@ public:
         const SelectQueryInfo & query_info_,
         const StorageSnapshotPtr & storage_snapshot_,
         const ContextPtr & context_,
-        Block sample_block,
+        SharedHeader sample_block,
         std::shared_ptr<StorageSystemPartsBase> storage_,
         std::vector<UInt8> columns_mask_,
         bool has_state_column_);
@@ -245,12 +248,12 @@ ReadFromSystemPartsBase::ReadFromSystemPartsBase(
     const SelectQueryInfo & query_info_,
     const StorageSnapshotPtr & storage_snapshot_,
     const ContextPtr & context_,
-    Block sample_block,
+    SharedHeader sample_block,
     std::shared_ptr<StorageSystemPartsBase> storage_,
     std::vector<UInt8> columns_mask_,
     bool has_state_column_)
     : SourceStepWithFilter(
-        DataStream{.header = std::move(sample_block)},
+        std::move(sample_block),
         column_names_,
         query_info_,
         storage_snapshot_,
@@ -311,7 +314,7 @@ void StorageSystemPartsBase::read(
 
     auto reading = std::make_unique<ReadFromSystemPartsBase>(
         column_names, query_info, storage_snapshot,
-        std::move(context), std::move(header), std::move(this_ptr), std::move(columns_mask), has_state_column);
+        std::move(context), std::make_shared<const Block>(std::move(header)), std::move(this_ptr), std::move(columns_mask), has_state_column);
 
     query_plan.addStep(std::move(reading));
 }
@@ -319,9 +322,9 @@ void StorageSystemPartsBase::read(
 void ReadFromSystemPartsBase::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     auto stream = storage->getStoragesInfoStream(std::move(filter_by_database), std::move(filter_by_other_columns), context);
-    auto header = getOutputStream().header;
+    auto header = getOutputHeader();
 
-    MutableColumns res_columns = header.cloneEmptyColumns();
+    MutableColumns res_columns = header->cloneEmptyColumns();
 
     while (StoragesInfo info = stream->next())
     {
@@ -362,4 +365,10 @@ StorageSystemPartsBase::StorageSystemPartsBase(const StorageID & table_id_, Colu
     setVirtuals(std::move(virtuals));
 }
 
+bool StoragesInfoStreamBase::tryLockTable(StoragesInfo & info)
+{
+    info.table_lock = info.storage->tryLockForShare(query_id, lock_timeout);
+    // nullptr means table was dropped while acquiring the lock
+    return info.table_lock != nullptr;
+}
 }

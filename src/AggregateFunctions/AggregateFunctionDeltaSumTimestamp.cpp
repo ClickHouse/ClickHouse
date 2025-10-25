@@ -22,14 +22,21 @@ namespace ErrorCodes
 namespace
 {
 
+/** Due to a lack of proper code review, this code was contributed with a multiplication of template instantiations
+  * over all pairs of data types, and we deeply regret that.
+  *
+  * We cannot remove all combinations, because the binary representation of serialized data has to remain the same,
+  * but we can partially heal the wound by treating unsigned and signed data types in the same way.
+  */
+
 template <typename ValueType, typename TimestampType>
 struct AggregationFunctionDeltaSumTimestampData
 {
-    ValueType sum = 0;
-    ValueType first = 0;
-    ValueType last = 0;
-    TimestampType first_ts = 0;
-    TimestampType last_ts = 0;
+    ValueType sum{};
+    ValueType first{};
+    ValueType last{};
+    TimestampType first_ts{};
+    TimestampType last_ts{};
     bool seen = false;
 };
 
@@ -37,23 +44,22 @@ template <typename ValueType, typename TimestampType>
 class AggregationFunctionDeltaSumTimestamp final
     : public IAggregateFunctionDataHelper<
         AggregationFunctionDeltaSumTimestampData<ValueType, TimestampType>,
-        AggregationFunctionDeltaSumTimestamp<ValueType, TimestampType>
-      >
+        AggregationFunctionDeltaSumTimestamp<ValueType, TimestampType>>
 {
 public:
     AggregationFunctionDeltaSumTimestamp(const DataTypes & arguments, const Array & params)
         : IAggregateFunctionDataHelper<
             AggregationFunctionDeltaSumTimestampData<ValueType, TimestampType>,
-            AggregationFunctionDeltaSumTimestamp<ValueType, TimestampType>
-        >{arguments, params, createResultType()}
-    {}
+            AggregationFunctionDeltaSumTimestamp<ValueType, TimestampType>>{arguments, params, createResultType()}
+    {
+    }
 
     AggregationFunctionDeltaSumTimestamp()
         : IAggregateFunctionDataHelper<
             AggregationFunctionDeltaSumTimestampData<ValueType, TimestampType>,
-            AggregationFunctionDeltaSumTimestamp<ValueType, TimestampType>
-        >{}
-    {}
+            AggregationFunctionDeltaSumTimestamp<ValueType, TimestampType>>{}
+    {
+    }
 
     bool allocatesMemoryInArena() const override { return false; }
 
@@ -63,8 +69,8 @@ public:
 
     void NO_SANITIZE_UNDEFINED ALWAYS_INLINE add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        auto value = assert_cast<const ColumnVector<ValueType> &>(*columns[0]).getData()[row_num];
-        auto ts = assert_cast<const ColumnVector<TimestampType> &>(*columns[1]).getData()[row_num];
+        auto value = unalignedLoad<ValueType>(columns[0]->getRawData().data() + row_num * sizeof(ValueType));
+        auto ts = unalignedLoad<TimestampType>(columns[1]->getRawData().data() + row_num * sizeof(TimestampType));
 
         auto & data = this->data(place);
 
@@ -172,9 +178,47 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        assert_cast<ColumnVector<ValueType> &>(to).getData().push_back(this->data(place).sum);
+        static_cast<ColumnFixedSizeHelper &>(to).template insertRawData<sizeof(ValueType)>(
+            reinterpret_cast<const char *>(&this->data(place).sum));
     }
 };
+
+
+template <typename FirstType, template <typename, typename> class AggregateFunctionTemplate, typename... TArgs>
+IAggregateFunction * createWithTwoTypesSecond(const IDataType & second_type, TArgs && ... args)
+{
+    WhichDataType which(second_type);
+
+    if (which.idx == TypeIndex::UInt32) return new AggregateFunctionTemplate<FirstType, UInt32>(args...);
+    if (which.idx == TypeIndex::UInt64) return new AggregateFunctionTemplate<FirstType, UInt64>(args...);
+    if (which.idx == TypeIndex::Int32) return new AggregateFunctionTemplate<FirstType, UInt32>(args...);
+    if (which.idx == TypeIndex::Int64) return new AggregateFunctionTemplate<FirstType, UInt64>(args...);
+    if (which.idx == TypeIndex::Float32) return new AggregateFunctionTemplate<FirstType, Float32>(args...);
+    if (which.idx == TypeIndex::Float64) return new AggregateFunctionTemplate<FirstType, Float64>(args...);
+    if (which.idx == TypeIndex::Date) return new AggregateFunctionTemplate<FirstType, UInt16>(args...);
+    if (which.idx == TypeIndex::DateTime) return new AggregateFunctionTemplate<FirstType, UInt32>(args...);
+
+    return nullptr;
+}
+
+template <template <typename, typename> class AggregateFunctionTemplate, typename... TArgs>
+IAggregateFunction * createWithTwoTypes(const IDataType & first_type, const IDataType & second_type, TArgs && ... args)
+{
+    WhichDataType which(first_type);
+
+    if (which.idx == TypeIndex::UInt8) return createWithTwoTypesSecond<UInt8, AggregateFunctionTemplate>(second_type, args...);
+    if (which.idx == TypeIndex::UInt16) return createWithTwoTypesSecond<UInt16, AggregateFunctionTemplate>(second_type, args...);
+    if (which.idx == TypeIndex::UInt32) return createWithTwoTypesSecond<UInt32, AggregateFunctionTemplate>(second_type, args...);
+    if (which.idx == TypeIndex::UInt64) return createWithTwoTypesSecond<UInt64, AggregateFunctionTemplate>(second_type, args...);
+    if (which.idx == TypeIndex::Int8) return createWithTwoTypesSecond<UInt8, AggregateFunctionTemplate>(second_type, args...);
+    if (which.idx == TypeIndex::Int16) return createWithTwoTypesSecond<UInt16, AggregateFunctionTemplate>(second_type, args...);
+    if (which.idx == TypeIndex::Int32) return createWithTwoTypesSecond<UInt32, AggregateFunctionTemplate>(second_type, args...);
+    if (which.idx == TypeIndex::Int64) return createWithTwoTypesSecond<UInt64, AggregateFunctionTemplate>(second_type, args...);
+    if (which.idx == TypeIndex::Float32) return createWithTwoTypesSecond<Float32, AggregateFunctionTemplate>(second_type, args...);
+    if (which.idx == TypeIndex::Float64) return createWithTwoTypesSecond<Float64, AggregateFunctionTemplate>(second_type, args...);
+
+    return nullptr;
+}
 
 AggregateFunctionPtr createAggregateFunctionDeltaSumTimestamp(
     const String & name,
@@ -193,8 +237,14 @@ AggregateFunctionPtr createAggregateFunctionDeltaSumTimestamp(
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}, "
                         "must be Int, Float, Date, DateTime", arguments[1]->getName(), name);
 
-    return AggregateFunctionPtr(createWithTwoNumericOrDateTypes<AggregationFunctionDeltaSumTimestamp>(
+    auto res = AggregateFunctionPtr(createWithTwoTypes<AggregationFunctionDeltaSumTimestamp>(
         *arguments[0], *arguments[1], arguments, params));
+
+    if (!res)
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}, "
+            "this type is not supported", arguments[0]->getName(), name);
+
+    return res;
 }
 }
 

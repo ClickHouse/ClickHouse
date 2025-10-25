@@ -1,6 +1,9 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/corrmatrix
+description: 'Computes the correlation matrix over N variables.'
 sidebar_position: 118
+slug: /sql-reference/aggregate-functions/reference/corrmatrix
+title: 'corrMatrix'
+doc_type: 'reference'
 ---
 
 # corrMatrix
@@ -15,11 +18,11 @@ corrMatrix(x[, ...])
 
 **Arguments**
 
-- `x` — a variable number of parameters. [(U)Int*](../../data-types/int-uint.md), [Float*](../../data-types/float.md), [Decimal](../../data-types/decimal.md).
+- `x` — a variable number of parameters. [`(U)Int8/16/32/64`](../../data-types/int-uint.md), [`Float*`](../../data-types/float.md).
 
 **Returned value**
 
-- Correlation matrix. [Array](../../data-types/array.md)([Array](../../data-types/array.md)([Float64](../../data-types/float.md))).
+- Correlation matrix. [`Array`](../../data-types/array.md)([`Array`](../../data-types/array.md)([`Float64`](../../data-types/float.md))).
 
 **Example**
 

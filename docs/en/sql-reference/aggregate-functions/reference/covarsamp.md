@@ -1,6 +1,9 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/covarsamp
+description: 'Calculates the value of `Σ((x - x̅)(y - y̅)) / (n - 1)`'
 sidebar_position: 124
+slug: /sql-reference/aggregate-functions/reference/covarsamp
+title: 'covarSamp'
+doc_type: 'reference'
 ---
 
 # covarSamp
@@ -76,5 +79,3 @@ Result:
 │                         nan │
 └─────────────────────────────┘
 ```
-
-

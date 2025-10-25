@@ -19,7 +19,7 @@ private:
     SingleValueDataBaseMemoryBlock v_data;
 
 public:
-    explicit AggregateFunctionCombinatorArgMinArgMaxData(TypeIndex value_type) { generateSingleValueFromTypeIndex(value_type, v_data); }
+    explicit AggregateFunctionCombinatorArgMinArgMaxData(const DataTypePtr & value_type) { generateSingleValueFromType(value_type, v_data); }
 
     ~AggregateFunctionCombinatorArgMinArgMaxData() { data().~SingleValueDataBase(); }
 
@@ -34,10 +34,11 @@ class AggregateFunctionCombinatorArgMinArgMax final : public IAggregateFunctionH
 
 private:
     AggregateFunctionPtr nested_function;
+    DataTypePtr data_type;
     SerializationPtr serialization;
     const size_t key_col;
     const size_t key_offset;
-    const TypeIndex key_type_index;
+    const DataTypePtr key_type;
 
     AggregateFunctionCombinatorArgMinArgMaxData & data(AggregateDataPtr __restrict place) const /// NOLINT
     {
@@ -52,15 +53,24 @@ public:
     AggregateFunctionCombinatorArgMinArgMax(AggregateFunctionPtr nested_function_, const DataTypes & arguments, const Array & params)
         : IAggregateFunctionHelper<AggregateFunctionCombinatorArgMinArgMax<isMin>>{arguments, params, nested_function_->getResultType()}
         , nested_function{nested_function_}
+        , data_type(arguments.back())
         , serialization(arguments.back()->getDefaultSerialization())
         , key_col{arguments.size() - 1}
         , key_offset{((nested_function->sizeOfData() + alignof(Key) - 1) / alignof(Key)) * alignof(Key)}
-        , key_type_index(WhichDataType(arguments[key_col]).idx)
+        , key_type(arguments[key_col])
     {
         if (!arguments[key_col]->isComparable())
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type {} for combinator {} because the values of that data type are not comparable",
+                arguments[key_col]->getName(),
+                getName());
+
+        if (isDynamic(arguments[key_col]) || isVariant(arguments[key_col]))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument of aggregate function {} because the column of that type can contain values with different "
+                "data types. Consider using typed subcolumns or cast column to a specific data type",
                 arguments[key_col]->getName(),
                 getName());
     }
@@ -83,7 +93,7 @@ public:
 
     bool allocatesMemoryInArena() const override
     {
-        return nested_function->allocatesMemoryInArena() || singleValueTypeAllocatesMemoryInArena(key_type_index);
+        return nested_function->allocatesMemoryInArena() || singleValueTypeAllocatesMemoryInArena(key_type->getTypeId());
     }
 
     bool hasTrivialDestructor() const override
@@ -98,7 +108,7 @@ public:
     void create(AggregateDataPtr __restrict place) const override
     {
         nested_function->create(place);
-        new (place + key_offset) Key(key_type_index);
+        new (place + key_offset) Key(key_type);
     }
 
     void destroy(AggregateDataPtr __restrict place) const noexcept override
@@ -152,7 +162,7 @@ public:
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
     {
         nested_function->deserialize(place, buf, version, arena);
-        data(place).data().read(buf, *serialization, arena);
+        data(place).data().read(buf, *serialization, data_type, arena);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override

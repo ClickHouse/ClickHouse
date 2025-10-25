@@ -134,7 +134,7 @@ struct AggregateFunctionDistinctJSONPathsAndTypesData
                 data[path].insert(dynamic_column->getTypeNameAt(row_num));
         }
 
-        /// Iterate over paths om shared data in this row and decode the data types.
+        /// Iterate over paths on shared data in this row and decode the data types.
         const auto [shared_data_paths, shared_data_values] = column.getSharedDataPathsAndValues();
         const auto & shared_data_offsets = column.getSharedDataOffsets();
         const size_t start = shared_data_offsets[static_cast<ssize_t>(row_num) - 1];
@@ -197,13 +197,15 @@ struct AggregateFunctionDistinctJSONPathsAndTypesData
 
     void deserialize(ReadBuffer & buf)
     {
-        size_t paths_size, types_size;
+        size_t paths_size;
+        size_t types_size;
         readVarUInt(paths_size, buf);
         if (paths_size > DISTINCT_JSON_PATHS_MAX_ARRAY_SIZE)
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size for paths (maximum: {}): {}", DISTINCT_JSON_PATHS_MAX_ARRAY_SIZE, paths_size);
 
         data.reserve(paths_size);
-        String path, type;
+        String path;
+        String type;
         for (size_t i = 0; i != paths_size; ++i)
         {
             readStringBinary(path, buf);
@@ -327,7 +329,7 @@ private:
 };
 
 template <typename Data>
-AggregateFunctionPtr createAggregateFunctionDistinctJSONPathsAndTypes(
+static AggregateFunctionPtr createAggregateFunctionDistinctJSONPathsAndTypes(
     const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
 {
     assertNoParameters(name, parameters);

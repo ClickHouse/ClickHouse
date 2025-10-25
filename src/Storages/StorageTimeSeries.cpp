@@ -5,6 +5,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTViewTargets.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
@@ -20,6 +21,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_time_series_table;
+}
 
 namespace ErrorCodes
 {
@@ -126,7 +131,7 @@ StorageTimeSeries::StorageTimeSeries(
     : IStorage(table_id)
     , WithContext(local_context->getGlobalContext())
 {
-    if (mode <= LoadingStrictnessLevel::CREATE && !local_context->getSettingsRef().allow_experimental_time_series_table)
+    if (mode <= LoadingStrictnessLevel::CREATE && !local_context->getSettingsRef()[Setting::allow_experimental_time_series_table])
     {
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                         "Experimental TimeSeries table engine "
@@ -175,9 +180,9 @@ StorageTimeSeries::StorageTimeSeries(
 StorageTimeSeries::~StorageTimeSeries() = default;
 
 
-TimeSeriesSettings StorageTimeSeries::getStorageSettings() const
+const TimeSeriesSettings & StorageTimeSeries::getStorageSettings() const
 {
-    return *getStorageSettingsPtr();
+    return *storage_settings;
 }
 
 void StorageTimeSeries::startup()
@@ -250,7 +255,7 @@ StoragePtr StorageTimeSeries::tryGetTargetTable(ViewTarget::Kind target_kind, co
 }
 
 
-std::optional<UInt64> StorageTimeSeries::totalRows(const Settings & settings) const
+std::optional<UInt64> StorageTimeSeries::totalRows(ContextPtr query_context) const
 {
     UInt64 total_rows = 0;
     if (has_inner_tables)
@@ -263,7 +268,7 @@ std::optional<UInt64> StorageTimeSeries::totalRows(const Settings & settings) co
                 if (!inner_table)
                     return std::nullopt;
 
-                auto total_rows_in_inner_table = inner_table->totalRows(settings);
+                auto total_rows_in_inner_table = inner_table->totalRows(query_context);
                 if (!total_rows_in_inner_table)
                     return std::nullopt;
 
@@ -274,7 +279,7 @@ std::optional<UInt64> StorageTimeSeries::totalRows(const Settings & settings) co
     return total_rows;
 }
 
-std::optional<UInt64> StorageTimeSeries::totalBytes(const Settings & settings) const
+std::optional<UInt64> StorageTimeSeries::totalBytes(ContextPtr query_context) const
 {
     UInt64 total_bytes = 0;
     if (has_inner_tables)
@@ -287,7 +292,7 @@ std::optional<UInt64> StorageTimeSeries::totalBytes(const Settings & settings) c
                 if (!inner_table)
                     return std::nullopt;
 
-                auto total_bytes_in_inner_table = inner_table->totalBytes(settings);
+                auto total_bytes_in_inner_table = inner_table->totalBytes(query_context);
                 if (!total_bytes_in_inner_table)
                     return std::nullopt;
 
@@ -471,6 +476,7 @@ void registerStorageTimeSeries(StorageFactory & factory)
     {
         .supports_settings = true,
         .supports_schema_inference = true,
+        .has_builtin_setting_fn = TimeSeriesSettings::hasBuiltin,
     });
 }
 

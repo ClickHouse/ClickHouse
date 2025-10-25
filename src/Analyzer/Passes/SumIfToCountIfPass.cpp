@@ -14,6 +14,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool aggregate_functions_null_for_empty;
+    extern const SettingsBool optimize_rewrite_sum_if_to_count_if;
+}
 
 namespace
 {
@@ -26,7 +31,7 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings().optimize_rewrite_sum_if_to_count_if)
+        if (!getSettings()[Setting::optimize_rewrite_sum_if_to_count_if])
             return;
 
         auto * function_node = node->as<FunctionNode>();
@@ -56,7 +61,7 @@ public:
                 return;
 
             const auto & constant_value_literal = constant_node->getValue();
-            if (getSettings().aggregate_functions_null_for_empty)
+            if (getSettings()[Setting::aggregate_functions_null_for_empty])
                 return;
 
             /// Rewrite `sumIf(1, cond)` into `countIf(cond)`
@@ -134,6 +139,7 @@ public:
                 not_function_result_type = makeNullable(not_function_result_type);
 
             auto not_function = std::make_shared<FunctionNode>("not");
+            not_function->markAsOperator();
 
             auto & not_function_arguments = not_function->getArguments().getNodes();
             not_function_arguments.push_back(nested_if_function_arguments_nodes[0]);
@@ -158,6 +164,7 @@ private:
     QueryTreeNodePtr getMultiplyFunction(QueryTreeNodePtr left, QueryTreeNodePtr right)
     {
         auto multiply_function_node = std::make_shared<FunctionNode>("multiply");
+        multiply_function_node->markAsOperator();
         auto & multiply_arguments_nodes = multiply_function_node->getArguments().getNodes();
         multiply_arguments_nodes.push_back(std::move(left));
         multiply_arguments_nodes.push_back(std::move(right));

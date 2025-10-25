@@ -4,9 +4,11 @@
 # pylint: disable=redefined-outer-name
 
 import logging
+
 import pytest
-from helpers.cluster import ClickHouseCluster, CLICKHOUSE_CI_MIN_TESTED_VERSION
+
 from helpers.client import QueryRuntimeException
+from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 upstream = cluster.add_instance("upstream", use_old_analyzer=True)
@@ -36,7 +38,7 @@ def test_aggregate_states(start_cluster):
 
     And do a simple check by creating the aggregate state with one string.
 
-    Yes this is not covers everything (does not cover functions with
+    Yes this does not cover everything (does not cover functions with
     different number of arguments, types, different states in case of
     multiple values - uniqCombined, but as for uniqCombined it will be
     checked via uniqHLL12), but at least something.
@@ -210,6 +212,8 @@ def test_string_functions(start_cluster):
         "filesystemAvailable",
         # Exclude it for now. Looks like the result depends on the build type.
         "farmHash64",
+        # Depends on the in-memory format of String columns, that we legitimately changed.
+        "byteSize",
     ]
     functions = filter(lambda x: x not in excludes, functions)
 

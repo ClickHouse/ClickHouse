@@ -16,6 +16,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds;
+}
 
 namespace ErrorCodes
 {
@@ -29,21 +33,22 @@ namespace
     {
         auto query_context = CurrentThread::getQueryContext();
         if (query_context)
-            return query_context->getSettingsRef().temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds;
-        else
-            return Context::getGlobalContextInstance()->getSettingsRef().temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds;
+            return query_context->getSettingsRef()[Setting::temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds];
+
+        return Context::getGlobalContextInstance()
+            ->getSettingsRef()[Setting::temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds];
     }
 }
 
-WriteBufferToFileSegment::WriteBufferToFileSegment(FileSegment * file_segment_)
-    : WriteBufferFromFileBase(DBMS_DEFAULT_BUFFER_SIZE, nullptr, 0)
+WriteBufferToFileSegment::WriteBufferToFileSegment(FileSegment * file_segment_, size_t buffer_size)
+    : WriteBufferFromFileBase(buffer_size, nullptr, 0)
     , file_segment(file_segment_)
     , reserve_space_lock_wait_timeout_milliseconds(getCacheLockWaitTimeout())
 {
 }
 
-WriteBufferToFileSegment::WriteBufferToFileSegment(FileSegmentsHolderPtr segment_holder_)
-    : WriteBufferFromFileBase(DBMS_DEFAULT_BUFFER_SIZE, nullptr, 0)
+WriteBufferToFileSegment::WriteBufferToFileSegment(FileSegmentsHolderPtr segment_holder_, size_t buffer_size)
+    : WriteBufferFromFileBase(buffer_size, nullptr, 0)
     , file_segment(&segment_holder_->front())
     , segment_holder(std::move(segment_holder_))
     , reserve_space_lock_wait_timeout_milliseconds(getCacheLockWaitTimeout())
@@ -87,7 +92,7 @@ void WriteBufferToFileSegment::nextImpl()
 
         throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Failed to reserve {} bytes for {}: reason {}, {}(segment info: {})",
             bytes_to_write,
-            file_segment->getKind() == FileSegmentKind::Temporary ? "temporary file" : "the file in cache",
+            file_segment->getKind() == FileSegmentKind::Ephemeral ? "temporary file" : "the file in cache",
             failure_reason,
             reserve_stat_msg,
             file_segment->getInfoForLog()
@@ -137,8 +142,7 @@ std::unique_ptr<ReadBuffer> WriteBufferToFileSegment::getReadBufferImpl()
     finalize();
     if (file_segment->getDownloadedSize() > 0)
         return std::make_unique<ReadBufferFromFile>(file_segment->getPath());
-    else
-        return std::make_unique<ReadBufferFromEmptyFile>();
+    return std::make_unique<ReadBufferFromEmptyFile>();
 }
 
 }

@@ -2,7 +2,6 @@
 
 #include <Functions/JSONPath/Generator/IGenerator_fwd.h>
 #include <Functions/JSONPath/Generator/VisitorStatus.h>
-#include <Parsers/IAST.h>
 
 namespace DB
 {

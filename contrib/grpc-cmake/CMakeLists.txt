@@ -6,11 +6,15 @@ if(NOT ENABLE_GRPC)
   return()
 endif()
 
+set(CMAKE_CXX_STANDARD 17)
+
 set(_gRPC_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/grpc")
 set(_gRPC_BINARY_DIR "${ClickHouse_BINARY_DIR}/contrib/grpc")
 
 if(TARGET OpenSSL::SSL)
   set(gRPC_USE_UNSECURE_LIBRARIES FALSE)
+
+  add_definitions(-DOPENSSL_NO_ENGINE)
 else()
   set(gRPC_USE_UNSECURE_LIBRARIES TRUE)
 endif()
@@ -146,6 +150,8 @@ if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME
             "-DOPENSSL_INCLUDE_DIR=${OPENSSL_BUILD_DIR}/include"
             "-DZLIB_ROOT_DIR=${zlib_source_dir}"
             "-DgRPC_SSL_PROVIDER=package"
+            # TODO: Bump c-ares
+            "-DCMAKE_POLICY_VERSION_MINIMUM=3.5"
             "${_gRPC_SOURCE_DIR}"
         WORKING_DIRECTORY "${GRPC_CPP_PLUGIN_BUILD_DIR}"
         COMMAND_ECHO STDOUT

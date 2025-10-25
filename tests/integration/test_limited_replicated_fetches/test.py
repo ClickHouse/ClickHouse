@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 
-import pytest
-import time
-from helpers.cluster import ClickHouseCluster
-from helpers.network import PartitionManager
+import os
 import random
 import string
-import os
+import time
+
+import pytest
+
+from helpers.cluster import ClickHouseCluster
+from helpers.network import PartitionManager
 
 cluster = ClickHouseCluster(__file__)
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))

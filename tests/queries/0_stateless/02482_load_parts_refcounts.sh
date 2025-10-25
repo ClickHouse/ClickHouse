@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: zookeeper
+# Tags: zookeeper, no-shared-merge-tree
+# no-shared-merge-tree: SharedMergeTree doesn't load inactive parts to memory after restart
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

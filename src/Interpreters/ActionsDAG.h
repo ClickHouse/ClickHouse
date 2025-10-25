@@ -1,9 +1,11 @@
 #pragma once
 
 #include <utility>
+#include <vector>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Names.h>
+#include <Common/SipHash.h>
 #include <Interpreters/Context_fwd.h>
 
 #include "config.h"
@@ -25,6 +27,11 @@ class FunctionNode;
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 
+namespace QueryPlanOptimizations
+{
+    class FullTextMatchingFunctionDAGReplacer;
+}
+
 namespace JSONBuilder
 {
     class JSONMap;
@@ -34,6 +41,9 @@ namespace JSONBuilder
 }
 
 class SortDescription;
+
+struct SerializedSetsRegistry;
+struct DeserializedSetsRegistry;
 
 /// Directed acyclic graph of expressions.
 /// This is an intermediate representation of actions which is usually built from expression list AST.
@@ -59,6 +69,8 @@ public:
         /// Function arrayJoin. Specially separated because it changes the number of rows.
         ARRAY_JOIN,
         FUNCTION,
+        /// Placeholder node for correlated column
+        PLACEHOLDER,
     };
 
     struct Node;
@@ -90,6 +102,8 @@ public:
         /// If result of this not is deterministic. Checks only this node, not a subtree.
         bool isDeterministic() const;
         void toTree(JSONBuilder::JSONMap & map) const;
+        UInt64 getHash() const;
+        void updateHash(SipHash & hash_state) const;
     };
 
     /// NOTE: std::list is an implementation detail.
@@ -109,17 +123,14 @@ public:
     ActionsDAG & operator=(ActionsDAG &&) = default;
     ActionsDAG & operator=(const ActionsDAG &) = delete;
     explicit ActionsDAG(const NamesAndTypesList & inputs_);
-    explicit ActionsDAG(const ColumnsWithTypeAndName & inputs_);
+    explicit ActionsDAG(const ColumnsWithTypeAndName & inputs_, bool duplicate_const_columns = true);
 
     const Nodes & getNodes() const { return nodes; }
     static Nodes detachNodes(ActionsDAG && dag) { return std::move(dag.nodes); }
-    const NodeRawConstPtrs & getOutputs() const { return outputs; }
-    /** Output nodes can contain any column returned from DAG.
-      * You may manually change it if needed.
-      */
-    NodeRawConstPtrs & getOutputs() { return outputs; }
-
     const NodeRawConstPtrs & getInputs() const { return inputs; }
+    const NodeRawConstPtrs & getOutputs() const { return outputs; }
+    /// Output nodes can contain any column returned from DAG. You may manually change it if needed.
+    NodeRawConstPtrs & getOutputs() { return outputs; }
 
     NamesAndTypesList getRequiredColumns() const;
     Names getRequiredColumnsNames() const;
@@ -129,6 +140,12 @@ public:
     Names getNames() const;
     std::string dumpNames() const;
     std::string dumpDAG() const;
+
+    std::vector<const Node *> getIdToNode() const;
+    std::unordered_map<const Node *, size_t> getNodeToIdMap() const;
+
+    void serialize(WriteBuffer & out, SerializedSetsRegistry & registry) const;
+    static ActionsDAG deserialize(ReadBuffer & in, DeserializedSetsRegistry & registry, const ContextPtr & context);
 
     const Node & addInput(std::string name, DataTypePtr type);
     const Node & addInput(ColumnWithTypeAndName column);
@@ -148,6 +165,7 @@ public:
         NodeRawConstPtrs children,
         std::string result_name);
     const Node & addCast(const Node & node_to_cast, const DataTypePtr & cast_type, std::string result_name);
+    const Node & addPlaceholder(std::string name, DataTypePtr type);
 
     /// Find first column by name in output nodes. This search is linear.
     const Node & findInOutputs(const std::string & name) const;
@@ -178,6 +196,11 @@ public:
     /// If columns is in inputs and has no dependent nodes, remove it from inputs too.
     /// Return true if column was removed from inputs.
     bool removeUnusedResult(const std::string & column_name);
+
+    /// Remove node with <node_name> from outputs.
+    /// Remove unused actions after that.
+    /// Do not remove any inputs.
+    void removeFromOutputs(const std::string & node_name);
 
     /// Remove actions that are not needed to compute output nodes
     void removeUnusedActions(bool allow_remove_inputs = true, bool allow_constant_folding = true);
@@ -250,9 +273,10 @@ public:
         const std::unordered_map<const Node *, const Node *> & new_inputs,
         const NodeRawConstPtrs & required_outputs);
 
-    bool hasArrayJoin() const;
+    bool hasCorrelatedColumns() const noexcept;
+    bool hasArrayJoin() const noexcept;
     bool hasStatefulFunctions() const;
-    bool trivial() const; /// If actions has no functions or array join.
+    bool trivial() const noexcept; /// If actions has no functions or array join.
     void assertDeterministic() const; /// Throw if not isDeterministic.
     bool hasNonDeterministic() const;
 
@@ -260,10 +284,12 @@ public:
     void compileExpressions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});
 #endif
 
-    ActionsDAG clone(std::unordered_map<const Node *, Node *> & old_to_new_nodes) const;
+    using NodeMapping = std::unordered_map<const Node *, const Node *>;
+    ActionsDAG clone(NodeMapping & old_to_new_nodes) const;
     ActionsDAG clone() const;
 
     static ActionsDAG cloneSubDAG(const NodeRawConstPtrs & outputs, bool remove_aliases);
+    static ActionsDAG cloneSubDAG(const NodeRawConstPtrs & outputs, NodeMapping & copy_map, bool remove_aliases);
 
     /// Execute actions for header. Input block must have empty columns.
     /// Result should be equal to the execution of ExpressionActions built from this DAG.
@@ -278,18 +304,22 @@ public:
         IntermediateExecutionResult & node_to_column,
         const NodeRawConstPtrs & outputs,
         size_t input_rows_count,
-        bool throw_on_error);
+        bool throw_on_error,
+        bool skip_materialize = false
+    );
+
+    /// Replace all PLACEHOLDER nodes with INPUT nodes
+    void decorrelate() noexcept;
 
     /// For apply materialize() function for every output.
     /// Also add aliases so the result names remain unchanged.
-    void addMaterializingOutputActions();
+    void addMaterializingOutputActions(bool materialize_sparse);
 
     /// Apply materialize() function to node. Result node has the same name.
-    const Node & materializeNode(const Node & node);
+    const Node & materializeNode(const Node & node, bool materialize_sparse = true);
 
     enum class MatchColumnsMode : uint8_t
     {
-        /// Require same number of columns in source and result. Match columns by corresponding positions, regardless to names.
         Position,
         /// Find columns in source by their names. Allow excessive columns in source.
         Name,
@@ -299,14 +329,14 @@ public:
     /// It is needed to convert result from different sources to the same structure, e.g. for UNION query.
     /// Conversion should be possible with only usage of CAST function and renames.
     /// @param ignore_constant_values - Do not check that constants are same. Use value from result_header.
-    /// @param add_casted_columns - Create new columns with converted values instead of replacing original.
-    /// @param new_names - Output parameter for new column names when add_casted_columns is used.
+    /// @param add_cast_columns - Create new columns with converted values instead of replacing original.
+    /// @param new_names - Output parameter for new column names when add_cast_columns is used.
     static ActionsDAG makeConvertingActions(
         const ColumnsWithTypeAndName & source,
         const ColumnsWithTypeAndName & result,
         MatchColumnsMode mode,
         bool ignore_constant_values = false,
-        bool add_casted_columns = false,
+        bool add_cast_columns = false,
         NameToNameMap * new_names = nullptr);
 
     /// Create expression which add const column and then materialize it.
@@ -322,10 +352,14 @@ public:
     /// Invariant : no nodes are removed from the first (this) DAG.
     /// So that pointers to nodes are kept valid.
     void mergeInplace(ActionsDAG && second);
+    void mergeInplace(ActionsDAG && second, NodeMapping & inputs_map, bool remove_dangling_inputs);
 
     /// Merge current nodes with specified dag nodes.
     /// *out_outputs is filled with pointers to the nodes corresponding to second.getOutputs().
     void mergeNodes(ActionsDAG && second, NodeRawConstPtrs * out_outputs = nullptr);
+
+    /// Union current nodes with second dag without any matching of inputs and outputs.
+    void unite(ActionsDAG && second);
 
     struct SplitResult;
 
@@ -340,7 +374,7 @@ public:
     SplitResult split(std::unordered_set<const Node *> split_nodes, bool create_split_nodes_mapping = false, bool avoid_duplicate_inputs = false) const;
 
     /// Splits actions into two parts. Returned first half may be swapped with ARRAY JOIN.
-    SplitResult splitActionsBeforeArrayJoin(const NameSet & array_joined_columns) const;
+    SplitResult splitActionsBeforeArrayJoin(const Names & array_joined_columns) const;
 
     /// Splits actions into two parts. First part has minimal size sufficient for calculation of column_name.
     /// Outputs of initial actions must contain column_name.
@@ -357,6 +391,7 @@ public:
       */
     bool isFilterAlwaysFalseForDefaultValueInputs(const std::string & filter_name, const Block & input_stream_header) const;
 
+    struct ActionsForFilterPushDown;
     /// Create actions which may calculate part of filter using only available_inputs.
     /// If nothing may be calculated, returns nullptr.
     /// Otherwise, return actions which inputs are from available_inputs.
@@ -374,11 +409,12 @@ public:
     /// columns will be transformed like `x, y, z` -> `z > 0, z, x, y` -(remove filter)-> `z, x, y`.
     /// To avoid it, add inputs from `all_inputs` list,
     /// so actions `x, y, z -> z > 0, x, y, z` -(remove filter)-> `x, y, z` will not change columns order.
-    std::optional<ActionsDAG> splitActionsForFilterPushDown(
+    std::optional<ActionsForFilterPushDown> splitActionsForFilterPushDown(
         const std::string & filter_name,
         bool removes_filter,
         const Names & available_inputs,
-        const ColumnsWithTypeAndName & all_inputs);
+        const ColumnsWithTypeAndName & all_inputs,
+        bool allow_non_deterministic_functions);
 
     struct ActionsForJOINFilterPushDown;
 
@@ -442,6 +478,26 @@ public:
         NodeRawConstPtrs nodes,
         const std::unordered_set<const Node *> & allowed_inputs);
 
+    UInt64 getHash() const;
+    void updateHash(SipHash & hash_state) const;
+
+    friend class QueryPlanOptimizations::FullTextMatchingFunctionDAGReplacer;
+
+    /* Create actions which calculate conjunction of selected nodes.
+     * Conjunction nodes are assumed to be predicates that will be combined with AND if multiple.
+     *
+     * The resulting DAG will have:
+     * - Inputs: all columns from all_inputs that are required by the conjunction
+     * - Outputs: all columns from all_inputs (preserved for pipeline compatibility)
+     *            plus the conjunction result (at position 0 if newly added)
+     *
+     * Returns nullopt if conjunction is empty, otherwise ActionsForFilterPushDown containing:
+     *   - dag: the new actions
+     *   - filter_pos: position of filter column in outputs
+     *   - remove_filter: whether the filter column should be removed from original DAG after evaluation
+     */
+    static std::optional<ActionsForFilterPushDown> createActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs);
+
 private:
     NodeRawConstPtrs getParents(const Node * target) const;
 
@@ -459,8 +515,6 @@ private:
     void compileFunctions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});
 #endif
 
-    static std::optional<ActionsDAG> createActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs);
-
     void removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions, Node * predicate, bool removes_filter);
 };
 
@@ -469,6 +523,13 @@ struct ActionsDAG::SplitResult
     ActionsDAG first;
     ActionsDAG second;
     std::unordered_map<const Node *, const Node *> split_nodes_mapping;
+};
+
+struct ActionsDAG::ActionsForFilterPushDown
+{
+    ActionsDAG dag;
+    size_t filter_pos;
+    bool remove_filter;
 };
 
 struct ActionsDAG::ActionsForJOINFilterPushDown
@@ -486,18 +547,6 @@ class FindOriginalNodeForOutputName
 public:
     explicit FindOriginalNodeForOutputName(const ActionsDAG & actions);
     const ActionsDAG::Node * find(const String & output_name);
-
-private:
-    NameToNodeIndex index;
-};
-
-class FindAliasForInputName
-{
-    using NameToNodeIndex = std::unordered_map<std::string_view, const ActionsDAG::Node *>;
-
-public:
-    explicit FindAliasForInputName(const ActionsDAG & actions);
-    const ActionsDAG::Node * find(const String & name);
 
 private:
     NameToNodeIndex index;

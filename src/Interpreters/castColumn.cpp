@@ -3,6 +3,7 @@
 #include <Functions/IFunction.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Columns/IColumn.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Field.h>
 
@@ -34,9 +35,8 @@ static ColumnPtr castColumn(CastType cast_type, const ColumnWithTypeAndName & ar
     FunctionBasePtr func_cast = cache ? cache->getOrSet(cast_type, from_name, to_name, std::move(get_cast_func)) : get_cast_func();
 
     if (cast_type == CastType::accurateOrNull)
-        return func_cast->execute(arguments, makeNullable(type), arg.column->size());
-    else
-        return func_cast->execute(arguments, type, arg.column->size());
+        return func_cast->execute(arguments, makeNullable(type), arg.column->size(), /* dry_run = */ false);
+    return func_cast->execute(arguments, type, arg.column->size(), /* dry_run = */ false);
 }
 
 ColumnPtr castColumn(const ColumnWithTypeAndName & arg, const DataTypePtr & type, InternalCastFunctionCache * cache)

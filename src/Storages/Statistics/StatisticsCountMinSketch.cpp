@@ -12,8 +12,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int LOGICAL_ERROR;
-extern const int ILLEGAL_STATISTICS;
+    extern const int LOGICAL_ERROR;
 }
 
 /// Constants chosen based on rolling dices.
@@ -27,7 +26,7 @@ static constexpr auto num_buckets = 2718uz;
 StatisticsCountMinSketch::StatisticsCountMinSketch(const SingleStatisticsDescription & description, const DataTypePtr & data_type_)
     : IStatistics(description)
     , sketch(num_hashes, num_buckets)
-    , data_type(data_type_)
+    , data_type(removeNullable(data_type_))
 {
 }
 
@@ -49,10 +48,10 @@ Float64 StatisticsCountMinSketch::estimateEqual(const Field & val) const
     if (isStringOrFixedString(data_type))
         return sketch.get_estimate(val.safeGet<String>());
 
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistics 'count_min' does not support estimate data type of {}", data_type->getName());
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistics 'countmin' does not support estimate data type of {}", data_type->getName());
 }
 
-void StatisticsCountMinSketch::update(const ColumnPtr & column)
+void StatisticsCountMinSketch::build(const ColumnPtr & column)
 {
     for (size_t row = 0; row < column->size(); ++row)
     {
@@ -61,6 +60,12 @@ void StatisticsCountMinSketch::update(const ColumnPtr & column)
         auto data = column->getDataAt(row);
         sketch.update(data.data, data.size, 1);
     }
+}
+
+void StatisticsCountMinSketch::merge(const StatisticsPtr & other_stats)
+{
+    const StatisticsCountMinSketch * other = typeid_cast<const StatisticsCountMinSketch *>(other_stats.get());
+    sketch.merge(other->sketch);
 }
 
 void StatisticsCountMinSketch::serialize(WriteBuffer & buf)
@@ -82,13 +87,11 @@ void StatisticsCountMinSketch::deserialize(ReadBuffer & buf)
     sketch = Sketch::deserialize(bytes.data(), size);
 }
 
-
-void countMinSketchStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & data_type)
+bool countMinSketchStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & data_type)
 {
     DataTypePtr inner_data_type = removeNullable(data_type);
     inner_data_type = removeLowCardinalityAndNullable(inner_data_type);
-    if (!inner_data_type->isValueRepresentedByNumber() && !isStringOrFixedString(inner_data_type))
-        throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type 'count_min' does not support type {}", data_type->getName());
+    return inner_data_type->isValueRepresentedByNumber() || isStringOrFixedString(inner_data_type);
 }
 
 StatisticsPtr countMinSketchStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type)

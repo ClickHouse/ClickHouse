@@ -28,14 +28,24 @@ public:
     using WrittenOffsetColumns = std::set<std::string>;
 
     virtual void write(const Block & block) = 0;
+    virtual void cancel() noexcept = 0;
 
-    const MergeTreeIndexGranularity & getIndexGranularity() const
+    MergeTreeIndexGranularityPtr getIndexGranularity() const
     {
         return writer->getIndexGranularity();
     }
 
-protected:
+    PlainMarksByName releaseCachedMarks()
+    {
+        return writer ? writer->releaseCachedMarks() : PlainMarksByName{};
+    }
 
+    size_t getNumberOfOpenStreams() const
+    {
+        return writer->getNumberOfOpenStreams();
+    }
+
+protected:
     /// Remove all columns marked expired in data_part. Also, clears checksums
     /// and columns array. Return set of removed files names.
     NameSet removeEmptyColumnsFromPart(
@@ -53,7 +63,8 @@ protected:
     MergeTreeDataPartWriterPtr writer;
 
     bool reset_columns = false;
-    SerializationInfoByName new_serialization_infos;
+    SerializationInfo::Settings info_settings;
+    SerializationInfoByName new_serialization_infos{{}};
 };
 
 using IMergedBlockOutputStreamPtr = std::shared_ptr<IMergedBlockOutputStream>;

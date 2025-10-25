@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -22,6 +23,7 @@
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypesCache.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Parsers/NullsAction.h>
@@ -44,6 +46,10 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// Max array size that is allowed for any nested elements during data type decoding.
+/// It prevents from allocating too large arrays if the data is corrupted.
+constexpr size_t MAX_ARRAY_SIZE = 1000000;
 
 enum class BinaryTypeIndex : uint8_t
 {
@@ -96,6 +102,22 @@ enum class BinaryTypeIndex : uint8_t
     SimpleAggregateFunction = 0x2E,
     Nested = 0x2F,
     JSON = 0x30,
+    BFloat16 = 0x31,
+    Time = 0x32,
+    /* The reason behind putting Time64 to 0x34 instead of 0x33 is following:
+    Originally, there were Time and Time64 with (and without) timezones, which were making the following indexing:
+    TimeUTC = 0x32
+    TimeWithTimezone = 0x33
+    Time64UTC = 0x34
+    Time64WithTimezone = 0x35
+
+    After that timezones became forbidden for Time[64] types, so we removed those types from here.
+    But we need to make the indexing consistent to ensure backwards compatibility.
+
+    Please don't use 0x33 and 0x35, because older client might try to serialise data as TimeWithTimezone/Time64WithTimezone, and newer server would deserialise them as incorrect types. */
+    Time64 = 0x34,
+    /// reserved = 0x35
+    QBit = 0x36
 };
 
 /// In future we can introduce more arguments in the JSON data type definition.
@@ -151,6 +173,8 @@ BinaryTypeIndex getBinaryTypeIndex(const DataTypePtr & type)
             return BinaryTypeIndex::Int128;
         case TypeIndex::Int256:
             return BinaryTypeIndex::Int256;
+        case TypeIndex::BFloat16:
+            return BinaryTypeIndex::BFloat16;
         case TypeIndex::Float32:
             return BinaryTypeIndex::Float32;
         case TypeIndex::Float64:
@@ -167,6 +191,10 @@ BinaryTypeIndex getBinaryTypeIndex(const DataTypePtr & type)
             if (assert_cast<const DataTypeDateTime64 &>(*type).hasExplicitTimeZone())
                 return BinaryTypeIndex::DateTime64WithTimezone;
             return BinaryTypeIndex::DateTime64UTC;
+        case TypeIndex::Time:
+            return BinaryTypeIndex::Time;
+        case TypeIndex::Time64:
+            return BinaryTypeIndex::Time64;
         case TypeIndex::String:
             return BinaryTypeIndex::String;
         case TypeIndex::FixedString:
@@ -190,10 +218,12 @@ BinaryTypeIndex getBinaryTypeIndex(const DataTypePtr & type)
         case TypeIndex::Tuple:
         {
             const auto & tuple_type = assert_cast<const DataTypeTuple &>(*type);
-            if (tuple_type.haveExplicitNames())
+            if (tuple_type.hasExplicitNames())
                 return BinaryTypeIndex::NamedTuple;
             return BinaryTypeIndex::UnnamedTuple;
         }
+        case TypeIndex::QBit:
+            return BinaryTypeIndex::QBit;
         case TypeIndex::Set:
             return BinaryTypeIndex::Set;
         case TypeIndex::Interval:
@@ -253,6 +283,9 @@ DataTypePtr decodeEnum(ReadBuffer & buf)
     typename DataTypeEnum<T>::Values values;
     size_t size;
     readVarUInt(size, buf);
+    if (size > MAX_ARRAY_SIZE)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Too many enum elements during Enum type decoding: {}. Maximum: {}", size, MAX_ARRAY_SIZE);
+
     for (size_t i = 0; i != size; ++i)
     {
         String name;
@@ -301,12 +334,18 @@ std::tuple<AggregateFunctionPtr, Array, DataTypes> decodeAggregateFunction(ReadB
     readStringBinary(function_name, buf);
     size_t num_parameters;
     readVarUInt(num_parameters, buf);
+    if (num_parameters > MAX_ARRAY_SIZE)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Too many parameters during AggregateFunction type decoding: {}. Maximum: {}", num_parameters, MAX_ARRAY_SIZE);
+
     Array parameters;
     parameters.reserve(num_parameters);
     for (size_t i = 0; i != num_parameters; ++i)
         parameters.push_back(decodeField(buf));
     size_t num_arguments;
     readVarUInt(num_arguments, buf);
+    if (num_arguments > MAX_ARRAY_SIZE)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Too many function arguments during AggregateFunction type decoding: {}. Maximum: {}", num_parameters, MAX_ARRAY_SIZE);
+
     DataTypes arguments_types;
     arguments_types.reserve(num_arguments);
     for (size_t i = 0; i != num_arguments; ++i)
@@ -330,7 +369,7 @@ void encodeDataType(const DataTypePtr & type, WriteBuffer & buf)
         case BinaryTypeIndex::DateTimeWithTimezone:
         {
             const auto & datetime_type = assert_cast<const DataTypeDateTime &>(*type);
-            writeStringBinary(datetime_type.getTimeZone().getTimeZone(), buf);
+            writeStringBinary(getDateLUTTimeZone(datetime_type.getTimeZone()), buf);
             break;
         }
         case BinaryTypeIndex::DateTime64UTC:
@@ -344,7 +383,14 @@ void encodeDataType(const DataTypePtr & type, WriteBuffer & buf)
         {
             const auto & datetime64_type = assert_cast<const DataTypeDateTime64 &>(*type);
             buf.write(UInt8(datetime64_type.getScale()));
-            writeStringBinary(datetime64_type.getTimeZone().getTimeZone(), buf);
+            writeStringBinary(getDateLUTTimeZone(datetime64_type.getTimeZone()), buf);
+            break;
+        }
+        case BinaryTypeIndex::Time64:
+        {
+            const auto & time64_type = assert_cast<const DataTypeTime64 &>(*type);
+            /// Maximum scale for Time64 is 9, so we can write it as 1 byte.
+            buf.write(UInt8(time64_type.getScale()));
             break;
         }
         case BinaryTypeIndex::FixedString:
@@ -409,6 +455,13 @@ void encodeDataType(const DataTypePtr & type, WriteBuffer & buf)
             writeVarUInt(element_types.size(), buf);
             for (const auto & element_type : element_types)
                 encodeDataType(element_type, buf);
+            break;
+        }
+        case BinaryTypeIndex::QBit:
+        {
+            const auto & qbit_type = assert_cast<const DataTypeQBit &>(*type);
+            encodeDataType(qbit_type.getElementType(), buf);
+            writeVarUInt(qbit_type.getDimension(), buf);
             break;
         }
         case BinaryTypeIndex::Interval:
@@ -538,41 +591,43 @@ DataTypePtr decodeDataType(ReadBuffer & buf)
     switch (BinaryTypeIndex(type))
     {
         case BinaryTypeIndex::Nothing:
-            return std::make_shared<DataTypeNothing>();
+            return getDataTypesCache().getType("Nothing");
         case BinaryTypeIndex::UInt8:
-            return std::make_shared<DataTypeUInt8>();
+            return getDataTypesCache().getType("UInt8");
         case BinaryTypeIndex::Bool:
-            return DataTypeFactory::instance().get("Bool");
+            return getDataTypesCache().getType("Bool");
         case BinaryTypeIndex::UInt16:
-            return std::make_shared<DataTypeUInt16>();
+            return getDataTypesCache().getType("UInt16");
         case BinaryTypeIndex::UInt32:
-            return std::make_shared<DataTypeUInt32>();
+            return getDataTypesCache().getType("UInt32");
         case BinaryTypeIndex::UInt64:
-            return std::make_shared<DataTypeUInt64>();
+            return getDataTypesCache().getType("UInt64");
         case BinaryTypeIndex::UInt128:
-            return std::make_shared<DataTypeUInt128>();
+            return getDataTypesCache().getType("UInt128");
         case BinaryTypeIndex::UInt256:
-            return std::make_shared<DataTypeUInt256>();
+            return getDataTypesCache().getType("UInt256");
         case BinaryTypeIndex::Int8:
-            return std::make_shared<DataTypeInt8>();
+            return getDataTypesCache().getType("Int8");
         case BinaryTypeIndex::Int16:
-            return std::make_shared<DataTypeInt16>();
+            return getDataTypesCache().getType("Int16");
         case BinaryTypeIndex::Int32:
-            return std::make_shared<DataTypeInt32>();
+            return getDataTypesCache().getType("Int32");
         case BinaryTypeIndex::Int64:
-            return std::make_shared<DataTypeInt64>();
+            return getDataTypesCache().getType("Int64");
         case BinaryTypeIndex::Int128:
-            return std::make_shared<DataTypeInt128>();
+            return getDataTypesCache().getType("Int128");
         case BinaryTypeIndex::Int256:
-            return std::make_shared<DataTypeInt256>();
+            return getDataTypesCache().getType("Int256");
+        case BinaryTypeIndex::BFloat16:
+            return getDataTypesCache().getType("BFloat16");
         case BinaryTypeIndex::Float32:
-            return std::make_shared<DataTypeFloat32>();
+            return getDataTypesCache().getType("Float32");
         case BinaryTypeIndex::Float64:
-            return std::make_shared<DataTypeFloat64>();
+            return getDataTypesCache().getType("Float64");
         case BinaryTypeIndex::Date:
-            return std::make_shared<DataTypeDate>();
+            return getDataTypesCache().getType("Date");
         case BinaryTypeIndex::Date32:
-            return std::make_shared<DataTypeDate32>();
+            return getDataTypesCache().getType("Date32");
         case BinaryTypeIndex::DateTimeUTC:
             return std::make_shared<DataTypeDateTime>();
         case BinaryTypeIndex::DateTimeWithTimezone:
@@ -595,8 +650,16 @@ DataTypePtr decodeDataType(ReadBuffer & buf)
             readStringBinary(time_zone, buf);
             return std::make_shared<DataTypeDateTime64>(scale, time_zone);
         }
+        case BinaryTypeIndex::Time:
+            return std::make_shared<DataTypeTime>();
+        case BinaryTypeIndex::Time64:
+        {
+            UInt8 scale;
+            readBinary(scale, buf);
+            return std::make_shared<DataTypeTime64>(scale);
+        }
         case BinaryTypeIndex::String:
-            return std::make_shared<DataTypeString>();
+            return getDataTypesCache().getType("String");
         case BinaryTypeIndex::FixedString:
         {
             UInt64 size;
@@ -616,13 +679,16 @@ DataTypePtr decodeDataType(ReadBuffer & buf)
         case BinaryTypeIndex::Decimal256:
             return decodeDecimal<Decimal256>(buf);
         case BinaryTypeIndex::UUID:
-            return std::make_shared<DataTypeUUID>();
+            return getDataTypesCache().getType("UUID");
         case BinaryTypeIndex::Array:
             return std::make_shared<DataTypeArray>(decodeDataType(buf));
         case BinaryTypeIndex::NamedTuple:
         {
             size_t size;
             readVarUInt(size, buf);
+            if (size > MAX_ARRAY_SIZE)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Too many tuple elements during Tuple type decoding: {}. Maximum: {}", size, MAX_ARRAY_SIZE);
+
             DataTypes elements;
             elements.reserve(size);
             Names names;
@@ -640,11 +706,21 @@ DataTypePtr decodeDataType(ReadBuffer & buf)
         {
             size_t size;
             readVarUInt(size, buf);
+            if (size > MAX_ARRAY_SIZE)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Too many tuple elements during Tuple type decoding: {}. Maximum: {}", size, MAX_ARRAY_SIZE);
+
             DataTypes elements;
             elements.reserve(size);
             for (size_t i = 0; i != size; ++i)
                 elements.push_back(decodeDataType(buf));
             return std::make_shared<DataTypeTuple>(elements);
+        }
+        case BinaryTypeIndex::QBit:
+        {
+            auto element_type = decodeDataType(buf);
+            size_t dimension;
+            readVarUInt(dimension, buf);
+            return std::make_shared<DataTypeQBit>(element_type, dimension);
         }
         case BinaryTypeIndex::Set:
             return std::make_shared<DataTypeSet>();
@@ -660,6 +736,9 @@ DataTypePtr decodeDataType(ReadBuffer & buf)
         {
             size_t arguments_size;
             readVarUInt(arguments_size, buf);
+            if (arguments_size > MAX_ARRAY_SIZE)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Too many function arguments during Function type decoding: {}. Maximum: {}", arguments_size, MAX_ARRAY_SIZE);
+
             DataTypes arguments;
             arguments.reserve(arguments_size);
             for (size_t i = 0; i != arguments_size; ++i)
@@ -676,13 +755,16 @@ DataTypePtr decodeDataType(ReadBuffer & buf)
             return std::make_shared<DataTypeMap>(key_type, value_type);
         }
         case BinaryTypeIndex::IPv4:
-            return std::make_shared<DataTypeIPv4>();
+            return getDataTypesCache().getType("IPv4");
         case BinaryTypeIndex::IPv6:
-            return std::make_shared<DataTypeIPv6>();
+            return getDataTypesCache().getType("IPv6");
         case BinaryTypeIndex::Variant:
         {
             size_t size;
             readVarUInt(size, buf);
+            if (size > MAX_ARRAY_SIZE)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Too many variants during Variant type decoding: {}. Maximum: {}", size, MAX_ARRAY_SIZE);
+
             DataTypes variants;
             variants.reserve(size);
             for (size_t i = 0; i != size; ++i)
@@ -711,6 +793,9 @@ DataTypePtr decodeDataType(ReadBuffer & buf)
         {
             size_t size;
             readVarUInt(size, buf);
+            if (size > MAX_ARRAY_SIZE)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Too many elements during Nested type decoding: {}. Maximum: {}", size, MAX_ARRAY_SIZE);
+
             Names names;
             names.reserve(size);
             DataTypes elements;
@@ -742,6 +827,9 @@ DataTypePtr decodeDataType(ReadBuffer & buf)
             readBinary(max_dynamic_types, buf);
             size_t typed_paths_size;
             readVarUInt(typed_paths_size, buf);
+            if (typed_paths_size > MAX_ARRAY_SIZE)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Too many typed paths during JSON type decoding: {}. Maximum: {}", typed_paths_size, MAX_ARRAY_SIZE);
+
             std::unordered_map<String, DataTypePtr> typed_paths;
             for (size_t i = 0; i != typed_paths_size; ++i)
             {
@@ -751,6 +839,9 @@ DataTypePtr decodeDataType(ReadBuffer & buf)
             }
             size_t paths_to_skip_size;
             readVarUInt(paths_to_skip_size, buf);
+            if (paths_to_skip_size > MAX_ARRAY_SIZE)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Too many paths to skip during JSON type decoding: {}. Maximum: {}", paths_to_skip_size, MAX_ARRAY_SIZE);
+
             std::unordered_set<String> paths_to_skip;
             paths_to_skip.reserve(paths_to_skip_size);
             for (size_t i = 0; i != paths_to_skip_size; ++i)
@@ -762,6 +853,9 @@ DataTypePtr decodeDataType(ReadBuffer & buf)
 
             size_t path_regexps_to_skip_size;
             readVarUInt(path_regexps_to_skip_size, buf);
+            if (path_regexps_to_skip_size > MAX_ARRAY_SIZE)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Too many path regexps to skip during JSON type decoding: {}. Maximum: {}", paths_to_skip_size, MAX_ARRAY_SIZE);
+
             std::vector<String> path_regexps_to_skip;
             path_regexps_to_skip.reserve(path_regexps_to_skip_size);
             for (size_t i = 0; i != path_regexps_to_skip_size; ++i)

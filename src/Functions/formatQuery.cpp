@@ -1,17 +1,26 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
+#include <Parsers/IAST.h>
 #include <Parsers/ParserQuery.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_query_size;
+    extern const SettingsBool print_pretty_type_names;
+    extern const SettingsBool implicit_select;
+}
 
 namespace ErrorCodes
 {
@@ -40,10 +49,11 @@ public:
         : name(name_), output_formatting(output_formatting_), error_handling(error_handling_)
     {
         const Settings & settings = context->getSettingsRef();
-        max_query_size = settings.max_query_size;
-        max_parser_depth = settings.max_parser_depth;
-        max_parser_backtracks = settings.max_parser_backtracks;
-        print_pretty_type_names = settings.print_pretty_type_names;
+        max_query_size = settings[Setting::max_query_size];
+        max_parser_depth = settings[Setting::max_parser_depth];
+        max_parser_backtracks = settings[Setting::max_parser_backtracks];
+        print_pretty_type_names = settings[Setting::print_pretty_type_names];
+        implicit_select = settings[Setting::implicit_select];
     }
 
     String getName() const override { return name; }
@@ -61,8 +71,7 @@ public:
         DataTypePtr string_type = std::make_shared<DataTypeString>();
         if (error_handling == ErrorHandling::Null)
             return std::make_shared<DataTypeNullable>(string_type);
-        else
-            return string_type;
+        return string_type;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -80,11 +89,9 @@ public:
 
             if (error_handling == ErrorHandling::Null)
                 return ColumnNullable::create(std::move(col_res), std::move(col_null_map));
-            else
-                return col_res;
+            return col_res;
         }
-        else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", col_query->getName(), getName());
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", col_query->getName(), getName());
     }
 
 private:
@@ -105,9 +112,9 @@ private:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const char * begin = reinterpret_cast<const char *>(&data[prev_offset]);
-            const char * end = begin + offsets[i] - prev_offset - 1;
+            const char * end = begin + offsets[i] - prev_offset;
 
-            ParserQuery parser(end);
+            ParserQuery parser(end, false, implicit_select);
             ASTPtr ast;
             WriteBufferFromOwnString buf;
 
@@ -123,9 +130,6 @@ private:
                     if (res_data_new_size > res_data.size())
                         res_data.resize(2 * res_data_new_size);
 
-                    res_data[res_data_size] = '\0';
-                    res_data_size += 1;
-
                     res_offsets[i] = res_data_size;
                     prev_offset = offsets[i];
 
@@ -133,29 +137,23 @@ private:
 
                     continue;
                 }
-                else
-                {
-                    throw;
-                }
+
+                throw;
             }
 
-            IAST::FormatSettings settings(buf, output_formatting == OutputFormatting::SingleLine, /*hilite*/ false);
+            IAST::FormatSettings settings(output_formatting == OutputFormatting::SingleLine);
             settings.show_secrets = true;
             settings.print_pretty_type_names = print_pretty_type_names;
-            ast->format(settings);
+            ast->format(buf, settings);
 
             auto formatted = buf.stringView();
 
-            const size_t res_data_new_size = res_data_size + formatted.size() + 1;
+            const size_t res_data_new_size = res_data_size + formatted.size();
             if (res_data_new_size > res_data.size())
                 res_data.resize(2 * res_data_new_size);
 
-            memcpy(&res_data[res_data_size], formatted.begin(), formatted.size());
+            memcpy(&res_data[res_data_size], formatted.data(), formatted.size());
             res_data_size += formatted.size();
-
-            res_data[res_data_size] = '\0';
-            res_data_size += 1;
-
             res_offsets[i] = res_data_size;
             prev_offset = offsets[i];
         }
@@ -171,6 +169,7 @@ private:
     size_t max_parser_depth;
     size_t max_parser_backtracks;
     bool print_pretty_type_names;
+    bool implicit_select;
 };
 
 }
@@ -184,7 +183,7 @@ REGISTER_FUNCTION(formatQuery)
             .description = "Returns a formatted, possibly multi-line, version of the given SQL query. Throws in case of a parsing error.\n[example:multiline]",
             .syntax = "formatQuery(query)",
             .arguments = {{"query", "The SQL query to be formatted. [String](../../sql-reference/data-types/string.md)"}},
-            .returned_value = "The formatted query. [String](../../sql-reference/data-types/string.md).",
+            .returned_value = {"The formatted query", {"String"}},
             .examples{
                 {"multiline",
                  "SELECT formatQuery('select a,    b FRom tab WHERE a > 3 and  b < 3');",
@@ -193,7 +192,7 @@ REGISTER_FUNCTION(formatQuery)
                  "    b\n"
                  "FROM tab\n"
                  "WHERE (a > 3) AND (b < 3)"}},
-            .categories{"Other"}});
+            .category = FunctionDocumentation::Category::Other});
 }
 
 REGISTER_FUNCTION(formatQueryOrNull)
@@ -205,7 +204,7 @@ REGISTER_FUNCTION(formatQueryOrNull)
             .description = "Returns a formatted, possibly multi-line, version of the given SQL query. Returns NULL in case of a parsing error.\n[example:multiline]",
             .syntax = "formatQueryOrNull(query)",
             .arguments = {{"query", "The SQL query to be formatted. [String](../../sql-reference/data-types/string.md)"}},
-            .returned_value = "The formatted query. [String](../../sql-reference/data-types/string.md).",
+            .returned_value = {"The formatted query", {"String"}},
             .examples{
                 {"multiline",
                  "SELECT formatQuery('select a,    b FRom tab WHERE a > 3 and  b < 3');",
@@ -214,7 +213,7 @@ REGISTER_FUNCTION(formatQueryOrNull)
                  "    b\n"
                  "FROM tab\n"
                  "WHERE (a > 3) AND (b < 3)"}},
-            .categories{"Other"}});
+            .category = FunctionDocumentation::Category::Other});
 }
 
 REGISTER_FUNCTION(formatQuerySingleLine)
@@ -226,12 +225,12 @@ REGISTER_FUNCTION(formatQuerySingleLine)
             .description = "Like formatQuery() but the returned formatted string contains no line breaks. Throws in case of a parsing error.\n[example:multiline]",
             .syntax = "formatQuerySingleLine(query)",
             .arguments = {{"query", "The SQL query to be formatted. [String](../../sql-reference/data-types/string.md)"}},
-            .returned_value = "The formatted query. [String](../../sql-reference/data-types/string.md).",
+            .returned_value = {"The formatted query", {"String"}},
             .examples{
                 {"multiline",
                  "SELECT formatQuerySingleLine('select a,    b FRom tab WHERE a > 3 and  b < 3');",
                  "SELECT a, b FROM tab WHERE (a > 3) AND (b < 3)"}},
-            .categories{"Other"}});
+            .category = FunctionDocumentation::Category::Other});
 }
 
 REGISTER_FUNCTION(formatQuerySingleLineOrNull)
@@ -242,13 +241,13 @@ REGISTER_FUNCTION(formatQuerySingleLineOrNull)
         FunctionDocumentation{
             .description = "Like formatQuery() but the returned formatted string contains no line breaks. Returns NULL in case of a parsing error.\n[example:multiline]",
             .syntax = "formatQuerySingleLineOrNull(query)",
-            .arguments = {{"query", "The SQL query to be formatted. [String](../../sql-reference/data-types/string.md)"}},
-            .returned_value = "The formatted query. [String](../../sql-reference/data-types/string.md).",
+            .arguments = {{"query", "The SQL query to be formatted.", {"String"}}},
+            .returned_value = {"The formatted query", {"String"}},
             .examples{
                 {"multiline",
                  "SELECT formatQuerySingleLine('select a,    b FRom tab WHERE a > 3 and  b < 3');",
                  "SELECT a, b FROM tab WHERE (a > 3) AND (b < 3)"}},
-            .categories{"Other"}});
+            .category = FunctionDocumentation::Category::Other});
 }
 
 }

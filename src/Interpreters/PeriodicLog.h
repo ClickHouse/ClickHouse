@@ -8,7 +8,9 @@
 
 #define SYSTEM_PERIODIC_LOG_ELEMENTS(M) \
     M(ErrorLogElement) \
-    M(MetricLogElement)
+    M(MetricLogElement) \
+    M(TransposedMetricLogElement) \
+    M(AggregatedZooKeeperLogElement) \
 
 namespace DB
 {
@@ -22,10 +24,12 @@ class PeriodicLog : public SystemLog<LogElement>
 public:
     using TimePoint = std::chrono::system_clock::time_point;
 
-    /// Launches a background thread to collect metrics with interval
-    void startCollect(size_t collect_interval_milliseconds_);
+    /// Launches a background thread to collect metrics with periodic interval
+    void startCollect(const String & thread_name, size_t collect_interval_milliseconds_);
 
     void shutdown() final;
+
+    void flushBufferToLog(TimePoint current_time) final;
 
 protected:
     /// Stop background thread

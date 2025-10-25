@@ -1,14 +1,16 @@
 ---
-slug: /en/sql-reference/functions/string-replace-functions
-sidebar_position: 150
-sidebar_label: Replacing in Strings
+description: 'Documentation for Functions for Replacing in Strings'
+sidebar_label: 'String replacement'
+slug: /sql-reference/functions/string-replace-functions
+title: 'Functions for Replacing in Strings'
+doc_type: 'reference'
 ---
 
 # Functions for Replacing in Strings
 
 [General strings functions](string-functions.md) and [functions for searching in strings](string-search-functions.md) are described separately.
 
-## overlay
+## overlay {#overlay}
 
 Replace part of the string `input` with another string `replace`, starting at the 1-based index `offset`.
 
@@ -20,10 +22,10 @@ overlay(s, replace, offset[, length])
 
 **Parameters**
 
-- `input`: A string type [String](../data-types/string.md).
+- `s`: A string type [String](../data-types/string.md).
 - `replace`: A string type [String](../data-types/string.md).
-- `offset`: An integer type [Int](../data-types/int-uint.md). If `offset` is negative, it is counted from the end of the `input` string.
-- `length`: Optional. An integer type [Int](../data-types/int-uint.md). `length` specifies the length of the snippet within input to be replaced. If `length` is not specified, the number of bytes removed from `input` equals the length of `replace`; otherwise `length` bytes are removed.
+- `offset`: An integer type [Int](../data-types/int-uint.md) (1-based). If `offset` is negative, it is counted from the end of the string `s`.
+- `length`: Optional. An integer type [Int](../data-types/int-uint.md). `length` specifies the length of the snippet within the input string `s` to be replaced. If `length` is not specified, the number of bytes removed from `s` equals the length of `replace`; otherwise `length` bytes are removed.
 
 **Returned value**
 
@@ -32,22 +34,35 @@ overlay(s, replace, offset[, length])
 **Example**
 
 ```sql
-SELECT overlay('ClickHouse SQL', 'CORE', 12) AS res;
+SELECT overlay('My father is from Mexico.', 'mother', 4) AS res;
 ```
 
 Result:
 
 ```text
-┌─res─────────────┐
-│ ClickHouse CORE │
-└─────────────────┘
+┌─res──────────────────────┐
+│ My mother is from Mexico.│
+└──────────────────────────┘
 ```
 
-## overlayUTF8
+```sql
+SELECT overlay('My father is from Mexico.', 'dad', 4, 6) AS res;
+```
+
+Result:
+
+```text
+┌─res───────────────────┐
+│ My dad is from Mexico.│
+└───────────────────────┘
+```
+
+## overlayUTF8 {#overlayutf8}
 
 Replace part of the string `input` with another string `replace`, starting at the 1-based index `offset`.
 
-Assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
+Assumes that the string contains valid UTF-8 encoded text.
+If this assumption is violated, no exception is thrown and the result is undefined.
 
 **Syntax**
 
@@ -59,8 +74,8 @@ overlayUTF8(s, replace, offset[, length])
 
 - `s`: A string type [String](../data-types/string.md).
 - `replace`: A string type [String](../data-types/string.md).
-- `offset`: An integer type [Int](../data-types/int-uint.md). If `offset` is negative, it is counted from the end of the `input` string.
-- `length`: Optional. An integer type [Int](../data-types/int-uint.md). `length` specifies the length of the snippet within input to be replaced. If `length` is not specified, the number of characters removed from `input` equals the length of `replace`; otherwise `length` characters are removed.
+- `offset`: An integer type [Int](../data-types/int-uint.md) (1-based). If `offset` is negative, it is counted from the end of the input string `s`.
+- `length`: Optional. An integer type [Int](../data-types/int-uint.md). `length` specifies the length of the snippet within the input string `s` to be replaced. If `length` is not specified, the number of characters removed from `s` equals the length of `replace`; otherwise `length` characters are removed.
 
 **Returned value**
 
@@ -69,18 +84,18 @@ overlayUTF8(s, replace, offset[, length])
 **Example**
 
 ```sql
-SELECT overlayUTF8('ClickHouse是一款OLAP数据库', '开源', 12, 2) AS res;
+SELECT overlay('Mein Vater ist aus Österreich.', 'der Türkei', 20) AS res;
 ```
 
 Result:
 
 ```text
-┌─res────────────────────────┐
-│ ClickHouse是开源OLAP数据库   │
-└────────────────────────────┘
+┌─res───────────────────────────┐
+│ Mein Vater ist aus der Türkei.│
+└───────────────────────────────┘
 ```
 
-## replaceOne
+## replaceOne {#replaceone}
 
 Replaces the first occurrence of the substring `pattern` in `haystack` by the `replacement` string.
 
@@ -90,7 +105,7 @@ Replaces the first occurrence of the substring `pattern` in `haystack` by the `r
 replaceOne(haystack, pattern, replacement)
 ```
 
-## replaceAll
+## replaceAll {#replaceall}
 
 Replaces all occurrences of the substring `pattern` in `haystack` by the `replacement` string.
 
@@ -102,7 +117,7 @@ replaceAll(haystack, pattern, replacement)
 
 Alias: `replace`.
 
-## replaceRegexpOne
+## replaceRegexpOne {#replaceregexpone}
 
 Replaces the first occurrence of the substring matching the regular expression `pattern` (in [re2 syntax](https://github.com/google/re2/wiki/Syntax)) in `haystack` by the `replacement` string.
 
@@ -122,7 +137,7 @@ replaceRegexpOne(haystack, pattern, replacement)
 
 Converting ISO dates to American format:
 
-``` sql
+```sql
 SELECT DISTINCT
     EventDate,
     replaceRegexpOne(toString(EventDate), '(\\d{4})-(\\d{2})-(\\d{2})', '\\2/\\3/\\1') AS res
@@ -133,7 +148,7 @@ FORMAT TabSeparated
 
 Result:
 
-``` text
+```text
 2014-03-17      03/17/2014
 2014-03-18      03/18/2014
 2014-03-19      03/19/2014
@@ -145,19 +160,19 @@ Result:
 
 Copying a string ten times:
 
-``` sql
+```sql
 SELECT replaceRegexpOne('Hello, World!', '.*', '\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0') AS res
 ```
 
 Result:
 
-``` text
+```text
 ┌─res────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World! │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## replaceRegexpAll
+## replaceRegexpAll {#replaceregexpall}
 
 Like `replaceRegexpOne` but replaces all occurrences of the pattern.
 
@@ -165,13 +180,13 @@ Alias: `REGEXP_REPLACE`.
 
 **Example**
 
-``` sql
+```sql
 SELECT replaceRegexpAll('Hello, World!', '.', '\\0\\0') AS res
 ```
 
 Result:
 
-``` text
+```text
 ┌─res────────────────────────┐
 │ HHeelllloo,,  WWoorrlldd!! │
 └────────────────────────────┘
@@ -179,19 +194,19 @@ Result:
 
 As an exception, if a regular expression worked on an empty substring, the replacement is not made more than once, e.g.:
 
-``` sql
+```sql
 SELECT replaceRegexpAll('Hello, World!', '^', 'here: ') AS res
 ```
 
 Result:
 
-``` text
+```text
 ┌─res─────────────────┐
 │ here: Hello, World! │
 └─────────────────────┘
 ```
 
-## regexpQuoteMeta
+## regexpQuoteMeta {#regexpquotemeta}
 
 Adds a backslash before these characters with special meaning in regular expressions: `\0`, `\\`, `|`, `(`, `)`, `^`, `$`, `.`, `[`, `]`, `?`, `*`, `+`, `{`, `:`, `-`.
 
@@ -204,7 +219,7 @@ For more information, see [RE2](https://github.com/google/re2/blob/master/re2/re
 regexpQuoteMeta(s)
 ```
 
-## format
+## format {#format}
 
 Format the `pattern` string with the values (strings, integers, etc.) listed in the arguments, similar to formatting in Python. The pattern string can contain replacement fields surrounded by curly braces `{}`. Anything not contained in braces is considered literal text and copied verbatim into the output. Literal brace character can be escaped by two braces: `{{ '{{' }}` and `{{ '}}' }}`. Field names can be numbers (starting from zero) or empty (then they are implicitly given monotonically increasing numbers).
 
@@ -216,7 +231,7 @@ format(pattern, s0, s1, ...)
 
 **Example**
 
-``` sql
+```sql
 SELECT format('{1} {0} {1}', 'World', 'Hello')
 ```
 
@@ -228,7 +243,7 @@ SELECT format('{1} {0} {1}', 'World', 'Hello')
 
 With implicit numbers:
 
-``` sql
+```sql
 SELECT format('{} {}', 'Hello', 'World')
 ```
 
@@ -238,9 +253,13 @@ SELECT format('{} {}', 'Hello', 'World')
 └───────────────────────────────────┘
 ```
 
-## translate
+## translate {#translate}
 
-Replaces characters in the string `s` using a one-to-one character mapping defined by `from` and `to` strings. `from` and `to` must be constant ASCII strings of the same size. Non-ASCII characters in the original string are not modified.
+Replaces characters in the string `s` using a one-to-one character mapping defined by `from` and `to` strings.
+`from` and `to` must be constant ASCII strings.
+If `from` and `to` have equal sizes, each occurrence of the 1st character of `first` in `s` is replaced by the 1st character of `to`, the 2nd character of `first` in `s` is replaced by the 2nd character of `to`, etc.
+If `from` contains more characters than `to`, all occurrences of the characters at the end of `from` that have no corresponding character in `to` are deleted from `s`.
+Non-ASCII characters in `s` are not modified by the function.
 
 **Syntax**
 
@@ -250,25 +269,39 @@ translate(s, from, to)
 
 **Example**
 
-``` sql
+```sql
 SELECT translate('Hello, World!', 'delor', 'DELOR') AS res
 ```
 
 Result:
 
-``` text
+```text
 ┌─res───────────┐
 │ HELLO, WORLD! │
 └───────────────┘
 ```
 
-## translateUTF8
+`from` and `to` arguments have different lengths:
+
+```sql
+SELECT translate('clickhouse', 'clickhouse', 'CLICK') AS res
+```
+
+Result:
+
+```text
+┌─res───┐
+│ CLICK │
+└───────┘
+```
+
+## translateUTF8 {#translateutf8}
 
 Like [translate](#translate) but assumes `s`, `from` and `to` are UTF-8 encoded strings.
 
 **Syntax**
 
-``` sql
+```sql
 translateUTF8(s, from, to)
 ```
 
@@ -286,23 +319,23 @@ translateUTF8(s, from, to)
 
 Query:
 
-``` sql
+```sql
 SELECT translateUTF8('Münchener Straße', 'üß', 'us') AS res;
 ```
 
-``` response
+```response
 ┌─res──────────────┐
 │ Munchener Strase │
 └──────────────────┘
 ```
 
-## printf
+## printf {#printf}
 
 The `printf` function formats the given string with the values (strings, integers, floating-points etc.) listed in the arguments, similar to printf function in C++. The format string can contain format specifiers starting with `%` character. Anything not contained in `%` and the following format specifier is considered literal text and copied verbatim into the output. Literal `%` character can be escaped by `%%`.
 
 **Syntax**
 
-``` sql
+```sql
 printf(format, arg1, arg2, ...)
 ```
 
@@ -310,13 +343,20 @@ printf(format, arg1, arg2, ...)
 
 Query:
 
-``` sql
-select printf('%%%s %s %d', 'Hello', 'World', 2024);
+```sql
+SELECT printf('%%%s %s %d', 'Hello', 'World', 2024);
 ```
-
-
-``` response
+```response
 ┌─printf('%%%s %s %d', 'Hello', 'World', 2024)─┐
 │ %Hello World 2024                            │
 └──────────────────────────────────────────────┘
 ```
+
+<!-- 
+The inner content of the tags below are replaced at doc framework build time with 
+docs generated from system.functions. Please do not modify or remove the tags.
+See: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
+-->
+
+<!--AUTOGENERATED_START-->
+<!--AUTOGENERATED_END-->

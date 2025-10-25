@@ -11,17 +11,16 @@ void optimizePrimaryKeyConditionAndLimit(const Stack & stack)
 {
     const auto & frame = stack.back();
 
-    auto * source_step_with_filter = dynamic_cast<SourceStepWithFilter *>(frame.node->step.get());
+    auto * source_step_with_filter = dynamic_cast<SourceStepWithFilterBase *>(frame.node->step.get());
     if (!source_step_with_filter)
         return;
 
     const auto & storage_prewhere_info = source_step_with_filter->getPrewhereInfo();
+    const auto & storage_row_level_filter = source_step_with_filter->getRowLevelFilter();
+    if (storage_row_level_filter)
+        source_step_with_filter->addFilter(storage_row_level_filter->actions.clone(), storage_row_level_filter->column_name);
     if (storage_prewhere_info)
-    {
         source_step_with_filter->addFilter(storage_prewhere_info->prewhere_actions.clone(), storage_prewhere_info->prewhere_column_name);
-        if (storage_prewhere_info->row_level_filter)
-            source_step_with_filter->addFilter(storage_prewhere_info->row_level_filter->clone(), storage_prewhere_info->row_level_column_name);
-    }
 
     for (auto iter = stack.rbegin() + 1; iter != stack.rend(); ++iter)
     {

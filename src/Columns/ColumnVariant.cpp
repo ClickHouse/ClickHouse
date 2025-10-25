@@ -1,3 +1,5 @@
+#include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnVariant.h>
 
 #include <Columns/ColumnCompressed.h>
@@ -404,6 +406,15 @@ void ColumnVariant::get(size_t n, Field & res) const
         variants[discr]->get(offsetAt(n), res);
 }
 
+std::pair<String, DataTypePtr> ColumnVariant::getValueNameAndType(size_t n) const
+{
+    Discriminator discr = localDiscriminatorAt(n);
+    if (discr == NULL_DISCRIMINATOR)
+        return {"NULL", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>())};
+
+    return variants[discr]->getValueNameAndType(offsetAt(n));
+}
+
 bool ColumnVariant::isDefaultAt(size_t n) const
 {
     return localDiscriminatorAt(n) == NULL_DISCRIMINATOR;
@@ -505,7 +516,10 @@ void ColumnVariant::insertRangeFromImpl(const DB::IColumn & src_, size_t start, 
 
         Discriminator local_discr = localDiscriminatorByGlobal(global_discr);
         size_t offset = variants[local_discr]->size();
-        variants[local_discr]->insertRangeFrom(*src.variants[*non_empty_src_local_discr], start, length);
+
+        if (!skip_discriminator || global_discr != *skip_discriminator)
+            variants[local_discr]->insertRangeFrom(*src.variants[*non_empty_src_local_discr], start, length);
+
         getLocalDiscriminators().resize_fill(local_discriminators->size() + length, local_discr);
         auto & offsets_data = getOffsets();
         offsets_data.reserve(offsets_data.size() + length);
@@ -739,6 +753,39 @@ void ColumnVariant::popBack(size_t n)
     offsets->popBack(n);
 }
 
+ColumnCheckpointPtr ColumnVariant::getCheckpoint() const
+{
+    ColumnCheckpoints checkpoints;
+    checkpoints.reserve(variants.size());
+
+    for (const auto & column : variants)
+        checkpoints.push_back(column->getCheckpoint());
+
+    return std::make_shared<ColumnCheckpointWithMultipleNested>(size(), std::move(checkpoints));
+}
+
+void ColumnVariant::updateCheckpoint(ColumnCheckpoint & checkpoint) const
+{
+    auto & checkpoints = assert_cast<ColumnCheckpointWithMultipleNested &>(checkpoint).nested;
+    chassert(checkpoints.size() == variants.size());
+
+    checkpoint.size = size();
+    for (size_t i = 0; i < variants.size(); ++i)
+        variants[i]->updateCheckpoint(*checkpoints[i]);
+}
+
+void ColumnVariant::rollback(const ColumnCheckpoint & checkpoint)
+{
+    getOffsets().resize_assume_reserved(checkpoint.size);
+    getLocalDiscriminators().resize_assume_reserved(checkpoint.size);
+
+    const auto & checkpoints = assert_cast<const ColumnCheckpointWithMultipleNested &>(checkpoint).nested;
+    chassert(variants.size() == checkpoints.size());
+
+    for (size_t i = 0; i < variants.size(); ++i)
+        variants[i]->rollback(*checkpoints[i]);
+}
+
 StringRef ColumnVariant::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     /// During any serialization/deserialization we should always use global discriminators.
@@ -751,6 +798,24 @@ StringRef ColumnVariant::serializeValueIntoArena(size_t n, Arena & arena, char c
         return res;
 
     auto value_ref = variants[localDiscriminatorByGlobal(global_discr)]->serializeValueIntoArena(offsetAt(n), arena, begin);
+    res.data = value_ref.data - res.size;
+    res.size += value_ref.size;
+
+    return res;
+}
+
+StringRef ColumnVariant::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+{
+    /// During any serialization/deserialization we should always use global discriminators.
+    Discriminator global_discr = globalDiscriminatorAt(n);
+    char * pos = arena.allocContinue(sizeof(global_discr), begin);
+    memcpy(pos, &global_discr, sizeof(global_discr));
+    StringRef res(pos, sizeof(global_discr));
+
+    if (global_discr == NULL_DISCRIMINATOR)
+        return res;
+
+    auto value_ref = variants[localDiscriminatorByGlobal(global_discr)]->serializeAggregationStateValueIntoArena(offsetAt(n), arena, begin);
     res.data = value_ref.data - res.size;
     res.size += value_ref.size;
 
@@ -774,12 +839,21 @@ const char * ColumnVariant::deserializeAndInsertFromArena(const char * pos)
     return variants[local_discr]->deserializeAndInsertFromArena(pos);
 }
 
-const char * ColumnVariant::deserializeVariantAndInsertFromArena(DB::ColumnVariant::Discriminator global_discr, const char * pos)
+const char * ColumnVariant::deserializeAndInsertAggregationStateValueFromArena(const char * pos)
 {
+    /// During any serialization/deserialization we should always use global discriminators.
+    Discriminator global_discr = unalignedLoad<Discriminator>(pos);
+    pos += sizeof(global_discr);
     Discriminator local_discr = localDiscriminatorByGlobal(global_discr);
     getLocalDiscriminators().push_back(local_discr);
+    if (local_discr == NULL_DISCRIMINATOR)
+    {
+        getOffsets().emplace_back();
+        return pos;
+    }
+
     getOffsets().push_back(variants[local_discr]->size());
-    return variants[local_discr]->deserializeAndInsertFromArena(pos);
+    return variants[local_discr]->deserializeAndInsertAggregationStateValueFromArena(pos);
 }
 
 const char * ColumnVariant::skipSerializedInArena(const char * pos) const
@@ -790,6 +864,31 @@ const char * ColumnVariant::skipSerializedInArena(const char * pos) const
         return pos;
 
     return variants[localDiscriminatorByGlobal(global_discr)]->skipSerializedInArena(pos);
+}
+
+char * ColumnVariant::serializeValueIntoMemory(size_t n, char * memory) const
+{
+    Discriminator global_discr = globalDiscriminatorAt(n);
+    memcpy(memory, &global_discr, sizeof(global_discr));
+    memory += sizeof(global_discr);
+    if (global_discr == NULL_DISCRIMINATOR)
+        return memory;
+
+    return variants[localDiscriminatorByGlobal(global_discr)]->serializeValueIntoMemory(offsetAt(n), memory);
+}
+
+std::optional<size_t> ColumnVariant::getSerializedValueSize(size_t n) const
+{
+    size_t res = sizeof(Discriminator);
+    Discriminator global_discr = globalDiscriminatorAt(n);
+    if (global_discr == NULL_DISCRIMINATOR)
+        return res;
+
+    auto variant_size = variants[localDiscriminatorByGlobal(global_discr)]->getSerializedValueSize(offsetAt(n));
+    if (!variant_size)
+        return std::nullopt;
+
+    return res + *variant_size;
 }
 
 void ColumnVariant::updateHashWithValue(size_t n, SipHash & hash) const
@@ -919,7 +1018,7 @@ ColumnPtr ColumnVariant::permute(const Permutation & perm, size_t limit) const
     if (hasOnlyNulls())
     {
         if (limit)
-            return cloneResized(limit);
+            return cloneResized(limit ? std::min(size(), limit) : size());
 
         /// If no limit, we can just return current immutable column.
         return this->getPtr();
@@ -1207,9 +1306,9 @@ int ColumnVariant::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_
     /// Check if we have NULLs and return result based on nan_direction_hint.
     if (left_discr == NULL_DISCRIMINATOR && right_discr == NULL_DISCRIMINATOR)
         return 0;
-    else if (left_discr == NULL_DISCRIMINATOR)
+    if (left_discr == NULL_DISCRIMINATOR)
         return nan_direction_hint;
-    else if (right_discr == NULL_DISCRIMINATOR)
+    if (right_discr == NULL_DISCRIMINATOR)
         return -nan_direction_hint;
 
     /// If rows have different discriminators, row with least discriminator is considered the least.
@@ -1268,12 +1367,12 @@ void ColumnVariant::reserve(size_t n)
     getOffsets().reserve_exact(n);
 }
 
-void ColumnVariant::prepareForSquashing(const Columns & source_columns)
+void ColumnVariant::prepareForSquashing(const Columns & source_columns, size_t factor)
 {
     size_t new_size = size();
     for (const auto & source_column : source_columns)
         new_size += source_column->size();
-    reserve(new_size);
+    reserve(new_size * factor);
 
     for (size_t i = 0; i != variants.size(); ++i)
     {
@@ -1281,7 +1380,7 @@ void ColumnVariant::prepareForSquashing(const Columns & source_columns)
         source_variant_columns.reserve(source_columns.size());
         for (const auto & source_column : source_columns)
             source_variant_columns.push_back(assert_cast<const ColumnVariant &>(*source_column).getVariantPtrByGlobalDiscriminator(i));
-        getVariantByGlobalDiscriminator(i).prepareForSquashing(source_variant_columns);
+        getVariantByGlobalDiscriminator(i).prepareForSquashing(source_variant_columns, factor);
     }
 }
 
@@ -1337,7 +1436,7 @@ void ColumnVariant::getExtremes(Field & min, Field & max) const
     max = Null();
 }
 
-void ColumnVariant::forEachSubcolumn(MutableColumnCallback callback)
+void ColumnVariant::forEachMutableSubcolumn(MutableColumnCallback callback)
 {
     callback(local_discriminators);
     callback(offsets);
@@ -1345,14 +1444,36 @@ void ColumnVariant::forEachSubcolumn(MutableColumnCallback callback)
         callback(variant);
 }
 
-void ColumnVariant::forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback)
+void ColumnVariant::forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback)
+{
+    callback(*local_discriminators);
+    local_discriminators->forEachMutableSubcolumnRecursively(callback);
+    callback(*offsets);
+    offsets->forEachMutableSubcolumnRecursively(callback);
+
+    for (auto & variant : variants)
+    {
+        callback(*variant);
+        variant->forEachMutableSubcolumnRecursively(callback);
+    }
+}
+
+void ColumnVariant::forEachSubcolumn(ColumnCallback callback) const
+{
+    callback(local_discriminators);
+    callback(offsets);
+    for (const auto & variant : variants)
+        callback(variant);
+}
+
+void ColumnVariant::forEachSubcolumnRecursively(RecursiveColumnCallback callback) const
 {
     callback(*local_discriminators);
     local_discriminators->forEachSubcolumnRecursively(callback);
     callback(*offsets);
     offsets->forEachSubcolumnRecursively(callback);
 
-    for (auto & variant : variants)
+    for (const auto & variant : variants)
     {
         callback(*variant);
         variant->forEachSubcolumnRecursively(callback);
@@ -1376,16 +1497,33 @@ bool ColumnVariant::structureEquals(const IColumn & rhs) const
     return true;
 }
 
-ColumnPtr ColumnVariant::compress() const
+bool ColumnVariant::dynamicStructureEquals(const IColumn & rhs) const
 {
-    ColumnPtr local_discriminators_compressed = local_discriminators->compress();
-    ColumnPtr offsets_compressed = offsets->compress();
+    const auto * rhs_variant = typeid_cast<const ColumnVariant *>(&rhs);
+    if (!rhs_variant)
+        return false;
+
+    const size_t num_variants = variants.size();
+    if (num_variants != rhs_variant->variants.size())
+        return false;
+
+    for (size_t i = 0; i < num_variants; ++i)
+        if (!variants[i]->dynamicStructureEquals(rhs_variant->getVariantByGlobalDiscriminator(globalDiscriminatorByLocal(i))))
+            return false;
+
+    return true;
+}
+
+ColumnPtr ColumnVariant::compress(bool force_compression) const
+{
+    ColumnPtr local_discriminators_compressed = local_discriminators->compress(force_compression);
+    ColumnPtr offsets_compressed = offsets->compress(force_compression);
     size_t byte_size = local_discriminators_compressed->byteSize() + offsets_compressed->byteSize();
     Columns compressed;
     compressed.reserve(variants.size());
     for (const auto & variant : variants)
     {
-        auto compressed_variant = variant->compress();
+        auto compressed_variant = variant->compress(force_compression);
         byte_size += compressed_variant->byteSize();
         compressed.emplace_back(std::move(compressed_variant));
     }
@@ -1393,9 +1531,11 @@ ColumnPtr ColumnVariant::compress() const
     return ColumnCompressed::create(size(), byte_size,
         [my_local_discriminators_compressed = std::move(local_discriminators_compressed), my_offsets_compressed = std::move(offsets_compressed), my_compressed = std::move(compressed), my_local_to_global_discriminators = this->local_to_global_discriminators]() mutable
         {
-            for (auto & variant : my_compressed)
-                variant = variant->decompress();
-            return ColumnVariant::create(my_local_discriminators_compressed->decompress(), my_offsets_compressed->decompress(), my_compressed, my_local_to_global_discriminators);
+            Columns decompressed;
+            decompressed.reserve(my_compressed.size());
+            for (const auto & variant : my_compressed)
+                decompressed.push_back(variant->decompress());
+            return ColumnVariant::create(my_local_discriminators_compressed->decompress(), my_offsets_compressed->decompress(), decompressed, my_local_to_global_discriminators);
         });
 }
 
@@ -1449,6 +1589,31 @@ std::optional<ColumnVariant::Discriminator> ColumnVariant::getLocalDiscriminator
     return std::nullopt;
 }
 
+std::optional<ColumnVariant::Discriminator> ColumnVariant::getGlobalDiscriminatorOfOneNoneEmptyVariantNoNulls() const
+{
+    if (auto local_discr = getLocalDiscriminatorOfOneNoneEmptyVariantNoNulls())
+        return globalDiscriminatorByLocal(*local_discr);
+
+    return std::nullopt;
+}
+
+std::optional<ColumnVariant::Discriminator> ColumnVariant::getGlobalDiscriminatorOfOneNoneEmptyVariant() const
+{
+    std::optional<ColumnVariant::Discriminator> discr;
+    for (size_t i = 0; i != variants.size(); ++i)
+    {
+        if (!variants[i]->empty())
+        {
+            /// Check if we already had non-empty variant.
+            if (discr)
+                return std::nullopt;
+            discr = globalDiscriminatorByLocal(i);
+        }
+    }
+
+    return discr;
+}
+
 void ColumnVariant::applyNullMap(const ColumnVector<UInt8>::Container & null_map)
 {
     applyNullMapImpl<false>(null_map);
@@ -1497,16 +1662,16 @@ void ColumnVariant::applyNullMapImpl(const ColumnVector<UInt8>::Container & null
             filter.reserve_exact(null_map.size());
             for (size_t i = 0; i != local_discriminators_data.size(); ++i)
             {
-               if (null_map[i])
-               {
+                if (null_map[i])
+                {
                     filter.push_back(0);
                     local_discriminators_data[i] = NULL_DISCRIMINATOR;
-               }
-               else
-               {
+                }
+                else
+                {
                    filter.push_back(1);
                    offsets_data[i] = size_hint++;
-               }
+                }
             }
             variants[*non_empty_local_discr] = variants[*non_empty_local_discr]->filter(filter, size_hint);
         }
@@ -1533,7 +1698,7 @@ void ColumnVariant::applyNullMapImpl(const ColumnVector<UInt8>::Container & null
                 auto & variant_filter = variant_filters[discr];
                 /// We create filters lazily.
                 if (variant_filter.empty())
-                   variant_filter.resize_fill(variants[discr]->size(), 1);
+                    variant_filter.resize_fill(variants[discr]->size(), 1);
                 variant_filter[offsets_data[i]] = 0;
                 discr = NULL_DISCRIMINATOR;
             }
@@ -1585,20 +1750,30 @@ bool ColumnVariant::hasDynamicStructure() const
 
 void ColumnVariant::takeDynamicStructureFromSourceColumns(const Columns & source_columns)
 {
+    /// List of source columns for each variant. In global order.
     std::vector<Columns> variants_source_columns;
-    variants_source_columns.resize(variants.size());
-    for (size_t i = 0; i != variants.size(); ++i)
+    size_t num_variants = variants.size();
+    variants_source_columns.resize(num_variants);
+    for (size_t i = 0; i != num_variants; ++i)
         variants_source_columns[i].reserve(source_columns.size());
 
     for (const auto & source_column : source_columns)
     {
-        const auto & source_variants = assert_cast<const ColumnVariant &>(*source_column).variants;
-        for (size_t i = 0; i != source_variants.size(); ++i)
-            variants_source_columns[i].push_back(source_variants[i]);
+        const auto & source_variant = assert_cast<const ColumnVariant &>(*source_column);
+        for (size_t i = 0; i != num_variants; ++i)
+            variants_source_columns[i].push_back(source_variant.getVariantPtrByGlobalDiscriminator(i));
     }
 
-    for (size_t i = 0; i != variants.size(); ++i)
-        variants[i]->takeDynamicStructureFromSourceColumns(variants_source_columns[i]);
+    for (size_t i = 0; i != num_variants; ++i)
+        getVariantByGlobalDiscriminator(i).takeDynamicStructureFromSourceColumns(variants_source_columns[i]);
 }
+
+void ColumnVariant::takeDynamicStructureFromColumn(const ColumnPtr & source_column)
+{
+    const auto & source_variant = assert_cast<const ColumnVariant &>(*source_column);
+    for (size_t i = 0; i != variants.size(); ++i)
+        getVariantByGlobalDiscriminator(i).takeDynamicStructureFromColumn(source_variant.getVariantPtrByGlobalDiscriminator(i));
+}
+
 
 }

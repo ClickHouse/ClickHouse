@@ -15,6 +15,8 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         if (!res.read(in))
             return 0;
         res.write(out);
+
+        out.finalize();
     }
     catch (...)
     {

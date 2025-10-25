@@ -1,8 +1,11 @@
 #include <Columns/ColumnFixedString.h>
 
+#include <Common/Exception.h>
+
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/Serializations/SerializationFixedString.h>
+#include <Common/SipHash.h>
 
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
@@ -13,10 +16,18 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int UNEXPECTED_AST_STRUCTURE;
 }
 
+DataTypeFixedString::DataTypeFixedString(size_t n_) : n(n_)
+{
+    if (n == 0)
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "FixedString size must be positive");
+    if (n > MAX_FIXEDSTRING_SIZE)
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "FixedString size is too large");
+}
 
 std::string DataTypeFixedString::doGetName() const
 {
@@ -36,6 +47,11 @@ Field DataTypeFixedString::getDefault() const
 bool DataTypeFixedString::equals(const IDataType & rhs) const
 {
     return typeid(rhs) == typeid(*this) && n == static_cast<const DataTypeFixedString &>(rhs).n;
+}
+
+void DataTypeFixedString::updateHashImpl(SipHash & hash) const
+{
+    hash.update(n);
 }
 
 SerializationPtr DataTypeFixedString::doGetDefaultSerialization() const

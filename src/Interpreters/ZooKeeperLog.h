@@ -1,11 +1,12 @@
 #pragma once
 
-#include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
+#include <Core/NamesAndTypes.h>
 #include <Interpreters/SystemLog.h>
-#include <Interpreters/ClientInfo.h>
-#include <Common/ZooKeeper/IKeeper.h>
 #include <Storages/ColumnsDescription.h>
+#include <Common/ZooKeeper/IKeeper.h>
+
+#include <Poco/Net/SocketAddress.h>
 
 
 namespace DB
@@ -31,7 +32,7 @@ struct ZooKeeperLogElement
     UInt64 duration_microseconds = 0;
 
     /// Common request info
-    Int32 xid = 0;
+    Int64 xid = 0;
     bool has_watch = false;
     Int32 op_num = 0;
     String path;

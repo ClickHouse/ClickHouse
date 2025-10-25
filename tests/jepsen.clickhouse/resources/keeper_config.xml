@@ -49,6 +49,7 @@
             <stale_log_gap>{stale_log_gap}</stale_log_gap>
             <reserved_log_items>{reserved_log_items}</reserved_log_items>
             <async_replication>1</async_replication>
+            <use_xid_64>1</use_xid_64>
         </coordination_settings>
 
         <raft_configuration>

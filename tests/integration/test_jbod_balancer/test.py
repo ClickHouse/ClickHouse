@@ -7,6 +7,7 @@ import time
 from multiprocessing.dummy import Pool
 
 import pytest
+
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster, assert_eq_with_retry
 
@@ -77,7 +78,7 @@ def check_balance(node, table):
 
 
 def wait_until_fully_merged(node, table):
-    for i in range(20):
+    for i in range(200):
         # Wait in-flight merges to finish
         merges_count_query = (
             f"select count() from system.merges where table = '{table}'"

@@ -146,4 +146,9 @@ bool ReadBufferFromPocoSocketBase::poll(size_t timeout_microseconds) const
     return res;
 }
 
+void ReadBufferFromPocoSocketBase::setReceiveTimeout(size_t receive_timeout_microseconds)
+{
+    socket.setReceiveTimeout(Poco::Timespan(receive_timeout_microseconds, 0));
+}
+
 }

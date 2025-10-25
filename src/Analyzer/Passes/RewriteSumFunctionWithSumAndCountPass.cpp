@@ -11,6 +11,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool optimize_arithmetic_operations_in_aggregate_functions;
+}
 
 namespace
 {
@@ -23,7 +27,7 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings().optimize_arithmetic_operations_in_aggregate_functions)
+        if (!getSettings()[Setting::optimize_arithmetic_operations_in_aggregate_functions])
             return;
 
         static const std::unordered_set<String> func_supported = {
@@ -81,6 +85,7 @@ public:
         resolveAggregateFunctionNodeByName(*rhs_count, rhs_count->getFunctionName());
 
         const auto rhs = std::make_shared<FunctionNode>("multiply");
+        rhs->markAsOperator();
         rhs->getArguments().getNodes().push_back(func_plus_minus_nodes[literal_id]);
         rhs->getArguments().getNodes().push_back(rhs_count);
         resolveOrdinaryFunctionNodeByName(*rhs, rhs->getFunctionName(), getContext());

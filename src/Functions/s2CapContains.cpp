@@ -11,7 +11,7 @@
 #include <Common/NaNUtils.h>
 #include <base/range.h>
 
-#include "s2_fwd.h"
+#include <Functions/s2_fwd.h>
 
 namespace DB
 {
@@ -79,6 +79,11 @@ public:
                     arg->getName(), index + 1, getName());
         }
 
+        return std::make_shared<DataTypeUInt8>();
+    }
+
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
         return std::make_shared<DataTypeUInt8>();
     }
 

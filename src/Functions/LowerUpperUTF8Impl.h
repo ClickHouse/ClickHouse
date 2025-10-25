@@ -6,6 +6,7 @@
 
 #    include <Columns/ColumnString.h>
 #    include <Functions/LowerUpperImpl.h>
+#    include <base/scope_guard.h>
 #    include <unicode/ucasemap.h>
 #    include <unicode/unistr.h>
 #    include <unicode/urename.h>
@@ -49,11 +50,16 @@ struct LowerUpperUTF8Impl
         if (U_FAILURE(error_code))
             throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Error calling ucasemap_open: {}", u_errorName(error_code));
 
+        SCOPE_EXIT(
+        {
+            ucasemap_close(case_map);
+        });
+
         size_t curr_offset = 0;
         for (size_t row_i = 0; row_i < input_rows_count; ++row_i)
         {
             const auto * src = reinterpret_cast<const char *>(&data[offsets[row_i - 1]]);
-            size_t src_size = offsets[row_i] - offsets[row_i - 1] - 1;
+            size_t src_size = offsets[row_i] - offsets[row_i - 1];
 
             int32_t dst_size;
             if constexpr (upper)
@@ -63,9 +69,9 @@ struct LowerUpperUTF8Impl
                 dst_size = ucasemap_utf8ToLower(
                     case_map, reinterpret_cast<char *>(&res_data[curr_offset]), res_data.size() - curr_offset, src, src_size, &error_code);
 
-            if (error_code == U_BUFFER_OVERFLOW_ERROR || error_code == U_STRING_NOT_TERMINATED_WARNING)
+            if (error_code == U_BUFFER_OVERFLOW_ERROR)
             {
-                size_t new_size = curr_offset + dst_size + 1;
+                size_t new_size = curr_offset + dst_size;
                 res_data.resize(new_size);
 
                 error_code = U_ZERO_ERROR;
@@ -77,8 +83,8 @@ struct LowerUpperUTF8Impl
                         case_map, reinterpret_cast<char *>(&res_data[curr_offset]), res_data.size() - curr_offset, src, src_size, &error_code);
             }
 
-            if (error_code != U_ZERO_ERROR)
-                throw DB::Exception(
+            if (error_code != U_ZERO_ERROR && error_code != U_STRING_NOT_TERMINATED_WARNING)
+                throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
                     "Error calling {}: {} input: {} input_size: {}",
                     upper ? "ucasemap_utf8ToUpper" : "ucasemap_utf8ToLower",
@@ -86,8 +92,7 @@ struct LowerUpperUTF8Impl
                     std::string_view(src, src_size),
                     src_size);
 
-            res_data[curr_offset + dst_size] = 0;
-            curr_offset += dst_size + 1;
+            curr_offset += dst_size;
             res_offsets[row_i] = curr_offset;
         }
 

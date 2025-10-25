@@ -1,6 +1,7 @@
-#include <Processors/Merges/MergingSortedTransform.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
 #include <IO/WriteBuffer.h>
+#include <Processors/Merges/MergingSortedTransform.h>
+#include <Processors/Port.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
 #include <Common/logger_useful.h>
 
 namespace ProfileEvents
@@ -12,7 +13,7 @@ namespace DB
 {
 
 MergingSortedTransform::MergingSortedTransform(
-    const Block & header,
+    SharedHeader header,
     size_t num_inputs,
     const SortDescription & description_,
     size_t max_block_size_rows,
@@ -21,7 +22,9 @@ MergingSortedTransform::MergingSortedTransform(
     UInt64 limit_,
     bool always_read_till_end_,
     WriteBuffer * out_row_sources_buf_,
+    const std::optional<String> & filter_column_name_,
     bool use_average_block_sizes,
+    bool apply_virtual_row_conversions,
     bool have_all_inputs_)
     : IMergingTransform(
         num_inputs,
@@ -38,7 +41,9 @@ MergingSortedTransform::MergingSortedTransform(
         sorting_queue_strategy,
         limit_,
         out_row_sources_buf_,
-        use_average_block_sizes)
+        filter_column_name_,
+        use_average_block_sizes,
+        apply_virtual_row_conversions)
 {
 }
 

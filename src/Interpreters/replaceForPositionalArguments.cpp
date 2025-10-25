@@ -79,13 +79,11 @@ bool replaceForPositionalArguments(ASTPtr & argument, const ASTSelectQuery * sel
                                     "Illegal value (aggregate function) for positional argument in {}",
                                     ASTSelectQuery::expressionToString(expression));
                 }
-                else
+
+                if (function->arguments)
                 {
-                    if (function->arguments)
-                    {
-                        for (const auto & arg : function->arguments->children)
-                            throw_if_aggregate_function(arg);
-                    }
+                    for (const auto & arg : function->arguments->children)
+                        throw_if_aggregate_function(arg);
                 }
             }
         };

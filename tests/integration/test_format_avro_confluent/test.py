@@ -1,6 +1,7 @@
 import io
 import logging
 import time
+from urllib import parse
 
 import avro.schema
 import pytest
@@ -8,8 +9,8 @@ from confluent_kafka.avro.cached_schema_registry_client import (
     CachedSchemaRegistryClient,
 )
 from confluent_kafka.avro.serializer.message_serializer import MessageSerializer
+
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance, is_arm
-from urllib import parse
 
 # Skip on ARM due to Confluent/Kafka
 if is_arm():
