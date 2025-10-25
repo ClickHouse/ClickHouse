@@ -415,6 +415,14 @@ enum class VectorSearchFilterStrategy : uint8_t
 
 DECLARE_SETTING_ENUM(VectorSearchFilterStrategy)
 
+enum class ObjectStorageGranularityLevel : uint8_t
+{
+    BUCKET,
+    FILE,
+};
+
+DECLARE_SETTING_ENUM(ObjectStorageGranularityLevel)
+
 enum class GeoToH3ArgumentOrder : uint8_t
 {
     LAT_LON,
