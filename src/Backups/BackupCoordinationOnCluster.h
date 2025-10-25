@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Backups/IBackupCoordination.h>
+#include <Backups/IBackupDataFileNameGenerator.h>
 #include <Backups/BackupCoordinationCleaner.h>
 #include <Backups/BackupCoordinationFileInfos.h>
 #include <Backups/BackupCoordinationReplicatedAccess.h>
@@ -32,7 +33,8 @@ public:
         bool allow_concurrent_backup_,
         BackupConcurrencyCounters & concurrency_counters_,
         ThreadPoolCallbackRunnerUnsafe<void> schedule_,
-        QueryStatusPtr process_list_element_);
+        QueryStatusPtr process_list_element_,
+        BackupDataFileNameGeneratorPtr data_file_name_gen_);
 
     ~BackupCoordinationOnCluster() override;
 
@@ -113,6 +115,7 @@ private:
     const size_t current_host_index;
     const bool plain_backup;
     const QueryStatusPtr process_list_element;
+    const BackupDataFileNameGeneratorPtr data_file_name_gen;
     const LoggerPtr log;
 
     /// The order is important: `stage_sync` must be initialized after `with_retries` and `cleaner`.
