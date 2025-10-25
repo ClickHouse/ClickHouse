@@ -49,7 +49,7 @@ namespace Setting
 {
     extern const SettingsBool cloud_mode;
     extern const SettingsBool s3queue_migrate_old_metadata_to_buckets;
-    extern const SettingsFloat s3queue_keeper_fault_injection_probablility;
+    extern const SettingsFloat s3queue_keeper_fault_injection_probability;
     extern const SettingsUInt64 keeper_max_retries;
     extern const SettingsUInt64 keeper_retry_initial_backoff_ms;
     extern const SettingsUInt64 keeper_retry_max_backoff_ms;
@@ -165,10 +165,10 @@ ZooKeeperWithFaultInjection::Ptr ObjectStorageQueueMetadata::getZooKeeper(Logger
 {
     auto context = Context::getGlobalContextInstance();
     auto zk_client = context->getZooKeeper();
-    if (context->getSettingsRef()[Setting::s3queue_keeper_fault_injection_probablility] != 0.0)
+    if (context->getSettingsRef()[Setting::s3queue_keeper_fault_injection_probability] != 0.0)
     {
         return ZooKeeperWithFaultInjection::createInstance(
-            context->getSettingsRef()[Setting::s3queue_keeper_fault_injection_probablility],
+            context->getSettingsRef()[Setting::s3queue_keeper_fault_injection_probability],
             /* seed */0,
             zk_client,
             "S3Queue",

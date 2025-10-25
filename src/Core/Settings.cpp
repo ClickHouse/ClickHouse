@@ -622,7 +622,7 @@ Migrate old metadata structure of S3Queue table to a new one
     DECLARE(Bool, s3queue_enable_logging_to_s3queue_log, false, R"(
 Enable writing to system.s3queue_log. The value can be overwritten per table with table settings
 )", 0) \
-    DECLARE(Float, s3queue_keeper_fault_injection_probablility, 0.0, R"(
+    DECLARE(Float, s3queue_keeper_fault_injection_probability, 0.0, R"(
 Keeper fault injection probability for S3Queue.
 )", 0) \
     DECLARE(UInt64, hdfs_replication, 0, R"(
