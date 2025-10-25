@@ -33,6 +33,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
+    extern const int TOO_MANY_ROWS;
 }
 
 namespace QueryPlanOptimizations
@@ -310,14 +311,25 @@ bool analyzeProjectionCandidate(
     if (projection_parts.empty())
         return false;
 
-    auto projection_result_ptr = reader.estimateNumMarksToRead(
-        std::move(projection_parts),
-        empty_mutations_snapshot,
-        required_column_names,
-        candidate.projection->metadata,
-        projection_query_info,
-        context,
-        context->getSettingsRef()[Setting::max_threads]);
+    ReadFromMergeTree::AnalysisResultPtr projection_result_ptr;
+    try
+    {
+        projection_result_ptr = reader.estimateNumMarksToRead(
+            std::move(projection_parts),
+            empty_mutations_snapshot,
+            required_column_names,
+            candidate.projection->metadata,
+            projection_query_info,
+            context,
+            context->getSettingsRef()[Setting::max_threads]);
+    }
+    catch (const Exception & e)
+    {
+        /// If projection analysis hits row limits, skip this candidate
+        if (e.code() == ErrorCodes::TOO_MANY_ROWS)
+            return false;
+        throw;
+    }
 
     std::unordered_set<const IMergeTreeDataPart *> valid_parts = candidate.parent_parts;
     for (auto & part : projection_result_ptr->parts_with_ranges)

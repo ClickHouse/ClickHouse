@@ -16,6 +16,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSampleRatio.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
+#include <Planner/Utils.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -94,6 +95,11 @@ namespace Setting
     extern const SettingsBool secondary_indices_enable_bulk_filtering;
     extern const SettingsBool parallel_replicas_support_projection;
     extern const SettingsBool vector_search_with_rescoring;
+    extern const SettingsUInt64 max_rows_to_read;
+    extern const SettingsUInt64 max_rows_to_read_leaf;
+    extern const SettingsOverflowMode read_overflow_mode;
+    extern const SettingsOverflowMode read_overflow_mode_leaf;
+
 }
 
 namespace MergeTreeSetting
@@ -112,6 +118,7 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int CANNOT_PARSE_TEXT;
     extern const int TOO_MANY_PARTITIONS;
+    extern const int TOO_MANY_ROWS;
     extern const int DUPLICATED_PART_UUIDS;
     extern const int INCORRECT_DATA;
 }
@@ -652,6 +659,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     RangesInDataParts parts_with_ranges,
     StorageMetadataPtr metadata_snapshot,
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
+    const SelectQueryInfo & query_info,
     const ContextPtr & context,
     const KeyCondition & key_condition,
     const std::optional<KeyCondition> & part_offset_condition,
@@ -761,6 +769,12 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         auto vector_similarity_index_cache = context->getVectorSimilarityIndexCache();
 
         auto query_status = context->getProcessListElement();
+
+        // These limits are checked per part so that we can fail very quickly
+        // should we hit row limits on large datasets. Row counts use an atomic
+        // counter as part processing typically uses multiple threads (max_threads)
+        auto [limits, leaf_limits] = getRowLimits(settings, query_info);
+        std::atomic<size_t> total_rows{0};
 
         auto process_part = [&](size_t part_index)
         {
@@ -928,6 +942,25 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                         stat.parts_dropped.fetch_add(1, std::memory_order_relaxed);
                 }
             }
+
+            if (!ranges.ranges.empty())
+
+            {
+                if (limits.max_rows || leaf_limits.max_rows)
+                {
+                    auto current_rows_estimate = ranges.getRowsCount();
+                    size_t prev_rows_estimate = total_rows.fetch_add(current_rows_estimate, std::memory_order_relaxed);
+                    size_t total_rows_estimate = current_rows_estimate + prev_rows_estimate;
+
+
+                    if (query_info.trivial_limit > 0 && total_rows_estimate > query_info.trivial_limit)
+                    {
+                        total_rows_estimate = query_info.trivial_limit;
+                    }
+                    limits.check(total_rows_estimate, 0, "rows (controlled by 'max_rows_to_read' setting)", ErrorCodes::TOO_MANY_ROWS);
+                    leaf_limits.check(total_rows_estimate, 0, "rows (controlled by 'max_rows_to_read_leaf' setting)", ErrorCodes::TOO_MANY_ROWS);
+                }
+            }
         };
 
         LOG_TRACE(log, "Filtering marks by primary and secondary keys");
@@ -1075,6 +1108,31 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         });
 
     return parts_with_ranges;
+}
+
+MergeTreeDataSelectExecutor::RowLimits MergeTreeDataSelectExecutor::getRowLimits(
+    const Settings & settings,
+    const SelectQueryInfo & query_info)
+{
+    RowLimits row_limits;
+
+    /// Do not check number of read rows if we are
+    /// reading in order via the sorting key with limit.
+    /// In the general case, when you have a WHERE clause
+    /// it's impossible to estimate number of rows precisely,
+    /// because we can stop reading at any time, especially given
+    /// part processing is done in multiple threads (max_threads)
+    if (settings[Setting::read_overflow_mode] == OverflowMode::THROW
+        && settings[Setting::max_rows_to_read]
+        && !query_info.input_order_info)
+        row_limits.limits = SizeLimits(settings[Setting::max_rows_to_read], 0, settings[Setting::read_overflow_mode]);
+
+    if (settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW
+        && settings[Setting::max_rows_to_read_leaf]
+        && !query_info.input_order_info)
+        row_limits.leaf_limits = SizeLimits(settings[Setting::max_rows_to_read_leaf], 0, settings[Setting::read_overflow_mode_leaf]);
+
+    return row_limits;
 }
 
 void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
