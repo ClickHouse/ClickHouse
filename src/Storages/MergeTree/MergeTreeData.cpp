@@ -10131,7 +10131,8 @@ bool MergeTreeData::initializeDiskOnConfigChange(const std::set<String> & new_ad
     for (const auto & name : new_added_disks)
     {
         auto disk = storage_policy->tryGetDiskByName(name);
-        if (disk)
+        /// It's unlikely that newly added disk is broken or readonly, but we check it anyway
+        if (disk && !disk->isBroken() && !disk->isReadOnly())
         {
             disk->createDirectories(relative_data_path);
             disk->createDirectories(fs::path(relative_data_path) / MergeTreeData::DETACHED_DIR_NAME);
