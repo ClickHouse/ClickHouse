@@ -31,8 +31,8 @@ CREATE TABLE azure_blob_storage_table (name String, value UInt32)
 - `account_key` - if storage_account_url is used, then account key can be specified here
 - `format` — The [format](/interfaces/formats.md) of the file.
 - `compression` — Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. By default, it will autodetect compression by file extension. (same as setting to `auto`).
-- `partition_strategy` – Options: `WILDCARD` or `HIVE`. `WILDCARD` requires a `{_partition_id}` in the path, which is replaced with the partition key. `HIVE` does not allow wildcards, assumes the path is the table root, and generates Hive-style partitioned directories with Snowflake IDs as filenames and the file format as the extension. Defaults to `WILDCARD`
-- `partition_columns_in_data_file` - Only used with `HIVE` partition strategy. Tells ClickHouse whether to expect partition columns to be written in the data file. Defaults `false`.
+- `partition_strategy` – Options: `wildcard` or `hive`. `wildcard` requires a `{_partition_id}` in the path, which is replaced with the partition key. `hive` does not allow wildcards, assumes the path is the table root, and generates Hive-style partitioned directories with Snowflake IDs as filenames and the file format as the extension. Defaults to `file_like_engine_default_partition_strategy` user profile setting, those default value is `wildcard` for compatibility setting <25.9 and `hive` otherwise.
+- `partition_columns_in_data_file` - Only used with `hive` partition strategy. Tells ClickHouse whether to expect partition columns to be written in the data file. Defaults `false`.
 - `extra_credentials` - Use `client_id` and `tenant_id` for authentication. If extra_credentials are provided, they are given priority over `account_name` and `account_key`.
 
 **Example**
@@ -107,13 +107,13 @@ For partitioning by month, use the `toYYYYMM(date_column)` expression, where `da
 
 #### Partition strategy {#partition-strategy}
 
-`WILDCARD` (default): Replaces the `{_partition_id}` wildcard in the file path with the actual partition key. Reading is not supported.
+`wildcard` (default): Replaces the `{_partition_id}` wildcard in the file path with the actual partition key. Reading is not supported.
 
-`HIVE` implements hive style partitioning for reads & writes. Reading is implemented using a recursive glob pattern. Writing generates files using the following format: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
+`hive` implements hive style partitioning for reads & writes. Reading is implemented using a recursive glob pattern. Writing generates files using the following format: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
 
-Note: When using `HIVE` partition strategy, the `use_hive_partitioning` setting has no effect.
+Note: When using `hive` partition strategy, the `use_hive_partitioning` setting has no effect.
 
-Example of `HIVE` partition strategy:
+Example of `hive` partition strategy:
 
 ```sql
 arthur :) create table azure_table (year UInt16, country String, counter UInt8) ENGINE=AzureBlobStorage(account_name='devstoreaccount1', account_key='Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', storage_account_url = 'http://localhost:30000/devstoreaccount1', container='cont', blob_path='hive_partitioned', format='Parquet', compression='auto', partition_strategy='hive') PARTITION BY (year, country);

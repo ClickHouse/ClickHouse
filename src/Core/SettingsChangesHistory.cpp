@@ -73,6 +73,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"optimize_empty_string_comparisons", false, true, "A new setting."},
             {"query_plan_use_logical_join_step", true, true, "Added alias"},
             {"schema_inference_make_columns_nullable", 1, 3, "Take nullability information from Parquet/ORC/Arrow metadata by default, instead of making everything nullable."},
+            {"file_like_engine_default_partition_strategy", "wildcard", "hive", "New setting."},
             {"materialized_views_squash_parallel_inserts", false, true, "Added setting to preserve old behavior if needed."},
             {"distributed_cache_connect_timeout_ms", 50, 50, "New setting"},
             {"distributed_cache_receive_timeout_ms", 3000, 3000, "New setting"},

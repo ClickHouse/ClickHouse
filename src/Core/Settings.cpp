@@ -6613,6 +6613,9 @@ Enables delta-kernel writes feature.
     DECLARE(Bool, allow_deprecated_error_prone_window_functions, false, R"(
 Allow usage of deprecated error prone window functions (neighbor, runningAccumulate, runningDifferenceStartingWithFirstValue, runningDifference)
 )", 0) \
+    DECLARE(FileLikeEngineDefaultPartitionStrategy, file_like_engine_default_partition_strategy, FileLikeEngineDefaultPartitionStrategy::HIVE, R"(
+Default partition strategy for file like engines.
+)", 0) \
     DECLARE(Bool, use_iceberg_partition_pruning, true, R"(
 Use Iceberg partition pruning for Iceberg tables
 )", 0) \
