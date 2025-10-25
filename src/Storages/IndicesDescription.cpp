@@ -181,7 +181,7 @@ IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expression is not set");
     }
 
-    auto syntax = TreeRewriter(context).analyze(expr_list, columns.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()));
+    auto syntax = TreeRewriter(context).analyze(expr_list, columns.get(GetColumnsOptions(GetColumnsOptions::AllPhysical)));
     result.expression = ExpressionAnalyzer(expr_list, syntax, context).getActions(true);
     result.sample_block = result.expression->getSampleBlock();
 

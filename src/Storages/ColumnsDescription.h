@@ -243,7 +243,7 @@ public:
             boost::multi_index::sequenced<>,
             boost::multi_index::ordered_unique<boost::multi_index::member<ColumnDescription, String, &ColumnDescription::name>>>>;
 
-    using SubcolumnsContainter = boost::multi_index_container<
+    using SubcolumnsContainer = boost::multi_index_container<
         NameAndTypePair,
         boost::multi_index::indexed_by<
             boost::multi_index::hashed_unique<boost::multi_index::member<NameAndTypePair, String, &NameAndTypePair::name>>,
@@ -259,7 +259,7 @@ private:
     /// - .null  for Nullable
     ///
     /// While nested columns have form like foo.bar
-    SubcolumnsContainter subcolumns;
+    SubcolumnsContainer subcolumns;
 
     void modifyColumnOrder(const String & column_name, const String & after_column, bool first);
     void addSubcolumnsToList(NamesAndTypesList & source_list) const;
