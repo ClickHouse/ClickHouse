@@ -117,7 +117,8 @@ enum class BinaryTypeIndex : uint8_t
     Please don't use 0x33 and 0x35, because older client might try to serialise data as TimeWithTimezone/Time64WithTimezone, and newer server would deserialise them as incorrect types. */
     Time64 = 0x34,
     /// reserved = 0x35
-    QBit = 0x36
+    QBit = 0x36,
+    MacAddress = 0x37
 };
 
 /// In future we can introduce more arguments in the JSON data type definition.
@@ -245,6 +246,8 @@ BinaryTypeIndex getBinaryTypeIndex(const DataTypePtr & type)
             return BinaryTypeIndex::IPv4;
         case TypeIndex::IPv6:
             return BinaryTypeIndex::IPv6;
+        case TypeIndex::MacAddress:
+            return BinaryTypeIndex::MacAddress;
         case TypeIndex::Variant:
             return BinaryTypeIndex::Variant;
         case TypeIndex::Dynamic:
@@ -758,6 +761,8 @@ DataTypePtr decodeDataType(ReadBuffer & buf)
             return getDataTypesCache().getType("IPv4");
         case BinaryTypeIndex::IPv6:
             return getDataTypesCache().getType("IPv6");
+        case BinaryTypeIndex::MacAddress:
+            return getDataTypesCache().getType("MacAddress");
         case BinaryTypeIndex::Variant:
         {
             size_t size;
