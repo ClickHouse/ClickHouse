@@ -25,7 +25,7 @@ Positions: 0
                  INPUT :: 1 -> __table2.value DateTime : 1
                  INPUT :: 2 -> __table3.value DateTime : 2
         Positions: 0 1 2
-          Join
+          Join (JOIN FillRightFirst)
           Type: CROSS
           Strictness: ALL
           Algorithm: HashJoin
