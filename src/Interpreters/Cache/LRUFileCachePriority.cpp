@@ -401,8 +401,19 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
     const UserID &,
     const CachePriorityGuard::ReadLock & lock)
 {
-    size_t size = eviction_info.at(queue_id).size_to_evict;
-    size_t elements = eviction_info.at(queue_id).elements_to_evict;
+    const QueueEvictionInfo * info;
+    if (auto it = eviction_info.find(queue_id); it != eviction_info.end())
+    {
+        info = &it->second;
+    }
+    else
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Eviction info for queue  with id {} does not exist", queue_id);
+    }
+    size_t size = info->size_to_evict;
+    size_t elements = info->elements_to_evict;
 
     if (!size && !elements)
         return true;

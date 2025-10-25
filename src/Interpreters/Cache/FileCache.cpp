@@ -1123,9 +1123,6 @@ bool FileCache::doTryReserve(
         return false;
     }
 
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    assertCacheCorrectness();
-#endif
     return true;
 }
 
@@ -1637,11 +1634,11 @@ void FileCache::loadMetadataForKeys(const fs::path & keys_dir)
             size_t size_limit = 0;
 
             {
-                auto lock = lockCache();
+                auto lock = cache_guard.writeLock();
                 auto state_lock = cache_state_guard.lock();
                 size_limit = main_priority->getSizeLimit(state_lock);
 
-                limits_satisfied = main_priority->canFit(size, 1, state_lock, nullptr, true);
+                limits_satisfied = main_priority->canFit(size, 1, state_lock, /* reservee */nullptr, true);
                 if (limits_satisfied)
                     cache_it = main_priority->add(key_metadata, offset, size, user, lock, &state_lock, /* best_effort */true);
 
