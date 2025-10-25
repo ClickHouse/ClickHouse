@@ -46,6 +46,7 @@ add_contrib (openssl-cmake openssl)  # Needed for delta-lake
 add_contrib (abseil-cpp-cmake abseil-cpp)
 add_contrib (zlib-ng-cmake zlib-ng)
 add_contrib (google-protobuf-cmake google-protobuf)
+add_contrib (substrait-cmake substrait)
 add_contrib (grpc-cmake grpc)
 add_contrib (llvm-project-cmake llvm-project)
 enable_dummy_launchers_if_needed()

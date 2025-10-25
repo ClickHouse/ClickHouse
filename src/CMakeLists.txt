@@ -327,6 +327,10 @@ if (TARGET ch_contrib::nuraft)
     add_object_library(clickhouse_coordination Coordination)
 endif()
 
+if (TARGET ch_contrib::substrait)
+    add_subdirectory(Processors/Substrait)
+endif()
+
 add_library (dbms STATIC ${dbms_headers} ${dbms_sources})
 target_link_libraries (dbms PRIVATE ch_contrib::libdivide daemon)
 if (TARGET ch_contrib::jemalloc)
@@ -442,6 +446,10 @@ endif()
 
 if (TARGET ch_contrib::sasl2)
     target_link_libraries(dbms PRIVATE ch_contrib::sasl2)
+endif()
+
+if (TARGET ch_contrib::substrait)
+    target_link_libraries(dbms PRIVATE clickhouse_processors_substrait)
 endif()
 
 if (TARGET ch_contrib::krb5)
