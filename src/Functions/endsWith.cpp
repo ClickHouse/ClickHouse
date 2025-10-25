@@ -43,7 +43,7 @@ REGISTER_FUNCTION(EndsWithCaseInsensitive)
     FunctionDocumentation::Description description = R"(
 Checks whether a string ends with the provided case-insensitive suffix.
 )";
-    FunctionDocumentation::Syntax syntax = "endsWith(s, suffix)";
+    FunctionDocumentation::Syntax syntax = "endsWithCaseInsensitive(s, suffix)";
     FunctionDocumentation::Arguments arguments = {
         {"s", "String to check.", {"String"}},
         {"suffix", "Case-insensitive suffix to check for.", {"String"}}
