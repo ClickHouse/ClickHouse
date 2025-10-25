@@ -1616,11 +1616,11 @@ void DatabaseCatalog::reloadDisksTask()
             {
                 table->initializeDiskOnConfigChange(disks);
             }
-            catch(std::exception & e)
+            catch (const std::exception & e)
             {
                 LOG_WARNING(log, "Fail to reinitialize disks [{}] for table {}, error: {}", fmt::join(disks, ","), table->getName(), e.what());
             }
-            catch(...)
+            catch (...)
             {
                 LOG_WARNING(log, "Fail to reinitialize disks [{}] for table {}", fmt::join(disks, ","), table->getName());
             }
