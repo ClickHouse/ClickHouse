@@ -16,7 +16,6 @@ namespace DB
   * Supported comparison operators: =, !=, <, <=, >, >=, LIKE, ILIKE and their negations.
   * NOTE: Does not support `dictGet*OrDefault` functions. Supports all other `dictGet*` functions that has 3 arguments.
   */
-
 class InverseDictionaryLookupPass final : public IQueryTreePass
 {
 public:
