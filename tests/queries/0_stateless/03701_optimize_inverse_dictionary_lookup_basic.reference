@@ -1,0 +1,139 @@
+Equality, LHS - plan
+CreatingSets (Create sets before main query execution)
+  Expression (Project names)
+    Sorting (Sorting for ORDER BY)
+      Expression ((Before ORDER BY + Projection))
+        Expression ((WHERE + Change column names to column identifiers))
+          ReadFromMergeTree (default.t)
+Equality, LHS
+1	a
+3	c
+Equality, RHS - plan
+CreatingSets (Create sets before main query execution)
+  Expression (Project names)
+    Sorting (Sorting for ORDER BY)
+      Expression ((Before ORDER BY + Projection))
+        Expression ((WHERE + Change column names to column identifiers))
+          ReadFromMergeTree (default.t)
+Equality, RHS
+1	a
+3	c
+Inequality <, LHS - plan
+CreatingSets (Create sets before main query execution)
+  Expression (Project names)
+    Sorting (Sorting for ORDER BY)
+      Expression ((Before ORDER BY + Projection))
+        Expression ((WHERE + Change column names to column identifiers))
+          ReadFromMergeTree (default.t)
+Inequality <, LHS
+1	a
+2	b
+4	d
+5	R
+Inequality <, RHS - plan
+CreatingSets (Create sets before main query execution)
+  Expression (Project names)
+    Sorting (Sorting for ORDER BY)
+      Expression ((Before ORDER BY + Projection))
+        Expression ((WHERE + Change column names to column identifiers))
+          ReadFromMergeTree (default.t)
+Inequality <, RHS
+1	a
+2	b
+4	d
+5	R
+Type variant cast, >= Int32 - plan
+CreatingSets (Create sets before main query execution)
+  Expression (Project names)
+    Sorting (Sorting for ORDER BY)
+      Expression ((Before ORDER BY + Projection))
+        Expression ((WHERE + Change column names to column identifiers))
+          ReadFromMergeTree (default.t)
+Type variant cast, >= Int32
+1	a
+2	b
+3	c
+5	R
+LIKE - plan
+CreatingSets (Create sets before main query execution)
+  Expression (Project names)
+    Sorting (Sorting for ORDER BY)
+      Expression ((Before ORDER BY + Projection))
+        Expression ((WHERE + Change column names to column identifiers))
+          ReadFromMergeTree (default.t)
+LIKE
+1	a
+3	c
+ILIKE - plan
+CreatingSets (Create sets before main query execution)
+  Expression (Project names)
+    Sorting (Sorting for ORDER BY)
+      Expression ((Before ORDER BY + Projection))
+        Expression ((WHERE + Change column names to column identifiers))
+          ReadFromMergeTree (default.t)
+ILIKE
+1	a
+3	c
+5	R
+NOT recursion - plan
+CreatingSets (Create sets before main query execution)
+  Expression (Project names)
+    Sorting (Sorting for ORDER BY)
+      Expression ((Before ORDER BY + Projection))
+        Expression ((WHERE + Change column names to column identifiers))
+          ReadFromMergeTree (default.t)
+NOT recursion
+2	b
+4	d
+5	R
+AND/OR recursion - plan
+CreatingSets (Create sets before main query execution)
+  Expression (Project names)
+    Sorting (Sorting for ORDER BY)
+      Expression ((Before ORDER BY + Projection))
+        Expression ((WHERE + Change column names to column identifiers))
+          ReadFromMergeTree (default.t)
+AND/OR recursion
+1	a
+4	d
+NULL constant - plan
+CreatingSets (Create sets before main query execution)
+  Expression (Project names)
+    Sorting (Sorting for ORDER BY)
+      Expression ((Before ORDER BY + Projection))
+        Expression ((WHERE + Change column names to column identifiers))
+          ReadFromMergeTree (default.t)
+NULL constant
+PREWHERE - plan
+CreatingSets (Create sets before main query execution)
+  Expression (Project names)
+    Sorting (Sorting for ORDER BY)
+      Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
+        ReadFromMergeTree (default.t)
+PREWHERE
+1
+3
+QUALIFY - plan
+CreatingSets (Create sets before main query execution)
+  Expression (Project names)
+    Sorting (Sorting for ORDER BY)
+      Expression ((Before ORDER BY + Projection))
+        Filter (QUALIFY)
+          Window (Window step for window \'PARTITION BY 1_UInt8 ORDER BY __table1.color_id ASC\')
+            Sorting (Sorting for window \'PARTITION BY 1_UInt8 ORDER BY __table1.color_id ASC\')
+              Expression ((Before WINDOW + Change column names to column identifiers))
+                ReadFromMergeTree (default.t)
+  CreatingSet (Create set for subquery)
+    Expression ((Project names + Projection))
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromStorage (Dictionary)
+QUALIFY
+1	1
+3	3
+Negative: non-constant RHS - plan
+Expression (Project names)
+  Sorting (Sorting for ORDER BY)
+    Expression ((Before ORDER BY + Projection))
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.t)
+Negative: non-constant RHS

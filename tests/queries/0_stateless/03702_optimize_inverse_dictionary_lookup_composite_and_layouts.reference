@@ -1,0 +1,98 @@
+Composite key: equality, LHS - plan
+CreatingSets (Create sets before main query execution)
+  Expression (Project names)
+    Sorting (Sorting for ORDER BY)
+      Expression ((Before ORDER BY + Projection))
+        Expression ((WHERE + Change column names to column identifiers))
+          ReadFromMergeTree (default.f)
+Composite key: equality, LHS - run
+1	a	x
+Composite key: equality, RHS - plan
+CreatingSets (Create sets before main query execution)
+  Expression (Project names)
+    Sorting (Sorting for ORDER BY)
+      Expression ((Before ORDER BY + Projection))
+        Expression ((WHERE + Change column names to column identifiers))
+          ReadFromMergeTree (default.f)
+Composite key: equality, RHS - run
+1	a	x
+Composite key: inequality <, LHS - plan
+CreatingSets (Create sets before main query execution)
+  Expression (Project names)
+    Sorting (Sorting for ORDER BY)
+      Expression ((Before ORDER BY + Projection))
+        Expression ((WHERE + Change column names to column identifiers))
+          ReadFromMergeTree (default.f)
+Composite key: inequality <, LHS - run
+1	b	y
+3	c	u
+Composite key: inequality <, RHS - plan
+CreatingSets (Create sets before main query execution)
+  Expression (Project names)
+    Sorting (Sorting for ORDER BY)
+      Expression ((Before ORDER BY + Projection))
+        Expression ((WHERE + Change column names to column identifiers))
+          ReadFromMergeTree (default.f)
+Composite key: inequality <, RHS - run
+1	b	y
+3	c	u
+Composite key: LIKE/ILIKE - plan
+CreatingSets (Create sets before main query execution)
+  Expression (Project names)
+    Sorting (Sorting for ORDER BY)
+      Expression ((Before ORDER BY + Projection))
+        Filter ((WHERE + Change column names to column identifiers))
+          ReadFromMergeTree (default.f)
+Composite key: LIKE/ILIKE - run
+1	a
+2	a
+Composite key: AND/OR recursion - plan
+CreatingSets (Create sets before main query execution)
+  Expression (Project names)
+    Sorting (Sorting for ORDER BY)
+      Expression ((Before ORDER BY + Projection))
+        Filter ((WHERE + Change column names to column identifiers))
+          ReadFromMergeTree (default.f)
+Composite key: AND/OR recursion - run
+1	a
+3	c
+Composite key: PREWHERE - plan
+CreatingSets (Create sets before main query execution)
+  Expression (Project names)
+    Sorting (Sorting for ORDER BY)
+      Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
+        ReadFromMergeTree (default.f)
+Composite key: PREWHERE - run
+2	a
+Flat layout: equality and inequality - plan
+CreatingSets (Create sets before main query execution)
+  Expression (Project names)
+    Sorting (Sorting for ORDER BY)
+      Expression ((Before ORDER BY + Projection))
+        Expression ((WHERE + Change column names to column identifiers))
+          ReadFromMergeTree (default.f)
+Flat layout: equality and inequality - run
+1	u
+1	x
+3	z
+Composite key: NOT LIKE - plan
+CreatingSets (Create sets before main query execution)
+  Expression (Project names)
+    Sorting (Sorting for ORDER BY)
+      Expression ((Before ORDER BY + Projection))
+        Filter ((WHERE + Change column names to column identifiers))
+          ReadFromMergeTree (default.f)
+Composite key: NOT LIKE - run
+1	a
+2	a
+3	c
+Composite key: MATCH - plan
+CreatingSets (Create sets before main query execution)
+  Expression (Project names)
+    Sorting (Sorting for ORDER BY)
+      Expression ((Before ORDER BY + Projection))
+        Filter ((WHERE + Change column names to column identifiers))
+          ReadFromMergeTree (default.f)
+Composite key: MATCH - run
+1	a
+2	a
