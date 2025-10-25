@@ -2506,8 +2506,10 @@ void InterpreterCreateQuery::processSQLSecurityOption(ContextMutablePtr context_
     if (sql_security.definer && !skip_check_permissions)
     {
         auto definer_name = sql_security.definer->toString();
-        auto & access_control = context_->getAccessControl();
+        if (definer_name != current_user_name)
+            context_->checkAccess(AccessType::SET_DEFINER, definer_name);
 
+        auto & access_control = context_->getAccessControl();
         const auto user = access_control.read<User>(definer_name);
         if (access_control.isEphemeral(access_control.getID<User>(definer_name)))
         {
@@ -2519,9 +2521,6 @@ void InterpreterCreateQuery::processSQLSecurityOption(ContextMutablePtr context_
             new_user->authentication_methods.emplace_back(AuthenticationType::NO_AUTHENTICATION);
             access_control.insertOrReplace(new_user);
         }
-
-        if (definer_name != current_user_name)
-            context_->checkAccess(AccessType::SET_DEFINER, definer_name);
     }
 
     if (sql_security.type == SQLSecurityType::NONE && !skip_check_permissions)
