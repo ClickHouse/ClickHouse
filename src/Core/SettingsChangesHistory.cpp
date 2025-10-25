@@ -42,6 +42,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "25.11",
         {
             {"use_statistics_cache", 0, 0, "New setting"},
+            {"optimize_inverse_dictionary_lookup", true, true, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.10",
         {
