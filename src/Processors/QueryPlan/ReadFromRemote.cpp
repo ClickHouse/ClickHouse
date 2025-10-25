@@ -711,7 +711,15 @@ void ReadFromRemote::addPipe(
         auto stage_to_use = shard.query_plan ? QueryProcessingStage::QueryPlan : stage;
 
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-            shard.shard_info.pool, query_string, shard.header, context, throttler, scalars, external_tables, stage_to_use, shard.query_plan);
+            shard.shard_info.pool,
+            query_string,
+            shard.header,
+            context,
+            throttler,
+            scalars,
+            external_tables,
+            stage_to_use,
+            shard.query_plan);
         remote_query_executor->setLogger(log);
 
         if (context->canUseTaskBasedParallelReplicas() || parallel_replicas_disabled)
@@ -850,7 +858,8 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     std::shared_ptr<const StorageLimitsList> storage_limits_,
     std::vector<ConnectionPoolPtr> pools_to_use_,
     std::optional<size_t> exclude_pool_index_,
-    ConnectionPoolWithFailoverPtr connection_pool_with_failover_)
+    ConnectionPoolWithFailoverPtr connection_pool_with_failover_,
+    std::shared_ptr<const QueryPlan> query_plan_)
     : ISourceStep(std::move(header_))
     , cluster(cluster_)
     , query_ast(query_ast_)
@@ -866,6 +875,7 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     , pools_to_use(std::move(pools_to_use_))
     , exclude_pool_index(exclude_pool_index_)
     , connection_pool_with_failover(connection_pool_with_failover_)
+    , query_plan(std::move(query_plan_))
 {
     chassert(cluster->getShardCount() == 1);
 
@@ -975,16 +985,13 @@ Pipe ReadFromParallelRemoteReplicasStep::createPipeForSingeReplica(
     const ConnectionPoolPtr & pool, ASTPtr ast, IConnections::ReplicaInfo replica_info, const SharedHeader & out_header,
     size_t parallel_marshalling_threads)
 {
-    bool add_agg_info = stage == QueryProcessingStage::WithMergeableState;
+    bool add_agg_info = query_plan ? false : stage == QueryProcessingStage::WithMergeableState;
     bool add_totals = false;
     bool add_extremes = false;
     bool async_read = context->getSettingsRef()[Setting::async_socket_for_remote];
     bool async_query_sending = context->getSettingsRef()[Setting::async_query_sending_for_remote];
 
     String query_string = formattedAST(ast);
-
-    if (ast->as<ASTExplainQuery>() == nullptr)
-        assert(stage != QueryProcessingStage::Complete);
 
     assert(output_header);
 
@@ -996,9 +1003,10 @@ Pipe ReadFromParallelRemoteReplicasStep::createPipeForSingeReplica(
         throttler,
         scalars,
         external_tables,
-        stage,
+        query_plan ? QueryProcessingStage::QueryPlan : stage,
         RemoteQueryExecutor::Extension{.parallel_reading_coordinator = coordinator, .replica_info = std::move(replica_info)},
-        connection_pool_with_failover);
+        connection_pool_with_failover,
+        query_plan);
 
     remote_query_executor->setLogger(log);
     remote_query_executor->setMainTable(storage_id);
