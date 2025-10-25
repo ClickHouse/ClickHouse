@@ -297,17 +297,13 @@ def test_docker_library(test_results) -> None:
         repo = "docker-library/official-images"
         logging.info("Cloning %s repository to run tests for 'clickhouse' image", repo)
         repo_path = temp_path / repo
+        config_override = (
+            Path(Utils.cwd()) / "ci/jobs/scripts/docker_server/config.sh"
+        ).absolute()
         Shell.check(f"{GIT_PREFIX} clone {GITHUB_SERVER_URL}/{repo} {repo_path}")
-        logging.info(
-            "Patching tests config to run clickhouse tests for clickhouse/clickhouse-server"
-        )
-        Shell.check(
-            "sed -i '/testAlias+=(/ a[clickhouse/clickhouse-server]=clickhouse' "
-            f"{repo_path/'test/config.sh'}"
-        )
         run_sh = (repo_path / "test/run.sh").absolute()
         for image in check_images:
-            cmd = f"{run_sh} {image}"
+            cmd = f"{run_sh} {image} -c {repo_path / 'test/config.sh'} -c {config_override}"
             test_results.append(Result.from_commands_run(name=test_name, command=cmd))
 
     except Exception as e:
