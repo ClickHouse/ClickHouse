@@ -296,6 +296,26 @@ PrewhereExprStepPtr createLightweightDeleteStep(bool remove_filter_column)
     return std::make_shared<PrewhereExprStep>(std::move(step));
 }
 
+NamesAndTypesList * getFirstStepColumnsWithPatches(MergeTreeReadTaskColumns & result, const NameSet & all_patch_columns)
+{
+    for (auto & columns : result.pre_columns)
+    {
+        for (const auto & column : columns)
+        {
+            if (all_patch_columns.contains(column.name))
+                return &columns;
+        }
+    }
+
+    for (const auto & column : result.columns)
+    {
+        if (all_patch_columns.contains(column.name))
+            return &result.columns;
+    }
+
+    return nullptr;
+}
+
 void addPatchPartsColumns(
     MergeTreeReadTaskColumns & result,
     const StorageSnapshotPtr & storage_snapshot,
@@ -309,6 +329,7 @@ void addPatchPartsColumns(
 
     NameSet required_virtuals;
     result.patch_columns.resize(patch_parts.size());
+    NameSet all_patch_columns_to_read_set;
 
     for (size_t i = 0; i < patch_parts.size(); ++i)
     {
@@ -344,17 +365,19 @@ void addPatchPartsColumns(
 
         Names patch_columns_to_read_names(patch_columns_to_read_set.begin(), patch_columns_to_read_set.end());
         result.patch_columns[i] = storage_snapshot->getColumnsByNames(options, patch_columns_to_read_names);
+        all_patch_columns_to_read_set.insert(patch_columns_to_read_names.begin(), patch_columns_to_read_names.end());
     }
 
-    auto & first_step_columns = result.pre_columns.empty() ? result.columns : result.pre_columns.front();
-    auto first_step_columns_set = first_step_columns.getNameSet();
+    NamesAndTypesList * first_step_columns = getFirstStepColumnsWithPatches(result, all_patch_columns_to_read_set);
+    chassert(first_step_columns);
+    auto first_step_columns_set = first_step_columns->getNameSet();
 
     for (const auto & virtual_name : required_virtuals)
     {
         if (!first_step_columns_set.contains(virtual_name))
         {
             auto column = storage_snapshot->getColumn(options, virtual_name);
-            first_step_columns.push_back(std::move(column));
+            first_step_columns->push_back(std::move(column));
         }
     }
 }

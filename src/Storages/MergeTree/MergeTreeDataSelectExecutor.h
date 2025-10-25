@@ -75,6 +75,16 @@ public:
         const Settings & settings,
         LoggerPtr log);
 
+    static std::expected<void, PreformattedMessage> canUseIndex(
+        const MergeTreeIndexPtr & index,
+        const StorageMetadataPtr & metadata_snapshot,
+        const NameSet & all_updated_columns);
+
+    static std::expected<void, PreformattedMessage> canUsedMergedIndex(
+        const std::vector<MergeTreeIndexPtr> & indices,
+        const StorageMetadataPtr & metadata_snapshot,
+        const NameSet & all_updated_columns);
+
     static std::pair<MarkRanges, RangesInDataPartReadHints> filterMarksUsingIndex(
         MergeTreeIndexPtr index_helper,
         MergeTreeIndexConditionPtr condition,
