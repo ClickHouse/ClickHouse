@@ -2255,12 +2255,11 @@ MarkRanges MergeTreeDataSelectExecutor::finalSetOfRangesForConditionWithORs(
 
     /// Evaluate the RPN over all the ranges.
     auto rpn = rpn_template_for_eval_result.getRPN();
+    std::vector<bool> rpn_stack;
     for (auto range : ranges)
     {
         for (auto range_begin = range.begin; range_begin < range.end; range_begin++)
         {
-            std::vector<bool> rpn_stack;
-
             size_t position = 0;
             for (const auto & element : rpn)
             {
@@ -2310,6 +2309,7 @@ MarkRanges MergeTreeDataSelectExecutor::finalSetOfRangesForConditionWithORs(
                 else
                     res.back().end = range_begin + 1;
             }
+            rpn_stack.pop_back();
         }
     }
     return res;
