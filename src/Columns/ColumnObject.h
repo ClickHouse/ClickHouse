@@ -159,7 +159,7 @@ public:
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
     ColumnPtr replicate(const Offsets & replicate_offsets) const override;
-    MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
+    MutableColumns scatter(size_t num_columns, const Selector & selector) const override;
 
     void getPermutation(PermutationSortDirection direction, PermutationSortStability stability,
                         size_t limit, int nan_direction_hint, Permutation & res) const override;

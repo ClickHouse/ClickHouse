@@ -675,7 +675,7 @@ ColumnPtr ColumnAggregateFunction::replicate(const IColumn::Offsets & offsets) c
     return res;
 }
 
-MutableColumns ColumnAggregateFunction::scatter(IColumn::ColumnIndex num_columns, const IColumn::Selector & selector) const
+MutableColumns ColumnAggregateFunction::scatter(size_t num_columns, const IColumn::Selector & selector) const
 {
     /// Columns with scattered values will point to this column as the owner of values.
     MutableColumns columns(num_columns);

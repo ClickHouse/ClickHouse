@@ -1,5 +1,6 @@
 #include <Interpreters/HashJoin/HashJoinResult.h>
 #include <Interpreters/castColumn.h>
+#include <Columns/ColumnReplicated.h>
 #include <Common/memcpySmall.h>
 
 namespace DB
@@ -72,6 +73,20 @@ static ColumnWithTypeAndName copyLeftKeyColumnToRight(
     return right_column;
 }
 
+static void replicateColumnLazily(ColumnPtr & column, const IColumn::Offsets & offsets, ColumnPtr & indexes)
+{
+    if (isLazyReplicationUseful(column))
+    {
+        if (!indexes)
+            indexes = convertOffsetsToIndexes(offsets);
+        column = ColumnReplicated::create(column, indexes);
+    }
+    else
+    {
+        column = column->replicate(offsets);
+    }
+}
+
 static void appendRightColumns(
     Block & block,
     MutableColumns columns,
@@ -132,10 +147,21 @@ static void appendRightColumns(
         chassert(offsets.size() == block.rows());
 
         auto columns_to_replicate = block.getColumns();
-        for (size_t i = 0; i < existing_columns; ++i)
-            columns_to_replicate[i] = columns_to_replicate[i]->replicate(offsets);
-        for (size_t pos : right_keys_to_replicate)
-            columns_to_replicate[pos] = columns_to_replicate[pos]->replicate(offsets);
+        if (properties.enable_lazy_columns_replication)
+        {
+            ColumnPtr indexes;
+            for (size_t i = 0; i < existing_columns; ++i)
+                replicateColumnLazily(columns_to_replicate[i], offsets, indexes);
+            for (size_t pos : right_keys_to_replicate)
+                replicateColumnLazily(columns_to_replicate[pos], offsets, indexes);
+        }
+        else
+        {
+            for (size_t i = 0; i < existing_columns; ++i)
+                columns_to_replicate[i] = columns_to_replicate[i]->replicate(offsets);
+            for (size_t pos : right_keys_to_replicate)
+                columns_to_replicate[pos] = columns_to_replicate[pos]->replicate(offsets);
+        }
 
         block.setColumns(columns_to_replicate);
     }

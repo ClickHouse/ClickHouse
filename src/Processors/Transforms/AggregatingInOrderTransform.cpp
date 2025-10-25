@@ -288,7 +288,7 @@ IProcessor::Status AggregatingInOrderTransform::prepare()
 
     chassert(!is_consume_finished);
     current_chunk = input.pull(true /* set_not_needed */);
-    convertToFullIfSparse(current_chunk);
+    removeSpecialColumnRepresentations(current_chunk);
     return Status::Ready;
 }
 

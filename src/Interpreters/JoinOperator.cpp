@@ -62,6 +62,7 @@ namespace Setting
 
     extern const SettingsBool allow_dynamic_type_in_join_keys;
     extern const SettingsBool use_join_disjunctions_push_down;
+    extern const SettingsBool enable_lazy_columns_replication;
 }
 
 namespace QueryPlanSerializationSetting
@@ -103,6 +104,7 @@ namespace QueryPlanSerializationSetting
 
     extern const QueryPlanSerializationSettingsBool allow_dynamic_type_in_join_keys;
     extern const QueryPlanSerializationSettingsBool use_join_disjunctions_push_down;
+    extern const QueryPlanSerializationSettingsBool enable_lazy_columns_replication;
 }
 
 JoinSettings::JoinSettings(const Settings & query_settings)
@@ -149,6 +151,7 @@ JoinSettings::JoinSettings(const Settings & query_settings)
 
     allow_dynamic_type_in_join_keys = query_settings[Setting::allow_dynamic_type_in_join_keys];
     use_join_disjunctions_push_down = query_settings[Setting::use_join_disjunctions_push_down];
+    enable_lazy_columns_replication = query_settings[Setting::enable_lazy_columns_replication];
 }
 
 JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
@@ -194,6 +197,8 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
 
     allow_dynamic_type_in_join_keys = settings[QueryPlanSerializationSetting::allow_dynamic_type_in_join_keys];
     use_join_disjunctions_push_down = settings[QueryPlanSerializationSetting::use_join_disjunctions_push_down];
+    enable_lazy_columns_replication = settings[QueryPlanSerializationSetting::enable_lazy_columns_replication];
+
 }
 
 void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings) const
@@ -239,6 +244,8 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings)
 
     settings[QueryPlanSerializationSetting::allow_dynamic_type_in_join_keys] = allow_dynamic_type_in_join_keys;
     settings[QueryPlanSerializationSetting::use_join_disjunctions_push_down] = use_join_disjunctions_push_down;
+    settings[QueryPlanSerializationSetting::enable_lazy_columns_replication] = enable_lazy_columns_replication;
+
 }
 
 String toString(const JoinActionRef & node)

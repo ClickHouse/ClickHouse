@@ -463,7 +463,7 @@ void MergeTreeDataPartWide::calculateEachColumnSizes(ColumnSizeByName & each_col
         if (rows_count != 0
             && column.type->isValueRepresentedByNumber()
             && !column.type->haveSubtypes()
-            && getSerialization(column.name)->getKind() == ISerialization::Kind::DEFAULT)
+            && getSerialization(column.name)->getKindStack() == ISerialization::KindStack{ISerialization::Kind::DEFAULT})
         {
             size_t rows_in_column = size.data_uncompressed / column.type->getSizeOfValueInMemory();
             if (rows_in_column != rows_count)

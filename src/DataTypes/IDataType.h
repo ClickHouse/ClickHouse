@@ -142,10 +142,9 @@ public:
     virtual bool canBeInsideSparseColumns() const { return supportsSparseSerialization(); }
 
     SerializationPtr getDefaultSerialization(SerializationPtr override_default = {}) const;
-    SerializationPtr getSparseSerialization(SerializationPtr override_default = {}) const;
 
-    /// Chooses serialization according to serialization kind.
-    SerializationPtr getSerialization(ISerialization::Kind kind, SerializationPtr override_default = {}) const;
+    /// Chooses serialization according to serialization kind stack.
+    SerializationPtr getSerialization(ISerialization::KindStack kind_stack, SerializationPtr override_default = {}) const;
 
     /// Chooses serialization according to collected information about content of column.
     virtual SerializationPtr getSerialization(const SerializationInfo & info) const;

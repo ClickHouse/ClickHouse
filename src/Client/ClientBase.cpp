@@ -539,7 +539,9 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
 
     try
     {
-        output_format->write(materializeBlock(block));
+        output_format->write(materializeBlock(
+            block,
+            !output_format->supportsSpecialSerializationKinds()));
         written_first_block = true;
     }
     catch (const NetException &)
@@ -606,14 +608,14 @@ void ClientBase::onLogData(Block & block)
 void ClientBase::onTotals(Block & block, ASTPtr parsed_query)
 {
     initOutputFormat(block, parsed_query);
-    output_format->setTotals(materializeBlock(block));
+    output_format->setTotals(materializeBlock(block, !output_format->supportsSpecialSerializationKinds()));
 }
 
 
 void ClientBase::onExtremes(Block & block, ASTPtr parsed_query)
 {
     initOutputFormat(block, parsed_query);
-    output_format->setExtremes(materializeBlock(block));
+    output_format->setExtremes(materializeBlock(block, !output_format->supportsSpecialSerializationKinds()));
 }
 
 

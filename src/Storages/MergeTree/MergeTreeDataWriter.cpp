@@ -864,7 +864,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     for (const auto & [column_name, _] : columns)
     {
         auto & column = block.getByName(column_name);
-        if (infos.getKind(column_name) != ISerialization::Kind::SPARSE)
+        if (!ISerialization::hasKind(infos.getKindStack(column_name), ISerialization::Kind::SPARSE))
             column.column = recursiveRemoveSparse(column.column);
     }
 

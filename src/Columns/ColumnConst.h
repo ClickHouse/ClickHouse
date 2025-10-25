@@ -250,7 +250,7 @@ public:
 
     bool hasEqualValues() const override { return true; }
 
-    MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
+    MutableColumns scatter(size_t num_columns, const Selector & selector) const override;
 
     void gather(ColumnGathererStream &) override;
 

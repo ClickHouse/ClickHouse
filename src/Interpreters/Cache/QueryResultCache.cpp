@@ -404,7 +404,7 @@ void QueryResultCacheWriter::buffer(Chunk && chunk, ChunkType chunk_type)
             /// such chunks are expected).
             auto & buffered_chunk = (chunk_type == ChunkType::Totals) ? query_result->totals : query_result->extremes;
 
-            convertToFullIfSparse(chunk);
+            removeSpecialColumnRepresentations(chunk);
             convertToFullIfConst(chunk);
 
             if (!buffered_chunk.has_value())
@@ -453,7 +453,7 @@ void QueryResultCacheWriter::finalizeWrite()
 
         for (auto & chunk : query_result->chunks)
         {
-            convertToFullIfSparse(chunk);
+            removeSpecialColumnRepresentations(chunk);
             convertToFullIfConst(chunk);
 
             const size_t rows_chunk = chunk.getNumRows();

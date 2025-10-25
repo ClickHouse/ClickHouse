@@ -60,7 +60,7 @@ Field parseFieldFromString(const String & value, DB::DataTypePtr data_type)
     {
         ReadBufferFromString buffer(value);
         auto col = data_type->createColumn();
-        auto serialization = data_type->getSerialization(ISerialization::Kind::DEFAULT);
+        auto serialization = data_type->getSerialization({ISerialization::Kind::DEFAULT});
         serialization->deserializeWholeText(*col, buffer, FormatSettings{});
         return (*col)[0];
     }

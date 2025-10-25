@@ -374,9 +374,9 @@ ColumnPtr ColumnString::indexImpl(const PaddedPODArray<Type> & indexes, size_t l
     size_t new_chars_size = 0;
     for (size_t i = 0; i < limit; ++i)
         new_chars_size += sizeAt(indexes[i]);
-    res_chars.resize(new_chars_size);
+    res_chars.resize_exact(new_chars_size);
 
-    res_offsets.resize(limit);
+    res_offsets.resize_exact(limit);
 
     Offset current_new_offset = 0;
 

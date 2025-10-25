@@ -118,6 +118,9 @@ static constexpr auto DBMS_MIN_REVISION_WITH_VERSIONED_CLUSTER_FUNCTION_PROTOCOL
 static constexpr auto DBMS_MIN_REVISION_WITH_OUT_OF_ORDER_BUCKETS_IN_AGGREGATION = 54480;
 static constexpr auto DBMS_MIN_REVISION_WITH_COMPRESSED_LOGS_PROFILE_EVENTS_COLUMNS = 54481;
 
+static constexpr auto DBMS_MIN_REVISION_WITH_REPLICATED_SERIALIZATION = 54481;
+
+
 /// Version of ClickHouse TCP protocol.
 ///
 /// Should be incremented manually on protocol changes.
