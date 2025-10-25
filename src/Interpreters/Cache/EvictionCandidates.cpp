@@ -37,12 +37,12 @@ void QueueEvictionInfo::releaseHoldSpace(const CacheStateGuard::Lock & lock)
 std::string QueueEvictionInfo::toString() const
 {
     WriteBufferFromOwnString wb;
-    wb << "size to evict: " << size_to_evict << ", ";
-    wb << "elements to evict: " << elements_to_evict;
+    wb << "size to evict: " << size_to_evict;
+    wb << ", " << "elements to evict: " << elements_to_evict;
     if (hold_space)
     {
-        wb << ", " << "hold space size: " << size_to_evict << ", ";
-        wb << "hold space elements: " << elements_to_evict;
+        wb << ", " << "hold space size: " << size_to_evict;
+        wb << ", " << "hold space elements: " << elements_to_evict;
     }
     return wb.str();
 }
@@ -309,23 +309,6 @@ bool EvictionCandidates::needFinalize() const
     return after_evict_state_func || after_evict_write_func || !queue_entries_to_invalidate.empty();
 }
 
-void EvictionCandidates::invalidateQueueEntries(const CacheStateGuard::Lock &)
-{
-    while (!queue_entries_to_invalidate.empty())
-    {
-        auto iterator = queue_entries_to_invalidate.back();
-        iterator->invalidate();
-        queue_entries_to_invalidate.pop_back();
-
-        /// Remove entry from per query priority queue.
-        //if (query_context)
-        //{
-        //    //const auto & entry = iterator->getEntry();
-        //    //query_context->remove(entry->key, entry->offset, lock);
-        //}
-    }
-}
-
 void EvictionCandidates::afterEvictWrite(const CachePriorityGuard::WriteLock & lock)
 {
     if (after_evict_write_func)
@@ -337,7 +320,15 @@ void EvictionCandidates::afterEvictWrite(const CachePriorityGuard::WriteLock & l
 
 void EvictionCandidates::afterEvictState(const CacheStateGuard::Lock & lock)
 {
-    invalidateQueueEntries(lock);
+    /// We invalidate queue entries under state lock,
+    /// because this space will be replaced by reserver,
+    /// so we need to make sure this is done automically.
+    while (!queue_entries_to_invalidate.empty())
+    {
+        auto iterator = queue_entries_to_invalidate.back();
+        iterator->invalidate();
+        queue_entries_to_invalidate.pop_back();
+    }
 
     if (after_evict_state_func)
     {

@@ -410,7 +410,8 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "Eviction info for queue  with id {} does not exist", queue_id);
+            "Eviction info for queue  with id {} ({}) does not exist ({})",
+            queue_id, description, eviction_info.toString());
     }
     size_t size = info->size_to_evict;
     size_t elements = info->elements_to_evict;

@@ -30,7 +30,6 @@ namespace fs = std::filesystem;
 namespace ProfileEvents
 {
     extern const Event FilesystemCacheLoadMetadataMicroseconds;
-    extern const Event FilesystemCacheLockCacheMicroseconds;
     extern const Event FilesystemCacheReserveMicroseconds;
     extern const Event FilesystemCacheReserveAttempts;
     extern const Event FilesystemCacheGetOrSetMicroseconds;
@@ -322,7 +321,6 @@ void FileCache::initializeImpl(bool load_metadata)
 
 CachePriorityGuard::WriteLock FileCache::lockCache() const
 {
-    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheLockCacheMicroseconds);
     return cache_guard.writeLock();
 }
 
@@ -1449,7 +1447,7 @@ void FileCache::loadMetadata()
 
     /// Shuffle file_segment_metadatas to have random order in LRUQueue
     /// as at startup all file_segment_metadatas have the same priority.
-    main_priority->shuffle(lockCache());
+    main_priority->shuffle(cache_guard.writeLock());
 }
 
 void FileCache::loadMetadataImpl()
@@ -1675,7 +1673,7 @@ void FileCache::loadMetadataForKeys(const fs::path & keys_dir)
                 }
                 else
                 {
-                    cache_it->remove(lockCache());
+                    cache_it->remove(cache_guard.writeLock());
                     fs::remove(offset_it->path());
                     chassert(false);
                 }
@@ -2199,7 +2197,7 @@ FileCache::QueryContextHolderPtr FileCache::getQueryContextHolder(
     if (!query_limit || read_settings.filesystem_cache_max_download_size == 0)
         return {};
 
-    auto lock = lockCache();
+    auto lock = cache_guard.writeLock();
     auto context = query_limit->getOrSetQueryContext(query_id, read_settings, lock);
     return std::make_unique<QueryContextHolder>(query_id, this, query_limit.get(), std::move(context));
 }

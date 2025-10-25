@@ -230,6 +230,7 @@ EvictionInfoPtr SLRUFileCachePriority::collectEvictionInfo(
         chassert(slru_iterator->lru_iterator.cache_priority == &protected_queue);
         info = protected_queue.collectEvictionInfo(size, elements, reservee, is_total_space_cleanup, lock);
 
+        LOG_TEST(log, "REQUIRES EVICTION: {}", info->requiresEviction());
         /// If protected queue required eviction, we need to "downgrade"
         /// its eviction candidates into probationary queue.
         if (info->requiresEviction())
@@ -450,8 +451,8 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
     });
 
     LOG_TEST(
-        log, "Downgrading {} elements from protected to probationary. Total size: {}",
-        downgrade_candidates->size(), downgrade_stat.total_stat.releasable_size);
+        log, "Eviction info: {}. Downgrading {} elements from protected to probationary. Total size: {}",
+        eviction_info.toString(), downgrade_candidates->size(), downgrade_stat.total_stat.releasable_size);
 
     return true;
 }

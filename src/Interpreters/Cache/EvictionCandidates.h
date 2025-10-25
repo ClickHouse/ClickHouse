@@ -92,6 +92,8 @@ public:
     /// Add a new eviction candidate.
     void add(const FileSegmentMetadataPtr & candidate, LockedKey & locked_key);
     /// Set a callback to be executed after eviction is finished.
+    /// "write" func modifies priority queue stucture.
+    /// "state" func modifies cache size/elements counters.
     void setAfterEvictWriteFunc(AfterEvictWriteFunc && func) { after_evict_write_func = func; }
     void setAfterEvictStateFunc(AfterEvictStateFunc && func) { after_evict_state_func = func; }
 
@@ -144,8 +146,6 @@ private:
     IFileCachePriority::HoldSpacePtr hold_space;
 
     LoggerPtr log;
-
-    void invalidateQueueEntries(const CacheStateGuard::Lock &);
 };
 
 using EvictionCandidatesPtr = std::unique_ptr<EvictionCandidates>;
