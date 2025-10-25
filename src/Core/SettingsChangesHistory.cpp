@@ -42,6 +42,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "25.11",
         {
             {"use_statistics_cache", 0, 0, "New setting"},
+            {"use_skip_indexes_on_disjuncts", false, false, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.10",
         {

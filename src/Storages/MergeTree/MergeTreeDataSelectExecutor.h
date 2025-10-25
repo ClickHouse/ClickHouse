@@ -1,5 +1,5 @@
 #pragma once
-
+#include <boost/dynamic_bitset.hpp>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -78,6 +78,7 @@ public:
     static std::pair<MarkRanges, RangesInDataPartReadHints> filterMarksUsingIndex(
         MergeTreeIndexPtr index_helper,
         MergeTreeIndexConditionPtr condition,
+        const std::optional<KeyCondition> & key_condition_rpn_template,
         MergeTreeData::DataPartPtr part,
         const MarkRanges & ranges,
         const RangesInDataPartReadHints & in_read_hints,
@@ -85,6 +86,8 @@ public:
         MarkCache * mark_cache,
         UncompressedCache * uncompressed_cache,
         VectorSimilarityIndexCache * vector_similarity_index_cache,
+        bool support_disjuncts,
+        boost::dynamic_bitset<> & partial_eval_results_for_disjuncts,
         LoggerPtr log);
 
     static MarkRanges filterMarksUsingMergedIndex(
@@ -97,6 +100,8 @@ public:
         UncompressedCache * uncompressed_cache,
         VectorSimilarityIndexCache * vector_similarity_index_cache,
         LoggerPtr log);
+
+    static constexpr size_t BITS_FOR_RPN_EVALUATION_RESULTS = 32;
 
 private:
     const MergeTreeData & data;
@@ -200,6 +205,7 @@ public:
         const KeyCondition & key_condition,
         const std::optional<KeyCondition> & part_offset_condition,
         const std::optional<KeyCondition> & total_offset_condition,
+        const std::optional<KeyCondition> & key_condition_rpn_template,
         const UsefulSkipIndexes & skip_indexes,
         const MergeTreeReaderSettings & reader_settings,
         LoggerPtr log,
@@ -208,7 +214,8 @@ public:
         bool use_skip_indexes,
         bool find_exact_ranges,
         bool is_final_query,
-        bool is_parallel_reading_from_replicas);
+        bool is_parallel_reading_from_replicas,
+        bool is_support_disjuncts);
 
     /// Filter parts using query condition cache.
     static void filterPartsByQueryConditionCache(
@@ -237,6 +244,14 @@ public:
         const MergeTreeData & data,
         const ReadFromMergeTree::AnalysisResult & result,
         const ContextPtr & context);
+
+    static MarkRanges finalSetOfRangesForConditionWithORs(
+        MergeTreeData::DataPartPtr part,
+        const MarkRanges & ranges,
+        const KeyCondition & rpn_template_for_eval_result,
+        const boost::dynamic_bitset<> & partial_eval_results,
+        MergeTreeReaderSettings reader_settings,
+        LoggerPtr log);
 };
 
 }

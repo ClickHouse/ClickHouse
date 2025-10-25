@@ -177,6 +177,7 @@ namespace Setting
     extern const SettingsBool split_intersecting_parts_ranges_into_layers_final;
     extern const SettingsBool use_skip_indexes;
     extern const SettingsBool use_skip_indexes_if_final;
+    extern const SettingsBool use_skip_indexes_on_disjuncts;
     extern const SettingsBool use_uncompressed_cache;
     extern const SettingsNonZeroUInt64 merge_tree_min_read_task_size;
     extern const SettingsBool read_in_order_use_virtual_row;
@@ -1819,6 +1820,10 @@ static void buildIndexes(
     indexes.emplace(
         ReadFromMergeTree::Indexes{KeyCondition{filter_dag, context, primary_key_column_names, primary_key.expression}});
 
+    /// Just the skeleton of the predicate - no columns resolved.
+    NamesAndTypesList dummy;
+    indexes->key_condition_rpn_template = KeyCondition{filter_dag, context, {}, std::make_shared<ExpressionActions>(ActionsDAG(dummy))};
+
     if (metadata_snapshot->hasPartitionKey())
     {
         const auto & partition_key = metadata_snapshot->getPartitionKey();
@@ -1905,6 +1910,8 @@ static void buildIndexes(
         if (!condition->alwaysUnknownOrTrue())
             skip_indexes.useful_indices.emplace_back(index_helper, condition);
     }
+
+    indexes->support_disjuncts_with_skip_indexes = skip_indexes.useful_indices.size() > 1 && !indexes->key_condition_rpn_template->isOnlyConjuncts() && settings[Setting::use_skip_indexes_on_disjuncts];
 
     {
         std::vector<size_t> index_sizes;
@@ -2107,6 +2114,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             indexes->key_condition,
             indexes->part_offset_condition,
             indexes->total_offset_condition,
+            indexes->key_condition_rpn_template,
             indexes->skip_indexes,
             reader_settings,
             log,
@@ -2115,7 +2123,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             indexes->use_skip_indexes,
             find_exact_ranges,
             query_info_.isFinal(),
-            is_parallel_reading_from_replicas_);
+            is_parallel_reading_from_replicas_,
+            indexes->support_disjuncts_with_skip_indexes);
 
         if (indexes->use_skip_indexes && !indexes->skip_indexes.empty() && query_info_.isFinal()
             && settings[Setting::use_skip_indexes_if_final_exact_mode])
@@ -2755,6 +2764,8 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
 
             MergeTreeSkipIndexReaderPtr skip_index_reader = std::make_shared<MergeTreeSkipIndexReader>(
                 applicable_skip_indexes,
+                indexes->key_condition_rpn_template,
+                indexes->support_disjuncts_with_skip_indexes,
                 context->getIndexMarkCache(),
                 context->getIndexUncompressedCache(),
                 context->getVectorSimilarityIndexCache(),
