@@ -17,12 +17,75 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int UNKNOWN_EXCEPTION;
+    extern const int FAULT_INJECTED;
 }
 
 namespace FailPoints
 {
     extern const char file_cache_dynamic_resize_fail_to_evict[];
+}
+
+void QueueEvictionInfo::releaseHoldSpace(const CacheStateGuard::Lock & lock)
+{
+    if (hold_space)
+    {
+        hold_space->release(lock);
+        hold_space = {};
+    }
+}
+
+std::string QueueEvictionInfo::toString() const
+{
+    WriteBufferFromOwnString wb;
+    wb << "size to evict: " << size_to_evict;
+    wb << ", " << "elements to evict: " << elements_to_evict;
+    if (hold_space)
+    {
+        wb << ", " << "hold space size: " << size_to_evict;
+        wb << ", " << "hold space elements: " << elements_to_evict;
+    }
+    return wb.str();
+}
+
+std::string EvictionInfo::toString() const
+{
+    WriteBufferFromOwnString wb;
+    for (auto it = begin(); it != end(); ++it)
+    {
+        if (it != begin())
+            wb << ", ";
+        wb << "[queue id " << it->first << ", " << it->second.toString() << "]";
+    }
+    return wb.str();
+}
+
+bool EvictionInfo::hasHoldSpace() const
+{
+    for (const auto & [_, elem] : *this)
+        if (elem.hasHoldSpace())
+            return true;
+    return false;
+}
+
+void EvictionInfo::releaseHoldSpace(const CacheStateGuard::Lock & lock)
+{
+    for (auto & [_, elem] : *this)
+        elem.releaseHoldSpace(lock);
+}
+
+void EvictionInfo::add(EvictionInfoPtr && info)
+{
+    for (auto && [queue_id, info_] : *info)
+        addImpl(queue_id, std::move(info_));
+}
+
+void EvictionInfo::addImpl(const QueueID & queue_id, QueueEvictionInfo && info)
+{
+    size_to_evict += info.size_to_evict;
+    elements_to_evict += info.elements_to_evict;
+    const bool inserted = emplace(queue_id, std::move(info)).second;
+    if (!inserted)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Queue with id {} already exists", queue_id);
 }
 
 std::string EvictionCandidates::FailedCandidates::getFirstErrorMessage() const
@@ -49,6 +112,7 @@ EvictionCandidates::~EvictionCandidates()
     /// for file segments which were successfully removed in evict().
     /// This set is non-empty in destructor only if there was
     /// an exception before we called finalize() or in the middle of finalize().
+    LOG_TEST(log, "Will invalidate {} queue entries", queue_entries_to_invalidate.size());
     for (const auto & iterator : queue_entries_to_invalidate)
     {
         /// In this case we need to finalize the state of queue entries
@@ -74,22 +138,19 @@ EvictionCandidates::~EvictionCandidates()
     }
 }
 
-void EvictionCandidates::add(
-    const FileSegmentMetadataPtr & candidate,
-    LockedKey & locked_key,
-    const CachePriorityGuard::Lock & lock)
+void EvictionCandidates::add(const FileSegmentMetadataPtr & candidate, LockedKey & locked_key)
 {
     auto [it, inserted] = candidates.emplace(locked_key.getKey(), KeyCandidates{});
     if (inserted)
         it->second.key_metadata = locked_key.getKeyMetadata();
 
     it->second.candidates.push_back(candidate);
-    candidate->setEvictingFlag(locked_key, lock);
+    candidate->setEvictingFlag(locked_key);
     ++candidates_size;
     candidates_bytes += candidate->size();
 }
 
-void EvictionCandidates::removeQueueEntries(const CachePriorityGuard::Lock & lock)
+void EvictionCandidates::removeQueueEntries(const CachePriorityGuard::WriteLock & lock)
 {
     /// Remove queue entries of eviction candidates.
     /// This will release space we consider to be hold for them.
@@ -114,7 +175,7 @@ void EvictionCandidates::removeQueueEntries(const CachePriorityGuard::Lock & loc
             /// In ordinary eviction we use `evicting` flag for this purpose,
             /// but here we cannot, because `evicting` is a property of a queue entry,
             /// but at this point for dynamic cache resize we have already deleted all queue entries.
-            candidate->setRemovedFlag(*locked_key, lock);
+            candidate->setRemovedFlag(*locked_key);
 
             queue_iterator->remove(lock);
         }
@@ -168,7 +229,7 @@ void EvictionCandidates::evict()
                 }
 
                 fiu_do_on(FailPoints::file_cache_dynamic_resize_fail_to_evict, {
-                    throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Failed to evict file segment");
+                    throw Exception(ErrorCodes::FAULT_INJECTED, "Failed to evict file segment");
                 });
 
                 locked_key->removeFileSegment(
@@ -245,54 +306,35 @@ bool EvictionCandidates::needFinalize() const
     ///    where we need to do additional work after eviction.
     ///    Note: this step is not needed in case of dynamic cache resize even for SLRU.
 
-    return !on_finalize.empty() || !queue_entries_to_invalidate.empty();
+    return after_evict_state_func || after_evict_write_func || !queue_entries_to_invalidate.empty();
 }
 
-void EvictionCandidates::finalize(
-    FileCacheQueryLimit::QueryContext * query_context,
-    const CachePriorityGuard::Lock & lock)
+void EvictionCandidates::afterEvictWrite(const CachePriorityGuard::WriteLock & lock)
 {
-    chassert(lock.owns_lock());
+    if (after_evict_write_func)
+    {
+        after_evict_write_func(lock);
+        after_evict_write_func = {};
+    }
+}
 
-    /// Release the hold space. It was hold only for the duration of evict() phase,
-    /// now we can release. It might also be needed for on_finalize func,
-    /// so release the space it firtst.
-    if (hold_space)
-        hold_space->release();
-
+void EvictionCandidates::afterEvictState(const CacheStateGuard::Lock & lock)
+{
+    /// We invalidate queue entries under state lock,
+    /// because this space will be replaced by reserver,
+    /// so we need to make sure this is done atomically.
     while (!queue_entries_to_invalidate.empty())
     {
         auto iterator = queue_entries_to_invalidate.back();
         iterator->invalidate();
         queue_entries_to_invalidate.pop_back();
-
-        /// Remove entry from per query priority queue.
-        if (query_context)
-        {
-            const auto & entry = iterator->getEntry();
-            query_context->remove(entry->key, entry->offset, lock);
-        }
-        /// Remove entry from main priority queue.
-        iterator->remove(lock);
     }
 
-    for (auto & func : on_finalize)
-        func(lock);
-
-    /// Finalize functions might hold something (like HoldSpace object),
-    /// so we need to clear them now.
-    on_finalize.clear();
-}
-
-void EvictionCandidates::setSpaceHolder(
-    size_t size,
-    size_t elements,
-    IFileCachePriority & priority,
-    const CachePriorityGuard::Lock & lock)
-{
-    if (hold_space)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Space hold is already set");
-    hold_space = std::make_unique<IFileCachePriority::HoldSpace>(size, elements, priority, lock);
+    if (after_evict_state_func)
+    {
+        after_evict_state_func(lock);
+        after_evict_state_func = {};
+    }
 }
 
 }

@@ -1,4 +1,6 @@
 #include <Interpreters/Cache/IFileCachePriority.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 
@@ -39,17 +41,20 @@ IFileCachePriority::Entry::Entry(const Entry & other)
     , offset(other.offset)
     , key_metadata(other.key_metadata)
     , size(other.size.load())
-    , hits(other.hits)
+    , hits(other.hits.load())
 {
 }
 
-void IFileCachePriority::check(const CachePriorityGuard::Lock & lock) const
+void IFileCachePriority::check(const CacheStateGuard::Lock & lock) const
 {
     if (getSize(lock) > max_size || getElementsCount(lock) > max_elements)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache limits violated. "
                         "{}", getStateInfoForLog(lock));
     }
+
+    if (getSize(lock) > (1ull << 63) || getElementsCount(lock) > (1ull << 63))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache became inconsistent. There must be a bug");
 }
 
 std::unordered_map<std::string, IFileCachePriority::UsageStat> IFileCachePriority::getUsageStatPerClient()
@@ -58,6 +63,20 @@ std::unordered_map<std::string, IFileCachePriority::UsageStat> IFileCachePriorit
         ErrorCodes::NOT_IMPLEMENTED,
         "getUsageStatPerClient() is not implemented for {} policy",
         magic_enum::enum_name(getType()));
+}
+
+void IFileCachePriority::removeEntries(
+    const std::vector<InvalidatedEntryInfo> & entries,
+    const CachePriorityGuard::WriteLock & lock)
+{
+    if (entries.empty())
+        return;
+
+    for (const auto & [entry, it] : entries)
+    {
+        if (!entry->isRemoved(lock))
+            it->remove(lock);
+    }
 }
 
 }
