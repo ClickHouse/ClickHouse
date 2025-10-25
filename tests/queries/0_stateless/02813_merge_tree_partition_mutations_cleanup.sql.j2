@@ -1,0 +1,30 @@
+{% macro print_mutations(text, table, expected_num_of_rows) %}
+select '{{ text }} for table {{ table }}';
+
+{% set q = 'system.mutations where database = currentDatabase()' %}
+
+-- just a sleep
+--  cleanup is not well determined, wait for expected number of rows
+{% for iter in range(1,5) %}
+select if({{expected_num_of_rows}} = 0 OR (select count(1) from {{q}} and table ='{{table}}') <={{expected_num_of_rows}} , sleep(0), sleep({{iter}})) settings function_sleep_max_microseconds_per_block=10e12 format Null;
+{% endfor %}
+
+select  mutation_id from {{q}} and table ='{{table}}' order by mutation_id;
+{% endmacro %}
+
+{% for keep in [0, 1] %}
+{% set table = 'data_mt' %}
+drop table if exists {{table}};
+select 'against finished_mutations_to_keep={{keep}}';
+create table {{table}} (key Int, p Int) engine=MergeTree() order by tuple() partition by p settings finished_mutations_to_keep={{keep}};
+
+insert into {{table}} values (1, 2), (2, 3);
+alter table {{table}} update key=key+1 in partition 2 where 1 settings mutations_sync = 1;
+alter table {{table}} update key=key+2 in partition 2 where 1 settings mutations_sync = 1;
+{{ print_mutations('mutations after first cleanup', table, keep*1) }}
+alter table {{table}} update key=key+1 in partition 2 where 1 settings mutations_sync = 1;
+alter table {{table}} update key=key+2 where 1 settings mutations_sync = 1;
+alter table {{table}} delete in partition 1 where 1 settings mutations_sync = 1;
+{{ print_mutations('mutations after second cleanup', table, keep*1) }}
+drop table {{table}};
+{% endfor %}
