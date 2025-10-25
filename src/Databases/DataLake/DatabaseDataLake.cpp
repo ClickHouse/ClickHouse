@@ -113,6 +113,9 @@ void DatabaseDataLake::validateSettings()
 
 std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
 {
+    if (settings[DatabaseDataLakeSetting::catalog_type].value == DatabaseDataLakeCatalogType::NONE)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unspecified catalog type");
+
     if (catalog_impl)
         return catalog_impl;
 
