@@ -120,6 +120,44 @@ IProcessor::ProcessorDataStats IProcessor::getProcessorDataStats() const
     return stats;
 }
 
+IProcessor::ProcessorsProfileLogInfo IProcessor::getProcessorsProfileLogInfo() const
+{
+    ProcessorsProfileLogInfo info;
+
+    auto get_proc_id = [](const IProcessor & proc) -> UInt64 { return reinterpret_cast<std::uintptr_t>(&proc); };
+
+    info.id = get_proc_id(*this);
+
+    for (const auto & port : outputs)
+    {
+        if (!port.isConnected())
+            continue;
+        const IProcessor & next = port.getInputPort().getProcessor();
+        info.parent_ids.push_back(get_proc_id(next));
+    }
+
+    info.plan_step = reinterpret_cast<std::uintptr_t>(query_plan_step);
+    info.plan_step_name = plan_step_name;
+    info.plan_step_description = plan_step_description;
+    info.plan_group = query_plan_step_group;
+    info.processor_uniq_id = getUniqID();
+    info.step_uniq_id = step_uniq_id;
+
+    info.processor_name = getName();
+
+    info.elapsed_us = static_cast<UInt64>(elapsed_ns / 1000U);
+    info.input_wait_elapsed_us = static_cast<UInt64>(input_wait_elapsed_ns / 1000U);
+    info.output_wait_elapsed_us = static_cast<UInt64>(output_wait_elapsed_ns / 1000U);
+
+    auto stats = getProcessorDataStats();
+    info.input_rows = stats.input_rows;
+    info.input_bytes = stats.input_bytes;
+    info.output_rows = stats.output_rows;
+    info.output_bytes = stats.output_bytes;
+
+    return info;
+}
+
 String IProcessor::debug() const
 {
     WriteBufferFromOwnString buf;

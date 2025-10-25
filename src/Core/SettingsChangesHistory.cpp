@@ -43,6 +43,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"correlated_subqueries_default_join_kind", "left", "right", "New setting. Default join kind for decorrelated query plan."},
             {"use_statistics_cache", 0, 0, "New setting"},
+            {"show_processlist_include_internal", false, false, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.10",
         {
