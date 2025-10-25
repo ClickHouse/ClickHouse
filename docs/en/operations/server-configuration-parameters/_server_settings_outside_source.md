@@ -2533,3 +2533,25 @@ The path to a ZooKeeper node, which is used as a storage for all `CREATE WORKLOA
 **See Also**
 - [Workload Hierarchy](/operations/workload-scheduling.md#workloads)
 - [workload_path](#workload_path)
+
+## zookeeper_log {#zookeeper_log}
+
+Settings for the [`zookeeper_log`](/operations/system-tables/zookeeper_log) system table.
+
+The following settings can be configured by sub-tags:
+
+<SystemLogParameters/>
+
+**Example**
+
+```xml
+<clickhouse>
+    <zookeeper_log>
+        <database>system</database>
+        <table>zookeeper_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <ttl>event_date + INTERVAL 1 WEEK DELETE</ttl>
+    </zookeeper_log>
+</clickhouse>
+```
+
