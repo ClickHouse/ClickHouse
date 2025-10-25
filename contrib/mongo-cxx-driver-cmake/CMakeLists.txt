@@ -18,45 +18,46 @@ set(BSONCXX_SOURCES
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/document/value.cpp
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/document/view.cpp
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/exception/error_code.cpp
+        ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/exception/exception.cpp
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/json.cpp
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/oid.cpp
-        ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/private/itoa.cpp
+        ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/private/itoa.cpp
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/string/view_or_value.cpp
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/types.cpp
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/types/bson_value/value.cpp
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/types/bson_value/view.cpp
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/validate.cpp
+        ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v1/detail/prelude.cpp
+        ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v1/detail/postlude.cpp
 )
+
 set(BSONCXX_POLY_USE_IMPLS ON)
 
 configure_file(
-        ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/config/config.hpp.in
-        ${BSONCXX_BINARY_DIR}/lib/bsoncxx/v_noabi/bsoncxx/config/config.hpp
+        ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v1/config/config.hpp.in
+        ${BSONCXX_BINARY_DIR}/lib/bsoncxx/v1/config/config.hpp
 )
 configure_file(
-        ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/config/version.hpp.in
-        ${BSONCXX_BINARY_DIR}/lib/bsoncxx/v_noabi/bsoncxx/config/version.hpp
+        ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v1/config/version.hpp.in
+        ${BSONCXX_BINARY_DIR}/lib/bsoncxx/v1/config/version.hpp
 )
 configure_file(
-        ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/config/private/config.hh.in
-        ${BSONCXX_BINARY_DIR}/lib/bsoncxx/v_noabi/bsoncxx/config/private/config.hh
+        ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/private/config/config.hh.in
+        ${BSONCXX_BINARY_DIR}/lib/bsoncxx/private/config/config.hh
 )
 
 add_library(_bsoncxx ${BSONCXX_SOURCES})
 add_library(ch_contrib::bsoncxx ALIAS _bsoncxx)
-target_include_directories(_bsoncxx SYSTEM PUBLIC "${BSONCXX_SOURCES_DIR}/include/bsoncxx/v_noabi" "${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi" "${BSONCXX_BINARY_DIR}/lib/bsoncxx/v_noabi")
-target_compile_definitions(_bsoncxx PUBLIC BSONCXX_STATIC)
-target_link_libraries(_bsoncxx ch_contrib::libbson)
+target_include_directories(_bsoncxx SYSTEM PUBLIC
+        "${BSONCXX_SOURCES_DIR}/include"
+        "${BSONCXX_SOURCES_DIR}/include/bsoncxx/v_noabi"
+        "${BSONCXX_SOURCES_DIR}/lib"
+        "${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi"
 
-include(GenerateExportHeader)
-generate_export_header(_bsoncxx
-        BASE_NAME BSONCXX
-        EXPORT_MACRO_NAME BSONCXX_API
-        NO_EXPORT_MACRO_NAME BSONCXX_PRIVATE
-        EXPORT_FILE_NAME ${BSONCXX_BINARY_DIR}/lib/bsoncxx/v_noabi/bsoncxx/config/export.hpp
-        STATIC_DEFINE BSONCXX_STATIC
+        "${CMAKE_CURRENT_SOURCE_DIR}/build"
+        "${BSONCXX_BINARY_DIR}/lib"
 )
-
+target_link_libraries(_bsoncxx ch_contrib::libbson)
 
 
 set(MONGOCXX_SOURCES_DIR "${ClickHouse_SOURCE_DIR}/contrib/mongo-cxx-driver/src/mongocxx")
@@ -87,6 +88,9 @@ set(MONGOCXX_SOURCES
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/exception/error_code.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/exception/operation_exception.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/exception/server_error_code.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/exception/logic_error.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/exception/exception.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/exception/query_exception.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/gridfs/bucket.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/gridfs/downloader.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/gridfs/uploader.cpp
@@ -111,7 +115,6 @@ set(MONGOCXX_SOURCES
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/options/client_encryption.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/options/client_session.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/options/count.cpp
-        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/options/create_collection.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/options/data_key.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/options/delete.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/options/distinct.cpp
@@ -136,10 +139,6 @@ set(MONGOCXX_SOURCES
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/options/update.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/pipeline.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/pool.cpp
-        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/private/conversions.cpp
-        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/private/libbson.cpp
-        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/private/libmongoc.cpp
-        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/private/numeric_casting.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/read_concern.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/read_preference.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/result/bulk_write.cpp
@@ -155,7 +154,14 @@ set(MONGOCXX_SOURCES
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/uri.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/validation_criteria.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/write_concern.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/private/bson.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/private/mongoc.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/detail/prelude.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/detail/postlude.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/private/conversions.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/private/numeric_casting.cpp
 )
+
 set(MONGOCXX_COMPILER_VERSION "${CMAKE_CXX_COMPILER_VERSION}")
 set(MONGOCXX_COMPILER_ID "${CMAKE_CXX_COMPILER_ID}")
 set(MONGOCXX_LINK_WITH_STATIC_MONGOC 1)
@@ -165,28 +171,27 @@ if(ENABLE_SSL)
 endif()
 
 configure_file(
-        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/config/config.hpp.in
-        ${MONGOCXX_BINARY_DIR}/lib/mongocxx/v_noabi/mongocxx/config/config.hpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/config/config.hpp.in
+        ${MONGOCXX_BINARY_DIR}/lib/mongocxx/v1/config/config.hpp
 )
 configure_file(
-        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/config/version.hpp.in
-        ${MONGOCXX_BINARY_DIR}/lib/mongocxx/v_noabi/mongocxx/config/version.hpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/config/version.hpp.in
+        ${MONGOCXX_BINARY_DIR}/lib/mongocxx/v1/config/version.hpp
 )
 configure_file(
-        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/config/private/config.hh.in
-        ${MONGOCXX_BINARY_DIR}/lib/mongocxx/v_noabi/mongocxx/config/private/config.hh
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/private/config/config.hh.in
+        ${MONGOCXX_BINARY_DIR}/lib/mongocxx/private/config/config.hh
 )
 
 add_library(_mongocxx ${MONGOCXX_SOURCES})
 add_library(ch_contrib::mongocxx ALIAS _mongocxx)
-target_include_directories(_mongocxx SYSTEM PUBLIC "${MONGOCXX_SOURCES_DIR}/include/mongocxx/v_noabi" "${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi" "${MONGOCXX_BINARY_DIR}/lib/mongocxx/v_noabi")
-target_compile_definitions(_mongocxx PUBLIC MONGOCXX_STATIC)
-target_link_libraries(_mongocxx ch_contrib::bsoncxx ch_contrib::libmongoc)
+target_include_directories(_mongocxx SYSTEM PUBLIC
+        "${MONGOCXX_SOURCES_DIR}/include"
+        "${MONGOCXX_SOURCES_DIR}/include/mongocxx/v_noabi"
+        "${MONGOCXX_SOURCES_DIR}/lib"
+        "${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi"
 
-generate_export_header(_mongocxx
-        BASE_NAME MONGOCXX
-        EXPORT_MACRO_NAME MONGOCXX_API
-        NO_EXPORT_MACRO_NAME MONGOCXX_PRIVATE
-        EXPORT_FILE_NAME ${MONGOCXX_BINARY_DIR}/lib/mongocxx/v_noabi/mongocxx/config/export.hpp
-        STATIC_DEFINE MONGOCXX_STATIC
+        "${CMAKE_CURRENT_SOURCE_DIR}/build"
+        "${MONGOCXX_BINARY_DIR}/lib"
 )
+target_link_libraries(_mongocxx ch_contrib::bsoncxx ch_contrib::libmongoc)
