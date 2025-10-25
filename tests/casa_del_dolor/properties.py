@@ -137,6 +137,7 @@ possible_properties = {
     "concurrent_threads_soft_limit_ratio_to_cores": threads_lambda,
     "database_catalog_drop_table_concurrency": threads_lambda,
     "database_replicated_allow_detach_permanently": true_false_lambda,
+    "database_replicated_drop_broken_tables": true_false_lambda,
     "dictionaries_lazy_load": true_false_lambda,
     "disable_insertion_and_mutation": true_false_lambda,
     "disable_internal_dns_cache": true_false_lambda,
@@ -1178,6 +1179,7 @@ def modify_server_settings(
             ("blob_storage_log", 1048576, 8192),
             ("crash_log", 1024, 1024),
             ("dead_letter_queue", 1048576, 8192),
+            ("delta_lake_metadata_log", 1048576, 8192),
             ("error_log", 1048576, 8192),
             ("iceberg_metadata_log", 1048576, 8192),
             ("metric_log", 1048576, 8192),
@@ -1356,6 +1358,7 @@ keeper_settings = {
     "coordination_settings": {
         "async_replication": true_false_lambda,
         "auto_forwarding": true_false_lambda,
+        "check_node_acl_on_remove": true_false_lambda,
         "commit_logs_cache_size_threshold": threshold_generator(
             0.2, 0.2, 0, 1000 * 1024 * 1024
         ),
