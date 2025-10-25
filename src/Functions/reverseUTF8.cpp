@@ -46,7 +46,7 @@ struct ReverseUTF8Impl
             ColumnString::Offset j = prev_offset;
             while (j < offsets[i])
             {
-                if (data[j] < 0xC0)
+                if (data[j] < 0xBF)
                 {
                     res_data[offsets[i] + prev_offset - 1 - j] = data[j];
                     j += 1;
@@ -63,8 +63,8 @@ struct ReverseUTF8Impl
                 }
                 else
                 {
-                    memcpy(&res_data[offsets[i] + prev_offset - 1 - j - 3], &data[j], 4);
-                    j += 4;
+                    res_data[offsets[i] + prev_offset - 1 - j] = data[j];
+                    j += 1;
                 }
             }
 
