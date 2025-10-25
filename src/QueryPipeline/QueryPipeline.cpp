@@ -522,14 +522,14 @@ static void addMaterializing(OutputPort *& output, Processors & processors, bool
     processors.emplace_back(std::move(materializing));
 }
 
-void QueryPipeline::complete(std::shared_ptr<IOutputFormat> format, bool allow_special_serialization_kinds_in_output_formats)
+void QueryPipeline::complete(std::shared_ptr<IOutputFormat> format)
 {
     if (!pulling())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline must be pulling to be completed with output format");
 
     if (format->expectMaterializedColumns())
     {
-        bool remove_special_column_representations = !allow_special_serialization_kinds_in_output_formats || !format->supportsSpecialSerializationKinds();
+        bool remove_special_column_representations = !format->supportsSpecialSerializationKinds();
         addMaterializing(output, *processors, remove_special_column_representations);
         addMaterializing(totals, *processors, remove_special_column_representations);
         addMaterializing(extremes, *processors, remove_special_column_representations);

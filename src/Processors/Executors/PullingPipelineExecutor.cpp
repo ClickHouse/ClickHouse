@@ -20,7 +20,7 @@ PullingPipelineExecutor::PullingPipelineExecutor(QueryPipeline & pipeline_) : pi
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline for PullingPipelineExecutor must be pulling");
 
     pulling_format = std::make_shared<PullingOutputFormat>(pipeline.output->getSharedHeader(), has_data_flag);
-    pipeline.complete(pulling_format, true);
+    pipeline.complete(pulling_format);
 }
 
 PullingPipelineExecutor::~PullingPipelineExecutor()

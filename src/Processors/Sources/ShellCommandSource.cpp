@@ -690,7 +690,7 @@ Pipe ShellCommandSourceCoordinator::createPipe(
         auto num_streams = input_pipes[i].maxParallelStreams();
         auto pipeline = std::make_shared<QueryPipeline>(std::move(input_pipes[i]));
         pipeline->setNumThreads(num_streams);
-        pipeline->complete(std::move(out), false);
+        pipeline->complete(std::move(out));
 
         ShellCommandSource::SendDataTask task = [pipeline, timeout_write_buffer, write_buffer, is_executable_pool]()
         {

@@ -137,7 +137,7 @@ std::string readData(DB::StoragePtr & table, const DB::ContextPtr context)
 
     WriteBufferFromOwnString out_buf;
     auto output = FormatFactory::instance().getOutputFormat("Values", out_buf, sample, context);
-    pipeline.complete(output, false);
+    pipeline.complete(output);
 
     Block data;
 

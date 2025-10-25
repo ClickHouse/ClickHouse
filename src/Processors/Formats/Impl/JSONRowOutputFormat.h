@@ -35,7 +35,7 @@ public:
         statistics.rows_before_aggregation = rows_before_aggregation_;
     }
 
-    bool supportsSpecialSerializationKinds() const override { return true; }
+    bool supportsSpecialSerializationKinds() const override { return settings.allow_special_serialization_kinds; }
 
 protected:
     void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;
