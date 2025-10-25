@@ -95,6 +95,12 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
         }
     }
 
+
+    String name;
+    String endpoint_authority_from_uri;
+
+    bool is_using_aws_private_link_interface = re2::RE2::FullMatch(uri.getAuthority(), aws_private_link_style_pattern);
+
     /// Poco::URI will ignore '?' when parsing the path, but if there is a versionId in the http parameter,
     /// '?' can not be used as a wildcard, otherwise it will be ambiguous.
     /// If no "versionId" in the http parameter, '?' can be used as a wildcard.
@@ -105,11 +111,6 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
         Poco::URI::encode(uri_, "?", uri_with_question_mark_encode);
         uri = Poco::URI(uri_with_question_mark_encode);
     }
-
-    String name;
-    String endpoint_authority_from_uri;
-
-    bool is_using_aws_private_link_interface = re2::RE2::FullMatch(uri.getAuthority(), aws_private_link_style_pattern);
 
     if (!is_using_aws_private_link_interface
         && re2::RE2::FullMatch(uri.getAuthority(), virtual_hosted_style_pattern, &bucket, &name, &endpoint_authority_from_uri))
