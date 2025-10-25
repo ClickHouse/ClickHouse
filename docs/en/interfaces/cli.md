@@ -1,5 +1,20 @@
+---
+description: 'Documentation for the ClickHouse command-line client interface'
+sidebar_label: 'ClickHouse Client'
+sidebar_position: 17
+slug: /interfaces/cli
+title: 'ClickHouse Client'
+---
 
-r exported to a file, with support for all ClickHouse output [formats](formats.md), such as Pretty, CSV, JSON, and more.
+import Image from '@theme/IdealImage';
+import cloud_connect_button from '@site/static/images/_snippets/cloud-connect-button.png';
+import connection_details_native from '@site/static/images/_snippets/connection-details-native.png';
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+ClickHouse provides a native command-line client for executing SQL queries directly against a ClickHouse server.
+It supports both interactive mode (for live query execution) and batch mode (for scripting and automation).
+Query results can be displayed in the terminal or exported to a file, with support for all ClickHouse output [formats](formats.md), such as Pretty, CSV, JSON, and more.
 
 The client provides real-time feedback on query execution with a progress bar and the number of rows read, bytes processed and query execution time.
 It supports both [command-line options](#command-line-options) and [configuration files](#configuration_files).
@@ -20,23 +35,7 @@ sudo ./clickhouse install
 
 See [Install ClickHouse](../getting-started/install/install.mdx) for more installation options.
 
-Different client and server versions are compatible with one another, but some features may not be available in older cli---
-description: 'Documentation for the ClickHouse command-line client interface'
-sidebar_label: 'ClickHouse Client'
-sidebar_position: 17
-slug: /interfaces/cli
-title: 'ClickHouse Client'
----
-
-import Image from '@theme/IdealImage';
-import cloud_connect_button from '@site/static/images/_snippets/cloud-connect-button.png';
-import connection_details_native from '@site/static/images/_snippets/connection-details-native.png';
-import Tabs from '@theme/Tabs';
-import TabItem from '@theme/TabItem';
-
-ClickHouse provides a native command-line client for executing SQL queries directly against a ClickHouse server.
-It supports both interactive mode (for live query execution) and batch mode (for scripting and automation).
-Query results can be displayed in the terminal ents. We recommend using the same version for client and server.
+Different client and server versions are compatible with one another, but some features may not be available in older clients. We recommend using the same version for client and server.
 
 ## Run {#run}
 
