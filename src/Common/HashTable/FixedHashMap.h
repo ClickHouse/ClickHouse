@@ -112,20 +112,19 @@ public:
     FixedHashMap() = default;
     FixedHashMap(size_t ) {} /// NOLINT
 
-    std::pair<UInt32, UInt32> getMinMaxIndex() const
-    {
-        UInt32 first_cell_index = this->firstPopulatedCell() - this->buf;
-        UInt32 last_cell_index = this->lastPopulatedCell() - this->buf;
-        return {first_cell_index, last_cell_index};
-    }
-
     /// mergeToViaIndexFilter is a special mergeTo function to allow `total_worker` worker to merge without race condition.
-    /// min_index and max_index are from the input instead of maintained here to avoid race condition.
     template <typename Func>
     void ALWAYS_INLINE mergeToViaIndexFilter(Self & that, Func && func,
-        UInt32 worker_id, UInt32 total_worker,
-        UInt32 min_index, UInt32 max_index)
+        UInt32 worker_id, UInt32 total_worker)
     {
+        UInt32 min_index = 0;
+        UInt32 max_index = this->getBufferSizeInCells();
+        if (this->canUseMinMaxOptimization())
+        {
+            auto [min, max] = this->getMinMaxIndex();
+            min_index = min;
+            max_index = max + 1;
+        }
         UInt32 start_index = (min_index / total_worker) * total_worker + worker_id;
 
         /// Increment by total_worker to make distribution of merge evenly. We use index directly instead of iterator

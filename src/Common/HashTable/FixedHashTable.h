@@ -133,6 +133,11 @@ protected:
 
     void alloc() { buf = reinterpret_cast<Cell *>(Allocator::alloc(NUM_CELLS * sizeof(Cell))); }
 
+    std::pair<UInt32, UInt32> getMinMaxIndex() const
+    {
+        return {min, max};
+    }
+
     void free()
     {
         if (buf)

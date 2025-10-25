@@ -98,12 +98,11 @@ public:
 
     using SharedDataPtr = std::shared_ptr<SharedData>;
 
-    ConvertingAggregatedToChunksWithMergingSourceForFixedHashMap(AggregatingTransformParamsPtr params_, ManyAggregatedDataVariantsPtr data_, const std::vector<Aggregator::FixedHashMapRange>& ranges_, UInt32 thread_index_, UInt32 num_threads_, Arena * arena_)
+    ConvertingAggregatedToChunksWithMergingSourceForFixedHashMap(AggregatingTransformParamsPtr params_, ManyAggregatedDataVariantsPtr data_, UInt32 thread_index_, UInt32 num_threads_, Arena * arena_)
         : ISource(std::make_shared<const Block>(params_->getHeader()), false)
         , params(std::move(params_))
         , data(std::move(data_))
         , shared_data(std::make_shared<SharedData>())
-        , ranges(ranges_)
         , thread_index(thread_index_)
         , num_threads(num_threads_)
         , arena(arena_)
@@ -115,7 +114,7 @@ public:
 protected:
     Chunk generate() override
     {
-        params->aggregator.mergeSingleLevelDataImplFixedMap(*data, arena, ranges, thread_index, num_threads, shared_data->is_cancelled);
+        params->aggregator.mergeSingleLevelDataImplFixedMap(*data, arena, thread_index, num_threads, shared_data->is_cancelled);
 
         finished = true;
         data.reset();
@@ -126,7 +125,6 @@ private:
     AggregatingTransformParamsPtr params;
     ManyAggregatedDataVariantsPtr data;
     SharedDataPtr shared_data;
-    std::vector<Aggregator::FixedHashMapRange> ranges;
     UInt32 thread_index;
     UInt32 num_threads;
     Arena * arena;
@@ -691,14 +689,14 @@ private:
 
     void createSourcesForFixedHashMap()
     {
-        /// Disable min max optimization to avoid race condition, also get the min/max index range to reduce range of cells to merge.
-        auto ranges = params->aggregator.disableMinMaxOptimizationForFixedHashMaps(*data);
+        /// Disable min max optimization to avoid race condition.
+        params->aggregator.disableMinMaxOptimizationForFixedHashMaps(*data);
 
         processors.reserve(num_threads);
         AggregatedDataVariantsPtr & first = data->at(0);
         for (size_t thread = 0; thread < num_threads; ++thread)
         {
-            auto source = std::make_shared<ConvertingAggregatedToChunksWithMergingSourceForFixedHashMap>(params, data, ranges, thread, num_threads, first->aggregates_pools.at(thread).get());
+            auto source = std::make_shared<ConvertingAggregatedToChunksWithMergingSourceForFixedHashMap>(params, data, thread, num_threads, first->aggregates_pools.at(thread).get());
             processors.emplace_back(std::move(source));
         }
     }
