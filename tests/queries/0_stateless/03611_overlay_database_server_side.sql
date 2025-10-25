@@ -1,0 +1,86 @@
+-- Tags: no-parallel
+-- { echo }
+DROP DATABASE IF EXISTS db_overlay;
+DROP DATABASE IF EXISTS db_a;
+DROP DATABASE IF EXISTS db_b;
+
+CREATE DATABASE db_a ENGINE = Atomic;
+CREATE DATABASE db_b ENGINE = Atomic;
+
+CREATE TABLE db_a.t_a
+(
+    id UInt32,
+    s  String
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+CREATE TABLE db_b.t_b
+(
+    id UInt32,
+    s  String
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO db_a.t_a VALUES (1, 'a1'), (2, 'a2');
+INSERT INTO db_b.t_b VALUES (10, 'b10'), (20, 'b20');
+
+CREATE DATABASE db_overlay ENGINE = Overlay('db_a', 'db_b');
+
+SHOW CREATE DATABASE db_overlay;
+
+SHOW TABLES FROM db_overlay;
+
+SELECT * FROM db_overlay.t_a ORDER BY id;
+
+SELECT * FROM db_overlay.t_b ORDER BY id;
+
+CREATE TABLE db_a.t_new
+(
+    k UInt32,
+    v String
+)
+ENGINE = MergeTree
+ORDER BY k;
+
+SHOW TABLES FROM db_overlay;
+
+INSERT INTO db_a.t_new VALUES (100, 'x'), (200, 'y');
+SELECT * FROM db_overlay.t_new ORDER BY k;
+
+INSERT INTO db_overlay.t_new VALUES (999, 'Pass-through overlay');
+
+ALTER TABLE db_overlay.t_a ADD COLUMN z UInt8 DEFAULT 0;
+
+SELECT * FROM db_overlay.t_new ORDER BY k;
+
+SELECT * FROM db_a.t_new ORDER BY k;
+
+CREATE TABLE db_overlay.ct_fail (x UInt8) ENGINE = MergeTree ORDER BY x; -- { serverError BAD_ARGUMENTS }
+
+ATTACH TABLE db_overlay.at_fail (x UInt8) ENGINE = MergeTree ORDER BY x; -- { serverError BAD_ARGUMENTS }
+
+RENAME TABLE db_overlay.t_a TO db_overlay.t_a_renamed_via_overlay; -- { serverError BAD_ARGUMENTS }
+
+CREATE DATABASE loop_self ENGINE = Overlay('loop_self'); -- { serverError BAD_ARGUMENTS }
+
+CREATE DATABASE bad_overlay ENGINE = Overlay('this_db_does_not_exist'); -- { serverError BAD_ARGUMENTS }
+
+DROP TABLE db_overlay.t_a;
+
+RENAME TABLE db_a.t_new TO db_a.t_new_renamed;
+
+SHOW TABLES FROM db_overlay;
+SELECT * FROM db_overlay.t_new_renamed ORDER BY k;
+
+DROP TABLE db_a.t_new_renamed;
+
+SHOW TABLES FROM db_overlay;
+
+DROP DATABASE db_overlay;
+
+SHOW TABLES FROM db_overlay; -- { serverError UNKNOWN_DATABASE }
+
+DROP DATABASE db_a;
+DROP DATABASE db_b;
