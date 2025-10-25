@@ -105,7 +105,8 @@ static Block adoptBlock(const Block & header, const Block & block, LoggerPtr log
     auto converting_dag = ActionsDAG::makeConvertingActions(
         block.cloneEmpty().getColumnsWithTypeAndName(),
         header.getColumnsWithTypeAndName(),
-        ActionsDAG::MatchColumnsMode::Name);
+        ActionsDAG::MatchColumnsMode::Name,
+        nullptr);
 
     auto converting_actions = std::make_shared<ExpressionActions>(std::move(converting_dag));
     Block converted = block;
