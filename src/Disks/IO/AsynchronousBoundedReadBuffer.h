@@ -50,6 +50,9 @@ public:
 
     off_t getPosition() override { return file_offset_of_buffer_end - available() + bytes_to_ignore; }
 
+    /// Used only for unit test.
+    const ImplPtr & getImpl() { return impl; }
+
 private:
     const ImplPtr impl;
     const ReadSettings read_settings;
