@@ -47,6 +47,8 @@ static constexpr UInt64 MAX_CARDINALITY_FOR_RAW_POSTINGS = 16;
 static_assert(PostingListBuilder::max_small_size <= MAX_CARDINALITY_FOR_RAW_POSTINGS, "max_small_size must be less than or equal to MAX_CARDINALITY_FOR_RAW_POSTINGS");
 
 static constexpr UInt64 DEFAULT_NGRAM_SIZE = 3;
+static constexpr UInt64 DEFAULT_SPARSE_GRAMS_MIN_LENGTH = 3;
+static constexpr UInt64 DEFAULT_SPARSE_GRAMS_MAX_LENGTH = 100;
 static constexpr UInt64 DEFAULT_DICTIONARY_BLOCK_SIZE = 128;
 static constexpr bool DEFAULT_DICTIONARY_BLOCK_USE_FRONTCODING = true;
 static constexpr UInt64 DEFAULT_MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS = 16;
@@ -957,57 +959,68 @@ static const String ARGUMENT_DICTIONARY_BLOCK_SIZE = "dictionary_block_size";
 static const String ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION = "dictionary_block_frontcoding_compression";
 static const String ARGUMENT_MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS = "max_cardinality_for_embedded_postings";
 static const String ARGUMENT_BLOOM_FILTER_FALSE_POSITIVE_RATE = "bloom_filter_false_positive_rate";
-static const String ARGUMENT_SPARSE_GRAMS_MIN_LENGTH = "min_length";
-static const String ARGUMENT_SPARSE_GRAMS_MAX_LENGTH = "max_length";
-static const String ARGUMENT_SPARSE_GRAMS_MIN_CUTOFF_LENGTH = "min_cutoff_length";
 
 namespace
 {
 
-template <typename Type>
-std::optional<Type> castAs(const std::optional<Field> & option, bool throw_on_unexpected_type = true)
+void assertParamsCount(const String & tokenizer, size_t params_count, size_t max_count)
 {
-    if (!option.has_value())
-        return {};
-
-    Field::Types::Which expected_type = Field::TypeToEnum<NearestFieldType<Type>>::value;
-    if (option->getType() != expected_type)
+    if (params_count > max_count)
     {
-        if (throw_on_unexpected_type)
-            throw Exception(
-                ErrorCodes::INCORRECT_QUERY,
-                "Text index argument expected to be {}, but got {}",
-                fieldTypeToString(expected_type),
-                option->getTypeName());
-        return {};
+        throw Exception(
+            ErrorCodes::INCORRECT_QUERY,
+            "Tokenizer for text index of type '{}' accepts at most {} parameters, but got {}",
+            tokenizer, max_count, params_count);
     }
-    return option->safeGet<Type>();
+}
+
+template <typename Type>
+std::optional<Type> tryCastAs(const Field & field)
+{
+    auto expected_type = Field::TypeToEnum<Type>::value;
+    return expected_type == field.getType() ? std::make_optional(field.safeGet<Type>()) : std::nullopt;
+}
+
+template <typename Type>
+Type castAs(const Field & field, std::string_view argument_name)
+{
+    auto result = tryCastAs<Type>(field);
+
+    if (!result.has_value())
+    {
+        throw Exception(
+            ErrorCodes::INCORRECT_QUERY,
+            "Text index argument '{}' expected to be {}, but got {}",
+            argument_name, fieldTypeToString(Field::TypeToEnum<Type>::value), field.getTypeName());
+    }
+
+    return result.value();
 }
 
 template <typename Type>
 std::optional<Type> extractOption(std::unordered_map<String, Field> & options, const String & option, bool throw_on_unexpected_type = true)
 {
     auto it = options.find(option);
-    if (it == options.end() || !castAs<Type>(it->second, throw_on_unexpected_type))
+    if (it == options.end())
         return {};
 
-    Field value = std::move(it->second);
+    Field value;
+
+    if (throw_on_unexpected_type)
+    {
+        value = castAs<Type>(it->second, option);
+    }
+    else
+    {
+        auto maybe_value = tryCastAs<Type>(it->second);
+        if (!maybe_value.has_value())
+            return {};
+
+        value = maybe_value.value();
+    }
+
     options.erase(it);
     return value.safeGet<Type>();
-}
-
-std::optional<std::vector<String>> castAsStringArray(const std::optional<Field> & option)
-{
-    auto array = castAs<Array>(option);
-    if (array.has_value())
-    {
-        std::vector<String> values;
-        for (const auto & entry : array.value())
-            values.emplace_back(entry.template safeGet<String>());
-
-        return values;
-    }
-    return {};
 }
 
 std::unordered_map<String, Field> convertArgumentsToOptionsMap(const FieldVector & arguments)
@@ -1034,7 +1047,7 @@ std::unordered_map<String, Field> convertArgumentsToOptionsMap(const FieldVector
  * In case of a function, tokenizer specific argument is provided as parameter of the function.
  * This function is responsible to extract the tokenizer name and parameter if provided.
  */
-std::pair<String, std::optional<Field>> extractTokenizer(std::unordered_map<String, Field> & options)
+std::pair<String, std::vector<Field>> extractTokenizer(std::unordered_map<String, Field> & options)
 {
     /// Check that tokenizer is present
     if (!options.contains(ARGUMENT_TOKENIZER))
@@ -1052,22 +1065,16 @@ std::pair<String, std::optional<Field>> extractTokenizer(std::unordered_map<Stri
 
         const auto & function_name = tokenizer_tuple->at(0);
         if (function_name.getType() != Field::Types::Which::String)
+        {
             throw Exception(
                 ErrorCodes::INCORRECT_QUERY,
                 "Text index argument '{}': function name expected to be String, but got {}",
                 ARGUMENT_TOKENIZER,
                 function_name.getTypeName());
+        }
 
-        if (tokenizer_tuple->size() > 4)
-            throw Exception(
-                ErrorCodes::INCORRECT_QUERY,
-                "Text index argument '{}': function accepts at most 3 parameters, but got {}",
-                ARGUMENT_TOKENIZER,
-                tokenizer_tuple->size() - 1);
-
-        if (tokenizer_tuple->size() == 2)
-            return {function_name.safeGet<String>(), tokenizer_tuple->at(1)};
-        return {function_name.safeGet<String>(), {}};
+        std::vector<Field> params(tokenizer_tuple->begin() + 1, tokenizer_tuple->end());
+        return {function_name.safeGet<String>(), std::move(params)};
     }
 
     throw Exception(
@@ -1076,14 +1083,54 @@ std::pair<String, std::optional<Field>> extractTokenizer(std::unordered_map<Stri
         ARGUMENT_TOKENIZER,
         options.at(ARGUMENT_TOKENIZER).getTypeName());
 }
+
+UInt64 extractNgramParam(const std::vector<Field> & params)
+{
+    assertParamsCount(NgramTokenExtractor::getExternalName(), params.size(), 1);
+    return params.empty() ? DEFAULT_NGRAM_SIZE : castAs<UInt64>(params.at(0), "ngram_size");
+}
+
+std::vector<String> extractSplitByStringParam(const std::vector<Field> & params)
+{
+    assertParamsCount(SplitTokenExtractor::getExternalName(), params.size(), 1);
+    if (params.empty())
+        return std::vector<String>{" "};
+
+    std::vector<String> values;
+    auto array = castAs<Array>(params.at(0), "separators");
+
+    for (const auto & value : array)
+        values.emplace_back(castAs<String>(value, "separator"));
+
+    return values;
+}
+
+std::tuple<UInt64, UInt64, std::optional<UInt64>> extractSparseGramsParams(const std::vector<Field> & params)
+{
+    assertParamsCount(SparseGramTokenExtractor::getExternalName(), params.size(), 3);
+
+    UInt64 min_length = DEFAULT_SPARSE_GRAMS_MIN_LENGTH;
+    UInt64 max_length = DEFAULT_SPARSE_GRAMS_MAX_LENGTH;
+    std::optional<UInt64> min_cutoff_length;
+
+    if (!params.empty())
+        min_length = castAs<UInt64>(params.at(0), "min_length");
+
+    if (params.size() > 1)
+        max_length = castAs<UInt64>(params.at(1), "max_length");
+
+    if (params.size() > 2)
+        min_cutoff_length = castAs<UInt64>(params.at(2), "min_cutoff_length");
+
+    return {min_length, max_length, min_cutoff_length};
+}
+
 }
 
 MergeTreeIndexPtr textIndexCreator(const IndexDescription & index)
 {
     std::unordered_map<String, Field> options = convertArgumentsToOptionsMap(index.arguments);
-
-    const auto [tokenizer, tokenizer_param] = extractTokenizer(options);
-
+    const auto [tokenizer, params] = extractTokenizer(options);
     std::unique_ptr<ITokenExtractor> token_extractor;
 
     if (tokenizer == DefaultTokenExtractor::getExternalName())
@@ -1092,12 +1139,12 @@ MergeTreeIndexPtr textIndexCreator(const IndexDescription & index)
     }
     else if (tokenizer == NgramTokenExtractor::getExternalName())
     {
-        auto ngram_size = castAs<UInt64>(tokenizer_param);
-        token_extractor = std::make_unique<NgramTokenExtractor>(ngram_size.value_or(DEFAULT_NGRAM_SIZE));
+        auto ngram_size = extractNgramParam(params);
+        token_extractor = std::make_unique<NgramTokenExtractor>(ngram_size);
     }
     else if (tokenizer == SplitTokenExtractor::getExternalName())
     {
-        auto separators = castAsStringArray(tokenizer_param).value_or(std::vector<String>{" "});
+        auto separators = extractSplitByStringParam(params);
         token_extractor = std::make_unique<SplitTokenExtractor>(separators);
     }
     else if (tokenizer == NoOpTokenExtractor::getExternalName())
@@ -1106,11 +1153,8 @@ MergeTreeIndexPtr textIndexCreator(const IndexDescription & index)
     }
     else if (tokenizer == SparseGramTokenExtractor::getExternalName())
     {
-        auto min_length = extractOption<UInt64>(options, ARGUMENT_SPARSE_GRAMS_MIN_LENGTH);
-        auto max_length = extractOption<UInt64>(options, ARGUMENT_SPARSE_GRAMS_MAX_LENGTH);
-        auto min_cutoff_length = extractOption<UInt64>(options, ARGUMENT_SPARSE_GRAMS_MIN_CUTOFF_LENGTH);
-
-        token_extractor = std::make_unique<SparseGramTokenExtractor>(min_length.value_or(2), max_length.value_or(100), min_cutoff_length);
+        auto [min_length, max_length, min_cutoff_length] = extractSparseGramsParams(params);
+        token_extractor = std::make_unique<SparseGramTokenExtractor>(min_length, max_length, min_cutoff_length);
     }
     else
     {
@@ -1123,19 +1167,18 @@ MergeTreeIndexPtr textIndexCreator(const IndexDescription & index)
     double bloom_filter_false_positive_rate = extractOption<double>(options, ARGUMENT_BLOOM_FILTER_FALSE_POSITIVE_RATE).value_or(DEFAULT_BLOOM_FILTER_FALSE_POSITIVE_RATE);
 
     const auto [bits_per_rows, num_hashes] = BloomFilterHash::calculationBestPractices(bloom_filter_false_positive_rate);
-    MergeTreeIndexTextParams params{dictionary_block_size, dictionary_block_frontcoding_compression, max_cardinality_for_embedded_postings, bits_per_rows, num_hashes};
+    MergeTreeIndexTextParams index_params{dictionary_block_size, dictionary_block_frontcoding_compression, max_cardinality_for_embedded_postings, bits_per_rows, num_hashes};
 
     if (!options.empty())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Unexpected text index arguments: {}", fmt::join(std::views::keys(options), ", "));
 
-    return std::make_shared<MergeTreeIndexText>(index, params, std::move(token_extractor));
+    return std::make_shared<MergeTreeIndexText>(index, index_params, std::move(token_extractor));
 }
 
 void textIndexValidator(const IndexDescription & index, bool /*attach*/)
 {
     std::unordered_map<String, Field> options = convertArgumentsToOptionsMap(index.arguments);
-
-    const auto [tokenizer, tokenizer_param] = extractTokenizer(options);
+    const auto [tokenizer, params] = extractTokenizer(options);
 
     /// Check that tokenizer is supported
     const bool is_supported_tokenizer = (tokenizer == DefaultTokenExtractor::getExternalName()
@@ -1152,62 +1195,66 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
             tokenizer);
     }
 
-    if (tokenizer == NgramTokenExtractor::getExternalName() && tokenizer_param.has_value())
+    if (tokenizer == DefaultTokenExtractor::getExternalName() || tokenizer == NoOpTokenExtractor::getExternalName())
     {
-        auto ngram_size = castAs<UInt64>(tokenizer_param);
-        if (ngram_size.has_value() && (*ngram_size < 2 || *ngram_size > 8))
-            throw Exception(
-                ErrorCodes::INCORRECT_QUERY,
-                "Text index '{}': function '{}' parameter must be between 2 and 8, but got {}",
-                ARGUMENT_TOKENIZER,
-                tokenizer,
-                *ngram_size);
+        assertParamsCount(tokenizer, params.size(), 0);
     }
-    else if (tokenizer == SplitTokenExtractor::getExternalName() && tokenizer_param.has_value())
+    else if (tokenizer == NgramTokenExtractor::getExternalName())
     {
-        auto separators = castAs<Array>(tokenizer_param);
-        if (separators.has_value())
+        auto ngram_size = extractNgramParam(params);
+
+        if (ngram_size < 2 || ngram_size > 8)
         {
-            for (const auto & separator : separators.value())
-            {
-                if (separator.getType() != Field::Types::String)
-                    throw Exception(
-                        ErrorCodes::INCORRECT_QUERY,
-                        "Element of text index '{}' function '{}' parameter expected to be String, but got {}",
-                        ARGUMENT_TOKENIZER,
-                        tokenizer,
-                        separator.getTypeName());
-            }
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                "Incorrect params of {} tokenizer: ngram size must be between 2 and 8, but got {}",
+                tokenizer, ngram_size);
+        }
+    }
+    else if (tokenizer == SplitTokenExtractor::getExternalName())
+    {
+        auto separators = extractSplitByStringParam(params);
+
+        if (separators.empty())
+        {
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                "Incorrect params of {} tokenizer: separators cannot be empty",
+                tokenizer);
         }
     }
     else if (tokenizer == SparseGramTokenExtractor::getExternalName())
     {
-        auto min_length = extractOption<UInt64>(options, ARGUMENT_SPARSE_GRAMS_MIN_LENGTH);
-        auto max_length = extractOption<UInt64>(options, ARGUMENT_SPARSE_GRAMS_MAX_LENGTH);
-        auto min_cutoff_length = extractOption<UInt64>(options, ARGUMENT_SPARSE_GRAMS_MIN_CUTOFF_LENGTH);
-        if (min_length.has_value() && max_length.has_value() && (*min_length > *max_length))
+        auto [min_length, max_length, min_cutoff_length] = extractSparseGramsParams(params);
+
+        if (min_length < 3)
         {
-            throw Exception(
-                ErrorCodes::INCORRECT_QUERY,
-                "Minimal length {} can not be larger than maximum {}",
-                *min_length,
-                *max_length);
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                "Incorrect params of {} tokenizer: minimal length must be at least 3, but got {}",
+                tokenizer, min_length);
         }
-        if (min_length.has_value() && min_cutoff_length.has_value() && (*min_length > *min_cutoff_length))
+        if (max_length > 100)
         {
-            throw Exception(
-                ErrorCodes::INCORRECT_QUERY,
-                "Minimal length {} can not be larger than minimum cutoff {}",
-                *min_length,
-                *min_cutoff_length);
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                "Incorrect params of {} tokenizer: maximal length must be at most 100, but got {}",
+                tokenizer, max_length);
         }
-        if (max_length.has_value() && min_cutoff_length.has_value() && (*max_length < *min_cutoff_length))
+        if (min_length > max_length)
+        {
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                "Incorrect params of {} tokenizer: minimal length ({}) cannot be larger than maximal length ({})",
+                tokenizer, min_length, max_length);
+        }
+        if (min_cutoff_length.has_value() && min_cutoff_length.value() < min_length)
+        {
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                "Incorrect params of {} tokenizer: minimal cutoff length ({}) cannot be smaller than minimal length ({})",
+                tokenizer, min_length, min_cutoff_length.value());
+        }
+        if (min_cutoff_length.has_value() && min_cutoff_length.value() > max_length)
         {
             throw Exception(
                 ErrorCodes::INCORRECT_QUERY,
-                "Minimal cutoff length {} can not be smaller than maximum {}",
-                *min_cutoff_length,
-                *max_length);
+                "Incorrect params of {} tokenizer: minimal cutoff length ({}) cannot be larger than maximal length ({})",
+                tokenizer, min_cutoff_length.value(), max_length);
         }
     }
 
