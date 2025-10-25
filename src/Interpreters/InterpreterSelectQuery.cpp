@@ -3228,6 +3228,8 @@ void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
 
             lim_info.limit_length += lim_info.limit_offset;
             lim_info.limit_offset = 0;
+            lim_info.fractional_limit += lim_info.fractional_offset;
+            lim_info.fractional_offset = 0;
         }
 
         const Settings & settings = context->getSettingsRef();

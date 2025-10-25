@@ -1068,6 +1068,8 @@ void addPreliminaryLimitStep(
 
         limit_length += limit_offset;
         limit_offset = 0;
+        fractional_limit += fractional_offset;
+        fractional_offset = 0;
     }
 
     const auto & query_context = planner_context->getQueryContext();
