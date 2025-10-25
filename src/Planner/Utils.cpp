@@ -269,7 +269,7 @@ std::pair<ActionsDAG, CorrelatedSubtrees> buildActionsDAGFromExpressionNode(
     return std::make_pair(std::move(action_dag), std::move(correlated_subtrees));
 }
 
-bool sortDescriptionIsPrefix(const SortDescription & prefix, const SortDescription & full)
+bool isSortDescriptionPrefix(const SortDescription & prefix, const SortDescription & full)
 {
     size_t prefix_size = prefix.size();
     if (prefix_size > full.size())
@@ -278,6 +278,21 @@ bool sortDescriptionIsPrefix(const SortDescription & prefix, const SortDescripti
     for (size_t i = 0; i < prefix_size; ++i)
     {
         if (full[i] != prefix[i])
+            return false;
+    }
+
+    return true;
+}
+
+bool isSortDescriptionPrefix(const Names & prefix, const SortDescription & full)
+{
+    size_t prefix_size = prefix.size();
+    if (prefix_size > full.size())
+        return false;
+
+    for (size_t i = 0; i < prefix_size; ++i)
+    {
+        if (full[i].column_name != prefix[i])
             return false;
     }
 
