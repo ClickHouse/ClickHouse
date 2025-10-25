@@ -67,7 +67,7 @@ namespace DB
 
 /**
  * Cache priority queue guard.
- * "Write" lock is for prirority queue structure modifications,
+ * "Write" lock is for priority queue structure modifications,
  * like adding, moving and removing elements.
  * "Read" lock is for read-only iteration of priority queue.
  */

@@ -230,7 +230,6 @@ EvictionInfoPtr SLRUFileCachePriority::collectEvictionInfo(
         chassert(slru_iterator->lru_iterator.cache_priority == &protected_queue);
         info = protected_queue.collectEvictionInfo(size, elements, reservee, is_total_space_cleanup, lock);
 
-        LOG_TEST(log, "REQUIRES EVICTION: {}", info->requiresEviction());
         /// If protected queue required eviction, we need to "downgrade"
         /// its eviction candidates into probationary queue.
         if (info->requiresEviction())

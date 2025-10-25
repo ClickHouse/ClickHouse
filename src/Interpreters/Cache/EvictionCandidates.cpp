@@ -322,7 +322,7 @@ void EvictionCandidates::afterEvictState(const CacheStateGuard::Lock & lock)
 {
     /// We invalidate queue entries under state lock,
     /// because this space will be replaced by reserver,
-    /// so we need to make sure this is done automically.
+    /// so we need to make sure this is done atomically.
     while (!queue_entries_to_invalidate.empty())
     {
         auto iterator = queue_entries_to_invalidate.back();
