@@ -1,5 +1,6 @@
 #include <Interpreters/inplaceBlockConversions.h>
 
+#include <algorithm>
 #include <utility>
 
 #include <Core/Block.h>
@@ -420,6 +421,7 @@ void fillMissingColumns(
 
         std::vector<ColumnPtr> current_offsets;
         size_t num_dimensions = 0;
+        size_t offset_tuple_elements = 0;
 
         const auto * array_type = typeid_cast<const DataTypeArray *>(requested_column->type.get());
         if (array_type && !offsets_columns.empty())
@@ -441,7 +443,10 @@ void fillMissingColumns(
                 auto stream_name = ISerialization::getFileNameForStream(*requested_column, subpath);
                 auto it = offsets_columns.find(stream_name);
                 if (it != offsets_columns.end())
+                {
                     current_offsets[level] = it->second;
+                    offset_tuple_elements = std::count_if(subpath.begin(), subpath.end(), [&](const auto & path) { return path.type == ISerialization::Substream::TupleElement; });
+                }
             });
 
             for (size_t j = 0; j < num_dimensions; ++j)
@@ -469,6 +474,14 @@ void fillMissingColumns(
             /// The number of dimensions that belongs to the array itself but not shared in Nested column.
             /// For example for column "n Nested(a UInt64, b Array(UInt64))" this value is 0 for `n.a` and 1 for `n.b`.
             size_t num_empty_dimensions = num_dimensions - current_offsets.size();
+
+            /// We should not go into the tuple elements that belongs **only** to the current element.
+            ///
+            /// Image the following requested column "n.e2.i" (not data available for it yet),
+            /// type in storage "Nested(e1 Int32, e2 Tuple(i Int32))", offset column "n.e1",
+            /// we should return "Tuple(i Int32)" as base type, not the "Int32",
+            /// so we should remove "some_value" from tuple_elements.
+            tuple_elements.resize(offset_tuple_elements);
 
             auto base_type = getBaseTypeOfArray(requested_column->getTypeInStorage(), tuple_elements);
             auto scalar_type = createArrayOfType(base_type, num_empty_dimensions);
