@@ -6,8 +6,6 @@
 #include <Common/NaNUtils.h>
 #include <DataTypes/NumberTraits.h>
 
-#include "config.h"
-
 
 namespace DB
 {
@@ -30,6 +28,11 @@ inline void throwIfDivisionLeadsToFPE(A a, B b)
         throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division of minimal signed number by minus one");
 }
 
+}
+
+
+namespace DB
+{
 template <typename A, typename B>
 inline bool divisionLeadsToFPE(A a, B b)
 {
@@ -173,7 +176,7 @@ struct ModuloImpl
     }
 
 #if USE_EMBEDDED_COMPILER
-    static constexpr bool compilable = false; /// don't know how to throw from LLVM IR
+    static constexpr bool compilable = false;
 #endif
 };
 
@@ -181,6 +184,10 @@ template <typename A, typename B>
 struct ModuloLegacyImpl : ModuloImpl<A, B>
 {
     using ResultType = typename NumberTraits::ResultOfModuloLegacy<A, B>::Type;
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = false; /// moduloLegacy is only used in partition key expression
+#endif
 };
 
 template <typename A, typename B>
@@ -224,6 +231,10 @@ struct PositiveModuloImpl : ModuloImpl<A, B>
         }
         return static_cast<ResultType>(res);
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = false;
+#endif
 };
 
 template <typename A, typename B>
