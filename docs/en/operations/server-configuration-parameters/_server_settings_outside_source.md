@@ -338,7 +338,7 @@ See also:
 
 ## format_schema_path {#format_schema_path}
 
-The path to the directory with the schemes for the input data, such as schemas for the [CapnProto](../../interfaces/formats.md#capnproto) format.
+The path to the directory with the schemes for the input data, such as schemas for the [CapnProto](/interfaces/formats/CapnProto) format.
 
 **Example**
 
