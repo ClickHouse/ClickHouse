@@ -1,8 +1,10 @@
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 
+#include <Core/Settings.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/MergeTreeWriterStream.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
+#include <Storages/MergeTree/TextIndexCache.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
@@ -28,6 +30,11 @@ namespace ProfileEvents
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool use_text_index_dictionary_cache;
+}
 
 namespace ErrorCodes
 {
@@ -83,18 +90,6 @@ size_t DictionaryBlockBase::size() const
     return tokens ? tokens->size() : 0;
 }
 
-size_t DictionaryBlockBase::lowerBound(const StringRef & token) const
-{
-    auto range = collections::range(0, tokens->size());
-
-    auto it = std::lower_bound(range.begin(), range.end(), token, [this](size_t lhs_idx, const StringRef & rhs_ref)
-    {
-        return assert_cast<const ColumnString &>(*tokens).getDataAt(lhs_idx) < rhs_ref;
-    });
-
-    return it - range.begin();
-}
-
 size_t DictionaryBlockBase::upperBound(const StringRef & token) const
 {
     auto range = collections::range(0, tokens->size());
@@ -105,17 +100,6 @@ size_t DictionaryBlockBase::upperBound(const StringRef & token) const
     });
 
     return it - range.begin();
-}
-
-std::optional<size_t> DictionaryBlockBase::binarySearch(const StringRef & token) const
-{
-    size_t idx = lowerBound(token);
-    const auto & tokens_str = assert_cast<const ColumnString &>(*tokens);
-
-    if (idx == tokens_str.size() || token != tokens_str.getDataAt(idx))
-        return std::nullopt;
-
-    return idx;
 }
 
 DictionarySparseIndex::DictionarySparseIndex(ColumnPtr tokens_, ColumnPtr offsets_in_file_)
@@ -204,9 +188,11 @@ PostingList PostingsSerialization::deserialize(UInt64 header, UInt32 cardinality
     return PostingList::read(buf.data());
 }
 
-MergeTreeIndexGranuleText::MergeTreeIndexGranuleText(MergeTreeIndexTextParams params_)
+MergeTreeIndexGranuleText::MergeTreeIndexGranuleText(MergeTreeIndexTextParams params_, ContextPtr context)
     : params(std::move(params_))
     , bloom_filter(params.bloom_filter_bits_per_row, params.bloom_filter_num_hashes, 0)
+    , text_index_dictionary_cache(context->getTextIndexDictionaryBlockCache().get())
+    , use_text_index_dictionary_cache(context->getSettingsRef()[Setting::use_text_index_dictionary_cache])
 {
 }
 
@@ -298,57 +284,6 @@ ColumnPtr deserializeTokensFrontCoding(ReadBuffer & istr, size_t num_tokens)
 }
 }
 
-/// TODO: add cache for dictionary blocks
-static DictionaryBlock deserializeDictionaryBlock(ReadBuffer & istr)
-{
-    ProfileEvents::increment(ProfileEvents::TextIndexReadDictionaryBlocks);
-
-    UInt64 tokens_format;
-    readVarUInt(tokens_format, istr);
-
-    size_t num_tokens = 0;
-    readVarUInt(num_tokens, istr);
-
-    ColumnPtr tokens_column;
-    switch (tokens_format)
-    {
-        case static_cast<UInt64>(TokensSerializationFormat::RawStrings):
-            tokens_column = deserializeTokensRaw(istr, num_tokens);
-            break;
-        case static_cast<UInt64>(TokensSerializationFormat::FrontCodedStrings):
-            tokens_column = deserializeTokensFrontCoding(istr, num_tokens);
-            break;
-        default:
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown tokens serialization format ({}) in dictionary block", tokens_format);
-    }
-
-    std::vector<TokenPostingsInfo> token_infos;
-    token_infos.reserve(num_tokens);
-
-    for (size_t i = 0; i < num_tokens; ++i)
-    {
-        UInt64 header;
-        UInt32 cardinality;
-
-        readVarUInt(header, istr);
-        readVarUInt(cardinality, istr);
-
-        if (header & PostingsSerialization::EmbeddedPostings)
-        {
-            auto postings = PostingsSerialization::deserialize(header, cardinality, istr);
-            token_infos.emplace_back(std::move(postings));
-        }
-        else
-        {
-            UInt64 offset_in_file;
-            readVarUInt(offset_in_file, istr);
-            token_infos.emplace_back(TokenPostingsInfo::FuturePostings{header, cardinality, offset_in_file});
-        }
-    }
-
-    return DictionaryBlock(std::move(tokens_column), std::move(token_infos));
-}
-
 /// TODO: add cache for dictionary sparse index
 void MergeTreeIndexGranuleText::deserializeSparseIndex(ReadBuffer & istr)
 {
@@ -416,6 +351,59 @@ void MergeTreeIndexGranuleText::analyzeBloomFilter(const IMergeTreeIndexConditio
     }
 }
 
+namespace
+{
+DictionaryBlock deserializeDictionaryBlock(ReadBuffer & istr)
+{
+    ProfileEvents::increment(ProfileEvents::TextIndexReadDictionaryBlocks);
+
+    UInt64 tokens_format;
+    readVarUInt(tokens_format, istr);
+
+    size_t num_tokens = 0;
+    readVarUInt(num_tokens, istr);
+
+    ColumnPtr tokens_column;
+    switch (tokens_format)
+    {
+        case static_cast<UInt64>(TokensSerializationFormat::RawStrings):
+            tokens_column = deserializeTokensRaw(istr, num_tokens);
+            break;
+        case static_cast<UInt64>(TokensSerializationFormat::FrontCodedStrings):
+            tokens_column = deserializeTokensFrontCoding(istr, num_tokens);
+            break;
+        default:
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown tokens serialization format ({}) in dictionary block", tokens_format);
+    }
+
+    std::vector<TokenPostingsInfo> token_infos;
+    token_infos.reserve(num_tokens);
+
+    for (size_t i = 0; i < num_tokens; ++i)
+    {
+        UInt64 header;
+        UInt32 cardinality;
+
+        readVarUInt(header, istr);
+        readVarUInt(cardinality, istr);
+
+        if (header & PostingsSerialization::EmbeddedPostings)
+        {
+            auto postings = PostingsSerialization::deserialize(header, cardinality, istr);
+            token_infos.emplace_back(std::move(postings));
+        }
+        else
+        {
+            UInt64 offset_in_file;
+            readVarUInt(offset_in_file, istr);
+            token_infos.emplace_back(TokenPostingsInfo::FuturePostings{header, cardinality, offset_in_file});
+        }
+    }
+
+    return DictionaryBlock{std::move(tokens_column), std::move(token_infos)};
+}
+}
+
 void MergeTreeIndexGranuleText::analyzeDictionary(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state)
 {
     if (remaining_tokens.empty())
@@ -438,22 +426,36 @@ void MergeTreeIndexGranuleText::analyzeDictionary(MergeTreeIndexReaderStream & s
     auto * data_buffer = stream.getDataBuffer();
     auto * compressed_buffer = stream.getCompressedDataBuffer();
 
+    /// Either retrieves a dictionary block from cache or from disk when cache is disabled.
+    const auto get_dictionary_block = [&](size_t block_id)
+    {
+        const auto dictionary_block_key = TextIndexDictionaryBlockCache::hash(state.path_to_data_part, state.index_name, state.index_mark, block_id);
+        const auto load_dictionary_block = [&] -> TextIndexDictionaryBlockCacheEntryPtr
+        {
+            UInt64 offset_in_file = sparse_index.getOffsetInFile(block_id);
+            compressed_buffer->seek(offset_in_file, 0);
+            return std::make_shared<TextIndexDictionaryBlockCacheEntry>(deserializeDictionaryBlock(*data_buffer));
+        };
+
+        if (use_text_index_dictionary_cache)
+            return text_index_dictionary_cache->getOrSet(dictionary_block_key, load_dictionary_block);
+
+        return load_dictionary_block();
+    };
+
     for (const auto & [block_idx, tokens] : block_to_tokens)
     {
-        UInt64 offset_in_file = sparse_index.getOffsetInFile(block_idx);
-        compressed_buffer->seek(offset_in_file, 0);
-        auto dictionary_block = deserializeDictionaryBlock(*data_buffer);
-
+        const auto dictionary_block = get_dictionary_block(block_idx);
         for (const auto & token : tokens)
         {
             auto it = remaining_tokens.find(token);
             chassert(it != remaining_tokens.end());
-            auto token_idx = dictionary_block.binarySearch(token);
+            auto * token_info = dictionary_block->getTokenInfo(token.toView());
 
-            if (token_idx.has_value())
+            if (token_info)
             {
                 ProfileEvents::increment(ProfileEvents::TextIndexBloomFilterTruePositives);
-                it->second = dictionary_block.token_infos.at(token_idx.value());
+                it->second = *token_info;
             }
             else
             {

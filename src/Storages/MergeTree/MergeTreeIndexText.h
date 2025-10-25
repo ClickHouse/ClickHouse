@@ -1,5 +1,5 @@
 #pragma once
-#include <vector>
+
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Columns/IColumn.h>
@@ -14,8 +14,12 @@
 
 #include <roaring.hh>
 
+#include <vector>
+
 namespace DB
 {
+
+class TextIndexDictionaryBlockCache;
 
 /**
   * Implementation of inverted index for text search.
@@ -173,9 +177,7 @@ struct DictionaryBlockBase
     bool empty() const;
     size_t size() const;
 
-    size_t lowerBound(const StringRef & token) const;
     size_t upperBound(const StringRef & token) const;
-    std::optional<size_t> binarySearch(const StringRef & token) const;
 };
 
 struct DictionarySparseIndex : public DictionaryBlockBase
@@ -201,7 +203,7 @@ struct MergeTreeIndexGranuleText final : public IMergeTreeIndexGranule
 public:
     using TokenToPostingsInfosMap = absl::flat_hash_map<StringRef, TokenPostingsInfo>;
 
-    explicit MergeTreeIndexGranuleText(MergeTreeIndexTextParams params_);
+    explicit MergeTreeIndexGranuleText(MergeTreeIndexTextParams params_, ContextPtr context = Context::getGlobalContextInstance());
     ~MergeTreeIndexGranuleText() override = default;
 
     void serializeBinary(WriteBuffer & ostr) const override;
@@ -232,6 +234,9 @@ private:
     DictionarySparseIndex sparse_index;
     /// Tokens that are in the index granule after analysis.
     TokenToPostingsInfosMap remaining_tokens;
+    TextIndexDictionaryBlockCache * text_index_dictionary_cache;
+    bool use_text_index_dictionary_cache;
+
 };
 
 /// Save BulkContext to optimize consecutive insertions into the posting list.
