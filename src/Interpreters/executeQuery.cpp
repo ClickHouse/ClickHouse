@@ -87,6 +87,7 @@
 #include <exception>
 #include <memory>
 #include <random>
+#include <filesystem>
 
 #include <boost/algorithm/string/predicate.hpp>
 
@@ -179,6 +180,7 @@ namespace Setting
     extern const SettingsString promql_database;
     extern const SettingsString promql_table;
     extern const SettingsFloatAuto promql_evaluation_time;
+    extern const SettingsBool into_outfile_create_parent_directories;
 }
 
 namespace ServerSetting
@@ -201,6 +203,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int INCORRECT_QUERY;
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_CREATE_DIRECTORY;
 }
 
 namespace FailPoints
@@ -2044,6 +2047,31 @@ void executeQuery(
                     throw Exception(ErrorCodes::INTO_OUTFILE_NOT_ALLOWED, "INTO OUTFILE is not allowed");
 
                 const auto & out_file = typeid_cast<const ASTLiteral &>(*ast_query_with_output->out_file).value.safeGet<std::string>();
+
+                const bool should_create_dirs = context->getSettingsRef()[Setting::into_outfile_create_parent_directories];
+                LOG_DEBUG(getLogger("executeQuery"), "INTO OUTFILE: file='{}', create_parent_directories={}", out_file, should_create_dirs);
+
+                if (should_create_dirs)
+                {
+                    std::filesystem::path file_path(out_file);
+                    std::filesystem::path parent_dir = file_path.parent_path();
+                    
+                    if (!parent_dir.empty() && !std::filesystem::exists(parent_dir))
+                    {
+                        try
+                        {
+                            LOG_DEBUG(getLogger("executeQuery"), "Creating parent directories for INTO OUTFILE: '{}'", parent_dir.string());
+                            std::filesystem::create_directories(parent_dir);
+                            LOG_DEBUG(getLogger("executeQuery"), "Successfully created directories: '{}'", parent_dir.string());
+                        }
+                        catch (const std::filesystem::filesystem_error & e)
+                        {
+                            throw Exception(ErrorCodes::CANNOT_CREATE_DIRECTORY, 
+                                "Cannot create parent directories for INTO OUTFILE '{}': {}", 
+                                parent_dir.string(), e.what());
+                        }
+                    }
+                }
 
                 std::string compression_method;
                 if (ast_query_with_output->compression)
