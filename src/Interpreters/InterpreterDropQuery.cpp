@@ -37,6 +37,8 @@ namespace Setting
     extern const SettingsBool database_atomic_wait_for_drop_and_detach_synchronously;
     extern const SettingsFloat ignore_drop_queries_probability;
     extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsUInt64 max_table_size_to_drop;
+    extern const SettingsUInt64 max_partition_size_to_drop;
 }
 
 namespace ErrorCodes
@@ -711,6 +713,13 @@ void InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind kind, ContextPtr 
         /// and not allowed to drop inner table explicitly. Allowing to drop inner table without explicit grant
         /// looks like expected behaviour and we have tests for it.
         auto drop_context = Context::createCopy(global_context);
+
+        /// We need to propagate settings related to drop size limits,
+        ///  otherwise we will not be able to drop large inner tables.
+        const auto & current_settings = current_context->getSettingsRef();
+        drop_context->setSetting("max_table_size_to_drop", current_settings[Setting::max_table_size_to_drop].value);
+        drop_context->setSetting("max_partition_size_to_drop", current_settings[Setting::max_partition_size_to_drop].value);
+
         if (ignore_sync_setting)
             drop_context->setSetting("database_atomic_wait_for_drop_and_detach_synchronously", false);
         drop_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
