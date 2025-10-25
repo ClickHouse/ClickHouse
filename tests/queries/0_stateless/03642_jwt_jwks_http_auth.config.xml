@@ -1,0 +1,23 @@
+<clickhouse>
+    <logger>
+        <level>trace</level>
+        <log>clickhouse-server.log</log>
+        <errorlog>clickhouse-server.err.log</errorlog>
+    </logger>
+
+    <listen_host>127.1</listen_host>
+    <http_port>3642</http_port>
+    <tcp_port>0</tcp_port>
+
+    <shutdown_wait_unfinished>0</shutdown_wait_unfinished>
+    <allow_plaintext_password>0</allow_plaintext_password>
+    <allow_no_password>0</allow_no_password>
+    <path>.</path>
+    <mark_cache_size>0</mark_cache_size>
+
+    <user_directories>
+        <users_xml>
+            <path>users.xml</path>
+        </users_xml>
+    </user_directories>
+</clickhouse>
