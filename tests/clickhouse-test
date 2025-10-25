@@ -1473,7 +1473,7 @@ class TestCase:
         )
 
         testcase_args.testcase_client = (
-            f"{testcase_args.client} --log_comment f'{testcase_args.testcase_basename}-{testcase_args.testcase_database}'"
+            f"{testcase_args.client} --log_comment '{testcase_args.testcase_basename}-{testcase_args.testcase_database}'"
         )
 
         return testcase_args
