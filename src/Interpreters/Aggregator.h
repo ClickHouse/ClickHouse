@@ -472,7 +472,6 @@ private:
         Table & table_src,
         Arena * arena) const;
 
-
     void mergeWithoutKeyDataImpl(
         ManyAggregatedDataVariants & non_empty_data,
         std::atomic<bool> & is_cancelled) const;
