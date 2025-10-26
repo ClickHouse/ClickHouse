@@ -515,7 +515,7 @@ static ContextMutablePtr updateContextForParallelReplicas(const LoggerPtr & logg
     return context_mutable;
 }
 
-static std::pair<ClusterPtr, size_t> prepareClusterForParallelReplicas(const LoggerPtr & logger, const ContextPtr & context)
+static ClusterPtr prepareClusterForParallelReplicas(const LoggerPtr & logger, const ContextPtr & context)
 {
     /// check cluster for parallel replicas
     auto not_optimized_cluster = context->getClusterForParallelReplicas();
@@ -561,10 +561,11 @@ static std::pair<ClusterPtr, size_t> prepareClusterForParallelReplicas(const Log
                 "`cluster_for_parallel_replicas` setting refers to cluster with several shards. Expected a cluster with one shard");
     }
 
-    return {new_cluster, shard_num};
+    return new_cluster;
 }
 
-static std::pair<std::vector<ConnectionPoolPtr>, size_t> prepareConnectionPoolsForParallelReplicas(const LoggerPtr & logger, const ContextPtr & context, const ClusterPtr & cluster)
+static std::pair<std::vector<ConnectionPoolPtr>, size_t> prepareConnectionPoolsForParallelReplicas(
+    const LoggerPtr & logger, const ContextPtr & context, const ClusterPtr & cluster)
 {
     const auto & settings = context->getSettingsRef();
 
@@ -629,10 +630,16 @@ static std::optional<size_t> findLocalReplicaIndexAndUpdatePools(std::vector<Con
         }
     }
     if (!local_replica_index)
+    {
+        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Address count: {}", shard.local_addresses.size());
+        for(auto addr : shard.local_addresses)
+            LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "{}:{}", addr.host_name, addr.port);
+
         throw Exception(
             ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION,
             "Local replica is not found in '{}' cluster definition, see 'cluster_for_parallel_replicas' setting",
             cluster->getName());
+    }
 
     // resize the pool but keep local replicas in it (and update its index)
     chassert(max_replicas_to_use <= pools.size());
@@ -660,7 +667,7 @@ void executeQueryWithParallelReplicas(
         storage_id.getNameForLogs(), header->dumpStructure(), query_ast->formatForLogging(), processed_stage);
 
     auto new_context = updateContextForParallelReplicas(logger, context);
-    auto [cluster, shard_num] = prepareClusterForParallelReplicas(logger, new_context);
+    auto cluster = prepareClusterForParallelReplicas(logger, new_context);
     auto [connection_pools, max_replicas_to_use] = prepareConnectionPoolsForParallelReplicas(logger, new_context, cluster);
 
     auto external_tables = new_context->getExternalTables();
@@ -1026,7 +1033,7 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
     const auto & settings = context->getSettingsRef();
 
     auto new_context = updateContextForParallelReplicas(logger, context);
-    auto [cluster, shard_num] = prepareClusterForParallelReplicas(logger, new_context);
+    auto cluster = prepareClusterForParallelReplicas(logger, new_context);
     auto [connection_pools, max_replicas_to_use] = prepareConnectionPoolsForParallelReplicas(logger, new_context, cluster);
     std::optional<size_t> local_replica_index;
 
