@@ -916,29 +916,7 @@ arrow::Status ArrowFlightHandler::GetFlightInfo(
 
         if ((request.type == arrow::flight::FlightDescriptor::CMD) && hasPollDescriptorPrefix(request.cmd))
         {
-            const String & poll_descriptor = request.cmd;
-            ARROW_RETURN_NOT_OK(evaluatePollDescriptor(poll_descriptor));
-            ARROW_RETURN_NOT_OK(calls_data->extendPollDescriptorExpirationTime(poll_descriptor));
-            auto poll_info_res = calls_data->getPollDescriptorInfo(poll_descriptor);
-            ARROW_RETURN_NOT_OK(poll_info_res);
-            auto poll_info = poll_info_res.ValueOrDie();
-            ch_to_arrow_converter = poll_info->ch_to_arrow_converter;
-            while (poll_info)
-            {
-                if (poll_info->ticket)
-                {
-                    arrow::flight::FlightEndpoint endpoint;
-                    endpoint.ticket = arrow::flight::Ticket{.ticket = *poll_info->ticket};
-                    endpoint.expiration_time = calls_data->getTicketExpirationTime(*poll_info->ticket);
-                    endpoints.emplace_back(endpoint);
-                }
-                if (poll_info->rows)
-                    total_rows += *poll_info->rows;
-                if (poll_info->bytes)
-                    total_bytes += *poll_info->bytes;
-                poll_info = poll_info->previous_info;
-            }
-            std::reverse(endpoints.begin(), endpoints.end());
+            return arrow::Status::Invalid("Method GetFlightInfo cannot be called with a flight descriptor returned by method PollFlightInfo");
         }
         else
         {
