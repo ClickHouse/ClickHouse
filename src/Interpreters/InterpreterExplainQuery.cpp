@@ -27,6 +27,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/Substrait/SubstraitSerializer.h>
 #include <QueryPipeline/printPipeline.h>
 
 #include <Common/JSONBuilder.h>
@@ -723,6 +724,40 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 writeCString("<no current transaction>", buf);
             }
 
+            break;
+        }
+        case ASTExplainQuery::Substrait:
+        {
+            if (!dynamic_cast<const ASTSelectWithUnionQuery *>(ast.getExplainedQuery().get()))
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT is supported for EXPLAIN SUBSTRAIT query");
+
+            QueryPlan plan;
+            ContextPtr context;
+
+            if (query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+            {
+                InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), query_context, options);
+                context = interpreter.getContext();
+                plan = std::move(interpreter).extractQueryPlan();
+            }
+            else
+            {
+                InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), query_context, options);
+                interpreter.buildQueryPlan(plan);
+                context = interpreter.getContext();
+            }
+
+            // Optimize the plan before converting to Substrait
+            auto optimization_settings = QueryPlanOptimizationSettings(context);
+            optimization_settings.is_explain = true;
+            optimization_settings.max_step_description_length = query_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
+            plan.optimize(optimization_settings);
+
+            // Convert to Substrait JSON
+            SubstraitSerializer serializer;
+            String substrait_json = serializer.serializePlanToJSON(plan);
+            buf.write(substrait_json.data(), substrait_json.size());
+            single_line = true;
             break;
         }
     }
