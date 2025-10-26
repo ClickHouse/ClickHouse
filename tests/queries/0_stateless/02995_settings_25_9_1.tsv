@@ -20,7 +20,6 @@ allow_deprecated_snowflake_conversion_functions	0
 allow_deprecated_syntax_for_merge_tree	0
 allow_distributed_ddl	1
 allow_drop_detached	0
-allow_dynamic_type_in_join_keys	0
 allow_execute_multiif_columnar	1
 allow_experimental_alter_materialized_view_structure	1
 allow_experimental_analyzer	1
@@ -62,7 +61,6 @@ allow_experimental_object_type	0
 allow_experimental_parallel_reading_from_replicas	0
 allow_experimental_projection_optimization	1
 allow_experimental_prql_dialect	0
-allow_experimental_qbit_type	0
 allow_experimental_query_cache	1
 allow_experimental_query_deduplication	0
 allow_experimental_refreshable_materialized_view	1
@@ -261,6 +259,7 @@ database_replicated_always_detach_permanently	0
 database_replicated_ddl_output	1
 database_replicated_enforce_synchronous_settings	0
 database_replicated_initial_query_timeout_sec	300
+datalake_disk_name
 date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands	0
 date_time_input_format	basic
 date_time_output_format	simple
@@ -277,8 +276,7 @@ default_view_definer	CURRENT_USER
 delta_lake_enable_engine_predicate	1
 delta_lake_enable_expression_visitor_logging	0
 delta_lake_insert_max_bytes_in_data_file	1073741824
-delta_lake_insert_max_rows_in_data_file	1000000
-delta_lake_log_metadata	0
+delta_lake_insert_max_rows_in_data_file	100000
 delta_lake_snapshot_version	-1
 delta_lake_throw_on_engine_predicate_error	0
 describe_compact_output	0
@@ -300,7 +298,6 @@ distributed_cache_bypass_connection_pool	0
 distributed_cache_connect_backoff_max_ms	50
 distributed_cache_connect_backoff_min_ms	0
 distributed_cache_connect_max_tries	5
-distributed_cache_connect_timeout_ms	50
 distributed_cache_credentials_refresh_period_seconds	5
 distributed_cache_data_packet_ack_window	5
 distributed_cache_discard_connection_if_unread_data	1
@@ -309,15 +306,11 @@ distributed_cache_log_mode	on_error
 distributed_cache_max_unacked_inflight_packets	10
 distributed_cache_min_bytes_for_seek	0
 distributed_cache_pool_behaviour_on_limit	wait
-distributed_cache_prefer_bigger_buffer_size	0
 distributed_cache_read_alignment	0
 distributed_cache_read_only_from_current_az	1
 distributed_cache_read_request_max_tries	10
 distributed_cache_receive_response_wait_milliseconds	60000
 distributed_cache_receive_timeout_milliseconds	10000
-distributed_cache_receive_timeout_ms	3000
-distributed_cache_send_timeout_ms	3000
-distributed_cache_tcp_keep_alive_timeout_ms	2900
 distributed_cache_throw_on_error	0
 distributed_cache_wait_connection_from_pool_milliseconds	100
 distributed_connections_pool_size	1024
@@ -362,9 +355,8 @@ enable_filesystem_cache_on_write_operations	0
 enable_filesystem_read_prefetches_log	0
 enable_global_with_statement	1
 enable_hdfs_pread	1
-enable_http_compression	1
+enable_http_compression	0
 enable_job_stack_trace	0
-enable_join_runtime_filters	0
 enable_json_type	1
 enable_lightweight_delete	1
 enable_lightweight_update	1
@@ -404,7 +396,6 @@ errors_output_format	CSV
 evaluation_time	auto
 exact_rows_before_limit	0
 except_default_mode	ALL
-exclude_materialize_skip_indexes_on_insert	
 execute_exists_as_scalar_subquery	1
 external_storage_connect_timeout_sec	10
 external_storage_max_read_bytes	0
@@ -533,8 +524,6 @@ http_write_exception_in_output_format	1
 http_zlib_compression_level	3
 iceberg_delete_data_on_drop	0
 iceberg_engine_ignore_schema_evolution	0
-iceberg_insert_max_bytes_in_data_file	1073741824
-iceberg_insert_max_rows_in_data_file	1000000
 iceberg_metadata_compression_method	
 iceberg_metadata_log_level	none
 iceberg_snapshot_id	0
@@ -550,7 +539,6 @@ ignore_on_cluster_for_replicated_udf_queries	0
 implicit_select	0
 implicit_table_at_top_level	
 implicit_transaction	0
-inject_random_order_for_select_without_order_by	0
 input_format_allow_errors_num	0
 input_format_allow_errors_ratio	0
 input_format_allow_seeks	1
@@ -700,13 +688,9 @@ join_default_strictness	ALL
 join_on_disk_max_files_to_merge	64
 join_output_by_rowlist_perkey_rows_threshold	5
 join_overflow_mode	throw
-join_runtime_bloom_filter_bytes	524288
-join_runtime_bloom_filter_hash_functions	3
-join_runtime_filter_exact_values_limit	10000
 join_to_sort_maximum_table_rows	10000
 join_to_sort_minimum_perkey_rows	40
 join_use_nulls	0
-joined_block_split_single_row	0
 joined_subquery_requires_alias	1
 json_type_escape_dots_in_keys	0
 kafka_disable_num_consumers_limit	0
@@ -749,8 +733,7 @@ materialize_skip_indexes_on_insert	1
 materialize_statistics_on_insert	1
 materialize_ttl_after_modify	1
 materialized_views_ignore_errors	0
-materialized_views_squash_parallel_inserts	1
-max_alter_threads	\'auto(12)\'
+max_alter_threads	\'auto(32)\'
 max_analyze_depth	5000
 max_ast_depth	1000
 max_ast_elements	50000
@@ -785,10 +768,12 @@ max_execution_time	0
 max_execution_time_leaf	0
 max_expanded_ast_elements	500000
 max_fetch_partition_retries_count	5
-max_final_threads	\'auto(12)\'
+max_final_threads	\'auto(32)\'
 max_http_get_redirects	0
 max_hyperscan_regexp_length	0
 max_hyperscan_regexp_total_length	0
+max_iceberg_data_file_bytes	1073741824
+max_iceberg_data_file_rows	1000
 max_insert_block_size	1048449
 max_insert_delayed_streams_for_parallel_write	0
 max_insert_threads	0
@@ -811,7 +796,7 @@ max_os_cpu_wait_time_ratio_to_throw	0
 max_parallel_replicas	1000
 max_parser_backtracks	1000000
 max_parser_depth	1000
-max_parsing_threads	\'auto(12)\'
+max_parsing_threads	\'auto(32)\'
 max_partition_size_to_drop	50000000000
 max_partitions_per_insert_block	100
 max_partitions_to_read	-1
@@ -852,7 +837,7 @@ max_temporary_columns	0
 max_temporary_data_on_disk_size_for_query	0
 max_temporary_data_on_disk_size_for_user	0
 max_temporary_non_const_columns	0
-max_threads	\'auto(12)\'
+max_threads	\'auto(32)\'
 max_threads_for_annoy_index_creation	4
 max_threads_for_indexes	0
 max_untracked_memory	4194304
@@ -946,7 +931,6 @@ optimize_count_from_files	1
 optimize_distinct_in_order	1
 optimize_distributed_group_by_sharding_key	1
 optimize_duplicate_order_by_and_distinct	0
-optimize_empty_string_comparisons	1
 optimize_extract_common_expressions	1
 optimize_functions_to_subcolumns	1
 optimize_fuse_sum_count_avg	0
@@ -966,14 +950,12 @@ optimize_multiif_to_if	1
 optimize_normalize_count_variants	1
 optimize_on_insert	1
 optimize_or_like_chain	0
-optimize_qbit_distance_function_reads	1
 optimize_read_in_order	1
 optimize_read_in_window_order	1
 optimize_redundant_functions_in_order_by	1
 optimize_respect_aliases	1
 optimize_rewrite_aggregate_function_with_if	1
 optimize_rewrite_array_exists_to_has	0
-optimize_rewrite_like_perfect_affix	1
 optimize_rewrite_regexp_functions	1
 optimize_rewrite_sum_if_to_count_if	1
 optimize_skip_merged_partitions	0
@@ -1164,6 +1146,7 @@ query_cache_store_results_of_queries_with_nondeterministic_functions	0
 query_cache_system_table_handling	throw
 query_cache_tag	
 query_cache_ttl	60
+query_condition_cache_selectivity_threshold	1
 query_condition_cache_store_conditions_as_plaintext	0
 query_metric_log_interval	-1
 query_plan_aggregation_in_order	1
@@ -1198,7 +1181,6 @@ query_plan_remove_redundant_sorting	1
 query_plan_reuse_storage_ordering_for_window_functions	1
 query_plan_split_filter	1
 query_plan_try_use_vector_search	1
-query_plan_use_logical_join_step	1
 query_plan_use_new_logical_join_step	1
 query_profiler_cpu_time_period_ns	1000000000
 query_profiler_real_time_period_ns	1000000000
@@ -1209,7 +1191,6 @@ read_backoff_min_concurrency	1
 read_backoff_min_events	2
 read_backoff_min_interval_between_events_ms	1000
 read_backoff_min_latency_ms	1000
-read_from_distributed_cache_if_exists_otherwise_bypass_cache	0
 read_from_filesystem_cache_if_exists_otherwise_bypass_cache	0
 read_from_page_cache_if_exists_otherwise_bypass_cache	0
 read_in_order_two_level_merge_threshold	100
@@ -1246,7 +1227,6 @@ restore_replicated_merge_tree_to_shared_merge_tree	0
 restore_threads	16
 result_overflow_mode	throw
 rewrite_count_distinct_if_with_count_distinct_implementation	0
-rewrite_in_to_join	0
 rows_before_aggregation	0
 s3_allow_multipart_copy	1
 s3_allow_parallel_part_upload	1
@@ -1274,7 +1254,7 @@ s3_request_timeout_ms	30000
 s3_retry_attempts	100
 s3_skip_empty_files	1
 s3_slow_all_threads_after_network_error	1
-s3_slow_all_threads_after_retryable_error	0
+s3_slow_all_threads_after_retryable_error	1
 s3_strict_upload_part_size	0
 s3_throw_on_zero_files_match	0
 s3_truncate_on_insert	0
@@ -1289,7 +1269,7 @@ s3queue_keeper_fault_injection_probability	0
 s3queue_migrate_old_metadata_to_buckets	0
 schema_inference_cache_require_modification_time_for_url	1
 schema_inference_hints	
-schema_inference_make_columns_nullable	3
+schema_inference_make_columns_nullable	1
 schema_inference_make_json_columns_nullable	0
 schema_inference_mode	default
 schema_inference_use_cache_for_azure	1
@@ -1312,7 +1292,7 @@ short_circuit_function_evaluation_for_nulls	1
 short_circuit_function_evaluation_for_nulls_threshold	1
 show_create_query_identifier_quoting_rule	when_necessary
 show_create_query_identifier_quoting_style	Backticks
-show_data_lake_catalogs_in_system_tables	0
+show_data_lake_catalogs_in_system_tables	1
 show_table_uuid_in_table_create_query_if_not_nil	0
 single_join_prefer_left_table	1
 skip_download_if_exceeds_query_cache	1
@@ -1337,7 +1317,6 @@ table_engine_read_through_distributed_cache	0
 table_function_remote_max_addresses	1000
 tcp_keep_alive_timeout	290
 temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds	600000
-temporary_files_buffer_size	1048576
 temporary_files_codec	LZ4
 temporary_live_view_timeout	1
 text_index_use_bloom_filter	1
@@ -1372,7 +1351,6 @@ use_iceberg_metadata_files_cache	1
 use_iceberg_partition_pruning	1
 use_index_for_in_with_subqueries	1
 use_index_for_in_with_subqueries_max_values	0
-use_join_disjunctions_push_down	0
 use_json_alias_for_old_object_type	0
 use_legacy_to_time	1
 use_local_cache_for_remote_storage	0

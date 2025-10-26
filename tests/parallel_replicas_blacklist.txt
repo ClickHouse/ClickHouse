@@ -457,6 +457,3 @@
 00443_optimize_final_vertical_merge
 01660_join_or_any
 01801_s3_cluster
-
-    Produces different result:
-03658_joined_block_split_single_row_bytes

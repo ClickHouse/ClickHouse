@@ -1257,7 +1257,6 @@ class MergeTreeSettingsRandomizer:
         "auto_statistics_types": auto_statistics_generator(),
         "serialization_info_version": lambda: random.choice(["default", "with_types"]),
         "string_serialization_version": lambda: random.choice(["default", "with_size_stream"]),
-        "enable_shared_storage_snapshot_in_query": lambda: random.randint(0, 1),
     }
 
     @staticmethod
@@ -1473,7 +1472,7 @@ class TestCase:
         )
 
         testcase_args.testcase_client = (
-            f"{testcase_args.client} --log_comment '{testcase_args.testcase_basename}-{testcase_args.testcase_database}'"
+            f"{testcase_args.client} --log_comment f'{testcase_args.testcase_basename}-{testcase_args.testcase_database}'"
         )
 
         return testcase_args

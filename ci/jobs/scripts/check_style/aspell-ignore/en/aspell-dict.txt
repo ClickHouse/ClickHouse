@@ -310,7 +310,6 @@ Eoan
 EphemeralNode
 EscapingRule
 Ethereum
-Eval
 ExactEdgeLengthKm
 ExactEdgeLengthM
 ExactEdgeLengthRads
@@ -948,7 +947,6 @@ RawBLOB
 RawSum
 RawWithNames
 RawWithNamesAndTypes
-REPL
 ReDoS
 ReadTaskRequestsSent
 ReadonlyReplica

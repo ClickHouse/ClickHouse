@@ -96,7 +96,6 @@ StorageArrowFlight::Configuration StorageArrowFlight::processNamedCollectionResu
 
     configuration.host = named_collection.getAnyOrDefault<String>({"host", "hostname"}, "");
     configuration.port = static_cast<UInt16>(named_collection.get<UInt64>("port"));
-    configuration.dataset_name = named_collection.getOrDefault<String>("dataset", "");
 
     configuration.use_basic_authentication = named_collection.getOrDefault<bool>("use_basic_authentication", true);
     bool is_username_set = named_collection.has("username") || named_collection.has("user");
