@@ -13,9 +13,7 @@
 #include <Interpreters/AggregationCommon.h>
 #include <Analyzer/SortNode.h>
 #include <algorithm>
-#include <queue>
 #include <type_traits>
-#include <typeinfo>
 
 namespace DB
 {
@@ -56,11 +54,11 @@ struct LastElementCacheStats
     }
 };
 
-struct OptimizationDataOneExpression
+struct OptimizationDataOneExpression // Metadata for one ORDER BY EXPRESSION
 {
-    UInt64 index_of_expression_in_group_by;
-    SortDirection sort_direction;
-    bool is_type_signed_integer;
+    UInt64 index_of_expression_in_group_by; // index of this expression on GROUP BY
+    SortDirection sort_direction; // ASC or DESC
+    bool is_type_signed_integer; // is it signed integer type or another type
 };
 
 namespace columns_hashing_impl
@@ -241,6 +239,11 @@ static bool compareKeyHolders(const KeyHolder1 & lhs, const KeyHolder2 & rhs, co
     return rhs_key < lhs_key;
 }
 
+// Compares two rows by ORDER BY rules from the query
+// lhs and rhs - lists of GROUP BY expressions
+// optimization_indexes - list of ORDER BY expressions
+bool compareOrderbyFields(const std::vector<Field> & lhs, const std::vector<Field> & rhs, const std::vector<OptimizationDataOneExpression> & optimization_indexes);
+
 template <typename Derived, typename Value, typename Mapped, bool consecutive_keys_optimization, bool need_offset = false, bool nullable = false>
 class HashMethodBase
 {
@@ -317,7 +320,9 @@ public:
         }
 
         auto key_holder = static_cast<Derived &>(*this).getKeyHolder(row, pool);
-        return emplaceImplOptimization(key_holder, data, limit_plus_offset_length, optimization_indexes, max_allowable_fill, top_keys_heap, heap_cmp);
+        auto fields = static_cast<Derived &>(*this).getFields(row, pool);
+        (void)fields;
+        return emplaceImplOptimization(key_holder, fields, data, limit_plus_offset_length, optimization_indexes, max_allowable_fill, top_keys_heap, heap_cmp);
     }
 
     template <typename Data>
@@ -474,6 +479,7 @@ protected:
     template <typename Data, typename KeyHolder, typename Compare>
     ALWAYS_INLINE std::optional<EmplaceResult> emplaceImplOptimization(
         KeyHolder & key_holder,
+        const std::vector<Field> & fields,
         Data & data,
         size_t limit_plus_offset_length,
         const std::vector<OptimizationDataOneExpression> & optimization_indexes,
@@ -481,7 +487,11 @@ protected:
         std::vector<typename Data::iterator>& top_keys_heap,
         Compare heap_cmp)
     {
+        (void)fields;
+        // fields содержит поля, использующиеся в group by, как они есть
+        // Таким образом, чтобы сравнивать два ключа, достаточно проитерироватсья по std::vector<Field> и сравнить каждый из элементов в соответствие с его sort_order
         chassert(limit_plus_offset_length > 0);
+        chassert(fields.size() == optimization_indexes.size());
         if constexpr (consecutive_keys_optimization)
         {
             if (cache.found && cache.check(keyHolderGetKey(key_holder)))
@@ -493,6 +503,7 @@ protected:
             }
         }
 
+        chassert(top_keys_heap.size() <= limit_plus_offset_length);
         if constexpr (!std::is_same_v<decltype(key_holder), const VoidKey>) { // TODO VoidKey doesn't work in compareKeyHolders
             if constexpr (!std::is_same_v<KeyHolder, DB::SerializedKeyHolder>
                        && !std::is_same_v<KeyHolder, DB::ArenaKeyHolder>
@@ -505,7 +516,7 @@ protected:
                     if constexpr (!std::is_same_v<decltype(data.begin()->getKey()), const VoidKey>)
                     {
                         // First check if key_holder more than top of top_keys_heap. If more, it could be skipped.
-                        if (top_keys_heap.size() >= limit_plus_offset_length && // TODO ==
+                        if (top_keys_heap.size() == limit_plus_offset_length &&
                             compareKeyHolders(top_keys_heap.front()->getKey(), key_holder, optimization_indexes))
                         {
                             return std::nullopt;

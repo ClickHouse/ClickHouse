@@ -91,6 +91,8 @@ struct HashMethodOneNumber : public columns_hashing_impl::HashMethodBase<
     FieldType getKeyHolder(size_t row, Arena &) const { return unalignedLoad<FieldType>(vec + row * sizeof(FieldType)); }
 
     const FieldType * getKeyData() const { return reinterpret_cast<const FieldType *>(vec); }
+
+    std::vector<Field> getFields(size_t, Arena &) const { std::cout << "HashMethodOneNumber called" << std::endl; return {}; }
 };
 
 
@@ -147,6 +149,8 @@ struct HashMethodString : public columns_hashing_impl::HashMethodBase<
             return key;
         }
     }
+
+    std::vector<Field> getFields(size_t, Arena &) const { std::cout << "HashMethodString called" << std::endl; return {}; }
 
 protected:
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset, nullable>;
@@ -206,6 +210,8 @@ struct HashMethodFixedString : public columns_hashing_impl::HashMethodBase<
             return key;
         }
     }
+
+    std::vector<Field> getFields(size_t, Arena &) const { std::cout << "HashMethodFixedString called" << std::endl; return {}; }
 
 protected:
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset, nullable>;
@@ -376,6 +382,8 @@ struct HashMethodKeysFixed
         }
     }
 
+    std::vector<Field> getFields(size_t, Arena &) const { std::cout << "HashMethodKeysFixed called" << std::endl; return {}; }
+
     static std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> & key_columns, const Sizes & key_sizes)
     {
         if (!usePreparedKeys(key_sizes))
@@ -428,6 +436,8 @@ struct HashMethodHashed
     {
         return hash128(row, key_columns.size(), key_columns);
     }
+
+    std::vector<Field> getFields(size_t, Arena &) const { std::cout << "HashMethodHashed called" << std::endl; return {}; }
 };
 
 }
