@@ -210,6 +210,19 @@ FROM t
 QUALIFY dictGetString('colors', 'name', color_id) = 'red'
 ORDER BY color_id, rn;
 
+SELECT 'Empty result set - plan';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT color_id
+FROM t
+WHERE dictGetString('colors', 'name', color_id) = 'nonexistent_color'
+ORDER BY color_id;
+
+SELECT 'Empty result set';
+SELECT color_id
+FROM t
+WHERE dictGetString('colors', 'name', color_id) = 'nonexistent_color'
+ORDER BY color_id; 
+
 -- Negative: non-constant RHS, expect no rewrite
 SELECT 'Negative: non-constant RHS - plan';
 EXPLAIN SYNTAX run_query_tree_passes=1

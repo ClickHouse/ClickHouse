@@ -172,6 +172,14 @@ ORDER BY
 QUALIFY
 1	1
 3	3
+Empty result set - plan
+SELECT __table1.color_id AS color_id
+FROM default.t AS __table1
+WHERE __table1.color_id IN (SELECT __table1.id AS id
+FROM dictionary(\'colors\') AS __table1
+WHERE __table1.name = \'nonexistent_color\')
+ORDER BY __table1.color_id ASC
+Empty result set
 Negative: non-constant RHS - plan
 SELECT __table1.color_id AS color_id
 FROM default.t AS __table1
