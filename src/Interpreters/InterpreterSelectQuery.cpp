@@ -2135,7 +2135,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
             }
 
             bool apply_limit = options.to_stage != QueryProcessingStage::WithMergeableStateAfterAggregation;
-            bool apply_prelimit = apply_limit &&
+            bool try_apply_prelimit = apply_limit &&
                                   query.limitLength() && !query.limit_with_ties &&
                                   !hasWithTotalsInAnySubqueryInFromClause(query) &&
                                   !query.arrayJoinExpressionList().first &&
@@ -2144,9 +2144,10 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                                   !settings[Setting::extremes] &&
                                   !has_withfill;
             bool apply_offset = options.to_stage != QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
-            if (apply_prelimit)
+            bool applied_prelimit = false;
+            if (try_apply_prelimit)
             {
-                executePreLimit(query_plan, /* do_not_skip_offset= */!apply_offset);
+                applied_prelimit = executePreLimit(query_plan, /* do_not_skip_offset= */!apply_offset);
             }
 
             /** If there was more than one stream,
@@ -2181,7 +2182,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
             /// Extremes are calculated before LIMIT, but after LIMIT BY. This is Ok.
             executeExtremes(query_plan);
 
-            bool limit_applied = apply_prelimit || (query.limit_with_ties && apply_offset);
+            bool limit_applied = applied_prelimit || (query.limit_with_ties && apply_offset);
             /// Limit is no longer needed if there is prelimit.
             ///
             /// NOTE: that LIMIT cannot be applied if OFFSET should not be applied,
@@ -3207,7 +3208,7 @@ void InterpreterSelectQuery::executeDistinct(QueryPlan & query_plan, bool before
 
 
 /// Preliminary LIMIT - is used in every source, if there are several sources, before they are combined.
-void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not_skip_offset)
+bool InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not_skip_offset)
 {
     auto & query = getSelectQuery();
     /// If there is LIMIT
@@ -3215,32 +3216,22 @@ void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
     {
         LimitInfo lim_info = getLimitLengthAndOffset(query, context);
 
-        if (lim_info.is_limit_length_negative && lim_info.fractional_offset > 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Negative Limits can't have a fractional Offset");
-
-        if (lim_info.is_limit_offset_negative && lim_info.fractional_limit > 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Fractional Limits can't have a negative Offset");
+        if (lim_info.fractional_offset > 0 || lim_info.fractional_limit > 0)
+            // Preliminary Limits mustn't be added if there is a fractional limit/offset
+            return false;
 
         if (do_not_skip_offset)
         {
             if (lim_info.limit_length > std::numeric_limits<UInt64>::max() - lim_info.limit_offset)
-                return;
+                return false;
 
             lim_info.limit_length += lim_info.limit_offset;
             lim_info.limit_offset = 0;
-            lim_info.fractional_limit += lim_info.fractional_offset;
-            lim_info.fractional_offset = 0;
         }
 
         const Settings & settings = context->getSettingsRef();
 
-        // only one of limit_length or fractional_limit will have a value not both
-        // only one of limit_offset or fractional_offset will have a value
-        // if fractional_limit has value is_limit_length_negative should be always false
-        // if fractional_offset has value is_limit_offset_negative should be always false
-
-        if (!lim_info.is_limit_length_negative && !lim_info.is_limit_offset_negative
-            && lim_info.fractional_offset == 0 && lim_info.fractional_limit == 0) [[likely]]
+        if (!lim_info.is_limit_length_negative && !lim_info.is_limit_offset_negative) [[likely]]
         {
             auto limit = std::make_unique<LimitStep>(
                 query_plan.getCurrentHeader(), lim_info.limit_length, lim_info.limit_offset, settings[Setting::exact_rows_before_limit]);
@@ -3251,13 +3242,13 @@ void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
 
             query_plan.addStep(std::move(limit));
         }
-        else if (lim_info.limit_length && lim_info.is_limit_length_negative && lim_info.is_limit_offset_negative)
+        else if (lim_info.is_limit_length_negative && lim_info.is_limit_offset_negative)
         {
             auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), lim_info.limit_length, lim_info.limit_offset);
 
             query_plan.addStep(std::move(limit));
         }
-        else if (lim_info.limit_length && lim_info.is_limit_length_negative && !lim_info.is_limit_offset_negative)
+        else if (lim_info.is_limit_length_negative && !lim_info.is_limit_offset_negative)
         {
             auto offsets_step = std::make_unique<OffsetStep>(query_plan.getCurrentHeader(), lim_info.limit_offset);
             query_plan.addStep(std::move(offsets_step));
@@ -3265,7 +3256,7 @@ void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
             auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), lim_info.limit_length, 0);
             query_plan.addStep(std::move(limit));
         }
-        else if (lim_info.limit_length && !lim_info.is_limit_length_negative && lim_info.is_limit_offset_negative)
+        else // if (!lim_info.is_limit_length_negative && lim_info.is_limit_offset_negative)
         {
             auto offsets_step = std::make_unique<NegativeOffsetStep>(query_plan.getCurrentHeader(), lim_info.limit_offset);
             query_plan.addStep(std::move(offsets_step));
@@ -3275,23 +3266,9 @@ void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
 
             query_plan.addStep(std::move(limit));
         }
-        else if (lim_info.limit_length && lim_info.fractional_offset > 0)
-        {
-            auto fractional_offset_step = std::make_unique<FractionalOffsetStep>(query_plan.getCurrentHeader(), lim_info.fractional_offset);
-            query_plan.addStep(std::move(fractional_offset_step));
-
-            auto limit = std::make_unique<LimitStep>(
-                query_plan.getCurrentHeader(), lim_info.limit_length, 0, settings[Setting::exact_rows_before_limit]);
-            query_plan.addStep(std::move(limit));
-        }
-        else
-        {
-            // Else its fractional limit + fractional offset or normal offset
-            auto fractional_limit_step = std::make_unique<FractionalLimitStep>(
-                query_plan.getCurrentHeader(), lim_info.fractional_limit, lim_info.fractional_offset, lim_info.limit_offset);
-            query_plan.addStep(std::move(fractional_limit_step));
-        }
+        return true;
     }
+    return false;
 }
 
 
