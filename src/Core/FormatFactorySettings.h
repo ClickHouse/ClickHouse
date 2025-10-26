@@ -1465,10 +1465,6 @@ Use geo column parser to convert Array(UInt8) into Point/Linestring/Polygon/Mult
     DECLARE(Bool, output_format_parquet_geometadata, true, R"(
 Allow to write information about geo columns in parquet metadata and encode columns in WKB format.
 )", 0) \
-    DECLARE(Bool, allow_special_serialization_kinds_in_output_formats, true, R"(
-Allows to output columns with special serialization kinds like Sparse and Replicated without converting them to full column representation.
-It helps to avoid unnecessary data copy during formatting.
-)", 0) \
 
 
 // End of FORMAT_FACTORY_SETTINGS
