@@ -79,6 +79,11 @@ struct PartialSortingLessImpl
 
             res *= elem.description.direction;
 
+            if (elem.description.is_natural)
+            {
+                res *= -1;
+            }
+
             if (res != 0)
                 break;
         }
