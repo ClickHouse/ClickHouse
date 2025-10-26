@@ -500,7 +500,7 @@ public:
 
         const auto & date_lut = DateLUT::instance(timezone);
 
-        const auto max_fraction = pow(10, precision) - 1;
+        const auto max_fraction = std::pow(10, precision) - 1;
         const auto min_date_time = minDateTime(date_lut);
         const auto max_date_time = maxDateTime(date_lut);
 
