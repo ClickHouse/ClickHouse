@@ -315,6 +315,9 @@ If the `needle` argument is of type [Array(String)](../../sql-reference/data-typ
 
 Duplicate tokens are ignored.
 For example, ['ClickHouse', 'ClickHouse'] is treated the same as ['ClickHouse'].
+
+An empty needle array (no array element) means that no filtering takes place and all input values match.
+If the ngrams(N) tokenizer is used and a needle has a length < N, then the needle is ignored.
     )";
     FunctionDocumentation::Syntax syntax_hasAnyTokens = R"(
 hasAnyTokens(input, needles)
@@ -396,6 +399,9 @@ If the `needle` argument is of type [Array(String)](../../sql-reference/data-typ
 
 Duplicate tokens are ignored.
 For example, needles = ['ClickHouse', 'ClickHouse'] is treated the same as ['ClickHouse'].
+
+An empty needle array (no array element) means that no filtering takes place and all input values match.
+If the ngrams(N) tokenizer is used and a needle has a length < N, then the needle is ignored.
     )";
     FunctionDocumentation::Syntax syntax_hasAllTokens = R"(
 hasAllTokens(input, needles)
