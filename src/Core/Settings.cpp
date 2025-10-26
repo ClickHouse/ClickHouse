@@ -5638,6 +5638,14 @@ Serialize query plan for distributed processing
     DECLARE(Bool, correlated_subqueries_substitute_equivalent_expressions, true, R"(
 Use filter expressions to inference equivalent expressions and substitute them instead of creating a CROSS JOIN.
 )", 0) \
+    DECLARE(DecorrelationJoinKind, correlated_subqueries_default_join_kind, DecorrelationJoinKind::RIGHT, R"(
+Controls the kind of joins in the decorrelated query plan. The default value is `right`, which means that decorrelated plan will contain RIGHT JOINs with subquery input on the right side.
+
+Possible values:
+
+- `left` - Decorrelation process will produce LEFT JOINs and input table will appear on the left side.
+- `right` - Decorrelation process will produce RIGHT JOINs and input table will appear on the right side.
+)", 0) \
     DECLARE(Bool, optimize_qbit_distance_function_reads, true, R"(
 Replace distance functions on `QBit` data type with equivalent ones that only read the columns necessary for the calculation from the storage.
 )", 0) \
