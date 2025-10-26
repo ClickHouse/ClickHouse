@@ -16,7 +16,8 @@ import CloudOnlyBadge from '@theme/badges/CloudOnlyBadge';
 The `Shared` database engine works in conjunction with Shared Catalog to manage databases whose tables use stateless table engines such as [`SharedMergeTree`](/cloud/reference/shared-merge-tree).
 These table engines do not write persistent state to disk and are compatible with dynamic compute environments.
 
-The `Shared` database engine in Cloud removes the dependency for local disks. It is  a purely in-memory engine, requiring only CPU and memory.
+The `Shared` database engine in Cloud removes the dependency for local disks.
+It is a purely in-memory engine, requiring only CPU and memory.
 
 ## How does it work? {#how-it-works}
 
