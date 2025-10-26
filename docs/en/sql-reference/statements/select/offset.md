@@ -18,7 +18,10 @@ The `offset_row_count` or `fetch_row_count` value can be a number or a literal c
 
 Negative OFFSET is also supported: `OFFSET -n` skips the last `n` rows from the result.  
 
-Fractional OFFSET skips percentages: `OFFSET 0.n` skips the first (n * 10)% percent from the result.
+Fractional OFFSET skips percentages: `OFFSET 0.n` skips the first (n * 10)% percent of rows from the result.
+
+> **Note**
+> • The fraction must be a Float32 number less than 1 and greater than zero
 
 The `FETCH` specifies the maximum number of rows that can be in the result of a query.
 

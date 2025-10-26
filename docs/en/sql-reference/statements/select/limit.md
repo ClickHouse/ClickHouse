@@ -28,10 +28,10 @@ Selecting a percentage from the table is also supported via **Fractions**:
 
 Examples:
     • `LIMIT 0.5 OFFSET 1` selects the median row
-    • `LIMIT 0.5 OFFSET 0.25` selects 3rd quarter of the result
+    • `LIMIT 0.5 OFFSET 0.25` selects 3rd quartile of the result
 
 > **Note**
-> • fractions must be Float32 numbers less than 1 and greater than zero
+> • Fractions must be Float32 numbers less than 1 and greater than zero
 
 If there is no [ORDER BY](../../../sql-reference/statements/select/order-by.md) clause that explicitly sorts results, the choice of rows for the result may be arbitrary and non-deterministic.
 
