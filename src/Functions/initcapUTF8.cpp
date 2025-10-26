@@ -107,7 +107,7 @@ using FunctionInitcapUTF8 = FunctionStringToString<InitcapUTF8Impl, NameInitcapU
 REGISTER_FUNCTION(InitcapUTF8)
 {
     FunctionDocumentation::Description description = R"(
-Like [`initcap`](#initCap), `initcapUTF8` converts the first letter of each word to upper case and the rest to lower case.
+Like [`initcap`](#initcap), `initcapUTF8` converts the first letter of each word to upper case and the rest to lower case.
 Assumes that the string contains valid UTF-8 encoded text.
 If this assumption is violated, no exception is thrown and the result is undefined.
 
