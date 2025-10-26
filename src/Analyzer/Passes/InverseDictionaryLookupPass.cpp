@@ -50,18 +50,35 @@ bool tryGetStringLiteral(const QueryTreeNodePtr & node, String & out)
     return false;
 }
 
-bool isDictGetWithoutDefault(const String & name)
-{
-    if (!name.starts_with("dictGet"))
-        return false;
+const std::unordered_set<String> supported_dictget_functions
+    = {"dictGet",
+       "dictGetString",
+       "dictGetInt8",
+       "dictGetInt16",
+       "dictGetInt32",
+       "dictGetInt64",
+       "dictGetUInt8",
+       "dictGetUInt16",
+       "dictGetUInt32",
+       "dictGetUInt64",
+       "dictGetFloat32",
+       "dictGetFloat64",
+       "dictGetDate",
+       "dictGetDateTime",
+       "dictGetUUID",
+       "dictGetIPv4",
+       "dictGetIPv6",
+       "dictGetOrNull"};
 
-    return name.find("OrDefault") == String::npos;
+bool isSupportedDictGetFunction(const String & name)
+{
+    return supported_dictget_functions.contains(name);
 }
 
 bool tryParseDictFunctionCall(const QueryTreeNodePtr & node, DictGetFunctionInfo & out)
 {
     const auto * function_node = node->as<FunctionNode>();
-    if (!function_node || !isDictGetWithoutDefault(function_node->getFunctionName()))
+    if (!function_node || !isSupportedDictGetFunction(function_node->getFunctionName()))
         return false;
 
     const auto & arguments = function_node->getArguments().getNodes();
