@@ -53,7 +53,7 @@ INSERT INTO t VALUES
     (5, 'R');
 
 SELECT 'Equality, LHS - plan';
-EXPLAIN PLAN
+EXPLAIN SYNTAX run_query_tree_passes=1
 SELECT color_id, payload
 FROM t
 WHERE dictGetString('colors', 'name', color_id) = 'red'
@@ -66,7 +66,7 @@ WHERE dictGetString('colors', 'name', color_id) = 'red'
 ORDER BY color_id, payload;
 
 SELECT 'Equality, RHS - plan';
-EXPLAIN PLAN
+EXPLAIN SYNTAX run_query_tree_passes=1
 SELECT color_id, payload
 FROM t
 WHERE 'red' = dictGetString('colors', 'name', color_id)
@@ -79,7 +79,7 @@ WHERE 'red' = dictGetString('colors', 'name', color_id)
 ORDER BY color_id, payload;
 
 SELECT 'Inequality <, LHS - plan';
-EXPLAIN PLAN
+EXPLAIN SYNTAX run_query_tree_passes=1
 SELECT color_id, payload
 FROM t
 WHERE dictGetUInt64('colors', 'n', color_id) < 10
@@ -92,7 +92,7 @@ WHERE dictGetUInt64('colors', 'n', color_id) < 10
 ORDER BY color_id, payload;
 
 SELECT 'Inequality <, RHS - plan';
-EXPLAIN PLAN
+EXPLAIN SYNTAX run_query_tree_passes=1
 SELECT color_id, payload
 FROM t
 WHERE 10 > dictGetUInt64('colors', 'n', color_id)
@@ -105,7 +105,7 @@ WHERE 10 > dictGetUInt64('colors', 'n', color_id)
 ORDER BY color_id, payload;
 
 SELECT 'Type variant cast, >= Int32 - plan';
-EXPLAIN PLAN
+EXPLAIN SYNTAX run_query_tree_passes=1
 SELECT color_id, payload
 FROM t
 WHERE dictGetInt32('colors', 'n', color_id) >= 2
@@ -118,7 +118,7 @@ WHERE dictGetInt32('colors', 'n', color_id) >= 2
 ORDER BY color_id, payload;
 
 SELECT 'LIKE - plan';
-EXPLAIN PLAN
+EXPLAIN SYNTAX run_query_tree_passes=1
 SELECT color_id, payload
 FROM t
 WHERE dictGetString('colors', 'name', color_id) LIKE 'r%'
@@ -131,7 +131,7 @@ WHERE dictGetString('colors', 'name', color_id) LIKE 'r%'
 ORDER BY color_id, payload;
 
 SELECT 'ILIKE - plan';
-EXPLAIN PLAN
+EXPLAIN SYNTAX run_query_tree_passes=1
 SELECT color_id, payload
 FROM t
 WHERE dictGetString('colors', 'name', color_id) ILIKE 'r%'
@@ -144,7 +144,7 @@ WHERE dictGetString('colors', 'name', color_id) ILIKE 'r%'
 ORDER BY color_id, payload;
 
 SELECT 'NOT recursion - plan';
-EXPLAIN PLAN
+EXPLAIN SYNTAX run_query_tree_passes=1
 SELECT color_id, payload
 FROM t
 WHERE NOT (dictGetString('colors', 'name', color_id) = 'red')
@@ -157,7 +157,7 @@ WHERE NOT (dictGetString('colors', 'name', color_id) = 'red')
 ORDER BY color_id, payload;
 
 SELECT 'AND/OR recursion - plan';
-EXPLAIN PLAN
+EXPLAIN SYNTAX run_query_tree_passes=1
 SELECT color_id, payload
 FROM t
 WHERE (dictGetString('colors', 'name', color_id) = 'red' AND dictGetUInt64('colors', 'n', color_id) < 10)
@@ -172,7 +172,7 @@ WHERE (dictGetString('colors', 'name', color_id) = 'red' AND dictGetUInt64('colo
 ORDER BY color_id, payload;
 
 SELECT 'NULL constant - plan';
-EXPLAIN PLAN
+EXPLAIN SYNTAX run_query_tree_passes=1
 SELECT color_id, payload
 FROM t
 WHERE dictGetString('colors', 'name', color_id) = NULL
@@ -185,7 +185,7 @@ WHERE dictGetString('colors', 'name', color_id) = NULL
 ORDER BY color_id, payload;
 
 SELECT 'PREWHERE - plan';
-EXPLAIN PLAN
+EXPLAIN SYNTAX run_query_tree_passes=1
 SELECT color_id
 FROM t
 PREWHERE dictGetString('colors', 'name', color_id) = 'red'
@@ -198,7 +198,7 @@ PREWHERE dictGetString('colors', 'name', color_id) = 'red'
 ORDER BY color_id;
 
 SELECT 'QUALIFY - plan';
-EXPLAIN PLAN
+EXPLAIN SYNTAX run_query_tree_passes=1
 SELECT color_id, row_number() OVER (PARTITION BY 1 ORDER BY color_id) AS rn
 FROM t
 QUALIFY dictGetString('colors', 'name', color_id) = 'red'
@@ -212,7 +212,7 @@ ORDER BY color_id, rn;
 
 -- Negative: non-constant RHS, expect no rewrite
 SELECT 'Negative: non-constant RHS - plan';
-EXPLAIN PLAN
+EXPLAIN SYNTAX run_query_tree_passes=1
 SELECT color_id
 FROM t
 WHERE dictGetString('colors', 'name', color_id) = payload
