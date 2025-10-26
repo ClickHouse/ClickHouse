@@ -103,7 +103,7 @@ FROM
             id,
             val_middle
         FROM middle_table
-    ) AS middle_table ON `_--left_table.id` = `_--middle_table.id`
+    ) AS middle_table ON (id AS `_--left_table.id`) = (middle_table.id AS `_--middle_table.id`)
 ) AS `--.s`
 ALL INNER JOIN
 (
