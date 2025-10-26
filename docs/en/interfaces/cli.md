@@ -931,7 +931,7 @@ Pipe all output into this command. Typically `less` (e.g., `less -S` to display 
 
 **`-E [ --vertical ]`**
 
-Use the [Vertical format](../interfaces/formats.md#vertical) to output the result. This is the same as `–-format Vertical`. In this format, each value is printed on a separate line, which is helpful when displaying wide tables.
+Use the [Vertical format](/interfaces/formats/Vertical) to output the result. This is the same as `–-format Vertical`. In this format, each value is printed on a separate line, which is helpful when displaying wide tables.
 
 ### Execution details {#command-line-options-execution-details}
 
