@@ -1562,7 +1562,7 @@ UInt64 InterpreterSelectQuery::getLimitForSorting(const ASTSelectQuery & query, 
     {
         const LimitInfo lim_info = getLimitLengthAndOffset(query, context_);
 
-        if (lim_info.is_limit_length_negative || lim_info.fractional_offset > 0)
+        if (lim_info.is_limit_length_negative || lim_info.fractional_offset > 0 || lim_info.fractional_limit > 0)
             return 0;
 
         if (lim_info.limit_length > std::numeric_limits<UInt64>::max() - lim_info.limit_offset)
