@@ -6,26 +6,23 @@
 namespace DB
 {
 
-class ColumnSparse;
-
-/** Serialization for sparse representation.
- *  Only '{serialize,deserialize}BinaryBulk' makes sense.
- *  Format:
- *    Values and offsets are written to separate substreams.
- *    There are written only non-default values.
- *
- *    Offsets have position independent format: as i-th offset there
- *    is written number of default values, that precedes the i-th non-default value.
- *    Offsets are written in VarInt encoding.
- *    Additionally at the end of every call of 'serializeBinaryBulkWithMultipleStreams'
- *    there is written number of default values in the suffix of part of column,
- *    that we currently writing. This value also marked with a flag, that means the end of portion of data.
- *    This value is used, e.g. to allow independent reading of granules in MergeTree.
- *
- * Sparse serialization of Nullable columns is supported too.
- * In that case NULL  is used as implicit default value,
- * null map is not written but can be restored from offsets.
- */
+/// Serialization for sparse representation.
+/// Only '{serialize,deserialize}BinaryBulk' makes sense.
+/// Format:
+///   Values and offsets are written to separate substreams.
+///   There are written only non-default values.
+///
+///   Offsets have position independent format: as i-th offset there
+///   is written number of default values, that precedes the i-th non-default value.
+///   Offsets are written in VarInt encoding.
+///   Additionally at the end of every call of 'serializeBinaryBulkWithMultipleStreams'
+///   there is written number of default values in the suffix of part of column,
+///   that we currently writing. This value also marked with a flag, that means the end of portion of data.
+///   This value is used, e.g. to allow independent reading of granules in MergeTree.
+///
+/// Sparse serialization of Nullable columns is supported too.
+/// In that case NULL is used as implicit default value,
+/// null map is not written but can be restored from offsets.
 class SerializationSparse final : public ISerialization
 {
 public:
@@ -93,45 +90,6 @@ public:
     void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
 
 private:
-    const SerializationPtr & getSerializationForMultipleStreams() const
-    {
-        return nested_non_nullable ? nested_non_nullable : nested;
-    }
-
-    /// Deserialized values of ColumnSparse.
-    void deserializeValuesWithMultipleStreams(
-        ColumnPtr & values,
-        size_t limit,
-        DeserializeBinaryBulkSettings & settings,
-        DeserializeBinaryBulkStatePtr & state) const;
-
-    /// Serializes ColumnSparse in sparse serialization.
-    void serializeWithMultipleStreamsSparse(
-        const ColumnSparse & column,
-        size_t offset,
-        size_t limit,
-        SerializeBinaryBulkSettings & settings,
-        SerializeBinaryBulkStatePtr & state) const;
-
-    /// Serializes full column in sparse serialization.
-    void serializeWithMultipleStreamsGeneric(
-        const IColumn & column,
-        size_t offset,
-        size_t limit,
-        SerializeBinaryBulkSettings & settings,
-        SerializeBinaryBulkStatePtr & state) const;
-
-    /// Serializes non-default values of sparse column.
-    void serializeValuesWithMultipleStreams(
-        const IColumn & values,
-        size_t offset,
-        size_t limit,
-        SerializeBinaryBulkSettings & settings,
-        SerializeBinaryBulkStatePtr & state) const;
-
-    template <typename Reader>
-    void deserialize(IColumn & column, Reader && reader) const;
-
     struct SubcolumnCreator : public ISubcolumnCreator
     {
         const ColumnPtr offsets;
@@ -140,7 +98,7 @@ private:
         SubcolumnCreator(const ColumnPtr & offsets_, size_t size_)
             : offsets(offsets_), size(size_) {}
 
-        DataTypePtr create(const DataTypePtr & prev) const override;
+        DataTypePtr create(const DataTypePtr & prev) const override { return prev; }
         SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override;
         ColumnPtr create(const ColumnPtr & prev) const override;
     };
@@ -153,17 +111,19 @@ private:
         NullMapSubcolumnCreator(const ColumnPtr & offsets_, size_t size_)
             : offsets(offsets_), size(size_) {}
 
-        DataTypePtr create(const DataTypePtr & prev) const override;
-        SerializationPtr create(const SerializationPtr & prev) const override;
+        DataTypePtr create(const DataTypePtr & prev) const override { return prev; }
+        SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override { return prev; }
         ColumnPtr create(const ColumnPtr & prev) const override;
     };
+
+    template <typename Reader>
+    void deserialize(IColumn & column, Reader && reader) const;
 
     /// Serialization of nested column.
     SerializationPtr nested;
 
-    /// Serialization of nested non-nullable column.
-    /// If @nested is not Nullable then nullptr.
-    SerializationPtr nested_non_nullable;
+    /// Serialization of null map.
+    SerializationPtr sparse_null_map;
 };
 
 
@@ -199,10 +159,12 @@ public:
 
     void deserializeBinaryBulkStatePrefix(
         DeserializeBinaryBulkSettings & settings,
-        DeserializeBinaryBulkStatePtr & state) const override;
+        DeserializeBinaryBulkStatePtr & state,
+        SubstreamsDeserializeStatesCache * cache) const override;
 
     void deserializeBinaryBulkWithMultipleStreams(
         ColumnPtr & column,
+        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
