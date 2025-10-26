@@ -1,4 +1,4 @@
-
+#include <Columns/IColumn.h>
 #include <Storages/ColumnsDescription.h>
 #include <Common/CurrentMetrics.h>
 #include <DataTypes/DataTypeString.h>
@@ -25,7 +25,7 @@ ColumnsDescription StorageSystemMetrics::getColumnsDescription()
     return description;
 }
 
-void StorageSystemMetrics::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
+void StorageSystemMetrics::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     for (size_t i = 0, end = CurrentMetrics::end(); i < end; ++i)
     {

@@ -14,12 +14,12 @@ struct MultiplyImpl
     static const constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
-    static inline NO_SANITIZE_UNDEFINED Result apply(A a, B b)
+    static NO_SANITIZE_UNDEFINED Result apply(A a, B b)
     {
         if constexpr (is_big_int_v<A> || is_big_int_v<B>)
         {
-            using CastA = std::conditional_t<std::is_floating_point_v<B>, B, A>;
-            using CastB = std::conditional_t<std::is_floating_point_v<A>, A, B>;
+            using CastA = std::conditional_t<is_floating_point<B>, B, A>;
+            using CastB = std::conditional_t<is_floating_point<A>, A, B>;
 
             return static_cast<Result>(static_cast<CastA>(a)) * static_cast<Result>(static_cast<CastB>(b));
         }
@@ -29,7 +29,7 @@ struct MultiplyImpl
 
     /// Apply operation and check overflow. It's used for Decimal operations. @returns true if overflowed, false otherwise.
     template <typename Result = ResultType>
-    static inline bool apply(A a, B b, Result & c)
+    static bool apply(A a, B b, Result & c)
     {
         if constexpr (std::is_same_v<Result, float> || std::is_same_v<Result, double>)
         {
@@ -43,7 +43,7 @@ struct MultiplyImpl
 #if USE_EMBEDDED_COMPILER
     static constexpr bool compilable = true;
 
-    static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool)
+    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool)
     {
         return left->getType()->isIntegerTy() ? b.CreateMul(left, right) : b.CreateFMul(left, right);
     }
@@ -55,7 +55,20 @@ using FunctionMultiply = BinaryArithmeticOverloadResolver<MultiplyImpl, NameMult
 
 REGISTER_FUNCTION(Multiply)
 {
-    factory.registerFunction<FunctionMultiply>();
+    FunctionDocumentation::Description description = "Calculates the product of two values `x` and `y`.";
+    FunctionDocumentation::Syntax syntax = "multiply(x, y)";
+    FunctionDocumentation::Arguments arguments =
+    {
+        {"x", "factor.", {"(U)Int*", "Float*", "Decimal"}},
+        {"y", "factor.", {"(U)Int*", "Float*", "Decimal"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the product of x and y"};
+    FunctionDocumentation::Examples examples = {{"Multiplying two numbers", "SELECT multiply(5,5)", "25"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, categories};
+
+    factory.registerFunction<FunctionMultiply>(documentation);
 }
 
 }

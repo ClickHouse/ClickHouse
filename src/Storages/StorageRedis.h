@@ -14,6 +14,7 @@ namespace DB
  */
 class StorageRedis : public IStorage, public IKeyValueEntity, WithContext
 {
+    friend class ReadFromRedis;
 public:
     StorageRedis(
         const StorageID & table_id_,
@@ -24,12 +25,13 @@ public:
 
     std::string getName() const override { return "Redis"; }
 
-    Pipe read(
+    void read(
+        QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context_,
-        QueryProcessingStage::Enum processed_stage,
+        QueryProcessingStage::Enum /*processed_stage*/,
         size_t max_block_size,
         size_t num_streams) override;
 
@@ -71,10 +73,9 @@ public:
     Block getSampleBlock(const Names &) const override;
 
 private:
-    StorageID table_id;
     RedisConfiguration configuration;
 
-    Poco::Logger * log;
+    LoggerPtr log;
     RedisPoolPtr pool;
 
     const String primary_key;

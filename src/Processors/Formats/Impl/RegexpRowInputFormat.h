@@ -2,13 +2,11 @@
 
 #include <string>
 #include <vector>
-#include <Core/Block.h>
 #include <Common/re2.h>
 #include <IO/PeekableReadBuffer.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
-#include <Formats/FormatFactory.h>
 #include <Formats/ParsedTemplateFormatString.h>
 #include <Formats/SchemaInferenceUtils.h>
 
@@ -31,6 +29,7 @@ public:
     size_t getNumberOfGroups() const { return regexp.NumberOfCapturingGroups(); }
 
 private:
+    String regexp_str;
     const re2::RE2 regexp;
     // The vector of fields extracted from line using regexp.
     std::vector<std::string_view> matched_fields;
@@ -50,14 +49,14 @@ private:
 class RegexpRowInputFormat final : public IRowInputFormat
 {
 public:
-    RegexpRowInputFormat(ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_);
+    RegexpRowInputFormat(ReadBuffer & in_, SharedHeader header_, Params params_, const FormatSettings & format_settings_);
 
     String getName() const override { return "RegexpRowInputFormat"; }
     void setReadBuffer(ReadBuffer & in_) override;
     void resetReadBuffer() override;
 
 private:
-    RegexpRowInputFormat(std::unique_ptr<PeekableReadBuffer> buf_, const Block & header_, Params params_, const FormatSettings & format_settings_);
+    RegexpRowInputFormat(std::unique_ptr<PeekableReadBuffer> buf_, SharedHeader header_, Params params_, const FormatSettings & format_settings_);
 
     using EscapingRule = FormatSettings::EscapingRule;
 

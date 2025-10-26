@@ -1,21 +1,14 @@
 #pragma once
 
 #include <tuple>
+#include <unordered_map>
 
-#include <IO/WriteHelpers.h>
 #include <base/types.h>
 #include <Common/PODArray.h>
 
 
 namespace DB
 {
-
-/// It's a bug in clang with three-way comparison operator
-/// https://github.com/llvm/llvm-project/issues/55919
-#ifdef __clang__
-    #pragma clang diagnostic push
-    #pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#endif
 
 /** Mark is the position in the compressed file. The compressed file consists of adjacent compressed blocks.
   * Mark is a tuple - the offset in the file to the start of the compressed block, the offset in the decompressed block to the start of the data.
@@ -29,21 +22,9 @@ struct MarkInCompressedFile
 
     auto asTuple() const { return std::make_tuple(offset_in_compressed_file, offset_in_decompressed_block); }
 
-    String toString() const
-    {
-        return "(" + DB::toString(offset_in_compressed_file) + "," + DB::toString(offset_in_decompressed_block) + ")";
-    }
-
-    String toStringWithRows(size_t rows_num) const
-    {
-        return "(" + DB::toString(offset_in_compressed_file) + "," + DB::toString(offset_in_decompressed_block) + ","
-            + DB::toString(rows_num) + ")";
-    }
+    String toString() const;
+    String toStringWithRows(size_t rows_num) const;
 };
-
-#ifdef __clang__
-    #pragma clang diagnostic pop
-#endif
 
 /**
  * In-memory representation of an array of marks.
@@ -63,11 +44,13 @@ class MarksInCompressedFile
 public:
     using PlainArray = PODArray<MarkInCompressedFile>;
 
-    MarksInCompressedFile(const PlainArray & marks);
+    explicit MarksInCompressedFile(const PlainArray & marks);
 
     MarkInCompressedFile get(size_t idx) const;
 
     size_t approximateMemoryUsage() const;
+
+    size_t getNumberOfMarks() const { return num_marks; }
 
 private:
     /** Throughout this class:
@@ -122,5 +105,7 @@ private:
     // Mark idx -> {block info, bit offset in `packed`}.
     std::tuple<const BlockInfo *, size_t> lookUpMark(size_t idx) const;
 };
+
+using PlainMarksByName = std::unordered_map<String, std::unique_ptr<MarksInCompressedFile::PlainArray>>;
 
 }

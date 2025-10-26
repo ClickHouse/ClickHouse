@@ -35,17 +35,22 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors args{
-            {"haystack", &isStringOrFixedString<IDataType>, nullptr, "String or FixedString"},
-            {"pattern", &isString<IDataType>, nullptr, "String"},
-            {"replacement", &isString<IDataType>, nullptr, "String"}
+            {"haystack", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"},
+            {"pattern", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
+            {"replacement", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
         };
 
-        validateFunctionArgumentTypes(*this, arguments, args);
+        validateFunctionArguments(*this, arguments, args);
 
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeString>();
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         ColumnPtr column_haystack = arguments[0].column;
         column_haystack = column_haystack->convertToFullColumnIfConst();
@@ -70,50 +75,64 @@ public:
                 col_haystack->getChars(), col_haystack->getOffsets(),
                 col_needle_const->getValue<String>(),
                 col_replacement_const->getValue<String>(),
-                col_res->getChars(), col_res->getOffsets());
+                col_res->getChars(), col_res->getOffsets(),
+                input_rows_count);
             return col_res;
         }
-        else if (col_haystack && col_needle_vector && col_replacement_const)
+        if (col_haystack && col_needle_vector && col_replacement_const)
         {
             Impl::vectorVectorConstant(
-                col_haystack->getChars(), col_haystack->getOffsets(),
-                col_needle_vector->getChars(), col_needle_vector->getOffsets(),
+                col_haystack->getChars(),
+                col_haystack->getOffsets(),
+                col_needle_vector->getChars(),
+                col_needle_vector->getOffsets(),
                 col_replacement_const->getValue<String>(),
-                col_res->getChars(), col_res->getOffsets());
+                col_res->getChars(),
+                col_res->getOffsets(),
+                input_rows_count);
             return col_res;
         }
-        else if (col_haystack && col_needle_const && col_replacement_vector)
+        if (col_haystack && col_needle_const && col_replacement_vector)
         {
             Impl::vectorConstantVector(
-                col_haystack->getChars(), col_haystack->getOffsets(),
+                col_haystack->getChars(),
+                col_haystack->getOffsets(),
                 col_needle_const->getValue<String>(),
-                col_replacement_vector->getChars(), col_replacement_vector->getOffsets(),
-                col_res->getChars(), col_res->getOffsets());
+                col_replacement_vector->getChars(),
+                col_replacement_vector->getOffsets(),
+                col_res->getChars(),
+                col_res->getOffsets(),
+                input_rows_count);
             return col_res;
         }
-        else if (col_haystack && col_needle_vector && col_replacement_vector)
+        if (col_haystack && col_needle_vector && col_replacement_vector)
         {
             Impl::vectorVectorVector(
-                col_haystack->getChars(), col_haystack->getOffsets(),
-                col_needle_vector->getChars(), col_needle_vector->getOffsets(),
-                col_replacement_vector->getChars(), col_replacement_vector->getOffsets(),
-                col_res->getChars(), col_res->getOffsets());
+                col_haystack->getChars(),
+                col_haystack->getOffsets(),
+                col_needle_vector->getChars(),
+                col_needle_vector->getOffsets(),
+                col_replacement_vector->getChars(),
+                col_replacement_vector->getOffsets(),
+                col_res->getChars(),
+                col_res->getOffsets(),
+                input_rows_count);
             return col_res;
         }
-        else if (col_haystack_fixed && col_needle_const && col_replacement_const)
+        if (col_haystack_fixed && col_needle_const && col_replacement_const)
         {
             Impl::vectorFixedConstantConstant(
-                col_haystack_fixed->getChars(), col_haystack_fixed->getN(),
+                col_haystack_fixed->getChars(),
+                col_haystack_fixed->getN(),
                 col_needle_const->getValue<String>(),
                 col_replacement_const->getValue<String>(),
-                col_res->getChars(), col_res->getOffsets());
+                col_res->getChars(),
+                col_res->getOffsets(),
+                input_rows_count);
             return col_res;
         }
-        else
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal column {} of first argument of function {}",
-                arguments[0].column->getName(), getName());
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", arguments[0].column->getName(), getName());
     }
 };
 

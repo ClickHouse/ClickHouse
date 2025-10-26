@@ -11,11 +11,11 @@ ORDER by (key1, key2);
 
 INSERT INTO table_with_pk_clear SELECT number, number * number, toString(number), toString(number * number) FROM numbers(1000);
 
-ALTER TABLE table_with_pk_clear CLEAR COLUMN key1 IN PARTITION tuple(); --{serverError 524}
+ALTER TABLE table_with_pk_clear CLEAR COLUMN key1 IN PARTITION tuple(); --{serverError ALTER_OF_COLUMN_IS_FORBIDDEN}
 
 SELECT count(distinct key1) FROM table_with_pk_clear;
 
-ALTER TABLE table_with_pk_clear CLEAR COLUMN key2 IN PARTITION tuple(); --{serverError 524}
+ALTER TABLE table_with_pk_clear CLEAR COLUMN key2 IN PARTITION tuple(); --{serverError ALTER_OF_COLUMN_IS_FORBIDDEN}
 
 SELECT count(distinct key2) FROM table_with_pk_clear;
 

@@ -32,6 +32,9 @@ public:
     /// of the function `writeFile()` should be destroyed before next call of `writeFile()`.
     std::unique_ptr<WriteBufferFromFileBase> writeFile(const String & filename) override;
 
+    std::unique_ptr<WriteBufferFromFileBase> writeFile(const String & filename, size_t size) override;
+
+
     /// Returns true if there is an active instance of WriteBuffer returned by writeFile().
     /// This function should be used mostly for debugging purposes.
     bool isWritingFile() const override;
@@ -39,6 +42,8 @@ public:
     /// Finalizes writing of the archive. This function must be always called at the end of writing.
     /// (Unless an error appeared and the archive is in fact no longer needed.)
     void finalize() override;
+
+    void cancel() noexcept override;
 
     /// Supported compression methods.
     static constexpr const char kStore[] = "store";
@@ -49,7 +54,7 @@ public:
     static constexpr const char kXz[] = "xz";
 
     /// Some compression levels.
-    enum class CompressionLevels
+    enum class CompressionLevels : int8_t
     {
         kDefault = kDefaultCompressionLevel,
         kFast = 2,

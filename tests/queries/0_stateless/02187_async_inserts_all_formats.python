@@ -38,7 +38,7 @@ def run_test(data_format, gen_data_template, settings):
 formats = (
     client.query(
         "SELECT name FROM system.formats WHERE is_input AND is_output \
-    AND name NOT IN ('CapnProto', 'RawBLOB', 'Template', 'ProtobufSingle', 'LineAsString', 'Protobuf', 'ProtobufList') ORDER BY name"
+    AND name NOT IN ('CapnProto', 'RawBLOB', 'Template', 'ProtobufSingle', 'LineAsString', 'Protobuf', 'ProtobufList', 'Npy') ORDER BY name"
     )
     .strip()
     .split("\n")

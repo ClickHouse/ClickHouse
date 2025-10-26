@@ -10,7 +10,7 @@ bool ParserShowPrivilegesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
 {
     auto query = std::make_shared<ASTShowPrivilegesQuery>();
 
-    if (!ParserKeyword("SHOW PRIVILEGES").ignore(pos, expected))
+    if (!ParserKeyword(Keyword::SHOW_PRIVILEGES).ignore(pos, expected))
         return false;
 
     node = query;

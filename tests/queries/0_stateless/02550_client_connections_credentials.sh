@@ -109,11 +109,7 @@ $CLICKHOUSE_CLIENT --config $CONFIG --connection test_port -q 'select tcpPort()'
 $CLICKHOUSE_CLIENT --config $CONFIG --connection test_port --port $TEST_PORT -q 'select tcpPort()'
 echo 'secure'
 
-if [ "`uname -m`" == 's390x' ]; then
-    $CLICKHOUSE_CLIENT --config $CONFIG --connection test_secure -q 'select tcpPort()' |& grep -c -F -o -e 'SSL routines::wrong version number' -e 'tcp_secure protocol is disabled because poco library was built without NetSSL support.'
-else
-    $CLICKHOUSE_CLIENT --config $CONFIG --connection test_secure -q 'select tcpPort()' |& grep -c -F -o -e OPENSSL_internal:WRONG_VERSION_NUMBER -e 'tcp_secure protocol is disabled because poco library was built without NetSSL support.'
-fi
+$CLICKHOUSE_CLIENT --config $CONFIG --connection test_secure -q 'select tcpPort()' |& grep -c -F -o -e 'SSL routines::wrong version number' -e 'tcp_secure protocol is disabled because poco library was built without NetSSL support.'
 
 echo 'database'
 $CLICKHOUSE_CLIENT --config $CONFIG --connection test_database -q 'select currentDatabase()'
@@ -129,6 +125,7 @@ $CLICKHOUSE_CLIENT --progress off --interactive --config $CONFIG --connection te
 # Just in case
 unset CLICKHOUSE_USER
 unset CLICKHOUSE_PASSWORD
+unset CLICKHOUSE_HOST
 echo 'root overrides'
 $CLICKHOUSE_CLIENT --config $CONFIG_ROOT_OVERRIDES --connection incorrect_auth -q 'select currentUser()' |& grep -F -o 'foo: Authentication failed: password is incorrect, or there is no user with such name.'
 $CLICKHOUSE_CLIENT --config $CONFIG_ROOT_OVERRIDES --connection incorrect_auth --user "default" --password "" -q 'select currentUser()'

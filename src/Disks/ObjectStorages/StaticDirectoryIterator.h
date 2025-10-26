@@ -22,7 +22,12 @@ public:
 
     std::string path() const override { return iter->string(); }
 
-    std::string name() const override { return iter->filename(); }
+    std::string name() const override
+    {
+        if (iter->filename().empty())
+            return iter->parent_path().filename();
+        return iter->filename();
+    }
 
 private:
     std::vector<std::filesystem::path> dir_file_paths;

@@ -1,6 +1,6 @@
-#include "Utilities.h"
+#include <Parsers/Kusto/Utilities.h>
 
-#include "KustoFunctions/IParserKQLFunction.h"
+#include <Parsers/Kusto/KustoFunctions/IParserKQLFunction.h>
 
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTExpressionList.h>
@@ -70,5 +70,13 @@ ASTPtr wrapInSelectWithUnion(const ASTPtr & select_query)
     select_with_union_query->children.push_back(list_of_selects);
 
     return select_with_union_query;
+}
+
+bool isValidKQLPos(IParser::Pos & pos)
+{
+    return (pos.isValid() ||
+            pos->type == TokenType::ErrorSingleExclamationMark || // allow kql negative operators
+            pos->type == TokenType::ErrorWrongNumber || // allow kql timespan data type with decimal like 2.6h
+            std::string_view(pos->begin, pos->end) == "~");  // allow kql Case-Sensitive operators
 }
 }

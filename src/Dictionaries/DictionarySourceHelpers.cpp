@@ -1,23 +1,19 @@
-#include "DictionarySourceHelpers.h"
+#include <Dictionaries/DictionarySourceHelpers.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteHelpers.h>
-#include "DictionaryStructure.h"
+#include <Dictionaries/DictionaryStructure.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/SettingsChanges.h>
-
-#include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
 }
 
@@ -103,8 +99,8 @@ static Block transformHeader(Block header, Block block_to_add)
 }
 
 TransformWithAdditionalColumns::TransformWithAdditionalColumns(
-    Block block_to_add_, const Block & header)
-    : ISimpleTransform(header, transformHeader(header, block_to_add_), true)
+    SharedHeader block_to_add_, SharedHeader header)
+    : ISimpleTransform(header, std::make_shared<const Block>(transformHeader(*header, *block_to_add_)), true)
     , block_to_add(std::move(block_to_add_))
 {
 }
@@ -116,7 +112,7 @@ void TransformWithAdditionalColumns::transform(Chunk & chunk)
         auto num_rows = chunk.getNumRows();
         auto columns = chunk.detachColumns();
 
-        auto cut_block = block_to_add.cloneWithCutColumns(current_range_index, num_rows);
+        auto cut_block = block_to_add->cloneWithCutColumns(current_range_index, num_rows);
 
         if (cut_block.rows() != num_rows)
             throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
@@ -134,30 +130,5 @@ String TransformWithAdditionalColumns::getName() const
 {
     return "TransformWithAdditionalColumns";
 }
-
-DictionaryPipelineExecutor::DictionaryPipelineExecutor(QueryPipeline & pipeline_, bool async)
-    : async_executor(async ? std::make_unique<PullingAsyncPipelineExecutor>(pipeline_) : nullptr)
-    , executor(async ? nullptr : std::make_unique<PullingPipelineExecutor>(pipeline_))
-{}
-
-bool DictionaryPipelineExecutor::pull(Block & block)
-{
-    if (async_executor)
-    {
-        while (true)
-        {
-            bool has_data = async_executor->pull(block);
-            if (has_data && !block)
-                continue;
-            return has_data;
-        }
-    }
-    else if (executor)
-        return executor->pull(block);
-    else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "DictionaryPipelineExecutor is not initialized");
-}
-
-DictionaryPipelineExecutor::~DictionaryPipelineExecutor() = default;
 
 }

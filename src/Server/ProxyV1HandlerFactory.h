@@ -16,7 +16,7 @@ class ProxyV1HandlerFactory : public TCPServerConnectionFactory
 {
 private:
     IServer & server;
-    Poco::Logger * log;
+    LoggerPtr log;
     std::string conf_name;
 
     class DummyTCPHandler : public Poco::Net::TCPServerConnection
@@ -28,7 +28,7 @@ private:
 
 public:
     explicit ProxyV1HandlerFactory(IServer & server_, const std::string & conf_name_)
-        : server(server_), log(&Poco::Logger::get("ProxyV1HandlerFactory")), conf_name(conf_name_)
+        : server(server_), log(getLogger("ProxyV1HandlerFactory")), conf_name(conf_name_)
     {
     }
 

@@ -1,11 +1,12 @@
 #pragma once
 
-#include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
+#include <Core/NamesAndTypes.h>
 #include <Interpreters/SystemLog.h>
-#include <Interpreters/ClientInfo.h>
-#include <Common/ZooKeeper/IKeeper.h>
 #include <Storages/ColumnsDescription.h>
+#include <Common/ZooKeeper/IKeeper.h>
+
+#include <Poco/Net/SocketAddress.h>
 
 
 namespace DB
@@ -28,10 +29,10 @@ struct ZooKeeperLogElement
     Poco::Net::SocketAddress address;
     Int64 session_id = 0;
 
-    UInt64 duration_ms = 0;
+    UInt64 duration_microseconds = 0;
 
     /// Common request info
-    Int32 xid = 0;
+    Int64 xid = 0;
     bool has_watch = false;
     Int32 op_num = 0;
     String path;
@@ -72,7 +73,6 @@ struct ZooKeeperLogElement
     static ColumnsDescription getColumnsDescription();
     static NamesAndAliases getNamesAndAliases() { return {}; }
     void appendToBlock(MutableColumns & columns) const;
-    static const char * getCustomColumnList() { return nullptr; }
 };
 
 class ZooKeeperLog : public SystemLog<ZooKeeperLogElement>

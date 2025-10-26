@@ -1,0 +1,23 @@
+<clickhouse>
+    <remote_servers>
+		<cluster>
+			<shard>
+				<replica>
+					<host>node1</host>
+					<port>9000</port>
+				</replica>
+				<replica>
+					<host>node2</host>
+					<port>9000</port>
+				</replica>
+			</shard>
+		</cluster>
+	</remote_servers>
+
+    <max_dictionary_num_to_throw>10</max_dictionary_num_to_throw>
+    <max_table_num_to_throw>10</max_table_num_to_throw>
+    <max_database_num_to_throw>10</max_database_num_to_throw>
+    <max_named_collection_num_to_warn>5</max_named_collection_num_to_warn>
+    <max_named_collection_num_to_throw>10</max_named_collection_num_to_throw>
+</clickhouse>
+

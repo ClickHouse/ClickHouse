@@ -6,7 +6,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e
 
-$CLICKHOUSE_CLIENT -n -q "
+$CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_async_insert_native_2;
     CREATE TABLE t_async_insert_native_2 (id UInt64, s String) ENGINE = MergeTree ORDER BY id;
 "
@@ -18,10 +18,10 @@ echo "(3, 'ccc') (4, 'ddd') (5, 'eee')" | $CLICKHOUSE_CLIENT $async_insert_optio
 
 wait
 
-$CLICKHOUSE_CLIENT -n -q "
+$CLICKHOUSE_CLIENT -q "
     SELECT * FROM t_async_insert_native_2 ORDER BY id;
 
-    SYSTEM FLUSH LOGS;
+    SYSTEM FLUSH LOGS asynchronous_insert_log;
 
     SELECT format, status, rows, data_kind, format
     FROM system.asynchronous_insert_log

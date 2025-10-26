@@ -10,12 +10,13 @@
 
 #if USE_RAPIDJSON
 
-#include "rapidjson/document.h"
-#include "rapidjson/writer.h"
-#include "rapidjson/stringbuffer.h"
-#include "rapidjson/filewritestream.h"
-#include "rapidjson/prettywriter.h"
-#include "rapidjson/filereadstream.h"
+/// Prevent stack overflow:
+#define RAPIDJSON_PARSE_DEFAULT_FLAGS (kParseIterativeFlag)
+
+#include <rapidjson/document.h>
+#include <rapidjson/writer.h>
+#include <rapidjson/stringbuffer.h>
+#include <rapidjson/error/en.h>
 
 
 namespace DB
@@ -25,23 +26,23 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
 {
-    // select jsonMergePatch('{"a":1}','{"name": "joey"}','{"name": "tom"}','{"name": "zoey"}');
+    // select JSONMergePatch('{"a":1}','{"name": "joey"}','{"name": "tom"}','{"name": "zoey"}');
     //           ||
     //           \/
     // ┌───────────────────────┐
     // │ {"a":1,"name":"zoey"} │
     // └───────────────────────┘
-    class FunctionjsonMergePatch : public IFunction
+    class FunctionJSONMergePatch : public IFunction
     {
     public:
-        static constexpr auto name = "jsonMergePatch";
-        static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionjsonMergePatch>(); }
+        static constexpr auto name = "JSONMergePatch";
+        static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionJSONMergePatch>(); }
 
         String getName() const override { return name; }
         bool isVariadic() const override { return true; }
@@ -53,7 +54,7 @@ namespace
         DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
             if (arguments.empty())
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires at least one argument.", getName());
+                throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function {} requires at least one argument.", getName());
 
             for (const auto & arg : arguments)
                 if (!isString(arg.type))
@@ -95,10 +96,12 @@ namespace
             auto parse_json_document = [](const ColumnString & column, rapidjson::Document & document, size_t i)
             {
                 auto str_ref = column.getDataAt(i);
-                const char * json = str_ref.data;
+                document.Parse(str_ref.toString().c_str());
 
-                document.Parse(json);
-                if (document.HasParseError() || !document.IsObject())
+                if (document.HasParseError())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong JSON string to merge: {}", rapidjson::GetParseError_En(document.GetParseError()));
+
+                if (!document.IsObject())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong JSON string to merge. Expected JSON object");
             };
 
@@ -162,10 +165,37 @@ namespace
 
 }
 
-REGISTER_FUNCTION(jsonMergePatch)
+REGISTER_FUNCTION(JSONMergePatch)
 {
-    factory.registerFunction<FunctionjsonMergePatch>(FunctionDocumentation{
-        .description="Returns the merged JSON object string, which is formed by merging multiple JSON objects."});
+    /// jsonMergePatch documentation
+    FunctionDocumentation::Description description_jsonMergePatch = R"(
+Returns the merged JSON object string which is formed by merging multiple JSON objects.
+    )";
+    FunctionDocumentation::Syntax syntax_jsonMergePatch = "jsonMergePatch(json1[, json2, ...])";
+    FunctionDocumentation::Arguments arguments_jsonMergePatch = {
+        {"json1[, json2, ...]", "One or more strings with valid JSON.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_jsonMergePatch = {"Returns the merged JSON object string, if the JSON object strings are valid.", {"String"}};
+    FunctionDocumentation::Examples examples_jsonMergePatch = {
+    {
+        "Usage example",
+        R"(
+SELECT jsonMergePatch('{"a":1}', '{"name": "joey"}', '{"name": "tom"}', '{"name": "zoey"}') AS res;
+        )",
+        R"(
+┌─res───────────────────┐
+│ {"a":1,"name":"zoey"} │
+└───────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_jsonMergePatch = {23, 10};
+    FunctionDocumentation::Category category_jsonMergePatch = FunctionDocumentation::Category::JSON;
+    FunctionDocumentation documentation_jsonMergePatch = {description_jsonMergePatch, syntax_jsonMergePatch, arguments_jsonMergePatch, returned_value_jsonMergePatch, examples_jsonMergePatch, introduced_in_jsonMergePatch, category_jsonMergePatch};
+
+    factory.registerFunction<FunctionJSONMergePatch>(documentation_jsonMergePatch);
+
+    factory.registerAlias("jsonMergePatch", "JSONMergePatch");
 }
 
 }

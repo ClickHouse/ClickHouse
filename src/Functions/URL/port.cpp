@@ -1,11 +1,11 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
-#include "domain.h"
+#include <Functions/URL/domain.h>
 
 
 namespace DB
@@ -46,7 +46,7 @@ struct FunctionPortImpl : public IFunction
     }
 
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         UInt16 default_port = 0;
         if (arguments.size() == 2)
@@ -64,23 +64,20 @@ struct FunctionPortImpl : public IFunction
             typename ColumnVector<UInt16>::Container & vec_res = col_res->getData();
             vec_res.resize(url_column->size());
 
-            vector(default_port, url_strs->getChars(), url_strs->getOffsets(), vec_res);
+            vector(default_port, url_strs->getChars(), url_strs->getOffsets(), vec_res, input_rows_count);
             return col_res;
         }
-        else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
-                arguments[0].column->getName(), getName());
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
 }
 
 private:
-    static void vector(UInt16 default_port, const ColumnString::Chars & data, const ColumnString::Offsets & offsets, PaddedPODArray<UInt16> & res)
+    static void vector(UInt16 default_port, const ColumnString::Chars & data, const ColumnString::Offsets & offsets, PaddedPODArray<UInt16> & res, size_t input_rows_count)
     {
-        size_t size = offsets.size();
-
         ColumnString::Offset prev_offset = 0;
-        for (size_t i = 0; i < size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
-            res[i] = extractPort(default_port, data, prev_offset, offsets[i] - prev_offset - 1);
+            res[i] = extractPort(default_port, data, prev_offset, offsets[i] - prev_offset);
             prev_offset = offsets[i];
         }
 }
@@ -138,16 +135,64 @@ struct FunctionPortRFC : public FunctionPortImpl<true>
 
 REGISTER_FUNCTION(Port)
 {
-    factory.registerFunction<FunctionPort>(FunctionDocumentation
+    /// port documentation
+    FunctionDocumentation::Description description_port = R"(
+Returns the port of a URL, or the `default_port` if the URL contains no port or cannot be parsed.
+    )";
+    FunctionDocumentation::Syntax syntax_port = "port(url[, default_port])";
+    FunctionDocumentation::Arguments arguments_port = {
+        {"url", "URL.", {"String"}},
+        {"default_port", "Optional. The default port number to be returned. `0` by default.", {"UInt16"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_port = {"Returns the port of the URL, or the default port if there is no port in the URL or in case of a validation error.", {"UInt16"}};
+    FunctionDocumentation::Examples examples_port = {
     {
-        .description=R"(Returns the port or `default_port` if there is no port in the URL (or in case of validation error).)",
-        .categories{"URL"}
-    });
-    factory.registerFunction<FunctionPortRFC>(FunctionDocumentation
+        "Usage example",
+        R"(
+SELECT port('https://clickhouse.com:8443/docs'), port('https://clickhouse.com/docs', 443);
+        )",
+        R"(
+┌─port('https://clickhouse.com:8443/docs')─┬─port('https://clickhouse.com/docs', 443)─┐
+│                                     8443 │                                      443 │
+└──────────────────────────────────────────┴──────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_port = {20, 5};
+    FunctionDocumentation::Category category_port = FunctionDocumentation::Category::URL;
+    FunctionDocumentation documentation_port = {description_port, syntax_port, arguments_port, returned_value_port, examples_port, introduced_in_port, category_port};
+
+    factory.registerFunction<FunctionPort>(documentation_port);
+
+    /// portRFC documentation
+    FunctionDocumentation::Description description_portRFC = R"(
+Returns the port or `default_port` if the URL contains no port or cannot be parsed.
+Similar to [`port`](#port), but [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986) conformant.
+    )";
+    FunctionDocumentation::Syntax syntax_portRFC = "portRFC(url[, default_port])";
+    FunctionDocumentation::Arguments arguments_portRFC = {
+        {"url", "URL.", {"String"}},
+        {"default_port", "Optional. The default port number to be returned. `0` by default.", {"UInt16"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_portRFC = {"Returns the port or the default port if there is no port in the URL or in case of a validation error.", {"UInt16"}};
+    FunctionDocumentation::Examples examples_portRFC = {
     {
-        .description=R"(Similar to `port`, but conforms to RFC 3986.)",
-        .categories{"URL"}
-    });
+        "Usage example",
+        R"(
+SELECT port('http://user:password@example.com:8080/'), portRFC('http://user:password@example.com:8080/');
+        )",
+        R"(
+┌─port('http:/⋯com:8080/')─┬─portRFC('htt⋯com:8080/')─┐
+│                        0 │                     8080 │
+└──────────────────────────┴──────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_portRFC = {22, 10};
+    FunctionDocumentation::Category category_portRFC = FunctionDocumentation::Category::URL;
+    FunctionDocumentation documentation_portRFC = {description_portRFC, syntax_portRFC, arguments_portRFC, returned_value_portRFC, examples_portRFC, introduced_in_portRFC, category_portRFC};
+
+    factory.registerFunction<FunctionPortRFC>(documentation_portRFC);
 }
 
 }

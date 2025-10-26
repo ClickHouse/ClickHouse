@@ -1,15 +1,9 @@
-#ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wold-style-cast"
 #pragma clang diagnostic ignored "-Wshadow"
 #pragma clang diagnostic ignored "-Wimplicit-float-conversion"
-#endif
-
 #include <Functions/stl.hpp>
-
-#ifdef __clang__
 #pragma clang diagnostic pop
-#endif
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
@@ -48,15 +42,15 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors args{
-            {"time_series", &isArray<IDataType>, nullptr, "Array"},
-            {"period", &isNativeUInt<IDataType>, nullptr, "Unsigned Integer"},
+            {"time_series", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"},
+            {"period", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeUInt), nullptr, "Unsigned Integer"},
         };
-        validateFunctionArgumentTypes(*this, arguments, args);
+        validateFunctionArguments(*this, arguments, args);
 
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat32>()));
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         ColumnPtr array_ptr = arguments[0].column;
         const ColumnArray * array = checkAndGetColumn<ColumnArray>(array_ptr.get());
@@ -85,7 +79,7 @@ public:
 
         ColumnArray::Offset prev_src_offset = 0;
 
-        for (size_t i = 0; i < src_offsets.size(); ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             UInt64 period;
             auto period_ptr = arguments[1].column->convertToFullColumnIfConst();
@@ -126,6 +120,10 @@ public:
                 res_col_offsets_data.push_back(res_data.size());
 
                 res_data.insert(residue.begin(), residue.end());
+                res_col_offsets_data.push_back(res_data.size());
+
+                // Create Baseline = seasonal + trend
+                std::transform(seasonal.begin(), seasonal.end(), trend.begin(), std::back_inserter(res_data), std::plus<>());
                 res_col_offsets_data.push_back(res_data.size());
 
                 root_offsets_data.push_back(res_col_offsets->size());
@@ -182,40 +180,20 @@ public:
 };
 REGISTER_FUNCTION(seriesDecomposeSTL)
 {
-    factory.registerFunction<FunctionSeriesDecomposeSTL>(FunctionDocumentation{
-        .description = R"(
-Decomposes a time series using STL [(Seasonal-Trend Decomposition Procedure Based on Loess)](https://www.wessa.net/download/stl.pdf) into a season, a trend and a residual component.
-
-**Syntax**
-
-``` sql
-seriesDecomposeSTL(series, period);
-```
-
-**Arguments**
-
-- `series` - An array of numeric values
-- `period` - A positive number
-
-The number of data points in `series` should be at least twice the value of `period`.
-
-**Returned value**
-
-- An array of three arrays where the first array include seasonal components, the second array - trend, and the third array - residue component.
-
-Type: [Array](../../sql-reference/data-types/array.md).
-
-**Examples**
-
-Query:
-
-``` sql
-SELECT seriesDecomposeSTL([10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34], 3) AS print_0;
-```
-
-Result:
-
-``` text
+    FunctionDocumentation::Description description = R"(
+Decomposes a series data using STL [(Seasonal-Trend Decomposition Procedure Based on Loess)](https://www.wessa.net/download/stl.pdf) into a season, a trend and a residual component.
+    )";
+    FunctionDocumentation::Syntax syntax = "seriesDecomposeSTL(series, period)";
+    FunctionDocumentation::Arguments arguments = {
+        {"series", "An array of numeric values", {"Array((U)Int8/16/32/64)", "Array(Float*)"}},
+        {"period", "A positive integer", {"UInt8/16/32/64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of four arrays where the first array includes seasonal components, the second array - trend, the third array - residue component, and the fourth array - baseline(seasonal + trend) component.", {"Array(Array(Float32), Array(Float32), Array(Float32), Array(Float32))"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Decompose series data using STL",
+        "SELECT seriesDecomposeSTL([10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34], 3) AS print_0",
+        R"(
 ┌───────────print_0──────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ [[
         -13.529999, -3.1799996, 16.71,      -13.53,     -3.1799996, 16.71,      -13.53,     -3.1799996,
@@ -230,9 +208,19 @@ Result:
     [
         0, 0.0000019073486, -0.0000019073486, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -0.0000019073486, 0,
         0
+    ],
+    [
+        10.1, 20.449999, 40.340004, 10.100001, 20.45, 40.34, 10.100001, 20.45, 40.34, 10.1, 20.45, 40.34,
+        10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.100002, 20.45, 40.34
     ]]                                                                                                                   │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-```)",
-        .categories{"Time series analysis"}});
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {24, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::TimeSeries;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionSeriesDecomposeSTL>(documentation);
 }
 }

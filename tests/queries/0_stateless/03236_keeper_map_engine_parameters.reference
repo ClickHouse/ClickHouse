@@ -1,0 +1,1 @@
+CREATE TABLE default.`03236_keeper_map_engine_parameters`\n(\n    `key` UInt64,\n    `value` UInt64\n)\nENGINE = KeeperMap(\'/default/test2417\')\nPRIMARY KEY key

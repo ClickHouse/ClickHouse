@@ -3,14 +3,30 @@ add_subdirectory(divide)
 include("${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake")
 add_headers_and_sources(clickhouse_functions .)
 
-extract_into_parent_list(clickhouse_functions_sources dbms_sources
-    IFunction.cpp
-    FunctionFactory.cpp
-    FunctionHelpers.cpp
-    extractTimeZoneFromFunctionArguments.cpp
-    FunctionsLogical.cpp
-    CastOverloadResolver.cpp
+# These files are moved from clickhouse_functions into dbms to make dbms self-contained (not depend on clickhouse_functions)
+# This allows less dependency and linker work (specially important when building many example executables)
+set(DBMS_FUNCTIONS
+    IFunction.cpp # IFunctionOverloadResolver::getLambdaArgumentTypes, IExecutableFunction::execute... (Many AST visitors, analyzer passes, some storages...)
+    IFunctionAdaptors.cpp # FunctionToFunctionBaseAdaptor (Used by FunctionFactory.cpp)
+    FunctionDynamicAdaptor.cpp # IFunctionOverloadResolver::getLambdaArgumentTypes, IExecutableFunction::execute... (Many AST visitors, analyzer passes, some storages...)
+    FunctionFactory.cpp # FunctionFactory::instance() (Many AST visitors, analyzer passes, some storages...)
+    FunctionHelpers.cpp # convertConstTupleToConstantElements, checkAndGetColumnConstStringOrFixedString, checkAndGetNestedArrayOffset ...)
+    FunctionsLogical.cpp # createInternalFunctionAndOverloadResolve / createInternalFunctionOrOverloadResolver ... (Multiple)
+    if.cpp # createInternalFunctionIfOverloadResolver (Used by MultiIfToIfPass.cpp)
+    multiIf.cpp # createInternalMultiIfOverloadResolver (Used by IfChainToMultiIfPass.cpp)
+    multiMatchAny.cpp # createInternalMultiMatchAnyOverloadResolver (Used by ConvertOrLikeChainPass.cpp)
+    checkHyperscanRegexp.cpp # checkHyperscanRegexp (Used by MultiMatchAnyImpl.h, multiMatchAny.cpp)
+    CastOverloadResolver.cpp # createInternalCast (Used by WindowTransform.cpp, KeyCondition.cpp...)
+    FunctionsConversion.cpp # createFunctionBaseCast (Used by CastOverloadResolver.cpp)
+    hasAnyAllTokens.cpp # FunctionSearchImpl (Used by MergeTreeIndexConditionText.cpp)
+    FunctionsConversion_impl0.cpp
+    FunctionsConversion_impl1.cpp
+    FunctionsConversion_impl2.cpp
+    FunctionsConversion_impl3.cpp
+    extractTimeZoneFromFunctionArguments.cpp # extractTimeZoneFromFunctionArguments (DateTimeTransforms.h, FunctionsConversion.cpp)
+    generateSnowflakeID.cpp
 )
+extract_into_parent_list(clickhouse_functions_sources dbms_sources ${DBMS_FUNCTIONS})
 extract_into_parent_list(clickhouse_functions_headers dbms_headers
     IFunction.h
     FunctionFactory.h
@@ -21,6 +37,9 @@ extract_into_parent_list(clickhouse_functions_headers dbms_headers
 )
 
 add_library(clickhouse_functions_obj OBJECT ${clickhouse_functions_headers} ${clickhouse_functions_sources})
+if (OMIT_HEAVY_DEBUG_SYMBOLS)
+    target_compile_options(clickhouse_functions_obj PRIVATE "-g0")
+endif()
 
 list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_obj>)
 
@@ -32,6 +51,7 @@ list (APPEND PUBLIC_LIBS
         clickhouse_dictionaries_embedded
         clickhouse_parsers
         ch_contrib::consistent_hashing
+        common
         dbms
         ch_contrib::metrohash
         ch_contrib::murmurhash
@@ -43,20 +63,11 @@ list (APPEND PRIVATE_LIBS
         boost::filesystem
         divide_impl
         ch_contrib::xxHash
+        ch_contrib::stringzilla
 )
-
-if (TARGET ch_rust::blake3)
-    list (APPEND PUBLIC_LIBS
-        ch_rust::blake3
-    )
-endif()
 
 if (TARGET OpenSSL::Crypto)
     list (APPEND PUBLIC_LIBS OpenSSL::Crypto)
-endif()
-
-if (OMIT_HEAVY_DEBUG_SYMBOLS)
-    target_compile_options(clickhouse_functions_obj PRIVATE "-g0")
 endif()
 
 if (TARGET ch_contrib::icu)
@@ -70,6 +81,10 @@ endif ()
 if (TARGET ch_contrib::llvm)
     list (APPEND PRIVATE_LIBS ch_contrib::llvm)
 endif ()
+
+if (TARGET ch_contrib::bech32)
+    list (APPEND PRIVATE_LIBS ch_contrib::bech32)
+endif()
 
 if (TARGET ch_contrib::base64)
     list (APPEND PRIVATE_LIBS ch_contrib::base64)
@@ -123,6 +138,9 @@ list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_array>)
 add_subdirectory(Kusto)
 list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_kusto>)
 
+add_subdirectory(TimeSeries)
+list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_time_series>)
+
 if (TARGET ch_contrib::datasketches)
     add_subdirectory(UniqTheta)
     list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_uniqtheta>)
@@ -132,14 +150,9 @@ add_subdirectory(JSONPath)
 list (APPEND PRIVATE_LIBS clickhouse_functions_jsonpath)
 
 add_subdirectory(keyvaluepair)
-list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_extractkeyvaluepairs>)
 
 # Signed integer overflow on user-provided data inside boost::geometry - ignore.
 set_source_files_properties("pointInPolygon.cpp" PROPERTIES COMPILE_FLAGS -fno-sanitize=signed-integer-overflow)
-
-if (ENABLE_FUZZING)
-    add_compile_definitions(FUZZING_MODE=1)
-endif ()
 
 if (USE_GPERF)
     # Only for regenerating
@@ -161,6 +174,10 @@ if (USE_GPERF)
     endif ()
     add_dependencies(generate-source generate-html-char-ref)
 endif ()
+
+# Update after all the includes
+set(dbms_sources "${dbms_sources}" PARENT_SCOPE)
+set(dbms_headers "${dbms_headers}" PARENT_SCOPE)
 
 target_link_libraries(clickhouse_functions_obj PUBLIC ${PUBLIC_LIBS} PRIVATE ${PRIVATE_LIBS})
 

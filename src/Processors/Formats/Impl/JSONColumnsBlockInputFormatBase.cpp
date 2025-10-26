@@ -1,3 +1,4 @@
+#include <Columns/IColumn.h>
 #include <Processors/Formats/Impl/JSONColumnsBlockInputFormatBase.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/JSONUtils.h>
@@ -13,6 +14,7 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int EMPTY_DATA_PASSED;
+    extern const int TYPE_MISMATCH;
 }
 
 
@@ -77,14 +79,15 @@ void JSONColumnsReaderBase::skipColumn()
 }
 
 JSONColumnsBlockInputFormatBase::JSONColumnsBlockInputFormatBase(
-    ReadBuffer & in_, const Block & header_, const FormatSettings & format_settings_, std::unique_ptr<JSONColumnsReaderBase> reader_)
+    ReadBuffer & in_, SharedHeader header_, const FormatSettings & format_settings_, std::unique_ptr<JSONColumnsReaderBase> reader_)
     : IInputFormat(header_, &in_)
     , format_settings(format_settings_)
-    , fields(header_.getNamesAndTypes())
-    , serializations(header_.getSerializations())
+    , fields(header_->getNamesAndTypes())
+    , serializations(header_->getSerializations())
     , reader(std::move(reader_))
+    , block_missing_values(getPort().getHeader().columns())
 {
-    name_to_index = getPort().getHeader().getNamesToIndexesMap();
+    name_to_index = getNamesToIndexesMap(getPort().getHeader());
 }
 
 size_t JSONColumnsBlockInputFormatBase::readColumn(
@@ -134,7 +137,7 @@ Chunk JSONColumnsBlockInputFormatBase::read()
         {
             do
             {
-                skipJSONField(*in, "skip_field");
+                skipJSONField(*in, "skip_field", format_settings.json);
                 ++num_rows;
             } while (!reader->checkColumnEndOrSkipFieldDelimiter());
         }
@@ -194,6 +197,8 @@ Chunk JSONColumnsBlockInputFormatBase::read()
     {
         if (!seen_columns[i])
         {
+            if (format_settings.force_null_for_omitted_fields && !isNullableOrLowCardinalityNullable(fields[i].type))
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot insert NULL value into a column `{}` of type '{}'", fields[i].name, fields[i].type->getName());
             columns[i]->insertManyDefaults(rows);
             if (format_settings.defaults_for_omitted_fields)
                 block_missing_values.setBits(i, rows);
@@ -215,7 +220,7 @@ JSONColumnsSchemaReaderBase::JSONColumnsSchemaReaderBase(
 {
 }
 
-void JSONColumnsSchemaReaderBase::setContext(ContextPtr & ctx)
+void JSONColumnsSchemaReaderBase::setContext(const ContextPtr & ctx)
 {
     ColumnsDescription columns;
     if (tryParseColumnsListFromString(hints_str, columns, ctx, hints_parsing_error))
@@ -326,7 +331,7 @@ DataTypePtr JSONColumnsSchemaReaderBase::readColumnAndGetDataType(const String &
             break;
         }
 
-        readJSONField(field, in);
+        readJSONField(field, in, format_settings.json);
         DataTypePtr field_type = tryInferDataTypeForSingleJSONField(field, format_settings, &inference_info);
         chooseResultColumnType(*this, column_type, field_type, nullptr, column_name, rows_read);
         ++rows_read;

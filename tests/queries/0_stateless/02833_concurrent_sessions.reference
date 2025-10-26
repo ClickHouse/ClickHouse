@@ -1,0 +1,34 @@
+sessions:
+45
+port_0_sessions:
+0
+address_0_sessions:
+0
+tcp_sessions
+18
+http_sessions
+9
+http_with_session_id_sessions
+9
+mysql_sessions
+9
+Corresponding LoginSuccess/Logout
+3
+LoginFailure
+3
+Corresponding LoginSuccess/Logout
+3
+LoginFailure
+3
+Corresponding LoginSuccess/Logout
+3
+LoginFailure
+3
+Corresponding LoginSuccess/Logout
+3
+LoginFailure
+3
+Corresponding LoginSuccess/Logout
+3
+LoginFailure
+3

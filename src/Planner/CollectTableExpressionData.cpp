@@ -2,17 +2,20 @@
 
 #include <Storages/IStorage.h>
 
-#include <Analyzer/Utils.h>
-#include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/ColumnNode.h>
-#include <Analyzer/QueryNode.h>
-#include <Analyzer/TableNode.h>
-#include <Analyzer/TableFunctionNode.h>
-#include <Analyzer/JoinNode.h>
+#include <Analyzer/FunctionNode.h>
+#include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/ListNode.h>
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/TableNode.h>
+#include <Analyzer/UnionNode.h>
+#include <Analyzer/Utils.h>
 
-#include <Planner/PlannerContext.h>
 #include <Planner/PlannerActionsVisitor.h>
+#include <Planner/PlannerContext.h>
+#include <Planner/PlannerCorrelatedSubqueries.h>
+
 
 namespace DB
 {
@@ -26,34 +29,21 @@ namespace ErrorCodes
 namespace
 {
 
-class CollectSourceColumnsVisitor : public InDepthQueryTreeVisitor<CollectSourceColumnsVisitor>
+class CollectSourceColumnsVisitor : public InDepthQueryTreeVisitorWithContext<CollectSourceColumnsVisitor>
 {
 public:
-    explicit CollectSourceColumnsVisitor(PlannerContext & planner_context_)
-        : planner_context(planner_context_)
-    {}
-
-    void visitImpl(QueryTreeNodePtr & node)
+    explicit CollectSourceColumnsVisitor(PlannerContextPtr & planner_context_, bool keep_alias_columns_ = true)
+        : InDepthQueryTreeVisitorWithContext(planner_context_->getQueryContext())
+        , planner_context(planner_context_)
+        , keep_alias_columns(keep_alias_columns_)
     {
-        /// Special case for USING clause which contains references to ALIAS columns.
-        /// We can not modify such ColumnNode.
-        if (auto * join_node = node->as<JoinNode>())
+    }
+
+    void enterImpl(QueryTreeNodePtr & node)
+    {
+        if (isIndexHintFunction(node))
         {
-            if (!join_node->isUsingJoinExpression())
-                return;
-
-            auto & using_list = join_node->getJoinExpression()->as<ListNode&>();
-            for (auto & using_element : using_list)
-            {
-                auto & column_node = using_element->as<ColumnNode&>();
-                /// This list contains column nodes from left and right tables.
-                auto & columns_from_subtrees = column_node.getExpressionOrThrow()->as<ListNode&>().getNodes();
-
-                /// Visit left table column node.
-                visitUsingColumn(columns_from_subtrees[0]);
-                /// Visit right table column node.
-                visitUsingColumn(columns_from_subtrees[1]);
-            }
+            is_inside_index_hint_function = true;
             return;
         }
 
@@ -64,30 +54,74 @@ public:
         if (column_node->getColumnName() == "__grouping_set")
             return;
 
+        /// A special case for the "indexHint" function. We don't need its arguments for execution if column's source table is MergeTree.
+        /// Instead, we prepare an ActionsDAG for its arguments and store it inside a function (see ActionsDAG::buildFilterActionsDAG).
+        /// So this optimization allows not to read arguments of "indexHint" (if not needed in other contexts) but only to use index analysis for them.
+        if (is_inside_index_hint_function && isColumnSourceMergeTree(*column_node))
+            return;
+
         auto column_source_node = column_node->getColumnSource();
         auto column_source_node_type = column_source_node->getNodeType();
 
-        if (column_source_node_type == QueryTreeNodeType::LAMBDA)
+        if (column_source_node_type == QueryTreeNodeType::LAMBDA || column_source_node_type == QueryTreeNodeType::INTERPOLATE)
             return;
 
         /// JOIN using expression
         if (column_node->hasExpression() && column_source_node_type == QueryTreeNodeType::JOIN)
-            return;
-
-        auto & table_expression_data = planner_context.getOrCreateTableExpressionData(column_source_node);
-
-        if (column_node->hasExpression() && column_source_node_type != QueryTreeNodeType::ARRAY_JOIN)
         {
-            /// Replace ALIAS column with expression
+            auto & columns_from_subtrees = column_node->getExpression()->as<ListNode &>().getNodes();
+            visit(columns_from_subtrees[0]);
+            visit(columns_from_subtrees[1]);
+            return;
+        }
+
+        auto & table_expression_data = planner_context->getOrCreateTableExpressionData(column_source_node);
+
+        if (isAliasColumn(node))
+        {
+            /// Column is an ALIAS column with expression
             bool column_already_exists = table_expression_data.hasColumn(column_node->getColumnName());
             if (!column_already_exists)
             {
-                auto column_identifier = planner_context.getGlobalPlannerContext()->createColumnIdentifier(node);
-                table_expression_data.addAliasColumnName(column_node->getColumnName(), column_identifier);
-            }
+                CollectSourceColumnsVisitor visitor_for_alias_column(planner_context);
+                /// While we are processing expression of ALIAS columns we should not add source columns to selected.
+                /// See also comment for `select_added_columns`
+                visitor_for_alias_column.select_added_columns = false;
+                visitor_for_alias_column.keep_alias_columns = keep_alias_columns;
+                visitor_for_alias_column.visit(column_node->getExpression());
 
-            node = column_node->getExpression();
-            visitImpl(node);
+                if (!keep_alias_columns)
+                {
+                    /// For PREWHERE we can just replace ALIAS column with it's expression,
+                    /// because ActionsDAG for PREWHERE applied right on top of table expression
+                    /// and cannot affect subqueries or other table expressions.
+                    node = column_node->getExpression();
+                    return;
+                }
+
+                auto column_identifier = planner_context->getGlobalPlannerContext()->createColumnIdentifier(node);
+
+                ActionsDAG alias_column_actions_dag;
+                ColumnNodePtrWithHashSet empty_correlated_columns_set;
+                PlannerActionsVisitor actions_visitor(planner_context, empty_correlated_columns_set, false);
+                auto [outputs, correlated_subtrees] = actions_visitor.visit(alias_column_actions_dag, column_node->getExpression());
+                if (outputs.size() != 1)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Expected single output in actions dag for alias column {}. Actual {}", column_node->dumpTree(), outputs.size());
+                if (correlated_subtrees.notEmpty())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Correlated subquery in alias column expression {}. Actual {}", column_node->dumpTree(), outputs.size());
+
+                auto & alias_node = outputs[0];
+                const auto & column_name = column_node->getColumnName();
+                alias_node = &alias_column_actions_dag.addAlias(*alias_node, column_name);
+
+                alias_column_actions_dag.getOutputs() = std::move(outputs);
+                table_expression_data.addAliasColumn(column_node->getColumn(), column_identifier, std::move(alias_column_actions_dag), select_added_columns);
+            }
+            else
+                table_expression_data.markSelectedColumn(column_node->getColumn().name);
+
             return;
         }
 
@@ -102,45 +136,111 @@ public:
 
         bool column_already_exists = table_expression_data.hasColumn(column_node->getColumnName());
         if (column_already_exists)
+        {
+            /// Column may be added when we collected data for ALIAS column
+            /// But now we see it directly in the query, so make sure it's marked as selected
+            if (select_added_columns)
+                table_expression_data.markSelectedColumn(column_node->getColumnName());
             return;
+        }
 
-        auto column_identifier = planner_context.getGlobalPlannerContext()->createColumnIdentifier(node);
-        table_expression_data.addColumn(column_node->getColumn(), column_identifier);
+        auto column_identifier = planner_context->getGlobalPlannerContext()->createColumnIdentifier(node);
+        table_expression_data.addColumn(column_node->getColumn(), column_identifier, select_added_columns);
     }
 
-    static bool needChildVisit(const QueryTreeNodePtr & parent, const QueryTreeNodePtr & child_node)
+    void leaveImpl(QueryTreeNodePtr & node)
     {
-        if (auto * join_node = parent->as<JoinNode>())
+        if (isIndexHintFunction(node))
         {
-            if (join_node->getJoinExpression() == child_node && join_node->isUsingJoinExpression())
+            is_inside_index_hint_function = false;
+            return;
+        }
+    }
+
+    static bool isAliasColumn(const QueryTreeNodePtr & node)
+    {
+        const auto * column_node = node->as<ColumnNode>();
+        if (!column_node || !column_node->hasExpression())
+            return false;
+        const auto & column_source = column_node->getColumnSourceOrNull();
+        if (!column_source)
+            return false;
+        return column_source->getNodeType() != QueryTreeNodeType::JOIN &&
+               column_source->getNodeType() != QueryTreeNodeType::CROSS_JOIN &&
+               column_source->getNodeType() != QueryTreeNodeType::ARRAY_JOIN;
+    }
+
+    /// Check if query node is a subquery and add used in correlated subquery columns to the table expression data.
+    /// These columns can be used only by correlated subquery, but still they
+    /// must be read by query plan for current query.
+    ///
+    /// Example: SELECT 1 FROM table as t WHERE EXISTS (SELECT * FROM numbers(10) WHERE t.id = number);
+    bool checkSubquery(const QueryTreeNodePtr & node)
+    {
+        auto node_type = node->getNodeType();
+        switch (node_type)
+        {
+            case QueryTreeNodeType::QUERY:
+            {
+                auto * query_node = node->as<QueryNode>();
+                chassert(query_node != nullptr);
+
+                /// Register correlated columns for the query or union node.
+                visit(query_node->getCorrelatedColumnsNode());
+                return true;
+            }
+            case QueryTreeNodeType::UNION:
+            {
+                auto * union_node = node->as<UnionNode>();
+                chassert(union_node != nullptr);
+
+                visit(union_node->getCorrelatedColumnsNode());
+                return true;
+            }
+            default:
                 return false;
         }
-        auto child_node_type = child_node->getNodeType();
-        return !(child_node_type == QueryTreeNodeType::QUERY || child_node_type == QueryTreeNodeType::UNION);
+    }
+
+    bool needChildVisit(const QueryTreeNodePtr & parent_node, const QueryTreeNodePtr & child_node)
+    {
+        return !(checkSubquery(child_node) || isAliasColumn(parent_node));
+    }
+
+    static bool isIndexHintFunction(const QueryTreeNodePtr & node)
+    {
+        return node->as<FunctionNode>() && node->as<FunctionNode>()->getFunctionName() == "indexHint";
+    }
+
+    static bool isColumnSourceMergeTree(const ColumnNode & node)
+    {
+        const auto * source_table = node.getColumnSource()->as<TableNode>();
+        return source_table && source_table->getStorage()->isMergeTree();
+    }
+
+    void setKeepAliasColumns(bool keep_alias_columns_)
+    {
+        keep_alias_columns = keep_alias_columns_;
     }
 
 private:
+    PlannerContextPtr & planner_context;
 
-    void visitUsingColumn(QueryTreeNodePtr & node)
-    {
-        auto & column_node = node->as<ColumnNode&>();
-        if (column_node.hasExpression())
-        {
-            auto & table_expression_data = planner_context.getOrCreateTableExpressionData(column_node.getColumnSource());
-            bool column_already_exists = table_expression_data.hasColumn(column_node.getColumnName());
-            if (column_already_exists)
-                return;
+    /// Replace ALIAS columns with their expressions or register them in table expression data.
+    /// Usually we can replace them when we build some "local" actions DAG
+    /// (for example Row Policy or PREWHERE) that is applied on top of the table expression.
+    /// In other cases, we keep ALIAS columns as ColumnNode with an expression child node,
+    /// and handle them in the Planner by inserting ActionsDAG to compute them after reading from storage.
+    bool keep_alias_columns = true;
 
-            auto column_identifier = planner_context.getGlobalPlannerContext()->createColumnIdentifier(node);
-            table_expression_data.addAliasColumnName(column_node.getColumnName(), column_identifier);
+    /// Flag `select_added_columns` indicates if we should mark column as explicitly selected.
+    /// For example, for table with columns (a Int32, b ALIAS a+1) and query SELECT b FROM table
+    /// Column `b` is selected explicitly by user, but not `a` (that is also read though).
+    /// Distinguishing such columns is important for checking access rights for ALIAS columns.
+    bool select_added_columns = true;
 
-            visitImpl(column_node.getExpressionOrThrow());
-        }
-        else
-            visitImpl(node);
-    }
-
-    PlannerContext & planner_context;
+    /// True if we are traversing arguments of function "indexHint".
+    bool is_inside_index_hint_function = false;
 };
 
 class CollectPrewhereTableExpressionVisitor : public ConstInDepthQueryTreeVisitor<CollectPrewhereTableExpressionVisitor>
@@ -186,9 +286,11 @@ public:
                 column_source->formatASTForErrorMessage(),
                 query_node->formatASTForErrorMessage());
 
+        const auto & storage = table_column_source ? table_column_source->getStorage() : table_function_column_source->getStorage();
+        const auto & storage_snapshot = table_column_source ? table_column_source->getStorageSnapshot() : table_function_column_source->getStorageSnapshot();
+
         if (!table_expression)
         {
-            const auto & storage = table_column_source ? table_column_source->getStorage() : table_function_column_source->getStorage();
             if (!storage->supportsPrewhere())
                 throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
                     "Storage {} (table {}) does not support PREWHERE",
@@ -199,7 +301,10 @@ public:
             table_supported_prewhere_columns = storage->supportedPrewhereColumns();
         }
 
-        if (table_supported_prewhere_columns && !table_supported_prewhere_columns->contains(column_node->getColumnName()))
+        const bool has_table_virtual_column =
+            column_node->getColumnName() == "_table" && storage->isVirtualColumn(column_node->getColumnName(), storage_snapshot->metadata);
+
+        if ((table_supported_prewhere_columns && !table_supported_prewhere_columns->contains(column_node->getColumnName())) || has_table_virtual_column)
             throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
                 "Table expression {} does not support column {} in PREWHERE. In query {}",
                 table_expression->formatASTForErrorMessage(),
@@ -210,7 +315,9 @@ public:
     static bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node)
     {
         auto child_node_type = child_node->getNodeType();
-        return !(child_node_type == QueryTreeNodeType::QUERY || child_node_type == QueryTreeNodeType::UNION);
+        return child_node_type != QueryTreeNodeType::QUERY &&
+               child_node_type != QueryTreeNodeType::UNION &&
+               child_node_type != QueryTreeNodeType::LAMBDA;
     }
 
 private:
@@ -274,7 +381,7 @@ void collectTableExpressionData(QueryTreeNodePtr & query_node, PlannerContextPtr
         }
     }
 
-    CollectSourceColumnsVisitor collect_source_columns_visitor(*planner_context);
+    CollectSourceColumnsVisitor collect_source_columns_visitor(planner_context);
     for (auto & node : query_node_typed.getChildren())
     {
         if (!node || node == query_node_typed.getPrewhere())
@@ -300,33 +407,43 @@ void collectTableExpressionData(QueryTreeNodePtr & query_node, PlannerContextPtr
         }
 
         auto & table_expression_data = planner_context->getOrCreateTableExpressionData(prewhere_table_expression);
-        const auto & column_names = table_expression_data.getColumnNames();
-        NameSet required_column_names_without_prewhere(column_names.begin(), column_names.end());
+        const auto & read_column_names = table_expression_data.getColumnNames();
+        NameSet required_column_names_without_prewhere(read_column_names.begin(), read_column_names.end());
+        const auto & selected_column_names = table_expression_data.getSelectedColumnsNames();
+        required_column_names_without_prewhere.insert(selected_column_names.begin(), selected_column_names.end());
 
+        collect_source_columns_visitor.setKeepAliasColumns(false);
         collect_source_columns_visitor.visit(query_node_typed.getPrewhere());
 
-        auto prewhere_actions_dag = std::make_shared<ActionsDAG>();
+        ActionsDAG prewhere_actions_dag;
 
-        PlannerActionsVisitor visitor(planner_context, false /*use_column_identifier_as_action_node_name*/);
-        auto expression_nodes = visitor.visit(prewhere_actions_dag, query_node_typed.getPrewhere());
+        QueryTreeNodePtr query_tree_node = query_node_typed.getPrewhere();
+        auto correlated_columns_set = query_node_typed.getCorrelatedColumnsSet();
+
+        PlannerActionsVisitor visitor(planner_context, /*correlated_columns_set_=*/correlated_columns_set, false /*use_column_identifier_as_action_node_name*/);
+        auto [expression_nodes, correlated_subtrees] = visitor.visit(prewhere_actions_dag, query_tree_node);
         if (expression_nodes.size() != 1)
             throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
                 "Invalid PREWHERE. Expected single boolean expression. In query {}",
                 query_node->formatASTForErrorMessage());
+        if (correlated_subtrees.notEmpty())
+            throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
+                "Correlated subqueries are not allowed in PREWHERE expression. In query {}",
+                query_node->formatASTForErrorMessage());
 
-        prewhere_actions_dag->getOutputs().push_back(expression_nodes[0]);
+        prewhere_actions_dag.getOutputs().push_back(expression_nodes.back());
 
-        for (const auto & prewhere_input_node : prewhere_actions_dag->getInputs())
+        for (const auto & prewhere_input_node : prewhere_actions_dag.getInputs())
             if (required_column_names_without_prewhere.contains(prewhere_input_node->result_name))
-                prewhere_actions_dag->getOutputs().push_back(prewhere_input_node);
+                prewhere_actions_dag.getOutputs().push_back(prewhere_input_node);
 
         table_expression_data.setPrewhereFilterActions(std::move(prewhere_actions_dag));
     }
 }
 
-void collectSourceColumns(QueryTreeNodePtr & expression_node, PlannerContextPtr & planner_context)
+void collectSourceColumns(QueryTreeNodePtr & expression_node, PlannerContextPtr & planner_context, bool keep_alias_columns)
 {
-    CollectSourceColumnsVisitor collect_source_columns_visitor(*planner_context);
+    CollectSourceColumnsVisitor collect_source_columns_visitor(planner_context, keep_alias_columns);
     collect_source_columns_visitor.visit(expression_node);
 }
 

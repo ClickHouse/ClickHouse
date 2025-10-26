@@ -8,14 +8,16 @@
 #include <base/getFQDNOrHostName.h>
 #include <Poco/Net/TCPServerConnection.h>
 #include <Common/CurrentMetrics.h>
-#include "IO/ReadBufferFromString.h"
-#include "IServer.h"
+#include <Common/ProfileEvents.h>
+#include <IO/ReadBufferFromString.h>
+#include <Server/IServer.h>
 
-#include "base/types.h"
+#include <base/types.h>
 #include "config.h"
 
 #if USE_SSL
 #    include <Poco/Net/SecureStreamSocket.h>
+#    include <Common/Crypto/KeyPair.h>
 #endif
 
 #include <memory>
@@ -42,9 +44,12 @@ public:
         TCPServer & tcp_server_,
         const Poco::Net::StreamSocket & socket_,
         bool ssl_enabled,
+        bool secure_required,
         uint32_t connection_id_,
         const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
         const ProfileEvents::Event & write_event_ = ProfileEvents::end());
+
+    ~MySQLHandler() override;
 
     void run() final;
 
@@ -81,7 +86,8 @@ protected:
 
     IServer & server;
     TCPServer & tcp_server;
-    Poco::Logger * log;
+    LoggerPtr log;
+    bool secure_required = false;
     uint32_t connection_id = 0;
 
     uint32_t server_capabilities = 0;
@@ -92,9 +98,13 @@ protected:
     MySQLProtocol::PacketEndpointPtr packet_endpoint;
     std::unique_ptr<Session> session;
 
-    using ReplacementFn = std::function<String(const String & query)>;
-    using Replacements = std::unordered_map<std::string, ReplacementFn>;
-    Replacements replacements;
+    using QueryReplacementFn = std::function<String(const String & query)>;
+    using QueriesReplacements = std::unordered_map<std::string, QueryReplacementFn>;
+    QueriesReplacements queries_replacements;
+
+    /// MySQL setting name --> ClickHouse setting name
+    using SettingsReplacements = std::unordered_map<std::string, std::string>;
+    SettingsReplacements settings_replacements;
 
     std::mutex prepared_statements_mutex;
     UInt32 current_prepared_statement_id TSA_GUARDED_BY(prepared_statements_mutex) = 0;
@@ -118,9 +128,9 @@ public:
         TCPServer & tcp_server_,
         const Poco::Net::StreamSocket & socket_,
         bool ssl_enabled,
+        bool secure_required_,
         uint32_t connection_id_,
-        RSA & public_key_,
-        RSA & private_key_,
+        KeyPair & private_key_,
         const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
         const ProfileEvents::Event & write_event_ = ProfileEvents::end());
 
@@ -131,8 +141,7 @@ private:
         size_t packet_size, char * buf, size_t pos,
         std::function<void(size_t)> read_bytes, MySQLProtocol::ConnectionPhase::HandshakeResponse & packet) override;
 
-    RSA & public_key;
-    RSA & private_key;
+    KeyPair & private_key;
     std::shared_ptr<Poco::Net::SecureStreamSocket> ss;
 };
 #endif

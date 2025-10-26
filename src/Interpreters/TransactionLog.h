@@ -1,11 +1,12 @@
 #pragma once
-#include <Interpreters/MergeTreeTransaction.h>
-#include <Interpreters/MergeTreeTransactionHolder.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/ThreadPool.h>
-#include <boost/noncopyable.hpp>
 #include <mutex>
 #include <unordered_map>
+#include <Interpreters/MergeTreeTransaction.h>
+#include <Interpreters/MergeTreeTransactionHolder.h>
+#include <base/types.h>
+#include <boost/noncopyable.hpp>
+#include <Common/ThreadPool.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 
 namespace DB
 {
@@ -131,6 +132,10 @@ public:
 
     void sync() const;
 
+    static void increaseAsyncTablesLoadingJobNumber();
+    static void decreaseAsyncTablesLoadingJobNumber();
+    static Int64 asyncTablesLoadingJobNumber();
+
 private:
     void loadLogFromZooKeeper() TSA_REQUIRES(mutex);
     void runUpdatingThread();
@@ -148,13 +153,15 @@ private:
     static TransactionID deserializeTID(const String & csn_node_content);
     static String serializeTID(const TransactionID & tid);
 
+    inline static std::atomic<Int64> async_tables_loading_job_number{0};
+
     ZooKeeperPtr getZooKeeper() const;
 
     /// Some time a transaction could be committed concurrently, in order to resolve it provide failback_with_strict_load_csn
     CSN getCSNImpl(const TIDHash & tid_hash, const std::atomic<CSN> * failback_with_strict_load_csn = nullptr) const;
 
     const ContextPtr global_context;
-    Poco::Logger * const log;
+    LoggerPtr const log;
 
     /// The newest snapshot available for reading
     std::atomic<CSN> latest_snapshot;
@@ -191,8 +198,9 @@ private:
     String last_loaded_entry TSA_GUARDED_BY(mutex);
     /// The oldest CSN such that we store in log entries with TransactionIDs containing this CSN.
     std::atomic<CSN> tail_ptr = Tx::UnknownCSN;
+    std::atomic<bool> updated_tail_ptr{false};
 
-    zkutil::EventPtr log_updated_event = std::make_shared<Poco::Event>();
+    Coordination::EventPtr log_updated_event = std::make_shared<Poco::Event>();
 
     std::atomic_bool stop_flag = false;
     ThreadFromGlobalPool updating_thread;

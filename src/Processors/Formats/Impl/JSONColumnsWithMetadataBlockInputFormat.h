@@ -9,22 +9,24 @@ namespace DB
 class JSONColumnsWithMetadataReader : public JSONColumnsReader
 {
 public:
-    JSONColumnsWithMetadataReader(ReadBuffer & in_, const Block & header_, const FormatSettings & settings);
+    JSONColumnsWithMetadataReader(ReadBuffer & in_, const Block & header_, const FormatSettings & format_settings_);
 
     void readChunkStart() override;
     bool checkChunkEnd() override;
 
 private:
-    const Block & header;
-    const bool validate_types_from_metadata;
+    const Block header;
 };
 
 class JSONColumnsWithMetadataSchemaReader : public ISchemaReader
 {
 public:
-    JSONColumnsWithMetadataSchemaReader(ReadBuffer & in_);
+    explicit JSONColumnsWithMetadataSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
 
     NamesAndTypesList readSchema() override;
+
+private:
+    const FormatSettings format_settings;
 };
 
 

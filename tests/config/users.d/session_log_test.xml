@@ -18,7 +18,8 @@
     <users>
         <session_log_test_xml_user>
             <no_password></no_password>
-            <networks incl="networks" replace="replace">
+
+            <networks>
                 <ip>::1</ip>
                 <ip>127.0.0.1</ip>
             </networks>

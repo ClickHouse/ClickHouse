@@ -567,3 +567,155 @@ Roundtrip:
 a7522158-3d41-4b77-ad69-6c598ee55c49	Ivan	Petrov	male	1980-12-29	png	+74951234567\0	1	2019-01-05 18:45:00	38	capricorn	['Yesterday','Flowers']	[255,0,0]	Moscow	[55.753216,37.622504]	3.14	214.1	0.1	5.8	17060000000	['meter','centimeter','kilometer']	[1,0.01,1000]	500	[501,502]
 c694ad8a-f714-4ea3-907d-fd54fb25d9b5	Natalia	Sokolova	female	1992-03-08	jpg	\N	0	\N	26	pisces	[]	[100,200,50]	Plymouth	[50.403724,-4.142123]	3.14159	\N	0.007	5.4	-20000000000000	[]	[]	\N	[]
 a7da1aa6-f425-4789-8947-b034786ed374	Vasily	Sidorov	male	1995-07-28	bmp	+442012345678	1	2018-12-30 00:00:00	23	leo	['Sunny']	[250,244,10]	Murmansk	[68.97068,33.074982]	3.14159265358979	100000000000	800	-3.2	154400000	['pound']	[16]	503	[]
+
+Schema 00825_protobuf_format_persons_edition2023:Person
+
+Binary representation:
+00000000  f4 01 0a 24 61 37 35 32  32 31 35 38 2d 33 64 34  |...$a7522158-3d4|
+00000010  31 2d 34 62 37 37 2d 61  64 36 39 2d 36 63 35 39  |1-4b77-ad69-6c59|
+00000020  38 65 65 35 35 63 34 39  12 04 49 76 61 6e 1a 06  |8ee55c49..Ivan..|
+00000030  50 65 74 72 6f 76 20 01  28 af 1f 32 03 70 6e 67  |Petrov .(..2.png|
+00000040  3a 0d 2b 37 34 39 35 31  32 33 34 35 36 37 00 40  |:.+74951234567.@|
+00000050  01 4d fc d0 30 5c 50 26  58 09 62 09 59 65 73 74  |.M..0\P&X.b.Yest|
+00000060  65 72 64 61 79 62 07 46  6c 6f 77 65 72 73 6a 04  |erdayb.Flowersj.|
+00000070  ff 01 00 00 72 06 4d 6f  73 63 6f 77 7a 08 4b 03  |....r.Moscowz.K.|
+00000080  5f 42 72 7d 16 42 81 01  1f 85 eb 51 b8 1e 09 40  |_Br}.B.....Q...@|
+00000090  89 01 33 33 33 33 33 c3  6a 40 95 01 cd cc cc 3d  |..33333.j@.....=|
+000000a0  9d 01 9a 99 b9 40 a0 01  80 c4 d7 8d 7f aa 01 0c  |.....@..........|
+000000b0  0a 05 6d 65 74 65 72 15  00 00 80 3f aa 01 11 0a  |..meter....?....|
+000000c0  0a 63 65 6e 74 69 6d 65  74 65 72 15 0a d7 23 3c  |.centimeter...#<|
+000000d0  aa 01 10 0a 09 6b 69 6c  6f 6d 65 74 65 72 15 00  |.....kilometer..|
+000000e0  00 7a 44 b2 01 10 0a 0e  a2 06 0b 0a 09 08 f4 03  |.zD.............|
+000000f0  12 04 f5 03 f6 03 7e 0a  24 63 36 39 34 61 64 38  |......~.$c694ad8|
+00000100  61 2d 66 37 31 34 2d 34  65 61 33 2d 39 30 37 64  |a-f714-4ea3-907d|
+00000110  2d 66 64 35 34 66 62 32  35 64 39 62 35 12 07 4e  |-fd54fb25d9b5..N|
+00000120  61 74 61 6c 69 61 1a 08  53 6f 6b 6f 6c 6f 76 61  |atalia..Sokolova|
+00000130  28 a6 3f 32 03 6a 70 67  50 1a 58 0b 6a 04 64 c8  |(.?2.jpgP.X.j.d.|
+00000140  01 32 72 08 50 6c 79 6d  6f 75 74 68 7a 08 6a 9d  |.2r.Plymouthz.j.|
+00000150  49 42 46 8c 84 c0 81 01  6e 86 1b f0 f9 21 09 40  |IBF.....n....!.@|
+00000160  95 01 42 60 e5 3b 9d 01  cd cc ac 40 a0 01 ff ff  |..B`.;.....@....|
+00000170  a9 ce 93 8c 09 c0 01 0a  24 61 37 64 61 31 61 61  |........$a7da1aa|
+00000180  36 2d 66 34 32 35 2d 34  37 38 39 2d 38 39 34 37  |6-f425-4789-8947|
+00000190  2d 62 30 33 34 37 38 36  65 64 33 37 34 12 06 56  |-b034786ed374..V|
+000001a0  61 73 69 6c 79 1a 07 53  69 64 6f 72 6f 76 20 01  |asily..Sidorov .|
+000001b0  28 fb 48 32 03 62 6d 70  3a 0d 2b 34 34 32 30 31  |(.H2.bmp:.+44201|
+000001c0  32 33 34 35 36 37 38 40  01 4d 50 e0 27 5c 50 17  |2345678@.MP.'\P.|
+000001d0  58 04 62 05 53 75 6e 6e  79 6a 05 fa 01 f4 01 0a  |X.b.Sunnyj......|
+000001e0  72 08 4d 75 72 6d 61 6e  73 6b 7a 08 fd f0 89 42  |r.Murmanskz....B|
+000001f0  c8 4c 04 42 81 01 11 2d  44 54 fb 21 09 40 89 01  |.L.B...-DT.!.@..|
+00000200  00 00 00 e8 76 48 37 42  95 01 00 00 48 44 9d 01  |....vH7B....HD..|
+00000210  cd cc 4c c0 a0 01 80 d4  9f 93 01 aa 01 0c 0a 05  |..L.............|
+00000220  70 6f 75 6e 64 15 00 00  80 41 b2 01 0a 0a 08 a2  |pound....A......|
+00000230  06 05 0a 03 08 f7 03                              |.......|
+00000237
+
+MESSAGE #1 AT 0x00000002
+uuid: "a7522158-3d41-4b77-ad69-6c598ee55c49"
+name: "Ivan"
+surname: "Petrov"
+gender: male
+birthDate: 4015
+photo: "png"
+phoneNumber: "+74951234567\000"
+isOnline: true
+visitTime: 1546703100
+age: 38
+zodiacSign: capricorn
+songs: "Yesterday"
+songs: "Flowers"
+color: 255
+color: 0
+color: 0
+hometown: "Moscow"
+location: 55.7532158
+location: 37.6225052
+pi: 3.14
+lotteryWin: 214.1
+someRatio: 0.1
+temperature: 5.8
+randomBigNumber: 17060000000
+measureUnits {
+  unit: "meter"
+  coef: 1
+}
+measureUnits {
+  unit: "centimeter"
+  coef: 0.01
+}
+measureUnits {
+  unit: "kilometer"
+  coef: 1000
+}
+nestiness {
+  a {
+    b {
+      c {
+        d: 500
+        e: 501
+        e: 502
+      }
+    }
+  }
+}
+MESSAGE #2 AT 0x000000F7
+uuid: "c694ad8a-f714-4ea3-907d-fd54fb25d9b5"
+name: "Natalia"
+surname: "Sokolova"
+birthDate: 8102
+photo: "jpg"
+age: 26
+zodiacSign: pisces
+color: 100
+color: 200
+color: 50
+hometown: "Plymouth"
+location: 50.4037247
+location: -4.14212322
+pi: 3.14159
+someRatio: 0.007
+temperature: 5.4
+randomBigNumber: -20000000000000
+MESSAGE #3 AT 0x00000177
+uuid: "a7da1aa6-f425-4789-8947-b034786ed374"
+name: "Vasily"
+surname: "Sidorov"
+gender: male
+birthDate: 9339
+photo: "bmp"
+phoneNumber: "+442012345678"
+isOnline: true
+visitTime: 1546117200
+age: 23
+zodiacSign: leo
+songs: "Sunny"
+color: 250
+color: 244
+color: 10
+hometown: "Murmansk"
+location: 68.9706802
+location: 33.0749817
+pi: 3.14159265358979
+lotteryWin: 100000000000
+someRatio: 800
+temperature: -3.2
+randomBigNumber: 154400000
+measureUnits {
+  unit: "pound"
+  coef: 16
+}
+nestiness {
+  a {
+    b {
+      c {
+        d: 503
+      }
+    }
+  }
+}
+
+Binary representation is as expected
+
+Roundtrip:
+a7522158-3d41-4b77-ad69-6c598ee55c49	Ivan	Petrov	male	1980-12-29	png	+74951234567\0	1	2019-01-05 18:45:00	38	capricorn	['Yesterday','Flowers']	[255,0,0]	Moscow	[55.753216,37.622504]	3.14	214.1	0.1	5.8	17060000000	['meter','centimeter','kilometer']	[1,0.01,1000]	500	[501,502]
+c694ad8a-f714-4ea3-907d-fd54fb25d9b5	Natalia	Sokolova	female	1992-03-08	jpg	\N	0	\N	26	pisces	[]	[100,200,50]	Plymouth	[50.403724,-4.142123]	3.14159	\N	0.007	5.4	-20000000000000	[]	[]	\N	[]
+a7da1aa6-f425-4789-8947-b034786ed374	Vasily	Sidorov	male	1995-07-28	bmp	+442012345678	1	2018-12-30 00:00:00	23	leo	['Sunny']	[250,244,10]	Murmansk	[68.97068,33.074982]	3.14159265358979	100000000000	800	-3.2	154400000	['pound']	[16]	503	[]

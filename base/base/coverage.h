@@ -2,6 +2,7 @@
 
 #include <span>
 #include <cstdint>
+#include <string>
 
 /// Flush coverage report to file, depending on coverage system
 /// proposed by compiler (llvm for clang and gcov for gcc).
@@ -15,7 +16,10 @@ void dumpCoverageReportIfPossible();
 /// Get accumulated unique program addresses of the instrumented parts of the code,
 /// seen so far after program startup or after previous reset.
 /// The returned span will be represented as a sparse map, containing mostly zeros, which you should filter away.
-std::span<const uintptr_t> getCoverage();
+std::span<const uintptr_t> getCurrentCoverage();
+
+/// Similar but not being reset.
+std::span<const uintptr_t> getCumulativeCoverage();
 
 /// Get all instrumented addresses that could be in the coverage.
 std::span<const uintptr_t> getAllInstrumentedAddresses();

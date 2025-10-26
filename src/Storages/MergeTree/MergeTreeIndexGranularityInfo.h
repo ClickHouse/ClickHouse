@@ -3,29 +3,33 @@
 #include <optional>
 #include <base/types.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
-#include <Disks/IDisk.h>
-#include <Storages/MergeTree/IDataPartStorage.h>
 
 namespace DB
 {
 
 class MergeTreeData;
+class IDataPartStorage;
 
 
 /** Various types of mark files are stored in files with various extensions:
-  * .mrk, .mrk2, .mrk3, .cmrk, .cmrk2, .cmrk3.
+  * .mrk, .mrk2, .mrk3, .mrk4, .cmrk, .cmrk2, .cmrk3, .cmrk4.
   * This helper allows to obtain mark type from file extension and vice versa.
   */
 struct MarkType
 {
-    MarkType(std::string_view extension);
-    MarkType(bool adaptive_, bool compressed_, MergeTreeDataPartType::Value part_type_);
+    explicit MarkType(std::string_view extension);
+    MarkType(bool adaptive_, bool compressed_, bool with_substreams_, MergeTreeDataPartType::Value part_type_);
 
     static bool isMarkFileExtension(std::string_view extension);
     std::string getFileExtension() const;
 
+    std::string describe() const;
+
     bool adaptive = false;
     bool compressed = false;
+    /// For Compact parts only.
+    /// If true, marks are written for each substream, not for each column.
+    bool with_substreams = false;
     MergeTreeDataPartType::Value part_type = MergeTreeDataPartType::Unknown;
 };
 
@@ -47,6 +51,7 @@ public:
     MergeTreeIndexGranularityInfo(const MergeTreeData & storage, MarkType mark_type_);
 
     MergeTreeIndexGranularityInfo(MergeTreeDataPartType type_, bool is_adaptive_, size_t index_granularity_, size_t index_granularity_bytes_);
+    MergeTreeIndexGranularityInfo(MarkType mark_type_, size_t index_granularity_, size_t index_granularity_bytes_);
 
     void changeGranularityIfRequired(const IDataPartStorage & data_part_storage);
 
@@ -58,10 +63,12 @@ public:
     size_t getMarkSizeInBytes(size_t columns_num = 1) const;
 
     static std::optional<MarkType> getMarksTypeFromFilesystem(const IDataPartStorage & data_part_storage);
+
+    std::string describe() const;
 };
 
-constexpr inline auto getNonAdaptiveMrkSizeWide() { return sizeof(UInt64) * 2; }
-constexpr inline auto getAdaptiveMrkSizeWide() { return sizeof(UInt64) * 3; }
+constexpr auto getNonAdaptiveMrkSizeWide() { return sizeof(UInt64) * 2; }
+constexpr auto getAdaptiveMrkSizeWide() { return sizeof(UInt64) * 3; }
 inline size_t getAdaptiveMrkSizeCompact(size_t columns_num);
 
 }

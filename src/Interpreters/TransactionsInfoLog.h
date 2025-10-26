@@ -43,7 +43,6 @@ struct TransactionsInfoLogElement
     static ColumnsDescription getColumnsDescription();
     static NamesAndAliases getNamesAndAliases() { return {}; }
     void appendToBlock(MutableColumns & columns) const;
-    static const char * getCustomColumnList() { return nullptr; }
 
     void fillCommonFields(const TransactionInfoContext * context = nullptr);
 };
@@ -54,7 +53,7 @@ class TransactionsInfoLog : public SystemLog<TransactionsInfoLogElement>
 };
 
 
-void tryWriteEventToSystemLog(Poco::Logger * log, TransactionsInfoLogElement::Type type,
+void tryWriteEventToSystemLog(LoggerPtr log, TransactionsInfoLogElement::Type type,
                               const TransactionID & tid, const TransactionInfoContext & context);
 
 }

@@ -42,7 +42,7 @@ struct ParallelReadBuffer::ReadWorker
 };
 
 ParallelReadBuffer::ParallelReadBuffer(
-    SeekableReadBuffer & input_, ThreadPoolCallbackRunner<void> schedule_, size_t max_working_readers_, size_t range_step_, size_t file_size_)
+    SeekableReadBuffer & input_, ThreadPoolCallbackRunnerUnsafe<void> schedule_, size_t max_working_readers_, size_t range_step_, size_t file_size_)
     : SeekableReadBuffer(nullptr, 0)
     , max_working_readers(max_working_readers_)
     , schedule(std::move(schedule_))
@@ -50,7 +50,7 @@ ParallelReadBuffer::ParallelReadBuffer(
     , file_size(file_size_)
     , range_step(std::max(1ul, range_step_))
 {
-    LOG_TRACE(&Poco::Logger::get("ParallelReadBuffer"), "Parallel reading is used");
+    LOG_TRACE(getLogger("ParallelReadBuffer"), "Parallel reading is used");
 
     try
     {
@@ -73,8 +73,9 @@ bool ParallelReadBuffer::addReaderToPool()
 
     auto worker = read_workers.emplace_back(std::make_shared<ReadWorker>(input, range_start, size));
 
-    ++active_working_readers;
     schedule([this, my_worker = std::move(worker)]() mutable { readerThreadFunction(std::move(my_worker)); }, Priority{});
+    /// increase number of workers only after we are sure that the reader was scheduled
+    ++active_working_readers;
 
     return true;
 }
@@ -151,7 +152,7 @@ off_t ParallelReadBuffer::seek(off_t offset, int whence)
     return offset;
 }
 
-size_t ParallelReadBuffer::getFileSize()
+std::optional<size_t> ParallelReadBuffer::tryGetFileSize()
 {
     return file_size;
 }
@@ -293,7 +294,7 @@ void ParallelReadBuffer::finishAndWait()
 }
 
 std::unique_ptr<ParallelReadBuffer> wrapInParallelReadBufferIfSupported(
-    ReadBuffer & buf, ThreadPoolCallbackRunner<void> schedule, size_t max_working_readers,
+    ReadBuffer & buf, ThreadPoolCallbackRunnerUnsafe<void> schedule, size_t max_working_readers,
     size_t range_step, size_t file_size)
 {
     auto * seekable = dynamic_cast<SeekableReadBuffer*>(&buf);

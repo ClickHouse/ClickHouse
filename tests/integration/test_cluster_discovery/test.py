@@ -1,9 +1,10 @@
+import functools
+
 import pytest
 
-import functools
-import time
-
 from helpers.cluster import ClickHouseCluster
+
+from .common import check_on_cluster
 
 cluster = ClickHouseCluster(__file__)
 
@@ -19,7 +20,7 @@ shard_configs = {
 nodes = {
     node_name: cluster.add_instance(
         node_name,
-        main_configs=[shard_config],
+        main_configs=[shard_config, "config/config_discovery_path.xml", "config/macros.xml"],
         stay_alive=True,
         with_zookeeper=True,
     )
@@ -34,39 +35,6 @@ def start_cluster():
         yield cluster
     finally:
         cluster.shutdown()
-
-
-def check_on_cluster(
-    nodes, expected, *, what, cluster_name="test_auto_cluster", msg=None, retries=5
-):
-    """
-    Select data from `system.clusters` on specified nodes and check the result
-    """
-    assert 1 <= retries <= 6
-
-    node_results = {}
-    for retry in range(1, retries + 1):
-        for node in nodes:
-            if node_results.get(node.name) == expected:
-                # do not retry node after success
-                continue
-            query_text = (
-                f"SELECT {what} FROM system.clusters WHERE cluster = '{cluster_name}'"
-            )
-            node_results[node.name] = int(node.query(query_text))
-
-        if all(actual == expected for actual in node_results.values()):
-            break
-
-        print(f"Retry {retry}/{retries} unsuccessful, result: {node_results}")
-
-        if retry != retries:
-            time.sleep(2**retry)
-    else:
-        msg = msg or f"Wrong '{what}' result"
-        raise Exception(
-            f"{msg}: {node_results}, expected: {expected} (after {retries} retries)"
-        )
 
 
 def test_cluster_discovery_startup_and_stop(start_cluster):
@@ -106,7 +74,7 @@ def test_cluster_discovery_startup_and_stop(start_cluster):
         int(
             nodes["node_observer"]
             .query(
-                "SELECT sum(x) FROM clusterAllReplicas(test_auto_cluster, default.tbl)"
+                "SELECT sum(x) FROM clusterAllReplicas(test_auto_cluster, default.tbl) settings serialize_query_plan=0"
             )
             .strip()
         )
@@ -151,3 +119,21 @@ def test_cluster_discovery_startup_and_stop(start_cluster):
     check_nodes_count(
         [nodes["node1"], nodes["node2"]], 2, cluster_name="two_shards", retries=1
     )
+
+    # cleanup
+    nodes["node0"].query("DROP TABLE tbl ON CLUSTER 'test_auto_cluster' SYNC")
+
+
+def test_cluster_discovery_macros(start_cluster):
+    # wait for all nodes to be started
+    check_nodes_count = functools.partial(
+        check_on_cluster, what="count()", msg="Wrong nodes count in cluster"
+    )
+    total_nodes = len(nodes) - 1
+    check_nodes_count([nodes["node_observer"]], total_nodes)
+
+    # check macros
+    res = nodes["node_observer"].query(
+        "SELECT sum(number) FROM clusterAllReplicas('{autocluster}', system.numbers) WHERE number=1"
+    )
+    assert res.strip() == "5"

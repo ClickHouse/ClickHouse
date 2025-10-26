@@ -105,6 +105,9 @@ create_keytabs() {
   kadmin.local -q "addprinc -randkey kafkauser/instance@${REALM}"
   kadmin.local -q "ktadd -norandkey -k /tmp/keytab/clickhouse.keytab kafkauser/instance@${REALM}"
 
+  kadmin.local -q "addprinc -randkey anotherkafkauser/instance@${REALM}"
+  kadmin.local -q "ktadd -norandkey -k /tmp/keytab/clickhouse.keytab anotherkafkauser/instance@${REALM}"
+
   chmod g+r /tmp/keytab/clickhouse.keytab
 
 }

@@ -7,7 +7,7 @@ INSERT INTO test (x) VALUES (1), (2), (3);
 SELECT * FROM test ORDER BY x, y;
 ALTER TABLE test CLEAR COLUMN x;
 SELECT * FROM test ORDER BY x, y;
-ALTER TABLE test DROP COLUMN x; -- { serverError 44 }
+ALTER TABLE test DROP COLUMN x; -- { serverError ILLEGAL_COLUMN }
 DROP TABLE test;
 
 DROP TABLE IF EXISTS test;
@@ -16,7 +16,7 @@ INSERT INTO test (x) VALUES (1), (2), (3);
 SELECT x, y FROM test ORDER BY x, y;
 ALTER TABLE test CLEAR COLUMN x;
 SELECT x, y FROM test ORDER BY x, y;
-ALTER TABLE test DROP COLUMN x; -- { serverError 44 }
+ALTER TABLE test DROP COLUMN x; -- { serverError ILLEGAL_COLUMN }
 DROP TABLE test;
 
 DROP TABLE IF EXISTS test;
@@ -25,7 +25,7 @@ INSERT INTO test (x) VALUES (1), (2), (3);
 SELECT x, y FROM test ORDER BY x, y;
 ALTER TABLE test CLEAR COLUMN x;
 SELECT x, y FROM test ORDER BY x, y;
-ALTER TABLE test DROP COLUMN x; -- { serverError 44 }
+ALTER TABLE test DROP COLUMN x; -- { serverError ILLEGAL_COLUMN }
 DROP TABLE test;
 
 

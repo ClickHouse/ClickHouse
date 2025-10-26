@@ -4,6 +4,7 @@ namespace DB
 {
 
 TTLColumnAlgorithm::TTLColumnAlgorithm(
+    const TTLExpressions & ttl_expressions_,
     const TTLDescription & description_,
     const TTLInfo & old_ttl_info_,
     time_t current_time_,
@@ -12,7 +13,7 @@ TTLColumnAlgorithm::TTLColumnAlgorithm(
     const ExpressionActionsPtr & default_expression_,
     const String & default_column_name_,
     bool is_compact_part_)
-    : ITTLAlgorithm(description_, old_ttl_info_, current_time_, force_)
+    : ITTLAlgorithm(ttl_expressions_, description_, old_ttl_info_, current_time_, force_)
     , column_name(column_name_)
     , default_expression(default_expression_)
     , default_column_name(default_column_name_)
@@ -30,7 +31,7 @@ TTLColumnAlgorithm::TTLColumnAlgorithm(
 
 void TTLColumnAlgorithm::execute(Block & block)
 {
-    if (!block)
+    if (block.empty())
         return;
 
     /// If we read not all table columns. E.g. while mutation.
@@ -41,24 +42,31 @@ void TTLColumnAlgorithm::execute(Block & block)
     if (!isMinTTLExpired())
         return;
 
-    /// Later drop full column
+    auto & column_with_type = block.getByName(column_name);
+
+    /// Reset the column to its default state so that dependent skip indices or
+    /// projections can correctly recalculate using it.
     if (isMaxTTLExpired() && !is_compact_part)
+    {
+        auto empty_column = column_with_type.column->cloneEmpty();
+        empty_column->insertManyDefaults(block.rows());
+        column_with_type.column = std::move(empty_column);
         return;
+    }
 
     auto default_column = executeExpressionAndGetColumn(default_expression, block, default_column_name);
     if (default_column)
         default_column = default_column->convertToFullColumnIfConst();
 
-    auto ttl_column = executeExpressionAndGetColumn(description.expression, block, description.result_column);
+    auto ttl_column = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column);
 
-    auto & column_with_type = block.getByName(column_name);
     const IColumn * values_column = column_with_type.column.get();
     MutableColumnPtr result_column = values_column->cloneEmpty();
     result_column->reserve(block.rows());
 
     for (size_t i = 0; i < block.rows(); ++i)
     {
-        UInt32 cur_ttl = getTimestampByIndex(ttl_column.get(), i);
+        Int64 cur_ttl = getTimestampByIndex(ttl_column.get(), i);
         if (isTTLExpired(cur_ttl))
         {
             if (default_column)

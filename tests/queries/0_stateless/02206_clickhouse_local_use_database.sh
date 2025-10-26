@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-
+# Tags: memory-engine
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 
-$CLICKHOUSE_LOCAL --echo --multiline --multiquery -q """
+$CLICKHOUSE_LOCAL --echo --multiline -q """
 SHOW TABLES;
 CREATE DATABASE test1;
 CREATE TABLE test1.table1 (a Int32) ENGINE=Memory;

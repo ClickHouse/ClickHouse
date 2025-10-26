@@ -47,7 +47,7 @@ void setupCassandraDriverLibraryLogging(CassLogLevel level)
 {
     std::call_once(setup_logging_flag, [level]()
     {
-        Poco::Logger * logger = &Poco::Logger::get("CassandraDriverLibrary");
+        Poco::Logger * logger = getRawLogger("CassandraDriverLibrary");
         cass_log_set_level(level);
         if (level != CASS_LOG_DISABLED)
             cass_log_set_callback(cassandraLogCallback, logger);

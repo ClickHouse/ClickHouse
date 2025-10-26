@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 
+import time
+from multiprocessing.dummy import Pool
+
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
 from helpers.test_tools import assert_eq_with_retry
-from multiprocessing.dummy import Pool
-import time
 
 cluster = ClickHouseCluster(__file__)
 
@@ -39,6 +41,10 @@ def test_shutdown_and_wait(start_cluster):
         node.query(
             f"CREATE TABLE test_table (value UInt64) ENGINE=ReplicatedMergeTree('/test/table', 'r{i}') ORDER BY tuple()"
         )
+
+    # we stop merges on node1 to make node2 fetch all 51 origin parts from node1
+    # and not to fetch a smaller set of merged covering parts
+    node1.query("SYSTEM STOP MERGES test_table")
 
     node1.query("INSERT INTO test_table VALUES (0)")
     node2.query("SYSTEM SYNC REPLICA test_table")

@@ -1,3 +1,4 @@
+#include <Columns/IColumn.h>
 #include <Common/Macros.h>
 #include <Interpreters/Context.h>
 #include <Storages/System/StorageSystemMacros.h>
@@ -15,7 +16,7 @@ ColumnsDescription StorageSystemMacros::getColumnsDescription()
     };
 }
 
-void StorageSystemMacros::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemMacros::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     auto macros = context->getMacros();
 

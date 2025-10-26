@@ -33,15 +33,14 @@ namespace
     {
         auto time_us = std::chrono::duration_cast<std::chrono::microseconds>(time_point.time_since_epoch()).count();
         DecimalUtils::DecimalComponents<DateTime64> components{time_us / 1'000'000, time_us % 1'000'000};
-        return DecimalField(DecimalUtils::decimalFromComponents<DateTime64>(components, TIME_SCALE), TIME_SCALE);
+        return DecimalField<DateTime64>(DecimalUtils::decimalFromComponents<DateTime64>(components, TIME_SCALE), TIME_SCALE);
     }
 
     Field optionalTimeInMicroseconds(const TimePoint & time_point)
     {
         if (time_point == TimePoint{})
             return {};
-        else
-            return timeInMicroseconds(time_point);
+        return timeInMicroseconds(time_point);
     }
 }
 
@@ -74,7 +73,7 @@ ColumnsDescription StorageSystemAsyncLoader::getColumnsDescription()
     };
 }
 
-void StorageSystemAsyncLoader::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemAsyncLoader::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     TimePoint now = std::chrono::system_clock::now();
 

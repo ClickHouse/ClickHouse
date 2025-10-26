@@ -6,10 +6,12 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeMap.h>
+#include <Columns/ColumnMap.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProfileEventsExt.h>
+#include <Columns/ColumnsDateTime.h>
 
 
 namespace DB
@@ -22,10 +24,11 @@ ColumnsDescription StorageSystemBackups::getColumnsDescription()
         {"id", std::make_shared<DataTypeString>(), "Operation ID, can be either passed via SETTINGS id=... or be randomly generated UUID."},
         {"name", std::make_shared<DataTypeString>(), "Operation name, a string like `Disk('backups', 'my_backup')`"},
         {"base_backup_name", std::make_shared<DataTypeString>(), "Base Backup Operation name, a string like `Disk('backups', 'my_base_backup')`"},
+        {"query_id", std::make_shared<DataTypeString>(), "Query ID of a query that started backup."},
         {"status", std::make_shared<DataTypeEnum8>(getBackupStatusEnumValues()), "Status of backup or restore operation."},
         {"error", std::make_shared<DataTypeString>(), "The error message if any."},
-        {"start_time", std::make_shared<DataTypeDateTime>(), "The time when operation started."},
-        {"end_time", std::make_shared<DataTypeDateTime>(), "The time when operation finished."},
+        {"start_time", std::make_shared<DataTypeDateTime64>(6), "The time when operation started."},
+        {"end_time", std::make_shared<DataTypeDateTime64>(6), "The time when operation finished."},
         {"num_files", std::make_shared<DataTypeUInt64>(), "The number of files stored in the backup."},
         {"total_size", std::make_shared<DataTypeUInt64>(), "The total size of files stored in the backup."},
         {"num_entries", std::make_shared<DataTypeUInt64>(), "The number of entries in the backup, i.e. the number of files inside the folder if the backup is stored as a folder."},
@@ -38,16 +41,17 @@ ColumnsDescription StorageSystemBackups::getColumnsDescription()
 }
 
 
-void StorageSystemBackups::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemBackups::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     size_t column_index = 0;
     auto & column_id = assert_cast<ColumnString &>(*res_columns[column_index++]);
     auto & column_name = assert_cast<ColumnString &>(*res_columns[column_index++]);
     auto & column_base_backup_name = assert_cast<ColumnString &>(*res_columns[column_index++]);
+    auto & column_query_id = assert_cast<ColumnString &>(*res_columns[column_index++]);
     auto & column_status = assert_cast<ColumnInt8 &>(*res_columns[column_index++]);
     auto & column_error = assert_cast<ColumnString &>(*res_columns[column_index++]);
-    auto & column_start_time = assert_cast<ColumnUInt32 &>(*res_columns[column_index++]);
-    auto & column_end_time = assert_cast<ColumnUInt32 &>(*res_columns[column_index++]);
+    auto & column_start_time = assert_cast<ColumnDateTime64 &>(*res_columns[column_index++]);
+    auto & column_end_time = assert_cast<ColumnDateTime64 &>(*res_columns[column_index++]);
     auto & column_num_files = assert_cast<ColumnUInt64 &>(*res_columns[column_index++]);
     auto & column_total_size = assert_cast<ColumnUInt64 &>(*res_columns[column_index++]);
     auto & column_num_entries = assert_cast<ColumnUInt64 &>(*res_columns[column_index++]);
@@ -62,10 +66,11 @@ void StorageSystemBackups::fillData(MutableColumns & res_columns, ContextPtr con
         column_id.insertData(info.id.data(), info.id.size());
         column_name.insertData(info.name.data(), info.name.size());
         column_base_backup_name.insertData(info.base_backup_name.data(), info.base_backup_name.size());
+        column_query_id.insertData(info.query_id.data(), info.query_id.size());
         column_status.insertValue(static_cast<Int8>(info.status));
         column_error.insertData(info.error_message.data(), info.error_message.size());
-        column_start_time.insertValue(static_cast<UInt32>(std::chrono::system_clock::to_time_t(info.start_time)));
-        column_end_time.insertValue(static_cast<UInt32>(std::chrono::system_clock::to_time_t(info.end_time)));
+        column_start_time.insertValue(static_cast<Decimal64>(info.start_time_us));
+        column_end_time.insertValue(static_cast<Decimal64>(info.end_time_us));
         column_num_files.insertValue(info.num_files);
         column_total_size.insertValue(info.total_size);
         column_num_entries.insertValue(info.num_entries);

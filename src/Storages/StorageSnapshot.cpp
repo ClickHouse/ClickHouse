@@ -1,10 +1,10 @@
+#include <Compression/CompressionFactory.h>
+#include <Compression/ICompressionCodec.h>
 #include <Storages/StorageSnapshot.h>
-#include <Storages/LightweightDeleteDescription.h>
-#include <Storages/BlockNumberColumn.h>
 #include <Storages/IStorage.h>
 #include <DataTypes/ObjectUtils.h>
-#include <DataTypes/NestedUtils.h>
-#include <Storages/StorageView.h>
+#include <Common/quoteString.h>
+
 #include <sparsehash/dense_hash_set>
 
 namespace DB
@@ -18,61 +18,115 @@ namespace ErrorCodes
     extern const int COLUMN_QUERIED_MORE_THAN_ONCE;
 }
 
+StorageSnapshot::StorageSnapshot(
+    const IStorage & storage_,
+    StorageMetadataPtr metadata_)
+    : storage(storage_)
+    , metadata(std::move(metadata_))
+    , virtual_columns(storage_.getVirtualsPtr())
+{
+}
+
+StorageSnapshot::StorageSnapshot(
+    const IStorage & storage_,
+    StorageMetadataPtr metadata_,
+    VirtualsDescriptionPtr virtual_columns_)
+    : storage(storage_)
+    , metadata(std::move(metadata_))
+    , virtual_columns(std::move(virtual_columns_))
+{
+}
+
+StorageSnapshot::StorageSnapshot(
+    const IStorage & storage_,
+    StorageMetadataPtr metadata_,
+    ColumnsDescription object_columns_)
+    : storage(storage_)
+    , metadata(std::move(metadata_))
+    , virtual_columns(storage_.getVirtualsPtr())
+    , object_columns(std::move(object_columns_))
+{
+}
+
+StorageSnapshot::StorageSnapshot(
+    const IStorage & storage_,
+    StorageMetadataPtr metadata_,
+    ColumnsDescription object_columns_,
+    DataPtr data_)
+    : storage(storage_)
+    , metadata(std::move(metadata_))
+    , virtual_columns(storage_.getVirtualsPtr())
+    , object_columns(std::move(object_columns_))
+    , data(std::move(data_))
+{
+}
+
+StorageSnapshot::StorageSnapshot(
+    const IStorage & storage_,
+    StorageMetadataPtr metadata_,
+    VirtualsDescriptionPtr virtual_columns_,
+    ColumnsDescription object_columns_,
+    DataPtr data_)
+    : storage(storage_)
+    , metadata(std::move(metadata_))
+    , virtual_columns(std::move(virtual_columns_))
+    , object_columns(std::move(object_columns_))
+    , data(std::move(data_))
+{
+}
+
 std::shared_ptr<StorageSnapshot> StorageSnapshot::clone(DataPtr data_) const
 {
     auto res = std::make_shared<StorageSnapshot>(storage, metadata, object_columns);
 
-    res->projection = projection;
     res->data = std::move(data_);
 
     return res;
 }
 
-void StorageSnapshot::init()
+ColumnsDescription StorageSnapshot::getAllColumnsDescription() const
 {
-    for (const auto & [name, type] : storage.getVirtuals())
-        virtual_columns[name] = type;
+    auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects().withVirtuals();
+    auto column_names_and_types = getColumns(get_column_options);
 
-    if (storage.hasLightweightDeletedMask())
-        system_columns[LightweightDeleteDescription::FILTER_COLUMN.name] = LightweightDeleteDescription::FILTER_COLUMN.type;
-
-    system_columns[BlockNumberColumn::name] = BlockNumberColumn::type;
+    return ColumnsDescription{column_names_and_types};
 }
 
 NamesAndTypesList StorageSnapshot::getColumns(const GetColumnsOptions & options) const
 {
-    auto all_columns = getMetadataForQuery()->getColumns().get(options);
+    auto all_columns = metadata->getColumns().get(options);
+    const auto & common_virtual_columns = IStorage::getCommonVirtuals();
 
     if (options.with_extended_objects)
         extendObjectColumns(all_columns, object_columns, options.with_subcolumns);
 
-    NameSet column_names;
-    if (options.with_virtuals)
+    if (options.virtuals_kind != VirtualsKind::None)
     {
-        /// Virtual columns must be appended after ordinary,
-        /// because user can override them.
-        if (!virtual_columns.empty())
-        {
-            for (const auto & column : all_columns)
-                column_names.insert(column.name);
+        NameSet column_names;
+        for (const auto & column : all_columns)
+            column_names.insert(column.name);
 
-            for (const auto & [name, type] : virtual_columns)
-                if (!column_names.contains(name))
-                    all_columns.emplace_back(name, type);
-        }
-    }
-
-    if (options.with_system_columns)
-    {
-        if (!system_columns.empty() && column_names.empty())
+        if (!virtual_columns->empty())
         {
-            for (const auto & column : all_columns)
+            auto virtuals_list = virtual_columns->getNamesAndTypesList(options.virtuals_kind);
+            for (const auto & column : virtuals_list)
+            {
+                if (column_names.contains(column.name))
+                    continue;
+
+                all_columns.emplace_back(column.name, column.type);
                 column_names.insert(column.name);
+            }
         }
 
-        for (const auto & [name, type] : system_columns)
-            if (!column_names.contains(name))
-                all_columns.emplace_back(name, type);
+        auto common_virtuals_list = common_virtual_columns.getNamesAndTypesList(options.virtuals_kind);
+        for (const auto & column : common_virtuals_list)
+        {
+            if (column_names.contains(column.name))
+                continue;
+
+            all_columns.emplace_back(column.name, column.type);
+        }
     }
 
     return all_columns;
@@ -88,9 +142,9 @@ NamesAndTypesList StorageSnapshot::getColumnsByNames(const GetColumnsOptions & o
 
 std::optional<NameAndTypePair> StorageSnapshot::tryGetColumn(const GetColumnsOptions & options, const String & column_name) const
 {
-    const auto & columns = getMetadataForQuery()->getColumns();
+    const auto & columns = metadata->getColumns();
     auto column = columns.tryGetColumn(options, column_name);
-    if (column && (!column->type->hasDynamicSubcolumns() || !options.with_extended_objects))
+    if (column && (!column->type->hasDynamicSubcolumnsDeprecated() || !options.with_extended_objects))
         return column;
 
     if (options.with_extended_objects)
@@ -100,18 +154,16 @@ std::optional<NameAndTypePair> StorageSnapshot::tryGetColumn(const GetColumnsOpt
             return object_column;
     }
 
-    if (options.with_virtuals)
+    if (options.virtuals_kind != VirtualsKind::None)
     {
-        auto it = virtual_columns.find(column_name);
-        if (it != virtual_columns.end())
-            return NameAndTypePair(column_name, it->second);
-    }
+        auto virtual_column = virtual_columns->tryGet(column_name, options.virtuals_kind);
+        if (virtual_column)
+            return NameAndTypePair{virtual_column->name, virtual_column->type};
 
-    if (options.with_system_columns)
-    {
-        auto it = system_columns.find(column_name);
-        if (it != system_columns.end())
-            return NameAndTypePair(column_name, it->second);
+        const auto & common_virtual_columns = IStorage::getCommonVirtuals();
+        auto common_virtual_column = common_virtual_columns.tryGet(column_name, options.virtuals_kind);
+        if (common_virtual_column)
+            return NameAndTypePair{common_virtual_column->name, common_virtual_column->type};
     }
 
     return {};
@@ -130,7 +182,8 @@ Block StorageSnapshot::getSampleBlockForColumns(const Names & column_names) cons
 {
     Block res;
 
-    const auto & columns = getMetadataForQuery()->getColumns();
+    const auto & columns = metadata->getColumns();
+    const auto & common_virtual_columns = IStorage::getCommonVirtuals();
     for (const auto & column_name : column_names)
     {
         auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, column_name);
@@ -143,11 +196,16 @@ Block StorageSnapshot::getSampleBlockForColumns(const Names & column_names) cons
         {
             res.insert({object_column->type->createColumn(), object_column->type, column_name});
         }
-        else if (auto it = virtual_columns.find(column_name); it != virtual_columns.end())
+        else if (auto virtual_column = virtual_columns->tryGet(column_name))
         {
             /// Virtual columns must be appended after ordinary, because user can
             /// override them.
-            const auto & type = it->second;
+            const auto & type = virtual_column->type;
+            res.insert({type->createColumn(), type, column_name});
+        }
+        else if (auto common_virtual_column = common_virtual_columns.tryGet(column_name))
+        {
+            const auto & type = common_virtual_column->type;
             res.insert({type->createColumn(), type, column_name});
         }
         else
@@ -162,7 +220,8 @@ Block StorageSnapshot::getSampleBlockForColumns(const Names & column_names) cons
 ColumnsDescription StorageSnapshot::getDescriptionForColumns(const Names & column_names) const
 {
     ColumnsDescription res;
-    const auto & columns = getMetadataForQuery()->getColumns();
+    const auto & columns = metadata->getColumns();
+    const auto & common_virtual_columns = IStorage::getCommonVirtuals();
     for (const auto & name : column_names)
     {
         auto column = columns.tryGetColumnOrSubcolumnDescription(GetColumnsOptions::All, name);
@@ -175,12 +234,15 @@ ColumnsDescription StorageSnapshot::getDescriptionForColumns(const Names & colum
         {
             res.add(*object_column, "", false, false);
         }
-        else if (auto it = virtual_columns.find(name); it != virtual_columns.end())
+        else if (auto virtual_column = virtual_columns->tryGet(name))
         {
             /// Virtual columns must be appended after ordinary, because user can
             /// override them.
-            const auto & type = it->second;
-            res.add({name, type});
+            res.add({name, virtual_column->type});
+        }
+        else if (auto common_virtual_column = common_virtual_columns.tryGet(name))
+        {
+            res.add({name, common_virtual_column->type});
         }
         else
         {
@@ -199,8 +261,9 @@ namespace
 
 void StorageSnapshot::check(const Names & column_names) const
 {
-    const auto & columns = getMetadataForQuery()->getColumns();
+    const auto & columns = metadata->getColumns();
     auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
+    const auto & common_virtual_columns = IStorage::getCommonVirtuals();
 
     if (column_names.empty())
     {
@@ -216,7 +279,8 @@ void StorageSnapshot::check(const Names & column_names) const
     {
         bool has_column = columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name)
             || object_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name)
-            || virtual_columns.contains(name);
+            || virtual_columns->has(name)
+            || common_virtual_columns.has(name);
 
         if (!has_column)
         {

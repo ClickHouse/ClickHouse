@@ -1,0 +1,5 @@
+<clickhouse>
+    <merge_tree>
+        <force_read_through_cache_for_merges>1</force_read_through_cache_for_merges>
+    </merge_tree>
+</clickhouse>

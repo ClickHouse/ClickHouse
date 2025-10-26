@@ -6,6 +6,16 @@
 
 #    include <base/types.h>
 
+#    include <aws/core/utils/threading/ReaderWriterLock.h>
+#    include <aws/core/http/HttpRequest.h>
+#    include <aws/core/endpoint/AWSEndpoint.h>
+#    include <aws/core/AmazonSerializableWebServiceRequest.h>
+#    include <aws/core/client/AWSErrorMarshaller.h>
+#    include <aws/core/NoResult.h>
+#    include <aws/s3/S3Errors.h>
+#    include <aws/core/client/AWSXmlClient.h>
+#    include <aws/core/auth/AWSCredentialsProvider.h>
+
 #    include <aws/core/client/ClientConfiguration.h>
 #    include <aws/core/internal/AWSHttpResourceClient.h>
 #    include <aws/core/config/AWSProfileConfigLoader.h>
@@ -13,21 +23,17 @@
 #    include <aws/core/auth/bearer-token-provider/SSOBearerTokenProvider.h>
 
 #    include <IO/S3/PocoHTTPClient.h>
-
+#    include <IO/S3Defines.h>
 
 namespace DB::S3
 {
-
-inline static constexpr uint64_t DEFAULT_EXPIRATION_WINDOW_SECONDS = 120;
-inline static constexpr uint64_t DEFAULT_CONNECT_TIMEOUT_MS = 1000;
-inline static constexpr uint64_t DEFAULT_REQUEST_TIMEOUT_MS = 30000;
-inline static constexpr uint64_t DEFAULT_MAX_CONNECTIONS = 100;
 
 /// In GCP metadata service can be accessed via DNS regardless of IPv4 or IPv6.
 static inline constexpr char GCP_METADATA_SERVICE_ENDPOINT[] = "http://metadata.google.internal";
 
 /// getRunningAvailabilityZone returns the availability zone of the underlying compute resources where the current process runs.
 std::string getRunningAvailabilityZone();
+std::string tryGetRunningAvailabilityZone();
 
 class AWSEC2MetadataClient : public Aws::Internal::AWSHttpResourceClient
 {
@@ -70,10 +76,10 @@ private:
     const Aws::String endpoint;
     mutable std::recursive_mutex token_mutex;
     mutable Aws::String token;
-    Poco::Logger * logger;
+    LoggerPtr logger;
 };
 
-std::shared_ptr<AWSEC2MetadataClient> InitEC2MetadataClient(const Aws::Client::ClientConfiguration & client_configuration);
+std::shared_ptr<AWSEC2MetadataClient> createEC2MetadataClient(const Aws::Client::ClientConfiguration & client_configuration);
 
 class AWSEC2InstanceProfileConfigLoader : public Aws::Config::AWSProfileConfigLoader
 {
@@ -88,7 +94,7 @@ protected:
 private:
     std::shared_ptr<AWSEC2MetadataClient> client;
     bool use_secure_pull;
-    Poco::Logger * logger;
+    LoggerPtr logger;
 };
 
 class AWSInstanceProfileCredentialsProvider : public Aws::Auth::AWSCredentialsProvider
@@ -103,11 +109,12 @@ protected:
     void Reload() override;
 
 private:
+    Aws::Auth::AWSCredentials GetAWSCredentialsImpl();
     void refreshIfExpired();
 
     std::shared_ptr<AWSEC2InstanceProfileConfigLoader> ec2_metadata_config_loader;
     Int64 load_frequency_ms;
-    Poco::Logger * logger;
+    LoggerPtr logger;
 };
 
 class AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider : public Aws::Auth::AWSCredentialsProvider
@@ -116,7 +123,7 @@ class AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider : public Aws::Auth::AWS
 
 public:
     explicit AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider(
-        DB::S3::PocoHTTPClientConfiguration & aws_client_configuration, uint64_t expiration_window_seconds_);
+        DB::S3::PocoHTTPClientConfiguration & aws_client_configuration, uint64_t expiration_window_seconds_, String role_arn_ = "");
 
     Aws::Auth::AWSCredentials GetAWSCredentials() override;
 
@@ -133,7 +140,7 @@ private:
     Aws::String session_name;
     Aws::String token;
     bool initialized = false;
-    Poco::Logger * logger;
+    LoggerPtr logger;
     uint64_t expiration_window_seconds;
 };
 
@@ -163,7 +170,7 @@ private:
 
     DB::S3::PocoHTTPClientConfiguration aws_client_configuration;
     uint64_t expiration_window_seconds;
-    Poco::Logger * logger;
+    LoggerPtr logger;
 
     void Reload() override;
     void refreshIfExpired();
@@ -176,6 +183,10 @@ struct CredentialsConfiguration
     bool use_insecure_imds_request = false;
     uint64_t expiration_window_seconds = DEFAULT_EXPIRATION_WINDOW_SECONDS;
     bool no_sign_request = false;
+    std::string role_arn{};
+    std::string role_session_name{};
+    std::string sts_endpoint_override{};
+    std::string kms_role_arn{};
 };
 
 class S3CredentialsProviderChain : public Aws::Auth::AWSCredentialsProviderChain
@@ -185,6 +196,87 @@ public:
         const DB::S3::PocoHTTPClientConfiguration & configuration,
         const Aws::Auth::AWSCredentials & credentials,
         CredentialsConfiguration credentials_configuration);
+};
+
+class AssumeRoleRequest : public Aws::AmazonSerializableWebServiceRequest
+{
+public:
+    AssumeRoleRequest(std::string role_arn_, std::string role_session_name_);
+
+    Aws::Http::HeaderValueCollection GetHeaders() const override;
+
+    const char * GetServiceRequestName() const override { return "AssumeRole"; }
+
+    Aws::String SerializePayload() const override { return {}; }
+
+    void AddQueryStringParameters(Aws::Http::URI & uri) const override;
+
+private:
+    std::string role_arn;
+    std::string role_session_name;
+};
+class AssumeRoleResult
+{
+public:
+    /// NOLINTNEXTLINE
+    AssumeRoleResult(Aws::AmazonWebServiceResult<Aws::Utils::Xml::XmlDocument> result);
+
+    const std::string & getAccessKeyID() const { return access_key_id; }
+
+    const std::string & getSecretAccessKey() const { return secret_access_key; }
+
+    const std::string & getSessionToken() const { return session_token; }
+
+    const Aws::Utils::DateTime & getExpiration() const { return expiration; }
+
+private:
+    std::string access_key_id;
+    std::string secret_access_key;
+    std::string session_token;
+    Aws::Utils::DateTime expiration;
+
+    LoggerPtr log{getLogger("AssumeRoleResult")};
+};
+
+using AssumeRoleOutcome = Aws::Utils::Outcome<AssumeRoleResult, Aws::S3::S3Error>;
+
+class AWSAssumeRoleClient : public Aws::Client::AWSXMLClient
+{
+public:
+    AWSAssumeRoleClient(
+        const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider,
+        const Aws::Client::ClientConfiguration & client_configuration,
+        const std::string & sts_endpoint_override = "");
+
+    AssumeRoleOutcome assumeRole(const AssumeRoleRequest & request) const;
+private:
+    Aws::Endpoint::AWSEndpoint endpoint;
+};
+
+class AwsAuthSTSAssumeRoleCredentialsProvider : public Aws::Auth::AWSCredentialsProvider
+{
+public:
+    AwsAuthSTSAssumeRoleCredentialsProvider(
+            std::string role_arn_,
+            std::string session_name_,
+            uint64_t expiration_window_seconds_,
+            std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider,
+            DB::S3::PocoHTTPClientConfiguration & client_configuration,
+            const std::string & sts_endpoint_override = "");
+
+    Aws::Auth::AWSCredentials GetAWSCredentials() override;
+
+protected:
+    void Reload() override;
+private:
+    void refreshIfExpired();
+
+    std::string role_arn;
+    std::string session_name;
+    uint64_t expiration_window_seconds;
+    std::shared_ptr<AWSAssumeRoleClient> client;
+    Aws::Auth::AWSCredentials credentials;
+    LoggerPtr logger;
 };
 
 }
@@ -199,6 +291,7 @@ namespace DB
 namespace S3
 {
 std::string getRunningAvailabilityZone();
+std::string tryGetRunningAvailabilityZone();
 }
 
 }

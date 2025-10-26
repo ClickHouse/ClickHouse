@@ -18,7 +18,7 @@ class VersionedCollapsingAlgorithm final : public IMergingAlgorithmWithSharedChu
 public:
     /// Don't need version column. It's in primary key.
     VersionedCollapsingAlgorithm(
-        const Block & header, size_t num_inputs,
+        SharedHeader header, size_t num_inputs,
         SortDescription description_, const String & sign_column_,
         size_t max_block_size_rows,
         size_t max_block_size_bytes,
@@ -29,8 +29,6 @@ public:
     Status merge() override;
 
 private:
-    MergedData merged_data;
-
     size_t sign_column_number = 0;
 
     const size_t max_rows_in_queue;

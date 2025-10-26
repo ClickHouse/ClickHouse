@@ -3,6 +3,8 @@
 #include <Backups/BackupStatus.h>
 #include <Common/ProfileEvents.h>
 
+#include <exception>
+
 namespace DB
 {
 
@@ -19,6 +21,9 @@ struct BackupOperationInfo
 
     /// Base Backup Operation name, a string like "Disk('backups', 'my_base_backup')"
     String base_backup_name;
+
+    /// Query ID of a query that started backup
+    String query_id;
 
     /// This operation is internal and should not be shown in system.backups
     bool internal = false;
@@ -54,8 +59,8 @@ struct BackupOperationInfo
     /// Profile events collected during the backup.
     std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters = nullptr;
 
-    std::chrono::system_clock::time_point start_time;
-    std::chrono::system_clock::time_point end_time;
+    UInt64 start_time_us = 0;
+    UInt64 end_time_us = 0;
 };
 
 }

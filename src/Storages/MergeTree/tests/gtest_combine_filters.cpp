@@ -138,6 +138,57 @@ bool testCombineColumns(size_t size)
     return true;
 }
 
+/* To ensure the vectorized DB::andFilters works as its scalar implementation, this test validates the AND (&&)
+ * of any combinations of the UInt8 values.
+ */
+bool testAndFilters(size_t size)
+{
+    auto generateFastIncrementColumn = [](size_t len)->ColumnPtr
+    {
+        auto filter = ColumnUInt8::create(len);
+        auto & filter_data = filter->getData();
+
+        for (size_t i = 0; i < len; ++i)
+            filter_data[i] = static_cast<UInt8>(i & 0xFF);
+
+        return filter;
+    };
+
+    auto generateSlowIncrementColumn = [](size_t len)->ColumnPtr
+    {
+        auto filter = ColumnUInt8::create(len);
+        auto & filter_data = filter->getData();
+
+        for (size_t i = 0; i < len; ++i)
+            filter_data[i] = static_cast<UInt8>((i >> 8) & 0xFF);
+
+        return filter;
+    };
+
+    auto first_filter = generateFastIncrementColumn(size);
+    auto second_filter = generateSlowIncrementColumn(size);
+
+    auto result = andFilters(first_filter, second_filter);
+
+    const auto & first_filter_data = typeid_cast<const ColumnUInt8 *>(first_filter.get())->getData();
+    const auto & second_filter_data = typeid_cast<const ColumnUInt8 *>(second_filter.get())->getData();
+    const auto & result_data = typeid_cast<const ColumnUInt8 *>(result.get())->getData();
+
+    if (result->size() != size)
+    {
+        return false;
+    }
+
+    for (size_t i = 0; i < size; i++)
+    {
+        UInt8 expected = first_filter_data[i] && second_filter_data[i];
+        if (result_data[i] != expected)
+            return false;
+    }
+
+    return true;
+}
+
 TEST(MergeTree, CombineFilters)
 {
     /// Tests with only 0/1 and fixed intervals.
@@ -158,4 +209,19 @@ TEST(MergeTree, CombineFilters)
     EXPECT_TRUE(testCombineColumns(201));
     EXPECT_TRUE(testCombineColumns(2000));
     EXPECT_TRUE(testCombineColumns(200000));
+}
+
+TEST(MergeTree, AndFilters)
+{
+    EXPECT_TRUE(testAndFilters(1));
+    EXPECT_TRUE(testAndFilters(2));
+    EXPECT_TRUE(testAndFilters(15));
+    EXPECT_TRUE(testAndFilters(16));
+    EXPECT_TRUE(testAndFilters(200));
+    EXPECT_TRUE(testAndFilters(201));
+    EXPECT_TRUE(testAndFilters(2000));
+    EXPECT_TRUE(testAndFilters(65535));
+    EXPECT_TRUE(testAndFilters(65536));
+    EXPECT_TRUE(testAndFilters(65537));
+    EXPECT_TRUE(testAndFilters(200000));
 }

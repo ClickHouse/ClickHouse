@@ -1,7 +1,16 @@
 ---
-slug: /en/operations/system-tables/text_log
+description: 'System table containing logging entries.'
+keywords: ['system table', 'text_log']
+slug: /operations/system-tables/text_log
+title: 'system.text_log'
+doc_type: 'reference'
 ---
-# text_log
+
+import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
+
+# system.text_log
+
+<SystemTableCloud/>
 
 Contains logging entries. The logging level which goes to this table can be limited to the `text_log.level` server setting.
 
@@ -15,14 +24,14 @@ Columns:
 - `thread_name` (String) — Name of the thread from which the logging was done.
 - `thread_id` (UInt64) — OS thread ID.
 - `level` (`Enum8`) — Entry level. Possible values:
-    - `1` or `'Fatal'`.
-    - `2` or `'Critical'`.
-    - `3` or `'Error'`.
-    - `4` or `'Warning'`.
-    - `5` or `'Notice'`.
-    - `6` or `'Information'`.
-    - `7` or `'Debug'`.
-    - `8` or `'Trace'`.
+  - `1` or `'Fatal'`.
+  - `2` or `'Critical'`.
+  - `3` or `'Error'`.
+  - `4` or `'Warning'`.
+  - `5` or `'Notice'`.
+  - `6` or `'Information'`.
+  - `7` or `'Debug'`.
+  - `8` or `'Trace'`.
 - `query_id` (String) — ID of the query.
 - `logger_name` (LowCardinality(String)) — Name of the logger (i.e. `DDLWorker`).
 - `message` (String) — The message itself.
@@ -30,14 +39,24 @@ Columns:
 - `source_file` (LowCardinality(String)) — Source file from which the logging was done.
 - `source_line` (UInt64) — Source line from which the logging was done.
 - `message_format_string` (LowCardinality(String)) — A format string that was used to format the message.
+- `value1` (String) - Argument 1 that was used to format the message.
+- `value2` (String) - Argument 2 that was used to format the message.
+- `value3` (String) - Argument 3 that was used to format the message.
+- `value4` (String) - Argument 4 that was used to format the message.
+- `value5` (String) - Argument 5 that was used to format the message.
+- `value6` (String) - Argument 6 that was used to format the message.
+- `value7` (String) - Argument 7 that was used to format the message.
+- `value8` (String) - Argument 8 that was used to format the message.
+- `value9` (String) - Argument 9 that was used to format the message.
+- `value10` (String) - Argument 10 that was used to format the message.
 
 **Example**
 
-``` sql
+```sql
 SELECT * FROM system.text_log LIMIT 1 \G
 ```
 
-``` text
+```text
 Row 1:
 ──────
 hostname:                clickhouse.eu-central1.internal
@@ -55,4 +74,14 @@ revision:                54440
 source_file:             /ClickHouse/src/Interpreters/DNSCacheUpdater.cpp; void DB::DNSCacheUpdater::start()
 source_line:             45
 message_format_string:   Update period {} seconds
+value1:                  15
+value2:                  
+value3:                  
+value4:                  
+value5:                  
+value6:                  
+value7:                  
+value8:                  
+value9:                  
+value10:                  
 ```

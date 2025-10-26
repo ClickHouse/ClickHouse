@@ -31,7 +31,7 @@ namespace ErrorCodes
 
 template <typename> class QuantileTiming;
 template <typename> class QuantileGK;
-
+template <typename> class QuantileDD;
 
 /** Generic aggregate function for calculation of quantiles.
   * It depends on quantile calculation data structure. Look at Quantile*.h for various implementations.
@@ -44,10 +44,8 @@ template <
     typename Data,
     /// Structure with static member "name", containing the name of the aggregate function.
     typename Name,
-    /// If true, the function accepts the second argument
-    /// (in can be "weight" to calculate quantiles or "determinator" that is used instead of PRNG).
-    /// Second argument is always obtained through 'getUInt' method.
-    bool has_second_arg,
+    /// Type of the second argument. If there is no second argument, this should be void.
+    typename SecondArgumentType,
     /// If non-void, the function will return float of specified type with possibly interpolated results and NaN if there was no values.
     /// Otherwise it will return Value type and default value if there was no values.
     /// As an example, the function cannot return floats, if the SQL type of argument is Date or DateTime.
@@ -58,12 +56,13 @@ template <
     /// If the first parameter (before level) is accuracy.
     bool has_accuracy_parameter>
 class AggregateFunctionQuantile final
-    : public IAggregateFunctionDataHelper<Data, AggregateFunctionQuantile<Value, Data, Name, has_second_arg, FloatReturnType, returns_many, has_accuracy_parameter>>
+    : public IAggregateFunctionDataHelper<Data, AggregateFunctionQuantile<Value, Data, Name, SecondArgumentType, FloatReturnType, returns_many, has_accuracy_parameter>>
 {
 private:
     using ColVecType = ColumnVectorOrDecimal<Value>;
 
     static constexpr bool returns_float = !(std::is_same_v<FloatReturnType, void>);
+    static constexpr bool is_quantile_ddsketch = std::is_same_v<Data, QuantileDD<Value>>;
     static_assert(!is_decimal<Value> || !returns_float);
 
     QuantileLevels<Float64> levels;
@@ -74,11 +73,14 @@ private:
     /// Used for the approximate version of the algorithm (Greenwald-Khanna)
     ssize_t accuracy = 10000;
 
+    /// Used for the quantile sketch
+    Float64 relative_accuracy = 0.01;
+
     DataTypePtr & argument_type;
 
 public:
     AggregateFunctionQuantile(const DataTypes & argument_types_, const Array & params)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionQuantile<Value, Data, Name, has_second_arg, FloatReturnType, returns_many, has_accuracy_parameter>>(
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionQuantile<Value, Data, Name, SecondArgumentType, FloatReturnType, returns_many, has_accuracy_parameter>>(
             argument_types_, params, createResultType(argument_types_))
         , levels(has_accuracy_parameter && !params.empty() ? Array(params.begin() + 1, params.end()) : params, returns_many)
         , level(levels.levels[0])
@@ -87,7 +89,61 @@ public:
         if (!returns_many && levels.size() > 1)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires one level parameter or less", getName());
 
-        if constexpr (has_accuracy_parameter)
+        if constexpr (std::is_same_v<SecondArgumentType, UInt64>)
+        {
+            assertBinary(Name::name, argument_types_);
+            if (!isUInt(argument_types_[1]))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Second argument (weight) for function {} must be unsigned integer, but it has type {}",
+                    Name::name,
+                    argument_types_[1]->getName());
+        }
+        else if constexpr (std::is_same_v<SecondArgumentType, Float64>)
+        {
+            assertBinary(Name::name, argument_types_);
+            if (!isFloat(argument_types_[1]))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Second argument for function {} must be float, but it has type {}",
+                    Name::name,
+                    argument_types_[1]->getName());
+        }
+        else
+        {
+            assertUnary(Name::name, argument_types_);
+        }
+
+        if constexpr (is_quantile_ddsketch)
+        {
+            if (params.empty())
+                throw Exception(
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires at least one param", getName());
+
+            const auto & relative_accuracy_field = params[0];
+            if (relative_accuracy_field.getType() != Field::Types::Float64)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function {} requires relative accuracy parameter with Float64 type", getName());
+
+            relative_accuracy = relative_accuracy_field.safeGet<Float64>();
+
+            if (relative_accuracy <= 0 || relative_accuracy >= 1 || isNaN(relative_accuracy))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Aggregate function {} requires relative accuracy parameter with value between 0 and 1 but is {}",
+                    getName(),
+                    relative_accuracy);
+            // Throw exception if the relative accuracy is too small.
+            // This is to avoid the case where the user specifies a relative accuracy that is too small
+            // and the sketch is not able to allocate enough memory to satisfy the accuracy requirement.
+            if (relative_accuracy < 1e-6)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Aggregate function {} requires relative accuracy parameter with value greater than 1e-6 but is {}",
+                    getName(),
+                    relative_accuracy);
+        }
+        else if constexpr (has_accuracy_parameter)
         {
             if (params.empty())
                 throw Exception(
@@ -99,9 +155,9 @@ public:
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function {} requires accuracy parameter with integer type", getName());
 
             if (accuracy_field.getType() == Field::Types::Int64)
-                accuracy = accuracy_field.get<Int64>();
+                accuracy = accuracy_field.safeGet<Int64>();
             else
-                accuracy = accuracy_field.get<UInt64>();
+                accuracy = accuracy_field.safeGet<UInt64>();
 
             if (accuracy <= 0)
                 throw Exception(
@@ -116,7 +172,9 @@ public:
 
     void create(AggregateDataPtr __restrict place) const override /// NOLINT
     {
-        if constexpr (has_accuracy_parameter)
+        if constexpr (is_quantile_ddsketch)
+            new (place) Data(relative_accuracy);
+        else if constexpr (has_accuracy_parameter)
             new (place) Data(accuracy);
         else
             new (place) Data;
@@ -147,6 +205,10 @@ public:
     {
         /// Return normalized state type: quantiles*(1)(...)
         Array params{1};
+        if constexpr (is_quantile_ddsketch)
+            params = {relative_accuracy, 1};
+        else if constexpr (has_accuracy_parameter)
+            params = {accuracy, 1};
         AggregateFunctionProperties properties;
         return std::make_shared<DataTypeAggregateFunction>(
             AggregateFunctionFactory::instance().get(
@@ -171,8 +233,10 @@ public:
 #   pragma clang diagnostic pop
         }
 
-        if constexpr (has_second_arg)
+        if constexpr (std::is_same_v<SecondArgumentType, UInt64>)
             this->data(place).add(value, columns[1]->getUInt(row_num));
+        else if constexpr (std::is_same_v<SecondArgumentType, Float64>)
+            this->data(place).add(value, columns[1]->getFloat64(row_num));
         else
             this->data(place).add(value);
     }
@@ -233,22 +297,6 @@ public:
                 static_cast<ColVecType &>(to).getData().push_back(data.get(level));
         }
     }
-
-    static void assertSecondArg(const DataTypes & types)
-    {
-        if constexpr (has_second_arg)
-        {
-            assertBinary(Name::name, types);
-            if (!isUInt(types[1]))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Second argument (weight) for function {} must be unsigned integer, but it has type {}",
-                    Name::name,
-                    types[1]->getName());
-        }
-        else
-            assertUnary(Name::name, types);
-    }
 };
 
 struct NameQuantile { static constexpr auto name = "quantile"; };
@@ -274,6 +322,9 @@ struct NameQuantilesExactInclusive { static constexpr auto name = "quantilesExac
 struct NameQuantileExactWeighted { static constexpr auto name = "quantileExactWeighted"; };
 struct NameQuantilesExactWeighted { static constexpr auto name = "quantilesExactWeighted"; };
 
+struct NameQuantileExactWeightedInterpolated { static constexpr auto name = "quantileExactWeightedInterpolated"; };
+struct NameQuantilesExactWeightedInterpolated { static constexpr auto name = "quantilesExactWeightedInterpolated"; };
+
 struct NameQuantileInterpolatedWeighted { static constexpr auto name = "quantileInterpolatedWeighted"; };
 struct NameQuantilesInterpolatedWeighted { static constexpr auto name = "quantilesInterpolatedWeighted"; };
 
@@ -294,5 +345,11 @@ struct NameQuantilesBFloat16Weighted { static constexpr auto name = "quantilesBF
 
 struct NameQuantileGK { static constexpr auto name = "quantileGK"; };
 struct NameQuantilesGK { static constexpr auto name = "quantilesGK"; };
+
+struct NameQuantileDD { static constexpr auto name = "quantileDD"; };
+struct NameQuantilesDD { static constexpr auto name = "quantilesDD"; };
+
+struct NameQuantilePrometheusHistogram { static constexpr auto name = "quantilePrometheusHistogram"; };
+struct NameQuantilesPrometheusHistogram { static constexpr auto name = "quantilesPrometheusHistogram"; };
 
 }

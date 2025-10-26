@@ -16,7 +16,7 @@ namespace ErrorCodes
 EmbeddedRocksDBSink::EmbeddedRocksDBSink(
     StorageEmbeddedRocksDB & storage_,
     const StorageMetadataPtr & metadata_snapshot_)
-    : SinkToStorage(metadata_snapshot_->getSampleBlock())
+    : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
 {
@@ -29,7 +29,7 @@ EmbeddedRocksDBSink::EmbeddedRocksDBSink(
     serializations = getHeader().getSerializations();
 }
 
-void EmbeddedRocksDBSink::consume(Chunk chunk)
+void EmbeddedRocksDBSink::consume(Chunk & chunk)
 {
     auto rows = chunk.getNumRows();
     const auto & columns = chunk.getColumns();

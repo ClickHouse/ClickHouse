@@ -12,9 +12,18 @@
 #include <base/types.h>
 #include <Common/CacheBase.h>
 #include <Common/PoolBase.h>
-#include <Storages/HDFS/HDFSCommon.h>
+#include <Common/CurrentMetrics.h>
+#include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
 #include <Storages/Hive/HiveFile.h>
 
+
+namespace CurrentMetrics
+{
+    extern const Metric HiveMetadataFilesCacheBytes;
+    extern const Metric HiveMetadataFilesCacheFiles;
+    extern const Metric HiveFilesCacheBytes;
+    extern const Metric HiveFilesCacheFiles;
+}
 
 namespace DB
 {
@@ -84,7 +93,7 @@ public:
             , table_name(table_name_)
             , table(std::move(table_))
             , empty_partition_keys(table->partitionKeys.empty())
-            , hive_files_cache(std::make_shared<HiveFilesCache>(10000))
+            , hive_files_cache(std::make_shared<HiveFilesCache>(CurrentMetrics::HiveFilesCacheBytes, CurrentMetrics::HiveFilesCacheFiles, 10000))
         {
             std::lock_guard lock(mutex);
             for (const auto & partition : partitions_)
@@ -115,12 +124,12 @@ public:
         const bool empty_partition_keys;
         const HiveFilesCachePtr hive_files_cache;
 
-        Poco::Logger * log = &Poco::Logger::get("HiveMetastoreClient");
+        LoggerPtr log = getLogger("HiveMetastoreClient");
     };
 
 
     explicit HiveMetastoreClient(ThriftHiveMetastoreClientBuilder builder_)
-        : table_metadata_cache(1000)
+        : table_metadata_cache(CurrentMetrics::HiveMetadataFilesCacheBytes, CurrentMetrics::HiveMetadataFilesCacheFiles, 1000)
         , client_pool(builder_)
     {
     }
@@ -138,7 +147,7 @@ private:
     CacheBase<String, HiveTableMetadata> table_metadata_cache;
     ThriftHiveMetastoreClientPool client_pool;
 
-    Poco::Logger * log = &Poco::Logger::get("HiveMetastoreClient");
+    LoggerPtr log = getLogger("HiveMetastoreClient");
 };
 
 using HiveMetastoreClientPtr = std::shared_ptr<HiveMetastoreClient>;

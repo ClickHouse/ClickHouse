@@ -74,7 +74,7 @@ void RowPolicyCache::PolicyInfo::setPolicy(const RowPolicyPtr & policy_)
             continue;
 
         auto previous_range = std::pair(std::begin(policy->filters), std::begin(policy->filters) + filter_type_i);
-        const auto * previous_it = std::find(previous_range.first, previous_range.second, filter);
+        const auto previous_it = std::find(previous_range.first, previous_range.second, filter);
         if (previous_it != previous_range.second)
         {
             /// The filter is already parsed before.
@@ -86,12 +86,12 @@ void RowPolicyCache::PolicyInfo::setPolicy(const RowPolicyPtr & policy_)
         try
         {
             ParserExpression parser;
-            parsed_filters[filter_type_i] = parseQuery(parser, filter, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+            parsed_filters[filter_type_i] = parseQuery(parser, filter, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
         }
         catch (...)
         {
             tryLogCurrentException(
-                &Poco::Logger::get("RowPolicy"),
+                getLogger("RowPolicy"),
                 String("Could not parse the condition ") + toString(filter_type) + " of row policy "
                     + backQuote(policy->getName()));
         }

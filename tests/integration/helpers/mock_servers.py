@@ -1,7 +1,7 @@
+import importlib
 import logging
 import os
 import time
-import importlib
 
 
 # Starts simple HTTP servers written in Python.
@@ -31,9 +31,23 @@ def start_mock_servers(cluster, script_dir, mocks, timeout=100):
             server_name,
         )
 
+        logs_dir = (
+            "/var/log/resolver"
+            if container == "resolver"
+            else "/var/log/clickhouse-server"
+        )
+        log_file = os.path.join(logs_dir, os.path.splitext(server_name)[0] + ".log")
+        err_log_file = os.path.join(
+            logs_dir, os.path.splitext(server_name)[0] + ".err.log"
+        )
+
         cluster.exec_in_container(
             container_id,
-            ["python", server_name, str(port)],
+            [
+                "bash",
+                "-c",
+                f"python3 {server_name} {port} >{log_file} 2>{err_log_file}",
+            ],
             detach=True,
         )
 

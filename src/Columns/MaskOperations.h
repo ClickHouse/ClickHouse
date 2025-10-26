@@ -13,7 +13,7 @@ namespace DB
 /// If inverted is true, we will work with inverted mask. This function is used in implementations of
 /// expand() method in IColumn interface.
 template <typename T>
-void expandDataByMask(PaddedPODArray<T> & data, const PaddedPODArray<UInt8> & mask, bool inverted);
+void expandDataByMask(PaddedPODArray<T> & data, const PaddedPODArray<UInt8> & mask, bool inverted, T default_value = T());
 
 struct MaskInfo
 {
@@ -58,7 +58,12 @@ void inverseMask(PaddedPODArray<UInt8> & mask, MaskInfo & mask_info);
 
 /// If given column is lazy executed argument (ColumnFunction with isShortCircuitArgument() = true),
 /// filter it by mask and then reduce. If inverted is true, we will work with inverted mask.
-void maskedExecute(ColumnWithTypeAndName & column, const PaddedPODArray<UInt8> & mask, const MaskInfo & mask_info);
+/// mask_info is used for for optimization in cases when we have all zeros or all ones in mask, so
+/// in general case this info is not used and we can skip it.
+void maskedExecute(
+    ColumnWithTypeAndName & column,
+    const PaddedPODArray<UInt8> & mask,
+    const MaskInfo & mask_info = {true, true});
 
 /// If given column is lazy executed argument, reduce it. If empty is true,
 /// create an empty column with the execution result type.

@@ -20,11 +20,11 @@
 
 #include <openssl/bio.h>
 #include <openssl/ssl.h>
+
 #include "Poco/Net/Context.h"
 #include "Poco/Net/NetSSL.h"
 #include "Poco/Net/Session.h"
 #include "Poco/Net/SocketImpl.h"
-#include "Poco/Net/X509Certificate.h"
 
 #include <mutex>
 
@@ -235,8 +235,6 @@ namespace Net
         /// Note that simply closing a socket is not sufficient
         /// to be able to re-use it again.
 
-        Poco::Timespan getMaxTimeout();
-
     private:
         SecureSocketImpl(const SecureSocketImpl &);
         SecureSocketImpl & operator=(const SecureSocketImpl &);
@@ -250,6 +248,9 @@ namespace Net
         Session::Ptr _pSession;
 
         friend class SecureStreamSocketImpl;
+
+        Poco::Timespan getMaxTimeoutOrLimit();
+        //// Return max(send, receive) if non zero, otherwise maximum timeout
     };
 
 

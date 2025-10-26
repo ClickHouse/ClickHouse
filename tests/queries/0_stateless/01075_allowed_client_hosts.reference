@@ -1,17 +1,17 @@
-CREATE USER test_user_01075
-CREATE USER test_user_01075
-CREATE USER test_user_01075 HOST NONE
-CREATE USER test_user_01075 HOST LOCAL
-CREATE USER test_user_01075 HOST IP \'192.168.23.15\'
-CREATE USER test_user_01075 HOST IP \'2001:db8:11a3:9d7:1f34:8a2e:7a0:765d\'
-CREATE USER test_user_01075 HOST LOCAL, IP \'2001:db8:11a3:9d7:1f34:8a2e:7a0:765d\'
-CREATE USER test_user_01075 HOST LOCAL
-CREATE USER test_user_01075 HOST NONE
-CREATE USER test_user_01075 HOST LIKE \'@.somesite.com\'
-CREATE USER test_user_01075 HOST REGEXP \'.*\\\\.anothersite\\\\.com\'
-CREATE USER test_user_01075 HOST REGEXP \'.*\\\\.anothersite\\\\.com\', \'.*\\\\.anothersite\\\\.org\'
-CREATE USER test_user_01075 HOST REGEXP \'.*\\\\.anothersite2\\\\.com\', \'.*\\\\.anothersite2\\\\.org\'
-CREATE USER test_user_01075 HOST REGEXP \'.*\\\\.anothersite3\\\\.com\', \'.*\\\\.anothersite3\\\\.org\'
-CREATE USER `test_user_01075_x@localhost` HOST LOCAL
-CREATE USER test_user_01075_x HOST LOCAL
-CREATE USER `test_user_01075_x@192.168.23.15` HOST LOCAL
+CREATE USER test_user_01075 IDENTIFIED WITH no_password
+CREATE USER test_user_01075 IDENTIFIED WITH no_password
+CREATE USER test_user_01075 IDENTIFIED WITH no_password HOST NONE
+CREATE USER test_user_01075 IDENTIFIED WITH no_password HOST LOCAL
+CREATE USER test_user_01075 IDENTIFIED WITH no_password HOST IP \'192.168.23.15\'
+CREATE USER test_user_01075 IDENTIFIED WITH no_password HOST IP \'2001:db8:11a3:9d7:1f34:8a2e:7a0:765d\'
+CREATE USER test_user_01075 IDENTIFIED WITH no_password HOST LOCAL, IP \'2001:db8:11a3:9d7:1f34:8a2e:7a0:765d\'
+CREATE USER test_user_01075 IDENTIFIED WITH no_password HOST LOCAL
+CREATE USER test_user_01075 IDENTIFIED WITH no_password HOST NONE
+CREATE USER test_user_01075 IDENTIFIED WITH no_password HOST LIKE \'@.somesite.com\'
+CREATE USER test_user_01075 IDENTIFIED WITH no_password HOST REGEXP \'.*\\\\.anothersite\\\\.com\'
+CREATE USER test_user_01075 IDENTIFIED WITH no_password HOST REGEXP \'.*\\\\.anothersite\\\\.com\', \'.*\\\\.anothersite\\\\.org\'
+CREATE USER test_user_01075 IDENTIFIED WITH no_password HOST REGEXP \'.*\\\\.anothersite2\\\\.com\', \'.*\\\\.anothersite2\\\\.org\'
+CREATE USER test_user_01075 IDENTIFIED WITH no_password HOST REGEXP \'.*\\\\.anothersite3\\\\.com\', \'.*\\\\.anothersite3\\\\.org\'
+CREATE USER `test_user_01075_x@localhost` IDENTIFIED WITH no_password HOST LOCAL
+CREATE USER test_user_01075_x IDENTIFIED WITH no_password HOST LOCAL
+CREATE USER `test_user_01075_x@192.168.23.15` IDENTIFIED WITH no_password HOST LOCAL

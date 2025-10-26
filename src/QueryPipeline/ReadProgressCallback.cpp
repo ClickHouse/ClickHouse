@@ -47,7 +47,7 @@ bool ReadProgressCallback::onProgress(uint64_t read_rows, uint64_t read_bytes, c
 {
     for (const auto & limits : storage_limits)
     {
-        if (!limits.local_limits.speed_limits.checkTimeLimit(total_stopwatch, limits.local_limits.timeout_overflow_mode))
+        if (!limits.local_limits.speed_limits.checkTimeLimit(total_stopwatch.elapsed(), limits.local_limits.timeout_overflow_mode))
             return false;
     }
 
@@ -125,8 +125,6 @@ bool ReadProgressCallback::onProgress(uint64_t read_rows, uint64_t read_bytes, c
         size_t total_rows = progress.total_rows_to_read;
 
         CurrentThread::updatePerformanceCountersIfNeeded();
-
-        std::lock_guard lock(limits_and_quotas_mutex);
 
         /// TODO: Should be done in PipelineExecutor.
         for (const auto & limits : storage_limits)

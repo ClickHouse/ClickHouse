@@ -4,16 +4,26 @@
 
 #include <TableFunctions/ITableFunction.h>
 #include <Core/PostgreSQL/PoolWithFailover.h>
+#include <Core/Settings.h>
 #include <Storages/StoragePostgreSQL.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/Exception.h>
 #include <Common/parseRemoteDescription.h>
-#include "registerTableFunctions.h"
+#include <TableFunctions/registerTableFunctions.h>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 postgresql_connection_attempt_timeout;
+    extern const SettingsBool postgresql_connection_pool_auto_close_connection;
+    extern const SettingsUInt64 postgresql_connection_pool_retries;
+    extern const SettingsUInt64 postgresql_connection_pool_size;
+    extern const SettingsUInt64 postgresql_connection_pool_wait_timeout;
+}
 
 namespace ErrorCodes
 {
@@ -34,7 +44,7 @@ private:
             const ASTPtr & ast_function, ContextPtr context,
             const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
 
-    const char * getStorageTypeName() const override { return "PostgreSQL"; }
+    const char * getStorageEngineName() const override { return "PostgreSQL"; }
 
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
@@ -78,10 +88,11 @@ void TableFunctionPostgreSQL::parseArguments(const ASTPtr & ast_function, Contex
     const auto & settings = context->getSettingsRef();
     connection_pool = std::make_shared<postgres::PoolWithFailover>(
         *configuration,
-        settings.postgresql_connection_pool_size,
-        settings.postgresql_connection_pool_wait_timeout,
-        POSTGRESQL_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES,
-        settings.postgresql_connection_pool_auto_close_connection);
+        settings[Setting::postgresql_connection_pool_size],
+        settings[Setting::postgresql_connection_pool_wait_timeout],
+        settings[Setting::postgresql_connection_pool_retries],
+        settings[Setting::postgresql_connection_pool_auto_close_connection],
+        settings[Setting::postgresql_connection_attempt_timeout]);
 }
 
 }

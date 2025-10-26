@@ -1,8 +1,8 @@
 #pragma once
 
+#include <Core/LogsLevel.h>
 #include <libnuraft/nuraft.hxx>
 #include <Common/logger_useful.h>
-#include <Core/SettingsEnums.h>
 
 namespace DB
 {
@@ -26,7 +26,7 @@ private:
 
 public:
     LoggerWrapper(const std::string & name, LogsLevel level_)
-        : log(&Poco::Logger::get(name))
+        : log(getLogger(name))
         , level(level_)
     {
         log->setLevel(static_cast<int>(LEVELS.at(level)));
@@ -57,7 +57,7 @@ public:
     }
 
 private:
-    Poco::Logger * log;
+    LoggerPtr log;
     std::atomic<LogsLevel> level;
 };
 

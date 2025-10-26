@@ -6,8 +6,8 @@ CREATE MATERIALIZED VIEW default.t_mv_00751
 )
 ENGINE = MergeTree
 ORDER BY date
-SETTINGS index_granularity = 8192 AS
-SELECT
+SETTINGS index_granularity = 8192
+AS SELECT
     date,
     platform,
     app

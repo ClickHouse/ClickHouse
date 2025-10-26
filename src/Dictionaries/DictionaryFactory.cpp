@@ -1,9 +1,9 @@
-#include "DictionaryFactory.h"
+#include <Dictionaries/DictionaryFactory.h>
 
 #include <memory>
-#include "DictionarySourceFactory.h"
-#include "DictionaryStructure.h"
-#include "getDictionaryConfigurationFromAST.h"
+#include <Dictionaries/DictionarySourceFactory.h>
+#include <Dictionaries/DictionaryStructure.h>
+#include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
 
@@ -46,7 +46,7 @@ DictionaryPtr DictionaryFactory::create(
 
     DictionarySourcePtr source_ptr = DictionarySourceFactory::instance().create(
         name, config, config_prefix + ".source", dict_struct, global_context, config.getString(config_prefix + ".database", ""), created_from_ddl);
-    LOG_TRACE(&Poco::Logger::get("DictionaryFactory"), "Created dictionary source '{}' for dictionary '{}'", source_ptr->toString(), name);
+    LOG_TRACE(getLogger("DictionaryFactory"), "Created dictionary source '{}' for dictionary '{}'", source_ptr->toString(), name);
 
     const auto & layout_type = keys.front();
 
@@ -55,11 +55,7 @@ DictionaryPtr DictionaryFactory::create(
         if (found != registered_layouts.end())
         {
             const auto & layout_creator = found->second.layout_create_function;
-            auto result = layout_creator(name, dict_struct, config, config_prefix, std::move(source_ptr), global_context, created_from_ddl);
-            if (config.hasProperty(config_prefix + ".comment"))
-                result->setDictionaryComment(config.getString(config_prefix + ".comment"));
-
-            return result;
+            return layout_creator(name, dict_struct, config, config_prefix, std::move(source_ptr), global_context, created_from_ddl);
         }
     }
 

@@ -1,18 +1,4 @@
-#ifdef __clang__
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#  pragma clang diagnostic ignored "-Wgnu-anonymous-struct"
-#  pragma clang diagnostic ignored "-Wnested-anon-types"
-#  pragma clang diagnostic ignored "-Wunused-parameter"
-#  pragma clang diagnostic ignored "-Wshadow-field-in-constructor"
-#  pragma clang diagnostic ignored "-Wdtor-name"
-#endif
-#include <re2/re2.h>
-#include <re2/regexp.h>
-#include <re2/walker-inl.h>
-#ifdef __clang__
-#  pragma clang diagnostic pop
-#endif
+#include <Common/re2.h>
 
 #ifdef LOG_INFO
 #undef LOG_INFO
@@ -21,13 +7,15 @@
 #undef LOG_FATAL
 #endif
 
-#include "MatchGenerator.h"
+#include <Common/MatchGenerator.h>
 
+#include <base/EnumReflection.h>
 #include <Common/Exception.h>
 #include <Common/thread_local_rng.h>
+
 #include <map>
 #include <functional>
-#include <magic_enum.hpp>
+
 
 namespace DB
 {

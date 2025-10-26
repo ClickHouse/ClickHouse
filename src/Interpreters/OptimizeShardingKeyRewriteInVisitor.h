@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Analyzer/IQueryTreeNode.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/Cluster.h>
 
@@ -27,8 +28,6 @@ struct OptimizeShardingKeyRewriteInMatcher
     {
         /// Expression of sharding_key for the Distributed() table
         const ExpressionActionsPtr & sharding_key_expr;
-        /// Type of sharding_key column.
-        const DataTypePtr & sharding_key_type;
         /// Name of the column for sharding_expr
         const std::string & sharding_key_column_name;
         /// Info for the current shard (to compare shard_num with calculated)
@@ -43,5 +42,7 @@ struct OptimizeShardingKeyRewriteInMatcher
 };
 
 using OptimizeShardingKeyRewriteInVisitor = InDepthNodeVisitor<OptimizeShardingKeyRewriteInMatcher, true>;
+
+void optimizeShardingKeyRewriteIn(QueryTreeNodePtr & node, OptimizeShardingKeyRewriteInVisitor::Data data, ContextPtr context);
 
 }

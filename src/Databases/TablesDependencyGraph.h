@@ -5,10 +5,16 @@
 #include <unordered_map>
 #include <unordered_set>
 
+namespace Poco
+{
+class Logger;
+}
+
 
 namespace DB
 {
 using TableNamesSet = std::unordered_set<QualifiedTableName>;
+using LoggerPtr = std::shared_ptr<Poco::Logger>;
 
 /// Represents dependencies of some tables on other tables or dictionaries.
 ///
@@ -55,7 +61,7 @@ public:
     /// Removes a single dependency of "table_id" on "dependency".
     /// If "remove_isolated_tables" is set the function will also remove tables with no dependencies and no dependents
     /// from the graph.
-    bool removeDependency(const StorageID & table_id, const StorageID & dependency, bool remove_isolated_tables = false);
+    bool removeDependency(const StorageID & table_id, const StorageID & dependency, bool remove_isolated_tables = true);
 
     /// Removes all dependencies of "table_id", returns those dependencies.
     std::vector<StorageID> removeDependencies(const StorageID & table_id, bool remove_isolated_tables = false);
@@ -106,6 +112,12 @@ public:
     /// tables which depend on the tables without dependencies, then
     /// tables which depend on the tables which depend on the tables without dependencies, and so on.
     std::vector<StorageID> getTablesSortedByDependency() const;
+
+    /// Returns a list of lists of tables by the number of dependencies they have:
+    /// tables without dependencies are in the first list, then
+    /// tables which depend on the tables without dependencies are in the second list, then
+    /// tables which depend on the tables which depend on the tables without dependencies are in the third list, and so on.
+    std::vector<std::vector<StorageID>> getTablesSplitByDependencyLevel() const;
 
     /// Outputs information about this graph as a bunch of logging messages.
     void log() const;
@@ -163,7 +175,7 @@ private:
     mutable bool levels_calculated = false;
 
     const String name_for_logging;
-    mutable Poco::Logger * logger = nullptr;
+    mutable LoggerPtr logger = nullptr;
 
     Node * findNode(const StorageID & table_id) const;
     Node * addOrUpdateNode(const StorageID & table_id);
@@ -175,7 +187,7 @@ private:
     void setNeedRecalculateLevels() const;
     const NodesSortedByLevel & getNodesSortedByLevel() const;
 
-    Poco::Logger * getLogger() const;
+    LoggerPtr getLogger() const;
 };
 
 }

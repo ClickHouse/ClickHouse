@@ -21,7 +21,10 @@
 #include <atomic>
 #include <cstddef>
 #include <map>
+#include <memory>
+#include <unordered_map>
 #include <vector>
+
 #include "Poco/Channel.h"
 #include "Poco/Format.h"
 #include "Poco/Foundation.h"
@@ -33,7 +36,8 @@ namespace Poco
 
 
 class Exception;
-
+class Logger;
+using LoggerPtr = std::shared_ptr<Logger>;
 
 class Foundation_API Logger : public Channel
 /// Logger is a special Channel that acts as the main
@@ -123,6 +127,7 @@ public:
     /// The "channel" and "level" properties are set-only.
 
     void log(const Message & msg);
+    void log(Message && msg);
     /// Logs the given message if its priority is
     /// greater than or equal to the Logger's log level.
 
@@ -870,18 +875,18 @@ public:
     /// If the Logger does not yet exist, it is created, based
     /// on its parent logger.
 
-    static Logger & unsafeGet(const std::string & name);
-    /// Returns a reference to the Logger with the given name.
+    static LoggerPtr getShared(const std::string & name, bool should_be_owned_by_shared_ptr_if_created = true);
+    /// Returns a shared pointer to the Logger with the given name.
     /// If the Logger does not yet exist, it is created, based
     /// on its parent logger.
-    ///
-    /// WARNING: This method is not thread safe. You should
-    /// probably use get() instead.
-    /// The only time this method should be used is during
-    /// program initialization, when only one thread is running.
 
     static Logger & create(const std::string & name, Channel * pChannel, int level = Message::PRIO_INFORMATION);
     /// Creates and returns a reference to a Logger with the
+    /// given name. The Logger's Channel and log level as set as
+    /// specified.
+
+    static LoggerPtr createShared(const std::string & name, Channel * pChannel, int level = Message::PRIO_INFORMATION);
+    /// Creates and returns a shared pointer to a Logger with the
     /// given name. The Logger's Channel and log level as set as
     /// specified.
 
@@ -892,13 +897,6 @@ public:
     static Logger * has(const std::string & name);
     /// Returns a pointer to the Logger with the given name if it
     /// exists, or a null pointer otherwise.
-
-    static void destroy(const std::string & name);
-    /// Destroys the logger with the specified name. Does nothing
-    /// if the logger is not found.
-    ///
-    /// After a logger has been destroyed, all references to it
-    /// become invalid.
 
     static void shutdown();
     /// Shuts down the logging framework and releases all
@@ -928,9 +926,17 @@ public:
 
     static const std::string ROOT; /// The name of the root logger ("").
 
-protected:
-    typedef std::map<std::string, Logger *> LoggerMap;
+public:
+    struct LoggerEntry
+    {
+        Poco::Logger * logger;
+        bool owned_by_shared_ptr = false;
+    };
 
+    using LoggerMap = std::unordered_map<std::string, LoggerEntry>;
+    using LoggerMapIterator = LoggerMap::iterator;
+
+protected:
     Logger(const std::string & name, Channel * pChannel, int level);
     ~Logger();
 
@@ -938,11 +944,16 @@ protected:
     void log(const std::string & text, Message::Priority prio, const char * file, int line);
 
     static std::string format(const std::string & fmt, int argc, std::string argv[]);
-    static Logger & parent(const std::string & name);
-    static void add(Logger * pLogger);
-    static Logger * find(const std::string & name);
 
 private:
+    static std::pair<Logger::LoggerMapIterator, bool> unsafeGet(const std::string & name, bool get_shared);
+    static Logger * unsafeGetRawPtr(const std::string & name);
+    static std::pair<LoggerMapIterator, bool> unsafeCreate(const std::string & name, Channel * pChannel, int level = Message::PRIO_INFORMATION);
+    static Logger & parent(const std::string & name);
+    static std::pair<LoggerMapIterator, bool> add(Logger * pLogger);
+    static std::optional<LoggerMapIterator> find(const std::string & name);
+    static Logger * findRawPtr(const std::string & name);
+
     Logger();
     Logger(const Logger &);
     Logger & operator=(const Logger &);
@@ -950,9 +961,6 @@ private:
     std::string _name;
     Channel * _pChannel;
     std::atomic_int _level;
-
-    static LoggerMap * _pLoggerMap;
-    static Mutex _mapMtx;
 };
 
 

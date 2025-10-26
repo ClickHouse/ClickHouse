@@ -3,8 +3,8 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <Common/StringUtils/StringUtils.h>
-#include "Columns/IColumn.h"
+#include <Common/StringUtils.h>
+#include <Columns/IColumn.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -16,6 +16,7 @@
 #include <Columns/ColumnConst.h>
 
 #include <Parsers/IAST.h>
+#include <Storages/ColumnsDescription.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
 
@@ -47,11 +48,8 @@ std::string concatenateName(const std::string & nested_table_name, const std::st
   */
 std::pair<std::string, std::string> splitName(const std::string & name, bool reverse)
 {
-    auto idx = (reverse ? name.find_last_of('.') : name.find_first_of('.'));
-    if (idx == std::string::npos || idx == 0 || idx + 1 == name.size())
-        return {name, {}};
-
-    return {name.substr(0, idx), name.substr(idx + 1)};
+    auto res = splitName(std::string_view(name), reverse);
+    return {std::string(res.first), std::string(res.second)};
 }
 
 std::pair<std::string_view, std::string_view> splitName(std::string_view name, bool reverse)
@@ -81,7 +79,7 @@ static Block flattenImpl(const Block & block, bool flatten_named_tuple)
         {
             const DataTypeArray * type_arr = assert_cast<const DataTypeArray *>(elem.type.get());
             const DataTypeTuple * type_tuple = assert_cast<const DataTypeTuple *>(type_arr->getNestedType().get());
-            if (type_tuple->haveExplicitNames())
+            if (type_tuple->hasExplicitNames())
             {
                 const DataTypes & element_types = type_tuple->getElements();
                 const Strings & names = type_tuple->getElementNames();
@@ -117,7 +115,7 @@ static Block flattenImpl(const Block & block, bool flatten_named_tuple)
         }
         else if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(elem.type.get()); type_tuple && flatten_named_tuple)
         {
-            if (type_tuple->haveExplicitNames())
+            if (type_tuple->hasExplicitNames())
             {
                 const DataTypes & element_types = type_tuple->getElements();
                 const Strings & names = type_tuple->getElementNames();
@@ -294,6 +292,12 @@ Names getAllNestedColumnsForTable(const Block & block, const std::string & table
     return names;
 }
 
+bool isSubcolumnOfNested(const String & column_name, const ColumnsDescription & columns)
+{
+    auto nested_subcolumn = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
+    return nested_subcolumn && isNested(nested_subcolumn->getTypeInStorage()) && nested_subcolumn->isSubcolumn() && isArray(nested_subcolumn->type);
+}
+
 }
 
 NestedColumnExtractHelper::NestedColumnExtractHelper(const Block & block_, bool case_insentive_)
@@ -345,10 +349,8 @@ std::optional<ColumnWithTypeAndName> NestedColumnExtractHelper::extractColumn(
                 column.name = original_column_name;
             return {std::move(column)};
         }
-        else
-        {
-            return {};
-        }
+
+        return {};
     }
 
     if (!nested_table->has(new_column_name_prefix, case_insentive))

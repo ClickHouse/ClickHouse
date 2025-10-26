@@ -17,7 +17,7 @@ int main(int, char **)
         Int64 x2 = 0;
         std::string s;
 
-        std::cerr << static_cast<Int64>(x1) << std::endl;
+        std::cerr << x1 << std::endl;
 
         {
             DB::WriteBufferFromString wb(s);
@@ -31,7 +31,7 @@ int main(int, char **)
             DB::readIntText(x2, rb);
         }
 
-        std::cerr << static_cast<Int64>(x2) << std::endl;
+        std::cerr << x2 << std::endl;
     }
     catch (const DB::Exception & e)
     {

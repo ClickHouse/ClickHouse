@@ -25,6 +25,9 @@ public:
     /// Is the user allowed to write a new entry into the cache?
     virtual bool approveWrite(const UUID & user_id, size_t entry_size_in_bytes) const = 0;
 
+    /// Clears the policy contents
+    virtual void clear() = 0;
+
     virtual ~ICachePolicyUserQuota() = default;
 };
 
@@ -38,6 +41,7 @@ public:
     void increaseActual(const UUID & /*user_id*/, size_t /*entry_size_in_bytes*/) override {}
     void decreaseActual(const UUID & /*user_id*/, size_t /*entry_size_in_bytes*/) override {}
     bool approveWrite(const UUID & /*user_id*/, size_t /*entry_size_in_bytes*/) const override { return true; }
+    void clear() override {}
 };
 
 

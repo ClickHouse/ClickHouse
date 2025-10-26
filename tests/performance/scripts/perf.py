@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 
 import argparse
-import clickhouse_driver
-import itertools
 import functools
+import itertools
+import logging
 import math
 import os
 import pprint
@@ -14,9 +14,10 @@ import string
 import sys
 import time
 import traceback
-import logging
 import xml.etree.ElementTree as et
 from threading import Thread
+
+import clickhouse_driver
 from scipy import stats
 
 logging.basicConfig(
@@ -83,6 +84,21 @@ parser.add_argument(
     nargs="*",
     default=[9000],
     help="Space-separated list of server port(s). Corresponds to '--host' options.",
+)
+parser.add_argument(
+    "--user",
+    default="default",
+    help="Username for ClickHouse authentication.",
+)
+parser.add_argument(
+    "--password",
+    default="",
+    help="Password for ClickHouse authentication.",
+)
+parser.add_argument(
+    "--secure",
+    action="store_true",
+    help="Use SSL/TLS connection.",
 )
 parser.add_argument(
     "--runs", type=int, default=1, help="Number of query runs per server."
@@ -231,7 +247,7 @@ reportStageEnd("before-connect")
 
 # Open connections
 servers = [
-    {"host": host or args.host[0], "port": port or args.port[0]}
+    { "host": host or args.host[0], "port": port or args.port[0], "user": args.user, "password": args.password, "secure": args.secure }
     for (host, port) in itertools.zip_longest(args.host, args.port)
 ]
 # Force settings_is_important to fail queries on unknown settings.
@@ -240,7 +256,8 @@ all_connections = [
 ]
 
 for i, s in enumerate(servers):
-    print(f'server\t{i}\t{s["host"]}\t{s["port"]}')
+    ssl_status = "SSL" if s["secure"] else "no-SSL"
+    print(f'server\t{i}\t{s["host"]}\t{s["port"]}\t{s["user"]}\t{ssl_status}')
 
 reportStageEnd("connect")
 
@@ -344,6 +361,16 @@ for query_index in queries_to_run:
         query_display_name = f"{query_display_name[:1000]}...({query_index})"
 
     print(f"display-name\t{query_index}\t{tsv_escape(query_display_name)}")
+
+    for conn_index, c in enumerate(all_connections):
+        try:
+            c.execute("SYSTEM JEMALLOC PURGE")
+
+            print(f"purging jemalloc arenas\t{conn_index}\t{c.last_query.elapsed}")
+        except KeyboardInterrupt:
+            raise
+        except:
+            continue
 
     # Prewarm: run once on both servers. Helps to bring the data into memory,
     # precompile the queries, etc.
@@ -467,6 +494,8 @@ for query_index in queries_to_run:
 
     client_seconds = time.perf_counter() - start_seconds
     print(f"client-time\t{query_index}\t{client_seconds}\t{server_seconds}")
+    median = [statistics.median(t) for t in all_server_times]
+    print(f"median\t{query_index}\t{median[0]}")
 
     # Run additional profiling queries to collect profile data, but only if test times appeared to be different.
     # We have to do it after normal runs because otherwise it will affect test statistics too much
@@ -480,7 +509,6 @@ for query_index in queries_to_run:
     pvalue = stats.ttest_ind(
         all_server_times[0], all_server_times[1], equal_var=False
     ).pvalue
-    median = [statistics.median(t) for t in all_server_times]
     # Keep this consistent with the value used in report. Should eventually move
     # to (median[1] - median[0]) / min(median), which is compatible with "times"
     # difference we use in report (max(median) / min(median)).

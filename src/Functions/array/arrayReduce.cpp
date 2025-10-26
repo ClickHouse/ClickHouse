@@ -1,14 +1,15 @@
-#include <Functions/IFunction.h>
-#include <Functions/FunctionFactory.h>
-#include <Functions/FunctionHelpers.h>
-#include <DataTypes/DataTypeArray.h>
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionState.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
+#include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
+#include <Functions/IFunction.h>
 #include <Common/Arena.h>
 
 #include <Common/scope_guard_safe.h>
@@ -20,7 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
@@ -48,6 +49,11 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
+    /// As we parse the function name and deal with arrays we don't want to default NULL handler, which will hide
+    /// nullability from us (which also means hidden from the aggregate functions)
+    bool useDefaultImplementationForNulls() const override { return false; }
+    /// Same for low cardinality. We want to return exactly what the aggregate function returns, no meddling
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
@@ -67,7 +73,7 @@ DataTypePtr FunctionArrayReduce::getReturnTypeImpl(const ColumnsWithTypeAndName 
     ///  (possibly with parameters in parentheses, for example: "quantile(0.99)").
 
     if (arguments.size() < 2)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+        throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
             "Number of arguments for function {} doesn't match: passed {}, should be at least 2.",
             getName(), arguments.size());
 
@@ -115,7 +121,8 @@ ColumnPtr FunctionArrayReduce::executeImpl(const ColumnsWithTypeAndName & argume
     const IAggregateFunction & agg_func = *aggregate_function;
     std::unique_ptr<Arena> arena = std::make_unique<Arena>();
 
-    /// Aggregate functions do not support constant columns. Therefore, we materialize them.
+    /// Aggregate functions do not support constant or lowcardinality columns. Therefore, we materialize them and
+    /// keep a reference so they are alive until we finish using their nested columns (array data/offset)
     std::vector<ColumnPtr> materialized_columns;
 
     const size_t num_arguments_columns = arguments.size() - 1;
@@ -126,6 +133,12 @@ ColumnPtr FunctionArrayReduce::executeImpl(const ColumnsWithTypeAndName & argume
     for (size_t i = 0; i < num_arguments_columns; ++i)
     {
         const IColumn * col = arguments[i + 1].column.get();
+        auto col_no_lowcardinality = recursiveRemoveLowCardinality(arguments[i + 1].column);
+        if (col_no_lowcardinality != arguments[i + 1].column)
+        {
+            materialized_columns.emplace_back(col_no_lowcardinality);
+            col = col_no_lowcardinality.get();
+        }
 
         const ColumnArray::Offsets * offsets_i = nullptr;
         if (const ColumnArray * arr = checkAndGetColumn<ColumnArray>(col))
@@ -203,7 +216,40 @@ ColumnPtr FunctionArrayReduce::executeImpl(const ColumnsWithTypeAndName & argume
 
 REGISTER_FUNCTION(ArrayReduce)
 {
-    factory.registerFunction<FunctionArrayReduce>();
+    FunctionDocumentation::Description description = R"(
+Applies an aggregate function to array elements and returns its result.
+The name of the aggregation function is passed as a string in single quotes `'max'`, `'sum'`.
+When using parametric aggregate functions, the parameter is indicated after the function name in parentheses `'uniqUpTo(6)'`.
+)";
+    FunctionDocumentation::Syntax syntax = "arrayReduce(agg_f, arr1 [, arr2, ... , arrN)])";
+    FunctionDocumentation::Arguments arguments = {
+        {"agg_f", "The name of an aggregate function which should be a constant.", {"String"}},
+        {"arr1 [, arr2, ... , arrN)]", "N arrays corresponding to the arguments of `agg_f`.", {"Array(T)"}},
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the result of the aggregate function"};
+    FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arrayReduce('max', [1, 2, 3]);", R"(
+┌─arrayReduce('max', [1, 2, 3])─┐
+│                             3 │
+└───────────────────────────────┘
+)"},{"Example with aggregate function using multiple arguments", R"(--If an aggregate function takes multiple arguments, then this function must be applied to multiple arrays of the same size.
+
+SELECT arrayReduce('maxIf', [3, 5], [1, 0]);
+)", R"(
+┌─arrayReduce('maxIf', [3, 5], [1, 0])─┐
+│                                    3 │
+└──────────────────────────────────────┘
+)"},{"Example with a parametric aggregate function", R"(
+SELECT arrayReduce('uniqUpTo(3)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+)", R"(
+┌─arrayReduce('uniqUpTo(3)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])─┐
+│                                                           4 │
+└─────────────────────────────────────────────────────────────┘
+)"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionArrayReduce>(documentation);
 }
 
 }

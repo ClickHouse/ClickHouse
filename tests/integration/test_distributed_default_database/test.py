@@ -5,13 +5,14 @@ in this test we write into per-node tables and read from the distributed table.
 The default database in the distributed table definition is left empty on purpose to test
 default database deduction.
 """
+
+from contextlib import contextmanager
+
 import pytest
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
-
-from contextlib import contextmanager
 
 
 def bootstrap(cluster):
@@ -48,4 +49,8 @@ def start_cluster():
 def test_query():
     with start_cluster() as cluster:
         node1 = cluster.instances["node1"]
-        assert TSV(node1.query("SELECT count() FROM default.test")) == TSV("20")
+        # For now, serialize_query_plan is disabled, because all the tables must exist on initiator.
+        assert TSV(node1.query("SELECT count() FROM default.test settings serialize_query_plan = 0")) == TSV("20")
+
+        # Setting allow_push_predicate_ast_for_distributed_subqueries should work when the inner table does not exist.
+        assert TSV(node1.query("SELECT count() FROM (SELECT v FROM default.test) where v != 0 settings serialize_query_plan = 0")) == TSV("18")

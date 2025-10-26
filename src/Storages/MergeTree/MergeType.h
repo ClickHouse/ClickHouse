@@ -11,7 +11,7 @@ namespace DB
 /// ReplicatedMergeTreeLogEntry.
 ///
 /// Order is important, don't try to change it.
-enum class MergeType
+enum class MergeType : uint8_t
 {
     /// Just regular merge
     Regular = 1,

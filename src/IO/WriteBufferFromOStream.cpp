@@ -1,6 +1,7 @@
 #include <IO/WriteBufferFromOStream.h>
 #include <Common/logger_useful.h>
 
+#include <ostream>
 
 namespace DB
 {

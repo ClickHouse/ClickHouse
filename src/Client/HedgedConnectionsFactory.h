@@ -8,12 +8,13 @@
 #include <Common/Fiber.h>
 #include <Client/ConnectionEstablisher.h>
 #include <Client/ConnectionPoolWithFailover.h>
-#include <Core/Settings.h>
 #include <unordered_map>
 #include <memory>
 
 namespace DB
 {
+
+struct Settings;
 
 /** Class for establishing hedged connections with replicas.
   * The process of establishing connection is divided on stages, on each stage if
@@ -27,7 +28,7 @@ public:
     using ShuffledPool = ConnectionPoolWithFailover::Base::ShuffledPool;
     using TryResult = PoolWithFailoverBase<IConnectionPool>::TryResult;
 
-    enum class State
+    enum class State : uint8_t
     {
         READY,
         NOT_READY,
@@ -133,7 +134,7 @@ private:
     std::shared_ptr<QualifiedTableName> table_to_check;
     int last_used_index = -1;
     Epoll epoll;
-    Poco::Logger * log;
+    LoggerPtr log;
     std::string fail_messages;
 
     /// The maximum number of attempts to connect to replicas.
@@ -158,8 +159,8 @@ private:
     /// checking the number of requested replicas that are still in process).
     size_t requested_connections_count = 0;
 
-    const size_t max_parallel_replicas = 0;
-    const bool skip_unavailable_shards = 0;
+    const size_t max_parallel_replicas = 1;
+    const bool skip_unavailable_shards = false;
 };
 
 }

@@ -50,10 +50,14 @@ public:
         char * buf = nullptr;
         Priority priority;
         size_t ignore = 0;
+        bool direct_io = false;
     };
 
     struct Result
     {
+        /// The read data is at [buf + offset, buf + size), where `buf` is from Request struct.
+        /// (Notice that `offset` is included in `size`.)
+
         /// size
         /// Less than requested amount of data can be returned.
         /// If size is zero - the file has ended.
@@ -66,7 +70,7 @@ public:
 
         std::unique_ptr<Stopwatch> execution_watch = {};
 
-        operator std::tuple<size_t &, size_t &>() { return {size, offset}; }
+        explicit operator std::tuple<size_t &, size_t &>() { return {size, offset}; }
     };
 
     /// Submit request and obtain a handle. This method don't perform any waits.

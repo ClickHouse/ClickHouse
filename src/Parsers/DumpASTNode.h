@@ -165,7 +165,7 @@ public:
         : log(nullptr)
     {
         if constexpr (_enable)
-            log = &Poco::Logger::get("AST");
+            log = getLogger("AST");
     }
 
     ~DebugASTLog()
@@ -177,7 +177,7 @@ public:
     WriteBuffer * stream() { return (_enable ? &buf : nullptr); }
 
 private:
-    Poco::Logger * log;
+    LoggerPtr log;
     WriteBufferFromOwnString buf;
 };
 

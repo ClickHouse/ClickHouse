@@ -81,15 +81,15 @@ ColumnsDescription StorageSystemQuotaUsage::getColumnsDescriptionImpl(bool add_c
             data_type = std::make_shared<DataTypeFloat64>();
         else
             data_type = std::make_shared<DataTypeUInt64>();
-        description.add({column_name, std::make_shared<DataTypeNullable>(data_type)});
-        description.add({String("max_") + column_name, std::make_shared<DataTypeNullable>(data_type)});
+        description.add({column_name, std::make_shared<DataTypeNullable>(data_type), type_info.current_usage_description});
+        description.add({String("max_") + column_name, std::make_shared<DataTypeNullable>(data_type), type_info.max_allowed_usage_description});
     }
 
     return description;
 }
 
 
-void StorageSystemQuotaUsage::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemQuotaUsage::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     /// If "select_from_system_db_requires_grant" is enabled the access rights were already checked in InterpreterSelectQuery.
     const auto & access_control = context->getAccessControl();

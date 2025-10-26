@@ -1,13 +1,20 @@
 import logging
-import pytest
 import os
 import time
+from contextlib import nullcontext as does_not_raise
+
+import pytest
+import uuid
+
+from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 NAMED_COLLECTIONS_CONFIG = os.path.join(
     SCRIPT_DIR, "./configs/config.d/named_collections.xml"
 )
+
+ZK_PATH = "/named_collections_path"
 
 
 @pytest.fixture(scope="module")
@@ -23,6 +30,28 @@ def cluster():
                 "configs/users.d/users.xml",
             ],
             stay_alive=True,
+        )
+        cluster.add_instance(
+            "node_with_keeper",
+            main_configs=[
+                "configs/config.d/named_collections_with_zookeeper.xml",
+            ],
+            user_configs=[
+                "configs/users.d/users.xml",
+            ],
+            stay_alive=True,
+            with_zookeeper=True,
+        )
+        cluster.add_instance(
+            "node_with_keeper_2",
+            main_configs=[
+                "configs/config.d/named_collections_with_zookeeper.xml",
+            ],
+            user_configs=[
+                "configs/users.d/users.xml",
+            ],
+            stay_alive=True,
+            with_zookeeper=True,
         )
         cluster.add_instance(
             "node_only_named_collection_control",
@@ -447,11 +476,36 @@ def test_config_reload(cluster):
     )
 
 
-def test_sql_commands(cluster):
-    node = cluster.instances["node"]
+@pytest.mark.parametrize("with_keeper", [False, True])
+def test_sql_commands(cluster, with_keeper):
+    zk = None
+    node = None
+    if with_keeper:
+        node = cluster.instances["node_with_keeper"]
+        zk = cluster.get_kazoo_client("zoo1")
+    else:
+        node = cluster.instances["node"]
+
     assert "1" == node.query("select count() from system.named_collections").strip()
 
-    node.query("CREATE NAMED COLLECTION collection2 AS key1=1, key2='value2'")
+    query_id = f"query_{uuid.uuid4()}"
+    node.query(
+        "CREATE NAMED COLLECTION collection2 AS key1=1, key2='value2'",
+        query_id=query_id,
+    )
+
+    node.query("SYSTEM FLUSH LOGS")
+    assert 0 == int(
+        node.query(
+            f"SELECT count() FROM system.text_log WHERE message ILIKE '%value2%' and query_id = '{query_id}'"
+        )
+    )
+    assert 1 == int(
+        node.query(
+            f"SELECT count() FROM system.text_log WHERE message ILIKE '%CREATE NAMED COLLECTION collection2 AS key1 = \\'[HIDDEN]\\', key2 = \\'[HIDDEN]\\' (stage: Complete)%' and query_id = '{query_id}'"
+        )
+    )
+    assert "key1 = \\'[HIDDEN]\\', key2 = \\'[HIDDEN]\\'" in node.query(f"SELECT query FROM system.query_log WHERE query_id = '{query_id}'")
 
     def check_created():
         assert (
@@ -479,12 +533,36 @@ def test_sql_commands(cluster):
                 "select collection['key2'] from system.named_collections where name = 'collection2'"
             ).strip()
         )
+        if zk is not None:
+            children = zk.get_children(ZK_PATH)
+            assert 1 == len(children)
+            assert "collection2.sql" in children
+            assert (
+                b"CREATE NAMED COLLECTION collection2 AS key1 = 1, key2 = 'value2'"
+                in zk.get(ZK_PATH + "/collection2.sql")[0]
+            )
 
     check_created()
     node.restart_clickhouse()
     check_created()
 
-    node.query("ALTER NAMED COLLECTION collection2 SET key1=4, key3='value3'")
+    query_id = f"query_{uuid.uuid4()}"
+    node.query(
+        "ALTER NAMED COLLECTION collection2 SET key1=4, key3='value3'",
+        query_id=query_id,
+    )
+
+    node.query("SYSTEM FLUSH LOGS")
+    assert 0 == int(
+        node.query(
+            f"SELECT count() FROM system.text_log WHERE message ILIKE '%value3%' and query_id = '{query_id}'"
+        )
+    )
+    assert 1 == int(
+        node.query(
+            f"SELECT count() FROM system.text_log WHERE message ILIKE '%ALTER NAMED COLLECTION collection2 SET key1 = \\'[HIDDEN]\\', key3 = \\'[HIDDEN]\\' (stage: Complete)%' and query_id = '{query_id}'"
+        )
+    )
 
     def check_altered():
         assert (
@@ -508,6 +586,15 @@ def test_sql_commands(cluster):
             ).strip()
         )
 
+        if zk is not None:
+            children = zk.get_children(ZK_PATH)
+            assert 1 == len(children)
+            assert "collection2.sql" in children
+            assert (
+                b"CREATE NAMED COLLECTION collection2 AS key1 = 4, key2 = 'value2', key3 = 'value3'"
+                in zk.get(ZK_PATH + "/collection2.sql")[0]
+            )
+
     check_altered()
     node.restart_clickhouse()
     check_altered()
@@ -522,13 +609,38 @@ def test_sql_commands(cluster):
             ).strip()
         )
 
+        if zk is not None:
+            children = zk.get_children(ZK_PATH)
+            assert 1 == len(children)
+            assert "collection2.sql" in children
+            assert (
+                b"CREATE NAMED COLLECTION collection2 AS key1 = 4, key3 = 'value3'"
+                in zk.get(ZK_PATH + "/collection2.sql")[0]
+            )
+
     check_deleted()
     node.restart_clickhouse()
     check_deleted()
 
+    query_id = f"query_{uuid.uuid4()}"
     node.query(
-        "ALTER NAMED COLLECTION collection2 SET key3=3, key4='value4' DELETE key1"
+        "ALTER NAMED COLLECTION collection2 SET key3=3, key4='value4' DELETE key1",
+        query_id=query_id,
     )
+    time.sleep(2)
+
+    node.query("SYSTEM FLUSH LOGS")
+    assert 0 == int(
+        node.query(
+            f"SELECT count() FROM system.text_log WHERE message ILIKE '%value3%' and query_id = '{query_id}'"
+        )
+    )
+    assert 1 == int(
+        node.query(
+            f"SELECT count() FROM system.text_log WHERE message ILIKE '%ALTER NAMED COLLECTION collection2 SET key3 = \\'[HIDDEN]\\', key4 = \\'[HIDDEN]\\' DELETE key1 (stage: Complete)%' and query_id = '{query_id}'"
+        )
+    )
+    assert "key3 = \\'[HIDDEN]\\', key4 = \\'[HIDDEN]\\'" in node.query(f"SELECT query FROM system.query_log WHERE query_id = '{query_id}'")
 
     def check_altered_and_deleted():
         assert (
@@ -552,6 +664,15 @@ def test_sql_commands(cluster):
             ).strip()
         )
 
+        if zk is not None:
+            children = zk.get_children(ZK_PATH)
+            assert 1 == len(children)
+            assert "collection2.sql" in children
+            assert (
+                b"CREATE NAMED COLLECTION collection2 AS key3 = 3, key4 = 'value4'"
+                in zk.get(ZK_PATH + "/collection2.sql")[0]
+            )
+
     check_altered_and_deleted()
     node.restart_clickhouse()
     check_altered_and_deleted()
@@ -564,7 +685,228 @@ def test_sql_commands(cluster):
             "collection1"
             == node.query("select name from system.named_collections").strip()
         )
+        if zk is not None:
+            children = zk.get_children(ZK_PATH)
+            assert 0 == len(children)
 
     check_dropped()
     node.restart_clickhouse()
     check_dropped()
+
+
+def test_keeper_storage(cluster):
+    node1 = cluster.instances["node_with_keeper"]
+    node2 = cluster.instances["node_with_keeper_2"]
+    zk = cluster.get_kazoo_client("zoo1")
+
+    assert "1" == node1.query("select count() from system.named_collections").strip()
+    assert "1" == node2.query("select count() from system.named_collections").strip()
+
+    node1.query("CREATE NAMED COLLECTION collection2 AS key1=1, key2='value2'")
+
+    def check_created(node):
+        assert (
+            "collection1\ncollection2"
+            == node.query("select name from system.named_collections").strip()
+        )
+
+        assert (
+            "['key1','key2']"
+            == node.query(
+                "select mapKeys(collection) from system.named_collections where name = 'collection2'"
+            ).strip()
+        )
+
+        assert (
+            "1"
+            == node.query(
+                "select collection['key1'] from system.named_collections where name = 'collection2'"
+            ).strip()
+        )
+
+        assert (
+            "value2"
+            == node.query(
+                "select collection['key2'] from system.named_collections where name = 'collection2'"
+            ).strip()
+        )
+
+        children = zk.get_children(ZK_PATH)
+        assert 1 == len(children)
+        assert "collection2.sql" in children
+        assert (
+            b"CREATE NAMED COLLECTION collection2 AS key1 = 1, key2 = 'value2'"
+            in zk.get(ZK_PATH + "/collection2.sql")[0]
+        )
+
+    check_created(node1)
+    check_created(node2)
+
+    node1.restart_clickhouse()
+    node2.restart_clickhouse()
+
+    check_created(node1)
+    check_created(node2)
+
+    node2.query("ALTER NAMED COLLECTION collection2 SET key1=4, key3='value3'")
+
+    time.sleep(5)
+
+    def check_altered(node):
+        assert (
+            "['key1','key2','key3']"
+            == node.query(
+                "select mapKeys(collection) from system.named_collections where name = 'collection2'"
+            ).strip()
+        )
+
+        assert (
+            "4"
+            == node.query(
+                "select collection['key1'] from system.named_collections where name = 'collection2'"
+            ).strip()
+        )
+
+        assert (
+            "value3"
+            == node.query(
+                "select collection['key3'] from system.named_collections where name = 'collection2'"
+            ).strip()
+        )
+
+        if zk is not None:
+            children = zk.get_children(ZK_PATH)
+            assert 1 == len(children)
+            assert "collection2.sql" in children
+            assert (
+                b"CREATE NAMED COLLECTION collection2 AS key1 = 4, key2 = 'value2', key3 = 'value3'"
+                in zk.get(ZK_PATH + "/collection2.sql")[0]
+            )
+
+    check_altered(node2)
+    check_altered(node1)
+
+    node1.restart_clickhouse()
+    node2.restart_clickhouse()
+
+    check_altered(node1)
+    check_altered(node2)
+
+    node1.query("DROP NAMED COLLECTION collection2")
+
+    time.sleep(5)
+
+    def check_dropped(node):
+        assert "1" == node.query("select count() from system.named_collections").strip()
+        assert (
+            "collection1"
+            == node.query("select name from system.named_collections").strip()
+        )
+        if zk is not None:
+            children = zk.get_children(ZK_PATH)
+            assert 0 == len(children)
+
+    check_dropped(node1)
+    check_dropped(node2)
+
+    node1.restart_clickhouse()
+    node2.restart_clickhouse()
+
+    check_dropped(node1)
+    check_dropped(node2)
+
+
+@pytest.mark.parametrize(
+    "ignore, expected_raise",
+    [(True, does_not_raise()), (False, pytest.raises(QueryRuntimeException))],
+)
+def test_keeper_storage_remove_on_cluster(cluster, ignore, expected_raise):
+    node = cluster.instances["node_with_keeper"]
+
+    replace_in_users_config(
+        node,
+        "ignore_on_cluster_for_replicated_named_collections_queries>.",
+        f"ignore_on_cluster_for_replicated_named_collections_queries>{int(ignore)}",
+    )
+    node.query("SYSTEM RELOAD CONFIG")
+
+    with expected_raise:
+        node.query(
+            "DROP NAMED COLLECTION IF EXISTS test_nc ON CLUSTER `replicated_nc_nodes_cluster`"
+        )
+        node.query(
+            f"CREATE NAMED COLLECTION test_nc ON CLUSTER `replicated_nc_nodes_cluster` AS key1=1, key2=2 OVERRIDABLE"
+        )
+        node.query(
+            f"ALTER NAMED COLLECTION  test_nc ON CLUSTER `replicated_nc_nodes_cluster` SET key2=3"
+        )
+        node.query(
+            f"DROP NAMED COLLECTION test_nc ON CLUSTER `replicated_nc_nodes_cluster`"
+        )
+    node.query("DROP NAMED COLLECTION IF EXISTS test_nc")
+
+
+@pytest.mark.parametrize(
+    "instance_name",
+    [("node"), ("node_with_keeper")],
+)
+def test_name_escaping(cluster, instance_name):
+    node = cluster.instances[instance_name]
+
+    node.query("DROP NAMED COLLECTION IF EXISTS `test_!strange/symbols!`;")
+    node.query("CREATE NAMED COLLECTION `test_!strange/symbols!` AS key1=1, key2=2")
+    node.restart_clickhouse()
+
+    node.query("DROP NAMED COLLECTION `test_!strange/symbols!`")
+
+
+@pytest.mark.parametrize(
+    "instance_name, show_secrets",
+    [("node", True), ("node_only_named_collection_control", False)],
+)
+def test_system_named_collection(cluster, instance_name, show_secrets):
+    node = cluster.instances[instance_name]
+
+    def validate_named_collection(collection_name, source, key_value):
+        assert (
+            node.query(
+                f"SELECT name FROM system.named_collections WHERE name='{collection_name}'"
+            )
+            == f"{collection_name}\n"
+        )
+        assert (
+            node.query(
+                f"SELECT collection['key1'] FROM system.named_collections WHERE name='{collection_name}'"
+            )
+            == f"{f'{key_value}' if show_secrets else '[HIDDEN]'}\n"
+        )
+        assert (
+            node.query(
+                f"SELECT source FROM system.named_collections WHERE name='{collection_name}'"
+            )
+            == f"{source}\n"
+        )
+        if source == "CONFIG":
+            assert (
+                node.query(
+                    f"SELECT create_query FROM system.named_collections WHERE name='{collection_name}'"
+                )
+                == "\n"
+            )
+        else:
+            hidden_str = "\\'[HIDDEN]\\'"
+            assert (
+                node.query(
+                    f"SELECT create_query FROM system.named_collections WHERE name='{collection_name}'"
+                )
+                == f"CREATE NAMED COLLECTION collection2 AS key1 = {f'{key_value}' if show_secrets else hidden_str} OVERRIDABLE\n"
+            )
+
+    validate_named_collection("collection1", "CONFIG", "value1")
+
+    node.query("CREATE NAMED COLLECTION collection2 AS key1=1 OVERRIDABLE")
+    validate_named_collection("collection2", "SQL", "1")
+    node.query("ALTER NAMED COLLECTION collection2 SET key1 = 30")
+    validate_named_collection("collection2", "SQL", "30")
+
+    node.query("DROP NAMED COLLECTION collection2")

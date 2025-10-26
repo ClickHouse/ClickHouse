@@ -17,7 +17,7 @@ select 1 SETTINGS use_query_cache = true;
 SELECT COUNT(*) FROM system.query_cache;
 
 -- The second query should cause a QC hit.
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['QueryCacheHits'], ProfileEvents['QueryCacheMisses']
 FROM system.query_log
 WHERE type = 'QueryFinish'

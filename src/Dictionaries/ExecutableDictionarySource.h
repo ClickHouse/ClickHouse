@@ -2,7 +2,7 @@
 
 
 #include <Core/Block.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/DictionaryStructure.h>
@@ -63,7 +63,7 @@ public:
     QueryPipeline getStreamForBlock(const Block & block);
 
 private:
-    Poco::Logger * log;
+    LoggerPtr log;
     time_t update_time = 0;
     const DictionaryStructure dict_struct;
     const Configuration configuration;

@@ -1,0 +1,25 @@
+services:
+    mysql57:
+        image: mysql:5.7
+        stop_grace_period: 5s
+        restart: always
+        environment:
+            MYSQL_ROOT_PASSWORD: ClickHouse_MySQL_P@ssw0rd
+            MYSQL_ROOT_HOST: ${MYSQL_ROOT_HOST}
+            DATADIR: /var/log/mysql/
+        expose:
+            - ${MYSQL_PORT:-3306}
+        command: --server_id=100
+            --log-bin='mysql-bin-1.log'
+            --default-time-zone='+3:00'
+            --gtid-mode="ON"
+            --enforce-gtid-consistency
+            --log-error-verbosity=3
+            --log-error=/var/log/mysql/error.log
+            --general-log=ON
+            --general-log-file=/var/log/mysql/general.log
+        volumes:
+            - type: ${MYSQL_LOGS_FS:-tmpfs}
+              source: ${MYSQL_LOGS:-}
+              target: /var/log/mysql/
+        user: ${MYSQL_DOCKER_USER}

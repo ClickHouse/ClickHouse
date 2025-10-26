@@ -1,9 +1,7 @@
 #pragma once
 
-#include <Core/Block.h>
-#include <Processors/Formats/Impl/JSONEachRowRowInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
-#include <Formats/FormatSettings.h>
+#include <Processors/Formats/Impl/JSONEachRowRowInputFormat.h>
 
 
 namespace DB
@@ -17,7 +15,7 @@ class JSONRowInputFormat final : public JSONEachRowRowInputFormat
 public:
     JSONRowInputFormat(
         ReadBuffer & in_,
-        const Block & header_,
+        SharedHeader header_,
         Params params_,
         const FormatSettings & format_settings_);
 
@@ -29,7 +27,7 @@ public:
 private:
     JSONRowInputFormat(
         std::unique_ptr<PeekableReadBuffer> buf,
-        const Block & header_,
+        SharedHeader header_,
         Params params_,
         const FormatSettings & format_settings_);
 
@@ -45,16 +43,17 @@ private:
 class JSONRowSchemaReader : public JSONEachRowSchemaReader
 {
 public:
-    JSONRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
+    JSONRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_, bool fallback_to_json_each_row_);
 
     NamesAndTypesList readSchema() override;
 
     bool hasStrictOrderOfColumns() const override { return false; }
 
 private:
-    JSONRowSchemaReader(std::unique_ptr<PeekableReadBuffer> buf, const FormatSettings & format_settings_);
+    JSONRowSchemaReader(std::unique_ptr<PeekableReadBuffer> buf, const FormatSettings & format_settings_, bool fallback_to_json_each_row_);
 
     std::unique_ptr<PeekableReadBuffer> peekable_buf;
+    bool fallback_to_json_each_row;
 };
 
 }

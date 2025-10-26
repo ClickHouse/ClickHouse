@@ -17,6 +17,13 @@
     <query>SELECT sumKahan(toNullable(toFloat32(number))) FROM numbers(100000000)</query>
     <query>SELECT sumKahan(toNullable(toFloat64(number))) FROM numbers(100000000)</query>
 
+    <query>select sumIf(number::Decimal128(3), rand32() % 2 = 0) from numbers(100000000)</query>
+    <query>select sumIf(number::Decimal256(3), rand32() % 2 = 0) from numbers(100000000)</query>
+    <query>select sumIf(number::Int128, rand32() % 2 = 0) from numbers(100000000)</query>
+    <query>select sumIf(number::UInt128, rand32() % 2 = 0) from numbers(100000000)</query>
+    <query>select sumIf(number::Int256, rand32() % 2 = 0) from numbers(100000000)</query>
+    <query>select sumIf(number::UInt256, rand32() % 2 = 0) from numbers(100000000)</query>
+
     <!-- Create a table with ~20% null values. Make it random so the branch predictor doesn't do all the work -->
     <create_query>CREATE TABLE nullfloat32 (x Nullable(Float32)) ENGINE = Memory</create_query>
     <fill_query>INSERT INTO nullfloat32

@@ -2,12 +2,15 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Interpreters/Aggregator.h>
+#include <Processors/Chunk.h>
 #include <Processors/IAccumulatingTransform.h>
-#include <Common/Stopwatch.h>
-#include <Common/setThreadName.h>
-#include <Common/scope_guard_safe.h>
+#include <Processors/RowsBeforeStepCounter.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
+#include <Common/Stopwatch.h>
+#include <Common/scope_guard_safe.h>
+#include <Common/setThreadName.h>
+
 
 namespace CurrentMetrics
 {
@@ -19,16 +22,14 @@ namespace CurrentMetrics
 namespace DB
 {
 
-class AggregatedChunkInfo : public ChunkInfo
+class AggregatedChunkInfo final : public ChunkInfoCloneable<AggregatedChunkInfo>
 {
 public:
     bool is_overflows = false;
     Int32 bucket_num = -1;
     UInt64 chunk_num = 0; // chunk number in order of generation, used during memory bound merging to restore chunks order
+    std::vector<Int32> out_of_order_buckets; // out of order buckets for two level aggregation
 };
-
-using AggregatorList = std::list<Aggregator>;
-using AggregatorListPtr = std::shared_ptr<AggregatorList>;
 
 using AggregatorList = std::list<Aggregator>;
 using AggregatorListPtr = std::shared_ptr<AggregatorList>;
@@ -46,10 +47,10 @@ struct AggregatingTransformParams
     Aggregator & aggregator;
     bool final;
 
-    AggregatingTransformParams(const Block & header, const Aggregator::Params & params_, bool final_)
+    AggregatingTransformParams(SharedHeader header, const Aggregator::Params & params_, bool final_)
         : params(params_)
         , aggregator_list_ptr(std::make_shared<AggregatorList>())
-        , aggregator(*aggregator_list_ptr->emplace(aggregator_list_ptr->end(), header, params))
+        , aggregator(*aggregator_list_ptr->emplace(aggregator_list_ptr->end(), *header, params))
         , final(final_)
     {
     }
@@ -71,16 +72,12 @@ struct AggregatingTransformParams
 struct ManyAggregatedData
 {
     ManyAggregatedDataVariants variants;
-    std::vector<std::unique_ptr<std::mutex>> mutexes;
     std::atomic<UInt32> num_finished = 0;
 
-    explicit ManyAggregatedData(size_t num_threads = 0) : variants(num_threads), mutexes(num_threads)
+    explicit ManyAggregatedData(size_t num_threads = 0) : variants(num_threads)
     {
         for (auto & elem : variants)
             elem = std::make_shared<AggregatedDataVariants>();
-
-        for (auto & mut : mutexes)
-            mut = std::make_unique<std::mutex>();
     }
 
     ~ManyAggregatedData()
@@ -107,18 +104,12 @@ struct ManyAggregatedData
                 // It doesn't make sense to spawn a thread if the variant is not going to actually destroy anything.
                 if (variant->aggregator)
                 {
-                    // variant is moved here and will be destroyed in the destructor of the lambda function.
-                    pool->trySchedule(
-                        [my_variant = std::move(variant), thread_group = CurrentThread::getGroup()]()
+                    pool->scheduleOrThrowOnError(
+                        [my_variant = std::move(variant), thread_group = CurrentThread::getGroup()]() mutable
                         {
-                            SCOPE_EXIT_SAFE(
-                                if (thread_group)
-                                    CurrentThread::detachFromGroupIfNotDetached();
-                            );
-                            if (thread_group)
-                                CurrentThread::attachToGroupIfDetached(thread_group);
+                            ThreadGroupSwitcher switcher(thread_group, "AggregDestruct");
 
-                            setThreadName("AggregDestruct");
+                            my_variant.reset();
                         });
                 }
             }
@@ -150,14 +141,14 @@ using ManyAggregatedDataPtr = std::shared_ptr<ManyAggregatedData>;
   * At aggregation step, every transform uses it's own AggregatedDataVariants structure.
   * At merging step, all structures pass to ConvertingAggregatedToChunksTransform.
   */
-class AggregatingTransform : public IProcessor
+class AggregatingTransform final : public IProcessor
 {
 public:
-    AggregatingTransform(Block header, AggregatingTransformParamsPtr params_);
+    AggregatingTransform(SharedHeader header, AggregatingTransformParamsPtr params_);
 
     /// For Parallel aggregating.
     AggregatingTransform(
-        Block header,
+        SharedHeader header,
         AggregatingTransformParamsPtr params_,
         ManyAggregatedDataPtr many_data,
         size_t current_variant,
@@ -171,6 +162,7 @@ public:
     Status prepare() override;
     void work() override;
     Processors expandPipeline() override;
+    void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr counter) override { rows_before_aggregation.swap(counter); }
 
 protected:
     void consume(Chunk chunk);
@@ -180,7 +172,7 @@ private:
     Processors processors;
 
     AggregatingTransformParamsPtr params;
-    Poco::Logger * log = &Poco::Logger::get("AggregatingTransform");
+    LoggerPtr log = getLogger("AggregatingTransform");
 
     ColumnRawPtrs key_columns;
     Aggregator::AggregateColumns aggregate_columns;
@@ -205,7 +197,7 @@ private:
     UInt64 src_rows = 0;
     UInt64 src_bytes = 0;
 
-    std::atomic<bool> is_generate_initialized = false;
+    std::atomic_flag is_generate_initialized;
     bool is_consume_finished = false;
     bool is_pipeline_created = false;
 
@@ -213,6 +205,10 @@ private:
     bool read_current_chunk = false;
 
     bool is_consume_started = false;
+
+    RowsBeforeStepCounterPtr rows_before_aggregation;
+
+    std::list<TemporaryBlockStreamHolder> tmp_files;
 
     void initGenerate();
 };

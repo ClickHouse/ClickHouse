@@ -1,13 +1,14 @@
 #pragma once
 
+#include <Core/Block.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/URI.h>
 #include <Common/LocalDateTime.h>
-#include "DictionaryStructure.h"
-#include "IDictionarySource.h"
-#include <Interpreters/Context.h>
+#include <Dictionaries/DictionaryStructure.h>
+#include <Dictionaries/IDictionarySource.h>
+#include <Interpreters/Context_fwd.h>
 #include <IO/CompressionMethod.h>
 
 namespace Poco
@@ -66,7 +67,7 @@ private:
     // wrap buffer using encoding from made request
     QueryPipeline createWrappedBuffer(std::unique_ptr<ReadWriteBufferFromHTTP> http_buffer);
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     LocalDateTime getLastModification() const;
 

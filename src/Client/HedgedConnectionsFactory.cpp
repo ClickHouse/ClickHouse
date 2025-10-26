@@ -3,11 +3,11 @@
 #include <Client/HedgedConnectionsFactory.h>
 #include <Common/typeid_cast.h>
 #include <Common/ProfileEvents.h>
+#include <Core/ProtocolDefines.h>
 
 namespace ProfileEvents
 {
     extern const Event HedgedRequestsChangeReplica;
-    extern const Event DistributedConnectionFailTry;
     extern const Event DistributedConnectionFailAtAll;
 }
 
@@ -34,15 +34,17 @@ HedgedConnectionsFactory::HedgedConnectionsFactory(
     : pool(pool_)
     , timeouts(timeouts_)
     , table_to_check(table_to_check_)
-    , log(&Poco::Logger::get("HedgedConnectionsFactory"))
+    , log(getLogger("HedgedConnectionsFactory"))
     , max_tries(max_tries_)
     , fallback_to_stale_replicas(fallback_to_stale_replicas_)
     , max_parallel_replicas(max_parallel_replicas_)
     , skip_unavailable_shards(skip_unavailable_shards_)
 {
-    shuffled_pools = pool->getShuffledPools(settings_, priority_func);
-    for (auto shuffled_pool : shuffled_pools)
-        replicas.emplace_back(std::make_unique<ConnectionEstablisherAsync>(shuffled_pool.pool, &timeouts, settings_, log, table_to_check.get()));
+    shuffled_pools = pool->getShuffledPools(settings_, priority_func, /* use_slowdown_count */ true);
+
+    for (const auto & shuffled_pool : shuffled_pools)
+        replicas.emplace_back(
+            std::make_unique<ConnectionEstablisherAsync>(shuffled_pool.pool, &timeouts, settings_, log, table_to_check.get()));
 }
 
 HedgedConnectionsFactory::~HedgedConnectionsFactory()
@@ -80,7 +82,7 @@ std::vector<Connection *> HedgedConnectionsFactory::getManyConnections(PoolMode 
         }
         case PoolMode::GET_MANY:
         {
-            max_entries = max_parallel_replicas;
+            max_entries = std::min(max_parallel_replicas, shuffled_pools.size());
             break;
         }
     }
@@ -280,7 +282,7 @@ int HedgedConnectionsFactory::getReadyFileDescriptor(bool blocking, AsyncCallbac
 
 HedgedConnectionsFactory::State HedgedConnectionsFactory::resumeConnectionEstablisher(int index, Connection *& connection_out)
 {
-    replicas[index].connection_establisher->resume();
+    replicas[index].connection_establisher->resumeConnectionWithForceOption(/*force_connected_*/ shuffled_pools[index].error_count != 0);
 
     if (replicas[index].connection_establisher->isCancelled())
         return State::CANNOT_CHOOSE;
@@ -325,9 +327,8 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::processFinishedConnect
     {
         ShuffledPool & shuffled_pool = shuffled_pools[index];
         LOG_INFO(log, "Connection failed at try №{}, reason: {}", (shuffled_pool.error_count + 1), fail_message);
-        ProfileEvents::increment(ProfileEvents::DistributedConnectionFailTry);
 
-        shuffled_pool.error_count = std::min(pool->getMaxErrorCup(), shuffled_pool.error_count + 1);
+        shuffled_pool.error_count = std::min(pool->getMaxErrorCap(), shuffled_pool.error_count + 1);
         shuffled_pool.slowdown_count = 0;
 
         if (shuffled_pool.error_count >= max_tries)
@@ -413,7 +414,7 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::setBestUsableReplica(C
         indexes.end(),
         [&](size_t lhs, size_t rhs)
         {
-            return replicas[lhs].connection_establisher->getResult().staleness < replicas[rhs].connection_establisher->getResult().staleness;
+            return replicas[lhs].connection_establisher->getResult().delay < replicas[rhs].connection_establisher->getResult().delay;
         });
 
     replicas[indexes[0]].is_ready = true;

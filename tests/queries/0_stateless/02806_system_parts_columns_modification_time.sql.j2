@@ -1,5 +1,5 @@
--- Tags: no-s3-storage
--- Tag: no-s3-storage because S3 updates metadata for the virtual link file on metadata disk (see CreateHardlinkOperation::execute() for details)
+-- Tags: no-object-storage
+-- Tag: no-object-storage because S3 updates metadata for the virtual link file on metadata disk (see CreateHardlinkOperation::execute() for details)
 
 set mutations_sync=1;
 

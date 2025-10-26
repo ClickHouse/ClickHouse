@@ -6,7 +6,6 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/logger_useful.h>
 #include <Common/randomSeed.h>
-#include "Coordination/KeeperConstants.h"
 #include <pcg_random.hpp>
 
 namespace DB
@@ -62,7 +61,7 @@ class ZooKeeperWithFaultInjection
 
     std::unique_ptr<RandomFaultInjection> fault_policy;
     std::string name;
-    Poco::Logger * logger = nullptr;
+    LoggerPtr logger = nullptr;
     const UInt64 seed = 0;
 
     std::vector<std::string> session_ephemeral_nodes;
@@ -87,7 +86,7 @@ public:
         double fault_injection_probability,
         UInt64 fault_injection_seed,
         std::string name_,
-        Poco::Logger * logger_);
+        LoggerPtr logger_);
 
     explicit ZooKeeperWithFaultInjection(zkutil::ZooKeeper::Ptr const & keeper_) : keeper(keeper_) { }
     static ZooKeeperWithFaultInjection::Ptr createInstance(
@@ -95,7 +94,7 @@ public:
         UInt64 fault_injection_seed,
         zkutil::ZooKeeper::Ptr const & zookeeper,
         std::string name,
-        Poco::Logger * logger)
+        LoggerPtr logger)
     {
         /// validate all parameters here, constructor just accept everything
         if (fault_injection_probability < 0.0)
@@ -141,7 +140,7 @@ public:
     Strings getChildren(
         const std::string & path,
         Coordination::Stat * stat = nullptr,
-        const zkutil::EventPtr & watch = nullptr,
+        const Coordination::EventPtr & watch = nullptr,
         Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
 
     zkutil::ZooKeeper::MultiGetChildrenResponse getChildren(
@@ -151,46 +150,26 @@ public:
         const std::string & path,
         Strings & res,
         Coordination::Stat * stat = nullptr,
-        const zkutil::EventPtr & watch = nullptr,
+        const Coordination::EventPtr & watch = nullptr,
         Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
 
     zkutil::ZooKeeper::MultiTryGetChildrenResponse tryGetChildren(
         const std::vector<std::string> & paths, Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
 
-    Coordination::Error tryGetChildrenWatch(
-        const std::string & path,
-        Strings & res,
-        Coordination::Stat * stat,
-        Coordination::WatchCallback watch_callback,
-        Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
-
     Strings getChildrenWatch(
         const std::string & path,
         Coordination::Stat * stat,
-        Coordination::WatchCallback watch_callback,
-        Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
-
-    Strings getChildrenWatch(
-        const std::string & path,
-        Coordination::Stat * stat,
-        Coordination::WatchCallbackPtr watch_callback,
+        Coordination::WatchCallbackPtrOrEventPtr watch_callback,
         Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
 
     bool tryGet(
         const std::string & path,
         std::string & res,
         Coordination::Stat * stat = nullptr,
-        const zkutil::EventPtr & watch = nullptr,
+        const Coordination::EventPtr & watch = nullptr,
         Coordination::Error * code = nullptr);
 
-    bool tryGetWatch(
-        const std::string & path,
-        std::string & res,
-        Coordination::Stat * stat,
-        Coordination::WatchCallback watch_callback,
-        Coordination::Error * code = nullptr);
-
-    std::string get(const std::string & path, Coordination::Stat * stat = nullptr, const zkutil::EventPtr & watch = nullptr);
+    std::string get(const std::string & path, Coordination::Stat * stat = nullptr, const Coordination::EventPtr & watch = nullptr);
 
     zkutil::ZooKeeper::MultiGetResponse get(const std::vector<std::string> & paths);
 
@@ -200,7 +179,7 @@ public:
 
     void remove(const String & path, int32_t version = -1);
 
-    bool exists(const std::string & path, Coordination::Stat * stat = nullptr, const zkutil::EventPtr & watch = nullptr);
+    bool exists(const std::string & path, Coordination::Stat * stat = nullptr, const Coordination::EventPtr & watch = nullptr);
 
     zkutil::ZooKeeper::MultiExistsResponse exists(const std::vector<std::string> & paths);
 
@@ -212,7 +191,7 @@ public:
 
     Coordination::Error tryCreate(const std::string & path, const std::string & data, int32_t mode);
 
-    Coordination::Responses multi(const Coordination::Requests & requests);
+    Coordination::Responses multi(const Coordination::Requests & requests, bool check_session_valid = false);
 
     void createIfNotExists(const std::string & path, const std::string & data);
 
@@ -242,17 +221,15 @@ public:
 
     void deleteEphemeralNodeIfContentMatches(const std::string & path, const std::string & fast_delete_if_equal_value);
 
-    Coordination::Error tryMulti(const Coordination::Requests & requests, Coordination::Responses & responses);
+    Coordination::Error tryMulti(const Coordination::Requests & requests, Coordination::Responses & responses, bool check_session_valid = false);
 
-    Coordination::Error tryMultiNoThrow(const Coordination::Requests & requests, Coordination::Responses & responses);
+    Coordination::Error tryMultiNoThrow(const Coordination::Requests & requests, Coordination::Responses & responses, bool check_session_valid = false);
 
     ///
     /// mirror ZooKeeper interface: Async functions
     /// Note that there is not guarantees that the parameters will live until the internal callback is called
     /// so we might need to copy them
     ///
-
-    zkutil::ZooKeeper::FutureExists asyncExists(std::string path, Coordination::WatchCallback watch_callback = {});
 
     zkutil::ZooKeeper::FutureGet asyncTryGet(std::string path);
 

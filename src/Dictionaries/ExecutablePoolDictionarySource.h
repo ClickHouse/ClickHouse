@@ -2,7 +2,7 @@
 
 
 #include <Core/Block.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/DictionaryStructure.h>
@@ -72,7 +72,7 @@ private:
     Block sample_block;
     std::shared_ptr<ShellCommandSourceCoordinator> coordinator;
     ContextPtr context;
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 }

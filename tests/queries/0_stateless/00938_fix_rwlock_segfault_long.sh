@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: long
+# Tags: long, no-debug, no-msan
+# msan: too slow
 
 # Test fix for issue #5066
 

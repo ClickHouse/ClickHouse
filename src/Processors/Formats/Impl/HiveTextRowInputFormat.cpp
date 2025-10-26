@@ -1,3 +1,4 @@
+#include <Formats/FormatFactory.h>
 #include <Processors/Formats/Impl/HiveTextRowInputFormat.h>
 #include <Common/assert_cast.h>
 
@@ -19,19 +20,20 @@ static FormatSettings updateFormatSettings(const FormatSettings & settings, cons
     updated.date_time_input_format = FormatSettings::DateTimeInputFormat::BestEffort;
     updated.defaults_for_omitted_fields = true;
     updated.csv.delimiter = updated.hive_text.fields_delimiter;
+    updated.csv.allow_variable_number_of_columns = settings.hive_text.allow_variable_number_of_columns;
     if (settings.hive_text.input_field_names.empty())
         updated.hive_text.input_field_names = header.getNames();
     return updated;
 }
 
 HiveTextRowInputFormat::HiveTextRowInputFormat(
-    const Block & header_, ReadBuffer & in_, const Params & params_, const FormatSettings & format_settings_)
-    : HiveTextRowInputFormat(header_, std::make_unique<PeekableReadBuffer>(in_), params_, updateFormatSettings(format_settings_, header_))
+    SharedHeader header_, ReadBuffer & in_, const Params & params_, const FormatSettings & format_settings_)
+    : HiveTextRowInputFormat(header_, std::make_unique<PeekableReadBuffer>(in_), params_, updateFormatSettings(format_settings_, *header_))
 {
 }
 
 HiveTextRowInputFormat::HiveTextRowInputFormat(
-    const Block & header_, std::shared_ptr<PeekableReadBuffer> buf_, const Params & params_, const FormatSettings & format_settings_)
+    SharedHeader header_, std::shared_ptr<PeekableReadBuffer> buf_, const Params & params_, const FormatSettings & format_settings_)
     : CSVRowInputFormat(
         header_, buf_, params_, true, false, format_settings_, std::make_unique<HiveTextFormatReader>(*buf_, format_settings_))
 {
@@ -44,9 +46,6 @@ HiveTextFormatReader::HiveTextFormatReader(PeekableReadBuffer & buf_, const Form
 
 std::vector<String> HiveTextFormatReader::readNames()
 {
-    PeekableReadBufferCheckpoint checkpoint{*buf, true};
-    auto values = readHeaderRow();
-    input_field_names.resize(values.size());
     return input_field_names;
 }
 
@@ -60,7 +59,7 @@ void registerInputFormatHiveText(FormatFactory & factory)
     factory.registerInputFormat(
         "HiveText", [](ReadBuffer & buf, const Block & sample, const RowInputFormatParams & params, const FormatSettings & settings)
         {
-            return std::make_shared<HiveTextRowInputFormat>(sample, buf, params, settings);
+            return std::make_shared<HiveTextRowInputFormat>(std::make_unique<const Block>(sample), buf, params, settings);
         });
 }
 

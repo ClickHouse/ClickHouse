@@ -29,6 +29,8 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_IPV4;
     extern const int CANNOT_PARSE_IPV6;
     extern const int UNKNOWN_ELEMENT_OF_ENUM;
+    extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
+    extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
 }
 
 
@@ -50,11 +52,16 @@ bool isParseError(int code)
         || code == ErrorCodes::CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING
         || code == ErrorCodes::CANNOT_PARSE_IPV4
         || code == ErrorCodes::CANNOT_PARSE_IPV6
-        || code == ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM;
+        || code == ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM
+        || code == ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE
+        || code == ErrorCodes::UNEXPECTED_DATA_AFTER_PARSED_VALUE;
 }
 
-IRowInputFormat::IRowInputFormat(Block header, ReadBuffer & in_, Params params_)
-    : IInputFormat(std::move(header), &in_), serializations(getPort().getHeader().getSerializations()), params(params_)
+IRowInputFormat::IRowInputFormat(SharedHeader header, ReadBuffer & in_, Params params_)
+    : IInputFormat(std::move(header), &in_)
+    , serializations(getPort().getHeader().getSerializations())
+    , params(params_)
+    , block_missing_values(getPort().getHeader().columns())
 {
 }
 
@@ -99,9 +106,12 @@ Chunk IRowInputFormat::read()
     }
 
     const Block & header = getPort().getHeader();
-
     size_t num_columns = header.columns();
-    MutableColumns columns = header.cloneEmptyColumns();
+    MutableColumns columns = header.cloneEmptyColumns(serializations);
+
+    ColumnCheckpoints checkpoints(columns.size());
+    for (size_t column_idx = 0; column_idx < columns.size(); ++column_idx)
+        checkpoints[column_idx] = columns[column_idx]->getCheckpoint();
 
     block_missing_values.clear();
 
@@ -124,10 +134,14 @@ Chunk IRowInputFormat::read()
 
         RowReadExtension info;
         bool continue_reading = true;
-        for (size_t rows = 0; (rows < params.max_block_size || num_rows == 0) && continue_reading; ++rows)
+        size_t total_bytes = 0;
+        for (size_t rows = 0; ((rows < params.max_block_size && (!params.max_block_size_bytes || total_bytes < params.max_block_size_bytes)) || num_rows == 0) && continue_reading; ++rows)
         {
             try
             {
+                for (size_t column_idx = 0; column_idx < columns.size(); ++column_idx)
+                    columns[column_idx]->updateCheckpoint(*checkpoints[column_idx]);
+
                 info.read_columns.clear();
                 continue_reading = readRow(columns, info);
 
@@ -155,6 +169,17 @@ Chunk IRowInputFormat::read()
                 /// The case when there is no columns. Just count rows.
                 if (columns.empty())
                     ++num_rows;
+
+                if (params.max_block_size_bytes)
+                {
+                    for (size_t i = 0; i != columns.size(); ++i)
+                    {
+                        /// Column of a deprecated Object type will throw inside byteSizeAt because it's not finalized.
+                        /// It's ok to ignore deprecated type here.
+                        if (!header.getByPosition(i).type->hasDynamicSubcolumnsDeprecated())
+                            total_bytes += columns[i]->byteSizeAt(columns[i]->size() - 1);
+                    }
+                }
             }
             catch (Exception & e)
             {
@@ -191,14 +216,9 @@ Chunk IRowInputFormat::read()
 
                 syncAfterError();
 
-                /// Truncate all columns in block to initial size (remove values, that was appended to only part of columns).
-
+                /// Rollback all columns in block to initial size (remove values, that was appended to only part of columns).
                 for (size_t column_idx = 0; column_idx < num_columns; ++column_idx)
-                {
-                    auto & column = columns[column_idx];
-                    if (column->size() > num_rows)
-                        column->popBack(column->size() - num_rows);
-                }
+                    columns[column_idx]->rollback(*checkpoints[column_idx]);
             }
         }
     }
@@ -230,7 +250,7 @@ Chunk IRowInputFormat::read()
     {
         if (num_errors && (params.allow_errors_num > 0 || params.allow_errors_ratio > 0))
         {
-            Poco::Logger * log = &Poco::Logger::get("IRowInputFormat");
+            LoggerPtr log = getLogger("IRowInputFormat");
             LOG_DEBUG(log, "Skipped {} rows with errors while reading the input stream", num_errors);
         }
 
@@ -262,6 +282,12 @@ void IRowInputFormat::resetParser()
 size_t IRowInputFormat::countRows(size_t)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method countRows is not implemented for input format {}", getName());
+}
+
+void IRowInputFormat::setSerializationHints(const SerializationInfoByName & hints)
+{
+    if (supportsCustomSerializations())
+        serializations = getPort().getHeader().getSerializations(hints);
 }
 
 

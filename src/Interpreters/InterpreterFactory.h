@@ -5,6 +5,7 @@
 #include <Interpreters/SelectQueryOptions.h>
 #include <Parsers/IAST_fwd.h>
 
+#include <boost/noncopyable.hpp>
 
 namespace DB
 {
@@ -21,7 +22,7 @@ public:
         ASTPtr & query;
         ContextMutablePtr context;
         const SelectQueryOptions & options;
-        bool allow_materialized;
+        bool allow_materialized = false;
     };
 
     using InterpreterPtr = std::unique_ptr<IInterpreter>;

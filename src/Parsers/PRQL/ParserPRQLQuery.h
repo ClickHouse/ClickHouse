@@ -13,9 +13,10 @@ private:
     // These fields are not used when PRQL is disabled at build time.
     [[maybe_unused]] size_t max_query_size;
     [[maybe_unused]] size_t max_parser_depth;
+    [[maybe_unused]] size_t max_parser_backtracks;
 
 public:
-    ParserPRQLQuery(size_t max_query_size_, size_t max_parser_depth_) : max_query_size{max_query_size_}, max_parser_depth{max_parser_depth_}
+    ParserPRQLQuery(size_t max_query_size_, size_t max_parser_depth_, size_t max_parser_backtracks_) : max_query_size(max_query_size_), max_parser_depth(max_parser_depth_), max_parser_backtracks(max_parser_backtracks_)
     {
     }
 

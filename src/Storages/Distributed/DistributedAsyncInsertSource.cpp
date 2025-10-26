@@ -2,6 +2,7 @@
 #include <Storages/Distributed/DistributedAsyncInsertHeader.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>
+#include <Core/Settings.h>
 #include <Formats/NativeReader.h>
 #include <Poco/Logger.h>
 
@@ -10,7 +11,7 @@ namespace DB
 
 struct DistributedAsyncInsertSource::Data
 {
-    Poco::Logger * log = nullptr;
+    LoggerPtr log = nullptr;
 
     ReadBufferFromFile in;
     CompressedReadBuffer decompressing_in;
@@ -19,7 +20,7 @@ struct DistributedAsyncInsertSource::Data
     Block first_block;
 
     explicit Data(const String & file_name)
-        : log(&Poco::Logger::get("DistributedAsyncInsertSource"))
+        : log(getLogger("DistributedAsyncInsertSource"))
         , in(file_name)
         , decompressing_in(in)
         , block_in(decompressing_in, DistributedAsyncInsertHeader::read(in, log).revision)
@@ -34,7 +35,7 @@ DistributedAsyncInsertSource::DistributedAsyncInsertSource(const String & file_n
 }
 
 DistributedAsyncInsertSource::DistributedAsyncInsertSource(std::unique_ptr<Data> data_)
-    : ISource(data_->first_block.cloneEmpty())
+    : ISource(std::make_shared<const Block>(data_->first_block.cloneEmpty()))
     , data(std::move(data_))
 {
 }
@@ -43,7 +44,7 @@ DistributedAsyncInsertSource::~DistributedAsyncInsertSource() = default;
 
 Chunk DistributedAsyncInsertSource::generate()
 {
-    if (data->first_block)
+    if (!data->first_block.empty())
     {
         size_t num_rows = data->first_block.rows();
         Chunk res(data->first_block.getColumns(), num_rows);
@@ -52,7 +53,7 @@ Chunk DistributedAsyncInsertSource::generate()
     }
 
     auto block = data->block_in.read();
-    if (!block)
+    if (block.empty())
         return {};
 
     size_t num_rows = block.rows();

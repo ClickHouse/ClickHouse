@@ -29,7 +29,7 @@ namespace DB
  * FORMAT Vertical
  */
 
-class StorageSystemFilesystemCache final : public IStorageSystemOneBlock<StorageSystemFilesystemCache>
+class StorageSystemFilesystemCache final : public IStorageSystemOneBlock
 {
 public:
     explicit StorageSystemFilesystemCache(const StorageID & table_id_);
@@ -39,7 +39,7 @@ public:
     static ColumnsDescription getColumnsDescription();
 
 protected:
-    void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const override;
+    void fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const override;
 };
 
 }

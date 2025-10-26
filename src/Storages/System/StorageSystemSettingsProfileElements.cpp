@@ -6,6 +6,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
+#include <Core/Settings.h>
 #include <Access/AccessControl.h>
 #include <Access/Role.h>
 #include <Access/User.h>
@@ -13,6 +14,7 @@
 #include <Interpreters/Context.h>
 #include <boost/range/algorithm_ext/push_back.hpp>
 #include <Common/SettingConstraintWritability.h>
+#include <base/range.h>
 
 
 namespace DB
@@ -42,7 +44,7 @@ ColumnsDescription StorageSystemSettingsProfileElements::getColumnsDescription()
         {"value", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Setting value."},
         {"min", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "The minimum value of the setting. NULL if not set."},
         {"max", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "The maximum value of the setting. NULL if not set."},
-        {"writability", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeEnum8>(getSettingConstraintWritabilityEnumValues()))},
+        {"writability", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeEnum8>(getSettingConstraintWritabilityEnumValues())), "The property which shows whether a setting can be changed or not."},
         {"inherit_profile", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()),
             "A parent profile for this setting profile. NULL if not set. "
             "Setting profile will inherit all the settings' values and constraints (min, max, readonly) from its parent profiles."
@@ -51,7 +53,7 @@ ColumnsDescription StorageSystemSettingsProfileElements::getColumnsDescription()
 }
 
 
-void StorageSystemSettingsProfileElements::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemSettingsProfileElements::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     /// If "select_from_system_db_requires_grant" is enabled the access rights were already checked in InterpreterSelectQuery.
     const auto & access_control = context->getAccessControl();

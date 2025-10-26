@@ -1,4 +1,4 @@
-#include "ThreadPoolRemoteFSReader.h"
+#include <Disks/IO/ThreadPoolRemoteFSReader.h>
 
 #include <IO/AsyncReadCounters.h>
 #include <IO/SeekableReadBuffer.h>
@@ -40,6 +40,10 @@ namespace CurrentMetrics
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 namespace
 {
@@ -106,7 +110,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Reques
     }
 
     ProfileEventTimeIncrement<Microseconds> elapsed(ProfileEvents::ThreadpoolReaderSubmit);
-    return scheduleFromThreadPool<Result>(
+    return scheduleFromThreadPoolUnsafe<Result>(
         [request, this]() -> Result { return execute(request, /*seek_performed=*/true); }, *pool, "VFSRead", request.priority);
 }
 
@@ -118,6 +122,12 @@ IAsynchronousReader::Result ThreadPoolRemoteFSReader::execute(Request request)
 IAsynchronousReader::Result ThreadPoolRemoteFSReader::execute(Request request, bool seek_performed)
 {
     CurrentMetrics::Increment metric_increment{CurrentMetrics::RemoteRead};
+
+    if (!request.buf)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Request buffer is invalid");
+
+    if (!request.size)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Request buffer size cannot be zero");
 
     auto * fd = assert_cast<RemoteFSFileDescriptor *>(request.descriptor.get());
     auto & reader = fd->getReader();
@@ -152,6 +162,8 @@ IAsynchronousReader::Result ThreadPoolRemoteFSReader::execute(Request request, b
     IAsynchronousReader::Result read_result;
     if (result)
     {
+        chassert(reader.buffer().begin() == request.buf);
+        chassert(reader.buffer().end() <= request.buf + request.size);
         read_result.size = reader.buffer().size();
         read_result.offset = reader.offset();
         ProfileEvents::increment(ProfileEvents::ThreadpoolReaderReadBytes, read_result.size);

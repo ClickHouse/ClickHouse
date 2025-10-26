@@ -1,3 +1,4 @@
+#include <Columns/IColumn.h>
 #include <Storages/System/StorageSystemTableFunctions.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -20,7 +21,7 @@ ColumnsDescription StorageSystemTableFunctions::getColumnsDescription()
     };
 }
 
-void StorageSystemTableFunctions::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
+void StorageSystemTableFunctions::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     const auto & factory = TableFunctionFactory::instance();
     const auto & functions_names = factory.getAllRegisteredNames();

@@ -5,9 +5,6 @@
 #include <Common/COW.h>
 
 #include <memory>
-#include <string>
-#include <unordered_map>
-
 
 namespace DB
 {
@@ -24,12 +21,11 @@ struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 class ActionsDAG;
-using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
 
 /// Create actions which adds missing defaults to block according to required_columns using columns description
 /// or substitute NULL into DEFAULT value in case of INSERT SELECT query (null_as_default) if according setting is 1.
 /// Return nullptr if no actions required.
-ActionsDAGPtr evaluateMissingDefaults(
+std::optional<ActionsDAG> evaluateMissingDefaults(
     const Block & header,
     const NamesAndTypesList & required_columns,
     const ColumnsDescription & columns,
@@ -46,6 +42,6 @@ void fillMissingColumns(
     const NamesAndTypesList & requested_columns,
     const NamesAndTypesList & available_columns,
     const NameSet & partially_read_columns,
-    StorageMetadataPtr metadata_snapshot, size_t block_number = 0);
+    StorageMetadataPtr metadata_snapshot);
 
 }

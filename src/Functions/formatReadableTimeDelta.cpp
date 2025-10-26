@@ -63,7 +63,7 @@ public:
 
         const IDataType & type = *arguments[0];
 
-        if (!isNativeNumber(type))
+        if (!isNumber(type))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot format {} as time delta", type.getName());
 
         if (arguments.size() >= 2)
@@ -82,6 +82,11 @@ public:
             }
         }
 
+        return std::make_shared<DataTypeString>();
+    }
+
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
         return std::make_shared<DataTypeString>();
     }
 
@@ -104,7 +109,8 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        std::string_view maximum_unit_str, minimum_unit_str;
+        std::string_view maximum_unit_str;
+        std::string_view minimum_unit_str;
         if (arguments.size() >= 2)
         {
             const ColumnPtr & maximum_unit_column = arguments[1].column;
@@ -224,7 +230,6 @@ public:
                 }
             }
 
-            writeChar(0, buf_to);
             offsets_to[i] = buf_to.count();
         }
 
@@ -320,29 +325,31 @@ private:
     {
         if (unit_str.empty())
             return default_unit;
-        else if (unit_str == "years")
+        if (unit_str == "years")
             return Years;
-        else if (unit_str == "months")
+        if (unit_str == "months")
             return Months;
-        else if (unit_str == "days")
+        if (unit_str == "days")
             return Days;
-        else if (unit_str == "hours")
+        if (unit_str == "hours")
             return Hours;
-        else if (unit_str == "minutes")
+        if (unit_str == "minutes")
             return Minutes;
-        else if (unit_str == "seconds")
+        if (unit_str == "seconds")
             return Seconds;
-        else if (unit_str == "milliseconds")
+        if (unit_str == "milliseconds")
             return Milliseconds;
-        else if (unit_str == "microseconds")
+        if (unit_str == "microseconds")
             return Microseconds;
-        else if (unit_str == "nanoseconds")
+        if (unit_str == "nanoseconds")
             return Nanoseconds;
-        else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Unexpected value of {} unit argument ({}) for function {}, the only allowed values are:"
-                            " 'nanoseconds', 'microseconds', 'nanoseconds', 'seconds', 'minutes', 'hours', 'days', 'months', 'years'.",
-                            bound_name, unit_str, getName());
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Unexpected value of {} unit argument ({}) for function {}, the only allowed values are:"
+            " 'nanoseconds', 'microseconds', 'nanoseconds', 'seconds', 'minutes', 'hours', 'days', 'months', 'years'.",
+            bound_name,
+            unit_str,
+            getName());
     }
 };
 
@@ -350,7 +357,54 @@ private:
 
 REGISTER_FUNCTION(FormatReadableTimeDelta)
 {
-    factory.registerFunction<FunctionFormatReadableTimeDelta>();
+    FunctionDocumentation::Description description = R"(
+Given a time interval (delta) in seconds, this function returns a time delta with year/month/day/hour/minute/second/millisecond/microsecond/nanosecond as a string.
+
+This function accepts any numeric type as input, but internally it casts them to `Float64`. Results might be suboptimal with large values.
+    )";
+    FunctionDocumentation::Syntax syntax = "formatReadableTimeDelta(column[, maximum_unit, minimum_unit])";
+    FunctionDocumentation::Arguments arguments = {
+        {"column", "A column with a numeric time delta.", {"Float64"}},
+        {"maximum_unit", "Optional. Maximum unit to show. Acceptable values: `nanoseconds`, `microseconds`, `milliseconds`, `seconds`, `minutes`, `hours`, `days`, `months`, `years`. Default value: `years`.", {"const String"}},
+        {"minimum_unit", "Optional. Minimum unit to show. All smaller units are truncated. Acceptable values: `nanoseconds`, `microseconds`, `milliseconds`, `seconds`, `minutes`, `hours`, `days`, `months`, `years`. If explicitly specified value is bigger than `maximum_unit`, an exception will be thrown. Default value: `seconds` if `maximum_unit` is `seconds` or bigger, `nanoseconds` otherwise.", {"const String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a time delta as a string.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+SELECT
+    arrayJoin([100, 12345, 432546534]) AS elapsed,
+    formatReadableTimeDelta(elapsed) AS time_delta
+        )",
+        R"(
+┌────elapsed─┬─time_delta─────────────────────────────────────────────────────┐
+│        100 │ 1 minute and 40 seconds                                        │
+│      12345 │ 3 hours, 25 minutes and 45 seconds                             │
+│  432546534 │ 13 years, 8 months, 17 days, 7 hours, 48 minutes and 54 seconds│
+└────────────┴────────────────────────────────────────────────────────────────┘
+        )"
+    },
+    {
+        "With maximum unit", R"(
+SELECT
+    arrayJoin([100, 12345, 432546534]) AS elapsed,
+    formatReadableTimeDelta(elapsed, 'minutes') AS time_delta
+        )",
+        R"(
+┌────elapsed─┬─time_delta─────────────────────────────────────────────────────┐
+│        100 │ 1 minute and 40 seconds                                         │
+│      12345 │ 205 minutes and 45 seconds                                      │
+│  432546534 │ 7209108 minutes and 54 seconds                                  │
+└────────────┴─────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 12};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionFormatReadableTimeDelta>(documentation);
 }
 
 }

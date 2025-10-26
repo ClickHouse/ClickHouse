@@ -1,10 +1,13 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/exponentialmovingaverage
-sidebar_position: 108
-sidebar_title: exponentialMovingAverage
+description: 'Calculates the exponential moving average of values for the determined
+  time.'
+sidebar_position: 132
+slug: /sql-reference/aggregate-functions/reference/exponentialMovingAverage
+title: 'exponentialMovingAverage'
+doc_type: 'reference'
 ---
 
-## exponentialMovingAverage
+## exponentialMovingAverage {#exponentialmovingaverage}
 
 Calculates the exponential moving average of values for the determined time.
 
@@ -19,7 +22,7 @@ Each `value` corresponds to the determinate `timeunit`. The half-life `x` is the
 **Arguments**
 
 - `value` — Value. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) or [Decimal](../../../sql-reference/data-types/decimal.md).
-- `timeunit` — Timeunit. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) or [Decimal](../../../sql-reference/data-types/decimal.md). Timeunit is not timestamp (seconds), it's -- an index of the time interval. Can be calculated using [intDiv](../../functions/arithmetic-functions.md#intdiva-b).
+- `timeunit` — Timeunit. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) or [Decimal](../../../sql-reference/data-types/decimal.md). Timeunit is not timestamp (seconds), it's -- an index of the time interval. Can be calculated using [intDiv](/sql-reference/functions/arithmetic-functions#intDiv).
 
 **Parameters**
 
@@ -29,13 +32,13 @@ Each `value` corresponds to the determinate `timeunit`. The half-life `x` is the
 
 - Returns an [exponentially smoothed moving average](https://en.wikipedia.org/wiki/Moving_average#Exponential_moving_average) of the values for the past `x` time at the latest point of time.
 
-Type: [Float64](../../../sql-reference/data-types/float.md#float32-float64).
+Type: [Float64](/sql-reference/data-types/float).
 
 **Examples**
 
 Input table:
 
-``` text
+```text
 ┌──temperature─┬─timestamp──┐
 │          95  │         1  │
 │          95  │         2  │
@@ -68,7 +71,7 @@ SELECT exponentialMovingAverage(5)(temperature, timestamp);
 
 Result:
 
-``` text
+```text
 ┌──exponentialMovingAverage(5)(temperature, timestamp)──┐
 │                                    92.25779635374204  │
 └───────────────────────────────────────────────────────┘
@@ -94,58 +97,58 @@ FROM
 
 Result:
 
-``` text
+```text
 ┌─value─┬─time─┬─round(exp_smooth, 3)─┬─bar────────────────────────────────────────┐
-│     1 │    0 │                0.067 │ ███▎                                      │
+│     1 │    0 │                0.067 │ ███▎                                       │
 │     0 │    1 │                0.062 │ ███                                        │
-│     0 │    2 │                0.058 │ ██▊                                       │
-│     0 │    3 │                0.054 │ ██▋                                       │
+│     0 │    2 │                0.058 │ ██▊                                        │
+│     0 │    3 │                0.054 │ ██▋                                        │
 │     0 │    4 │                0.051 │ ██▌                                        │
-│     0 │    5 │                0.047 │ ██▎                                       │
-│     0 │    6 │                0.044 │ ██▏                                       │
+│     0 │    5 │                0.047 │ ██▎                                        │
+│     0 │    6 │                0.044 │ ██▏                                        │
 │     0 │    7 │                0.041 │ ██                                         │
-│     0 │    8 │                0.038 │ █▊                                        │
-│     0 │    9 │                0.036 │ █▋                                        │
-│     0 │   10 │                0.033 │ █▋                                        │
+│     0 │    8 │                0.038 │ █▊                                         │
+│     0 │    9 │                0.036 │ █▋                                         │
+│     0 │   10 │                0.033 │ █▋                                         │
 │     0 │   11 │                0.031 │ █▌                                         │
-│     0 │   12 │                0.029 │ █▍                                        │
-│     0 │   13 │                0.027 │ █▎                                        │
-│     0 │   14 │                0.025 │ █▎                                        │
-│     0 │   15 │                0.024 │ █▏                                        │
+│     0 │   12 │                0.029 │ █▍                                         │
+│     0 │   13 │                0.027 │ █▎                                         │
+│     0 │   14 │                0.025 │ █▎                                         │
+│     0 │   15 │                0.024 │ █▏                                         │
 │     0 │   16 │                0.022 │ █                                          │
 │     0 │   17 │                0.021 │ █                                          │
-│     0 │   18 │                0.019 │ ▊                                         │
-│     0 │   19 │                0.018 │ ▊                                         │
-│     0 │   20 │                0.017 │ ▋                                         │
-│     0 │   21 │                0.016 │ ▋                                         │
-│     0 │   22 │                0.015 │ ▋                                         │
-│     0 │   23 │                0.014 │ ▋                                         │
-│     0 │   24 │                0.013 │ ▋                                         │
-│     1 │   25 │                0.079 │ ███▊                                      │
+│     0 │   18 │                0.019 │ ▊                                          │
+│     0 │   19 │                0.018 │ ▊                                          │
+│     0 │   20 │                0.017 │ ▋                                          │
+│     0 │   21 │                0.016 │ ▋                                          │
+│     0 │   22 │                0.015 │ ▋                                          │
+│     0 │   23 │                0.014 │ ▋                                          │
+│     0 │   24 │                0.013 │ ▋                                          │
+│     1 │   25 │                0.079 │ ███▊                                       │
 │     1 │   26 │                 0.14 │ ███████                                    │
-│     1 │   27 │                0.198 │ █████████▊                                │
+│     1 │   27 │                0.198 │ █████████▊                                 │
 │     1 │   28 │                0.252 │ ████████████▌                              │
 │     1 │   29 │                0.302 │ ███████████████                            │
-│     1 │   30 │                0.349 │ █████████████████▍                        │
+│     1 │   30 │                0.349 │ █████████████████▍                         │
 │     1 │   31 │                0.392 │ ███████████████████▌                       │
-│     1 │   32 │                0.433 │ █████████████████████▋                    │
+│     1 │   32 │                0.433 │ █████████████████████▋                     │
 │     1 │   33 │                0.471 │ ███████████████████████▌                   │
-│     1 │   34 │                0.506 │ █████████████████████████▎                │
-│     1 │   35 │                0.539 │ ██████████████████████████▊               │
+│     1 │   34 │                0.506 │ █████████████████████████▎                 │
+│     1 │   35 │                0.539 │ ██████████████████████████▊                │
 │     1 │   36 │                 0.57 │ ████████████████████████████▌              │
-│     1 │   37 │                0.599 │ █████████████████████████████▊            │
-│     1 │   38 │                0.626 │ ███████████████████████████████▎          │
+│     1 │   37 │                0.599 │ █████████████████████████████▊             │
+│     1 │   38 │                0.626 │ ███████████████████████████████▎           │
 │     1 │   39 │                0.651 │ ████████████████████████████████▌          │
-│     1 │   40 │                0.674 │ █████████████████████████████████▋        │
-│     1 │   41 │                0.696 │ ██████████████████████████████████▋       │
-│     1 │   42 │                0.716 │ ███████████████████████████████████▋      │
-│     1 │   43 │                0.735 │ ████████████████████████████████████▋     │
-│     1 │   44 │                0.753 │ █████████████████████████████████████▋    │
-│     1 │   45 │                 0.77 │ ██████████████████████████████████████▍   │
-│     1 │   46 │                0.785 │ ███████████████████████████████████████▎  │
-│     1 │   47 │                  0.8 │ ███████████████████████████████████████▊  │
-│     1 │   48 │                0.813 │ ████████████████████████████████████████▋ │
-│     1 │   49 │                0.825 │ █████████████████████████████████████████▎│
+│     1 │   40 │                0.674 │ █████████████████████████████████▋         │
+│     1 │   41 │                0.696 │ ██████████████████████████████████▋        │
+│     1 │   42 │                0.716 │ ███████████████████████████████████▋       │
+│     1 │   43 │                0.735 │ ████████████████████████████████████▋      │
+│     1 │   44 │                0.753 │ █████████████████████████████████████▋     │
+│     1 │   45 │                 0.77 │ ██████████████████████████████████████▍    │
+│     1 │   46 │                0.785 │ ███████████████████████████████████████▎   │
+│     1 │   47 │                  0.8 │ ███████████████████████████████████████▊   │  
+│     1 │   48 │                0.813 │ ████████████████████████████████████████▋  │
+│     1 │   49 │                0.825 │ █████████████████████████████████████████▎ │
 └───────┴──────┴──────────────────────┴────────────────────────────────────────────┘
 ```
 
@@ -156,8 +159,6 @@ SELECT
     10 AS value,
     toDateTime('2020-01-01') + (3600 * number) AS time
 FROM numbers_mt(10);
-
-
 -- Calculate timeunit using intDiv
 SELECT
     value,
@@ -179,8 +180,6 @@ ORDER BY time ASC;
 │    10 │ 2020-01-01 08:00:00 │  9.98046875 │   438296 │
 │    10 │ 2020-01-01 09:00:00 │ 9.990234375 │   438297 │
 └───────┴─────────────────────┴─────────────┴──────────┘
-
-
 -- Calculate timeunit using toRelativeHourNum
 SELECT
     value,

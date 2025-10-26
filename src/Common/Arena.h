@@ -47,11 +47,9 @@ private:
 
         std::unique_ptr<MemoryChunk> prev;
 
-        MemoryChunk()
-        {
-        }
+        MemoryChunk() = default;
 
-        void swap(MemoryChunk & other)
+        void swap(MemoryChunk & other) noexcept
         {
             std::swap(begin, other.begin);
             std::swap(pos, other.pos);
@@ -59,18 +57,18 @@ private:
             prev.swap(other.prev);
         }
 
-        MemoryChunk(MemoryChunk && other)
+        MemoryChunk(MemoryChunk && other) noexcept
         {
             *this = std::move(other);
         }
 
-        MemoryChunk & operator=(MemoryChunk && other)
+        MemoryChunk & operator=(MemoryChunk && other) noexcept
         {
             swap(other);
             return *this;
         }
 
-        MemoryChunk(size_t size_)
+        explicit MemoryChunk(size_t size_)
         {
             ProfileEvents::increment(ProfileEvents::ArenaAllocChunks);
             ProfileEvents::increment(ProfileEvents::ArenaAllocBytes, size_);
@@ -249,11 +247,10 @@ public:
     char * allocContinue(size_t additional_bytes, char const *& range_start,
                          size_t start_alignment = 0)
     {
-        /*
-         * Allocating zero bytes doesn't make much sense. Also, a zero-sized
-         * range might break the invariant that the range begins at least before
-         * the current MemoryChunk end.
-         */
+        /** Allocating zero bytes doesn't make much sense. Also, a zero-sized
+          * range might break the invariant that the range begins at least before
+          * the current MemoryChunk end.
+          */
         assert(additional_bytes > 0);
 
         if (!range_start)

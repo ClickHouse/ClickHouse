@@ -21,7 +21,7 @@ static bool sameConstants(const IColumn & a, const IColumn & b)
 ColumnWithTypeAndName getLeastSuperColumn(const std::vector<const ColumnWithTypeAndName *> & columns)
 {
     if (columns.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: no src columns for supercolumn");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No src columns for supercolumn");
 
     ColumnWithTypeAndName result = *columns[0];
 

@@ -1,10 +1,10 @@
-#include "RegionsHierarchy.h"
+#include <Dictionaries/Embedded/RegionsHierarchy.h>
 
 #include <IO/WriteHelpers.h>
 #include <Poco/Exception.h>
 #include <Poco/Util/Application.h>
 #include <Common/logger_useful.h>
-#include "GeodataProviders/IHierarchiesProvider.h"
+#include <Dictionaries/Embedded/GeodataProviders/IHierarchiesProvider.h>
 
 
 namespace DB
@@ -23,7 +23,7 @@ RegionsHierarchy::RegionsHierarchy(IRegionsHierarchyDataSourcePtr data_source_) 
 
 void RegionsHierarchy::reload()
 {
-    Poco::Logger * log = &Poco::Logger::get("RegionsHierarchy");
+    LoggerPtr log = getLogger("RegionsHierarchy");
 
     if (!data_source->isModified())
         return;

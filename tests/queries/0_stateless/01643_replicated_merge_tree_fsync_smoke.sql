@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-s3-storage
+-- Tags: no-parallel, no-object-storage
 -- no-parallel -- for flaky check and to avoid "Removing leftovers from table" (for other tables)
 
 -- Temporarily skip warning 'table was created by another server at the same moment, will retry'

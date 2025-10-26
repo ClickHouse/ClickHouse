@@ -1,12 +1,12 @@
 #pragma once
 
+#include <Core/Block.h>
 #include <IO/ConnectionTimeouts.h>
-#include <Poco/Data/SessionPool.h>
 #include <Poco/URI.h>
 #include <BridgeHelper/XDBCBridgeHelper.h>
-#include "DictionaryStructure.h"
-#include "ExternalQueryBuilder.h"
-#include "IDictionarySource.h"
+#include <Dictionaries/DictionaryStructure.h>
+#include <Dictionaries/ExternalQueryBuilder.h>
+#include <Dictionaries/IDictionarySource.h>
 
 
 namespace Poco
@@ -26,7 +26,6 @@ namespace DB
 class XDBCDictionarySource final : public IDictionarySource, WithContext
 {
 public:
-
     struct Configuration
     {
         const std::string db;
@@ -74,9 +73,9 @@ private:
     // execute invalidate_query. expects single cell in result
     std::string doInvalidateQuery(const std::string & request) const;
 
-    QueryPipeline loadFromQuery(const Poco::URI & url, const Block & required_sample_block, const std::string & query) const;
+    QueryPipeline loadFromQuery(const Poco::URI & uri, const Block & required_sample_block, const std::string & query) const;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     std::chrono::time_point<std::chrono::system_clock> update_time;
     const DictionaryStructure dict_struct;

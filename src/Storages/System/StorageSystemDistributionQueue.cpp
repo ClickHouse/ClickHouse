@@ -10,6 +10,7 @@
 #include <Access/ContextAccess.h>
 #include <Common/typeid_cast.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Databases/IDatabase.h>
 
 namespace DB
@@ -106,17 +107,24 @@ ColumnsDescription StorageSystemDistributionQueue::getColumnsDescription()
     };
 }
 
+Block StorageSystemDistributionQueue::getFilterSampleBlock() const
+{
+    return {
+        { {}, std::make_shared<DataTypeString>(), "database" },
+        { {}, std::make_shared<DataTypeString>(), "table" },
+    };
+}
 
-void StorageSystemDistributionQueue::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const
+void StorageSystemDistributionQueue::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node * predicate, std::vector<UInt8>) const
 {
     const auto access = context->getAccess();
     const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
 
     std::map<String, std::map<String, StoragePtr>> tables;
-    for (const auto & db : DatabaseCatalog::instance().getDatabases())
+    for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
     {
         /// Check if database can contain distributed tables
-        if (!db.second->canContainDistributedTables())
+        if (db.second->isExternal())
             continue;
 
         const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, db.first);
@@ -159,7 +167,7 @@ void StorageSystemDistributionQueue::fillData(MutableColumns & res_columns, Cont
             { col_table_to_filter, std::make_shared<DataTypeString>(), "table" },
         };
 
-        VirtualColumnUtils::filterBlockWithQuery(query_info.query, filtered_block, context);
+        VirtualColumnUtils::filterBlockWithPredicate(predicate, filtered_block, context);
 
         if (!filtered_block.rows())
             return;
@@ -170,8 +178,8 @@ void StorageSystemDistributionQueue::fillData(MutableColumns & res_columns, Cont
 
     for (size_t i = 0, tables_size = col_database_to_filter->size(); i < tables_size; ++i)
     {
-        String database = (*col_database_to_filter)[i].safeGet<const String &>();
-        String table = (*col_table_to_filter)[i].safeGet<const String &>();
+        String database = (*col_database_to_filter)[i].safeGet<String>();
+        String table = (*col_table_to_filter)[i].safeGet<String>();
 
         auto & distributed_table = dynamic_cast<StorageDistributed &>(*tables[database][table]);
 
