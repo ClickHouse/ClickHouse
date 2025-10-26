@@ -153,10 +153,10 @@ FractionalLimitTransform::Status FractionalLimitTransform::pullData(PortsData & 
     rows_cnt += rows;
 
     // ignore entire chunks that are not part of LIMIT
-    if (rows_cnt <= offset)
+    if (rows <= offset)
     {
-        data.current_chunk.clear();
         offset -= rows;
+        data.current_chunk.clear();
 
         if (input.isFinished())
             return Status::Finished;
