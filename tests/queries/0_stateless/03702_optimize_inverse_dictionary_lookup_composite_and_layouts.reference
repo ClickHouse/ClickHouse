@@ -1,98 +1,85 @@
-Composite key: equality, LHS - plan
-CreatingSets (Create sets before main query execution)
-  Expression (Project names)
-    Sorting (Sorting for ORDER BY)
-      Expression ((Before ORDER BY + Projection))
-        Expression ((WHERE + Change column names to column identifiers))
-          ReadFromMergeTree (default.f)
-Composite key: equality, LHS - run
+Composite key - plan
+SELECT
+    __table1.k1 AS k1,
+    __table1.k2 AS k2,
+    __table1.payload AS payload
+FROM default.f AS __table1
+WHERE (__table1.k1, __table1.k2) IN (SELECT
+    __table1.k1 AS k1,
+    __table1.k2 AS k2
+FROM dictionary(\'dict_prices_ckh\') AS __table1
+WHERE __table1.tag = \'pro\')
+ORDER BY
+    __table1.k1 ASC,
+    __table1.k2 ASC,
+    __table1.payload ASC
+Composite key
 1	a	x
-Composite key: equality, RHS - plan
-CreatingSets (Create sets before main query execution)
-  Expression (Project names)
-    Sorting (Sorting for ORDER BY)
-      Expression ((Before ORDER BY + Projection))
-        Expression ((WHERE + Change column names to column identifiers))
-          ReadFromMergeTree (default.f)
-Composite key: equality, RHS - run
-1	a	x
-Composite key: inequality <, LHS - plan
-CreatingSets (Create sets before main query execution)
-  Expression (Project names)
-    Sorting (Sorting for ORDER BY)
-      Expression ((Before ORDER BY + Projection))
-        Expression ((WHERE + Change column names to column identifiers))
-          ReadFromMergeTree (default.f)
-Composite key: inequality <, LHS - run
-1	b	y
-3	c	u
-Composite key: inequality <, RHS - plan
-CreatingSets (Create sets before main query execution)
-  Expression (Project names)
-    Sorting (Sorting for ORDER BY)
-      Expression ((Before ORDER BY + Projection))
-        Expression ((WHERE + Change column names to column identifiers))
-          ReadFromMergeTree (default.f)
-Composite key: inequality <, RHS - run
-1	b	y
-3	c	u
-Composite key: LIKE/ILIKE - plan
-CreatingSets (Create sets before main query execution)
-  Expression (Project names)
-    Sorting (Sorting for ORDER BY)
-      Expression ((Before ORDER BY + Projection))
-        Filter ((WHERE + Change column names to column identifiers))
-          ReadFromMergeTree (default.f)
-Composite key: LIKE/ILIKE - run
-1	a
-2	a
 Composite key: AND/OR recursion - plan
-CreatingSets (Create sets before main query execution)
-  Expression (Project names)
-    Sorting (Sorting for ORDER BY)
-      Expression ((Before ORDER BY + Projection))
-        Filter ((WHERE + Change column names to column identifiers))
-          ReadFromMergeTree (default.f)
-Composite key: AND/OR recursion - run
+SELECT
+    __table1.k1 AS k1,
+    __table1.k2 AS k2
+FROM default.f AS __table1
+WHERE (((__table1.k1, __table1.k2) IN (SELECT
+    __table1.k1 AS k1,
+    __table1.k2 AS k2
+FROM dictionary(\'dict_prices_ckh\') AS __table1
+WHERE __table1.tag = \'pro\')) AND ((__table1.k1, __table1.k2) IN (SELECT
+    __table1.k1 AS k1,
+    __table1.k2 AS k2
+FROM dictionary(\'dict_prices_ckh\') AS __table1
+WHERE _CAST(__table1.price, \'Int32\') < 120))) OR ((__table1.k1, __table1.k2) IN (SELECT
+    __table1.k1 AS k1,
+    __table1.k2 AS k2
+FROM dictionary(\'dict_prices_ckh\') AS __table1
+WHERE __table1.tag = \'cheap\'))
+ORDER BY
+    __table1.k1 ASC,
+    __table1.k2 ASC
+Composite key: AND/OR recursion
 1	a
 3	c
-Composite key: PREWHERE - plan
-CreatingSets (Create sets before main query execution)
-  Expression (Project names)
-    Sorting (Sorting for ORDER BY)
-      Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
-        ReadFromMergeTree (default.f)
-Composite key: PREWHERE - run
+Composite key, Complex Key Hashed layout: MATCH - plan
+SELECT
+    __table1.k1 AS k1,
+    __table1.k2 AS k2
+FROM default.f AS __table1
+WHERE (__table1.k1, __table1.k2) IN (SELECT
+    __table1.k1 AS k1,
+    __table1.k2 AS k2
+FROM dictionary(\'dict_prices_ckh\') AS __table1
+WHERE match(__table1.tag, \'^p\'))
+ORDER BY
+    __table1.k1 ASC,
+    __table1.k2 ASC
+Composite key, Complex Key Hashed layout: MATCH
+1	a
 2	a
 Flat layout: equality and inequality - plan
-CreatingSets (Create sets before main query execution)
-  Expression (Project names)
-    Sorting (Sorting for ORDER BY)
-      Expression ((Before ORDER BY + Projection))
-        Expression ((WHERE + Change column names to column identifiers))
-          ReadFromMergeTree (default.f)
-Flat layout: equality and inequality - run
+SELECT
+    __table1.id AS id,
+    __table1.payload AS payload
+FROM default.f AS __table1
+WHERE (__table1.id IN (SELECT __table1.id AS id
+FROM dictionary(\'dict_items_flat\') AS __table1
+WHERE __table1.name = \'alpha\')) AND (__table1.id IN (SELECT __table1.id AS id
+FROM dictionary(\'dict_items_flat\') AS __table1
+WHERE __table1.score >= 10))
+ORDER BY
+    __table1.id ASC,
+    __table1.payload ASC
+Flat layout: equality and inequality
 1	u
 1	x
 3	z
-Composite key: NOT LIKE - plan
-CreatingSets (Create sets before main query execution)
-  Expression (Project names)
-    Sorting (Sorting for ORDER BY)
-      Expression ((Before ORDER BY + Projection))
-        Filter ((WHERE + Change column names to column identifiers))
-          ReadFromMergeTree (default.f)
-Composite key: NOT LIKE - run
-1	a
-2	a
-3	c
-Composite key: MATCH - plan
-CreatingSets (Create sets before main query execution)
-  Expression (Project names)
-    Sorting (Sorting for ORDER BY)
-      Expression ((Before ORDER BY + Projection))
-        Filter ((WHERE + Change column names to column identifiers))
-          ReadFromMergeTree (default.f)
-Composite key: MATCH - run
-1	a
-2	a
+Range layout: not supported, no rewrite expected - plan
+SELECT
+    __table1.id AS id,
+    __table1.payload AS payload
+FROM default.g AS __table1
+WHERE dictGetUInt64(\'dict_salary_rh\', \'rate\', __table1.id, _CAST(\'2024-01-15\', \'Date\')) >= 100
+ORDER BY
+    __table1.id ASC,
+    __table1.payload ASC
+Range layout: not supported, no rewrite expected
+1	p
