@@ -599,25 +599,28 @@ public:
     {
         std::lock_guard lock{mutex};
         auto it = poll_descriptors.find(poll_descriptor);
-        if (it != poll_descriptors.end())
+        if (it == poll_descriptors.end())
         {
-            auto info = it->second;
-            if (!info->evaluated)
-            {
-                auto new_info = std::make_shared<PollDescriptorInfo>(*info);
-                new_info->evaluating = false;
-                new_info->evaluated = true;
-                new_info->status = arrow::Status::OK();
-                new_info->ticket = ticket;
-                new_info->rows = rows;
-                new_info->bytes = bytes;
-                if (!last)
-                    new_info->next_poll_descriptor = generatePollDescriptorName();
-                it->second = new_info;
-                info = new_info;
-                evaluation_ended.notify_all();
-            }
+            /// The poll descriptor expired during the query execution.
+            return;
         }
+
+        auto info = it->second;
+        if (info->evaluated)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Poll descriptor can't be evaluated twice");
+
+        auto new_info = std::make_shared<PollDescriptorInfo>(*info);
+        new_info->evaluating = false;
+        new_info->evaluated = true;
+        new_info->status = arrow::Status::OK();
+        new_info->ticket = ticket;
+        new_info->rows = rows;
+        new_info->bytes = bytes;
+        if (!last)
+            new_info->next_poll_descriptor = generatePollDescriptorName();
+        it->second = new_info;
+        info = new_info;
+        evaluation_ended.notify_all();
     }
 
     /// Ends evaluation for a specified poll descriptor with an error.
