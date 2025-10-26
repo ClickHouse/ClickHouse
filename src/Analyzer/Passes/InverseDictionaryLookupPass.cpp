@@ -110,7 +110,7 @@ bool tryGetConstantNode(const QueryTreeNodePtr & node, QueryTreeNodePtr & out)
 
 bool isInMemoryLayout(const String & type_name)
 {
-    return type_name == "Flat" || type_name == "Hashed" || type_name == "ComplexKeyHashed" || type_name == "RangeHashed";
+    return type_name == "Flat" || type_name == "Hashed" || type_name == "ComplexKeyHashed";
 }
 
 template <typename Node>
