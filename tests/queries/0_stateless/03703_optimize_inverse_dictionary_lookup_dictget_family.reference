@@ -1,0 +1,154 @@
+dictGet (generic) - plan
+SELECT
+    __table1.id AS id,
+    __table1.payload AS payload
+FROM default.tab AS __table1
+WHERE __table1.id IN (SELECT __table1.id AS id
+FROM dictionary(\'dictionary_all\') AS __table1
+WHERE __table1.name = \'alpha\')
+ORDER BY
+    __table1.id ASC,
+    __table1.payload ASC
+dictGet (generic)
+1	x
+dictGetString - plan
+SELECT
+    __table1.id AS id,
+    __table1.payload AS payload
+FROM default.tab AS __table1
+WHERE __table1.id IN (SELECT __table1.id AS id
+FROM dictionary(\'dictionary_all\') AS __table1
+WHERE __table1.name = \'alpha\')
+ORDER BY
+    __table1.id ASC,
+    __table1.payload ASC
+dictGetString
+1	x
+dictGetInt32 - plan
+SELECT
+    __table1.id AS id,
+    __table1.payload AS payload
+FROM default.tab AS __table1
+WHERE __table1.id IN (SELECT __table1.id AS id
+FROM dictionary(\'dictionary_all\') AS __table1
+WHERE _CAST(__table1.i32, \'Int32\') = -32)
+ORDER BY
+    __table1.id ASC,
+    __table1.payload ASC
+dictGetInt32
+1	x
+dictGetUInt64 - plan
+SELECT
+    __table1.id AS id,
+    __table1.payload AS payload
+FROM default.tab AS __table1
+WHERE __table1.id IN (SELECT __table1.id AS id
+FROM dictionary(\'dictionary_all\') AS __table1
+WHERE _CAST(__table1.u64, \'UInt64\') = 64)
+ORDER BY
+    __table1.id ASC,
+    __table1.payload ASC
+dictGetUInt64
+1	x
+dictGetFloat64 - plan
+SELECT
+    __table1.id AS id,
+    __table1.payload AS payload
+FROM default.tab AS __table1
+WHERE __table1.id IN (SELECT __table1.id AS id
+FROM dictionary(\'dictionary_all\') AS __table1
+WHERE _CAST(__table1.f64, \'Float64\') = 20.)
+ORDER BY
+    __table1.id ASC,
+    __table1.payload ASC
+dictGetFloat64
+1	x
+dictGetDate - plan
+SELECT
+    __table1.id AS id,
+    __table1.payload AS payload
+FROM default.tab AS __table1
+WHERE __table1.id IN (SELECT __table1.id AS id
+FROM dictionary(\'dictionary_all\') AS __table1
+WHERE _CAST(__table1.d, \'Date\') = _CAST(\'2025-01-01\', \'Date\'))
+ORDER BY
+    __table1.id ASC,
+    __table1.payload ASC
+dictGetDate
+1	x
+dictGetDateTime - plan
+SELECT
+    __table1.id AS id,
+    __table1.payload AS payload
+FROM default.tab AS __table1
+WHERE __table1.id IN (SELECT __table1.id AS id
+FROM dictionary(\'dictionary_all\') AS __table1
+WHERE _CAST(__table1.dt, \'DateTime\') = _CAST(\'2025-01-01 10:00:00\', \'DateTime\'))
+ORDER BY
+    __table1.id ASC,
+    __table1.payload ASC
+dictGetDateTime
+1	x
+dictGetUUID - plan
+SELECT
+    __table1.id AS id,
+    __table1.payload AS payload
+FROM default.tab AS __table1
+WHERE __table1.id IN (SELECT __table1.id AS id
+FROM dictionary(\'dictionary_all\') AS __table1
+WHERE _CAST(__table1.uid, \'UUID\') = _CAST(\'00000000-0000-0000-0000-000000000001\', \'UUID\'))
+ORDER BY
+    __table1.id ASC,
+    __table1.payload ASC
+dictGetUUID
+1	x
+dictGetIPv4 - plan
+SELECT
+    __table1.id AS id,
+    __table1.payload AS payload
+FROM default.tab AS __table1
+WHERE __table1.id IN (SELECT __table1.id AS id
+FROM dictionary(\'dictionary_all\') AS __table1
+WHERE _CAST(__table1.ip4, \'IPv4\') = _CAST(\'192.168.0.1\', \'IPv4\'))
+ORDER BY
+    __table1.id ASC,
+    __table1.payload ASC
+dictGetIPv4
+1	x
+dictGetIPv6 - plan
+SELECT
+    __table1.id AS id,
+    __table1.payload AS payload
+FROM default.tab AS __table1
+WHERE __table1.id IN (SELECT __table1.id AS id
+FROM dictionary(\'dictionary_all\') AS __table1
+WHERE _CAST(__table1.ip6, \'IPv6\') = _CAST(\'2001:db8::1\', \'IPv6\'))
+ORDER BY
+    __table1.id ASC,
+    __table1.payload ASC
+dictGetIPv6
+1	x
+dictGetOrNull(String) - plan
+SELECT
+    __table1.id AS id,
+    __table1.payload AS payload
+FROM default.tab AS __table1
+WHERE __table1.id IN (SELECT __table1.id AS id
+FROM dictionary(\'dictionary_all\') AS __table1
+WHERE _CAST(__table1.name, \'Nullable(String)\') = \'alpha\')
+ORDER BY
+    __table1.id ASC,
+    __table1.payload ASC
+dictGetOrNull(String)
+1	x
+dictGetOrNull(String) IS NULL - plan
+SELECT
+    __table1.id AS id,
+    __table1.payload AS payload
+FROM default.tab AS __table1
+WHERE isNull(dictGetOrNull(\'dictionary_all\', \'name\', __table1.id))
+ORDER BY
+    __table1.id ASC,
+    __table1.payload ASC
+dictGetOrNull(String) IS NULL
+99	z
