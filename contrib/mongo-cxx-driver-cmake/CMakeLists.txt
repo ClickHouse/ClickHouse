@@ -54,7 +54,7 @@ target_include_directories(_bsoncxx SYSTEM PUBLIC
         "${BSONCXX_SOURCES_DIR}/lib"
         "${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi"
 
-        "${CMAKE_CURRENT_SOURCE_DIR}/build"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
         "${BSONCXX_BINARY_DIR}/lib"
 )
 target_link_libraries(_bsoncxx ch_contrib::libbson)
@@ -191,7 +191,7 @@ target_include_directories(_mongocxx SYSTEM PUBLIC
         "${MONGOCXX_SOURCES_DIR}/lib"
         "${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi"
 
-        "${CMAKE_CURRENT_SOURCE_DIR}/build"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
         "${MONGOCXX_BINARY_DIR}/lib"
 )
 target_link_libraries(_mongocxx ch_contrib::bsoncxx ch_contrib::libmongoc)
