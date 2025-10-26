@@ -2048,7 +2048,8 @@ bool Aggregator::isTypeFixedSize(const ManyAggregatedDataVariants & data_variant
 
 void Aggregator::disableMinMaxOptimizationForFixedHashMaps(ManyAggregatedDataVariants & data_variants) const
 {
-    /// TODO: may not need this at all, otherwise add notes about reason why only do it for the first.
+    /// We have to disable min max optimization for the first variant because when emplace new values, multiple threads could
+    /// update the min and max values at the same time, causing race condition.
     auto & first = data_variants.at(0);
     if (first->type == AggregatedDataVariants::Type::key8)
         first->key8->data.disableMinMaxOptimization();
