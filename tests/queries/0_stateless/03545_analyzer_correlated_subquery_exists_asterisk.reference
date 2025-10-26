@@ -49,7 +49,7 @@ Positions: 2
               Expression (Left Pre Join Actions)
               Actions: INPUT :: 0 -> __table1.i1 Int64 : 0
               Positions: 0
-                Expression (( + Change column names to column identifiers))
+                Expression (Change column names to column identifiers)
                 Actions: INPUT : 0 -> i1 Int64 : 0
                          ALIAS i1 :: 0 -> __table1.i1 Int64 : 1
                 Positions: 1

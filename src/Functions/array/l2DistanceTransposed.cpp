@@ -257,19 +257,19 @@ public:
         /// We need to find two types: the type of the reference vector and the type of the calculation.
         /// The type of calculation is determined by the value of `precision. For example, if col_x is Float32 and p = 16, we will only have
         /// 16 meaningful bits to calculate the distance. So we can downcast the reference vector to BFloat16 and do calculations faster.
-        auto dispatch_by_accum_type = [&]<typename ReferenceType>(auto func)
+        auto dispatch_by_accum_type = [&]<typename RefT>(auto func)
         {
             auto calc_type
                 = (precision <= 16 ? TypeToTypeIndex<BFloat16> : (precision <= 32 ? TypeToTypeIndex<Float32> : TypeToTypeIndex<Float64>));
 
             /// Float64 cannot be downcasted to Float32 or BFloat16 in an easy way by reordering bits. That is why with it we always do
             /// calculations in full width. Alternatively, we could static_cast each element when calculating, but it is slower.
-            if (std::is_same_v<ReferenceType, Float64>)
-                return func.template operator()<ReferenceType, Float64>();
+            if (std::is_same_v<RefT, Float64>)
+                return func.template operator()<RefT, Float64>();
             else if (calc_type == TypeToTypeIndex<Float32>)
-                return func.template operator()<ReferenceType, Float32>();
+                return func.template operator()<RefT, Float32>();
             else if (calc_type == TypeToTypeIndex<BFloat16>)
-                return func.template operator()<ReferenceType, BFloat16>();
+                return func.template operator()<RefT, BFloat16>();
             else
                 UNREACHABLE();
         };
@@ -284,7 +284,6 @@ public:
         /// Dispatch to type-specific implementation based on reference vector type
         switch (type_y)
         {
-            /// Result type cannot be BFloat16 as there is no sqrt function for it
             case TypeIndex::BFloat16:
                 return execute_with_type.template operator()<BFloat16>();
             case TypeIndex::Float32:
@@ -326,23 +325,24 @@ private:
         return executeImpl(converted_arguments, nullptr, input_rows_count);
     }
 
-    template <typename ReferenceType, typename CalculationType>
+    /// RefT is the type of the reference vector, CalcT is the type used for calculation (can be downcasted from RefT if p is low enough)
+    template <typename RefT, typename CalcT>
     ColumnPtr executeDistanceCalculation(
-        const ColumnArray & array, const ColumnsWithTypeAndName & arguments, const size_t qbit_size, size_t input_rows_count) const
+        const ColumnArray & col_y, const ColumnsWithTypeAndName & arguments, const size_t qbit_size, size_t input_rows_count) const
     {
         const size_t precision = arguments.size() - 2;
         const size_t bytes_per_fixedstring = DataTypeQBit::bitsToBytes(qbit_size);
         const size_t padded_array_size = bytes_per_fixedstring * 8;
 
-        /// For the sake of speed, downcast the reference vector to CalculationType p is low enough
-        const auto & array_data = static_cast<const ColumnVector<ReferenceType> &>(array.getData()).getData();
-        const PaddedPODArray<CalculationType> * data_ptr;
-        PaddedPODArray<CalculationType> array_data_downcasted;
-        if constexpr (!std::is_same_v<ReferenceType, CalculationType>)
+        /// For the sake of speed, downcast the reference vector to CalcT `precision` is low enough
+        const auto & array_data = static_cast<const ColumnVector<RefT> &>(col_y.getData()).getData();
+        const PaddedPODArray<CalcT> * data_ptr;
+        PaddedPODArray<CalcT> array_data_downcasted;
+        if constexpr (!std::is_same_v<RefT, CalcT>)
         {
             array_data_downcasted.resize(array_data.size());
             for (size_t i = 0; i < array_data.size(); ++i)
-                array_data_downcasted[i] = static_cast<CalculationType>(array_data[i]);
+                array_data_downcasted[i] = static_cast<CalcT>(array_data[i]);
             data_ptr = &array_data_downcasted;
         }
         else
@@ -353,44 +353,47 @@ private:
         auto col_res = ColumnVector<Float64>::create(input_rows_count);
         auto & result_data = col_res->getData();
 
-        using Word
-            = std::conditional_t<sizeof(CalculationType) == 2, UInt16, std::conditional_t<sizeof(CalculationType) == 4, UInt32, UInt64>>;
-        std::vector<CalculationType> untransposed_x(padded_array_size);
+        using Word = std::conditional_t<sizeof(CalcT) == 2, UInt16, std::conditional_t<sizeof(CalcT) == 4, UInt32, UInt64>>;
 
-        /// Pre-extract all FixedString columns from constants if needed to avoid repeated work in the loop below
-        std::vector<ColumnPtr> extracted_columns;
-        extracted_columns.reserve(precision);
-        for (size_t bit = 0; bit < precision; ++bit)
-            extracted_columns.emplace_back(extractFromConst(arguments[bit].column));
+        /// We process 32 rows per iteration. It's a magic number, but gives a good trade-off between memory usage and performance
+        constexpr size_t block_size = 32;
+        std::vector<CalcT> block(block_size * padded_array_size);
+        auto block_row = [&](size_t r) -> CalcT * { return block.data() + r * padded_array_size; };
 
-        /// Handle two cases for reference vector access:
-        /// 1. Constant reference vector: All rows use the same reference vector, so array_start stays at 0
-        /// 2. Non-constant reference vector: Each row has its own reference vector, so we advance by qbit_size elements after each row
-        const auto reference_vector_shift = arguments.back().column->isConst() ? 0 : qbit_size;
-        size_t array_start = 0;
-        for (size_t row = 0; row < input_rows_count; row++)
+        for (size_t base_row = 0; base_row < input_rows_count; base_row += block_size)
         {
-            memset(untransposed_x.data(), 0, padded_array_size * sizeof(CalculationType));
+            const size_t rows_in_block = std::min(block_size, input_rows_count - base_row);
 
+            memset(block.data(), 0, rows_in_block * padded_array_size * sizeof(CalcT));
+
+            /// Untranspose p bit planes into all rows of the block
             for (size_t bit = 0; bit < precision; ++bit)
             {
-                const auto & col = assert_cast<const ColumnFixedString &>(*extracted_columns[bit]);
-                const UInt8 * src = reinterpret_cast<const UInt8 *>(col.getChars().data()) + row * bytes_per_fixedstring;
-
+                const auto & col = assert_cast<const ColumnFixedString &>(*extractFromConst(arguments[bit].column));
                 Word bit_mask = Word(1) << (sizeof(Word) * 8 - 1 - bit);
-                SerializationQBit::untransposeBitPlane(src, reinterpret_cast<Word *>(untransposed_x.data()), padded_array_size, bit_mask);
+
+                for (size_t r = 0; r < rows_in_block; ++r)
+                {
+                    const UInt8 * src = reinterpret_cast<const UInt8 *>(col.getChars().data()) + (base_row + r) * bytes_per_fixedstring;
+
+                    SerializationQBit::untransposeBitPlane(src, reinterpret_cast<Word *>(block_row(r)), padded_array_size, bit_mask);
+                }
             }
 
-            if constexpr (std::is_same_v<CalculationType, BFloat16>)
-                l2Distance(untransposed_x.data(), data_ptr->data(), qbit_size, &result_data[row]);
-            else if constexpr (std::is_same_v<CalculationType, Float32>)
-                l2Distance(untransposed_x.data(), data_ptr->data() + array_start, qbit_size, &result_data[row]);
-            else if constexpr (std::is_same_v<CalculationType, Float64>)
-                l2Distance(untransposed_x.data(), data_ptr->data() + array_start, qbit_size, &result_data[row]);
-            else
-                UNREACHABLE();
+            /// Calculate L2 distance
+            for (size_t r = 0; r < rows_in_block; ++r)
+            {
+                auto * dst = block_row(r);
 
-            array_start += reference_vector_shift;
+                if constexpr (std::is_same_v<CalcT, BFloat16>)
+                    l2Distance(dst, data_ptr->data(), qbit_size, &result_data[base_row + r]);
+                else if constexpr (std::is_same_v<CalcT, Float32>)
+                    l2Distance(dst, data_ptr->data(), qbit_size, &result_data[base_row + r]);
+                else if constexpr (std::is_same_v<CalcT, Float64>)
+                    l2Distance(dst, data_ptr->data(), qbit_size, &result_data[base_row + r]);
+                else
+                    UNREACHABLE();
+            }
         }
 
         return col_res;
