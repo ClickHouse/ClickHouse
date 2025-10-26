@@ -3129,12 +3129,6 @@ void Aggregator::mergeSingleLevelDataImplFixedMap(
         throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "mergeSingleLevelDataImplFixedMap only supports key8 and key16 variants.");
 }
 
-// template void NO_INLINE Aggregator::mergeSingleLevelDataImplFixedMap<decltype(AggregatedDataVariants::key8)::element_type>(
-//     ManyAggregatedDataVariants & non_empty_data, Arena * arena, const UInt32 worker_id, UInt32 total_worker, std::atomic<bool> & is_cancelled) const;
-// template void NO_INLINE Aggregator::mergeSingleLevelDataImplFixedMap<decltype(AggregatedDataVariants::key16)::element_type>(
-//     ManyAggregatedDataVariants & non_empty_data, Arena * arena, UInt32 worker_id, UInt32 total_worker, std::atomic<bool> & is_cancelled) const;
-
-
 void Aggregator::resetAggregatorExceptFirst(ManyAggregatedDataVariants & data_variants) const
 {
     for (size_t i = 1, size = data_variants.size(); i < size; ++i)
