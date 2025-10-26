@@ -79,6 +79,13 @@ struct PartialSortingLessImpl
 
             res *= elem.description.direction;
 
+            if (elem.description.is_natural)
+            {
+                res *= -1;
+            } else {
+                throw std::runtime_error("dsdsdsd");
+            }
+
             if (res != 0)
                 break;
         }

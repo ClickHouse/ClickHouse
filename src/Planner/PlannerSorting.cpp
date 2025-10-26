@@ -162,6 +162,7 @@ SortDescription extractSortDescription(const QueryTreeNodePtr & order_by_node, c
         std::shared_ptr<Collator> collator = sort_node_typed.getCollator();
         int direction = sort_node_typed.getSortDirection() == SortDirection::ASCENDING ? 1 : -1;
         int nulls_direction = direction;
+        bool is_natural = sort_node_typed.isNatural();
 
         auto nulls_sort_direction = sort_node_typed.getNullsSortDirection();
         if (nulls_sort_direction)
@@ -170,11 +171,12 @@ SortDescription extractSortDescription(const QueryTreeNodePtr & order_by_node, c
         if (sort_node_typed.withFill())
         {
             FillColumnDescription fill_description = extractWithFillDescription(sort_node_typed);
-            sort_column_description.emplace_back(column_name, direction, nulls_direction, collator, true /*with_fill*/, fill_description);
+            sort_column_description.emplace_back(column_name, direction, nulls_direction, collator, true /*with_fill*/, fill_description, is_natural);
         }
         else
         {
-            sort_column_description.emplace_back(column_name, direction, nulls_direction, collator);
+            FillColumnDescription empty_description;
+            sort_column_description.emplace_back(column_name, direction, nulls_direction, collator, false, empty_description, is_natural);
         }
     }
 
