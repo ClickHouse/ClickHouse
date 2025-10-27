@@ -126,6 +126,11 @@ public:
         UInt64 selected_rows = 0;
         bool has_exact_ranges = false;
 
+        AnalysisResult() = default;
+
+        AnalysisResult(const AnalysisResult &) = default;
+        AnalysisResult(AnalysisResult &&) noexcept = default;
+
         bool readFromProjection() const { return !parts_with_ranges.empty() && parts_with_ranges.front().data_part->isProjectionPart(); }
         void checkLimits(const Settings & settings, const SelectQueryInfo & query_info_) const;
     };
@@ -265,7 +270,8 @@ public:
 
     /// Adds virtual columns for reading from text index.
     /// Removes physical text columns that were eliminated by direct read from text index.
-    void replaceColumnsForTextSearch(const IndexReadColumns & added_columns, const Names & removed_columns);
+    void createReadTasksForTextIndex(const UsefulSkipIndexes & skip_indexes, const IndexReadColumns & added_columns, const Names & removed_columns);
+
     const std::optional<Indexes> & getIndexes() const { return indexes; }
     ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator() const;
 

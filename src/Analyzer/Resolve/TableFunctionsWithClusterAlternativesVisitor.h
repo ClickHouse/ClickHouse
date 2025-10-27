@@ -26,7 +26,7 @@ public:
     bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr &) { return true; }
     bool shouldReplaceWithClusterAlternatives() const
     {
-        return !has_subquery && !has_join && (table_count + table_function_count) == 1;
+        return !has_subquery && !has_join && ((table_count + table_function_count) == 1 || (table_function_count == 0));
     }
 
 private:
