@@ -88,7 +88,6 @@ namespace HistogramMetrics
     extern Metric & KeeperResponseTimeWrite;
     extern Metric & KeeperResponseTimeMulti;
     extern Metric & KeeperClientQueueDuration;
-    extern Metric & KeeperClientSendDuration;
     extern MetricFamily & KeeperClientRoundtripDuration;
 }
 
@@ -811,6 +810,7 @@ void ZooKeeper::sendThread()
                     if (info.request->xid != close_xid)
                     {
                         CurrentMetrics::add(CurrentMetrics::ZooKeeperRequest);
+                        info.request->send_ts = clock::now();
                         std::lock_guard lock(operations_mutex);
                         operations[info.request->xid] = info;
                     }
@@ -829,12 +829,6 @@ void ZooKeeper::sendThread()
                     info.request->probably_sent = true;
                     info.request->write(getWriteBuffer(), use_xid_64);
                     flushWriteBuffer();
-
-                    info.request->send_ts = clock::now();
-
-                    HistogramMetrics::observe(
-                        HistogramMetrics::KeeperClientSendDuration,
-                        std::chrono::duration_cast<std::chrono::milliseconds>(info.request->send_ts - dequeue_ts).count());
 
                     logOperationIfNeeded(info.request);
 

@@ -79,12 +79,6 @@ namespace HistogramMetrics
         {10, 100, 250, 500}
     );
 
-    Metric & KeeperClientSendDuration = Factory::instance().registerMetric(
-        "keeper_client_send_duration_milliseconds",
-        "Time to send requests to the Keeper after dequeuing",
-        {10, 100, 250, 500}
-    );
-
     MetricFamily & KeeperClientRoundtripDuration = Factory::instance().registerMetric(
         "keeper_client_roundtrip_duration_milliseconds",
         "Time from sending requests to receiving response from the Keeper (network + Keeper processing)",

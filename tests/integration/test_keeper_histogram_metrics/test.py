@@ -34,7 +34,6 @@ def test_server_histogram_metrics_in_system_table(started_cluster):
     expected_metrics = (
         'keeper_client_queue_duration_milliseconds',
         'keeper_client_roundtrip_duration_milliseconds',
-        'keeper_client_send_duration_milliseconds',
         'keeper_response_time_ms',
         'keeper_server_preprocess_request_duration_milliseconds',
         'keeper_server_queue_duration_milliseconds',
