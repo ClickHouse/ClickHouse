@@ -959,6 +959,8 @@ KeyCondition::KeyCondition(
 
     has_filter = true;
 
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
     RPNBuilder<RPNElement> builder(filter_dag.predicate, context, [&](const RPNBuilderTreeNode & node, RPNElement & out)
     {
         return extractAtomFromTree(node, out);
