@@ -54,8 +54,45 @@ const char * FunctionArea<SphericalPoint>::name = "areaSpherical";
 
 REGISTER_FUNCTION(Area)
 {
-    factory.registerFunction<FunctionArea<CartesianPoint>>();
-    factory.registerFunction<FunctionArea<SphericalPoint>>();
+    {
+        FunctionDocumentation::Description description = R"(
+    Returns the area of the object.
+        )";
+        FunctionDocumentation::Syntax syntax = "areaCartesian(object)";
+        FunctionDocumentation::Arguments arguments = {
+            {"object", "geometry object", {"Geometry"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {
+            "Returns the area of the object.",
+            {"Float64"}
+        };
+        FunctionDocumentation::Examples examples;
+
+        FunctionDocumentation::IntroducedIn introduced_in = {25, 10};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+        factory.registerFunction<FunctionArea<CartesianPoint>>();
+    }
+    {
+        FunctionDocumentation::Description description = R"(
+    Returns the area of the object.
+        )";
+        FunctionDocumentation::Syntax syntax = "areaSpherical(object)";
+        FunctionDocumentation::Arguments arguments = {
+            {"object", "geometry object", {"Geometry"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {
+            "Returns the area of the object.",
+            {"Float64"}
+        };
+        FunctionDocumentation::Examples examples;
+        FunctionDocumentation::IntroducedIn introduced_in = {25, 10};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+        factory.registerFunction<FunctionArea<SphericalPoint>>();
+    }
 }
 
 }
