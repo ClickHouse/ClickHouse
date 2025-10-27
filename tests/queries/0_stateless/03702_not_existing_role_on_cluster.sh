@@ -10,28 +10,28 @@ role="role03702_${CLICKHOUSE_DATABASE}_$RANDOM"
 db=${CLICKHOUSE_DATABASE}
 
 ${CLICKHOUSE_CLIENT} <<EOF
-DROP USER IF EXISTS $user ON CLUSTER test_cluster_two_shards;
-CREATE USER $user ON CLUSTER test_cluster_two_shards;
+DROP USER IF EXISTS $user ON CLUSTER test_shard_localhost;
+CREATE USER $user ON CLUSTER test_shard_localhost;
 
-DROP ROLE IF EXISTS $role ON CLUSTER test_cluster_two_shards;
-CREATE ROLE $role ON CLUSTER test_cluster_two_shards;
+DROP ROLE IF EXISTS $role ON CLUSTER test_shard_localhost;
+CREATE ROLE $role ON CLUSTER test_shard_localhost;
 
-GRANT REMOTE ON *.* TO $user ON CLUSTER test_cluster_two_shards;
-GRANT SELECT ON *.* TO $role ON CLUSTER test_cluster_two_shards;
+GRANT REMOTE ON *.* TO $user ON CLUSTER test_shard_localhost;
+GRANT SELECT ON *.* TO $role ON CLUSTER test_shard_localhost;
 
-GRANT $role TO $user ON CLUSTER test_cluster_two_shards;
-DROP ROLE $role ON CLUSTER test_cluster_two_shards;
+GRANT $role TO $user ON CLUSTER test_shard_localhost;
+DROP ROLE $role ON CLUSTER test_shard_localhost;
 EOF
 
 ${CLICKHOUSE_CLIENT} --user $user <<EOF
 SELECT
     hostName() AS h,
     count()
-FROM clusterAllReplicas('test_cluster_two_shards', system.one)
+FROM clusterAllReplicas('test_shard_localhost', system.one)
 GROUP BY h
 FORMAT Null
 EOF;
 
 ${CLICKHOUSE_CLIENT} <<EOF
-DROP USER IF EXISTS $user ON CLUSTER test_cluster_two_shards;
+DROP USER IF EXISTS $user ON CLUSTER test_shard_localhost;
 EOF
