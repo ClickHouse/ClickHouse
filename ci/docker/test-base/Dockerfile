@@ -1,6 +1,6 @@
 # rebuild in #33610
 # docker build -t clickhouse/test-base .
-FROM ubuntu:22.04
+FROM ubuntu:24.04
 
 # ARG for quick switch to a given ubuntu mirror
 ARG apt_archive="http://archive.ubuntu.com"

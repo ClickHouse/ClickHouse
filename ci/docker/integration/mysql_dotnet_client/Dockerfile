@@ -1,6 +1,6 @@
 # docker build -t clickhouse/mysql_dotnet_client .
 
-FROM ubuntu:22.04
+FROM ubuntu:24.04
 
 WORKDIR /testapp
 

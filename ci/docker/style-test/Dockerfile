@@ -1,5 +1,5 @@
 # docker build -t clickhouse/style-test .
-FROM ubuntu:22.04
+FROM ubuntu:24.04
 
 RUN apt-get update && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
         aspell \
