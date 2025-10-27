@@ -271,14 +271,20 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
         item_->is_done.set();
         item_.reset();
 
+#if defined(SANITIZER)
+        static constexpr auto THRESHOLD_MILLISECONDS = 10 * 1000ULL;
+#else
+        static constexpr auto THRESHOLD_MILLISECONDS = 1000ULL;
+#endif
         UInt64 elapsed_ms = destruction_watch.elapsedMilliseconds();
         NOEXCEPT_SCOPE({
             ALLOW_ALLOCATIONS_IN_SCOPE;
-            if (elapsed_ms > 1000ULL)
+
+            if (elapsed_ms > THRESHOLD_MILLISECONDS)
             {
                 LOG_WARNING(log,
-                    "Releasing background task runtime data took {:.3f} seconds (> 1s), executor={}, storage={}, query_id={}, deleting={}",
-                    static_cast<double>(elapsed_ms) / 1000.0,
+                    "Releasing background task runtime data took {} milliseconds, executor={}, storage={}, query_id={}, deleting={}",
+                    elapsed_ms,
                     name,
                     captured_storage_id.value_or("unknown"),
                     captured_query_id.value_or("unknown"),

@@ -9,6 +9,12 @@ namespace DB
 
 struct TSA_SCOPED_LOCKABLE LockGuardWithStopWatch final
 {
+#if defined(SANITIZER)
+    static constexpr auto THRESHOLD_MILLISECONDS = 10000;
+#else
+    static constexpr auto THRESHOLD_MILLISECONDS = 1000;
+#endif
+
     const char * caller{nullptr};
     LoggerRawPtr log;
     UInt64 thread_id{0};
@@ -40,15 +46,16 @@ struct TSA_SCOPED_LOCKABLE LockGuardWithStopWatch final
 
         /// Must be destroyed first.
         lock.reset();
+        wait_watch->stop();
+        lock_watch->stop();
 
-        if (wait_watch.has_value() && lock_watch.has_value() &&
-            wait_watch->elapsedMilliseconds() - lock_watch->elapsedMilliseconds() > 1000)
+        if (wait_watch->elapsedMilliseconds() - lock_watch->elapsedMilliseconds() > THRESHOLD_MILLISECONDS)
         {
             LOG_WARNING(log, "Lock acquisition took {} ms for thread {} in [{}], Stack trace (when copying this message, always include the lines below): \n {}",
                 wait_watch->elapsedMilliseconds() - lock_watch->elapsedMilliseconds(), thread_id, caller, StackTrace().toString());
         }
 
-        if (lock_watch.has_value() && lock_watch->elapsedMilliseconds() > 1000)
+        if (lock_watch->elapsedMilliseconds() > THRESHOLD_MILLISECONDS)
         {
             LOG_WARNING(log, "Lock was held for {} ms by thread {} in [{}], Stack trace (when copying this message, always include the lines below): \n {}",
                 wait_watch->elapsedMilliseconds(), thread_id, caller, StackTrace().toString());
