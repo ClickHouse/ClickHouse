@@ -745,7 +745,7 @@ struct ByteStreamSplitDecoder : public PageDecoder
 
 bool PageDecoderInfo::canReadDirectlyIntoColumn(parq::Encoding::type encoding, size_t num_values, IColumn & col, std::span<char> & out) const
 {
-    if (encoding == parq::Encoding::PLAIN && fixed_size_converter && fixed_size_converter->isTrivial())
+    if (encoding == parq::Encoding::PLAIN && fixed_size_converter && physical_type != parq::Type::BOOLEAN && fixed_size_converter->isTrivial())
     {
         chassert(col.sizeOfValueIfFixed() == fixed_size_converter->input_size);
         out = col.insertRawUninitialized(num_values);
@@ -1419,7 +1419,7 @@ void GeoConverter::convertColumn(std::span<const char> chars, const UInt64 * off
 {
     col.reserve(col.size() + num_values);
     chassert(chars.size() >= offsets[num_values - 1]);
-    for (size_t i = 0; i < num_values; ++i)
+    for (ssize_t i = 0; i < ssize_t(num_values); ++i)
     {
         char * ptr = const_cast<char*>(chars.data() + offsets[i - 1]);
         size_t length = offsets[i] - offsets[i - 1] - separator_bytes;

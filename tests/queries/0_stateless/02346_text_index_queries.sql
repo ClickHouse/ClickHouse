@@ -165,11 +165,11 @@ SELECT read_rows==2 from system.query_log
     LIMIT 1;
 
 ----------------------------------------------------
-SELECT 'Test text(tokenizer = sparseGrams(2, 100)) on UTF-8 data';
+SELECT 'Test text(tokenizer = sparseGrams(3, 100)) on UTF-8 data';
 
 DROP TABLE IF EXISTS tab;
 
-CREATE TABLE tab(k UInt64, s String, INDEX af(s) TYPE text(tokenizer = sparseGrams(2, 100)) GRANULARITY 1)
+CREATE TABLE tab(k UInt64, s String, INDEX af(s) TYPE text(tokenizer = sparseGrams(3, 100)) GRANULARITY 1)
     ENGINE = MergeTree()
     ORDER BY k
     SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';
@@ -180,7 +180,7 @@ INSERT INTO tab VALUES (101, 'Alick 好'), (102, 'clickhouse你好'), (103, 'Cli
 SELECT name, type FROM system.data_skipping_indices WHERE table == 'tab' AND database = currentDatabase() LIMIT 1;
 
 -- search text index
-SELECT * FROM tab WHERE s LIKE '%你好%' ORDER BY k;
+SELECT * FROM tab WHERE s LIKE '%house你好%' ORDER BY k;
 
 -- check the query only read 1 granule (2 rows total; each granule has 2 rows)
 SYSTEM FLUSH LOGS query_log;
@@ -193,11 +193,11 @@ SELECT read_rows==2 from system.query_log
     LIMIT 1;
 
 ----------------------------------------------------
-SELECT 'Test text(tokenizer = sparseGrams(2, 100, 3)) on UTF-8 data';
+SELECT 'Test text(tokenizer = sparseGrams(3, 100, 4)) on UTF-8 data';
 
 DROP TABLE IF EXISTS tab;
 
-CREATE TABLE tab(k UInt64, s String, INDEX af(s) TYPE text(tokenizer = sparseGrams(2, 100, 3)) GRANULARITY 1)
+CREATE TABLE tab(k UInt64, s String, INDEX af(s) TYPE text(tokenizer = sparseGrams(3, 100, 4)) GRANULARITY 1)
     ENGINE = MergeTree()
     ORDER BY k
     SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';
@@ -208,7 +208,7 @@ INSERT INTO tab VALUES (101, 'Alick 好'), (102, 'clickhouse你好'), (103, 'Cli
 SELECT name, type FROM system.data_skipping_indices WHERE table == 'tab' AND database = currentDatabase() LIMIT 1;
 
 -- search text index
-SELECT * FROM tab WHERE s LIKE '%你好%' ORDER BY k;
+SELECT * FROM tab WHERE s LIKE '%house你好%' ORDER BY k;
 
 -- check the query only read 1 granule (2 rows total; each granule has 2 rows)
 SYSTEM FLUSH LOGS query_log;
