@@ -3761,7 +3761,6 @@ bool KeyCondition::alwaysFalse() const
     {
         switch (element.function)
         {
-<<<<<<< HEAD
             case RPNElement::ALWAYS_TRUE:
                 rpn_stack.push_back(1);
                 break;
@@ -3781,31 +3780,6 @@ bool KeyCondition::alwaysFalse() const
                 break;
             case RPNElement::FUNCTION_NOT:
             {
-                assert(!rpn_stack.empty());
-=======
-            rpn_stack.push_back(1);
-        }
-        else if (element.function == RPNElement::ALWAYS_FALSE)
-        {
-            rpn_stack.push_back(0);
-        }
-        else if (element.function == RPNElement::FUNCTION_NOT_IN_RANGE
-            || element.function == RPNElement::FUNCTION_IN_RANGE
-            || element.function == RPNElement::FUNCTION_IN_SET
-            || element.function == RPNElement::FUNCTION_NOT_IN_SET
-            || element.function == RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE
-            || element.function == RPNElement::FUNCTION_POINT_IN_POLYGON
-            || element.function == RPNElement::FUNCTION_IS_NULL
-            || element.function == RPNElement::FUNCTION_IS_NOT_NULL
-            || element.function == RPNElement::FUNCTION_UNKNOWN)
-        {
-            rpn_stack.push_back(2);
-        }
-        else if (element.function == RPNElement::FUNCTION_NOT)
-        {
-            assert(!rpn_stack.empty());
->>>>>>> d9c4f395c2d (Fix ~7 bugs in KeyCondition)
-
                 auto & arg = rpn_stack.back();
                 if (arg == 0)
                     arg = 1;
