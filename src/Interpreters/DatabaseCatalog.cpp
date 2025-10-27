@@ -2008,7 +2008,18 @@ void DatabaseCatalog::reloadDisksTask()
         while (it->isValid())
         {
             auto table = it->table();
-            table->initializeDiskOnConfigChange(disks);
+            try
+            {
+                table->initializeDiskOnConfigChange(disks);
+            }
+            catch (const std::exception & e)
+            {
+                LOG_WARNING(log, "Fail to reinitialize disks [{}] for table {}, error: {}", fmt::join(disks, ","), table->getName(), e.what());
+            }
+            catch (...)
+            {
+                LOG_WARNING(log, "Fail to reinitialize disks [{}] for table {}", fmt::join(disks, ","), table->getName());
+            }
             it->next();
         }
     }
