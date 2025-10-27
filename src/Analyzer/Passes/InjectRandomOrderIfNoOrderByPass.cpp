@@ -1,10 +1,10 @@
 #include <memory>
 #include <Analyzer/Passes/InjectRandomOrderIfNoOrderByPass.h>
 
-#include <Analyzer/IQueryTreePass.h>
-#include <Analyzer/QueryNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/IQueryTreePass.h>
 #include <Analyzer/ListNode.h>
+#include <Analyzer/QueryNode.h>
 #include <Analyzer/SortNode.h>
 #include <Analyzer/UnionNode.h>
 
@@ -35,7 +35,9 @@ void addRandomOrderBy(ListNode & order_by_list_node, ContextPtr context)
     order_by_list_node.getNodes().push_back(std::move(sort_node));
 }
 
-void wrapWithSelectOrderBy(QueryTreeNodePtr & query_root, ContextPtr context) {
+/// Utility: wrap query_root in new QueryNode that includes a random order by
+void wrapWithSelectOrderBy(QueryTreeNodePtr & query_root, ContextPtr context)
+{
     auto * query_node = query_root->as<QueryNode>();
 
     /// Re-resolve query_node columns setting the unique alias
@@ -45,7 +47,7 @@ void wrapWithSelectOrderBy(QueryTreeNodePtr & query_root, ContextPtr context) {
     query_node->setProjectionAliasesToOverride({unique_column_name});
     query_node->resolveProjectionColumns(subquery_projection_columns);
 
-    /// SELECT * AS _unique_name_ FROM query_node order by rand()
+    /// SELECT unique_column_name FROM query_node order by rand()
     auto new_root = std::make_shared<QueryNode>(Context::createCopy(context));
     new_root->setIsSubquery(true);
     new_root->getJoinTree() = query_root;
@@ -69,9 +71,9 @@ void InjectRandomOrderIfNoOrderByPass::run(QueryTreeNodePtr & root, ContextPtr c
     /// Case 1: Top-level SELECT
     if (auto * query_node = root->as<QueryNode>())
     {
-        if (!query_node->hasOrderBy()) 
+        if (!query_node->hasOrderBy())
             wrapWithSelectOrderBy(root, context);
-            
+
         return;
     }
 
@@ -87,7 +89,6 @@ void InjectRandomOrderIfNoOrderByPass::run(QueryTreeNodePtr & root, ContextPtr c
         }
         return;
     }
-
 }
 
 }
