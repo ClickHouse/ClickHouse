@@ -1724,8 +1724,9 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t al
     const uint32_t dynamic_type = 30 * static_cast<uint32_t>(!low_card && (allowed_types & allow_dynamic) != 0);
     const uint32_t time_type = 15 * static_cast<uint32_t>((allowed_types & allow_time) != 0);
     const uint32_t qbit_type = 15 * static_cast<uint32_t>(!low_card && (allowed_types & allow_qbit) != 0 && allow_floats);
+    const uint32_t geo_type = 10 * static_cast<uint32_t>((allowed_types & allow_geo) != 0 && allow_floats);
     const uint32_t prob_space = int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + bool_type
-        + enum_type + uuid_type + ipv4_type + ipv6_type + j_type + dynamic_type + time_type + qbit_type;
+        + enum_type + uuid_type + ipv4_type + ipv6_type + j_type + dynamic_type + time_type + qbit_type + geo_type;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
@@ -2015,6 +2016,21 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t al
         }
         res = new QBitType(sub, dimension);
     }
+    else if (
+        geo_type
+        && nopt
+            < (int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + bool_type + enum_type + uuid_type
+               + ipv4_type + ipv6_type + j_type + dynamic_type + time_type + qbit_type + geo_type + 1))
+    {
+        std::uniform_int_distribution<uint32_t> geo_range(1, static_cast<uint32_t>(GeoTypes_MAX));
+        const GeoTypes gt = static_cast<GeoTypes>(geo_range(rg.generator));
+
+        if (tp)
+        {
+            tp->set_geo(gt);
+        }
+        res = new GeoType(gt);
+    }
     else
     {
         chassert(0);
@@ -2034,9 +2050,7 @@ SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint64_
     const uint32_t nested_type = 10
         * static_cast<uint32_t>((allowed_types & allow_nested) != 0 && this->depth < this->fc.max_depth
                                 && this->width < this->fc.max_width);
-    const uint32_t geo_type = 10 * static_cast<uint32_t>((allowed_types & allow_geo) != 0 && this->fc.fuzz_floating_points);
-    const uint32_t prob_space
-        = nullable_type + non_nullable_type + array_type + map_type + tuple_type + variant_type + nested_type + geo_type;
+    const uint32_t prob_space = nullable_type + non_nullable_type + array_type + map_type + tuple_type + variant_type + nested_type;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
@@ -2157,20 +2171,6 @@ SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint64_
         this->depth--;
         return new NestedType(subtypes);
     }
-    else if (
-        geo_type
-        && nopt < (nullable_type + non_nullable_type + array_type + map_type + tuple_type + variant_type + nested_type + geo_type + 1))
-    {
-        /// Geo
-        std::uniform_int_distribution<uint32_t> geo_range(1, static_cast<uint32_t>(GeoTypes_MAX));
-        const GeoTypes gt = static_cast<GeoTypes>(geo_range(rg.generator));
-
-        if (tp)
-        {
-            tp->set_geo(gt);
-        }
-        return new GeoType(gt);
-    }
     else
     {
         chassert(0);
@@ -2251,8 +2251,10 @@ String strAppendGeoValue(RandomGenerator & rg, const GeoTypes & gt)
 {
     String ret;
     const uint32_t limit = rg.randomInt<uint32_t>(0, 10);
+    const GeoTypes & imp
+        = gt == GeoTypes::Geometry ? static_cast<GeoTypes>(rg.randomInt<uint32_t>(1, static_cast<uint32_t>(GeoTypes::MultiPolygon))) : gt;
 
-    switch (gt)
+    switch (imp)
     {
         case GeoTypes::Point:
             ret = fmt::format("({},{})", nextFloatingPoint(rg, false), nextFloatingPoint(rg, false));
@@ -2328,6 +2330,8 @@ String strAppendGeoValue(RandomGenerator & rg, const GeoTypes & gt)
             }
             ret += "]";
             break;
+        case GeoTypes::Geometry:
+            chassert(0);
     }
     return ret;
 }

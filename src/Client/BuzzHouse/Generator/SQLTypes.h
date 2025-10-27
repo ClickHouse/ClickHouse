@@ -678,4 +678,5 @@ String strBuildJSONArray(RandomGenerator & rg, int jdepth, int jwidth);
 String strBuildJSONElement(RandomGenerator & rg);
 String strBuildJSON(RandomGenerator & rg, int jdepth, int jwidth);
 String strAppendGeoValue(RandomGenerator & rg, const GeoTypes & gt);
+
 }

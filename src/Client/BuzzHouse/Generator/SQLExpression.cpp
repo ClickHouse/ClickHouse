@@ -161,6 +161,7 @@ void StatementGenerator::refColumn(RandomGenerator & rg, const GroupCol & gcol, 
 
 void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, const bool complex, Expr * expr)
 {
+    const bool allow_floats = (this->next_type_mask & (allow_bfloat16 | allow_float32 | allow_float64)) != 0 && this->fc.fuzz_floating_points;
     uint32_t nested_prob = 0;
     LiteralValue * lv = expr->mutable_lit_val();
     const uint32_t hugeint_lit = 20;
@@ -175,7 +176,7 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
     const uint32_t uuid_lit = 20 * static_cast<uint32_t>((this->next_type_mask & allow_uuid) != 0);
     const uint32_t ipv4_lit = 20 * static_cast<uint32_t>((this->next_type_mask & allow_ipv4) != 0);
     const uint32_t ipv6_lit = 20 * static_cast<uint32_t>((this->next_type_mask & allow_ipv6) != 0);
-    const uint32_t geo_lit = 20 * static_cast<uint32_t>((this->next_type_mask & allow_geo) != 0);
+    const uint32_t geo_lit = 20 * static_cast<uint32_t>((this->next_type_mask & allow_geo) != 0 && allow_floats);
     const uint32_t str_lit = 50;
     const uint32_t special_val = 80;
     const uint32_t json_lit = 20 * static_cast<uint32_t>((this->next_type_mask & allow_JSON) != 0);

@@ -986,6 +986,9 @@ static void BottomTypeNameToString(String & ret, const uint32_t quote, const boo
             ret += ")";
         }
         break;
+        case BottomTypeNameType::kGeo:
+            ret += GeoTypes_Name(btn.geo());
+            break;
         default: {
             if (lcard)
             {
@@ -1188,9 +1191,6 @@ CONV_FN_QUOTE(TopTypeName, ttn)
         case TopTypeNameType::kVariant:
             ret += "Variant";
             TupleWithOutColumnNamesToString(ret, quote, ttn.variant());
-            break;
-        case TopTypeNameType::kGeo:
-            ret += GeoTypes_Name(ttn.geo());
             break;
         default:
             ret += "Int";
