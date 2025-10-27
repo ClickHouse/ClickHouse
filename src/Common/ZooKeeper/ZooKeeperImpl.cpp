@@ -1026,14 +1026,16 @@ void ZooKeeper::receiveEvent()
         }
 
         auto receive_ts = clock::now();
-        elapsed_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(receive_ts - request_info.create_ts).count();
 
+        chassert(request_info.create_ts != std::chrono::steady_clock::time_point{});
+        elapsed_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(receive_ts - request_info.create_ts).count();
         ProfileEvents::increment(ProfileEvents::ZooKeeperWaitMicroseconds, elapsed_microseconds);
 
+        chassert(request_info.send_ts != std::chrono::steady_clock::time_point{});
         HistogramMetrics::observe(
             HistogramMetrics::KeeperClientRoundtripDuration,
             {toOperationTypeMetricLabel(request_info.request->getOpNum())},
-            std::chrono::duration_cast<std::chrono::milliseconds>(receive_ts - request_info.create_ts).count());
+            std::chrono::duration_cast<std::chrono::milliseconds>(receive_ts - request_info.send_ts).count());
     }
 
     try
@@ -1251,6 +1253,8 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
                     ? Error::ZCONNECTIONLOSS
                     : Error::ZSESSIONEXPIRED;
                 response->xid = request_info.request->xid;
+
+                chassert(request_info.create_ts != std::chrono::steady_clock::time_point{});
                 UInt64 elapsed_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - request_info.create_ts).count();
 
                 if (request_info.callback)
@@ -1319,6 +1323,7 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
                     try
                     {
                         info.callback(*response);
+                        chassert(info.create_ts != std::chrono::steady_clock::time_point{});
                         UInt64 elapsed_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - info.create_ts).count();
                         logOperationIfNeeded(info.request, response, true, elapsed_microseconds);
                         observeOperation(info.request.get(), response.get(), elapsed_microseconds);
@@ -1809,6 +1814,8 @@ void ZooKeeper::close()
 
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperCloseRequest>(std::move(request));
+
+    request_info.enqueue_ts = clock::now();
 
     if (!requests_queue.tryPush(std::move(request_info), args.operation_timeout_ms))
         throw Exception(Error::ZOPERATIONTIMEOUT, "Cannot push close request to queue within operation timeout of {} ms", args.operation_timeout_ms);

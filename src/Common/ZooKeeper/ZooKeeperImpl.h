@@ -278,9 +278,9 @@ private:
         ResponseCallback callback;
         WatchCallbackPtrOrEventPtr watch;
 
-        clock::time_point create_ts;
-        clock::time_point enqueue_ts;
-        clock::time_point send_ts;
+        clock::time_point create_ts = {};
+        clock::time_point enqueue_ts = {};
+        clock::time_point send_ts = {};
     };
 
     using RequestsQueue = ConcurrentBoundedQueue<RequestInfo>;
