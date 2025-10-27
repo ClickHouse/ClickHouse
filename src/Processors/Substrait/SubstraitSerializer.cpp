@@ -6,10 +6,13 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Interpreters/ActionsDAG.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <Core/Block.h>
+#include <Core/Field.h>
+#include <Functions/IFunction.h>
 #include <Common/Exception.h>
 
 // Include generated Substrait protobuf headers
@@ -102,6 +105,155 @@ private:
         }
     }
 
+    /// Convert ActionsDAG Node to Substrait Expression
+    substrait::Expression convertExpression(const ActionsDAG::Node * node, const Block & input_header)
+    {
+        substrait::Expression expr;
+        
+        if (!node)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot convert null ActionsDAG node");
+        
+        switch (node->type)
+        {
+            case ActionsDAG::ActionType::INPUT:
+            {
+                // Column reference - find column index in input
+                auto * selection = expr.mutable_selection();
+                auto * direct_ref = selection->mutable_direct_reference();
+                auto * struct_field = direct_ref->mutable_struct_field();
+                
+                // Find column index by name
+                int field_index = -1;
+                for (size_t i = 0; i < input_header.columns(); ++i)
+                {
+                    if (input_header.getByPosition(i).name == node->result_name)
+                    {
+                        field_index = static_cast<int>(i);
+                        break;
+                    }
+                }
+                
+                if (field_index < 0)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, 
+                        "Column {} not found in input header", node->result_name);
+                
+                struct_field->set_field(field_index);
+                break;
+            }
+            
+            case ActionsDAG::ActionType::COLUMN:
+            {
+                // Constant value
+                auto * literal = expr.mutable_literal();
+                
+                if (!node->column || node->column->empty())
+                {
+                    // NULL value - just create empty literal
+                    literal->set_boolean(false); // Placeholder for NULL
+                }
+                else
+                {
+                    // Get the first value from the column
+                    TypeIndex type_id = node->result_type->getTypeId();
+                    auto field = (*node->column)[0];
+                    
+                    switch (type_id)
+                    {
+                        case TypeIndex::UInt8:
+                            if (node->result_type->getName() == "Bool")
+                                literal->set_boolean(field.safeGet<UInt8>() != 0);
+                            else
+                                literal->set_i32(field.safeGet<UInt8>());
+                            break;
+                        case TypeIndex::Int32:
+                            literal->set_i32(field.safeGet<Int32>());
+                            break;
+                        case TypeIndex::Int64:
+                            literal->set_i64(field.safeGet<Int64>());
+                            break;
+                        case TypeIndex::UInt32:
+                            literal->set_i64(field.safeGet<UInt32>());
+                            break;
+                        case TypeIndex::UInt64:
+                            literal->set_i64(static_cast<Int64>(field.safeGet<UInt64>()));
+                            break;
+                        case TypeIndex::Float32:
+                            literal->set_fp32(static_cast<float>(field.safeGet<Float64>()));
+                            break;
+                        case TypeIndex::Float64:
+                            literal->set_fp64(field.safeGet<Float64>());
+                            break;
+                        case TypeIndex::String:
+                            literal->set_string(field.safeGet<String>());
+                            break;
+                        default:
+                            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                                "Constant type {} not yet supported", node->result_type->getName());
+                    }
+                }
+                break;
+            }
+            
+            case ActionsDAG::ActionType::ALIAS:
+            {
+                // Just pass through to the child
+                if (node->children.empty())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "ALIAS node must have a child");
+                return convertExpression(node->children[0], input_header);
+            }
+            
+            case ActionsDAG::ActionType::FUNCTION:
+            {
+                // Function call
+                const String & func_name = node->function_base->getName();
+                
+                // Map ClickHouse function names to Substrait
+                auto * scalar_func = expr.mutable_scalar_function();
+                
+                // Map function names to Substrait function references
+                // In a full implementation, these would be registered in an extension URI
+                static const std::unordered_map<String, int> function_map = {
+                    {"equals", 1},
+                    {"notEquals", 2},
+                    {"less", 3},
+                    {"lessOrEquals", 4},
+                    {"greater", 5},
+                    {"greaterOrEquals", 6},
+                    {"and", 10},
+                    {"or", 11},
+                    {"not", 12}
+                };
+                
+                auto it = function_map.find(func_name);
+                if (it == function_map.end())
+                {
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Function {} not yet supported for Substrait conversion", func_name);
+                }
+                
+                // Set function reference
+                scalar_func->set_function_reference(it->second);
+                
+                // Convert children arguments
+                for (const auto * child : node->children)
+                {
+                    auto * arg = scalar_func->add_arguments();
+                    arg->mutable_value()->CopyFrom(convertExpression(child, input_header));
+                }
+                
+                break;
+            }
+            
+            case ActionsDAG::ActionType::ARRAY_JOIN:
+            case ActionsDAG::ActionType::PLACEHOLDER:
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "ActionsDAG node type {} not yet supported for Substrait conversion",
+                    static_cast<int>(node->type));
+        }
+        
+        return expr;
+    }
+
     /// Convert QueryPlan node to Substrait Rel
     substrait::Rel convertNode(const QueryPlan::Node * node)
     {
@@ -177,11 +329,27 @@ private:
         auto child_rel = convertNode(node->children[0]);
         filter_rel->mutable_input()->Swap(&child_rel);
         
-        // TODO: Convert filter expression
-        // For now, create a placeholder literal true condition
-        auto * condition = filter_rel->mutable_condition();
-        auto * literal = condition->mutable_literal();
-        literal->set_boolean(true);
+        // Cast to FilterStep to access the ActionsDAG
+        const auto * filter_step = dynamic_cast<const FilterStep *>(node->step.get());
+        if (!filter_step)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected FilterStep but got {}", node->step->getName());
+        
+        // Get the filter expression from ActionsDAG
+        const auto & actions_dag = filter_step->getExpression();
+        const String & filter_column_name = filter_step->getFilterColumnName();
+        
+        // Find the filter column in the DAG outputs
+        const ActionsDAG::Node * filter_node = actions_dag.tryFindInOutputs(filter_column_name);
+        if (!filter_node)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Filter column {} not found in ActionsDAG outputs", filter_column_name);
+        
+        // Get input header from child node
+        const auto & input_header_ptr = node->children[0]->step->getOutputHeader();
+        const Block & input_header = *input_header_ptr;
+        
+        // Convert the filter expression
+        auto filter_expr = convertExpression(filter_node, input_header);
+        filter_rel->mutable_condition()->Swap(&filter_expr);
     }
 
     void convertExpressionStep(const QueryPlan::Node * node, substrait::Rel * rel)
