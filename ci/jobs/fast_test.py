@@ -57,6 +57,7 @@ def clone_submodules():
         "contrib/corrosion",
         "contrib/StringZilla",
         "contrib/rust_vendor",
+        "contrib/jwt-cpp",
     ]
 
     res = Shell.check("git submodule sync", verbose=True, strict=True)
