@@ -36,6 +36,7 @@ def test_s3_table_functions(started_cluster):
     """
     Simple test to check s3 table function functionalities
     """
+    node.query("SET s3_truncate_on_insert=1")
     node.query(
         f"""
             INSERT INTO FUNCTION s3
@@ -60,6 +61,7 @@ def test_s3_table_functions(started_cluster):
 
 
 def test_s3_table_functions_line_as_string(started_cluster):
+    node.query("SET s3_truncate_on_insert=1")
     node.query(
         f"""
             INSERT INTO FUNCTION s3
@@ -91,6 +93,7 @@ def test_s3_table_functions_line_as_string(started_cluster):
 
 
 def test_s3_question_mark_wildcards(started_cluster):
+    node.query("SET s3_truncate_on_insert=1")
     node.query(
         f"""
             INSERT INTO FUNCTION s3
@@ -174,6 +177,7 @@ def test_s3_presigned_url_works_with_s3_engine(started_cluster):
 
     # Generate a pre-signed GET URL with ?X-Amz-* query parameters
     url = client.presigned_get_object(bucket, object_name, expires=timedelta(minutes=5))
+    node.query("SET s3_truncate_on_insert=1")
 
     cnt_url = node.query(f"SELECT count() FROM url('{url}', 'CSV', 'x String')")
     assert cnt_url.strip() == "3", f"URL engine returned unexpected row count: {cnt_url!r}"
