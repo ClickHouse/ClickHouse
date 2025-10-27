@@ -172,11 +172,13 @@ TableJoin::TableJoin(const JoinSettings & settings, bool join_use_nulls_, Volume
     , cross_join_min_bytes_to_compress(settings.cross_join_min_bytes_to_compress)
     , max_joined_block_rows(settings.max_joined_block_size_rows)
     , max_joined_block_bytes(settings.max_joined_block_size_bytes)
+    , joined_block_split_single_row(settings.joined_block_split_single_row)
     , join_algorithms(settings.join_algorithms)
     , partial_merge_join_rows_in_right_blocks(settings.partial_merge_join_rows_in_right_blocks)
     , partial_merge_join_left_table_buffer_bytes(settings.partial_merge_join_left_table_buffer_bytes)
     , max_files_to_merge(settings.join_on_disk_max_files_to_merge)
     , temporary_files_codec(settings.temporary_files_codec)
+    , temporary_files_buffer_size(settings.temporary_files_buffer_size)
     , output_by_rowlist_perkey_rows_threshold(settings.join_output_by_rowlist_perkey_rows_threshold)
     , sort_right_minimum_perkey_rows(settings.join_to_sort_minimum_perkey_rows)
     , sort_right_maximum_table_rows(settings.join_to_sort_maximum_table_rows)
@@ -1044,7 +1046,7 @@ static void addJoinConditionWithAnd(ASTPtr & current_cond, const ASTPtr & new_co
         func->arguments->children.push_back(new_cond);
     else
         /// already have some conditions, unite it with `and`
-        current_cond = makeASTFunction("and", current_cond, new_cond);
+        current_cond = makeASTOperator("and", current_cond, new_cond);
 }
 
 void TableJoin::addJoinCondition(const ASTPtr & ast, bool is_left)
