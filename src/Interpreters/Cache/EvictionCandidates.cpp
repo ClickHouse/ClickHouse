@@ -37,12 +37,13 @@ void QueueEvictionInfo::releaseHoldSpace(const CacheStateGuard::Lock & lock)
 std::string QueueEvictionInfo::toString() const
 {
     WriteBufferFromOwnString wb;
-    wb << "size to evict: " << size_to_evict;
+    wb << "description: " << description;
+    wb << ", " << "size to evict: " << size_to_evict;
     wb << ", " << "elements to evict: " << elements_to_evict;
     if (hold_space)
     {
-        wb << ", " << "hold space size: " << size_to_evict;
-        wb << ", " << "hold space elements: " << elements_to_evict;
+        wb << ", " << "hold space size: " << hold_space->size;
+        wb << ", " << "hold space elements: " << hold_space->elements;
     }
     return wb.str();
 }
@@ -318,17 +319,23 @@ void EvictionCandidates::afterEvictWrite(const CachePriorityGuard::WriteLock & l
     }
 }
 
-void EvictionCandidates::afterEvictState(const CacheStateGuard::Lock & lock)
+void EvictionCandidates::invalidateQueueEntries(const CacheStateGuard::Lock &)
 {
-    /// We invalidate queue entries under state lock,
-    /// because this space will be replaced by reserver,
-    /// so we need to make sure this is done atomically.
+    LOG_TEST(log, "Invaldating {} entries", queue_entries_to_invalidate.size());
     while (!queue_entries_to_invalidate.empty())
     {
         auto iterator = queue_entries_to_invalidate.back();
         iterator->invalidate();
         queue_entries_to_invalidate.pop_back();
     }
+}
+
+void EvictionCandidates::afterEvictState(const CacheStateGuard::Lock & lock)
+{
+    /// We invalidate queue entries under state lock,
+    /// because this space will be replaced by reserver,
+    /// so we need to make sure this is done atomically.
+    invalidateQueueEntries(lock);
 
     if (after_evict_state_func)
     {

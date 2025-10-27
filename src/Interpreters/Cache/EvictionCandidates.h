@@ -13,9 +13,11 @@ namespace DB
 /// hold space will be automatically released in destructor of HoldSpacePtr.
 struct QueueEvictionInfo
 {
+    explicit QueueEvictionInfo(const std::string & description_) : description(description_) {}
     size_t size_to_evict = 0;
     size_t elements_to_evict = 0;
     IFileCachePriority::HoldSpacePtr hold_space;
+    std::string description;
 
     std::string toString() const;
     /// Whether actual eviction is needed to be done.
@@ -89,6 +91,8 @@ public:
     auto begin() const { return candidates.begin(); }
     auto end() const { return candidates.end(); }
 
+    void clear() { candidates.clear(); }
+
     /// Add a new eviction candidate.
     void add(const FileSegmentMetadataPtr & candidate, LockedKey & locked_key);
     /// Set a callback to be executed after eviction is finished.
@@ -129,6 +133,10 @@ public:
     };
 
     FailedCandidates getFailedCandidates() const { return failed_candidates; }
+
+    void addEntryToInvalidate(IFileCachePriority::IteratorPtr entry_) { queue_entries_to_invalidate.push_back(entry_); }
+
+    void invalidateQueueEntries(const CacheStateGuard::Lock & lock);
 
 private:
 

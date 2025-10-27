@@ -350,7 +350,7 @@ EvictionInfoPtr LRUFileCachePriority::collectEvictionInfo(
     if (!size && !elements)
         return std::make_unique<EvictionInfo>();
 
-    QueueEvictionInfo info;
+    QueueEvictionInfo info(description);
 
     /// Total space cleanup is for keep_free_space_size(elements)_ratio feature.
     if (is_total_space_cleanup)
