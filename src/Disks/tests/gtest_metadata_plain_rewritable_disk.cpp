@@ -269,6 +269,88 @@ TEST_F(MetadataPlainRewritableDiskTest, RemoveDirectory)
     EXPECT_TRUE(metadata->existsDirectory("A/B/C"));
 }
 
+TEST_F(MetadataPlainRewritableDiskTest, RemoveDirectoryRecursive)
+{
+    auto metadata = getMetadataStorage("RemoveDirectoryRecursive");
+    auto object_storage = getObjectStorage("RemoveDirectoryRecursive");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("root");
+        tx->createDirectory("root/A");
+        tx->createDirectory("root/A/B");
+        tx->createDirectory("root/A/C");
+        tx->createDirectory("root/A/B/D");
+        tx->createDirectory("root/A/B/E");
+        tx->createDirectory("root/A/B/E/F");
+        tx->commit();
+    }
+
+    {
+        auto tx = metadata->createTransaction();
+        writeObject(object_storage, object_storage->generateObjectKeyForPath("root/A/file_1", std::nullopt).serialize(), "1");
+        writeObject(object_storage, object_storage->generateObjectKeyForPath("root/A/B/file_2", std::nullopt).serialize(), "2");
+        writeObject(object_storage, object_storage->generateObjectKeyForPath("root/A/C/file_3", std::nullopt).serialize(), "3");
+        writeObject(object_storage, object_storage->generateObjectKeyForPath("root/A/B/E/F/file_4", std::nullopt).serialize(), "4");
+        tx->createMetadataFile("root/A/file_1", {StoredObject("root/A/file_1")});
+        tx->createMetadataFile("root/A/B/file_2", {StoredObject("root/A/B/file_2")});
+        tx->createMetadataFile("root/A/C/file_3", {StoredObject("root/A/C/file_3")});
+        tx->createMetadataFile("root/A/B/E/F/file_4", {StoredObject("root/A/B/E/F/file_4")});
+        tx->commit();
+    }
+
+    EXPECT_TRUE(metadata->existsDirectory("root/A/B"));
+    EXPECT_TRUE(metadata->existsDirectory("root/A/B/E/F"));
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("root/A/file_1").front().remote_path), "1");
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("root/A/B/file_2").front().remote_path), "2");
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("root/A/C/file_3").front().remote_path), "3");
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("root/A/B/E/F/file_4").front().remote_path), "4");
+
+    auto inodes_start = std::filesystem::recursive_directory_iterator("./RemoveDirectoryRecursive")
+                            | std::views::transform([](const auto & dir) { return dir.path(); })
+                            | std::ranges::to<std::vector<std::string>>();
+    EXPECT_EQ(inodes_start.size(), 23);
+
+    /// Check undo
+    {
+        auto tx = metadata->createTransaction();
+        tx->removeRecursive("root/A");
+        tx->moveFile("non-existing", "other-place");
+        EXPECT_ANY_THROW(tx->commit());
+    }
+
+    {
+        auto inodes = std::filesystem::recursive_directory_iterator("./RemoveDirectoryRecursive")
+                        | std::views::transform([](const auto & dir) { return dir.path(); })
+                        | std::ranges::to<std::vector<std::string>>();
+        EXPECT_EQ(inodes, inodes_start);
+    }
+
+    /// Remove fs tree
+    {
+        auto tx = metadata->createTransaction();
+        tx->removeRecursive("root/A");
+        tx->commit();
+    }
+
+    EXPECT_FALSE(metadata->existsDirectory("root/A"));
+    EXPECT_FALSE(metadata->existsDirectory("root/A/B"));
+    EXPECT_FALSE(metadata->existsDirectory("root/A/C"));
+    EXPECT_FALSE(metadata->existsDirectory("root/A/B/D"));
+    EXPECT_FALSE(metadata->existsDirectory("root/A/B/E"));
+    EXPECT_FALSE(metadata->existsDirectory("root/A/B/E/F"));
+
+    {
+        auto inodes = std::filesystem::recursive_directory_iterator("./RemoveDirectoryRecursive")
+                        | std::views::transform([](const auto & dir) { return dir.path(); })
+                        | std::ranges::to<std::vector<std::string>>();
+
+        /// Left nodes example: '/__meta', '/__meta/cixdezesimoamhzozymbalencsyqaakx', '/__meta/cixdezesimoamhzozymbalencsyqaakx/prefix.path'
+        /// It is the directory 'root/'
+        EXPECT_EQ(inodes.size(), 3);
+    }
+}
+
 TEST_F(MetadataPlainRewritableDiskTest, MoveFile)
 {
     auto metadata = getMetadataStorage("MoveFile");
