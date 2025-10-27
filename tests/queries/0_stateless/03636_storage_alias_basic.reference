@@ -37,7 +37,7 @@ Test RENAME alias
 2	two	active
 Test DROP alias
 2
-Test Alias with explicit columns
+Test Create alias
 1	one	active
 2	two	active
 Test OPTIMIZE
@@ -67,12 +67,50 @@ Test DROP PARTITION
 2
 Test INSERT SELECT
 2
-Before EXCHANGE:
+Before EXCHANGE
 from_a
 from_b
-After EXCHANGE alias tables:
+After EXCHANGE alias tables
 from_b
 from_a
-After EXCHANGE source tables:
+After EXCHANGE source tables
 from_a
 from_b
+Test DETACH and ATTACH TABLE
+1	data1
+2	data2
+1	data1
+2	data2
+After ATTACH
+1	data1
+2	data2
+1	data1
+2	data2
+1	data1
+2	data2
+3	data3
+1	data1
+2	data2
+3	data3
+Test circular reference prevention
+Test ALTER target directly
+1	one
+2	two
+After ALTER target
+extra
+id
+value
+1	one	data1
+2	two	data1
+3	three	data3
+After multiple ALTERs
+extra
+id
+num
+value
+4	four	data2	100
+After DROP
+extra
+id
+value
+5	five	data5

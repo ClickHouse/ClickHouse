@@ -502,7 +502,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
                     auto equals_function_node_ptr = std::make_shared<FunctionNode>("equals");
 
-                    auto & copy_of_in_first_parameter = function_in_arguments_nodes[0];
+                    auto copy_of_in_first_parameter = function_in_arguments_nodes[0];
 
                     auto subquery_projection = std::make_shared<IdentifierNode>(Identifier{unique_column_name});
 
