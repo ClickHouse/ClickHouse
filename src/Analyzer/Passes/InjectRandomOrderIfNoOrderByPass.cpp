@@ -11,7 +11,7 @@
 #include <Core/Settings.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
-#include "Analyzer/ColumnNode.h"
+#include <Analyzer/ColumnNode.h>
 
 namespace DB
 {
