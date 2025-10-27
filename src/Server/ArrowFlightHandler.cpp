@@ -10,6 +10,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/executeQuery.h>
+#include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
@@ -230,13 +231,13 @@ namespace
     {
         if (const auto * ast_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
         {
-            if (ast_with_output->format_ast)
-                return arrow::Status::ExecutionError("FORMAT clause not supported by Arrow Flight");
+            if (ast_with_output->format_ast && (getIdentifierName(ast_with_output->format_ast) != "Arrow"))
+                return arrow::Status::ExecutionError("Invalid format, only 'Arrow' format is supported");
         }
         else if (const auto * insert = dynamic_cast<const ASTInsertQuery *>(ast.get()))
         {
             if (!insert->format.empty() && insert->format != "Arrow")
-                return arrow::Status::Invalid("DoPut failed: invalid format value, only 'Arrow' custom format supported");
+                return arrow::Status::ExecutionError("Invalid format, only 'Arrow' format is supported");
         }
         return arrow::Status::OK();
     }
@@ -360,6 +361,8 @@ namespace
         ThreadGroupPtr getThreadGroup() const { return thread_group; }
         std::shared_ptr<const CHColumnToArrowColumn> getCHToArrowConverter() const { return ch_to_arrow_converter; }
         bool getNextBlock(Block & block) { return executor.pull(block); }
+        void onFinish() { block_io.onFinish(); }
+        void onException() { block_io.onException(); }
 
     private:
         std::unique_ptr<Session> session;
@@ -698,21 +701,24 @@ public:
     {
         auto current_time = now();
         std::unique_lock lock{mutex};
+        auto expiration_time = next_expiration_time;
         auto is_ready = [&]
         {
             if (stop_waiting_next_expiration_time)
                 return true;
+            if (next_expiration_time != expiration_time)
+                return true; /// We need to restart waiting if the next expiration time has changed.
             current_time = now();
-            return next_expiration_time && (current_time > *next_expiration_time);
+            return (expiration_time && (current_time > *expiration_time));
         };
-        if (next_expiration_time)
+        if (expiration_time)
         {
-            if (current_time < *next_expiration_time)
-                next_expiration_time_decreased.wait_for(lock, *next_expiration_time - current_time, is_ready);
+            if (current_time < *expiration_time)
+                next_expiration_time_updated.wait_for(lock, *expiration_time - current_time, is_ready);
         }
         else
         {
-            next_expiration_time_decreased.wait(lock, is_ready);
+            next_expiration_time_updated.wait(lock, is_ready);
         }
     }
 
@@ -720,6 +726,7 @@ public:
     {
         std::lock_guard lock{mutex};
         stop_waiting_next_expiration_time = true;
+        next_expiration_time_updated.notify_all();
     }
 
 private:
@@ -749,7 +756,7 @@ private:
 
     void updateNextExpirationTime() TSA_REQUIRES(mutex)
     {
-        auto old_value = next_expiration_time;
+        auto expiration_time = next_expiration_time;
         next_expiration_time.reset();
         if (!tickets_by_expiration_time.empty())
             next_expiration_time = tickets_by_expiration_time.begin()->first;
@@ -758,8 +765,8 @@ private:
             auto other_expiration_time = poll_descriptors_by_expiration_time.begin()->first;
             next_expiration_time = next_expiration_time ? std::min(*next_expiration_time, other_expiration_time) : other_expiration_time;
         }
-        if (next_expiration_time && (!old_value || next_expiration_time < *old_value))
-            next_expiration_time_decreased.notify_all();
+        if (next_expiration_time != expiration_time)
+            next_expiration_time_updated.notify_all();
     }
 
     const std::optional<Duration> tickets_lifetime;
@@ -773,7 +780,7 @@ private:
     std::set<std::pair<Timestamp, String>> tickets_by_expiration_time TSA_GUARDED_BY(mutex);
     std::set<std::pair<Timestamp, String>> poll_descriptors_by_expiration_time TSA_GUARDED_BY(mutex);
     std::optional<Timestamp> next_expiration_time;
-    mutable std::condition_variable next_expiration_time_decreased;
+    mutable std::condition_variable next_expiration_time_updated;
     bool stop_waiting_next_expiration_time = false;
 };
 
@@ -937,25 +944,34 @@ arrow::Status ArrowFlightHandler::GetFlightInfo(
             CurrentThread::QueryScope query_scope{query_context};
 
             auto [ast, block_io] = executeQuery(sql, query_context, QueryFlags{}, QueryProcessingStage::Complete);
-            ARROW_RETURN_NOT_OK(checkNoCustomFormat(ast));
-            ARROW_RETURN_NOT_OK(checkPipelineIsPulling(block_io.pipeline));
-
-            PullingPipelineExecutor executor{block_io.pipeline};
-            ch_to_arrow_converter = createCHToArrowConverter(executor.getHeader());
-
-            Block block;
-            while (executor.pull(block))
+            try
             {
-                if (!block.empty())
+                ARROW_RETURN_NOT_OK(checkNoCustomFormat(ast));
+                ARROW_RETURN_NOT_OK(checkPipelineIsPulling(block_io.pipeline));
+
+                PullingPipelineExecutor executor{block_io.pipeline};
+                ch_to_arrow_converter = createCHToArrowConverter(executor.getHeader());
+
+                Block block;
+                while (executor.pull(block))
                 {
-                    total_rows += block.rows();
-                    total_bytes += block.bytes();
-                    auto ticket_info = calls_data->createTicket(std::make_shared<Block>(std::move(block)), ch_to_arrow_converter);
-                    arrow::flight::FlightEndpoint endpoint;
-                    endpoint.ticket = arrow::flight::Ticket{.ticket = ticket_info->ticket};
-                    endpoint.expiration_time = ticket_info->expiration_time;
-                    endpoints.emplace_back(endpoint);
+                    if (!block.empty())
+                    {
+                        total_rows += block.rows();
+                        total_bytes += block.bytes();
+                        auto ticket_info = calls_data->createTicket(std::make_shared<Block>(std::move(block)), ch_to_arrow_converter);
+                        arrow::flight::FlightEndpoint endpoint;
+                        endpoint.ticket = arrow::flight::Ticket{.ticket = ticket_info->ticket};
+                        endpoint.expiration_time = ticket_info->expiration_time;
+                        endpoints.emplace_back(endpoint);
+                    }
                 }
+                block_io.onFinish();
+            }
+            catch (...)
+            {
+                block_io.onException();
+                throw;
             }
         }
 
@@ -1076,16 +1092,24 @@ arrow::Status ArrowFlightHandler::PollFlightInfo(
             CurrentThread::attachToGroup(thread_group);
 
             auto [ast, block_io] = executeQuery(sql, query_context, QueryFlags{}, QueryProcessingStage::Complete);
-            ARROW_RETURN_NOT_OK(checkNoCustomFormat(ast));
-            ARROW_RETURN_NOT_OK(checkPipelineIsPulling(block_io.pipeline));
+            try
+            {
+                ARROW_RETURN_NOT_OK(checkNoCustomFormat(ast));
+                ARROW_RETURN_NOT_OK(checkPipelineIsPulling(block_io.pipeline));
 
-            ch_to_arrow_converter = createCHToArrowConverter(block_io.pipeline.getHeader());
+                ch_to_arrow_converter = createCHToArrowConverter(block_io.pipeline.getHeader());
 
-            auto poll_session = std::make_unique<PollSession>(std::move(session), query_context, thread_group, std::move(block_io),
-                                                              ch_to_arrow_converter);
+                auto poll_session = std::make_unique<PollSession>(std::move(session), query_context, thread_group, std::move(block_io),
+                                                                  ch_to_arrow_converter);
 
-            auto next_info = calls_data->createPollDescriptor(std::move(poll_session), /* previous_info = */ nullptr);
-            next_poll_descriptor = *next_info;
+                auto next_info = calls_data->createPollDescriptor(std::move(poll_session), /* previous_info = */ nullptr);
+                next_poll_descriptor = *next_info;
+            }
+            catch (...)
+            {
+                block_io.onException();
+                throw;
+            }
         }
 
         std::vector<arrow::flight::FlightEndpoint> endpoints;
@@ -1180,12 +1204,14 @@ arrow::Status ArrowFlightHandler::evaluatePollDescriptor(const String & poll_des
         }
 
         calls_data->endEvaluation(poll_descriptor, ticket, rows, bytes, last);
+        poll_session->onFinish();
     }
     catch (...)
     {
         tryLogCurrentException(log, "Poll: Failed to get next block");
         auto error_status = arrow::Status::ExecutionError("Poll: Failed to get next block: ", getCurrentExceptionMessage(/* with_stacktrace = */ false));
         calls_data->endEvaluationWithError(poll_descriptor, error_status);
+        poll_session->onException();
         return error_status;
     }
 
@@ -1237,17 +1263,26 @@ arrow::Status ArrowFlightHandler::DoGet(
             CurrentThread::QueryScope query_scope{query_context};
 
             auto [ast, block_io] = executeQuery(sql, query_context, QueryFlags{}, QueryProcessingStage::Complete);
-            ARROW_RETURN_NOT_OK(checkNoCustomFormat(ast));
-            ARROW_RETURN_NOT_OK(checkPipelineIsPulling(block_io.pipeline));
+            try
+            {
+                ARROW_RETURN_NOT_OK(checkNoCustomFormat(ast));
+                ARROW_RETURN_NOT_OK(checkPipelineIsPulling(block_io.pipeline));
 
-            PullingPipelineExecutor executor{block_io.pipeline};
+                PullingPipelineExecutor executor{block_io.pipeline};
 
-            Block block;
-            while (executor.pull(block))
-                chunks.emplace_back(Chunk(block.getColumns(), block.rows()));
+                Block block;
+                while (executor.pull(block))
+                    chunks.emplace_back(Chunk(block.getColumns(), block.rows()));
 
-            header = executor.getHeader();
-            ch_to_arrow_converter = createCHToArrowConverter(header);
+                header = executor.getHeader();
+                ch_to_arrow_converter = createCHToArrowConverter(header);
+                block_io.onFinish();
+            }
+            catch (...)
+            {
+                block_io.onException();
+                throw;
+            }
         }
 
         std::shared_ptr<arrow::Table> arrow_table;
@@ -1293,26 +1328,35 @@ arrow::Status ArrowFlightHandler::DoPut(
         CurrentThread::QueryScope query_scope{query_context};
 
         auto [ast, block_io] = executeQuery(sql, query_context, QueryFlags{}, QueryProcessingStage::Complete);
-        ARROW_RETURN_NOT_OK(checkNoCustomFormat(ast));
-        auto & pipeline = block_io.pipeline;
-
-        if (pipeline.pushing())
+        try
         {
-            Block header = pipeline.getHeader();
-            auto input = std::make_shared<ArrowFlightSource>(std::move(reader), header);
-            pipeline.complete(Pipe(std::move(input)));
+            ARROW_RETURN_NOT_OK(checkNoCustomFormat(ast));
+            auto & pipeline = block_io.pipeline;
+
+            if (pipeline.pushing())
+            {
+                Block header = pipeline.getHeader();
+                auto input = std::make_shared<ArrowFlightSource>(std::move(reader), header);
+                pipeline.complete(Pipe(std::move(input)));
+            }
+            else if (pipeline.pulling())
+            {
+                Block header = pipeline.getHeader();
+                auto output = std::make_shared<NullSink>(std::make_shared<Block>(header));
+                pipeline.complete(std::move(output));
+            }
+
+            CompletedPipelineExecutor executor(pipeline);
+            executor.execute();
+            LOG_INFO(log, "DoPut succeeded");
+            block_io.onFinish();
         }
-        else if (pipeline.pulling())
+        catch (...)
         {
-            Block header = pipeline.getHeader();
-            auto output = std::make_shared<NullSink>(std::make_shared<Block>(header));
-            pipeline.complete(Pipe(std::move(output)));
+            block_io.onException();
+            throw;
         }
 
-        CompletedPipelineExecutor executor(pipeline);
-        executor.execute();
-
-        LOG_INFO(log, "DoPut succeeded");
         return arrow::Status::OK();
     };
     return tryRunAndLogIfError("DoPut", impl);
