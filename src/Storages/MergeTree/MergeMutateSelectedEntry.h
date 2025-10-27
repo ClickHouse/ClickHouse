@@ -32,7 +32,7 @@ struct CurrentlyMergingPartsTagger
 
     /// The finalize() method acquires the `currently_processing_in_background_mutex` lock
     /// to remove the parts from the `currently_merging_mutating_parts` set.
-    /// This might take a lot of time and it's important not to do it in the des
+    /// This might take a lot of time and it's important not to do it in the destructor.
     void finalize();
     ~CurrentlyMergingPartsTagger();
 };
