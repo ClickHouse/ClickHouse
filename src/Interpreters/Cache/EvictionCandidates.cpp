@@ -89,6 +89,13 @@ void EvictionInfo::addImpl(const QueueID & queue_id, QueueEvictionInfo && info)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Queue with id {} already exists", queue_id);
 }
 
+void EvictionInfo::setOnFinishFunc(std::function<void()> func)
+{
+    if (on_finish_func)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "On finish function is already set");
+    on_finish_func = func;
+}
+
 std::string EvictionCandidates::FailedCandidates::getFirstErrorMessage() const
 {
     if (failed_candidates_per_key.empty())
@@ -321,7 +328,6 @@ void EvictionCandidates::afterEvictWrite(const CachePriorityGuard::WriteLock & l
 
 void EvictionCandidates::invalidateQueueEntries(const CacheStateGuard::Lock &)
 {
-    LOG_TEST(log, "Invaldating {} entries", queue_entries_to_invalidate.size());
     while (!queue_entries_to_invalidate.empty())
     {
         auto iterator = queue_entries_to_invalidate.back();

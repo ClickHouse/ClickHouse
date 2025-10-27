@@ -200,7 +200,8 @@ void LRUFileCachePriority::iterate(
     FileCacheReserveStat & stat,
     const CachePriorityGuard::ReadLock & lock)
 {
-    iterateImpl(queue.begin(), func, stat, lock);
+    InvalidatedEntriesInfos invalidated_entries;
+    iterateImpl(queue.begin(), func, stat, invalidated_entries, lock);
 }
 
 LRUFileCachePriority::LRUQueue::iterator
@@ -208,6 +209,7 @@ LRUFileCachePriority::iterateImpl(
     LRUQueue::iterator start_pos,
     IterateFunc func,
     FileCacheReserveStat & stat,
+    InvalidatedEntriesInfos & invalidated_entries,
     const CachePriorityGuard::ReadLock &)
 {
     const size_t max_elements_to_iterate = queue.size();
@@ -228,8 +230,8 @@ LRUFileCachePriority::iterateImpl(
             stat.update(
                 entry.size,
                 FileSegmentKind::Unknown,
-                FileCacheReserveStat::State::Invalidated,
-                std::make_shared<LRUIterator>(this, it));
+                FileCacheReserveStat::State::Invalidated);
+            invalidated_entries.emplace_back(*it, std::make_shared<LRUIterator>(this, it));
             ++it;
             continue;
         }
@@ -242,7 +244,10 @@ LRUFileCachePriority::iterateImpl(
             /// We threat them the same way as deleted entries.
             ++it;
             ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionSkippedEvictingFileSegments);
-            stat.update(entry.size, FileSegmentKind::Unknown, FileCacheReserveStat::State::Evicting);
+            stat.update(
+                entry.size,
+                FileSegmentKind::Unknown,
+                FileCacheReserveStat::State::Evicting);
             continue;
         }
 
@@ -256,8 +261,7 @@ LRUFileCachePriority::iterateImpl(
             stat.update(
                 entry.size,
                 FileSegmentKind::Unknown,
-                FileCacheReserveStat::State::Invalidated,
-                nullptr);
+                FileCacheReserveStat::State::Invalidated);
             ++it;
             continue;
         }
@@ -266,7 +270,10 @@ LRUFileCachePriority::iterateImpl(
         {
             /// Skip queue entries which are in evicting state.
             /// We threat them the same way as deleted entries.
-            stat.update(entry.size, FileSegmentKind::Unknown, FileCacheReserveStat::State::Evicting);
+            stat.update(
+                entry.size,
+                FileSegmentKind::Unknown,
+                FileCacheReserveStat::State::Evicting);
             ++it;
             ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionSkippedEvictingFileSegments);
             continue;
@@ -281,7 +288,7 @@ LRUFileCachePriority::iterateImpl(
             stat.update(
                 entry.size,
                 FileSegmentKind::Unknown,
-                FileCacheReserveStat::State::Invalidated, nullptr);
+                FileCacheReserveStat::State::Invalidated);
             ++it;
             continue;
         }
@@ -394,6 +401,7 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
     const EvictionInfo & eviction_info,
     FileCacheReserveStat & stat,
     EvictionCandidates & res,
+    InvalidatedEntriesInfos & invalidated_entries,
     IFileCachePriority::IteratorPtr /* reservee */,
     bool continue_from_last_eviction_pos,
     size_t max_candidates_size,
@@ -469,7 +477,7 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
             FileCacheReserveStat::State::NonReleasable);
 
         return IterationResult::CONTINUE;
-    }, stat, lock);
+    }, stat, invalidated_entries, lock);
 
     if (continue_from_last_eviction_pos)
         setEvictionIterator(iteration_pos);

@@ -40,8 +40,6 @@ struct FileCacheReserveStat
         size_t evicting_count = 0;
         size_t invalidated_count = 0;
 
-        std::vector<IFileCachePriority::InvalidatedEntryInfo> invalidated_entries;
-
         Stat & operator +=(const Stat & other)
         {
             releasable_size += other.releasable_size;
@@ -66,7 +64,7 @@ struct FileCacheReserveStat
         Evicting,
         Invalidated,
     };
-    void update(size_t size, FileSegmentKind kind, State state, IFileCachePriority::IteratorPtr iterator = nullptr);
+    void update(size_t size, FileSegmentKind kind, State state);
 
     FileCacheReserveStat & operator +=(const FileCacheReserveStat & other)
     {
@@ -351,6 +349,7 @@ private:
         const IFileCachePriority::IteratorPtr & main_priority_iterator,
         FileCacheReserveStat & reserve_stat,
         EvictionCandidates & eviction_candidates,
+        IFileCachePriority::InvalidatedEntriesInfos & invalidated_entries,
         Priority * query_priority,
         std::string & failure_reason);
 };

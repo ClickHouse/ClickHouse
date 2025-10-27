@@ -91,7 +91,7 @@ namespace
     }
 }
 
-void FileCacheReserveStat::update(size_t size, FileSegmentKind kind, State state, IFileCachePriority::IteratorPtr iterator)
+void FileCacheReserveStat::update(size_t size, FileSegmentKind kind, State state)
 {
     auto & local_stat = stat_by_kind[kind];
     switch (state)
@@ -124,8 +124,6 @@ void FileCacheReserveStat::update(size_t size, FileSegmentKind kind, State state
         {
             ++total_stat.invalidated_count;
             ++local_stat.invalidated_count;
-            if (iterator)
-                total_stat.invalidated_entries.emplace_back(iterator->getEntry(), iterator);
             break;
         }
     }
@@ -1027,12 +1025,14 @@ bool FileCache::doTryReserve(
     }
 
     EvictionCandidates eviction_candidates;
+    IFileCachePriority::InvalidatedEntriesInfos invalidated_entries;
 
     /// Collect candidates for eviction and
     /// evict them from in-memory state and from filesystem.
     if (!doEviction(
         *main_eviction_info, query_eviction_info.get(), file_segment, user,
-        main_priority_iterator, reserve_stat, eviction_candidates, query_priority, failure_reason))
+        main_priority_iterator, reserve_stat, eviction_candidates,
+        invalidated_entries, query_priority, failure_reason))
     {
         chassert(!failure_reason.empty());
         return false;
@@ -1045,7 +1045,7 @@ bool FileCache::doTryReserve(
     {
         auto lock = cache_guard.writeLock();
         eviction_candidates.afterEvictWrite(lock);
-        IFileCachePriority::removeEntries(reserve_stat.total_stat.invalidated_entries, lock);
+        IFileCachePriority::removeEntries(invalidated_entries, lock);
 
         if (!main_priority_iterator)
         {
@@ -1066,12 +1066,12 @@ bool FileCache::doTryReserve(
             }
         }
     }
-    else if (!reserve_stat.total_stat.invalidated_entries.empty())
+    else if (!invalidated_entries.empty())
     {
         auto lock = cache_guard.tryWriteLock();
         if (lock.owns_lock())
         {
-            IFileCachePriority::removeEntries(reserve_stat.total_stat.invalidated_entries, lock);
+            IFileCachePriority::removeEntries(invalidated_entries, lock);
         }
         else
         {
@@ -1132,6 +1132,7 @@ bool FileCache::doEviction(
     const IFileCachePriority::IteratorPtr & main_priority_iterator,
     FileCacheReserveStat & reserve_stat,
     EvictionCandidates & eviction_candidates,
+    IFileCachePriority::InvalidatedEntriesInfos & invalidated_entries,
     Priority * query_priority,
     std::string & failure_reason)
 {
@@ -1139,7 +1140,7 @@ bool FileCache::doEviction(
     if (query_priority)
         LOG_TEST(log, "Query eviction info {}", main_eviction_info.toString());
 
-    if (!main_eviction_info.size_to_evict && !main_eviction_info.elements_to_evict)
+    if (!main_eviction_info.requiresEviction())
         return true;
 
     /// If there is at least something we need to evict, we need to collect "eviction candidates".
@@ -1162,13 +1163,14 @@ bool FileCache::doEviction(
                 CurrentMetrics::get(CurrentMetrics::FilesystemCacheDownloadQueueElements));
         };
 
-        if (query_eviction_info && (query_eviction_info->size_to_evict || query_eviction_info->elements_to_evict))
+        if (query_eviction_info && query_eviction_info->requiresEviction())
         {
             chassert(query_priority);
             if (!query_priority->collectCandidatesForEviction(
                     *query_eviction_info,
                     reserve_stat,
                     eviction_candidates,
+                    invalidated_entries,
                     /* reservee */{},
                     /* continue_from_last_eviction_pos */false,
                     /* max_candidates_size */0,
@@ -1197,6 +1199,7 @@ bool FileCache::doEviction(
                 main_eviction_info,
                 reserve_stat,
                 eviction_candidates,
+                invalidated_entries,
                 main_priority_iterator,
                 continue_from_last_eviction_pos,
                 /* max_candidates_size */0,
@@ -1307,17 +1310,19 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
 
     LOG_TRACE(
         log, "Size to evict: {}, elements to evict: {}",
-        eviction_info->size_to_evict, eviction_info->elements_to_evict);
+        eviction_info->getSizeToEvict(), eviction_info->getElementsToEvict());
 
     IFileCachePriority::CollectStatus desired_size_status =  IFileCachePriority::CollectStatus::CANNOT_EVICT;
     /// Collect at most `keep_up_free_space_remove_batch` elements to evict,
     /// (we use batches to make sure we do not block cache for too long,
     /// by default the batch size is quite small).
 
+    IFileCachePriority::InvalidatedEntriesInfos invalidated_entries;
     if (main_priority->collectCandidatesForEviction(
             *eviction_info,
             stat,
             eviction_candidates,
+            invalidated_entries,
             /* reservee */nullptr,
             /* continue_from_last_eviction_pos */false,
             /* max_candidates_size */keep_up_free_space_remove_batch,
@@ -1325,16 +1330,6 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
             {},
             cache_guard.readLock()))
     {
-
-        //LOG_TRACE(log, "Current usage {}/{} in size, {}/{} in elements count "
-        //        "(trying to keep size ratio at {} and elements ratio at {}). "
-        //        "Collected {} eviction candidates, "
-        //        "skipped {} candidates while iterating",
-        //        main_priority->getSize(lock), size_limit,
-        //        main_priority->getElementsCount(lock), elements_limit,
-        //        desired_size, desired_elements_num,
-        //        eviction_candidates.size(), stat.total_stat.non_releasable_count);
-
         desired_size_status = IFileCachePriority::CollectStatus::SUCCESS;
 
         /// Remove files from filesystem.
@@ -1347,7 +1342,7 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
     {
         auto lock = cache_guard.writeLock();
         eviction_candidates.afterEvictWrite(lock);
-        IFileCachePriority::removeEntries(stat.total_stat.invalidated_entries, lock);
+        IFileCachePriority::removeEntries(invalidated_entries, lock);
     }
     eviction_candidates.afterEvictState(cache_state_guard.lock());
 
@@ -2065,10 +2060,12 @@ bool FileCache::doDynamicResizeImpl(
     state_lock.unlock();
 
     FileCacheReserveStat stat;
+    IFileCachePriority::InvalidatedEntriesInfos invalidated_entries;
     if (!main_priority->collectCandidatesForEviction(
             *eviction_info,
             stat,
             eviction_candidates,
+            invalidated_entries,
             /* reservee */nullptr,
             /* continue_from_last_eviction_pos */false,
             /* max_candidates_size */0,
@@ -2111,7 +2108,7 @@ bool FileCache::doDynamicResizeImpl(
     {
         auto lock = cache_guard.writeLock();
         eviction_candidates.afterEvictWrite(lock);
-        IFileCachePriority::removeEntries(stat.total_stat.invalidated_entries, lock);
+        IFileCachePriority::removeEntries(invalidated_entries, lock);
     }
 
     auto failed_candidates = eviction_candidates.getFailedCandidates();

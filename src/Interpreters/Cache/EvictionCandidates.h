@@ -53,6 +53,10 @@ public:
 
     std::string toString() const;
 
+    size_t getSizeToEvict() const { return size_to_evict; }
+
+    size_t getElementsToEvict() const { return elements_to_evict; }
+
     /// Add eviction info for another queue_id,
     /// Throws exception if eviction info with the same queue_id already exists.
     void add(EvictionInfoPtr && info);
@@ -66,13 +70,13 @@ public:
 
     /// Set on finish function,
     /// which will be called when this EvictionInfo object is destructed.
-    void setOnFinishFunc(std::function<void()> func) { on_finish_func = func; }
-
-    size_t size_to_evict = 0; /// Total size to evict among all eviction infos.
-    size_t elements_to_evict = 0; /// Total elements to evict among all eviction infos.
+    void setOnFinishFunc(std::function<void()> func);
 
 private:
     void addImpl(const QueueID & queue_id, QueueEvictionInfo && info);
+
+    size_t size_to_evict = 0; /// Total size to evict among all eviction infos.
+    size_t elements_to_evict = 0; /// Total elements to evict among all eviction infos.
 
     std::function<void()> on_finish_func;
 };

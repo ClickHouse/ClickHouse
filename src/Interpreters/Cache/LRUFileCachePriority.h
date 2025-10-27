@@ -80,6 +80,7 @@ public:
         const EvictionInfo & eviction_info,
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
+        InvalidatedEntriesInfos & invalidated_entries,
         IFileCachePriority::IteratorPtr reservee,
         bool continue_from_last_eviction_pos,
         size_t max_candidates_size,
@@ -162,6 +163,7 @@ private:
         LRUQueue::iterator start_pos,
         IterateFunc func,
         FileCacheReserveStat & stat,
+        InvalidatedEntriesInfos & invalidated_entries,
         const CachePriorityGuard::ReadLock &);
 
     LRUIterator add(

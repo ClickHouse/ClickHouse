@@ -255,8 +255,8 @@ EvictionInfoPtr SLRUFileCachePriority::collectEvictionInfoImpl(
         {
             /// Make sure we have space in probationary queue for the downgrade.
             auto downgrade_info = probationary_queue.collectEvictionInfo(
-                info->size_to_evict,
-                info->elements_to_evict,
+                info->getSizeToEvict(),
+                info->getElementsToEvict(),
                 reservee,
                 is_total_space_cleanup,
                 lock);
@@ -286,6 +286,7 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
     const EvictionInfo & eviction_info,
     FileCacheReserveStat & stat,
     EvictionCandidates & res,
+    InvalidatedEntriesInfos & invalidated_entries,
     IFileCachePriority::IteratorPtr reservee,
     bool continue_from_last_eviction_pos,
     size_t max_candidates_size,
@@ -299,6 +300,7 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
             eviction_info,
             stat,
             res,
+            invalidated_entries,
             reservee,
             continue_from_last_eviction_pos,
             max_candidates_size,
@@ -316,6 +318,7 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
             eviction_info,
             stat,
             res,
+            invalidated_entries,
             reservee,
             continue_from_last_eviction_pos,
             max_candidates_size,
@@ -332,6 +335,7 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
             eviction_info,
             stat,
             res,
+            invalidated_entries,
             reservee,
             continue_from_last_eviction_pos,
             max_candidates_size,
@@ -356,6 +360,7 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
             eviction_info,
             stat,
             res,
+            invalidated_entries,
             reservee,
             continue_from_last_eviction_pos,
             max_candidates_size,
@@ -370,6 +375,7 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
             eviction_info,
             stat,
             res,
+            invalidated_entries,
             reservee,
             continue_from_last_eviction_pos,
             max_candidates_size,
@@ -387,6 +393,7 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
     const EvictionInfo & eviction_info,
     FileCacheReserveStat & stat,
     EvictionCandidates & res,
+    InvalidatedEntriesInfos & invalidated_entries,
     IFileCachePriority::IteratorPtr reservee,
     bool continue_from_last_eviction_pos,
     size_t max_candidates_size,
@@ -400,6 +407,7 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
         eviction_info,
         downgrade_stat,
         *downgrade_candidates,
+        invalidated_entries,
         reservee,
         continue_from_last_eviction_pos,
         max_candidates_size,
@@ -424,6 +432,7 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
         eviction_info,
         stat,
         res,
+        invalidated_entries,
         reservee,
         continue_from_last_eviction_pos,
         max_candidates_size,
@@ -544,12 +553,14 @@ bool SLRUFileCachePriority::tryIncreasePriority(
     /// queue to probationary queue.
 
     bool collected_downgrade_candidates = false;
+    InvalidatedEntriesInfos invalidated_entries;
     {
         auto lock = queue_guard.readLock();
         collected_downgrade_candidates = collectCandidatesForEvictionInProtected(
             *downgrade_info,
             downgrade_stat,
             downgrade_candidates,
+            invalidated_entries,
             /* reservee */nullptr,
             /* continue_from_last_eviction_pos */false,
             /* max_candidates_size */0,
@@ -575,7 +586,7 @@ bool SLRUFileCachePriority::tryIncreasePriority(
     {
         auto lock = queue_guard.writeLock();
         downgrade_candidates.afterEvictWrite(lock);
-        removeEntries(downgrade_stat.total_stat.invalidated_entries, lock);
+        removeEntries(invalidated_entries, lock);
 
         iterator.lru_iterator.remove(lock);
 

@@ -103,6 +103,15 @@ public:
     };
     using IteratorPtr = std::shared_ptr<Iterator>;
 
+    struct InvalidatedEntryInfo
+    {
+        /// Iterator becomes invalid when entry is removed
+        /// so we also save the entry here.
+        IFileCachePriority::EntryPtr entry;
+        IFileCachePriority::IteratorPtr iterator;
+    };
+    using InvalidatedEntriesInfos = std::vector<InvalidatedEntryInfo>;
+
     virtual ~IFileCachePriority() = default;
 
     enum class Type
@@ -192,6 +201,7 @@ public:
         const EvictionInfo & eviction_info,
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
+        InvalidatedEntriesInfos & invalidated_entries,
         IteratorPtr reservee,
         bool continue_from_last_eviction_pos,
         size_t max_candidates_size,
@@ -218,13 +228,6 @@ public:
 
     virtual void resetEvictionPos(const CachePriorityGuard::ReadLock &) = 0;
 
-    struct InvalidatedEntryInfo
-    {
-        /// Iterator becomes invalid when entry is removed
-        /// so we also save the entry here.
-        IFileCachePriority::EntryPtr entry;
-        IFileCachePriority::IteratorPtr iterator;
-    };
     static void removeEntries(const std::vector<InvalidatedEntryInfo> & entries, const CachePriorityGuard::WriteLock &);
 
     struct UsageStat
