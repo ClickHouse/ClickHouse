@@ -57,6 +57,11 @@ struct ZooKeeperRequest : virtual Request
     UInt64 thread_id = 0;
     String query_id;
 
+    /// For histogram metrics.
+    std::chrono::steady_clock::time_point create_ts = {};
+    std::chrono::steady_clock::time_point enqueue_ts = {};
+    std::chrono::steady_clock::time_point send_ts = {};
+
     ZooKeeperRequest() = default;
     ZooKeeperRequest(const ZooKeeperRequest &) = default;
 
