@@ -40,7 +40,6 @@ def test_dictionary_internal_queries_not_counted(started_cluster):
         PRIMARY KEY dummy
         SOURCE(CLICKHOUSE(QUERY 'SELECT dummy from system.one'))
         LAYOUT(DIRECT())
-        LIFETIME(0)
     """)
 
     # should not get TOO_MANY_SIMULTANEOUS_QUERIES
