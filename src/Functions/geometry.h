@@ -1,3 +1,5 @@
+#pragma once
+
 #include <Functions/FunctionFactory.h>
 #include <Functions/geometryConverters.h>
 
@@ -8,21 +10,13 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnVariant.h>
 #include <DataTypes/DataTypesNumber.h>
-#include "Core/Field.h"
-#include "base/types.h"
+#include <Core/Field.h>
+#include <base/types.h>
 
-#include <initializer_list>
 #include <memory>
-#include <string>
-
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-}
 
 template <typename Point>
 Point getPointFromField(const Field & field)
