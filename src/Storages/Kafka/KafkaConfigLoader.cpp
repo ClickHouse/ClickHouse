@@ -33,6 +33,7 @@ namespace KafkaSetting
     extern const KafkaSettingsString kafka_sasl_username;
     extern const KafkaSettingsString kafka_sasl_password;
     extern const KafkaSettingsString kafka_compression_codec;
+    extern const KafkaSettingsInt64 kafka_compression_level;
 }
 
 namespace ErrorCodes
@@ -374,6 +375,9 @@ void updateConfigurationFromConfig(
     if (!kafka_settings[KafkaSetting::kafka_compression_codec].value.empty())
         kafka_config.set("compression.codec", kafka_settings[KafkaSetting::kafka_compression_codec]);
 
+    if (kafka_settings[KafkaSetting::kafka_compression_level].changed)
+        kafka_config.set("compression.level", kafka_settings[KafkaSetting::kafka_compression_level].toString());
+
 #if USE_KRB5
     if (kafka_config.has_property("sasl.kerberos.kinit.cmd"))
         LOG_WARNING(params.log, "sasl.kerberos.kinit.cmd configuration parameter is ignored.");
@@ -514,9 +518,14 @@ cppkafka::Configuration KafkaConfigLoader::getProducerConfiguration(TKafkaStorag
     updateConfigurationFromConfig(loadProducerConfig, conf, storage, params);
 
     for (auto & property : conf.get_all())
-    {
         LOG_TRACE(params.log, "Producer set property {}:{}", property.first, property.second);
-    }
+
+    /// compression.codec is a global and topic level property, however compression.level is only a topic level property.
+    /// cppkafka::Configuration::get_all returns the global properties only, so we need to check compression.level separately.
+    /// It is not clear why compression.level is like this, but let's work around it.
+    const std::string compression_level_key = "compression.level";
+    if (conf.has_property(compression_level_key))
+        LOG_TRACE(params.log, "Producer set property {}:{}", compression_level_key, conf.get(compression_level_key));
 
     return conf;
 }

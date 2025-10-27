@@ -45,10 +45,33 @@ def kafka_setup_teardown():
     k.clean_test_database_and_topics(instance, cluster)
     yield  # run test
 
+def get_applicable_compression_level(compression_codec):
+    if compression_codec == "gzip":
+        return 7
+    elif compression_codec == "snappy":
+        return 0
+    elif compression_codec == "lz4":
+        return 12
+    elif compression_codec == "zstd":
+        return 11
+    elif compression_codec == "none":
+        return None
+
+    raise ValueError(f"Unknown compression codec: {compression_codec}")
+
+
+def assert_producer_property_set_in_logs(instance, table_name, property_name, property_value):
+    maybe_uuid_regex = "( \([a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}\))?"
+    instance.wait_for_log_line(f"StorageKafka2? \(test\.{table_name}{maybe_uuid_regex}\): Producer set property {property_name}:{property_value}")
+
 
 def assert_compression_codec_in_logs(instance, table_name, compression_codec):
-    maybe_uuid_regex = "( \([a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}\))?"
-    instance.wait_for_log_line(f"StorageKafka2? \(test\.{table_name}{maybe_uuid_regex}\): Producer set property compression\.codec:{compression_codec}")
+    assert_producer_property_set_in_logs(instance, table_name, "compression\.codec", compression_codec)
+
+
+def assert_compression_level_in_logs(instance, table_name, compression_level):
+    assert_producer_property_set_in_logs(instance, table_name, "compression\.level", compression_level)
+
 
 # Test for different compression codec values
 @pytest.mark.parametrize(
@@ -67,6 +90,11 @@ def test_kafka_compression_codec(kafka_cluster, compression_codec, create_query_
     kafka_table_producer = f"kafka_producer_{suffix}"
     kafka_table_consumer = f"kafka_consumer_{suffix}"
     topic_name = f"compression_codec_{suffix}"
+    compression_level = get_applicable_compression_level(compression_codec)
+    table_settings = {"kafka_compression_codec": compression_codec}
+
+    if compression_level is not None:
+        table_settings["kafka_compression_level"] = compression_level
 
     admin_client = k.get_admin_client(kafka_cluster)
 
@@ -79,7 +107,7 @@ def test_kafka_compression_codec(kafka_cluster, compression_codec, create_query_
             "key UInt64, value String",
             topic_list=topic_name,
             consumer_group=f"{topic_name}_producer",
-            settings={"kafka_compression_codec": compression_codec}
+            settings=table_settings
         )
         instance.query(producer_create_query)
 
@@ -88,11 +116,7 @@ def test_kafka_compression_codec(kafka_cluster, compression_codec, create_query_
             kafka_table_consumer,
             "key UInt64, value String",
             topic_list=topic_name,
-            consumer_group=f"{topic_name}_consumer",
-            settings={
-                "kafka_compression_codec": compression_codec,
-                "kafka_commit_on_select": 1
-            }
+            consumer_group=f"{topic_name}_consumer"
         )
         instance.query(consumer_create_query)
 
@@ -119,6 +143,8 @@ def test_kafka_compression_codec(kafka_cluster, compression_codec, create_query_
 
         # Unfortunately there is no way to directly verify the compression codec using the python client
         assert_compression_codec_in_logs(instance, kafka_table_producer, compression_codec)
+        if compression_level is not None:
+            assert_compression_level_in_logs(instance, kafka_table_producer, compression_level)
 
         # Wait for messages to be consumed
         expected_result = "\n".join(expected_data)

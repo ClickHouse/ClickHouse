@@ -48,6 +48,7 @@ namespace ErrorCodes
     DECLARE(String, kafka_sasl_username, "", "SASL username for use with the PLAIN and SASL-SCRAM-.. mechanisms", 0) \
     DECLARE(String, kafka_sasl_password, "", "SASL password for use with the PLAIN and SASL-SCRAM-.. mechanisms", 0) \
     DECLARE(String, kafka_compression_codec, "", "Compression codec used for consuming messages. Supported: none, gzip, snappy, lz4, zstd.", 0) \
+    DECLARE(Int64, kafka_compression_level, -1, "Compression level parameter for algorithm selected by kafka_compression_codec.", 0) \
 
 #define OBSOLETE_KAFKA_SETTINGS(M, ALIAS) \
     MAKE_OBSOLETE(M, Char, kafka_row_delimiter, '\0') \
