@@ -72,7 +72,7 @@ SELECT trimLeft(explain) AS explain FROM (
 ) WHERE explain LIKE '%Granules%';
 
 -- Test with RPN size of 23 - only 6 granules and 6x64=384 rows should be read
-SELECT count(*) FROM tab1 WHERE  (v1 = 1 AND v2 = 10000) OR (v1 = 129 AND v2 = 9872) OR (v1 = 999 OR v2 = 9002) OR (v1 = 1300 AND v2 = 8701) OR (v1 = 5000 AND v2 = 5001) OR (v1 = 9000 AND v2 = 1001) SETTINGS max_rows_to_read=384
+SELECT count(*) FROM tab1 WHERE  (v1 = 1 AND v2 = 10000) OR (v1 = 129 AND v2 = 9872) OR (v1 = 999 OR v2 = 9002) OR (v1 = 1300 AND v2 = 8701) OR (v1 = 5000 AND v2 = 5001) OR (v1 = 9000 AND v2 = 1001) SETTINGS max_rows_to_read=384;
 
 DROP TABLE tab1;
 
