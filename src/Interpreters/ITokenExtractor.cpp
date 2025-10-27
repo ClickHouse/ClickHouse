@@ -20,31 +20,6 @@ namespace ErrorCodes
 namespace DB
 {
 
-std::vector<std::string_view> ITokenExtractor::getTokensView(const char * data, size_t length) const
-{
-    std::vector<std::string_view> tokens;
-
-    size_t cur = 0;
-    size_t token_start = 0;
-    size_t token_len = 0;
-
-    while (cur < length && nextInString(data, length, &cur, &token_start, &token_len))
-        tokens.emplace_back(data + token_start, token_len);
-
-    return tokens;
-}
-
-std::vector<std::string_view> NgramTokenExtractor::getTokensView(const char * data, size_t length) const
-{
-    if (length == 0)
-        return {};
-
-    if (length < n)
-        return std::vector<std::string_view>{{data, length}};
-
-    return ITokenExtractor::getTokensView(data, length);
-}
-
 bool NgramTokenExtractor::nextInString(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const
 {
     *token_start = *pos;
@@ -296,11 +271,6 @@ void DefaultTokenExtractor::substringToTokens(const char * data, size_t length, 
     }
 }
 
-SplitTokenExtractor::SplitTokenExtractor(const std::vector<String> & separators_)
-    : separators(separators_)
-{
-}
-
 namespace
 {
 
@@ -352,14 +322,6 @@ bool SplitTokenExtractor::nextInStringLike(const char * /*data*/, size_t /*lengt
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "StringTokenExtractor::nextInStringLike is not implemented");
 }
 
-std::vector<std::string_view> NoOpTokenExtractor::getTokensView(const char * data, size_t length) const
-{
-    if (length == 0)
-        return {};
-
-    return {{data, length}};
-}
-
 bool NoOpTokenExtractor::nextInString(const char * /*data*/, size_t length, size_t * pos, size_t * token_start, size_t * token_length) const
 {
     if (*pos == 0)
@@ -375,6 +337,85 @@ bool NoOpTokenExtractor::nextInString(const char * /*data*/, size_t length, size
 bool NoOpTokenExtractor::nextInStringLike(const char * /*data*/, size_t /*length*/, size_t * /*token_start*/, String & /*token_length*/) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "NoOpTokenExtractor::nextInStringLike is not implemented");
+}
+
+SparseGramTokenExtractor::SparseGramTokenExtractor(size_t min_length, size_t max_length, std::optional<size_t> min_cutoff_length_)
+    : ITokenExtractorHelper(Type::SparseGram)
+    , sparse_grams_iterator(min_length, max_length, min_cutoff_length_)
+{
+}
+
+bool SparseGramTokenExtractor::nextInString(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const
+{
+    if (std::tie(data, length) != std::tie(previous_data, previous_len))
+    {
+        previous_data = data;
+        previous_len = length;
+        sparse_grams_iterator.set(data, data + length);
+    }
+
+    Pos next_begin;
+    Pos next_end;
+    if (!sparse_grams_iterator.get(next_begin, next_end))
+    {
+        previous_data = nullptr;
+        previous_len = 0;
+        return false;
+    }
+    *token_start = next_begin - data;
+    *token_length = next_end - next_begin;
+    *pos = *token_start;
+
+    return true;
+}
+
+bool SparseGramTokenExtractor::nextInStringLike(const char * data, size_t length, size_t * pos, String & token) const
+{
+    if (std::tie(data, length) != std::tie(previous_data, previous_len))
+    {
+        previous_data = data;
+        previous_len = length;
+        sparse_grams_iterator.set(data, data + length);
+    }
+
+    token.clear();
+
+    while (true)
+    {
+        Pos next_begin;
+        Pos next_end;
+        if (!sparse_grams_iterator.get(next_begin, next_end))
+        {
+            previous_data = nullptr;
+            previous_len = 0;
+            return false;
+        }
+        bool match_substring = true;
+        for (size_t i = next_begin - data; i < static_cast<size_t>(next_end - data);)
+        {
+            /// Escaped sequences are not supported by sparse grams tokenizers.
+            /// It requires pushing down this logic into sparse grams implementation,
+            /// because it changes the split into sparse grams. We don't want to do that now.
+            if (data[i] == '%' || data[i] == '_' || data[i] == '\\')
+            {
+                token.clear();
+                match_substring = false;
+                break;
+            }
+            else
+            {
+                const size_t sz = UTF8::seqLength(static_cast<UInt8>(data[i]));
+                for (size_t j = 0; j < sz; ++j)
+                    token.push_back(data[i + j]);
+                i += sz;
+            }
+        }
+        if (match_substring)
+        {
+            *pos = next_begin - data;
+            return true;
+        }
+    }
 }
 
 }

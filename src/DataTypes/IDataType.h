@@ -106,13 +106,13 @@ public:
     void updateHash(SipHash & hash) const;
     virtual void updateHashImpl(SipHash & hash) const = 0;
 
-    bool hasSubcolumn(std::string_view subcolumn_name) const;
+    bool hasSubcolumn(std::string_view subcolumn_name, SerializationPtr override_default = nullptr) const;
 
-    DataTypePtr tryGetSubcolumnType(std::string_view subcolumn_name) const;
-    DataTypePtr getSubcolumnType(std::string_view subcolumn_name) const;
+    DataTypePtr tryGetSubcolumnType(std::string_view subcolumn_name, SerializationPtr override_default = nullptr) const;
+    DataTypePtr getSubcolumnType(std::string_view subcolumn_name, SerializationPtr override_default = nullptr) const;
 
-    ColumnPtr tryGetSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column) const;
-    ColumnPtr getSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column) const;
+    ColumnPtr tryGetSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column, SerializationPtr override_default = nullptr) const;
+    ColumnPtr getSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column, SerializationPtr override_default = nullptr) const;
 
     SerializationPtr getSubcolumnSerialization(std::string_view subcolumn_name, const SerializationPtr & serialization) const;
 
@@ -422,6 +422,7 @@ struct WhichDataType
     constexpr bool isNativeFloat() const { return isFloat32() || isFloat64(); }
     constexpr bool isFloat() const { return isNativeFloat() || isBFloat16(); }
 
+    constexpr bool isIntegerOrDecimal() const { return isInteger() || isDecimal(); }
     constexpr bool isNativeNumber() const { return isNativeInteger() || isNativeFloat(); }
     constexpr bool isNumber() const { return isInteger() || isFloat() || isDecimal(); }
 
@@ -503,6 +504,7 @@ bool isDecimal(TYPE data_type); \
 \
 bool isFloat(TYPE data_type); \
 \
+bool isIntegerOrDecimal(TYPE data_type); \
 bool isNativeNumber(TYPE data_type); \
 bool isNumber(TYPE data_type); \
 \
