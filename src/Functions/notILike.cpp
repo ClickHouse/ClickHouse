@@ -19,6 +19,37 @@ using FunctionNotILike = FunctionsStringSearch<NotILikeImpl>;
 
 REGISTER_FUNCTION(NotILike)
 {
-    factory.registerFunction<FunctionNotILike>();
+    FunctionDocumentation::Description description = "Checks whether a string does not match a pattern, case-insensitive. The pattern can contain special characters `%` and `_` for SQL LIKE matching.";
+    FunctionDocumentation::Syntax syntax = "notILike(haystack, pattern)";
+    FunctionDocumentation::Arguments arguments = {
+        {"haystack", "The input string to search in."},
+        {"pattern", "The SQL LIKE pattern to match against. `%` matches any number of characters (including zero), `_` matches exactly one character."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if the string does not match the pattern (case-insensitive), otherwise `0`.", {"UInt8"}};
+    FunctionDocumentation::Examples examples =
+    {
+    {
+        "Usage example",
+        "SELECT notILike('Hello, World!', '%world%');",
+        R"(
+┌─notILike('Hello, World!', '%world%')─┐
+│                                     0 │
+└───────────────────────────────────────┘
+        )"  
+    },
+    {
+        "Non-matching pattern",
+        "SELECT notILike('ClickHouse', '%postgres%');",
+        R"(
+┌─notILike('ClickHouse', '%postgres%')─┐
+│                                     1 │
+└───────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 6};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionNotILike>(documentation);
 }
 }
