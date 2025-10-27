@@ -525,10 +525,16 @@ void KeeperTCPHandler::runImpl()
 
                 auto & response = request_with_response.response;
 
-                chassert(response->enqueue_ts != std::chrono::steady_clock::time_point{});
-                HistogramMetrics::observe(
-                    HistogramMetrics::KeeperServerQueueDuration,
-                    std::chrono::duration_cast<std::chrono::milliseconds>(dequeue_ts - response->enqueue_ts).count());
+                if (response->xid != Coordination::WATCH_XID)
+                {
+                    /// The same ZooKeeperWatchResponse pointer may be put into the `responses` queue multiple times (once for each session).
+                    /// So, to avoid a data race between the producer and consumer threads accessing response->enqueue_ts,
+                    /// we should just ignore watches in this thread.
+                    chassert(response->enqueue_ts != std::chrono::steady_clock::time_point{});
+                    HistogramMetrics::observe(
+                        HistogramMetrics::KeeperServerQueueDuration,
+                        std::chrono::duration_cast<std::chrono::milliseconds>(dequeue_ts - response->enqueue_ts).count());
+                }
 
                 log_long_operation("Waiting for response to be ready");
 

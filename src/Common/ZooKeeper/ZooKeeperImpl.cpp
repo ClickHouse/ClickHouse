@@ -803,6 +803,7 @@ void ZooKeeper::sendThread()
 
                     auto dequeue_ts = clock::now();
 
+                    chassert(info.enqueue_ts != std::chrono::steady_clock::time_point{});
                     HistogramMetrics::observe(
                         HistogramMetrics::KeeperClientQueueDuration,
                         std::chrono::duration_cast<std::chrono::milliseconds>(dequeue_ts - info.enqueue_ts).count());
