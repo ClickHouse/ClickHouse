@@ -55,8 +55,47 @@ const char * FunctionPerimeter<SphericalPoint>::name = "perimeterSpherical";
 
 REGISTER_FUNCTION(Perimeter)
 {
-    factory.registerFunction<FunctionPerimeter<CartesianPoint>>();
-    factory.registerFunction<FunctionPerimeter<SphericalPoint>>();
+    {
+        FunctionDocumentation::Description description = R"(
+    Returns the perimeter of the object.
+        )";
+        FunctionDocumentation::Syntax syntax = "perimeterCartesian(object)";
+        FunctionDocumentation::Arguments arguments = {
+            {"object", "geometry object", {"Geometry"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {
+            "Returns the perimeter of the object.",
+            {"Float64"}
+        };
+        FunctionDocumentation::Examples examples;
+
+        FunctionDocumentation::IntroducedIn introduced_in = {25, 10};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+        factory.registerFunction<FunctionPerimeter<CartesianPoint>>();
+    }
+    {
+            FunctionDocumentation::Description description = R"(
+    Returns the perimeter of the object.
+        )";
+        FunctionDocumentation::Syntax syntax = "perimeterSpherical(object)";
+        FunctionDocumentation::Arguments arguments = {
+            {"object", "geometry object", {"Geometry"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {
+            "Returns the perimeter of the object.",
+            {"Float64"}
+        };
+        FunctionDocumentation::Examples examples;
+
+        FunctionDocumentation::IntroducedIn introduced_in = {25, 10};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+
+        factory.registerFunction<FunctionPerimeter<SphericalPoint>>();
+    }
 }
 
 }
