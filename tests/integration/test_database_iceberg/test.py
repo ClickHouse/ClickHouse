@@ -653,12 +653,6 @@ def test_cluster_select(started_cluster):
     
 def test_not_specified_catalog_type(started_cluster):
     node = started_cluster.instances["node1"]
-
-    test_ref = f"test_list_tables_{uuid.uuid4()}"
-    table_name = f"{test_ref}_table"
-    root_namespace = f"{test_ref}_namespace"
-
-    catalog = load_catalog_impl(started_cluster)
     settings = {
         "warehouse": "demo",
         "storage_endpoint": "http://minio:9000/warehouse-rest",
