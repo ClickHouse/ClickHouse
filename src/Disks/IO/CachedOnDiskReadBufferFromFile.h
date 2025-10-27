@@ -10,6 +10,7 @@
 #include <Interpreters/FilesystemCacheLog.h>
 #include <Interpreters/Cache/FileSegment.h>
 #include <Interpreters/Cache/UserInfo.h>
+#include <IO/SwapHelper.h>
 
 
 namespace CurrentMetrics
@@ -137,7 +138,7 @@ private:
         ReadInfo & info,
         LoggerPtr log);
 
-    static void predownloadForFileSegment(
+    static bool predownloadForFileSegment(
         FileSegment & file_segment,
         size_t offset,
         ReadFromFileSegmentState & state,
