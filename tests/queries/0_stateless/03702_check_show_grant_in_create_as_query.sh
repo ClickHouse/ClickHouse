@@ -5,7 +5,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-user="user03701_${CLICKHOUSE_DATABASE}_$RANDOM"
+user="user03702_${CLICKHOUSE_DATABASE}_$RANDOM"
 db=${CLICKHOUSE_DATABASE}
 
 ${CLICKHOUSE_CLIENT} <<EOF
