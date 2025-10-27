@@ -1011,12 +1011,6 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & create,
                                                     const InterpreterCreateQuery::TableProperties & properties) const
 {
-    /// Check sub columns limit
-    auto get_column_options = GetColumnsOptions(GetColumnsOptions::None).withSubcolumns();
-    NamesAndTypesList subcolumns = properties.columns.get(get_column_options);
-    if (subcolumns.size() > 5) 
-        throw Exception(ErrorCodes::TOO_MANY_SUBCOLUMNS, "Too many subcolumns");
-
     /// Check for duplicates
     std::set<String> all_columns;
     for (const auto & column : properties.columns)
@@ -2019,6 +2013,20 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "ATTACH ... FROM ... query is not supported for {} table engine, "
                         "because such tables do not store any data on disk. Use CREATE instead.", res->getName());
+
+    if (res->storesDataOnDisk())
+        /// Check sub columns limit
+        auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns();
+        NamesAndTypesList columns = properties.columns.get(get_column_options);
+        auto subcolumn_count = 0;
+        for (const auto & column : columns)
+            if (column.isSubcolumn())
+                subcolumn_count++;
+
+        throw Exception(ErrorCodes::TOO_MANY_SUBCOLUMNS,
+                                "Too many subcolumns {}. "
+                                "The limit (server configuration parameter `{}`) is set to {}, the current number is {}",
+                                entity_name, setting_name, num_limit, attached_count);
 
     auto * replicated_storage = typeid_cast<StorageReplicatedMergeTree *>(res.get());
     if (replicated_storage)
