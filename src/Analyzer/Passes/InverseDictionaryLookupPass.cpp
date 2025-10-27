@@ -111,7 +111,16 @@ bool tryGetConstantNode(const QueryTreeNodePtr & node, QueryTreeNodePtr & out)
 
 bool isInMemoryLayout(const String & type_name)
 {
-    return type_name == "Flat" || type_name == "Hashed" || type_name == "ComplexKeyHashed";
+    static const std::unordered_set<String> supported_layouts = {
+        "Flat",
+        "Hashed",
+        "HashedArray",
+        "SparseHashed",
+        "ComplexKeyHashed",
+        "ComplexHashedArray",
+        "ComplexKeySparseHashed",
+    };
+    return supported_layouts.contains(type_name);
 }
 
 template <typename Node>
