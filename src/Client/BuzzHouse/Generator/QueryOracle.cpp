@@ -135,7 +135,7 @@ void QueryOracle::generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & 
     sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
 }
 
-void QueryOracle::addLimitOrOffset(RandomGenerator & rg, StatementGenerator & gen, const uint32_t ncols, SelectStatementCore * ssc) const
+void QueryOracle::addLimitOrOffset(RandomGenerator & rg, StatementGenerator & gen, SelectStatementCore * ssc) const
 {
     const uint32_t noption = rg.nextSmallNumber();
 
@@ -146,7 +146,7 @@ void QueryOracle::addLimitOrOffset(RandomGenerator & rg, StatementGenerator & ge
         gen.setAllowEngineUDF(false);
         if (noption == 1)
         {
-            gen.generateLimit(rg, ssc->has_orderby(), ncols, ssc->mutable_limit());
+            gen.generateLimit(rg, ssc->has_orderby(), ssc->mutable_limit());
         }
         else
         {
@@ -199,7 +199,6 @@ void QueryOracle::dumpTableContent(
     jtf->set_final(t.supportsFinal());
 
     gen.flatTableColumnPath(0, t.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
-    const uint32_t ncols = static_cast<uint32_t>(gen.entries.size());
     for (const auto & entry : gen.entries)
     {
         ExprOrderingTerm * eot = first ? obs->mutable_ord_term() : obs->add_extra_ord_terms();
@@ -220,7 +219,7 @@ void QueryOracle::dumpTableContent(
     }
     gen.entries.clear();
 
-    addLimitOrOffset(rg, gen, ncols, ssc);
+    addLimitOrOffset(rg, gen, ssc);
     if (test_content)
     {
         /// Don't write statistics
@@ -678,7 +677,7 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
             ->mutable_select()
             ->set_allocated_sel(osel);
         nsel->mutable_orderby()->set_oall(true);
-        addLimitOrOffset(rg, gen, ncols, nsel);
+        addLimitOrOffset(rg, gen, nsel);
     }
 
     /// Don't write statistics
