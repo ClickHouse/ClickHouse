@@ -60,15 +60,81 @@ void HashiCorpVault::load(const Poco::Util::AbstractConfiguration & config, cons
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "token is not given for vault.");
         }
 
-
-
         loaded = true;
+    }
+}
+
+String HashiCorpVault::login()
+{
+    DB::HTTPHeaderEntries headers;
+
+    headers.emplace_back("X-Vault-Token", token);
+    headers.emplace_back("Content-Type", "application/json");
+
+    Poco::URI uri = Poco::URI(fmt::format("{}/v1/auth/userpass/login/{}", url, username));
+    Poco::Net::HTTPBasicCredentials credentials{};
+
+    std::string json_str;
+
+    try
+    {
+        auto wb = DB::BuilderRWBufferFromHTTP(uri)
+                      .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
+                      .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
+                      .withTimeouts(DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings()))
+                      .withSkipNotFound(false)
+                      .withHeaders(headers)
+                      .withOutCallback(
+                          [this](std::ostream & os)
+                          {
+                              Poco::JSON::Object obj;
+                              obj.set("password", password);
+                              obj.stringify(os);
+                          })
+                      .create(credentials);
+
+        readJSONObjectPossiblyInvalid(json_str, *wb);
+    }
+    catch (const DB::HTTPException & e)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot login in vault as {}. ({})", username, e.displayText());
+    }
+
+    Poco::JSON::Parser parser;
+    Poco::Dynamic::Var res_json;
+    try
+    {
+        res_json = parser.parse(json_str);
+    }
+    catch (const Poco::Exception & e)
+    {
+        throw Exception(ErrorCodes::CANNOT_PARSE_JSON, "Cannot parse JSON response from vault. ({})", e.displayText());
+    }
+
+    try
+    {
+        const Poco::JSON::Object::Ptr & root = res_json.extract<Poco::JSON::Object::Ptr>();
+        const Poco::JSON::Object::Ptr & auth = root->getObject("auth");
+        const auto value = auth->get("client_token").extract<String>();
+
+        return value;
+    }
+    catch (const Exception &)
+    {
+        throw;
+    }
+    catch (const Poco::Exception & e)
+    {
+        throw Exception(ErrorCodes::INVALID_JSON_STRUCTURE, "Invalid JSON structure in response from vault. ({})", e.displayText());
     }
 }
 
 String HashiCorpVault::readSecret(const String & secret, const String & key)
 {
     LOG_DEBUG(log, "readSecret {} {}", secret, key);
+
+    if (auth_method == HashiCorpVaultAuthMethod::Userpass)
+        token = login();
 
     DB::HTTPHeaderEntries headers;
 
@@ -94,7 +160,7 @@ String HashiCorpVault::readSecret(const String & secret, const String & key)
     {
         const auto status = e.getHTTPStatus();
         if (status == Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Secret {} not found in vault.", secret);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Secret {} not found in vault. ({})", secret, e.displayText());
 
         throw;
     }
@@ -106,9 +172,9 @@ String HashiCorpVault::readSecret(const String & secret, const String & key)
         // json_str = "{data=";
         res_json = parser.parse(json_str);
     }
-    catch (const Poco::Exception &)
+    catch (const Poco::Exception & e)
     {
-        throw Exception(ErrorCodes::CANNOT_PARSE_JSON, "Cannot parse JSON response from vault.");
+        throw Exception(ErrorCodes::CANNOT_PARSE_JSON, "Cannot parse JSON response from vault. ({})", e.displayText());
     }
 
     try
@@ -128,9 +194,9 @@ String HashiCorpVault::readSecret(const String & secret, const String & key)
     {
         throw;
     }
-    catch (const Poco::Exception &)
+    catch (const Poco::Exception & e)
     {
-        throw Exception(ErrorCodes::INVALID_JSON_STRUCTURE, "Invalid JSON structure in response from vault.");
+        throw Exception(ErrorCodes::INVALID_JSON_STRUCTURE, "Invalid JSON structure in response from vault. ({})", e.displayText());
     }
 }
 

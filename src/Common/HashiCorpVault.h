@@ -1,14 +1,15 @@
 #pragma once
 
+#include <Interpreters/Context_fwd.h>
 #include <base/types.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Common/Logger.h>
-#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
 
-enum class HashiCorpVaultAuthMethod {
+enum class HashiCorpVaultAuthMethod
+{
     Token,
     Userpass
 };
@@ -41,6 +42,7 @@ private:
         client_token = "";
         loaded = false;
     }
+    String login();
     LoggerPtr log;
     bool loaded = false;
     String url;
