@@ -26,7 +26,7 @@ namespace ErrorCodes
 template <typename Point>
 Point getPointFromField(const Field & field)
 {
-    auto point = field.safeGet<Tuple>();
+    const auto & point = field.safeGet<Tuple>();
     auto x = point.at(0).safeGet<Float64>();
     auto y = point.at(1).safeGet<Float64>();
     return {x, y};
@@ -36,12 +36,9 @@ template <typename Point>
 LineString<Point> getLineStringFromField(const Field & field)
 {
     LineString<Point> linestring;
-    auto array = field.safeGet<Array>();
-    for (size_t i = 0; i < array.size(); ++i)
-    {
-        auto tuple = array.at(i);
+    const auto & array = field.safeGet<Array>();
+    for (const auto & tuple : array)
         linestring.push_back(getPointFromField<Point>(tuple));
-    }
     return linestring;
 }
 
@@ -49,12 +46,9 @@ template <typename Point>
 Ring<Point> getRingFromField(const Field & field)
 {
     Ring<Point> ring;
-    auto array = field.safeGet<Array>();
-    for (size_t i = 0; i < array.size(); ++i)
-    {
-        auto tuple = array.at(i);
+    const auto & array = field.safeGet<Array>();
+    for (const auto & tuple : array)
         ring.push_back(getPointFromField<Point>(tuple));
-    }
     return ring;
 }
 
@@ -62,12 +56,9 @@ template <typename Point>
 MultiLineString<Point> getMultiLineStringFromField(const Field & field)
 {
     MultiLineString<Point> multilinestring;
-    auto array = field.safeGet<Array>();
-    for (size_t i = 0; i < array.size(); ++i)
-    {
-        auto tuple = array.at(i);
+    const auto & array = field.safeGet<Array>();
+    for (const auto & tuple : array)
         multilinestring.push_back(getLineStringFromField<Point>(tuple));
-    }
     return multilinestring;
 }
 
@@ -75,7 +66,7 @@ template <typename Point>
 Polygon<Point> getPolygonFromField(const Field & field)
 {
     Polygon<Point> polygon;
-    auto array = field.safeGet<Array>();
+    const auto & array = field.safeGet<Array>();
     std::vector<Ring<Point>> rings_outer;
     Ring<Point> ring_inner;
     for (size_t i = 0; i < array.size(); ++i)
@@ -93,12 +84,9 @@ template <typename Point>
 MultiPolygon<Point> getMultiPolygonFromField(const Field & field)
 {
     MultiPolygon<Point> polygon;
-    auto array = field.safeGet<Array>();
-    for (size_t i = 0; i < array.size(); ++i)
-    {
-        auto tuple = array.at(i);
+    const auto & array = field.safeGet<Array>();
+    for (const auto & tuple : array)
         polygon.push_back(getPolygonFromField<Point>(tuple));
-    }
     return polygon;
 }
 

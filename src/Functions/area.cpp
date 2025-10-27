@@ -72,7 +72,7 @@ REGISTER_FUNCTION(Area)
         FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
         FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-        factory.registerFunction<FunctionArea<CartesianPoint>>();
+        factory.registerFunction<FunctionArea<CartesianPoint>>(documentation);
     }
     {
         FunctionDocumentation::Description description = R"(
@@ -91,7 +91,7 @@ REGISTER_FUNCTION(Area)
         FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
         FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-        factory.registerFunction<FunctionArea<SphericalPoint>>();
+        factory.registerFunction<FunctionArea<SphericalPoint>>(documentation);
     }
 }
 
