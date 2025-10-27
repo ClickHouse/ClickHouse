@@ -14,7 +14,6 @@ struct QueryPlanSerializationSettingsImpl;
     M(CLASS_NAME, Bool) \
     M(CLASS_NAME, Float) \
     M(CLASS_NAME, Double) \
-    M(CLASS_NAME, JoinAlgorithm) \
     M(CLASS_NAME, NonZeroUInt64) \
     M(CLASS_NAME, OverflowMode) \
     M(CLASS_NAME, OverflowModeGroupBy) \
@@ -22,6 +21,7 @@ struct QueryPlanSerializationSettingsImpl;
     M(CLASS_NAME, String) \
     M(CLASS_NAME, TotalsMode) \
     M(CLASS_NAME, UInt64) \
+    M(CLASS_NAME, JoinAlgorithm) \
 
 QUERY_PLAN_SERIALIZATION_SETTINGS_SUPPORTED_TYPES(QueryPlanSerializationSettings, DECLARE_SETTING_TRAIT)
 

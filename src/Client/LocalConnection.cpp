@@ -1,9 +1,8 @@
-#include <Client/LocalConnection.h>
+#include "LocalConnection.h"
 #include <memory>
 #include <Client/ClientBase.h>
 #include <Client/ClientApplicationBase.h>
 #include <Core/Protocol.h>
-#include <Core/Settings.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeQuery.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -16,7 +15,6 @@
 #include <QueryPipeline/Pipe.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Storages/IStorage.h>
-#include <Common/config_version.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/CurrentThread.h>
 #include <Interpreters/InternalTextLogsQueue.h>
@@ -24,7 +22,6 @@
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/Kusto/parseKQLQuery.h>
-#include <Parsers/Prometheus/ParserPrometheusQuery.h>
 
 namespace DB
 {
@@ -34,16 +31,13 @@ namespace Setting
     extern const SettingsDialect dialect;
     extern const SettingsBool input_format_defaults_for_omitted_fields;
     extern const SettingsUInt64 interactive_delay;
-    extern const SettingsNonZeroUInt64 max_insert_block_size;
+    extern const SettingsUInt64 max_insert_block_size;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
     extern const SettingsBool implicit_select;
     extern const SettingsLogsLevel send_logs_level;
     extern const SettingsString send_logs_source_regexp;
-    extern const SettingsString promql_database;
-    extern const SettingsString promql_table;
-    extern const SettingsFloatAuto promql_evaluation_time;
 }
 
 namespace ErrorCodes
@@ -64,9 +58,7 @@ LocalConnection::LocalConnection(ContextPtr context_, ReadBuffer * in_, bool sen
 {
     /// Authenticate and create a context to execute queries.
     session->authenticate("default", "", Poco::Net::SocketAddress{});
-    ContextMutablePtr session_context = session->makeSessionContext();
-    /// Re-apply settings from the command line arguments
-    session_context->applySettingsChanges(getContext()->getSettingsRef().changes());
+    session->makeSessionContext();
 }
 
 LocalConnection::LocalConnection(
@@ -205,9 +197,8 @@ void LocalConnection::sendQuery(
         if (dialect == Dialect::kusto)
             parser = std::make_unique<ParserKQLStatement>(end, settings[Setting::allow_settings_after_format_in_insert]);
         else if (dialect == Dialect::prql)
-            parser = std::make_unique<ParserPRQLQuery>(settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
-        else if (dialect == Dialect::promql)
-            parser = std::make_unique<ParserPrometheusQuery>(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
+            parser
+                = std::make_unique<ParserPRQLQuery>(settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         else
             parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
 
@@ -246,7 +237,7 @@ void LocalConnection::sendQuery(
         auto columns_description = metadata_snapshot->getColumns();
         if (columns_description.hasDefaults())
         {
-            pipe.addSimpleTransform([&](const SharedHeader & header)
+            pipe.addSimpleTransform([&](const Block & header)
             {
                 return std::make_shared<AddingDefaultsTransform>(header, columns_description, *source, context);
             });
@@ -268,7 +259,6 @@ void LocalConnection::sendQuery(
 
     try
     {
-        query_context->setSetting("serialize_query_plan", false);
         state->io = executeQuery(state->query, query_context, QueryFlags{}, state->stage).second;
 
         if (state->io.pipeline.pushing())
@@ -344,14 +334,9 @@ void LocalConnection::sendQuery(
     }
 }
 
-void LocalConnection::sendQueryPlan(const QueryPlan &)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
-}
-
 void LocalConnection::sendData(const Block & block, const String &, bool)
 {
-    if (block.empty())
+    if (!block)
         return;
 
     if (state->pushing_async_executor)
@@ -475,23 +460,6 @@ bool LocalConnection::poll(size_t)
         return true;
     }
 
-    // pushing executors have to be finished before the final stats are sent
-    if (state->is_finished)
-    {
-        if (state->executor)
-        {
-            // no op
-        }
-        else if (state->pushing_async_executor)
-        {
-            state->pushing_async_executor->finish();
-        }
-        else if (state->pushing_executor)
-        {
-            state->pushing_executor->finish();
-        }
-    }
-
     if (state->is_finished && !state->sent_totals)
     {
         state->sent_totals = true;
@@ -500,7 +468,7 @@ bool LocalConnection::poll(size_t)
         if (state->executor)
             totals = state->executor->getTotalsBlock();
 
-        if (!totals.empty())
+        if (totals)
         {
             next_packet_type = Protocol::Server::Totals;
             state->block.emplace(totals);
@@ -516,7 +484,7 @@ bool LocalConnection::poll(size_t)
         if (state->executor)
             extremes = state->executor->getExtremesBlock();
 
-        if (!extremes.empty())
+        if (extremes)
         {
             next_packet_type = Protocol::Server::Extremes;
             state->block.emplace(extremes);
@@ -540,7 +508,7 @@ bool LocalConnection::poll(size_t)
     {
         state->sent_profile_events = true;
 
-        if (send_profile_events && (state->executor || state->pushing_async_executor || state->pushing_executor))
+        if (send_profile_events && state->executor)
         {
             sendProfileEvents();
             return true;
@@ -556,7 +524,7 @@ bool LocalConnection::poll(size_t)
         return true;
     }
 
-    if (state->block && !state->block.value().empty())
+    if (state->block && state->block.value())
     {
         next_packet_type = Protocol::Server::Data;
         return true;
@@ -624,11 +592,11 @@ bool LocalConnection::pollImpl()
     Block block;
     auto next_read = pullBlock(block);
 
-    if (block.empty() && next_read)
+    if (!block && next_read)
     {
         return true;
     }
-    if (!block.empty() && !state->io.null_format)
+    if (block && !state->io.null_format)
     {
         state->block.emplace(block);
     }
@@ -642,7 +610,7 @@ bool LocalConnection::pollImpl()
 
 UInt64 LocalConnection::receivePacketType()
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "receivePacketType is not implemented for LocalConnection");
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "receivePacketType() is not implemented for LocalConnection");
 }
 
 Packet LocalConnection::receivePacket()
@@ -672,7 +640,7 @@ Packet LocalConnection::receivePacket()
         case Protocol::Server::Data:
         case Protocol::Server::ProfileEvents:
         {
-            if (state->block && !state->block.value().empty())
+            if (state->block && state->block.value())
             {
                 packet.block = std::move(state->block.value());
                 state->block.reset();
@@ -694,7 +662,9 @@ Packet LocalConnection::receivePacket()
         {
             if (state->columns_description)
             {
-                packet.columns_description = state->columns_description->toString(/* include_comments = */ false);
+                /// Send external table name (empty name is the main table)
+                /// (see TCPHandler::sendTableColumns)
+                packet.multistring_message = {"", state->columns_description->toString()};
             }
 
             if (state->block)
@@ -731,15 +701,11 @@ Packet LocalConnection::receivePacket()
 }
 
 void LocalConnection::getServerVersion(
-    const ConnectionTimeouts & /* timeouts */, String & name,
-    UInt64 & version_major, UInt64 & version_minor,
-    UInt64 & version_patch, UInt64 & revision)
+    const ConnectionTimeouts & /* timeouts */, String & /* name */,
+    UInt64 & /* version_major */, UInt64 & /* version_minor */,
+    UInt64 & /* version_patch */, UInt64 & /* revision */)
 {
-    name = std::string(VERSION_NAME);
-    version_major = VERSION_MAJOR;
-    version_minor = VERSION_MINOR;
-    version_patch = VERSION_PATCH;
-    revision = DBMS_TCP_PROTOCOL_VERSION;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
 }
 
 void LocalConnection::setDefaultDatabase(const String & database)

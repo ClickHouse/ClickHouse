@@ -3,7 +3,6 @@ description: 'Calculates the Pearson correlation coefficient.'
 sidebar_position: 117
 slug: /sql-reference/aggregate-functions/reference/corr
 title: 'corr'
-doc_type: 'reference'
 ---
 
 # corr
@@ -27,8 +26,8 @@ corr(x, y)
 
 **Arguments**
 
-- `x` — first variable. [(U)Int*](../../data-types/int-uint.md), [Float*](../../data-types/float.md).
-- `y` — second variable. [(U)Int*](../../data-types/int-uint.md), [Float*](../../data-types/float.md).
+- `x` — first variable. [(U)Int*](../../data-types/int-uint.md), [Float*](../../data-types/float.md), [Decimal](../../data-types/decimal.md).
+- `y` — second variable. [(U)Int*](../../data-types/int-uint.md), [Float*](../../data-types/float.md), [Decimal](../../data-types/decimal.md).
 
 **Returned Value**
 

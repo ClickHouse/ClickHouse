@@ -1,15 +1,13 @@
 #include <TableFunctions/TableFunctionURL.h>
 
-#include <TableFunctions/registerTableFunctions.h>
+#include "registerTableFunctions.h"
 #include <Access/Common/AccessFlags.h>
-#include <Access/ContextAccess.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
-#include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/ColumnsDescription.h>
@@ -19,7 +17,6 @@
 
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromVector.h>
-#include <Storages/HivePartitioningUtils.h>
 
 
 namespace DB
@@ -140,37 +137,21 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
 {
     if (structure == "auto")
     {
-        ColumnsDescription columns;
-
-        if (const auto access_object = getSourceAccessObject())
-            context->getAccess()->checkAccessWithFilter(AccessType::READ, toStringSource(*access_object), getFunctionURINormalized());
+        context->checkAccess(getSourceAccessType());
         if (format == "auto")
-        {
-            columns = StorageURL::getTableStructureAndFormatFromData(
-                filename,
-                chooseCompressionMethod(Poco::URI(filename).getPath(), compression_method),
-                configuration.headers,
-                std::nullopt,
-                context).first;
-        }
-        else
-        {
-            columns = StorageURL::getTableStructureFromData(format,
-                filename,
-                chooseCompressionMethod(Poco::URI(filename).getPath(), compression_method),
-                configuration.headers,
-                std::nullopt,
-                context);
-        }
+            return StorageURL::getTableStructureAndFormatFromData(
+                       filename,
+                       chooseCompressionMethod(Poco::URI(filename).getPath(), compression_method),
+                       configuration.headers,
+                       std::nullopt,
+                       context).first;
 
-        HivePartitioningUtils::setupHivePartitioningForFileURLLikeStorage(
-            columns,
+        return StorageURL::getTableStructureFromData(format,
             filename,
-            /* inferred_schema */ true,
-            /* format_settings */ std::nullopt,
+            chooseCompressionMethod(Poco::URI(filename).getPath(), compression_method),
+            configuration.headers,
+            std::nullopt,
             context);
-
-        return columns;
     }
 
     return parseColumnsListFromString(structure, context);

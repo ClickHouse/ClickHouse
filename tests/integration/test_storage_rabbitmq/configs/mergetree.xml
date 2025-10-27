@@ -1,0 +1,5 @@
+<clickhouse>
+    <merge_tree>
+        <parts_to_throw_insert>0</parts_to_throw_insert>
+    </merge_tree>
+</clickhouse>

@@ -1,4 +1,4 @@
-#include <Interpreters/ProfileEventsExt.h>
+#include "ProfileEventsExt.h"
 #include <Common/typeid_cast.h>
 #include <Common/MemoryTracker.h>
 #include <Common/CurrentThread.h>
@@ -36,7 +36,7 @@ void dumpToMapColumn(const Counters::Snapshot & counters, DB::IColumn * column, 
     auto & offsets = column_map->getNestedColumn().getOffsets();
     auto & tuple_column = column_map->getNestedData();
     auto & key_column = tuple_column.getColumn(0);
-    auto & value_column = typeid_cast<DB::ColumnUInt64 &>(tuple_column.getColumn(1));
+    auto & value_column = tuple_column.getColumn(1);
 
     size_t size = 0;
     for (Event event = Event(0); event < Counters::num_counters; ++event)
@@ -48,7 +48,7 @@ void dumpToMapColumn(const Counters::Snapshot & counters, DB::IColumn * column, 
 
         const char * desc = getName(event);
         key_column.insertData(desc, strlen(desc));
-        value_column.getData().push_back(value);
+        value_column.insert(value);
         size++;
     }
 
@@ -142,17 +142,17 @@ DB::Block getProfileEvents(
 
     ProfileEventsSnapshot group_snapshot;
     {
-        group_snapshot.thread_id = 0;
+        group_snapshot.thread_id    = 0;
         group_snapshot.current_time = time(nullptr);
         group_snapshot.memory_usage = thread_group->memory_tracker.get();
         group_snapshot.peak_memory_usage = thread_group->memory_tracker.getPeak();
-        auto group_counters = thread_group->performance_counters.getPartiallyAtomicSnapshot();
-        auto prev_group_snapshot = last_sent_snapshots.find(0);
-        group_snapshot.counters =
+        auto group_counters         = thread_group->performance_counters.getPartiallyAtomicSnapshot();
+        auto prev_group_snapshot    = last_sent_snapshots.find(0);
+        group_snapshot.counters     =
             prev_group_snapshot != last_sent_snapshots.end()
             ? CountersIncrement(group_counters, prev_group_snapshot->second)
             : CountersIncrement(group_counters);
-        new_snapshots[0] = std::move(group_counters);
+        new_snapshots[0]            = std::move(group_counters);
     }
     last_sent_snapshots = std::move(new_snapshots);
 

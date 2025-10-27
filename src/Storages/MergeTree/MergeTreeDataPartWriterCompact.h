@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
-#include <Storages/MergeTree/ColumnsSubstreams.h>
 
 
 namespace DB
@@ -54,9 +53,7 @@ private:
 
     void addToChecksums(MergeTreeDataPartChecksums & checksums);
 
-    void addStreams(const NameAndTypePair & name_and_type, const ASTPtr & effective_codec_desc) override;
-
-    void initColumnsSubstreamsIfNeeded(const Block & sample);
+    void addStreams(const NameAndTypePair & name_and_type, const ColumnPtr & column, const ASTPtr & effective_codec_desc) override;
 
     Block header;
 

@@ -8,10 +8,10 @@
 #include <Interpreters/Cache/FileCacheKey.h>
 #include <Interpreters/Cache/FileSegment.h>
 #include <Interpreters/Cache/FileCache_fwd_internal.h>
-#include <Common/SharedMutex.h>
 #include <Common/ThreadPool.h>
 
 #include <memory>
+#include <shared_mutex>
 
 namespace DB
 {
@@ -41,21 +41,17 @@ struct FileSegmentMetadata : private boost::noncopyable
 
     bool isEvictingOrRemoved(const CachePriorityGuard::Lock & lock) const
     {
-        if (removed)
-            return true;
         auto iterator = getQueueIterator();
-        if (!iterator)
-            return false; /// Iterator is set only on first space reservation attempt.
+        if (!iterator || removed)
+            return false;
         return iterator->getEntry()->isEvicting(lock);
     }
 
     bool isEvictingOrRemoved(const LockedKey & lock) const
     {
-        if (removed)
-            return true;
         auto iterator = getQueueIterator();
-        if (!iterator)
-            return false; /// Iterator is set only on first space reservation attempt.
+        if (!iterator || removed)
+            return false;
         return iterator->getEntry()->isEvicting(lock);
     }
 
@@ -77,10 +73,7 @@ struct FileSegmentMetadata : private boost::noncopyable
         auto iterator = getQueueIterator();
         if (!iterator)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Iterator is not set");
-
-        const auto & entry = iterator->getEntry();
-        chassert(size() == entry->size);
-        entry->resetEvictingFlag();
+        iterator->getEntry()->resetEvictingFlag();
     }
 
     Priority::IteratorPtr getQueueIterator() const { return file_segment->getQueueIterator(); }
@@ -231,7 +224,7 @@ private:
     const bool write_cache_per_user_directory;
 
     LoggerPtr log;
-    mutable SharedMutex key_prefix_directory_mutex;
+    mutable std::shared_mutex key_prefix_directory_mutex;
 
     struct MetadataBucket : public std::unordered_map<FileCacheKey, KeyMetadataPtr>
     {
@@ -329,11 +322,6 @@ struct LockedKey : private boost::noncopyable
         bool invalidate_queue_entry = true);
 
     KeyMetadata::iterator removeFileSegment(
-        size_t offset,
-        bool can_be_broken = false,
-        bool invalidate_queue_entry = true);
-
-    KeyMetadata::iterator removeFileSegmentIfExists(
         size_t offset,
         bool can_be_broken = false,
         bool invalidate_queue_entry = true);

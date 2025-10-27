@@ -1,5 +1,5 @@
-#include <AggregateFunctions/Combinators/AggregateFunctionArray.h>
-#include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
+#include "AggregateFunctionArray.h"
+#include "AggregateFunctionCombinatorFactory.h"
 
 #include <Common/typeid_cast.h>
 

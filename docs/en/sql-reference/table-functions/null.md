@@ -5,32 +5,31 @@ sidebar_label: 'null function'
 sidebar_position: 140
 slug: /sql-reference/table-functions/null
 title: 'null'
-doc_type: 'reference'
 ---
 
 # null Table Function
 
 Creates a temporary table of the specified structure with the [Null](../../engines/table-engines/special/null.md) table engine. According to the `Null`-engine properties, the table data is ignored and the table itself is immediately dropped right after the query execution. The function is used for the convenience of test writing and demonstrations.
 
-## Syntax {#syntax}
+**Syntax**
 
-```sql
+``` sql
 null('structure')
 ```
 
-## Argument {#argument}
+**Parameter**
 
 - `structure` — A list of columns and column types. [String](../../sql-reference/data-types/string.md).
 
-## Returned value {#returned_value}
+**Returned value**
 
 A temporary `Null`-engine table with the specified structure.
 
-## Example {#example}
+**Example**
 
 Query with the `null` function:
 
-```sql
+``` sql
 INSERT INTO function null('x UInt64') SELECT * FROM numbers_mt(1000000000);
 ```
 can replace three queries:
@@ -41,6 +40,6 @@ INSERT INTO t SELECT * FROM numbers_mt(1000000000);
 DROP TABLE IF EXISTS t;
 ```
 
-## Related {#related}
+See also:
 
 - [Null table engine](../../engines/table-engines/special/null.md)

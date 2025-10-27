@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
-#include <Dictionaries/IDictionary.h>
+#include "IDictionary.h"
 
 
 namespace Poco

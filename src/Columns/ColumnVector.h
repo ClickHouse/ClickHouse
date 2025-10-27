@@ -269,7 +269,6 @@ public:
     bool canBeInsideNullable() const override { return true; }
     bool isFixedAndContiguous() const override { return true; }
     size_t sizeOfValueIfFixed() const override { return sizeof(T); }
-    std::span<char> insertRawUninitialized(size_t count) override;
 
     std::string_view getRawData() const override
     {
@@ -289,8 +288,6 @@ public:
     }
 
     ColumnPtr createWithOffsets(const IColumn::Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const override;
-
-    void updateAt(const IColumn & src, size_t dst_pos, size_t src_pos) override;
 
     ColumnPtr compress(bool force_compression) const override;
 
