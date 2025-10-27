@@ -61,7 +61,7 @@ REGISTER_FUNCTION(Perimeter)
         )";
         FunctionDocumentation::Syntax syntax = "perimeterCartesian(object)";
         FunctionDocumentation::Arguments arguments = {
-            {"object", "geometry object", {"Geometry"}}
+            {"object", "geometry object", {"Variant"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {
             "Returns the perimeter of the object.",
@@ -81,7 +81,7 @@ REGISTER_FUNCTION(Perimeter)
         )";
         FunctionDocumentation::Syntax syntax = "perimeterSpherical(object)";
         FunctionDocumentation::Arguments arguments = {
-            {"object", "geometry object", {"Geometry"}}
+            {"object", "geometry object", {"Variant"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {
             "Returns the perimeter of the object.",
