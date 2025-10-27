@@ -26,7 +26,7 @@ cid="$(
     --name "$cname" \
     "$serverImage"
 )"
-#trap "docker rm -vf $cid > /dev/null" EXIT
+trap "docker rm -vf $cid > /dev/null" EXIT
 
 chCli() {
   args="$@"
