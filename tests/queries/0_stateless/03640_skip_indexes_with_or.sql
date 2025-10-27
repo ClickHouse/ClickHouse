@@ -1,5 +1,4 @@
 -- Tests for skip index with predicate conditions containing AND and OR.
--- Tags: no-random-settings, no-random-merge-tree-settings
 
 DROP TABLE IF EXISTS tab1;
 
@@ -14,7 +13,7 @@ CREATE TABLE tab1
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 64;
+SETTINGS index_granularity = 64,min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, max_bytes_to_merge_at_max_space_in_pool = 1, use_const_adaptive_granularity = 1, index_granularity_bytes = 0;
 
 -- Total 156 ranges
 INSERT INTO tab1 SELECT number+1, number+1, (10000 - number), (number * 5) FROM numbers(10000);
@@ -87,7 +86,7 @@ CREATE TABLE tab2
 )
 ENGINE = MergeTree
 ORDER BY (x,y)
-SETTINGS index_granularity = 100;
+SETTINGS index_granularity = 100, min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, max_bytes_to_merge_at_max_space_in_pool = 1, use_const_adaptive_granularity = 1, index_granularity_bytes = 0;
 
 INSERT INTO tab2 SELECT (number+1)/10, (number+1)%100, number+1, (10000 - number), (number * 5) FROM numbers(1000);
 
