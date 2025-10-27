@@ -206,6 +206,11 @@ class JobConfigs:
             runs_on=RunnerLabels.AMD_LARGE,
         ),
         Job.ParamSet(
+            parameter=BuildTypes.AMD_FIPS_BINARY,
+            provides=[ArtifactNames.CH_AMD_FIPS_BINARY],
+            runs_on=RunnerLabels.AMD_LARGE,
+        ),
+        Job.ParamSet(
             parameter=BuildTypes.ARM_ASAN,
             provides=[
                 ArtifactNames.CH_ARM_ASAN,
