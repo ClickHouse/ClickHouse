@@ -6,17 +6,11 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # Test that internal queries are logged correctly
 
-TEST_USER="test_user_${RANDOM}_${RANDOM}"
-
-$CLICKHOUSE_CLIENT --query "DROP USER IF EXISTS ${TEST_USER}"
-$CLICKHOUSE_CLIENT --query "CREATE USER ${TEST_USER}"
-$CLICKHOUSE_CLIENT --query "GRANT SELECT ON system.* TO ${TEST_USER}"
-
-$CLICKHOUSE_CLIENT --user ${TEST_USER} --query "SHOW TABLES FORMAT Null"
-$CLICKHOUSE_CLIENT --user ${TEST_USER} --query "SHOW ENGINES FORMAT Null"
-$CLICKHOUSE_CLIENT --user ${TEST_USER} --query "SHOW FUNCTIONS LIKE 'plus' FORMAT Null"
-$CLICKHOUSE_CLIENT --user ${TEST_USER} --query "SHOW SETTING max_threads FORMAT Null"
-$CLICKHOUSE_CLIENT --user ${TEST_USER} --query "KILL QUERY WHERE query_id = 'nonexistent' SYNC" &>/dev/null
+$CLICKHOUSE_CLIENT --query "SHOW TABLES FORMAT Null"
+$CLICKHOUSE_CLIENT --query "SHOW ENGINES FORMAT Null"
+$CLICKHOUSE_CLIENT --query "SHOW FUNCTIONS LIKE 'plus' FORMAT Null"
+$CLICKHOUSE_CLIENT --query "SHOW SETTING max_threads FORMAT Null"
+$CLICKHOUSE_CLIENT --query "KILL QUERY WHERE query_id = 'nonexistent' SYNC" &>/dev/null
 
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
 
@@ -33,6 +27,4 @@ SELECT
     countIf(query LIKE '%system.processes%' AND type = 'QueryStart'),
     countIf(query LIKE '%system.processes%' AND type = 'QueryFinish')
 FROM system.query_log
-WHERE is_internal = 1 AND user = '${TEST_USER}' AND current_database = currentDatabase()"
-
-$CLICKHOUSE_CLIENT --query "DROP USER ${TEST_USER}"
+WHERE is_internal = 1 AND current_database = currentDatabase()"
