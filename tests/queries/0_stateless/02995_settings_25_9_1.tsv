@@ -1265,6 +1265,7 @@ s3_validate_request_settings	1
 s3queue_allow_experimental_sharded_mode	0
 s3queue_default_zookeeper_path	/clickhouse/s3queue/
 s3queue_enable_logging_to_s3queue_log	0
+s3queue_keeper_fault_injection_probability	0
 s3queue_migrate_old_metadata_to_buckets	0
 schema_inference_cache_require_modification_time_for_url	1
 schema_inference_hints	
