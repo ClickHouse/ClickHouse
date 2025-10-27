@@ -17,6 +17,11 @@
 #include <base/range.h>
 #include <fmt/ranges.h>
 
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTIndexDeclaration.h>
+
 namespace ProfileEvents
 {
     extern const Event TextIndexReadDictionaryBlocks;
@@ -1306,6 +1311,75 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
             ErrorCodes::INCORRECT_QUERY,
             "Text index must be created on columns of type `String`, `FixedString`, `LowCardinality(String)`, `LowCardinality(FixedString)`, `Array(String)` or `Array(FixedString)`");
     }
+
+}
+
+/// Static helper functions here.
+
+Tuple MergeTreeIndexText::parseNamedArgumentFromAST(const ASTFunction * ast_equal_function)
+{
+    if (ast_equal_function == nullptr
+        || ast_equal_function->name != "equals"
+        || ast_equal_function->arguments->children.size() != 2)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot mix key-value pair and single argument as text index arguments");
+
+    Tuple result;
+
+    ASTPtr arguments = ast_equal_function->arguments;
+    /// Parse parameter name. It can be Identifier.
+    {
+        const auto * identifier = arguments->children[0]->as<ASTIdentifier>();
+        if (identifier == nullptr)
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Text index parameter name: Expected identifier");
+
+        result.emplace_back(identifier->name());
+    }
+
+    /// Parse parameter value. It can be Literal, Identifier or Function.
+    if (const auto * literal_arg = arguments->children[1]->as<ASTLiteral>(); literal_arg != nullptr)
+    {
+        result.emplace_back(literal_arg->value);
+    }
+    else if (const auto * identifier_arg = arguments->children[1]->as<ASTIdentifier>(); identifier_arg != nullptr)
+    {
+        result.emplace_back(identifier_arg->name());
+    }
+    else if (const auto * function_arg = arguments->children[1]->as<ASTFunction>(); function_arg != nullptr)
+    {
+        Tuple tuple;
+        tuple.emplace_back(function_arg->name);
+        for (const auto & subargument : function_arg->arguments->children)
+        {
+            const auto * arg_literal = subargument->as<ASTLiteral>();
+            if (arg_literal == nullptr)
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "Text index function argument: Expected literal");
+
+            tuple.emplace_back(arg_literal->value);
+        }
+        result.emplace_back(tuple);
+    }
+    else
+    {
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Text index parameter value: Expected literal, identifier or function");
+    }
+
+    return result;
+}
+
+FieldVector MergeTreeIndexText::parseArgumentsListFromAST(const ASTPtr & arguments)
+{
+    FieldVector result;
+
+    result.reserve(arguments->children.size());
+
+    for (const auto & argument : arguments->children)
+    {
+        const auto * ast_equal_function = argument->as<ASTFunction>();
+
+        result.emplace_back(MergeTreeIndexText::parseNamedArgumentFromAST(ast_equal_function));
+    }
+
+    return result;
 }
 
 }

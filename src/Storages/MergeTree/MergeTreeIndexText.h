@@ -1,4 +1,6 @@
 #pragma once
+#include <algorithm>
+#include <functional>
 #include <vector>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
@@ -311,8 +313,10 @@ struct MergeTreeIndexAggregatorText final : IMergeTreeIndexAggregator
     MergeTreeIndexTextGranuleBuilder granule_builder;
 };
 
+class ASTFunction;
 class MergeTreeIndexText final : public IMergeTreeIndex
 {
+    static Tuple parseNamedArgumentFromAST(const ASTFunction * ast_equal_function);
 public:
     MergeTreeIndexText(
         const IndexDescription & index_,
@@ -328,6 +332,12 @@ public:
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const override;
+
+    /// This function performs text index specific arguments parsing because text index has a special syntax and more complex arguments.
+    /// 1. It expects only named arguments like: argument = value
+    /// 2. The tokenizer argument can be strings (like other indices), but also function names (literals) or a function-like
+    /// expression (i.e: ngram(5))
+    static FieldVector parseArgumentsListFromAST(const ASTPtr & arguments);
 
     MergeTreeIndexTextParams params;
     std::unique_ptr<ITokenExtractor> token_extractor;
