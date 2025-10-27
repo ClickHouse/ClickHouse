@@ -1,49 +1,47 @@
 #include <Disks/ObjectStorages/FlatDirectoryStructureKeyGenerator.h>
-#include <Disks/ObjectStorages/InMemoryDirectoryPathMap.h>
+#include <Disks/ObjectStorages/InMemoryDirectoryTree.h>
+#include <Processors/Transforms/SelectByIndicesTransform.h>
+
 #include <Common/ObjectStorageKey.h>
 #include <Common/getRandomASCIIString.h>
 
-#include <optional>
-#include <string>
-
+namespace fs = std::filesystem;
 
 namespace DB
 {
 
 FlatDirectoryStructureKeyGenerator::FlatDirectoryStructureKeyGenerator(
-    String storage_key_prefix_, std::weak_ptr<InMemoryDirectoryPathMap> path_map_)
-    : storage_key_prefix(storage_key_prefix_), path_map(std::move(path_map_))
+    String storage_key_prefix_, std::weak_ptr<InMemoryDirectoryTree> tree_)
+    : storage_key_prefix(storage_key_prefix_), tree(std::move(tree_))
 {
 }
 
 ObjectStorageKey FlatDirectoryStructureKeyGenerator::generate(const String & path, bool is_directory, const std::optional<String> & key_prefix) const
 {
-    if (is_directory)
-        chassert(path.empty() || path.ends_with('/'));
-
+    const auto tree_ptr = tree.lock();
     const auto fs_path = std::filesystem::path(path);
-    std::filesystem::path directory = fs_path.parent_path();
+    const auto prefix = key_prefix.has_value() ? *key_prefix : storage_key_prefix;
 
-    std::optional<std::filesystem::path> remote_path;
+    if (is_directory)
     {
-        const auto ptr = path_map.lock();
-        auto res = ptr->getRemotePathInfoIfExists(fs_path);
-        if (res)
-            return ObjectStorageKey::createAsRelative(key_prefix.has_value() ? *key_prefix : storage_key_prefix, res->path);
+        if (auto info = tree_ptr->getDirectoryRemoteInfo(fs_path))
+            return ObjectStorageKey::createAsRelative(prefix, info->remote_path);
 
-        res = ptr->getRemotePathInfoIfExists(directory);
-        if (res)
-            remote_path = res->path;
+        return ObjectStorageKey::createAsRelative(prefix, getRandomASCIIString(32));
     }
-    constexpr size_t part_size = 32;
-    std::filesystem::path key = remote_path.has_value() ? *remote_path
-        : is_directory                                  ? std::filesystem::path(getRandomASCIIString(part_size))
-                                                        : directory;
+    else
+    {
+        const auto directory = fs_path.parent_path();
+        const auto filename = fs_path.filename();
+        if (filename.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "File name is empty for path '{}'", fs_path.string());
 
-    if (!is_directory)
-        key /= fs_path.filename();
+        const auto directory_info = tree_ptr->getDirectoryRemoteInfo(directory);
+        if (!directory_info.has_value())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' does not exist", directory.string());
 
-    return ObjectStorageKey::createAsRelative(key_prefix.has_value() ? *key_prefix : storage_key_prefix, key);
+        return ObjectStorageKey::createAsRelative(prefix, fs::path(directory_info->remote_path) / filename);
+    }
 }
 
 }
