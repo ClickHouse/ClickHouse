@@ -91,6 +91,7 @@ set(MONGOCXX_SOURCES
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/events/topology_closed_event.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/events/topology_description.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/events/topology_opening_event.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/exception/bulk_write_exception.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/exception/error_code.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/exception/exception.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/exception/logic_error.cpp
