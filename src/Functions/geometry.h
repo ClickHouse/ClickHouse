@@ -18,6 +18,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 template <typename Point>
 Point getPointFromField(const Field & field)
 {
