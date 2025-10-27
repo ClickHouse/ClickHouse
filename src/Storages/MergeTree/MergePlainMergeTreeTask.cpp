@@ -180,6 +180,8 @@ void MergePlainMergeTreeTask::finish()
         ThreadFuzzer::maybeInjectSleep();
         ThreadFuzzer::maybeInjectMemoryLimitException();
     }
+
+    merge_mutate_entry->finalize();
 }
 
 void MergePlainMergeTreeTask::cancel() noexcept
