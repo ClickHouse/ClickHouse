@@ -16,11 +16,11 @@ void StatementGenerator::addFieldAccess(RandomGenerator & rg, Expr * expr, const
         this->depth++;
         if (noption < 41)
         {
-            fa->set_array_index(rg.nextRandomUInt32() % 5);
+            fa->set_array_index(rg.randomInt<uint32_t>(0, 4));
         }
         else if (noption < 71)
         {
-            fa->set_tuple_index(rg.nextRandomUInt32() % 5);
+            fa->set_tuple_index(rg.randomInt<uint32_t>(0, 4));
         }
         else if (this->depth >= this->fc.max_depth || noption < 81)
         {
@@ -51,14 +51,13 @@ void StatementGenerator::addColNestedAccess(RandomGenerator & rg, ExprColumn * e
             TypeName * tpn = nullptr;
             JSONColumns * subcols = expr->mutable_subcols();
             const uint32_t noption = rg.nextMediumNumber();
-            const uint32_t nvalues = std::max(std::min(this->fc.max_width - this->width, rg.nextMediumNumber() % 4), UINT32_C(1));
+            const uint32_t nvalues = std::max(std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(0, 3)), UINT32_C(1));
 
             for (uint32_t i = 0; i < nvalues; i++)
             {
                 const uint32_t noption2 = rg.nextMediumNumber();
                 JSONColumn * jcol = i == 0 ? subcols->mutable_jcol() : subcols->add_other_jcols();
 
-                this->width++;
                 if (noption2 < 31)
                 {
                     jcol->set_jcol(true);
@@ -68,6 +67,7 @@ void StatementGenerator::addColNestedAccess(RandomGenerator & rg, ExprColumn * e
                     jcol->set_jarray(0);
                 }
                 jcol->mutable_col()->set_column(rg.nextJSONCol());
+                this->width++;
             }
             if (noption < 4)
             {
@@ -116,7 +116,7 @@ void StatementGenerator::addColNestedAccess(RandomGenerator & rg, ExprColumn * e
         }
         else if (nsuboption < 24)
         {
-            cp.add_sub_cols()->set_column("size" + std::to_string(rg.nextMediumNumber() % 3));
+            cp.add_sub_cols()->set_column("size" + std::to_string(rg.randomInt<uint32_t>(0, 2)));
         }
         this->depth--;
     }
@@ -360,7 +360,7 @@ void StatementGenerator::generateLiteralValue(RandomGenerator & rg, const bool c
         /// Generate a few arrays/tuples with literal values
         ExprList * elist
             = (!complex || rg.nextBool()) ? expr->mutable_comp_expr()->mutable_array() : expr->mutable_comp_expr()->mutable_tuple();
-        const uint32_t nvalues = std::min(this->fc.max_width - this->width, rg.nextMediumNumber() % 8);
+        const uint32_t nvalues = std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(0, 8));
 
         this->depth++;
         for (uint32_t i = 0; i < nvalues; i++)
@@ -502,7 +502,7 @@ Expr * StatementGenerator::generatePartialSearchExpr(RandomGenerator & rg, Expr 
     if (nfunc == SQLFunc::FUNChasAnyTokens || nfunc == SQLFunc::FUNChasAllTokens)
     {
         ExprList * elist = expr2->mutable_comp_expr()->mutable_array();
-        const uint32_t nvalues = std::min(this->fc.max_width - this->width, rg.nextMediumNumber() % 6) + 1;
+        const uint32_t nvalues = std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(0, 5)) + 1;
 
         for (uint32_t i = 0; i < nvalues; i++)
         {
@@ -593,7 +593,7 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
         else if (in_expr && noption < (unary_expr + binary_expr + between_expr + in_expr + 1))
         {
             const uint32_t nopt2 = rg.nextSmallNumber();
-            const uint32_t nclauses = std::min(this->fc.max_width - this->width, (rg.nextMediumNumber() % 4) + 1);
+            const uint32_t nclauses = std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(1, 4));
             ComplicatedExpr * cexpr = expr->mutable_comp_expr();
             ExprIn * ein = cexpr->mutable_expr_in();
             ExprList * elist = ein->mutable_expr();
@@ -774,7 +774,7 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
         const uint32_t agg_max_args = std::min(agg.max_args, UINT32_C(5));
         const uint32_t max_args = std::min(this->fc.max_width - this->width, agg_max_args);
         const uint32_t ncombinators
-            = rg.nextSmallNumber() < 4 ? std::min(this->fc.max_width - this->width, (rg.nextSmallNumber() % 3) + 1) : 0;
+            = rg.nextSmallNumber() < 4 ? std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(1, 3)) : 0;
         const bool prev_inside_aggregate = this->levels[this->current_level].inside_aggregate;
         const bool prev_allow_window_funcs = this->levels[this->current_level].allow_window_funcs;
         std::uniform_int_distribution<uint32_t> comb_range(
@@ -910,7 +910,7 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
 
         if (n_lambda > 0)
         {
-            generateLambdaCall(rg, rg.nextBool() ? 1 : ((rg.nextSmallNumber() % 3) + 1), func_call->add_args()->mutable_lambda());
+            generateLambdaCall(rg, rg.nextBool() ? 1 : rg.randomInt<uint32_t>(1, 3), func_call->add_args()->mutable_lambda());
             this->width++;
             generated_params++;
         }
@@ -955,7 +955,7 @@ void StatementGenerator::generateTableFuncCall(RandomGenerator & rg, SQLTableFun
     tfunc_call->set_func(static_cast<SQLTableFunc>(func.fnum));
     if (n_lambda > 0)
     {
-        generateLambdaCall(rg, rg.nextBool() ? 1 : ((rg.nextSmallNumber() % 3) + 1), tfunc_call->add_args()->mutable_lambda());
+        generateLambdaCall(rg, rg.nextBool() ? 1 : rg.randomInt<uint32_t>(1, 3), tfunc_call->add_args()->mutable_lambda());
         this->width++;
         generated_params++;
     }
@@ -1022,7 +1022,7 @@ void StatementGenerator::generateWindowDefinition(RandomGenerator & rg, WindowDe
 {
     if (this->width < this->fc.max_width && rg.nextSmallNumber() < 4)
     {
-        const uint32_t nclauses = std::min(this->fc.max_width - this->width, (rg.nextMediumNumber() % 4) + 1);
+        const uint32_t nclauses = std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(1, 4));
 
         for (uint32_t i = 0; i < nclauses; i++)
         {
@@ -1196,7 +1196,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
                + 1))
     {
         ExprCase * caseexp = expr->mutable_comp_expr()->mutable_expr_case();
-        const uint32_t nwhen = std::min(this->fc.max_width - this->width, rg.nextMediumNumber() % 4);
+        const uint32_t nwhen = std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(0, 3));
 
         this->depth++;
         if (rg.nextSmallNumber() < 5)
@@ -1260,7 +1260,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
                + subquery_expr + binary_expr + array_tuple_expr + 1))
     {
         ExprList * elist = rg.nextBool() ? expr->mutable_comp_expr()->mutable_array() : expr->mutable_comp_expr()->mutable_tuple();
-        const uint32_t nvalues = std::min(this->fc.max_width - this->width, rg.nextMediumNumber() % 8);
+        const uint32_t nvalues = std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(0, 8));
 
         this->depth++;
         for (uint32_t i = 0; i < nvalues; i++)
@@ -1352,7 +1352,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
                 case WINlagInFrame:
                 case WINlead:
                 case WINleadInFrame:
-                    nargs = std::min(this->fc.max_width - this->width, (rg.nextMediumNumber() % 3) + 1);
+                    nargs = std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(1, 3));
                     break;
                 default:
                     break;
@@ -1399,7 +1399,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
             < (literal_value + col_ref_expr + predicate_expr + cast_expr + unary_expr + interval_expr + columns_expr + cond_expr + case_expr
                + subquery_expr + binary_expr + array_tuple_expr + func_expr + window_func_expr + table_star_expr + lambda_expr + 1))
     {
-        const uint32_t nexprs = std::min(this->fc.max_width - this->width, rg.nextMediumNumber() % 4);
+        const uint32_t nexprs = std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(0, 3));
 
         this->depth++;
         generateLambdaCall(rg, nexprs, expr->mutable_comp_expr()->mutable_lambda());
