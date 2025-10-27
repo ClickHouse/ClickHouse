@@ -9,6 +9,9 @@ set(BSONCXX_SOURCES_DIR "${ClickHouse_SOURCE_DIR}/contrib/mongo-cxx-driver/src/b
 set(BSONCXX_BINARY_DIR "${ClickHouse_BINARY_DIR}/contrib/mongo-cxx-driver/src/bsoncxx")
 
 set(BSONCXX_SOURCES
+        ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/private/itoa.cpp
+        ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v1/detail/postlude.cpp
+        ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v1/detail/prelude.cpp
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/array/element.cpp
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/array/value.cpp
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/array/view.cpp
@@ -21,14 +24,11 @@ set(BSONCXX_SOURCES
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/exception/exception.cpp
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/json.cpp
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/oid.cpp
-        ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/private/itoa.cpp
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/string/view_or_value.cpp
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/types.cpp
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/types/bson_value/value.cpp
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/types/bson_value/view.cpp
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/validate.cpp
-        ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v1/detail/prelude.cpp
-        ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v1/detail/postlude.cpp
 )
 
 set(BSONCXX_POLY_USE_IMPLS ON)
@@ -63,6 +63,12 @@ target_link_libraries(_bsoncxx ch_contrib::libbson)
 set(MONGOCXX_SOURCES_DIR "${ClickHouse_SOURCE_DIR}/contrib/mongo-cxx-driver/src/mongocxx")
 set(MONGOCXX_BINARY_DIR "${ClickHouse_BINARY_DIR}/contrib/mongo-cxx-driver/src/mongocxx")
 set(MONGOCXX_SOURCES
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/private/bson.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/private/conversions.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/private/mongoc.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/private/numeric_casting.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/detail/postlude.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/detail/prelude.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/bulk_write.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/change_stream.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/client.cpp
@@ -86,11 +92,11 @@ set(MONGOCXX_SOURCES
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/events/topology_description.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/events/topology_opening_event.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/exception/error_code.cpp
-        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/exception/operation_exception.cpp
-        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/exception/server_error_code.cpp
-        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/exception/logic_error.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/exception/exception.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/exception/logic_error.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/exception/operation_exception.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/exception/query_exception.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/exception/server_error_code.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/gridfs/bucket.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/gridfs/downloader.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/gridfs/uploader.cpp
@@ -154,12 +160,6 @@ set(MONGOCXX_SOURCES
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/uri.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/validation_criteria.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/write_concern.cpp
-        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/private/bson.cpp
-        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/private/mongoc.cpp
-        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/detail/prelude.cpp
-        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/detail/postlude.cpp
-        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/private/conversions.cpp
-        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/private/numeric_casting.cpp
 )
 
 set(MONGOCXX_COMPILER_VERSION "${CMAKE_CXX_COMPILER_VERSION}")
