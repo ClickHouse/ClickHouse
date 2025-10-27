@@ -133,6 +133,7 @@ void IndexDescription::initExpressionInfo(ASTPtr index_expression, const Columns
 
     ReplaceAliasToExprVisitor::Data data{columns};
     ReplaceAliasToExprVisitor{data}.visit(expr_list);
+
     expression_list_ast = expr_list->clone();
 
     TreeRewriterResultPtr syntax = TreeRewriter(context).analyze(
