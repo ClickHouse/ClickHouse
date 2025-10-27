@@ -10,6 +10,7 @@
 #include <base/types.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
+#include "Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h"
 
 #include <algorithm>
 #include <atomic>
@@ -109,12 +110,17 @@ public:
     using SharedDataPtr = std::shared_ptr<SharedData>;
 
     ConvertingAggregatedToChunksWithMergingSource(
-        AggregatingTransformParamsPtr params_, ManyAggregatedDataVariantsPtr data_, SharedDataPtr shared_data_, Arena * arena_)
+        AggregatingTransformParamsPtr params_,
+        ManyAggregatedDataVariantsPtr data_,
+        SharedDataPtr shared_data_,
+        Arena * arena_,
+        UpdaterPtr updater_)
         : ISource(std::make_shared<const Block>(params_->getHeader()), false)
         , params(std::move(params_))
         , data(std::move(data_))
         , shared_data(std::move(shared_data_))
         , arena(arena_)
+        , updater(std::move(updater_))
     {
     }
 
@@ -131,7 +137,8 @@ protected:
             return {};
         }
 
-        Block block = params->aggregator.mergeAndConvertOneBucketToBlock(*data, arena, params->final, bucket_num, shared_data->is_cancelled);
+        Block block = params->aggregator.mergeAndConvertOneBucketToBlock(
+            *data, arena, params->final, bucket_num, shared_data->is_cancelled, updater);
         Chunk chunk = convertToChunk(block);
 
         shared_data->is_bucket_processed[bucket_num] = true;
@@ -144,6 +151,7 @@ private:
     ManyAggregatedDataVariantsPtr data;
     SharedDataPtr shared_data;
     Arena * arena;
+    UpdaterPtr updater;
 };
 
 /// Asks Aggregator to convert accumulated aggregation state into blocks (without merging) and pushes them to later steps.
@@ -594,7 +602,7 @@ private:
         {
             /// Select Arena to avoid race conditions
             Arena * arena = first->aggregates_pools.at(thread).get();
-            auto source = std::make_shared<ConvertingAggregatedToChunksWithMergingSource>(params, data, shared_data, arena);
+            auto source = std::make_shared<ConvertingAggregatedToChunksWithMergingSource>(params, data, shared_data, arena, updater);
 
             processors.emplace_back(std::move(source));
         }

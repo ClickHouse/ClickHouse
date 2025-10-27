@@ -3,6 +3,7 @@
 #include <Core/Settings.h>
 #include <base/defines.h>
 #include <Poco/Util/Application.h>
+#include "Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h"
 
 #ifdef OS_LINUX
 #    include <unistd.h>
@@ -186,10 +187,6 @@ namespace DB
 
 void Aggregator::applyToAllStates(AggregatedDataVariants & result, WriteBuffer & wb) const
 {
-    if (is_simple_count)
-        // return size * sizeof(UInt64)
-        return;
-
     auto f = [&](auto & table)
     {
         if constexpr (requires { table.forEachMapped([](AggregateDataPtr) {}); })
@@ -201,29 +198,44 @@ void Aggregator::applyToAllStates(AggregatedDataVariants & result, WriteBuffer &
                     {
                         if (!place)
                             throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty place in Aggregator::applyToAllStates");
-                        aggregate_functions[j]->serialize(place + offsets_of_aggregate_states[j], wb);
+                        if (is_simple_count)
+                            wb.write(getInlineCountState(place));
+                        else
+                            aggregate_functions[j]->serialize(place + offsets_of_aggregate_states[j], wb);
                     });
             }
         }
     };
 
-    // clang-format off
-#define M(NAME, IS_TWO_LEVEL) \
-    else if (result.type == AggregatedDataVariants::Type::NAME) \
-        f(result.NAME->data);
-
     if (result.type == AggregatedDataVariants::Type::EMPTY)
     {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty data passed to Aggregator::applyToAllStates");
     } // NOLINT
     else if (result.type == AggregatedDataVariants::Type::without_key)
     {
-        // if (result.without_key == nullptr)
-        //     throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "Empty data passed to Aggregator::applyToAllStates");
-        // for (size_t j = 0; j < params.aggregates_size; ++j)
-        // {
-        //     aggregate_functions[j]->serialize(result.without_key + offsets_of_aggregate_states[j], wb);
-        // }
+        if (result.without_key == nullptr)
+            throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "Empty data passed to Aggregator::applyToAllStates");
+        LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
+        LOG_DEBUG(&Poco::Logger::get("debug"), "params.aggregates_size={}", params.aggregates_size);
+        for (size_t j = 0; j < params.aggregates_size; ++j)
+        {
+            LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
+            if (is_simple_count)
+                wb.write(getInlineCountState(result.without_key));
+            else
+                aggregate_functions[j]->serialize(result.without_key + offsets_of_aggregate_states[j], wb);
+        }
+        return;
     } // NOLINT
+    // clang-format off
+#define M(NAME, IS_TWO_LEVEL) \
+    else if (result.type == AggregatedDataVariants::Type::NAME) \
+    { \
+        LOG_DEBUG(&Poco::Logger::get("debug"), "result.type={}, AggregatedDataVariants::Type::NAME={}, #NAME={}", result.type, AggregatedDataVariants::Type::NAME, #NAME); \
+        f(result.NAME->data); \
+        return; \
+    }
+
     APPLY_FOR_AGGREGATED_VARIANTS(M)
 #undef M
 
@@ -1901,7 +1913,8 @@ Block Aggregator::mergeAndConvertOneBucketToBlock(
     Arena * arena,
     bool final,
     Int32 bucket,
-    std::atomic<bool> & is_cancelled) const
+    std::atomic<bool> & is_cancelled,
+    UpdaterPtr updater) const
 {
     auto & merged_data = *variants[0];
     auto method = merged_data.type;
@@ -1914,6 +1927,7 @@ Block Aggregator::mergeAndConvertOneBucketToBlock(
         mergeBucketImpl<decltype(merged_data.NAME)::element_type>(variants, bucket, arena, is_cancelled); \
         if (is_cancelled.load(std::memory_order_seq_cst)) \
             return {}; \
+        updater->addOutputBytes(*this, merged_data, bucket); \
         block = convertOneBucketToBlock(merged_data, *merged_data.NAME, arena, final, bucket); \
     }
 

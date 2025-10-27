@@ -1,3 +1,4 @@
+#include <Compression/CompressedWriteBuffer.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
 namespace DB
@@ -49,13 +50,15 @@ void Updater::addOutputBytes(const Chunk & chunk)
 
 void Updater::addOutputBytes(const Aggregator &, const ManyAggregatedDataVariants & variants)
 {
-    WriteBufferFromOwnString wbuf;
+    WriteBufferFromOwnString wb;
+    CompressedWriteBuffer wbuf(wb);
     for (const auto & variant : variants)
     {
         if (!variant || !variant->aggregator)
             continue;
         variant->aggregator->applyToAllStates(*variant, wbuf);
     }
+    wbuf.finalize();
     std::lock_guard lock(mutex);
     statistics.output_bytes += wbuf.count();
     output_bytes_sample += wbuf.count();

@@ -10,9 +10,10 @@
 #include <Core/Block.h>
 #include <Core/Block_fwd.h>
 #include <Core/ColumnNumbers.h>
+#include <IO/WriteBuffer.h>
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Common/ThreadPool.h>
 #include <Common/filesystemHelpers.h>
-#include "IO/WriteBuffer.h"
 
 #include <QueryPipeline/SizeLimits.h>
 
@@ -523,7 +524,8 @@ private:
         Arena * arena,
         bool final,
         Int32 bucket,
-        std::atomic<bool> & is_cancelled) const;
+        std::atomic<bool> & is_cancelled,
+        UpdaterPtr updater) const;
 
     Block prepareBlockAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final, bool is_overflows) const;
     BlocksList prepareBlocksAndFillTwoLevel(AggregatedDataVariants & data_variants, bool final) const;

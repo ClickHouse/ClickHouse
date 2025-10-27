@@ -12,7 +12,6 @@
 
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
-#include "Interpreters/Aggregator.h"
 
 #include <cstddef>
 #include <memory>
@@ -36,6 +35,9 @@ namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
 }
+
+class Aggregator;
+class ManyAggregatedDataVariants;
 
 struct RuntimeDataflowStatistics
 {
