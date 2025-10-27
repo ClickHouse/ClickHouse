@@ -1,6 +1,10 @@
 option(ENABLE_WASMTIME "Enable WasmTime engine" ${ENABLE_LIBRARIES})
 
-if (NOT ENABLE_WASMTIME OR NOT ENABLE_RUST)
+# MSAN: Disabled due to false-positives in WasmTime
+# We tried to do __msan_unpoison memory coming from jit generated code,
+# however sometimes sanitizer trap happened without entering code on our side,
+# e.g. while handling wasm traps.
+if (NOT ENABLE_WASMTIME OR NOT ENABLE_RUST OR (SANITIZE STREQUAL "memory"))
     message (STATUS "Not using wasmtime")
     return()
 endif()
