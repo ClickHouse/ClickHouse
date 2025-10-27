@@ -333,7 +333,6 @@ public:
     /// This function parses the arguments of a text index. Text indexes have a special syntax with complex arguments.
     /// 1. Arguments are named, e.g.: argument = value
     /// 2. The tokenizer argument can be a string, a function name (literal) or a function-like expression, e.g.: ngram(5)
-    /// 3. The preprocessor argument is a generic expression, e.g. lower(extractTextFromHTML(col)))
     static FieldVector parseArgumentsListFromAST(const ASTPtr & arguments);
 
     MergeTreeIndexTextParams params;
