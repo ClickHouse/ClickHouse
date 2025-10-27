@@ -8,6 +8,8 @@ endif()
 set(BSONCXX_SOURCES_DIR "${ClickHouse_SOURCE_DIR}/contrib/mongo-cxx-driver/src/bsoncxx")
 set(BSONCXX_BINARY_DIR "${ClickHouse_BINARY_DIR}/contrib/mongo-cxx-driver/src/bsoncxx")
 
+include(GenerateExportHeader)
+
 set(BSONCXX_SOURCES
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/private/itoa.cpp
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v1/detail/postlude.cpp
@@ -54,10 +56,36 @@ target_include_directories(_bsoncxx SYSTEM PUBLIC
         "${BSONCXX_SOURCES_DIR}/lib"
         "${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi"
 
-        "${CMAKE_CURRENT_SOURCE_DIR}/include"
         "${BSONCXX_BINARY_DIR}/lib"
+        "${BSONCXX_BINARY_DIR}/lib/bsoncxx/v_noabi"
 )
 target_link_libraries(_bsoncxx ch_contrib::libbson)
+
+# Taken from mongo-cxx-driver/src/bsoncxx/CMakeLists.txt
+set(bsoncxx_export_header_custom_content "")
+string(APPEND bsoncxx_export_header_custom_content [[
+
+#undef BSONCXX_DEPRECATED_EXPORT
+#undef BSONCXX_DEPRECATED_NO_EXPORT
+
+#if defined(_MSC_VER)
+#define BSONCXX_ABI_CDECL __cdecl
+#else
+#define BSONCXX_ABI_CDECL
+#endif
+
+#define BSONCXX_ABI_EXPORT_CDECL(...) BSONCXX_ABI_EXPORT __VA_ARGS__ BSONCXX_ABI_CDECL
+
+]]
+)
+generate_export_header(_bsoncxx
+        BASE_NAME BSONCXX_ABI
+        EXPORT_MACRO_NAME BSONCXX_ABI_EXPORT
+        DEPRECATED_MACRO_NAME BSONCXX_DEPRECATED
+        EXPORT_FILE_NAME ${BSONCXX_BINARY_DIR}/lib/bsoncxx/v_noabi/bsoncxx/v1/config/export.hpp
+        STATIC_DEFINE BSONCXX_STATIC
+        CUSTOM_CONTENT_FROM_VARIABLE bsoncxx_export_header_custom_content
+)
 
 
 set(MONGOCXX_SOURCES_DIR "${ClickHouse_SOURCE_DIR}/contrib/mongo-cxx-driver/src/mongocxx")
@@ -168,15 +196,12 @@ set(MONGOCXX_SOURCES
 set(MONGOCXX_COMPILER_VERSION "${CMAKE_CXX_COMPILER_VERSION}")
 set(MONGOCXX_COMPILER_ID "${CMAKE_CXX_COMPILER_ID}")
 
-set(MONGOCXX_LINK_WITH_STATIC_MONGOC 1)
-set(MONGOCXX_BUILD_STATIC 1)
-
-set(BSONCXX_STATIC 1)
-set(MONGOCXX_STATIC 1)
-
 if(ENABLE_SSL)
     set(MONGOCXX_ENABLE_SSL 1)
 endif()
+
+set(BSONCXX_STATIC 1)
+set(MONGOCXX_STATIC 1)
 
 configure_file(
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/config/config.hpp.in
@@ -199,7 +224,33 @@ target_include_directories(_mongocxx SYSTEM PUBLIC
         "${MONGOCXX_SOURCES_DIR}/lib"
         "${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi"
 
-        "${CMAKE_CURRENT_SOURCE_DIR}/include"
         "${MONGOCXX_BINARY_DIR}/lib"
+        "${MONGOCXX_BINARY_DIR}/lib/mongocxx/v_noabi"
 )
 target_link_libraries(_mongocxx ch_contrib::bsoncxx ch_contrib::libmongoc)
+
+# Taken from mongo-cxx-driver/src/mongocxx/CMakeLists.txt
+set(mongocxx_export_header_custom_content "")
+string(APPEND mongocxx_export_header_custom_content [[
+
+#undef MONGOCXX_DEPRECATED_EXPORT
+#undef MONGOCXX_DEPRECATED_NO_EXPORT
+
+#if defined(_MSC_VER)
+#define MONGOCXX_ABI_CDECL __cdecl
+#else
+#define MONGOCXX_ABI_CDECL
+#endif
+
+#define MONGOCXX_ABI_EXPORT_CDECL(...) MONGOCXX_ABI_EXPORT __VA_ARGS__ MONGOCXX_ABI_CDECL
+
+]]
+)
+generate_export_header(_mongocxx
+        BASE_NAME MONGOCXX_ABI
+        EXPORT_MACRO_NAME MONGOCXX_ABI_EXPORT
+        DEPRECATED_MACRO_NAME MONGOCXX_DEPRECATED
+        EXPORT_FILE_NAME ${MONGOCXX_BINARY_DIR}/lib/mongocxx/v_noabi/mongocxx/v1/config/export.hpp
+        STATIC_DEFINE MONGOCXX_STATIC
+        CUSTOM_CONTENT_FROM_VARIABLE mongocxx_export_header_custom_content
+)
