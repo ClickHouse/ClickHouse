@@ -45,9 +45,10 @@ void DiskSelector::recordDisk(const std::string & disk_name, DiskPtr disk)
                     const auto new_prefix = disk->getObjectStorage()->getCommonKeyPrefix();
                     const auto saved_prefix = saved_disk->getObjectStorage()->getCommonKeyPrefix();
                     if (new_prefix.starts_with(saved_prefix) || saved_prefix.starts_with(new_prefix))
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "It is not possible to register multiple plain-rewritable disks with the same object storage prefix. Disks '{}' and '{}'",
-                            disk_name, saved_disk_name);
+                        if (disk->supportsCache() == saved_disk->supportsCache())
+                            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "It is not possible to register multiple plain-rewritable disks with the same object storage prefix. Disks '{}' and '{}'",
+                                disk_name, saved_disk_name);
                 }
             }
         }
