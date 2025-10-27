@@ -117,6 +117,7 @@ ManifestFilesPruner::ManifestFilesPruner(
         if (transformed_dag != nullptr)
         {
             ActionsDAGWithInversionPushDown inverted_dag(transformed_dag->getOutputs().front(), context);
+            LOG_DEBUG(&Poco::Logger::get("Iceberg ManifestFilesPruner"), "Creating key condition");
             partition_key_condition.emplace(inverted_dag, context, partition_key->column_names, partition_key->expression, true /* single_point */);
         }
     }

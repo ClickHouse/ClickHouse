@@ -196,13 +196,24 @@ FutureSet::Hash FutureSetFromSubquery::getHash() const { return hash; }
 
 std::unique_ptr<QueryPlan> FutureSetFromSubquery::build(const SizeLimits & network_transfer_limits, const PreparedSetsCachePtr & prepared_sets_cache)
 {
+    LOG_DEBUG(&Poco::Logger::get("FutureSetFromSubquery::build"), "Stacktrace: {}", StackTrace().toString());
     if (set_and_key->set->isCreated())
+    {
+        LOG_DEBUG(&Poco::Logger::get("FutureSetFromSubquery::build"), "Set is already created.");
         return nullptr;
+    }
+
+    LOG_DEBUG(&Poco::Logger::get("FutureSetFromSubquery::build"), "Building set from subquery");
 
     auto plan = std::move(source);
 
     if (!plan)
+    {
+        LOG_DEBUG(&Poco::Logger::get("FutureSetFromSubquery::build"), "There is no plan to build set from subquery.");
         return nullptr;
+    }
+
+    LOG_DEBUG(&Poco::Logger::get("FutureSetFromSubquery::build"), "Building set from subquery (plan exists)");
 
     auto creating_set = std::make_unique<CreatingSetStep>(
         plan->getCurrentHeader(),
@@ -212,6 +223,7 @@ std::unique_ptr<QueryPlan> FutureSetFromSubquery::build(const SizeLimits & netwo
         prepared_sets_cache);
     creating_set->setStepDescription("Create set for subquery");
     plan->addStep(std::move(creating_set));
+    LOG_DEBUG(&Poco::Logger::get("FutureSetFromSubquery::build"), "Creating set step added to plan.");
     return plan;
 }
 
@@ -239,11 +251,18 @@ void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
 
 SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
 {
+    LOG_DEBUG(
+        &Poco::Logger::get("FutureSetFromSubquery::buildOrderedSetInplace"),
+        "Building ordered set inplace from subquery, stacktrace: {}",
+        StackTrace().toString());
     if (!context->getSettingsRef()[Setting::use_index_for_in_with_subqueries])
         return nullptr;
 
+    LOG_DEBUG(&Poco::Logger::get("FutureSetFromSubquery::buildOrderedSetInplace"), "Good setting");
+
     if (auto set = get())
     {
+        LOG_DEBUG(&Poco::Logger::get("FutureSetFromSubquery::buildOrderedSetInplace"), "Set is got.");
         if (set->hasExplicitSetElements())
             return set;
 
@@ -252,9 +271,11 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
 
     if (external_table_set)
     {
+        LOG_DEBUG(&Poco::Logger::get("FutureSetFromSubquery::buildOrderedSetInplace"), "In external_table_set.");
         auto set = external_table_set->buildOrderedSetInplace(context);
         if (set)
         {
+            LOG_DEBUG(&Poco::Logger::get("FutureSetFromSubquery::buildOrderedSetInplace"), "Managed to built from external set.");
             set_and_key->set = set;
             return set_and_key->set;
         }
@@ -266,7 +287,13 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
 
     auto plan = build(network_transfer_limits, prepared_sets_cache);
     if (!plan)
+    {
+        LOG_DEBUG(&Poco::Logger::get("FutureSetFromSubquery::buildOrderedSetInplace"), "No plan to build.");
         return nullptr;
+    }
+
+    LOG_DEBUG(&Poco::Logger::get("FutureSetFromSubquery::buildOrderedSetInplace"), "Plan to build exists.");
+
 
     set_and_key->set->fillSetElements();
     auto builder = plan->buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
@@ -280,7 +307,12 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     /// timeout_overflow_mode set to `break`, no exception is thrown, and the executor just stops executing
     /// the pipeline without setting `set_and_key->set->is_created` to true.
     if (!set_and_key->set->isCreated())
+    {
+        LOG_DEBUG(&Poco::Logger::get("FutureSetFromSubquery::buildOrderedSetInplace"), "Set is not created after executing the pipeline.");
         return nullptr;
+    }
+
+    LOG_DEBUG(&Poco::Logger::get("FutureSetFromSubquery::buildOrderedSetInplace"), "Set is created after executing the pipeline.");
 
     logProcessorProfile(context, pipeline.getProcessors());
 

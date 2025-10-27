@@ -1,41 +1,42 @@
-#include <Storages/MergeTree/KeyCondition.h>
-#include <Storages/MergeTree/BoolMask.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnSet.h>
 #include <Core/PlainRanges.h>
-#include <DataTypes/DataTypesNumber.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/FieldToDataType.h>
-#include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/Utils.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/TreeRewriter.h>
-#include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Interpreters/castColumn.h>
-#include <Interpreters/misc.h>
-#include <Functions/FunctionFactory.h>
-#include <Functions/indexHint.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <Functions/CastOverloadResolver.h>
+#include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/IFunctionDateOrDateTime.h>
 #include <Functions/geometryConverters.h>
-#include <Common/FieldVisitorToString.h>
-#include <Common/HilbertUtils.h>
-#include <Common/FieldVisitorConvertToNumber.h>
-#include <Common/MortonUtils.h>
-#include <Common/typeid_cast.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <Columns/ColumnSet.h>
-#include <Columns/ColumnConst.h>
-#include <Core/Settings.h>
-#include <Interpreters/convertFieldToType.h>
+#include <Functions/indexHint.h>
+#include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/Set.h>
+#include <Interpreters/TreeRewriter.h>
+#include <Interpreters/castColumn.h>
+#include <Interpreters/convertFieldToType.h>
+#include <Interpreters/misc.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
+#include <Storages/MergeTree/BoolMask.h>
+#include <Storages/MergeTree/KeyCondition.h>
+#include <Common/FieldVisitorConvertToNumber.h>
+#include <Common/FieldVisitorToString.h>
+#include <Common/HilbertUtils.h>
+#include <Common/MortonUtils.h>
+#include <Common/logger_useful.h>
+#include <Common/typeid_cast.h>
 
 #include <algorithm>
 #include <cassert>
@@ -890,12 +891,17 @@ KeyCondition::KeyCondition(
 
     has_filter = true;
 
+    // std::this_thread::sleep_for(std::chrono::milliseconds(100)); // for debug purposes
     RPNBuilder<RPNElement> builder(filter_dag.predicate, context, [&](const RPNBuilderTreeNode & node, RPNElement & out)
     {
         return extractAtomFromTree(node, info, out);
     });
 
     rpn = std::move(builder).extractRPN();
+    for (const auto & elem : rpn)
+    {
+        LOG_DEBUG(&Poco::Logger::get("KeyCondition::KeyCondition"), "KeyCondition RPN Element: {}", elem.toString());
+    }
 
     findHyperrectanglesForArgumentsOfSpaceFillingCurves();
 
@@ -2071,7 +2077,13 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                     is_set_const = true;
                 }
                 else
+                {
+                    LOG_DEBUG(
+                        &Poco::Logger::get("KeyCondition::extractAtomFromTree"),
+                        "Cannot prepare set index for KeyCondition atom with function {}",
+                        func_name);
                     return false;
+                }
             }
             else if (func_name == "pointInPolygon")
             {

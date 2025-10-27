@@ -6,8 +6,9 @@
 #include <Interpreters/SetKeys.h>
 #include <Storages/MergeTree/BoolMask.h>
 
-#include <Common/SharedMutex.h>
 #include <Interpreters/castColumn.h>
+#include <Common/SharedMutex.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -56,7 +57,11 @@ public:
     void appendSetElements(SetKeyColumns & holder);
 
     /// Call after all blocks were inserted. To get the information that set is already created.
-    void finishInsert() { is_created = true; }
+    void finishInsert()
+    {
+        LOG_DEBUG(&Poco::Logger::get("Set cnt, FinishInsert"), "Stacktrace: {}", StackTrace().toString());
+        is_created = true;
+    }
 
     /// finishInsert and isCreated are thread-safe
     bool isCreated() const { return is_created.load(); }
