@@ -3141,7 +3141,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
             if (key_column >= hyperrectangle.size())
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                                "Hyperrectangle size is {}, but requested element at posittion {} ({})",
+                                "Hyperrectangle size is {}, but requested element at position {} ({})",
                                 hyperrectangle.size(), key_column, element.toString());
             }
 
