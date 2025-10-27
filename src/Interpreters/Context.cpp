@@ -4897,7 +4897,7 @@ double Context::getMaxOSCPUWaitTimeRatioToDropConnection() const
 
 void Context::setOSCPUOverloadSettings(double min_os_cpu_wait_time_ratio_to_drop_connection, double max_os_cpu_wait_time_ratio_to_drop_connection)
 {
-    SharedLockGuard lock(shared->mutex);
+    std::lock_guard lock(shared->mutex);
     shared->min_os_cpu_wait_time_ratio_to_drop_connection = min_os_cpu_wait_time_ratio_to_drop_connection;
     shared->max_os_cpu_wait_time_ratio_to_drop_connection = max_os_cpu_wait_time_ratio_to_drop_connection;
 }

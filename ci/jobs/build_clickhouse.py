@@ -129,7 +129,10 @@ def main():
         cmake_cmd += " -DCLICKHOUSE_OFFICIAL_BUILD=1"
 
     # For PRs we prefer to build without debug symbols to save space and time (LTO is much faster)
-    if info.pr_number != 0 and build_type in (BuildTypes.AMD_RELEASE, BuildTypes.ARM_RELEASE):
+    if info.pr_number != 0 and build_type in (
+        BuildTypes.AMD_RELEASE,
+        BuildTypes.ARM_RELEASE,
+    ):
         cmake_cmd += " -DDISABLE_ALL_DEBUG_SYMBOLS=1"
 
     cmake_cmd += f" {current_directory}"

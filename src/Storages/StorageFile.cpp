@@ -1029,8 +1029,9 @@ bool StorageFile::canMoveConditionsToPrewhere() const
 
 std::optional<NameSet> StorageFile::supportedPrewhereColumns() const
 {
-    /// Currently don't support prewhere for virtual columns and columns with default expressions.
-    return getInMemoryMetadataPtr()->getColumnsWithoutDefaultExpressions();
+    /// Currently don't support prewhere for virtual columns, columns with default expressions,
+    /// and columns taken from file path (hive partitioning).
+    return getInMemoryMetadataPtr()->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
 }
 
 IStorage::ColumnSizeByName StorageFile::getColumnSizes() const
