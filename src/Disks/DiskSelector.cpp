@@ -1,5 +1,6 @@
 #include <Disks/DiskLocal.h>
 #include <Disks/DiskSelector.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 
 #include <IO/WriteHelpers.h>
 #include <Common/escapeForFileName.h>
@@ -16,8 +17,8 @@ namespace ErrorCodes
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
     extern const int UNKNOWN_DISK;
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
-
 
 void DiskSelector::assertInitialized() const
 {
@@ -25,6 +26,24 @@ void DiskSelector::assertInitialized() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "DiskSelector not initialized");
 }
 
+void DiskSelector::recordDisk(const std::string & disk_name, DiskPtr disk)
+{
+    if (disk->isPlain())
+    {
+        for (const auto & [_, saved_disk] : disks)
+        {
+            if (!saved_disk->isPlain())
+                continue;
+
+            if (disk->getObjectStorage()->getCommonKeyPrefix() == saved_disk->getObjectStorage()->getCommonKeyPrefix())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "It is not possible to register multiple plain-rewritable disks with the same object storage prefix");
+        }
+    }
+
+    const auto [_, inserted] = disks.emplace(disk_name, std::move(disk));
+    if (!inserted)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Disk with name `{}` is already in disks map", disk_name);
+}
 
 void DiskSelector::initialize(
     const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context, DiskValidator disk_validator)
@@ -55,23 +74,21 @@ void DiskSelector::initialize(
             = factory.create(disk_name, config, disk_config_prefix, context, disks, /*attach*/ false, /*custom_disk*/ false, skip_types);
         if (created_disk.get())
         {
-            disks.emplace(disk_name, std::move(created_disk));
+            recordDisk(disk_name, std::move(created_disk));
         }
     }
     if (!has_default_disk)
     {
-        disks.emplace(
-            DEFAULT_DISK_NAME, std::make_shared<DiskLocal>(DEFAULT_DISK_NAME, context->getPath(), 0, context, config, config_prefix));
+        recordDisk(DEFAULT_DISK_NAME, std::make_shared<DiskLocal>(DEFAULT_DISK_NAME, context->getPath(), 0, context, config, config_prefix));
     }
 
     if (!has_local_disk && (context->getApplicationType() == Context::ApplicationType::DISKS))
     {
         throw_away_local_on_update = true;
-        disks.emplace(LOCAL_DISK_NAME, std::make_shared<DiskLocal>(LOCAL_DISK_NAME, "/", 0, context, config, config_prefix));
+        recordDisk(LOCAL_DISK_NAME, std::make_shared<DiskLocal>(LOCAL_DISK_NAME, "/", 0, context, config, config_prefix));
     }
     is_initialized = true;
 }
-
 
 DiskSelectorPtr DiskSelector::updateFromConfig(
     const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context) const
@@ -153,7 +170,6 @@ DiskSelectorPtr DiskSelector::updateFromConfig(
     return result;
 }
 
-
 DiskPtr DiskSelector::tryGet(const String & name) const
 {
     assertInitialized();
@@ -177,15 +193,11 @@ const DisksMap & DiskSelector::getDisksMap() const
     return disks;
 }
 
-
 void DiskSelector::addToDiskMap(const String & name, DiskPtr disk)
 {
     assertInitialized();
-    auto [_, inserted] = disks.emplace(name, disk);
-    if (!inserted)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Disk with name `{}` is already in disks map", name);
+    recordDisk(name, disk);
 }
-
 
 void DiskSelector::shutdown()
 {
