@@ -32,6 +32,7 @@ namespace KafkaSetting
     extern const KafkaSettingsString kafka_sasl_mechanism;
     extern const KafkaSettingsString kafka_sasl_username;
     extern const KafkaSettingsString kafka_sasl_password;
+    extern const KafkaSettingsString kafka_compression_codec;
 }
 
 namespace ErrorCodes
@@ -342,7 +343,13 @@ void loadProducerConfig(cppkafka::Configuration & kafka_config, const KafkaConfi
 }
 
 template <typename TKafkaStorage>
-void updateGlobalConfiguration(
+using SpecificConfigUpdaterFunc = void (*)(
+    cppkafka::Configuration & kafka_config,
+    const KafkaConfigLoader::LoadConfigParams & params);
+
+template <typename TKafkaStorage>
+void updateConfigurationFromConfig(
+    SpecificConfigUpdaterFunc<TKafkaStorage> specific_config_updater,
     cppkafka::Configuration & kafka_config,
     TKafkaStorage & storage,
     const KafkaConfigLoader::LoadConfigParams & params,
@@ -350,6 +357,8 @@ void updateGlobalConfiguration(
 {
     loadFromConfig(kafka_config, params, KafkaConfigLoader::CONFIG_KAFKA_TAG);
 
+    /// We have to set these settings before taking the values from the consumer/producer specific configuration,
+    /// because otherwise we would introduce a breaking change.
     auto kafka_settings = storage.getKafkaSettings();
     if (!kafka_settings[KafkaSetting::kafka_security_protocol].value.empty())
         kafka_config.set("security.protocol", kafka_settings[KafkaSetting::kafka_security_protocol]);
@@ -359,6 +368,11 @@ void updateGlobalConfiguration(
         kafka_config.set("sasl.username", kafka_settings[KafkaSetting::kafka_sasl_username]);
     if (!kafka_settings[KafkaSetting::kafka_sasl_password].value.empty())
         kafka_config.set("sasl.password", kafka_settings[KafkaSetting::kafka_sasl_password]);
+
+    specific_config_updater(kafka_config, params);
+
+    if (!kafka_settings[KafkaSetting::kafka_compression_codec].value.empty())
+        kafka_config.set("compression.codec", kafka_settings[KafkaSetting::kafka_compression_codec]);
 
 #if USE_KRB5
     if (kafka_config.has_property("sasl.kerberos.kinit.cmd"))
@@ -468,8 +482,7 @@ cppkafka::Configuration KafkaConfigLoader::getConsumerConfiguration(TKafkaStorag
     conf.set(
         "queued.min.messages", std::min(std::max(params.max_block_size, default_queued_min_messages), max_allowed_queued_min_messages));
 
-    updateGlobalConfiguration(conf, storage, params, exception_info_sink_ptr);
-    loadConsumerConfig(conf, params);
+    updateConfigurationFromConfig(loadConsumerConfig, conf, storage, params, exception_info_sink_ptr);
 
     // those settings should not be changed by users.
     conf.set("enable.auto.commit", "false"); // We manually commit offsets after a stream successfully finished
@@ -498,8 +511,7 @@ cppkafka::Configuration KafkaConfigLoader::getProducerConfiguration(TKafkaStorag
     conf.set("client.software.name", VERSION_NAME);
     conf.set("client.software.version", VERSION_DESCRIBE);
 
-    updateGlobalConfiguration(conf, storage, params);
-    loadProducerConfig(conf, params);
+    updateConfigurationFromConfig(loadProducerConfig, conf, storage, params);
 
     for (auto & property : conf.get_all())
     {
