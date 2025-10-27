@@ -215,7 +215,7 @@ ASTPtr ColumnStatisticsDescription::getAST() const
 
 String ColumnStatisticsDescription::getNameForLogs() const
 {
-    String ret = "";
+    String ret;
     for (const auto & [tp, desc] : types_to_desc)
     {
         ret += desc.getTypeName();
