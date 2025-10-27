@@ -30,8 +30,8 @@ SELECT
     count()
 FROM clusterAllReplicas('test_shard_localhost', system.one)
 GROUP BY h
-FORMAT Null
-EOF;
+FORMAT Null;
+EOF
 
 ${CLICKHOUSE_CLIENT} <<EOF
 SET distributed_ddl_output_mode = 'none';
