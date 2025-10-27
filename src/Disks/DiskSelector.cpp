@@ -28,17 +28,28 @@ void DiskSelector::assertInitialized() const
 
 void DiskSelector::recordDisk(const std::string & disk_name, DiskPtr disk)
 {
-    if (disk->isPlain())
+    if (disk->isPlain() && !disk->isReadOnly() && !disk->isWriteOnce())
     {
-        for (const auto & [_, saved_disk] : disks)
+        for (const auto & [saved_disk_name, saved_disk] : disks)
         {
-            if (!saved_disk->isPlain())
+            if (!saved_disk->isPlain() || disk->isReadOnly() || disk->isWriteOnce())
                 continue;
 
-            const auto new_prefix = disk->getObjectStorage()->getCommonKeyPrefix();
-            const auto saved_prefix = saved_disk->getObjectStorage()->getCommonKeyPrefix();
-            if (new_prefix.starts_with(saved_prefix) || saved_prefix.starts_with(new_prefix))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "It is not possible to register multiple plain-rewritable disks with the same object storage prefix");
+            /// Same endpoint
+            if (disk->getObjectStorage()->getDescription() == saved_disk->getObjectStorage()->getDescription())
+            {
+                /// Same bucket
+                if (disk->getObjectStorage()->getObjectsNamespace() == saved_disk->getObjectStorage()->getObjectsNamespace())
+                {
+                    /// Nested common keys
+                    const auto new_prefix = disk->getObjectStorage()->getCommonKeyPrefix();
+                    const auto saved_prefix = saved_disk->getObjectStorage()->getCommonKeyPrefix();
+                    if (new_prefix.starts_with(saved_prefix) || saved_prefix.starts_with(new_prefix))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "It is not possible to register multiple plain-rewritable disks with the same object storage prefix. Disks '{}' and '{}'",
+                            disk_name, saved_disk_name);
+                }
+            }
         }
     }
 
