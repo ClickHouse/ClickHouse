@@ -133,7 +133,12 @@ std::string_view SchemaConverter::useColumnMapperIfNeeded(const parq::SchemaElem
         return element.name;
     const auto & map = column_mapper->getFieldIdToClickHouseName();
     if (!element.__isset.field_id)
-        throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Missing field_id for column {}", element.name);
+    {
+        /// Does iceberg require that parquet files have field ids?
+        /// Our iceberg writer currently doesn't write them.
+        //throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Missing field_id for column {}", element.name);
+        return element.name;
+    }
     auto it = map.find(element.field_id);
     if (it == map.end())
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Parquet file has column {} with field_id {} that is not in datalake metadata", element.name, element.field_id);

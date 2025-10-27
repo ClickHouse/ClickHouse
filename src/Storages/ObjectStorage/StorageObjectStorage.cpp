@@ -209,7 +209,26 @@ StorageObjectStorage::StorageObjectStorage(
             sample_path);
     }
 
-    supports_prewhere = FormatFactory::instance().checkIfFormatSupportsPrewhere(configuration->format, context, format_settings);
+    /// TODO: Known problems with datalake prewhere:
+    ///  * If the iceberg table went through schema evolution, columns read from file may need to
+    ///    be renamed or typecast before applying prewhere. There's already a mechanism for
+    ///    telling parquet reader to rename columns: ColumnMapper. And parquet reader already
+    ///    automatically does type casts to requested types. But weirdly the iceberg reader uses
+    ///    those mechanism to request the *old* name and type of the column, then has additional
+    ///    code to do the renaming and casting as a separate step outside parquet reader.
+    ///    We should probably change this and delete that additional code?
+    ///  * Delta Lake can have "partition columns", which are columns with constant value specified
+    ///    in the metadata, not present in parquet file. Like hive partitioning, but in metadata
+    ///    files instead of path. Currently these columns are added to the block outside parquet
+    ///    reader. If they appear in prewhere expression, parquet reader gets a "no column in block"
+    ///    error. Unlike hive partitioning, we can't (?) just return these columns from
+    ///    supportedPrewhereColumns() because at the time of the call the delta lake metadata hasn't
+    ///    been read yet. So we should probably pass these columns to the parquet reader instead of
+    ///    adding them outside.
+    ///  * There's a bug in StorageObjectStorageSource::createReader: it makes a copy of
+    ///    FormatFilterInfo, but for some reason unsets prewhere_info and row_level_filter_info.
+    ///    There's probably no reason for this, and it should just copy those fields like the others.
+    supports_prewhere = !configuration->isDataLakeConfiguration() && FormatFactory::instance().checkIfFormatSupportsPrewhere(configuration->format, context, format_settings);
 
     StorageInMemoryMetadata metadata;
     metadata.setColumns(columns);
