@@ -307,6 +307,7 @@ Encodings
 Enum
 Enums
 Eoan
+epilog
 EphemeralNode
 EscapingRule
 Ethereum
@@ -900,6 +901,7 @@ PrivatePreviewBadge
 ProfileEvents
 Profiler
 Proleptic
+prolog
 PromHouse
 PromQL
 Promql
@@ -3473,6 +3475,8 @@ xeus
 xkcd
 xlarge
 xml
+XRay
+xray
 xxHash
 xz
 yaml

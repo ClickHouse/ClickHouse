@@ -270,7 +270,7 @@ or all of them using the `ALL` parameter:
 SYSTEM INSTRUMENT REMOVE ALL
 ```
 
-The instrumentation point ID can be read in [`system.xray_instrumentation`](../../operations/systems-tables/xray_instrumentation.md) system table.
+The instrumentation point ID can be collected from [`system.xray_instrumentation`](../../operations/systems-tables/xray_instrumentation.md) system table.
 
 ## Managing Distributed Tables {#managing-distributed-tables}
 
