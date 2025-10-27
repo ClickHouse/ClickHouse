@@ -25,6 +25,7 @@ There are also a host of additional cache types:
 - [Regexp](../interfaces/formats.md#data-format-regexp) cache.
 - Compiled expressions cache.
 - [Vector similarity index](../engines/table-engines/mergetree-family/annindexes.md) cache.
+- [Text index](../engines/table-engines/mergetree-family/invertedindexes.md#tuning-the-text-index) cache.
 - [Avro format](../interfaces/formats.md#data-format-avro) schemas cache.
 - [Dictionaries](../sql-reference/dictionaries/index.md) data cache.
 - Schema inference cache.

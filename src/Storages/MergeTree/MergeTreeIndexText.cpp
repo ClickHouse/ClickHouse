@@ -31,11 +31,6 @@ namespace ProfileEvents
 namespace DB
 {
 
-namespace Setting
-{
-    extern const SettingsBool use_text_index_dictionary_cache;
-}
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -186,11 +181,9 @@ PostingList PostingsSerialization::deserialize(UInt64 header, UInt32 cardinality
     return PostingList::read(buf.data());
 }
 
-MergeTreeIndexGranuleText::MergeTreeIndexGranuleText(MergeTreeIndexTextParams params_, ContextPtr context)
+MergeTreeIndexGranuleText::MergeTreeIndexGranuleText(MergeTreeIndexTextParams params_)
     : params(std::move(params_))
     , bloom_filter(params.bloom_filter_bits_per_row, params.bloom_filter_num_hashes, 0)
-    , text_index_dictionary_cache(context->getTextIndexDictionaryBlockCache().get())
-    , use_text_index_dictionary_cache(context->getSettingsRef()[Setting::use_text_index_dictionary_cache])
 {
 }
 
@@ -435,8 +428,8 @@ void MergeTreeIndexGranuleText::analyzeDictionary(MergeTreeIndexReaderStream & s
             return std::make_shared<TextIndexDictionaryBlockCacheEntry>(deserializeDictionaryBlock(*data_buffer));
         };
 
-        if (use_text_index_dictionary_cache)
-            return text_index_dictionary_cache->getOrSet(dictionary_block_key, load_dictionary_block);
+        if (condition_text.useDictionaryBlockCache())
+            return condition_text.dictionaryBlockCache()->getOrSet(dictionary_block_key, load_dictionary_block);
 
         return load_dictionary_block();
     };

@@ -19,8 +19,6 @@
 namespace DB
 {
 
-class TextIndexDictionaryBlockCache;
-
 /**
   * Implementation of inverted index for text search.
   *
@@ -203,7 +201,7 @@ struct MergeTreeIndexGranuleText final : public IMergeTreeIndexGranule
 public:
     using TokenToPostingsInfosMap = absl::flat_hash_map<StringRef, TokenPostingsInfo>;
 
-    explicit MergeTreeIndexGranuleText(MergeTreeIndexTextParams params_, ContextPtr context = Context::getGlobalContextInstance());
+    explicit MergeTreeIndexGranuleText(MergeTreeIndexTextParams params_);
     ~MergeTreeIndexGranuleText() override = default;
 
     void serializeBinary(WriteBuffer & ostr) const override;
@@ -234,9 +232,6 @@ private:
     DictionarySparseIndex sparse_index;
     /// Tokens that are in the index granule after analysis.
     TokenToPostingsInfosMap remaining_tokens;
-    TextIndexDictionaryBlockCache * text_index_dictionary_cache;
-    bool use_text_index_dictionary_cache;
-
 };
 
 /// Save BulkContext to optimize consecutive insertions into the posting list.
