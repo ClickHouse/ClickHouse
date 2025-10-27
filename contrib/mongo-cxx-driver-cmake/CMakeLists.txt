@@ -94,10 +94,12 @@ set(MONGOCXX_SOURCES
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/exception/bulk_write_exception.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/exception/error_code.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/exception/exception.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/exception/gridfs_exception.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/exception/logic_error.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/exception/operation_exception.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/exception/query_exception.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/exception/server_error_code.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/exception/write_exception.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/gridfs/bucket.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/gridfs/downloader.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/gridfs/uploader.cpp
