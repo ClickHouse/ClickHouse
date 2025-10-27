@@ -82,17 +82,17 @@ ossl_rsaz_amm52x20_x1_avxifma256:
 	orq	%r10,%r9
 
 	leaq	-168(%rsp),%rsp
-{vex} vpmadd52luq 0(%rsi), %ymm1, %ymm3
-{vex} vpmadd52luq 32(%rsi), %ymm1, %ymm5
-{vex} vpmadd52luq 64(%rsi), %ymm1, %ymm6
-{vex} vpmadd52luq 96(%rsi), %ymm1, %ymm7
-{vex} vpmadd52luq 128(%rsi), %ymm1, %ymm8
+{vex}	vpmadd52luq	0(%rsi),%ymm1,%ymm3
+{vex}	vpmadd52luq	32(%rsi),%ymm1,%ymm5
+{vex}	vpmadd52luq	64(%rsi),%ymm1,%ymm6
+{vex}	vpmadd52luq	96(%rsi),%ymm1,%ymm7
+{vex}	vpmadd52luq	128(%rsi),%ymm1,%ymm8
 
-{vex} vpmadd52luq 0(%rcx), %ymm2, %ymm3
-{vex} vpmadd52luq 32(%rcx), %ymm2, %ymm5
-{vex} vpmadd52luq 64(%rcx), %ymm2, %ymm6
-{vex} vpmadd52luq 96(%rcx), %ymm2, %ymm7
-{vex} vpmadd52luq 128(%rcx), %ymm2, %ymm8
+{vex}	vpmadd52luq	0(%rcx),%ymm2,%ymm3
+{vex}	vpmadd52luq	32(%rcx),%ymm2,%ymm5
+{vex}	vpmadd52luq	64(%rcx),%ymm2,%ymm6
+{vex}	vpmadd52luq	96(%rcx),%ymm2,%ymm7
+{vex}	vpmadd52luq	128(%rcx),%ymm2,%ymm8
 
 
 	vmovdqu	%ymm3,0(%rsp)
@@ -110,17 +110,17 @@ ossl_rsaz_amm52x20_x1_avxifma256:
 
 	addq	8(%rsp),%r9
 
-{vex} vpmadd52huq 0(%rsi), %ymm1, %ymm3
-{vex} vpmadd52huq 32(%rsi), %ymm1, %ymm5
-{vex} vpmadd52huq 64(%rsi), %ymm1, %ymm6
-{vex} vpmadd52huq 96(%rsi), %ymm1, %ymm7
-{vex} vpmadd52huq 128(%rsi), %ymm1, %ymm8
+{vex}	vpmadd52huq	0(%rsi),%ymm1,%ymm3
+{vex}	vpmadd52huq	32(%rsi),%ymm1,%ymm5
+{vex}	vpmadd52huq	64(%rsi),%ymm1,%ymm6
+{vex}	vpmadd52huq	96(%rsi),%ymm1,%ymm7
+{vex}	vpmadd52huq	128(%rsi),%ymm1,%ymm8
 
-{vex} vpmadd52huq 0(%rcx), %ymm2, %ymm3
-{vex} vpmadd52huq 32(%rcx), %ymm2, %ymm5
-{vex} vpmadd52huq 64(%rcx), %ymm2, %ymm6
-{vex} vpmadd52huq 96(%rcx), %ymm2, %ymm7
-{vex} vpmadd52huq 128(%rcx), %ymm2, %ymm8
+{vex}	vpmadd52huq	0(%rcx),%ymm2,%ymm3
+{vex}	vpmadd52huq	32(%rcx),%ymm2,%ymm5
+{vex}	vpmadd52huq	64(%rcx),%ymm2,%ymm6
+{vex}	vpmadd52huq	96(%rcx),%ymm2,%ymm7
+{vex}	vpmadd52huq	128(%rcx),%ymm2,%ymm8
 	leaq	168(%rsp),%rsp
 	movq	8(%r11),%r13
 
@@ -147,17 +147,17 @@ ossl_rsaz_amm52x20_x1_avxifma256:
 	orq	%r10,%r9
 
 	leaq	-168(%rsp),%rsp
-{vex} vpmadd52luq 0(%rsi), %ymm1, %ymm3
-{vex} vpmadd52luq 32(%rsi), %ymm1, %ymm5
-{vex} vpmadd52luq 64(%rsi), %ymm1, %ymm6
-{vex} vpmadd52luq 96(%rsi), %ymm1, %ymm7
-{vex} vpmadd52luq 128(%rsi), %ymm1, %ymm8
+{vex}	vpmadd52luq	0(%rsi),%ymm1,%ymm3
+{vex}	vpmadd52luq	32(%rsi),%ymm1,%ymm5
+{vex}	vpmadd52luq	64(%rsi),%ymm1,%ymm6
+{vex}	vpmadd52luq	96(%rsi),%ymm1,%ymm7
+{vex}	vpmadd52luq	128(%rsi),%ymm1,%ymm8
 
-{vex} vpmadd52luq 0(%rcx), %ymm2, %ymm3
-{vex} vpmadd52luq 32(%rcx), %ymm2, %ymm5
-{vex} vpmadd52luq 64(%rcx), %ymm2, %ymm6
-{vex} vpmadd52luq 96(%rcx), %ymm2, %ymm7
-{vex} vpmadd52luq 128(%rcx), %ymm2, %ymm8
+{vex}	vpmadd52luq	0(%rcx),%ymm2,%ymm3
+{vex}	vpmadd52luq	32(%rcx),%ymm2,%ymm5
+{vex}	vpmadd52luq	64(%rcx),%ymm2,%ymm6
+{vex}	vpmadd52luq	96(%rcx),%ymm2,%ymm7
+{vex}	vpmadd52luq	128(%rcx),%ymm2,%ymm8
 
 
 	vmovdqu	%ymm3,0(%rsp)
@@ -175,17 +175,17 @@ ossl_rsaz_amm52x20_x1_avxifma256:
 
 	addq	8(%rsp),%r9
 
-{vex} vpmadd52huq 0(%rsi), %ymm1, %ymm3
-{vex} vpmadd52huq 32(%rsi), %ymm1, %ymm5
-{vex} vpmadd52huq 64(%rsi), %ymm1, %ymm6
-{vex} vpmadd52huq 96(%rsi), %ymm1, %ymm7
-{vex} vpmadd52huq 128(%rsi), %ymm1, %ymm8
+{vex}	vpmadd52huq	0(%rsi),%ymm1,%ymm3
+{vex}	vpmadd52huq	32(%rsi),%ymm1,%ymm5
+{vex}	vpmadd52huq	64(%rsi),%ymm1,%ymm6
+{vex}	vpmadd52huq	96(%rsi),%ymm1,%ymm7
+{vex}	vpmadd52huq	128(%rsi),%ymm1,%ymm8
 
-{vex} vpmadd52huq 0(%rcx), %ymm2, %ymm3
-{vex} vpmadd52huq 32(%rcx), %ymm2, %ymm5
-{vex} vpmadd52huq 64(%rcx), %ymm2, %ymm6
-{vex} vpmadd52huq 96(%rcx), %ymm2, %ymm7
-{vex} vpmadd52huq 128(%rcx), %ymm2, %ymm8
+{vex}	vpmadd52huq	0(%rcx),%ymm2,%ymm3
+{vex}	vpmadd52huq	32(%rcx),%ymm2,%ymm5
+{vex}	vpmadd52huq	64(%rcx),%ymm2,%ymm6
+{vex}	vpmadd52huq	96(%rcx),%ymm2,%ymm7
+{vex}	vpmadd52huq	128(%rcx),%ymm2,%ymm8
 	leaq	168(%rsp),%rsp
 	movq	16(%r11),%r13
 
@@ -212,17 +212,17 @@ ossl_rsaz_amm52x20_x1_avxifma256:
 	orq	%r10,%r9
 
 	leaq	-168(%rsp),%rsp
-{vex} vpmadd52luq 0(%rsi), %ymm1, %ymm3
-{vex} vpmadd52luq 32(%rsi), %ymm1, %ymm5
-{vex} vpmadd52luq 64(%rsi), %ymm1, %ymm6
-{vex} vpmadd52luq 96(%rsi), %ymm1, %ymm7
-{vex} vpmadd52luq 128(%rsi), %ymm1, %ymm8
+{vex}	vpmadd52luq	0(%rsi),%ymm1,%ymm3
+{vex}	vpmadd52luq	32(%rsi),%ymm1,%ymm5
+{vex}	vpmadd52luq	64(%rsi),%ymm1,%ymm6
+{vex}	vpmadd52luq	96(%rsi),%ymm1,%ymm7
+{vex}	vpmadd52luq	128(%rsi),%ymm1,%ymm8
 
-{vex} vpmadd52luq 0(%rcx), %ymm2, %ymm3
-{vex} vpmadd52luq 32(%rcx), %ymm2, %ymm5
-{vex} vpmadd52luq 64(%rcx), %ymm2, %ymm6
-{vex} vpmadd52luq 96(%rcx), %ymm2, %ymm7
-{vex} vpmadd52luq 128(%rcx), %ymm2, %ymm8
+{vex}	vpmadd52luq	0(%rcx),%ymm2,%ymm3
+{vex}	vpmadd52luq	32(%rcx),%ymm2,%ymm5
+{vex}	vpmadd52luq	64(%rcx),%ymm2,%ymm6
+{vex}	vpmadd52luq	96(%rcx),%ymm2,%ymm7
+{vex}	vpmadd52luq	128(%rcx),%ymm2,%ymm8
 
 
 	vmovdqu	%ymm3,0(%rsp)
@@ -240,17 +240,17 @@ ossl_rsaz_amm52x20_x1_avxifma256:
 
 	addq	8(%rsp),%r9
 
-{vex} vpmadd52huq 0(%rsi), %ymm1, %ymm3
-{vex} vpmadd52huq 32(%rsi), %ymm1, %ymm5
-{vex} vpmadd52huq 64(%rsi), %ymm1, %ymm6
-{vex} vpmadd52huq 96(%rsi), %ymm1, %ymm7
-{vex} vpmadd52huq 128(%rsi), %ymm1, %ymm8
+{vex}	vpmadd52huq	0(%rsi),%ymm1,%ymm3
+{vex}	vpmadd52huq	32(%rsi),%ymm1,%ymm5
+{vex}	vpmadd52huq	64(%rsi),%ymm1,%ymm6
+{vex}	vpmadd52huq	96(%rsi),%ymm1,%ymm7
+{vex}	vpmadd52huq	128(%rsi),%ymm1,%ymm8
 
-{vex} vpmadd52huq 0(%rcx), %ymm2, %ymm3
-{vex} vpmadd52huq 32(%rcx), %ymm2, %ymm5
-{vex} vpmadd52huq 64(%rcx), %ymm2, %ymm6
-{vex} vpmadd52huq 96(%rcx), %ymm2, %ymm7
-{vex} vpmadd52huq 128(%rcx), %ymm2, %ymm8
+{vex}	vpmadd52huq	0(%rcx),%ymm2,%ymm3
+{vex}	vpmadd52huq	32(%rcx),%ymm2,%ymm5
+{vex}	vpmadd52huq	64(%rcx),%ymm2,%ymm6
+{vex}	vpmadd52huq	96(%rcx),%ymm2,%ymm7
+{vex}	vpmadd52huq	128(%rcx),%ymm2,%ymm8
 	leaq	168(%rsp),%rsp
 	movq	24(%r11),%r13
 
@@ -277,17 +277,17 @@ ossl_rsaz_amm52x20_x1_avxifma256:
 	orq	%r10,%r9
 
 	leaq	-168(%rsp),%rsp
-{vex} vpmadd52luq 0(%rsi), %ymm1, %ymm3
-{vex} vpmadd52luq 32(%rsi), %ymm1, %ymm5
-{vex} vpmadd52luq 64(%rsi), %ymm1, %ymm6
-{vex} vpmadd52luq 96(%rsi), %ymm1, %ymm7
-{vex} vpmadd52luq 128(%rsi), %ymm1, %ymm8
+{vex}	vpmadd52luq	0(%rsi),%ymm1,%ymm3
+{vex}	vpmadd52luq	32(%rsi),%ymm1,%ymm5
+{vex}	vpmadd52luq	64(%rsi),%ymm1,%ymm6
+{vex}	vpmadd52luq	96(%rsi),%ymm1,%ymm7
+{vex}	vpmadd52luq	128(%rsi),%ymm1,%ymm8
 
-{vex} vpmadd52luq 0(%rcx), %ymm2, %ymm3
-{vex} vpmadd52luq 32(%rcx), %ymm2, %ymm5
-{vex} vpmadd52luq 64(%rcx), %ymm2, %ymm6
-{vex} vpmadd52luq 96(%rcx), %ymm2, %ymm7
-{vex} vpmadd52luq 128(%rcx), %ymm2, %ymm8
+{vex}	vpmadd52luq	0(%rcx),%ymm2,%ymm3
+{vex}	vpmadd52luq	32(%rcx),%ymm2,%ymm5
+{vex}	vpmadd52luq	64(%rcx),%ymm2,%ymm6
+{vex}	vpmadd52luq	96(%rcx),%ymm2,%ymm7
+{vex}	vpmadd52luq	128(%rcx),%ymm2,%ymm8
 
 
 	vmovdqu	%ymm3,0(%rsp)
@@ -305,17 +305,17 @@ ossl_rsaz_amm52x20_x1_avxifma256:
 
 	addq	8(%rsp),%r9
 
-{vex} vpmadd52huq 0(%rsi), %ymm1, %ymm3
-{vex} vpmadd52huq 32(%rsi), %ymm1, %ymm5
-{vex} vpmadd52huq 64(%rsi), %ymm1, %ymm6
-{vex} vpmadd52huq 96(%rsi), %ymm1, %ymm7
-{vex} vpmadd52huq 128(%rsi), %ymm1, %ymm8
+{vex}	vpmadd52huq	0(%rsi),%ymm1,%ymm3
+{vex}	vpmadd52huq	32(%rsi),%ymm1,%ymm5
+{vex}	vpmadd52huq	64(%rsi),%ymm1,%ymm6
+{vex}	vpmadd52huq	96(%rsi),%ymm1,%ymm7
+{vex}	vpmadd52huq	128(%rsi),%ymm1,%ymm8
 
-{vex} vpmadd52huq 0(%rcx), %ymm2, %ymm3
-{vex} vpmadd52huq 32(%rcx), %ymm2, %ymm5
-{vex} vpmadd52huq 64(%rcx), %ymm2, %ymm6
-{vex} vpmadd52huq 96(%rcx), %ymm2, %ymm7
-{vex} vpmadd52huq 128(%rcx), %ymm2, %ymm8
+{vex}	vpmadd52huq	0(%rcx),%ymm2,%ymm3
+{vex}	vpmadd52huq	32(%rcx),%ymm2,%ymm5
+{vex}	vpmadd52huq	64(%rcx),%ymm2,%ymm6
+{vex}	vpmadd52huq	96(%rcx),%ymm2,%ymm7
+{vex}	vpmadd52huq	128(%rcx),%ymm2,%ymm8
 	leaq	168(%rsp),%rsp
 	leaq	32(%r11),%r11
 	decl	%ebx
@@ -422,34 +422,34 @@ ossl_rsaz_amm52x20_x1_avxifma256:
 	andq	$0xf,%r14
 	vpsubq	.Lmask52x4(%rip),%ymm3,%ymm0
 	shlq	$5,%r14
-	vmovapd	(%rdx,%r14), %ymm2
+	vmovapd	(%rdx,%r14,1),%ymm2
 	vblendvpd	%ymm2,%ymm0,%ymm3,%ymm3
 
 	shrb	$4,%r13b
 	andq	$0xf,%r13
 	vpsubq	.Lmask52x4(%rip),%ymm5,%ymm0
 	shlq	$5,%r13
-	vmovapd	(%rdx,%r13), %ymm2
+	vmovapd	(%rdx,%r13,1),%ymm2
 	vblendvpd	%ymm2,%ymm0,%ymm5,%ymm5
 
 	movb	%r12b,%r11b
 	andq	$0xf,%r12
 	vpsubq	.Lmask52x4(%rip),%ymm6,%ymm0
 	shlq	$5,%r12
-	vmovapd	(%rdx,%r12), %ymm2
+	vmovapd	(%rdx,%r12,1),%ymm2
 	vblendvpd	%ymm2,%ymm0,%ymm6,%ymm6
 
 	shrb	$4,%r11b
 	andq	$0xf,%r11
 	vpsubq	.Lmask52x4(%rip),%ymm7,%ymm0
 	shlq	$5,%r11
-	vmovapd	(%rdx,%r11), %ymm2
+	vmovapd	(%rdx,%r11,1),%ymm2
 	vblendvpd	%ymm2,%ymm0,%ymm7,%ymm7
 
 	andq	$0xf,%r10
 	vpsubq	.Lmask52x4(%rip),%ymm8,%ymm0
 	shlq	$5,%r10
-	vmovapd	(%rdx,%r10), %ymm2
+	vmovapd	(%rdx,%r10,1),%ymm2
 	vblendvpd	%ymm2,%ymm0,%ymm8,%ymm8
 
 
@@ -653,17 +653,17 @@ ossl_rsaz_amm52x20_x2_avxifma256:
 	orq	%r10,%r9
 
 	leaq	-168(%rsp),%rsp
-{vex} vpmadd52luq 0(%rsi), %ymm1, %ymm3
-{vex} vpmadd52luq 32(%rsi), %ymm1, %ymm5
-{vex} vpmadd52luq 64(%rsi), %ymm1, %ymm6
-{vex} vpmadd52luq 96(%rsi), %ymm1, %ymm7
-{vex} vpmadd52luq 128(%rsi), %ymm1, %ymm8
+{vex}	vpmadd52luq	0(%rsi),%ymm1,%ymm3
+{vex}	vpmadd52luq	32(%rsi),%ymm1,%ymm5
+{vex}	vpmadd52luq	64(%rsi),%ymm1,%ymm6
+{vex}	vpmadd52luq	96(%rsi),%ymm1,%ymm7
+{vex}	vpmadd52luq	128(%rsi),%ymm1,%ymm8
 
-{vex} vpmadd52luq 0(%rcx), %ymm2, %ymm3
-{vex} vpmadd52luq 32(%rcx), %ymm2, %ymm5
-{vex} vpmadd52luq 64(%rcx), %ymm2, %ymm6
-{vex} vpmadd52luq 96(%rcx), %ymm2, %ymm7
-{vex} vpmadd52luq 128(%rcx), %ymm2, %ymm8
+{vex}	vpmadd52luq	0(%rcx),%ymm2,%ymm3
+{vex}	vpmadd52luq	32(%rcx),%ymm2,%ymm5
+{vex}	vpmadd52luq	64(%rcx),%ymm2,%ymm6
+{vex}	vpmadd52luq	96(%rcx),%ymm2,%ymm7
+{vex}	vpmadd52luq	128(%rcx),%ymm2,%ymm8
 
 
 	vmovdqu	%ymm3,0(%rsp)
@@ -681,17 +681,17 @@ ossl_rsaz_amm52x20_x2_avxifma256:
 
 	addq	8(%rsp),%r9
 
-{vex} vpmadd52huq 0(%rsi), %ymm1, %ymm3
-{vex} vpmadd52huq 32(%rsi), %ymm1, %ymm5
-{vex} vpmadd52huq 64(%rsi), %ymm1, %ymm6
-{vex} vpmadd52huq 96(%rsi), %ymm1, %ymm7
-{vex} vpmadd52huq 128(%rsi), %ymm1, %ymm8
+{vex}	vpmadd52huq	0(%rsi),%ymm1,%ymm3
+{vex}	vpmadd52huq	32(%rsi),%ymm1,%ymm5
+{vex}	vpmadd52huq	64(%rsi),%ymm1,%ymm6
+{vex}	vpmadd52huq	96(%rsi),%ymm1,%ymm7
+{vex}	vpmadd52huq	128(%rsi),%ymm1,%ymm8
 
-{vex} vpmadd52huq 0(%rcx), %ymm2, %ymm3
-{vex} vpmadd52huq 32(%rcx), %ymm2, %ymm5
-{vex} vpmadd52huq 64(%rcx), %ymm2, %ymm6
-{vex} vpmadd52huq 96(%rcx), %ymm2, %ymm7
-{vex} vpmadd52huq 128(%rcx), %ymm2, %ymm8
+{vex}	vpmadd52huq	0(%rcx),%ymm2,%ymm3
+{vex}	vpmadd52huq	32(%rcx),%ymm2,%ymm5
+{vex}	vpmadd52huq	64(%rcx),%ymm2,%ymm6
+{vex}	vpmadd52huq	96(%rcx),%ymm2,%ymm7
+{vex}	vpmadd52huq	128(%rcx),%ymm2,%ymm8
 	leaq	168(%rsp),%rsp
 	movq	160(%r11),%r13
 
@@ -718,17 +718,17 @@ ossl_rsaz_amm52x20_x2_avxifma256:
 	orq	%r10,%r15
 
 	leaq	-168(%rsp),%rsp
-{vex} vpmadd52luq 160(%rsi), %ymm1, %ymm4
-{vex} vpmadd52luq 192(%rsi), %ymm1, %ymm9
-{vex} vpmadd52luq 224(%rsi), %ymm1, %ymm10
-{vex} vpmadd52luq 256(%rsi), %ymm1, %ymm11
-{vex} vpmadd52luq 288(%rsi), %ymm1, %ymm12
+{vex}	vpmadd52luq	160(%rsi),%ymm1,%ymm4
+{vex}	vpmadd52luq	192(%rsi),%ymm1,%ymm9
+{vex}	vpmadd52luq	224(%rsi),%ymm1,%ymm10
+{vex}	vpmadd52luq	256(%rsi),%ymm1,%ymm11
+{vex}	vpmadd52luq	288(%rsi),%ymm1,%ymm12
 
-{vex} vpmadd52luq 160(%rcx), %ymm2, %ymm4
-{vex} vpmadd52luq 192(%rcx), %ymm2, %ymm9
-{vex} vpmadd52luq 224(%rcx), %ymm2, %ymm10
-{vex} vpmadd52luq 256(%rcx), %ymm2, %ymm11
-{vex} vpmadd52luq 288(%rcx), %ymm2, %ymm12
+{vex}	vpmadd52luq	160(%rcx),%ymm2,%ymm4
+{vex}	vpmadd52luq	192(%rcx),%ymm2,%ymm9
+{vex}	vpmadd52luq	224(%rcx),%ymm2,%ymm10
+{vex}	vpmadd52luq	256(%rcx),%ymm2,%ymm11
+{vex}	vpmadd52luq	288(%rcx),%ymm2,%ymm12
 
 
 	vmovdqu	%ymm4,0(%rsp)
@@ -746,17 +746,17 @@ ossl_rsaz_amm52x20_x2_avxifma256:
 
 	addq	8(%rsp),%r15
 
-{vex} vpmadd52huq 160(%rsi), %ymm1, %ymm4
-{vex} vpmadd52huq 192(%rsi), %ymm1, %ymm9
-{vex} vpmadd52huq 224(%rsi), %ymm1, %ymm10
-{vex} vpmadd52huq 256(%rsi), %ymm1, %ymm11
-{vex} vpmadd52huq 288(%rsi), %ymm1, %ymm12
+{vex}	vpmadd52huq	160(%rsi),%ymm1,%ymm4
+{vex}	vpmadd52huq	192(%rsi),%ymm1,%ymm9
+{vex}	vpmadd52huq	224(%rsi),%ymm1,%ymm10
+{vex}	vpmadd52huq	256(%rsi),%ymm1,%ymm11
+{vex}	vpmadd52huq	288(%rsi),%ymm1,%ymm12
 
-{vex} vpmadd52huq 160(%rcx), %ymm2, %ymm4
-{vex} vpmadd52huq 192(%rcx), %ymm2, %ymm9
-{vex} vpmadd52huq 224(%rcx), %ymm2, %ymm10
-{vex} vpmadd52huq 256(%rcx), %ymm2, %ymm11
-{vex} vpmadd52huq 288(%rcx), %ymm2, %ymm12
+{vex}	vpmadd52huq	160(%rcx),%ymm2,%ymm4
+{vex}	vpmadd52huq	192(%rcx),%ymm2,%ymm9
+{vex}	vpmadd52huq	224(%rcx),%ymm2,%ymm10
+{vex}	vpmadd52huq	256(%rcx),%ymm2,%ymm11
+{vex}	vpmadd52huq	288(%rcx),%ymm2,%ymm12
 	leaq	168(%rsp),%rsp
 	leaq	8(%r11),%r11
 	decl	%ebx
@@ -863,34 +863,34 @@ ossl_rsaz_amm52x20_x2_avxifma256:
 	andq	$0xf,%r14
 	vpsubq	.Lmask52x4(%rip),%ymm3,%ymm0
 	shlq	$5,%r14
-	vmovapd	(%rdx,%r14), %ymm2
+	vmovapd	(%rdx,%r14,1),%ymm2
 	vblendvpd	%ymm2,%ymm0,%ymm3,%ymm3
 
 	shrb	$4,%r13b
 	andq	$0xf,%r13
 	vpsubq	.Lmask52x4(%rip),%ymm5,%ymm0
 	shlq	$5,%r13
-	vmovapd	(%rdx,%r13), %ymm2
+	vmovapd	(%rdx,%r13,1),%ymm2
 	vblendvpd	%ymm2,%ymm0,%ymm5,%ymm5
 
 	movb	%r12b,%r11b
 	andq	$0xf,%r12
 	vpsubq	.Lmask52x4(%rip),%ymm6,%ymm0
 	shlq	$5,%r12
-	vmovapd	(%rdx,%r12), %ymm2
+	vmovapd	(%rdx,%r12,1),%ymm2
 	vblendvpd	%ymm2,%ymm0,%ymm6,%ymm6
 
 	shrb	$4,%r11b
 	andq	$0xf,%r11
 	vpsubq	.Lmask52x4(%rip),%ymm7,%ymm0
 	shlq	$5,%r11
-	vmovapd	(%rdx,%r11), %ymm2
+	vmovapd	(%rdx,%r11,1),%ymm2
 	vblendvpd	%ymm2,%ymm0,%ymm7,%ymm7
 
 	andq	$0xf,%r10
 	vpsubq	.Lmask52x4(%rip),%ymm8,%ymm0
 	shlq	$5,%r10
-	vmovapd	(%rdx,%r10), %ymm2
+	vmovapd	(%rdx,%r10,1),%ymm2
 	vblendvpd	%ymm2,%ymm0,%ymm8,%ymm8
 
 
@@ -1001,34 +1001,34 @@ ossl_rsaz_amm52x20_x2_avxifma256:
 	andq	$0xf,%r14
 	vpsubq	.Lmask52x4(%rip),%ymm4,%ymm0
 	shlq	$5,%r14
-	vmovapd	(%rdx,%r14), %ymm2
+	vmovapd	(%rdx,%r14,1),%ymm2
 	vblendvpd	%ymm2,%ymm0,%ymm4,%ymm4
 
 	shrb	$4,%r13b
 	andq	$0xf,%r13
 	vpsubq	.Lmask52x4(%rip),%ymm9,%ymm0
 	shlq	$5,%r13
-	vmovapd	(%rdx,%r13), %ymm2
+	vmovapd	(%rdx,%r13,1),%ymm2
 	vblendvpd	%ymm2,%ymm0,%ymm9,%ymm9
 
 	movb	%r12b,%r11b
 	andq	$0xf,%r12
 	vpsubq	.Lmask52x4(%rip),%ymm10,%ymm0
 	shlq	$5,%r12
-	vmovapd	(%rdx,%r12), %ymm2
+	vmovapd	(%rdx,%r12,1),%ymm2
 	vblendvpd	%ymm2,%ymm0,%ymm10,%ymm10
 
 	shrb	$4,%r11b
 	andq	$0xf,%r11
 	vpsubq	.Lmask52x4(%rip),%ymm11,%ymm0
 	shlq	$5,%r11
-	vmovapd	(%rdx,%r11), %ymm2
+	vmovapd	(%rdx,%r11,1),%ymm2
 	vblendvpd	%ymm2,%ymm0,%ymm11,%ymm11
 
 	andq	$0xf,%r10
 	vpsubq	.Lmask52x4(%rip),%ymm12,%ymm0
 	shlq	$5,%r10
-	vmovapd	(%rdx,%r10), %ymm2
+	vmovapd	(%rdx,%r10,1),%ymm2
 	vblendvpd	%ymm2,%ymm0,%ymm12,%ymm12
 
 

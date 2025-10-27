@@ -1142,6 +1142,9 @@ if(ARCH_AMD64)
             asm/crypto/rc4/rc4-md5-x86_64.s
             asm/crypto/rc4/rc4-x86_64.s
             asm/crypto/sha/keccak1600-x86_64.s
+            asm/crypto/sha/keccak1600-avx2.s
+            asm/crypto/sha/keccak1600-avx512.s
+            asm/crypto/sha/keccak1600-avx512vl.s
             asm/crypto/sha/sha1-mb-x86_64.s
             asm/crypto/sha/sha1-x86_64.s
             asm/crypto/sha/sha256-mb-x86_64.s

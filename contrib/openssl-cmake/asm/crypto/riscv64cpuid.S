@@ -64,7 +64,8 @@ OPENSSL_cleanse:
 .globl riscv_vlen_asm
 .type riscv_vlen_asm,@function
 riscv_vlen_asm:
-    csrr a0, vlenb
+    # 0xc22 is CSR vlenb
+    csrr a0, 0xc22
     slli a0, a0, 3
     ret
 .size riscv_vlen_asm,.-riscv_vlen_asm

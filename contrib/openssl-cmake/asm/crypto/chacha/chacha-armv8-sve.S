@@ -620,13 +620,29 @@ ChaCha20_ctr32_sve:
 .endif
 #ifdef	__AARCH64EB__
 	rev	x7,x7
+.inst	0x05a48000	//revb z0.s,p0/m,z0.s
+.inst	0x05a48084	//revb z4.s,p0/m,z4.s
 	rev	x9,x9
+.inst	0x05a48108	//revb z8.s,p0/m,z8.s
+.inst	0x05a4818c	//revb z12.s,p0/m,z12.s
 	rev	x11,x11
+.inst	0x05a48021	//revb z1.s,p0/m,z1.s
+.inst	0x05a480a5	//revb z5.s,p0/m,z5.s
 	rev	x13,x13
+.inst	0x05a48129	//revb z9.s,p0/m,z9.s
+.inst	0x05a481ad	//revb z13.s,p0/m,z13.s
 	rev	x15,x15
+.inst	0x05a48042	//revb z2.s,p0/m,z2.s
+.inst	0x05a480c6	//revb z6.s,p0/m,z6.s
 	rev	x17,x17
+.inst	0x05a4814a	//revb z10.s,p0/m,z10.s
+.inst	0x05a481ce	//revb z14.s,p0/m,z14.s
 	rev	x19,x19
+.inst	0x05a48063	//revb z3.s,p0/m,z3.s
+.inst	0x05a480e7	//revb z7.s,p0/m,z7.s
 	rev	x21,x21
+.inst	0x05a4816b	//revb z11.s,p0/m,z11.s
+.inst	0x05a481ef	//revb z15.s,p0/m,z15.s
 #endif
 .if	mixin == 1
 	add	x29,x29,#1
@@ -834,37 +850,13 @@ ChaCha20_ctr32_sve:
 	eor	x21,x21,x22
 .endif
 .inst	0xa540a031	//ld1w {z17.s},p0/z,[x1,#0,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48231	//revb z17.s,p0/m,z17.s
-#endif
 .inst	0xa541a032	//ld1w {z18.s},p0/z,[x1,#1,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48252	//revb z18.s,p0/m,z18.s
-#endif
 .inst	0xa542a033	//ld1w {z19.s},p0/z,[x1,#2,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48273	//revb z19.s,p0/m,z19.s
-#endif
 .inst	0xa543a034	//ld1w {z20.s},p0/z,[x1,#3,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48294	//revb z20.s,p0/m,z20.s
-#endif
 .inst	0xa544a035	//ld1w {z21.s},p0/z,[x1,#4,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a482b5	//revb z21.s,p0/m,z21.s
-#endif
 .inst	0xa545a036	//ld1w {z22.s},p0/z,[x1,#5,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a482d6	//revb z22.s,p0/m,z22.s
-#endif
 .inst	0xa546a037	//ld1w {z23.s},p0/z,[x1,#6,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a482f7	//revb z23.s,p0/m,z23.s
-#endif
 .inst	0xa547a038	//ld1w {z24.s},p0/z,[x1,#7,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48318	//revb z24.s,p0/m,z24.s
-#endif
 .inst	0x04215101	//addvl x1,x1,8
 .inst	0x04b13000	//eor z0.d,z0.d,z17.d
 .inst	0x04b23084	//eor z4.d,z4.d,z18.d
@@ -875,37 +867,13 @@ ChaCha20_ctr32_sve:
 .inst	0x04b73129	//eor z9.d,z9.d,z23.d
 .inst	0x04b831ad	//eor z13.d,z13.d,z24.d
 .inst	0xa540a031	//ld1w {z17.s},p0/z,[x1,#0,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48231	//revb z17.s,p0/m,z17.s
-#endif
 .inst	0xa541a032	//ld1w {z18.s},p0/z,[x1,#1,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48252	//revb z18.s,p0/m,z18.s
-#endif
 .inst	0xa542a033	//ld1w {z19.s},p0/z,[x1,#2,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48273	//revb z19.s,p0/m,z19.s
-#endif
 .inst	0xa543a034	//ld1w {z20.s},p0/z,[x1,#3,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48294	//revb z20.s,p0/m,z20.s
-#endif
 .inst	0xa544a035	//ld1w {z21.s},p0/z,[x1,#4,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a482b5	//revb z21.s,p0/m,z21.s
-#endif
 .inst	0xa545a036	//ld1w {z22.s},p0/z,[x1,#5,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a482d6	//revb z22.s,p0/m,z22.s
-#endif
 .inst	0xa546a037	//ld1w {z23.s},p0/z,[x1,#6,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a482f7	//revb z23.s,p0/m,z23.s
-#endif
 .inst	0xa547a038	//ld1w {z24.s},p0/z,[x1,#7,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48318	//revb z24.s,p0/m,z24.s
-#endif
 .inst	0x04215101	//addvl x1,x1,8
 .if	mixin == 1
 	stp	x7,x9,[x0],#16
@@ -927,70 +895,22 @@ ChaCha20_ctr32_sve:
 .endif
 .inst	0x04b7316b	//eor z11.d,z11.d,z23.d
 .inst	0x04b831ef	//eor z15.d,z15.d,z24.d
-#ifdef  __AARCH64EB__
-.inst	0x05a48000	//revb z0.s,p0/m,z0.s
-#endif
 .inst	0xe540e000	//st1w {z0.s},p0,[x0,#0,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48084	//revb z4.s,p0/m,z4.s
-#endif
 .inst	0xe541e004	//st1w {z4.s},p0,[x0,#1,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48108	//revb z8.s,p0/m,z8.s
-#endif
 .inst	0xe542e008	//st1w {z8.s},p0,[x0,#2,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a4818c	//revb z12.s,p0/m,z12.s
-#endif
 .inst	0xe543e00c	//st1w {z12.s},p0,[x0,#3,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48021	//revb z1.s,p0/m,z1.s
-#endif
 .inst	0xe544e001	//st1w {z1.s},p0,[x0,#4,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a480a5	//revb z5.s,p0/m,z5.s
-#endif
 .inst	0xe545e005	//st1w {z5.s},p0,[x0,#5,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48129	//revb z9.s,p0/m,z9.s
-#endif
 .inst	0xe546e009	//st1w {z9.s},p0,[x0,#6,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a481ad	//revb z13.s,p0/m,z13.s
-#endif
 .inst	0xe547e00d	//st1w {z13.s},p0,[x0,#7,MUL VL]
 .inst	0x04205100	//addvl x0,x0,8
-#ifdef  __AARCH64EB__
-.inst	0x05a48042	//revb z2.s,p0/m,z2.s
-#endif
 .inst	0xe540e002	//st1w {z2.s},p0,[x0,#0,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a480c6	//revb z6.s,p0/m,z6.s
-#endif
 .inst	0xe541e006	//st1w {z6.s},p0,[x0,#1,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a4814a	//revb z10.s,p0/m,z10.s
-#endif
 .inst	0xe542e00a	//st1w {z10.s},p0,[x0,#2,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a481ce	//revb z14.s,p0/m,z14.s
-#endif
 .inst	0xe543e00e	//st1w {z14.s},p0,[x0,#3,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48063	//revb z3.s,p0/m,z3.s
-#endif
 .inst	0xe544e003	//st1w {z3.s},p0,[x0,#4,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a480e7	//revb z7.s,p0/m,z7.s
-#endif
 .inst	0xe545e007	//st1w {z7.s},p0,[x0,#5,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a4816b	//revb z11.s,p0/m,z11.s
-#endif
 .inst	0xe546e00b	//st1w {z11.s},p0,[x0,#6,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a481ef	//revb z15.s,p0/m,z15.s
-#endif
 .inst	0xe547e00f	//st1w {z15.s},p0,[x0,#7,MUL VL]
 .inst	0x04205100	//addvl x0,x0,8
 210:
@@ -1527,13 +1447,29 @@ ChaCha20_ctr32_sve:
 .endif
 #ifdef	__AARCH64EB__
 	rev	x7,x7
+.inst	0x05a48000	//revb z0.s,p0/m,z0.s
+.inst	0x05a48084	//revb z4.s,p0/m,z4.s
 	rev	x9,x9
+.inst	0x05a48108	//revb z8.s,p0/m,z8.s
+.inst	0x05a4818c	//revb z12.s,p0/m,z12.s
 	rev	x11,x11
+.inst	0x05a48021	//revb z1.s,p0/m,z1.s
+.inst	0x05a480a5	//revb z5.s,p0/m,z5.s
 	rev	x13,x13
+.inst	0x05a48129	//revb z9.s,p0/m,z9.s
+.inst	0x05a481ad	//revb z13.s,p0/m,z13.s
 	rev	x15,x15
+.inst	0x05a48042	//revb z2.s,p0/m,z2.s
+.inst	0x05a480c6	//revb z6.s,p0/m,z6.s
 	rev	x17,x17
+.inst	0x05a4814a	//revb z10.s,p0/m,z10.s
+.inst	0x05a481ce	//revb z14.s,p0/m,z14.s
 	rev	x19,x19
+.inst	0x05a48063	//revb z3.s,p0/m,z3.s
+.inst	0x05a480e7	//revb z7.s,p0/m,z7.s
 	rev	x21,x21
+.inst	0x05a4816b	//revb z11.s,p0/m,z11.s
+.inst	0x05a481ef	//revb z15.s,p0/m,z15.s
 #endif
 .if	mixin == 1
 	add	x29,x29,#1
@@ -1741,37 +1677,13 @@ ChaCha20_ctr32_sve:
 	eor	x21,x21,x22
 .endif
 .inst	0xa540a031	//ld1w {z17.s},p0/z,[x1,#0,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48231	//revb z17.s,p0/m,z17.s
-#endif
 .inst	0xa541a032	//ld1w {z18.s},p0/z,[x1,#1,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48252	//revb z18.s,p0/m,z18.s
-#endif
 .inst	0xa542a033	//ld1w {z19.s},p0/z,[x1,#2,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48273	//revb z19.s,p0/m,z19.s
-#endif
 .inst	0xa543a034	//ld1w {z20.s},p0/z,[x1,#3,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48294	//revb z20.s,p0/m,z20.s
-#endif
 .inst	0xa544a035	//ld1w {z21.s},p0/z,[x1,#4,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a482b5	//revb z21.s,p0/m,z21.s
-#endif
 .inst	0xa545a036	//ld1w {z22.s},p0/z,[x1,#5,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a482d6	//revb z22.s,p0/m,z22.s
-#endif
 .inst	0xa546a037	//ld1w {z23.s},p0/z,[x1,#6,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a482f7	//revb z23.s,p0/m,z23.s
-#endif
 .inst	0xa547a038	//ld1w {z24.s},p0/z,[x1,#7,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48318	//revb z24.s,p0/m,z24.s
-#endif
 .inst	0x04215101	//addvl x1,x1,8
 .inst	0x04b13000	//eor z0.d,z0.d,z17.d
 .inst	0x04b23084	//eor z4.d,z4.d,z18.d
@@ -1782,37 +1694,13 @@ ChaCha20_ctr32_sve:
 .inst	0x04b73129	//eor z9.d,z9.d,z23.d
 .inst	0x04b831ad	//eor z13.d,z13.d,z24.d
 .inst	0xa540a031	//ld1w {z17.s},p0/z,[x1,#0,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48231	//revb z17.s,p0/m,z17.s
-#endif
 .inst	0xa541a032	//ld1w {z18.s},p0/z,[x1,#1,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48252	//revb z18.s,p0/m,z18.s
-#endif
 .inst	0xa542a033	//ld1w {z19.s},p0/z,[x1,#2,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48273	//revb z19.s,p0/m,z19.s
-#endif
 .inst	0xa543a034	//ld1w {z20.s},p0/z,[x1,#3,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48294	//revb z20.s,p0/m,z20.s
-#endif
 .inst	0xa544a035	//ld1w {z21.s},p0/z,[x1,#4,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a482b5	//revb z21.s,p0/m,z21.s
-#endif
 .inst	0xa545a036	//ld1w {z22.s},p0/z,[x1,#5,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a482d6	//revb z22.s,p0/m,z22.s
-#endif
 .inst	0xa546a037	//ld1w {z23.s},p0/z,[x1,#6,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a482f7	//revb z23.s,p0/m,z23.s
-#endif
 .inst	0xa547a038	//ld1w {z24.s},p0/z,[x1,#7,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48318	//revb z24.s,p0/m,z24.s
-#endif
 .inst	0x04215101	//addvl x1,x1,8
 .if	mixin == 1
 	stp	x7,x9,[x0],#16
@@ -1834,70 +1722,22 @@ ChaCha20_ctr32_sve:
 .endif
 .inst	0x04b7316b	//eor z11.d,z11.d,z23.d
 .inst	0x04b831ef	//eor z15.d,z15.d,z24.d
-#ifdef  __AARCH64EB__
-.inst	0x05a48000	//revb z0.s,p0/m,z0.s
-#endif
 .inst	0xe540e000	//st1w {z0.s},p0,[x0,#0,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48084	//revb z4.s,p0/m,z4.s
-#endif
 .inst	0xe541e004	//st1w {z4.s},p0,[x0,#1,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48108	//revb z8.s,p0/m,z8.s
-#endif
 .inst	0xe542e008	//st1w {z8.s},p0,[x0,#2,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a4818c	//revb z12.s,p0/m,z12.s
-#endif
 .inst	0xe543e00c	//st1w {z12.s},p0,[x0,#3,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48021	//revb z1.s,p0/m,z1.s
-#endif
 .inst	0xe544e001	//st1w {z1.s},p0,[x0,#4,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a480a5	//revb z5.s,p0/m,z5.s
-#endif
 .inst	0xe545e005	//st1w {z5.s},p0,[x0,#5,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48129	//revb z9.s,p0/m,z9.s
-#endif
 .inst	0xe546e009	//st1w {z9.s},p0,[x0,#6,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a481ad	//revb z13.s,p0/m,z13.s
-#endif
 .inst	0xe547e00d	//st1w {z13.s},p0,[x0,#7,MUL VL]
 .inst	0x04205100	//addvl x0,x0,8
-#ifdef  __AARCH64EB__
-.inst	0x05a48042	//revb z2.s,p0/m,z2.s
-#endif
 .inst	0xe540e002	//st1w {z2.s},p0,[x0,#0,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a480c6	//revb z6.s,p0/m,z6.s
-#endif
 .inst	0xe541e006	//st1w {z6.s},p0,[x0,#1,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a4814a	//revb z10.s,p0/m,z10.s
-#endif
 .inst	0xe542e00a	//st1w {z10.s},p0,[x0,#2,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a481ce	//revb z14.s,p0/m,z14.s
-#endif
 .inst	0xe543e00e	//st1w {z14.s},p0,[x0,#3,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48063	//revb z3.s,p0/m,z3.s
-#endif
 .inst	0xe544e003	//st1w {z3.s},p0,[x0,#4,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a480e7	//revb z7.s,p0/m,z7.s
-#endif
 .inst	0xe545e007	//st1w {z7.s},p0,[x0,#5,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a4816b	//revb z11.s,p0/m,z11.s
-#endif
 .inst	0xe546e00b	//st1w {z11.s},p0,[x0,#6,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a481ef	//revb z15.s,p0/m,z15.s
-#endif
 .inst	0xe547e00f	//st1w {z15.s},p0,[x0,#7,MUL VL]
 .inst	0x04205100	//addvl x0,x0,8
 210:
@@ -2508,13 +2348,29 @@ ChaCha20_ctr32_sve:
 .endif
 #ifdef	__AARCH64EB__
 	rev	x7,x7
+.inst	0x05a48000	//revb z0.s,p0/m,z0.s
+.inst	0x05a48084	//revb z4.s,p0/m,z4.s
 	rev	x9,x9
+.inst	0x05a48108	//revb z8.s,p0/m,z8.s
+.inst	0x05a4818c	//revb z12.s,p0/m,z12.s
 	rev	x11,x11
+.inst	0x05a48021	//revb z1.s,p0/m,z1.s
+.inst	0x05a480a5	//revb z5.s,p0/m,z5.s
 	rev	x13,x13
+.inst	0x05a48129	//revb z9.s,p0/m,z9.s
+.inst	0x05a481ad	//revb z13.s,p0/m,z13.s
 	rev	x15,x15
+.inst	0x05a48042	//revb z2.s,p0/m,z2.s
+.inst	0x05a480c6	//revb z6.s,p0/m,z6.s
 	rev	x17,x17
+.inst	0x05a4814a	//revb z10.s,p0/m,z10.s
+.inst	0x05a481ce	//revb z14.s,p0/m,z14.s
 	rev	x19,x19
+.inst	0x05a48063	//revb z3.s,p0/m,z3.s
+.inst	0x05a480e7	//revb z7.s,p0/m,z7.s
 	rev	x21,x21
+.inst	0x05a4816b	//revb z11.s,p0/m,z11.s
+.inst	0x05a481ef	//revb z15.s,p0/m,z15.s
 #endif
 .if	mixin == 1
 	add	x29,x29,#1
@@ -2722,37 +2578,13 @@ ChaCha20_ctr32_sve:
 	eor	x21,x21,x22
 .endif
 .inst	0xa540a031	//ld1w {z17.s},p0/z,[x1,#0,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48231	//revb z17.s,p0/m,z17.s
-#endif
 .inst	0xa541a032	//ld1w {z18.s},p0/z,[x1,#1,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48252	//revb z18.s,p0/m,z18.s
-#endif
 .inst	0xa542a033	//ld1w {z19.s},p0/z,[x1,#2,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48273	//revb z19.s,p0/m,z19.s
-#endif
 .inst	0xa543a034	//ld1w {z20.s},p0/z,[x1,#3,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48294	//revb z20.s,p0/m,z20.s
-#endif
 .inst	0xa544a035	//ld1w {z21.s},p0/z,[x1,#4,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a482b5	//revb z21.s,p0/m,z21.s
-#endif
 .inst	0xa545a036	//ld1w {z22.s},p0/z,[x1,#5,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a482d6	//revb z22.s,p0/m,z22.s
-#endif
 .inst	0xa546a037	//ld1w {z23.s},p0/z,[x1,#6,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a482f7	//revb z23.s,p0/m,z23.s
-#endif
 .inst	0xa547a038	//ld1w {z24.s},p0/z,[x1,#7,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48318	//revb z24.s,p0/m,z24.s
-#endif
 .inst	0x04215101	//addvl x1,x1,8
 .inst	0x04b13000	//eor z0.d,z0.d,z17.d
 .inst	0x04b23084	//eor z4.d,z4.d,z18.d
@@ -2763,37 +2595,13 @@ ChaCha20_ctr32_sve:
 .inst	0x04b73129	//eor z9.d,z9.d,z23.d
 .inst	0x04b831ad	//eor z13.d,z13.d,z24.d
 .inst	0xa540a031	//ld1w {z17.s},p0/z,[x1,#0,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48231	//revb z17.s,p0/m,z17.s
-#endif
 .inst	0xa541a032	//ld1w {z18.s},p0/z,[x1,#1,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48252	//revb z18.s,p0/m,z18.s
-#endif
 .inst	0xa542a033	//ld1w {z19.s},p0/z,[x1,#2,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48273	//revb z19.s,p0/m,z19.s
-#endif
 .inst	0xa543a034	//ld1w {z20.s},p0/z,[x1,#3,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48294	//revb z20.s,p0/m,z20.s
-#endif
 .inst	0xa544a035	//ld1w {z21.s},p0/z,[x1,#4,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a482b5	//revb z21.s,p0/m,z21.s
-#endif
 .inst	0xa545a036	//ld1w {z22.s},p0/z,[x1,#5,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a482d6	//revb z22.s,p0/m,z22.s
-#endif
 .inst	0xa546a037	//ld1w {z23.s},p0/z,[x1,#6,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a482f7	//revb z23.s,p0/m,z23.s
-#endif
 .inst	0xa547a038	//ld1w {z24.s},p0/z,[x1,#7,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48318	//revb z24.s,p0/m,z24.s
-#endif
 .inst	0x04215101	//addvl x1,x1,8
 .if	mixin == 1
 	stp	x7,x9,[x0],#16
@@ -2815,70 +2623,22 @@ ChaCha20_ctr32_sve:
 .endif
 .inst	0x04b7316b	//eor z11.d,z11.d,z23.d
 .inst	0x04b831ef	//eor z15.d,z15.d,z24.d
-#ifdef  __AARCH64EB__
-.inst	0x05a48000	//revb z0.s,p0/m,z0.s
-#endif
 .inst	0xe540e000	//st1w {z0.s},p0,[x0,#0,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48084	//revb z4.s,p0/m,z4.s
-#endif
 .inst	0xe541e004	//st1w {z4.s},p0,[x0,#1,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48108	//revb z8.s,p0/m,z8.s
-#endif
 .inst	0xe542e008	//st1w {z8.s},p0,[x0,#2,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a4818c	//revb z12.s,p0/m,z12.s
-#endif
 .inst	0xe543e00c	//st1w {z12.s},p0,[x0,#3,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48021	//revb z1.s,p0/m,z1.s
-#endif
 .inst	0xe544e001	//st1w {z1.s},p0,[x0,#4,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a480a5	//revb z5.s,p0/m,z5.s
-#endif
 .inst	0xe545e005	//st1w {z5.s},p0,[x0,#5,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48129	//revb z9.s,p0/m,z9.s
-#endif
 .inst	0xe546e009	//st1w {z9.s},p0,[x0,#6,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a481ad	//revb z13.s,p0/m,z13.s
-#endif
 .inst	0xe547e00d	//st1w {z13.s},p0,[x0,#7,MUL VL]
 .inst	0x04205100	//addvl x0,x0,8
-#ifdef  __AARCH64EB__
-.inst	0x05a48042	//revb z2.s,p0/m,z2.s
-#endif
 .inst	0xe540e002	//st1w {z2.s},p0,[x0,#0,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a480c6	//revb z6.s,p0/m,z6.s
-#endif
 .inst	0xe541e006	//st1w {z6.s},p0,[x0,#1,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a4814a	//revb z10.s,p0/m,z10.s
-#endif
 .inst	0xe542e00a	//st1w {z10.s},p0,[x0,#2,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a481ce	//revb z14.s,p0/m,z14.s
-#endif
 .inst	0xe543e00e	//st1w {z14.s},p0,[x0,#3,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48063	//revb z3.s,p0/m,z3.s
-#endif
 .inst	0xe544e003	//st1w {z3.s},p0,[x0,#4,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a480e7	//revb z7.s,p0/m,z7.s
-#endif
 .inst	0xe545e007	//st1w {z7.s},p0,[x0,#5,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a4816b	//revb z11.s,p0/m,z11.s
-#endif
 .inst	0xe546e00b	//st1w {z11.s},p0,[x0,#6,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a481ef	//revb z15.s,p0/m,z15.s
-#endif
 .inst	0xe547e00f	//st1w {z15.s},p0,[x0,#7,MUL VL]
 .inst	0x04205100	//addvl x0,x0,8
 210:
@@ -3482,13 +3242,29 @@ ChaCha20_ctr32_sve:
 .endif
 #ifdef	__AARCH64EB__
 	rev	x7,x7
+.inst	0x05a48000	//revb z0.s,p0/m,z0.s
+.inst	0x05a48084	//revb z4.s,p0/m,z4.s
 	rev	x9,x9
+.inst	0x05a48108	//revb z8.s,p0/m,z8.s
+.inst	0x05a4818c	//revb z12.s,p0/m,z12.s
 	rev	x11,x11
+.inst	0x05a48021	//revb z1.s,p0/m,z1.s
+.inst	0x05a480a5	//revb z5.s,p0/m,z5.s
 	rev	x13,x13
+.inst	0x05a48129	//revb z9.s,p0/m,z9.s
+.inst	0x05a481ad	//revb z13.s,p0/m,z13.s
 	rev	x15,x15
+.inst	0x05a48042	//revb z2.s,p0/m,z2.s
+.inst	0x05a480c6	//revb z6.s,p0/m,z6.s
 	rev	x17,x17
+.inst	0x05a4814a	//revb z10.s,p0/m,z10.s
+.inst	0x05a481ce	//revb z14.s,p0/m,z14.s
 	rev	x19,x19
+.inst	0x05a48063	//revb z3.s,p0/m,z3.s
+.inst	0x05a480e7	//revb z7.s,p0/m,z7.s
 	rev	x21,x21
+.inst	0x05a4816b	//revb z11.s,p0/m,z11.s
+.inst	0x05a481ef	//revb z15.s,p0/m,z15.s
 #endif
 .if	mixin == 1
 	add	x29,x29,#1
@@ -3696,37 +3472,13 @@ ChaCha20_ctr32_sve:
 	eor	x21,x21,x22
 .endif
 .inst	0xa540a031	//ld1w {z17.s},p0/z,[x1,#0,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48231	//revb z17.s,p0/m,z17.s
-#endif
 .inst	0xa541a032	//ld1w {z18.s},p0/z,[x1,#1,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48252	//revb z18.s,p0/m,z18.s
-#endif
 .inst	0xa542a033	//ld1w {z19.s},p0/z,[x1,#2,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48273	//revb z19.s,p0/m,z19.s
-#endif
 .inst	0xa543a034	//ld1w {z20.s},p0/z,[x1,#3,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48294	//revb z20.s,p0/m,z20.s
-#endif
 .inst	0xa544a035	//ld1w {z21.s},p0/z,[x1,#4,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a482b5	//revb z21.s,p0/m,z21.s
-#endif
 .inst	0xa545a036	//ld1w {z22.s},p0/z,[x1,#5,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a482d6	//revb z22.s,p0/m,z22.s
-#endif
 .inst	0xa546a037	//ld1w {z23.s},p0/z,[x1,#6,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a482f7	//revb z23.s,p0/m,z23.s
-#endif
 .inst	0xa547a038	//ld1w {z24.s},p0/z,[x1,#7,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48318	//revb z24.s,p0/m,z24.s
-#endif
 .inst	0x04215101	//addvl x1,x1,8
 .inst	0x04b13000	//eor z0.d,z0.d,z17.d
 .inst	0x04b23084	//eor z4.d,z4.d,z18.d
@@ -3737,37 +3489,13 @@ ChaCha20_ctr32_sve:
 .inst	0x04b73129	//eor z9.d,z9.d,z23.d
 .inst	0x04b831ad	//eor z13.d,z13.d,z24.d
 .inst	0xa540a031	//ld1w {z17.s},p0/z,[x1,#0,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48231	//revb z17.s,p0/m,z17.s
-#endif
 .inst	0xa541a032	//ld1w {z18.s},p0/z,[x1,#1,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48252	//revb z18.s,p0/m,z18.s
-#endif
 .inst	0xa542a033	//ld1w {z19.s},p0/z,[x1,#2,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48273	//revb z19.s,p0/m,z19.s
-#endif
 .inst	0xa543a034	//ld1w {z20.s},p0/z,[x1,#3,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48294	//revb z20.s,p0/m,z20.s
-#endif
 .inst	0xa544a035	//ld1w {z21.s},p0/z,[x1,#4,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a482b5	//revb z21.s,p0/m,z21.s
-#endif
 .inst	0xa545a036	//ld1w {z22.s},p0/z,[x1,#5,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a482d6	//revb z22.s,p0/m,z22.s
-#endif
 .inst	0xa546a037	//ld1w {z23.s},p0/z,[x1,#6,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a482f7	//revb z23.s,p0/m,z23.s
-#endif
 .inst	0xa547a038	//ld1w {z24.s},p0/z,[x1,#7,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48318	//revb z24.s,p0/m,z24.s
-#endif
 .inst	0x04215101	//addvl x1,x1,8
 .if	mixin == 1
 	stp	x7,x9,[x0],#16
@@ -3789,70 +3517,22 @@ ChaCha20_ctr32_sve:
 .endif
 .inst	0x04b7316b	//eor z11.d,z11.d,z23.d
 .inst	0x04b831ef	//eor z15.d,z15.d,z24.d
-#ifdef  __AARCH64EB__
-.inst	0x05a48000	//revb z0.s,p0/m,z0.s
-#endif
 .inst	0xe540e000	//st1w {z0.s},p0,[x0,#0,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48084	//revb z4.s,p0/m,z4.s
-#endif
 .inst	0xe541e004	//st1w {z4.s},p0,[x0,#1,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48108	//revb z8.s,p0/m,z8.s
-#endif
 .inst	0xe542e008	//st1w {z8.s},p0,[x0,#2,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a4818c	//revb z12.s,p0/m,z12.s
-#endif
 .inst	0xe543e00c	//st1w {z12.s},p0,[x0,#3,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48021	//revb z1.s,p0/m,z1.s
-#endif
 .inst	0xe544e001	//st1w {z1.s},p0,[x0,#4,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a480a5	//revb z5.s,p0/m,z5.s
-#endif
 .inst	0xe545e005	//st1w {z5.s},p0,[x0,#5,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48129	//revb z9.s,p0/m,z9.s
-#endif
 .inst	0xe546e009	//st1w {z9.s},p0,[x0,#6,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a481ad	//revb z13.s,p0/m,z13.s
-#endif
 .inst	0xe547e00d	//st1w {z13.s},p0,[x0,#7,MUL VL]
 .inst	0x04205100	//addvl x0,x0,8
-#ifdef  __AARCH64EB__
-.inst	0x05a48042	//revb z2.s,p0/m,z2.s
-#endif
 .inst	0xe540e002	//st1w {z2.s},p0,[x0,#0,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a480c6	//revb z6.s,p0/m,z6.s
-#endif
 .inst	0xe541e006	//st1w {z6.s},p0,[x0,#1,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a4814a	//revb z10.s,p0/m,z10.s
-#endif
 .inst	0xe542e00a	//st1w {z10.s},p0,[x0,#2,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a481ce	//revb z14.s,p0/m,z14.s
-#endif
 .inst	0xe543e00e	//st1w {z14.s},p0,[x0,#3,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a48063	//revb z3.s,p0/m,z3.s
-#endif
 .inst	0xe544e003	//st1w {z3.s},p0,[x0,#4,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a480e7	//revb z7.s,p0/m,z7.s
-#endif
 .inst	0xe545e007	//st1w {z7.s},p0,[x0,#5,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a4816b	//revb z11.s,p0/m,z11.s
-#endif
 .inst	0xe546e00b	//st1w {z11.s},p0,[x0,#6,MUL VL]
-#ifdef  __AARCH64EB__
-.inst	0x05a481ef	//revb z15.s,p0/m,z15.s
-#endif
 .inst	0xe547e00f	//st1w {z15.s},p0,[x0,#7,MUL VL]
 .inst	0x04205100	//addvl x0,x0,8
 210:
