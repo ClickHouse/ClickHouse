@@ -699,7 +699,6 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
             return result;
 
         // maybe we detect a correct region
-        bool new_region_detected = false;
         if (!detect_region || is_illegal_constraint_exception)
         {
             if (auto region = GetErrorMarshaller()->ExtractRegion(error); !region.empty() && region != explicit_region)
@@ -707,22 +706,11 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
                 LOG_INFO(log, "Detected new region: {}", region);
                 request.overrideRegion(region);
                 insertRegionOverride(bucket, region);
-                new_region_detected = true;
             }
         }
 
-        /// special handling for opt-in regions
-        if (new_region_detected && is_illegal_constraint_exception && initial_endpoint.substr(11) == "amazonaws.com")
-        {
-            S3::URI new_uri(initial_endpoint);
-            new_uri.addRegionToURI(request.getRegionOverride());
-            found_new_endpoint = true;
-            request.overrideURI(new_uri);
-            continue;
-        }
-
         // we possibly got new location, need to try with that one
-        auto new_uri = getURIFromError(error);
+        auto new_uri = is_illegal_constraint_exception ? std::optional<S3::URI>(initial_endpoint) : getURIFromError(error);
         if (!new_uri)
             return result;
 
