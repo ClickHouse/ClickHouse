@@ -1189,7 +1189,10 @@ void StorageObjectStorageQueue::alter(
         LOG_TEST(log, "New settings: {}", new_metadata.settings_changes->formatForLogging());
 
         /// Alter settings which are stored in keeper.
-        files_metadata->alterSettings(changed_settings, local_context);
+        ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
+        {
+            files_metadata->alterSettings(changed_settings, local_context);
+        });
 
         /// Alter settings which are not stored in keeper.
         for (const auto & change : changed_settings)
