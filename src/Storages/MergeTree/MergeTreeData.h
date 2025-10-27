@@ -1340,6 +1340,8 @@ protected:
     friend class MergeTask;
     friend class IPartMetadataManager;
     friend class IMergedBlockOutputStream; // for access to log
+    friend class VersionMetadata; // for access to log
+    friend class VersionMetadataOnDisk; // for access to log
 
     bool require_part_metadata;
 

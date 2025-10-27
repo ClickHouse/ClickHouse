@@ -45,13 +45,13 @@ MergeTreeDataPartsVector collectInitial(const MergeTreeData & data, const MergeT
         /// We don't need rolled back parts.
         /// NOTE When rolling back a transaction we set creation_csn to RolledBackCSN at first
         /// and then remove part from working set, so there's no race condition
-        if (part->version.creation_csn == Tx::RolledBackCSN)
+        if (part->version->getCreationCSN() == Tx::RolledBackCSN)
             continue;
 
         /// We don't need parts that are finally removed.
         /// NOTE There's a minor race condition: we may get UnknownCSN if a transaction has been just committed concurrently.
         /// But it's not a problem if we will add such part to `data_parts`.
-        if (part->version.removal_csn != Tx::UnknownCSN)
+        if (part->version->getRemovalCSN() != Tx::UnknownCSN)
             continue;
 
         active_parts_set.add(part->name);
@@ -85,11 +85,11 @@ auto constructPreconditionsPredicate(const StoragePolicyPtr & storage_policy, co
         {
             /// Cannot merge parts if some of them are not visible in current snapshot
             /// TODO Transactions: We can use simplified visibility rules (without CSN lookup) here
-            if (!part->version.isVisible(tx->getSnapshot(), Tx::EmptyTID))
+            if (!part->version->isVisible(tx->getSnapshot(), Tx::EmptyTID))
                 return std::unexpected(PreformattedMessage::create("Part {} is not visible in transaction {}", part->name, tx->dumpDescription()));
 
             /// Do not try to merge parts that are locked for removal (merge will probably fail)
-            if (part->version.isRemovalTIDLocked())
+            if (part->version->isRemovalTIDLocked())
                 return std::unexpected(PreformattedMessage::create("Part {} is locked for removal", part->name));
         }
 
