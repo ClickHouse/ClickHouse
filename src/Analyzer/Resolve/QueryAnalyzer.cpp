@@ -106,6 +106,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int UNEXPECTED_EXPRESSION;
+    extern const int SYNTAX_ERROR;
 }
 
 QueryAnalyzer::QueryAnalyzer(bool only_analyze_)
@@ -163,7 +164,11 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & ta
             }
 
             if (node_type == QueryTreeNodeType::LIST)
+            {
+                QueryExpressionsAliasVisitor visitor(scope.aliases);
+                visitor.visit(node);
                 resolveExpressionNodeList(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+            }
             else
                 resolveExpressionNode(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
@@ -191,7 +196,6 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & ta
 void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression, ContextPtr context)
 {
     IdentifierResolveScope & scope = createIdentifierResolveScope(node, /*parent_scope=*/ nullptr);
-
     if (!scope.context)
         scope.context = context;
 
@@ -838,6 +842,40 @@ void QueryAnalyzer::expandOrderByAll(QueryNode & query_tree_node_typed, const Se
 
     query_tree_node_typed.getOrderByNode() = list_node;
     query_tree_node_typed.setIsOrderByAll(false);
+}
+
+void QueryAnalyzer::expandLimitByAll(QueryNode & query_tree_node_typed)
+{
+    if (!query_tree_node_typed.isLimitByAll())
+        return;
+
+    if (!query_tree_node_typed.hasLimitByLimit())
+    {
+        throw Exception(ErrorCodes::SYNTAX_ERROR,
+            "LIMIT BY ALL requires a limit expression. Use LIMIT n BY ALL");
+    }
+
+    auto & limit_by_nodes = query_tree_node_typed.getLimitBy().getNodes();
+    auto & projection_nodes = query_tree_node_typed.getProjection().getNodes();
+
+    limit_by_nodes.clear();
+    limit_by_nodes.reserve(projection_nodes.size());
+
+    for (auto & projection_node : projection_nodes)
+    {
+        if (hasAggregateFunctionNodes(projection_node))
+            continue;
+
+        limit_by_nodes.push_back(projection_node->clone());
+    }
+
+    if (limit_by_nodes.empty())
+    {
+        throw Exception(ErrorCodes::SYNTAX_ERROR,
+            "LIMIT BY ALL requires at least one non-aggregate expression in SELECT");
+    }
+
+    query_tree_node_typed.setIsLimitByAll(false);
 }
 
 std::string QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(
@@ -4111,6 +4149,10 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
         }
     }
 
+    if (array_join_column_expressions.empty())
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "ARRAY JOIN requires at least one expression after resolving COLUMNS");
+
     array_join_nodes = std::move(array_join_column_expressions);
 }
 
@@ -4796,6 +4838,8 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     if (query_node_typed.hasInterpolate())
         resolveInterpolateColumnsNodeList(query_node_typed.getInterpolate(), scope);
+
+    expandLimitByAll(query_node_typed);
 
     if (query_node_typed.hasLimitByLimit())
     {

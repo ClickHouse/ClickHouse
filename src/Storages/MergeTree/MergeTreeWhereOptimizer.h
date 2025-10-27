@@ -3,7 +3,6 @@
 #include <Interpreters/Context_fwd.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/RPNBuilder.h>
-#include <Storages/Statistics/ConditionSelectivityEstimator.h>
 
 #include <boost/noncopyable.hpp>
 
@@ -31,6 +30,9 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
  *  Otherwise any condition with minimal summary column size can be transferred to PREWHERE.
  *  If column sizes are unknown (in compact parts), the number of columns, participating in condition is used instead.
  */
+
+class ConditionSelectivityEstimator;
+using ConditionSelectivityEstimatorPtr = std::shared_ptr<ConditionSelectivityEstimator>;
 class MergeTreeWhereOptimizer : private boost::noncopyable
 {
 public:
