@@ -1,18 +1,5 @@
-Simple SELECT with limit: expect a Sorting step injected above limit
-Expression (Project names)
-  Sorting (Sorting for ORDER BY)
-    Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))))
-      Limit (preliminary LIMIT (without OFFSET))
-        ReadFromSystemNumbers
-UNION: expect ORDER BY injected as wrapping select above each child with limit
-Union
-  Expression (Project names)
-    Sorting (Sorting for ORDER BY)
-      Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))))
-        Limit (preliminary LIMIT (without OFFSET))
-          ReadFromSystemNumbers
-  Expression ((Conversion before UNION + Project names))
-    Sorting (Sorting for ORDER BY)
-      Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))))
-        Limit (preliminary LIMIT (without OFFSET))
-          ReadFromSystemNumbers
+Simple SELECT with limit: limit on source is unaffected by random order by
+0
+UNION: limit in both subqueries are unaffected by random order by
+0
+0
