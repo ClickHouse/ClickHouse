@@ -159,6 +159,9 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
 
     registerCreator("text", textIndexCreator);
     registerValidator("text", textIndexValidator);
+
+    registerCreator("bitmap", bitmapIndexCreator);
+    registerValidator("bitmap", bitmapIndexValidator);
 }
 
 MergeTreeIndexFactory & MergeTreeIndexFactory::instance()

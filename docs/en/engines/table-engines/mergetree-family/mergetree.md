@@ -354,6 +354,7 @@ see ["Understanding ClickHouse data skipping indexes"](/optimize/skipping-indexe
 
 - [`MinMax`](#minmax) index
 - [`Set`](#set) index
+- [`Bitmap`](#bitmap) index
 - [`bloom_filter`](#bloom-filter) index
 - [`ngrambf_v1`](#n-gram-bloom-filter) index
 - [`tokenbf_v1`](#token-bloom-filter) index
@@ -375,6 +376,56 @@ For each index granule at most `max_rows` many unique values of the specified ex
 ```text title="Syntax"
 set(max_rows)
 ```
+
+#### Bitmap {#bitmap}
+
+For each index granule stores a [Roaring Bitmap](https://roaringbitmap.org/) that maps each distinct value to the row positions where it appears.
+This index is optimized for low-to-medium cardinality columns (typically 100 to 100,000 distinct values) and provides efficient filtering for equality and `IN` predicates.
+
+```text title="Syntax"
+bitmap(max_rows)
+```
+
+The `max_rows` parameter specifies the maximum number of distinct values to track per granule.
+If a granule contains more than `max_rows` distinct values, the index for that granule becomes conservative and won't filter it out.
+`max_rows = 0` means "track all distinct values" (use with caution on high-cardinality columns).
+
+**Use cases:**
+- Status or category columns with moderate cardinality (e.g., order status, user role, product category)
+- Enum-like columns with a limited set of values
+- Queries with equality predicates (`WHERE status = 'active'`) or `IN` predicates (`WHERE status IN ('active', 'pending')`)
+
+**Example:**
+
+```sql
+CREATE TABLE events
+(
+    timestamp DateTime,
+    user_id UInt64,
+    event_type String,
+    status String,
+    INDEX status_idx status TYPE bitmap(1000) GRANULARITY 1
+)
+ENGINE = MergeTree()
+ORDER BY (timestamp, user_id);
+```
+
+The following data types are supported:
+- `(U)Int*`
+- `Float*`
+- `Enum`
+- `Date`
+- `DateTime`
+- `String`
+- `FixedString`
+- `UUID`
+- `IPv4`
+- `IPv6`
+
+:::note
+The bitmap index works best when data has some locality - different granules should contain different sets of values.
+For evenly distributed data (where every granule contains all possible values), the index cannot skip any granules.
+:::
 
 #### Bloom filter {#bloom-filter}
 

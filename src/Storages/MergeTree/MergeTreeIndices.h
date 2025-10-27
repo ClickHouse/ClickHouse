@@ -401,4 +401,7 @@ void ginIndexValidator(const IndexDescription & index, bool attach);
 MergeTreeIndexPtr textIndexCreator(const IndexDescription & index);
 void textIndexValidator(const IndexDescription & index, bool attach);
 
+MergeTreeIndexPtr bitmapIndexCreator(const IndexDescription & index);
+void bitmapIndexValidator(const IndexDescription & index, bool attach);
+
 }
