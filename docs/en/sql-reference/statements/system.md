@@ -211,6 +211,67 @@ Normally shuts down ClickHouse (like `service clickhouse-server stop` / `kill {$
 
 Aborts ClickHouse process (like `kill -9 {$ pid_clickhouse-server}`)
 
+## SYSTEM INSTRUMENT {#instrument}
+
+Manages instrumentation points using LLVM's XRay feature which is available when ClickHouse is built using `ENABLE_XRAY=1`.
+This enables to debug and profile in production without modifying the source code and with minimal overhead.
+When no instrumentation point is added, the performance penalty is negligible because it only adds an extra jump to a nearby
+address at the prolog and epilog of those functions that are longer than 200 instructions.
+
+### SYSTEM INSTRUMENT ADD {#instrument-add}
+
+Adds a new instrumentation point. Functions instrumented can be inspected in the [`system.xray_instrumentation`](../../operations/systems-tables/xray_instrumentation.md) system table.
+There are three different kind of handlers to add to functions:
+
+**Syntax**
+```sql
+SYSTEM INSTRUMENT ADD FUNCTION HANDLER [PARAMETERS]
+```
+
+where `FUNCTION` is any C++ function such as `QueryMetricLog::startQuery` and the handler one of the following
+
+#### LOG
+
+Prints the text provided as an argument and the stack trace either on `ENTRY` or `EXIT` of the function.
+
+```sql
+SYSTEM INSTRUMENT ADD `QueryMetricLog::startQuery` LOG ENTRY 'this is a log printed at entry'
+SYSTEM INSTRUMENT ADD `QueryMetricLog::startQuery` LOG EXIT 'this is a log printed at exit'
+```
+
+#### SLEEP
+
+Sleeps for a number of seconds either on `ENTRY` or `EXIT`.
+
+```sql
+SYSTEM INSTRUMENT ADD `QueryMetricLog::startQuery` SLEEP ENTRY 0.5
+```
+
+#### PROFILE
+
+Measures the time spent between `ENTRY` and `EXIT` of a function.
+The result of the profiling is stored in [`system.xray_instrumentation_profiling_log`](../../operations/systems-tables/xray_instrumentation_profiling_log.md).
+
+```sql
+SYSTEM INSTRUMENT ADD `QueryMetricLog::startQuery` PROFILE
+```
+
+### SYSTEM INSTRUMENT REMOVE {#instrument-remove}
+
+Removes either a specific instrumentation point with:
+
+```sql
+SYSTEM INSTRUMENT REMOVE ID
+```
+
+or all of them using the `ALL` parameter:
+
+```sql
+SYSTEM INSTRUMENT REMOVE ALL
+```
+
+The instrumentation point ID can be read in [`system.xray_instrumentation`](../../operations/systems-tables/xray_instrumentation.md) system table.
+
 ## Managing Distributed Tables {#managing-distributed-tables}
 
 ClickHouse can manage [distributed](../../engines/table-engines/special/distributed.md) tables. When a user inserts data into these tables, ClickHouse first creates a queue of the data that should be sent to cluster nodes, then asynchronously sends it. You can manage queue processing with the [`STOP DISTRIBUTED SENDS`](#stop-distributed-sends), [FLUSH DISTRIBUTED](#flush-distributed), and [`START DISTRIBUTED SENDS`](#start-distributed-sends) queries. You can also synchronously insert distributed data with the [`distributed_foreground_insert`](../../operations/settings/settings.md#distributed_foreground_insert) setting.
@@ -494,7 +555,7 @@ SYSTEM RESTORE DATABASE REPLICA repl_db [ON CLUSTER cluster]
 **Example**
 
 ```sql
-CREATE DATABASE repl_db 
+CREATE DATABASE repl_db
 ENGINE=Replicated("/clickhouse/repl_db", shard1, replica1);
 
 CREATE TABLE repl_db.test_table (n UInt32)
