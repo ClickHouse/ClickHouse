@@ -1,26 +1,26 @@
-#include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 
-#include <Storages/MergeTree/IDataPartStorage.h>
-#include <Storages/MergeTree/MergeTreeWriterStream.h>
-#include <Storages/MergeTree/MergeTreeIndexConditionText.h>
-#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
-#include <DataTypes/Serializations/SerializationNumber.h>
-#include <DataTypes/Serializations/SerializationString.h>
-#include <Interpreters/BloomFilterHash.h>
+#include <Columns/ColumnsNumber.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
+#include <DataTypes/Serializations/SerializationNumber.h>
+#include <DataTypes/Serializations/SerializationString.h>
+#include <Interpreters/BloomFilterHash.h>
 #include <Interpreters/ITokenExtractor.h>
-#include <base/range.h>
-#include <fmt/ranges.h>
-
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIndexDeclaration.h>
+#include <Parsers/ASTLiteral.h>
+#include <Storages/MergeTree/IDataPartStorage.h>
+#include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
+#include <Storages/MergeTree/MergeTreeIndexConditionText.h>
+#include <Storages/MergeTree/MergeTreeWriterStream.h>
+
+#include <base/range.h>
+#include <fmt/ranges.h>
 
 namespace ProfileEvents
 {
