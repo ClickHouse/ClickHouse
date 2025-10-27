@@ -186,7 +186,7 @@ SparseFilterDescription::SparseFilterDescription(const IColumn & column)
         mutable_valid_offsets->reserve(offsets.size());
         for (size_t i = 0; i < offsets.size(); ++i)
         {
-            if (values->getBool(i))
+            if (values->getBool(i + 1))
                 mutable_valid_offsets->insertValue(offsets[i]);
         }
 

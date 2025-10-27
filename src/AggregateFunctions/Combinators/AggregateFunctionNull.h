@@ -427,6 +427,9 @@ public:
         auto from = std::lower_bound(offsets.begin(), offsets.end(), row_begin) - offsets.begin() + 1;
         auto to = std::lower_bound(offsets.begin(), offsets.end(), row_end) - offsets.begin() + 1;
 
+        if (from >= to)
+            return;
+
         this->setFlag(place);
         this->nested_function->addBatchSinglePlace(from, to, this->nestedPlace(place), &nested_column, arena, -1);
     }
