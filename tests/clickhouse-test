@@ -1170,8 +1170,6 @@ class SettingsRandomizer:
         "use_skip_indexes_if_final": lambda: random.randint(0, 1),
         "use_skip_indexes_on_data_read": lambda: random.randint(0, 1),
         "optimize_rewrite_like_perfect_affix": lambda: random.randint(0, 1),
-        # Use the new reader most of the time.
-        "input_format_parquet_use_native_reader_v3": lambda: min(1, random.randint(0, 5)),
         **randomize_external_sort_group_by(),
     }
 
@@ -1473,7 +1471,7 @@ class TestCase:
         )
 
         testcase_args.testcase_client = (
-            f"{testcase_args.client} --log_comment f'{testcase_args.testcase_basename}-{testcase_args.testcase_database}'"
+            f"{testcase_args.client} --log_comment '{testcase_args.testcase_basename}-{testcase_args.testcase_database}'"
         )
 
         return testcase_args
@@ -1944,7 +1942,6 @@ class TestCase:
                     self.stdout_file,
                 ],
                 stdout=PIPE,
-                universal_newlines=True,
             ) as diff_proc:
                 if self.show_whitespaces_in_diff:
                     with Popen(
@@ -1952,11 +1949,10 @@ class TestCase:
                         stdin=diff_proc.stdout,
                         stdout=PIPE,
                     ) as sed_proc:
-                        diff = sed_proc.communicate()[0].decode(
-                            "utf-8", errors="ignore"
-                        )
+                        diff = sed_proc.communicate()[0]
                 else:
                     diff = diff_proc.communicate()[0]
+            diff = diff.decode("utf-8", errors="ignore")
 
             if diff.startswith("Binary files "):
                 diff += "Content of stdout:\n===================\n"

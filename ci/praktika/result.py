@@ -599,16 +599,25 @@ class Result(MetaClasses.Serializable):
                     # If command is a Python function, call it with provided arguments
                     if with_info or with_info_on_failure:
                         buffer = io.StringIO()
+                    else:
+                        buffer = "stdout"
+                    try:
                         with Utils.Tee(stdout=buffer):
                             result = command_(*command_args, **command_kwargs)
-                    else:
-                        result = command_(*command_args, **command_kwargs)
+                    except Exception as e:
+                        result = False
+                        info_lines.extend(
+                            [
+                                f"Command [{command_}] failed with exception [{e}]:",
+                                *traceback.format_exc().splitlines(),
+                            ]
+                        )
                     res = result if isinstance(result, bool) else not bool(result)
                     if (with_info_on_failure and not res) or with_info:
                         if isinstance(result, bool):
-                            info_lines = buffer.getvalue().splitlines()
+                            info_lines.extend(buffer.getvalue().splitlines())
                         else:
-                            info_lines = str(result).splitlines()
+                            info_lines.extend(str(result).splitlines())
                 else:
                     # Run shell command in a specified directory with logging and verbosity
                     exit_code = Shell.run(
