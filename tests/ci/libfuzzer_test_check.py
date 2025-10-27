@@ -1,5 +1,18 @@
 #!/usr/bin/env python3
 
+# Strategy of fuzzing:
+# we want to minimize corpora with preserving coverage, and at the same time
+# we want to include whatever additional inputs we can get from either dynamically
+# generated inputs or from manual uploads. To this end we are going to firstly run
+# fuzzers with -merge=1 flag with first corpus directory empty - which will collect
+# only uniquely covering inputs - and with following other corpus directories
+# including previously collected and downloaded from S3. This run will produce
+# minimized corpus with unique coverage on which we are going to run fuzzing next.
+# Also this run may produce some (multiple) failures which we are going to report as regressions.
+# After that we are going to run fuzzers normally with produced minimized corpus and
+# with enabled coverage collection. After this run we are going to upload fresh corpus
+# to S3 for future runs. All discovered failures will be reported along with coverage stats.
+
 import argparse
 import logging
 import os
@@ -144,29 +157,48 @@ def upload_corpus(path):
 
 def process_error(path: Path) -> list:
     ERROR = r"^==\d+==\s?ERROR: (\S+): (.*)"
-    # error_source = ""
-    # error_reason = ""
-    # test_unit = ""
-    # TEST_UNIT_LINE = r"artifact_prefix='.*\/'; Test unit written to (.*)"
-    error_info = []
+    ERROR_END = r"^SUMMARY: .*"
+    error_source = ""
+    error_reason = ""
+    test_unit = ""
+    stack_trace = []
+    TEST_UNIT_LINE = r"artifact_prefix='.*\/'; Test unit written to (.*)"
+    error_info = [] # [(error_source, error_reason, test_unit, trace_file), ...]
     is_error = False
 
     with open(path, "r", encoding="utf-8", errors='replace') as file:
         for line in file:
             line = line.rstrip("\n")
             if is_error:
-                error_info.append(line)
-                # match = re.search(TEST_UNIT_LINE, line)
-                # if match:
-                #     test_unit = match.group(1)
+                match = re.search(ERROR_END, line)
+                if match:
+                    is_error = False
+                    continue
+                stack_trace.append(line)                
                 continue
 
             match = re.search(ERROR, line)
             if match:
-                error_info.append(line)
-                # error_source = match.group(1)
-                # error_reason = match.group(2)
+                stack_trace.append(line)
+                error_source = match.group(1)
+                error_reason = match.group(2)
                 is_error = True
+                continue
+
+            match = re.search(TEST_UNIT_LINE, line)
+            if match:
+                test_unit_path = match.group(1)
+                test_unit = os.path.basename(test_unit_path)
+                trace_file = f"{test_unit}.trace"
+                trace_path = f"{os.path.dirname(test_unit_path)}/{trace_file}"
+                with open(trace_path, "w", encoding="utf-8") as tracef:
+                    tracef.write("\n".join(stack_trace))
+                error_info.append((error_source, error_reason, test_unit, trace_file))
+                # reset for next error
+                error_source = ""
+                error_reason = ""
+                test_unit = ""
+                stack_trace = []
 
     return error_info
 
@@ -184,13 +216,13 @@ def process_results(result_path: Path):
     oks = 0
     errors = 0
     fails = 0
-    for file in result_path.glob("*.status"):
-        fuzzer = file.stem
-        file_path = file.parent / fuzzer
-        file_path_unit = file_path.with_suffix(".unit")
-        file_path_out = file_path.with_suffix(".out")
-        file_path_stdout = file_path.with_suffix(".stdout")
-        status = read_status(file)
+    for fuzzer_result_dir in result_path.glob("*.results"):
+        fuzzer = fuzzer_result_dir.stem
+        file_path_status = fuzzer_result_dir / "status.txt"
+        file_path_out = fuzzer_result_dir / "out.txt"
+        file_path_stdout = fuzzer_result_dir / "stdout.txt"
+
+        status = read_status(file_path_status)
         result = TestResult(fuzzer, status[0], float(status[2]))
         if status[0] == "OK":
             oks += 1
@@ -203,13 +235,15 @@ def process_results(result_path: Path):
         else:
             fails += 1
             if file_path_out.exists():
-                result.set_raw_logs("\n".join(process_error(file_path_out)))
-            if file_path_unit.exists():
-                result.set_log_files(f"['{file_path_unit}']")
-            elif file_path_out.exists():
-                result.set_log_files(f"['{file_path_out}']")
-            elif file_path_stdout.exists():
-                result.set_log_files(f"['{file_path_stdout}']")
+                errors = process_error(file_path_out)
+                result.set_raw_logs("\n".join("\t".join(e) for e in errors))
+            # Collect all crash files and trace files
+            crash_files = list(fuzzer_result_dir.glob("crash-*"))
+            trace_files = list(fuzzer_result_dir.glob("*.trace"))
+            all_files = crash_files + trace_files
+            if all_files:
+                result.set_log_files("[" + ", ".join(f"'{f}'" for f in all_files) + "]")
+
         test_results.append(result)
 
     return [oks, errors, fails, test_results]

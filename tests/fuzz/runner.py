@@ -92,14 +92,17 @@ def run_fuzzer(fuzzer: str, timeout: int):
 
             use_fuzzer_args = parser.getboolean("CI", "FUZZER_ARGS", fallback=False)
 
-    exact_artifact_path = f"{OUTPUT}/{fuzzer}.unit"
-    status_path = f"{OUTPUT}/{fuzzer}.status"
-    out_path = f"{OUTPUT}/{fuzzer}.out"
-    stdout_path = f"{OUTPUT}/{fuzzer}.stdout"
+    results_path = f"{OUTPUT}/{fuzzer}.results/"
+    if not os.path.exists(results_path):
+        os.makedirs(results_path)
+    artifact_prefix = f"{results_path}"
+    status_path = f"{results_path}/status.txt"
+    out_path = f"{results_path}/out.txt"
+    stdout_path = f"{results_path}/stdout.txt"
 
     if not "-dict=" in custom_libfuzzer_options and Path(f"{fuzzer}.dict").exists():
         custom_libfuzzer_options += f" -dict={fuzzer}.dict"
-    custom_libfuzzer_options += f" -exact_artifact_path={exact_artifact_path}"
+    custom_libfuzzer_options += f" -artifact_prefix={artifact_prefix}"
 
     custom_libfuzzer_options += f" -timeout={timeout}"
 
