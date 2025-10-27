@@ -16,7 +16,7 @@ int main(int, char **)
 
     String s;
     readStringUntilEOF(s, in);
-    out << StringRefHash()(StringRef{s}) << '\n';
+    out << StringRefHash()(s) << '\n';
     out.finalize();
 
     return 0;

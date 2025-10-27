@@ -6,7 +6,6 @@ keywords: ['TabSeparatedRaw']
 output_format: true
 slug: /interfaces/formats/TabSeparatedRaw
 title: 'TabSeparatedRaw'
-doc_type: 'reference'
 ---
 
 | Input | Output | Alias           |
@@ -88,3 +87,4 @@ The output will be in tab separated format:
 ```
 
 ## Format settings {#format-settings}
+

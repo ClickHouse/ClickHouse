@@ -87,7 +87,6 @@ void InterpreterParallelWithQuery::executeSubqueries(const ASTs & subqueries)
         {
             ContextMutablePtr subquery_context = Context::createCopy(context);
             subquery_context->makeQueryContext();
-            subquery_context->setCurrentQueryId({});
 
             auto callback = [this, subquery, subquery_context, error_found]
             {

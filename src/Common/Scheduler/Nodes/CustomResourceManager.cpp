@@ -177,12 +177,6 @@ ResourceLink CustomResourceManager::Classifier::get(const String & resource_name
         return ResourceLink{}; // unlimited access
 }
 
-WorkloadSettings CustomResourceManager::Classifier::getWorkloadSettings(const String & resource_name) const
-{
-    UNUSED(resource_name);
-    return {};
-}
-
 CustomResourceManager::CustomResourceManager()
     : state(new State())
 {

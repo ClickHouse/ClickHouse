@@ -45,7 +45,7 @@ namespace Net
         ~HTTPChunkedStreamBuf();
         void close();
 
-        bool isComplete(bool read_from_device_to_check_eof = false) noexcept;
+        bool isComplete(bool read_from_device_to_check_eof = false);
 
     protected:
         int readFromDevice(char * buffer, std::streamsize length);

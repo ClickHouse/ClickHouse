@@ -4,7 +4,6 @@ sidebar_label: 'CHECK TABLE'
 sidebar_position: 41
 slug: /sql-reference/statements/check-table
 title: 'CHECK TABLE Statement'
-doc_type: 'reference'
 ---
 
 The `CHECK TABLE` query in ClickHouse is used to perform a validation check on a specific table or its partitions. It ensures the integrity of the data by verifying the checksums and other internal data structures.
@@ -30,8 +29,9 @@ CHECK TABLE table_name [PARTITION partition_expression | PART part_name] [FORMAT
 - `part_name`: (Optional) If you want to check a specific part in the table, you can add string literal to specify a part name.
 - `FORMAT format`: (Optional) Allows you to specify the output format of the result.
 - `SETTINGS`: (Optional) Allows additional settings.
-  - **`check_query_single_value_result`**: (Optional) This setting allows you to toggle between a detailed result (`0`) or a summarized result (`1`).
-  - Other settings can be applied as well. If you don't require a deterministic order for the results, you can set max_threads to a value greater than one to speed up the query.
+    - **`check_query_single_value_result`**: (Optional) This setting allows you to toggle between a detailed result (`0`) or a summarized result (`1`).
+    - Other settings can be applied as well. If you don't require a deterministic order for the results, you can set max_threads to a value greater than one to speed up the query.
+
 
 The query response depends on the value of contains `check_query_single_value_result` setting.
 In case of `check_query_single_value_result = 1` only `result` column with a single row is returned. Value inside this row is `1` if the integrity check is passed and `0` if data is corrupted.

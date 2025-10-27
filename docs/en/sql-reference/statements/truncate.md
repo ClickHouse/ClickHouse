@@ -4,7 +4,6 @@ sidebar_label: 'TRUNCATE'
 sidebar_position: 52
 slug: /sql-reference/statements/truncate
 title: 'TRUNCATE Statements'
-doc_type: 'reference'
 ---
 
 # TRUNCATE Statements
@@ -52,6 +51,7 @@ TRUNCATE [ALL] TABLES FROM [IF EXISTS] db [LIKE | ILIKE | NOT LIKE '<pattern>'] 
 | `LIKE \| ILIKE \| NOT LIKE '<pattern>'` | Filters tables by pattern.           |
 | `ON CLUSTER cluster`       | Runs the command across a cluster.                |
 
+
 Removes all data from all tables in a database.
 
 ## TRUNCATE DATABASE {#truncate-database}
@@ -64,6 +64,7 @@ TRUNCATE DATABASE [IF EXISTS] db [ON CLUSTER cluster]
 | `IF EXISTS`          | Prevents an error if the database does not exist. |
 | `db`                 | The database name.                                |
 | `ON CLUSTER cluster` | Runs the command across a specified cluster.      |
+
 
 Removes all tables from a database but keeps the database itself. When the clause `IF EXISTS` is omitted, the query returns an error if the database does not exist.
 

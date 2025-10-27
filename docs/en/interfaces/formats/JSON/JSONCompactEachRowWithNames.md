@@ -6,16 +6,17 @@ keywords: ['JSONCompactEachRowWithNames']
 output_format: true
 slug: /interfaces/formats/JSONCompactEachRowWithNames
 title: 'JSONCompactEachRowWithNames'
-doc_type: 'reference'
 ---
 
 | Input | Output | Alias |
 |-------|--------|-------|
 | ✔     | ✔      |       |
 
+
 ## Description {#description}
 
 Differs from the [`JSONCompactEachRow`](./JSONCompactEachRow.md) format in that it also prints the header row with column names, similar to the [`TabSeparatedWithNames`](../TabSeparated/TabSeparatedWithNames.md) format.
+
 
 ## Example usage {#example-usage}
 
@@ -82,6 +83,7 @@ The output will be in JSON format:
 ["2022-05-07", 2021, "Stevenage Borough", "Salford City", 4, 2]
 ["2022-05-07", 2021, "Walsall", "Swindon Town", 0, 3]
 ```
+
 
 ## Format settings {#format-settings}
 

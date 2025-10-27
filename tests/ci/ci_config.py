@@ -402,7 +402,7 @@ class CI:
         ),
         JobNames.INTEGRATION_TEST: CommonJobConfigs.INTEGRATION_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE],
-            num_batches=6,
+            num_batches=4,
             release_only=True,
         ),
         JobNames.INTEGRATION_TEST_FLAKY: CommonJobConfigs.INTEGRATION_TEST.with_properties(
@@ -529,7 +529,7 @@ class CI:
         ),
         JobNames.DOCS_CHECK: JobConfig(
             digest=DigestConfig(
-                include_paths=["**/*.md", "./docs", "tests/ci/docs_check.py", "src/Core/ServerSettings.cpp"],
+                include_paths=["**/*.md", "./docs", "tests/ci/docs_check.py"],
                 docker=["clickhouse/docs-builder"],
             ),
             run_command="docs_check.py",

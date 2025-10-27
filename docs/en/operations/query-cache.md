@@ -4,7 +4,6 @@ sidebar_label: 'Query cache'
 sidebar_position: 65
 slug: /operations/query-cache
 title: 'Query cache'
-doc_type: 'guide'
 ---
 
 # Query cache
@@ -195,7 +194,7 @@ Also, results of queries with non-deterministic functions are not cached by defa
   [`runningDifference()`](../sql-reference/functions/other-functions.md#runningDifference),
   [`blockSize()`](../sql-reference/functions/other-functions.md#blockSize) etc.,
 - functions which depend on the environment: [`currentUser()`](../sql-reference/functions/other-functions.md#currentUser),
-  [`queryID()`](/sql-reference/functions/other-functions#queryID),
+  [`queryID()`](/sql-reference/functions/other-functions#queryid),
   [`getMacro()`](../sql-reference/functions/other-functions.md#getMacro) etc.
 
 To force caching of results of queries with non-deterministic functions regardless, use setting

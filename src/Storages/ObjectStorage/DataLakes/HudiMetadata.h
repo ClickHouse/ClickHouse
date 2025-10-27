@@ -15,11 +15,9 @@ class HudiMetadata final : public IDataLakeMetadata, private WithContext
 public:
     static constexpr auto name = "Hudi";
 
-    const char * getName() const override { return name; }
-
     HudiMetadata(ObjectStoragePtr object_storage_, StorageObjectStorageConfigurationWeakPtr configuration_, ContextPtr context_);
 
-    NamesAndTypesList getTableSchema(ContextPtr /*local_context*/) const override { return {}; }
+    NamesAndTypesList getTableSchema() const override { return {}; }
 
     bool operator ==(const IDataLakeMetadata & other) const override
     {
@@ -27,18 +25,6 @@ public:
         return hudi_metadata
             && !data_files.empty() && !hudi_metadata->data_files.empty()
             && data_files == hudi_metadata->data_files;
-    }
-
-    static void createInitial(
-        const ObjectStoragePtr & /*object_storage*/,
-        const StorageObjectStorageConfigurationWeakPtr & /*configuration*/,
-        const ContextPtr & /*local_context*/,
-        const std::optional<ColumnsDescription> & /*columns*/,
-        ASTPtr /*partition_by*/,
-        bool /*if_not_exists*/,
-        std::shared_ptr<DataLake::ICatalog> /*catalog*/,
-        const StorageID & /*table_id_*/)
-    {
     }
 
     static DataLakeMetadataPtr create(
@@ -54,7 +40,6 @@ protected:
         const ActionsDAG * filter_dag,
         FileProgressCallback callback,
         size_t list_batch_size,
-        StorageMetadataPtr storage_metadata_snapshot,
         ContextPtr context) const override;
 
 private:

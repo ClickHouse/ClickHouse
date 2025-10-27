@@ -71,14 +71,12 @@ void ParallelParsingInputFormat::parserThreadFunction(size_t current_ticket_numb
          * just a 'normal' factory class that doesn't have any state, and so we
          * can use it from multiple threads simultaneously.
          */
-
         ReadBuffer read_buffer(unit.segment.data(), unit.segment.size(), 0);
 
         InputFormatPtr input_format = internal_parser_creator(read_buffer);
         input_format->setRowsReadBefore(unit.offset);
         input_format->setErrorsLogger(errors_logger);
         input_format->setSerializationHints(serialization_hints);
-
         InternalParser parser(input_format);
 
         unit.chunk_ext.chunk.clear();
@@ -166,7 +164,11 @@ Chunk ParallelParsingInputFormat::read()
           */
         std::unique_lock<std::mutex> lock(mutex);
         if (background_exception)
+        {
+            lock.unlock();
+            onCancel();
             std::rethrow_exception(background_exception);
+        }
 
         return {};
     }

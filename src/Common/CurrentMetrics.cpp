@@ -22,7 +22,6 @@
     M(BackgroundCommonPoolSize, "Limit on number of tasks in an associated background pool") \
     M(BackgroundMovePoolTask, "Number of active tasks in BackgroundProcessingPool for moves") \
     M(BackgroundMovePoolSize, "Limit on number of tasks in BackgroundProcessingPool for moves") \
-    M(AzureRequests, "Number of currently executing Azure requests") \
     M(BackgroundSchedulePoolTask, "Number of active tasks in BackgroundSchedulePool. This pool is used for periodic ReplicatedMergeTree tasks, like cleaning old data parts, altering data parts, replica re-initialization, etc.") \
     M(BackgroundSchedulePoolSize, "Limit on number of tasks in BackgroundSchedulePool. This pool is used for periodic ReplicatedMergeTree tasks, like cleaning old data parts, altering data parts, replica re-initialization, etc.") \
     M(BackgroundBufferFlushSchedulePoolTask, "Number of active tasks in BackgroundBufferFlushSchedulePool. This pool is used for periodic Buffer flushes") \
@@ -62,13 +61,11 @@
     M(SendExternalTables, "Number of connections that are sending data for external tables to remote servers. External tables are used to implement GLOBAL IN and GLOBAL JOIN operators with distributed subqueries.") \
     M(QueryThread, "Number of query processing threads") \
     M(ReadonlyReplica, "Number of Replicated tables that are currently in readonly state due to re-initialization after ZooKeeper session loss or due to startup without ZooKeeper configured.") \
-    M(ReplicaReady, "Indicates if the replica is ready for queries: 0 = no, 1 = yes") \
     M(MemoryTracking, "Total amount of memory (bytes) allocated by the server.") \
     M(MemoryTrackingUncorrected, "Total amount of memory (bytes) allocated by the server not corrected by RSS.") \
     M(MergesMutationsMemoryTracking, "Total amount of memory (bytes) allocated by background tasks (merges and mutations).") \
     M(EphemeralNode, "Number of ephemeral nodes hold in ZooKeeper.") \
     M(ZooKeeperSession, "Number of sessions (connections) to ZooKeeper. Should be no more than one, because using more than one connection to ZooKeeper may lead to bugs due to lack of linearizability (stale reads) that ZooKeeper consistency model allows.") \
-    M(ZooKeeperSessionExpired, "Number of expired global ZooKeeper sessions.") \
     M(ZooKeeperWatch, "Number of watches (event subscriptions) in ZooKeeper.") \
     M(ZooKeeperRequest, "Number of requests to ZooKeeper in fly.") \
     M(DelayedInserts, "Number of INSERT queries that are throttled due to high number of active data parts for partition in a MergeTree table.") \
@@ -234,11 +231,8 @@
     M(IDiskCopierThreadsActive, "Number of threads for copying data between disks of different types running a task.") \
     M(IDiskCopierThreadsScheduled, "Number of queued or active jobs for copying data between disks of different types.") \
     M(SystemReplicasThreads, "Number of threads in the system.replicas thread pool.") \
-    M(SystemDatabaseReplicasThreads, "Number of threads in the system.database_replicas thread pool.") \
     M(SystemReplicasThreadsActive, "Number of threads in the system.replicas thread pool running a task.") \
-    M(SystemDatabaseReplicasThreadsActive, "Number of threads in the system.database_replicas thread pool running a task.") \
     M(SystemReplicasThreadsScheduled, "Number of queued or active jobs in the system.replicas thread pool.") \
-    M(SystemDatabaseReplicasThreadsScheduled, "Number of queued or active jobs in the system.database_replicas thread pool.") \
     M(RestartReplicaThreads, "Number of threads in the RESTART REPLICA thread pool.") \
     M(RestartReplicaThreadsActive, "Number of threads in the RESTART REPLICA thread pool running a task.") \
     M(RestartReplicaThreadsScheduled, "Number of queued or active jobs in the RESTART REPLICA thread pool.") \
@@ -324,7 +318,6 @@
     M(DNSAddressesCacheSize, "Number of cached DNS addresses") \
     M(MarkCacheBytes, "Total size of mark cache in bytes") \
     M(MarkCacheFiles, "Total number of mark files cached in the mark cache") \
-    M(NamedCollection, "Number of named collections") \
     M(PrimaryIndexCacheBytes, "Total size of primary index cache in bytes") \
     M(PrimaryIndexCacheFiles, "Total number of index files cached in the primary index cache") \
     M(PageCacheBytes, "Total size of userspace page cache in bytes") \
@@ -364,10 +357,6 @@
     M(SharedMergeTreeThreadsActive, "Number of threads in the thread pools in internals of SharedMergeTree running a task") \
     M(SharedMergeTreeThreadsScheduled, "Number of queued or active threads in the thread pools in internals of SharedMergeTree") \
     M(SharedMergeTreeFetch, "Number of fetches in progress") \
-    M(SharedMergeTreeAssignedCurrentParts, "Number of parts locked by merge or mutation") \
-    M(SharedMergeTreeOutdatedPartsInKeeper, "How many outdated part records stored in keeper") \
-    M(SharedMergeTreeCondemnedPartsInKeeper, "How many condemned part records stored in keeper") \
-    M(SharedMergeTreeBrokenCondemnedPartsInKeeper, "How many broken condemned part records stored in keeper") \
     M(CacheWarmerBytesInProgress, "Total size of remote file segments waiting to be asynchronously loaded into filesystem cache.") \
     M(DistrCacheOpenedConnections, "Number of open connections to Distributed Cache") \
     M(DistrCacheUsedConnections, "Number of currently used connections to Distributed Cache") \
@@ -403,7 +392,6 @@
     M(ConcurrencyControlAcquired, "Total number of acquired CPU slots") \
     M(ConcurrencyControlAcquiredNonCompeting, "Total number of acquired CPU slots that are not considered competing (the first thread if fair_round_robin scheduler is in use)") \
     M(ConcurrencyControlSoftLimit, "Value of soft limit on number of CPU slots") \
-    M(ConcurrencyControlPreempted, "Total number of preempted threads waiting for CPU slot") \
     \
     M(ConcurrentQueryScheduled, "Total number of query slot requests are being scheduled currently") \
     M(ConcurrentQueryAcquired, "Total number of acquired query slots") \
@@ -429,8 +417,6 @@
     M(SharedDatabaseCatalogTablesInLocalDropDetachQueue, "Number of tables in the queue for local drop or detach in Shared Catalog.") \
     \
     M(SharedCatalogDropDetachLocalTablesErrors, "Number of errors that occurred when attempting to drop or detach local tables in Shared Catalog.") \
-    \
-    M(SharedCatalogNumberOfObjectsInState, "Number of objects in the current state of Shared Catalog.") \
     \
     M(MetadataFromKeeperCacheObjects, "Number of objects in disk metadata cache.") \
     \

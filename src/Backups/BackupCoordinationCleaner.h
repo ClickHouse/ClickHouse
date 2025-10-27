@@ -14,10 +14,10 @@ class BackupCoordinationCleaner
 public:
     BackupCoordinationCleaner(bool is_restore_, const String & zookeeper_path_, const WithRetries & with_retries_, LoggerPtr log_);
 
-    void cleanup(bool throw_if_error);
+    bool cleanup(bool throw_if_error);
 
 private:
-    void cleanupImpl(bool throw_if_error, WithRetries::Kind retries_kind);
+    bool cleanupImpl(bool throw_if_error, WithRetries::Kind retries_kind);
 
     const bool is_restore;
     const String zookeeper_path;

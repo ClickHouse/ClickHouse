@@ -112,8 +112,7 @@ void registerOutputFormatJSONEachRowWithProgress(FormatFactory & factory)
     factory.registerOutputFormat("JSONEachRowWithProgress", [](
             WriteBuffer & buf,
             const Block & sample,
-            const FormatSettings & _format_settings,
-            FormatFilterInfoPtr /*format_filter_info*/)
+            const FormatSettings & _format_settings)
     {
         FormatSettings settings = _format_settings;
         settings.json.serialize_as_strings = false;
@@ -124,8 +123,7 @@ void registerOutputFormatJSONEachRowWithProgress(FormatFactory & factory)
     factory.registerOutputFormat("JSONStringsEachRowWithProgress", [](
             WriteBuffer & buf,
             const Block & sample,
-            const FormatSettings & _format_settings,
-            FormatFilterInfoPtr /*format_filter_info*/)
+            const FormatSettings & _format_settings)
     {
         FormatSettings settings = _format_settings;
         settings.json.serialize_as_strings = true;

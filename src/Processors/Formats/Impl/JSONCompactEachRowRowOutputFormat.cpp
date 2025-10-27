@@ -124,8 +124,7 @@ void registerOutputFormatJSONCompactEachRow(FormatFactory & factory)
             factory.registerOutputFormat(format_name, [yield_strings, with_names, with_types](
                 WriteBuffer & buf,
                 const Block & sample,
-                const FormatSettings & format_settings,
-                FormatFilterInfoPtr /*format_filter_info*/)
+                const FormatSettings & format_settings)
             {
                 FormatSettings settings = format_settings;
                 settings.json.serialize_as_strings = yield_strings;

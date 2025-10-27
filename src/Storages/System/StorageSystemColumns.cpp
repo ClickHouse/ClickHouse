@@ -20,18 +20,13 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Common/Exception.h>
+
 
 namespace DB
 {
 namespace Setting
 {
     extern const SettingsSeconds lock_acquire_timeout;
-    extern const SettingsBool show_data_lake_catalogs_in_system_tables;
-}
-namespace ErrorCodes
-{
-    extern const int UNKNOWN_DATABASE;
 }
 
 StorageSystemColumns::StorageSystemColumns(const StorageID & table_id_)
@@ -41,7 +36,8 @@ StorageSystemColumns::StorageSystemColumns(const StorageID & table_id_)
 
     /// NOTE: when changing the list of columns, take care of the ColumnsSource::generate method,
     /// when they are referenced by their numeric positions.
-    auto description = ColumnsDescription({
+    storage_metadata.setColumns(ColumnsDescription(
+    {
         { "database",           std::make_shared<DataTypeString>(), "Database name."},
         { "table",              std::make_shared<DataTypeString>(), "Table name."},
         { "name",               std::make_shared<DataTypeString>(), "Column name."},
@@ -69,13 +65,7 @@ StorageSystemColumns::StorageSystemColumns(const StorageID & table_id_)
         { "datetime_precision",         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
             "Decimal precision of DateTime64 data type. For other data types, the NULL value is returned."},
         { "serialization_hint",         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "A hint for column to choose serialization on inserts according to statistics."},
-    });
-
-    description.setAliases({
-        {"column", std::make_shared<DataTypeString>(), "name"}
-    });
-
-    storage_metadata.setColumns(description);
+    }));
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -135,7 +125,7 @@ protected:
             Names cols_required_for_primary_key;
             Names cols_required_for_sampling;
             IStorage::ColumnSizeByName column_sizes;
-            SerializationInfoByName serialization_hints{{}};
+            SerializationInfoByName serialization_hints;
 
             {
                 StoragePtr storage = storages.at(std::make_pair(database_name, table_name));
@@ -153,19 +143,7 @@ protected:
 
                 /// Certain information about a table - should be calculated only when the corresponding columns are queried.
                 if (columns_mask[7] || columns_mask[8] || columns_mask[9])
-                {
-                    /// Can throw UNKNOWN_DATABASE in case of Merge table
-                    try
-                    {
-                        column_sizes = storage->getColumnSizes();
-                    }
-                    catch (const Exception & e)
-                    {
-                        if (e.code() != ErrorCodes::UNKNOWN_DATABASE)
-                            throw;
-                        tryLogCurrentException(getLogger("SystemColumns"), fmt::format("While obtaining columns sizes for {}", storage->getStorageID().getNameForLogs()), LogsLevel::debug);
-                    }
-                }
+                    column_sizes = storage->getColumnSizes();
 
                 if (columns_mask[11])
                     cols_required_for_partition_key = metadata_snapshot->getColumnsRequiredForPartitionKey();
@@ -442,9 +420,7 @@ void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, 
         /// Add `database` column.
         MutableColumnPtr database_column_mut = ColumnString::create();
 
-        const auto & context = getContext();
-        const auto & settings = context->getSettingsRef();
-        const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = settings[Setting::show_data_lake_catalogs_in_system_tables]});
+        const auto databases = DatabaseCatalog::instance().getDatabases();
         for (const auto & [database_name, database] : databases)
         {
             if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
