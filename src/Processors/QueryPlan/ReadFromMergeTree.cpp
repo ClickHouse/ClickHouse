@@ -36,6 +36,7 @@
 #include <Storages/LazilyReadInfo.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
+#include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeIndexVectorSimilarity.h>
 #include <Storages/MergeTree/MergeTreePrefetchedReadPool.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
@@ -49,6 +50,7 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Poco/Logger.h>
 #include <Common/JSONBuilder.h>
 #include <Common/logger_useful.h>
@@ -197,7 +199,6 @@ namespace ErrorCodes
     extern const int INDEX_NOT_USED;
     extern const int LOGICAL_ERROR;
     extern const int TOO_MANY_ROWS;
-    extern const int CANNOT_PARSE_TEXT;
 }
 
 static bool checkAllPartsOnRemoteFS(const RangesInDataParts & parts)
@@ -1030,13 +1031,13 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
         = settings[Setting::merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability];
     std::bernoulli_distribution fault(read_split_ranges_into_intersecting_and_non_intersecting_injection_probability);
 
-    /// TODO: Should we consider row-policy filter here?
     if (read_type != ReadType::ParallelReplicas &&
         num_streams > 1 &&
         read_split_ranges_into_intersecting_and_non_intersecting_injection_probability > 0.0 &&
         fault(thread_local_rng) &&
         !isQueryWithFinal() &&
         data.merging_params.is_deleted_column.empty() &&
+        !query_info.row_level_filter &&
         !query_info.prewhere_info &&
         !lazily_read_info &&
         !reader_settings.use_query_condition_cache && /// the query condition cache produces incorrect results with intersecting ranges
@@ -1473,12 +1474,24 @@ static void addMergingFinal(
 static std::pair<std::shared_ptr<ExpressionActions>, String> createExpressionForPositiveSign(const String & sign_column_name, const Block & header, const ContextPtr & context)
 {
     ASTPtr sign_indentifier = std::make_shared<ASTIdentifier>(sign_column_name);
-    ASTPtr sign_filter = makeASTFunction("equals", sign_indentifier, std::make_shared<ASTLiteral>(Field(static_cast<Int8>(1))));
+    ASTPtr sign_filter = makeASTOperator("equals", sign_indentifier, std::make_shared<ASTLiteral>(Field(static_cast<Int8>(1))));
     const auto & sign_column = header.getByName(sign_column_name);
 
     auto syntax_result = TreeRewriter(context).analyze(sign_filter, {{sign_column.name, sign_column.type}});
     auto actions = ExpressionAnalyzer(sign_filter, syntax_result, context).getActionsDAG(false);
     return {std::make_shared<ExpressionActions>(std::move(actions)), sign_filter->getColumnName()};
+}
+
+static std::pair<std::shared_ptr<ExpressionActions>, String> createExpressionForIsDeleted(const String & is_deleted_column_name, const Block & header, const ContextPtr & context)
+{
+    ASTPtr is_deleted_identifier = std::make_shared<ASTIdentifier>(is_deleted_column_name);
+    ASTPtr is_deleted_filter = makeASTFunction("equals", is_deleted_identifier, std::make_shared<ASTLiteral>(Field(static_cast<Int8>(0))));
+
+    const auto & is_deleted_column = header.getByName(is_deleted_column_name);
+
+    auto syntax_result = TreeRewriter(context).analyze(is_deleted_filter, {{is_deleted_column.name, is_deleted_column.type}});
+    auto actions = ExpressionAnalyzer(is_deleted_filter, syntax_result, context).getActionsDAG(false);
+    return {std::make_shared<ExpressionActions>(std::move(actions)), is_deleted_filter->getColumnName()};
 }
 
 bool ReadFromMergeTree::doNotMergePartsAcrossPartitionsFinal() const
@@ -1579,7 +1592,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         bool no_merging_final = do_not_merge_across_partitions_select_final &&
             std::distance(parts_to_merge_ranges[range_index], parts_to_merge_ranges[range_index + 1]) == 1 &&
             parts_to_merge_ranges[range_index]->data_part->info.level > 0 &&
-            data.merging_params.is_deleted_column.empty() && !reader_settings.read_in_order;
+            !reader_settings.read_in_order;
 
         if (no_merging_final)
         {
@@ -1619,11 +1632,12 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                         info.use_uncompressed_cache);
                 };
 
-                /// Parts of non-zero level still may contain duplicate PK values to merge on FINAL if there's is_deleted column,
-                /// so we have to process all ranges. It would be more optimal to remove this flag and add an extra filtering step.
+                /// Parts of non-zero level still may contain duplicate PK values to merge on FINAL if there's is_deleted column.
+                /// Non-intersecting ranges will just go through extra filter added by createExpressionForIsDeleted() to filter
+                /// deleted rows.
                 bool split_parts_ranges_into_intersecting_and_non_intersecting_final
-                    = settings[Setting::split_parts_ranges_into_intersecting_and_non_intersecting_final]
-                    && data.merging_params.is_deleted_column.empty() && !reader_settings.read_in_order;
+                    = settings[Setting::split_parts_ranges_into_intersecting_and_non_intersecting_final] &&
+                          !reader_settings.read_in_order;
 
                 SplitPartsWithRangesByPrimaryKeyResult split_ranges_result = splitPartsWithRangesByPrimaryKey(
                     storage_snapshot->metadata->getPrimaryKey(),
@@ -1715,6 +1729,21 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                 return std::make_shared<FilterTransform>(header, expression, filter_name, true);
             });
         }
+        else if (!data.merging_params.is_deleted_column.empty())
+        {
+            auto columns_with_is_deleted = origin_column_names;
+            if (std::ranges::find(columns_with_is_deleted, data.merging_params.is_deleted_column) == columns_with_is_deleted.end())
+                columns_with_is_deleted.push_back(data.merging_params.is_deleted_column);
+
+            pipe = spreadMarkRangesAmongStreams(
+                std::move(non_intersecting_parts_by_primary_key), index_build_context, num_streams, columns_with_is_deleted);
+            auto [expression, filter_name] = createExpressionForIsDeleted(data.merging_params.is_deleted_column, pipe.getHeader(), context);
+
+            pipe.addSimpleTransform([&](const SharedHeader & header)
+            {
+                return std::make_shared<FilterTransform>(header, expression, filter_name, true);
+            });
+        }
         else
         {
             pipe = spreadMarkRangesAmongStreams(
@@ -1763,6 +1792,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool 
         indexes,
         find_exact_ranges,
         is_parallel_reading_from_replicas);
+
     return analyzed_result_ptr;
 }
 
@@ -1826,23 +1856,7 @@ static void buildIndexes(
     if (settings[Setting::ignore_data_skipping_indices].changed)
     {
         const auto & indices = settings[Setting::ignore_data_skipping_indices].toString();
-        Tokens tokens(indices.data(), indices.data() + indices.size(), settings[Setting::max_query_size]);
-        IParser::Pos pos(tokens, static_cast<unsigned>(settings[Setting::max_parser_depth]), static_cast<unsigned>(settings[Setting::max_parser_backtracks]));
-        Expected expected;
-
-        /// Use an unordered list rather than string vector
-        auto parse_single_id_or_literal = [&]
-        {
-            String str;
-            if (!parseIdentifierOrStringLiteral(pos, expected, str))
-                return false;
-
-            ignored_index_names.insert(std::move(str));
-            return true;
-        };
-
-        if (!ParserList::parseUtil(pos, expected, parse_single_id_or_literal, false))
-            throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse ignore_data_skipping_indices ('{}')", indices);
+        ignored_index_names = parseIdentifiersOrStringLiteralsToSet(indices, settings);
     }
 
     UsefulSkipIndexes skip_indexes;
@@ -1895,6 +1909,7 @@ static void buildIndexes(
     {
         std::vector<size_t> index_sizes;
         index_sizes.reserve(skip_indexes.useful_indices.size());
+
         for (const auto & part : parts)
         {
             auto & index_order = skip_indexes.per_part_index_orders.emplace_back();
@@ -1906,7 +1921,7 @@ static void buildIndexes(
             for (const auto & idx : skip_indexes.useful_indices)
             {
                 size_t index_size = 0;
-                auto format = idx.index->getDeserializedFormat(part.data_part->getDataPartStorage(), idx.index->getFileName());
+                auto format = idx.index->getDeserializedFormat(part.data_part->checksums, idx.index->getFileName());
 
                 for (const auto & substream : format.substreams)
                     index_size += part.data_part->getFileSizeOrZero(idx.index->getFileName() + substream.suffix + substream.extension);
@@ -2082,9 +2097,11 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             total_marks_pk += part.data_part->index_granularity->getMarksCountWithoutFinal();
         parts_before_pk = parts.size();
 
+        MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(parts, query_info_, vector_search_parameters, context_, log);
+
         auto reader_settings = MergeTreeReaderSettings::create(context_, *data.getSettings(), query_info_);
         result.parts_with_ranges = MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(
-            std::move(parts),
+            parts,
             metadata_snapshot,
             mutations_snapshot,
             context_,
@@ -2101,14 +2118,112 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             query_info_.isFinal(),
             is_parallel_reading_from_replicas_);
 
-        MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(result.parts_with_ranges, query_info_, vector_search_parameters, context_, log);
-
         if (indexes->use_skip_indexes && !indexes->skip_indexes.empty() && query_info_.isFinal()
             && settings[Setting::use_skip_indexes_if_final_exact_mode])
         {
             result.parts_with_ranges
                 = findPKRangesForFinalAfterSkipIndex(primary_key, metadata_snapshot->getSortingKey(), result.parts_with_ranges, log);
             add_index_stat_row_for_pk_expand = true;
+        }
+
+        std::optional<size_t> condition_hash;
+        if (reader_settings.use_query_condition_cache && query_info_.filter_actions_dag)
+        {
+            const auto & outputs = query_info_.filter_actions_dag->getOutputs();
+            if (outputs.size() == 1 && VirtualColumnUtils::isDeterministic(outputs.front()))
+                condition_hash = outputs.front()->getHash();
+        }
+
+        /// Fill query condition cache with ranges excluded by index analysis.
+        if (condition_hash)
+        {
+            RangesInDataParts remaining;
+
+            auto it_parts = parts.begin();
+            auto it_result = result.parts_with_ranges.begin();
+
+            while (it_parts != parts.end())
+            {
+                if (it_result != result.parts_with_ranges.end() && it_parts->part_index_in_query == it_result->part_index_in_query)
+                {
+                    auto & full_ranges = it_parts->ranges;
+                    const auto & kept_ranges = it_result->ranges;
+
+                    MarkRanges diff_ranges;
+
+                    auto * it_full = full_ranges.begin();
+                    const auto * it_kept = kept_ranges.begin();
+
+                    while (it_full != full_ranges.end())
+                    {
+                        if (it_kept == kept_ranges.end() || it_full->end <= it_kept->begin)
+                        {
+                            /// full range is completely before kept range, keep it
+                            diff_ranges.push_back(*it_full);
+                            ++it_full;
+                        }
+                        else if (it_full->begin >= it_kept->end)
+                        {
+                            /// full range is completely after kept range, move to next kept
+                            ++it_kept;
+                        }
+                        else
+                        {
+                            /// overlap, need to slice
+                            if (it_full->begin < it_kept->begin)
+                                diff_ranges.push_back({it_full->begin, it_kept->begin});
+
+                            if (it_full->end > it_kept->end)
+                            {
+                                /// adjust full range and check next kept range
+                                *it_full = {it_kept->end, it_full->end};
+                                ++it_kept;
+                            }
+                            else
+                            {
+                                /// fully covered or trimmed
+                                ++it_full;
+                            }
+                        }
+                    }
+
+                    if (!diff_ranges.empty())
+                    {
+                        remaining.emplace_back(
+                            it_parts->data_part,
+                            it_parts->parent_part,
+                            it_parts->part_index_in_query,
+                            it_parts->part_starting_offset_in_query,
+                            std::move(diff_ranges));
+                    }
+
+                    ++it_parts;
+                    ++it_result;
+                }
+                else
+                {
+                    /// part was erased entirely, keep it whole
+                    remaining.push_back(*it_parts);
+                    ++it_parts;
+                }
+            }
+
+            auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
+            const auto * output = query_info_.filter_actions_dag->getOutputs().front();
+            for (const auto & remaining_ranges : remaining)
+            {
+                const auto & data_part = remaining_ranges.data_part;
+                String part_name = data_part->isProjectionPart() ? fmt::format("{}:{}", data_part->getParentPartName(), data_part->name)
+                                                                 : data_part->name;
+                query_condition_cache->write(
+                    data_part->storage.getStorageID().uuid,
+                    part_name,
+                    *condition_hash,
+                    reader_settings.query_condition_cache_store_conditions_as_plaintext ? output->result_name : "",
+                    remaining_ranges.ranges,
+                    data_part->index_granularity->getMarksCount(),
+                    data_part->index_granularity->hasFinalMark());
+            }
         }
     }
 
@@ -2494,7 +2609,27 @@ Pipe ReadFromMergeTree::groupStreamsByPartition(
 
 QueryPlanStepPtr ReadFromMergeTree::clone() const
 {
-    return std::make_unique<ReadFromMergeTree>(*this);
+    AnalysisResultPtr analysis_result_copy;
+    if (analyzed_result_ptr)
+        analysis_result_copy = std::make_shared<AnalysisResult>(*analyzed_result_ptr);
+
+    return std::make_unique<ReadFromMergeTree>(
+        prepared_parts,
+        mutations_snapshot,
+        all_column_names,
+        data,
+        query_info,
+        storage_snapshot,
+        context,
+        block_size.max_block_size_rows,
+        requested_num_streams,
+        max_block_numbers_to_read,
+        log,
+        std::move(analysis_result_copy),
+        is_parallel_reading_from_replicas,
+        all_ranges_callback,
+        read_task_callback,
+        number_of_current_replica);
 }
 
 bool ReadFromMergeTree::supportsSkipIndexesOnDataRead() const
@@ -3117,8 +3252,10 @@ std::shared_ptr<ParallelReadingExtension> ReadFromMergeTree::getParallelReadingE
         context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount());
 }
 
-void ReadFromMergeTree::replaceColumnsForTextSearch(const IndexReadColumns & added_columns, const Names & removed_columns)
+void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & skip_indexes, const IndexReadColumns & added_columns, const Names & removed_columns)
 {
+    index_read_tasks.clear();
+
     if (added_columns.empty())
         return;
 
@@ -3162,6 +3299,17 @@ void ReadFromMergeTree::replaceColumnsForTextSearch(const IndexReadColumns & add
         }
     }
 
+    for (const auto & index : skip_indexes.useful_indices)
+    {
+        if (dynamic_cast<const MergeTreeIndexText *>(index.index.get()))
+        {
+            /// Create tasks for text indexes which don't read virtual columns.
+            /// It's required to always read text indexes on separate step on data read.
+            if (!index_read_tasks.contains(index.index->index.name))
+                index_read_tasks.emplace(index.index->index.name, IndexReadTask{.columns = {}, .index = index});
+        }
+    }
+
     storage_snapshot = std::make_shared<StorageSnapshot>(
         storage_snapshot->storage,
         storage_snapshot->metadata,
@@ -3188,7 +3336,7 @@ void ReadFromMergeTree::replaceColumnsForTextSearch(const IndexReadColumns & add
 
 ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstimator() const
 {
-    return data.getConditionSelectivityEstimatorByPredicate(storage_snapshot, nullptr, getContext());
+    return data.getConditionSelectivityEstimator(getParts(), getContext());
 }
 
 }

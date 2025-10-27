@@ -1,7 +1,6 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsDateTime.h>
-#include <Common/DateLUTImpl.h>
-#include <Common/intExp.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/ObjectUtils.h>
@@ -10,24 +9,28 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/AggregationCommon.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/MergeTreeTransaction.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/PreparedSets.h>
+#include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Processors/TTL/ITTLAlgorithm.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
-#include <Storages/MergeTree/MergedBlockOutputStream.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/MergeTree/RowOrderOptimizer.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MergedBlockOutputStream.h>
+#include <Storages/MergeTree/RowOrderOptimizer.h>
 #include <Common/ColumnsHashing.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/OpenTelemetryTraceContext.h>
+#include <Common/intExp.h>
 #include <Common/typeid_cast.h>
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Core/Settings.h>
+#include <Common/quoteString.h>
 
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
 #include <Processors/Merges/Algorithms/MergingSortedAlgorithm.h>
@@ -65,6 +68,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool materialize_skip_indexes_on_insert;
+    extern const SettingsString exclude_materialize_skip_indexes_on_insert;
     extern const SettingsBool materialize_statistics_on_insert;
     extern const SettingsBool optimize_on_insert;
     extern const SettingsBool throw_on_max_partitions_per_insert_block;
@@ -697,8 +701,26 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     temp_part->temporary_directory_lock = data.getTemporaryPartDirectoryHolder(part_dir);
 
     MergeTreeIndices indices;
+    /// Create skip indexes if setting materialize_skip_indexes_on_insert = true
     if (context->getSettingsRef()[Setting::materialize_skip_indexes_on_insert])
-        indices = MergeTreeIndexFactory::instance().getMany(metadata_snapshot->getSecondaryIndices());
+    {
+        const auto & index_descriptions = metadata_snapshot->getSecondaryIndices();
+        auto exclude_indexes_string = context->getSettingsRef()[Setting::exclude_materialize_skip_indexes_on_insert].toString();
+
+        /// Check if user specified list of indexes to exclude from materialize on INSERT
+        if (!exclude_indexes_string.empty())
+        {
+            std::unordered_set<String> exclude_index_names
+                = parseIdentifiersOrStringLiteralsToSet(exclude_indexes_string, context->getSettingsRef());
+
+            for (const auto & index : index_descriptions)
+                if (!exclude_index_names.contains(index.name))
+                    indices.emplace_back(MergeTreeIndexFactory::instance().get(index));
+        }
+        else /// All indexes will be materialized on INSERT
+            indices = MergeTreeIndexFactory::instance().getMany(metadata_snapshot->getSecondaryIndices());
+    }
+
 
     ColumnsStatistics statistics;
     if (context->getSettingsRef()[Setting::materialize_statistics_on_insert])
@@ -788,11 +810,13 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         ? (*data_settings)[MergeTreeSetting::min_free_disk_ratio_to_perform_insert]
         : global_settings[Setting::min_free_disk_ratio_to_perform_insert];
 
-    if (min_bytes_to_perform_insert > 0 || min_ratio_to_perform_insert > 0.0)
+    const bool is_system_database = (data.getStorageID().getDatabaseName() == DatabaseCatalog::SYSTEM_DATABASE);
+
+    if (!is_system_database && (min_bytes_to_perform_insert > 0 || min_ratio_to_perform_insert > 0.0))
     {
         const auto & disk = data_part_volume->getDisk();
         const UInt64 & total_disk_bytes = disk->getTotalSpace().value_or(0);
-        const UInt64 & free_disk_bytes = disk->getAvailableSpace().value_or(0);
+        const UInt64 & free_disk_bytes = disk->getUnreservedSpace().value_or(0);
 
         const UInt64 & min_bytes_from_ratio = static_cast<UInt64>(min_ratio_to_perform_insert * total_disk_bytes);
         const UInt64 & needed_free_bytes = std::max(min_bytes_to_perform_insert, min_bytes_from_ratio);
@@ -801,17 +825,23 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         {
             throw Exception(
                 ErrorCodes::NOT_ENOUGH_SPACE,
-                "Could not perform insert: less than {} free bytes left in the disk space ({}). "
-                "Configure this limit with user settings {} or {}",
-                needed_free_bytes,
-                free_disk_bytes,
-                "min_free_disk_bytes_to_perform_insert",
-                "min_free_disk_ratio_to_perform_insert");
+                "Could not perform insert. "
+                "The amount of free space ({}) on disk {} is less than the configured threshold ({})."
+                "The threshold can be configured either in MergeTree settings or User settings, "
+                "using the following settings: "
+                "(1) `min_free_disk_bytes_to_perform_insert` "
+                "(2) `min_free_disk_ratio_to_perform_insert`. "
+                "The total disk capacity of {} is {}",
+                formatReadableSizeWithBinarySuffix(free_disk_bytes),
+                backQuote(disk->getName()),
+                formatReadableSizeWithBinarySuffix(needed_free_bytes),
+                backQuote(disk->getName()),
+                formatReadableSizeWithBinarySuffix(total_disk_bytes));
         }
     }
 
     auto new_data_part = data.getDataPartBuilder(part_name, data_part_volume, part_dir, getReadSettings())
-        .withPartFormat(data.choosePartFormat(expected_size, block.rows()))
+        .withPartFormat(data.choosePartFormat(expected_size, block.rows(), new_part_level))
         .withPartInfo(new_part_info)
         .build();
 
@@ -967,7 +997,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     size_t expected_size = block.bytes();
     // just check if there is enough space on parent volume
     MergeTreeData::reserveSpace(expected_size, parent_part->getDataPartStorage());
-    part_type = data.choosePartFormat(expected_size, block.rows()).part_type;
+    part_type = data.choosePartFormat(expected_size, block.rows(), parent_part->info.level).part_type;
 
     auto new_data_part = parent_part->getProjectionPartBuilder(part_name, is_temp).withPartType(part_type).build();
     auto projection_part_storage = new_data_part->getDataPartStoragePtr();

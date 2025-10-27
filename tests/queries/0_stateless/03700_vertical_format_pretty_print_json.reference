@@ -1,0 +1,26 @@
+Row 1:
+──────
+id:           1
+data:         {
+    "address": {
+        "city": "New York",
+        "zip": "10001"
+    },
+    "age": 30,
+    "hobbies": [
+        "reading",
+        "cycling"
+    ],
+    "name": "Alice"
+}
+nullableData: {
+    "foo": "bar"
+}
+
+Row 2:
+──────
+id:           2
+data:         {
+
+}
+nullableData: null
