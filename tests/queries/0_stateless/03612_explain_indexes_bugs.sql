@@ -1,5 +1,5 @@
-# Tags: no-parallel-replicas
-# no-parallel-replicas because the output of explain is different. 
+-- Tags: no-parallel-replicas
+-- no-parallel-replicas because the output of explain is different. 
 set enable_analyzer = 1;
 
 create table points (x Int64, y Int64) engine MergeTree order by (x, y);
