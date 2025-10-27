@@ -1575,7 +1575,7 @@ Chunk ArrowColumnToCHColumn::arrowTableToCHChunk(
             {
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
-                    "Column '{}' is not presented in input data. Column name mapping is: {}",
+                    "Column '{}' is not present in input data. Column name mapping has {} columns",
                     column_name,
                     parquet_columns_to_clickhouse->size());
             }
