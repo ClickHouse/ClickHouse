@@ -139,6 +139,7 @@ HashJoin::HashJoin(
     , right_sample_block(*right_sample_block_)
     , max_joined_block_rows(table_join->maxJoinedBlockRows())
     , max_joined_block_bytes(table_join->maxJoinedBlockBytes())
+    , joined_block_split_single_row(table_join->joinedBlockAllowSplitSingleRow())
     , instance_log_id(!instance_id_.empty() ? "(" + instance_id_ + ") " : "")
     , log(getLogger("HashJoin"))
 {
@@ -667,7 +668,7 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
             || (max_rows_in_join && getTotalRowCount() + block_to_save.rows() >= max_rows_in_join)))
     {
         if (!tmp_stream)
-            tmp_stream.emplace(std::make_shared<const Block>(right_sample_block), tmp_data.get());
+            tmp_stream.emplace(std::make_shared<const Block>(right_sample_block), tmp_data);
 
         chassert(rows == block.rows()); /// We don't run parallel_hash for cross join
         tmp_stream.value()->write(block_to_save);
@@ -1049,9 +1050,10 @@ DataTypePtr HashJoin::joinGetCheckAndGetReturnType(const DataTypes & data_types,
     if (right_table_keys.columns() != num_keys)
         throw Exception(
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Number of arguments for function joinGet{} doesn't match: passed, should be equal to {}",
+            "Number of join_keys and number of right table key columns for function joinGet{} don't match: passed {}, should be equal to {}",
             toString(or_null ? "OrNull" : ""),
-            toString(num_keys));
+            toString(num_keys),
+            toString(right_table_keys.columns()));
 
     for (size_t i = 0; i < num_keys; ++i)
     {
@@ -1828,5 +1830,7 @@ void HashJoin::onBuildPhaseFinish()
         all_join_was_promoted_to_right_any = true;
         LOG_DEBUG(log, "Promoting join strictness to RightAny, because all values in the right table are unique");
     }
+
+    LOG_TRACE(log, "{}Join data is built, {} and {} rows in hash table", instance_log_id, ReadableSize(getTotalByteCount()), getTotalRowCount());
 }
 }

@@ -3,6 +3,7 @@ description: 'Computes a rank correlation coefficient.'
 sidebar_position: 182
 slug: /sql-reference/aggregate-functions/reference/rankCorr
 title: 'rankCorr'
+doc_type: 'reference'
 ---
 
 # rankCorr

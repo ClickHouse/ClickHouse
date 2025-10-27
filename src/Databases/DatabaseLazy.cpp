@@ -123,7 +123,8 @@ time_t DatabaseLazy::getObjectMetadataModificationTime(const String & table_name
 void DatabaseLazy::alterTable(
     ContextPtr /* context */,
     const StorageID & /*table_id*/,
-    const StorageInMemoryMetadata & /* metadata */)
+    const StorageInMemoryMetadata & /* metadata */,
+    const bool /*validate_new_create_query*/)
 {
     clearExpiredTables();
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ALTER query is not supported for Lazy database.");
@@ -155,7 +156,16 @@ StoragePtr DatabaseLazy::tryGetTable(const String & table_name) const
         }
     }
 
-    return loadTable(table_name);
+    try
+    {
+        return loadTable(table_name);
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() == ErrorCodes::UNKNOWN_TABLE)
+            return {};
+        throw;
+    }
 }
 
 DatabaseTablesIteratorPtr DatabaseLazy::getTablesIterator(ContextPtr, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */) const

@@ -18,7 +18,6 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Disks/TemporaryFileOnDisk.h>
 #include <Formats/NativeWriter.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/Operators.h>
@@ -1772,7 +1771,7 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, si
     auto & out_stream = [this, max_temp_file_size]() -> TemporaryBlockStreamHolder &
     {
         std::lock_guard lk(tmp_files_mutex);
-        return tmp_files.emplace_back(std::make_shared<const Block>(getHeader(false)), tmp_data.get(), max_temp_file_size);
+        return tmp_files.emplace_back(std::make_shared<const Block>(getHeader(false)), tmp_data, max_temp_file_size);
     }();
 
     ProfileEvents::increment(ProfileEvents::ExternalAggregationWritePart);

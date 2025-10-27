@@ -15,7 +15,6 @@
 #include <Disks/IO/ReadBufferFromWebServer.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <Disks/IO/getThreadPoolReader.h>
-#include <Disks/ObjectStorages/Web/WebObjectStorageConnectionInfo.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
 
@@ -36,7 +35,7 @@ namespace ErrorCodes
 }
 
 std::pair<WebObjectStorage::FileDataPtr, std::vector<fs::path>>
-WebObjectStorage::loadFiles(const String & path, const std::unique_lock<std::shared_mutex> &) const
+WebObjectStorage::loadFiles(const String & path, const std::unique_lock<SharedMutex> &) const
 {
     std::vector<fs::path> loaded_files;
     auto full_url = fs::path(url) / path;
@@ -283,9 +282,9 @@ ObjectMetadata WebObjectStorage::getObjectMetadata(const std::string & /* path *
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Metadata is not supported for {}", getName());
 }
 
-ObjectStorageConnectionInfoPtr WebObjectStorage::getConnectionInfo() const
+std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const std::string & /* path */) const
 {
-    return getWebObjectStorageConnectionInfo(url);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Metadata is not supported for {}", getName());
 }
 
 }
