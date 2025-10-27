@@ -25,6 +25,14 @@ namespace Setting
 }
 }
 
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int TOO_MANY_ROWS;
+}
+}
+
 namespace DB::QueryPlanOptimizations
 {
 
@@ -189,7 +197,41 @@ std::optional<String> optimizeUseNormalProjections(
 
     auto parent_reading_select_result = reading->getAnalyzedResult();
     if (!parent_reading_select_result)
-        parent_reading_select_result = reading->selectRangesToRead();
+    {
+        try
+        {
+            parent_reading_select_result = reading->selectRangesToRead();
+        }
+        catch (const Exception & e)
+        {
+            /// If parent table analysis hits TOO_MANY_ROWS, still try projections
+            /// A projection might be able to answer the query more efficiently
+            if (e.code() == ErrorCodes::TOO_MANY_ROWS)
+            {
+                /// Create a minimal result to allow projection analysis to proceed
+                const auto & parts = reading->getParts();
+
+                parent_reading_select_result = std::make_shared<ReadFromMergeTree::AnalysisResult>();
+                parent_reading_select_result->parts_with_ranges = parts;
+                parent_reading_select_result->selected_parts = parts.size();
+
+                /// populate total marks and rows from parts for candidate analysis.
+                /// This should reflect worst case / full table scan, meaning the candidate is disregarded.
+                size_t total_marks = 0;
+                size_t total_rows = 0;
+                for (const auto & part : parts)
+                {
+                    total_marks += part.data_part->getMarksCount();
+                    total_rows += part.data_part->rows_count;
+                }
+                parent_reading_select_result->selected_marks = total_marks;
+                parent_reading_select_result->selected_rows = total_rows;
+                parent_reading_select_result->selected_ranges = parts.size();
+            }
+            else
+                throw;
+        }
+    }
 
     if (!force_optimize_projection)
     {
