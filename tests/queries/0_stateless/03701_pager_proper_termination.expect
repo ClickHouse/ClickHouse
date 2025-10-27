@@ -1,7 +1,7 @@
 #!/usr/bin/expect -f
 
 # This test is about interaction with pager and proper handling of
-# SIGINT (Ctrl-C) sent to the pager.
+# SIGINT (Ctrl-C) sent to the pager and cancelling the query.
 #
 # https://github.com/ClickHouse/ClickHouse/issues/80778
 
@@ -29,9 +29,23 @@ expect_after {
 spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file --pager=less"
 expect "\n:) "
 
-send -- "SELECT sleepEachRow(1) FROM numbers(30) SETTINGS max_block_size=1, function_sleep_max_microseconds_per_block=30e6"
-send \x03
-expect "\n:)"
+send -- "SELECT sleepEachRow(1) FROM numbers(180) SETTINGS max_block_size=1, function_sleep_max_microseconds_per_block=180e6"
+
+# Ctrl+C
+send "\3"
+
+# We should make sure, the query is terminated
+set timeout 30
+expect "\n:) "
+
+# There should be no extra output from pager
+expect {
+    "\n" {
+        exit 1
+    }
+    default {
+    }
+}
 
 # Ctrl+D
 send -- "\4"
