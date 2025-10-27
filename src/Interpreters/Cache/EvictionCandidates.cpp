@@ -48,6 +48,17 @@ std::string QueueEvictionInfo::toString() const
     return wb.str();
 }
 
+EvictionInfo::EvictionInfo(QueueID queue_id, QueueEvictionInfo && info)
+{
+    addImpl(queue_id, std::move(info));
+}
+
+EvictionInfo::~EvictionInfo()
+{
+    if (on_finish_func)
+        on_finish_func();
+}
+
 std::string EvictionInfo::toString() const
 {
     WriteBufferFromOwnString wb;
@@ -293,30 +304,6 @@ void EvictionCandidates::evict()
     }
 }
 
-bool EvictionCandidates::needFinalize() const
-{
-    /// finalize() does the following:
-    /// 1. Release space holder in case if exists.
-    ///    (Space holder is created if some space needs to be hold
-    ///    while were are doing eviction from filesystem without which is done without a lock)
-    ///    Note: this step is not needed in case of dynamic cache resize,
-    ///          because space holders are not used.
-    /// 2. Delete queue entries from IFileCachePriority queue.
-    ///    These queue entries were invalidated during lock-free eviction phase,
-    ///    so on finalize() we just remove them (not to let the queue grow too much).
-    ///    Note: this step can in fact be removed as we do this cleanup
-    ///    (removal of invalidated queue entries)
-    ///    when we iterate the queue and see such entries along the way.
-    ///    Note: this step is not needed in case of dynamic cache resize,
-    ///          because we remove queue entries in advance, before actual eviction.
-    /// 3. Execute on_finalize functions.
-    ///    These functions are set only for SLRU eviction policy,
-    ///    where we need to do additional work after eviction.
-    ///    Note: this step is not needed in case of dynamic cache resize even for SLRU.
-
-    return after_evict_state_func || after_evict_write_func || !queue_entries_to_invalidate.empty();
-}
-
 void EvictionCandidates::afterEvictWrite(const CachePriorityGuard::WriteLock & lock)
 {
     if (after_evict_write_func)
@@ -331,6 +318,9 @@ void EvictionCandidates::invalidateQueueEntries(const CacheStateGuard::Lock &)
     /// We invalidate queue entries under state lock,
     /// because this space will be replaced by reserver,
     /// so we need to make sure this is done atomically.
+    ///
+    /// Note: this step is not needed in case of dynamic cache resize,
+    ///       because we remove queue entries in advance, before actual eviction.
     while (!queue_entries_to_invalidate.empty())
     {
         auto iterator = queue_entries_to_invalidate.back();

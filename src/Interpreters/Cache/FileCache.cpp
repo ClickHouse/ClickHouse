@@ -1042,7 +1042,7 @@ bool FileCache::doTryReserve(
     bool added_new_main_entry = !main_priority_iterator;
     Priority::IteratorPtr query_priority_iterator;
 
-    if (!main_priority_iterator || eviction_candidates.needFinalize())
+    if (!main_priority_iterator || eviction_candidates.requiresAfterEvictWrite())
     {
         auto lock = cache_guard.writeLock();
         eviction_candidates.afterEvictWrite(lock);

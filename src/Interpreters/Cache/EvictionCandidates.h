@@ -6,10 +6,10 @@
 namespace DB
 {
 
-/// Eviction info, which contains information about
-/// how much size/elements is needed to be evicted,
-/// plus holds "space holders", for space which was already available
-/// and will now be "hold" as reserved, while we are evicting remaining space.
+/// Eviction info:
+/// - contains information about how much size/elements is needed to be evicted
+/// - holds "space holders", for space which was already available
+///   and will now be "hold" as reserved, while we are evicting remaining space.
 /// If releaseHoldSpace() is not called,
 /// hold space will be automatically released in destructor of HoldSpacePtr.
 struct QueueEvictionInfo
@@ -33,23 +33,18 @@ using QueueID = size_t;
 class EvictionInfo;
 using EvictionInfoPtr = std::unique_ptr<EvictionInfo>;
 
-/// Aggregated eviction info,
-/// contains QueueEvictionInfo per queue_id,
-/// aggregates all methods among all queue eviction infos.
+/// Aggregated eviction info:
+/// - contains QueueEvictionInfo per queue_id
+/// - aggregates all methods among all queue eviction infos
 class EvictionInfo : public std::map<QueueID, QueueEvictionInfo>, private boost::noncopyable
 {
 public:
     EvictionInfo() = default;
-    explicit EvictionInfo(QueueID queue_id, QueueEvictionInfo && info)
-    {
-        addImpl(queue_id, std::move(info));
-    }
+    /// Creates eviction info from a single QueueEvictionInfo.
+    /// More infos can be added via add() method.
+    explicit EvictionInfo(QueueID queue_id, QueueEvictionInfo && info);
 
-    ~EvictionInfo()
-    {
-        if (on_finish_func)
-            on_finish_func();
-    }
+    ~EvictionInfo();
 
     std::string toString() const;
 
@@ -57,7 +52,7 @@ public:
 
     size_t getElementsToEvict() const { return elements_to_evict; }
 
-    /// Add eviction info for another queue_id,
+    /// Add eviction info under the queue_id.
     /// Throws exception if eviction info with the same queue_id already exists.
     void add(EvictionInfoPtr && info);
 
@@ -94,11 +89,10 @@ public:
     size_t bytes() const { return candidates_bytes; }
 
     auto begin() const { return candidates.begin(); }
-    auto end() const { return candidates.end(); }
     auto begin() { return candidates.begin(); }
-    auto end() { return candidates.end(); }
 
-    void clear() { candidates.clear(); }
+    auto end() const { return candidates.end(); }
+    auto end() { return candidates.end(); }
 
     /// Add a new eviction candidate.
     void add(const FileSegmentMetadataPtr & candidate, LockedKey & locked_key);
@@ -110,16 +104,21 @@ public:
 
     /// Evict all candidates, which were added before via add().
     void evict();
-    /// Finalize eviction state.
+    /// Execute "after eviction callbacks".
+    /// "write" callback must be executed before "state" callback.
     void afterEvictWrite(const CachePriorityGuard::WriteLock & lock);
     void afterEvictState(const CacheStateGuard::Lock & lock);
+
+    /// Whether calling afterEvictWrite() is required.
+    /// (Can be used to avoid taking write lock)
+    bool requiresAfterEvictWrite() const { return bool(after_evict_write_func); }
+    /// Whether calling afterEvictState() is required.
+    /// (Can be used to avoid taking state lock)
+    bool requiresAfterEvictState() const { return bool(after_evict_state_func) || !queue_entries_to_invalidate.empty(); }
 
     /// Used only for dynamic cache resize,
     /// allows to remove queue entries in advance.
     void removeQueueEntries(const CachePriorityGuard::WriteLock &);
-
-    /// Whether finalize() is required.
-    bool needFinalize() const;
 
     struct KeyCandidates
     {

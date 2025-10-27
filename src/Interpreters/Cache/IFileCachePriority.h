@@ -39,8 +39,7 @@ public:
         std::atomic<size_t> hits = 0;
         std::atomic<bool> invalidated = false;
 
-        std::string toString() const
-        { return fmt::format("{}:{}:{} (invalidated: {}, evicting: {})", key, offset, size.load(), invalidated.load(), evicting.load()); }
+        std::string toString() const;
 
         bool isEvictingUnlocked() const { return evicting; }
         bool isEvicting(const LockedKey &) const { return evicting; }

@@ -45,6 +45,11 @@ IFileCachePriority::Entry::Entry(const Entry & other)
 {
 }
 
+std::string IFileCachePriority::Entry::toString() const
+{
+    return fmt::format("{}:{}:{} (invalidated: {}, evicting: {})", key, offset, size.load(), invalidated.load(), evicting.load());
+}
+
 void IFileCachePriority::check(const CacheStateGuard::Lock & lock) const
 {
     if (getSize(lock) > max_size || getElementsCount(lock) > max_elements)
