@@ -1,3 +1,6 @@
+-- Tags: no-replicated-database, no-parallel-replicas
+-- no-parallel, no-parallel-replicas: Dictionary is not created in parallel replicas.
+
 SET enable_analyzer = 1;
 SET optimize_inverse_dictionary_lookup = 1;
 SET optimize_or_like_chain = 0;
