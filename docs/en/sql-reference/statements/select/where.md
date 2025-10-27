@@ -111,7 +111,7 @@ WHERE (price > 100 OR category IN (SELECT category FROM featured))
 ```
 ## Examples {#examples}
 
-### Testing for `NULL` {#testing-for-null}
+### Testing for `NULL` {#examples-testing-for-null}
 
 Queries with `NULL` values:
 
