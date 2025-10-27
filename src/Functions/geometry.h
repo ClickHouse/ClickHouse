@@ -12,6 +12,8 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Core/Field.h>
 #include <base/types.h>
+#include <DataTypes/DataTypeVariant.h>
+#include <Functions/FunctionHelpers.h>
 
 #include <memory>
 
@@ -71,7 +73,7 @@ Polygon<Point> getPolygonFromField(const Field & field)
     Ring<Point> ring_inner;
     for (size_t i = 0; i < array.size(); ++i)
     {
-        auto ring = array.at(i);
+        const auto & ring = array.at(i);
         if (i == 0)
             polygon.outer() = getRingFromField<Point>(ring);
         else
@@ -118,8 +120,13 @@ public:
         return 1;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
+        if (checkAndGetDataType<DataTypeVariant>(arguments[0].get()) == nullptr)
+        {
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument should be Variant (Geometry)");
+        }
+
         return std::make_shared<DataTypeFloat64>();
     }
 
