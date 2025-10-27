@@ -10,7 +10,7 @@ role="role03702_${CLICKHOUSE_DATABASE}_$RANDOM"
 db=${CLICKHOUSE_DATABASE}
 
 ${CLICKHOUSE_CLIENT} <<EOF
-SET distributed_ddl_output_mode = 'none'
+SET distributed_ddl_output_mode = 'none';
 DROP USER IF EXISTS $user ON CLUSTER test_shard_localhost;
 CREATE USER $user ON CLUSTER test_shard_localhost;
 
@@ -34,6 +34,6 @@ FORMAT Null
 EOF;
 
 ${CLICKHOUSE_CLIENT} <<EOF
-SET distributed_ddl_output_mode = 'none'
+SET distributed_ddl_output_mode = 'none';
 DROP USER IF EXISTS $user ON CLUSTER test_shard_localhost;
 EOF
