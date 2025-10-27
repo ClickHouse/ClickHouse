@@ -80,8 +80,7 @@ cache_policy=""
 if [ $((RANDOM % 2)) -eq 1 ]; then
     cache_policy="SLRU"
 else
-    #cache_policy="LRU"
-    cache_policy="SLRU"
+    cache_policy="LRU"
 fi
 
 echo "Using cache policy: $cache_policy"

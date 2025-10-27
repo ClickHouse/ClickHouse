@@ -1,6 +1,7 @@
 #pragma once
 #include <Interpreters/Cache/IFileCachePriority.h>
 #include <Common/logger_useful.h>
+#include <deque>
 
 namespace DB
 {
@@ -90,6 +91,8 @@ public:
 
     auto begin() const { return candidates.begin(); }
     auto end() const { return candidates.end(); }
+    auto begin() { return candidates.begin(); }
+    auto end() { return candidates.end(); }
 
     void clear() { candidates.clear(); }
 
@@ -117,7 +120,7 @@ public:
     struct KeyCandidates
     {
         KeyMetadataPtr key_metadata;
-        std::vector<FileSegmentMetadataPtr> candidates;
+        std::deque<FileSegmentMetadataPtr> candidates;
         std::vector<std::string> error_messages;
     };
     /// Get eviction candidates which failed to be evicted during evict().

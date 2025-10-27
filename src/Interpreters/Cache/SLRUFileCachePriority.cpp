@@ -438,28 +438,29 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
     /// As PriorityGuard::WriteLock allows to only move elements,
     /// but not increment size of any of the queues,
     /// we move elements with zero size and increase the size later in a separate callback.
-    res.setAfterEvictWriteFunc([=, this](const CachePriorityGuard::WriteLock & lk)
+    auto downgraded_file_segments = std::make_shared<std::vector<FileSegmentMetadataPtr>>();
+    downgraded_file_segments->reserve(downgrade_candidates->size());
+    res.setAfterEvictWriteFunc([=, this](const CachePriorityGuard::WriteLock & lk) mutable
     {
-        for (const auto & [key, key_candidates] : *downgrade_candidates)
+        for (auto & [key, key_candidates] : *downgrade_candidates)
         {
-            for (const auto & candidate : key_candidates.candidates)
+            while (!key_candidates.candidates.empty())
             {
+                auto candidate = key_candidates.candidates.front();
                 auto * candidate_it = assert_cast<SLRUIterator *>(candidate->getQueueIterator()->getNestedOrThis());
+
                 auto prev_lru_iterator = candidate_it->lru_iterator;
-
-                auto entry = candidate_it->getEntry();
-                EntryPtr new_entry = std::make_shared<Entry>(entry->key, entry->offset, /* size */0, entry->key_metadata);
-                //entry->size = 0;
-                candidate_it->lru_iterator = probationary_queue.add(new_entry, lk, nullptr);
-                candidate_it->is_protected = false;
-
-                chassert(entry->isEvictingUnlocked());
                 downgrade_candidates->addEntryToInvalidate(
                     std::make_shared<SLRUIterator>(candidate_it->cache_priority, std::move(prev_lru_iterator), true));
 
-                //prev_lru_iterator.remove(lk);
+                auto entry = candidate_it->getEntry();
+                EntryPtr new_entry = std::make_shared<Entry>(entry->key, entry->offset, /* size */0, entry->key_metadata);
+                candidate_it->lru_iterator = probationary_queue.add(new_entry, lk, nullptr);
+                candidate_it->is_protected = false;
+                downgraded_file_segments->push_back(candidate);
+
+                key_candidates.candidates.pop_front();
             }
-            //downgrade_candidates->removeQueueEntries(lk);
         }
     });
 
@@ -467,16 +468,15 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
     res.setAfterEvictStateFunc([=](const CacheStateGuard::Lock & lk)
     {
         downgrade_candidates->invalidateQueueEntries(lk);
-        for (const auto & [key, key_candidates] : *downgrade_candidates)
+        chassert(!downgraded_file_segments->empty());
+        for (const auto & metadata : *downgraded_file_segments)
         {
-            for (const auto & candidate : key_candidates.candidates)
-            {
-                auto * it = assert_cast<SLRUIterator *>(candidate->getQueueIterator()->getNestedOrThis());
-                it->setEntry(it->lru_iterator.getEntry(), lk);
-                it->incrementSize(candidate->file_segment->getReservedSize(), lk);
-            }
+            const auto & file_segment = metadata->file_segment;
+            auto * iterator = assert_cast<SLRUIterator *>(file_segment->getQueueIterator()->getNestedOrThis());
+            iterator->setEntry(iterator->lru_iterator.getEntry(), lk);
+            chassert(iterator->getEntry()->size == 0);
+            iterator->incrementSize(file_segment->getReservedSize(), lk);
         }
-        downgrade_candidates->clear();
     });
 
     LOG_TEST(

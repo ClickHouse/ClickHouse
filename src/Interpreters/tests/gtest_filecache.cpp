@@ -1549,70 +1549,73 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
         return it;
     };
 
-    //auto get_file_segment = [&](size_t offset)
-    //{
-    //    return LockedKey(key_metadata).getByOffset(offset)->file_segment;
-    //};
-
     auto it1 = add_file_segment(0, 10);
     auto it2 = add_file_segment(10, 10);
 
     ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 2);
     ASSERT_EQ(priority.getEvictionPos(), 2); /// queue.end()
 
-    //FileCacheReserveStat stat;
-    //auto evicted = std::make_unique<EvictionCandidates>();
-    //priority.collectCandidatesForEviction(10, 1, stat, *evicted, nullptr, false, user.user_id, cache_lock);
+    FileCacheReserveStat stat;
+    auto evicted = std::make_unique<EvictionCandidates>();
 
-    //ASSERT_EQ(evicted->size(), 0); /// Nothing is evicted.
-    //ASSERT_EQ(priority.getElementsCount(cache_lock), 2);
-    //ASSERT_EQ(priority.getEvictionPos(), 2); /// queue.end()
+    auto eviction_info = priority.collectEvictionInfo(10, 1, nullptr, false, state_guard.lock());
+    priority.collectCandidatesForEviction(*eviction_info, stat, *evicted, nullptr, false, 0, false, user.user_id, cache_guard.readLock());
 
-    //auto it3 = add_file_segment(20, 10);
+    ASSERT_EQ(evicted->size(), 0); /// Nothing is evicted.
+    ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 2);
+    ASSERT_EQ(priority.getEvictionPos(), 2); /// queue.end()
 
-    //ASSERT_EQ(priority.getElementsCount(cache_lock), 3);
-    //ASSERT_EQ(priority.getEvictionPos(), 3); /// queue.end()
+    auto it3 = add_file_segment(20, 10);
 
-    //evicted = std::make_unique<EvictionCandidates>();
-    //stat = {};
-    //priority.collectCandidatesForEviction(10, 1, stat, *evicted, nullptr, true, user.user_id, cache_lock);
+    ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 3);
+    ASSERT_EQ(priority.getEvictionPos(), 3); /// queue.end()
 
-    //ASSERT_EQ(evicted->size(), 1);
-    //ASSERT_EQ(priority.getElementsCount(cache_lock), 3);
-    //ASSERT_EQ(priority.getEvictionPos(), 0); /// queue.begin()
+    evicted = std::make_unique<EvictionCandidates>();
+    stat = {};
+    eviction_info = priority.collectEvictionInfo(10, 1, nullptr, false, state_guard.lock());
+    priority.collectCandidatesForEviction(*eviction_info, stat, *evicted, nullptr, false, 0, false, user.user_id, cache_guard.readLock());
 
-    //{
-    //    evicted->evict();
-    //    cache_lock.unlock();
-    //    evicted->finalize(nullptr, cache_guard.writeLock());
-    //    evicted.reset();
-    //    cache_lock.lock();
-    //}
-    //ASSERT_EQ(priority.getElementsCount(cache_lock), 2);
-    //ASSERT_EQ(priority.getEvictionPos(), 0); /// still queue.begin(), but it2
+    ASSERT_EQ(evicted->size(), 1);
+    ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 3);
+    ASSERT_EQ(priority.getEvictionPos(), 0); /// queue.begin()
 
-    ///// Make fs2 (it2) non-evictable.
-    //auto fs2 = get_file_segment(10);
-    //ASSERT_EQ(it2->getEntry()->offset, fs2->offset());
-    ///// Make fs3 (it3) non-evictable.
-    //auto fs3 = get_file_segment(20);
-    //ASSERT_EQ(it3->getEntry()->offset, fs3->offset());
+    {
+        evicted->evict();
+        evicted->afterEvictState(state_guard.lock());
+        evicted->afterEvictWrite(cache_guard.writeLock());
+        evicted.reset();
+    }
+    ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 2);
+    ASSERT_EQ(priority.getEvictionPos(), 0); /// still queue.begin(), but it2
 
-    //auto it4 = add_file_segment(30, 10);
-    //ASSERT_EQ(priority.getElementsCount(cache_lock), 3);
-    //ASSERT_EQ(priority.getEvictionPos(), 0);
+    auto get_file_segment = [&](size_t offset)
+    {
+        return LockedKey(key_metadata).getByOffset(offset)->file_segment;
+    };
 
-    //evicted = std::make_unique<EvictionCandidates>();
-    //stat = {};
-    //priority.collectCandidatesForEviction(10, 1, stat, *evicted, nullptr, true, user.user_id, cache_lock);
+    /// Make fs2 (it2) non-evictable.
+    auto fs2 = get_file_segment(10);
+    ASSERT_EQ(it2->getEntry()->offset, fs2->offset());
+    /// Make fs3 (it3) non-evictable.
+    auto fs3 = get_file_segment(20);
+    ASSERT_EQ(it3->getEntry()->offset, fs3->offset());
 
-    //ASSERT_EQ(evicted->size(), 1);
-    //ASSERT_EQ(priority.getElementsCount(cache_lock), 3);
-    //ASSERT_EQ(priority.getEvictionPos(), 2); /// Last element in the queue.
+    auto it4 = add_file_segment(30, 10);
+    ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 3);
+    ASSERT_EQ(priority.getEvictionPos(), 0);
 
-    //fs2.reset();
-    //fs3.reset();
+    evicted = std::make_unique<EvictionCandidates>();
+    stat = {};
+    eviction_info = priority.collectEvictionInfo(10, 1, nullptr, false, state_guard.lock());
+    priority.collectCandidatesForEviction(*eviction_info, stat, *evicted, nullptr, false, 0, false, user.user_id, cache_guard.readLock());
 
-    //priority.resetEvictionPos(cache_lock);
-    //ASSERT_EQ(priority.getEvictionPos(), 3); /// queue.end()
+    ASSERT_EQ(evicted->size(), 1);
+    ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 3);
+    ASSERT_EQ(priority.getEvictionPos(), 2); /// Last element in the queue.
+
+    fs2.reset();
+    fs3.reset();
+
+    priority.resetEvictionPos(cache_guard.readLock());
+    ASSERT_EQ(priority.getEvictionPos(), 3); /// queue.end()
 }
