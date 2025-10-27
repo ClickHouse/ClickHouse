@@ -96,17 +96,15 @@ CATEGORIES_FOLD = [
 ]
 
 
-def check_category(pr_body: str) -> Tuple[bool, str]:
+def get_category(pr_body: str) -> Tuple[str, str]:
     lines = list(map(lambda x: x.strip(), pr_body.split("\n") if pr_body else []))
     lines = [re.sub(r"\s+", " ", line) for line in lines]
 
     if "Reverts ClickHouse/" in pr_body:
-        return True, LABEL_CATEGORIES["pr-not-for-changelog"][0]
+        return "", LABEL_CATEGORIES["pr-not-for-changelog"][0]
 
     category = ""
-    entry = ""
-    description_error = ""
-
+    error = ""
     i = 0
     while i < len(lines):
         if re.match(r"(?i)^[#>*_ ]*change\s*log\s*category", lines[i]):
@@ -128,43 +126,13 @@ def check_category(pr_body: str) -> Tuple[bool, str]:
                 break
             if lines[i]:
                 second_category = re.sub(r"^[-*\s]*", "", lines[i])
-                description_error = (
-                    "More than one changelog category specified: "
-                    f"'{category}', '{second_category}'"
-                )
+                error = f"More than one changelog category specified: '{category}', '{second_category}'"
                 break
-
-        elif re.match(
-            r"(?i)^[#>*_ ]*(short\s*description|change\s*log\s*entry)", lines[i]
-        ):
-            i += 1
-            # Can have one empty line between header and the entry itself.
-            # Filter it out.
-            if i < len(lines) and not lines[i]:
-                i += 1
-            # All following lines until empty one are the changelog entry.
-            entry_lines = []
-            while i < len(lines) and lines[i]:
-                entry_lines.append(lines[i])
-                i += 1
-            entry = " ".join(entry_lines)
-            # Don't accept changelog entries like '...'.
-            entry = re.sub(r"[#>*_.\- ]", "", entry)
-            # Don't accept changelog entries like 'Close #12345'.
-            entry = re.sub(r"^[\w\-\s]{0,10}#?\d{5,6}\.?$", "", entry)
         else:
             i += 1
-
-    if not description_error:
-        if not category:
-            description_error = "Changelog category is empty"
-        elif normalize_category(category) not in CATEGORIES_FOLD:
-            description_error = f"Category '{category}' is not valid"
-        elif not entry and "(changelog entry is not required)" not in category:
-            description_error = f"Changelog entry required for category '{category}'"
-
-    print(description_error)
-    return not description_error, category
+    if not category or normalize_category(category) not in CATEGORIES_FOLD:
+        error = "Change category is missing or invalid"
+    return error, category
 
 
 def check_labels(category, info):
@@ -215,7 +183,8 @@ def check_labels(category, info):
 
 if __name__ == "__main__":
     info = Info()
-    is_ok, category = check_category(info.pr_body)
-    if not is_ok:
+    error, category = get_category(info.pr_body)
+    if not category or error:
+        print(f"ERROR: {error}")
         sys.exit(1)
     check_labels(category, info)
