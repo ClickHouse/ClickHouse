@@ -302,24 +302,32 @@ IcebergIterator::IcebergIterator(
     producer_task.emplace(
         [this]()
         {
-            try
+            while (!blocking_queue.isFinished())
             {
-                auto data_file = data_files_iterator.next();
-                while (data_file.has_value())
+                std::optional<ManifestFileEntry> entry;
+                try
                 {
-                    blocking_queue.push(std::move(data_file.value()));
-                    if (callback)
-                    {
-                        chassert(data_file->metadata);
-                        callback(FileProgress(0, data_file->metadata->size_bytes));
-                    }
-                    data_file = data_files_iterator.next();
+                    entry = data_files_iterator.next();
                 }
-            }
-            catch (...)
-            {
-                std::lock_guard lock(exception_mutex);
-                exception = std::current_exception();
+                catch (...)
+                {
+                    std::lock_guard lock(exception_mutex);
+                    if (!exception)
+                    {
+                        exception = std::current_exception();
+                    }
+                    blocking_queue.finish();
+                    break;
+                }
+                if (!entry.has_value())
+                    break;
+                while (!blocking_queue.push(std::move(entry.value())))
+                {
+                    if (blocking_queue.isFinished())
+                    {
+                        break;
+                    }
+                }
             }
             blocking_queue.finish();
         });
