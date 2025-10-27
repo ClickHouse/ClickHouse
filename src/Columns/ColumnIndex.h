@@ -19,6 +19,7 @@ public:
 
     const ColumnPtr & getIndexes() const { return indexes; }
     const IColumn::WrappedPtr & getIndexesPtr() const { return indexes; }
+    IColumn::WrappedPtr & getIndexesPtr() { return indexes; }
     size_t getIndexAt(size_t row) const;
     void insertIndex(size_t index);
     void insertManyIndexes(size_t index, size_t length);
@@ -63,8 +64,6 @@ public:
 private:
     size_t getMaxIndexForCurrentType() const;
 
-    void updateIndexesDataPtr();
-
     void checkSizeOfType();
 
     template <typename Callback>
@@ -83,8 +82,6 @@ private:
     void convertIndexes();
 
     IColumn::WrappedPtr indexes;
-    /// Pointer to the data inside indexes column.
-    void * indexes_data_ptr = nullptr;
     size_t size_of_type = 0;
 };
 

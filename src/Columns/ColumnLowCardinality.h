@@ -200,9 +200,7 @@ public:
 
     void forEachMutableSubcolumn(MutableColumnCallback callback) override
     {
-        WrappedPtr indexes = idx.detachIndexes();
-        callback(indexes);
-        idx.attachIndexes(mutate(std::move(indexes)));
+        callback(idx.getIndexesPtr());
 
         /// Column doesn't own dictionary if it's shared.
         if (!dictionary.isShared())
@@ -231,10 +229,8 @@ public:
 
     void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
     {
-        auto indexes = idx.detachIndexes();
-        callback(*indexes);
-        indexes->forEachMutableSubcolumnRecursively(callback);
-        idx.attachIndexes(std::move(indexes));
+        callback(*idx.getIndexesPtr());
+        idx.getIndexesPtr()->forEachMutableSubcolumnRecursively(callback);
 
         /// Column doesn't own dictionary if it's shared.
         if (!dictionary.isShared())
