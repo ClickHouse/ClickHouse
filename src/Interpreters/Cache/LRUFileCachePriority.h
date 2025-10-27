@@ -90,6 +90,7 @@ public:
 
     bool tryIncreasePriority(
         Iterator & iterator,
+        bool is_space_reservation_complete,
         CachePriorityGuard & queue_guard,
         CacheStateGuard & state_guard) override;
 

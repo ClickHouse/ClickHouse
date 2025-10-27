@@ -244,41 +244,23 @@ EvictionInfoPtr SLRUFileCachePriority::collectEvictionInfoImpl(
                  : slru_iterator->lru_iterator.cache_priority == &probationary_queue);
     }
 
-    std::unique_ptr<EvictionInfo> info;
-    if (evict_in_protected)
-    {
-        info = protected_queue.collectEvictionInfo(size, elements, reservee, is_total_space_cleanup, lock);
+    if (!evict_in_protected)
+        return probationary_queue.collectEvictionInfo(size, elements, reservee, is_total_space_cleanup, lock);
 
-        /// If protected queue required eviction, we need to "downgrade"
-        /// its eviction candidates into probationary queue.
-        if (info->requiresEviction())
-        {
-            /// Make sure we have space in probationary queue for the downgrade.
-            auto downgrade_info = probationary_queue.collectEvictionInfo(
-                info->getSizeToEvict(),
-                info->getElementsToEvict(),
-                reservee,
-                is_total_space_cleanup,
-                lock);
-            info->add(std::move(downgrade_info));
-        }
-    }
-    else
-    {
-        info = probationary_queue.collectEvictionInfo(size, elements, reservee, is_total_space_cleanup, lock);
-    }
+    auto info = protected_queue.collectEvictionInfo(size, elements, reservee, is_total_space_cleanup, lock);
+    if (!info->requiresEviction())
+        return info;
 
-    /// Make sure this queue element (our reservee) is not
-    /// 1. "downgraded" (moved from protected to probationary queue)
-    /// by other concurrent space reservation attempts.
-    /// 2. "upgraded" by concurrently executed tryIncreasePriority.
-    /// E.g. we mark reservee's queue entry unmovable for the duration
-    /// of its space reservation.
-    if (slru_iterator)
-    {
-        slru_iterator->disableMoving(lock);
-        info->setOnFinishFunc([=]{ slru_iterator->enableMoving(); });
-    }
+    /// If protected queue required eviction, we need to "downgrade"
+    /// its eviction candidates into probationary queue
+    /// (to make sure we have space in probationary queue for the downgrade).
+    auto downgrade_info = probationary_queue.collectEvictionInfo(
+        info->getSizeToEvict(),
+        info->getElementsToEvict(),
+        reservee,
+        is_total_space_cleanup,
+        lock);
+    info->add(std::move(downgrade_info));
     return info;
 }
 
@@ -387,7 +369,7 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
     return success;
 }
 
-/// TODO: currently this will find only releadable entries,
+/// TODO: currently this will find only releasable entries,
 /// but since we are only downgrading, then it does not matter.
 bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
     const EvictionInfo & eviction_info,
@@ -497,6 +479,7 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
 
 bool SLRUFileCachePriority::tryIncreasePriority(
     Iterator & iterator_,
+    bool is_space_reservation_complete,
     CachePriorityGuard & queue_guard,
     CacheStateGuard & state_guard)
 {
@@ -507,7 +490,18 @@ bool SLRUFileCachePriority::tryIncreasePriority(
     /// we only need to increase its priority within the protected queue.
     if (iterator.is_protected)
     {
-        return protected_queue.tryIncreasePriority(iterator.lru_iterator, queue_guard, state_guard);
+        return protected_queue.tryIncreasePriority(
+            iterator.lru_iterator, is_space_reservation_complete, queue_guard, state_guard);
+    }
+    else if (!is_space_reservation_complete)
+    {
+        /// This is a limitation of current implementation
+        /// that we opt to upgrade only those entries which have already completed space reservation
+        /// (e.g. corresponding file segments have "Downloaded" state).
+        /// Because otherwise it becomes too complex to handle concurrent
+        /// space reservation and priority increase (because of the granular locking).
+        return probationary_queue.tryIncreasePriority(
+            iterator.lru_iterator, is_space_reservation_complete, queue_guard, state_guard);
     }
 
     chassert(iterator.lru_iterator.cache_priority == &probationary_queue);
@@ -519,14 +513,6 @@ bool SLRUFileCachePriority::tryIncreasePriority(
     std::unique_ptr<EvictionInfo> downgrade_info;
     {
         auto lock = state_guard.lock();
-        if (!iterator.isMovable(lock))
-        {
-            lock.unlock();
-            /// We cannot move the entry to protected queue as it is
-            /// temporarily unmovable because of a concurrent space reservation.
-            return probationary_queue.tryIncreasePriority(iterator.lru_iterator, queue_guard, state_guard);
-        }
-
         downgrade_info = collectEvictionInfoImpl(
             entry->size,
             /* elements */1,
@@ -570,7 +556,7 @@ bool SLRUFileCachePriority::tryIncreasePriority(
     }
 
     if (!collected_downgrade_candidates)
-        return probationary_queue.tryIncreasePriority(iterator.lru_iterator, queue_guard, state_guard);
+        return probationary_queue.tryIncreasePriority(iterator.lru_iterator, is_space_reservation_complete, queue_guard, state_guard);
 
     downgrade_candidates.evict();
 

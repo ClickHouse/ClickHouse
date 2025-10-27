@@ -911,7 +911,8 @@ KeyMetadata::iterator FileCache::addFileSegment(
 
 bool FileCache::tryIncreasePriority(FileSegment & file_segment)
 {
-    return main_priority->tryIncreasePriority(*file_segment.getQueueIterator(), cache_guard, cache_state_guard);
+    return main_priority->tryIncreasePriority(
+        *file_segment.getQueueIterator(), file_segment.isCompleted(), cache_guard, cache_state_guard);
 }
 
 bool FileCache::tryReserve(
