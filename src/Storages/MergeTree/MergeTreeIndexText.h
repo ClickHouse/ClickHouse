@@ -1,7 +1,4 @@
 #pragma once
-#include <algorithm>
-#include <functional>
-#include <vector>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Columns/IColumn.h>
@@ -13,6 +10,8 @@
 #include <Interpreters/BloomFilter.h>
 #include <Interpreters/ITokenExtractor.h>
 #include <absl/container/flat_hash_map.h>
+
+#include <vector>
 
 #include <roaring.hh>
 
@@ -316,7 +315,6 @@ struct MergeTreeIndexAggregatorText final : IMergeTreeIndexAggregator
 class ASTFunction;
 class MergeTreeIndexText final : public IMergeTreeIndex
 {
-    static Tuple parseNamedArgumentFromAST(const ASTFunction * ast_equal_function);
 public:
     MergeTreeIndexText(
         const IndexDescription & index_,
@@ -333,10 +331,10 @@ public:
     MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const override;
 
-    /// This function performs text index specific arguments parsing because text index has a special syntax and more complex arguments.
-    /// 1. It expects only named arguments like: argument = value
-    /// 2. The tokenizer argument can be strings (like other indices), but also function names (literals) or a function-like
-    /// expression (i.e: ngram(5))
+    /// This function parses the arguments of a text index. Text indexes have a special syntax with complex arguments.
+    /// 1. Arguments are named, e.g.: argument = value
+    /// 2. The tokenizer argument can be a string, a function name (literal) or a function-like expression, e.g.: ngram(5)
+    /// 3. The preprocessor argument is a generic expression, e.g. lower(extractTextFromHTML(col)))
     static FieldVector parseArgumentsListFromAST(const ASTPtr & arguments);
 
     MergeTreeIndexTextParams params;

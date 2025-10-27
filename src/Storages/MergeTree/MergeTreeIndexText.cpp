@@ -1314,9 +1314,10 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
 
 }
 
-/// Static helper functions here.
+namespace
+{
 
-Tuple MergeTreeIndexText::parseNamedArgumentFromAST(const ASTFunction * ast_equal_function)
+Tuple parseNamedArgumentFromAST(const ASTFunction * ast_equal_function)
 {
     if (ast_equal_function == nullptr
         || ast_equal_function->name != "equals"
@@ -1366,17 +1367,17 @@ Tuple MergeTreeIndexText::parseNamedArgumentFromAST(const ASTFunction * ast_equa
     return result;
 }
 
+}
+
 FieldVector MergeTreeIndexText::parseArgumentsListFromAST(const ASTPtr & arguments)
 {
     FieldVector result;
-
     result.reserve(arguments->children.size());
 
     for (const auto & argument : arguments->children)
     {
         const auto * ast_equal_function = argument->as<ASTFunction>();
-
-        result.emplace_back(MergeTreeIndexText::parseNamedArgumentFromAST(ast_equal_function));
+        result.emplace_back(parseNamedArgumentFromAST(ast_equal_function));
     }
 
     return result;
