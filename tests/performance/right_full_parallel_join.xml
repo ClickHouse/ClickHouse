@@ -5,11 +5,12 @@
     <max_threads>8</max_threads>
     <enable_analyzer>1</enable_analyzer>
     <parallel_hash_join_threshold>1</parallel_hash_join_threshold>
+    <query_plan_convert_outer_join_to_inner_join>0</query_plan_convert_outer_join_to_inner_join>
   </settings>
 
-  <query tag='RIGHT_100_1e7_LR'>SELECT * FROM numbers_mt(100) AS l RIGHT JOIN numbers_mt(10000000) AS r USING (number) FORMAT Null</query>
-  <query tag='FULL_100_1e7_LR'>SELECT * FROM numbers_mt(100) AS l FULL JOIN numbers_mt(10000000) AS r USING (number) FORMAT Null</query>
-  <query tag='RIGHT_1e7_1e7'>SELECT * FROM numbers_mt(10000000) AS l RIGHT JOIN numbers_mt(10000000) AS r USING (number) FORMAT Null</query>
-  <query tag='FULL_1e7_1e7'>SELECT * FROM numbers_mt(10000000) AS l FULL JOIN numbers_mt(10000000) AS r USING (number) FORMAT Null</query>
+  <query tag='RIGHT_100_1e7_LR'>SELECT * FROM numbers_mt(100) AS l RIGHT JOIN numbers_mt(10000000) AS r USING (number)</query>
+  <query tag='FULL_100_1e7_LR'>SELECT * FROM numbers_mt(100) AS l FULL JOIN numbers_mt(10000000) AS r USING (number)</query>
+  <query tag='RIGHT_1e7_1e7'>SELECT * FROM numbers_mt(10000000) AS l RIGHT JOIN numbers_mt(10000000) AS r USING (number)</query>
+  <query tag='FULL_1e7_1e7'>SELECT * FROM numbers_mt(10000000) AS l FULL JOIN numbers_mt(10000000) AS r USING (number)</query>
 
 </test>
