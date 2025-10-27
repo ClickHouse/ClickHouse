@@ -1,4 +1,4 @@
-Composite key - plan
+ComplexKeyHashed - plan
 SELECT
     __table1.k1 AS k1,
     __table1.k2 AS k2,
@@ -13,73 +13,99 @@ ORDER BY
     __table1.k1 ASC,
     __table1.k2 ASC,
     __table1.payload ASC
-Composite key
+ComplexKeyHashed
 1	a	x
-Composite key: AND/OR recursion - plan
+ComplexHashedArray - plan
 SELECT
     __table1.k1 AS k1,
-    __table1.k2 AS k2
-FROM default.f AS __table1
-WHERE (((__table1.k1, __table1.k2) IN (SELECT
-    __table1.k1 AS k1,
-    __table1.k2 AS k2
-FROM dictionary(\'dict_prices_ckh\') AS __table1
-WHERE __table1.tag = \'pro\')) AND ((__table1.k1, __table1.k2) IN (SELECT
-    __table1.k1 AS k1,
-    __table1.k2 AS k2
-FROM dictionary(\'dict_prices_ckh\') AS __table1
-WHERE _CAST(__table1.price, \'Int32\') < 120))) OR ((__table1.k1, __table1.k2) IN (SELECT
-    __table1.k1 AS k1,
-    __table1.k2 AS k2
-FROM dictionary(\'dict_prices_ckh\') AS __table1
-WHERE __table1.tag = \'cheap\'))
-ORDER BY
-    __table1.k1 ASC,
-    __table1.k2 ASC
-Composite key: AND/OR recursion
-1	a
-3	c
-Composite key, Complex Key Hashed layout: MATCH - plan
-SELECT
-    __table1.k1 AS k1,
-    __table1.k2 AS k2
+    __table1.k2 AS k2,
+    __table1.payload AS payload
 FROM default.f AS __table1
 WHERE (__table1.k1, __table1.k2) IN (SELECT
     __table1.k1 AS k1,
     __table1.k2 AS k2
-FROM dictionary(\'dict_prices_ckh\') AS __table1
-WHERE match(__table1.tag, \'^p\'))
+FROM dictionary(\'dict_prices_ch_array\') AS __table1
+WHERE __table1.tag = \'pro\')
 ORDER BY
     __table1.k1 ASC,
-    __table1.k2 ASC
-Composite key, Complex Key Hashed layout: MATCH
-1	a
-2	a
-Flat layout: equality and inequality - plan
+    __table1.k2 ASC,
+    __table1.payload ASC
+ComplexHashedArray
+1	a	x
+ComplexKeySparseHashed - plan
+SELECT
+    __table1.k1 AS k1,
+    __table1.k2 AS k2,
+    __table1.payload AS payload
+FROM default.f AS __table1
+WHERE (__table1.k1, __table1.k2) IN (SELECT
+    __table1.k1 AS k1,
+    __table1.k2 AS k2
+FROM dictionary(\'dict_prices_ck_sparse_hashed\') AS __table1
+WHERE __table1.tag = \'pro\')
+ORDER BY
+    __table1.k1 ASC,
+    __table1.k2 ASC,
+    __table1.payload ASC
+ComplexKeySparseHashed
+1	a	x
+Flat - plan
 SELECT
     __table1.id AS id,
     __table1.payload AS payload
 FROM default.f AS __table1
-WHERE (__table1.id IN (SELECT __table1.id AS id
+WHERE __table1.id IN (SELECT __table1.id AS id
 FROM dictionary(\'dict_items_flat\') AS __table1
-WHERE __table1.name = \'alpha\')) AND (__table1.id IN (SELECT __table1.id AS id
-FROM dictionary(\'dict_items_flat\') AS __table1
-WHERE __table1.score >= 10))
+WHERE __table1.name = \'alpha\')
 ORDER BY
     __table1.id ASC,
     __table1.payload ASC
-Flat layout: equality and inequality
+Flat
 1	u
 1	x
 3	z
-Range layout: not supported, no rewrite expected - plan
+Hashed - plan
 SELECT
     __table1.id AS id,
     __table1.payload AS payload
-FROM default.g AS __table1
-WHERE dictGetUInt64(\'dict_salary_rh\', \'rate\', __table1.id, _CAST(\'2024-01-15\', \'Date\')) >= 100
+FROM default.f AS __table1
+WHERE __table1.id IN (SELECT __table1.id AS id
+FROM dictionary(\'dict_items_hashed\') AS __table1
+WHERE __table1.name = \'alpha\')
 ORDER BY
     __table1.id ASC,
     __table1.payload ASC
-Range layout: not supported, no rewrite expected
-1	p
+Hashed
+1	u
+1	x
+3	z
+HashedArray - plan
+SELECT
+    __table1.id AS id,
+    __table1.payload AS payload
+FROM default.f AS __table1
+WHERE __table1.id IN (SELECT __table1.id AS id
+FROM dictionary(\'dict_items_hashed_array\') AS __table1
+WHERE __table1.name = \'alpha\')
+ORDER BY
+    __table1.id ASC,
+    __table1.payload ASC
+HashedArray
+1	u
+1	x
+3	z
+SparseHashed - plan
+SELECT
+    __table1.id AS id,
+    __table1.payload AS payload
+FROM default.f AS __table1
+WHERE __table1.id IN (SELECT __table1.id AS id
+FROM dictionary(\'dict_items_sparse_hashed\') AS __table1
+WHERE __table1.name = \'alpha\')
+ORDER BY
+    __table1.id ASC,
+    __table1.payload ASC
+SparseHashed
+1	u
+1	x
+3	z
