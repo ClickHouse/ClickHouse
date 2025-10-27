@@ -747,7 +747,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         num_threads = std::min<size_t>(num_streams, settings[Setting::max_threads_for_indexes]);
     }
 
-    const bool support_disjuncts = is_support_disjuncts && !settings[Setting::use_skip_indexes_on_data_read];
+    const bool support_disjuncts = is_support_disjuncts && !settings[Setting::use_skip_indexes_on_data_read] &&
+                                        key_condition.getRPN().size() < BITS_FOR_RPN_EVALUATION_RESULTS;
     auto is_index_supported_on_data_read = [&](const MergeTreeIndexPtr & index) -> bool
     {
         /// Vector similarity indexes are not applicable on data reads.
