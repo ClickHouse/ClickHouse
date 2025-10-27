@@ -5,6 +5,7 @@ sidebar_label: 'HTTP Interface'
 sidebar_position: 15
 slug: /interfaces/http
 title: 'HTTP Interface'
+doc_type: 'reference'
 ---
 
 import PlayUI from '@site/static/images/play.png';
@@ -141,7 +142,7 @@ ECT 1
 , expected One of: SHOW TABLES, SHOW DATABASES, SELECT, INSERT, CREATE, ATTACH, RENAME, DROP, DETACH, USE, SET, OPTIMIZE., e.what() = DB::Exception
 ```
 
-By default, data is returned in the [`TabSeparated`](formats.md#tabseparated) format.
+By default, data is returned in the [`TabSeparated`](/interfaces/formats/TabSeparated) format.
 
 The `FORMAT` clause is used in the query to request any other format. For example:
 
@@ -295,7 +296,7 @@ You can also choose to use [HTTP compression](https://en.wikipedia.org/wiki/HTTP
 
 To send a compressed `POST` request, append the request header `Content-Encoding: compression_method`.
 
-In order for ClickHouse to compress the response, enable compression with the [`enable_http_compression`](../operations/settings/settings.md#enable_http_compression) setting and append the `Accept-Encoding: compression_method` header to the request. 
+In order for ClickHouse to compress the response, append the `Accept-Encoding: compression_method` header to the request. 
 
 You can configure the data compression level using the [`http_zlib_compression_level`](../operations/settings/settings.md#http_zlib_compression_level) setting for all compression methods.
 

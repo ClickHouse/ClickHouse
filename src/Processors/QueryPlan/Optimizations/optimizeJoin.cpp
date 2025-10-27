@@ -20,6 +20,7 @@
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Interpreters/FullSortingMergeJoin.h>
 
+#include <Interpreters/Context.h>
 #include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
 
@@ -42,12 +43,22 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 
 
+namespace ProfileEvents
+{
+    extern const Event JoinOptimizeMicroseconds;
+}
+
 namespace DB
 {
 
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace Setting
+{
+    extern const SettingsBool allow_statistics_optimize;
 }
 
 RelationStats getDummyStats(ContextPtr context, const String & table_name);
@@ -57,6 +68,7 @@ namespace QueryPlanOptimizations
 {
 
 const size_t MAX_ROWS = std::numeric_limits<size_t>::max();
+static String dumpStatsForLogs(const RelationStats & stats);
 
 static size_t functionDoesNotChangeNumberOfValues(std::string_view function_name, size_t num_args)
 {
@@ -169,13 +181,27 @@ struct RuntimeHashStatisticsContext
     }
 };
 
-RelationStats estimateReadRowsCount(QueryPlan::Node & node, bool has_filter = false)
+RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr)
 {
     IQueryPlanStep * step = node.step.get();
     if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(step))
     {
         String table_display_name = reading->getStorageID().getTableName();
 
+        if (reading->getContext()->getSettingsRef()[Setting::allow_statistics_optimize])
+        {
+            if (auto estimator_ = reading->getConditionSelectivityEstimator())
+            {
+                auto prewhere_info = reading->getPrewhereInfo();
+                const ActionsDAG::Node * prewhere_node = prewhere_info
+                    ? static_cast<const ActionsDAG::Node *>(prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name))
+                    : nullptr;
+                auto relation_profile = estimator_->estimateRelationProfile(filter, prewhere_node);
+                RelationStats stats {.estimated_rows = relation_profile.rows, .column_stats = relation_profile.column_stats, .table_name = table_display_name};
+                LOG_TRACE(getLogger("optimizeJoin"), "estimate statistics {}", dumpStatsForLogs(stats));
+                return stats;
+            }
+        }
         if (auto dummy_stats = getDummyStats(reading->getContext(), table_display_name); !dummy_stats.table_name.empty())
             return dummy_stats;
 
@@ -206,7 +232,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, bool has_filter = fa
             if (is_filtered_by_index)
                 break;
         }
-        has_filter = has_filter || reading->getPrewhereInfo();
+        bool has_filter = filter || reading->getPrewhereInfo();
 
         /// If any conditions are pushed down to storage but not used in the index,
         /// we cannot precisely estimate the row count
@@ -228,7 +254,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, bool has_filter = fa
 
     if (const auto * limit_step = typeid_cast<const LimitStep *>(step))
     {
-        auto estimated = estimateReadRowsCount(*node.children.front(), has_filter);
+        auto estimated = estimateReadRowsCount(*node.children.front(), filter);
         auto limit = limit_step->getLimit();
         if (!estimated.estimated_rows || estimated.estimated_rows > limit)
             estimated.estimated_rows = limit;
@@ -237,15 +263,17 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, bool has_filter = fa
 
     if (const auto * expression_step = typeid_cast<const ExpressionStep *>(step))
     {
-        auto stats = estimateReadRowsCount(*node.children.front(), has_filter);
+        auto stats = estimateReadRowsCount(*node.children.front(), filter);
         remapColumnStats(stats.column_stats, expression_step->getExpression());
         return stats;
     }
 
-    if (const auto * expression_step = typeid_cast<const FilterStep *>(step))
+    if (const auto * filter_step = typeid_cast<const FilterStep *>(step))
     {
-        auto stats = estimateReadRowsCount(*node.children.front(), true);
-        remapColumnStats(stats.column_stats, expression_step->getExpression());
+        const auto & dag = filter_step->getExpression();
+        const auto * predicate = static_cast<const ActionsDAG::Node *>(dag.tryFindInOutputs(filter_step->getFilterColumnName()));
+        auto stats = estimateReadRowsCount(*node.children.front(), predicate);
+        remapColumnStats(stats.column_stats, filter_step->getExpression());
         return stats;
     }
 
@@ -270,6 +298,8 @@ bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryP
     const auto & join = join_step->getJoin();
     if (join->pipelineType() != JoinPipelineType::FillRightFirst || !join->isCloneSupported())
         return true;
+
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::JoinOptimizeMicroseconds);
 
     const auto & table_join = join->getTableJoin();
 
@@ -443,7 +473,7 @@ static bool isTrivialStep(const QueryPlan::Node * node)
     return isPassthroughActions(expression_step->getExpression());
 }
 
-void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 
 constexpr bool isInnerOrCross(JoinKind kind)
 {
@@ -470,7 +500,7 @@ size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * node, Que
             return count;
         }
         /// Optimize child subplan before continuing to get size estimation
-        optimizeJoinLogical(*node, nodes, graph.context->optimization_settings);
+        optimizeJoinLogicalImpl(child_join_step, *node, nodes, graph.context->optimization_settings);
     }
 
     graph.inputs.push_back(node);
@@ -1003,6 +1033,10 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
 
             join_step->setOptimized(entry->estimated_rows, lhs_estimation, rhs_estimation);
 
+            auto right_table_key = query_graph_builder.context->statistics_context.getCachedKey(right_child_node);
+            if (right_table_key)
+                join_step->setRightHashTableCacheKey(right_table_key);
+
             auto & new_node = nodes.emplace_back();
             new_node.step = std::move(join_step);
             new_node.children = {left_child_node, right_child_node};
@@ -1030,6 +1064,12 @@ void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
     if (node.children.size() != 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStepLogical should have exactly 2 children, but has {}", node.children.size());
 
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::JoinOptimizeMicroseconds);
+    optimizeJoinLogicalImpl(join_step, node, nodes, optimization_settings);
+}
+
+void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
+{
     for (auto * child : node.children)
     {
         if (auto * lookup_step = typeid_cast<JoinStepLogicalLookup *>(child->step.get()))

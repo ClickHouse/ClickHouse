@@ -10,6 +10,7 @@
 
 #include <aws/core/Aws.h>
 #include <aws/core/client/CoreErrors.h>
+#include <aws/core/utils/cbor/CborValue.h>
 #include <aws/s3/model/HeadBucketRequest.h>
 #include <aws/s3/model/GetObjectRequest.h>
 #include <aws/s3/model/HeadObjectRequest.h>
@@ -84,6 +85,7 @@ namespace S3
 
 Client::RetryStrategy::RetryStrategy(const PocoHTTPClientConfiguration::RetryStrategy & config_)
     : config(config_)
+    , log(getLogger("S3ClientRetryStrategy"))
 {
     chassert(config.max_delay_ms <= (1.0 + config.jitter_factor) * config.initial_delay_ms * (1ul << 31l));
     chassert(config.jitter_factor >= 0 && config.jitter_factor <= 1);
@@ -133,7 +135,7 @@ long Client::RetryStrategy::CalculateDelayBeforeNextRetry(const Aws::Client::AWS
     else
         res = std::min<uint64_t>(config.initial_delay_ms * backoffLimitedPow, config.max_delay_ms);
 
-    LOG_TEST(getLogger("RetryStrategy"), "Next retry in {} ms", res);
+    LOG_TEST(log, "Next retry in {} ms", res);
     return res;
 }
 
@@ -141,6 +143,37 @@ long Client::RetryStrategy::CalculateDelayBeforeNextRetry(const Aws::Client::AWS
 long Client::RetryStrategy::GetMaxAttempts() const
 {
     return config.max_retries + 1;
+}
+
+void Client::RetryStrategy::RequestBookkeeping(const Aws::Client::HttpResponseOutcome & httpResponseOutcome)
+{
+    if (!httpResponseOutcome.IsSuccess())
+    {
+        const auto & error = httpResponseOutcome.GetError();
+        if (error.ShouldRetry())
+            LOG_TRACE(
+                log,
+                "Attempt {}/{} failed with retryable error: {}, {}",
+                httpResponseOutcome.GetRetryCount() + 1,
+                GetMaxAttempts(),
+                static_cast<size_t>(error.GetResponseCode()),
+                error.GetMessage());
+    }
+}
+
+void Client::RetryStrategy::RequestBookkeeping(
+    const Aws::Client::HttpResponseOutcome & httpResponseOutcome, const Aws::Client::AWSError<Aws::Client::CoreErrors> & lastError)
+{
+    if (httpResponseOutcome.IsSuccess())
+        LOG_TRACE(
+            log,
+            "Attempt {}/{} succeeded with response code {}, last error: {}, {}",
+            httpResponseOutcome.GetRetryCount() + 1,
+            GetMaxAttempts(),
+            static_cast<size_t>(httpResponseOutcome.GetResult()->GetResponseCode()),
+            static_cast<size_t>(lastError.GetResponseCode()),
+            lastError.GetMessage());
+    RequestBookkeeping(httpResponseOutcome);
 }
 
 namespace
@@ -193,7 +226,12 @@ std::unique_ptr<Client> Client::create(
 
 std::unique_ptr<Client> Client::clone() const
 {
-    return std::unique_ptr<Client>(new Client(*this, client_configuration));
+    return cloneWithConfigurationOverride(this->client_configuration);
+}
+
+std::unique_ptr<Client> Client::cloneWithConfigurationOverride(const PocoHTTPClientConfiguration & client_configuration_override) const
+{
+    return std::unique_ptr<Client>(new Client(*this, client_configuration_override));
 }
 
 namespace
@@ -254,15 +292,7 @@ Client::Client(
 
     LOG_TRACE(log, "API mode of the S3 client: {}", api_mode);
 
-    LOG_TRACE(
-        log,
-        "Slowing down threads on retryable errors is {}",
-        client_configuration.s3_slow_all_threads_after_retryable_error ? "enabled" : "disabled");
-
-    LOG_TRACE(
-        log,
-        "Slowing down threads on network errors is {}",
-        client_configuration.s3_slow_all_threads_after_network_error ? "enabled" : "disabled");
+    logConfiguration();
 
     detect_region = provider_type == ProviderType::AWS && explicit_region == Aws::Region::AWS_GLOBAL;
 
@@ -290,6 +320,8 @@ Client::Client(
 {
     cache = std::make_shared<ClientCache>(*other.cache);
     ClientCacheRegistry::instance().registerClient(cache);
+
+    logConfiguration();
 
     ProfileEvents::increment(ProfileEvents::TinyS3Clients);
 }
@@ -660,17 +692,33 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
             continue;
         }
 
-        if (error.GetResponseCode() != Aws::Http::HttpResponseCode::MOVED_PERMANENTLY)
+        /// IllegalLocationConstraintException may indicate that we are working with an opt-in region (e.g. me-south-1)
+        /// In that case, we need to update the region and try again
+        bool is_illegal_constraint_exception = error.GetExceptionName() == "IllegalLocationConstraintException";
+        if (error.GetResponseCode() != Aws::Http::HttpResponseCode::MOVED_PERMANENTLY && !is_illegal_constraint_exception)
             return result;
 
         // maybe we detect a correct region
-        if (!detect_region)
+        bool new_region_detected = false;
+        if (!detect_region || is_illegal_constraint_exception)
         {
             if (auto region = GetErrorMarshaller()->ExtractRegion(error); !region.empty() && region != explicit_region)
             {
+                LOG_INFO(log, "Detected new region: {}", region);
                 request.overrideRegion(region);
                 insertRegionOverride(bucket, region);
+                new_region_detected = true;
             }
+        }
+
+        /// special handling for opt-in regions
+        if (new_region_detected && is_illegal_constraint_exception && initial_endpoint.substr(11) == "amazonaws.com")
+        {
+            S3::URI new_uri(initial_endpoint);
+            new_uri.addRegionToURI(request.getRegionOverride());
+            found_new_endpoint = true;
+            request.overrideURI(new_uri);
+            continue;
         }
 
         // we possibly got new location, need to try with that one
@@ -707,6 +755,7 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
         const Int64 max_attempts = client_configuration.retry_strategy.max_retries + 1;
         chassert(max_attempts > 0);
         std::exception_ptr last_exception = nullptr;
+        bool inside_retry_loop = false;
         for (Int64 attempt_no = 0; attempt_no < max_attempts; ++attempt_no)
         {
             incrementProfileEvents<IsReadMethod>(ProfileEvents::S3ReadRequestAttempts, ProfileEvents::S3WriteRequestAttempts);
@@ -744,8 +793,13 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
                             ProfileEvents::DiskS3ReadRequestRetryableErrors, ProfileEvents::DiskS3WriteRequestRetryableErrors);
 
                     updateNextTimeToRetryAfterRetryableError(outcome.GetError(), attempt_no);
+                    inside_retry_loop = true;
                     continue;
                 }
+
+                if (inside_retry_loop)
+                    LOG_TRACE(log, "Request succeeded after {} retries. Max retries: {}", attempt_no, max_attempts);
+
                 return outcome;
             }
             catch (Poco::Net::NetException &)
@@ -767,6 +821,7 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
                     break;
 
                 updateNextTimeToRetryAfterRetryableError(error, attempt_no);
+                inside_retry_loop = true;
             }
         }
 
@@ -831,7 +886,7 @@ void Client::slowDownAfterRetryableError() const
         if (current_time_ms >= next_time_ms)
         {
             if (next_time_ms != 0)
-                LOG_TEST(log, "Retry time has passed; proceeding without delay");
+                LOG_TRACE(log, "Retry time has passed; proceeding without delay");
             break;
         }
         UInt64 sleep_ms = next_time_ms - current_time_ms;
@@ -844,6 +899,31 @@ void Client::slowDownAfterRetryableError() const
 
         LOG_TRACE(log, "Request failed from a retryable error, now waiting {} ms before retrying", sleep_ms);
         sleepForMilliseconds(sleep_ms);
+    }
+}
+
+void Client::logConfiguration() const
+{
+    if (client_configuration.for_disk_s3)
+    {
+        LOG_TRACE(
+            log,
+            "S3 client for disk '{}' initialized with s3_retry_attempts: {}",
+            client_configuration.opt_disk_name.value_or(""),
+            client_configuration.retry_strategy.max_retries);
+        LOG_TRACE(
+            log,
+            "S3 client for disk '{}': slowing down threads on retryable errors is {}",
+            client_configuration.opt_disk_name.value_or(""),
+            client_configuration.s3_slow_all_threads_after_retryable_error ? "enabled" : "disabled");
+    }
+    else
+    {
+        LOG_TRACE(log, "S3 client initialized with s3_retry_attempts: {}", client_configuration.retry_strategy.max_retries);
+        LOG_TRACE(
+            log,
+            "S3 client: slowing down threads on retryable errors is {}",
+            client_configuration.s3_slow_all_threads_after_retryable_error ? "enabled" : "disabled");
     }
 }
 
@@ -1143,6 +1223,7 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
     bool s3_slow_all_threads_after_retryable_error,
     bool enable_s3_requests_logging,
     bool for_disk_s3,
+    std::optional<std::string> opt_disk_name,
     const ThrottlerPtr & get_request_throttler,
     const ThrottlerPtr & put_request_throttler,
     const String & protocol)
@@ -1164,6 +1245,7 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
         s3_slow_all_threads_after_retryable_error,
         enable_s3_requests_logging,
         for_disk_s3,
+        opt_disk_name,
         context->getGlobalContext()->getSettingsRef()[Setting::s3_use_adaptive_timeouts],
         get_request_throttler,
         put_request_throttler,

@@ -27,7 +27,7 @@ public:
 
     bool canReadIncompleteGranules() const override { return main_reader->canReadIncompleteGranules(); }
 
-    bool canSkipMark(size_t mark) const override;
+    bool canSkipMark(size_t mark, size_t current_task_last_mark) override;
 
 private:
     /// Delegates to the main reader to determine if reading incomplete index granules is supported.

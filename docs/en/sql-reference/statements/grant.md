@@ -4,6 +4,7 @@ sidebar_label: 'GRANT'
 sidebar_position: 38
 slug: /sql-reference/statements/grant
 title: 'GRANT Statement'
+doc_type: 'reference'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
@@ -73,6 +74,11 @@ It means that `john` has the permission to execute:
 Also `john` has the `GRANT OPTION` privilege, so it can grant other users with privileges of the same or smaller scope.
 
 Access to the `system` database is always allowed (since this database is used for processing queries).
+
+:::note
+While there are many system tables which new users can access by default, they  may not be able to access every system table by default without grants.
+Additionally, access to certain system tables such as `system.zookeeper` is restricted for Cloud users for security reasons.
+:::
 
 You can grant multiple privileges to multiple accounts in one query. The query `GRANT SELECT, INSERT ON *.* TO john, robin` allows accounts `john` and `robin` to execute the `INSERT` and `SELECT` queries over all the tables in all the databases on the server.
 
@@ -433,7 +439,7 @@ Allows executing [ALTER](../../sql-reference/statements/alter/index.md) queries 
   - `ALTER FETCH PARTITION`. Level: `TABLE`. Aliases: `ALTER FETCH PART`, `FETCH PARTITION`, `FETCH PART`
   - `ALTER FREEZE PARTITION`. Level: `TABLE`. Aliases: `FREEZE PARTITION`
   - `ALTER VIEW`. Level: `GROUP`
-  - `ALTER VIEW REFRESH`. Level: `VIEW`. Aliases: `ALTER LIVE VIEW REFRESH`, `REFRESH VIEW`
+  - `ALTER VIEW REFRESH`. Level: `VIEW`. Aliases: `REFRESH VIEW`
   - `ALTER VIEW MODIFY QUERY`. Level: `VIEW`. Aliases: `ALTER TABLE MODIFY QUERY`
   - `ALTER VIEW MODIFY SQL SECURITY`. Level: `VIEW`. Aliases: `ALTER TABLE MODIFY SQL SECURITY`
 
@@ -680,6 +686,23 @@ GRANT READ ON S3('s3://foo/.*') TO john
 GRANT READ ON S3('s3://bar/.*') TO john
 ```
 
+:::warning
+Source filter takes **regexp** as a parameter, so a grant
+`GRANT READ ON URL('http://www.google.com') TO john;`
+
+will allow queries
+```sql
+SELECT * FROM url('https://www.google.com');
+SELECT * FROM url('https://www-google.com');
+```
+
+because `.` is treated as an `Any Single Character` in the regexps. 
+This may lead to potential vulnerability. The correct grant should be
+```sql
+GRANT READ ON URL('https://www\.google\.com') TO john;
+```
+:::
+
 **Re-granting with GRANT OPTION:**
 
 If the original grant has `WITH GRANT OPTION`, it can be re-granted using `GRANT CURRENT GRANTS`:
@@ -752,7 +775,7 @@ Allows using a specified table engine when creating a table. Applies to [table e
 Grants all the privileges on regulated entity to a user account or a role.
 
 :::note
-The privilege `ALL` is not supported in ClickHouse Cloud, where the `default` user has limited permissions. Users can grant the maximum permissions to a user by granting the `default_role`. See [here](/cloud/security/cloud-access-management/overview#initial-settings) for further details.
+The privilege `ALL` is not supported in ClickHouse Cloud, where the `default` user has limited permissions. Users can grant the maximum permissions to a user by granting the `default_role`. See [here](/cloud/security/manage-cloud-users) for further details.
 Users can also use the `GRANT CURRENT GRANTS` as the default user to achieve similar effects to `ALL`.
 :::
 

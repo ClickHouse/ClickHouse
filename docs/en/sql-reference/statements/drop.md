@@ -4,6 +4,7 @@ sidebar_label: 'DROP'
 sidebar_position: 44
 slug: /sql-reference/statements/drop
 title: 'DROP Statements'
+doc_type: 'reference'
 ---
 
 # DROP Statements

@@ -139,6 +139,7 @@ HashJoin::HashJoin(
     , right_sample_block(*right_sample_block_)
     , max_joined_block_rows(table_join->maxJoinedBlockRows())
     , max_joined_block_bytes(table_join->maxJoinedBlockBytes())
+    , joined_block_split_single_row(table_join->joinedBlockAllowSplitSingleRow())
     , instance_log_id(!instance_id_.empty() ? "(" + instance_id_ + ") " : "")
     , log(getLogger("HashJoin"))
 {
@@ -667,7 +668,7 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
             || (max_rows_in_join && getTotalRowCount() + block_to_save.rows() >= max_rows_in_join)))
     {
         if (!tmp_stream)
-            tmp_stream.emplace(std::make_shared<const Block>(right_sample_block), tmp_data.get());
+            tmp_stream.emplace(std::make_shared<const Block>(right_sample_block), tmp_data);
 
         chassert(rows == block.rows()); /// We don't run parallel_hash for cross join
         tmp_stream.value()->write(block_to_save);
@@ -1049,9 +1050,10 @@ DataTypePtr HashJoin::joinGetCheckAndGetReturnType(const DataTypes & data_types,
     if (right_table_keys.columns() != num_keys)
         throw Exception(
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Number of arguments for function joinGet{} doesn't match: passed, should be equal to {}",
+            "Number of join_keys and number of right table key columns for function joinGet{} don't match: passed {}, should be equal to {}",
             toString(or_null ? "OrNull" : ""),
-            toString(num_keys));
+            toString(num_keys),
+            toString(right_table_keys.columns()));
 
     for (size_t i = 0; i < num_keys; ++i)
     {
@@ -1637,6 +1639,7 @@ void HashJoin::validateAdditionalFilterExpression(ExpressionActionsPtr additiona
         || ((strictness == JoinStrictness::Semi || strictness == JoinStrictness::Any || strictness == JoinStrictness::Anti)
             && (isLeft(kind) || isRight(kind)))
         || (strictness == JoinStrictness::Any && (isInner(kind)));
+
     if (!is_supported)
     {
         throw Exception(
@@ -1763,12 +1766,23 @@ void HashJoin::tryRerangeRightTableData()
         return;
 
     /// We should not rerange the right table on such conditions:
-    /// 1. the right table is already reranged by key or it is empty.
-    /// 2. the join clauses size is greater than 1, like `...join on a.key1=b.key1 or a.key2=b.key2`, we can not rerange the right table on different set of keys.
-    /// 3. the number of right table rows exceed the threshold, which may result in a significant cost for reranging and lead to performance degradation.
-    /// 4. the keys of right table is very sparse, which may result in insignificant performance improvement after reranging by key.
-    if (!data || data->sorted || data->columns.empty() || data->maps.size() > 1 || data->rows_to_join > table_join->sortRightMaximumTableRows() ||  data->avgPerKeyRows() < table_join->sortRightMinimumPerkeyRows())
+    /// 1. The right table is already reranged by key, or it is empty.
+    /// 2. The join clauses size is greater than 1, for example:
+    ///    `...join on a.key1=b.key1 or a.key2=b.key2`.
+    ///    We cannot rerange the right table on different sets of keys.
+    /// 3. The number of right table rows exceeds the threshold, which may
+    ///    results in a significant cost for reranging and performance degradation.
+    /// 4. The keys of the right table are very sparse, which may result in
+    ///    insignificant performance improvement after reranging by key.
+    if (!data
+        || data->sorted
+        || data->columns.empty()
+        || data->maps.size() > 1
+        || data->rows_to_join > table_join->sortRightMaximumTableRows()
+        || data->avgPerKeyRows() < table_join->sortRightMinimumPerkeyRows())
+    {
         return;
+    }
 
     if (data->keys_to_join == 0)
         data->keys_to_join = getTotalRowCount();
@@ -1816,5 +1830,7 @@ void HashJoin::onBuildPhaseFinish()
         all_join_was_promoted_to_right_any = true;
         LOG_DEBUG(log, "Promoting join strictness to RightAny, because all values in the right table are unique");
     }
+
+    LOG_TRACE(log, "{}Join data is built, {} and {} rows in hash table", instance_log_id, ReadableSize(getTotalByteCount()), getTotalRowCount());
 }
 }

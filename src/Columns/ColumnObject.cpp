@@ -631,6 +631,7 @@ void ColumnObject::doInsertFrom(const IColumn & src, size_t n)
 
     /// Finally, insert paths from shared data.
     insertFromSharedDataAndFillRemainingDynamicPaths(src_object_column, std::move(src_dynamic_paths_for_shared_data), n, 1);
+    validateDynamicPathsSizes();
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -665,6 +666,7 @@ void ColumnObject::doInsertRangeFrom(const IColumn & src, size_t start, size_t l
 
     /// Finally, insert paths from shared data.
     insertFromSharedDataAndFillRemainingDynamicPaths(src_object_column, std::move(src_dynamic_paths_for_shared_data), start, length);
+    validateDynamicPathsSizes();
 }
 
 void ColumnObject::insertFromSharedDataAndFillRemainingDynamicPaths(const DB::ColumnObject & src_object_column, std::vector<std::string_view> && src_dynamic_paths_for_shared_data, size_t start, size_t length)
@@ -726,6 +728,8 @@ void ColumnObject::insertFromSharedDataAndFillRemainingDynamicPaths(const DB::Co
             if (auto it = dynamic_paths_ptrs.find(path); it != dynamic_paths_ptrs.end())
             {
                 /// Deserialize binary value into dynamic column from shared data.
+                if (it->second->size() != current_size)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of dynamic path {}: {} != {}. It may indicate duplicated data for this path", path, it->second->size(), current_size);
                 deserializeValueFromSharedData(src_shared_data_values, i, *it->second);
             }
             else
@@ -897,6 +901,28 @@ StringRef ColumnObject::serializeValueIntoArena(size_t n, Arena & arena, const c
     }
 
     /// Second, serialize paths and values in binary format from dynamic paths and shared data in sorted by path order.
+    serializeDynamicPathsAndSharedDataIntoArena(n, arena, begin, res);
+    return res;
+}
+
+StringRef ColumnObject::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+{
+    StringRef res(begin, 0);
+    /// First serialize values from typed paths in sorted order. They are the same for all instances of this column.
+    for (auto path : sorted_typed_paths)
+    {
+        auto data_ref = typed_paths.find(path)->second->serializeAggregationStateValueIntoArena(n, arena, begin);
+        res.data = data_ref.data - res.size;
+        res.size += data_ref.size;
+    }
+
+    /// Second, serialize paths and values in binary format from dynamic paths and shared data in sorted by path order.
+    serializeDynamicPathsAndSharedDataIntoArena(n, arena, begin, res);
+    return res;
+}
+
+void ColumnObject::serializeDynamicPathsAndSharedDataIntoArena(size_t n, Arena & arena, const char *& begin, StringRef & res) const
+{
     /// Calculate total number of paths to serialize and write it.
     const auto & shared_data_offsets = getSharedDataOffsets();
     size_t offset = shared_data_offsets[static_cast<ssize_t>(n) - 1];
@@ -943,8 +969,6 @@ StringRef ColumnObject::serializeValueIntoArena(size_t n, Arena & arena, const c
             serializePathAndValueIntoArena(arena, begin, StringRef(*dynamic_paths_it), buf.str(), res);
         }
     }
-
-    return res;
 }
 
 void ColumnObject::serializePathAndValueIntoArena(DB::Arena & arena, const char *& begin, StringRef path, StringRef value, StringRef & res) const
@@ -962,12 +986,27 @@ void ColumnObject::serializePathAndValueIntoArena(DB::Arena & arena, const char 
 
 const char * ColumnObject::deserializeAndInsertFromArena(const char * pos)
 {
-    size_t current_size = size();
     /// First deserialize typed paths. They come first.
     for (auto path : sorted_typed_paths)
         pos = typed_paths.find(path)->second->deserializeAndInsertFromArena(pos);
 
     /// Second deserialize all other paths and values and insert them into dynamic paths or shared data.
+    return deserializeDynamicPathsAndSharedDataFromArena(pos);
+}
+
+const char * ColumnObject::deserializeAndInsertAggregationStateValueFromArena(const char * pos)
+{
+    /// First deserialize typed paths. They come first.
+    for (auto path : sorted_typed_paths)
+        pos = typed_paths.find(path)->second->deserializeAndInsertAggregationStateValueFromArena(pos);
+
+    /// Second deserialize all other paths and values and insert them into dynamic paths or shared data.
+    return deserializeDynamicPathsAndSharedDataFromArena(pos);
+}
+
+const char * ColumnObject::deserializeDynamicPathsAndSharedDataFromArena(const char * pos)
+{
+    size_t current_size = size();
     auto num_paths = unalignedLoad<size_t>(pos);
     pos += sizeof(size_t);
     const auto [shared_data_paths, shared_data_values] = getSharedDataPathsAndValues();
@@ -1757,6 +1796,34 @@ void ColumnObject::takeDynamicStructureFromSourceColumns(const DB::Columns & sou
     }
 }
 
+void ColumnObject::takeDynamicStructureFromColumn(const ColumnPtr & source_column)
+{
+    if (!empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "takeDynamicStructureFromColumn should be called only on empty Object column");
+
+    const auto & source_object = assert_cast<const ColumnObject &>(*source_column);
+
+    for (auto & [path, column] : typed_paths)
+        column->takeDynamicStructureFromColumn(source_object.typed_paths.at(path));
+
+    dynamic_paths.clear();
+    dynamic_paths_ptrs.clear();
+    sorted_dynamic_paths.clear();
+    for (const auto & [path, column] : source_object.getDynamicPaths())
+    {
+        auto it = dynamic_paths.emplace(path, ColumnDynamic::create(max_dynamic_types)).first;
+        it->second->takeDynamicStructureFromColumn(column);
+        dynamic_paths_ptrs.emplace(path, assert_cast<ColumnDynamic *>(it->second.get()));
+        sorted_dynamic_paths.insert(it->first);
+    }
+
+    /// Set max_dynamic_paths to the number of dynamic paths.
+    /// It's needed to avoid adding new unexpected dynamic paths during later inserts into this column.
+    max_dynamic_paths = dynamic_paths.size();
+
+    statistics = source_object.getStatistics();
+}
+
 size_t ColumnObject::findPathLowerBoundInSharedData(StringRef path, const ColumnString & shared_data_paths, size_t start, size_t end)
 {
     /// Simple random access iterator over values in ColumnString in specified range.
@@ -1993,6 +2060,16 @@ int ColumnObject::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_d
     if (it.end())
         return -1;
     return 1;
+}
+
+void ColumnObject::validateDynamicPathsSizes() const
+{
+    size_t expected_size = shared_data->size();
+    for (const auto & [path, column] : dynamic_paths)
+    {
+        if (column->size() != expected_size)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of dynamic path {}: {} != {}", path, column->size(), expected_size);
+    }
 }
 
 }
