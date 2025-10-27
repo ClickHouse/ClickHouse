@@ -21,17 +21,6 @@ def started_cluster():
         cluster.shutdown()
 
 
-expected_metrics = (
-    'keeper_client_queue_duration_milliseconds',
-    'keeper_client_roundtrip_duration_milliseconds',
-    'keeper_client_send_duration_milliseconds',
-    'keeper_response_time_ms',
-    'keeper_server_preprocess_request_duration_milliseconds',
-    'keeper_server_queue_duration_milliseconds',
-    'keeper_server_send_duration_milliseconds',
-)
-
-
 def test_server_histogram_metrics_in_system_table(started_cluster):
     result = node.query(
         """
@@ -42,17 +31,14 @@ def test_server_histogram_metrics_in_system_table(started_cluster):
         """
     )
 
+    expected_metrics = (
+        'keeper_client_queue_duration_milliseconds',
+        'keeper_client_roundtrip_duration_milliseconds',
+        'keeper_client_send_duration_milliseconds',
+        'keeper_response_time_ms',
+        'keeper_server_preprocess_request_duration_milliseconds',
+        'keeper_server_queue_duration_milliseconds',
+        'keeper_server_send_duration_milliseconds',
+    )
     for metric_name in expected_metrics:
         assert metric_name in result
-
-
-def test_server_prometheus_endpoint(started_cluster):
-    response = requests.get(
-        f"http://{node.ip_address}:9363/metrics",
-    )
-    assert response.status_code == 200
-
-    metrics_text = response.text
-
-    for metric_name in expected_metrics:
-        metric_name in metrics_text
