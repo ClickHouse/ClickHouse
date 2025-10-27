@@ -220,7 +220,7 @@ address at the prolog and epilog of those functions that are longer than 200 ins
 
 ### SYSTEM INSTRUMENT ADD {#instrument-add}
 
-Adds a new instrumentation point. Functions instrumented can be inspected in the [`system.xray_instrumentation`](../../operations/systems-tables/xray_instrumentation.md) system table.
+Adds a new instrumentation point. Functions instrumented can be inspected in the [`system.xray_instrumentation`](../../operations/system-tables/xray_instrumentation.md) system table.
 There are three different kind of handlers to add to functions:
 
 **Syntax**
@@ -230,7 +230,7 @@ SYSTEM INSTRUMENT ADD FUNCTION HANDLER [PARAMETERS]
 
 where `FUNCTION` is any C++ function such as `QueryMetricLog::startQuery` and the handler one of the following
 
-#### LOG
+#### LOG {#instrument-add-log}
 
 Prints the text provided as an argument and the stack trace either on `ENTRY` or `EXIT` of the function.
 
@@ -239,7 +239,7 @@ SYSTEM INSTRUMENT ADD `QueryMetricLog::startQuery` LOG ENTRY 'this is a log prin
 SYSTEM INSTRUMENT ADD `QueryMetricLog::startQuery` LOG EXIT 'this is a log printed at exit'
 ```
 
-#### SLEEP
+#### SLEEP {#instrument-add-sleep}
 
 Sleeps for a number of seconds either on `ENTRY` or `EXIT`.
 
@@ -247,10 +247,10 @@ Sleeps for a number of seconds either on `ENTRY` or `EXIT`.
 SYSTEM INSTRUMENT ADD `QueryMetricLog::startQuery` SLEEP ENTRY 0.5
 ```
 
-#### PROFILE
+#### PROFILE {#instrument-add-profile}
 
 Measures the time spent between `ENTRY` and `EXIT` of a function.
-The result of the profiling is stored in [`system.xray_instrumentation_profiling_log`](../../operations/systems-tables/xray_instrumentation_profiling_log.md).
+The result of the profiling is stored in [`system.xray_instrumentation_profiling_log`](../../operations/system-tables/xray_instrumentation_profiling_log.md).
 
 ```sql
 SYSTEM INSTRUMENT ADD `QueryMetricLog::startQuery` PROFILE
@@ -270,7 +270,7 @@ or all of them using the `ALL` parameter:
 SYSTEM INSTRUMENT REMOVE ALL
 ```
 
-The instrumentation point ID can be collected from [`system.xray_instrumentation`](../../operations/systems-tables/xray_instrumentation.md) system table.
+The instrumentation point ID can be collected from [`system.xray_instrumentation`](../../operations/system-tables/xray_instrumentation.md) system table.
 
 ## Managing Distributed Tables {#managing-distributed-tables}
 
