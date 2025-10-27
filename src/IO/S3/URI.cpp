@@ -74,9 +74,6 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
             mapper["gs"] = "https://storage.googleapis.com/{bucket}";
             mapper["oss"] = "https://{bucket}.oss.aliyuncs.com";
         }
-
-        if (!mapper.empty())
-            URIConverter::modifyURI(uri, mapper);
     }
 
     storage_name = "S3";
@@ -105,6 +102,9 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
         Poco::URI::encode(uri_, "?", uri_with_question_mark_encode);
         uri = Poco::URI(uri_with_question_mark_encode);
     }
+
+    if (context && !mapper.empty())
+        URIConverter::modifyURI(uri, mapper);
 
     String name;
     String endpoint_authority_from_uri;
