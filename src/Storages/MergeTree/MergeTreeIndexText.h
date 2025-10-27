@@ -312,7 +312,6 @@ struct MergeTreeIndexAggregatorText final : IMergeTreeIndexAggregator
     MergeTreeIndexTextGranuleBuilder granule_builder;
 };
 
-class ASTFunction;
 class MergeTreeIndexText final : public IMergeTreeIndex
 {
 public:
