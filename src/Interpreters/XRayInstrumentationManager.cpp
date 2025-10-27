@@ -95,7 +95,7 @@ void XRayInstrumentationManager::setHandlerAndPatch(ContextPtr context, const St
     if (!found)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown XRay handler: ({})", handler_name);
 
-    int32_t function_id;
+    Int32 function_id;
     auto fn_it = functions_container.get<FunctionName>().find(function_name);
     if (fn_it != functions_container.get<FunctionName>().end())
         function_id = fn_it->function_id;
@@ -168,12 +168,12 @@ XRayInstrumentationManager::InstrumentedPoints XRayInstrumentationManager::getIn
     return points;
 }
 
-void XRayInstrumentationManager::dispatchHandler(int32_t func_id, XRayEntryType entry_type)
+void XRayInstrumentationManager::dispatchHandler(Int32 func_id, XRayEntryType entry_type)
 {
     XRayInstrumentationManager::instance().dispatchHandlerImpl(func_id, entry_type);
 }
 
-void XRayInstrumentationManager::dispatchHandlerImpl(int32_t func_id, XRayEntryType entry_type)
+void XRayInstrumentationManager::dispatchHandlerImpl(Int32 func_id, XRayEntryType entry_type)
 {
     /// We don't need to distinguish between a normal EXIT and a TAIL EXIT, so we convert
     /// the latter to the former to simplify the rest of the logic.
@@ -376,7 +376,7 @@ void XRayInstrumentationManager::log(XRayEntryType entry_type, const Instrumente
 
 void XRayInstrumentationManager::profile(XRayEntryType entry_type, const InstrumentedPointInfo & instrumented_point)
 {
-    static thread_local std::unordered_map<int32_t, XRayInstrumentationProfilingLogElement> active_elements;
+    static thread_local std::unordered_map<Int32, XRayInstrumentationProfilingLogElement> active_elements;
 
     LOG_TRACE(logger, "Profile: function with id {}", toString(instrumented_point.function_id));
     if (entry_type == XRayEntryType::ENTRY)
