@@ -5,13 +5,9 @@
 #include <boost/geometry.hpp>
 #include <boost/geometry/algorithms/perimeter.hpp>
 #include <boost/geometry/geometries/point_xy.hpp>
+
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-}
 
 template <typename Point>
 struct PerimeterCalculator
@@ -25,7 +21,7 @@ struct PerimeterCalculator
     {
         return static_cast<Float64>(boost::geometry::perimeter(object));
     }
-    
+
     Float64 operator()(const Polygon<Point> & object)
     {
         return static_cast<Float64>(boost::geometry::perimeter(object));
