@@ -30,6 +30,7 @@
 #include <Common/assert_cast.h>
 #include <Common/formatReadable.h>
 #include <Common/typeid_cast.h>
+#include <Columns/ColumnsCommon.h>
 #include <Interpreters/IJoin.h>
 
 #include <Interpreters/HashJoin/HashJoinMethods.h>
@@ -753,8 +754,19 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
                     has_right_not_joined = true;
                 };
 
-                for (size_t r : sel)
-                    mark_if_needed(r);
+                /// Fast path for continuous range selector to reduce iterator overhead
+                if (sel.isContinuousRange())
+                {
+                    auto rg = sel.getRange();
+                    for (size_t r = rg.first; r < rg.second; ++r)
+                        mark_if_needed(r);
+                }
+                else
+                {
+                    const auto & idxs = sel.getIndexes().getData();
+                    for (size_t r : idxs)
+                        mark_if_needed(r);
+                }
             }
 
             bool is_inserted = false;
@@ -1515,20 +1527,50 @@ private:
 
         for (auto & it = *nulls_position; it != end && rows_added < max_block_size; ++it)
         {
-            const auto * columns = it->columns;
-            ConstNullMapPtr nullmap = nullptr;
-            if (it->column)
-                nullmap = &assert_cast<const ColumnUInt8 &>(*it->column).getData();
+            const auto * sc = it->columns;
+            if (!sc)
+                continue;
+            const size_t src_rows = sc->columns.at(0)->size();
+            const auto * mask_col = it->column ? &assert_cast<const ColumnUInt8 &>(*it->column) : nullptr;
 
-            size_t rows = columns->columns.at(0)->size();
-            for (size_t row = 0; row < rows; ++row)
+            if (!mask_col)
             {
-                if (nullmap && (*nullmap)[row])
-                {
-                    for (size_t col = 0; col < columns_keys_and_right.size(); ++col)
-                        columns_keys_and_right[col]->insertFrom(*columns->columns[col], row);
-                    ++rows_added;
-                }
+                /// Mask is missing => all rows from this partition are considered non-joined
+                size_t can_take = std::min<UInt64>(max_block_size - rows_added, src_rows);
+                if (can_take == 0)
+                    break;
+                for (size_t col = 0; col < columns_keys_and_right.size(); ++col)
+                    columns_keys_and_right[col]->insertRangeFrom(*sc->columns[col], 0, can_take);
+                rows_added += can_take;
+                /// If there are still rows left, we wait for the next call to fillColumns()
+                if (rows_added >= max_block_size && can_take < src_rows)
+                    break;
+                continue;
+            }
+
+            const auto & mask = mask_col->getData();
+            const size_t ones_total = countBytesInFilter(mask);
+            if (ones_total == 0)
+                continue;
+
+            size_t remaining = static_cast<size_t>(max_block_size - rows_added);
+            size_t to_take = std::min(ones_total, remaining);
+            if (to_take == 0)
+                break;
+
+            /// Filter all columns of right table with mask (batch)
+            /// and take only first 'to_take' rows (if ones_total > remaining)
+            for (size_t col = 0; col < columns_keys_and_right.size(); ++col)
+            {
+                const IColumn & src = *sc->columns[col];
+                ColumnPtr filtered = src.filter(mask, static_cast<ssize_t>(ones_total));
+                columns_keys_and_right[col]->insertRangeFrom(*filtered, 0, to_take);
+            }
+            rows_added += to_take;
+            if (rows_added >= max_block_size)
+            {
+                /// Rest (ones_total - to_take) will be taken on the next call
+                break;
             }
         }
     }
