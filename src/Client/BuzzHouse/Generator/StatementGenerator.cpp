@@ -539,7 +539,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
                 }
             }
         }
-        if (!replace && (next.is_refreshable = rg.nextBool()))
+        if (!replace && !next.is_deterministic && (next.is_refreshable = rg.nextBool()))
         {
             generateNextRefreshableView(rg, cv->mutable_refresh());
             cv->set_empty(rg.nextBool());
@@ -1464,7 +1464,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
         v.setName(sot->mutable_est(), false);
         for (uint32_t i = 0; i < nalters; i++)
         {
-            const uint32_t alter_refresh = 1;
+            const uint32_t alter_refresh = 1 * static_cast<uint32_t>(!v.is_deterministic);
             const uint32_t alter_query = 3;
             const uint32_t comment_view = 2;
             const uint32_t prob_space = alter_refresh + alter_query + comment_view;
@@ -4977,6 +4977,7 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
                         v.cols.insert(j);
                     }
                 }
+                v.is_refreshable |= (success && ati.has_refresh());
             }
         }
         else if (istable)
