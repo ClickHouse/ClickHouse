@@ -169,6 +169,7 @@ def should_skip_job(job_name: str) -> tuple[bool, str]:
 
     return False, ""
 
+
 def is_a_release_pr(job_name: str) -> tuple[bool, str]:
     global _info_cache
     if _info_cache is None:
