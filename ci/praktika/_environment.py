@@ -72,6 +72,9 @@ class _Environment(MetaClasses.Serializable):
         else:
             assert False, "BUG?"
 
+        print("TTT", WORKFLOW_DATA)
+        assert False
+
         if EVENT_FILE_PATH:
             with open(EVENT_FILE_PATH, "r", encoding="utf-8") as f:
                 github_event = json.load(f)

@@ -62,6 +62,10 @@ class Info:
         return self.env.CHANGE_URL
 
     @property
+    def run_url(self):
+        return ""
+
+    @property
     def commit_url(self):
         return self.env.COMMIT_URL
 
