@@ -1,0 +1,73 @@
+SET allow_experimental_full_text_index = 1;
+SET use_skip_indexes_on_data_read = 1;
+
+-- Basic test preprocessor clause usage with lower
+DROP TABLE IF EXISTS tab;
+
+SELECT 'Test single tokenizer and preprocessor argument.';
+
+CREATE TABLE tab
+(
+    key UInt64,
+    str String,
+    INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(str))
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+INSERT INTO tab VALUES (1, 'foo'), (2, 'BAR'), (3, 'Baz');
+
+SELECT count() FROM tab WHERE hasToken(str, 'foo');
+SELECT count() FROM tab WHERE hasToken(str, 'FOO');
+
+SELECT count() FROM tab WHERE hasToken(str, 'BAR');
+SELECT count() FROM tab WHERE hasToken(str, 'Baz');
+
+SELECT count() FROM tab WHERE hasToken(str, 'bar');
+SELECT count() FROM tab WHERE hasToken(str, 'baz');
+
+DROP TABLE tab;
+
+
+-- Basic test preprocessor validation
+SELECT 'Test preprocessor validations.';
+
+-- Dependency only on indexed column
+CREATE TABLE tab
+(
+    key UInt64,
+    str String,
+    str2 String,
+    INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(str2))
+)
+ENGINE = MergeTree
+ORDER BY tuple();  -- { serverError UNKNOWN_IDENTIFIER }
+
+-- Dependency only on 1 column
+CREATE TABLE tab
+(
+    key UInt64,
+    str String,
+    str2 String,
+    INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = concat(lower(str), lower(str2)))
+)
+ENGINE = MergeTree
+ORDER BY tuple();   -- { serverError UNKNOWN_IDENTIFIER }
+
+-- When using preprocessor, the index expression should be only the column (with no expressions)
+CREATE TABLE tab
+(
+    key UInt64,
+    str String,
+    INDEX idx(upper(str)) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(str))
+)
+ENGINE = MergeTree
+ORDER BY tuple();   -- { serverError UNKNOWN_IDENTIFIER }
+
+
+DROP TABLE IF EXISTS tab;
+
+
+
+
+
