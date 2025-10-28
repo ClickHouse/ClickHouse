@@ -53,6 +53,6 @@ REGISTER_FUNCTION(CountSubstrings)
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionCountSubstrings>({}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionCountSubstrings>(documentation, FunctionFactory::Case::Insensitive);
 }
 }
