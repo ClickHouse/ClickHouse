@@ -79,6 +79,10 @@ public:
     using AggregateColumnsConstData = std::vector<const AggregateFunctionContainer *>;
     using AggregateFunctionsPlainPtrs = std::vector<const IAggregateFunction *>;
 
+    mutable std::mutex bs_mutex;
+    mutable std::map<size_t, size_t> bs_bf;
+    mutable std::map<size_t, size_t> bs_af;
+
     struct Params
     {
         /// What to count.
@@ -179,6 +183,10 @@ public:
     };
 
     explicit Aggregator(const Block & header_, const Params & params_);
+
+    ~Aggregator();
+
+    const Params & getParams() const { return params; }
 
     /// Process one block. Return false if the processing should be aborted (with group_by_overflow_mode = 'break').
     bool executeOnBlock(const Block & block,
@@ -284,7 +292,7 @@ public:
     /// Get data structure of the result.
     Block getHeader(bool final) const;
 
-    void applyToAllStates(AggregatedDataVariants & result, WriteBuffer & wb) const;
+    void applyToAllStates(AggregatedDataVariants & result, WriteBuffer & wb, ssize_t bucket) const;
 
 private:
 

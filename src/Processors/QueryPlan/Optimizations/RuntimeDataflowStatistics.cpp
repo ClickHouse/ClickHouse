@@ -1,6 +1,8 @@
 #include <Compression/CompressedWriteBuffer.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
+#include <Interpreters/Aggregator.h>
+
 namespace DB
 {
 
@@ -56,14 +58,46 @@ void Updater::addOutputBytes(const Aggregator &, const ManyAggregatedDataVariant
     {
         if (!variant || !variant->aggregator)
             continue;
-        variant->aggregator->applyToAllStates(*variant, wbuf);
+        variant->aggregator->applyToAllStates(*variant, wbuf, -1);
     }
     wbuf.finalize();
+    // LOG_DEBUG(&Poco::Logger::get("debug"), "wbuf.str());={}", wb.str());
     std::lock_guard lock(mutex);
     statistics.output_bytes += wbuf.count();
     output_bytes_sample += wbuf.count();
     output_bytes_compressed += wbuf.count();
-    LOG_DEBUG(&Poco::Logger::get("debug"), "wbuf.count()={}", wbuf.count());
+    LOG_DEBUG(&Poco::Logger::get("debug"), "wbuf.count()={}, cnt={}, sz={}", wbuf.count(), wb.count(), wb.str().size());
+}
+
+void Updater::addOutputBytes(const Aggregator &, AggregatedDataVariants & variant, size_t bucket)
+{
+    WriteBufferFromOwnString wb;
+    CompressedWriteBuffer wbuf(wb);
+    if (!variant.aggregator)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "variant.aggregator is nullptr");
+    variant.aggregator->applyToAllStates(variant, wbuf, bucket);
+    wbuf.finalize();
+    // LOG_DEBUG(&Poco::Logger::get("debug"), "wbuf.str());={}", wb.str());
+    std::lock_guard lock(mutex);
+    statistics.output_bytes += wbuf.count();
+    output_bytes_sample += wbuf.count();
+    output_bytes_compressed += wbuf.count();
+    LOG_DEBUG(&Poco::Logger::get("debug"), "wbuf.count()={}, cnt={}, sz={}", wbuf.count(), wb.count(), wb.str().size());
+}
+
+void Updater::addOutputBytes(const Aggregator & aggregator, const Block & block)
+{
+    for (size_t i = 0; i < aggregator.getParams().keys_size; ++i)
+    {
+        const auto & key_column_name = aggregator.getParams().keys[i];
+        LOG_DEBUG(&Poco::Logger::get("debug"), "key_column_name={}", key_column_name);
+        const auto & column = block.getByName(key_column_name);
+        const auto compressed = compressedColumnSize(column);
+        std::lock_guard lock(mutex);
+        statistics.output_bytes += compressed;
+        output_bytes_sample += compressed;
+        output_bytes_compressed += compressed;
+    }
 }
 
 void Updater::addInputBytes(const IMergeTreeDataPart::ColumnSizeByName & column_sizes, const Block & block, size_t bytes)
@@ -100,5 +134,4 @@ void Updater::addInputBytes(const IMergeTreeDataPart::ColumnSizeByName & column_
         input_bytes_compressed += column_sizes.at(column.name).data_compressed;
     }
 }
-
 }

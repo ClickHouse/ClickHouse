@@ -37,7 +37,9 @@ extern const int LOGICAL_ERROR;
 }
 
 class Aggregator;
-class ManyAggregatedDataVariants;
+struct AggregatedDataVariants;
+using AggregatedDataVariantsPtr = std::shared_ptr<AggregatedDataVariants>;
+using ManyAggregatedDataVariants = std::vector<AggregatedDataVariantsPtr>;
 
 struct RuntimeDataflowStatistics
 {
@@ -111,6 +113,10 @@ public:
     void addOutputBytes(const Chunk & chunk);
 
     void addOutputBytes(const Aggregator & aggregator, const ManyAggregatedDataVariants & variants);
+
+    void addOutputBytes(const Aggregator & aggregator, AggregatedDataVariants & variant, size_t bucket);
+
+    void addOutputBytes(const Aggregator & aggregator, const Block & block);
 
     void addInputBytes(const IMergeTreeDataPart::ColumnSizeByName & column_sizes, const Block & block, size_t bytes);
 

@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <mutex>
 #include <optional>
 #include <Core/Settings.h>
 #include <base/defines.h>
@@ -185,7 +186,7 @@ UInt64 & getInlineCountState(DB::AggregateDataPtr & ptr)
 namespace DB
 {
 
-void Aggregator::applyToAllStates(AggregatedDataVariants & result, WriteBuffer & wb) const
+void Aggregator::applyToAllStates(AggregatedDataVariants & result, WriteBuffer & wb, ssize_t bucket) const
 {
     auto f = [&](auto & table)
     {
@@ -199,7 +200,7 @@ void Aggregator::applyToAllStates(AggregatedDataVariants & result, WriteBuffer &
                         if (!place)
                             throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty place in Aggregator::applyToAllStates");
                         if (is_simple_count)
-                            wb.write(getInlineCountState(place));
+                            writeVarUInt(getInlineCountState(result.without_key), wb);
                         else
                             aggregate_functions[j]->serialize(place + offsets_of_aggregate_states[j], wb);
                     });
@@ -219,16 +220,15 @@ void Aggregator::applyToAllStates(AggregatedDataVariants & result, WriteBuffer &
         LOG_DEBUG(&Poco::Logger::get("debug"), "params.aggregates_size={}", params.aggregates_size);
         for (size_t j = 0; j < params.aggregates_size; ++j)
         {
-            LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
             if (is_simple_count)
-                wb.write(getInlineCountState(result.without_key));
+                writeVarUInt(getInlineCountState(result.without_key), wb);
             else
                 aggregate_functions[j]->serialize(result.without_key + offsets_of_aggregate_states[j], wb);
         }
         return;
     } // NOLINT
     // clang-format off
-#define M(NAME, IS_TWO_LEVEL) \
+#define M(NAME) \
     else if (result.type == AggregatedDataVariants::Type::NAME) \
     { \
         LOG_DEBUG(&Poco::Logger::get("debug"), "result.type={}, AggregatedDataVariants::Type::NAME={}, #NAME={}", result.type, AggregatedDataVariants::Type::NAME, #NAME); \
@@ -236,7 +236,20 @@ void Aggregator::applyToAllStates(AggregatedDataVariants & result, WriteBuffer &
         return; \
     }
 
-    APPLY_FOR_AGGREGATED_VARIANTS(M)
+    APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)
+#undef M
+#define M(NAME) \
+    else if (result.type == AggregatedDataVariants::Type::NAME) \
+    { \
+        LOG_DEBUG(&Poco::Logger::get("debug"), "result.type={}, AggregatedDataVariants::Type::NAME={}, #NAME={}", result.type, AggregatedDataVariants::Type::NAME, #NAME); \
+        if (bucket >= 0) \
+            f(result.NAME->data.impls[bucket]); \
+        else \
+            f(result.NAME->data); \
+        return; \
+    }
+
+    APPLY_FOR_VARIANTS_TWO_LEVEL(M)
 #undef M
 
     UNREACHABLE();
@@ -515,6 +528,10 @@ public:
 };
 
 #endif
+
+Aggregator::~Aggregator() {
+    LOG_DEBUG(&Poco::Logger::get("debug"), "bs_bf={}, bs_af={}", fmt::join(bs_bf, ", "), fmt::join(bs_af, ", "));
+}
 
 Aggregator::Aggregator(const Block & header_, const Params & params_)
     : header(header_)
@@ -1924,11 +1941,16 @@ Block Aggregator::mergeAndConvertOneBucketToBlock(
 #define M(NAME) \
     else if (method == AggregatedDataVariants::Type::NAME) \
     { \
+        std::lock_guard lock(bs_mutex); \
+        for (size_t i = 0; i < variants.size(); ++i) \
+            bs_bf[bucket] += variants[i]->NAME->data.impls[bucket].size(); \
         mergeBucketImpl<decltype(merged_data.NAME)::element_type>(variants, bucket, arena, is_cancelled); \
+        bs_af[bucket] = merged_data.NAME->data.impls[bucket].size(); \
+        updater->addOutputBytes(*this, merged_data, bucket); \
         if (is_cancelled.load(std::memory_order_seq_cst)) \
             return {}; \
-        updater->addOutputBytes(*this, merged_data, bucket); \
         block = convertOneBucketToBlock(merged_data, *merged_data.NAME, arena, final, bucket); \
+        updater->addOutputBytes(*this, block); \
     }
 
     APPLY_FOR_VARIANTS_TWO_LEVEL(M)

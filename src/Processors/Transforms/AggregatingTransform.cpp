@@ -555,8 +555,12 @@ private:
         if (first->type == AggregatedDataVariants::Type::without_key || params->params.overflow_row)
         {
             params->aggregator.mergeWithoutKeyDataImpl(*data, shared_data->is_cancelled);
+            if (updater)
+                updater->addOutputBytes(params->aggregator, *first, -1);
             auto block = params->aggregator.prepareBlockAndFillWithoutKey(
                 *first, params->final, first->type != AggregatedDataVariants::Type::without_key);
+            if (updater)
+                updater->addOutputBytes(params->aggregator, block);
 
             if (block.rows() > 0)
                 single_level_chunks.emplace_back(convertToChunk(block));
@@ -841,8 +845,8 @@ void AggregatingTransform::initGenerate()
         if (!skip_merging)
         {
             auto prepared_data = params->aggregator.prepareVariantsToMerge(std::move(many_data->variants));
-            if (updater)
-                updater->addOutputBytes(params->aggregator, prepared_data);
+            // if (updater)
+            //     updater->addOutputBytes(params->aggregator, prepared_data);
             auto prepared_data_ptr = std::make_shared<ManyAggregatedDataVariants>(std::move(prepared_data));
             processors.emplace_back(
                 std::make_shared<ConvertingAggregatedToChunksTransform>(params, std::move(prepared_data_ptr), max_threads, updater));
