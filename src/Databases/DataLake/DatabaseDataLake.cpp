@@ -119,7 +119,7 @@ void DatabaseDataLake::validateSettings()
 std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
 {
     if (settings[DatabaseDataLakeSetting::catalog_type].value == DatabaseDataLakeCatalogType::NONE)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unspecified catalog type");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unspecified catalog type");
 
     if (catalog_impl)
         return catalog_impl;
@@ -301,7 +301,7 @@ std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfigur
             }
         }
         case DatabaseDataLakeCatalogType::NONE:
-            return nullptr;
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unspecified catalog type");
     }
 }
 
