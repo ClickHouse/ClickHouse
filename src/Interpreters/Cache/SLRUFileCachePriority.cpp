@@ -444,7 +444,7 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
 
         void add(DowngradedEntryInfo && info) { push_back(info); }
 
-        size_t getSize() const { return size(); }
+        [[maybe_unused]] size_t getSize() const { return size(); }
 
         std::optional<DowngradedEntryInfo> next()
         {
