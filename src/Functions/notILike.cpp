@@ -22,28 +22,19 @@ REGISTER_FUNCTION(NotILike)
     FunctionDocumentation::Description description = "Checks whether a string does not match a pattern, case-insensitive. The pattern can contain special characters `%` and `_` for SQL LIKE matching.";
     FunctionDocumentation::Syntax syntax = "notILike(haystack, pattern)";
     FunctionDocumentation::Arguments arguments = {
-        {"haystack", "The input string to search in."},
-        {"pattern", "The SQL LIKE pattern to match against. `%` matches any number of characters (including zero), `_` matches exactly one character."}
+        {"haystack", "The input string to search in.", {"String", "FixedString"}},
+        {"pattern", "The SQL LIKE pattern to match against. `%` matches any number of characters (including zero), `_` matches exactly one character.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if the string does not match the pattern (case-insensitive), otherwise `0`.", {"UInt8"}};
     FunctionDocumentation::Examples examples =
     {
     {
         "Usage example",
-        "SELECT notILike('Hello, World!', '%world%');",
+        "SELECT notILike('ClickHouse', '%house%');",
         R"(
-┌─notILike('Hello, World!', '%world%')─┐
-│                                     0 │
-└───────────────────────────────────────┘
-        )"
-    },
-    {
-        "Non-matching pattern",
-        "SELECT notILike('ClickHouse', '%postgres%');",
-        R"(
-┌─notILike('ClickHouse', '%postgres%')─┐
-│                                     1 │
-└───────────────────────────────────────┘
+┌─notILike('Cl⋯ '%house%')─┐
+│                        0 │
+└──────────────────────────┘
         )"
     }
     };

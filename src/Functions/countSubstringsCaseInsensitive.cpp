@@ -19,7 +19,7 @@ using FunctionCountSubstringsCaseInsensitive = FunctionsStringSearch<CountSubstr
 
 REGISTER_FUNCTION(CountSubstringsCaseInsensitive)
 {
-    FunctionDocumentation::Description description = "Returns how often a substring `needle` occurs in a string `haystack`. Ignores case.";
+    FunctionDocumentation::Description description = "Like [`countSubstrings`](#countSubstrings) but counts case-insensitively."
     FunctionDocumentation::Syntax syntax = "countSubstringsCaseInsensitive(haystack, needle[, start_pos])";
     FunctionDocumentation::Arguments arguments = {
         {"haystack", "String in which the search is performed.", {"String", "Enum"}},

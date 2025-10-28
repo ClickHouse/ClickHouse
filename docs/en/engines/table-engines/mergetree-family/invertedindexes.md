@@ -219,7 +219,7 @@ Functions `hasToken` and `hasTokenOrNull` are the most performant functions to u
 
 #### `hasAnyTokens` and `hasAllTokens` {#functions-example-hasanytokens-hasalltokens}
 
-Functions [hasAnyTokens](/sql-reference/functions/string-search-functions.md/#hasAnyTokens) and [hasAllTokens](/sql-reference/functions/string-s<SystemLogParameters/>earch-functions.md/#hasAllTokens) match against one or all of the given tokens.
+Functions [hasAnyTokens](/sql-reference/functions/string-search-functions.md/#hasAnyTokens) and [hasAllTokens](/sql-reference/functions/string-search-functions.md/#hasAllTokens) match against one or all of the given tokens.
 
 These two functions accept the search tokens as either a string which will be tokenized using the same tokenizer used for the index column, or as an array of already processed tokens to which no tokenization will be applied prior to searching.
 See the function documentation for more info.

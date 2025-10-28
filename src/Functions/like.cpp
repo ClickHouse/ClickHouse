@@ -37,7 +37,7 @@ like(haystack, pattern)
 -- haystack LIKE pattern
     )";
     FunctionDocumentation::Arguments arguments = {
-        {"haystack", "String in which the search is performed.", {"String"}},
+        {"haystack", "String in which the search is performed.", {"String", "FixedString"}},
         {"pattern", "`LIKE` pattern to match against. Can contain `%` (matches any number of characters), `_` (matches single character), and `\\` for escaping.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if the string matches the `LIKE` pattern, otherwise `0`.", {"UInt8"}};

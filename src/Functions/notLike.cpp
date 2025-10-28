@@ -25,7 +25,7 @@ notLike(haystack, pattern)
 -- haystack NOT LIKE pattern
     )";
     FunctionDocumentation::Arguments arguments = {
-        {"haystack", "String in which the search is performed.", {"String"}},
+        {"haystack", "String in which the search is performed.", {"String", "FixedString"}},
         {"pattern", "LIKE pattern to match against.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if the string does not match the `LIKE` pattern, otherwise `0`.", {"UInt8"}};

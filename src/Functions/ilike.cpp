@@ -25,7 +25,7 @@ ilike(haystack, pattern)
 -- haystack ILIKE pattern
     )";
     FunctionDocumentation::Arguments arguments = {
-        {"haystack", "String in which the search is performed.", {"String"}},
+        {"haystack", "String in which the search is performed.", {"String", "FixedString"}},
         {"pattern", "LIKE pattern to match against.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if the string matches the LIKE pattern (case-insensitive), otherwise `0`.", {"UInt8"}};
@@ -36,17 +36,8 @@ ilike(haystack, pattern)
         "SELECT ilike('ClickHouse', '%house%');",
         R"(
 ┌─ilike('ClickHouse', '%house%')─┐
-│                               1 │
-└─────────────────────────────────┘
-        )"
-    },
-    {
-        "Non-matching pattern",
-        "SELECT ilike('ClickHouse', '%SQL%');",
-        R"(
-┌─ilike('ClickHouse', '%SQL%')─┐
-│                             0 │
-└───────────────────────────────┘
+│                              1 │
+└────────────────────────────────┘
         )"
     }
     };

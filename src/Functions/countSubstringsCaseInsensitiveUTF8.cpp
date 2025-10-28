@@ -20,8 +20,7 @@ using FunctionCountSubstringsCaseInsensitiveUTF8 = FunctionsStringSearch<CountSu
 REGISTER_FUNCTION(CountSubstringsCaseInsensitiveUTF8)
 {
     FunctionDocumentation::Description description = R"(
-Returns how often a substring `needle` occurs in a string `haystack`.
-Ignores case and assumes that `haystack` is a UTF-8 string.
+Like [`countSubstrings`](#countSubstrings) but counts case-insensitively and assumes that haystack is a UTF-8 string.
     )";
     FunctionDocumentation::Syntax syntax = "countSubstringsCaseInsensitiveUTF8(haystack, needle[, start_pos])";
     FunctionDocumentation::Arguments arguments = {
