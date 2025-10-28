@@ -167,6 +167,7 @@ size_t MergeTreeReaderTextIndex::readRows(
     {
         max_rows_to_read = std::min(max_rows_to_read, total_rows - starting_row);
     }
+    max_rows_to_read = std::min(max_rows_to_read, data_part_info_for_read->getRowCount());
 
     if (res_columns.empty())
     {
