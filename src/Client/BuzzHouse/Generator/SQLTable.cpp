@@ -298,7 +298,7 @@ SQLRelation StatementGenerator::createViewRelation(const String & rel_name, cons
 {
     SQLRelation rel(rel_name);
 
-    assert(!v.cols.empty());
+    chassert(!v.cols.empty());
     for (const auto & entry : v.cols)
     {
         rel.cols.emplace_back(SQLRelationCol(rel_name, {"c" + std::to_string(entry)}));
@@ -369,7 +369,7 @@ void StatementGenerator::generateNextStatistics(RandomGenerator & rg, ColumnStat
 
 void StatementGenerator::generateNextCodecs(RandomGenerator & rg, CodecList * cl)
 {
-    const uint32_t ncodecs = (rg.nextMediumNumber() % UINT32_C(3)) + 1;
+    const uint32_t ncodecs = rg.randomInt<uint32_t>(1, 3);
     std::uniform_int_distribution<uint32_t> codec_range(1, static_cast<uint32_t>(CompressionCodec_MAX));
 
     for (uint32_t i = 0; i < ncodecs; i++)
@@ -500,7 +500,7 @@ void StatementGenerator::generateTTLExpression(RandomGenerator & rg, const std::
 void StatementGenerator::generateNextTTL(
     RandomGenerator & rg, const std::optional<SQLTable> & t, const TableEngine * te, TTLExpr * ttl_expr)
 {
-    const uint32_t nttls = (rg.nextLargeNumber() % 3) + 1;
+    const uint32_t nttls = rg.randomInt<uint32_t>(1, 3);
 
     for (uint32_t i = 0; i < nttls; i++)
     {
@@ -806,7 +806,7 @@ void StatementGenerator::generateTableKey(
         if (rg.nextSmallNumber() < 3)
         {
             /// Generate a random key
-            const uint32_t nkeys = (rg.nextMediumNumber() % UINT32_C(3)) + UINT32_C(1);
+            const uint32_t nkeys = rg.randomInt<uint32_t>(1, 3);
 
             for (uint32_t i = 0; i < nkeys; i++)
             {
@@ -1069,7 +1069,7 @@ void StatementGenerator::generateMergeTreeEngineDetails(
 void StatementGenerator::setClusterInfo(RandomGenerator & rg, SQLBase & b) const
 {
     /// Don't use on CLUSTER with ReplicatedMergeTrees or SharedMergeTrees
-    if (!fc.clusters.empty() && !b.isSharedMergeTree() && (!b.db || !b.db->isSharedDatabase()) && (b.db || !supports_cloud_features)
+    if (!fc.clusters.empty() && !b.isShared() && (!b.db || !b.db->isSharedDatabase()) && (b.db || !supports_cloud_features)
         && rg.nextSmallNumber() < (b.toption.has_value() ? 9 : 5))
     {
         if (b.db && b.db->cluster.has_value() && rg.nextSmallNumber() < 9)
@@ -1399,7 +1399,7 @@ void StatementGenerator::generateEngineDetails(
     {
         const auto & engineSettings = allTableSettings.at(b.teng);
 
-        if (!engineSettings.empty() && rg.nextBool())
+        if (!engineSettings.empty() && (!b.isJoinEngine() || !b.isShared()) && rg.nextBool())
         {
             /// Add table engine settings
             svs = svs ? svs : te->mutable_setting_values();
@@ -1433,7 +1433,7 @@ void StatementGenerator::generateEngineDetails(
             sv->set_property("mode");
             sv->set_value(fmt::format("'{}ordered'", rg.nextBool() ? "un" : ""));
         }
-        if ((b.isMergeTreeFamily() || b.isLogFamily()) && (b.isSharedMergeTree() || rg.nextSmallNumber() < 3)
+        if ((b.isMergeTreeFamily() || b.isLogFamily() || b.isShared()) && (b.isShared() || rg.nextSmallNumber() < 3)
             && (!fc.storage_policies.empty() || !fc.keeper_disks.empty())
             && (!svs
                 || (svs->set_value().property() != "storage_policy" && svs->set_value().property() != "disk"
@@ -1701,7 +1701,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
         case IndexType::IDX_text: {
             String buf;
             bool has_paren = rg.nextSmallNumber() < 8;
-            static const DB::Strings & tokenizerVals = {"splitByNonAlpha", "splitByString", "ngrams", "array"};
+            static const DB::Strings & tokenizerVals = {"splitByNonAlpha", "splitByString", "ngrams", "array", "sparseGrams"};
             const String & next_tokenizer = rg.pickRandomly(tokenizerVals);
 
             buf += fmt::format("tokenizer = {}", next_tokenizer);
@@ -1732,6 +1732,14 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
                 }
                 buf2 += "]";
                 buf += buf2;
+            }
+            else if (has_paren && next_tokenizer == "sparseGrams" && rg.nextBool())
+            {
+                std::uniform_int_distribution<uint32_t> next_dist(0, rg.nextBool() ? 10 : 100);
+
+                buf += std::to_string(next_dist(rg.generator));
+                buf += ", ";
+                buf += std::to_string(next_dist(rg.generator));
             }
             buf += has_paren ? ")" : "";
             idef->add_params()->set_unescaped_sval(std::move(buf));
@@ -1794,7 +1802,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
         }
         else if (next_opt < 8)
         {
-            granularity = UINT32_C(1) << (rg.nextLargeNumber() % 21);
+            granularity = UINT32_C(1) << rg.randomInt<uint32_t>(0, 20);
         }
         idef->set_granularity(granularity);
     }
@@ -1804,7 +1812,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
 void StatementGenerator::addTableProjection(RandomGenerator & rg, SQLTable & t, const bool staged, ProjectionDef * pdef)
 {
     const uint32_t pname = t.proj_counter++;
-    const uint32_t ncols = std::max(std::min(this->fc.max_width - this->width, (rg.nextMediumNumber() % UINT32_C(3)) + 1), UINT32_C(1));
+    const uint32_t ncols = std::max(std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(1, 3)), UINT32_C(1));
     auto & to_add = staged ? t.staged_projs : t.projs;
 
     pdef->mutable_proj()->set_projection("p" + std::to_string(pname));
@@ -1844,21 +1852,22 @@ void StatementGenerator::addTableConstraint(RandomGenerator & rg, SQLTable & t, 
 void StatementGenerator::getNextPeerTableDatabase(RandomGenerator & rg, SQLBase & b)
 {
     chassert(this->ids.empty());
-    if (b.is_deterministic && b.teng != Set && b.teng != ExternalDistributed)
+    if (b.is_deterministic && !b.is_temp && !b.isExternalDistributedEngine())
     {
-        if (b.teng != MySQL && connections.hasMySQLConnection())
+        if (!b.isMySQLEngine() && connections.hasMySQLConnection())
         {
             this->ids.emplace_back(static_cast<uint32_t>(PeerTableDatabase::MySQL));
         }
-        if (b.teng != PostgreSQL && b.teng != MaterializedPostgreSQL && connections.hasPostgreSQLConnection())
+        if (!b.isPostgreSQLEngine() && connections.hasPostgreSQLConnection())
         {
             this->ids.emplace_back(static_cast<uint32_t>(PeerTableDatabase::PostgreSQL));
         }
-        if (b.teng != SQLite && connections.hasSQLiteConnection())
+        if (!b.isSQLiteEngine() && connections.hasSQLiteConnection())
         {
             this->ids.emplace_back(static_cast<uint32_t>(PeerTableDatabase::SQLite));
         }
-        if (b.teng >= MergeTree && b.teng <= VersionedCollapsingMergeTree && connections.hasClickHouseExtraServerConnection())
+        if ((b.isMergeTreeFamily() || b.isLogFamily() || b.isRocksEngine() || b.isKeeperMapEngine() || b.isJoinEngine() || b.isSetEngine())
+            && connections.hasClickHouseExtraServerConnection())
         {
             this->ids.emplace_back(static_cast<uint32_t>(PeerTableDatabase::ClickHouse));
             this->ids.emplace_back(static_cast<uint32_t>(PeerTableDatabase::ClickHouse)); // give more probability
@@ -2156,12 +2165,12 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
         uint32_t added_sign = 0;
         uint32_t added_is_deleted = 0;
         uint32_t added_version = 0;
-        const uint32_t to_addcols = (rg.nextLargeNumber() % fc.max_columns) + UINT32_C(1);
+        const uint32_t to_addcols = rg.randomInt<uint32_t>(1, fc.max_columns);
         const uint32_t to_addidxs
-            = ((rg.nextMediumNumber() % 4) + UINT32_C(1)) * static_cast<uint32_t>(next.isMergeTreeFamily() && rg.nextSmallNumber() < 4);
+            = rg.randomInt<uint32_t>(1, 4) * static_cast<uint32_t>(next.isMergeTreeFamily() && rg.nextSmallNumber() < 4);
         const uint32_t to_addprojs
-            = ((rg.nextMediumNumber() % 3) + UINT32_C(1)) * static_cast<uint32_t>(next.isMergeTreeFamily() && rg.nextSmallNumber() < 5);
-        const uint32_t to_addconsts = ((rg.nextMediumNumber() % 3) + UINT32_C(1)) * static_cast<uint32_t>(rg.nextSmallNumber() < 3);
+            = rg.randomInt<uint32_t>(1, 3) * static_cast<uint32_t>(next.isMergeTreeFamily() && rg.nextSmallNumber() < 5);
+        const uint32_t to_addconsts = rg.randomInt<uint32_t>(1, 3) * static_cast<uint32_t>(rg.nextSmallNumber() < 3);
         const uint32_t to_add_sign = static_cast<uint32_t>(next.hasSignColumn());
         const uint32_t to_add_version = static_cast<uint32_t>(next.hasVersionColumn() || add_version_to_replacing);
         const uint32_t to_add_is_deleted = static_cast<uint32_t>(add_version_to_replacing && rg.nextSmallNumber() < 4);
@@ -2293,6 +2302,10 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
     generateEngineDetails(rg, createTableRelation(rg, true, "", next), next, !added_pkey, te);
     this->entries.clear();
 
+    if (rg.nextSmallNumber() < 4)
+    {
+        ct->set_uuid(rg.nextUUID());
+    }
     if (next.cluster.has_value())
     {
         ct->mutable_cluster()->set_cluster(next.cluster.value());
@@ -2332,7 +2345,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
     const DictionaryLayouts & dl = rg.pickRandomly(allDictionaryLayoutSettings);
     const bool isRange = dl == COMPLEX_KEY_RANGE_HASHED || dl == RANGE_HASHED;
     /// Range requires 2 cols for min and max
-    const uint32_t dictionary_ncols = std::max((rg.nextLargeNumber() % fc.max_columns) + UINT32_C(1), isRange ? UINT32_C(2) : UINT32_C(1));
+    const uint32_t dictionary_ncols = std::max(rg.randomInt<uint32_t>(1, fc.max_columns), isRange ? UINT32_C(2) : UINT32_C(1));
     SettingValues * svs = nullptr;
     DictionaryLayout * layout = cd->mutable_layout();
     const uint32_t type_mask_backup = this->next_type_mask;
@@ -2521,6 +2534,11 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
         }
         dc->set_is_object_id(rg.nextMediumNumber() < 3);
     }
+    if (rg.nextSmallNumber() < 4)
+    {
+        cd->set_uuid(rg.nextUUID());
+    }
+
     setClusterInfo(rg, next);
     if (next.cluster.has_value())
     {
@@ -2638,6 +2656,10 @@ void StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, Create
     SQLDatabase::setRandomDatabase(rg, next);
     next.deng = this->getNextDatabaseEngine(rg);
     deng->set_engine(next.deng);
+    if (rg.nextBool())
+    {
+        cd->set_uuid(rg.nextUUID());
+    }
     if (!next.isSharedDatabase() && !fc.clusters.empty() && rg.nextSmallNumber() < 4)
     {
         next.cluster = rg.pickRandomly(fc.clusters);
@@ -2652,7 +2674,7 @@ void StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, Create
     }
     else
     {
-        next.finishDatabaseSpecification(deng);
+        next.finishDatabaseSpecification(deng, rg.nextBool());
     }
     next.setName(cd->mutable_database());
     if (rg.nextSmallNumber() < 3)

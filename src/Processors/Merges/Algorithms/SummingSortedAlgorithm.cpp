@@ -1,8 +1,10 @@
+#include <memory>
 #include <Processors/Merges/Algorithms/SummingSortedAlgorithm.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnTuple.h>
+#include <Common/Exception.h>
 #include <Common/AlignedBuffer.h>
 #include <Common/Arena.h>
 #include <Common/FieldVisitorSum.h>
@@ -52,7 +54,7 @@ struct SummingSortedAlgorithm::AggregateDescription
     bool is_agg_func_type = false;
     bool is_simple_agg_func_type = false;
     bool remove_default_values;
-    bool aggregate_all_columns;
+    bool aggregate_all_columns = false;
 
     String sum_function_map_name;
 
@@ -592,10 +594,11 @@ void SummingSortedAlgorithm::SummingMergedData::initialize(const DB::Block & hea
         {
             if (desc.aggregate_all_columns)
             {
-                size_t tuple_size = assert_cast<const ColumnTuple &>(*desc.real_type->createColumn()).tupleSize();
+                auto column = desc.real_type->createColumn();
+                size_t tuple_size = static_cast<const ColumnTuple &>(*column).tupleSize();
                 MutableColumns tuple_columns(tuple_size);
                 for (size_t i = 0; i < tuple_size; ++i)
-                    tuple_columns[i] = assert_cast<const ColumnTuple &>(*desc.real_type->createColumn()).getColumnPtr(i)->cloneEmpty();
+                    tuple_columns[i] = static_cast<const ColumnTuple &>(*column).getColumnPtr(i)->cloneEmpty();
                 new_columns.emplace_back(ColumnTuple::create(std::move(tuple_columns)));
             }
             else

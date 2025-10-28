@@ -24,7 +24,7 @@ namespace Setting
     extern const SettingsBool text_index_use_bloom_filter;
 }
 
-UInt128 TextSearchQuery::getHash() const
+SipHash TextSearchQuery::getHash() const
 {
     SipHash hash;
     hash.update(function_name);
@@ -34,7 +34,7 @@ UInt128 TextSearchQuery::getHash() const
     for (const auto & token : tokens)
         hash.update(token);
 
-    return hash.get128();
+    return hash;
 }
 
 MergeTreeIndexConditionText::MergeTreeIndexConditionText(
@@ -68,7 +68,7 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
         for (const auto & search_query : element.text_search_queries)
         {
             all_search_tokens_set.insert(search_query->tokens.begin(), search_query->tokens.end());
-            all_search_queries[search_query->getHash()] = search_query;
+            all_search_queries[search_query->getHash().get128()] = search_query;
         }
 
         if (getTextSearchMode(element) == TextSearchMode::Any)
@@ -130,13 +130,13 @@ TextSearchQueryPtr MergeTreeIndexConditionText::createTextSearchQuery(const Acti
 std::optional<String> MergeTreeIndexConditionText::replaceToVirtualColumn(const TextSearchQuery & query, const String & index_name)
 {
     auto query_hash = query.getHash();
-    auto it = all_search_queries.find(query_hash);
+    auto it = all_search_queries.find(query_hash.get128());
 
     if (it == all_search_queries.end())
         return std::nullopt;
 
-    size_t counter = function_name_to_index[query.function_name]++;
-    String virtual_column_name = fmt::format("{}{}_{}_{}", TEXT_INDEX_VIRTUAL_COLUMN_PREFIX, index_name, query.function_name, counter);
+    auto hash_str = getSipHash128AsHexString(query_hash);
+    String virtual_column_name = fmt::format("{}{}_{}_{}", TEXT_INDEX_VIRTUAL_COLUMN_PREFIX, index_name, query.function_name, hash_str);
 
     virtual_column_to_search_query[virtual_column_name] = it->second;
     return virtual_column_name;
@@ -424,12 +424,20 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     {
         std::vector<String> search_tokens;
 
-        for (const auto & element : const_value.safeGet<Array>())
+        // hasAny/AllTokens funcs accept either string which will be tokenized or array of strings to be used as-is
+        if (value_data_type.isString())
         {
-            if (element.getType() != Field::Types::String)
-                return false;
+            search_tokens = stringToTokens(const_value, *token_extractor);
+        }
+        else
+        {
+            for (const auto & element : const_value.safeGet<Array>())
+            {
+                if (element.getType() != Field::Types::String)
+                    return false;
 
-            search_tokens.push_back(element.safeGet<String>());
+                search_tokens.push_back(element.safeGet<String>());
+            }
         }
 
         /// TODO(ahmadov): move this block to another place, e.g. optimizations or query tree re-write.
