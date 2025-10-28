@@ -1355,7 +1355,7 @@ Can be used when the output compression method is `zstd`. If greater than `0`, t
 
 Possible values: non-negative numbers. Note that if the value is too small or too big, `zstdlib` will throw an exception. Typical values are from `20` (window size = `1MB`) to `30` (window size = `1GB`).
 )", 0) \
-    DECLARE(Bool, allow_special_serialization_kinds_in_output_formats, true, R"(
+    DECLARE(Bool, allow_special_serialization_kinds_in_output_formats, false, R"(
 Allows to output columns with special serialization kinds like Sparse and Replicated without converting them to full column representation.
 It helps to avoid unnecessary data copy during formatting.
 )", 0) \
@@ -5632,7 +5632,7 @@ Use query plan for lazy materialization optimization.
 )", 0) \
     DECLARE(UInt64, query_plan_max_limit_for_lazy_materialization, 10, R"(Control maximum limit value that allows to use query plan for lazy materialization optimization. If zero, there is no limit.
 )", 0) \
-    DECLARE(Bool, enable_lazy_columns_replication, true, R"(
+    DECLARE(Bool, enable_lazy_columns_replication, false, R"(
 Enables lazy columns replication in JOIN and ARRAY JOIN, it allows to avoid unnecessary copy of the same rows multiple times in memory.
 )", 0) \
     DECLARE_WITH_ALIAS(Bool, query_plan_use_new_logical_join_step, true, R"(
