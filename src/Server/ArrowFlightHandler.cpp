@@ -131,7 +131,7 @@ namespace
         auto ip_to_listen = address_to_listen.host();
         auto port_to_listen = address_to_listen.port();
 
-        /// Function arrow::flight::Location::ForGrpc*() builds an URL based so it requires IPv6 address to be enclosed in brackets
+        /// Function arrow::flight::Location::ForGrpc*() builds an URL so it requires IPv6 address to be enclosed in brackets
         String host_component = (ip_to_listen.family() == Poco::Net::AddressFamily::IPv6) ? ("[" + ip_to_listen.toString() + "]") : ip_to_listen.toString();
 
         arrow::Result<arrow::flight::Location> parse_location_status;
@@ -179,6 +179,7 @@ namespace
     }
 
     /// Extracts an SQL query from a flight descriptor.
+    /// It depends on the flight descriptor's type (PATH/CMD) and on the operation's type (DoPut/DoGet).
     [[nodiscard]] arrow::Result<String> convertDescriptorToSQL(const arrow::flight::FlightDescriptor & descriptor, bool for_put_operation)
     {
         switch (descriptor.type)
@@ -265,9 +266,9 @@ namespace
     }
 
     /// We generate poll descriptors with this prefix.
-    /// Methods GetFlightInfo() and GetSchema() accept a flight descriptor which is either
+    /// Methods PollFlightInfo() or GetSchema() accept a flight descriptor which is either
     /// 1) a normal flight descriptor (a table name or a SQL query); or 2) a poll descriptor with this prefix.
-    /// A valid SQL query can't start with this prefix so methods GetFlightInfo() and GetSchema() can distinguish those cases.
+    /// A valid SQL query can't start with this prefix so methods PollFlightInfo() and GetSchema() can distinguish those cases.
     const String POLL_DESCRIPTOR_PREFIX = "~POLL-";
 
     bool hasPollDescriptorPrefix(const String & poll_descriptor)
@@ -373,7 +374,7 @@ namespace
         std::shared_ptr<const CHColumnToArrowColumn> ch_to_arrow_converter;
     };
 
-    /// Creates a converter from ClickHouse blocks to the Arrow format.
+    /// Creates a converter to convert ClickHouse blocks to the Arrow format.
     std::shared_ptr<CHColumnToArrowColumn> createCHToArrowConverter(const Block & header)
     {
         CHColumnToArrowColumn::Settings arrow_settings;
@@ -385,7 +386,7 @@ namespace
 }
 
 
-/// Keeps information about calls - e.g. blocks extracted from pipelines, tickets, poll descriptors.
+/// Keeps information about calls - e.g. blocks extracted from query pipelines, flight tickets, poll descriptors.
 class ArrowFlightHandler::CallsData
 {
 public:
@@ -396,7 +397,7 @@ public:
     {
     }
 
-    /// Creates a ticket for a specified block.
+    /// Creates a flight ticket which allows to download a specified block.
     std::shared_ptr<const TicketInfo> createTicket(ConstBlockPtr block, std::shared_ptr<const CHColumnToArrowColumn> ch_to_arrow_converter)
     {
         String ticket = generateTicketName();
@@ -408,16 +409,17 @@ public:
         info->block = block;
         info->ch_to_arrow_converter = ch_to_arrow_converter;
         std::lock_guard lock{mutex};
-        tickets[ticket] = info;
+        bool inserted = tickets.try_emplace(ticket, info).second;
+        chassert(inserted); /// Flight tickets are unique.
         if (expiration_time)
         {
-            tickets_by_expiration_time.emplace(*expiration_time, ticket);
+            inserted = tickets_by_expiration_time.emplace(*expiration_time, ticket).second;
+            chassert(inserted); /// Flight tickets are unique.
             updateNextExpirationTime();
         }
         return info;
     }
 
-    /// Returns the information about a ticket.
     [[nodiscard]] arrow::Result<std::shared_ptr<const TicketInfo>> getTicketInfo(const String & ticket) const
     {
         std::lock_guard lock{mutex};
@@ -441,6 +443,7 @@ public:
     }
 
     /// Extends the expiration time of a ticket.
+    /// The function calculates a new expiration time of a ticket based on the current time.
     [[nodiscard]] arrow::Status extendTicketExpirationTime(const String & ticket)
     {
         if (!tickets_lifetime)
@@ -462,24 +465,26 @@ public:
     }
 
     /// Cancels a ticket to free memory.
+    /// Tickets are cancelled either by timer (if setting "arrowflight.tickets_lifetime_seconds" > 0)
+    /// or after they are used by method DoGet (if setting "arrowflight.cancel_flight_descriptor_after_poll_flight_info" is set to true).
     void cancelTicket(const String & ticket)
     {
         std::lock_guard lock{mutex};
         auto it = tickets.find(ticket);
-        if (it != tickets.end())
+        if (it == tickets.end())
+            return; /// The ticked has been already cancelled.
+        LOG_DEBUG(log, "Cancelling ticket {}", ticket);
+        auto info = it->second;
+        tickets.erase(it);
+        if (info->expiration_time)
         {
-            LOG_DEBUG(log, "Cancelling ticket {}", ticket);
-            auto info = it->second;
-            tickets.erase(it);
-            if (info->expiration_time)
-            {
-                tickets_by_expiration_time.erase(std::make_pair(*info->expiration_time, ticket));
-                updateNextExpirationTime();
-            }
+            tickets_by_expiration_time.erase(std::make_pair(*info->expiration_time, ticket));
+            updateNextExpirationTime();
         }
     }
 
     /// Creates a poll descriptor.
+    /// Poll descriptors are returned by method PollFlightInfo to get subsequent results from a long-running query.
     std::shared_ptr<const PollDescriptorInfo>
     createPollDescriptor(std::unique_ptr<PollSession> poll_session, std::shared_ptr<const PollDescriptorInfo> previous_info)
     {
@@ -504,17 +509,19 @@ public:
         info->expiration_time = expiration_time;
         info->ch_to_arrow_converter = poll_session->getCHToArrowConverter();
         std::lock_guard lock{mutex};
-        poll_descriptors[poll_descriptor] = info;
-        poll_sessions[poll_descriptor] = std::move(poll_session);
+        bool inserted = poll_descriptors.try_emplace(poll_descriptor, info).second;
+        chassert(inserted); /// Poll descriptors are unique.
+        inserted = poll_sessions.try_emplace(poll_descriptor, std::move(poll_session)).second;
+        chassert(inserted); /// Poll descriptors are unique.
         if (expiration_time)
         {
-            poll_descriptors_by_expiration_time.emplace(*expiration_time, poll_descriptor);
+            inserted = poll_descriptors_by_expiration_time.emplace(*expiration_time, poll_descriptor).second;
+            chassert(inserted); /// Poll descriptors are unique.
             updateNextExpirationTime();
         }
         return info;
     }
 
-    /// Returns the information about a poll descriptor.
     [[nodiscard]] arrow::Result<std::shared_ptr<const PollDescriptorInfo>> getPollDescriptorInfo(const String & poll_descriptor) const
     {
         std::lock_guard lock{mutex};
@@ -538,6 +545,7 @@ public:
     }
 
     /// Extends the expiration time of a poll descriptor.
+    /// The function calculates a new expiration time of a ticket based on the current time.
     [[nodiscard]] arrow::Status extendPollDescriptorExpirationTime(const String & poll_descriptor)
     {
         if (!poll_descriptors_lifetime)
@@ -649,6 +657,8 @@ public:
     }
 
     /// Cancels a poll descriptor to free memory.
+    /// Poll descriptors are cancelled either by timer (if setting "arrowflight.poll_descriptors_lifetime_seconds" > 0)
+    /// or after they are used by method PollFlightInfo (if setting "arrowflight.cancel_ticket_after_do_get" is set to true).
     void cancelPollDescriptor(const String & poll_descriptor)
     {
         std::lock_guard lock{mutex};
@@ -669,7 +679,7 @@ public:
             poll_sessions.erase(it2);
     }
 
-    /// Cancels tickets and poll descriptors if `current_time` is greater than their expiration time.
+    /// Cancels tickets and poll descriptors if the current time is greater than their expiration time.
     void cancelExpired()
     {
         auto current_time = now();
@@ -696,7 +706,7 @@ public:
         updateNextExpirationTime();
     }
 
-    /// Waits until it's time to cancel expired tickets or poll descriptors.
+    /// Waits until maybe it's time to cancel expired tickets or poll descriptors.
     void waitNextExpirationTime() const
     {
         auto current_time = now();
@@ -777,6 +787,7 @@ private:
     std::unordered_map<String, std::shared_ptr<const PollDescriptorInfo>> poll_descriptors TSA_GUARDED_BY(mutex);
     std::unordered_map<String, std::unique_ptr<PollSession>> poll_sessions TSA_GUARDED_BY(mutex);
     std::condition_variable evaluation_ended;
+    /// `tickets_by_expiration_time` and `poll_descriptors_by_expiration_time` are sorted by `expiration_time` so `std::set` is used.
     std::set<std::pair<Timestamp, String>> tickets_by_expiration_time TSA_GUARDED_BY(mutex);
     std::set<std::pair<Timestamp, String>> poll_descriptors_by_expiration_time TSA_GUARDED_BY(mutex);
     std::optional<Timestamp> next_expiration_time;
@@ -1161,6 +1172,11 @@ arrow::Status ArrowFlightHandler::PollFlightInfo(
 }
 
 
+/// evaluatePollDescriptors() pulls a block from the query pipeline.
+/// This function blocks until it either gets a nonempty block from the query pipeline or finds out that there will be no blocks anymore.
+///
+/// NOTE: The current implementation doesn't allow to set a timeout to avoid blocking calls as it's suggested in the documentation
+/// for PollFlightInfo (see https://arrow.apache.org/docs/format/Flight.html#downloading-data-by-running-a-heavy-query).
 arrow::Status ArrowFlightHandler::evaluatePollDescriptor(const String & poll_descriptor)
 {
     auto poll_session_res = calls_data->startEvaluation(poll_descriptor);
