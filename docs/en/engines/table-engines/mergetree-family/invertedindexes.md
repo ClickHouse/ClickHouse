@@ -59,7 +59,7 @@ The `tokenizer` argument specifies the tokenizer:
   The ngram length can be specified using an optional integer parameter between 2 and 8, for example, `tokenizer = ngrams(3)`.
   The default ngram size, if not specified explicitly (for example, `tokenizer = ngrams`), is 3.
 - `array` performs no tokenization, i.e. every row value is a token (also see function [array](/sql-reference/functions/array-functions.md/#array)).
-- `sparseGrams(min_length, max_length, min_cutoff_length)` — uses the algorithm as in the [sparseGrams](/sql-reference/functions/string-functions#sparsegrams) function to split a string into all ngrams of `min_length` and several ngrams of larger size up to `max_length`, inclusive. If `min_cutoff_length` is specified, only N-grams with length greater than or equal to `min_cutoff_length` are saved in the index. Unlike `ngrams(N)`, which generates only fixed-length N-grams, `sparseGrams` produces a set of variable-length N-grams within the specified range, allowing for a more flexible representation of text context. For example, `tokenizer = sparseGrams(3, 5, 4)` will generate 3-, 4-, 5-grams from the input string and save only the 4- and 5-grams in the index.
+- `sparseGrams(min_length, max_length, min_cutoff_length)` — uses the algorithm as in the [sparseGrams](/sql-reference/functions/string-functions#sparseGrams) function to split a string into all ngrams of `min_length` and several ngrams of larger size up to `max_length`, inclusive. If `min_cutoff_length` is specified, only N-grams with length greater than or equal to `min_cutoff_length` are saved in the index. Unlike `ngrams(N)`, which generates only fixed-length N-grams, `sparseGrams` produces a set of variable-length N-grams within the specified range, allowing for a more flexible representation of text context. For example, `tokenizer = sparseGrams(3, 5, 4)` will generate 3-, 4-, 5-grams from the input string and save only the 4- and 5-grams in the index.
 
 :::note
 The `splitByString` tokenizer applies the split separators left-to-right.
@@ -180,7 +180,7 @@ The spaces left and right of `support` make sure that the term can be extracted 
 
 #### `startsWith` and `endsWith` {#functions-example-startswith-endswith}
 
-Similar to `LIKE`, functions [startsWith](/sql-reference/functions/string-functions.md/#startswith) and [endsWith](/sql-reference/functions/string-functions.md/#endswith) can only use a text index, if complete tokens can be extracted from the search term.
+Similar to `LIKE`, functions [startsWith](/sql-reference/functions/string-functions.md/#startsWith) and [endsWith](/sql-reference/functions/string-functions.md/#endsWith) can only use a text index, if complete tokens can be extracted from the search term.
 
 Example:
 
