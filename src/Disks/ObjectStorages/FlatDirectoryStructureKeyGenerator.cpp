@@ -10,6 +10,11 @@ namespace fs = std::filesystem;
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 FlatDirectoryStructureKeyGenerator::FlatDirectoryStructureKeyGenerator(
     String storage_key_prefix_, std::weak_ptr<InMemoryDirectoryTree> tree_)
     : storage_key_prefix(storage_key_prefix_), tree(std::move(tree_))
@@ -24,8 +29,12 @@ ObjectStorageKey FlatDirectoryStructureKeyGenerator::generate(const String & pat
 
     if (is_directory)
     {
-        if (auto info = tree_ptr->getDirectoryRemoteInfo(fs_path))
-            return ObjectStorageKey::createAsRelative(prefix, info->remote_path);
+        auto [exists_direcotory, remote_info] = tree_ptr->existsDirectory(fs_path);
+        if (exists_direcotory && !remote_info)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' is virtual", path);
+
+        if (exists_direcotory)
+            return ObjectStorageKey::createAsRelative(prefix, remote_info->remote_path);
 
         return ObjectStorageKey::createAsRelative(prefix, getRandomASCIIString(32));
     }
@@ -36,11 +45,13 @@ ObjectStorageKey FlatDirectoryStructureKeyGenerator::generate(const String & pat
         if (filename.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "File name is empty for path '{}'", fs_path.string());
 
-        const auto directory_info = tree_ptr->getDirectoryRemoteInfo(directory);
-        if (!directory_info.has_value())
+        auto [exists_direcotory, remote_info] = tree_ptr->existsDirectory(fs_path);
+        if (!exists_direcotory)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' does not exist", directory.string());
+        else if (exists_direcotory && !remote_info)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' is virtual", path);
 
-        return ObjectStorageKey::createAsRelative(prefix, fs::path(directory_info->remote_path) / filename);
+        return ObjectStorageKey::createAsRelative(prefix, fs::path(remote_info->remote_path) / filename);
     }
 }
 
