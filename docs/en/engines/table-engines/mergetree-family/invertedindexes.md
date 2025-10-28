@@ -38,6 +38,7 @@ CREATE TABLE tab
                                 -- Mandatory parameters:
                                 tokenizer = splitByNonAlpha|splitByString(S)|ngrams(N)|array
                                 -- Optional parameters:
+                                [, preprocessor = expression(str)]
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
                                 [, max_cardinality_for_embedded_postings = M]
@@ -85,6 +86,56 @@ returns
 | ['abc','bc ','c d',' de','def'] |
 +---------------------------------+
 ```
+
+Optional parameter `preprocessor` is intended to be an expression that transforms the input string into another one before
+tokenization. The main purposes for this argument are:
+1. Perform some transformations to the string to generate indices with specific purposes (i.e. case insensitive indices)
+2. Cleanup the data (i.e remove HTML tags)
+3. Optimize the index information (i.e remove accents, reduce cardinality limiting input to UTF-8)
+
+The expression's input and output are intended to be of the same types, but they are intended to work if they return any of the supported
+types mentioned above ([String](/sql-reference/data-types/string.md), [FixedString](/sql-reference/data-types/fixedstring.md),
+[Array(String)](/sql-reference/data-types/array.md), [Array(FixedString)](/sql-reference/data-types/array.md)). The expression should be
+expressed as a function of the index column name and should not depend of any other column. When using a `preprocessor` the index argument
+for construction will be limited only to the column name for simplicity in the interface and to avoid potential corner cases.
+
+The preprocessor expression is also used to transform the input before performing function comparisons. This means that:
+
+```sql
+CREATE TABLE tab
+(
+    key UInt64,
+    str String,
+    INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(str))
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+...
+
+SELECT count() FROM tab WHERE hasToken(str, 'Foo');
+```
+
+is equivalent to:
+
+```sql
+CREATE TABLE tab
+(
+    key UInt64,
+    str String,
+    INDEX idx(lower(str)) TYPE text(tokenizer = 'splitByNonAlpha')
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+...
+
+SELECT count() FROM tab WHERE hasToken(str, lower('Foo'));
+```
+
+:::note
+User Defined Functions [UDFs](sql-reference/functions/udf.md) are not supported in the preprocessor expression.
+:::
 
 Text indexes in ClickHouse are implemented as [secondary indexes](/engines/table-engines/mergetree-family/mergetree.md/#skip-index-types).
 However, unlike other skipping indexes, text indexes have a default index GRANULARITY of 64.
