@@ -1345,6 +1345,8 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
 
         const Names required_columns = expression.getRequiredColumns();
 
+        /// This is expected top no never happen because the `validatePreprocessorASTExpression` already checks that we have a single identifier.
+        /// But once again, with user inputs: Don't trust, validate!
         if (required_columns.size() != 1 || required_columns.front() != index.column_names.front())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index preprocessor expression must depend only of column: {}", index.column_names.front());
     }
@@ -1364,20 +1366,24 @@ void validatePreprocessorASTExpression(const ASTFunction * function, String &ide
 
     for (const auto & argument : function->arguments->children)
     {
+        /// In principle all literals are valid
         if (argument->as<ASTLiteral>())
             continue;
 
-        /// TODO(JAM) : Extend checks here for the right column
+        /// We must have only one identifier
         if (const ASTIdentifier * identifier = argument->as<ASTIdentifier>())
         {
             if (identifier_name.empty())
                 identifier_name = identifier->name();
             else if (identifier_name != identifier->name())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text preprocessor function should receive only one identifier");
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text preprocessor function should receive only one identifier, but there is {} and {}",
+                    identifier_name, identifier->name());
 
             continue;
         }
 
+        /// If there is a nested (sub) function, then we recursively checks also it's arguments.
+        /// I like to avoid recursive calls, but I won't expect more than 2 or 3 functions nesting levels here, so let's keep it simple.
         if (const ASTFunction * subfunction = argument->as<ASTFunction>())
         {
             validatePreprocessorASTExpression(subfunction, identifier_name);
@@ -1516,6 +1522,10 @@ String MergeTreePreprocessor::processString(const String &input) const
 
 ExpressionActions MergeTreePreprocessor::parseExpression(const IndexDescription & index_description, const String & expression)
 {
+    chassert(index_description.column_names.size() == 1);
+    chassert(index_description.data_types.size() == 1);
+
+    /// Empty expression still creates a preprocessor with empty actions.
     if (std::ranges::all_of(expression, isspace))
         return ExpressionActions(ActionsDAG());
 
@@ -1529,17 +1539,24 @@ ExpressionActions MergeTreePreprocessor::parseExpression(const IndexDescription 
     Expected expected;
     ASTPtr expression_ast;
 
-    const bool parse_res = ParserExpression().parse(token_iterator, expression_ast, expected);
-    if (!parse_res)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Error parsing preprocessor expression");
+    { /// Parse and verify expression
+        if (!ParserExpression().parse(token_iterator, expression_ast, expected))
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Error parsing preprocessor expression");
 
+        /// Repeat expression validation here. after the string has been parsed into an AST.
+        /// We already made this check during index construction, but "don't trust, verify"
+        const ASTFunction * preprocessor_function = expression_ast->as<ASTFunction>();
+        if (preprocessor_function == nullptr)
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Text index preprocessor argument is intended to be a function");
+
+        // Now we know that the only valid identifier_name must be the text indexed column.
+        String identifier_name = index_description.column_names.front();
+        validatePreprocessorASTExpression(preprocessor_function, identifier_name);
+    }
 
     // TODO(JAM): Check this
     const String name = expression_ast->getColumnName();
     const String alias = expression_ast->getAliasOrColumnName();
-
-    chassert(index_description.column_names.size() == 1);
-    chassert(index_description.data_types.size() == 1);
 
     NamesAndTypesList source_columns({{index_description.column_names.front(), index_description.data_types.front()}});
 

@@ -41,7 +41,7 @@ CREATE TABLE tab
     INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(str2))
 )
 ENGINE = MergeTree
-ORDER BY tuple();  -- { serverError UNKNOWN_IDENTIFIER }
+ORDER BY tuple();  -- { serverError BAD_ARGUMENTS }
 
 -- Dependency only on 1 column
 CREATE TABLE tab
@@ -52,7 +52,7 @@ CREATE TABLE tab
     INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = concat(lower(str), lower(str2)))
 )
 ENGINE = MergeTree
-ORDER BY tuple();   -- { serverError UNKNOWN_IDENTIFIER }
+ORDER BY tuple();   -- { serverError BAD_ARGUMENTS }
 
 -- When using preprocessor, the index expression should be only the column (with no expressions)
 CREATE TABLE tab
@@ -62,7 +62,7 @@ CREATE TABLE tab
     INDEX idx(upper(str)) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(str))
 )
 ENGINE = MergeTree
-ORDER BY tuple();   -- { serverError UNKNOWN_IDENTIFIER }
+ORDER BY tuple();   -- { serverError BAD_ARGUMENTS }
 
 
 DROP TABLE IF EXISTS tab;
