@@ -108,6 +108,10 @@ CREATE QUOTA q3_01297 KEYED BY ip_address ipv4_prefix_bits 16 ipv6_prefix_bits 4
 CREATE QUOTA q4_01297 KEYED BY ip_address ipv4_prefix_bits 0
 CREATE QUOTA q5_01297 KEYED BY ip_address ipv4_prefix_bits 32 ipv6_prefix_bits 128
 CREATE QUOTA q1_01297 KEYED BY ip_address ipv4_prefix_bits 8 ipv6_prefix_bits 32
+-- alter prefix bits independently
+CREATE QUOTA q1_01297 KEYED BY ip_address ipv4_prefix_bits 16 ipv6_prefix_bits 32
+CREATE QUOTA q1_01297 KEYED BY ip_address ipv4_prefix_bits 16 ipv6_prefix_bits 96
+CREATE QUOTA q1_01297 KEYED BY ip_address ipv4_prefix_bits 20 ipv6_prefix_bits 80
 -- ip prefix bits with intervals
 CREATE QUOTA q1_01297 KEYED BY ip_address ipv4_prefix_bits 24 ipv6_prefix_bits 64 FOR INTERVAL 1 hour MAX queries = 100
 -- ip prefix bits invalid

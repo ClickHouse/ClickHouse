@@ -261,6 +261,15 @@ SHOW CREATE QUOTA q4_01297;
 SHOW CREATE QUOTA q5_01297;
 ALTER QUOTA q1_01297 KEYED BY ip_address ipv4_prefix_bits 8 ipv6_prefix_bits 32;
 SHOW CREATE QUOTA q1_01297;
+
+SELECT '-- alter prefix bits independently';
+ALTER QUOTA q1_01297 ipv4_prefix_bits 16;
+SHOW CREATE QUOTA q1_01297;
+ALTER QUOTA q1_01297 ipv6_prefix_bits 96;
+SHOW CREATE QUOTA q1_01297;
+ALTER QUOTA q1_01297 ipv4_prefix_bits 20 ipv6_prefix_bits 80;
+SHOW CREATE QUOTA q1_01297;
+
 DROP QUOTA IF EXISTS q1_01297, q2_01297, q3_01297, q4_01297, q5_01297;
 
 SELECT '-- ip prefix bits with intervals';
@@ -271,3 +280,5 @@ DROP QUOTA IF EXISTS q1_01297;
 SELECT '-- ip prefix bits invalid';
 CREATE QUOTA q1_01297 KEYED BY ip_address ipv4_prefix_bits 33; -- { clientError SYNTAX_ERROR }
 CREATE QUOTA q2_01297 KEYED BY ip_address ipv6_prefix_bits 129; -- { clientError SYNTAX_ERROR }
+CREATE QUOTA q3_01297 KEYED BY user_name ipv4_prefix_bits 24; -- { clientError SYNTAX_ERROR }
+CREATE QUOTA q4_01297 NOT KEYED ipv6_prefix_bits 64; -- { clientError SYNTAX_ERROR }

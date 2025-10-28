@@ -355,6 +355,18 @@ bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
             }
         }
 
+        if (!ipv4_prefix_bits && !ipv6_prefix_bits)
+        {
+            MaskBits ipv4_bits = 0;
+            MaskBits ipv6_bits = 0;
+            if (parseIpPrefixBits(pos, expected, ipv4_bits, ipv6_bits))
+            {
+                ipv4_prefix_bits = ipv4_bits;
+                ipv6_prefix_bits = ipv6_bits;
+                continue;
+            }
+        }
+
         if (parseIntervalsWithLimits(pos, expected, all_limits))
             continue;
 
@@ -372,6 +384,14 @@ bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
     if (cluster.empty())
         parseOnCluster(pos, expected, cluster);
+
+    /// Validate that prefix bits are only used with IP_ADDRESS key type
+    if ((ipv4_prefix_bits || ipv6_prefix_bits) && key_type && *key_type != QuotaKeyType::IP_ADDRESS)
+    {
+        throw Exception(
+            ErrorCodes::SYNTAX_ERROR,
+            "IP prefix bits can only be specified for quotas KEYED BY ip_address");
+    }
 
     auto query = std::make_shared<ASTCreateQuotaQuery>();
     node = query;
