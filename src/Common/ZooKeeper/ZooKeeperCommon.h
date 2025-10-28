@@ -233,15 +233,12 @@ struct ZooKeeperCreateRequest final : public CreateRequest, ZooKeeperRequest
     /// used only during restore from zookeeper log
     int32_t parent_cversion = -1;
 
-    /// used only for include_data=true
-    mutable Stat zstat;
-
     ZooKeeperCreateRequest() = default;
     explicit ZooKeeperCreateRequest(const CreateRequest & base) : CreateRequest(base) {}
 
     OpNum getOpNum() const override
     {
-        if (include_data)
+        if (include_stats)
             return OpNum::Create2;
         return not_exists ? OpNum::CreateIfNotExists : OpNum::Create;
     }
@@ -257,8 +254,6 @@ struct ZooKeeperCreateRequest final : public CreateRequest, ZooKeeperRequest
     size_t bytesSize() const override { return CreateRequest::bytesSize() + sizeof(xid) + sizeof(has_watch); }
 
     void createLogElements(LogElements & elems) const override;
-
-    void setStats(Stat stats) const;
 };
 
 struct ZooKeeperCreateResponse : CreateResponse, ZooKeeperResponse

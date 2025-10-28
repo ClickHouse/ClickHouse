@@ -1692,7 +1692,6 @@ std::list<KeeperStorageBase::Delta> preprocess(
     stat.cversion = 0;
     stat.ephemeralOwner = zk_request.is_ephemeral ? session_id : 0;
 
-    zk_request.setStats(stat);
     new_deltas.emplace_back(
         std::move(path_created),
         zxid,
@@ -1706,10 +1705,12 @@ Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperCreateRe
 {
     std::shared_ptr<Coordination::ZooKeeperCreateResponse> response;
 
-    if (zk_request.include_data)
+    if (zk_request.include_stats)
     {
         auto create2response = std::make_shared<Coordination::ZooKeeperCreate2Response>();
-        create2response->zstat = zk_request.zstat;
+        auto it = deltas.end_it;
+        --it;
+        create2response->zstat = std::get<CreateNodeDelta>(it->operation).stat;
         response = create2response;
     }
     else if (zk_request.not_exists)
