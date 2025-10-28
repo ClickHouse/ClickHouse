@@ -35,7 +35,7 @@ REGISTER_FUNCTION(NotILike)
 ┌─notILike('Hello, World!', '%world%')─┐
 │                                     0 │
 └───────────────────────────────────────┘
-        )"  
+        )"
     },
     {
         "Non-matching pattern",
