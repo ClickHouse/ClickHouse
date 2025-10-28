@@ -1763,7 +1763,7 @@ void InterpreterSystemQuery::instrumentWithXRay(bool add, ASTSystemQuery & query
             else
                 id = std::to_string(std::get<UInt64>(query.instrumentation_point_id.value()));
 
-            id_str = fmt::format(" and instrumentation_point_id '{}'", id);
+            id_str = fmt::format(" and id '{}'", id);
         }
 
         String entry_type;

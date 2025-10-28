@@ -2,7 +2,6 @@
 
 #if USE_XRAY
 
-#include <cstdint>
 #include <filesystem>
 #include <print>
 #include <thread>
