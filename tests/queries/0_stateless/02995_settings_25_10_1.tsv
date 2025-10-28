@@ -1271,7 +1271,7 @@ s3_max_unexpected_write_error_retries	4
 s3_max_upload_part_size	5368709120
 s3_min_upload_part_size	16777216
 s3_request_timeout_ms	30000
-s3_retry_attempts	100
+s3_retry_attempts	500
 s3_skip_empty_files	1
 s3_slow_all_threads_after_network_error	1
 s3_slow_all_threads_after_retryable_error	0
