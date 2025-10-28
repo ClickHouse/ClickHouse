@@ -272,7 +272,7 @@ Client::Client(
 
     provider_type = deduceProviderType(initial_endpoint);
     LOG_TRACE(log, "Provider type: {}", toString(provider_type));
-
+    LOG_TRACE(log, "Client configured with s3_retry_attempts: {}", client_configuration.retry_strategy.max_retries);
     if (provider_type == ProviderType::GCS)
     {
         /// GCS can operate in 2 modes for header and query params names:

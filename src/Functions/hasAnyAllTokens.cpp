@@ -338,7 +338,7 @@ ORDER BY id;
 
 INSERT INTO table VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
 
-SELECT count() FROM table WHERE hasAnyTokens(msg, 'a\\d()'
+SELECT count() FROM table WHERE hasAnyTokens(msg, 'a\\d()');
         )",
         R"(
 ┌─count()─┐
