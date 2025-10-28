@@ -82,3 +82,5 @@ def test_ticket_expiration():
     except pa.lib.ArrowKeyError as e:
         expected_error = f"Ticket '{ticket.ticket.decode()}' not found"
         assert expected_error in str(e)
+
+    node.query("DROP TABLE mytable SYNC")
