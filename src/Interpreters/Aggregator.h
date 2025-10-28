@@ -79,10 +79,6 @@ public:
     using AggregateColumnsConstData = std::vector<const AggregateFunctionContainer *>;
     using AggregateFunctionsPlainPtrs = std::vector<const IAggregateFunction *>;
 
-    mutable std::mutex bs_mutex;
-    mutable std::map<size_t, size_t> bs_bf;
-    mutable std::map<size_t, size_t> bs_af;
-
     struct Params
     {
         /// What to count.
@@ -183,8 +179,6 @@ public:
     };
 
     explicit Aggregator(const Block & header_, const Params & params_);
-
-    ~Aggregator();
 
     const Params & getParams() const { return params; }
 

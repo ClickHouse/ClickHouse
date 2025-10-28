@@ -66,7 +66,7 @@ void Updater::addOutputBytes(const Aggregator &, const ManyAggregatedDataVariant
     statistics.output_bytes += wbuf.count();
     output_bytes_sample += wbuf.count();
     output_bytes_compressed += wbuf.count();
-    LOG_DEBUG(&Poco::Logger::get("debug"), "wbuf.count()={}, cnt={}, sz={}", wbuf.count(), wb.count(), wb.str().size());
+    // LOG_DEBUG(&Poco::Logger::get("debug"), "wbuf.count()={}, cnt={}, sz={}", wbuf.count(), wb.count(), wb.str().size());
 }
 
 void Updater::addOutputBytes(const Aggregator &, AggregatedDataVariants & variant, size_t bucket)
@@ -82,7 +82,7 @@ void Updater::addOutputBytes(const Aggregator &, AggregatedDataVariants & varian
     statistics.output_bytes += wbuf.count();
     output_bytes_sample += wbuf.count();
     output_bytes_compressed += wbuf.count();
-    LOG_DEBUG(&Poco::Logger::get("debug"), "wbuf.count()={}, cnt={}, sz={}", wbuf.count(), wb.count(), wb.str().size());
+    // LOG_DEBUG(&Poco::Logger::get("debug"), "wbuf.count()={}, cnt={}, sz={}", wbuf.count(), wb.count(), wb.str().size());
 }
 
 void Updater::addOutputBytes(const Aggregator & aggregator, const Block & block)
@@ -90,7 +90,7 @@ void Updater::addOutputBytes(const Aggregator & aggregator, const Block & block)
     for (size_t i = 0; i < aggregator.getParams().keys_size; ++i)
     {
         const auto & key_column_name = aggregator.getParams().keys[i];
-        LOG_DEBUG(&Poco::Logger::get("debug"), "key_column_name={}", key_column_name);
+        // LOG_DEBUG(&Poco::Logger::get("debug"), "key_column_name={}", key_column_name);
         const auto & column = block.getByName(key_column_name);
         const auto compressed = compressedColumnSize(column);
         std::lock_guard lock(mutex);

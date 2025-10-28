@@ -216,8 +216,6 @@ void Aggregator::applyToAllStates(AggregatedDataVariants & result, WriteBuffer &
     {
         if (result.without_key == nullptr)
             throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "Empty data passed to Aggregator::applyToAllStates");
-        LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
-        LOG_DEBUG(&Poco::Logger::get("debug"), "params.aggregates_size={}", params.aggregates_size);
         for (size_t j = 0; j < params.aggregates_size; ++j)
         {
             if (is_simple_count)
@@ -231,7 +229,6 @@ void Aggregator::applyToAllStates(AggregatedDataVariants & result, WriteBuffer &
 #define M(NAME) \
     else if (result.type == AggregatedDataVariants::Type::NAME) \
     { \
-        LOG_DEBUG(&Poco::Logger::get("debug"), "result.type={}, AggregatedDataVariants::Type::NAME={}, #NAME={}", result.type, AggregatedDataVariants::Type::NAME, #NAME); \
         f(result.NAME->data); \
         return; \
     }
@@ -241,7 +238,6 @@ void Aggregator::applyToAllStates(AggregatedDataVariants & result, WriteBuffer &
 #define M(NAME) \
     else if (result.type == AggregatedDataVariants::Type::NAME) \
     { \
-        LOG_DEBUG(&Poco::Logger::get("debug"), "result.type={}, AggregatedDataVariants::Type::NAME={}, #NAME={}", result.type, AggregatedDataVariants::Type::NAME, #NAME); \
         if (bucket >= 0) \
             f(result.NAME->data.impls[bucket]); \
         else \
@@ -528,10 +524,6 @@ public:
 };
 
 #endif
-
-Aggregator::~Aggregator() {
-    LOG_DEBUG(&Poco::Logger::get("debug"), "bs_bf={}, bs_af={}", fmt::join(bs_bf, ", "), fmt::join(bs_af, ", "));
-}
 
 Aggregator::Aggregator(const Block & header_, const Params & params_)
     : header(header_)
@@ -1941,11 +1933,7 @@ Block Aggregator::mergeAndConvertOneBucketToBlock(
 #define M(NAME) \
     else if (method == AggregatedDataVariants::Type::NAME) \
     { \
-        std::lock_guard lock(bs_mutex); \
-        for (size_t i = 0; i < variants.size(); ++i) \
-            bs_bf[bucket] += variants[i]->NAME->data.impls[bucket].size(); \
         mergeBucketImpl<decltype(merged_data.NAME)::element_type>(variants, bucket, arena, is_cancelled); \
-        bs_af[bucket] = merged_data.NAME->data.impls[bucket].size(); \
         updater->addOutputBytes(*this, merged_data, bucket); \
         if (is_cancelled.load(std::memory_order_seq_cst)) \
             return {}; \
