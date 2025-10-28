@@ -1,8 +1,6 @@
 #pragma once
 #include "config.h"
 
-#if USE_AVRO
-
 #include <optional>
 #include <base/types.h>
 #include <vector>
@@ -17,6 +15,3 @@ struct EqualityDeleteObject
     Int32 schema_id;
 };
 }
-
-
-#endif
