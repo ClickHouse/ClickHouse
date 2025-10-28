@@ -49,7 +49,7 @@ std::string QueueEvictionInfo::toString() const
     return wb.str();
 }
 
-EvictionInfo::EvictionInfo(QueueID queue_id, QueueEvictionInfo && info)
+EvictionInfo::EvictionInfo(QueueID queue_id, QueueEvictionInfoPtr info)
 {
     addImpl(queue_id, std::move(info));
 }
@@ -67,7 +67,7 @@ std::string EvictionInfo::toString() const
     {
         if (it != begin())
             wb << ", ";
-        wb << "[queue id " << it->first << ", " << it->second.toString() << "]";
+        wb << "[queue id " << it->first << ", " << it->second->toString() << "]";
     }
     return wb.str();
 }
@@ -75,7 +75,7 @@ std::string EvictionInfo::toString() const
 bool EvictionInfo::hasHoldSpace() const
 {
     for (const auto & [_, elem] : *this)
-        if (elem.hasHoldSpace())
+        if (elem->hasHoldSpace())
             return true;
     return false;
 }
@@ -83,7 +83,7 @@ bool EvictionInfo::hasHoldSpace() const
 void EvictionInfo::releaseHoldSpace(const CacheStateGuard::Lock & lock)
 {
     for (auto & [_, elem] : *this)
-        elem.releaseHoldSpace(lock);
+        elem->releaseHoldSpace(lock);
 }
 
 void EvictionInfo::add(EvictionInfoPtr && info)
@@ -92,13 +92,28 @@ void EvictionInfo::add(EvictionInfoPtr && info)
         addImpl(queue_id, std::move(info_));
 }
 
-void EvictionInfo::addImpl(const QueueID & queue_id, QueueEvictionInfo && info)
+void EvictionInfo::addImpl(const QueueID & queue_id, QueueEvictionInfoPtr info)
 {
-    size_to_evict += info.size_to_evict;
-    elements_to_evict += info.elements_to_evict;
+    size_to_evict += info->size_to_evict;
+    elements_to_evict += info->elements_to_evict;
     const bool inserted = emplace(queue_id, std::move(info)).second;
     if (!inserted)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Queue with id {} already exists", queue_id);
+}
+
+const QueueEvictionInfoPtr & EvictionInfo::get(const QueueID & queue_id) const
+{
+    if (auto it = find(queue_id); it != end())
+    {
+        return it->second;
+    }
+    else
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Eviction info for queue  with id {} does not exist ({})",
+            queue_id,toString());
+    }
 }
 
 void EvictionInfo::setOnFinishFunc(std::function<void()> func)

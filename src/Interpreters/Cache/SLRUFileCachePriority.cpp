@@ -408,6 +408,22 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
         return true;
     }
 
+    /// In collectEvictionInfo we create probationary queue eviction info
+    /// from size/elements we need to put into protected queue.
+    /// But after we do protected_queue.collectCandidatesForEviction,
+    /// the total downgrade size can be bigger
+    /// (because total_evict_size >= size_to_evict always).
+    /// Therefore adjust possible difference here.
+    const auto & probationary_eviction_info = eviction_info.get(probationary_queue.getQueueID());
+    size_t additional_size_to_evict = stat.total_stat.releasable_size > probationary_eviction_info->getTotalSize()
+        ? stat.total_stat.releasable_size - probationary_eviction_info->getTotalSize()
+        : 0;
+    size_t additional_elements_to_evict = stat.total_stat.releasable_count > probationary_eviction_info->getTotalElements()
+        ? stat.total_stat.releasable_count - probationary_eviction_info->getTotalElements()
+        : 0;
+    probationary_eviction_info->size_to_evict += additional_size_to_evict;
+    probationary_eviction_info->elements_to_evict += additional_elements_to_evict;
+
     /// If not enough space - we need to "downgrade" lowest priority entries
     /// from protected queue to probationary queue,
     /// so collect eviction candidates in probationary now.

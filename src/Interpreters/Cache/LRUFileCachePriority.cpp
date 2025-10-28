@@ -339,23 +339,23 @@ EvictionInfoPtr LRUFileCachePriority::collectEvictionInfo(
     if (!size && !elements)
         return std::make_unique<EvictionInfo>();
 
-    QueueEvictionInfo info(description);
+    auto info = std::make_unique<QueueEvictionInfo>(description);
 
     /// Total space cleanup is for keep_free_space_size(elements)_ratio feature.
     if (is_total_space_cleanup)
     {
-        info.size_to_evict = std::min(size, getSize(lock));
-        info.elements_to_evict = std::min(elements, getElementsCount(lock));
+        info->size_to_evict = std::min(size, getSize(lock));
+        info->elements_to_evict = std::min(elements, getElementsCount(lock));
         return std::make_unique<EvictionInfo>(queue_id, std::move(info));
     }
 
     const size_t available_size = max_size.load() - state->getSize(lock);
     if (available_size < size)
-        info.size_to_evict = size - available_size;
+        info->size_to_evict = size - available_size;
 
     const size_t available_elements = max_elements.load() - state->getElementsCount(lock);
     if (available_elements < elements)
-        info.elements_to_evict = elements - available_elements;
+        info->elements_to_evict = elements - available_elements;
 
     /// As eviction is done without a cache priority lock,
     /// then if some space was partially available and some needed
@@ -365,12 +365,12 @@ EvictionInfoPtr LRUFileCachePriority::collectEvictionInfo(
     /// So we create a space holder for the currently available part
     /// of the required space for the duration of eviction of the other
     /// currently non-available part of the space.
-    size_t size_to_hold = info.size_to_evict ? available_size : size;
-    size_t elements_to_hold = info.elements_to_evict ? available_elements : elements;
+    size_t size_to_hold = info->size_to_evict ? available_size : size;
+    size_t elements_to_hold = info->elements_to_evict ? available_elements : elements;
 
     if (size_to_hold || elements_to_hold)
     {
-        info.hold_space = std::make_unique<IFileCachePriority::HoldSpace>(
+        info->hold_space = std::make_unique<IFileCachePriority::HoldSpace>(
             size_to_hold,
             elements_to_hold,
             *this,
@@ -391,18 +391,7 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
     const UserID &,
     const CachePriorityGuard::ReadLock & lock)
 {
-    const QueueEvictionInfo * info;
-    if (auto it = eviction_info.find(queue_id); it != eviction_info.end())
-    {
-        info = &it->second;
-    }
-    else
-    {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Eviction info for queue  with id {} ({}) does not exist ({})",
-            queue_id, description, eviction_info.toString());
-    }
+    const auto & info = eviction_info.get(queue_id);
     size_t size = info->size_to_evict;
     size_t elements = info->elements_to_evict;
 

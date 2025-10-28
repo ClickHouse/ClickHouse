@@ -51,6 +51,8 @@ public:
     size_t getElementsCount(const CacheStateGuard::Lock & lock) const override { return state->getElementsCount(lock); }
     size_t getElementsCountApprox() const override { return state->getElementsCountApprox(); }
 
+    size_t getQueueID() const { return queue_id; }
+
     std::string getStateInfoForLog(const CacheStateGuard::Lock & lock) const override;
 
     EvictionInfoPtr collectEvictionInfo(

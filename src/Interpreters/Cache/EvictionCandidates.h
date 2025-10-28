@@ -26,7 +26,11 @@ struct QueueEvictionInfo
     bool hasHoldSpace() const { return hold_space != nullptr; }
     /// Release hold space if still hold.
     void releaseHoldSpace(const CacheStateGuard::Lock & lock);
+
+    size_t getTotalSize() const { return size_to_evict + (hold_space ? hold_space->size : 0); }
+    size_t getTotalElements() const { return elements_to_evict + (hold_space ? hold_space->elements : 0); }
 };
+using QueueEvictionInfoPtr = std::unique_ptr<QueueEvictionInfo>;
 using QueueID = size_t;
 
 class EvictionInfo;
@@ -35,19 +39,21 @@ using EvictionInfoPtr = std::unique_ptr<EvictionInfo>;
 /// Aggregated eviction info:
 /// - contains QueueEvictionInfo per queue_id
 /// - aggregates all methods among all QueueEvictionInfo's.
-class EvictionInfo : public std::map<QueueID, QueueEvictionInfo>, private boost::noncopyable
+class EvictionInfo : public std::map<QueueID, QueueEvictionInfoPtr>, private boost::noncopyable
 {
 public:
     EvictionInfo() = default;
     /// Creates eviction info from a single QueueEvictionInfo.
     /// More infos can be added via add() method.
-    explicit EvictionInfo(QueueID queue_id, QueueEvictionInfo && info);
+    explicit EvictionInfo(QueueID queue_id, QueueEvictionInfoPtr info);
 
     ~EvictionInfo();
 
     std::string toString() const;
 
     size_t getSizeToEvict() const { return size_to_evict; }
+
+    const QueueEvictionInfoPtr & get(const QueueID & queue_id) const;
 
     size_t getElementsToEvict() const { return elements_to_evict; }
 
@@ -67,7 +73,7 @@ public:
     void setOnFinishFunc(std::function<void()> func);
 
 private:
-    void addImpl(const QueueID & queue_id, QueueEvictionInfo && info);
+    void addImpl(const QueueID & queue_id, QueueEvictionInfoPtr info);
 
     size_t size_to_evict = 0; /// Total size to evict among all eviction infos.
     size_t elements_to_evict = 0; /// Total elements to evict among all eviction infos.
