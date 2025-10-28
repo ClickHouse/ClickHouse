@@ -78,6 +78,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int DATALAKE_DATABASE_ERROR;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
+    extern const int LOGICAL_ERROR;
 }
 
 DatabaseDataLake::DatabaseDataLake(
@@ -117,6 +118,9 @@ void DatabaseDataLake::validateSettings()
 
 std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
 {
+    if (settings[DatabaseDataLakeSetting::catalog_type].value == DatabaseDataLakeCatalogType::NONE)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unspecified catalog type");
+
     if (catalog_impl)
         return catalog_impl;
 
@@ -297,7 +301,7 @@ std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfigur
             }
         }
         case DatabaseDataLakeCatalogType::NONE:
-            return nullptr;
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unspecified catalog type");
     }
 }
 
@@ -574,13 +578,9 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIterator(
 DatabaseTablesIteratorPtr DatabaseDataLake::getLightweightTablesIterator(
     ContextPtr context_,
     const FilterByNameFunction & filter_by_table_name,
-    bool skip_not_loaded,
-    bool skip_data_lake_catalog) const
+    bool skip_not_loaded) const
 {
     Tables tables;
-
-    if (skip_data_lake_catalog)
-        return std::make_unique<DatabaseTablesSnapshotIterator>(tables, getDatabaseName());
 
     auto catalog = getCatalog();
     DB::Names iceberg_tables;

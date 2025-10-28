@@ -2327,7 +2327,7 @@ static bool canSkipConversionToNullable(const MergeTreeDataPartPtr & part, const
         return false;
 
     auto serialization = part->getSerialization(command.column_name);
-    if (serialization->getKind() != ISerialization::Kind::DEFAULT)
+    if (serialization->getKindStack() != ISerialization::KindStack{ISerialization::Kind::DEFAULT})
         return false;
 
     return true;
