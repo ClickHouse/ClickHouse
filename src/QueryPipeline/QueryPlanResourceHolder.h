@@ -26,7 +26,6 @@ struct QueryPlanResourceHolder
 
     /// Custom move assignment does not destroy data from lhs. It appends data from rhs to lhs.
     QueryPlanResourceHolder & operator=(QueryPlanResourceHolder &&) noexcept;
-    QueryPlanResourceHolder & append(QueryPlanResourceHolder && rhs) noexcept;
     QueryPlanResourceHolder & append(const QueryPlanResourceHolder & rhs) noexcept;
 
     /// Some processors may implicitly use Context or temporary Storage created by Interpreter.
