@@ -380,7 +380,7 @@ SELECT count() FROM table WHERE hasAnyTokens(msg, tokens('a()d', 'splitByString'
 REGISTER_FUNCTION(HasAllTokens)
 {
     FunctionDocumentation::Description description_hasAllTokens = R"(
-Like [`hasAnyTokens`](#hasanytokens), but returns 1, if all tokens in the `needle` string or array match the `input` string, and 0 otherwise. If `input` is a column, returns all rows that satisfy this condition.
+Like [`hasAnyTokens`](#hasAnyTokens), but returns 1, if all tokens in the `needle` string or array match the `input` string, and 0 otherwise. If `input` is a column, returns all rows that satisfy this condition.
 
 :::note
 Column `input` should have a [text index](../../engines/table-engines/mergetree-family/invertedindexes) defined for optimal performance.
