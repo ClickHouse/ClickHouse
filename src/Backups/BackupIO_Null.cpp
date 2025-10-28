@@ -76,7 +76,7 @@ std::unique_ptr<ReadBuffer> BackupWriterNull::readFile(const String & file_name,
     throw Exception(ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "Backup entry {} not found (Null backup is always empty)", file_name);
 }
 
-bool BackupWriterNull::fileContentsEqual(const String & file_name, const String & /* expected_file_contents */)
+bool BackupWriterNull::fileContentsEqual(const String & file_name, const String & /* expected_file_contents */, String & /* actual_file_contents */)
 {
     if (fs::path{file_name}.filename() == ".lock")
         return true; /// To pass the check for the ".lock" file in BackupImpl::checkLockFile().

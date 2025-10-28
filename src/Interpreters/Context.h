@@ -273,6 +273,9 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 struct StorageSnapshot;
 using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 
+/// IRuntimeFilterLookup allows to store and find per-query runtime filters under unique names.
+/// Runtime filters are used to optimize JOINs in some cases by building a bloom filter from the right side
+/// of the JOIN and use it to do early pre-filtering on the left side of the JOIN.
 struct IRuntimeFilterLookup;
 using RuntimeFilterLookupPtr = std::shared_ptr<IRuntimeFilterLookup>;
 RuntimeFilterLookupPtr createRuntimeFilterLookup();
@@ -540,12 +543,6 @@ protected:
 
     /// Used at query runtime to save per-query runtime filters and find them by names
     RuntimeFilterLookupPtr runtime_filter_lookup;
-
-    /// indicates how the query operates storage alias:
-    /// 0: operate on original storage
-    /// 1: operate on alias storage, for example, drop table ...
-    /// 2: throw exception on DDL, for example, alter table ... add column ...
-    uint8_t storage_alias_behaviour = 0;
 
 public:
     /// Some counters for current query execution.
@@ -1214,6 +1211,7 @@ public:
 
     UInt32 getZooKeeperSessionUptime() const;
     UInt64 getClientProtocolVersion() const;
+    void reconnectZooKeeper(const String & reason) const;
     void setClientProtocolVersion(UInt64 version);
 
 #if USE_NURAFT
@@ -1606,11 +1604,10 @@ public:
     void setPreparedSetsCache(const PreparedSetsCachePtr & cache);
     PreparedSetsCachePtr getPreparedSetsCache() const;
 
+    /// IRuntimeFilterLookup allows to store and find per-query runtime filters under unique names. Those are used
+    /// to optimize some JOINs by early pre-filtering left side of the JOIN by a filter built form the right side.
     void setRuntimeFilterLookup(const RuntimeFilterLookupPtr & filter_lookup);
     RuntimeFilterLookupPtr getRuntimeFilterLookup() const;
-
-    void setStorageAliasBehaviour(uint8_t storage_alias_behaviour_);
-    uint8_t getStorageAliasBehaviour() const;
 
     void setPartitionIdToMaxBlock(const UUID & table_uuid, PartitionIdToMaxBlockPtr partitions);
     PartitionIdToMaxBlockPtr getPartitionIdToMaxBlock(const UUID & table_uuid) const;
@@ -1683,6 +1680,8 @@ private:
     std::unordered_set<String> allowed_disks;
     /// Throttling
 public:
+    /// Does not hold the lock, should be called once at the startup.
+    void configureServerWideThrottling();
     ThrottlerPtr getReplicatedFetchesThrottler() const;
     ThrottlerPtr getReplicatedSendsThrottler() const;
 

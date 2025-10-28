@@ -59,12 +59,14 @@ Extracts the the top-level domain from a URL.
 
 :::note
 The URL can be specified with or without a protocol.
-For examples
+For example:
 
 ```text
 svn+ssh://some.svn-hosting.com:80/repo/trunk
 some.svn-hosting.com:80/repo/trunk
 https://clickhouse.com/time/
+```
+:::
     )";
     FunctionDocumentation::Syntax syntax_topLevelDomain = "topLevelDomain(url)";
     FunctionDocumentation::Arguments arguments_topLevelDomain = {
@@ -93,7 +95,7 @@ SELECT topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk');
     /// topLevelDomainRFC documentation
     FunctionDocumentation::Description description_topLevelDomainRFC = R"(
 Extracts the the top-level domain from a URL.
-Similar to [`topLevelDomain`](#topleveldomain), but conforms to [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986).
+Similar to [`topLevelDomain`](#topLevelDomain), but conforms to [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986).
     )";
     FunctionDocumentation::Syntax syntax_topLevelDomainRFC = "topLevelDomainRFC(url)";
     FunctionDocumentation::Arguments arguments_topLevelDomainRFC = {

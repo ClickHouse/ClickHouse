@@ -32,6 +32,7 @@
 #include <Common/DNSResolver.h>
 #include <Common/CgroupsMemoryUsageObserver.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/DimensionalMetrics.h>
 #include <Common/ISlotControl.h>
 #include <Common/Macros.h>
 #include <Common/ShellCommand.h>
@@ -369,6 +370,11 @@ namespace CurrentMetrics
     extern const Metric MaxPushedDDLEntryID;
     extern const Metric StartupScriptsExecutionState;
     extern const Metric IsServerShuttingDown;
+}
+
+namespace DimensionalMetrics
+{
+    extern MetricFamily & StartupScriptsFailureReason;
 }
 
 namespace ProfileEvents
@@ -940,12 +946,9 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
     }
     catch (...)
     {
-        static DimensionalMetrics::MetricFamily & startup_scripts_failure_reason = DimensionalMetrics::Factory::instance().registerMetric(
-            "startup_scripts_failure_reason",
-            "Indicates startup scripts failures by error type. Set to 1 when a startup script fails, labelled with the error name.",
-            {"error_name"}
-        );
-        startup_scripts_failure_reason.withLabels({String(ErrorCodes::getName(getCurrentExceptionCode()))}).set(1.0);
+        DimensionalMetrics::set(
+            DimensionalMetrics::StartupScriptsFailureReason, {String(ErrorCodes::getName(getCurrentExceptionCode()))}, 1.0);
+
         CurrentMetrics::set(CurrentMetrics::StartupScriptsExecutionState, StartupScriptsExecutionState::Failure);
         tryLogCurrentException(log, "Failed to parse startup scripts file");
         if (config.getBool("startup_scripts.throw_on_error", false))
@@ -1025,23 +1028,67 @@ try
 #endif
 
     Stopwatch startup_watch;
-
     Poco::Logger * log = &logger();
 
-    // If the startupLevel is set in the config, we override the root logger level.
+#if defined(OS_LINUX)
+    std::string executable_path = getExecutablePath();
+    /// Remap before creating other threads to prevent crashes
+    if (config().getBool("remap_executable", false))
+    {
+        LOG_DEBUG(log, "Will remap executable in memory.");
+        size_t size = remapExecutable();
+        LOG_DEBUG(log, "The code ({}) in memory has been successfully remapped.", ReadableSize(size));
+    }
+
+    if (config().getBool("mlock_executable", false))
+    {
+        if (hasLinuxCapability(CAP_IPC_LOCK))
+        {
+            try
+            {
+                /// Get the memory area with (current) code segment.
+                /// It's better to lock only the code segment instead of calling "mlockall",
+                /// because otherwise debug info will be also locked in memory, and it can be huge.
+                auto [addr, len] = getMappedArea(reinterpret_cast<void *>(mainEntryClickHouseServer));
+
+                LOG_TRACE(log, "Will do mlock to prevent executable memory from being paged out. It may take a few seconds.");
+                if (0 != mlock(addr, len))
+                    LOG_WARNING(log, "Failed mlock: {}", errnoToString());
+                else
+                    LOG_TRACE(log, "The memory map of clickhouse executable has been mlock'ed, total {}", ReadableSize(len));
+            }
+            catch (...)
+            {
+                LOG_WARNING(log, "Cannot mlock: {}", getCurrentExceptionMessage(false));
+            }
+        }
+        else
+        {
+            LOG_INFO(
+                log,
+                "It looks like the process has no CAP_IPC_LOCK capability, binary mlock will be disabled."
+                " It could happen due to incorrect ClickHouse package installation."
+                " You could resolve the problem manually with 'sudo setcap cap_ipc_lock=+ep {}'."
+                " Note that it will not work on 'nosuid' mounted filesystems.",
+                executable_path.empty() ? "/usr/bin/clickhouse" : executable_path);
+        }
+    }
+#endif
+
+    // If the startup_level is set in the config, we override the root logger level.
     // Specific loggers can still override it.
     std::string default_logger_level_config = config().getString("logger.level", "");
     bool should_restore_default_logger_level = false;
-    if (config().has("logger.startupLevel") && !config().getString("logger.startupLevel").empty())
+    if (config().has("logger.startup_level") && !config().getString("logger.startup_level").empty())
     {
         /// Set the root logger level to the startup level.
         /// This is useful for debugging startup issues.
         /// The root logger level will be reset to the default level after the server is fully initialized.
-        config().setString("logger.level", config().getString("logger.startupLevel"));
+        config().setString("logger.level", config().getString("logger.startup_level"));
         Loggers::updateLevels(config(), logger());
         should_restore_default_logger_level = true;
 
-        LOG_INFO(log, "Starting root logger in level {}", config().getString("logger.startupLevel"));
+        LOG_INFO(log, "Starting root logger in level {}", config().getString("logger.startup_level"));
     }
 
     MainThreadStatus::getInstance();
@@ -1485,10 +1532,9 @@ try
 
     /// We need to reload server settings because config could be updated via zookeeper.
     server_settings.loadSettingsFromConfig(config());
+    global_context->configureServerWideThrottling();
 
 #if defined(OS_LINUX)
-    std::string executable_path = getExecutablePath();
-
     if (server_settings[ServerSetting::skip_binary_checksum_checks])
     {
         LOG_WARNING(log, "Binary checksum checks disabled due to skip_binary_checksum_checks - not recommended for production deployments");
@@ -1544,49 +1590,6 @@ try
                         stored_binary_hash,
                         executable_path);
                 }
-            }
-        }
-    }
-    else
-        executable_path = "/usr/bin/clickhouse";    /// It is used for information messages.
-
-    /// After full config loaded
-    {
-        if (config().getBool("remap_executable", false))
-        {
-            LOG_DEBUG(log, "Will remap executable in memory.");
-            size_t size = remapExecutable();
-            LOG_DEBUG(log, "The code ({}) in memory has been successfully remapped.", ReadableSize(size));
-        }
-
-        if (config().getBool("mlock_executable", false))
-        {
-            if (hasLinuxCapability(CAP_IPC_LOCK))
-            {
-                try
-                {
-                    /// Get the memory area with (current) code segment.
-                    /// It's better to lock only the code segment instead of calling "mlockall",
-                    /// because otherwise debug info will be also locked in memory, and it can be huge.
-                    auto [addr, len] = getMappedArea(reinterpret_cast<void *>(mainEntryClickHouseServer));
-
-                    LOG_TRACE(log, "Will do mlock to prevent executable memory from being paged out. It may take a few seconds.");
-                    if (0 != mlock(addr, len))
-                        LOG_WARNING(log, "Failed mlock: {}", errnoToString());
-                    else
-                        LOG_TRACE(log, "The memory map of clickhouse executable has been mlock'ed, total {}", ReadableSize(len));
-                }
-                catch (...)
-                {
-                    LOG_WARNING(log, "Cannot mlock: {}", getCurrentExceptionMessage(false));
-                }
-            }
-            else
-            {
-                LOG_INFO(log, "It looks like the process has no CAP_IPC_LOCK capability, binary mlock will be disabled."
-                    " It could happen due to incorrect ClickHouse package installation."
-                    " You could resolve the problem manually with 'sudo setcap cap_ipc_lock=+ep {}'."
-                    " Note that it will not work on 'nosuid' mounted filesystems.", executable_path);
             }
         }
     }
@@ -2183,6 +2186,9 @@ try
                 global_context->getResourceManager()->updateConfiguration(*config);
             }
 
+            /// Load WORKLOADs and RESOURCEs.
+            global_context->getWorkloadEntityStorage().loadEntities(*config);
+
             if (!initial_loading)
             {
                 /// We do not load ZooKeeper configuration on the first config loading
@@ -2627,8 +2633,6 @@ try
         database_catalog.assertDatabaseExists(default_database);
         /// Load user-defined SQL functions.
         global_context->getUserDefinedSQLObjectsStorage().loadObjects();
-        /// Load WORKLOADs and RESOURCEs.
-        global_context->getWorkloadEntityStorage().loadEntities();
 
         global_context->getRefreshSet().setRefreshesStopped(false);
     }
@@ -2813,14 +2817,14 @@ try
 #endif
 
         SCOPE_EXIT_SAFE({
-            if (config().has("logger.shutdownLevel") && !config().getString("logger.shutdownLevel").empty())
+            if (config().has("logger.shutdown_level") && !config().getString("logger.shutdown_level").empty())
             {
                 /// Set the root logger level to the shutdown level.
                 /// This is useful for debugging shutdown issues.
-                config().setString("logger.level", config().getString("logger.shutdownLevel"));
+                config().setString("logger.level", config().getString("logger.shutdown_level"));
                 Loggers::updateLevels(config(), logger());
 
-                LOG_INFO(log, "Set root logger in level {} before shutdown", config().getString("logger.shutdownLevel"));
+                LOG_INFO(log, "Set root logger in level {} before shutdown", config().getString("logger.shutdown_level"));
             }
             LOG_DEBUG(log, "Received termination signal.");
 
@@ -2877,11 +2881,11 @@ try
             else
                 LOG_INFO(log, "Closed connections.");
 
-            global_context->getRefreshSet().joinBackgroundTasks(wait_start + std::chrono::milliseconds(wait_limit_seconds * 1000));
+            bool joined_refresh_tasks = global_context->getRefreshSet().joinBackgroundTasks(wait_start + std::chrono::milliseconds(wait_limit_seconds * 1000));
 
             dns_cache_updater.reset();
 
-            if (current_connections)
+            if (current_connections || !joined_refresh_tasks)
             {
                 /// There is no better way to force connections to close in Poco.
                 /// Otherwise connection handlers will continue to live
