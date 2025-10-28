@@ -2,7 +2,6 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnReplicated.h>
 #include <Common/WeakHash.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -18,8 +17,6 @@ std::atomic<UInt64> ColumnReplicated::global_id_counter = 0;
 ColumnReplicated::ColumnReplicated(MutableColumnPtr && nested_column_)
     : nested_column(std::move(nested_column_)), id(global_id_counter.fetch_add(1))
 {
-    LOG_DEBUG(getLogger("ColumnReplicated"), "Create over {}", nested_column->getName());
-
     indexes.insertIndexesRange(0, nested_column->size());
 }
 
@@ -28,7 +25,6 @@ ColumnReplicated::ColumnReplicated(MutableColumnPtr && nested_column_, MutableCo
     , indexes(std::move(indexes_))
     , id(global_id_counter.fetch_add(1))
 {
-    LOG_DEBUG(getLogger("ColumnReplicated"), "Create over {}", nested_column->getName());
 }
 
 ColumnReplicated::ColumnReplicated(MutableColumnPtr && nested_column_, ColumnIndex && indexes_)
@@ -36,7 +32,6 @@ ColumnReplicated::ColumnReplicated(MutableColumnPtr && nested_column_, ColumnInd
     , indexes(std::move(indexes_))
     , id(global_id_counter.fetch_add(1))
 {
-    LOG_DEBUG(getLogger("ColumnReplicated"), "Create over {}", nested_column->getName());
 }
 
 MutableColumnPtr ColumnReplicated::cloneResized(size_t new_size) const
@@ -129,7 +124,6 @@ StringRef ColumnReplicated::getDataAt(size_t n) const
 
 ColumnPtr ColumnReplicated::convertToFullColumnIfReplicated() const
 {
-    LOG_DEBUG(getLogger("ColumnReplicated"), "Convert to full {}", nested_column->getName());
     return nested_column->index(*indexes.getIndexes(), 0);
 }
 
