@@ -2,7 +2,7 @@ from praktika import Workflow
 
 from ci.defs.defs import BASE_BRANCH, DOCKERS, SECRETS, ArtifactConfigs, JobNames
 from ci.defs.job_configs import JobConfigs
-from ci.jobs.scripts.workflow_hooks.filter_job import should_skip_job
+from ci.jobs.scripts.workflow_hooks.filter_job import should_skip_job, is_a_release_pr
 from ci.jobs.scripts.workflow_hooks.trusted import can_be_trusted
 
 FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES = [
@@ -132,7 +132,7 @@ workflow = Workflow.Config(
         # "python3 ./ci/jobs/scripts/workflow_hooks/quick_sync.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/team_notifications.py",
     ],
-    workflow_filter_hooks=[should_skip_job],
+    workflow_filter_hooks=[should_skip_job, is_a_release_pr],
     post_hooks=[
         "python3 ./ci/jobs/scripts/workflow_hooks/feature_docs.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/new_tests_check.py",

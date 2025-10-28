@@ -49,7 +49,7 @@ FUNCTIONAL_TEST_FLAKY_CHECK_JOBS = [
 _info_cache = None
 
 
-def should_skip_job(job_name):
+def should_skip_job(job_name: str) -> tuple[bool, str]:
     global _info_cache
     if _info_cache is None:
         _info_cache = Info()
@@ -167,4 +167,9 @@ def should_skip_job(job_name):
             return False, ""
         return True, "Skipped, not labeled with 'pr-performance'"
 
+    return False, ""
+
+def is_a_release_pr(job_name: str) -> tuple[bool, str]:
+    if Labels.RELEASE in _info_cache.pr_labels:
+        return True, "Skipped for the release branch"
     return False, ""
