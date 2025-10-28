@@ -142,7 +142,7 @@ ECT 1
 , expected One of: SHOW TABLES, SHOW DATABASES, SELECT, INSERT, CREATE, ATTACH, RENAME, DROP, DETACH, USE, SET, OPTIMIZE., e.what() = DB::Exception
 ```
 
-By default, data is returned in the [`TabSeparated`](formats.md#tabseparated) format.
+By default, data is returned in the [`TabSeparated`](/interfaces/formats/TabSeparated) format.
 
 The `FORMAT` clause is used in the query to request any other format. For example:
 

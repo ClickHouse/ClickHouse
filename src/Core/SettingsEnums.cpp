@@ -369,6 +369,12 @@ IMPLEMENT_SETTING_ENUM(
      {"none", SearchOrphanedPartsDisks::NONE}})
 
 IMPLEMENT_SETTING_ENUM(
+    DecorrelationJoinKind,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"left", DecorrelationJoinKind::LEFT},
+     {"right", DecorrelationJoinKind::RIGHT}})
+
+IMPLEMENT_SETTING_ENUM(
     IcebergMetadataLogLevel,
     ErrorCodes::BAD_ARGUMENTS,
     {{"none", IcebergMetadataLogLevel::None},

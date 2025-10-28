@@ -1910,6 +1910,7 @@ static void buildIndexes(
     {
         std::vector<size_t> index_sizes;
         index_sizes.reserve(skip_indexes.useful_indices.size());
+
         for (const auto & part : parts)
         {
             auto & index_order = skip_indexes.per_part_index_orders.emplace_back();
@@ -1921,7 +1922,7 @@ static void buildIndexes(
             for (const auto & idx : skip_indexes.useful_indices)
             {
                 size_t index_size = 0;
-                auto format = idx.index->getDeserializedFormat(part.data_part->getDataPartStorage(), idx.index->getFileName());
+                auto format = idx.index->getDeserializedFormat(part.data_part->checksums, idx.index->getFileName());
 
                 for (const auto & substream : format.substreams)
                     index_size += part.data_part->getFileSizeOrZero(idx.index->getFileName() + substream.suffix + substream.extension);
@@ -2609,7 +2610,27 @@ Pipe ReadFromMergeTree::groupStreamsByPartition(
 
 QueryPlanStepPtr ReadFromMergeTree::clone() const
 {
-    return std::make_unique<ReadFromMergeTree>(*this);
+    AnalysisResultPtr analysis_result_copy;
+    if (analyzed_result_ptr)
+        analysis_result_copy = std::make_shared<AnalysisResult>(*analyzed_result_ptr);
+
+    return std::make_unique<ReadFromMergeTree>(
+        prepared_parts,
+        mutations_snapshot,
+        all_column_names,
+        data,
+        query_info,
+        storage_snapshot,
+        context,
+        block_size.max_block_size_rows,
+        requested_num_streams,
+        max_block_numbers_to_read,
+        log,
+        std::move(analysis_result_copy),
+        is_parallel_reading_from_replicas,
+        all_ranges_callback,
+        read_task_callback,
+        number_of_current_replica);
 }
 
 bool ReadFromMergeTree::supportsSkipIndexesOnDataRead() const

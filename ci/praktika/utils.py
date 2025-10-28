@@ -771,6 +771,20 @@ class Utils:
                 verbose=True,
                 strict=not no_strict,
             )
+        elif path.endswith(".gz"):
+            path_to = path_to or path.removesuffix(".gz")
+
+            # Ensure gzip is installed
+            if not Shell.check("which gzip", verbose=True, strict=not no_strict):
+                print("ERROR: gzip is not installed. Cannot decompress artifact.")
+                return False
+
+            # Perform decompression (decompress to stdout and redirect to file)
+            res = Shell.check(
+                f"gzip --decompress --stdout {quote(path)} > {quote(path_to)}",
+                verbose=True,
+                strict=not no_strict,
+            )
         else:
             raise NotImplementedError(
                 f"Decompression for file type not supported: {path}"
