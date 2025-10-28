@@ -141,6 +141,7 @@ namespace Setting
     extern const SettingsBool restore_replace_external_engines_to_null;
     extern const SettingsBool restore_replace_external_table_functions_to_null;
     extern const SettingsBool restore_replace_external_dictionary_source_to_null;
+    extern const SettingsUInt64 max_subcolumns;
 }
 
 namespace ServerSetting
@@ -2015,18 +2016,22 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                         "because such tables do not store any data on disk. Use CREATE instead.", res->getName());
 
     if (res->storesDataOnDisk())
+    {
         /// Check sub columns limit
+        unsigned max_subcolumns = static_cast<unsigned>(getContext()->getSettingsRef()[Setting::max_subcolumns]);
         auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns();
         NamesAndTypesList columns = properties.columns.get(get_column_options);
-        auto subcolumn_count = 0;
+        
+        unsigned subcolumn_count = 0;
         for (const auto & column : columns)
             if (column.isSubcolumn())
                 subcolumn_count++;
-
-        throw Exception(ErrorCodes::TOO_MANY_SUBCOLUMNS,
-                                "Too many subcolumns {}. "
-                                "The limit (server configuration parameter `{}`) is set to {}, the current number is {}",
-                                entity_name, setting_name, num_limit, attached_count);
+        
+        if (subcolumn_count > max_subcolumns)
+            throw Exception(ErrorCodes::TOO_MANY_SUBCOLUMNS,
+                                    "Too many subcolumns. The limit is set to {}, the current number is {}",
+                                    max_subcolumns, max_subcolumns);
+    }
 
     auto * replicated_storage = typeid_cast<StorageReplicatedMergeTree *>(res.get());
     if (replicated_storage)
