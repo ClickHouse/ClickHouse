@@ -286,19 +286,29 @@ ObjectStorageQueueSource::FileIterator::next()
                         }
                         else
                         {
-                            String data;
-                            for (const auto & path : processing_paths)
+                            auto processing_paths_responses = zk_client->tryGet(processing_paths);
+                            for (size_t i = 0; i < processing_paths_responses.size(); ++i)
                             {
-                                if (!zk_client->tryGet(path, data))
+                                const auto & response = processing_paths_responses[i];
+                                if (response.error == Coordination::Error::ZNONODE)
                                 {
-                                    LOG_TEST(log, "Path {} does not exist", path);
+                                    LOG_TEST(log, "Path {} does not exist", processing_paths[i]);
                                     failed = true;
                                     break;
                                 }
-
-                                LOG_TEST(log, "Having {}, current processor: {}", data, processor_info);
-                                if (data != processor_info)
+                                if (response.error == Coordination::Error::ZOK)
                                 {
+                                    LOG_TEST(log, "Having {}, current processor: {}", response.data, processor_info);
+                                    if (response.data != processor_info)
+                                    {
+                                        failed = true;
+                                        break;
+                                    }
+                                }
+                                else
+                                {
+                                    LOG_WARNING(log, "Unexpected error: {}, path: {}", response.error, processing_paths[i]);
+                                    chassert(false);
                                     failed = true;
                                     break;
                                 }
