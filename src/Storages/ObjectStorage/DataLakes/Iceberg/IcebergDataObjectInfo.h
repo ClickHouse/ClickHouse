@@ -1,4 +1,5 @@
 #pragma once
+#include <IO/VarInt.h>
 #include "config.h"
 
 #if USE_AVRO
@@ -6,6 +7,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 
+#include <Storages/ObjectStorage/DataLakes/Iceberg/EqualityDeleteObject.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteObject.h>
 #include <base/defines.h>
@@ -15,6 +17,7 @@ namespace DB
 {
 struct IcebergDataObjectInfo : public RelativePathWithMetadata, std::enable_shared_from_this<IcebergDataObjectInfo>
 {
+    static constexpr auto CURRENT_SERDE_VERSION = 1;
     using IcebergDataObjectInfoPtr = std::shared_ptr<IcebergDataObjectInfo>;
 
     /// Full path to the data object file
@@ -38,16 +41,26 @@ struct IcebergDataObjectInfo : public RelativePathWithMetadata, std::enable_shar
 
     void addEqualityDeleteObject(const Iceberg::ManifestFileEntry & equality_delete_object)
     {
-        equality_deletes_objects.emplace_back(equality_delete_object);
+        equality_deletes_objects.emplace_back(
+            equality_delete_object.file_path,
+            equality_delete_object.file_format,
+            equality_delete_object.equality_ids,
+            equality_delete_object.schema_id);
     }
 
     String data_object_file_path_key; // Full path to the data object file
     Int32 underlying_format_read_schema_id;
     Int32 schema_id_relevant_to_iterator;
     std::vector<Iceberg::PositionDeleteObject> position_deletes_objects;
-    std::vector<Iceberg::ManifestFileEntry> equality_deletes_objects;
+    std::vector<Iceberg::EqualityDeleteObject> equality_deletes_objects;
     Int64 sequence_number;
     String file_format;
+
+    void serialize(WriteBuffer & out) const { 
+        writeVarUInt(CURRENT_SERDE_VERSION, out); 
+        write 
+    }
+    void deserialize(ReadBuffer & in);
 };
 
 using IcebergDataObjectInfoPtr = std::shared_ptr<IcebergDataObjectInfo>;

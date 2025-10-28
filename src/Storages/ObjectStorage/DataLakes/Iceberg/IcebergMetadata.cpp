@@ -893,7 +893,7 @@ void IcebergMetadata::addDeleteTransformers(
     }
     const auto & delete_files = iceberg_object_info->equality_deletes_objects;
     LOG_DEBUG(log, "Constructing filter transform for equality delete, there are {} delete files", delete_files.size());
-    for (const ManifestFileEntry & delete_file : delete_files)
+    for (const EqualityDeleteObject & delete_file : delete_files)
     {
         auto simple_transform_adder = [&](const SharedHeader & header)
         {
