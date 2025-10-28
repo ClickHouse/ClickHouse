@@ -24,5 +24,5 @@ $CLICKHOUSE_CLIENT --query-id="$query_id" -q "SELECT 1 FORMAT Null;"
 $CLICKHOUSE_CLIENT -q """
     SYSTEM INSTRUMENT REMOVE ALL;
     SYSTEM FLUSH LOGS system.xray_instrumentation_profiling_log;
-    SELECT count() >= 1 FROM system.xray_instrumentation_profiling_log WHERE event_date >= yesterday() AND query_id = '$query_id' AND name = 'QueryMetricLog::startQuery';
+    SELECT count() >= 1 FROM system.xray_instrumentation_profiling_log WHERE event_date >= yesterday() AND query_id = '$query_id' AND function_name = 'QueryMetricLog::startQuery';
 """

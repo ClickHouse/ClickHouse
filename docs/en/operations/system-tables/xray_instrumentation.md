@@ -17,7 +17,7 @@ Contains the instrumentation points using LLVM's XRay feature.
 Columns:
 - `id` ([UInt32](../../sql-reference/data-types/int-uint.md)) — ID of the instrumentation point.
 - `function_id` ([Int32](../../sql-reference/data-types/int-uint.md)) — ID assigned to the function in the `xray_instr_map` section of the ELF binary.
-- `function_name` ([String](../../sql-reference/data-types/string.md)) — Name of the instrumented function.
+- `function_name` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Name of the instrumented function.
 - `handler` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Handler type.
 - `entry_type` ([LowCardinality(Nullable(String))](../../sql-reference/data-types/string.md)) — Entry type: Null, `ENTRY` or `EXIT`.
 - `parameters` ([Dynamic](../../sql-reference/data-types/dynamic.md)) — Parameters for the handler call.

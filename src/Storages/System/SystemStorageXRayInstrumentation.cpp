@@ -24,7 +24,7 @@ ColumnsDescription SystemStorageXRayInstrumentation::getColumnsDescription()
     {
         {"id", std::make_shared<DataTypeUInt32>(), "ID of the instrumentation point"},
         {"function_id", std::make_shared<DataTypeInt32>(), "ID assigned to the function in xray_instr_map section of elf-binary."},
-        {"function_name", std::make_shared<DataTypeString>(), "Name of the instrumented function."},
+        {"function_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Name of the instrumented function."},
         {"handler", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Handler that was patched into instrumentation points of the function."},
         {"entry_type", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())), "Entry type for the patch."},
         {"parameters", std::make_shared<DataTypeDynamic>(), "Parameters for the handler call."},
@@ -38,8 +38,8 @@ void SystemStorageXRayInstrumentation::fillData(MutableColumns & res_columns, Co
 
     size_t column_index = 0;
     auto & column_id = assert_cast<ColumnUInt32 &>(*res_columns[column_index++]).getData();
-    auto & column_function_id = assert_cast<ColumnInt32 &>(*res_columns[column_index++]).getData();
-    auto & column_function_name = assert_cast<ColumnString &>(*res_columns[column_index++]);
+    auto & column_function_id = assert_cast<ColumnInt32 &>(*res_columns[column_index++]);
+    auto & column_function_name = assert_cast<ColumnLowCardinality &>(*res_columns[column_index++]);
     auto & column_handler_name = assert_cast<ColumnLowCardinality &>(*res_columns[column_index++]);
     auto & column_entry_type = assert_cast<ColumnLowCardinality &>(*res_columns[column_index++]);
     auto & column_parameters = assert_cast<ColumnDynamic&>(*res_columns[column_index++]);
@@ -47,15 +47,12 @@ void SystemStorageXRayInstrumentation::fillData(MutableColumns & res_columns, Co
     auto add_row = [&](UInt32 id, Int32 function_id, const String & function_name, const String & handler_name, std::optional<XRayEntryType> entry_type, std::optional<std::vector<XRayInstrumentationManager::InstrumentedParameter>> parameters)
     {
         column_id.push_back(id);
-        column_function_id.push_back(function_id);
-        column_function_name.insertData(function_name.data(), function_name.size());
-        column_handler_name.insertData(handler_name.data(), handler_name.size());
+        column_function_id.insert(function_id);
+        column_function_name.insert(function_name);
+        column_handler_name.insert(handler_name);
 
         if (entry_type.has_value())
-        {
-            const String entry_type_string = entry_type == XRayEntryType::ENTRY ? "entry" : "exit";
-            column_entry_type.insertData(entry_type_string.data(), entry_type_string.size());
-        }
+            column_entry_type.insert(entry_type == XRayEntryType::ENTRY ? "entry" : "exit");
         else
             column_entry_type.insert(Field());
 
