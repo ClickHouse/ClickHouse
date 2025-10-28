@@ -978,16 +978,25 @@ void MergeTreeData::checkProperties(
 
         for (const auto & index : new_metadata.secondary_indices)
         {
-            if (!allow_suspicious_indices && !attach)
+            try
             {
-                const auto * index_ast = typeid_cast<const ASTIndexDeclaration *>(index.definition_ast.get());
-                ASTPtr index_expression = index_ast ? index_ast->getExpression() : nullptr;
-                const auto * index_expression_ptr = index_expression ? typeid_cast<const ASTFunction *>(index_expression.get()) : nullptr;
-                if (index_expression_ptr)
-                    checkSuspiciousIndices(index_expression_ptr);
-            }
+                if (!allow_suspicious_indices && !attach)
+                {
+                    const auto * index_ast = typeid_cast<const ASTIndexDeclaration *>(index.definition_ast.get());
+                    ASTPtr index_expression = index_ast ? index_ast->getExpression() : nullptr;
+                    const auto * index_expression_ptr
+                        = index_expression ? typeid_cast<const ASTFunction *>(index_expression.get()) : nullptr;
+                    if (index_expression_ptr)
+                        checkSuspiciousIndices(index_expression_ptr);
+                }
 
-            MergeTreeIndexFactory::instance().validate(index, attach);
+                MergeTreeIndexFactory::instance().validate(index, attach);
+            }
+            catch (Exception & e)
+            {
+                e.addMessage("When validating secondary index {}", backQuote(index.name));
+                throw;
+            }
 
             if (indices_names.contains(index.name))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Index with name {} already exists", backQuote(index.name));
