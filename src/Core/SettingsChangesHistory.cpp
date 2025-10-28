@@ -43,6 +43,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"correlated_subqueries_default_join_kind", "left", "right", "New setting. Default join kind for decorrelated query plan."},
             {"use_statistics_cache", 0, 0, "New setting"},
+            {"max_projection_rows_to_use_projection_index", 1'000'000, 1'000'000, "New setting"},
+            {"min_table_rows_to_use_projection_index", 1'000'000, 1'000'000, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.10",
         {
@@ -76,8 +78,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_use_logical_join_step", true, true, "Added alias"},
             {"schema_inference_make_columns_nullable", 1, 3, "Take nullability information from Parquet/ORC/Arrow metadata by default, instead of making everything nullable."},
             {"materialized_views_squash_parallel_inserts", false, true, "Added setting to preserve old behavior if needed."},
-            {"max_projection_rows_to_use_projection_index", 1'000'000, 1'000'000, "New setting"},
-            {"min_table_rows_to_use_projection_index", 1'000'000, 1'000'000, "New setting"},
             {"distributed_cache_connect_timeout_ms", 50, 50, "New setting"},
             {"distributed_cache_receive_timeout_ms", 3000, 3000, "New setting"},
             {"distributed_cache_send_timeout_ms", 3000, 3000, "New setting"},
