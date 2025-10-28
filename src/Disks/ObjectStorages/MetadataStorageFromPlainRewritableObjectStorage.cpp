@@ -268,10 +268,7 @@ MetadataStorageFromPlainRewritableObjectStorage::MetadataStorageFromPlainRewrita
 
 bool MetadataStorageFromPlainRewritableObjectStorage::existsFileOrDirectory(const std::string & path) const
 {
-    if (existsDirectory(path))
-        return true;
-
-    return getObjectMetadataEntryWithCache(path) != nullptr;
+    return existsDirectory(path) || existsFile(path);
 }
 
 bool MetadataStorageFromPlainRewritableObjectStorage::supportsPartitionCommand(const PartitionCommand & command) const
@@ -283,7 +280,8 @@ bool MetadataStorageFromPlainRewritableObjectStorage::supportsPartitionCommand(c
 
 bool MetadataStorageFromPlainRewritableObjectStorage::existsFile(const std::string & path) const
 {
-    if (existsDirectory(path))
+    auto [exists, remote_info] = fs_tree->existsDirectory(fs::path(path).parent_path());
+    if (!exists || !remote_info.has_value())
         return false;
 
     return getObjectMetadataEntryWithCache(path) != nullptr;

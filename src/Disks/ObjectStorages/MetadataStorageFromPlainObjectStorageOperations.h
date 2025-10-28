@@ -17,7 +17,10 @@ private:
     InMemoryDirectoryTree & fs_tree;
     ObjectStoragePtr object_storage;
     const std::string metadata_key_prefix;
-    const std::string object_key_prefix;
+    const bool recursive;
+
+    std::string object_key_prefix;
+    bool created_directory = false;
 
 public:
     MetadataStorageFromPlainObjectStorageCreateDirectoryOperation(
@@ -25,7 +28,8 @@ public:
         std::filesystem::path && path_,
         InMemoryDirectoryTree & fs_tree_,
         ObjectStoragePtr object_storage_,
-        const std::string & metadata_key_prefix_);
+        const std::string & metadata_key_prefix_,
+        bool recursive_);
 
     void execute() override;
     void undo() override;
@@ -163,6 +167,7 @@ private:
 
     bool moved_existing_source_file{false};
     bool moved_existing_target_file{false};
+    bool created_target_file{false};
     bool moved_file{false};
 
 public:

@@ -21,11 +21,11 @@ namespace ErrorCodes
 
 static std::filesystem::path normalizePath(std::string_view path)
 {
+    if (path.ends_with('/'))
+        path.remove_suffix(1);
+
     if (path.starts_with('/'))
         path.remove_prefix(1);
-
-    if (path.ends_with('/'))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid path '{}': Path should not ends with '/'", path);
 
     return std::filesystem::path(path);
 }
@@ -156,9 +156,6 @@ std::unordered_map<std::string, std::optional<DirectoryRemoteInfo>> InMemoryDire
     std::lock_guard guard(mutex);
     const auto normalized_path = normalizePath(path);
 
-    if (!walk(normalized_path))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' does not exist", normalized_path.string());
-
     std::unordered_map<std::string, std::optional<DirectoryRemoteInfo>> subtree_info;
     traverseSubtree(normalized_path, [&subtree_info](const std::string & node_path, const std::shared_ptr<INode> & node)
     {
@@ -191,6 +188,9 @@ void InMemoryDirectoryTree::unlinkTree(const std::string & path)
 
     if (!inode)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' does not exist", normalized_path.string());
+
+    if (inode->isVirtual())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' is virtual", normalized_path.string());
 
     traverseSubtree(normalized_path, [&](const std::string &, const std::shared_ptr<INode> & node) TSA_REQUIRES(mutex)
     {
@@ -244,7 +244,7 @@ std::vector<std::string> InMemoryDirectoryTree::listDirectory(const std::string 
     const auto inode = walk(normalized_path);
 
     if (!inode)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' does not exist", normalized_path.string());
+        return {};
 
     std::vector<std::string> result;
     result.append_range(inode->subdirectories | std::views::keys);
@@ -277,7 +277,7 @@ bool InMemoryDirectoryTree::existsFile(const std::string & path) const
     const auto inode = walk(normalized_path.parent_path());
 
     if (!inode)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' does not exist", normalized_path.string());
+        return false;
 
     if (inode->isVirtual())
         return false;

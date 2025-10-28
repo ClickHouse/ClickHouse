@@ -26,11 +26,12 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
     extern const int FILE_ALREADY_EXISTS;
     extern const int DIRECTORY_DOESNT_EXIST;
-    extern const int FILE_ALREADY_EXISTS;
+    extern const int DIRECTORY_ALREADY_EXISTS;
     extern const int INCORRECT_DATA;
     extern const int FAULT_INJECTED;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_RMDIR;
+    extern const int CANNOT_CREATE_DIRECTORY;
 };
 
 namespace FailPoints
@@ -59,12 +60,13 @@ MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::MetadataStorageFr
     std::filesystem::path && path_,
     InMemoryDirectoryTree & fs_tree_,
     ObjectStoragePtr object_storage_,
-    const std::string & metadata_key_prefix_)
+    const std::string & metadata_key_prefix_,
+    bool recursive_)
     : path(std::move(path_))
     , fs_tree(fs_tree_)
     , object_storage(object_storage_)
     , metadata_key_prefix(metadata_key_prefix_)
-    , object_key_prefix(object_storage->generateObjectKeyPrefixForDirectoryPath(path, "" /* object_key_prefix */).serialize())
+    , recursive(recursive_)
 {
     chassert(path.empty() || path.string().ends_with('/'));
 }
@@ -74,6 +76,14 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute()
     if (fs_tree.existsDirectory(path).first)
         return;
 
+    if (fs_tree.existsFile(path))
+        throw Exception(ErrorCodes::CANNOT_CREATE_DIRECTORY, "File '{}' already exists", path.parent_path());
+
+    if (!recursive)
+        if (!fs_tree.existsDirectory(path.parent_path().parent_path()).first)
+            throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Directory '{}' does not exist", path.parent_path().parent_path());
+
+    object_key_prefix = object_storage->generateObjectKeyPrefixForDirectoryPath(path, "" /* object_key_prefix */).serialize();
     auto metadata_object_key = createMetadataObjectKey(object_key_prefix, metadata_key_prefix);
 
     LOG_TRACE(
@@ -101,13 +111,16 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute()
     ProfileEvents::increment(event);
     auto metadata = object_storage->getObjectMetadata(metadata_object.remote_path);
     fs_tree.recordDirectoryPath(path, DirectoryRemoteInfo{object_key_prefix, metadata.etag, metadata.last_modified.epochTime(), {}});
+    created_directory = true;
 }
 
 void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::undo()
 {
     LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageCreateDirectoryOperation"), "Reversing directory creation for path '{}'", path);
-    const auto base_path = path.parent_path();
-    fs_tree.unlinkTree(base_path);
+
+    if (created_directory)
+        fs_tree.unlinkTree(path);
+
     auto metadata_object_key = createMetadataObjectKey(object_key_prefix, metadata_key_prefix);
     object_storage->removeObjectIfExists(StoredObject(metadata_object_key.serialize(), path / PREFIX_PATH_FILE_NAME));
 }
@@ -136,6 +149,7 @@ std::unique_ptr<WriteBufferFromFileBase> MetadataStorageFromPlainObjectStorageMo
 
     if (expected_content)
     {
+        chassert(expected_content.value().ends_with('/'));
         LockMemoryExceptionInThread temporarily_lock_exceptions;
 
         std::string data;
@@ -189,12 +203,20 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::execute()
     constexpr bool validate_content = false;
 #endif
 
+    if (auto [exists, remote_info] = fs_tree.existsDirectory(path_from); !exists)
+        throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Directory '{}' does not exist", path_from);
+    else if (!remote_info.has_value())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' is virtual", path_from);
+
+    if (fs_tree.existsDirectory(path_to).first)
+        throw Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS, "Directory '{}' already exists", path_from);
+
     from_tree_info = fs_tree.getSubtreeRemoteInfo(path_from);
 
     for (const auto & [subdir, remote_info] : from_tree_info)
     {
-        auto sub_path_to = path_to / subdir;
-        auto sub_path_from = path_from / subdir;
+        auto sub_path_to = path_to / subdir / "";
+        auto sub_path_from = path_from / subdir / "";
 
         if (!remote_info.has_value())
         {
@@ -215,12 +237,13 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::undo()
 {
     LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageMoveDirectoryOperation"), "Reversing directory move from '{}' to '{}'", path_from, path_to);
 
-    fs_tree.moveDirectory(path_to, path_from);
+    if (fs_tree.existsDirectory(path_to).first)
+        fs_tree.moveDirectory(path_to, path_from);
 
     for (const auto & [subdir, remote_info] : from_tree_info)
     {
-        auto sub_path_to = path_to / subdir;
-        auto sub_path_from = path_from / subdir;
+        auto sub_path_to = path_to / subdir / "";
+        auto sub_path_from = path_from / subdir / "";
 
         if (!changed_paths.contains(sub_path_from))
             continue;
@@ -405,9 +428,7 @@ MetadataStorageFromPlainObjectStorageMoveFileOperation::MetadataStorageFromPlain
     ObjectStoragePtr object_storage_)
     : replaceable(replaceable_)
     , path_from(path_from_)
-    , remote_path_from(object_storage_->generateObjectKeyForPath(path_from_, std::nullopt).serialize())
     , path_to(path_to_)
-    , remote_path_to(object_storage_->generateObjectKeyForPath(path_to_, std::nullopt).serialize())
     , fs_tree(fs_tree_)
     , object_storage(object_storage_)
 {
@@ -423,16 +444,17 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
         path_to);
 
     if (!fs_tree.existsFile(path_from))
-        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Metadata object for the source path '{}' does not exist", path_from);
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File '{}' does not exist", path_from);
 
     if (auto [exists, remote_info] = fs_tree.existsDirectory(path_to.parent_path()); !exists)
         throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Directory '{}' does not exist", path_to.parent_path());
     else if (!remote_info.has_value())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' is virtual", path_to.parent_path());
 
+    remote_path_from = object_storage->generateObjectKeyForPath(path_from, std::nullopt).serialize();
+    remote_path_to = object_storage->generateObjectKeyForPath(path_to, std::nullopt).serialize();
     tmp_remote_path_from = object_storage->generateObjectKeyForPath(path_to.string() + "." + getRandomASCIIString(16) + ".tmp_move_from", std::nullopt).serialize();
     tmp_remote_path_to = object_storage->generateObjectKeyForPath(path_to.string() + "." + getRandomASCIIString(16) + ".tmp_move_to", std::nullopt).serialize();
-
     const auto read_settings = getReadSettingsForMetadata();
     const auto write_settings = getWriteSettingsForMetadata();
 
@@ -456,6 +478,7 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
     else
     {
         fs_tree.addFile(path_to);
+        created_target_file = true;
     }
 
     {
@@ -486,7 +509,8 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
 
 void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
 {
-    fs_tree.addFile(path_from);
+    if (moved_file)
+        fs_tree.addFile(path_from);
 
     const auto read_settings = getReadSettings();
     const auto write_settings = getWriteSettings();
@@ -524,7 +548,8 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
 
         object_storage->removeObjectIfExists(StoredObject(tmp_remote_path_to));
     }
-    else
+
+    if (created_target_file)
     {
         fs_tree.removeFile(path_to);
     }
@@ -564,11 +589,6 @@ MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::MetadataStorageFr
 
 void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::execute()
 {
-    if (auto [exists, remote_info] = fs_tree.existsDirectory(path); !exists)
-        throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Directory '{}' does not exist", path);
-    else if (!remote_info.has_value())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' is virtual", path);
-
     move_tried = true;
     move_to_tmp_op->execute();
 }

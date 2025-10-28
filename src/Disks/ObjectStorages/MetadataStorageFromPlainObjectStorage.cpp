@@ -301,13 +301,33 @@ void MetadataStorageFromPlainObjectStorageTransaction::createDirectory(const std
         std::move(normalized_path),
         *metadata_storage.getFsTree(),
         object_storage,
-        metadata_storage.getMetadataKeyPrefix());
+        metadata_storage.getMetadataKeyPrefix(),
+        /*recursive=*/false);
     operations.addOperation(std::move(op));
 }
 
 void MetadataStorageFromPlainObjectStorageTransaction::createDirectoryRecursive(const std::string & path)
 {
-    createDirectory(path);
+    if (metadata_storage.object_storage->isWriteOnce())
+        return;
+
+    auto normalized_path = normalizeDirectoryPath(path);
+    if (normalized_path.empty())
+    {
+        LOG_TRACE(
+            getLogger("MetadataStorageFromPlainObjectStorageTransaction"),
+            "Skipping creation of a directory '{}' with an empty normalized path",
+            path);
+        return;
+    }
+
+    auto op = std::make_unique<MetadataStorageFromPlainObjectStorageCreateDirectoryOperation>(
+        std::move(normalized_path),
+        *metadata_storage.getFsTree(),
+        object_storage,
+        metadata_storage.getMetadataKeyPrefix(),
+        /*recursive=*/true);
+    operations.addOperation(std::move(op));
 }
 
 void MetadataStorageFromPlainObjectStorageTransaction::moveDirectory(const std::string & path_from, const std::string & path_to)

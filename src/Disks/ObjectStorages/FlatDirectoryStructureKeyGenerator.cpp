@@ -31,7 +31,7 @@ ObjectStorageKey FlatDirectoryStructureKeyGenerator::generate(const String & pat
     {
         auto [exists_direcotory, remote_info] = tree_ptr->existsDirectory(fs_path);
         if (exists_direcotory && !remote_info)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' is virtual", path);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' is virtual", fs_path.string());
 
         if (exists_direcotory)
             return ObjectStorageKey::createAsRelative(prefix, remote_info->remote_path);
@@ -45,11 +45,11 @@ ObjectStorageKey FlatDirectoryStructureKeyGenerator::generate(const String & pat
         if (filename.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "File name is empty for path '{}'", fs_path.string());
 
-        auto [exists_direcotory, remote_info] = tree_ptr->existsDirectory(fs_path);
+        auto [exists_direcotory, remote_info] = tree_ptr->existsDirectory(directory);
         if (!exists_direcotory)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' does not exist", directory.string());
         else if (exists_direcotory && !remote_info)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' is virtual", path);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' is virtual", fs_path.string());
 
         return ObjectStorageKey::createAsRelative(prefix, fs::path(remote_info->remote_path) / filename);
     }
