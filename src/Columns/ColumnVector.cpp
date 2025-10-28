@@ -23,6 +23,7 @@
 #include <Common/assert_cast.h>
 #include <Common/findExtreme.h>
 #include <Common/iota.h>
+#include "Core/Defines.h"
 #include <DataTypes/FieldToDataType.h>
 
 #include <bit>
