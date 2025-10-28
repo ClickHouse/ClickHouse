@@ -1,5 +1,5 @@
 #include <Disks/ObjectStorages/FlatDirectoryStructureKeyGenerator.h>
-#include <Disks/ObjectStorages/InMemoryDirectoryPathMap.h>
+#include <Disks/ObjectStorages/InMemoryDirectoryTree.h>
 #include <Disks/ObjectStorages/MetadataStorageFromPlainRewritableObjectStorage.h>
 #include <Disks/ObjectStorages/ObjectStorageIterator.h>
 
@@ -86,13 +86,10 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load)
     /// 3. Checking if the value of `prefix.path` changed for any already existing directory
     ///    and apply the corresponding rename.
 
-    size_t num_dirs_found = 0;
-    size_t num_dirs_added = 0;
-    size_t num_dirs_removed = 0;
-
     std::set<std::string> set_of_remote_paths;
 
     bool has_metadata = object_storage->existsOrHasAnyChild(metadata_key_prefix);
+    std::unordered_map<std::string, DirectoryRemoteInfo> remote_layout;
 
     if (is_initial_load)
     {
@@ -112,6 +109,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load)
         if (!has_metadata)
         {
             LOG_DEBUG(log, "Loaded metadata (empty)");
+            tree->apply(std::move(remote_layout));
             return;
         }
     }
@@ -139,15 +137,15 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load)
             auto remote_path = rel_path.parent_path();
             set_of_remote_paths.insert(remote_path);
 
-            ++num_dirs_found;
-            if (path_map->existsRemotePathUnchanged(remote_path, file->metadata->etag))
+            if (auto directory_info = tree->lookupDirectoryIfNotChanged(remote_path, file->metadata->etag))
             {
                 /// Already loaded.
+                auto & [local_path, remote_info] = directory_info.value();
+                remote_layout[local_path] = std::move(remote_info);
                 continue;
             }
 
-            ++num_dirs_added;
-            runner([remote_metadata_path, remote_path, path, metadata = file->metadata, &log, &settings, this]
+            runner([remote_metadata_path, remote_path, path, metadata = file->metadata, &log, &settings, this, &remote_layout]
             {
                 setThreadName("PlainRWMetaLoad");
 
@@ -155,7 +153,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load)
                 String local_path;
                 /// Assuming that local and the object storage clocks are synchronized.
                 Poco::Timestamp last_modified = metadata->last_modified;
-                InMemoryDirectoryPathMap::FileNames files;
+                std::unordered_set<std::string> files;
 
                 try
                 {
@@ -223,9 +221,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load)
                     throw;
                 }
 
-                path_map->addOrReplacePath(
-                    fs::path(local_path).parent_path(),
-                    InMemoryDirectoryPathMap::RemotePathInfo{remote_path, metadata->etag, last_modified.epochTime(), std::move(files)});
+                remote_layout[local_path] = DirectoryRemoteInfo{remote_path, metadata->etag, last_modified.epochTime(), std::move(files)};
             });
         }
     }
@@ -237,14 +233,8 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load)
 
     runner.waitForAllToFinishAndRethrowFirstError();
 
-    /// Now check which paths have to be removed in memory.
-    num_dirs_removed = path_map->removeOutdatedPaths(set_of_remote_paths);
-
-    size_t num_dirs_in_memory = path_map->directoriesCount();
-
-    LOG_DEBUG(log, "Loaded metadata for {} directories ({} currently, {} added, {} removed)",
-        num_dirs_found, num_dirs_in_memory, num_dirs_added, num_dirs_removed);
-
+    LOG_DEBUG(log, "Loaded metadata for {} directories", remote_layout.size());
+    tree->apply(std::move(remote_layout));
     previous_refresh.restart();
 }
 
@@ -262,7 +252,7 @@ MetadataStorageFromPlainRewritableObjectStorage::MetadataStorageFromPlainRewrita
     ObjectStoragePtr object_storage_, String storage_path_prefix_, size_t object_metadata_cache_size)
     : MetadataStorageFromPlainObjectStorage(object_storage_, storage_path_prefix_, object_metadata_cache_size)
     , metadata_key_prefix(std::filesystem::path(object_storage->getCommonKeyPrefix()) / METADATA_PATH_TOKEN)
-    , path_map(std::make_shared<InMemoryDirectoryPathMap>(
+    , tree(std::make_shared<InMemoryDirectoryTree>(
         object_storage->getMetadataStorageMetrics().directory_map_size,
         object_storage->getMetadataStorageMetrics().file_count))
 {
@@ -304,32 +294,25 @@ bool MetadataStorageFromPlainRewritableObjectStorage::existsFile(const std::stri
 
 bool MetadataStorageFromPlainRewritableObjectStorage::existsDirectory(const std::string & path) const
 {
-    return path_map->getRemotePathInfoIfExists(path) != std::nullopt;
+    return tree->existsDirectory(path);
 }
 
 std::vector<std::string> MetadataStorageFromPlainRewritableObjectStorage::listDirectory(const std::string & path) const
 {
-    return getDirectChildrenOnDisk(fs::path(path) / "");
+    return tree->listDirectory(path);
 }
 
 std::optional<Poco::Timestamp> MetadataStorageFromPlainRewritableObjectStorage::getLastModifiedIfExists(const String & path) const
 {
     /// Path corresponds to a directory.
-    if (auto remote = path_map->getRemotePathInfoIfExists(path))
-        return Poco::Timestamp::fromEpochTime(remote->last_modified);
+    if (tree->existsDirectory(path))
+        return Poco::Timestamp::fromEpochTime(tree->getDirectoryRemoteInfo(path)->last_modified);
 
     /// A file.
     if (auto res = getObjectMetadataEntryWithCache(path))
         return Poco::Timestamp::fromEpochTime(res->last_modified);
-    return std::nullopt;
-}
 
-std::vector<std::string> MetadataStorageFromPlainRewritableObjectStorage::getDirectChildrenOnDisk(const fs::path & local_path) const
-{
-    std::vector<std::string> result;
-    result.append_range(path_map->listSubdirectories(local_path));
-    result.append_range(path_map->listFiles(local_path));
-    return result;
+    return std::nullopt;
 }
 
 }
