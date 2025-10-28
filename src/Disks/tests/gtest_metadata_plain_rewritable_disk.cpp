@@ -1,4 +1,5 @@
 #include <Disks/ObjectStorages/IMetadataStorage.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/ObjectStorages/Local/LocalObjectStorage.h>
 #include <Disks/ObjectStorages/MetadataStorageFromPlainRewritableObjectStorage.h>
 #include <Disks/ObjectStorages/createMetadataStorageMetrics.h>
@@ -39,6 +40,13 @@ public:
         return active_metadatas[key_prefix];
     }
 
+    std::shared_ptr<IMetadataStorage> restartMetadataStorage(const std::string & key_prefix)
+    {
+        std::unique_lock<std::mutex> lock(active_metadatas_mutex);
+        active_metadatas.at(key_prefix)->refresh(0);
+        return active_metadatas.at(key_prefix);
+    }
+
     std::shared_ptr<IObjectStorage> getObjectStorage(const std::string & key_prefix)
     {
         std::unique_lock<std::mutex> lock(active_metadatas_mutex);
@@ -66,6 +74,7 @@ private:
         EXPECT_EQ(metadata_storage_metrics.directory_map_size, CurrentMetrics::DiskPlainRewritableLocalDirectoryMapSize);
         EXPECT_EQ(metadata_storage_metrics.file_count, CurrentMetrics::DiskPlainRewritableLocalFileCount);
 
+        fs::remove_all("./" + key_prefix);
         LocalObjectStorageSettings settings("./" + key_prefix, /*read_only_=*/false);
         auto object_storage = std::make_shared<PlainRewritableObjectStorage<LocalObjectStorage>>(std::move(metadata_storage_metrics), std::move(settings));
         auto metadata_storage = std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, "", 0);
@@ -150,9 +159,25 @@ TEST_F(MetadataPlainRewritableDiskTest, Ls)
         tx->commit();
     }
 
-    /// This is a bug. Should be {A, B, C}
-    EXPECT_EQ(sorted(metadata->listDirectory("/")), std::vector<std::string>{});
-    EXPECT_EQ(sorted(metadata->listDirectory("")), std::vector<std::string>({"A/", "B/", "C/"}));
+    EXPECT_EQ(sorted(metadata->listDirectory("/")), std::vector<std::string>({"A", "B", "C"}));
+    EXPECT_EQ(sorted(metadata->listDirectory("")), std::vector<std::string>({"A", "B", "C"}));
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectoryRecursive("D/E/F/G/H");
+        tx->createDirectoryRecursive("/D/E/F/K");
+        tx->createMetadataFile("D/E/F/G/H/file", {StoredObject()});
+        tx->commit();
+    }
+
+    EXPECT_EQ(sorted(metadata->listDirectory("/D/E/F")), std::vector<std::string>({"G", "K"}));
+    EXPECT_EQ(sorted(metadata->listDirectory("D/E/F/G/H")), std::vector<std::string>({"file"}));
+
+    metadata = restartMetadataStorage("Ls");
+    EXPECT_EQ(sorted(metadata->listDirectory("/")), std::vector<std::string>({"A", "B", "C", "D"}));
+    EXPECT_EQ(sorted(metadata->listDirectory("")), std::vector<std::string>({"A", "B", "C", "D"}));
+    EXPECT_EQ(sorted(metadata->listDirectory("/D/E/F")), std::vector<std::string>({"G", "K"}));
+    EXPECT_EQ(sorted(metadata->listDirectory("D/E/F/G/H")), std::vector<std::string>({"file"}));
 }
 
 TEST_F(MetadataPlainRewritableDiskTest, MoveTree)
@@ -164,14 +189,12 @@ TEST_F(MetadataPlainRewritableDiskTest, MoveTree)
         auto tx = metadata->createTransaction();
         tx->createDirectory("A");
         tx->createDirectory("A/B");
-        tx->createDirectory("A/B/C");
-        tx->createDirectory("A/B/C/D");
+        tx->createDirectoryRecursive("A/B/C/D");
         tx->commit();
     }
 
     auto a_path = createMetadataObjectPath(object_storage, "A");
     auto ab_path = createMetadataObjectPath(object_storage, "A/B");
-    auto abc_path = createMetadataObjectPath(object_storage, "A/B/C");
     auto abcd_path = createMetadataObjectPath(object_storage, "A/B/C/D");
 
     /// Move tree starting from the root
@@ -183,9 +206,18 @@ TEST_F(MetadataPlainRewritableDiskTest, MoveTree)
 
     EXPECT_EQ(readObject(object_storage, a_path), "MOVED/");
     EXPECT_EQ(readObject(object_storage, ab_path), "MOVED/B/");
-    EXPECT_EQ(readObject(object_storage, abc_path), "MOVED/B/C/");
     EXPECT_EQ(readObject(object_storage, abcd_path), "MOVED/B/C/D/");
 
+    EXPECT_FALSE(metadata->existsDirectory("A"));
+    EXPECT_FALSE(metadata->existsDirectory("A/B"));
+    EXPECT_FALSE(metadata->existsDirectory("A/B/C"));
+    EXPECT_FALSE(metadata->existsDirectory("A/B/C/D"));
+    EXPECT_TRUE(metadata->existsDirectory("MOVED"));
+    EXPECT_TRUE(metadata->existsDirectory("MOVED/B"));
+    EXPECT_TRUE(metadata->existsDirectory("MOVED/B/C"));
+    EXPECT_TRUE(metadata->existsDirectory("MOVED/B/C/D"));
+
+    metadata = restartMetadataStorage("MoveTree");
     EXPECT_FALSE(metadata->existsDirectory("A"));
     EXPECT_FALSE(metadata->existsDirectory("A/B"));
     EXPECT_FALSE(metadata->existsDirectory("A/B/C"));
@@ -224,6 +256,26 @@ TEST_F(MetadataPlainRewritableDiskTest, MoveUndo)
     EXPECT_EQ(readObject(object_storage, a_path), "A/");
     EXPECT_EQ(readObject(object_storage, ab_path), "A/B/");
     EXPECT_EQ(readObject(object_storage, abc_path), "A/B/C/");
+    EXPECT_FALSE(metadata->existsFile("non-existing"));
+    EXPECT_FALSE(metadata->existsFile("/non-existing"));
+    EXPECT_FALSE(metadata->existsFile("other-place"));
+    EXPECT_FALSE(metadata->existsFile("/other-place"));
+    EXPECT_FALSE(metadata->existsDirectory("other-place"));
+    EXPECT_FALSE(metadata->existsDirectory("/other-place"));
+    EXPECT_TRUE(metadata->existsDirectory("/A"));
+    EXPECT_TRUE(metadata->existsDirectory("/A/B"));
+    EXPECT_TRUE(metadata->existsDirectory("/A/B/C/"));
+
+    metadata = restartMetadataStorage("MoveUndo");
+    EXPECT_FALSE(metadata->existsFile("non-existing"));
+    EXPECT_FALSE(metadata->existsFile("/non-existing"));
+    EXPECT_FALSE(metadata->existsFile("other-place"));
+    EXPECT_FALSE(metadata->existsFile("/other-place"));
+    EXPECT_FALSE(metadata->existsDirectory("other-place"));
+    EXPECT_FALSE(metadata->existsDirectory("/other-place"));
+    EXPECT_TRUE(metadata->existsDirectory("/A"));
+    EXPECT_TRUE(metadata->existsDirectory("/A/B"));
+    EXPECT_TRUE(metadata->existsDirectory("/A/B/C/"));
 }
 
 TEST_F(MetadataPlainRewritableDiskTest, CreateNotFromRoot)
@@ -234,13 +286,28 @@ TEST_F(MetadataPlainRewritableDiskTest, CreateNotFromRoot)
     {
         auto tx = metadata->createTransaction();
         tx->createDirectory("A/B/C");
+        EXPECT_ANY_THROW(tx->commit());
+    }
+
+    EXPECT_FALSE(metadata->existsDirectory("A"));
+    EXPECT_FALSE(metadata->existsDirectory("A/B"));
+    EXPECT_FALSE(metadata->existsDirectory("A/B/C"));
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, CreateRecursive)
+{
+    auto metadata = getMetadataStorage("CreateRecursive");
+    auto object_storage = getObjectStorage("CreateRecursive");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectoryRecursive("A/B/C");
         tx->commit();
     }
 
-    /// It is a bug. It should not be possible to create folder unlinked from root.
+    EXPECT_TRUE(metadata->existsDirectory("A"));
+    EXPECT_TRUE(metadata->existsDirectory("A/B"));
     EXPECT_TRUE(metadata->existsDirectory("A/B/C"));
-    EXPECT_FALSE(metadata->existsDirectory("A"));
-    EXPECT_FALSE(metadata->existsDirectory("A/B"));
 }
 
 TEST_F(MetadataPlainRewritableDiskTest, RemoveDirectory)
@@ -256,17 +323,50 @@ TEST_F(MetadataPlainRewritableDiskTest, RemoveDirectory)
         tx->commit();
     }
 
-    /// Remove fs tree
+    EXPECT_TRUE(metadata->existsDirectory("A"));
+    EXPECT_TRUE(metadata->existsDirectory("A/B"));
+    EXPECT_TRUE(metadata->existsDirectory("A/B/C"));
+
     {
         auto tx = metadata->createTransaction();
+        tx->removeDirectory("A/B/C");
+        tx->commit();
+    }
+
+    EXPECT_TRUE(metadata->existsDirectory("A"));
+    EXPECT_TRUE(metadata->existsDirectory("A/B"));
+    EXPECT_FALSE(metadata->existsDirectory("A/B/C"));
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->removeDirectory("A");
+        EXPECT_ANY_THROW(tx->commit());
+    }
+
+    EXPECT_TRUE(metadata->existsDirectory("A"));
+    EXPECT_TRUE(metadata->existsDirectory("A/B"));
+    EXPECT_FALSE(metadata->existsDirectory("A/B/C"));
+
+    metadata = restartMetadataStorage("RemoveDirectory");
+    EXPECT_TRUE(metadata->existsDirectory("A"));
+    EXPECT_TRUE(metadata->existsDirectory("A/B"));
+    EXPECT_FALSE(metadata->existsDirectory("A/B/C"));
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->removeDirectory("A/B");
         tx->removeDirectory("A");
         tx->commit();
     }
 
-    /// This is a bug. Logical tree is broken.
     EXPECT_FALSE(metadata->existsDirectory("A"));
-    EXPECT_TRUE(metadata->existsDirectory("A/B"));
-    EXPECT_TRUE(metadata->existsDirectory("A/B/C"));
+    EXPECT_FALSE(metadata->existsDirectory("A/B"));
+    EXPECT_FALSE(metadata->existsDirectory("A/B/C"));
+
+    metadata = restartMetadataStorage("RemoveDirectory");
+    EXPECT_FALSE(metadata->existsDirectory("A"));
+    EXPECT_FALSE(metadata->existsDirectory("A/B"));
+    EXPECT_FALSE(metadata->existsDirectory("A/B/C"));
 }
 
 TEST_F(MetadataPlainRewritableDiskTest, RemoveDirectoryRecursive)
@@ -456,13 +556,16 @@ TEST_F(MetadataPlainRewritableDiskTest, DirectoryFileNameCollision)
     EXPECT_FALSE(metadata->existsDirectory("A/B"));
     EXPECT_TRUE(metadata->existsFile("A/B"));
 
-    /// This is a bug. Directory should not be created in this case.
     {
         auto tx = metadata->createTransaction();
         tx->createDirectory("A/B");
-        tx->commit();
+        EXPECT_ANY_THROW(tx->commit());
     }
 
-    EXPECT_TRUE(metadata->existsDirectory("A/B"));
-    EXPECT_FALSE(metadata->existsFile("A/B"));
+    EXPECT_FALSE(metadata->existsDirectory("A/B"));
+    EXPECT_TRUE(metadata->existsFile("A/B"));
+
+    metadata = restartMetadataStorage("DirectoryFileNameCollision");
+    EXPECT_FALSE(metadata->existsDirectory("A/B"));
+    EXPECT_TRUE(metadata->existsFile("A/B"));
 }
