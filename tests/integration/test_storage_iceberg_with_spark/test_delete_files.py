@@ -37,7 +37,7 @@ def test_delete_files(started_cluster_iceberg_with_spark, format_version, storag
         f"/iceberg_data/default/{TABLE_NAME}/",
         f"/iceberg_data/default/{TABLE_NAME}/",
     )
-    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark, run_on_cluster=True)
 
     # Test trivial count with deleted files
     query_id = "test_trivial_count_" + get_uuid_str()

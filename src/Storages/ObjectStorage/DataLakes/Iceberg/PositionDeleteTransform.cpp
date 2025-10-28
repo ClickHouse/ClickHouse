@@ -65,13 +65,36 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
         std::make_shared<ASTIdentifier>(IcebergPositionDeleteTransform::data_file_path_column_name),
         std::make_shared<ASTLiteral>(Field(iceberg_data_path)));
 
+    LOG_DEBUG(
+        log,
+        "Iceberg data file path is {}, iceberg data object info: {}, number of position deletes: {}",
+        iceberg_data_path,
+        iceberg_object_info->getPath(),
+        iceberg_object_info->position_deletes_objects.size());
+
     for (const auto & position_deletes_object : iceberg_object_info->position_deletes_objects)
     {
         /// Skip position deletes that do not match the data file path.
         if (position_deletes_object.reference_data_file_path.has_value()
             && position_deletes_object.reference_data_file_path != iceberg_data_path)
+        {
+            LOG_DEBUG(
+                log,
+                "Skipping position delete file {} since its reference data file path {} does not match the data file path {}",
+                position_deletes_object.file_path,
+                position_deletes_object.reference_data_file_path.has_value() ? position_deletes_object.reference_data_file_path.value()
+                                                                             : "null",
+                iceberg_data_path);
             continue;
+        }
 
+        LOG_DEBUG(
+            log,
+            "Constructing position delete file {} since its reference data file path {} does not match the data file path {}",
+            position_deletes_object.file_path,
+            position_deletes_object.reference_data_file_path.has_value() ? position_deletes_object.reference_data_file_path.value()
+                                                                         : "null",
+            iceberg_data_path);
         auto object_path = position_deletes_object.file_path;
         auto object_metadata = object_storage->getObjectMetadata(object_path);
         auto object_info = std::make_shared<ObjectInfo>(object_path, object_metadata);
@@ -107,6 +130,8 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
                 return std::make_shared<const ActionsDAG>(std::move(actions.value()));
             return std::shared_ptr<const ActionsDAG>();
         }();
+
+        LOG_DEBUG(log, "Position delete filter expression for file: {}", object_path);
 
         auto delete_format = FormatFactory::instance().getInput(
             format,

@@ -29,7 +29,6 @@
 
 #include <Processors/ISimpleTransform.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeObjectMetadata.h>
-#include <Storages/ObjectStorage/DataLakes/IcebergObjectMetadata.h>
 
 #include <Interpreters/Context_fwd.h>
 #include "config.h"

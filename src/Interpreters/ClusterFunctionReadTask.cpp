@@ -110,12 +110,12 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t protoc
     {
         if (iceberg_info.has_value())
         {
-            writeVarUInt(0, out);
+            writeVarUInt(1, out);
+            iceberg_info->serialize(out, protocol_version);
         }
         else
         {
-            writeVarUInt(1, out);
-            iceberg_info->serialize(out, protocol_version);
+            writeVarUInt(0, out);
         }
     }
 }
@@ -171,7 +171,7 @@ void IcebergObjectSerializableInfo::checkVersion(size_t protocol_version) const
 void IcebergObjectSerializableInfo::serialize(WriteBuffer & out, size_t protocol_version) const
 {
     checkVersion(protocol_version);
-    writeStringBinary(file_format, out);
+    writeStringBinary(data_object_file_path_key, out);
     writeVarInt(underlying_format_read_schema_id, out);
     writeVarInt(schema_id_relevant_to_iterator, out);
     writeVarInt(sequence_number, out);
@@ -206,6 +206,7 @@ void IcebergObjectSerializableInfo::serialize(WriteBuffer & out, size_t protocol
             }
             else
             {
+                writeVarUInt(1, out);
                 writeVarUInt(eq_delete_obj.equality_ids->size(), out);
                 for (const auto & equality_id : *eq_delete_obj.equality_ids)
                 {
@@ -227,51 +228,54 @@ void IcebergObjectSerializableInfo::deserialize(ReadBuffer & in, size_t protocol
             DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_METADATA,
             protocol_version);
     }
-    readStringBinary(file_format, in);
+    readStringBinary(data_object_file_path_key, in);
     readVarInt(underlying_format_read_schema_id, in);
     readVarInt(schema_id_relevant_to_iterator, in);
     readVarInt(sequence_number, in);
     readStringBinary(file_format, in);
-    size_t pos_delete_obj_size = 0;
-    readVarUInt(pos_delete_obj_size, in);
-    position_deletes_objects.resize(pos_delete_obj_size);
 
-    for (size_t i = 0; i < pos_delete_obj_size; ++i)
     {
-        Iceberg::PositionDeleteObject & pos_delete_obj = position_deletes_objects[i];
-        readStringBinary(pos_delete_obj.file_path, in);
-        readStringBinary(pos_delete_obj.file_format, in);
-        size_t has_reference_path = 0;
-        readVarUInt(has_reference_path, in);
-        if (has_reference_path == 1)
+        size_t pos_delete_obj_size = 0;
+        readVarUInt(pos_delete_obj_size, in);
+        position_deletes_objects.resize(pos_delete_obj_size);
+        for (size_t i = 0; i < pos_delete_obj_size; ++i)
         {
-            String reference_path;
-            readStringBinary(reference_path, in);
-            pos_delete_obj.reference_data_file_path = reference_path;
+            Iceberg::PositionDeleteObject & pos_delete_obj = position_deletes_objects[i];
+            readStringBinary(pos_delete_obj.file_path, in);
+            readStringBinary(pos_delete_obj.file_format, in);
+            size_t has_reference_path = 0;
+            readVarUInt(has_reference_path, in);
+            if (has_reference_path)
+            {
+                String reference_path;
+                readStringBinary(reference_path, in);
+                pos_delete_obj.reference_data_file_path = reference_path;
+            }
         }
     }
-    size_t eq_delete_obj_size = 0;
-    readVarUInt(eq_delete_obj_size, in);
-    equality_deletes_objects.resize(eq_delete_obj_size);
-
-    for (size_t i = 0; i < eq_delete_obj_size; ++i)
     {
-        Iceberg::EqualityDeleteObject & eq_delete_obj = equality_deletes_objects[i];
-        readStringBinary(eq_delete_obj.file_path, in);
-        readStringBinary(eq_delete_obj.file_format, in);
-        size_t equality_ids_size = 0;
-        bool has_equality_ids = false;
-        readVarUInt(has_equality_ids, in);
-        readVarInt(eq_delete_obj.schema_id, in);
-        if (!has_equality_ids)
+        size_t eq_delete_obj_size = 0;
+        readVarUInt(eq_delete_obj_size, in);
+        equality_deletes_objects.resize(eq_delete_obj_size);
+        for (size_t i = 0; i < eq_delete_obj_size; ++i)
         {
-            readVarUInt(equality_ids_size, in);
-            eq_delete_obj.equality_ids->resize(equality_ids_size);
-            for (size_t j = 0; j < equality_ids_size; ++j)
+            Iceberg::EqualityDeleteObject & eq_delete_obj = equality_deletes_objects[i];
+            readStringBinary(eq_delete_obj.file_path, in);
+            readStringBinary(eq_delete_obj.file_format, in);
+            readVarInt(eq_delete_obj.schema_id, in);
+            size_t has_equality_ids = 0;
+            readVarUInt(has_equality_ids, in);
+            if (has_equality_ids)
             {
-                Int32 equality_id = 0;
-                readVarInt(equality_id, in);
-                eq_delete_obj.equality_ids->at(j) = equality_id;
+                size_t equality_ids_size = 0;
+                readVarUInt(equality_ids_size, in);
+                eq_delete_obj.equality_ids = std::vector<Int32>{};
+                for (size_t j = 0; j < equality_ids_size; ++j)
+                {
+                    Int32 equality_id = 0;
+                    readVarInt(equality_id, in);
+                    eq_delete_obj.equality_ids->push_back(equality_id);
+                }
             }
         }
     }

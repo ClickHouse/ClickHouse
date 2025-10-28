@@ -1,6 +1,7 @@
 #pragma once
 #include <Core/Types.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeObjectMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteObject.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/EqualityDeleteObject.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 
