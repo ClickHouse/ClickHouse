@@ -823,6 +823,8 @@ def test_shutdown_order(started_cluster):
 
     node.restart_clickhouse()
 
+    node.query(f"SYSTEM FLUSH LOGS system.text_log")
+
     def check_in_text_log(message, logger_name):
         return int(
             node.query(
@@ -833,6 +835,9 @@ def test_shutdown_order(started_cluster):
     assert 0 == check_in_text_log(
         "Failed to process data", f"StorageS3Queue(default.{table_name})"
     )
+
+    node.query(f"SYSTEM FLUSH LOGS system.s3queue_log")
+
     assert 0 == int(
         node.query(
             f"SELECT count() FROM system.s3queue_log WHERE table = '{table_name}' and status = 'Failed'"
