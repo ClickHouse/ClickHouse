@@ -60,7 +60,7 @@ YTsaurusNodeType YTsaurusClient::getNodeTypeFromAttributes(const Poco::JSON::Obj
     if (!json_ptr->has("type"))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect json with yt attributes, no field 'type'.");
 
-    if (json_ptr->getValue<String>("type") == "table")
+    if (json_ptr->getValue<String>("type") == "table" || json_ptr->getValue<String>("type") == "replicated_table")
     {
         if (!json_ptr->has("dynamic"))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect json with yt attributes, no field 'dynamic'.");
