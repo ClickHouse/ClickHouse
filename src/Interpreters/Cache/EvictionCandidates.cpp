@@ -314,7 +314,7 @@ void EvictionCandidates::afterEvictWrite(const CachePriorityGuard::WriteLock & l
     }
 }
 
-void EvictionCandidates::invalidateQueueEntries(const CacheStateGuard::Lock &)
+void EvictionCandidates::afterEvictState(const CacheStateGuard::Lock & lock)
 {
     /// We invalidate queue entries under state lock,
     /// because this space will be replaced by reserver,
@@ -328,11 +328,6 @@ void EvictionCandidates::invalidateQueueEntries(const CacheStateGuard::Lock &)
         iterator->invalidate();
         queue_entries_to_invalidate.pop_back();
     }
-}
-
-void EvictionCandidates::afterEvictState(const CacheStateGuard::Lock & lock)
-{
-    invalidateQueueEntries(lock);
 
     if (after_evict_state_func)
     {

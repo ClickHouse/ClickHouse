@@ -588,8 +588,10 @@ void LRUFileCachePriority::LRUIterator::invalidate()
 
     const auto & entry = *iterator;
     if (entry->size)
+    {
         cache_priority->state->sub(entry->size, 1);
-    entry->size = 0;
+        entry->size = 0;
+    }
     entry->invalidated = true;
 
     LOG_TEST(cache_priority->log,

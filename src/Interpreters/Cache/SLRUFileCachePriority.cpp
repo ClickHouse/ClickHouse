@@ -1,4 +1,3 @@
-#include <mutex>
 #include <Interpreters/Cache/IFileCachePriority.h>
 #include <Interpreters/Cache/SLRUFileCachePriority.h>
 #include <Interpreters/Cache/FileCache.h>
@@ -291,7 +290,8 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
             user_id,
             lock);
         /// We do not quit here if !success_probationary,
-        /// because in case of keep_up_free_space_ratio it is ok to evict at least something.
+        /// because in case of keep_up_free_space_ratio it is ok to evict at least something
+        /// (so we will check res.size() instead of returned bool value).
 
         /// We do not use collectCandidatesForEvictionInProtected method,
         /// because it will "downgrade" instead of remove,
@@ -426,42 +426,69 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
         return false;
     }
 
+    struct DowngradedEntryInfo
+    {
+        IteratorPtr slru_iterator;
+        /// Entry size as it was in protected queue.
+        size_t entry_size = 0;
+        /// Previous iterator to entry in protected queue.
+        LRUIterator prev_nested_iterator;
+        /// New iterator to entry in probationary queue.
+        LRUIterator new_nested_iterator;
+    };
+    /// RAII wrapper to protect against the case when afterEvictState callback
+    /// is not called because of some unexpected exception.
+    struct DowngradedEntriesInfos : private std::vector<DowngradedEntryInfo>
+    {
+        explicit DowngradedEntriesInfos(size_t size) { reserve(size); }
+
+        void add(DowngradedEntryInfo && info) { push_back(info); }
+
+        size_t getSize() const { return size(); }
+
+        std::optional<DowngradedEntryInfo> next()
+        {
+            if (empty())
+                return std::nullopt;
+            auto info = std::move(back());
+            pop_back();
+            return info;
+        }
+
+        ~DowngradedEntriesInfos()
+        {
+            /// Invalidate new unused iterators.
+            /// If entries number is non-zero here, it must mean there was
+            /// some exception because of which we failed to process new iterators.
+            for (auto & entry : *this)
+                entry.new_nested_iterator.invalidate();
+        }
+    };
+    auto downgraded_entries = std::make_shared<DowngradedEntriesInfos>(downgrade_candidates->size());
+
     /// Set callback to execute the "downgrade".
     /// As PriorityGuard::WriteLock allows to only move elements,
     /// but not increment size of any of the queues,
     /// we move elements with zero size and increase the size later in a separate callback.
-    struct DowngradedEntryInfo
-    {
-        FileSegmentMetadataPtr metadata;
-        LRUIterator new_iterator;
-        size_t entry_size = 0;
-    };
-    auto downgraded_entries = std::make_shared<std::vector<DowngradedEntryInfo>>();
-    downgraded_entries->reserve(downgrade_candidates->size());
-
-    /// We first (in write func callback) create an empty queue entry in protected queue.
-    /// Then (in state func callback) increment new entry size to actual size.
     res.setAfterEvictWriteFunc([=, this](const CachePriorityGuard::WriteLock & lk) mutable
     {
         for (auto & [key, key_candidates] : *downgrade_candidates)
         {
             while (!key_candidates.candidates.empty())
             {
-                auto candidate = key_candidates.candidates.front();
-                auto * candidate_it = assert_cast<SLRUIterator *>(candidate->getQueueIterator()->getNestedOrThis());
-
-                auto prev_lru_iterator = candidate_it->lru_iterator;
-                downgrade_candidates->addEntryToInvalidate(
-                    std::make_shared<SLRUIterator>(candidate_it->cache_priority, std::move(prev_lru_iterator), true));
-
-                auto entry = candidate_it->getEntry();
-                auto empty_entry = std::make_shared<Entry>(entry->key, entry->offset, /* size */0, entry->key_metadata);
-
+                auto iterator = key_candidates.candidates.front()->getQueueIterator();
+                auto * slru_iterator = assert_cast<SLRUIterator *>(iterator->getNestedOrThis());
+                auto entry = slru_iterator->getEntry();
                 chassert(entry->size > 0);
-                downgraded_entries->emplace_back(
-                    std::move(candidate),
-                    probationary_queue.add(empty_entry, lk, /* state_lock */nullptr),
-                    entry->size);
+
+                auto empty_entry = std::make_shared<Entry>(entry->key, entry->offset, /* size */0, entry->key_metadata);
+                auto new_iterator = probationary_queue.add(std::move(empty_entry), lk, /* state_lock */nullptr);
+                downgraded_entries->add(DowngradedEntryInfo{
+                    iterator,
+                    entry->size,
+                    slru_iterator->lru_iterator,
+                    new_iterator
+                });
                 key_candidates.candidates.pop_front();
             }
         }
@@ -470,13 +497,25 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
     /// Set incrementing size callback, as explained in the previous comment.
     res.setAfterEvictStateFunc([=](const CacheStateGuard::Lock & lk)
     {
-        downgrade_candidates->invalidateQueueEntries(lk);
-        chassert(!downgraded_entries->empty());
-        for (auto & info : *downgraded_entries)
+        chassert(downgraded_entries->getSize() > 0);
+        while (true)
         {
-            auto * iterator = assert_cast<SLRUIterator *>(info.metadata->getQueueIterator()->getNestedOrThis());
-            info.new_iterator.incrementSize(info.entry_size, lk);
-            iterator->setIterator(std::move(info.new_iterator), /* is_protected */false, lk);
+            auto info = downgraded_entries->next();
+            if (!info.has_value())
+                break;
+
+            auto * iterator = assert_cast<SLRUIterator *>(info->slru_iterator->getNestedOrThis());
+            try
+            {
+                info->new_nested_iterator.incrementSize(info->entry_size, lk);
+            }
+            catch (...)
+            {
+                info->new_nested_iterator.invalidate();
+                throw;
+            }
+            iterator->setIterator(std::move(info->new_nested_iterator), /* is_protected */false, lk);
+            info->prev_nested_iterator.invalidate();
         }
     });
 

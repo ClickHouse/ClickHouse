@@ -139,10 +139,6 @@ public:
 
     FailedCandidates getFailedCandidates() const { return failed_candidates; }
 
-    void addEntryToInvalidate(IFileCachePriority::IteratorPtr entry_) { queue_entries_to_invalidate.push_back(entry_); }
-
-    void invalidateQueueEntries(const CacheStateGuard::Lock & lock);
-
 private:
 
     std::unordered_map<FileCacheKey, KeyCandidates> candidates;
