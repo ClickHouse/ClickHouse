@@ -1014,6 +1014,7 @@ bool FileCache::doTryReserve(
             size, required_elements_num, main_priority_iterator.get(), /* is_total_space_cleanup */false, lock);
 
         /// Can we already just increment size for the queue entry and quit?
+        /// TODO: allow to quit here if query_context != nullptr.
         if (main_priority_iterator && !main_eviction_info->requiresEviction() && !query_context)
         {
             main_eviction_info->releaseHoldSpace(lock);
@@ -1063,7 +1064,7 @@ bool FileCache::doTryReserve(
             {
                 query_priority_iterator = query_context->tryGet(file_segment.key(), file_segment.offset(), lock);
                 if (!query_priority_iterator)
-                    query_context->add(file_segment.getKeyMetadata(), file_segment.offset(), 0, user, lock);
+                    query_context->add(file_segment.getKeyMetadata(), file_segment.offset(), /* size */0, user, lock);
             }
         }
     }
@@ -1141,28 +1142,33 @@ bool FileCache::doEviction(
     if (query_priority)
         LOG_TEST(log, "Query eviction info {}", main_eviction_info.toString());
 
-    if (!main_eviction_info.requiresEviction())
+    if (!main_eviction_info.requiresEviction()
+        && (!query_eviction_info || query_eviction_info->requiresEviction()))
         return true;
 
-    /// If there is at least something we need to evict, we need to collect "eviction candidates".
+    /// If there is at least something we need to evict,
+    /// we need to collect "eviction candidates".
     /// This is done under "read (shared) lock" for query priority queue.
     {
-        auto lock = cache_guard.readLock();
-
         auto on_cannot_evict_enough_space_message = [&](const IFileCachePriority & priority)
         {
             const auto & stat = reserve_stat.total_stat;
             return fmt::format(
                 "cannot evict enough space "
-                "(non-releasable count: {}, non-releasable size: {}, "
-                "releasable count: {}, releasable size: {}, evicting count: {}, invalidated count: {}, "
-                "total size: {}/{}, total elements: {}/{}, background download elements: {})",
-                stat.non_releasable_count, stat.non_releasable_size,
-                stat.releasable_count, stat.releasable_size, stat.evicting_count, stat.invalidated_count,
+                "(stat: {}, total size: {}/{}, total elements: {}/{}, "
+                "background download elements: {})",
+                stat.toString(),
                 priority.getSizeApprox(), priority.getSizeLimitApprox(),
                 priority.getElementsCountApprox(), priority.getElementsLimitApprox(),
                 CurrentMetrics::get(CurrentMetrics::FilesystemCacheDownloadQueueElements));
         };
+
+        bool continue_from_last_eviction_pos = cache_reserve_active_threads.load(std::memory_order_relaxed) > 1;
+
+        auto lock = cache_guard.readLock();
+
+        if (!continue_from_last_eviction_pos)
+            main_priority->resetEvictionPos(lock);
 
         if (query_eviction_info && query_eviction_info->requiresEviction())
         {
@@ -1173,7 +1179,7 @@ bool FileCache::doEviction(
                     eviction_candidates,
                     invalidated_entries,
                     /* reservee */{},
-                    /* continue_from_last_eviction_pos */false,
+                    continue_from_last_eviction_pos,
                     /* max_candidates_size */0,
                     /* is_total_space_cleanup */false,
                     user.user_id,
@@ -1184,17 +1190,8 @@ bool FileCache::doEviction(
             }
 
             LOG_TEST(log, "Query limits satisfied (while reserving for {}:{})",
-                    file_segment.key(), file_segment.offset());
-
-            /// If we have enough space in query_priority, we are not interested about stat there anymore.
-            /// Clean the stat before iterating main_priority to avoid calculating any segment stat twice.
-            /// FIXME: this does not look correct
-            reserve_stat.stat_by_kind.clear();
+                     file_segment.key(), file_segment.offset());
         }
-
-        bool continue_from_last_eviction_pos = cache_reserve_active_threads.load(std::memory_order_relaxed) > 1;
-        if (!continue_from_last_eviction_pos)
-            main_priority->resetEvictionPos(lock);
 
         if (!main_priority->collectCandidatesForEviction(
                 main_eviction_info,
@@ -1217,27 +1214,29 @@ bool FileCache::doEviction(
     /// This is done without any lock.
     if (eviction_candidates.size() > 0)
     {
+        auto on_failed_evict = [&]()
+        {
+            {
+                auto lock = cache_guard.writeLock();
+                eviction_candidates.afterEvictWrite(lock);
+                IFileCachePriority::removeEntries(invalidated_entries, lock);
+            }
+            eviction_candidates.afterEvictState(cache_state_guard.lock());
+        };
         try
         {
             eviction_candidates.evict();
         }
         catch (...)
         {
-            /// Invalidate queue entries if some succeeded to be removed.
-            eviction_candidates.afterEvictWrite(cache_guard.writeLock());
-            eviction_candidates.afterEvictState(cache_state_guard.lock());
+            on_failed_evict();
             throw;
         }
 
         const auto & failed_candidates = eviction_candidates.getFailedCandidates();
         if (failed_candidates.size() > 0)
         {
-            /// Process this case the same as any other exception
-            /// from eviction_candidates.evict() above.
-
-            /// Invalidate queue entries if some succeeded to be removed.
-            eviction_candidates.afterEvictWrite(cache_guard.writeLock());
-            eviction_candidates.afterEvictState(cache_state_guard.lock());
+            on_failed_evict();
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Failed to evict {} file segments (first error: {})",
@@ -1802,12 +1801,12 @@ void FileCache::assertCacheCorrectness()
         }
     }, getInternalUser().user_id);
 
-    //main_priority->iterate([](LockedKey &, const FileSegmentMetadataPtr & file_segment_metadata)
-    //{
-    //    chassert(file_segment_metadata->file_segment->assertCorrectness());
-    //    return IFileCachePriority::IterationResult::CONTINUE;
-    //},
-    //cache_guard.readLock());
+    FileCacheReserveStat stat;
+    main_priority->iterate([](LockedKey &, const FileSegmentMetadataPtr & file_segment_metadata)
+    {
+        chassert(file_segment_metadata->file_segment->assertCorrectness());
+        return IFileCachePriority::IterationResult::CONTINUE;
+    }, stat, cache_guard.readLock());
 }
 
 void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, FileCacheSettings & actual_settings)
@@ -2078,17 +2077,14 @@ bool FileCache::doDynamicResizeImpl(
         return false;
     }
 
+    /// Remove only queue entries of eviction candidates.
+    eviction_candidates.removeQueueEntries(cache_guard.writeLock());
 
-    {
-        /// Remove only queue entries of eviction candidates.
-        eviction_candidates.removeQueueEntries(cache_guard.writeLock());
-
-        /// Note that (in-memory) metadata about corresponding file segments
-        /// (e.g. file segment info in CacheMetadata) will be removed
-        /// only after eviction from filesystem. This is needed to avoid
-        /// a race on removal of file from filesystsem and
-        /// addition of the same file as part of a newly cached file segment.
-    }
+    /// Note that (in-memory) metadata about corresponding file segments
+    /// (e.g. file segment info in CacheMetadata) will be removed
+    /// only after eviction from filesystem. This is needed to avoid
+    /// a race on removal of file from filesystsem and
+    /// addition of the same file as part of a newly cached file segment.
 
     state_lock.lock();
 
@@ -2105,14 +2101,11 @@ bool FileCache::doDynamicResizeImpl(
     /// Do actual eviction from filesystem.
     eviction_candidates.evict();
 
-    {
-        auto lock = cache_guard.writeLock();
-        eviction_candidates.afterEvictWrite(lock);
-        IFileCachePriority::removeEntries(invalidated_entries, lock);
-    }
+    chassert(!eviction_candidates.requiresAfterEvictWrite());
+    IFileCachePriority::removeEntries(invalidated_entries, cache_guard.writeLock());
 
     auto failed_candidates = eviction_candidates.getFailedCandidates();
-    if (failed_candidates.total_cache_size == 0)
+    if (failed_candidates.size() == 0)
     {
         LOG_INFO(
             log, "Successfully evicted {} cache elements needed for resize",
@@ -2136,6 +2129,12 @@ bool FileCache::doDynamicResizeImpl(
         failed_candidates.total_cache_elements, failed_candidates.total_cache_size,
         result_limits.max_size, result_limits.max_elements);
 
+    /// The below code corresponds to the case where
+    /// we failed to execute eviction from filesystem.
+    /// So here we need to restore removed queue entries to avoid broken cache state.
+    /// As this case should be very rare (as it can only happen because of a bug)
+    /// we allow ourselves to be suboptional here in favour of being robust
+    /// and take two locks at the same time to do the restore in the most straightforward way.
     auto cache_write_lock = cache_guard.writeLock();
     state_lock.lock();
 
@@ -2185,7 +2184,7 @@ bool FileCache::doDynamicResizeImpl(
         }
     }
 
-    return failed_candidates.size() == 0;
+    return false;
 }
 
 FileCache::QueryContextHolderPtr FileCache::getQueryContextHolder(
