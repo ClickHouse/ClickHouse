@@ -159,7 +159,7 @@ The same restrictions as for `=` and `!=` apply, i.e. `IN` and `NOT IN` only mak
 These functions currently use the text index for filtering only if the index tokenizer is either `splitByNonAlpha` or `ngrams`.
 :::
 
-In order to use `LIKE` [like](/sql-reference/functions/string-search-functions.md/#like), `NOT LIKE` ([notLike](/sql-reference/functions/string-search-functions.md/#notlike)), and the [match](/sql-reference/functions/string-search-functions.md/#match) function with text indexes, ClickHouse must be able to extract complete tokens from the search term.
+In order to use `LIKE` [like](/sql-reference/functions/string-search-functions.md/#like), `NOT LIKE` ([notLike](/sql-reference/functions/string-search-functions.md/#notLike)), and the [match](/sql-reference/functions/string-search-functions.md/#match) function with text indexes, ClickHouse must be able to extract complete tokens from the search term.
 
 Example:
 
@@ -205,7 +205,7 @@ SELECT count() FROM tab WHERE endsWith(comment, ' olap engine');
 
 #### `hasToken` and `hasTokenOrNull` {#functions-example-hastoken-hastokenornull}
 
-Functions [hasToken](/sql-reference/functions/string-search-functions.md/#hastoken) and [hasTokenOrNull](/sql-reference/functions/string-search-functions.md/#hastokenornull) match against a single given token.
+Functions [hasToken](/sql-reference/functions/string-search-functions.md/#hasToken) and [hasTokenOrNull](/sql-reference/functions/string-search-functions.md/#hasTokenOrNull) match against a single given token.
 
 Unlike the previously mentioned functions, they do not tokenize the search term (they assume the input is a single token).
 
@@ -219,7 +219,7 @@ Functions `hasToken` and `hasTokenOrNull` are the most performant functions to u
 
 #### `hasAnyTokens` and `hasAllTokens` {#functions-example-hasanytokens-hasalltokens}
 
-Functions [hasAnyTokens](/sql-reference/functions/string-search-functions.md/#hasanytokens) and [hasAllTokens](/sql-reference/functions/string-search-functions.md/#hasalltokens) match against one or all of the given tokens.
+Functions [hasAnyTokens](/sql-reference/functions/string-search-functions.md/#hasAnyTokens) and [hasAllTokens](/sql-reference/functions/string-s<SystemLogParameters/>earch-functions.md/#hasAllTokens) match against one or all of the given tokens.
 
 These two functions accept the search tokens as either a string which will be tokenized using the same tokenizer used for the index column, or as an array of already processed tokens to which no tokenization will be applied prior to searching.
 See the function documentation for more info.
