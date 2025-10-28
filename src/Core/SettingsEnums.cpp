@@ -1,7 +1,8 @@
 #include <Access/Common/SQLSecurityDefs.h>
-#include <Common/Exception.h>
 #include <Core/SettingsEnums.h>
 #include <base/EnumReflection.h>
+#include <Common/Exception.h>
+#include <Formats/FormatSettings.h>
 
 #include <boost/range/adaptor/map.hpp>
 
@@ -115,6 +116,11 @@ IMPLEMENT_SETTING_ENUM(DateTimeOutputFormat, ErrorCodes::BAD_ARGUMENTS,
 IMPLEMENT_SETTING_ENUM(IntervalOutputFormat, ErrorCodes::BAD_ARGUMENTS,
     {{"kusto",     FormatSettings::IntervalOutputFormat::Kusto},
      {"numeric", FormatSettings::IntervalOutputFormat::Numeric}})
+
+IMPLEMENT_SETTING_ENUM(AggregateFunctionInputFormat, ErrorCodes::BAD_ARGUMENTS,
+    {{"state", FormatSettings::AggregateFunctionInputFormat::State},
+    {"value", FormatSettings::AggregateFunctionInputFormat::Value},
+    {"array", FormatSettings::AggregateFunctionInputFormat::Array}})
 
 IMPLEMENT_SETTING_AUTO_ENUM(LogsLevel, ErrorCodes::BAD_ARGUMENTS)
 
