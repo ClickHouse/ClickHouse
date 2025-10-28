@@ -1172,6 +1172,7 @@ class SettingsRandomizer:
         "optimize_rewrite_like_perfect_affix": lambda: random.randint(0, 1),
         # Use the new reader most of the time.
         "input_format_parquet_use_native_reader_v3": lambda: min(1, random.randint(0, 5)),
+        "temporary_files_buffer_size": lambda: random.randint(128, 2048),
         **randomize_external_sort_group_by(),
     }
 
