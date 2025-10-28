@@ -69,6 +69,12 @@ struct ParquetFileBucketInfo : public FileBucketInfo
 };
 using ParquetFileBucketInfoPtr = std::shared_ptr<ParquetFileBucketInfo>;
 
+struct ParquetBucketSplitter : public IBucketSplitter
+{
+    ParquetBucketSplitter() = default;
+    std::vector<FileBucketInfoPtr> splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_) override;
+};
+
 void registerParquetFileBucketInfo(std::unordered_map<String, FileBucketInfoPtr> & instances);
 
 class ParquetBlockInputFormat : public IInputFormat

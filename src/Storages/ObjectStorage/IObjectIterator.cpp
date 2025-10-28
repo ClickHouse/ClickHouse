@@ -125,21 +125,16 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
         return {};
 
     auto buffer = createReadBuffer(*last_object_info, object_storage, getContext(), log);
-    auto input_format = FormatFactory::instance().getInput(
-        last_object_info->getFileFormat().value_or(format),
-        *buffer,
-        {},
-        getContext(),
-        DBMS_DEFAULT_BUFFER_SIZE);
-
-    auto bucket_sizes = input_format->getChunksByteSizes();
-    if (bucket_sizes)
+    size_t bucket_size = getContext()->getSettingsRef()[Setting::cluster_table_function_buckets_batch_size];
+    
+    auto splitter = FormatFactory::instance().getSplitter(format);
+    if (splitter)
     {
-        std::vector<std::vector<size_t>> buckets = splitObjectToBuckets(*bucket_sizes);
-        for (const auto & bucket : buckets)
+        auto file_bucket_info = splitter->splitToBuckets(bucket_size, *buffer, {});
+        for (const auto & file_bucket : file_bucket_info)
         {
             auto copy_object_info = *last_object_info;
-            copy_object_info.file_bucket_info = FormatFactory::instance().createFromBuckets(last_object_info->getFileFormat().value_or(format), bucket);
+            copy_object_info.file_bucket_info = file_bucket;
             pending_objects_info.push(std::make_shared<ObjectInfo>(copy_object_info));
         }
     }

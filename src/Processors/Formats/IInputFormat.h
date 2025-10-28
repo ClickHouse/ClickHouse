@@ -58,8 +58,14 @@ struct FileBucketInfo
 
     virtual ~FileBucketInfo() = default;
 };
-
 using FileBucketInfoPtr = std::shared_ptr<FileBucketInfo>;
+
+struct IBucketSplitter
+{
+    virtual std::vector<FileBucketInfoPtr> splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_) = 0;
+    virtual ~IBucketSplitter() = default;
+};
+using BucketSplitter = std::shared_ptr<IBucketSplitter>;
 
 /** Input format is a source, that reads data from ReadBuffer.
   */

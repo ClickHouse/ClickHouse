@@ -294,11 +294,12 @@ public:
     void serializeFileFormatName(FileBucketInfoPtr file_bucket_info, WriteBuffer & buffer);
     void deserializeFileFormatName(FileBucketInfoPtr & file_bucket_info, ReadBuffer & buffer);
     void registerFileBucketInfo(const String & format, FileBucketInfoPtr bucket_info);
+    void registerSplitter(const String & format, BucketSplitter splitter);
+    BucketSplitter getSplitter(const String & format);
 
 private:
-    std::unordered_map<String, FileBucketInfoPtr> instances;
-    std::unordered_map<String, Int32> format_to_type;
-    std::unordered_map<Int32, String> type_to_format;
+    std::unordered_map<String, FileBucketInfoPtr> instances_file_buckets_info;
+    std::unordered_map<String, BucketSplitter> instances_splitters;
 
     FormatsDictionary dict;
     FileExtensionFormats file_extension_formats;

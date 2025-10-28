@@ -379,41 +379,36 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
 
 FileBucketInfoPtr FormatFactory::createFromBuckets(const String & format, const std::vector<size_t> & buckets)
 {
-    if (!instances.contains(format))
+    if (!instances_file_buckets_info.contains(format))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Format {} not found", format);
-    return instances.at(format)->createFromBuckets(buckets);
+    return instances_file_buckets_info.at(format)->createFromBuckets(buckets);
 }
 
 void FormatFactory::serializeFileFormatName(FileBucketInfoPtr file_bucket_info, WriteBuffer & buffer)
 {
     if (!file_bucket_info)
     {
-        writeVarInt(0, buffer);
+        writeString("", buffer);
         return;
     }
-    auto index = format_to_type[file_bucket_info->getFormatName()];
-    writeVarInt(index, buffer);
+    writeString(file_bucket_info->getFormatName(), buffer);
 }
 
 void FormatFactory::deserializeFileFormatName(FileBucketInfoPtr & file_bucket_info, ReadBuffer & buffer)
 {
-    Int32 type_index;
-    readVarInt(type_index, buffer);
-    if (type_index == 0)
+    String format;
+    readString(format, buffer);
+    if (format.empty())
     {
         file_bucket_info = nullptr;
         return;
     }
-    auto format = type_to_format[type_index];
-    file_bucket_info = instances.at(format)->clone();
+    file_bucket_info = instances_file_buckets_info.at(format)->clone();
 }
 
 void FormatFactory::registerFileBucketInfo(const String & format, FileBucketInfoPtr bucket_info)
 {
-    instances.emplace(format, bucket_info);
-    Int32 total_count = static_cast<Int32>(instances.size());
-    format_to_type[format] = ++total_count;
-    type_to_format[total_count] = format;
+    instances_file_buckets_info.emplace(format, bucket_info);
 }
 
 InputFormatPtr FormatFactory::getInput(
@@ -734,6 +729,16 @@ void FormatFactory::registerInputFormat(const String & name, InputCreator input_
     creators.input_creator = std::move(input_creator);
     registerFileExtension(name, name);
     KnownFormatNames::instance().add(name, /* case_insensitive = */ true);
+}
+
+void FormatFactory::registerSplitter(const String & format, BucketSplitter splitter)
+{
+    instances_splitters.emplace(format, splitter);
+}
+
+BucketSplitter FormatFactory::getSplitter(const String & format)
+{
+    return instances_splitters.at(format);
 }
 
 void FormatFactory::registerRandomAccessInputFormat(const String & name, RandomAccessInputCreator input_creator)

@@ -1,8 +1,10 @@
+#include <atomic>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 #include <Common/Exception.h>
+#include "Formats/FormatSettings.h"
 
 #if USE_PARQUET
 
@@ -1407,6 +1409,42 @@ std::optional<size_t> ArrowParquetSchemaReader::readNumberOrRows()
     return metadata->num_rows();
 }
 
+std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_)
+{
+    std::atomic<int> is_stopped = false;
+    auto arrow_file = asArrowFile(buf, format_settings_, is_stopped, "Parquet", PARQUET_MAGIC_BYTES, /* avoid_buffering */ true, nullptr);
+    auto metadata = parquet::ReadMetaData(arrow_file);
+    std::vector<size_t> bucket_sizes;
+    for (int i = 0; i < metadata->num_row_groups(); ++i)
+        bucket_sizes.push_back(metadata->RowGroup(i)->total_byte_size());
+    
+    std::vector<std::vector<size_t>> buckets;
+    size_t current_weight = 0;
+    buckets.push_back({});
+    for (size_t i = 0; i < bucket_sizes.size(); ++i)
+    {
+        if (current_weight + bucket_sizes[i] <= bucket_size)
+        {
+            buckets.back().push_back(i);
+            current_weight += bucket_sizes[i];
+        }
+        else
+        {
+            current_weight = 0;
+            buckets.push_back({});
+            buckets.back().push_back(i);
+            current_weight += bucket_sizes[i];
+        }
+    }
+
+    std::vector<FileBucketInfoPtr> result;
+    for (const auto & bucket : buckets)
+    {
+        result.push_back(FormatFactory::instance().createFromBuckets("PARQUET", bucket));
+    }
+    return result;
+}
+
 void registerInputFormatParquet(FormatFactory & factory)
 {
     factory.registerFileBucketInfo(
@@ -1456,6 +1494,7 @@ void registerInputFormatParquet(FormatFactory & factory)
 
 void registerParquetSchemaReader(FormatFactory & factory)
 {
+    factory.registerSplitter("Parquet", std::make_shared<ParquetBucketSplitter>());
     factory.registerSchemaReader(
         "Parquet",
         [](ReadBuffer & buf, const FormatSettings & settings) -> SchemaReaderPtr
