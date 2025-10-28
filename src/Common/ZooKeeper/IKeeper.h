@@ -269,7 +269,7 @@ struct CreateRequest : virtual Request
     bool is_ephemeral = false;
     bool is_sequential = false;
     ACLs acls;
-    bool include_data = false;
+    bool include_stats = false;
 
     /// should it succeed if node already exists
     bool not_exists = false;

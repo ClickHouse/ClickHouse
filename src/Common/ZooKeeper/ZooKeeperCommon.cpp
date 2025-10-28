@@ -258,11 +258,6 @@ std::string ZooKeeperCreateRequest::toStringImpl(bool /*short_format*/) const
         is_sequential);
 }
 
-void ZooKeeperCreateRequest::setStats(Stat stats) const
-{
-    zstat = stats;
-}
-
 void ZooKeeperCreateResponse::readImpl(ReadBuffer & in)
 {
     Coordination::read(path_created, in);
@@ -996,7 +991,7 @@ ZooKeeperResponsePtr ZooKeeperSimpleListRequest::makeResponse() const { return s
 
 ZooKeeperResponsePtr ZooKeeperCreateRequest::makeResponse() const
 {
-    if (include_data)
+    if (include_stats)
         return std::make_shared<ZooKeeperCreate2Response>();
     if (not_exists)
         return std::make_shared<ZooKeeperCreateIfNotExistsResponse>();
@@ -1268,7 +1263,7 @@ void registerZooKeeperRequest(ZooKeeperRequestFactory & factory)
         else if constexpr (num == OpNum::CheckNotExists || num == OpNum::CreateIfNotExists)
             res->not_exists = true;
         else if constexpr (num == OpNum::Create2)
-            res->include_data = true;
+            res->include_stats = true;
         else if constexpr (num == OpNum::CheckStat)
             res->stat_to_check.emplace();
 
