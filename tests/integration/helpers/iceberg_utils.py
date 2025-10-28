@@ -268,7 +268,7 @@ def get_creation_expression(
 
     elif storage_type == "local":
         assert not run_on_cluster
-        
+
         if table_function:
             return f"""
                 icebergLocal(local, path = '/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}', format={format})
