@@ -272,7 +272,7 @@ See the following examples for the usage of `Array(T)` and `Map(K, V)` with the 
 
 ### Examples for the text index `Array` and `Map` support. {#text-index-array-and-map-examples}
 
-#### Indexing Array(String) {#text-indexi-example-array}
+#### Indexing Array(String) {#text-index-example-array}
 
 In a simple blogging platform, authors assign keywords to their posts to categorize content.
 A common feature allows users to discover related content by clicking on keywords or searching for topics.

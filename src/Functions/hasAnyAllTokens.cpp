@@ -467,13 +467,13 @@ For example, ['ClickHouse', 'ClickHouse'] is treated the same as ['ClickHouse'].
 hasAnyTokens(input, needles)
 )";
     FunctionDocumentation::Arguments arguments_hasAnyTokens = {
-        {"input", "The input column.", {"String", "FixedString"}},
+        {"input", "The input column.", {"String", "FixedString", "Array(String)", "Array(FixedString)"}},
         {"needles", "Tokens to be searched. Supports at most 64 tokens.", {"String", "Array(String)"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_hasAnyTokens = {"Returns `1`, if there was at least one match. `0`, otherwise.", {"UInt8"}};
     FunctionDocumentation::Examples examples_hasAnyTokens = {
     {
-        "Usage example",
+        "Usage example for a string column",
         R"(
 CREATE TABLE table (
     id UInt32,
@@ -514,6 +514,59 @@ SELECT count() FROM table WHERE hasAnyTokens(msg, tokens('a()d', 'splitByString'
 │       3 │
 └─────────┘
         )"
+    },
+    {
+        "Usage examples for array and map columns",
+        R"(
+CREATE TABLE log (
+    id UInt32,
+    tags Array(String),
+    attributes Map(String, String),
+    INDEX idx_tags (tags) TYPE text(tokenizer = splitByNonAlpha),
+    INDEX idx_attributes_keys mapKeys(attributes) TYPE text(tokenizer = array),
+    INDEX idx_attributes_vals mapValues(attributes) TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO log VALUES
+    (1, ['clickhouse', 'clickhouse cloud'], {'address': '192.0.0.1', 'log_level': 'INFO'}),
+    (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
+        )",
+        ""
+    },
+    {
+        "Example with an array column",
+        R"(
+SELECT count() FROM log WHERE hasAnyTokens(tags, 'clickhouse');
+        )",
+        R"(
+┌─count()─┐
+│       1 │
+└─────────┘
+        )"
+    },
+    {
+        "Example with mapKeys",
+        R"(
+SELECT count() FROM log WHERE hasAnyTokens(mapKeys(attributes), ['address', 'log_level']);
+        )",
+        R"(
+┌─count()─┐
+│       2 │
+└─────────┘
+        )"
+    },
+    {
+        "Example with mapValues",
+        R"(
+SELECT count() FROM log WHERE hasAnyTokens(mapValues(attributes), ['192.0.0.1', 'DEBUG']);
+        )",
+        R"(
+┌─count()─┐
+│       2 │
+└─────────┘
+        )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_hasAnyTokens = {25, 7};
@@ -548,13 +601,13 @@ For example, needles = ['ClickHouse', 'ClickHouse'] is treated the same as ['Cli
 hasAllTokens(input, needles)
 )";
     FunctionDocumentation::Arguments arguments_hasAllTokens = {
-        {"input", "The input column.", {"String", "FixedString"}},
+        {"input", "The input column.", {"String", "FixedString", "Array(String)", "Array(FixedString)"}},
         {"needles", "Tokens to be searched. Supports at most 64 tokens.", {"String", "Array(String)"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_hasAllTokens = {"Returns 1, if all needles match. 0, otherwise.", {"UInt8"}};
     FunctionDocumentation::Examples examples_hasAllTokens = {
     {
-        "Usage example",
+        "Usage example for a string column",
         R"(
 CREATE TABLE table (
     id UInt32,
@@ -593,6 +646,59 @@ SELECT count() FROM table WHERE hasAllTokens(msg, tokens('a()d', 'splitByString'
         R"(
 ┌─count()─┐
 │       1 │
+└─────────┘
+        )"
+    },
+    {
+        "Usage examples for array and map columns",
+        R"(
+CREATE TABLE log (
+    id UInt32,
+    tags Array(String),
+    attributes Map(String, String),
+    INDEX idx_tags (tags) TYPE text(tokenizer = splitByNonAlpha),
+    INDEX idx_attributes_keys mapKeys(attributes) TYPE text(tokenizer = array),
+    INDEX idx_attributes_vals mapValues(attributes) TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO log VALUES
+    (1, ['clickhouse', 'clickhouse cloud'], {'address': '192.0.0.1', 'log_level': 'INFO'}),
+    (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
+        )",
+        ""
+    },
+    {
+        "Example with an array column",
+        R"(
+SELECT count() FROM log WHERE hasAllTokens(tags, 'clickhouse');
+        )",
+        R"(
+┌─count()─┐
+│       1 │
+└─────────┘
+        )"
+    },
+    {
+        "Example with mapKeys",
+        R"(
+SELECT count() FROM log WHERE hasAllTokens(mapKeys(attributes), ['address', 'log_level']);
+        )",
+        R"(
+┌─count()─┐
+│       1 │
+└─────────┘
+        )"
+    },
+    {
+        "Example with mapValues",
+        R"(
+SELECT count() FROM log WHERE hasAllTokens(mapValues(attributes), ['192.0.0.1', 'DEBUG']);
+        )",
+        R"(
+┌─count()─┐
+│       0 │
 └─────────┘
         )"
     }
