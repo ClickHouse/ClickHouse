@@ -881,18 +881,12 @@ void IcebergMetadata::addDeleteTransformers(
     const std::optional<FormatSettings> & format_settings,
     ContextPtr local_context) const
 {
-    LOG_DEBUG(log, "Adding delete transformers for iceberg data object {}, kek 1", object_info->getPath());
     auto iceberg_object_info = std::dynamic_pointer_cast<IcebergDataObjectInfo>(object_info);
     if (!iceberg_object_info)
         return;
 
-    LOG_DEBUG(log, "Adding delete transformers for iceberg data object {}, kek 2", object_info->getPath());
-
-
     if (!iceberg_object_info->position_deletes_objects.empty())
     {
-        LOG_DEBUG(log, "Adding delete transformers for iceberg data object {}, kek 3", object_info->getPath());
-
         builder.addSimpleTransform(
             [&](const SharedHeader & header)
             { return iceberg_object_info->getPositionDeleteTransformer(object_storage, header, format_settings, local_context); });

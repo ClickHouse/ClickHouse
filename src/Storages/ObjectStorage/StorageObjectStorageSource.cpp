@@ -561,15 +561,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             return std::make_shared<FormatFilterInfo>(format_filter_info->filter_actions_dag, format_filter_info->context.lock(), mapper, nullptr, nullptr);
         }();
 
-        auto * iceberg_object_info = dynamic_cast<IcebergDataObjectInfo *>(object_info.get());
-
-
-        LOG_DEBUG(
-            &Poco::Logger::get("StorageObjectStorageSource"),
-            "Is object info an Iceberg: {}, number of files: {}",
-            (iceberg_object_info != nullptr),
-            iceberg_object_info->position_deletes_objects.size());
-
         auto input_format = FormatFactory::instance().getInput(
             object_info->getFileFormat().value_or(configuration->format),
             *read_buf,
