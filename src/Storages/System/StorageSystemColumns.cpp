@@ -80,7 +80,8 @@ StorageSystemColumns::StorageSystemColumns(const StorageID & table_id_, ContextP
             "The scale of approximate numeric data, exact numeric data, integer data, or monetary data. In ClickHouse makes sense only for Decimal types. Otherwise, the NULL value is returned."},
         { "datetime_precision",         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
             "Decimal precision of DateTime64 data type. For other data types, the NULL value is returned."},
-        { "serialization_hint",         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "A hint for column to choose serialization on inserts according to statistics."}
+        { "serialization_hint",         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "A hint for column to choose serialization on inserts according to statistics."},
+        { "statistics",                 std::make_shared<DataTypeString>(), "The types of statistics created in this columns."}
     });
 
     auto description = ColumnsDescription(columns);
@@ -347,6 +348,13 @@ protected:
                         res_columns[res_index++]->insert(ISerialization::kindToString(it->second->getKind()));
                     else
                         res_columns[res_index++]->insertDefault();
+                }
+
+                /// statistics
+                if (columns_mask[src_index++])
+                {
+                    const ColumnStatisticsDescription & stats = column.statistics;
+                    res_columns[res_index++]->insert(stats.getNameForLogs());
                 }
 
                 ++rows_count;
