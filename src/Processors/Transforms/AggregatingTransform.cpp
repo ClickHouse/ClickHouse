@@ -10,7 +10,8 @@
 #include <base/types.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
-#include "Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h"
+
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
 #include <algorithm>
 #include <atomic>

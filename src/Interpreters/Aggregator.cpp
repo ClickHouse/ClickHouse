@@ -4,7 +4,8 @@
 #include <Core/Settings.h>
 #include <base/defines.h>
 #include <Poco/Util/Application.h>
-#include "Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h"
+
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
 #ifdef OS_LINUX
 #    include <unistd.h>

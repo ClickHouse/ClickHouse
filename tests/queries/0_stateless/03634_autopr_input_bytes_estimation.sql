@@ -30,7 +30,7 @@ SELECT 1, URL, COUNT(*) AS c FROM test.hits GROUP BY 1, URL ORDER BY c DESC LIMI
 
 SET enable_parallel_replicas=0, enable_automatic_parallel_replicas=0;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 -- Just checking that the estimation is not too far off (within 75% error)
 SELECT format('{} {} {}', log_comment, compressed_bytes, statistics_input_bytes)

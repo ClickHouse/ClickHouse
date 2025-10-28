@@ -6654,7 +6654,7 @@ Use up to `max_parallel_replicas` the number of replicas from each shard for SEL
 )", BETA, enable_parallel_replicas) \
     DECLARE(UInt64, enable_automatic_parallel_replicas, 0, R"(
 New setting
-0 - disabled, 1 - enabled, 2 - only statistics collection is enabled (swithing to execution with parallel replicas is disabled)
+0 - disabled, 1 - enabled, 2 - only statistics collection is enabled (switching to execution with parallel replicas is disabled)
 )", 0) \
     DECLARE(NonZeroUInt64, max_parallel_replicas, 1000, R"(
 The maximum number of replicas for each shard when executing a query.

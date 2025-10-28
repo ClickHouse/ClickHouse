@@ -11,7 +11,8 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/StorageSnapshot.h>
 #include <boost/core/noncopyable.hpp>
-#include "Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h"
+
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
 namespace DB
 {

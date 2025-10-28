@@ -16,7 +16,8 @@
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/logger_useful.h>
 #include <Common/threadPoolCallbackRunner.h>
-#include "Storages/MergeTree/MergeTreeReadTask.h"
+
+#include <Storages/MergeTree/MergeTreeReadTask.h>
 
 
 namespace ProfileEvents

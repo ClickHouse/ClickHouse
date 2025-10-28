@@ -31,11 +31,6 @@ extern const Event RuntimeDataflowStatisticsOutputBytes;
 namespace DB
 {
 
-namespace ErrorCodes
-{
-extern const int LOGICAL_ERROR;
-}
-
 class Aggregator;
 struct AggregatedDataVariants;
 using AggregatedDataVariantsPtr = std::shared_ptr<AggregatedDataVariants>;
