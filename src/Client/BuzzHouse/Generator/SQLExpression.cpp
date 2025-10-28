@@ -499,7 +499,7 @@ Expr * StatementGenerator::generatePartialSearchExpr(RandomGenerator & rg, Expr 
     sfc->mutable_func()->set_catalog_func(nfunc);
     Expr * res = sfc->add_args()->mutable_expr();
     Expr * expr2 = sfc->add_args()->mutable_expr();
-    if (nfunc == SQLFunc::FUNChasAnyTokens || nfunc == SQLFunc::FUNChasAllTokens)
+    if ((nfunc == SQLFunc::FUNChasAnyTokens || nfunc == SQLFunc::FUNChasAllTokens) && rg.nextBool())
     {
         ExprList * elist = expr2->mutable_comp_expr()->mutable_array();
         const uint32_t nvalues = std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(0, 5)) + 1;
