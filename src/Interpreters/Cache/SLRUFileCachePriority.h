@@ -159,8 +159,6 @@ public:
 
     QueueEntryType getType() const override { return is_protected ? QueueEntryType::SLRU_Protected : QueueEntryType::SLRU_Probationary; }
 
-    /// Can be called only once,
-    /// and only if iterator was previously created with an empty entry.
     void setIterator(LRUIterator && iterator_, bool is_protected_, const CacheStateGuard::Lock &);
 
 private:

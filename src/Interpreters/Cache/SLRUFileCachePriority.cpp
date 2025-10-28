@@ -430,11 +430,17 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
     /// As PriorityGuard::WriteLock allows to only move elements,
     /// but not increment size of any of the queues,
     /// we move elements with zero size and increase the size later in a separate callback.
-    auto downgraded_file_segments = std::make_shared<std::vector<FileSegmentMetadataPtr>>();
-    downgraded_file_segments->reserve(downgrade_candidates->size());
+    struct DowngradedEntryInfo
+    {
+        FileSegmentMetadataPtr metadata;
+        LRUIterator new_iterator;
+        size_t entry_size = 0;
+    };
+    auto downgraded_entries = std::make_shared<std::vector<DowngradedEntryInfo>>();
+    downgraded_entries->reserve(downgrade_candidates->size());
 
     /// We first (in write func callback) create an empty queue entry in protected queue.
-    std::shared_ptr<LRUIterator> new_iterator;
+    /// Then (in state func callback) increment new entry size to actual size.
     res.setAfterEvictWriteFunc([=, this](const CachePriorityGuard::WriteLock & lk) mutable
     {
         for (auto & [key, key_candidates] : *downgrade_candidates)
@@ -450,10 +456,12 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
 
                 auto entry = candidate_it->getEntry();
                 auto empty_entry = std::make_shared<Entry>(entry->key, entry->offset, /* size */0, entry->key_metadata);
-                new_iterator = std::make_shared<LRUIterator>(
-                    probationary_queue.add(empty_entry, lk, /* state_lock */nullptr));
 
-                downgraded_file_segments->push_back(std::move(candidate));
+                chassert(entry->size > 0);
+                downgraded_entries->emplace_back(
+                    std::move(candidate),
+                    probationary_queue.add(empty_entry, lk, /* state_lock */nullptr),
+                    entry->size);
                 key_candidates.candidates.pop_front();
             }
         }
@@ -463,14 +471,12 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
     res.setAfterEvictStateFunc([=](const CacheStateGuard::Lock & lk)
     {
         downgrade_candidates->invalidateQueueEntries(lk);
-        chassert(!downgraded_file_segments->empty());
-        for (const auto & metadata : *downgraded_file_segments)
+        chassert(!downgraded_entries->empty());
+        for (auto & info : *downgraded_entries)
         {
-            const auto & file_segment = metadata->file_segment;
-            auto * iterator = assert_cast<SLRUIterator *>(file_segment->getQueueIterator()->getNestedOrThis());
-            iterator->setIterator(std::move(*new_iterator), /* is_protected */false, lk);
-            chassert(iterator->getEntry()->size == 0);
-            iterator->incrementSize(file_segment->getReservedSize(), lk);
+            auto * iterator = assert_cast<SLRUIterator *>(info.metadata->getQueueIterator()->getNestedOrThis());
+            info.new_iterator.incrementSize(info.entry_size, lk);
+            iterator->setIterator(std::move(info.new_iterator), /* is_protected */false, lk);
         }
     });
 
@@ -708,17 +714,14 @@ void SLRUFileCachePriority::SLRUIterator::setIterator(
     bool is_protected_,
     const CacheStateGuard::Lock &)
 {
+    auto new_entry = iterator_.getEntry();
+    chassert(new_entry->size > 0);
+
     lru_iterator = iterator_;
     is_protected = is_protected_;
 
-    {
-        std::lock_guard lock(entry_mutex);
-        chassert(entry.lock());
-        if (entry.lock()->size > 0)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Valid entry is already set");
-        entry = iterator_.getEntry();
-        chassert(entry.lock()->size > 0);
-    }
+    std::lock_guard lock(entry_mutex);
+    entry = new_entry;
 }
 
 void SLRUFileCachePriority::SLRUIterator::incrementSize(size_t size, const CacheStateGuard::Lock & lock)
