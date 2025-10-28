@@ -439,7 +439,7 @@ Allows executing [ALTER](../../sql-reference/statements/alter/index.md) queries 
   - `ALTER FETCH PARTITION`. Level: `TABLE`. Aliases: `ALTER FETCH PART`, `FETCH PARTITION`, `FETCH PART`
   - `ALTER FREEZE PARTITION`. Level: `TABLE`. Aliases: `FREEZE PARTITION`
   - `ALTER VIEW`. Level: `GROUP`
-  - `ALTER VIEW REFRESH`. Level: `VIEW`. Aliases: `ALTER LIVE VIEW REFRESH`, `REFRESH VIEW`
+  - `ALTER VIEW REFRESH`. Level: `VIEW`. Aliases: `REFRESH VIEW`
   - `ALTER VIEW MODIFY QUERY`. Level: `VIEW`. Aliases: `ALTER TABLE MODIFY QUERY`
   - `ALTER VIEW MODIFY SQL SECURITY`. Level: `VIEW`. Aliases: `ALTER TABLE MODIFY SQL SECURITY`
 
@@ -685,6 +685,23 @@ GRANT READ ON S3('s3://mybucket/data/2024/.*\.parquet') TO analyst
 GRANT READ ON S3('s3://foo/.*') TO john
 GRANT READ ON S3('s3://bar/.*') TO john
 ```
+
+:::warning
+Source filter takes **regexp** as a parameter, so a grant
+`GRANT READ ON URL('http://www.google.com') TO john;`
+
+will allow queries
+```sql
+SELECT * FROM url('https://www.google.com');
+SELECT * FROM url('https://www-google.com');
+```
+
+because `.` is treated as an `Any Single Character` in the regexps. 
+This may lead to potential vulnerability. The correct grant should be
+```sql
+GRANT READ ON URL('https://www\.google\.com') TO john;
+```
+:::
 
 **Re-granting with GRANT OPTION:**
 

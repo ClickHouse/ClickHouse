@@ -262,9 +262,19 @@ private:
         if (!virtual_column_name)
             return std::nullopt;
 
+<<<<<<< HEAD
         NodeReplacement replacement;
         replacement.index_name = index_name;
         replacement.column_name = virtual_column_name.value();
+=======
+        function_node.type = ActionsDAG::ActionType::INPUT;
+        function_node.result_type = std::make_shared<DataTypeUInt8>();
+        function_node.result_name = virtual_column_name.value();
+        function_node.function.reset();
+        function_node.function_base.reset();
+        function_node.children.clear();
+        actions_dag.inputs.push_back(&function_node);
+>>>>>>> upstream/master
 
         switch (direct_read_mode)
         {
@@ -337,7 +347,7 @@ void optimizeDirectReadFromTextIndex(const Stack & stack, QueryPlan::Nodes & /*n
             /// search for parts where index is not materialized.
             bool has_index_in_all_parts = std::ranges::all_of(unique_parts, [&](const auto & part)
             {
-                return !!index.index->getDeserializedFormat(part->getDataPartStorage(), index.index->getFileName());
+                return !!index.index->getDeserializedFormat(part->checksums, index.index->getFileName());
             });
 
             if (has_index_in_all_parts)
@@ -364,7 +374,7 @@ void optimizeDirectReadFromTextIndex(const Stack & stack, QueryPlan::Nodes & /*n
     LOG_DEBUG(logger, "{}", optimizationInfoToString(result.added_columns, result.removed_columns));
 
     bool removes_filter_column = filter_step->removesFilterColumn();
-    read_from_merge_tree_step->replaceColumnsForTextSearch(result.added_columns, result.removed_columns);
+    read_from_merge_tree_step->createReadTasksForTextIndex(indexes->skip_indexes, result.added_columns, result.removed_columns);
 
     auto new_filter_column_name = result.filter_node->result_name;
     filter_node->step = std::make_unique<FilterStep>(read_from_merge_tree_step->getOutputHeader(), filter_dag.clone(), new_filter_column_name, removes_filter_column);

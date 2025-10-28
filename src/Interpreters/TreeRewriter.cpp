@@ -1398,6 +1398,11 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     if (settings[Setting::enable_order_by_all] && select_query->order_by_all)
         expandOrderByAll(select_query, tables_with_columns);
 
+    if (select_query->limit_by_all)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "LIMIT BY ALL is not supported with the old planner");
+    }
+
     /// Remove unneeded columns according to 'required_result_columns'.
     /// Leave all selected columns in case of DISTINCT; columns that contain arrayJoin function inside.
     /// Must be after 'normalizeTree' (after expanding aliases, for aliases not get lost)

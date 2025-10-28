@@ -1,8 +1,8 @@
 #pragma once
-#include <vector>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Columns/IColumn.h>
+#include <Common/Logger.h>
 #include <Formats/MarkInCompressedFile.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/StringHashMap.h>
@@ -10,6 +10,8 @@
 #include <Interpreters/BloomFilter.h>
 #include <Interpreters/ITokenExtractor.h>
 #include <absl/container/flat_hash_map.h>
+
+#include <vector>
 
 #include <roaring.hh>
 
@@ -124,7 +126,7 @@ struct PostingsSerialization
         EmbeddedPostings = 1ULL << 1,
     };
 
-    static void serialize(UInt64 header, PostingListBuilder && postings, WriteBuffer & ostr);
+    static UInt64 serialize(UInt64 header, PostingListBuilder && postings, WriteBuffer & ostr);
     static PostingList deserialize(UInt64 header, UInt32 cardinality, ReadBuffer & istr);
 };
 
@@ -268,6 +270,7 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
     TokenToPostingsMap tokens_map;
     std::list<PostingList> posting_lists;
     std::unique_ptr<Arena> arena;
+    LoggerPtr logger;
 };
 
 struct MergeTreeIndexTextGranuleBuilder
@@ -319,12 +322,18 @@ public:
 
     ~MergeTreeIndexText() override = default;
 
+    bool supportsReadingOnParallelReplicas() const override { return true; }
     MergeTreeIndexSubstreams getSubstreams() const override;
-    MergeTreeIndexFormat getDeserializedFormat(const IDataPartStorage & data_part_storage, const std::string & path_prefix) const override;
+    MergeTreeIndexFormat getDeserializedFormat(const MergeTreeDataPartChecksums & checksums, const std::string & path_prefix) const override;
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const override;
+
+    /// This function parses the arguments of a text index. Text indexes have a special syntax with complex arguments.
+    /// 1. Arguments are named, e.g.: argument = value
+    /// 2. The tokenizer argument can be a string, a function name (literal) or a function-like expression, e.g.: ngram(5)
+    static FieldVector parseArgumentsListFromAST(const ASTPtr & arguments);
 
     MergeTreeIndexTextParams params;
     std::unique_ptr<ITokenExtractor> token_extractor;

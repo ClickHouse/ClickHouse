@@ -81,7 +81,7 @@ bool injectRequiredColumnsRecursively(
             }
         }
         /// TODO: correctly determine whether the index is present in the part
-        else if (column_name_in_part.starts_with(TEXT_INDEX_VIRTUAL_COLUMN_PREFIX))
+        else if (isTextIndexVirtualColumn(column_name_in_part))
         {
             add_column(column_name);
             return true;

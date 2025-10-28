@@ -7819,7 +7819,7 @@ formatRow(format, x, y, ...)
 
 **Arguments**
 
-- `format` — Text format. For example, [CSV](/interfaces/formats.md/#csv), [TSV](/interfaces/formats.md/#tabseparated).
+- `format` — Text format. For example, [CSV](/interfaces/formats/CSV), [TabSeparated (TSV)](/interfaces/formats/TabSeparated).
 - `x`,`y`, ... — Expressions.
 
 **Returned value**
@@ -7890,7 +7890,7 @@ formatRowNoNewline(format, x, y, ...)
 
 **Arguments**
 
-- `format` — Text format. For example, [CSV](/interfaces/formats.md/#csv), [TSV](/interfaces/formats.md/#tabseparated).
+- `format` — Text format. For example, [CSV](/interfaces/formats/CSV), [TabSeparated (TSV)](/interfaces/formats/TabSeparated).
 - `x`,`y`, ... — Expressions.
 
 **Returned value**
