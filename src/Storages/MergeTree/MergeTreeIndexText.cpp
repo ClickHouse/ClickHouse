@@ -57,9 +57,9 @@ static constexpr UInt64 DEFAULT_SPARSE_GRAMS_MIN_LENGTH = 3;
 static constexpr UInt64 DEFAULT_SPARSE_GRAMS_MAX_LENGTH = 100;
 static constexpr UInt64 DEFAULT_DICTIONARY_BLOCK_SIZE = 128;
 static constexpr bool DEFAULT_DICTIONARY_BLOCK_USE_FRONTCODING = true;
-static constexpr UInt64 DEFAULT_MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS = 16;
-/// 0.1 may seem quite high. The motivation of it is to minimize the size of the bloom filter.
+static constexpr UInt64 DEFAULT_MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS = 8;
 /// Rate of 0.1 gives 5 bits per token. 0.05 gives 7 bits; 0.025 - 8 bits.
+/// 0.1 may seem quite high. The motivation of it is to minimize the size of the bloom filter.
 static constexpr double DEFAULT_BLOOM_FILTER_FALSE_POSITIVE_RATE = 0.1; /// 10%
 
 enum class TokensSerializationFormat : UInt64
