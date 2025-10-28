@@ -60,6 +60,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"joined_block_split_single_row", false, false, "New setting"},
             {"temporary_files_buffer_size", DBMS_DEFAULT_BUFFER_SIZE, DBMS_DEFAULT_BUFFER_SIZE, "New setting"},
             {"rewrite_in_to_join", false, false, "New experimental setting"},
+            {"allow_reorder_row_policy_and_prewhere", false, false, "New experimental setting"},
             {"iceberg_insert_max_rows_in_data_file", 100000, 1000000, "New setting."},
             {"iceberg_insert_max_bytes_in_data_file", 100000000, 100000000, "New setting."},
             {"delta_lake_insert_max_rows_in_data_file", 100000, 1000000, "New setting."},

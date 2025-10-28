@@ -34,7 +34,7 @@ public:
 
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
-    void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
+    void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value, const FilterDAGInfoPtr & row_level_filter_value) override;
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
     QueryPlanStepPtr clone() const override;
