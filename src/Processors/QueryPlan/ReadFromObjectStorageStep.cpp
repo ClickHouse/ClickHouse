@@ -1,20 +1,21 @@
-#include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Core/Settings.h>
-#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
-#include <Interpreters/ActionsDAG.h>
-#include <Processors/Sources/NullSource.h>
-#include <Processors/QueryPlan/Serialization.h>
-#include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
-#include <IO/Operators.h>
-#include <Storages/ObjectStorage/S3/Configuration.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
-#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Formats/FormatFactory.h>
+#include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
+#include <Processors/QueryPlan/Serialization.h>
+#include <Processors/Sources/NullSource.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
+#include <Storages/ObjectStorage/S3/Configuration.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#include <Storages/VirtualColumnUtils.h>
 
 #include <Common/logger_useful.h>
 
@@ -60,6 +61,8 @@ void ReadFromObjectStorageStep::applyFilters(ActionDAGNodes added_filter_nodes)
 {
     LOG_DEBUG(&Poco::Logger::get("ApplyFilters"), "Applying filters to ReadFromObjectStorageStep");
     SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
+    VirtualColumnUtils::buildSetsForDAG(*filter_actions_dag, getContext());
+
     // createIterator();
 }
 
