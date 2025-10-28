@@ -582,10 +582,6 @@ bool SLRUFileCachePriority::tryIncreasePriority(
 #endif
     }
 
-    /// We need to remove the entry from probationary first
-    /// in order to make space for downgrade from protected.
-    //iterator.lru_iterator.remove(lock);
-
     EvictionCandidates downgrade_candidates;
     FileCacheReserveStat downgrade_stat;
     InvalidatedEntriesInfos invalidated_entries;
@@ -614,46 +610,32 @@ bool SLRUFileCachePriority::tryIncreasePriority(
         ProfileEvents::FilesystemCacheEvictedFileSegmentsDuringPriorityIncrease,
         downgrade_candidates.size());
 
-    std::optional<LRUIterator> new_iterator;
-    /// Create an *empty* entry.
-    {
+    auto new_iterator = [&]{
         auto lock = queue_guard.writeLock();
         downgrade_candidates.afterEvictWrite(lock);
         removeEntries(invalidated_entries, lock);
 
-        iterator.lru_iterator.remove(lock);
-
         auto empty_entry = std::make_shared<Entry>(entry->key, entry->offset, /* size */0, entry->key_metadata);
-        try
-        {
-            new_iterator = protected_queue.add(std::move(empty_entry), lock, /* state_lock */nullptr);
-        }
-        catch (...)
-        {
-            chassert(false);
-            /// TODO return the entry back to avoid a case when file segment has no entry.
-            throw;
-        }
-    }
+        return protected_queue.add(std::move(empty_entry), lock, /* state_lock */nullptr);
+    }();
 
+    auto prev_iterator = iterator.lru_iterator;
     {
+        auto lock = state_guard.lock();
         try
         {
-            auto lock = state_guard.lock();
             downgrade_info->releaseHoldSpace(lock);
             downgrade_candidates.afterEvictState(lock);
-
-            new_iterator->incrementSize(entry->size, lock);
-            iterator.setIterator(std::move(*new_iterator), /* is_protected */true, lock);
+            new_iterator.incrementSize(entry->size, lock);
         }
         catch (...)
         {
-            new_iterator->remove(queue_guard.writeLock());
-            chassert(false);
-            /// TODO return the entry back to avoid a case when file segment has no entry.
+            new_iterator.invalidate();
             throw;
         }
+        iterator.setIterator(std::move(new_iterator), /* is_protected */true, lock);
     }
+    prev_iterator.invalidate();
 
     return true;
 }
