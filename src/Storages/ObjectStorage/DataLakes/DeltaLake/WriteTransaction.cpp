@@ -241,7 +241,7 @@ void WriteTransaction::commit(const std::vector<CommitFile> & files)
     {
         /// Takes ownership of `array` (but not`schema`) if successfully called.
         engine_data = DeltaLake::KernelUtils::unwrapResult(
-            ffi::get_engine_data(array, &schema, engine.get()),
+            ffi::get_engine_data(array, &schema, &KernelUtils::allocateError),
             "get_engine_data");
     }
     catch (...)
