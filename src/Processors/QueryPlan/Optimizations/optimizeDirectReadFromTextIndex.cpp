@@ -262,19 +262,9 @@ private:
         if (!virtual_column_name)
             return std::nullopt;
 
-<<<<<<< HEAD
         NodeReplacement replacement;
         replacement.index_name = index_name;
         replacement.column_name = virtual_column_name.value();
-=======
-        function_node.type = ActionsDAG::ActionType::INPUT;
-        function_node.result_type = std::make_shared<DataTypeUInt8>();
-        function_node.result_name = virtual_column_name.value();
-        function_node.function.reset();
-        function_node.function_base.reset();
-        function_node.children.clear();
-        actions_dag.inputs.push_back(&function_node);
->>>>>>> upstream/master
 
         switch (direct_read_mode)
         {

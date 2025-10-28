@@ -13,6 +13,8 @@ namespace ProfileEvents
     extern const Event TextIndexReaderTotalMicroseconds;
     extern const Event TextIndexReadPostings;
     extern const Event TextIndexUsedEmbeddedPostings;
+    extern const Event TextIndexUseHint;
+    extern const Event TextIndexDiscardHint;
 }
 
 namespace DB
@@ -204,7 +206,7 @@ size_t MergeTreeReaderTextIndex::readRows(
         }
         else
         {
-            readPostingsIfNeeded(granule);
+            readPostingsIfNeeded(granule, index_mark);
 
             const auto & index_granularity = data_part_info_for_read->getIndexGranularity();
             size_t mark_at_index_granule = index_mark * granularity;
@@ -213,7 +215,16 @@ size_t MergeTreeReaderTextIndex::readRows(
             for (size_t i = 0; i < res_columns.size(); ++i)
             {
                 auto & column_mutable = res_columns[i]->assumeMutableRef();
-                fillColumn(column_mutable, granule, columns_to_read[i].name, granule_offset, rows_to_read);
+
+                if (granule.is_always_true[i])
+                {
+                    auto & column_data = assert_cast<ColumnUInt8 &>(column_mutable).getData();
+                    column_data.resize_fill(column_mutable.size() + rows_to_read, 1);
+                }
+                else
+                {
+                    fillColumn(column_mutable, granule, columns_to_read[i].name, granule_offset, rows_to_read);
+                }
             }
         }
 
@@ -242,16 +253,104 @@ void MergeTreeReaderTextIndex::createEmptyColumns(Columns & columns) const
     }
 }
 
-void MergeTreeReaderTextIndex::readPostingsIfNeeded(Granule & granule)
+size_t MergeTreeReaderTextIndex::getNumRowsInGranule(size_t index_mark) const
+{
+    const auto & index_granularity = data_part_info_for_read->getIndexGranularity();
+    size_t from_mark = index_mark * index.index->index.granularity;
+    size_t to_mark = (index_mark + 1) * index.index->index.granularity;
+    return index_granularity.getRowsCountInRange(from_mark, to_mark);
+}
+
+size_t MergeTreeReaderTextIndex::estimateCardinality(const TextSearchQuery & query, const MergeTreeIndexGranuleText::TokenToPostingsInfosMap & remaining_tokens, size_t total_rows) const
+{
+    if (query.tokens.empty())
+        return 0;
+
+    switch (query.search_mode)
+    {
+        case TextSearchMode::All:
+        {
+            double cardinality = 1.0;
+
+            for (const auto & token : query.tokens)
+            {
+                auto it = remaining_tokens.find(token);
+
+                if (it == remaining_tokens.end())
+                    return 0;
+
+                cardinality *= it->second.getCardinality();
+            }
+
+            for (size_t i = 0; i < query.tokens.size() - 1; ++i)
+                cardinality /= total_rows;
+
+            return static_cast<size_t>(cardinality);
+        }
+        case TextSearchMode::Any:
+        {
+            double cardinality = 1.0;
+
+            for (const auto & token : query.tokens)
+            {
+                auto it = remaining_tokens.find(token);
+                double token_cardinality = it == remaining_tokens.end() ? 0 : it->second.getCardinality();
+
+                cardinality *= (1 - (token_cardinality / total_rows));
+            }
+
+            cardinality = total_rows * (1 - cardinality);
+            return static_cast<size_t>(cardinality);
+        }
+    }
+}
+
+void MergeTreeReaderTextIndex::readPostingsIfNeeded(Granule & granule, size_t index_mark)
 {
     if (!granule.need_read_postings)
         return;
 
     const auto & granule_text = assert_cast<const MergeTreeIndexGranuleText &>(*granule.granule);
     const auto & remaining_tokens = granule_text.getRemainingTokens();
+    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
+
+    std::unordered_set<std::string_view> useful_tokens;
+    granule.is_always_true.resize(columns_to_read.size(), false);
+
+    for (size_t i = 0; i < columns_to_read.size(); ++i)
+    {
+        const auto & column = columns_to_read[i];
+        auto search_query = condition_text.getSearchQueryForVirtualColumn(column.name);
+
+        if (search_query->read_mode == TextIndexDirectReadMode::Exact)
+        {
+            useful_tokens.insert(search_query->tokens.begin(), search_query->tokens.end());
+        }
+        else if (search_query->read_mode == TextIndexDirectReadMode::Hint)
+        {
+            size_t num_rows_in_granule = getNumRowsInGranule(index_mark);
+            size_t cardinality = estimateCardinality(*search_query, remaining_tokens, num_rows_in_granule);
+
+            if (cardinality * 4 <= num_rows_in_granule)
+            {
+                useful_tokens.insert(search_query->tokens.begin(), search_query->tokens.end());
+                ProfileEvents::increment(ProfileEvents::TextIndexUseHint);
+            }
+            else
+            {
+                granule.is_always_true[i] = true;
+                ProfileEvents::increment(ProfileEvents::TextIndexDiscardHint);
+            }
+        }
+    }
 
     for (const auto & [token, postings] : remaining_tokens)
     {
+        if (!useful_tokens.contains(token.toView()))
+        {
+            continue;
+        }
+
         if (postings.hasEmbeddedPostings())
         {
             ProfileEvents::increment(ProfileEvents::TextIndexUsedEmbeddedPostings);

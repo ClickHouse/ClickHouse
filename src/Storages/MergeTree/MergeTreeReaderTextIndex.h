@@ -45,13 +45,18 @@ private:
         std::list<PostingList> postings_holders;
         bool may_be_true = true;
         bool need_read_postings = true;
+        std::vector<bool> is_always_true;
     };
 
     void updateAllIndexRanges();
     void createEmptyColumns(Columns & columns) const;
-    void readPostingsIfNeeded(Granule & granule);
+    void readPostingsIfNeeded(Granule & granule, size_t index_mark);
     void fillSkippedColumn(IColumn & column, size_t num_rows);
     void fillColumn(IColumn & column, Granule & granule, const String & column_name, size_t granule_offset, size_t num_rows);
+
+    using TokenToPostingsInfosMap = MergeTreeIndexGranuleText::TokenToPostingsInfosMap;
+    size_t getNumRowsInGranule(size_t index_mark) const;
+    size_t estimateCardinality(const TextSearchQuery & query, const TokenToPostingsInfosMap & remaining_tokens, size_t total_rows) const;
 
     MergeTreeIndexWithCondition index;
     MarkRanges all_index_ranges;
