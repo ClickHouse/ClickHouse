@@ -1504,7 +1504,7 @@ void StatementGenerator::addTableColumnInternal(
     delete col.tp;
     col.tp = tp;
     col.special = special;
-    if (!modify && col.special == ColumnSpecial::NONE && tp->isNullable() && rg.nextSmallNumber() < 3)
+    if (!modify && tp->isNullable() && rg.nextSmallNumber() < 3)
     {
         cd->set_nullable(rg.nextBool());
         col.nullable = std::optional<bool>(cd->nullable());
@@ -1513,7 +1513,7 @@ void StatementGenerator::addTableColumnInternal(
     {
         generateNextStatistics(rg, cd->mutable_stats());
     }
-    if (col.special == ColumnSpecial::NONE && rg.nextMediumNumber() < 6)
+    if (rg.nextMediumNumber() < 6)
     {
         DefaultModifier * def_value = cd->mutable_defaultv();
         std::uniform_int_distribution<uint32_t> dmod_range(1, static_cast<uint32_t>(DModifier_MAX));
