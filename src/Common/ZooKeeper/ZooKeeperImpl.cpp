@@ -887,7 +887,7 @@ void ZooKeeper::receiveThread()
                 std::lock_guard lock(operations_mutex);
                 if (!operations.empty())
                 {
-                    /// Operations are ordered by xid (and consequently, by time).
+                    /// Operations are ordered by xid (and consequently, by create_ts).
                     earliest_operation = operations.begin()->second;
                     auto earliest_operation_deadline = earliest_operation->request->create_ts + std::chrono::microseconds(static_cast<Int64>(args.operation_timeout_ms) * 1000);
                     if (now > earliest_operation_deadline)

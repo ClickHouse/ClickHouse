@@ -452,6 +452,7 @@ void KeeperTCPHandler::runImpl()
     auto response_callback = [my_responses = this->responses, my_poll_wrapper = this->poll_wrapper](
                                  const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request)
     {
+        chassert(response->enqueue_ts != std::chrono::steady_clock::time_point{});
         if (!my_responses->push(RequestWithResponse{response, std::move(request)}))
             throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push response with xid {} and zxid {}", response->xid, response->zxid);
 
@@ -525,7 +526,7 @@ void KeeperTCPHandler::runImpl()
 
                 auto & response = request_with_response.response;
 
-                if (response->xid != Coordination::WATCH_XID)
+                if (response->xid != Coordination::WATCH_XID && response->error != Coordination::Error::ZSESSIONEXPIRED)
                 {
                     /// The same ZooKeeperWatchResponse pointer may be put into the `responses` queue multiple times (once for each session).
                     /// So, to avoid a data race between the producer and consumer threads accessing response->enqueue_ts,
