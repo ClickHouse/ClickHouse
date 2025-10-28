@@ -863,6 +863,7 @@ PeerDB
 PendingAsyncInsert
 Percona
 PerfEventInfo
+Perfetto
 PhpStorm
 PlantUML
 Poess
