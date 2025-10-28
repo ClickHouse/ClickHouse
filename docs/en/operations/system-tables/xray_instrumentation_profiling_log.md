@@ -46,6 +46,49 @@ SELECT * FROM system.xray_instrumentation_profiling_log;
  ┘
 ```
 
+The profiling information can be converted easily to Chrome's Event Trace Format creating the following query in a `chrome_trace.sql` file:
+
+```sql
+SELECT
+    format(
+        '{{"traceEvents": [{}]}}',
+        arrayStringConcat(
+            groupArray(
+                concat(
+                    -- Begin Event
+                    format(
+                        '\n{{"name": "{}", "cat": "{}", "ph": "B", "ts": {}, "pid": 1, "tid": {}, "args": {{"query_id": "{}"}}}}',
+                        name,
+                        'clickhouse',
+                        toString(event_time_microseconds),
+                        toString(tid),
+                        query_id
+                    ),
+                    ',',
+                    -- End Event
+                    format(
+                        '\n{{"name": "{}", "cat": "{}", "ph": "E", "ts": {}, "pid": 1, "tid": {}, "args": {{"query_id": "{}"}}}}',
+                        name,
+                        'clickhouse',
+                        toString(event_time_microseconds + duration_microseconds),
+                        toString(tid),
+                        query_id
+                    )
+                )
+            ),
+            ','
+        )
+    ) AS trace_json
+FROM system.xray_instrumentation_profiling_log
+WHERE event_date >= today();
+```
+
+And executing it with ClickHouse Client to export it to a `trace.json` file that we can import either with [Perfetto](https://ui.perfetto.dev/) or [speedscope](https://www.speedscope.app/).
+
+```bash
+clickhouse client --query "$(cat chrome_trace.sql)" > trace.json
+```
+
 **See also**
 
 - [SYSTEM INSTRUMENT](../../sql-reference/statements/system.md) — Add or remove instrumentation points.
