@@ -41,10 +41,6 @@ hasTokenCaseInsensitiveOrNull
 in
 inIgnoreSet
 moduloLegacy
-multiFuzzyMatchAny
-multiMatchAnyIndex
-multiSearchFirstIndex
-multiSearchFirstIndexCaseInsensitive
 nested
 notIn
 notInIgnoreSet

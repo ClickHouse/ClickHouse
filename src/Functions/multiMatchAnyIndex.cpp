@@ -43,7 +43,7 @@ REGISTER_FUNCTION(MultiMatchAnyIndex)
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionMultiMatchAnyIndex>();
+    factory.registerFunction<FunctionMultiMatchAnyIndex>(documentation);
 }
 
 }

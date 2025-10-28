@@ -46,7 +46,7 @@ Ignores case.
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionMultiSearchFirstIndexCaseInsensitive>();
+    factory.registerFunction<FunctionMultiSearchFirstIndexCaseInsensitive>(documentation);
 }
 
 }

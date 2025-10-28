@@ -27,10 +27,6 @@ globalNullInIgnoreSet
 in
 inIgnoreSet
 moduloLegacy
-multiFuzzyMatchAny
-multiMatchAnyIndex
-multiSearchFirstIndex
-multiSearchFirstIndexCaseInsensitive
 notIn
 notInIgnoreSet
 notNullIn

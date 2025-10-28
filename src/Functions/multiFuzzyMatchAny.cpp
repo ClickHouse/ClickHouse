@@ -54,7 +54,7 @@ The performance depends on the edit distance value and patterns used, but it's a
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionMultiFuzzyMatchAny>();
+    factory.registerFunction<FunctionMultiFuzzyMatchAny>(documentation);
 }
 
 }

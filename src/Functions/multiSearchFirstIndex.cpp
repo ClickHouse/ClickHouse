@@ -64,7 +64,7 @@ REGISTER_FUNCTION(MultiSearchFirstIndex)
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionMultiSearchFirstIndex>();
+    factory.registerFunction<FunctionMultiSearchFirstIndex>(documentation);
 }
 
 }
