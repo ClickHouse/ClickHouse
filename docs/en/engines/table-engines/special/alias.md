@@ -14,16 +14,20 @@ The `Alias` engine creates a proxy to another table. All read and write operatio
 ## Creating a Table {#creating-a-table}
 
 ```sql
-CREATE TABLE [db_name.]alias_name [columns]
+CREATE TABLE [db_name.]alias_name
 ENGINE = Alias(target_table)
 ```
 
 Or with explicit database name:
 
 ```sql
-CREATE TABLE [db_name.]alias_name [columns]
+CREATE TABLE [db_name.]alias_name
 ENGINE = Alias(target_db, target_table)
 ```
+
+:::note
+The `Alias` table does not support explicit column definitions. Columns are automatically inherited from the target table. This ensures that the alias always matches the target table's schema.
+:::
 
 ## Engine Parameters {#engine-parameters}
 

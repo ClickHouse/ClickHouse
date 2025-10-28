@@ -69,10 +69,21 @@ class Runner:
             filtered_jobs={},
             custom_data={},
         )
+        # Extract repository name from git remote (format: owner/repo)
+        repo_url = Shell.get_output("git config --get remote.origin.url")
+        repo_name = ""
+        if repo_url:
+            # Handle both HTTPS and SSH formats
+            # HTTPS: https://github.com/owner/repo.git
+            # SSH: git@github.com:owner/repo.git
+            match = re.search(r"[:/]([^/]+/[^/]+?)(\.git)?$", repo_url)
+            if match:
+                repo_name = match.group(1)
+
         _Environment(
             WORKFLOW_NAME=workflow.name,
             JOB_NAME=job.name,
-            REPOSITORY="",
+            REPOSITORY=repo_name,
             BRANCH=branch,
             SHA=sha or Shell.get_output("git rev-parse HEAD"),
             PR_NUMBER=pr if not branch else 0,
@@ -265,6 +276,9 @@ class Runner:
                     f"Custom param for local tests must be of type str, got [{type(param)}]"
                 )
 
+        if job.enable_gh_auth:
+            _GH_Auth(workflow=workflow)
+
         if job.run_in_docker and not no_docker:
             job.run_in_docker, docker_settings = (
                 job.run_in_docker.split("+")[0],
@@ -303,6 +317,11 @@ class Runner:
                 "docker ps -a --format '{{.Names}}' | grep -q praktika && docker rm -f praktika",
                 verbose=True,
             )
+            if job.enable_gh_auth:
+                # pass gh auth seamlessly into the docker container
+                gh_mount = "--volume ~/.config/gh:/ghconfig -e GH_CONFIG_DIR=/ghconfig"
+            else:
+                gh_mount = ""
             # enable tty mode & interactive for docker if we have real tty
             tty = ""
             if preserve_stdio:
@@ -313,7 +332,7 @@ class Runner:
             for p_ in [path, path_1]:
                 if p_ and Path(p_).exists() and p_.startswith("/"):
                     extra_mounts += f" --volume {p_}:{p_}"
-            cmd = f"docker run {tty} --rm --name praktika {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONUNBUFFERED=1 -e PYTHONPATH='.:./ci' --volume ./:{current_dir} {extra_mounts} --workdir={current_dir} {' '.join(settings)} {docker} {job.command}"
+            cmd = f"docker run {tty} --rm --name praktika {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONUNBUFFERED=1 -e PYTHONPATH='.:./ci' --volume ./:{current_dir} {extra_mounts} {gh_mount} --workdir={current_dir} {' '.join(settings)} {docker} {job.command}"
         else:
             cmd = job.command
             python_path = os.getenv("PYTHONPATH", ":")

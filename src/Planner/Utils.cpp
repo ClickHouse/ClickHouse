@@ -669,4 +669,25 @@ bool optimizePlanForExists(QueryPlan & query_plan)
     return false;
 }
 
+QueryPlanStepPtr projectOnlyUsedColumns(
+    const SharedHeader & stream_header,
+    const ColumnIdentifiers & used_column_identifiers)
+{
+    ActionsDAG project_only_used_columns_actions;
+
+    NameSet used_column_identifiers_set(used_column_identifiers.begin(), used_column_identifiers.end());
+
+    auto & outputs = project_only_used_columns_actions.getOutputs();
+    for (const auto & column : stream_header->getColumnsWithTypeAndName())
+    {
+        const auto * input_node = &project_only_used_columns_actions.addInput(column);
+        if (used_column_identifiers_set.contains(column.name))
+            outputs.push_back(input_node);
+    }
+
+    auto step = std::make_unique<ExpressionStep>(stream_header, std::move(project_only_used_columns_actions));
+    step->setStepDescription("Project only used columns");
+    return step;
+}
+
 }

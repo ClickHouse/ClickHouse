@@ -2692,10 +2692,17 @@ CONV_FN(LimitStatement, ls)
     {
         ret += " WITH TIES";
     }
-    if (ls.has_limit_by())
+    if (ls.has_by_expr() || ls.lall())
     {
         ret += " BY ";
-        ExprToString(ret, ls.limit_by());
+        if (ls.has_by_expr())
+        {
+            ExprToString(ret, ls.by_expr());
+        }
+        else
+        {
+            ret += "ALL";
+        }
     }
 }
 
@@ -5036,6 +5043,10 @@ CONV_FN(SystemCommand, cmd)
             break;
         case CmdType::kIcebergMetadataCache:
             ret += "DROP ICEBERG METADATA CACHE";
+            can_set_cluster = true;
+            break;
+        case CmdType::kReconnectKeeper:
+            ret += "RECONNECT ZOOKEEPER";
             can_set_cluster = true;
             break;
         default:

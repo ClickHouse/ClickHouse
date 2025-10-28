@@ -205,6 +205,18 @@ void optimizeTreeSecondPass(
         stack.pop_back();
     }
 
+    /// Materialize subplan references before other optimizations.
+    traverseQueryPlan(stack, root, [&](auto & frame_node)
+    {
+        materializeQueryPlanReferences(frame_node, nodes);
+    });
+
+    /// Remove CommonSubplanSteps (they must be not used at that point).
+    traverseQueryPlan(stack, root, [&](auto & frame_node)
+    {
+        optimizeUnusedCommonSubplans(frame_node);
+    });
+
     bool join_runtime_filters_were_added = false;
     traverseQueryPlan(stack, root,
         [&](auto & frame_node)

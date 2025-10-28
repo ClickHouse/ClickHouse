@@ -261,7 +261,7 @@ void optimizeDirectReadFromTextIndex(const Stack & stack, QueryPlan::Nodes & /*n
             /// search for parts where index is not materialized.
             bool has_index_in_all_parts = std::ranges::all_of(unique_parts, [&](const auto & part)
             {
-                return !!index.index->getDeserializedFormat(part->getDataPartStorage(), index.index->getFileName());
+                return !!index.index->getDeserializedFormat(part->checksums, index.index->getFileName());
             });
 
             if (has_index_in_all_parts)

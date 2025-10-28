@@ -16,6 +16,7 @@
 #include <Core/Defines.h>
 #include <Common/Exception.h>
 
+#include <Storages/MergeTree/MergeTreeIndexText.h>
 
 namespace DB
 {
@@ -23,78 +24,6 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
-}
-
-namespace
-{
-using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMatcher, true>;
-
-
-Tuple parseTextIndexArgumentFromAST(const ASTPtr & arguments)
-{
-    Tuple parameter;
-
-    /// Parse parameter name. It can be Identifier.
-    {
-        if (const auto * identifier = arguments->children[0]->as<ASTIdentifier>(); identifier != nullptr)
-            parameter.emplace_back(identifier->name());
-        else
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Text index parameter name: Expected identifier");
-    }
-
-    /// Parse parameter value. It can be Literal, Identifier or Function.
-    {
-        if (const auto * literal = arguments->children[1]->as<ASTLiteral>(); literal != nullptr)
-        {
-            parameter.emplace_back(literal->value);
-        }
-        else if (const auto * identifier = arguments->children[1]->as<ASTIdentifier>(); identifier != nullptr)
-        {
-            parameter.emplace_back(identifier->name());
-        }
-        else if (const auto * function = arguments->children[1]->as<ASTFunction>(); function != nullptr)
-        {
-            Tuple tuple;
-            tuple.emplace_back(function->name);
-            for (const auto & argument : function->arguments->children)
-            {
-                if (const auto * arg = argument->as<ASTLiteral>(); arg != nullptr)
-                    tuple.emplace_back(arg->value);
-                else
-                    throw Exception(ErrorCodes::INCORRECT_QUERY, "Text index function argument: Expected literal");
-            }
-            parameter.emplace_back(tuple);
-        }
-        else
-        {
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Text index parameter value: Expected literal, identifier or function");
-        }
-    }
-
-    return parameter;
-}
-
-bool parseTextIndexArgumentsFromAST(const ASTPtr & arguments, FieldVector & parsed_arguments)
-{
-    parsed_arguments.reserve(arguments->children.size());
-
-    for (const auto & argument : arguments->children)
-    {
-        if (const auto * ast_function = argument->as<ASTFunction>();
-            ast_function && ast_function->name == "equals" && ast_function->arguments->children.size() == 2)
-        {
-            parsed_arguments.emplace_back(parseTextIndexArgumentFromAST(ast_function->arguments));
-        }
-        else
-        {
-            if (!parsed_arguments.empty())
-                throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot mix key-value pair and single argument as text index arguments");
-            return false;
-        }
-    }
-
-    return true;
-}
 }
 
 IndexDescription::IndexDescription(const IndexDescription & other)
@@ -166,24 +95,7 @@ IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast
     result.type = Poco::toLower(index_type->name);
     result.granularity = index_definition->granularity;
 
-    ASTPtr expr_list;
-    if (auto index_expression = index_definition->getExpression())
-    {
-        expr_list = extractKeyExpressionList(index_expression);
-
-        ReplaceAliasToExprVisitor::Data data{columns};
-        ReplaceAliasToExprVisitor{data}.visit(expr_list);
-
-        result.expression_list_ast = expr_list->clone();
-    }
-    else
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expression is not set");
-    }
-
-    auto syntax = TreeRewriter(context).analyze(expr_list, columns.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()));
-    result.expression = ExpressionAnalyzer(expr_list, syntax, context).getActions(true);
-    result.sample_block = result.expression->getSampleBlock();
+    result.initExpressionInfo(index_definition->getExpression(), columns, context);
 
     for (auto & elem : result.sample_block)
     {
@@ -196,22 +108,9 @@ IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast
 
     if (index_type && index_type->arguments)
     {
-        bool is_text_index = index_type->name == TEXT_INDEX_NAME;
-        if (is_text_index && parseTextIndexArgumentsFromAST(index_type->arguments, result.arguments))
-            return result;
-
-        for (size_t i = 0; i < index_type->arguments->children.size(); ++i)
-        {
-            const auto & child = index_type->arguments->children[i];
-            if (const auto * ast_literal = child->as<ASTLiteral>(); ast_literal != nullptr)
-                /// E.g. INDEX index_name column_name TYPE vector_similarity('hnsw', 'f32')
-                result.arguments.emplace_back(ast_literal->value);
-            else if (const auto * ast_identifier = child->as<ASTIdentifier>(); ast_identifier != nullptr)
-                /// E.g. INDEX index_name column_name TYPE vector_similarity(hnsw, f32)
-                result.arguments.emplace_back(ast_identifier->name());
-            else
-                throw Exception(ErrorCodes::INCORRECT_QUERY, "Only literals can be skip index arguments");
-        }
+        result.arguments = (index_type->name == TEXT_INDEX_NAME)
+            ? MergeTreeIndexText::parseArgumentsListFromAST(index_type->arguments)
+            : IndexDescription::parsePositionalArgumentsFromAST(index_type->arguments);
     }
 
     return result;
@@ -221,6 +120,52 @@ void IndexDescription::recalculateWithNewColumns(const ColumnsDescription & new_
 {
     *this = getIndexFromAST(definition_ast, new_columns, context);
 }
+
+void IndexDescription::initExpressionInfo(ASTPtr index_expression, const ColumnsDescription & columns, ContextPtr context)
+{
+    chassert(index_expression != nullptr);
+
+    using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMatcher, true>;
+
+    ASTPtr expr_list = extractKeyExpressionList(index_expression);
+    if (expr_list == nullptr)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expression is not set");
+
+    ReplaceAliasToExprVisitor::Data data{columns};
+    ReplaceAliasToExprVisitor{data}.visit(expr_list);
+
+    expression_list_ast = expr_list->clone();
+
+    TreeRewriterResultPtr syntax = TreeRewriter(context).analyze(
+        expr_list,
+        columns.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns())
+    );
+
+    expression = ExpressionAnalyzer(expr_list, syntax, context).getActions(true);
+
+    sample_block = expression->getSampleBlock();
+}
+
+FieldVector IndexDescription::parsePositionalArgumentsFromAST(const ASTPtr & arguments)
+{
+    FieldVector result;
+
+    for (size_t i = 0; i < arguments->children.size(); ++i)
+    {
+        const auto & child = arguments->children[i];
+        if (const auto * ast_literal = child->as<ASTLiteral>(); ast_literal != nullptr)
+            /// E.g. INDEX index_name column_name TYPE vector_similarity('hnsw', 'f32')
+            result.emplace_back(ast_literal->value);
+        else if (const auto * ast_identifier = child->as<ASTIdentifier>(); ast_identifier != nullptr)
+            /// E.g. INDEX index_name column_name TYPE vector_similarity(hnsw, f32)
+            result.emplace_back(ast_identifier->name());
+        else
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Only literals can be skip index arguments");
+    }
+
+    return result;
+}
+
 
 bool IndicesDescription::has(const String & name) const
 {

@@ -1154,6 +1154,7 @@ void writeColumnChunkBody(
         case TypeIndex::Int128:  F(Int128); break;
         case TypeIndex::Int256:  F(Int256); break;
         case TypeIndex::IPv6:    F(IPv6); break;
+        case TypeIndex::UUID:    F(UUID); break;
         #undef F
 
         #define D(source_type) \
@@ -1311,7 +1312,12 @@ void writeFileFooter(FileWriteState & file,
         meta.num_rows += rg.row_group.num_rows;
         meta.row_groups.push_back(std::move(rg.row_group));
     }
-    meta.__set_created_by(std::string(VERSION_NAME) + " " + VERSION_DESCRIBE);
+
+    /// parquet.thrift sayeth:
+    ///  >  This should be in the format
+    ///  >  <Application> version <App Version> (build <App Build Hash>).
+    ///  >  e.g. impala version 1.0 (build 6cf94d29b2b7115df4de2c06e2ab4326d721eb55)
+    meta.__set_created_by(fmt::format("ClickHouse version {}.{}.{} (build {})", VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, VERSION_GITHASH));
 
     if (options.write_page_statistics || options.write_column_chunk_statistics)
     {

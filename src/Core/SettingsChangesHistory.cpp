@@ -39,13 +39,19 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
+        addSettingsChanges(settings_changes_history, "25.11",
+        {
+            {"correlated_subqueries_default_join_kind", "left", "right", "New setting. Default join kind for decorrelated query plan."},
+            {"use_statistics_cache", 0, 0, "New setting"},
+            {"s3_retry_attempts", 500, 500, "Changed the value of the obsolete setting"},
+        });
         addSettingsChanges(settings_changes_history, "25.10",
         {
+            {"correlated_subqueries_default_join_kind", "left", "right", "New setting. Default join kind for decorrelated query plan."},
             {"show_data_lake_catalogs_in_system_tables", true, false, "Disable catalogs in system tables by default"},
             {"optimize_rewrite_like_perfect_affix", false, true, "New setting"},
             {"allow_dynamic_type_in_join_keys", true, false, "Disallow using Dynamic type in JOIN keys by default"},
-            {"use_skip_indexes_on_data_read", false, true, "Enabled skip index usage in read phase by default"},
-            {"s3queue_keeper_fault_injection_probablility", 0, 0, "New setting."},
+            {"s3queue_keeper_fault_injection_probability", 0, 0, "New setting."},
             {"enable_join_runtime_filters", false, false, "New setting"},
             {"join_runtime_filter_exact_values_limit", 10000, 10000, "New setting"},
             {"join_runtime_bloom_filter_bytes", 512_KiB, 512_KiB, "New setting"},
@@ -71,6 +77,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_use_logical_join_step", true, true, "Added alias"},
             {"schema_inference_make_columns_nullable", 1, 3, "Take nullability information from Parquet/ORC/Arrow metadata by default, instead of making everything nullable."},
             {"materialized_views_squash_parallel_inserts", false, true, "Added setting to preserve old behavior if needed."},
+            {"distributed_cache_connect_timeout_ms", 50, 50, "New setting"},
+            {"distributed_cache_receive_timeout_ms", 3000, 3000, "New setting"},
+            {"distributed_cache_send_timeout_ms", 3000, 3000, "New setting"},
+            {"distributed_cache_tcp_keep_alive_timeout_ms", 2900, 2900, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.9",
         {
@@ -216,6 +226,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_scopes_for_with_statement", true, true, "New setting for backward compatibility with the old analyzer."},
             {"backup_slow_all_threads_after_retryable_s3_error", false, false, "New setting"},
             {"s3_slow_all_threads_after_retryable_error", false, false, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
+            {"s3_retry_attempts", 500, 500, "Changed the value of the obsolete setting"},
             /// RELEASE CLOSED
         });
         addSettingsChanges(settings_changes_history, "25.5",
@@ -908,6 +919,10 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "25.11",
+        {
+            {"refresh_statistics_interval", 0, 0, "New setting"},
+        });
         addSettingsChanges(merge_tree_settings_changes_history, "25.10",
         {
             {"auto_statistics_types", "", "", "New setting"},

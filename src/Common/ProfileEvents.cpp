@@ -1214,6 +1214,8 @@ The server successfully detected this situation and will download merged part fr
     \
     M(JemallocFailedAllocationSampleTracking, "Total number of times tracking of jemalloc allocation sample failed", ValueType::Number) \
     M(JemallocFailedDeallocationSampleTracking, "Total number of times tracking of jemalloc deallocation sample failed", ValueType::Number) \
+    \
+    M(LoadedStatisticsMicroseconds, "Elapsed time of loading statistics from parts", ValueType::Microseconds) \
 
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS

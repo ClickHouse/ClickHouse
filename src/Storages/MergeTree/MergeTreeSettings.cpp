@@ -1998,6 +1998,9 @@ namespace ErrorCodes
     - local - scope is limited by local disks .
     - none - empty scope, do not search
     )", 0) \
+    DECLARE(Seconds, refresh_statistics_interval, 0, R"(
+    The interval of refreshing statistics cache in seconds. If it is set to zero, the refreshing will be disabled.
+    )", 0) \
 
 #define MAKE_OBSOLETE_MERGE_TREE_SETTING(M, TYPE, NAME, DEFAULT) \
     M(TYPE, NAME, DEFAULT, "Obsolete setting, does nothing.", SettingsTierType::OBSOLETE)

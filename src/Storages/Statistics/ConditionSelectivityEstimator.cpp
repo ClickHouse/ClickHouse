@@ -10,6 +10,7 @@
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
 #include <Storages/MergeTree/RPNBuilder.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 
 namespace DB
 {
@@ -148,6 +149,19 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const Act
     return estimateRelationProfile(RPNBuilderTreeNode(node, tree_context));
 }
 
+bool ConditionSelectivityEstimator::isStale(const std::vector<DataPartPtr> & data_parts) const
+{
+    if (data_parts.size() != parts_names.size())
+        return true;
+    size_t idx = 0;
+    for (const auto & data_part : data_parts)
+    {
+        if (parts_names[idx++] != data_part->name)
+            return true;
+    }
+    return false;
+}
+
 bool ConditionSelectivityEstimator::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out) const
 {
     const auto * node_dag = node.getDAGNode();
@@ -249,6 +263,12 @@ ConditionSelectivityEstimatorBuilder::ConditionSelectivityEstimatorBuilder(Conte
 void ConditionSelectivityEstimatorBuilder::incrementRowCount(UInt64 rows)
 {
     estimator->total_rows += rows;
+}
+
+void ConditionSelectivityEstimatorBuilder::markDataPart(const DataPartPtr & data_part)
+{
+    estimator->parts_names.push_back(data_part->name);
+    estimator->total_rows += data_part->rows_count;
 }
 
 void ConditionSelectivityEstimatorBuilder::addStatistics(ColumnStatisticsPtr column_stats)

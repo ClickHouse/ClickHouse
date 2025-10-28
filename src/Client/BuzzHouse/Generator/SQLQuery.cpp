@@ -1935,10 +1935,11 @@ void StatementGenerator::generateLimitExpr(RandomGenerator & rg, Expr * expr)
 {
     if (this->depth >= this->fc.max_depth || rg.nextSmallNumber() < 8)
     {
-        static const std::vector<uint32_t> & limitValues = {0, 0, 1, 1, 1, 1, 2, 2, 5, 5, 10, 50, 100};
+        static const std::vector<int32_t> & limitValues = {0, 0, 1, 1, 1, 1, 2, 2, 5, 5, 10, 50, 100};
+        int32_t nlimit = rg.nextSmallNumber() < 9 ? rg.pickRandomly(limitValues) : rg.nextRandomInt32();
 
-        expr->mutable_lit_val()->mutable_int_lit()->set_uint_lit(
-            rg.nextSmallNumber() < 9 ? rg.pickRandomly(limitValues) : rg.nextRandomUInt32());
+        nlimit *= rg.nextSmallNumber() < 3 ? -1 : 1;
+        expr->mutable_lit_val()->mutable_int_lit()->set_int_lit(nlimit);
     }
     else
     {
@@ -1958,19 +1959,26 @@ void StatementGenerator::generateLimit(RandomGenerator & rg, const bool has_orde
     ls->set_with_ties(has_order_by && (!this->allow_not_deterministic || rg.nextSmallNumber() < 7));
     if (ncols && !ls->with_ties() && rg.nextSmallNumber() < 4)
     {
-        Expr * expr = ls->mutable_limit_by();
-
-        if (this->depth >= this->fc.max_depth || rg.nextSmallNumber() < 8)
+        if (rg.nextSmallNumber() < 8)
         {
-            LiteralValue * lv = expr->mutable_lit_val();
+            Expr * expr = ls->mutable_by_expr();
 
-            lv->mutable_int_lit()->set_uint_lit(rg.randomInt<uint32_t>(1, ncols));
+            if (this->depth >= this->fc.max_depth || rg.nextSmallNumber() < 8)
+            {
+                LiteralValue * lv = expr->mutable_lit_val();
+
+                lv->mutable_int_lit()->set_uint_lit(rg.randomInt<uint32_t>(1, ncols));
+            }
+            else
+            {
+                this->depth++;
+                generateExpression(rg, expr);
+                this->depth--;
+            }
         }
         else
         {
-            this->depth++;
-            generateExpression(rg, expr);
-            this->depth--;
+            ls->set_lall(true);
         }
     }
 }
@@ -2240,13 +2248,13 @@ void StatementGenerator::generateSelect(
             generateOrderBy(rg, ncols, (allowed_clauses & allow_orderby_settings), false, ssc->mutable_orderby());
             this->depth--;
         }
-        if ((allowed_clauses & allow_limit) && rg.nextSmallNumber() < 4)
+        if ((allowed_clauses & allow_limit) && (ssc->has_orderby() || this->allow_not_deterministic) && rg.nextSmallNumber() < 4)
         {
             if (rg.nextBool())
             {
                 generateLimit(rg, ssc->has_orderby(), ncols, ssc->mutable_limit());
             }
-            else if (ssc->has_orderby() || this->allow_not_deterministic)
+            else
             {
                 generateOffset(rg, ssc->has_orderby(), ssc->mutable_offset());
             }
