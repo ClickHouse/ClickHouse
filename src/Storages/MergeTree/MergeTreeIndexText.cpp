@@ -1359,7 +1359,7 @@ namespace
 void validatePreprocessorASTExpression(const ASTFunction * function, String &identifier_name)
 {
     chassert(function != nullptr);
-    if ( function->arguments == nullptr)
+    if (function->arguments == nullptr)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Text index preprocessor argument functions expects a function with some arguments");
 
     for (const auto & argument : function->arguments->children)
