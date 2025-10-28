@@ -31,6 +31,8 @@
 #include <Client/IServerConnection.h>
 #include <Server/IServer.h>
 
+#include <fmt/format.h>
+#include <fmt/ranges.h>
 
 namespace CurrentMetrics
 {
@@ -89,6 +91,8 @@ struct QueryState
     ASTPtr parsed_query;
     /// Streams of blocks, that are processing the query.
     BlockIO io;
+
+    std::map<std::string, size_t> sizes;
 
     /// Is request cancelled
     bool allow_partial_result_on_first_cancel = false;
