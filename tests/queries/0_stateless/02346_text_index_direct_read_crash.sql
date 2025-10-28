@@ -14,11 +14,19 @@ ENGINE = MergeTree
 ORDER BY id
 SETTINGS index_granularity = 32;
 
-INSERT INTO tab VALUES (0,'a'),(1,'b'),(2,'c'),(3,'d');
+INSERT INTO tab VALUES (0,'a'),(1,'b'),(2,'c');
 
 SELECT id FROM tab WHERE hasToken(text, 'b');
 
 SELECT id FROM tab WHERE hasToken(text, 'c');
+
+TRUNCATE TABLE tab;
+
+INSERT INTO tab VALUES (0,'a'),(1,'b'),(2,'c'),(3,'d');
+
+SELECT id FROM tab WHERE hasToken(text, 'b');
+
+SELECT id FROM tab WHERE hasToken(text, 'd');
 
 INSERT INTO tab SELECT number , 'aaabbbccc' FROM numbers(128);
 
