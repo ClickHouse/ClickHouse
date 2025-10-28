@@ -1,5 +1,3 @@
-Simple SELECT with limit: limit on source is unaffected by random order by
 0
-UNION: limit in both subqueries are unaffected by random order by
 0
 0

@@ -1,17 +1,17 @@
-#include <memory>
 #include <Analyzer/Passes/InjectRandomOrderIfNoOrderByPass.h>
 
+#include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/IQueryTreePass.h>
 #include <Analyzer/ListNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/SortNode.h>
 #include <Analyzer/UnionNode.h>
-
 #include <Core/Settings.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
-#include <Analyzer/ColumnNode.h>
+
+#include <memory>
 
 namespace DB
 {
@@ -21,7 +21,7 @@ namespace Setting
     extern const SettingsBool inject_random_order_for_select_without_order_by;
 }
 
-/// Utility: append ORDER BY rand() to an order-by list
+/// Append ORDER BY rand() to an order-by list
 void addRandomOrderBy(ListNode & order_by_list_node, ContextPtr context)
 {
     /// Build rand() node
@@ -35,7 +35,7 @@ void addRandomOrderBy(ListNode & order_by_list_node, ContextPtr context)
     order_by_list_node.getNodes().push_back(std::move(sort_node));
 }
 
-/// Utility: wrap query_root in new QueryNode that includes a random order by
+/// Wrap query_root in new QueryNode that includes a random order by
 void wrapWithSelectOrderBy(QueryTreeNodePtr & query_root, ContextPtr context)
 {
     auto * query_node = query_root->as<QueryNode>();
@@ -56,12 +56,13 @@ void wrapWithSelectOrderBy(QueryTreeNodePtr & query_root, ContextPtr context)
     new_root->resolveProjectionColumns({column});
     addRandomOrderBy(new_root->getOrderBy(), context);
 
-    // replace old root with new wrapping query node
+    /// Replace old root with new wrapping query node
     query_root = new_root;
 }
 
-/// If inject_random_order_for_select_without_order_by = 1, then inject `ORDER BY rand()` into top level query.
-/// The goal is to expose flaky tests during testing.
+/// If inject_random_order_for_select_without_order_by = 1, wrap the query node into
+/// SELECT * FROM <query_node> ORDER BY rand().
+
 void InjectRandomOrderIfNoOrderByPass::run(QueryTreeNodePtr & root, ContextPtr context)
 {
     const auto & settings = context->getSettingsRef();
@@ -73,19 +74,18 @@ void InjectRandomOrderIfNoOrderByPass::run(QueryTreeNodePtr & root, ContextPtr c
     {
         if (!query_node->hasOrderBy())
             wrapWithSelectOrderBy(root, context);
-
         return;
     }
 
-    /// Case 2: Top-level UNION - inject `ORDER BY rand()` into each branch
+    /// Case 2: Top-level UNION - wrap each branch
     if (auto * union_node = root->as<UnionNode>())
     {
-        auto & union_branches = union_node->getQueries();
-        for (auto & unio_branch_node : union_branches.getNodes())
+        auto & union_subqueries = union_node->getQueries();
+        for (auto & union_subquery_node : union_subqueries.getNodes())
         {
-            if (auto * branch_node = unio_branch_node->as<QueryNode>())
-                if (!branch_node->hasOrderBy())
-                    wrapWithSelectOrderBy(unio_branch_node, context);
+            if (auto * node = union_subquery_node->as<QueryNode>())
+                if (!node->hasOrderBy())
+                    wrapWithSelectOrderBy(union_subquery_node, context);
         }
         return;
     }
