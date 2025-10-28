@@ -1,3 +1,4 @@
+#include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 
 #include <Storages/MergeTree/IDataPartStorage.h>
@@ -930,9 +931,9 @@ MergeTreeIndexSubstreams MergeTreeIndexText::getSubstreams() const
     };
 }
 
-MergeTreeIndexFormat MergeTreeIndexText::getDeserializedFormat(const IDataPartStorage & data_part_storage, const std::string & path_prefix) const
+MergeTreeIndexFormat MergeTreeIndexText::getDeserializedFormat(const MergeTreeDataPartChecksums & checksums, const std::string & path_prefix) const
 {
-    if (data_part_storage.existsFile(path_prefix + ".idx"))
+    if (checksums.files.contains(path_prefix + ".idx"))
         return {1, getSubstreams()};
     return {0, {}};
 }
