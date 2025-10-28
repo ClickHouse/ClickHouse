@@ -6,9 +6,14 @@
 #include <Common/HashTable/HashSet.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
+#include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationString.h>
+#include <Interpreters/ActionsDAG.h>
+#include <Interpreters/ActionsMatcher.h>
+#include <Interpreters/ActionsVisitor.h>
 #include <Interpreters/BloomFilterHash.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ITokenExtractor.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -41,6 +46,7 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int CORRUPTED_DATA;
+    extern const int BAD_ARGUMENTS;
 }
 
 static size_t getBloomFilterSizeInBytes(size_t bits_per_row, size_t num_tokens)
@@ -765,7 +771,9 @@ void MergeTreeIndexGranuleTextWritable::deserializeBinary(ReadBuffer &, MergeTre
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Deserialization of MergeTreeIndexGranuleTextWritable is not implemented");
 }
 
-MergeTreeIndexTextGranuleBuilder::MergeTreeIndexTextGranuleBuilder(MergeTreeIndexTextParams params_, TokenExtractorPtr token_extractor_)
+MergeTreeIndexTextGranuleBuilder::MergeTreeIndexTextGranuleBuilder(
+    MergeTreeIndexTextParams params_,
+    TokenExtractorPtr token_extractor_)
     : params(std::move(params_))
     , token_extractor(token_extractor_)
     , arena(std::make_unique<Arena>())
@@ -855,11 +863,13 @@ void MergeTreeIndexTextGranuleBuilder::reset()
 MergeTreeIndexAggregatorText::MergeTreeIndexAggregatorText(
     String index_column_name_,
     MergeTreeIndexTextParams params_,
-    TokenExtractorPtr token_extractor_)
+    TokenExtractorPtr token_extractor_,
+    MergeTreePreprocessorPtr preprocessor_)
     : index_column_name(std::move(index_column_name_))
     , params(std::move(params_))
     , token_extractor(token_extractor_)
     , granule_builder(params, token_extractor_)
+    , preprocessor(preprocessor_)
 {
 }
 
@@ -879,22 +889,21 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
             *pos, block.rows());
     }
 
-    size_t rows_read = std::min(limit, block.rows() - *pos);
+    const size_t rows_read = std::min(limit, block.rows() - *pos);
     if (rows_read == 0)
         return;
 
-    size_t current_position = *pos;
-    const auto & index_column = block.getByName(index_column_name).column;
+    auto [processed_column, offset] = preprocessor->processColumn(block.getByName(index_column_name), *pos, rows_read);
 
-    if (isArray(index_column->getDataType()))
+    if (isArray(processed_column->getDataType()))
     {
-        const auto & column_array = assert_cast<const ColumnArray &>(*index_column);
+        const auto & column_array = assert_cast<const ColumnArray &>(*processed_column);
         const auto & column_data = column_array.getData();
         const auto & column_offsets = column_array.getOffsets();
         for (size_t i = 0; i < rows_read; ++i)
         {
-            size_t element_start_row = column_offsets[current_position + i - 1];
-            size_t elements_size = column_offsets[current_position + i] - element_start_row;
+            size_t element_start_row = column_offsets[offset + i - 1];
+            size_t elements_size = column_offsets[offset + i] - element_start_row;
 
             for (size_t element_idx = 0; element_idx < elements_size; ++element_idx)
             {
@@ -909,7 +918,7 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
     {
         for (size_t i = 0; i < rows_read; ++i)
         {
-            auto ref = index_column->getDataAt(current_position + i);
+            auto ref = processed_column->getDataAt(offset + i);
             granule_builder.addDocument(ref);
             granule_builder.incrementCurrentRow();
         }
@@ -925,6 +934,7 @@ MergeTreeIndexText::MergeTreeIndexText(
     : IMergeTreeIndex(index_)
     , params(std::move(params_))
     , token_extractor(std::move(token_extractor_))
+    , preprocessor(std::make_shared<MergeTreePreprocessor>(params.preprocessor, index_))
 {
 }
 
@@ -952,15 +962,16 @@ MergeTreeIndexGranulePtr MergeTreeIndexText::createIndexGranule() const
 
 MergeTreeIndexAggregatorPtr MergeTreeIndexText::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
 {
-    return std::make_shared<MergeTreeIndexAggregatorText>(index.column_names[0], params, token_extractor.get());
+    return std::make_shared<MergeTreeIndexAggregatorText>(index.column_names[0], params, token_extractor.get(), preprocessor);
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexText::createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeIndexConditionText>(predicate, context, index.sample_block, token_extractor.get());
+    return std::make_shared<MergeTreeIndexConditionText>(predicate, context, index.sample_block, token_extractor.get(), preprocessor);
 }
 
 static const String ARGUMENT_TOKENIZER = "tokenizer";
+static const String ARGUMENT_PREPROCESSOR = "preprocessor";
 static const String ARGUMENT_DICTIONARY_BLOCK_SIZE = "dictionary_block_size";
 static const String ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION = "dictionary_block_frontcoding_compression";
 static const String ARGUMENT_MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS = "max_cardinality_for_embedded_postings";
@@ -1172,8 +1183,16 @@ MergeTreeIndexPtr textIndexCreator(const IndexDescription & index)
     UInt64 max_cardinality_for_embedded_postings = extractOption<UInt64>(options, ARGUMENT_MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS).value_or(DEFAULT_MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS);
     double bloom_filter_false_positive_rate = extractOption<double>(options, ARGUMENT_BLOOM_FILTER_FALSE_POSITIVE_RATE).value_or(DEFAULT_BLOOM_FILTER_FALSE_POSITIVE_RATE);
 
+    String preprocessor = extractOption<String>(options, ARGUMENT_PREPROCESSOR).value_or("");
+
     const auto [bits_per_rows, num_hashes] = BloomFilterHash::calculationBestPractices(bloom_filter_false_positive_rate);
-    MergeTreeIndexTextParams index_params{dictionary_block_size, dictionary_block_frontcoding_compression, max_cardinality_for_embedded_postings, bits_per_rows, num_hashes};
+    MergeTreeIndexTextParams index_params{
+        dictionary_block_size,
+        dictionary_block_frontcoding_compression,
+        max_cardinality_for_embedded_postings,
+        bits_per_rows,
+        num_hashes,
+        preprocessor};
 
     if (!options.empty())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Unexpected text index arguments: {}", fmt::join(std::views::keys(options), ", "));
@@ -1285,6 +1304,7 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
 
     /// No validation for max_cardinality_for_embedded_postings.
     extractOption<UInt64>(options, ARGUMENT_MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS);
+    auto preprocessor_str = extractOption<String>(options, ARGUMENT_PREPROCESSOR, false);
 
     if (!options.empty())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Unexpected text index arguments: {}", fmt::join(std::views::keys(options), ", "));
@@ -1312,10 +1332,61 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
             "Text index must be created on columns of type `String`, `FixedString`, `LowCardinality(String)`, `LowCardinality(FixedString)`, `Array(String)` or `Array(FixedString)`");
     }
 
+    /// check preprocessor_str now, after data_type and column_names and index.data_types were already checked because we want to get
+    /// accurate error messages.
+    if (preprocessor_str.has_value())
+    {
+        /// For very strict validation of the expression we fully parse it here.  However it will be parsed again for index construction,
+        /// generally immediately after this call.
+        /// This is a bit redundant but I won't expect that this impact performance anyhow because the expression is intended to be simple
+        /// enough.  But if this redundant construction represents an issue we could simple build the "intermediate" ASTPtr and use it for
+        /// validation. That way we skip the ActionsDAG and ExpressionActions constructions.
+        ExpressionActions expression = MergeTreePreprocessor::parseExpression(index, preprocessor_str.value());
+
+        const Names required_columns = expression.getRequiredColumns();
+
+        if (required_columns.size() != 1 || required_columns.front() != index.column_names.front())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index preprocessor expression must depend only of column: {}", index.column_names.front());
+    }
+
 }
 
 namespace
 {
+/// Early preprocessor argument validation.
+/// Maybe we could omit this validation and use only the validate function. But here we do it early and simpler to ensure that what we parse
+/// latter is correct
+void validatePreprocessorASTExpression(const ASTFunction * function, String &identifier_name)
+{
+    chassert(function != nullptr);
+    if ( function->arguments == nullptr)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Text index preprocessor argument functions expects a function with some arguments");
+
+    for (const auto & argument : function->arguments->children)
+    {
+        if (argument->as<ASTLiteral>())
+            continue;
+
+        /// TODO(JAM) : Extend checks here for the right column
+        if (const ASTIdentifier * identifier = argument->as<ASTIdentifier>())
+        {
+            if (identifier_name.empty())
+                identifier_name = identifier->name();
+            else if (identifier_name != identifier->name())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text preprocessor function should receive only one identifier");
+
+            continue;
+        }
+
+        if (const ASTFunction * subfunction = argument->as<ASTFunction>())
+        {
+            validatePreprocessorASTExpression(subfunction, identifier_name);
+            continue;
+        }
+
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text preprocessor function expect a literal or identifier as argument");
+    }
+}
 
 Tuple parseNamedArgumentFromAST(const ASTFunction * ast_equal_function)
 {
@@ -1336,32 +1407,51 @@ Tuple parseNamedArgumentFromAST(const ASTFunction * ast_equal_function)
         result.emplace_back(identifier->name());
     }
 
-    /// Parse parameter value. It can be Literal, Identifier or Function.
-    if (const auto * literal_arg = arguments->children[1]->as<ASTLiteral>(); literal_arg != nullptr)
+    if (result.back() == "preprocessor")
     {
-        result.emplace_back(literal_arg->value);
-    }
-    else if (const auto * identifier_arg = arguments->children[1]->as<ASTIdentifier>(); identifier_arg != nullptr)
-    {
-        result.emplace_back(identifier_arg->name());
-    }
-    else if (const auto * function_arg = arguments->children[1]->as<ASTFunction>(); function_arg != nullptr)
-    {
-        Tuple tuple;
-        tuple.emplace_back(function_arg->name);
-        for (const auto & subargument : function_arg->arguments->children)
-        {
-            const auto * arg_literal = subargument->as<ASTLiteral>();
-            if (arg_literal == nullptr)
-                throw Exception(ErrorCodes::INCORRECT_QUERY, "Text index function argument: Expected literal");
+        const ASTFunction * preprocessor_function = arguments->children[1]->as<ASTFunction>();
+        if (preprocessor_function == nullptr)
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Text index preprocessor argument is intended to be a function");
 
-            tuple.emplace_back(arg_literal->value);
-        }
-        result.emplace_back(tuple);
+        String identifier_name;
+        validatePreprocessorASTExpression(preprocessor_function, identifier_name);
+
+        /// This checks that the expression received at least one identifier. More explicit checks will be performed latter when
+        /// constructing a DAG
+        if (identifier_name.empty())
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Text index preprocessor expression needs to have the column identifier");
+
+        result.emplace_back(preprocessor_function->getColumnName());
     }
     else
     {
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Text index parameter value: Expected literal, identifier or function");
+        /// Parse parameter value. It can be Literal, Identifier or Function.
+        if (const auto * literal_arg = arguments->children[1]->as<ASTLiteral>(); literal_arg != nullptr)
+        {
+            result.emplace_back(literal_arg->value);
+        }
+        else if (const auto * identifier_arg = arguments->children[1]->as<ASTIdentifier>(); identifier_arg != nullptr)
+        {
+            result.emplace_back(identifier_arg->name());
+        }
+        else if (const auto * function_arg = arguments->children[1]->as<ASTFunction>(); function_arg != nullptr)
+        {
+            Tuple tuple;
+            tuple.emplace_back(function_arg->name);
+            for (const auto & subargument : function_arg->arguments->children)
+            {
+                const auto * arg_literal = subargument->as<ASTLiteral>();
+                if (arg_literal == nullptr)
+                    throw Exception(ErrorCodes::INCORRECT_QUERY, "Text index function argument: Expected literal");
+
+                tuple.emplace_back(arg_literal->value);
+            }
+            result.emplace_back(tuple);
+        }
+        else
+        {
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Text index parameter value: Expected literal, identifier or function");
+        }
     }
 
     return result;
@@ -1381,6 +1471,99 @@ FieldVector MergeTreeIndexText::parseArgumentsListFromAST(const ASTPtr & argumen
     }
 
     return result;
+}
+
+MergeTreePreprocessor::MergeTreePreprocessor(const String & expression_str, const IndexDescription & index_description)
+    : expression(MergeTreePreprocessor::parseExpression(index_description, expression_str))
+    , column_type(index_description.data_types.front())
+    , column_name(index_description.column_names.front())
+{
+}
+
+std::pair<ColumnPtr,size_t> MergeTreePreprocessor::processColumn(const ColumnWithTypeAndName & index_column_with_type_and_name, size_t start_row, size_t n_rows) const
+{
+    auto index_column = index_column_with_type_and_name.column;
+
+    if (expression.getActions().empty())
+        return {index_column, start_row};
+
+    if (start_row != 0 || n_rows != index_column->size())
+        index_column = index_column->cut(start_row, n_rows);
+
+    Block block({ColumnWithTypeAndName(index_column, index_column_with_type_and_name.type, index_column_with_type_and_name.name)});
+
+    expression.execute(block, n_rows);
+
+    return {block.safeGetByPosition(0).column, 0};
+}
+
+String MergeTreePreprocessor::processString(const String &input) const
+{
+    if (expression.getActions().empty())
+        return input;
+
+    Field field(input);
+    ColumnWithTypeAndName entry(column_type->createColumnConst(1, field), column_type, column_name);
+
+    Block block;
+    block.insert(entry);
+
+    size_t nrows = 1;
+    expression.execute(block, nrows);
+
+    return block.safeGetByPosition(0).column->getDataAt(0).toString();
+}
+
+ExpressionActions MergeTreePreprocessor::parseExpression(const IndexDescription & index_description, const String & expression)
+{
+    if (std::ranges::all_of(expression, isspace))
+        return ExpressionActions(ActionsDAG());
+
+    const char * expression_begin = &*expression.begin();
+    const char * expression_end = &*expression.end();
+
+    // These are expression tokens, do not confuse with index tokens
+    Tokens tokens(expression_begin, expression_end);
+    IParser::Pos token_iterator(tokens, 1000, 1000000);
+
+    Expected expected;
+    ASTPtr expression_ast;
+
+    const bool parse_res = ParserExpression().parse(token_iterator, expression_ast, expected);
+    if (!parse_res)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Error parsing preprocessor expression");
+
+
+    // TODO(JAM): Check this
+    const String name = expression_ast->getColumnName();
+    const String alias = expression_ast->getAliasOrColumnName();
+
+    chassert(index_description.column_names.size() == 1);
+    chassert(index_description.data_types.size() == 1);
+
+    NamesAndTypesList source_columns({{index_description.column_names.front(), index_description.data_types.front()}});
+
+    NamesAndTypesList aggregation_keys;
+    ColumnNumbersList aggregation_keys_indexes_list;
+
+    ActionsVisitor::Data visitor_data(
+        nullptr,
+        SizeLimits() /* set_size_limit */,
+        0 /* subquery_depth */,
+        source_columns,
+        ActionsDAG(source_columns),
+        {} /* prepared_sets */,
+        false /* no_makeset_for_subqueries */,
+        false /* no_makeset */,
+        false /* only_consts */,
+        AggregationKeysInfo(aggregation_keys, aggregation_keys_indexes_list, GroupByKind::NONE)
+    );
+    ActionsVisitor(visitor_data).visit(expression_ast);
+
+    ActionsDAG actions = visitor_data.getActions();
+    actions.project(NamesWithAliases({{name, alias}}));
+
+    return ExpressionActions(std::move(actions));
 }
 
 }

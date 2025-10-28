@@ -3,12 +3,16 @@
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Columns/IColumn.h>
 #include <Common/Logger.h>
-#include <Formats/MarkInCompressedFile.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/StringHashMap.h>
 #include <Common/logger_useful.h>
+#include <Core/ColumnWithTypeAndName.h>
+#include <Formats/MarkInCompressedFile.h>
 #include <Interpreters/BloomFilter.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ITokenExtractor.h>
+#include <Parsers/ExpressionListParsers.h>
+
 #include <absl/container/flat_hash_map.h>
 
 #include <vector>
@@ -75,6 +79,7 @@ struct MergeTreeIndexTextParams
     size_t max_cardinality_for_embedded_postings = 0;
     size_t bloom_filter_bits_per_row = 0;
     size_t bloom_filter_num_hashes = 0;
+    String preprocessor;
 };
 
 using PostingList = roaring::Roaring;
@@ -275,7 +280,9 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
 
 struct MergeTreeIndexTextGranuleBuilder
 {
-    MergeTreeIndexTextGranuleBuilder(MergeTreeIndexTextParams params_, TokenExtractorPtr token_extractor_);
+    MergeTreeIndexTextGranuleBuilder(
+        MergeTreeIndexTextParams params_,
+        TokenExtractorPtr token_extractor_);
 
     /// Extracts tokens from the document and adds them to the granule.
     void addDocument(StringRef document);
@@ -297,9 +304,30 @@ struct MergeTreeIndexTextGranuleBuilder
     std::unique_ptr<Arena> arena;
 };
 
+class MergeTreePreprocessor
+{
+public:
+    MergeTreePreprocessor(const String & expression, const IndexDescription & index_description);
+    std::pair<ColumnPtr,size_t> processColumn(const ColumnWithTypeAndName & index_column_with_type_and_name, size_t start_row, size_t n_rows) const;
+    String processString(const String &input) const;
+
+    static ExpressionActions parseExpression(const IndexDescription & index, const String & expression);
+private:
+    ExpressionActions expression;
+    DataTypePtr column_type;
+    String column_name;
+};
+
+using MergeTreePreprocessorPtr = std::shared_ptr<MergeTreePreprocessor>;
+
 struct MergeTreeIndexAggregatorText final : IMergeTreeIndexAggregator
 {
-    MergeTreeIndexAggregatorText(String index_column_name_, MergeTreeIndexTextParams params_, TokenExtractorPtr token_extractor_);
+    MergeTreeIndexAggregatorText(
+        String index_column_name_,
+        MergeTreeIndexTextParams params_,
+        TokenExtractorPtr token_extractor_,
+        MergeTreePreprocessorPtr preprocessor_);
+
     ~MergeTreeIndexAggregatorText() override = default;
 
     bool empty() const override { return granule_builder.empty(); }
@@ -310,6 +338,7 @@ struct MergeTreeIndexAggregatorText final : IMergeTreeIndexAggregator
     MergeTreeIndexTextParams params;
     TokenExtractorPtr token_extractor;
     MergeTreeIndexTextGranuleBuilder granule_builder;
+    MergeTreePreprocessorPtr preprocessor;
 };
 
 class MergeTreeIndexText final : public IMergeTreeIndex
@@ -333,10 +362,13 @@ public:
     /// This function parses the arguments of a text index. Text indexes have a special syntax with complex arguments.
     /// 1. Arguments are named, e.g.: argument = value
     /// 2. The tokenizer argument can be a string, a function name (literal) or a function-like expression, e.g.: ngram(5)
+    /// 3. The preprocessor argument is a generic expression, e.g. lower(extractTextFromHTML(col))
     static FieldVector parseArgumentsListFromAST(const ASTPtr & arguments);
 
     MergeTreeIndexTextParams params;
     std::unique_ptr<ITokenExtractor> token_extractor;
+
+    MergeTreePreprocessorPtr preprocessor;
 };
 
 }
