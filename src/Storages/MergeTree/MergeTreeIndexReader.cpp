@@ -101,7 +101,7 @@ void MergeTreeIndexReader::initStreamIfNeeded()
     if (!streams.empty())
         return;
 
-    auto index_format = index->getDeserializedFormat(part->getDataPartStorage(), index->getFileName());
+    auto index_format = index->getDeserializedFormat(part->checksums, index->getFileName());
     auto index_name = index->getFileName();
     auto last_mark = getLastMark(all_mark_ranges);
 
@@ -196,6 +196,19 @@ void MergeTreeIndexReader::adjustRightMark(size_t right_mark)
 {
     for (const auto & stream : stream_holders)
         stream->adjustRightMark(right_mark);
+}
+
+void MergeTreeIndexReader::prefetchBeginOfRange(size_t from_mark, Priority priority)
+{
+    initStreamIfNeeded();
+
+    for (const auto & stream : stream_holders)
+    {
+        stream->seekToMark(from_mark);
+        stream->getDataBuffer()->prefetch(priority);
+    }
+
+    stream_mark = from_mark;
 }
 
 }
