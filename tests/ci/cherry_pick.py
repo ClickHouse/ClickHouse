@@ -477,18 +477,6 @@ class BackportPRs:
             logging.info("Resetting %s to %s/%s", branch, self.remote, branch)
             git_runner(f"git branch -f {branch} {self.remote}/{branch}")
 
-    def oldest_commit_date(self) -> date:
-        # The dates of every commit in each release branche
-        commit_dates = [
-            commit
-            for branch in self.release_branches
-            for commit in git_runner(
-                "git log --no-merges --format=format:%cs --reverse "
-                f"{self.remote}/{self.default_branch}..{self.remote}/{branch}"
-            ).split("\n")
-        ]
-        return min(date.fromisoformat(c_date) for c_date in commit_dates)
-
     def receive_prs_for_backport(
         self,
         since_date: Optional[date] = None,
@@ -497,8 +485,7 @@ class BackportPRs:
         backport_created_label: str = Labels.PR_BACKPORTS_CREATED,
         repo_name: str = "",
     ) -> None:
-
-        since_date = since_date or self.oldest_commit_date()
+        since_date = date.today() - timedelta(days=1)
         labels_to_backport = (
             labels_to_backport
             or self.labels_to_backport + self.must_create_backport_labels
