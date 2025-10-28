@@ -184,21 +184,21 @@ size_t readOrGetCachedSparseOffsets(
     settings.path.push_back(ISerialization::Substream::SparseOffsets);
     const auto * cached_element = ISerialization::getElementFromSubstreamsCache(cache, settings.path);
 
-    if (!settings.continuous_reading)
-        state_sparse.reset();
-
     size_t old_size = 0;
     if (cached_element)
     {
         /// Reuse cached offsets info
         const auto & cached_offsets_element = assert_cast<const SubstreamsCacheSparseOffsetsElement &>(*cached_element);
-        chassert(state_sparse.column_offsets == cached_offsets_element.offsets);
+        state_sparse.column_offsets = cached_offsets_element.offsets;
         old_size = cached_offsets_element.old_size;
         read_rows = cached_offsets_element.read_rows;
         skipped_values_rows = cached_offsets_element.skipped_values_rows;
     }
     else if (auto * stream = settings.getter(settings.path))
     {
+        if (!settings.continuous_reading)
+            state_sparse.reset();
+
         if (!state_sparse.column_offsets || prev_size == 0)
             state_sparse.column_offsets = ColumnUInt64::create();
 
@@ -226,17 +226,6 @@ SerializationSparse::SerializationSparse(const SerializationPtr & nested_)
         nested = std::make_shared<SerializationNullable>(nested_nullable->getNested(), true /* use_default_null_map */);
         sparse_null_map = std::make_shared<SerializationSparseNullMap>();
     }
-    // else if (const auto * nested_named = typeid_cast<const SerializationNamed *>(nested.get()))
-    // {
-    //     if (const auto * nested_named_nullable = typeid_cast<const SerializationNullable *>(nested_named->getNested().get()))
-    //     {
-    //         nested = std::make_shared<SerializationNamed>(
-    //             std::make_shared<SerializationNullable>(nested_named_nullable->getNested(), true /* use_default_null_map */),
-    //             nested_named->getElementName(),
-    //             nested_named->getSubstreamType());
-    //         sparse_null_map = std::make_shared<SerializationSparseNullMap>();
-    //     }
-    // }
 }
 
 SerializationPtr SerializationSparse::SubcolumnCreator::create(const SerializationPtr & prev, const DataTypePtr &) const
