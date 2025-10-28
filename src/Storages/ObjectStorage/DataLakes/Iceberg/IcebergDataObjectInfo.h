@@ -17,7 +17,6 @@ namespace DB
 {
 struct IcebergDataObjectInfo : public RelativePathWithMetadata, std::enable_shared_from_this<IcebergDataObjectInfo>
 {
-    static constexpr auto CURRENT_SERDE_VERSION = 1;
     using IcebergDataObjectInfoPtr = std::shared_ptr<IcebergDataObjectInfo>;
 
     /// Full path to the data object file
@@ -55,12 +54,6 @@ struct IcebergDataObjectInfo : public RelativePathWithMetadata, std::enable_shar
     std::vector<Iceberg::EqualityDeleteObject> equality_deletes_objects;
     Int64 sequence_number;
     String file_format;
-
-    void serialize(WriteBuffer & out) const { 
-        writeVarUInt(CURRENT_SERDE_VERSION, out); 
-        write 
-    }
-    void deserialize(ReadBuffer & in);
 };
 
 using IcebergDataObjectInfoPtr = std::shared_ptr<IcebergDataObjectInfo>;

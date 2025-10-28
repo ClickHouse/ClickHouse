@@ -1,13 +1,31 @@
 #pragma once
 #include <Core/Types.h>
-#include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeObjectMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/EqualityDeleteObject.h>
+#include <Storages/ObjectStorage/IObjectIterator.h>
 
 
 namespace DB
 {
 class ReadBuffer;
 class WriteBuffer;
+
+struct IcebergObjectSerializableInfo
+{
+    String data_object_file_path_key;
+    Int32 underlying_format_read_schema_id;
+    Int32 schema_id_relevant_to_iterator;
+    Int64 sequence_number;
+    String file_format;
+    std::vector<Iceberg::PositionDeleteObject> position_deletes_objects;
+    std::vector<Iceberg::EqualityDeleteObject> equality_deletes_objects;
+
+    void serialize(WriteBuffer & out, size_t protocol_version) const;
+    void deserialize(ReadBuffer & in, size_t protocol_version);
+
+private:
+    void checkVersion(size_t protocol_version) const;
+};
 
 /// A response send from initiator in Cluster functions (S3Cluster, etc)
 struct ClusterFunctionReadTaskResponse
@@ -21,7 +39,7 @@ struct ClusterFunctionReadTaskResponse
     /// Object metadata path, in case of data lake object.
     DataLakeObjectMetadata data_lake_metadata;
     /// Iceberg object metadata
-    IcebergObjectMetadata iceberg_metadata;
+    std::optional<IcebergObjectSerializableInfo> iceberg_info;
 
     /// Convert received response into ObjectInfo.
     ObjectInfoPtr getObjectInfo() const;
