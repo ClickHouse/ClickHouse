@@ -1201,6 +1201,7 @@
 
             // Build an ordered list of columns that actually exist
             const existingColumnsList = columns.filter(column => existing_columns[column]);
+            const lastColumn = existingColumnsList[existingColumnsList.length - 1];
 
             // Create table headers based on the fixed columns
             const headerRow = document.createElement('tr');
@@ -1210,6 +1211,7 @@
                 th.style.cursor = 'pointer';
                 th.style.textDecoration = 'underline';
                 th.setAttribute('data-sort-direction', 'asc'); // Default sort direction
+                if (column === lastColumn) th.classList.add('time-column');
                 th.addEventListener('click', () => sortTable(results, column, columnSymbols[column] || column, tbody, nest_level, existingColumnsList));
                 headerRow.appendChild(th);
             });
@@ -1231,6 +1233,7 @@
         // Clear existing rows
         tbody.innerHTML = '';
         const filter = localStorage.getItem('filter');
+        const lastColumn = existingColumnsList[existingColumnsList.length - 1];
 
         results.forEach((result, _index) => {
             const row = document.createElement('tr');
@@ -1240,6 +1243,9 @@
             existingColumnsList.forEach(column => {
                 const td = document.createElement('td');
                 const value = result[column];
+
+                // Make the last column the expanding one regardless of its name
+                if (column === lastColumn) td.classList.add('time-column');
 
                 if (column === 'status') {
                     const span = document.createElement('span');
@@ -1350,7 +1356,6 @@
                     }
 
                 } else if (column === 'start_time') {
-                    td.classList.add('time-column');
                     td.textContent = value ? formatTimestamp(value, false) : '';
 
                 } else if (column === 'duration') {
