@@ -209,9 +209,6 @@ EvictionInfoPtr SLRUFileCachePriority::collectEvictionInfoImpl(
         size -= evict_size_from_probationary;
         elements -= evict_elements_from_probationary;
 
-        size_t evict_size_from_protected = size ? std::min(size, protected_queue.getSize(lock)) : 0;
-        size_t evict_elements_from_protected = elements ? std::min(elements, protected_queue.getElementsCount(lock)) : 0;
-
         auto info = probationary_queue.collectEvictionInfo(
             evict_size_from_probationary,
             evict_elements_from_probationary,
@@ -219,12 +216,16 @@ EvictionInfoPtr SLRUFileCachePriority::collectEvictionInfoImpl(
             is_total_space_cleanup,
             lock);
 
-        if (evict_size_from_protected || evict_elements_from_protected)
-        {
-            info->add(protected_queue.collectEvictionInfo(
-                          size, elements, reservee, is_total_space_cleanup, lock));
-        }
+        size_t evict_size_from_protected = size ? std::min(size, protected_queue.getSize(lock)) : 0;
+        size_t evict_elements_from_protected = elements ? std::min(elements, protected_queue.getElementsCount(lock)) : 0;
 
+        info->add(
+            protected_queue.collectEvictionInfo(
+                evict_size_from_protected,
+                evict_elements_from_protected,
+                reservee,
+                is_total_space_cleanup,
+                lock));
         return info;
     }
 
@@ -278,7 +279,7 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
 {
     if (is_total_space_cleanup)
     {
-        auto success = probationary_queue.collectCandidatesForEviction(
+        bool success_probationary = probationary_queue.collectCandidatesForEviction(
             eviction_info,
             stat,
             res,
@@ -289,14 +290,13 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
             is_total_space_cleanup,
             user_id,
             lock);
-
-        if (success)
-            return true;
+        /// We do not quit here if !success_probationary,
+        /// because in case of keep_up_free_space_ratio it is ok to evict at least something.
 
         /// We do not use collectCandidatesForEvictionInProtected method,
         /// because it will "downgrade" instead of remove,
         /// but for total space cleanup we need remove.
-        return protected_queue.collectCandidatesForEviction(
+        bool success_protected = protected_queue.collectCandidatesForEviction(
             eviction_info,
             stat,
             res,
@@ -307,6 +307,8 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
             is_total_space_cleanup,
             user_id,
             lock);
+
+        return success_probationary && success_protected;
     }
 
     /// If `reservee` is nullptr, then it is the first space reservation attempt
@@ -337,7 +339,6 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
         chassert(slru_iterator->lru_iterator.cache_priority == &protected_queue);
         /// Entry is in protected queue.
         /// Check if we have enough space in protected queue to fit a new size of entry.
-        /// `size` is the increment to the current entry.size we want to increase.
         success = collectCandidatesForEvictionInProtected(
             eviction_info,
             stat,
@@ -431,6 +432,9 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
     /// we move elements with zero size and increase the size later in a separate callback.
     auto downgraded_file_segments = std::make_shared<std::vector<FileSegmentMetadataPtr>>();
     downgraded_file_segments->reserve(downgrade_candidates->size());
+
+    /// We first (in write func callback) create an empty queue entry in protected queue.
+    std::shared_ptr<LRUIterator> new_iterator;
     res.setAfterEvictWriteFunc([=, this](const CachePriorityGuard::WriteLock & lk) mutable
     {
         for (auto & [key, key_candidates] : *downgrade_candidates)
@@ -445,11 +449,11 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
                     std::make_shared<SLRUIterator>(candidate_it->cache_priority, std::move(prev_lru_iterator), true));
 
                 auto entry = candidate_it->getEntry();
-                EntryPtr new_entry = std::make_shared<Entry>(entry->key, entry->offset, /* size */0, entry->key_metadata);
-                candidate_it->lru_iterator = probationary_queue.add(new_entry, lk, nullptr);
-                candidate_it->is_protected = false;
-                downgraded_file_segments->push_back(candidate);
+                auto empty_entry = std::make_shared<Entry>(entry->key, entry->offset, /* size */0, entry->key_metadata);
+                new_iterator = std::make_shared<LRUIterator>(
+                    probationary_queue.add(empty_entry, lk, /* state_lock */nullptr));
 
+                downgraded_file_segments->push_back(std::move(candidate));
                 key_candidates.candidates.pop_front();
             }
         }
@@ -464,14 +468,17 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
         {
             const auto & file_segment = metadata->file_segment;
             auto * iterator = assert_cast<SLRUIterator *>(file_segment->getQueueIterator()->getNestedOrThis());
-            iterator->setEntry(iterator->lru_iterator.getEntry(), lk);
+            iterator->setIterator(std::move(*new_iterator), /* is_protected */false, lk);
             chassert(iterator->getEntry()->size == 0);
             iterator->incrementSize(file_segment->getReservedSize(), lk);
         }
     });
 
     LOG_TEST(
-        log, "Eviction info: {}. Downgrading {} elements from protected to probationary. Total size: {}",
+        log,
+        "Eviction info: {}. "
+        "Downgrading {} elements from protected to probationary. "
+        "Total size: {}",
         eviction_info.toString(), downgrade_candidates->size(), downgrade_stat.total_stat.releasable_size);
 
     return true;
@@ -509,7 +516,9 @@ bool SLRUFileCachePriority::tryIncreasePriority(
     EntryPtr entry = iterator.getEntry();
 
     /// Entry is in probationary queue.
-    /// We need to move it to protected queue.
+    /// Check if there is enough space in protected queue to move entry there.
+    /// If not - we need to "downgrade" lowest priority entries from protected
+    /// queue to probationary queue.
     std::unique_ptr<EvictionInfo> downgrade_info;
     {
         auto lock = state_guard.lock();
@@ -534,29 +543,23 @@ bool SLRUFileCachePriority::tryIncreasePriority(
 
     EvictionCandidates downgrade_candidates;
     FileCacheReserveStat downgrade_stat;
-    /// Check if there is enough space in protected queue to move entry there.
-    /// If not - we need to "downgrade" lowest priority entries from protected
-    /// queue to probationary queue.
-
-    bool collected_downgrade_candidates = false;
     InvalidatedEntriesInfos invalidated_entries;
-    {
-        auto lock = queue_guard.readLock();
-        collected_downgrade_candidates = collectCandidatesForEvictionInProtected(
-            *downgrade_info,
-            downgrade_stat,
-            downgrade_candidates,
-            invalidated_entries,
-            /* reservee */nullptr,
-            /* continue_from_last_eviction_pos */false,
-            /* max_candidates_size */0,
-            /* is_total_space_cleanup */false,
-            FileCache::getInternalUser().user_id,
-            lock);
-    }
 
-    if (!collected_downgrade_candidates)
-        return probationary_queue.tryIncreasePriority(iterator.lru_iterator, is_space_reservation_complete, queue_guard, state_guard);
+    if (!collectCandidatesForEvictionInProtected(
+        *downgrade_info,
+        downgrade_stat,
+        downgrade_candidates,
+        invalidated_entries,
+        /* reservee */nullptr,
+        /* continue_from_last_eviction_pos */false,
+        /* max_candidates_size */0,
+        /* is_total_space_cleanup */false,
+        FileCache::getInternalUser().user_id,
+        queue_guard.readLock()))
+    {
+        return probationary_queue.tryIncreasePriority(
+            iterator.lru_iterator, is_space_reservation_complete, queue_guard, state_guard);
+    }
 
     downgrade_candidates.evict();
 
@@ -568,7 +571,6 @@ bool SLRUFileCachePriority::tryIncreasePriority(
 
     std::optional<LRUIterator> new_iterator;
     /// Create an *empty* entry.
-    EntryPtr new_entry = std::make_shared<Entry>(entry->key, entry->offset, /* size */0, entry->key_metadata);
     {
         auto lock = queue_guard.writeLock();
         downgrade_candidates.afterEvictWrite(lock);
@@ -576,9 +578,10 @@ bool SLRUFileCachePriority::tryIncreasePriority(
 
         iterator.lru_iterator.remove(lock);
 
+        auto empty_entry = std::make_shared<Entry>(entry->key, entry->offset, /* size */0, entry->key_metadata);
         try
         {
-            new_iterator = protected_queue.add(new_entry, lock, /* state_lock */nullptr);
+            new_iterator = protected_queue.add(std::move(empty_entry), lock, /* state_lock */nullptr);
         }
         catch (...)
         {
@@ -588,23 +591,23 @@ bool SLRUFileCachePriority::tryIncreasePriority(
         }
     }
 
-    try
     {
-        auto lock = state_guard.lock();
-        downgrade_info->releaseHoldSpace(lock);
-        downgrade_candidates.afterEvictState(lock);
+        try
+        {
+            auto lock = state_guard.lock();
+            downgrade_info->releaseHoldSpace(lock);
+            downgrade_candidates.afterEvictState(lock);
 
-        new_iterator->incrementSize(entry->size, lock);
-        iterator.lru_iterator = *new_iterator;
-        iterator.setEntry(std::move(new_entry), lock);
-        iterator.is_protected = true;
-    }
-    catch (...)
-    {
-        new_iterator->remove(queue_guard.writeLock());
-        chassert(false);
-        /// TODO return the entry back to avoid a case when file segment has no entry.
-        throw;
+            new_iterator->incrementSize(entry->size, lock);
+            iterator.setIterator(std::move(*new_iterator), /* is_protected */true, lock);
+        }
+        catch (...)
+        {
+            new_iterator->remove(queue_guard.writeLock());
+            chassert(false);
+            /// TODO return the entry back to avoid a case when file segment has no entry.
+            throw;
+        }
     }
 
     return true;
@@ -700,10 +703,22 @@ SLRUFileCachePriority::EntryPtr SLRUFileCachePriority::SLRUIterator::getEntry() 
     return entry_ptr;
 }
 
-void SLRUFileCachePriority::SLRUIterator::setEntry(EntryPtr && entry_, const CacheStateGuard::Lock &)
+void SLRUFileCachePriority::SLRUIterator::setIterator(
+    LRUIterator && iterator_,
+    bool is_protected_,
+    const CacheStateGuard::Lock &)
 {
-    std::lock_guard lock(entry_mutex);
-    entry = entry_;
+    lru_iterator = iterator_;
+    is_protected = is_protected_;
+
+    {
+        std::lock_guard lock(entry_mutex);
+        chassert(entry.lock());
+        if (entry.lock()->size > 0)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Valid entry is already set");
+        entry = iterator_.getEntry();
+        chassert(entry.lock()->size > 0);
+    }
 }
 
 void SLRUFileCachePriority::SLRUIterator::incrementSize(size_t size, const CacheStateGuard::Lock & lock)

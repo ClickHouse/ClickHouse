@@ -41,7 +41,6 @@ namespace DB
 
     enum class FileSegmentKind : uint8_t
     {
-        Unknown,
         /**
          * Represents data cached from S3 or other backing storage.
          * It is kept in the cache after usage and can be evicted on demand, unless there are some holders.

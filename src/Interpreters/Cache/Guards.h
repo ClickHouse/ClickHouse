@@ -6,6 +6,7 @@
 
 namespace ProfileEvents
 {
+    extern const Event FilesystemCacheStateLockMicroseconds;
     extern const Event FilesystemCachePriorityWriteLockMicroseconds;
     extern const Event FilesystemCachePriorityReadLockMicroseconds;
 }
@@ -129,12 +130,21 @@ struct CacheStateGuard : private boost::noncopyable
         explicit Lock(Mutex & mutex_) : std::unique_lock<Mutex>(mutex_) {}
     };
 
-    Lock lock() { return Lock(mutex); }
     Lock tryLock() { return Lock(mutex, std::try_to_lock); }
+
+    Lock lock()
+    {
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheStateLockMicroseconds);
+        return Lock(mutex);
+    }
+
     Lock tryLockFor(const std::chrono::milliseconds & acquire_timeout)
     {
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheStateLockMicroseconds);
         return Lock(mutex, std::chrono::duration<double, std::milli>(acquire_timeout));
     }
+
+private:
     Mutex mutex;
 };
 

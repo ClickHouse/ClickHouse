@@ -1,6 +1,5 @@
 #pragma once
 #include <Interpreters/Cache/IFileCachePriority.h>
-#include <Common/logger_useful.h>
 #include <deque>
 
 namespace DB
@@ -35,7 +34,7 @@ using EvictionInfoPtr = std::unique_ptr<EvictionInfo>;
 
 /// Aggregated eviction info:
 /// - contains QueueEvictionInfo per queue_id
-/// - aggregates all methods among all queue eviction infos
+/// - aggregates all methods among all QueueEvictionInfo's.
 class EvictionInfo : public std::map<QueueID, QueueEvictionInfo>, private boost::noncopyable
 {
 public:

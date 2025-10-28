@@ -23,7 +23,7 @@ namespace ProfileEvents
     extern const Event FileSegmentCompleteMicroseconds;
     extern const Event FileSegmentLockMicroseconds;
     extern const Event FileSegmentWriteMicroseconds;
-    extern const Event FileSegmentUseMicroseconds;
+    extern const Event FileSegmentIncreasePriorityMicroseconds;
     extern const Event FileSegmentHolderCompleteMicroseconds;
     extern const Event FileSegmentFailToIncreasePriority;
     extern const Event FilesystemCacheHoldFileSegments;
@@ -1136,21 +1136,25 @@ void FileSegment::detach(const FileSegmentGuard::Lock & lock, const LockedKey &)
 
 void FileSegment::increasePriority()
 {
-    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentUseMicroseconds);
-
     if (!cache)
     {
         chassert(isDetached());
         return;
     }
 
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentIncreasePriorityMicroseconds);
+
+    /// In case of concurrently called increasePriority()
+    /// we want to increase a priority only once
+    /// (because it does not really make any sense
+    /// to do it immediately again after we've just done it)
     std::unique_lock<std::mutex> lock(increase_priority_mutex, std::defer_lock);
     if (lock.try_lock())
     {
         auto it = getQueueIterator();
         if (it)
         {
-            if (cache->tryIncreasePriority(*this))
+            if (!cache->tryIncreasePriority(*this))
                 ProfileEvents::increment(ProfileEvents::FileSegmentFailToIncreasePriority);
 
             /// Used only for system.filesystem_cache.

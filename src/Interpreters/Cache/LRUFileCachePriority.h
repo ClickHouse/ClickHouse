@@ -188,6 +188,7 @@ private:
 
     LRUQueue::iterator getEvictionIterator() const;
     void setEvictionIterator(LRUQueue::iterator it);
+    void skipEvictionIteratorIfEqual(LRUQueue::iterator it);
 };
 
 class LRUFileCachePriority::LRUIterator : public IFileCachePriority::Iterator

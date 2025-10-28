@@ -1,6 +1,4 @@
 #include <Interpreters/Cache/IFileCachePriority.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 
@@ -47,7 +45,8 @@ IFileCachePriority::Entry::Entry(const Entry & other)
 
 std::string IFileCachePriority::Entry::toString() const
 {
-    return fmt::format("{}:{}:{} (invalidated: {}, evicting: {})", key, offset, size.load(), invalidated.load(), evicting.load());
+    return fmt::format("{}:{}:{} (invalidated: {}, evicting: {})",
+                       key, offset, size.load(), invalidated.load(), evicting.load());
 }
 
 void IFileCachePriority::check(const CacheStateGuard::Lock & lock) const

@@ -150,7 +150,6 @@ public:
     {
         BREAK,
         CONTINUE,
-        //REMOVE_AND_CONTINUE,
     };
 
     using IterateFunc = std::function<IterationResult(LockedKey &, const FileSegmentMetadataPtr &)>;

@@ -1,5 +1,6 @@
 #include <Interpreters/Cache/EvictionCandidates.h>
 #include <Interpreters/Cache/Metadata.h>
+#include <Common/logger_useful.h>
 #include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
 

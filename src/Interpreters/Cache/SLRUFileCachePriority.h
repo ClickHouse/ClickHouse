@@ -161,13 +161,13 @@ public:
 
     /// Can be called only once,
     /// and only if iterator was previously created with an empty entry.
-    void setEntry(EntryPtr && entry_, const CacheStateGuard::Lock &);
+    void setIterator(LRUIterator && iterator_, bool is_protected_, const CacheStateGuard::Lock &);
 
 private:
     bool assertValid() const;
 
     SLRUFileCachePriority * cache_priority;
-    LRUFileCachePriority::LRUIterator lru_iterator;
+    LRUIterator lru_iterator;
     /// Entry itself is stored by lru_iterator.entry.
     /// We have it as a separate field to use entry without requiring any lock
     /// (which will be required if we wanted to get entry from lru_iterator.getEntry()).

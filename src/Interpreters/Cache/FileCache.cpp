@@ -1319,22 +1319,21 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
     /// by default the batch size is quite small).
 
     IFileCachePriority::InvalidatedEntriesInfos invalidated_entries;
-    if (main_priority->collectCandidatesForEviction(
-            *eviction_info,
-            stat,
-            eviction_candidates,
-            invalidated_entries,
-            /* reservee */nullptr,
-            /* continue_from_last_eviction_pos */false,
-            /* max_candidates_size */keep_up_free_space_remove_batch,
-            /* is_total_space_cleanup */true,
-            {},
-            cache_guard.readLock()))
+    main_priority->collectCandidatesForEviction(
+        *eviction_info,
+        stat,
+        eviction_candidates,
+        invalidated_entries,
+        /* reservee */nullptr,
+        /* continue_from_last_eviction_pos */false,
+        /* max_candidates_size */keep_up_free_space_remove_batch,
+        /* is_total_space_cleanup */true,
+        {},
+        cache_guard.readLock());
+
+    if (eviction_candidates.size() > 0)
     {
         desired_size_status = IFileCachePriority::CollectStatus::SUCCESS;
-
-        /// Remove files from filesystem.
-        chassert(eviction_candidates.size() > 0);
         eviction_candidates.evict();
     }
 
@@ -1353,8 +1352,8 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
     watch.stop();
     ProfileEvents::increment(ProfileEvents::FilesystemCacheFreeSpaceKeepingThreadWorkMilliseconds, watch.elapsedMilliseconds());
 
-    //LOG_TRACE(log, "Free space ratio keeping thread finished in {} ms (status: {})",
-    //          watch.elapsedMilliseconds(), desired_size_status);
+    LOG_TRACE(log, "Free space ratio keeping thread finished in {} ms (status: {})",
+              watch.elapsedMilliseconds(), desired_size_status);
 
     [[maybe_unused]] bool scheduled = false;
     switch (desired_size_status)
