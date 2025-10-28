@@ -171,7 +171,6 @@ void TTLTransform::consume(Chunk chunk)
     /// Fill expired columns with default values which will later be handled in TTLColumnAlgorithm
     for (const auto & [column, data] : expired_columns_data)
     {
-        chassert(!block.has(column));
         auto default_column
             = ITTLAlgorithm::executeExpressionAndGetColumn(data.default_expression, block, data.default_column_name);
         if (default_column)
@@ -179,7 +178,13 @@ void TTLTransform::consume(Chunk chunk)
         else
             default_column = data.type->createColumnConstWithDefaultValue(block.rows())->convertToFullColumnIfConst();
 
-        block.insert(ColumnWithTypeAndName(default_column, data.type, column));
+        /// Expired column may pre-exist (e.g. from customized merges like ReplacingMergeTree with version key), so
+        /// replace it with default instead of inserting a new one.
+        auto * c = block.findByName(column);
+        if (c)
+            c->column = default_column;
+        else
+            block.insert(ColumnWithTypeAndName(default_column, data.type, column));
     }
 
     for (const auto & algorithm : algorithms)

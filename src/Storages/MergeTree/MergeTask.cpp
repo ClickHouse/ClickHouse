@@ -272,7 +272,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
     Names sort_key_columns_vec = sorting_key_expr->getRequiredColumns();
 
     /// Collect columns used in the sorting key expressions.
-    std::set<String> key_columns;
+    NameSet key_columns;
     auto storage_columns = global_ctx->storage_columns.getNameSet();
     for (const auto & name : sort_key_columns_vec)
     {
@@ -308,6 +308,11 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
         auto minmax_columns = MergeTreeData::getMinMaxColumnsNames(global_ctx->metadata_snapshot->getPartitionKey());
         key_columns.insert(minmax_columns.begin(), minmax_columns.end());
     }
+
+    key_columns.insert(global_ctx->deduplicate_by_columns.begin(), global_ctx->deduplicate_by_columns.end());
+
+    /// Key columns required for merge, must not be expired early.
+    global_ctx->merge_required_key_columns = key_columns;
 
     const auto & skip_indexes = global_ctx->metadata_snapshot->getSecondaryIndices();
 
@@ -534,9 +539,13 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         NamesAndTypesList merging_columns;
         for (const auto & column : global_ctx->merging_columns)
         {
-            if (expired_columns.contains(column.name))
+            bool is_expired = expired_columns.contains(column.name);
+            bool is_required_for_merge = global_ctx->merge_required_key_columns.contains(column.name);
+
+            if (is_expired)
                 global_ctx->merging_columns_expired_by_ttl.push_back(column);
-            else
+
+            if (!is_expired || is_required_for_merge)
                 merging_columns.push_back(column);
         }
         global_ctx->merging_columns = std::move(merging_columns);
@@ -544,9 +553,13 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         NamesAndTypesList storage_columns;
         for (const auto & column : global_ctx->storage_columns)
         {
-            if (expired_columns.contains(column.name))
+            bool is_expired = expired_columns.contains(column.name);
+            bool is_required_for_merge = global_ctx->merge_required_key_columns.contains(column.name);
+
+            if (is_expired)
                 global_ctx->storage_columns_expired_by_ttl.push_back(column);
-            else
+
+            if (!is_expired || is_required_for_merge)
                 storage_columns.push_back(column);
         }
         global_ctx->storage_columns = std::move(storage_columns);
