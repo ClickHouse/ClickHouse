@@ -9,7 +9,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
-#include "Formats/FormatFactory.h"
+#include <Formats/FormatFactory.h>
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 
 namespace DB

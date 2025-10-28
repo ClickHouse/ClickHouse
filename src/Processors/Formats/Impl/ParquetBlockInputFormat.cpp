@@ -1408,7 +1408,7 @@ void registerInputFormatParquet(FormatFactory & factory)
 {
     factory.registerFileBucketInfo(
         "PARQUET",
-        std::make_shared<ParquetFileBucketInfo>(std::nullopt)   
+        std::make_shared<ParquetFileBucketInfo>(std::nullopt)
     );
 
     factory.registerRandomAccessInputFormat(
