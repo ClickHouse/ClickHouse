@@ -377,6 +377,45 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
 }
 
 
+FileBucketInfoPtr FormatFactory::createFromBuckets(const String & format, const std::vector<size_t> & buckets)
+{
+    if (!instances.contains(format))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Format {} not found", format);
+    return instances.at(format)->createFromBuckets(buckets);
+}
+
+void FormatFactory::serializeFileFormatName(FileBucketInfoPtr file_bucket_info, WriteBuffer & buffer)
+{
+    if (!file_bucket_info)
+    {
+        writeVarInt(0, buffer);
+        return;
+    }
+    auto index = format_to_type[file_bucket_info->getFormatName()];
+    writeVarInt(index, buffer);
+}
+
+void FormatFactory::deserializeFileFormatName(FileBucketInfoPtr & file_bucket_info, ReadBuffer & buffer)
+{
+    Int32 type_index;
+    readVarInt(type_index, buffer);
+    if (type_index == 0)
+    {
+        file_bucket_info = nullptr;
+        return;
+    }
+    auto format = type_to_format[type_index];
+    file_bucket_info = instances.at(format)->clone();
+}
+
+void FormatFactory::registerFileBucketInfo(const String & format, FileBucketInfoPtr bucket_info)
+{
+    instances.emplace(format, bucket_info);
+    Int32 total_count = static_cast<Int32>(instances.size());
+    format_to_type[format] = ++total_count;
+    type_to_format[total_count] = format;
+}
+
 InputFormatPtr FormatFactory::getInput(
     const String & name,
     ReadBuffer & _buf,

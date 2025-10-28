@@ -6869,13 +6869,13 @@ Controls how data is split into tasks when executing a CLUSTER TABLE FUNCTION.
 
 This setting defines the granularity of work distribution across the cluster:
 - `file` — each task processes an entire file.
-- `row_group` — tasks are created per internal data block within a file (for example, Parquet row groups).
+- `bucket` — tasks are created per internal data block within a file (for example, Parquet row groups).
 
-Choosing finer granularity (like `row_group`) can improve parallelism when working with a small number of large files.
-For instance, if a Parquet file contains multiple row groups, enabling `row_group` granularity allows each group to be processed independently by different workers.
+Choosing finer granularity (like `bucket`) can improve parallelism when working with a small number of large files.
+For instance, if a Parquet file contains multiple row groups, enabling `bucket` granularity allows each group to be processed independently by different workers.
 )", 0) \
     DECLARE(UInt64, cluster_table_function_buckets_batch_size, 0, R"(
-Approximate size of batch in distributed processing.
+Defines the approximate size of a batch (in bytes) used in distributed processing. The system accumulates data until at least this amount is reached; the actual size may be slightly larger to align with data boundaries
 )", 0) \
     DECLARE(UInt64, merge_table_max_tables_to_look_for_schema_inference, 1000, R"(
 When creating a `Merge` table without an explicit schema or when using the `merge` table function, infer schema as a union of not more than the specified number of matching tables.

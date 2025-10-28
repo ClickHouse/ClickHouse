@@ -61,20 +61,6 @@ struct FileBucketInfo
 
 using FileBucketInfoPtr = std::shared_ptr<FileBucketInfo>;
 
-class FileBucketInfoFactory
-{
-public:
-    FileBucketInfoFactory();
-
-    FileBucketInfoPtr createFromBuckets(const String & format, const std::vector<size_t> & buckets);
-    void serializeType(FileBucketInfoPtr file_bucket_info, WriteBuffer & buffer);
-    void deserializeType(FileBucketInfoPtr & file_bucket_info, ReadBuffer & buffer);
-private:
-    std::unordered_map<String, FileBucketInfoPtr> instances;
-    std::unordered_map<String, Int32> format_to_type;
-    std::unordered_map<Int32, String> type_to_format;
-};
-
 /** Input format is a source, that reads data from ReadBuffer.
   */
 class IInputFormat : public ISource

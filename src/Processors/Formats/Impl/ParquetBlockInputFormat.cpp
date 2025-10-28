@@ -605,7 +605,6 @@ void ParquetFileBucketInfo::serialize(WriteBuffer & buffer)
 {
     if (row_group_ids)
     {
-        chassert(row_group_ids->size() != static_cast<size_t>(-1));
         writeVarInt(row_group_ids->size(), buffer);
         for (auto chunk : *row_group_ids)
             writeVarUInt(chunk, buffer);
@@ -616,20 +615,19 @@ void ParquetFileBucketInfo::serialize(WriteBuffer & buffer)
 
 void ParquetFileBucketInfo::deserialize(ReadBuffer & buffer)
 {
-    Int32 size_chunks;
+    Int64 size_chunks;
     readVarInt(size_chunks, buffer);
     if (size_chunks != -1)
     {
         row_group_ids = std::vector<size_t>{};
-        for (Int32 i = 0; i < size_chunks; ++i)
+        row_group_ids->resize(size_chunks);
+        size_t bucket;
+        for (Int64 i = 0; i < size_chunks; ++i)
         {
-            size_t bucket;
             readVarUInt(bucket, buffer);
-            row_group_ids->push_back(bucket);
+            row_group_ids->at(i) = bucket;
         }
     }
-    else
-        row_group_ids = std::nullopt;
 }
 
 String ParquetFileBucketInfo::getIdentifier() const
@@ -1408,6 +1406,11 @@ std::optional<size_t> ArrowParquetSchemaReader::readNumberOrRows()
 
 void registerInputFormatParquet(FormatFactory & factory)
 {
+    factory.registerFileBucketInfo(
+        "PARQUET",
+        std::make_shared<ParquetFileBucketInfo>(std::nullopt)   
+    );
+
     factory.registerRandomAccessInputFormat(
         "Parquet",
         [](ReadBuffer & buf,

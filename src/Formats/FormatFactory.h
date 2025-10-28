@@ -11,6 +11,8 @@
 #include <Common/Allocator.h>
 #include <Common/NamePrompter.h>
 
+#include <Processors/Formats/IInputFormat.h>
+
 #include <boost/noncopyable.hpp>
 
 #include <functional>
@@ -288,7 +290,16 @@ public:
     void checkFormatName(const String & name) const;
     bool exists(const String & name) const;
 
+    FileBucketInfoPtr createFromBuckets(const String & format, const std::vector<size_t> & buckets);
+    void serializeFileFormatName(FileBucketInfoPtr file_bucket_info, WriteBuffer & buffer);
+    void deserializeFileFormatName(FileBucketInfoPtr & file_bucket_info, ReadBuffer & buffer);
+    void registerFileBucketInfo(const String & format, FileBucketInfoPtr bucket_info);
+
 private:
+    std::unordered_map<String, FileBucketInfoPtr> instances;
+    std::unordered_map<String, Int32> format_to_type;
+    std::unordered_map<Int32, String> type_to_format;
+
     FormatsDictionary dict;
     FileExtensionFormats file_extension_formats;
 
