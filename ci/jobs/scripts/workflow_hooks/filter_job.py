@@ -176,5 +176,5 @@ def is_a_release_pr(job_name: str) -> tuple[bool, str]:
         _info_cache = Info()
 
     if Labels.RELEASE in _info_cache.pr_labels:
-        return True, "Skipped for the release branch"
+        return True, "Skipped for the release PR"
     return False, ""
