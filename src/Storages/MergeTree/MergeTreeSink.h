@@ -3,6 +3,7 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Common/ProfileEvents.h>
+#include <Interpreters/InsertDeduplication.h>
 
 
 namespace DB
@@ -26,7 +27,8 @@ struct MergeTreeDelayedChunk
     {
         TemporaryPartPtr temp_part;
         UInt64 elapsed_ns;
-        String block_dedup_token;
+        Block block;
+        DeduplicationInfo::Ptr deduplication_info;
         ProfileEvents::Counters part_counters;
     };
 
@@ -59,7 +61,7 @@ protected:
     /// We can delay processing for previous chunk and start writing a new one.
     std::unique_ptr<MergeTreeDelayedChunk> delayed_chunk;
 
-    bool commitPart(MutableDataPartPtr & part, const String & deduplication_token);
+    bool commitPart(MutableDataPartPtr & part, const Block & block,const DeduplicationInfo::Ptr & deduplication_info);
     virtual void finishDelayedChunk();
     virtual TemporaryPartPtr writeNewTempPart(BlockWithPartition & block);
 };

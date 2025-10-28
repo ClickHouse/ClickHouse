@@ -439,6 +439,21 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
 
     pipeline.resize(1);
 
+    auto insert_dependencies = InsertDependenciesBuilder::create(
+        table, query_ptr, std::make_shared<const Block>(std::move(query_sample_block)),
+        async_insert, /*skip_destination_table*/ no_destination, max_insert_threads,
+        getContext());
+
+
+    pipeline.addSimpleTransform([&](const SharedHeader &in_header) -> ProcessorPtr
+    {
+        return std::make_shared<AddDeduplicationInfoTransform>(
+            insert_dependencies,
+            insert_dependencies->getRootViewID(),
+            settings[Setting::insert_deduplication_token].value,
+            in_header);
+    });
+
     bool should_squash = shouldAddSquashingForStorage(table, getContext()) && !no_squash && !async_insert;
     if (should_squash)
     {
@@ -451,29 +466,6 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
                     table->prefersLargeBlocks() ? settings[Setting::min_insert_block_size_bytes] : 0ULL);
             });
     }
-
-    pipeline.addSimpleTransform([&](const SharedHeader &in_header) -> ProcessorPtr
-    {
-        return std::make_shared<DeduplicationToken::AddTokenInfoTransform>(in_header);
-    });
-
-    if (!settings[Setting::insert_deduplication_token].value.empty())
-    {
-        pipeline.addSimpleTransform([&](const SharedHeader & in_header) -> ProcessorPtr
-        {
-            return std::make_shared<DeduplicationToken::SetUserTokenTransform>(settings[Setting::insert_deduplication_token].value, in_header);
-        });
-
-        pipeline.addSimpleTransform([&](const SharedHeader & in_header) -> ProcessorPtr
-        {
-            return std::make_shared<DeduplicationToken::SetSourceBlockNumberTransform>(in_header);
-        });
-    }
-
-    auto insert_dependencies = InsertDependenciesBuilder::create(
-        table, query_ptr, std::make_shared<const Block>(std::move(query_sample_block)),
-        async_insert, /*skip_destination_table*/ no_destination, max_insert_threads,
-        getContext());
 
     std::vector<Chain> sink_chains = insert_dependencies->createChainWithDependenciesForAllStreams();
 
@@ -693,14 +685,12 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     chassert(chains.size() == 1);
     auto chain = std::move(chains.front());
 
-    if (!settings[Setting::insert_deduplication_token].value.empty())
-    {
-        chain.addSource(std::make_shared<DeduplicationToken::SetSourceBlockNumberTransform>(chain.getInputSharedHeader()));
-        chain.addSource(std::make_shared<DeduplicationToken::SetUserTokenTransform>(
-            settings[Setting::insert_deduplication_token].value, chain.getInputSharedHeader()));
-    }
-
-    chain.addSource(std::make_shared<DeduplicationToken::AddTokenInfoTransform>(chain.getInputSharedHeader()));
+    chain.addSource(
+        std::make_shared<AddDeduplicationInfoTransform>(
+            insert_dependencies,
+            insert_dependencies->getRootViewID(),
+            settings[Setting::insert_deduplication_token].value,\
+            chain.getInputSharedHeader()));
 
     if (shouldAddSquashingForStorage(table, getContext()) && !no_squash && !async_insert)
     {

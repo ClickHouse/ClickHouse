@@ -2582,20 +2582,12 @@ UInt128 IMergeTreeDataPart::getPartBlockIDHash() const
     return hash.get128();
 }
 
-String IMergeTreeDataPart::getNewPartBlockID(std::string_view token) const
+String IMergeTreeDataPart::getNewPartBlockID() const
 {
     if (info.min_block != info.max_block)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to get block id for part {} that contains more than one block", name);
 
-    if (token.empty())
-    {
-        const auto hash_value = getPartBlockIDHash();
-        return info.getPartitionId() + "_" + toString(hash_value.items[0]) + "_" + toString(hash_value.items[1]);
-    }
-
-    SipHash hash;
-    hash.update(token.data(), token.size());
-    const auto hash_value = hash.get128();
+    const auto hash_value = getPartBlockIDHash();
     return info.getPartitionId() + "_" + toString(hash_value.items[0]) + "_" + toString(hash_value.items[1]);
 }
 

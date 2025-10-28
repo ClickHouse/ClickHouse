@@ -20,19 +20,16 @@ EphemeralLockInZooKeeper::EphemeralLockInZooKeeper(const String & path_prefix_, 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Name of the main node is shorter than prefix.");
 }
 
-template <typename T>
-std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
+EphemeralLockInZooKeeper createEphemeralLockInZooKeeper(
     const String & path_prefix_,
     const String & temp_path,
     const ZooKeeperWithFaultInjectionPtr & zookeeper_,
-    const T & deduplication_path,
+    const std::vector<String> & deduplication_paths,
     const std::optional<String> & znode_data)
 {
-    static constexpr bool async_insert = std::is_same_v<T, std::vector<String>>;
-
     String path;
 
-    if (deduplication_path.empty())
+    if (deduplication_paths.empty())
     {
         String holder_path = znode_data.value_or(temp_path + "/" + EphemeralLockInZooKeeper::LEGACY_LOCK_OTHER);
         path = zookeeper_->create(path_prefix_, holder_path, zkutil::CreateMode::EphemeralSequential);
@@ -43,15 +40,9 @@ std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
 
         /// Check for duplicates in advance, to avoid superfluous block numbers allocation
         Coordination::Requests ops;
-        if constexpr (async_insert)
-        {
-            for (const auto & single_dedup_path : deduplication_path)
-                zkutil::addCheckNotExistsRequest(ops, *zookeeper_, single_dedup_path);
-        }
-        else
-        {
-            zkutil::addCheckNotExistsRequest(ops, *zookeeper_, deduplication_path);
-        }
+
+        for (const auto & single_dedup_path : deduplication_paths)
+            zkutil::addCheckNotExistsRequest(ops, *zookeeper_, single_dedup_path);
 
         auto deduplication_path_ops_size = ops.size();
 
@@ -60,27 +51,16 @@ std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
         Coordination::Error e = zookeeper_->tryMulti(ops, responses);
         if (e == Coordination::Error::ZNODEEXISTS)
         {
-            if constexpr (async_insert)
-            {
-                auto failed_idx = zkutil::getFailedOpIndex(Coordination::Error::ZNODEEXISTS, responses);
+            auto failed_idx = zkutil::getFailedOpIndex(Coordination::Error::ZNODEEXISTS, responses);
 
-                if (failed_idx < deduplication_path_ops_size)
-                {
-                    const String & failed_op_path = ops[failed_idx]->getPath();
-                    LOG_DEBUG(
-                        getLogger("createEphemeralLockInZooKeeper"),
-                        "Deduplication path already exists: deduplication_path={}",
-                        failed_op_path);
-                    return EphemeralLockInZooKeeper{"", nullptr, "", failed_op_path};
-                }
-            }
-            else if (responses[0]->error == Coordination::Error::ZNODEEXISTS)
+            if (failed_idx < deduplication_path_ops_size)
             {
+                const String & failed_op_path = ops[failed_idx]->getPath();
                 LOG_DEBUG(
                     getLogger("createEphemeralLockInZooKeeper"),
                     "Deduplication path already exists: deduplication_path={}",
-                    deduplication_path);
-                return {};
+                    failed_op_path);
+                return EphemeralLockInZooKeeper{"", nullptr, "", failed_op_path};
             }
         }
 
@@ -240,13 +220,5 @@ EphemeralLocksInAllPartitions::~EphemeralLocksInAllPartitions()
         tryLogCurrentException("~EphemeralLocksInAllPartitions");
     }
 }
-
-template std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper<String>(
-    const String & path_prefix_, const String & temp_path, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const String & deduplication_path,
-    const std::optional<String> & znode_data);
-
-template std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper<std::vector<String>>(
-    const String & path_prefix_, const String & temp_path, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const std::vector<String> & deduplication_path,
-    const std::optional<String> & znode_data);
 
 }
