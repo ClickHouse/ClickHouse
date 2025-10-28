@@ -117,9 +117,6 @@ void DatabaseDataLake::validateSettings()
 
 std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
 {
-    if (settings[DatabaseDataLakeSetting::catalog_type].value == DatabaseDataLakeCatalogType::NONE)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unspecified catalog type");
-
     if (catalog_impl)
         return catalog_impl;
 
@@ -132,6 +129,8 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
 
     switch (settings[DatabaseDataLakeSetting::catalog_type].value)
     {
+        case DB::DatabaseDataLakeCatalogType::NONE:
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unspecified catalog type");
         case DB::DatabaseDataLakeCatalogType::ICEBERG_REST:
         {
             catalog_impl = std::make_shared<DataLake::RestCatalog>(
