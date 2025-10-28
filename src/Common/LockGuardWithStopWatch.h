@@ -32,6 +32,7 @@ struct TSA_SCOPED_LOCKABLE LockGuardWithStopWatch final
 
         wait_watch.emplace(CLOCK_MONOTONIC);
         lock.emplace(mutex_);
+        wait_watch->stop();
         lock_watch.emplace(CLOCK_MONOTONIC);
     }
 
@@ -46,13 +47,12 @@ struct TSA_SCOPED_LOCKABLE LockGuardWithStopWatch final
 
         /// Must be destroyed first.
         lock.reset();
-        wait_watch->stop();
         lock_watch->stop();
 
-        if (wait_watch->elapsedMilliseconds() - lock_watch->elapsedMilliseconds() > THRESHOLD_MILLISECONDS)
+        if (wait_watch->elapsedMilliseconds() > THRESHOLD_MILLISECONDS)
         {
             LOG_WARNING(log, "Lock acquisition took {} ms for thread {} in [{}], Stack trace (when copying this message, always include the lines below): \n {}",
-                wait_watch->elapsedMilliseconds() - lock_watch->elapsedMilliseconds(), thread_id, caller, StackTrace().toString());
+                wait_watch->elapsedMilliseconds(), thread_id, caller, StackTrace().toString());
         }
 
         if (lock_watch->elapsedMilliseconds() > THRESHOLD_MILLISECONDS)

@@ -162,6 +162,9 @@ void MutatePlainMergeTreeTask::cancel() noexcept
 
     if (new_part)
         new_part->removeIfNeeded();
+
+    if (merge_mutate_entry)
+        merge_mutate_entry->finalize();
 }
 
 
