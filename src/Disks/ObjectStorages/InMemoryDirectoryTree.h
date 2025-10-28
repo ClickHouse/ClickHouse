@@ -44,9 +44,6 @@ public:
     std::optional<std::pair<std::string, DirectoryRemoteInfo>> lookupDirectoryIfNotChanged(const std::string & remote_path, const std::string & etag) const;
 
     /// TODO:
-    std::optional<DirectoryRemoteInfo> getDirectoryRemoteInfo(const std::string & path) const;
-
-    /// TODO:
     std::unordered_map<std::string, std::optional<DirectoryRemoteInfo>> getSubtreeRemoteInfo(const std::string & path) const;
 
     /// TODO:
@@ -56,9 +53,9 @@ public:
     void unlinkTree(const std::string & path);
 
     /// Normal File System Methods
-    bool existsDirectory(const std::string & path) const;
     void moveDirectory(const std::string & from, const std::string & to);
     std::vector<std::string> listDirectory(const std::string & path) const;
+    std::pair<bool, std::optional<DirectoryRemoteInfo>> existsDirectory(const std::string & path) const;
 
     bool existsFile(const std::string & path) const;
     void addFile(const std::string & path);

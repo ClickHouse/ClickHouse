@@ -77,7 +77,7 @@ void InMemoryDirectoryTree::traverseSubtree(const std::filesystem::path & path, 
     std::deque<std::pair<fs::path, std::shared_ptr<INode>>> unvisited;
 
     if (auto start_node = walk(path))
-        unvisited.emplace_back(path, std::move(start_node));
+        unvisited.emplace_back("", std::move(start_node));
 
     while (!unvisited.empty())
     {
@@ -151,14 +151,6 @@ std::optional<std::pair<std::string, DirectoryRemoteInfo>> InMemoryDirectoryTree
     return std::make_pair(determineNodePath(inode), inode->remote_info.value());
 }
 
-std::optional<DirectoryRemoteInfo> InMemoryDirectoryTree::getDirectoryRemoteInfo(const std::string & path) const
-{
-    std::lock_guard guard(mutex);
-    const auto normalized_path = normalizePath(path);
-    const auto inode = walk(normalized_path);
-    return inode ? inode->remote_info : std::nullopt;
-}
-
 std::unordered_map<std::string, std::optional<DirectoryRemoteInfo>> InMemoryDirectoryTree::getSubtreeRemoteInfo(const std::string & path) const
 {
     std::lock_guard guard(mutex);
@@ -215,14 +207,6 @@ void InMemoryDirectoryTree::unlinkTree(const std::string & path)
     inode->last_directory_name = "";
 }
 
-bool InMemoryDirectoryTree::existsDirectory(const std::string & path) const
-{
-    std::lock_guard guard(mutex);
-    const auto normalized_path = normalizePath(path);
-    const auto inode = walk(normalized_path);
-    return inode != nullptr;
-}
-
 void InMemoryDirectoryTree::moveDirectory(const std::string & from, const std::string & to)
 {
     std::lock_guard guard(mutex);
@@ -269,6 +253,21 @@ std::vector<std::string> InMemoryDirectoryTree::listDirectory(const std::string 
         result.append_range(inode->remote_info->file_names);
 
     return result;
+}
+
+std::pair<bool, std::optional<DirectoryRemoteInfo>> InMemoryDirectoryTree::existsDirectory(const std::string & path) const
+{
+    std::lock_guard guard(mutex);
+    const auto normalized_path = normalizePath(path);
+    const auto inode = walk(normalized_path);
+
+    if (!inode)
+        return {false, std::nullopt};
+
+    if (inode->isVirtual())
+        return {true, std::nullopt};
+
+    return {true, inode->remote_info};
 }
 
 bool InMemoryDirectoryTree::existsFile(const std::string & path) const
