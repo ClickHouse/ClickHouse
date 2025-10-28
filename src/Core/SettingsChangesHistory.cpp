@@ -43,6 +43,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"correlated_subqueries_default_join_kind", "left", "right", "New setting. Default join kind for decorrelated query plan."},
             {"use_statistics_cache", 0, 0, "New setting"},
+            {"input_format_parquet_use_native_reader_v3", false, true, "Seems stable"},
         });
         addSettingsChanges(settings_changes_history, "25.10",
         {
@@ -80,7 +81,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_cache_receive_timeout_ms", 3000, 3000, "New setting"},
             {"distributed_cache_send_timeout_ms", 3000, 3000, "New setting"},
             {"distributed_cache_tcp_keep_alive_timeout_ms", 2900, 2900, "New setting"},
-            {"input_format_parquet_use_native_reader_v3", false, true, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.9",
         {
