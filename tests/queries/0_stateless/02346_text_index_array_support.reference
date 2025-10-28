@@ -41,3 +41,85 @@ Granules: 3072/6144
 -- -- value does not exist in granules
 Description: text GRANULARITY 1
 Granules: 0/6144
+hasAnyTokens support
+-- with String
+3072
+3072
+5120
+-- with FixedString
+3072
+3072
+5120
+-- Check that the text index actually gets used (String)
+-- -- value exists only in 1024 granules
+Description: text GRANULARITY 1
+Granules: 1024/6144
+-- -- value exists only in 2048 granules
+Description: text GRANULARITY 1
+Granules: 2048/6144
+-- -- value exists only in 3072 granules
+Description: text GRANULARITY 1
+Granules: 3072/6144
+-- -- value exists only in 5120 granules
+Description: text GRANULARITY 1
+Granules: 5120/6144
+-- -- value does not exist in granules
+Description: text GRANULARITY 1
+Granules: 0/6144
+-- Check that the text index actually gets used (FixedString)
+-- -- value exists only in 1024 granules
+Description: text GRANULARITY 1
+Granules: 1024/6144
+-- -- value exists only in 2048 granules
+Description: text GRANULARITY 1
+Granules: 2048/6144
+-- -- value exists only in 3072 granules
+Description: text GRANULARITY 1
+Granules: 3072/6144
+-- -- value exists only in 5120 granules
+Description: text GRANULARITY 1
+Granules: 5120/6144
+-- -- value does not exist in granules
+Description: text GRANULARITY 1
+Granules: 0/6144
+hasAllTokens support
+-- with String
+3072
+3072
+1024
+-- with FixedString
+3072
+3072
+1024
+-- Check that the text index actually gets used (String)
+-- -- value exists only in 1024 granules
+Description: text GRANULARITY 1
+Granules: 1024/6144
+-- -- value exists only in 2048 granules
+Description: text GRANULARITY 1
+Granules: 2048/6144
+-- -- value exists only in 3072 granules
+Description: text GRANULARITY 1
+Granules: 3072/6144
+-- -- value exists only in 1024 granules
+Description: text GRANULARITY 1
+Granules: 1024/6144
+-- -- value does not exist in granules
+Description: text GRANULARITY 1
+Granules: 0/6144
+-- Check that the text index actually gets used (FixedString)
+-- -- value exists only in 1024 granules
+Description: text GRANULARITY 1
+Granules: 1024/6144
+-- -- value exists only in 2048 granules
+Description: text GRANULARITY 1
+Granules: 2048/6144
+-- -- value exists only in 3072 granules
+Description: text GRANULARITY 1
+Granules: 3072/6144
+-- -- value exists only in 1024 granules
+Description: text GRANULARITY 1
+Granules: 1024/6144
+-- -- value does not exist in granules
+Description: text GRANULARITY 1
+Granules: 0/6144
