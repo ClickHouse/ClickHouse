@@ -1218,7 +1218,7 @@ ColumnPtr ColumnObject::replicate(const Offsets & replicate_offsets) const
     return ColumnObject::create(replicated_typed_paths, replicated_dynamic_paths, replicated_shared_data, max_dynamic_paths, global_max_dynamic_paths, max_dynamic_types);
 }
 
-MutableColumns ColumnObject::scatter(ColumnIndex num_columns, const Selector & selector) const
+MutableColumns ColumnObject::scatter(size_t num_columns, const Selector & selector) const
 {
     std::vector<std::unordered_map<String, MutableColumnPtr>> scattered_typed_paths(num_columns);
     for (auto & typed_paths_ : scattered_typed_paths)
