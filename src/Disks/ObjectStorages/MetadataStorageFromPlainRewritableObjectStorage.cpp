@@ -85,6 +85,8 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load)
     ///    and apply the corresponding rename.
 
     bool has_metadata = object_storage->existsOrHasAnyChild(metadata_key_prefix);
+
+    std::mutex remote_layout_mutex;
     std::unordered_map<std::string, DirectoryRemoteInfo> remote_layout;
     remote_layout[""] = DirectoryRemoteInfo{ROOT_FOLDER_TOKEN, "fake_etag", 0, {}};
 
@@ -140,12 +142,13 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load)
             if (auto directory_info = fs_tree->lookupDirectoryIfNotChanged(remote_path, file->metadata->etag))
             {
                 /// Already loaded.
+                std::lock_guard guard(remote_layout_mutex);
                 auto & [local_path, remote_info] = directory_info.value();
                 remote_layout[local_path] = std::move(remote_info);
                 continue;
             }
 
-            runner([remote_metadata_path, remote_path, path, metadata = file->metadata, &log, &settings, this, &remote_layout]
+            runner([remote_metadata_path, remote_path, path, metadata = file->metadata, &log, &settings, this, &remote_layout, &remote_layout_mutex]
             {
                 setThreadName("PlainRWMetaLoad");
 
@@ -221,6 +224,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load)
                     throw;
                 }
 
+                std::lock_guard guard(remote_layout_mutex);
                 remote_layout[local_path] = DirectoryRemoteInfo{remote_path, metadata->etag, last_modified.epochTime(), std::move(files)};
             });
         }
