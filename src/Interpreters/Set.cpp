@@ -176,11 +176,25 @@ void Set::setHeader(const ColumnsWithTypeAndName & header)
 
 void Set::fillSetElements()
 {
+    LOG_DEBUG(&Poco::Logger::get("Set::fillSetElements"), "Filling set elements from place: {}", StackTrace().toString());
     fill_set_elements = true;
     set_elements.reserve(keys_size);
     for (const auto & type : set_elements_types)
         set_elements.emplace_back(type->createColumn());
 }
+
+bool Set::hasExplicitSetElements() const
+{
+    LOG_DEBUG(
+        &Poco::Logger::get("Set::hasExplicitSetElements"),
+        "fill_set_elements: {}, set_elements size: {}, set_elements front size: {}, data total row count: {}",
+        fill_set_elements,
+        set_elements.size(),
+        set_elements.empty() ? 0 : set_elements.front()->size(),
+        data.getTotalRowCount());
+    return fill_set_elements || (!set_elements.empty() && set_elements.front()->size() == data.getTotalRowCount());
+}
+
 
 bool Set::insertFromBlock(const ColumnsWithTypeAndName & columns)
 {
