@@ -65,7 +65,6 @@ extern const SettingsDecorrelationJoinKind correlated_subqueries_default_join_ki
 extern const SettingsBool join_use_nulls;
 extern const SettingsMaxThreads max_threads;
 extern const SettingsNonZeroUInt64 max_block_size;
-extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
 
 }
 
@@ -679,11 +678,6 @@ void buildQueryPlanForCorrelatedSubquery(
     auto * query_node = correlated_subquery.query_tree->as<QueryNode>();
     auto * union_node = correlated_subquery.query_tree->as<UnionNode>();
     chassert(query_node != nullptr && query_node->isCorrelated() || union_node != nullptr && union_node->isCorrelated());
-
-    if (query_node)
-        query_node->getMutableContext()->setSetting("allow_experimental_parallel_reading_from_replicas", String("0"));
-    if (union_node)
-        union_node->getMutableContext()->setSetting("allow_experimental_parallel_reading_from_replicas", String("0"));
 
     switch (correlated_subquery.kind)
     {

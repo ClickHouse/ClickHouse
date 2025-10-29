@@ -172,13 +172,6 @@
     MULTIPLE_EXPRESSIONS_FOR_ALIAS
 03121_analyzer_filed_redefenition_in_subquery
 
-    Correlated subqueries are not supported
-    Cannot clone ReadFromPreparedSource plan step. (NOT_IMPLEMENTED)
-03408_analyzer_correlated_subquery_simple
-03538_analyzer_correlated_query_collect_columns_fix
-03400_analyzer_correlated_subquery_unused_column
-03538_analyzer_scalar_correlated_subquery_fix
-
     Transactions
 02421_truncate_isolation_no_merges
 02421_truncate_isolation_with_mutations
