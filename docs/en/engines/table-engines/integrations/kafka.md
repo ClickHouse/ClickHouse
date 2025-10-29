@@ -54,7 +54,7 @@ SETTINGS
     [kafka_handle_error_mode = 'default',]
     [kafka_commit_on_select = false,]
     [kafka_max_rows_per_message = 1,]
-    [kafka_compression_codec = 'none',]
+    [kafka_compression_codec = '',]
     [kafka_compression_level = -1];
 ```
 
