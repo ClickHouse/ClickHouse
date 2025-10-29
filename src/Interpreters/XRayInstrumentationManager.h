@@ -128,6 +128,15 @@ private:
     std::atomic<UInt64> instrumentation_point_ids;
     std::unordered_map<InstrumentedPointKey, InstrumentedPointInfo, InstrumentedPointHash> instrumented_points TSA_GUARDED_BY(shared_mutex);
 
+    enum class InitializationStatus
+    {
+        UNINITIALIZED,
+        INITIALIZING,
+        INITIALIZED
+    };
+
+    std::atomic<InitializationStatus> initialization_status = XRayInstrumentationManager::InitializationStatus::UNINITIALIZED;
+
     friend class ::XRayInstrumentationManagerTest;
 };
 

@@ -66,14 +66,11 @@ XRayInstrumentationManager::XRayInstrumentationManager()
     registerHandler(LOG_HANDLER, [this](XRayEntryType entry_type, const InstrumentedPointInfo & ip) { log(entry_type, ip); });
     registerHandler(PROFILE_HANDLER, [this](XRayEntryType entry_type, const InstrumentedPointInfo & ip) { profile(entry_type, ip); });
     registerHandler(SLEEP_HANDLER, [this](XRayEntryType entry_type, const InstrumentedPointInfo & ip) { sleep(entry_type, ip); });
-
-    parseXRayInstrumentationMap();
 }
 
 XRayInstrumentationManager & XRayInstrumentationManager::instance()
 {
     static XRayInstrumentationManager instance;
-    __xray_set_handler(&XRayInstrumentationManager::dispatchHandler);
     return instance;
 }
 
@@ -93,6 +90,27 @@ void XRayInstrumentationManager::setHandlerAndPatch(ContextPtr context, const St
 
     if (!found)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown XRay handler: ({})", handler_name);
+
+    /// Lazy load the XRay instrumentation map only once we need to set up a handler
+    if (initialization_status != InitializationStatus::INITIALIZED)
+    {
+        auto expected_status = InitializationStatus::UNINITIALIZED;
+        if (initialization_status.compare_exchange_strong(expected_status, InitializationStatus::INITIALIZING))
+        {
+            LOG_DEBUG(logger, "Initializing XRayInstrumentationManager by reading the instrumentation map");
+            parseXRayInstrumentationMap();
+            __xray_set_handler(&XRayInstrumentationManager::dispatchHandler);
+            initialization_status = InitializationStatus::INITIALIZED;
+            LOG_DEBUG(logger, "XRayInstrumentationManager initialized in this thread. Setting up handler");
+            initialization_status.notify_all();
+        }
+        else
+        {
+            LOG_DEBUG(logger, "XRayInstrumentationManager is initializing. Waiting for it");
+            initialization_status.wait(InitializationStatus::INITIALIZING);
+            LOG_DEBUG(logger, "XRayInstrumentationManager initialized by some other query. Setting up handler");
+        }
+    }
 
     Int32 function_id;
     auto fn_it = functions_container.get<FunctionName>().find(function_name);
