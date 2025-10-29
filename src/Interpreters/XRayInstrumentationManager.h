@@ -138,8 +138,8 @@ private:
     void registerHandler(const String & name, XRayHandlerFunction handler);
     void parseXRayInstrumentationMap();
 
-    [[clang::xray_never_instrument]] void patchFunctionIfNeeded(Int32 function) TSA_REQUIRES_SHARED(shared_mutex);
-    [[clang::xray_never_instrument]] void unpatchFunctionIfNeeded(Int32 function) TSA_REQUIRES_SHARED(shared_mutex);
+    [[clang::xray_never_instrument]] void patchFunctionIfNeeded(Int32 function) TSA_REQUIRES(shared_mutex);
+    [[clang::xray_never_instrument]] void unpatchFunctionIfNeeded(Int32 function) TSA_REQUIRES(shared_mutex);
 
     [[clang::xray_never_instrument]] static void dispatchHandler(Int32 func_id, XRayEntryType entry_type);
     [[clang::xray_never_instrument]] void dispatchHandlerImpl(Int32 func_id, XRayEntryType entry_type);
