@@ -1475,21 +1475,17 @@ private:
                 const auto & mapped_block = *it;
                 size_t rows = mapped_block.columns_info.columns.at(0)->size();
 
-                IColumn::Filter filter(rows);
-
                 for (size_t row = 0; row < rows; ++row)
                 {
                     if (!parent.isUsed(&mapped_block.columns_info.columns, row))
                     {
-                        filter[row] = 1;
+                        for (size_t colnum = 0; colnum < columns_keys_and_right.size(); ++colnum)
+                        {
+                            columns_keys_and_right[colnum]->insertFrom(*mapped_block.columns_info.columns[colnum], row);
+                        }
+
                         ++rows_added;
                     }
-                }
-
-                for (size_t colnum = 0; colnum < columns_keys_and_right.size(); ++colnum)
-                {
-                    auto col = mapped_block.columns_info.columns[colnum]->filter(filter, rows_added);
-                    columns_keys_and_right[colnum]->insertRangeFrom(*col, 0, col->size());
                 }
             }
         }
@@ -1507,11 +1503,11 @@ private:
 
             for (; it != end; ++it)
             {
+                const Mapped & mapped = it->getMapped();
+
                 size_t offset = map.offsetInternal(it.getPtr());
                 if (parent.isUsed(offset))
                     continue;
-
-                const Mapped & mapped = it->getMapped();
                 AdderNonJoined<Mapped>::add(mapped, rows_added, columns_keys_and_right);
 
                 if (rows_added >= max_block_size)
