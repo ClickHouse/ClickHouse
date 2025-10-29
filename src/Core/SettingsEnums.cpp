@@ -323,12 +323,6 @@ IMPLEMENT_SETTING_ENUM(
      {"postfilter", VectorSearchFilterStrategy::POSTFILTER}})
 
 IMPLEMENT_SETTING_ENUM(
-    ObjectStorageGranularityLevel,
-    ErrorCodes::BAD_ARGUMENTS,
-    {{"bucket", ObjectStorageGranularityLevel::BUCKET},
-     {"file", ObjectStorageGranularityLevel::FILE}})
-
-IMPLEMENT_SETTING_ENUM(
     GeoToH3ArgumentOrder,
     ErrorCodes::BAD_ARGUMENTS,
     {{"lat_lon", GeoToH3ArgumentOrder::LAT_LON},
@@ -390,3 +384,9 @@ IMPLEMENT_SETTING_ENUM(
      {"manifest_file_metadata", IcebergMetadataLogLevel::ManifestFileMetadata},
      {"manifest_file_entry", IcebergMetadataLogLevel::ManifestFileEntry}})
 }
+
+IMPLEMENT_SETTING_ENUM(
+    ObjectStorageGranularityLevel,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"bucket", ObjectStorageGranularityLevel::BUCKET},
+     {"file", ObjectStorageGranularityLevel::FILE}})

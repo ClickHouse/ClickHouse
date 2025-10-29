@@ -126,7 +126,7 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
 
     auto buffer = createReadBuffer(*last_object_info, object_storage, getContext(), log);
     size_t bucket_size = getContext()->getSettingsRef()[Setting::cluster_table_function_buckets_batch_size];
-    
+
     auto splitter = FormatFactory::instance().getSplitter(format);
     if (splitter)
     {

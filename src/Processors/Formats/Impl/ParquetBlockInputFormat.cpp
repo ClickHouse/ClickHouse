@@ -4,7 +4,7 @@
 #include <optional>
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 #include <Common/Exception.h>
-#include "Formats/FormatSettings.h"
+#include <Formats/FormatSettings.h>
 
 #if USE_PARQUET
 
@@ -1417,7 +1417,7 @@ std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(size_t buck
     std::vector<size_t> bucket_sizes;
     for (int i = 0; i < metadata->num_row_groups(); ++i)
         bucket_sizes.push_back(metadata->RowGroup(i)->total_byte_size());
-    
+
     std::vector<std::vector<size_t>> buckets;
     size_t current_weight = 0;
     buckets.push_back({});
