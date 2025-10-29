@@ -11,29 +11,29 @@ db=${CLICKHOUSE_DATABASE}
 
 ${CLICKHOUSE_CLIENT} <<EOF
 SET distributed_ddl_output_mode = 'none';
-DROP USER IF EXISTS $user ON CLUSTER test_cluster_interserver_secret;
-CREATE USER $user ON CLUSTER test_cluster_interserver_secret;
+DROP USER IF EXISTS $user ON CLUSTER test_cluster_two_shards_different_databases;
+CREATE USER $user ON CLUSTER test_cluster_two_shards_different_databases;
 
-DROP ROLE IF EXISTS $role ON CLUSTER test_cluster_interserver_secret;
-CREATE ROLE $role ON CLUSTER test_cluster_interserver_secret;
+DROP ROLE IF EXISTS $role ON CLUSTER test_cluster_two_shards_different_databases;
+CREATE ROLE $role ON CLUSTER test_cluster_two_shards_different_databases;
 
-GRANT REMOTE ON *.* TO $user ON CLUSTER test_cluster_interserver_secret;
-GRANT SELECT ON *.* TO $role ON CLUSTER test_cluster_interserver_secret;
+GRANT REMOTE ON *.* TO $user ON CLUSTER test_cluster_two_shards_different_databases;
+GRANT SELECT ON *.* TO $role ON CLUSTER test_cluster_two_shards_different_databases;
 
-GRANT $role TO $user ON CLUSTER test_cluster_interserver_secret;
-DROP ROLE $role ON CLUSTER test_cluster_interserver_secret;
+GRANT $role TO $user ON CLUSTER test_cluster_two_shards_different_databases;
+DROP ROLE $role ON CLUSTER test_cluster_two_shards_different_databases;
 EOF
 
 ${CLICKHOUSE_CLIENT} --user $user <<EOF
 SELECT
     hostName() AS h,
     count()
-FROM clusterAllReplicas('test_cluster_interserver_secret', system.one)
+FROM clusterAllReplicas('test_cluster_two_shards_different_databases', system.one)
 GROUP BY h
 FORMAT Null;
 EOF
 
 ${CLICKHOUSE_CLIENT} <<EOF
 SET distributed_ddl_output_mode = 'none';
-DROP USER IF EXISTS $user ON CLUSTER test_cluster_interserver_secret;
+DROP USER IF EXISTS $user ON CLUSTER test_cluster_two_shards_different_databases;
 EOF
