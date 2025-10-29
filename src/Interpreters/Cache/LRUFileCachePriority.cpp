@@ -159,7 +159,7 @@ LRUFileCachePriority::remove(LRUQueue::iterator it, const CachePriorityGuard::Wr
         log, "Removed entry from LRU queue, key: {}, offset: {}, size: {}",
         entry.key, entry.offset, entry.size.load());
 
-    skipEvictionPosIfEqual(it);
+    skipEvictionPosIfEqual(it, lock);
     return queue.erase(it);
 }
 
@@ -401,14 +401,6 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
 
     ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionTries);
 
-    auto start_pos = queue.begin();
-    auto current_eviction_pos = getEvictionPos();
-    if (continue_from_last_eviction_pos && current_eviction_pos != queue.end() && start_pos != current_eviction_pos)
-    {
-        ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionReusedIterator);
-        start_pos = current_eviction_pos;
-    }
-
     auto get_iteration_result = [&]()
     {
         if ((!size || stat.total_stat.releasable_size >= size)
@@ -420,6 +412,19 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
 
         return IterationResult::CONTINUE;
     };
+
+    auto lock = cache_guard.readLock();
+
+    auto start_pos = queue.begin();
+    auto current_eviction_pos = getEvictionPos(lock);
+    if (continue_from_last_eviction_pos
+        && current_eviction_pos != LRUQueue::iterator{}
+        && current_eviction_pos != queue.end()
+        && start_pos != current_eviction_pos)
+    {
+        ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionReusedIterator);
+        start_pos = current_eviction_pos;
+    }
 
     auto iteration_pos = iterateImpl(
         start_pos,
@@ -450,10 +455,12 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
 
         return IterationResult::CONTINUE;
     },
-    stat, invalidated_entries, cache_guard.readLock()); /// Take a shared read lock.
+    stat, invalidated_entries, lock);
 
     if (continue_from_last_eviction_pos)
-        setEvictionPos(iteration_pos);
+        setEvictionPos(iteration_pos, lock);
+
+    lock.unlock();
 
     const bool success = (max_candidates_size && res.size() >= max_candidates_size)
         || ((!size || stat.total_stat.releasable_size >= size)
@@ -472,7 +479,7 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
 LRUFileCachePriority::LRUIterator LRUFileCachePriority::move(
     LRUIterator & it,
     LRUFileCachePriority & other,
-    const CachePriorityGuard::WriteLock &,
+    const CachePriorityGuard::WriteLock & lock,
     const CacheStateGuard::Lock & state_lock)
 {
     const auto & entry = *it.getEntry();
@@ -495,7 +502,7 @@ LRUFileCachePriority::LRUIterator LRUFileCachePriority::move(
     }
 #endif
 
-    skipEvictionPosIfEqual(it.iterator);
+    skipEvictionPosIfEqual(it.iterator, lock);
     queue.splice(queue.end(), other.queue, it.iterator);
 
     state->add(entry.size, /* elements */1, state_lock);
@@ -550,7 +557,7 @@ bool LRUFileCachePriority::tryIncreasePriority(
     iterator.getEntry()->hits += 1;
 
     auto it = dynamic_cast<const LRUFileCachePriority::LRUIterator &>(iterator).get();
-    skipEvictionPosIfEqual(it);
+    skipEvictionPosIfEqual(it, lock);
     queue.splice(queue.end(), queue, it);
     return true;
 }
@@ -690,22 +697,22 @@ void LRUFileCachePriority::releaseImpl(size_t size, size_t elements)
     LOG_TEST(log, "Released {} by size and {} by elements", size, elements);
 }
 
-LRUFileCachePriority::LRUQueue::iterator LRUFileCachePriority::getEvictionPos() const
+LRUFileCachePriority::LRUQueue::iterator LRUFileCachePriority::getEvictionPos(const CachePriorityGuard::ReadLock &) const
 {
     std::lock_guard lk(eviction_pos_mutex);
     return eviction_pos;
 }
 
-void LRUFileCachePriority::setEvictionPos(LRUQueue::iterator it)
+void LRUFileCachePriority::setEvictionPos(LRUQueue::iterator it, const CachePriorityGuard::ReadLock &)
 {
     std::lock_guard lk(eviction_pos_mutex);
     eviction_pos = it;
 }
 
-void LRUFileCachePriority::skipEvictionPosIfEqual(LRUQueue::iterator it)
+void LRUFileCachePriority::skipEvictionPosIfEqual(LRUQueue::iterator it, const CachePriorityGuard::WriteLock &)
 {
     std::lock_guard lk(eviction_pos_mutex);
-    if (eviction_pos == it)
+    if (eviction_pos != LRUQueue::iterator{} && eviction_pos == it)
         eviction_pos = std::next(it);
 }
 }

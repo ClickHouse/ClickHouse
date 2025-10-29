@@ -120,13 +120,15 @@ public:
     void resetEvictionPos() override
     {
         std::lock_guard lock(eviction_pos_mutex);
-        eviction_pos = queue.end();
+        eviction_pos = LRUQueue::iterator{};
     }
 
     /// Used only for unit test.
     size_t getEvictionPosCount()
     {
         std::lock_guard lock(eviction_pos_mutex);
+        if (eviction_pos == LRUQueue::iterator{})
+            return 0;
         return std::distance(queue.begin(), eviction_pos);
     }
 
@@ -189,9 +191,9 @@ private:
     void releaseImpl(size_t size, size_t elements) override;
     std::string getApproxStateInfoForLog() const;
 
-    LRUQueue::iterator getEvictionPos() const;
-    void setEvictionPos(LRUQueue::iterator it);
-    void skipEvictionPosIfEqual(LRUQueue::iterator it);
+    LRUQueue::iterator getEvictionPos(const CachePriorityGuard::ReadLock &) const;
+    void setEvictionPos(LRUQueue::iterator it, const CachePriorityGuard::ReadLock &);
+    void skipEvictionPosIfEqual(LRUQueue::iterator it, const CachePriorityGuard::WriteLock &);
 };
 
 class LRUFileCachePriority::LRUIterator : public IFileCachePriority::Iterator

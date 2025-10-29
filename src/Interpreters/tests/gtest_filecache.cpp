@@ -1621,5 +1621,5 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
     fs3.reset();
 
     priority.resetEvictionPos();
-    ASSERT_EQ(priority.getEvictionPosCount(), 4); /// queue.end()
+    ASSERT_EQ(priority.getEvictionPosCount(), 0); /// queue.begin()
 }
