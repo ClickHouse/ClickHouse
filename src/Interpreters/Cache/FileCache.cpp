@@ -1164,11 +1164,8 @@ bool FileCache::doEviction(
         };
 
         bool continue_from_last_eviction_pos = cache_reserve_active_threads.load(std::memory_order_relaxed) > 1;
-
-        auto lock = cache_guard.readLock();
-
         if (!continue_from_last_eviction_pos)
-            main_priority->resetEvictionPos(lock);
+            main_priority->resetEvictionPos();
 
         if (query_eviction_info && query_eviction_info->requiresEviction())
         {
@@ -1183,7 +1180,8 @@ bool FileCache::doEviction(
                     /* max_candidates_size */0,
                     /* is_total_space_cleanup */false,
                     user.user_id,
-                    lock))
+                    cache_guard,
+                    cache_state_guard))
             {
                 failure_reason = on_cannot_evict_enough_space_message(*main_priority);
                 return false;
@@ -1203,7 +1201,8 @@ bool FileCache::doEviction(
                 /* max_candidates_size */0,
                 /* is_total_space_cleanup */false,
                 user.user_id,
-                lock))
+                cache_guard,
+                cache_state_guard))
         {
             failure_reason = on_cannot_evict_enough_space_message(*main_priority);
             return false;
@@ -1328,7 +1327,8 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
         /* max_candidates_size */keep_up_free_space_remove_batch,
         /* is_total_space_cleanup */true,
         {},
-        cache_guard.readLock());
+        cache_guard,
+        cache_state_guard);
 
     if (eviction_candidates.size() > 0)
     {
@@ -2070,7 +2070,8 @@ bool FileCache::doDynamicResizeImpl(
             /* max_candidates_size */0,
             /* is_total_space_cleanup */true,
             {},
-            cache_guard.readLock()))
+            cache_guard,
+            cache_state_guard))
     {
         result_limits = prev_limits;
         LOG_INFO(log, "Dynamic cache resize is not possible at the moment");

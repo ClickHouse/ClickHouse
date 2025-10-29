@@ -70,7 +70,8 @@ public:
         size_t max_candidates_size,
         bool is_total_space_cleanup,
         const UserID & user_id,
-        const CachePriorityGuard::ReadLock &) override;
+        CachePriorityGuard &,
+        CacheStateGuard &) override;
 
     void iterate(
         IterateFunc func,
@@ -85,7 +86,7 @@ public:
 
     void shuffle(const CachePriorityGuard::WriteLock &) override;
 
-    void resetEvictionPos(const CachePriorityGuard::ReadLock &) override;
+    void resetEvictionPos() override;
 
     PriorityDumpPtr dump(const CachePriorityGuard::ReadLock &) override;
 
@@ -119,7 +120,8 @@ private:
         size_t max_candidates_size,
         bool is_total_space_cleanup,
         const UserID & user_id,
-        const CachePriorityGuard::ReadLock & lock);
+        CachePriorityGuard & cache_guard,
+        CacheStateGuard & state_guard);
 
     LRUFileCachePriority::LRUIterator addOrThrow(
         EntryPtr entry,

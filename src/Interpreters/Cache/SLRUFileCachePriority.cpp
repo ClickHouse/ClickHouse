@@ -169,10 +169,10 @@ void SLRUFileCachePriority::iterate(
     probationary_queue.iterate(func, stat, lock);
 }
 
-void SLRUFileCachePriority::resetEvictionPos(const CachePriorityGuard::ReadLock & lock)
+void SLRUFileCachePriority::resetEvictionPos()
 {
-    protected_queue.resetEvictionPos(lock);
-    probationary_queue.resetEvictionPos(lock);
+    protected_queue.resetEvictionPos();
+    probationary_queue.resetEvictionPos();
 }
 
 EvictionInfoPtr SLRUFileCachePriority::collectEvictionInfo(
@@ -254,13 +254,8 @@ EvictionInfoPtr SLRUFileCachePriority::collectEvictionInfoImpl(
     /// If protected queue required eviction, we need to "downgrade"
     /// its eviction candidates into probationary queue
     /// (to make sure we have space in probationary queue for the downgrade).
-    auto downgrade_info = probationary_queue.collectEvictionInfo(
-        info->getSizeToEvict(),
-        info->getElementsToEvict(),
-        reservee,
-        is_total_space_cleanup,
-        lock);
-    info->add(std::move(downgrade_info));
+    /// But we cannot do it here, as we do not know in advance the exact size to downgrade.
+    /// So we will do it in collectCandidatesForEviction.
     return info;
 }
 
@@ -274,7 +269,8 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
     size_t max_candidates_size,
     bool is_total_space_cleanup,
     const UserID & user_id,
-    const CachePriorityGuard::ReadLock & lock)
+    CachePriorityGuard & cache_guard,
+    CacheStateGuard & state_guard)
 {
     if (is_total_space_cleanup)
     {
@@ -288,7 +284,8 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
             max_candidates_size,
             is_total_space_cleanup,
             user_id,
-            lock);
+            cache_guard,
+            state_guard);
         /// We do not quit here if !success_probationary,
         /// because in case of keep_up_free_space_ratio it is ok to evict at least something
         /// (so we will check res.size() instead of returned bool value).
@@ -306,7 +303,8 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
             max_candidates_size,
             is_total_space_cleanup,
             user_id,
-            lock);
+            cache_guard,
+            state_guard);
 
         return success_probationary && success_protected;
     }
@@ -325,7 +323,8 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
             max_candidates_size,
             is_total_space_cleanup,
             user_id,
-            lock);
+            cache_guard,
+            state_guard);
     }
 
     auto * slru_iterator = assert_cast<SLRUIterator *>(reservee->getNestedOrThis());
@@ -349,7 +348,8 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
             max_candidates_size,
             is_total_space_cleanup,
             user_id,
-            lock);
+            cache_guard,
+            state_guard);
     }
     else
     {
@@ -364,7 +364,8 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
             max_candidates_size,
             is_total_space_cleanup,
             user_id,
-            lock);
+            cache_guard,
+            state_guard);
     }
 
     return success;
@@ -382,7 +383,8 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
     size_t max_candidates_size,
     bool is_total_space_cleanup,
     const UserID & user_id,
-    const CachePriorityGuard::ReadLock & lock)
+    CachePriorityGuard & cache_guard,
+    CacheStateGuard & state_guard)
 {
     auto downgrade_candidates = std::make_shared<EvictionCandidates>();
     FileCacheReserveStat downgrade_stat;
@@ -396,7 +398,8 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
         max_candidates_size,
         is_total_space_cleanup,
         user_id,
-        lock))
+        cache_guard,
+        state_guard))
     {
         return false;
     }
@@ -408,21 +411,16 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
         return true;
     }
 
-    /// In collectEvictionInfo we create probationary queue eviction info
-    /// from size/elements we need to put into protected queue.
-    /// But after we do protected_queue.collectCandidatesForEviction,
-    /// the total downgrade size can be bigger
-    /// (because total_evict_size >= size_to_evict always).
-    /// Therefore adjust possible difference here.
-    const auto & probationary_eviction_info = eviction_info.get(probationary_queue.getQueueID());
-    size_t additional_size_to_evict = stat.total_stat.releasable_size > probationary_eviction_info->getTotalSize()
-        ? stat.total_stat.releasable_size - probationary_eviction_info->getTotalSize()
-        : 0;
-    size_t additional_elements_to_evict = stat.total_stat.releasable_count > probationary_eviction_info->getTotalElements()
-        ? stat.total_stat.releasable_count - probationary_eviction_info->getTotalElements()
-        : 0;
-    probationary_eviction_info->size_to_evict += additional_size_to_evict;
-    probationary_eviction_info->elements_to_evict += additional_elements_to_evict;
+    /// We did not collect eviction info for probationary queue in advance
+    /// (when doing so for protected queue),
+    /// because we cannot know how much space we will need to downgrade
+    /// (because downgraded space >= space to reserve in protected).
+    const_cast<EvictionInfo &>(eviction_info).add(probationary_queue.collectEvictionInfo(
+        stat.total_stat.releasable_size,
+        stat.total_stat.releasable_count,
+        /* reservee */nullptr,
+        /* is_total_space_cleanup */false,
+        state_guard.lock()));
 
     /// If not enough space - we need to "downgrade" lowest priority entries
     /// from protected queue to probationary queue,
@@ -437,7 +435,8 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
         max_candidates_size,
         is_total_space_cleanup,
         user_id,
-        lock))
+        cache_guard,
+        state_guard))
     {
         return false;
     }
@@ -612,7 +611,8 @@ bool SLRUFileCachePriority::tryIncreasePriority(
         /* max_candidates_size */0,
         /* is_total_space_cleanup */false,
         FileCache::getInternalUser().user_id,
-        queue_guard.readLock()))
+        queue_guard,
+        state_guard))
     {
         return probationary_queue.tryIncreasePriority(
             iterator.lru_iterator, is_space_reservation_complete, queue_guard, state_guard);

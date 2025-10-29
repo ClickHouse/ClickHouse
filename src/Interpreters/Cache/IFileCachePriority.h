@@ -206,7 +206,8 @@ public:
         size_t max_candidates_size,
         bool is_total_space_cleanup,
         const UserID & user_id,
-        const CachePriorityGuard::ReadLock &) = 0;
+        CachePriorityGuard &,
+        CacheStateGuard &) = 0;
 
     /// Collect eviction candidates sufficient to have `desired_size`
     /// and `desired_elements_num` as current cache state.
@@ -225,7 +226,7 @@ public:
         double size_ratio_,
         const CacheStateGuard::Lock &) = 0;
 
-    virtual void resetEvictionPos(const CachePriorityGuard::ReadLock &) = 0;
+    virtual void resetEvictionPos() = 0;
 
     static void removeEntries(const std::vector<InvalidatedEntryInfo> & entries, const CachePriorityGuard::WriteLock &);
 

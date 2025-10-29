@@ -1554,33 +1554,33 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
     auto it2 = add_file_segment(10, 10);
 
     ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 2);
-    ASSERT_EQ(priority.getEvictionPos(), 2); /// queue.end()
+    ASSERT_EQ(priority.getEvictionPosCount(), 2); /// queue.end()
 
     FileCacheReserveStat stat;
     IFileCachePriority::InvalidatedEntriesInfos invalidated_entries;
     auto evicted = std::make_unique<EvictionCandidates>();
 
     auto eviction_info = priority.collectEvictionInfo(10, 1, nullptr, false, state_guard.lock());
-    priority.collectCandidatesForEviction(*eviction_info, stat, *evicted, invalidated_entries, nullptr, true, 0, false, user.user_id, cache_guard.readLock());
+    priority.collectCandidatesForEviction(*eviction_info, stat, *evicted, invalidated_entries, nullptr, true, 0, false, user.user_id, cache_guard, state_guard);
     eviction_info.reset();
 
     ASSERT_EQ(evicted->size(), 0); /// Nothing is evicted.
     ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 2);
-    ASSERT_EQ(priority.getEvictionPos(), 2); /// queue.end()
+    ASSERT_EQ(priority.getEvictionPosCount(), 2); /// queue.end()
 
     auto it3 = add_file_segment(20, 10);
 
     ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 3);
-    ASSERT_EQ(priority.getEvictionPos(), 3); /// queue.end()
+    ASSERT_EQ(priority.getEvictionPosCount(), 3); /// queue.end()
 
     evicted = std::make_unique<EvictionCandidates>();
     stat = {};
     eviction_info = priority.collectEvictionInfo(10, 1, nullptr, false, state_guard.lock());
-    priority.collectCandidatesForEviction(*eviction_info, stat, *evicted, invalidated_entries, nullptr, true, 0, false, user.user_id, cache_guard.readLock());
+    priority.collectCandidatesForEviction(*eviction_info, stat, *evicted, invalidated_entries, nullptr, true, 0, false, user.user_id, cache_guard, state_guard);
 
     ASSERT_EQ(evicted->size(), 1);
     ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 3);
-    ASSERT_EQ(priority.getEvictionPos(), 0); /// queue.begin()
+    ASSERT_EQ(priority.getEvictionPosCount(), 0); /// queue.begin()
 
     {
         evicted->evict();
@@ -1590,7 +1590,7 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
         evicted.reset();
     }
     ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 2);
-    ASSERT_EQ(priority.getEvictionPos(), 0); /// still queue.begin(), but it2
+    ASSERT_EQ(priority.getEvictionPosCount(), 0); /// still queue.begin(), but it2
 
     auto get_file_segment = [&](size_t offset)
     {
@@ -1606,20 +1606,20 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
 
     auto it4 = add_file_segment(30, 10);
     ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 3);
-    ASSERT_EQ(priority.getEvictionPos(), 0);
+    ASSERT_EQ(priority.getEvictionPosCount(), 0);
 
     evicted = std::make_unique<EvictionCandidates>();
     stat = {};
     eviction_info = priority.collectEvictionInfo(10, 1, nullptr, false, state_guard.lock());
-    priority.collectCandidatesForEviction(*eviction_info, stat, *evicted, invalidated_entries, nullptr, true, 0, false, user.user_id, cache_guard.readLock());
+    priority.collectCandidatesForEviction(*eviction_info, stat, *evicted, invalidated_entries, nullptr, true, 0, false, user.user_id, cache_guard, state_guard);
 
     ASSERT_EQ(evicted->size(), 1);
     ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 3);
-    ASSERT_EQ(priority.getEvictionPos(), 3); /// 3 and not 2, because 1 entry is invalidated.
+    ASSERT_EQ(priority.getEvictionPosCount(), 3); /// 3 and not 2, because 1 entry is invalidated.
 
     fs2.reset();
     fs3.reset();
 
-    priority.resetEvictionPos(cache_guard.readLock());
-    ASSERT_EQ(priority.getEvictionPos(), 4); /// queue.end()
+    priority.resetEvictionPos();
+    ASSERT_EQ(priority.getEvictionPosCount(), 4); /// queue.end()
 }
