@@ -4,7 +4,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <Common/Logger.h>
 #include <Common/Macros.h>
-#include "Formats/FormatSettings.h"
+#include <Formats/FormatSettings.h>
 
 namespace DB
 {
