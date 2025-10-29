@@ -157,8 +157,10 @@ public:
 
         if (is_values_column_const)
         {
-            const IColumn & values_column = *arguments[2].column;
-            const UInt64 const_value_hash = hashAt(values_column, 0);
+            ColumnWithTypeAndName values_column_raw{
+                arguments[2].column->cloneResized(1)->convertToFullColumnIfConst(), arguments[2].type, arguments[2].name};
+            ColumnPtr values_column = castColumnAccurate(values_column_raw, attribute_column_type)->convertToFullColumnIfLowCardinality();
+            const UInt64 const_value_hash = hashAt(*values_column, 0);
 
             std::vector<Bucket> buckets(1);
             buckets[0].key_cols.reserve(keys_cnt);
@@ -187,7 +189,7 @@ public:
                     if (hashAt(*attribute_column, cur_row_id) != const_value_hash)
                         continue;
 
-                    if (!equalAt(*attribute_column, cur_row_id, values_column, 0))
+                    if (!equalAt(*attribute_column, cur_row_id, *values_column, 0))
                         continue;
 
                     for (size_t key_id = 0; key_id < keys_cnt; ++key_id)
@@ -236,7 +238,6 @@ public:
 
         using BucketIdList = PODArray<UInt64, 2 * sizeof(UInt64)>;
         using Map = HashMap<UInt64, BucketIdList, HashCRC32<UInt64>>;
-
         Map hash_to_bucket_ids;
         hash_to_bucket_ids.reserve(input_rows_count);
 
