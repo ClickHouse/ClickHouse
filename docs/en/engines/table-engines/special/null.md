@@ -16,5 +16,3 @@ When reading from a `Null` table, the response is empty.
 The `Null` table engine is useful for data transformations where you no longer need the original data after it has been transformed.
 For this purpose you can create a materialized view on a `Null` table.
 The data written to the table will be consumed by the view, but the original raw data will be discarded.
-
-
