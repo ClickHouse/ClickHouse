@@ -35,16 +35,23 @@ struct RapidJSONParser
         {
             switch (ptr->GetType())
             {
-                case rapidjson::kNumberType: return ptr->IsDouble() ? ElementType::DOUBLE : (ptr->IsUint64() ? ElementType::UINT64 : ElementType::INT64);
+                case rapidjson::kNumberType:
+                    if (ptr->IsDouble()) {
+                        // проверка на переполненние 2^53
+                        if (ptr->GetDouble() > 9007199254740992.0)
+                            return ElementType::STRING; 
+                        return ElementType::DOUBLE;
+                    }
+                    return ptr->IsUint64() ? ElementType::UINT64 : ElementType::INT64;
+        
                 case rapidjson::kStringType: return ElementType::STRING;
-                case rapidjson::kArrayType: return ElementType::ARRAY;
+                case rapidjson::kArrayType:  return ElementType::ARRAY;
                 case rapidjson::kObjectType: return ElementType::OBJECT;
-                case rapidjson::kTrueType: return ElementType::BOOL;
+                case rapidjson::kTrueType:
                 case rapidjson::kFalseType: return ElementType::BOOL;
-                case rapidjson::kNullType: return ElementType::NULL_VALUE;
+                case rapidjson::kNullType:   return ElementType::NULL_VALUE;
             }
         }
-
         ALWAYS_INLINE bool isInt64() const { return ptr->IsInt64(); }
         ALWAYS_INLINE bool isUInt64() const { return ptr->IsUint64(); }
         ALWAYS_INLINE bool isDouble() const { return ptr->IsDouble(); }
