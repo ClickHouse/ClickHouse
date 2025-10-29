@@ -38,7 +38,7 @@ struct RapidJSONParser
                 case rapidjson::kNumberType:
                     if (ptr->IsDouble()) {
                         // проверка на переполненние 2^53
-                        if (ptr->GetDouble() > 9007199254740992.0)
+                        if (ptr->GetDouble() > 9007199254740992.0 || ptr->GetDouble() < -9007199254740992.0)
                             return ElementType::STRING; 
                         return ElementType::DOUBLE;
                     }
