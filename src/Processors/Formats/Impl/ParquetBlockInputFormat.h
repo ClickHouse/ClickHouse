@@ -53,9 +53,10 @@ class ParquetRecordReader;
 
 struct ParquetFileBucketInfo : public FileBucketInfo
 {
-    std::optional<std::vector<size_t>> row_group_ids;
+    std::vector<size_t> row_group_ids;
 
-    ParquetFileBucketInfo(const std::optional<std::vector<size_t>> & row_group_ids_);
+    ParquetFileBucketInfo() = default;
+    ParquetFileBucketInfo(const std::vector<size_t> & row_group_ids_);
     void serialize(WriteBuffer & buffer) override;
     void deserialize(ReadBuffer & buffer) override;
     String getIdentifier() const override;
@@ -65,7 +66,7 @@ struct ParquetFileBucketInfo : public FileBucketInfo
     }
     std::shared_ptr<FileBucketInfo> clone() const override;
 
-    std::shared_ptr<FileBucketInfo> createFromBuckets(std::vector<size_t> buckets_ids);
+    std::shared_ptr<FileBucketInfo> createFromBuckets(const std::vector<size_t> & buckets_ids);
 };
 using ParquetFileBucketInfoPtr = std::shared_ptr<ParquetFileBucketInfo>;
 

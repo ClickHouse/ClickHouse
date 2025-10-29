@@ -92,7 +92,7 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
         reader.emplace();
         reader->reader.prefetcher.init(in, read_options, parser_shared_resources);
         reader->reader.init(read_options, getPort().getHeader(), format_filter_info);
-        reader->init(parser_shared_resources, buckets_to_read ? buckets_to_read->row_group_ids : std::nullopt);
+        reader->init(parser_shared_resources, buckets_to_read ? std::optional(buckets_to_read->row_group_ids) : std::nullopt);
     }
 }
 
