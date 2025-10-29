@@ -23,33 +23,39 @@ struct DirectoryRemoteInfo
     std::unordered_set<std::string> file_names;
 };
 
+/// Maintains virtual file system tree of directories. Files are not included into
+/// the tree and contain in tree nodes as values. Nodes can be virtual and physical.
+/// Physical node will have remote info - that means it was written into object storage.
+/// For virtual nodes some restrictions are applied:
+///     - No underlying files
+///     - Can not be moved/removed
 class InMemoryDirectoryTree
 {
     struct INode;
 
-    /// TODO:
+    /// Resolved inode starting from the root reachable by path.
     std::shared_ptr<INode> walk(const std::filesystem::path & path, bool create_missing = false) const TSA_REQUIRES(mutex);
 
-    /// TODO:
+    /// For each node in path subtree (including the inode related to path) will call observe.
     void traverseSubtree(const std::filesystem::path & path, std::function<void(const std::string &, const std::shared_ptr<INode> &)> observe) const TSA_REQUIRES(mutex);
 
-    /// TODO:
+    /// Constructs path which can be resolved (walked) to node.
     std::filesystem::path determineNodePath(std::shared_ptr<INode> node) const TSA_REQUIRES(mutex);
 
 public:
     InMemoryDirectoryTree(CurrentMetrics::Metric metric_directories_name, CurrentMetrics::Metric metric_files_name);
     void apply(std::unordered_map<std::string, DirectoryRemoteInfo> remote_layout);
 
-    /// TODO:
+    /// Returns (logical path, remote info) if directory did not change since last tree update.
     std::optional<std::pair<std::string, DirectoryRemoteInfo>> lookupDirectoryIfNotChanged(const std::string & remote_path, const std::string & etag) const;
 
-    /// TODO:
+    /// For each node in path subtree (including the inode related to path) will return related remote info.
+    /// NOTE: If node is virtual it still will be in map but remote info will be nullopt.
     std::unordered_map<std::string, std::optional<DirectoryRemoteInfo>> getSubtreeRemoteInfo(const std::string & path) const;
 
-    /// TODO:
+    /// Creates virtual path in tree according to the path. Only leaf of this path will be physical (will have remote info).
     void recordDirectoryPath(const std::string & path, DirectoryRemoteInfo info);
 
-    /// TODO:
     void unlinkTree(const std::string & path);
 
     /// Normal File System Methods

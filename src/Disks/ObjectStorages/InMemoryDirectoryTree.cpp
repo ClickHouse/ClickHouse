@@ -304,7 +304,7 @@ void InMemoryDirectoryTree::addFile(const std::string & path)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "There is a subdirectory '{}' under the path '{}'. Can't create file", normalized_path.filename().string(), normalized_path.parent_path().string());
 
     if (inode->remote_info->file_names.contains(normalized_path.filename()))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "File '{}' alredy exists", normalized_path.string());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "File '{}' already exists", normalized_path.string());
 
     inode->remote_info->file_names.insert(normalized_path.filename());
     remote_layout_files_count.add();
