@@ -4,7 +4,6 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <Dictionaries/IDictionary.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsExternalDictionaries.h>
 #include <Functions/IFunction.h>
@@ -26,11 +25,9 @@ extern const SettingsNonZeroUInt64 max_block_size;
 
 namespace ErrorCodes
 {
-extern const int NOT_IMPLEMENTED;
+extern const int LOGICAL_ERROR;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int ILLEGAL_COLUMN;
-extern const int TYPE_MISMATCH;
-extern const int BAD_ARGUMENTS;
 }
 
 static inline UInt64 hashAt(const IColumn & column, size_t row)
