@@ -599,12 +599,14 @@ bool Client::buzzHouse()
     else
     {
         String full_query2;
+        String full_query3;
         std::vector<BuzzHouse::SQLQuery> peer_queries;
         bool has_cloud_features = true;
         BuzzHouse::RandomGenerator rg(fuzz_config->seed, fuzz_config->min_string_length, fuzz_config->max_string_length);
         BuzzHouse::SQLQuery sq1;
         BuzzHouse::SQLQuery sq2;
         BuzzHouse::SQLQuery sq3;
+        BuzzHouse::SQLQuery sq4;
         std::vector<BuzzHouse::SQLQuery> intermediate_queries;
         uint32_t nsuccessfull_create_database = 0;
         uint32_t total_create_database_tries = 0;
@@ -629,6 +631,7 @@ bool Client::buzzHouse()
         loadSystemTables(*fuzz_config);
 
         full_query2.reserve(8192);
+        full_query3.reserve(8192);
         BuzzHouse::StatementGenerator gen(*fuzz_config, *external_integrations, has_cloud_features);
         BuzzHouse::QueryOracle qo(*fuzz_config);
         while (server_up && !buzz_done)
@@ -731,8 +734,12 @@ bool Client::buzzHouse()
                     server_up &= processBuzzHouseQuery(full_query);
                     qo.setIntermediateStepSuccess(!have_error);
 
-                    fuzz_config->outf << full_query2 << std::endl;
-                    server_up &= processBuzzHouseQuery(full_query2);
+                    sq4.Clear();
+                    full_query3.resize(0);
+                    qo.maybeUpdateOracleSelectQuery(rg, sq2, sq4);
+                    BuzzHouse::SQLQueryToString(full_query3, sq4);
+                    fuzz_config->outf << full_query3 << std::endl;
+                    server_up &= processBuzzHouseQuery(full_query3);
                     qo.processSecondOracleQueryResult(error_code, *external_integrations, "Multi setting query");
                 }
                 else if (dump_oracle && nopt < (correctness_oracle + settings_oracle + dump_oracle + 1))

@@ -941,7 +941,7 @@ class JobConfigs:
                 "./docs",
                 "./ci/jobs/docs_job.py",
                 "CHANGELOG.md",
-                "./src/Functions"
+                "./src/Functions",
             ],
         ),
         run_in_docker="clickhouse/docs-builder",
