@@ -12,24 +12,18 @@ CLICKHOUSE_TEST_TRIES=5
 export CLICKHOUSE_USER='my_cool_ch_user'
 export CLICKHOUSE_PASSWORD='my cool clickhouse password'
 
-serverImage="$("$lib_dir/tests/image-name.sh" librarytest/clickhouse-initdb "$image")"
-"$lib_dir/tests/docker-build.sh" "$dir" "$serverImage" <<EOD
-FROM $image
-COPY dir/initdb.sql /docker-entrypoint-initdb.d/
-EOD
-
 cname="clickhouse-container-$RANDOM-$RANDOM"
 cid="$(
   docker run -d \
     -e CLICKHOUSE_USER \
     -e CLICKHOUSE_PASSWORD \
+    -v "$dir/initdb.sql":/docker-entrypoint-initdb.d/initdb.sql:ro \
     --name "$cname" \
-    "$serverImage"
+    "$image"
 )"
-#trap "docker rm -vf $cid > /dev/null" EXIT
+trap 'docker rm -vf $cid > /dev/null' EXIT
 
 chCli() {
-  args="$@"
   docker run --rm -i \
     --link "$cname":clickhouse \
     -e CLICKHOUSE_USER \
@@ -37,7 +31,7 @@ chCli() {
     "$image" \
     clickhouse-client \
     --host clickhouse \
-    --query "$(echo "${args}")"
+    --query "$*"
 }
 
 . "$lib_dir/retry.sh" \
