@@ -7,5 +7,5 @@ Tagged exception marker found: OK
 Test 4: Check reverse marker format (length + tag + __exception__)
 Reverse marker found: OK
 Test 5: Verify exception message handling
-Exception message handling: OK
+exception message handling: OK
 
