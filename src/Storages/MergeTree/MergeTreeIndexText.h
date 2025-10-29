@@ -12,9 +12,9 @@
 #include <Interpreters/ITokenExtractor.h>
 #include <absl/container/flat_hash_map.h>
 
-#include <roaring.hh>
-
 #include <vector>
+
+#include <roaring.hh>
 
 namespace DB
 {
@@ -323,11 +323,16 @@ public:
 
     bool supportsReadingOnParallelReplicas() const override { return true; }
     MergeTreeIndexSubstreams getSubstreams() const override;
-    MergeTreeIndexFormat getDeserializedFormat(const IDataPartStorage & data_part_storage, const std::string & path_prefix) const override;
+    MergeTreeIndexFormat getDeserializedFormat(const MergeTreeDataPartChecksums & checksums, const std::string & path_prefix) const override;
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const override;
+
+    /// This function parses the arguments of a text index. Text indexes have a special syntax with complex arguments.
+    /// 1. Arguments are named, e.g.: argument = value
+    /// 2. The tokenizer argument can be a string, a function name (literal) or a function-like expression, e.g.: ngram(5)
+    static FieldVector parseArgumentsListFromAST(const ASTPtr & arguments);
 
     MergeTreeIndexTextParams params;
     std::unique_ptr<ITokenExtractor> token_extractor;

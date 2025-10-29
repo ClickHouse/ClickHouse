@@ -800,6 +800,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     else if (!create.as_table.empty())
     {
         String as_database_name = getContext()->resolveDatabase(create.as_database);
+        getContext()->checkAccess(AccessType::SHOW_TABLES, as_database_name, create.as_table);
         StoragePtr as_storage = DatabaseCatalog::instance().getTable({as_database_name, create.as_table}, getContext());
 
         /// as_storage->getColumns() and setEngine(...) must be called under structure lock of other_table for CREATE ... AS other_table.
@@ -2503,8 +2504,10 @@ void InterpreterCreateQuery::processSQLSecurityOption(ContextMutablePtr context_
     if (sql_security.definer && !skip_check_permissions)
     {
         auto definer_name = sql_security.definer->toString();
-        auto & access_control = context_->getAccessControl();
+        if (definer_name != current_user_name)
+            context_->checkAccess(AccessType::SET_DEFINER, definer_name);
 
+        auto & access_control = context_->getAccessControl();
         const auto user = access_control.read<User>(definer_name);
         if (access_control.isEphemeral(access_control.getID<User>(definer_name)))
         {
@@ -2516,9 +2519,6 @@ void InterpreterCreateQuery::processSQLSecurityOption(ContextMutablePtr context_
             new_user->authentication_methods.emplace_back(AuthenticationType::NO_AUTHENTICATION);
             access_control.insertOrReplace(new_user);
         }
-
-        if (definer_name != current_user_name)
-            context_->checkAccess(AccessType::SET_DEFINER, definer_name);
     }
 
     if (sql_security.type == SQLSecurityType::NONE && !skip_check_permissions)

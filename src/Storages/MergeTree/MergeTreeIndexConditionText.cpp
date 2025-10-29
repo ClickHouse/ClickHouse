@@ -339,21 +339,6 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
 
 namespace
 {
-std::vector<String> stringToTokens(const Field & field, const ITokenExtractor & token_extractor)
-{
-    std::vector<String> tokens;
-    const auto & value = field.safeGet<String>();
-    token_extractor.stringToTokens(value.data(), value.size(), tokens);
-    return tokens;
-}
-
-std::vector<String> substringToTokens(const Field & field, const ITokenExtractor & token_extractor, bool is_prefix, bool is_suffix)
-{
-    std::vector<String> tokens;
-    const auto & value = field.safeGet<String>();
-    token_extractor.substringToTokens(value.data(), value.size(), tokens, is_prefix, is_suffix);
-    return tokens;
-}
 
 /**
   * Since functions `mapKeys` and `mapValues` project data as Array(T) from Map, this function checks if an index column is defined for the Map.
@@ -384,6 +369,31 @@ bool traverseArrayFunctionNode(const RPNBuilderTreeNode & index_column_node, con
     }
     return false;
 }
+
+}
+
+std::vector<String> MergeTreeIndexConditionText::stringToTokens(const Field & field) const
+{
+    std::vector<String> tokens;
+    const String &value = field.safeGet<String>();
+    token_extractor->stringToTokens(value.data(), value.size(), tokens);
+    return tokens;
+}
+
+std::vector<String> MergeTreeIndexConditionText::substringToTokens(const Field & field, bool is_prefix, bool is_suffix) const
+{
+    std::vector<String> tokens;
+    const String &value = field.safeGet<String>();
+    token_extractor->substringToTokens(value.data(), value.size(), tokens, is_prefix, is_suffix);
+    return tokens;
+}
+
+std::vector<String> MergeTreeIndexConditionText::stringLikeToTokens(const Field & field) const
+{
+    std::vector<String> tokens;
+    const String &value = field.safeGet<String>();
+    token_extractor->stringLikeToTokens(value.data(), value.size(), tokens);
+    return tokens;
 }
 
 bool MergeTreeIndexConditionText::traverseFunctionNode(
@@ -411,14 +421,14 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
     if (function_name == "notEquals")
     {
-        auto tokens = stringToTokens(const_value, *token_extractor);
+        auto tokens = stringToTokens(const_value);
         out.function = RPNElement::FUNCTION_NOT_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, std::move(tokens)));
         return true;
     }
     if (function_name == "equals")
     {
-        auto tokens = stringToTokens(const_value, *token_extractor);
+        auto tokens = stringToTokens(const_value);
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, std::move(tokens)));
         return true;
@@ -430,7 +440,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         // hasAny/AllTokens funcs accept either string which will be tokenized or array of strings to be used as-is
         if (value_data_type.isString())
         {
-            search_tokens = stringToTokens(const_value, *token_extractor);
+            search_tokens = stringToTokens(const_value);
         }
         else
         {
@@ -473,7 +483,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "hasToken" || function_name == "hasTokenOrNull")
     {
-        auto tokens = stringToTokens(const_value, *token_extractor);
+        auto tokens = stringToTokens(const_value);
         if (tokens.empty())
             tokens.push_back("");
         out.function = RPNElement::FUNCTION_EQUALS;
@@ -482,14 +492,14 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "startsWith")
     {
-        auto tokens = substringToTokens(const_value, *token_extractor, true, false);
+        auto tokens = substringToTokens(const_value, true, false);
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, std::move(tokens)));
         return true;
     }
     if (function_name == "endsWith")
     {
-        auto tokens = substringToTokens(const_value, *token_extractor, false, true);
+        auto tokens = substringToTokens(const_value, false, true);
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, std::move(tokens)));
         return true;
@@ -497,9 +507,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     /// Currently, not all token extractors support LIKE-style matching.
     if (function_name == "like" && token_extractor->supportsStringLike())
     {
-        std::vector<String> tokens;
-        const auto & value = const_value.safeGet<String>();
-        token_extractor->stringLikeToTokens(value.data(), value.size(), tokens);
+        std::vector<String> tokens = stringLikeToTokens(const_value);
 
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, std::move(tokens)));
@@ -507,9 +515,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "notLike" && token_extractor->supportsStringLike())
     {
-        std::vector<String> tokens;
-        const auto & value = const_value.safeGet<String>();
-        token_extractor->stringLikeToTokens(value.data(), value.size(), tokens);
+        std::vector<String> tokens = stringLikeToTokens(const_value);
 
         out.function = RPNElement::FUNCTION_NOT_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, std::move(tokens)));
@@ -526,14 +532,14 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         {
             for (const auto & alternative : result.alternatives)
             {
-                auto tokens = substringToTokens(alternative, *token_extractor, false, false);
+                auto tokens = substringToTokens(alternative, false, false);
                 out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, std::move(tokens)));
             }
             return true;
         }
         if (!result.required_substring.empty())
         {
-            auto tokens = substringToTokens(result.required_substring, *token_extractor, false, false);
+            auto tokens = substringToTokens(result.required_substring, false, false);
             out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, std::move(tokens)));
             return true;
         }
@@ -545,14 +551,14 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         /// mapContainsKey can be used only with an index defined as `mapKeys(Map(String, ...))`
         if (!index_column_map_keys_exists || !value_data_type.isStringOrFixedString())
             return false;
-        auto tokens = stringToTokens(const_value, *token_extractor);
+        auto tokens = stringToTokens(const_value);
         out.function = RPNElement::FUNCTION_HAS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, std::move(tokens)));
         return true;
     }
     if (function_name == "has")
     {
-        auto tokens = stringToTokens(const_value, *token_extractor);
+        auto tokens = stringToTokens(const_value);
         out.function = RPNElement::FUNCTION_HAS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, std::move(tokens)));
         return true;

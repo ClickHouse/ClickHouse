@@ -2504,8 +2504,11 @@ try
         else
         {
             Transaction transaction(*this, nullptr);
-            preparePartForCommit(res.part, transaction, false, false);
-            transaction.commit();
+            {
+                auto part_lock = lockParts();
+                preparePartForCommit(res.part, transaction, part_lock, false, false);
+                transaction.commit(&part_lock);
+            }
 
             bool is_adaptive = res.part->index_granularity_info.mark_type.adaptive;
             have_non_adaptive_parts |= !is_adaptive;
@@ -3657,12 +3660,14 @@ size_t MergeTreeData::clearEmptyParts()
 
 size_t MergeTreeData::clearUnusedPatchParts()
 {
-    if (!(*getSettings())[MergeTreeSetting::remove_unused_patch_parts])
+    if (!supportsLightweightUpdate() || !(*getSettings())[MergeTreeSetting::remove_unused_patch_parts])
         return 0;
 
     auto patch_parts = getPatchPartsVectorForInternalUsage();
-    auto regular_parts = getDataPartsVectorForInternalUsage();
+    if (patch_parts.empty())
+        return 0;
 
+    auto regular_parts = getDataPartsVectorForInternalUsage();
     std::unordered_map<std::string_view, UInt64> min_data_version_by_partition;
 
     for (const auto & part : regular_parts)
@@ -4836,7 +4841,7 @@ void MergeTreeData::checkPartDynamicColumns(MutableDataPartPtr & part, DataParts
     }
 }
 
-void MergeTreeData::preparePartForCommit(MutableDataPartPtr & part, Transaction & out_transaction, bool need_rename, bool rename_in_transaction)
+void MergeTreeData::preparePartForCommit(MutableDataPartPtr & part, Transaction & out_transaction, DataPartsLock & /*lock*/, bool need_rename, bool rename_in_transaction)
 {
     part->is_temp = false;
     part->setState(DataPartState::PreActive);
@@ -4888,7 +4893,7 @@ bool MergeTreeData::addTempPart(
 
     /// All checks are passed. Now we can rename the part on disk.
     /// So, we maintain invariant: if a non-temporary part in filesystem then it is in data_parts
-    preparePartForCommit(part, out_transaction, /* need_rename = */false);
+    preparePartForCommit(part, out_transaction, lock, /* need_rename = */false);
 
     if (out_covered_parts)
     {
@@ -4946,7 +4951,7 @@ bool MergeTreeData::renameTempPartAndReplaceImpl(
 
     /// All checks are passed. Now we can rename the part on disk.
     /// So, we maintain invariant: if a non-temporary part in filesystem then it is in data_parts
-    preparePartForCommit(part, out_transaction, /* need_rename= */ true, rename_in_transaction);
+    preparePartForCommit(part, out_transaction, lock, /* need_rename= */ true, rename_in_transaction);
 
     if (out_covered_parts)
     {
@@ -10128,7 +10133,8 @@ bool MergeTreeData::initializeDiskOnConfigChange(const std::set<String> & new_ad
     for (const auto & name : new_added_disks)
     {
         auto disk = storage_policy->tryGetDiskByName(name);
-        if (disk)
+        /// It's unlikely that newly added disk is broken or readonly, but we check it anyway
+        if (disk && !disk->isBroken() && !disk->isReadOnly())
         {
             disk->createDirectories(relative_data_path);
             disk->createDirectories(fs::path(relative_data_path) / MergeTreeData::DETACHED_DIR_NAME);
