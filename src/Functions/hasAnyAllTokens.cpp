@@ -147,8 +147,13 @@ namespace
 {
 struct HasAnyTokensMatcher
 {
-    template <Fn<void(void)> OnMatchCallback>
-    auto operator()(const TokensWithPosition & tokens, OnMatchCallback && onMatchCallback) const
+    explicit HasAnyTokensMatcher(const TokensWithPosition & tokens_)
+        : tokens(tokens_)
+    {
+    }
+
+    template <typename OnMatchCallback>
+    auto operator()(OnMatchCallback && onMatchCallback)
     {
         return [&](const char * token_start, size_t token_len)
         {
@@ -161,19 +166,30 @@ struct HasAnyTokensMatcher
             return false;
         };
     }
+
+    void reset() { /* nothing to reset */ }
+
+private:
+    const TokensWithPosition & tokens;
 };
 
 struct HasAllTokensMatcher
 {
-    template <Fn<void(void)> OnMatchCallback>
-    auto operator()(const TokensWithPosition & tokens, UInt64 & mask, const UInt64 & expected_mask, OnMatchCallback && onMatchCallback) const
+    explicit HasAllTokensMatcher(const TokensWithPosition & tokens_)
+        : tokens(tokens_)
+    {
+        const size_t ns = tokens.size();
+        /// It is equivalent to ((2 ^ ns) - 1), but avoids overflow in case of ns = 64.
+        expected_mask = ((1ULL << (ns - 1)) + ((1ULL << (ns - 1)) - 1));
+    }
+
+    template <typename OnMatchCallback>
+    auto operator()(OnMatchCallback && onMatchCallback)
     {
         return [&](const char * token_start, size_t token_len)
         {
             if (auto it = tokens.find(std::string_view(token_start, token_len)); it != tokens.end())
-            {
                 mask |= (1ULL << it->second);
-            }
 
             if (mask == expected_mask)
             {
@@ -184,67 +200,43 @@ struct HasAllTokensMatcher
             return false;
         };
     }
+
+    void reset() { mask = 0; }
+
+private:
+    const TokensWithPosition & tokens;
+    UInt64 expected_mask;
+    UInt64 mask = 0;
 };
 
 template <typename T>
 concept StringColumnType = std::same_as<T, ColumnString> || std::same_as<T, ColumnFixedString>;
 using ArrayOffset = ColumnArray::Offset;
 
+template <typename Matcher>
+concept MatcherType = std::same_as<Matcher, HasAnyTokensMatcher> || std::same_as<Matcher, HasAllTokensMatcher>;
+
 /// Execute on Array(String) or Array(FixedString) column
-void executeHasAnyTokens(
+void searchOnArray(
     const ColumnArray::Offsets & offsets,
     const StringColumnType auto & input_string,
     PaddedPODArray<UInt8> & col_result,
     size_t input_rows_count,
     const ITokenExtractor * token_extractor,
-    const TokensWithPosition & tokens)
+    MatcherType auto matcher)
 {
     ArrayOffset current_offset = 0;
     for (size_t i = 0; i < input_rows_count; ++i)
     {
         const ArrayOffset array_size = offsets[i] - current_offset;
         col_result[i] = false;
+        matcher.reset();
 
         for (size_t j = 0; j < array_size; ++j)
         {
             std::string_view input = input_string.getDataAt(current_offset + j).toView();
 
-            forEachTokenPadded(*token_extractor, input.data(), input.size(), HasAnyTokensMatcher()(tokens, [&] { col_result[i] = true; }));
-
-            if (col_result[i])
-                break;
-        }
-
-        current_offset = offsets[i];
-    }
-}
-
-/// Execute on Array(String) or Array(FixedString) column
-void executeHasAllTokens(
-    const ColumnArray::Offsets & offsets,
-    const StringColumnType auto & input_string,
-    PaddedPODArray<UInt8> & col_result,
-    size_t input_rows_count,
-    const ITokenExtractor * token_extractor,
-    const TokensWithPosition & tokens)
-{
-    const size_t ns = tokens.size();
-    /// It is equivalent to ((2 ^ ns) - 1), but avoids overflow in case of ns = 64.
-    const UInt64 expected_mask = ((1ULL << (ns - 1)) + ((1ULL << (ns - 1)) - 1));
-
-    UInt64 mask;
-    ArrayOffset current_offset = 0;
-    for (size_t i = 0; i < input_rows_count; ++i)
-    {
-        const ArrayOffset array_size = offsets[i] - current_offset;
-        col_result[i] = false;
-        mask = 0;
-
-        for (size_t j = 0; j < array_size; ++j)
-        {
-            std::string_view input = input_string.getDataAt(current_offset + j).toView();
-
-            forEachTokenPadded(*token_extractor, input.data(), input.size(), HasAllTokensMatcher()(tokens, mask, expected_mask, [&] { col_result[i] = true; }));
+            forEachTokenPadded(*token_extractor, input.data(), input.size(), matcher([&] { col_result[i] = true; }));
 
             if (col_result[i])
                 break;
@@ -255,42 +247,20 @@ void executeHasAllTokens(
 }
 
 /// Execute on String column
-void executeHasAnyTokens(
+void searchOnString(
     const StringColumnType auto & col_input,
     PaddedPODArray<UInt8> & col_result,
     size_t input_rows_count,
     const ITokenExtractor * token_extractor,
-    const TokensWithPosition & tokens)
+    MatcherType auto matcher)
 {
     for (size_t i = 0; i < input_rows_count; ++i)
     {
         std::string_view input = col_input.getDataAt(i).toView();
         col_result[i] = false;
+        matcher.reset();
 
-        forEachTokenPadded(*token_extractor, input.data(), input.size(), HasAnyTokensMatcher()(tokens, [&] { col_result[i] = true; }));
-    }
-}
-
-/// Execute on String column
-void executeHasAllTokens(
-    const StringColumnType auto & col_input,
-    PaddedPODArray<UInt8> & col_result,
-    size_t input_rows_count,
-    const ITokenExtractor * token_extractor,
-    const TokensWithPosition & tokens)
-{
-    const size_t ns = tokens.size();
-    /// It is equivalent to ((2 ^ ns) - 1), but avoids overflow in case of ns = 64.
-    const UInt64 expected_mask = ((1ULL << (ns - 1)) + ((1ULL << (ns - 1)) - 1));
-
-    UInt64 mask;
-    for (size_t i = 0; i < input_rows_count; ++i)
-    {
-        std::string_view input = col_input.getDataAt(i).toView();
-        col_result[i] = false;
-        mask = 0;
-
-        forEachTokenPadded(*token_extractor, input.data(), input.size(), HasAllTokensMatcher()(tokens, mask, expected_mask, [&] { col_result[i] = true; }));
+        forEachTokenPadded(*token_extractor, input.data(), input.size(), matcher([&] { col_result[i] = true; }));
     }
 }
 
@@ -302,20 +272,19 @@ void executeString(
     const ITokenExtractor * token_extractor,
     const TokensWithPosition & tokens)
 {
-    col_result.resize(input_rows_count);
-
     if (tokens.empty())
     {
         /// No needles mean we don't filter and all rows pass
-        for (size_t i = 0; i < input_rows_count; ++i)
-            col_result[i] = true;
+        col_result.assign(input_rows_count, UInt8(1));
         return;
     }
 
+    col_result.resize(input_rows_count);
+
     if constexpr (HasTokensTraits::mode == HasAnyAllTokensMode::Any)
-        executeHasAnyTokens(col_input, col_result, input_rows_count, token_extractor, tokens);
+        searchOnString(col_input, col_result, input_rows_count, token_extractor, HasAnyTokensMatcher(tokens));
     else if constexpr (HasTokensTraits::mode == HasAnyAllTokensMode::All)
-        executeHasAllTokens(col_input, col_result, input_rows_count, token_extractor, tokens);
+        searchOnString(col_input, col_result, input_rows_count, token_extractor, HasAllTokensMatcher(tokens));
     else
         static_assert(false, "Unknown search mode value detected");
 }
@@ -330,20 +299,20 @@ void executeArray(
 {
     const auto & offsets = array->getOffsets();
     const size_t input_size = offsets.size();
-    col_result.resize(input_size);
 
     if (tokens.empty())
     {
         /// No needles mean we don't filter and all rows pass
-        for (size_t i = 0; i < input_size; ++i)
-            col_result[i] = true;
+        col_result.assign(input_size, UInt8(1));
         return;
     }
 
+    col_result.resize(input_size);
+
     if constexpr (HasTokensTraits::mode == HasAnyAllTokensMode::Any)
-        executeHasAnyTokens(offsets, input_string, col_result, input_size, token_extractor, tokens);
+        searchOnArray(offsets, input_string, col_result, input_size, token_extractor, HasAnyTokensMatcher(tokens));
     else if constexpr (HasTokensTraits::mode == HasAnyAllTokensMode::All)
-        executeHasAllTokens(offsets, input_string, col_result, input_size, token_extractor, tokens);
+        searchOnArray(offsets, input_string, col_result, input_size, token_extractor, HasAllTokensMatcher(tokens));
     else
         static_assert(false, "Unknown search mode value detected");
 }
