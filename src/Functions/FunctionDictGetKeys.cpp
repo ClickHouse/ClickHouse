@@ -151,9 +151,71 @@ public:
         const auto key_types = structure.getKeyTypes();
         const size_t keys_cnt = key_types.size();
 
+        struct Bucket
+        {
+            std::vector<MutableColumnPtr> key_cols;
+        };
+
         const bool is_values_column_const = isColumnConst(*arguments[2].column);
 
-        /// TODO: Do not convert to full column if const because it will be more efficient later to create the bucket
+        if (is_values_column_const)
+        {
+            const IColumn & values_column = *arguments[2].column;
+            const UInt64 const_value_hash = hashAt(values_column, 0);
+
+            std::vector<Bucket> buckets(1);
+            buckets[0].key_cols.reserve(keys_cnt);
+            for (const auto & key_type : key_types)
+                buckets[0].key_cols.emplace_back(key_type->createColumn());
+
+            Names column_names = structure.getKeysNames();
+            column_names.push_back(attribute_column_name);
+
+            auto pipe = dict->read(column_names, helper.getContext()->getSettingsRef()[Setting::max_block_size], 1);
+            QueryPipeline pipeline(std::move(pipe));
+            PullingPipelineExecutor executor(pipeline);
+
+            Block block;
+            while (executor.pull(block))
+            {
+                ColumnPtr attribute_column = block.getByPosition(keys_cnt).column->convertToFullColumnIfLowCardinality();
+
+                std::vector<ColumnPtr> key_source(keys_cnt);
+                for (size_t key_id = 0; key_id < keys_cnt; ++key_id)
+                    key_source[key_id] = block.getByPosition(key_id).column->convertToFullColumnIfLowCardinality();
+
+                const size_t num_rows_in_block = attribute_column->size();
+                for (size_t cur_row_id = 0; cur_row_id < num_rows_in_block; ++cur_row_id)
+                {
+                    if (hashAt(*attribute_column, cur_row_id) != const_value_hash)
+                        continue;
+
+                    if (!equalAt(*attribute_column, cur_row_id, values_column, 0))
+                        continue;
+
+                    for (size_t key_id = 0; key_id < keys_cnt; ++key_id)
+                        buckets[0].key_cols[key_id]->insertFrom(*key_source[key_id], cur_row_id);
+                }
+            }
+
+            auto offsets_column = ColumnArray::ColumnOffsets::create();
+            offsets_column->getData().push_back(buckets[0].key_cols[0]->size());
+
+            if (keys_cnt == 1)
+            {
+                auto array_column = ColumnArray::create(std::move(buckets[0].key_cols[0]), std::move(offsets_column));
+                return ColumnConst::create(std::move(array_column), input_rows_count);
+            }
+
+            MutableColumns result_columns;
+            result_columns.reserve(keys_cnt);
+            for (size_t key_id = 0; key_id < keys_cnt; ++key_id)
+                result_columns.emplace_back(std::move(buckets[0].key_cols[key_id]));
+
+            auto array_column = ColumnArray::create(ColumnTuple::create(std::move(result_columns)), std::move(offsets_column));
+            return ColumnConst::create(std::move(array_column), input_rows_count);
+        }
+
         ColumnWithTypeAndName values_column_raw{arguments[2].column->convertToFullColumnIfConst(), arguments[2].type, arguments[2].name};
         ColumnPtr values_column = castColumnAccurate(values_column_raw, attribute_column_type)->convertToFullColumnIfLowCardinality();
 
@@ -210,11 +272,6 @@ public:
         /// Prepare storage for keys corresponding to each bucket
         const size_t num_buckets = bucket_id_to_representative_row_id.size();
 
-        struct Bucket
-        {
-            std::vector<MutableColumnPtr> key_cols;
-        };
-
         std::vector<Bucket> buckets(num_buckets);
         for (size_t bucket_id = 0; bucket_id < num_buckets; ++bucket_id)
         {
@@ -264,26 +321,6 @@ public:
                     break;
                 }
             }
-        }
-
-        if (is_values_column_const)
-        {
-            MutableColumns result_columns;
-            result_columns.reserve(keys_cnt);
-            for (size_t key_id = 0; key_id < keys_cnt; ++key_id)
-                result_columns.emplace_back(std::move(buckets[0].key_cols[key_id]));
-
-            auto offsets_column = ColumnArray::ColumnOffsets::create();
-            offsets_column->getData().push_back(result_columns[0]->size());
-
-            if (keys_cnt == 1)
-            {
-                auto array_col = ColumnArray::create(std::move(result_columns[0]), std::move(offsets_column));
-                return ColumnConst::create(std::move(array_col), input_rows_count);
-            }
-
-            auto array_col = ColumnArray::create(ColumnTuple::create(std::move(result_columns)), std::move(offsets_column));
-            return ColumnConst::create(std::move(array_col), input_rows_count);
         }
 
         MutableColumns result_columns;
