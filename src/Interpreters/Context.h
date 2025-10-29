@@ -1684,6 +1684,8 @@ private:
     std::unordered_set<String> allowed_disks;
     /// Throttling
 public:
+    /// Does not hold the lock, should be called once at the startup.
+    void configureServerWideThrottling();
     ThrottlerPtr getReplicatedFetchesThrottler() const;
     ThrottlerPtr getReplicatedSendsThrottler() const;
 

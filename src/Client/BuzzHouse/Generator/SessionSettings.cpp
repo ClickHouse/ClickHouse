@@ -250,11 +250,13 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"use_index_for_in_with_subqueries", trueOrFalseSetting},
        {"use_index_for_in_with_subqueries_max_values", trueOrFalseSetting},
        {"use_join_disjunctions_push_down", trueOrFalseSetting},
+       /// ClickHouse cloud setting
        {"use_page_cache_with_distributed_cache", trueOrFalseSetting},
        {"use_query_condition_cache", trueOrFalseSetting},
        {"use_skip_indexes", trueOrFalseSetting},
        {"use_skip_indexes_if_final", trueOrFalseSetting},
        {"use_skip_indexes_on_data_read", trueOrFalseSetting},
+       {"use_statistics_cache", trueOrFalseSetting},
        {"use_uncompressed_cache", trueOrFalseSetting}};
 
 std::unordered_map<String, CHSetting> serverSettings = {
@@ -327,6 +329,15 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"compatibility_ignore_auto_increment_in_create_table", trueOrFalseSettingNoOracle},
     {"compatibility_ignore_collation_in_create_table", trueOrFalseSettingNoOracle},
     {"convert_query_to_cnf", trueOrFalseSettingNoOracle},
+    {"correlated_subqueries_default_join_kind",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &)
+         {
+             static const DB::Strings & choices = {"'left'", "'right'"};
+             return rg.pickRandomly(choices);
+         },
+         {},
+         false)},
     {"create_table_empty_primary_key_by_default", trueOrFalseSettingNoOracle},
     {"cross_to_inner_join_rewrite", CHSetting(zeroOneTwo, {"0", "1", "2"}, false)},
     {"database_atomic_wait_for_drop_and_detach_synchronously", trueOrFalseSettingNoOracle},
@@ -373,9 +384,13 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"distributed_aggregation_memory_efficient", trueOrFalseSetting},
     {"distributed_background_insert_batch", trueOrFalseSettingNoOracle},
     {"distributed_background_insert_split_batch_on_failure", trueOrFalseSettingNoOracle},
+    /// ClickHouse cloud setting
     {"distributed_cache_bypass_connection_pool", trueOrFalseSettingNoOracle},
+    /// ClickHouse cloud setting
     {"distributed_cache_discard_connection_if_unread_data", trueOrFalseSettingNoOracle},
+    /// ClickHouse cloud setting
     {"distributed_cache_fetch_metrics_only_from_current_az", trueOrFalseSettingNoOracle},
+    /// ClickHouse cloud setting
     {"distributed_cache_log_mode",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
@@ -385,6 +400,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
          },
          {},
          false)},
+    /// ClickHouse cloud setting
     {"distributed_cache_pool_behaviour_on_limit",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
@@ -394,8 +410,11 @@ std::unordered_map<String, CHSetting> serverSettings = {
          },
          {},
          false)},
+    /// ClickHouse cloud setting
     {"distributed_cache_prefer_bigger_buffer_size", trueOrFalseSettingNoOracle},
+    /// ClickHouse cloud setting
     {"distributed_cache_read_only_from_current_az", trueOrFalseSettingNoOracle},
+    /// ClickHouse cloud setting
     {"distributed_cache_throw_on_error", trueOrFalseSettingNoOracle},
     {"distributed_foreground_insert", trueOrFalseSettingNoOracle},
     {"distributed_group_by_no_merge", CHSetting(zeroOneTwo, {}, false)},
@@ -716,6 +735,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
          {"0", "1", "2", "3", "4", "10"},
          false)},
     {"join_use_nulls", trueOrFalseSettingNoOracle},
+    {"joined_block_split_single_row", trueOrFalseSetting},
     {"keeper_map_strict_mode", trueOrFalseSettingNoOracle},
     {"least_greatest_legacy_null_behavior", trueOrFalseSettingNoOracle},
     {"legacy_column_name_of_tuple_literal", trueOrFalseSettingNoOracle},
@@ -729,7 +749,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
          {},
          false)},
     /// {"lightweight_deletes_sync", CHSetting(zeroOneTwo, {}, false)}, FINAL queries don't cover these
-    {"limit", CHSetting(rowsRange, {}, false)},
+    /// {"limit", CHSetting(rowsRange, {}, false)}, gives problem with query oracle
     {"load_balancing",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
@@ -1010,9 +1030,12 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 1000)); }, {}, false)},
     {"query_plan_use_logical_join_step", trueOrFalseSetting},
+    /// ClickHouse cloud setting
+    {"read_from_distributed_cache_if_exists_otherwise_bypass_cache", trueOrFalseSetting},
     {"read_from_filesystem_cache_if_exists_otherwise_bypass_cache", trueOrFalseSetting},
     {"read_from_page_cache_if_exists_otherwise_bypass_cache", trueOrFalseSetting},
     {"read_overflow_mode", overflowSetting},
+    /// ClickHouse cloud setting
     {"read_through_distributed_cache", trueOrFalseSetting},
     {"regexp_dict_allow_hyperscan", trueOrFalseSetting},
     {"regexp_dict_flag_case_insensitive", trueOrFalseSettingNoOracle},
@@ -1043,7 +1066,8 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"s3_validate_request_settings", trueOrFalseSettingNoOracle},
     {"s3queue_enable_logging_to_s3queue_log", trueOrFalseSettingNoOracle},
     {"schema_inference_cache_require_modification_time_for_url", trueOrFalseSettingNoOracle},
-    {"schema_inference_make_columns_nullable", trueOrFalseSettingNoOracle},
+    {"schema_inference_make_columns_nullable",
+     CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<int32_t>(0, 3)); }, {}, false)},
     {"schema_inference_make_json_columns_nullable", trueOrFalseSettingNoOracle},
     {"schema_inference_use_cache_for_file", trueOrFalseSettingNoOracle},
     {"schema_inference_use_cache_for_s3", trueOrFalseSettingNoOracle},
@@ -1186,6 +1210,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
          false)},
     /// {"wait_for_async_insert", trueOrFalseSettingNoOracle},
     {"write_full_path_in_iceberg_metadata", trueOrFalseSettingNoOracle},
+    /// ClickHouse cloud setting
     {"write_through_distributed_cache", trueOrFalseSettingNoOracle},
     {"zstd_window_log_max",
      CHSetting(
@@ -1231,6 +1256,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
           "group_by_two_level_threshold",
           "hnsw_candidate_list_size_for_search",
           "join_output_by_rowlist_perkey_rows_threshold",
+          "join_runtime_filter_exact_values_limit",
           "join_to_sort_maximum_table_rows",
           "join_to_sort_minimum_perkey_rows",
           "iceberg_insert_max_rows_in_data_file",
@@ -1271,8 +1297,11 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
           "cross_join_min_bytes_to_compress",
           "default_max_bytes_in_join",
           "delta_lake_insert_max_bytes_in_data_file",
+          /// ClickHouse cloud setting
           "distributed_cache_alignment",
+          /// ClickHouse cloud setting
           "distributed_cache_min_bytes_for_seek",
+          /// ClickHouse cloud setting
           "distributed_cache_read_alignment",
           "external_storage_max_read_bytes",
           "filesystem_cache_boundary_alignment",
@@ -1321,6 +1350,8 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
           "prefetch_buffer_size",
           "query_cache_max_size_in_bytes",
           "remote_read_min_bytes_for_seek",
+          "temporary_files_buffer_size",
+          /// ClickHouse cloud setting
           "write_through_distributed_cache_buffer_size"})
     {
         performanceSettings.insert({{entry, CHSetting(bytesRange, {"32768", "65536", "1048576", "4194304", "33554432", "'10M'"}, false)}});
@@ -1361,6 +1392,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
              {"min_free_disk_ratio_to_perform_insert", CHSetting(probRange, {}, false)},
              {"min_free_disk_space_for_temporary_data", CHSetting(bytesRange, {}, false)},
              {"postgresql_fault_injection_probability", CHSetting(probRange, {}, false)},
+             {"s3queue_keeper_fault_injection_probability", CHSetting(probRange, {}, false)},
              {"unknown_packet_in_send_data",
               CHSetting(
                   [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.1, 0.1, 0, 16384)); },
