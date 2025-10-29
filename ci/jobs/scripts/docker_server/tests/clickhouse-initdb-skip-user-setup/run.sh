@@ -1,7 +1,7 @@
 #!/bin/bash
 set -eo pipefail
 
-dir="$(dirname "$(readlink -f "$BASH_SOURCE")")"
+dir="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
 lib_dir="$(realpath "${dir}/../../../../../tmp/docker-library/official-images/test")"
 
 image="$1"
@@ -9,14 +9,10 @@ image="$1"
 CLICKHOUSE_TEST_SLEEP=3
 CLICKHOUSE_TEST_TRIES=5
 
-export CLICKHOUSE_USER='my_cool_ch_user'
-export CLICKHOUSE_PASSWORD='my cool clickhouse password'
-
 cname="clickhouse-container-$RANDOM-$RANDOM"
 cid="$(
   docker run -d \
-    -e CLICKHOUSE_USER \
-    -e CLICKHOUSE_PASSWORD \
+    -e CLICKHOUSE_SKIP_USER_SETUP=1 \
     -v "$dir/initdb.sql":/docker-entrypoint-initdb.d/initdb.sql:ro \
     --name "$cname" \
     "$image"
@@ -26,8 +22,6 @@ trap 'docker rm -vf $cid > /dev/null' EXIT
 chCli() {
   docker run --rm -i \
     --link "$cname":clickhouse \
-    -e CLICKHOUSE_USER \
-    -e CLICKHOUSE_PASSWORD \
     "$image" \
     clickhouse-client \
     --host clickhouse \
