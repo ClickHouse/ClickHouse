@@ -37,8 +37,6 @@ namespace Setting
     extern const SettingsBool database_atomic_wait_for_drop_and_detach_synchronously;
     extern const SettingsFloat ignore_drop_queries_probability;
     extern const SettingsSeconds lock_acquire_timeout;
-    extern const SettingsUInt64 max_table_size_to_drop;
-    extern const SettingsUInt64 max_partition_size_to_drop;
 }
 
 namespace ErrorCodes
