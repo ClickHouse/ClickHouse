@@ -14,6 +14,7 @@
 #include <IO/Operators.h>
 
 #include <gtest/gtest.h>
+#include <Common/thread_local_rng.h>
 
 using namespace DB;
 
@@ -120,6 +121,13 @@ std::vector<std::string> sorted(std::vector<std::string> array)
 {
     std::sort(array.begin(), array.end());
     return array;
+}
+
+std::vector<std::string> listAllBlobs(std::string test)
+{
+    return sorted(std::filesystem::recursive_directory_iterator(fmt::format("./{}", test))
+                    | std::views::transform([](const auto & dir) { return dir.path(); })
+                    | std::ranges::to<std::vector<std::string>>());
 }
 
 TEST_F(MetadataPlainRewritableDiskTest, JustWorking)
@@ -371,6 +379,8 @@ TEST_F(MetadataPlainRewritableDiskTest, RemoveDirectory)
 
 TEST_F(MetadataPlainRewritableDiskTest, RemoveDirectoryRecursive)
 {
+    thread_local_rng.seed(42);
+
     auto metadata = getMetadataStorage("RemoveDirectoryRecursive");
     auto object_storage = getObjectStorage("RemoveDirectoryRecursive");
 
@@ -406,9 +416,7 @@ TEST_F(MetadataPlainRewritableDiskTest, RemoveDirectoryRecursive)
     EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("root/A/C/file_3").front().remote_path), "3");
     EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("root/A/B/E/F/file_4").front().remote_path), "4");
 
-    auto inodes_start = std::filesystem::recursive_directory_iterator("./RemoveDirectoryRecursive")
-                            | std::views::transform([](const auto & dir) { return dir.path(); })
-                            | std::ranges::to<std::vector<std::string>>();
+    auto inodes_start = listAllBlobs("RemoveDirectoryRecursive");
     EXPECT_EQ(inodes_start.size(), 23);
 
     /// Check undo
@@ -419,12 +427,7 @@ TEST_F(MetadataPlainRewritableDiskTest, RemoveDirectoryRecursive)
         EXPECT_ANY_THROW(tx->commit());
     }
 
-    {
-        auto inodes = std::filesystem::recursive_directory_iterator("./RemoveDirectoryRecursive")
-                        | std::views::transform([](const auto & dir) { return dir.path(); })
-                        | std::ranges::to<std::vector<std::string>>();
-        EXPECT_EQ(inodes, inodes_start);
-    }
+    EXPECT_EQ(listAllBlobs("RemoveDirectoryRecursive"), inodes_start);
 
     /// Remove fs tree
     {
@@ -440,15 +443,12 @@ TEST_F(MetadataPlainRewritableDiskTest, RemoveDirectoryRecursive)
     EXPECT_FALSE(metadata->existsDirectory("root/A/B/E"));
     EXPECT_FALSE(metadata->existsDirectory("root/A/B/E/F"));
 
-    {
-        auto inodes = std::filesystem::recursive_directory_iterator("./RemoveDirectoryRecursive")
-                        | std::views::transform([](const auto & dir) { return dir.path(); })
-                        | std::ranges::to<std::vector<std::string>>();
-
-        /// Left nodes example: '/__meta', '/__meta/cixdezesimoamhzozymbalencsyqaakx', '/__meta/cixdezesimoamhzozymbalencsyqaakx/prefix.path'
-        /// It is the directory 'root/'
-        EXPECT_EQ(inodes.size(), 3);
-    }
+    /// It is the directory 'root/'
+    EXPECT_EQ(listAllBlobs("RemoveDirectoryRecursive"), std::vector<std::string>({
+        "./RemoveDirectoryRecursive/__meta",
+        "./RemoveDirectoryRecursive/__meta/faefxnlkbtfqgxcbfqfjtztsocaqrnqn",
+        "./RemoveDirectoryRecursive/__meta/faefxnlkbtfqgxcbfqfjtztsocaqrnqn/prefix.path",
+    }));
 }
 
 TEST_F(MetadataPlainRewritableDiskTest, MoveFile)
@@ -568,4 +568,119 @@ TEST_F(MetadataPlainRewritableDiskTest, DirectoryFileNameCollision)
     metadata = restartMetadataStorage("DirectoryFileNameCollision");
     EXPECT_FALSE(metadata->existsDirectory("A/B"));
     EXPECT_TRUE(metadata->existsFile("A/B"));
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, RemoveRecursiveEmpty)
+{
+    auto metadata = getMetadataStorage("RemoveRecursiveEmpty");
+    auto object_storage = getObjectStorage("RemoveRecursiveEmpty");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->removeRecursive("non-existing");
+        tx->commit();
+    }
+
+    EXPECT_FALSE(metadata->existsDirectory("non-existing"));
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, RemoteLayout)
+{
+    thread_local_rng.seed(42);
+
+    auto metadata = getMetadataStorage("RemoteLayout");
+    auto object_storage = getObjectStorage("RemoteLayout");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("A");
+        tx->createDirectory("A/B");
+        tx->commit();
+    }
+
+    std::string a_remote = object_storage->generateObjectKeyPrefixForDirectoryPath("A", "").serialize();
+    EXPECT_EQ(a_remote, "faefxnlkbtfqgxcbfqfjtztsocaqrnqn");
+    EXPECT_EQ(object_storage->generateObjectKeyPrefixForDirectoryPath("A", "").serialize(), a_remote);
+    EXPECT_EQ(object_storage->generateObjectKeyPrefixForDirectoryPath("A", "").serialize(), a_remote);
+    EXPECT_EQ(object_storage->generateObjectKeyPrefixForDirectoryPath("A", "").serialize(), a_remote);
+
+    std::string ab_remote = object_storage->generateObjectKeyPrefixForDirectoryPath("A/B", "").serialize();
+    EXPECT_EQ(ab_remote, "ykwvvchguqasvfnkikaqtiebknfzafwv");
+    EXPECT_EQ(object_storage->generateObjectKeyPrefixForDirectoryPath("A/B", "").serialize(), ab_remote);
+    EXPECT_EQ(object_storage->generateObjectKeyPrefixForDirectoryPath("A/B", "").serialize(), ab_remote);
+    EXPECT_EQ(object_storage->generateObjectKeyPrefixForDirectoryPath("A/B", "").serialize(), ab_remote);
+
+    std::string file_1_remote = object_storage->generateObjectKeyForPath("/A/file_1", std::nullopt).serialize();
+    EXPECT_EQ(file_1_remote, "./RemoteLayout/faefxnlkbtfqgxcbfqfjtztsocaqrnqn/file_1");
+    EXPECT_EQ(file_1_remote, fmt::format("./RemoteLayout/{}/file_1", a_remote));
+
+    std::string file_2_remote = object_storage->generateObjectKeyForPath("/A/B/file_2", std::nullopt).serialize();
+    EXPECT_EQ(file_2_remote, "./RemoteLayout/ykwvvchguqasvfnkikaqtiebknfzafwv/file_2");
+    EXPECT_EQ(file_2_remote, fmt::format("./RemoteLayout/{}/file_2", ab_remote));
+
+    /// Root files
+    EXPECT_EQ(object_storage->generateObjectKeyForPath("root_file", std::nullopt).serialize(), "./RemoteLayout/__root/root_file");
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, RootFiles)
+{
+    thread_local_rng.seed(42);
+
+    auto metadata = getMetadataStorage("RootFiles");
+    auto object_storage = getObjectStorage("RootFiles");
+
+    {
+        auto tx = metadata->createTransaction();
+        writeObject(object_storage, object_storage->generateObjectKeyForPath("/A", std::nullopt).serialize(), "A");
+        writeObject(object_storage, object_storage->generateObjectKeyForPath("/B", std::nullopt).serialize(), "B");
+        tx->createMetadataFile("/A", {StoredObject("A")});
+        tx->createMetadataFile("/B", {StoredObject("B")});
+        tx->commit();
+    }
+
+    EXPECT_TRUE(metadata->existsDirectory(""));
+    EXPECT_TRUE(metadata->existsDirectory("/"));
+    EXPECT_TRUE(metadata->existsFile("A"));
+    EXPECT_TRUE(metadata->existsFile("/A"));
+    EXPECT_TRUE(metadata->existsFile("B"));
+    EXPECT_TRUE(metadata->existsFile("/B"));
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->moveFile("/A", "/C");
+        tx->commit();
+    }
+
+    EXPECT_FALSE(metadata->existsFile("A"));
+    EXPECT_FALSE(metadata->existsFile("/A"));
+    EXPECT_TRUE(metadata->existsFile("C"));
+    EXPECT_TRUE(metadata->existsFile("/C"));
+
+    metadata = restartMetadataStorage("RootFiles");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("X");
+        tx->moveFile("/C", "/X/C");
+        tx->commit();
+    }
+
+    EXPECT_FALSE(metadata->existsFile("A"));
+    EXPECT_FALSE(metadata->existsFile("/A"));
+    EXPECT_TRUE(metadata->existsFile("B"));
+    EXPECT_TRUE(metadata->existsFile("/B"));
+    EXPECT_FALSE(metadata->existsFile("C"));
+    EXPECT_FALSE(metadata->existsFile("/C"));
+    EXPECT_TRUE(metadata->existsFile("X/C"));
+    EXPECT_TRUE(metadata->existsFile("/X/C"));
+
+    EXPECT_EQ(listAllBlobs("RootFiles"), std::vector<std::string>({
+        "./RootFiles/__meta",
+        "./RootFiles/__meta/ykwvvchguqasvfnkikaqtiebknfzafwv",
+        "./RootFiles/__meta/ykwvvchguqasvfnkikaqtiebknfzafwv/prefix.path",  /// X
+        "./RootFiles/__root",
+        "./RootFiles/__root/B",                                             /// /B
+        "./RootFiles/ykwvvchguqasvfnkikaqtiebknfzafwv",
+        "./RootFiles/ykwvvchguqasvfnkikaqtiebknfzafwv/C"                    /// X/C
+    }));
 }

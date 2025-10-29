@@ -589,8 +589,11 @@ MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::MetadataStorageFr
 
 void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::execute()
 {
-    move_tried = true;
-    move_to_tmp_op->execute();
+    if (fs_tree.existsDirectory(path).first)
+    {
+        move_tried = true;
+        move_to_tmp_op->execute();
+    }
 }
 
 void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::undo()

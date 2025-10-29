@@ -47,6 +47,7 @@ namespace
 
 constexpr auto PREFIX_PATH_FILE_NAME = "prefix.path";
 constexpr auto METADATA_PATH_TOKEN = "__meta/";
+constexpr auto ROOT_FOLDER_TOKEN = "__root";
 
 }
 
@@ -83,10 +84,9 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load)
     /// 3. Checking if the value of `prefix.path` changed for any already existing directory
     ///    and apply the corresponding rename.
 
-    std::set<std::string> set_of_remote_paths;
-
     bool has_metadata = object_storage->existsOrHasAnyChild(metadata_key_prefix);
     std::unordered_map<std::string, DirectoryRemoteInfo> remote_layout;
+    remote_layout[""] = DirectoryRemoteInfo{ROOT_FOLDER_TOKEN, "fake_etag", 0, {}};
 
     if (is_initial_load)
     {
@@ -113,6 +113,10 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load)
 
     try
     {
+        /// Root folder is a special case. Files are stored as /__root/{file-name}.
+        for (auto iterator = object_storage->iterate(std::filesystem::path(object_storage->getCommonKeyPrefix()) / ROOT_FOLDER_TOKEN, 0); iterator->isValid(); iterator->next())
+            remote_layout[""].file_names.insert(fs::path(iterator->current()->getPath()).filename());
+
         for (auto iterator = object_storage->iterate(metadata_key_prefix, 0); iterator->isValid(); iterator->next())
         {
             auto file = iterator->current();
@@ -132,7 +136,6 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load)
 
             /// randomlygenerated
             auto remote_path = rel_path.parent_path();
-            set_of_remote_paths.insert(remote_path);
 
             if (auto directory_info = fs_tree->lookupDirectoryIfNotChanged(remote_path, file->metadata->etag))
             {

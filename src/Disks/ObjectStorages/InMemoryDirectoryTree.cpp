@@ -121,8 +121,9 @@ void InMemoryDirectoryTree::apply(std::unordered_map<std::string, DirectoryRemot
     /// Unlink old tree
     remote_layout_directories_count.changeTo(0);
     remote_layout_files_count.changeTo(0);
-    root->subdirectories.clear();
     remote_path_to_inode.clear();
+    root->remote_info.reset();
+    root->subdirectories.clear();
 
     for (auto & [path, info] : remote_layout)
     {
@@ -174,6 +175,9 @@ void InMemoryDirectoryTree::recordDirectoryPath(const std::string & path, Direct
     if (!inode->isVirtual())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' was already recorded", normalized_path.string());
 
+    if (!inode->subdirectories.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' is virtual", normalized_path.string());
+
     remote_path_to_inode[info.remote_path] = inode;
     inode->remote_info = std::move(info);
     remote_layout_directories_count.add();
@@ -204,7 +208,6 @@ void InMemoryDirectoryTree::unlinkTree(const std::string & path)
 
     auto inode_parent = inode->parent.lock();
     inode_parent->subdirectories.erase(normalized_path.filename());
-    inode->last_directory_name = "";
 }
 
 void InMemoryDirectoryTree::moveDirectory(const std::string & from, const std::string & to)
