@@ -189,61 +189,60 @@ namespace DB
 
 void Aggregator::applyToAllStates(AggregatedDataVariants & result, WriteBuffer & wb, ssize_t bucket) const
 {
-    auto f = [&](auto & table)
+    auto serialize_states = [&](auto & table)
     {
-        if constexpr (requires { table.forEachMapped([](AggregateDataPtr) {}); })
+        for (size_t j = 0; j < params.aggregates_size; ++j)
         {
-            for (size_t j = 0; j < params.aggregates_size; ++j)
-            {
-                table.forEachMapped(
-                    [&](AggregateDataPtr place)
-                    {
-                        if (!place)
-                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty place in Aggregator::applyToAllStates");
-                        if (is_simple_count)
-                            writeVarUInt(getInlineCountState(result.without_key), wb);
-                        else
-                            aggregate_functions[j]->serialize(place + offsets_of_aggregate_states[j], wb);
-                    });
-            }
+            table.forEachMapped(
+                [&](AggregateDataPtr place)
+                {
+                    chassert(place);
+                    if (is_simple_count)
+                        writeVarUInt(getInlineCountState(place), wb);
+                    else
+                        aggregate_functions[j]->serialize(place + offsets_of_aggregate_states[j], wb);
+                });
         }
     };
 
-    if (result.type == AggregatedDataVariants::Type::EMPTY)
+    const auto method = result.type;
+    if (method == AggregatedDataVariants::Type::EMPTY)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty data passed to Aggregator::applyToAllStates");
-    } // NOLINT
-    else if (result.type == AggregatedDataVariants::Type::without_key)
+    }
+    else if (method == AggregatedDataVariants::Type::without_key)
     {
-        if (result.without_key == nullptr)
-            throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "Empty data passed to Aggregator::applyToAllStates");
+        if (!result.without_key)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty without_key data passed to Aggregator::applyToAllStates");
+
         for (size_t j = 0; j < params.aggregates_size; ++j)
         {
             if (is_simple_count)
-                writeVarUInt(getInlineCountState(result.without_key), wb);
+                writeVarUInt(getCountState(result.without_key), wb);
             else
                 aggregate_functions[j]->serialize(result.without_key + offsets_of_aggregate_states[j], wb);
         }
         return;
-    } // NOLINT
-    // clang-format off
-#define M(NAME) \
-    else if (result.type == AggregatedDataVariants::Type::NAME) \
-    { \
-        f(result.NAME->data); \
-        return; \
+    }
+
+#define M(NAME)                                                 \
+    else if (method == AggregatedDataVariants::Type::NAME)      \
+    {                                                           \
+        serialize_states(result.NAME->data);                    \
+        return;                                                 \
     }
 
     APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)
 #undef M
-#define M(NAME) \
-    else if (result.type == AggregatedDataVariants::Type::NAME) \
-    { \
-        if (bucket >= 0) \
-            f(result.NAME->data.impls[bucket]); \
-        else \
-            f(result.NAME->data); \
-        return; \
+
+#define M(NAME)                                                 \
+    else if (method == AggregatedDataVariants::Type::NAME)      \
+    {                                                           \
+        if (bucket >= 0)                                        \
+            serialize_states(result.NAME->data.impls[bucket]);  \
+        else                                                    \
+            serialize_states(result.NAME->data);                \
+        return;                                                 \
     }
 
     APPLY_FOR_VARIANTS_TWO_LEVEL(M)
