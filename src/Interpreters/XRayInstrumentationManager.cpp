@@ -75,7 +75,33 @@ XRayInstrumentationManager & XRayInstrumentationManager::instance()
     return instance;
 }
 
-void XRayInstrumentationManager::setHandlerAndPatch(ContextPtr context, const String & function_name, const String & handler_name, std::optional<XRayEntryType> entry_type, std::optional<std::vector<InstrumentedParameter>> &parameters)
+
+void XRayInstrumentationManager::patchFunctionIfNeeded(Int32 function_id)
+{
+    if (instrumented_functions.contains(function_id))
+    {
+        instrumented_functions[function_id]++;
+    }
+    else
+    {
+        instrumented_functions.emplace(std::make_pair(function_id, 1));
+        __xray_patch_function(function_id);
+    }
+}
+
+void XRayInstrumentationManager::unpatchFunctionIfNeeded(Int32 function_id)
+{
+    if (!instrumented_functions.contains(function_id))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Function id {} to unpatch not previously patched", function_id);
+
+    if (--instrumented_functions[function_id] <= 0)
+    {
+        __xray_unpatch_function(function_id);
+        instrumented_functions.erase(function_id);
+    }
+}
+
+void XRayInstrumentationManager::setHandlerAndPatch(ContextPtr context, const String & function_name, const String & handler_name, std::optional<XRayEntryType> entry_type, std::optional<std::vector<InstrumentedParameter>> & parameters)
 {
     auto handler_name_lower = Poco::toLower(handler_name);
 
@@ -144,31 +170,6 @@ void XRayInstrumentationManager::setHandlerAndPatch(ContextPtr context, const St
         InstrumentedPointKey{function_id, entry_type, handler_name_lower},
         std::move(info)));
     instrumentation_point_ids++;
-}
-
-void XRayInstrumentationManager::patchFunctionIfNeeded(Int32 function_id)
-{
-    if (instrumented_functions.contains(function_id))
-    {
-        instrumented_functions[function_id]++;
-    }
-    else
-    {
-        instrumented_functions.emplace(std::make_pair(function_id, 1));
-        __xray_patch_function(function_id);
-    }
-}
-
-void XRayInstrumentationManager::unpatchFunctionIfNeeded(Int32 function_id)
-{
-    if (!instrumented_functions.contains(function_id))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Function id {} to unpatch not previously patched", function_id);
-
-    if (--instrumented_functions[function_id] <= 0)
-    {
-        __xray_unpatch_function(function_id);
-        instrumented_functions.erase(function_id);
-    }
 }
 
 void XRayInstrumentationManager::unpatchFunction(std::variant<UInt64, bool> id)
