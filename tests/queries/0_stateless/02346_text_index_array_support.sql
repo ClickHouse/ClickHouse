@@ -21,12 +21,12 @@ ENGINE = MergeTree()
 ORDER BY (id)
 SETTINGS index_granularity = 1;
 
-INSERT INTO tab SELECT number, ['abc'], ['abc'] FROM numbers(1024);
-INSERT INTO tab SELECT number, ['foo'], ['foo'] FROM numbers(1024);
-INSERT INTO tab SELECT number, ['bar'], ['bar'] FROM numbers(1024);
-INSERT INTO tab SELECT number, ['foo', 'bar'], ['foo', 'bar'] FROM numbers(1024);
-INSERT INTO tab SELECT number, ['foo', 'baz'], ['foo', 'baz'] FROM numbers(1024);
-INSERT INTO tab SELECT number, ['bar', 'baz'], ['bar', 'baz'] FROM numbers(1024);
+INSERT INTO tab SELECT number, ['abc'], ['abc'] FROM numbers(512);
+INSERT INTO tab SELECT number, ['foo'], ['foo'] FROM numbers(512);
+INSERT INTO tab SELECT number, ['bar'], ['bar'] FROM numbers(512);
+INSERT INTO tab SELECT number, ['foo', 'bar'], ['foo', 'bar'] FROM numbers(512);
+INSERT INTO tab SELECT number, ['foo', 'baz'], ['foo', 'baz'] FROM numbers(512);
+INSERT INTO tab SELECT number, ['bar', 'baz'], ['bar', 'baz'] FROM numbers(512);
 
 SELECT 'has support';
 
@@ -59,16 +59,16 @@ CREATE VIEW explain_index_has AS (
     LIMIT 1, 2
 );
 
-SELECT '-- -- value exists only in 1024 granules';
+SELECT '-- -- value exists only in 512 granules';
 SELECT * FROM explain_index_has(use_idx_fixed = 0, filter = 'abc');
 
-SELECT '-- -- value exists only in 2048 granules';
+SELECT '-- -- value exists only in 1024 granules';
 SELECT * FROM explain_index_has(use_idx_fixed = 0, filter = 'baz');
 
-SELECT '-- -- value exists only in 3072 granules';
+SELECT '-- -- value exists only in 1536 granules';
 SELECT * FROM explain_index_has(use_idx_fixed = 0, filter = 'foo');
 
-SELECT '-- -- value exists only in 3072 granules';
+SELECT '-- -- value exists only in 1536 granules';
 SELECT * FROM explain_index_has(use_idx_fixed = 0, filter = 'bar');
 
 SELECT '-- -- value does not exist in granules';
@@ -76,16 +76,16 @@ SELECT * FROM explain_index_has(use_idx_fixed = 0, filter = 'def');
 
 SELECT '-- Check that the text index actually gets used (FixedString)';
 
-SELECT '-- -- value exists only in 1024 granules';
+SELECT '-- -- value exists only in 512 granules';
 SELECT * FROM explain_index_has(use_idx_fixed = 1, filter = toFixedString('abc', 3));
 
-SELECT '-- -- value exists only in 2048 granules';
+SELECT '-- -- value exists only in 1024 granules';
 SELECT * FROM explain_index_has(use_idx_fixed = 1, filter = toFixedString('baz', 3));
 
-SELECT '-- -- value exists only in 3072 granules';
+SELECT '-- -- value exists only in 1536 granules';
 SELECT * FROM explain_index_has(use_idx_fixed = 1, filter = toFixedString('foo', 3));
 
-SELECT '-- -- value exists only in 3072 granules';
+SELECT '-- -- value exists only in 1536 granules';
 SELECT * FROM explain_index_has(use_idx_fixed = 1, filter = toFixedString('bar', 3));
 
 SELECT '-- -- value does not exist in granules';
@@ -120,16 +120,16 @@ CREATE VIEW explain_index_has_any_tokens AS (
     LIMIT 1, 2
 );
 
-SELECT '-- -- value exists only in 1024 granules';
+SELECT '-- -- value exists only in 512 granules';
 SELECT * FROM explain_index_has_any_tokens(use_idx_fixed = 0, filter = 'abc');
 
-SELECT '-- -- value exists only in 2048 granules';
+SELECT '-- -- value exists only in 1024 granules';
 SELECT * FROM explain_index_has_any_tokens(use_idx_fixed = 0, filter = 'baz');
 
-SELECT '-- -- value exists only in 3072 granules';
+SELECT '-- -- value exists only in 1536 granules';
 SELECT * FROM explain_index_has_any_tokens(use_idx_fixed = 0, filter = 'foo');
 
-SELECT '-- -- value exists only in 5120 granules';
+SELECT '-- -- value exists only in 2560 granules';
 SELECT * FROM explain_index_has_any_tokens(use_idx_fixed = 0, filter = 'foo bar');
 
 SELECT '-- -- value does not exist in granules';
@@ -137,16 +137,16 @@ SELECT * FROM explain_index_has_any_tokens(use_idx_fixed = 0, filter = 'def');
 
 SELECT '-- Check that the text index actually gets used (FixedString)';
 
-SELECT '-- -- value exists only in 1024 granules';
+SELECT '-- -- value exists only in 512 granules';
 SELECT * FROM explain_index_has_any_tokens(use_idx_fixed = 1, filter = 'abc');
 
-SELECT '-- -- value exists only in 2048 granules';
+SELECT '-- -- value exists only in 1024 granules';
 SELECT * FROM explain_index_has_any_tokens(use_idx_fixed = 1, filter = 'baz');
 
-SELECT '-- -- value exists only in 3072 granules';
+SELECT '-- -- value exists only in 1536 granules';
 SELECT * FROM explain_index_has_any_tokens(use_idx_fixed = 1, filter = 'foo');
 
-SELECT '-- -- value exists only in 5120 granules';
+SELECT '-- -- value exists only in 2560 granules';
 SELECT * FROM explain_index_has_any_tokens(use_idx_fixed = 1, filter = 'foo bar');
 
 SELECT '-- -- value does not exist in granules';
@@ -181,16 +181,16 @@ CREATE VIEW explain_index_has_all_tokens AS (
     LIMIT 1, 2
 );
 
-SELECT '-- -- value exists only in 1024 granules';
+SELECT '-- -- value exists only in 512 granules';
 SELECT * FROM explain_index_has_all_tokens(use_idx_fixed = 0, filter = 'abc');
 
-SELECT '-- -- value exists only in 2048 granules';
+SELECT '-- -- value exists only in 1024 granules';
 SELECT * FROM explain_index_has_all_tokens(use_idx_fixed = 0, filter = 'baz');
 
-SELECT '-- -- value exists only in 3072 granules';
+SELECT '-- -- value exists only in 1536 granules';
 SELECT * FROM explain_index_has_all_tokens(use_idx_fixed = 0, filter = 'foo');
 
-SELECT '-- -- value exists only in 1024 granules';
+SELECT '-- -- value exists only in 512 granules';
 SELECT * FROM explain_index_has_all_tokens(use_idx_fixed = 0, filter = 'foo bar');
 
 SELECT '-- -- value does not exist in granules';
@@ -198,16 +198,16 @@ SELECT * FROM explain_index_has_all_tokens(use_idx_fixed = 0, filter = 'def');
 
 SELECT '-- Check that the text index actually gets used (FixedString)';
 
-SELECT '-- -- value exists only in 1024 granules';
+SELECT '-- -- value exists only in 512 granules';
 SELECT * FROM explain_index_has_all_tokens(use_idx_fixed = 1, filter = 'abc');
 
-SELECT '-- -- value exists only in 2048 granules';
+SELECT '-- -- value exists only in 1024 granules';
 SELECT * FROM explain_index_has_all_tokens(use_idx_fixed = 1, filter = 'baz');
 
-SELECT '-- -- value exists only in 3072 granules';
+SELECT '-- -- value exists only in 1536 granules';
 SELECT * FROM explain_index_has_all_tokens(use_idx_fixed = 1, filter = 'foo');
 
-SELECT '-- -- value exists only in 1024 granules';
+SELECT '-- -- value exists only in 512 granules';
 SELECT * FROM explain_index_has_all_tokens(use_idx_fixed = 1, filter = 'foo bar');
 
 SELECT '-- -- value does not exist in granules';
