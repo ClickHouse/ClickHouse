@@ -1,4 +1,3 @@
-#include <csignal>
 #include "config.h"
 
 #include <Client/ClientBase.h>
@@ -96,6 +95,7 @@
 #include <mutex>
 #include <string_view>
 #include <unordered_map>
+#include <csignal>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/split.hpp>
