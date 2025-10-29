@@ -65,17 +65,3 @@ Export the file list to a file:
 ```sql title="Query"
 LS INTO OUTFILE 'file_list.txt' FORMAT TabSeparated
 ```
-
-## Notes
-
-- The files returned depend on ClickHouse's file access permissions and the current working directory
-- This is useful for exploring available data files before using them with the [`file()` table function](../../sql-reference/table-functions/file.md)
-- The statement internally uses the `file()` table function with a wildcard pattern
-- Only files that ClickHouse has permission to read will be listed
-- The current working directory is typically determined by ClickHouse's `user_files_path` setting
-
-## See Also
-
-- [file() table function](../../sql-reference/table-functions/file.md)
-- [File Engines](../../engines/table-engines/special/file.md)
-
