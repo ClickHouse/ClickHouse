@@ -138,9 +138,11 @@ void XRayInstrumentationManager::setHandlerAndPatch(ContextPtr context, const St
 
     patchFunctionIfNeeded(function_id);
 
+    InstrumentedPointInfo info{context, instrumentation_point_ids, function_id, function_name, handler_name_lower, entry_type, parameters};
+    LOG_DEBUG(logger, "Adding instrumentation point for {}", info.toString());
     instrumented_points.emplace(std::make_pair(
         InstrumentedPointKey{function_id, entry_type, handler_name_lower},
-        InstrumentedPointInfo{context, instrumentation_point_ids, function_id, function_name, handler_name_lower, entry_type, parameters}));
+        std::move(info)));
     instrumentation_point_ids++;
 }
 
@@ -175,6 +177,7 @@ void XRayInstrumentationManager::unpatchFunction(std::variant<UInt64, bool> id)
 
     if (std::holds_alternative<bool>(id))
     {
+        LOG_DEBUG(logger, "Removing all instrumented functions");
         for (const auto & [function_id, info] : instrumented_points)
             unpatchFunctionIfNeeded(info.function_id);
         instrumented_points.clear();
@@ -182,11 +185,13 @@ void XRayInstrumentationManager::unpatchFunction(std::variant<UInt64, bool> id)
     else
     {
         std::optional<InstrumentedPointKey> function_key;
+        InstrumentedPointInfo instrumented_info;
         for (const auto & [key, info] : instrumented_points)
         {
             if (info.id == std::get<UInt64>(id))
             {
                 function_key = key;
+                instrumented_info = info;
                 break;
             }
         }
@@ -194,6 +199,7 @@ void XRayInstrumentationManager::unpatchFunction(std::variant<UInt64, bool> id)
         if (!function_key.has_value())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown instrumentation point id to remove: ({})", std::get<UInt64>(id));
 
+        LOG_DEBUG(logger, "Removing instrumented function {}", instrumented_info.toString());
         unpatchFunctionIfNeeded(function_key->function_id);
         instrumented_points.erase(function_key.value());
     }
@@ -421,7 +427,7 @@ void XRayInstrumentationManager::profile(XRayEntryType entry_type, const Instrum
 {
     static thread_local std::unordered_map<Int32, XRayInstrumentationProfilingLogElement> active_elements;
 
-    LOG_TRACE(logger, "Profile: function with id {}", toString(instrumented_point.function_id));
+    LOG_TRACE(logger, "Profile: function with id {}", instrumented_point.function_id);
     if (entry_type == XRayEntryType::ENTRY)
     {
         XRayInstrumentationProfilingLogElement element;

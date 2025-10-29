@@ -44,6 +44,29 @@ public:
         String handler_name;
         std::optional<XRayEntryType> entry_type;
         std::optional<std::vector<InstrumentedParameter>> parameters;
+
+        String toString()
+        {
+            String entry_type_str = !entry_type.has_value() ? "none" : (entry_type.value() == XRayEntryType::ENTRY ? "entry" : "exit");
+            String parameters_str;
+            if (parameters.has_value())
+            {
+                parameters_str = ", parameters (";
+                for (const auto & param : parameters.value())
+                {
+                    if (std::holds_alternative<String>(param))
+                        parameters_str += fmt::format("{}, ", std::get<String>(param));
+                    else if (std::holds_alternative<Int64>(param))
+                        parameters_str += fmt::format("{}, ", std::get<Int64>(param));
+                    else if (std::holds_alternative<Float64>(param))
+                        parameters_str += fmt::format("{}, ", std::get<Float64>(param));
+                }
+                parameters_str = ")";
+            }
+
+            return fmt::format("id {}, function_id {}, function_name '{}', handler_name {}, entry_type {}{}",
+                id, function_id, function_name, handler_name, entry_type_str, parameters_str);
+        }
     };
 
     using XRayHandlerFunction = std::function<void(XRayEntryType, const InstrumentedPointInfo &)>;
