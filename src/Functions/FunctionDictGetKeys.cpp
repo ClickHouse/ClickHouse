@@ -45,8 +45,8 @@ static inline bool equalAt(const IColumn & left_column, size_t left_row_id, cons
         {
             const bool left_is_null = left_nullable->isNullAt(left_row_id);
             const bool right_is_null = right_nullable->isNullAt(right_row_id);
-            if (left_is_null | right_is_null)
-                return left_is_null & right_is_null;
+            if (left_is_null || right_is_null)
+                return left_is_null && right_is_null;
 
             /// Both not null
             return left_nullable->getNestedColumn().compareAt(
