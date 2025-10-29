@@ -44,7 +44,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"correlated_subqueries_default_join_kind", "left", "right", "New setting. Default join kind for decorrelated query plan."},
             {"use_statistics_cache", 0, 0, "New setting"},
             {"s3_retry_attempts", 500, 500, "Changed the value of the obsolete setting"},
-            {"enable_partition_distinct", false, false, "Add new setting to enable partitioned distinct processing."},
+            {"enable_partition_distinct", false, true, "Add new setting to enable partitioned distinct processing."},
         });
         addSettingsChanges(settings_changes_history, "25.10",
         {
