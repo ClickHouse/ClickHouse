@@ -30,6 +30,7 @@
 #include <Common/assert_cast.h>
 #include <Common/formatReadable.h>
 #include <Common/typeid_cast.h>
+#include "Columns/IColumn_fwd.h"
 #include <Columns/ColumnsCommon.h>
 #include <Interpreters/IJoin.h>
 
@@ -767,19 +768,8 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
                     has_right_not_joined = true;
                 };
 
-                /// Fast path for continuous range selector to reduce iterator overhead
-                if (sel.isContinuousRange())
-                {
-                    auto rg = sel.getRange();
-                    for (size_t r = rg.first; r < rg.second; ++r)
-                        mark_if_needed(r);
-                }
-                else
-                {
-                    const auto & idxs = sel.getIndexes().getData();
-                    for (size_t r : idxs)
-                        mark_if_needed(r);
-                }
+                for (size_t r : sel)
+                    mark_if_needed(r);
             }
 
             bool is_inserted = false;
@@ -1351,16 +1341,38 @@ struct AdderNonJoined
         }
         else
         {
+            const Columns * current_columns = nullptr;
+            size_t run_start = 0;
+            size_t run_length = 0;
+
+            auto flush_run = [&]()
+            {
+                if (!run_length)
+                    return;
+                for (size_t j = 0; j < columns_right.size(); ++j)
+                    columns_right[j]->insertRangeFrom(*(*current_columns)[j], run_start, run_length);
+                rows_added += run_length;
+                run_length = 0;
+            };
+
             for (auto it = mapped.begin(); it.ok(); ++it)
             {
-                for (size_t j = 0; j < columns_right.size(); ++j)
-                {
-                    const auto & mapped_column = it->columns_info->columns[j];
-                    columns_right[j]->insertFrom(*mapped_column, it->row_num);
-                }
+                const auto & cols = it->columns_info->columns;
+                size_t row = it->row_num;
 
-                ++rows_added;
+                if (*current_columns == cols && row == run_start + run_length)
+                {
+                    ++run_length;
+                }
+                else
+                {
+                    flush_run();
+                    current_columns = &cols;
+                    run_start = row;
+                    run_length = 1;
+                }
             }
+            flush_run();
         }
     }
 };
@@ -1485,17 +1497,23 @@ private:
                 const auto & mapped_block = *it;
                 size_t rows = mapped_block.columns_info.columns.at(0)->size();
 
+                IColumn::Filter filter(rows);
+
                 for (size_t row = 0; row < rows; ++row)
                 {
                     if (!parent.isUsed(&mapped_block.columns_info.columns, row))
                     {
-                        for (size_t colnum = 0; colnum < columns_keys_and_right.size(); ++colnum)
-                        {
-                            columns_keys_and_right[colnum]->insertFrom(*mapped_block.columns_info.columns[colnum], row);
-                        }
-
+                        filter[row] = 1;
                         ++rows_added;
                     }
+                }
+
+
+                    
+                for (size_t colnum = 0; colnum < columns_keys_and_right.size(); ++colnum)
+                {
+                    auto col = mapped_block.columns_info.columns[colnum]->filter(filter, rows_added);
+                    columns_keys_and_right[colnum]->insertRangeFrom(*col, 0, col->size());
                 }
             }
         }
@@ -1513,11 +1531,11 @@ private:
 
             for (; it != end; ++it)
             {
-                const Mapped & mapped = it->getMapped();
-
                 size_t offset = map.offsetInternal(it.getPtr());
                 if (parent.isUsed(offset))
                     continue;
+
+                const Mapped & mapped = it->getMapped();
                 AdderNonJoined<Mapped>::add(mapped, rows_added, columns_keys_and_right);
 
                 if (rows_added >= max_block_size)
@@ -1545,13 +1563,13 @@ private:
             if (it->column)
                 nullmap = &assert_cast<const ColumnUInt8 &>(*it->column).getData();
 
-            size_t rows = columns->columns.at(0)->size();
+            size_t rows = columns->columns_info.columns.at(0)->size();
             for (size_t row = 0; row < rows; ++row)
             {
                 if (nullmap && (*nullmap)[row])
                 {
                     for (size_t col = 0; col < columns_keys_and_right.size(); ++col)
-                        columns_keys_and_right[col]->insertFrom(*columns->columns[col], row);
+                        columns_keys_and_right[col]->insertFrom(*columns->columns_info.columns[col], row);
                     ++rows_added;
                 }
             }
@@ -1751,8 +1769,8 @@ template <JoinKind KIND, typename Map, JoinStrictness STRICTNESS>
 void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
 {
     constexpr JoinFeatures<KIND, STRICTNESS, Map> join_features;
-    if constexpr (!join_features.is_all_join || (!join_features.left && !join_features.inner))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Only left or inner join table can be reranged.");
+    if constexpr (!join_features.is_all_join)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Only ALL join table can be reranged.");
     else
     {
         auto merge_rows_into_one_block = [&](ScatteredColumnsList & columns_list, RowRefList & rows_ref)
