@@ -172,7 +172,7 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
     const uint32_t time_lit = 25 * static_cast<uint32_t>((this->next_type_mask & allow_time) != 0);
     const uint32_t date_lit = 25 * static_cast<uint32_t>((this->next_type_mask & allow_dates) != 0);
     const uint32_t datetime_lit = 25 * static_cast<uint32_t>((this->next_type_mask & allow_datetimes) != 0);
-    const uint32_t dec_lit = 50 * static_cast<uint32_t>((this->next_type_mask & allow_decimals) != 0);
+    const uint32_t dec_lit = 25 * static_cast<uint32_t>((this->next_type_mask & allow_decimals) != 0);
     const uint32_t random_str = 30 * static_cast<uint32_t>(complex && this->allow_not_deterministic);
     const uint32_t uuid_lit = 20 * static_cast<uint32_t>((this->next_type_mask & allow_uuid) != 0);
     const uint32_t ipv4_lit = 20 * static_cast<uint32_t>((this->next_type_mask & allow_ipv4) != 0);
@@ -182,8 +182,9 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
     const uint32_t special_val = 80;
     const uint32_t json_lit = 20 * static_cast<uint32_t>((this->next_type_mask & allow_JSON) != 0);
     const uint32_t null_lit = 10;
+    const uint32_t frac_lit = 25;
     const uint32_t prob_space = hugeint_lit + uhugeint_lit + int_lit + uint_lit + time_lit + date_lit + datetime_lit + dec_lit + random_str
-        + uuid_lit + ipv4_lit + ipv6_lit + geo_lit + str_lit + special_val + json_lit + null_lit;
+        + uuid_lit + ipv4_lit + ipv6_lit + geo_lit + str_lit + special_val + json_lit + null_lit + frac_lit;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t noption = next_dist(rg.generator);
 
@@ -347,6 +348,15 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
                 + ipv4_lit + ipv6_lit + geo_lit + str_lit + special_val + json_lit + null_lit + 1))
     {
         lv->mutable_special_val()->set_val(SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_NULL);
+    }
+    else if (
+        frac_lit
+        && (noption < hugeint_lit + uhugeint_lit + int_lit + uint_lit + time_lit + date_lit + datetime_lit + dec_lit + random_str + uuid_lit
+                + ipv4_lit + ipv6_lit + geo_lit + str_lit + special_val + json_lit + null_lit + frac_lit + 1))
+    {
+        std::uniform_int_distribution<uint32_t> frange(1, 1000);
+
+        lv->set_no_quote_str(fmt::format("0.{}", frange(rg.generator)));
     }
     else
     {
