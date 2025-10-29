@@ -19,7 +19,7 @@ from helpers.s3_queue_common import (
 )
 
 AVAILABLE_MODES = ["unordered", "ordered"]
-#test
+
 
 @pytest.fixture(autouse=True)
 def s3_queue_setup_teardown(started_cluster):
@@ -372,18 +372,22 @@ def test_alter_settings(started_cluster):
         "min_insert_block_size_bytes_for_materialized_views": 321,
         "cleanup_interval_min_ms": 34500,
         "cleanup_interval_max_ms": 45600,
-        "persistent_processing_node_ttl_seconds": 89
+        "persistent_processing_node_ttl_seconds": 89,
     }
     string_settings = {"after_processing": "delete"}
 
     def check_alterable(setting):
         if setting.startswith("s3queue_"):
-            name = setting[len("s3queue_"):]
+            name = setting[len("s3queue_") :]
         else:
             name = setting
         if name == "tracked_files_ttl_sec":
-            name = "tracked_file_ttl_sec" # sadly
-        assert 1 == int(node1.query(f"select alterable from system.s3_queue_settings where name = '{name}'"))
+            name = "tracked_file_ttl_sec"  # sadly
+        assert 1 == int(
+            node1.query(
+                f"select alterable from system.s3_queue_settings where name = '{name}'"
+            )
+        )
 
     for setting, _ in int_settings.items():
         check_alterable(setting)
@@ -391,7 +395,11 @@ def test_alter_settings(started_cluster):
     for setting, _ in string_settings.items():
         check_alterable(setting)
 
-    assert 0 == int(node1.query(f"select alterable from system.s3_queue_settings where name = 'mode'"))
+    assert 0 == int(
+        node1.query(
+            f"select alterable from system.s3_queue_settings where name = 'mode'"
+        )
+    )
 
     def with_keeper(setting):
         return setting in {
@@ -463,7 +471,9 @@ def test_alter_settings(started_cluster):
         check_string_settings(node, string_settings)
 
 
-@pytest.mark.skip(reason = "tracked_files_limit = 1 triggers asserts, but this is unrealistic")
+@pytest.mark.skip(
+    reason="tracked_files_limit = 1 triggers asserts, but this is unrealistic"
+)
 def test_list_and_delete_race(started_cluster):
     node = started_cluster.instances["instance"]
     if node.is_built_with_sanitizer():
@@ -593,18 +603,28 @@ def test_registry(started_cluster):
     )
 
     zk = started_cluster.get_kazoo_client("zoo1")
-    registry, stat = zk.get(f"{keeper_path}/registry/")
 
     uuid1 = node1.query(
         f"SELECT uuid FROM system.tables WHERE database = '{db_name}' and table = '{table_name}'"
     ).strip()
-    assert uuid1 in str(registry)
-
     server_uuid_1 = node1.query("SELECT serverUUID()").strip()
     server_uuid_2 = node2.query("SELECT serverUUID()").strip()
+    for _ in range(30):
+        registry, stat = zk.get(f"{keeper_path}/registry/")
+        if (
+            f"{uuid1}\\n{server_uuid_1}" in str(registry)
+            and f"{uuid1}\\n{server_uuid_2}" in str(registry)
+        ):
+            break
+        time.sleep(1)
 
-    expected = [f"1\\ninstance\\n{uuid1}\\n{server_uuid_1}\\n", f"1\\ninstance2\\n{uuid1}\\n{server_uuid_2}\\n"]
+    registry, stat = zk.get(f"{keeper_path}/registry/")
+    assert uuid1 in str(registry)
 
+    expected = [
+        f"1\\ninstance\\n{uuid1}\\n{server_uuid_1}\\n",
+        f"1\\ninstance2\\n{uuid1}\\n{server_uuid_2}\\n",
+    ]
     for elem in expected:
         assert elem in str(registry)
 
@@ -631,7 +651,25 @@ def test_registry(started_cluster):
         if expected_rows == get_count():
             break
         time.sleep(1)
-    assert expected_rows == get_count()
+    count = get_count()
+    if expected_rows != count:
+        expected_files = [f"{files_path}/test_{x}.csv" for x in range(1000)]
+        node.query("SYSTEM FLUSH LOGS")
+        node_2.query("SYSTEM FLUSH LOGS")
+        processed_files = (
+            node.query(
+                f"SELECT distinct(_path) FROM clusterAllReplicas(cluster, {db_name}.{dst_table_name})"
+            )
+            .strip()
+            .split("\n")
+        )
+        processed_files.sort()
+        logging.debug(f"Processed files: {processed_files}")
+        missing_files = [file for file in expected_files if file not in processed_files]
+        missing_files.sort()
+        assert (
+            False
+        ), f"Expected {expected_rows} in total, got {count} (having {len(missing_files)} missing files: ({missing_files})"
 
     table_name_2 = f"test_registry_{uuid.uuid4().hex[:8]}_2"
     create_table(
@@ -648,12 +686,17 @@ def test_registry(started_cluster):
     # we actually create the table on node2 and when we query the registry.
     node2.query(f"SYSTEM SYNC DATABASE REPLICA {db_name}")
 
-    registry, stat = zk.get(f"{keeper_path}/registry/")
-
     uuid2 = node1.query(
         f"SELECT uuid FROM system.tables WHERE database = '{db_name}' and table = '{table_name_2}'"
     ).strip()
 
+    for _ in range(30):
+        registry, stat = zk.get(f"{keeper_path}/registry/")
+        if uuid2 in str(registry):
+            break
+        time.sleep(1)
+
+    registry, stat = zk.get(f"{keeper_path}/registry/")
     assert uuid1 in str(registry)
     assert uuid2 in str(registry)
 
@@ -697,4 +740,3 @@ def test_registry(started_cluster):
 
     # finally drop and clean up the database
     node1.query_with_retry(f"DROP DATABASE {db_name}")
-
