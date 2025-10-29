@@ -137,6 +137,8 @@ class GitHub(github.Github):
             order="asc",
             label="release",
         )
+        # All PRs should belong to the repo_name
+        prs = [pr for pr in prs if pr.head.repo.full_name == repo_name]
         # Ensure that the answer from GitHub is correct (we should always have some releases)
         assert prs
         return prs
