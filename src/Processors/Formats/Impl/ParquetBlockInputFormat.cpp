@@ -637,16 +637,6 @@ ParquetFileBucketInfo::ParquetFileBucketInfo(const std::vector<size_t> & row_gro
 {
 }
 
-std::shared_ptr<FileBucketInfo> ParquetFileBucketInfo::createFromBuckets(const std::vector<size_t> & buckets_ids)
-{
-    return std::make_shared<ParquetFileBucketInfo>(buckets_ids);
-}
-
-std::shared_ptr<FileBucketInfo> ParquetFileBucketInfo::clone() const
-{
-    return std::make_shared<ParquetFileBucketInfo>(row_group_ids);
-}
-
 void registerParquetFileBucketInfo(std::unordered_map<String, FileBucketInfoPtr> & instances)
 {
     instances.emplace("PARQUET", std::make_shared<ParquetFileBucketInfo>());
@@ -1403,6 +1393,8 @@ std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(size_t buck
     {
         if (current_weight + bucket_sizes[i] <= bucket_size)
         {
+            if (buckets.empty())
+                buckets.emplace_back();
             buckets.back().push_back(i);
             current_weight += bucket_sizes[i];
         }
@@ -1418,7 +1410,7 @@ std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(size_t buck
     std::vector<FileBucketInfoPtr> result;
     for (const auto & bucket : buckets)
     {
-        result.push_back(std::make_shared<ParquetFileBucketInfo>(bucket)->createFromBuckets(bucket));
+        result.push_back(std::make_shared<ParquetFileBucketInfo>(bucket));
     }
     return result;
 }

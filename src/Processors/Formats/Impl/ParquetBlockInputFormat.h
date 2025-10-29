@@ -64,9 +64,6 @@ struct ParquetFileBucketInfo : public FileBucketInfo
     {
         return "PARQUET";
     }
-    std::shared_ptr<FileBucketInfo> clone() const override;
-
-    std::shared_ptr<FileBucketInfo> createFromBuckets(const std::vector<size_t> & buckets_ids);
 };
 using ParquetFileBucketInfoPtr = std::shared_ptr<ParquetFileBucketInfo>;
 

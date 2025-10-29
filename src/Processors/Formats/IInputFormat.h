@@ -53,7 +53,6 @@ struct FileBucketInfo
     virtual void serialize(WriteBuffer & buffer) = 0;
     virtual void deserialize(ReadBuffer & buffer) = 0;
     virtual String getIdentifier() const = 0;
-    virtual std::shared_ptr<FileBucketInfo> clone() const = 0;
     virtual String getFormatName() const = 0;
 
     virtual ~FileBucketInfo() = default;
