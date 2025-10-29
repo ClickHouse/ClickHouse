@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database, no-fasttest
+# Tags: no-replicated-database, no-parallel
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -10,6 +10,12 @@ role="role03702_${CLICKHOUSE_DATABASE}_$RANDOM"
 db=${CLICKHOUSE_DATABASE}
 
 ${CLICKHOUSE_CLIENT} <<EOF
+DROP DATABASE IF EXISTS shard_0;
+DROP DATABASE IF EXISTS shard_1;
+
+CREATE DATABASE IF NOT EXISTS shard_0;
+CREATE DATABASE IF NOT EXISTS shard_1;
+
 SET distributed_ddl_output_mode = 'none';
 DROP USER IF EXISTS $user ON CLUSTER test_cluster_two_shards_different_databases;
 CREATE USER $user ON CLUSTER test_cluster_two_shards_different_databases;
