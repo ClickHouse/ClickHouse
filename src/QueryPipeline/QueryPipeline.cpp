@@ -511,12 +511,12 @@ void QueryPipeline::complete(Pipe pipe)
     processors->insert(processors->end(), pipe_processors.begin(), pipe_processors.end());
 }
 
-static void addMaterializing(OutputPort *& output, Processors & processors)
+static void addMaterializing(OutputPort *& output, Processors & processors, bool remove_special_column_representations)
 {
     if (!output)
         return;
 
-    auto materializing = std::make_shared<MaterializingTransform>(output->getSharedHeader());
+    auto materializing = std::make_shared<MaterializingTransform>(output->getSharedHeader(), remove_special_column_representations);
     connect(*output, materializing->getInputPort());
     output = &materializing->getOutputPort();
     processors.emplace_back(std::move(materializing));
@@ -529,9 +529,10 @@ void QueryPipeline::complete(std::shared_ptr<IOutputFormat> format)
 
     if (format->expectMaterializedColumns())
     {
-        addMaterializing(output, *processors);
-        addMaterializing(totals, *processors);
-        addMaterializing(extremes, *processors);
+        bool remove_special_column_representations = !format->supportsSpecialSerializationKinds();
+        addMaterializing(output, *processors, remove_special_column_representations);
+        addMaterializing(totals, *processors, remove_special_column_representations);
+        addMaterializing(extremes, *processors, remove_special_column_representations);
     }
 
     auto & format_main = format->getPort(IOutputFormat::PortKind::Main);
