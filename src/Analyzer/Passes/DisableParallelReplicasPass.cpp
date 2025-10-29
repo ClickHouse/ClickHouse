@@ -33,7 +33,7 @@ public:
                 is_correlated = true;
     }
 
-    void leaveImpl(QueryTreeNodePtr & node)
+    void leaveImpl(QueryTreeNodePtr & node) const
     {
         if (!is_correlated)
             return;
