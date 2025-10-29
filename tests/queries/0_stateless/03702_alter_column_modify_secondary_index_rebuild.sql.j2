@@ -1,5 +1,8 @@
--- TODO: Make sure we test with wide, compact and packed parts
 DROP TABLE IF EXISTS test_table;
+
+{% for part_type_setting in ['min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage=0', 'min_bytes_for_full_part_storage = \'1G\''] -%}
+
+-- { echoOn }
 CREATE TABLE test_table
 (
     id UInt64,
@@ -14,7 +17,8 @@ CREATE TABLE test_table
 ENGINE = MergeTree()
 ORDER BY id
 PARTITION BY id
-SETTINGS alter_column_secondary_index_mode = 'rebuild';
+SETTINGS alter_column_secondary_index_mode = 'rebuild', {{ part_type_setting }};
+-- { echOff }
 
 -- Need it for proper explain
 SET use_skip_indexes_on_data_read = 0;
@@ -52,7 +56,7 @@ SET max_threads = DEFAULT;
 SYSTEM START MERGES test_table;
 -- Wait for mutations
 SET alter_sync = 1;
-ALTER TABLE test_table DELETE WHERE value = 'DoesNotExist'; -- Just a dummy mutation to wait for previous to finish
+ALTER TABLE test_table UPDATE ip = '127.0.0.1' WHERE true; -- Just a dummy mutation to wait for previous to finish
 
 SELECT 'Status after ALTER is applied';
 EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = 'c';
@@ -63,3 +67,24 @@ OPTIMIZE TABLE test_table FINAL;
 SELECT 'Status after ALTER full table rewrite (should be the same)';
 EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = 'c';
 SELECT count() FROM test_table WHERE value = 'c';
+
+-- Doing a MODIFY COLUMN TTL should not affect the index
+SELECT 'ALTER TTL';
+SYSTEM STOP MERGES test_table;
+SET alter_sync = 0;
+ALTER TABLE test_table MODIFY COLUMN value MODIFY SETTING max_compress_block_size = 1048576;
+
+SELECT 'Status after unrelated ALTER MODIFY COLUMN is issued, before merges happen';
+EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = 'c';
+SELECT count() FROM test_table WHERE value = 'c';
+
+SYSTEM START MERGES test_table;
+-- Wait for mutations
+SET alter_sync = 1;
+ALTER TABLE test_table UPDATE ip = '127.0.0.1' WHERE true; -- Just a dummy mutation to wait for previous to finish
+SELECT 'Status after unrelated ALTER is applied';
+EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = 'c';
+SELECT count() FROM test_table WHERE value = 'c';
+
+DROP TABLE IF EXISTS test_table;
+{% endfor -%}

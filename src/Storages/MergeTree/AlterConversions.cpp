@@ -165,9 +165,7 @@ void AlterConversions::addMutationCommand(const MutationCommand & command, const
         version_of_alter_mutation = command.mutation_version;
 
         /// This is neeeded to ignore skip indices that use the column as it's changing its type and no longer applies
-        /// TODO: check if this needs to compare types or is enough to check for != nullptr (see MutationsInterpreter:
-        /// if (column && command.data_type && !column->type->equals(*command.data_type))
-        /// A
+        /// Note that data_type is only set on ADD_COLUMN and MODIFY_COLUMN commands
         if (command.data_type)
             all_updated_columns.insert(command.column_name);
     }
