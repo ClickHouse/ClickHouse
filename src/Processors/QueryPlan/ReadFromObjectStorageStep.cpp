@@ -62,7 +62,7 @@ QueryPlanStepPtr ReadFromObjectStorageStep::clone() const
 void ReadFromObjectStorageStep::applyFilters(ActionDAGNodes added_filter_nodes)
 {
     SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
-    VirtualColumnUtils::buildSetsForDAG(*filter_actions_dag, getContext());
+    VirtualColumnUtils::buildOrderedSetsForDAG(*filter_actions_dag, getContext());
 }
 
 void ReadFromObjectStorageStep::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
