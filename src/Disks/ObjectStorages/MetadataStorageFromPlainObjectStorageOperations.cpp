@@ -338,7 +338,6 @@ void MetadataStorageFromPlainObjectStorageWriteFileOperation::undo()
 MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation(
     std::filesystem::path && path_, InMemoryDirectoryTree & fs_tree_, ObjectStoragePtr object_storage_)
     : path(path_)
-    , remote_path(std::filesystem::path(object_storage_->generateObjectKeyForPath(path_, std::nullopt).serialize()))
     , fs_tree(fs_tree_)
     , object_storage(object_storage_)
 {
@@ -354,6 +353,8 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::execute()
 
     if (!fs_tree.existsFile(path))
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File '{}' does not exist", path);
+
+    remote_path = object_storage->generateObjectKeyForPath(path, std::nullopt).serialize();
 
     fs_tree.removeFile(path);
     unlinked = true;
@@ -373,9 +374,7 @@ MetadataStorageFromPlainObjectStorageCopyFileOperation::MetadataStorageFromPlain
     InMemoryDirectoryTree & fs_tree_,
     ObjectStoragePtr object_storage_)
     : path_from(path_from_)
-    , remote_path_from(object_storage_->generateObjectKeyForPath(path_from_, std::nullopt).serialize())
     , path_to(path_to_)
-    , remote_path_to(object_storage_->generateObjectKeyForPath(path_to_, std::nullopt).serialize())
     , fs_tree(fs_tree_)
     , object_storage(object_storage_)
 {
@@ -589,6 +588,12 @@ MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::MetadataStorageFr
 
 void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::execute()
 {
+    /// Unfortunatelly we are able to create merge tree unlinked from database directory.
+    /// In this case during the dropAllData method removeRecursive can be called pointing to the root folder.
+    /// I don't know what to do in this case, so right now it is a no-op.
+    if (path.empty())
+        return;
+
     if (fs_tree.existsDirectory(path).first)
     {
         move_tried = true;

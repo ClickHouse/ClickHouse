@@ -196,6 +196,9 @@ void InMemoryDirectoryTree::unlinkTree(const std::string & path)
     if (inode->isVirtual())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' is virtual", normalized_path.string());
 
+    if (inode->isRoot())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' is root", normalized_path.string());
+
     traverseSubtree(normalized_path, [&](const std::string &, const std::shared_ptr<INode> & node) TSA_REQUIRES(mutex)
     {
         if (!node->remote_info.has_value())
@@ -221,6 +224,12 @@ void InMemoryDirectoryTree::moveDirectory(const std::string & from, const std::s
 
     if (!inode_from)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' does not exist", normalized_from.string());
+
+    if (inode_from->isVirtual())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' is virtual", normalized_from.string());
+
+    if (inode_from->isRoot())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' is root", normalized_from.string());
 
     if (!inode_to_parent)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' does not exist", normalized_to.parent_path().string());

@@ -46,10 +46,13 @@ ObjectStorageKey FlatDirectoryStructureKeyGenerator::generate(const String & pat
             throw Exception(ErrorCodes::LOGICAL_ERROR, "File name is empty for path '{}'", fs_path.string());
 
         auto [exists_direcotory, remote_info] = tree_ptr->existsDirectory(directory);
-        if (!exists_direcotory)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' does not exist", directory.string());
-        else if (exists_direcotory && !remote_info)
+        if (exists_direcotory && !remote_info)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' is virtual", directory.string());
+
+        /// This is invalid in 100% cases, but because plain-rewritable disk based on top of plain disk we can not throw logical error here.
+        /// So let's return some path that will not exist for plain-rewritable
+        if (!exists_direcotory)
+            return ObjectStorageKey::createAsRelative(prefix, fs::path(directory) / filename);
 
         return ObjectStorageKey::createAsRelative(prefix, fs::path(remote_info->remote_path) / filename);
     }
