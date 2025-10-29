@@ -3,6 +3,7 @@
 #include <cassert>
 #include <vector>
 #include <algorithm>
+#include <cmath>
 
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnFixedString.h>
@@ -27,6 +28,9 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+#include <Common/logger_useful.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 
 #include "config.h"
 
@@ -110,6 +114,23 @@ struct SortCursorImpl
         if (permutation)
             return (*permutation)[pos];
         return pos;
+    }
+
+    String dumpSortedKeys() const
+    {
+        if (!isValid())
+            return "()";
+        size_t row = getRow();
+        WriteBufferFromOwnString s;
+        s << "(";
+        for (size_t i = 0; i < sort_columns.size(); ++i)
+        {
+            if (i != 0)
+                s << ", ";
+            s << (*sort_columns[i])[row].dump();
+        }
+        s << ")";
+        return s.str();
     }
 
     /// We need a possibility to change pos (see MergeJoin).
@@ -499,7 +520,6 @@ public:
         if constexpr (strategy == SortingQueueStrategy::Batch)
             updateBatchSize();
     }
-
 private:
     using Container = std::vector<Cursor>;
     Container queue;
@@ -630,19 +650,314 @@ private:
     }
 };
 
+template <typename Cursor, SortingQueueStrategy strategy>
+class LoserTreeSortingQueueImpl
+{
+public:
+    LoserTreeSortingQueueImpl() = default;
+
+    template <typename Cursors>
+    explicit LoserTreeSortingQueueImpl(Cursors & cursors)
+    {
+        size_t size = cursors.size();
+        queue.reserve(size);
+        for (size_t i = 0; i < size; ++i)
+        {
+            if (cursors[i].empty())
+                continue;
+            queue.emplace_back(&cursors[i]);
+        }
+        if (queue.empty())
+            return;
+
+        buildLoserTree();
+
+        if constexpr (strategy == SortingQueueStrategy::Batch)
+        {
+            updateBatchSize();
+        }
+    }
+
+    bool isValid() const { return !queue.empty() && loser_tree[0] >= 0; }
+
+    Cursor & ALWAYS_INLINE current() requires (strategy == SortingQueueStrategy::Default)
+    {
+        return queue[loser_tree[0]];
+    }
+
+    std::pair<Cursor *, size_t> ALWAYS_INLINE current() requires (strategy == SortingQueueStrategy::Batch)
+    {
+        assert(current_batch_size > 0);
+        return {&queue[loser_tree[0]], current_batch_size};
+    }
+
+    size_t size() { return queue.size(); }
+
+    // Avoid frequent calls to this, as it has a high overhead
+    Cursor & ALWAYS_INLINE nextChild()
+    {
+        assert(this->size() > 1);
+        auto winner = loser_tree[0];
+        auto next_child_index = (winner + this->size()) / 2;
+        auto child_index = next_child_index;
+        while (child_index > 1)
+        {
+            auto parent = child_index / 2;
+            auto & next_child = queue[loser_tree[next_child_index]];
+            auto & parent_child = queue[loser_tree[parent]];
+            if (next_child.greater(parent_child))
+            {
+                next_child_index = parent;
+            }
+            child_index = parent;
+        }
+        return queue[loser_tree[next_child_index]];
+    }
+
+    void ALWAYS_INLINE next() requires (strategy == SortingQueueStrategy::Default)
+    {
+        assert(isValid());
+        read_rows += 1;
+        size_t winner = loser_tree[0];
+        if (!queue[winner]->isLast())
+        {
+            queue[winner]->next();
+            adjustLoserTree(winner);
+        }
+        else
+        {
+            removeTop();
+        }
+    }
+
+    void ALWAYS_INLINE next(size_t batch_size_value) requires (strategy == SortingQueueStrategy::Batch)
+    {
+        read_rows += batch_size_value;
+        assert(isValid());
+        assert(batch_size_value <= current_batch_size);
+        assert(batch_size_value > 0);
+
+        current_batch_size -= batch_size_value;
+        auto winner = loser_tree[0];
+        if (current_batch_size > 0)
+        {
+            queue[winner]->next(batch_size_value);
+            return;
+        }
+        if (!queue[winner]->isLast(batch_size_value))
+        {
+            queue[winner]->next(batch_size_value);
+            adjustLoserTree(winner);
+            switch_winners_count += (winner != loser_tree[0]);
+            if constexpr (strategy == SortingQueueStrategy::Batch)
+                updateBatchSize();
+        }
+        else
+        {
+            switch_winners_count += 1;
+            removeTop();
+        }
+#ifndef NDEBUG
+
+        LOG_ERROR(getLogger("LoserTreeSortingQueue"), "{} After update tree:\n{}", fmt::ptr(this), dumpLoserTree());
+#endif
+    }
+
+    void replaceTop(Cursor new_top)
+    {
+        size_t winner = loser_tree[0];
+        queue[winner] = new_top;
+        adjustLoserTree(winner);
+        switch_winners_count += (winner != loser_tree[0]);
+    }
+
+    void removeTop()
+    {
+        size_t size = this->size();
+        if (size == 1)
+        {
+            loser_tree[0] = -1;
+            queue.clear();
+            if constexpr (strategy == SortingQueueStrategy::Batch)
+                current_batch_size = 0;
+            return;
+        }
+
+        // The tree structure is changed after removing the top element.
+        // So we need to rebuild the loser tree.
+        auto winner = loser_tree[0];
+        if (winner >= 0 && static_cast<size_t>(winner) != size - 1)
+            queue[winner] = std::move(queue.back());
+        queue.pop_back();
+        buildLoserTree();
+
+        if constexpr (strategy == SortingQueueStrategy::Batch)
+            updateBatchSize();
+    }
+
+    void ALWAYS_INLINE push(SortCursorImpl & cursor)
+    {
+        queue.emplace_back(&cursor);
+        buildLoserTree();
+
+        if constexpr (strategy == SortingQueueStrategy::Batch)
+            updateBatchSize();
+    }
+
+private:
+    using Container = std::vector<Cursor>;
+    Container queue;
+    size_t current_batch_size = 0;
+    // loser_tree[0] is the index of the overall winner
+    std::vector<Int32> loser_tree;
+    size_t tree_high = 0;
+    // How many rows have been read
+    size_t read_rows = 0;
+    size_t switch_winners_count = 0;
+
+    void buildLoserTree()
+    {
+        resetLoserTree(this->size());
+        Int32 k = this->size();
+        for (int i = k - 1; i >= 0; --i)
+            adjustLoserTree(i);
+        tree_high = static_cast<size_t>(std::log2(k));
+    }
+
+    void ALWAYS_INLINE adjustLoserTree(Int32 winner)
+    {
+        if (this->size() <= 1) [[unlikely]]
+        {
+            loser_tree[0] = (this->size() == 1) ? 0 : -1;
+            return;
+        }
+
+        int t = (winner + this->size()) >> 1;
+        while (t > 0)
+        {
+            int loser = loser_tree[t];
+            bool is_winner = loser != -1 && isWinner(winner, loser);
+            loser_tree[t] = is_winner ? loser : winner;
+            winner = is_winner ? winner : loser;
+            t = winner == -1 ? 0 : t >> 1;
+        }
+        loser_tree[0] = winner == -1 ? loser_tree[0] : winner;
+    }
+
+    bool ALWAYS_INLINE isWinner(Int32 a, Int32 b)
+    {
+        if (a == -1 || !queue[a]->isValid())
+            return false;
+        if (b == -1 || !queue[b]->isValid())
+            return true;
+
+        return !queue[a].greater(queue[b]);
+    }
+
+    void updateBatchSize()
+    {
+        auto & winner_cursor = queue[loser_tree[0]];
+        size_t min_cursor_size = winner_cursor->getSize();
+        size_t min_cursor_pos = winner_cursor->getPosRef();
+        if (this->size() == 1)
+        {
+            current_batch_size = min_cursor_size - min_cursor_pos;
+            return;
+        }
+
+        // If each batch size is too small, we just set batch size to 1 to avoid the overhead of computing batch size.
+        current_batch_size = 1;
+        if (switch_winners_count > 0 && read_rows / switch_winners_count < tree_high)
+        {
+            current_batch_size = 1;
+            return;
+        }
+
+        auto & next_child_cursor = nextChild();
+        if (min_cursor_pos + current_batch_size < min_cursor_size && next_child_cursor.greaterWithOffset(winner_cursor, 0, current_batch_size))
+            ++current_batch_size;
+        else
+            return;
+
+        constexpr size_t max_linear_detection = 16;
+        size_t i = 0;
+        while (i < max_linear_detection && min_cursor_pos + current_batch_size < min_cursor_size
+               && next_child_cursor.greaterWithOffset(winner_cursor, 0, current_batch_size))
+        {
+            ++current_batch_size;
+            ++i;
+        }
+        if (i < max_linear_detection)
+            return;
+        size_t start_offset = current_batch_size;
+        size_t end_offset = min_cursor_size - min_cursor_pos;
+        while (start_offset < end_offset)
+        {
+            size_t mid_offset = start_offset + (end_offset - start_offset) / 2;
+            if (next_child_cursor.greaterWithOffset(winner_cursor, 0, mid_offset))
+                start_offset = mid_offset + 1;
+            else
+                end_offset = mid_offset;
+        }
+        current_batch_size = start_offset;
+    }
+
+    String dumpLoserTree() const
+    {
+        WriteBufferFromOwnString s;
+        for (size_t i = 0; i < queue.size(); ++i)
+        {
+            if (i != 0)
+                s << "\n";
+            s << "leaf[" << i << "] : " << queue[i]->dumpSortedKeys();
+        }
+        for (size_t i = 0; i < loser_tree.size(); ++i)
+        {
+            s << "\nnode[" << i << "] : " << loser_tree[i];
+        }
+        return s.str();
+    }
+
+    void resetLoserTree(size_t new_size)
+    {
+        loser_tree.resize(new_size);
+        for (auto & idx : loser_tree)
+            idx = -1;
+    }
+};
+
 template <typename Cursor>
 using SortingQueue = SortingQueueImpl<Cursor, SortingQueueStrategy::Default>;
 
 template <typename Cursor>
 using SortingQueueBatch = SortingQueueImpl<Cursor, SortingQueueStrategy::Batch>;
 
+enum class QueueImplType : uint8_t
+{
+    Default,
+    LoserTree
+};
+
+template <QueueImplType queue_type>
+struct QueueImplSelector
+{
+    template <typename Cursor, SortingQueueStrategy strategy>
+    using Type = std::conditional_t<queue_type == QueueImplType::LoserTree,
+        LoserTreeSortingQueueImpl<Cursor, strategy>,
+        SortingQueueImpl<Cursor, strategy>>;
+};
+
 /** SortQueueVariants allow to specialize sorting queue for concrete types and sort description.
   * To access queue variant callOnVariant method must be used.
   * To access batch queue variant callOnBatchVariant method must be used.
   */
+template <QueueImplType queue_type = QueueImplType::Default>
 class SortQueueVariants
 {
 public:
+    template <typename Cursor, SortingQueueStrategy strategy>
+    using QueueImpl = typename QueueImplSelector<queue_type>::template Type<Cursor, strategy>;
+
     SortQueueVariants() = default;
 
     SortQueueVariants(const DataTypes & sort_description_types, const SortDescription & sort_description)
@@ -698,7 +1013,9 @@ public:
             }
 
             if (!result)
+            {
                 initializeQueues<SimpleSortCursor>();
+            }
         }
         else
         {
@@ -725,90 +1042,89 @@ public:
 
     bool variantSupportJITCompilation() const
     {
-        return std::holds_alternative<SortingQueue<SimpleSortCursor>>(default_queue_variants)
-            || std::holds_alternative<SortingQueue<SortCursor>>(default_queue_variants)
-            || std::holds_alternative<SortingQueue<SortCursorWithCollation>>(default_queue_variants);
+        return std::holds_alternative<QueueImpl<SimpleSortCursor, SortingQueueStrategy::Default>>(default_queue_variants)
+            || std::holds_alternative<QueueImpl<SortCursor, SortingQueueStrategy::Default>>(default_queue_variants)
+            || std::holds_alternative<QueueImpl<SortCursorWithCollation, SortingQueueStrategy::Default>>(default_queue_variants);
     }
 
 private:
     template <typename Cursor>
     void initializeQueues()
     {
-        default_queue_variants = SortingQueue<Cursor>();
-        batch_queue_variants = SortingQueueBatch<Cursor>();
+        default_queue_variants = QueueImpl<Cursor, SortingQueueStrategy::Default>();
+        batch_queue_variants = QueueImpl<Cursor, SortingQueueStrategy::Batch>();
     }
 
     static DataTypes extractSortDescriptionTypesFromHeader(const Block & header, const SortDescription & sort_description);
 
     template <SortingQueueStrategy strategy>
     using QueueVariants = std::variant<
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<UInt8>>, strategy>,
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<UInt16>>, strategy>,
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<UInt32>>, strategy>,
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<UInt64>>, strategy>,
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<UInt128>>, strategy>,
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<UInt256>>, strategy>,
+        QueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<UInt8>>, strategy>,
+        QueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<UInt16>>, strategy>,
+        QueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<UInt32>>, strategy>,
+        QueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<UInt64>>, strategy>,
+        QueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<UInt128>>, strategy>,
+        QueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<UInt256>>, strategy>,
 
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<Int8>>, strategy>,
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<Int16>>, strategy>,
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<Int32>>, strategy>,
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<Int64>>, strategy>,
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<Int128>>, strategy>,
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<Int256>>, strategy>,
+        QueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<Int8>>, strategy>,
+        QueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<Int16>>, strategy>,
+        QueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<Int32>>, strategy>,
+        QueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<Int64>>, strategy>,
+        QueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<Int128>>, strategy>,
+        QueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<Int256>>, strategy>,
 
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<BFloat16>>, strategy>,
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<Float32>>, strategy>,
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<Float64>>, strategy>,
+        QueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<BFloat16>>, strategy>,
+        QueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<Float32>>, strategy>,
+        QueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<Float64>>, strategy>,
 
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnDecimal<Decimal32>>, strategy>,
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnDecimal<Decimal64>>, strategy>,
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnDecimal<Decimal128>>, strategy>,
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnDecimal<Decimal256>>, strategy>,
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnDecimal<DateTime64>>, strategy>,
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnDecimal<Time64>>, strategy>,
+        QueueImpl<SpecializedSingleColumnSortCursor<ColumnDecimal<Decimal32>>, strategy>,
+        QueueImpl<SpecializedSingleColumnSortCursor<ColumnDecimal<Decimal64>>, strategy>,
+        QueueImpl<SpecializedSingleColumnSortCursor<ColumnDecimal<Decimal128>>, strategy>,
+        QueueImpl<SpecializedSingleColumnSortCursor<ColumnDecimal<Decimal256>>, strategy>,
+        QueueImpl<SpecializedSingleColumnSortCursor<ColumnDecimal<DateTime64>>, strategy>,
+        QueueImpl<SpecializedSingleColumnSortCursor<ColumnDecimal<Time64>>, strategy>,
 
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<UUID>>, strategy>,
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<IPv4>>, strategy>,
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<IPv6>>, strategy>,
+        QueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<UUID>>, strategy>,
+        QueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<IPv4>>, strategy>,
+        QueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<IPv6>>, strategy>,
 
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnString>, strategy>,
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnFixedString>, strategy>,
+        QueueImpl<SpecializedSingleColumnSortCursor<ColumnString>, strategy>,
+        QueueImpl<SpecializedSingleColumnSortCursor<ColumnFixedString>, strategy>,
 
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<UInt8>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<UInt16>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<UInt32>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<UInt64>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<UInt128>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<UInt256>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<Int8>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<Int16>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<Int32>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<Int64>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<Int128>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<Int256>>, strategy>,
+        QueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<UInt8>>, strategy>,
+        QueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<UInt16>>, strategy>,
+        QueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<UInt32>>, strategy>,
+        QueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<UInt64>>, strategy>,
+        QueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<UInt128>>, strategy>,
+        QueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<UInt256>>, strategy>,
+        QueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<Int8>>, strategy>,
+        QueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<Int16>>, strategy>,
+        QueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<Int32>>, strategy>,
+        QueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<Int64>>, strategy>,
+        QueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<Int128>>, strategy>,
+        QueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<Int256>>, strategy>,
 
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<BFloat16>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<Float32>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<Float64>>, strategy>,
+        QueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<BFloat16>>, strategy>,
+        QueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<Float32>>, strategy>,
+        QueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<Float64>>, strategy>,
 
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnDecimal<Decimal32>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnDecimal<Decimal64>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnDecimal<Decimal128>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnDecimal<Decimal256>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnDecimal<DateTime64>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnDecimal<Time64>>, strategy>,
+        QueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnDecimal<Decimal32>>, strategy>,
+        QueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnDecimal<Decimal64>>, strategy>,
+        QueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnDecimal<Decimal128>>, strategy>,
+        QueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnDecimal<Decimal256>>, strategy>,
+        QueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnDecimal<DateTime64>>, strategy>,
+        QueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnDecimal<Time64>>, strategy>,
 
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<UUID>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<IPv4>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<IPv6>>, strategy>,
+        QueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<UUID>>, strategy>,
+        QueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<IPv4>>, strategy>,
+        QueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<IPv6>>, strategy>,
 
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnString>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnFixedString>, strategy>,
+        QueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnString>, strategy>,
+        QueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnFixedString>, strategy>,
 
-        SortingQueueImpl<SimpleSortCursor, strategy>,
-        SortingQueueImpl<SortCursor, strategy>,
-        SortingQueueImpl<SortCursorWithCollation, strategy>>;
-
+        QueueImpl<SimpleSortCursor, strategy>,
+        QueueImpl<SortCursor, strategy>,
+        QueueImpl<SortCursorWithCollation, strategy>>;
     using DefaultQueueVariants = QueueVariants<SortingQueueStrategy::Default>;
     using BatchQueueVariants = QueueVariants<SortingQueueStrategy::Batch>;
 
