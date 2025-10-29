@@ -41,7 +41,7 @@ Columns getColumnsByIndices(const Chunk & chunk, const std::vector<size_t> & ind
     const Columns & all_cols = chunk.getColumns();
     for (const auto & index : indices)
     {
-        auto col = recursiveRemoveSparse(all_cols.at(index));
+        auto col = removeSpecialRepresentations(all_cols.at(index));
         columns.push_back(std::move(col));
     }
 
