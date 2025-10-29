@@ -366,11 +366,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
          {"'default'", "'with_types'"},
          false)},
     /// ClickHouse cloud setting
-    {"shared_merge_tree_merge_coordinator_factor", highRangeSetting},
-    /// ClickHouse cloud setting
-    {"shared_merge_tree_merge_coordinator_max_merge_request_size", highRangeSetting},
-    /// ClickHouse cloud setting
-    {"shared_merge_tree_merge_coordinator_merges_prepare_count", highRangeSetting},
+    {"shared_merge_tree_activate_coordinated_merges_tasks", trueOrFalseSetting},
     /// ClickHouse cloud setting
     {"shared_merge_tree_create_per_replica_metadata_nodes", trueOrFalseSetting},
     /// ClickHouse cloud setting
@@ -393,6 +389,12 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"shared_merge_tree_max_suspicious_broken_parts", rowsRangeSetting},
     /// ClickHouse cloud setting
     {"shared_merge_tree_max_suspicious_broken_parts_bytes", bytesRangeSetting},
+    /// ClickHouse cloud setting
+    {"shared_merge_tree_merge_coordinator_factor", highRangeSetting},
+    /// ClickHouse cloud setting
+    {"shared_merge_tree_merge_coordinator_max_merge_request_size", highRangeSetting},
+    /// ClickHouse cloud setting
+    {"shared_merge_tree_merge_coordinator_merges_prepare_count", highRangeSetting},
     /// ClickHouse cloud setting
     {"shared_merge_tree_outdated_parts_group_size", rowsRangeSetting},
     /// ClickHouse cloud setting

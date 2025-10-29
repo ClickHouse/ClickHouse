@@ -148,8 +148,7 @@ DataTypePtr convertTypeToNullable(const DataTypePtr & type)
 /// Returns nullptr if conversion cannot be performed.
 static ColumnPtr tryConvertColumnToNullable(ColumnPtr col)
 {
-    if (col->isSparse())
-        col = recursiveRemoveSparse(col);
+    col = removeSpecialRepresentations(col);
 
     if (isColumnNullable(*col) || col->canBeInsideNullable())
         return makeNullable(col);
@@ -301,7 +300,7 @@ ColumnPtr emptyNotNullableClone(const ColumnPtr & column)
 
 ColumnPtr materializeColumn(const ColumnPtr & column)
 {
-    return recursiveRemoveLowCardinality(recursiveRemoveSparse(column->convertToFullColumnIfConst()));
+    return recursiveRemoveLowCardinality(removeSpecialRepresentations(column->convertToFullColumnIfConst()));
 }
 
 ColumnRawPtrs materializeColumnsInplace(Block & block, const Names & names)

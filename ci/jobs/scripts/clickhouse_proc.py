@@ -4,9 +4,9 @@ import subprocess
 import sys
 import time
 import traceback
+import uuid
 from collections import defaultdict
 from pathlib import Path
-import uuid
 
 from ci.praktika import Secret
 from ci.praktika.info import Info

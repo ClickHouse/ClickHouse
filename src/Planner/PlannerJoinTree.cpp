@@ -125,6 +125,7 @@ namespace Setting
     extern const SettingsUInt64 min_joined_block_size_bytes;
     extern const SettingsBool use_join_disjunctions_push_down;
     extern const SettingsBool query_plan_display_internal_aliases;
+    extern const SettingsBool enable_lazy_columns_replication;
 }
 
 namespace ErrorCodes
@@ -2403,7 +2404,9 @@ JoinTreeQueryPlan buildQueryPlanForArrayJoinNode(const QueryTreeNodePtr & array_
         plan.getCurrentHeader(),
         ArrayJoin{std::move(array_join_column_names), array_join_node.isLeft()},
         settings[Setting::enable_unaligned_array_join],
-        settings[Setting::max_block_size]);
+        settings[Setting::max_block_size],
+        settings[Setting::enable_lazy_columns_replication]
+        );
 
     array_join_step->setStepDescription("ARRAY JOIN");
     plan.addStep(std::move(array_join_step));
@@ -2518,7 +2521,7 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     /** If left most table expression query plan is planned to stage that is not equal to fetch columns,
       * then left most table expression is responsible for providing valid JOIN TREE part of final query plan.
       *
-      * Examples: Distributed, LiveView, Merge storages.
+      * Examples: Distributed, Merge storages.
       */
     auto left_table_expression = table_expressions_stack.front();
     auto left_table_expression_query_plan = buildQueryPlanForTableExpression(
