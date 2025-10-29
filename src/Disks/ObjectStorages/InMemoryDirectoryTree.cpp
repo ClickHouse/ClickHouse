@@ -57,6 +57,7 @@ struct InMemoryDirectoryTree::INode
 
 std::shared_ptr<InMemoryDirectoryTree::INode> InMemoryDirectoryTree::walk(const std::filesystem::path & path, bool create_missing) const
 {
+    chassert(normalizePath(path.string()) == path);
     std::shared_ptr<INode> node = root;
 
     for (const auto & step : fs::path(path))
@@ -74,6 +75,7 @@ std::shared_ptr<InMemoryDirectoryTree::INode> InMemoryDirectoryTree::walk(const 
 
 void InMemoryDirectoryTree::traverseSubtree(const std::filesystem::path & path, std::function<void(const std::string &, const std::shared_ptr<INode> &)> observe) const
 {
+    chassert(normalizePath(path.string()) == path);
     std::deque<std::pair<fs::path, std::shared_ptr<INode>>> unvisited;
 
     if (auto start_node = walk(path))
@@ -127,7 +129,7 @@ void InMemoryDirectoryTree::apply(std::unordered_map<std::string, DirectoryRemot
 
     for (auto & [path, info] : remote_layout)
     {
-        const auto inode = walk(path, /*create_missing=*/true);
+        const auto inode = walk(normalizePath(path), /*create_missing=*/true);
         remote_path_to_inode[info.remote_path] = inode;
         inode->remote_info = std::move(info);
         remote_layout_directories_count.add();

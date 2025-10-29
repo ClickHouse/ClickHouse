@@ -598,17 +598,17 @@ TEST_F(MetadataPlainRewritableDiskTest, RemoteLayout)
         tx->commit();
     }
 
-    std::string a_remote = object_storage->generateObjectKeyPrefixForDirectoryPath("A", "").serialize();
+    std::string a_remote = object_storage->generateObjectKeyPrefixForDirectoryPath("A/", "").serialize();
     EXPECT_EQ(a_remote, "faefxnlkbtfqgxcbfqfjtztsocaqrnqn");
-    EXPECT_EQ(object_storage->generateObjectKeyPrefixForDirectoryPath("A", "").serialize(), a_remote);
-    EXPECT_EQ(object_storage->generateObjectKeyPrefixForDirectoryPath("A", "").serialize(), a_remote);
-    EXPECT_EQ(object_storage->generateObjectKeyPrefixForDirectoryPath("A", "").serialize(), a_remote);
+    EXPECT_EQ(object_storage->generateObjectKeyPrefixForDirectoryPath("A/", "").serialize(), a_remote);
+    EXPECT_EQ(object_storage->generateObjectKeyPrefixForDirectoryPath("A/", "").serialize(), a_remote);
+    EXPECT_EQ(object_storage->generateObjectKeyPrefixForDirectoryPath("A/", "").serialize(), a_remote);
 
-    std::string ab_remote = object_storage->generateObjectKeyPrefixForDirectoryPath("A/B", "").serialize();
+    std::string ab_remote = object_storage->generateObjectKeyPrefixForDirectoryPath("A/B/", "").serialize();
     EXPECT_EQ(ab_remote, "ykwvvchguqasvfnkikaqtiebknfzafwv");
-    EXPECT_EQ(object_storage->generateObjectKeyPrefixForDirectoryPath("A/B", "").serialize(), ab_remote);
-    EXPECT_EQ(object_storage->generateObjectKeyPrefixForDirectoryPath("A/B", "").serialize(), ab_remote);
-    EXPECT_EQ(object_storage->generateObjectKeyPrefixForDirectoryPath("A/B", "").serialize(), ab_remote);
+    EXPECT_EQ(object_storage->generateObjectKeyPrefixForDirectoryPath("A/B/", "").serialize(), ab_remote);
+    EXPECT_EQ(object_storage->generateObjectKeyPrefixForDirectoryPath("A/B/", "").serialize(), ab_remote);
+    EXPECT_EQ(object_storage->generateObjectKeyPrefixForDirectoryPath("A/B/", "").serialize(), ab_remote);
 
     std::string file_1_remote = object_storage->generateObjectKeyForPath("/A/file_1", std::nullopt).serialize();
     EXPECT_EQ(file_1_remote, "./RemoteLayout/faefxnlkbtfqgxcbfqfjtztsocaqrnqn/file_1");
@@ -721,6 +721,12 @@ TEST_F(MetadataPlainRewritableDiskTest, UnlinkNonExisting)
 
     {
         auto tx = metadata->createTransaction();
+        tx->createDirectoryRecursive("A/B/C");
+        tx->commit();
+    }
+
+    {
+        auto tx = metadata->createTransaction();
         tx->unlinkMetadata("non-existing");
         EXPECT_ANY_THROW(tx->commit());
     }
@@ -728,6 +734,12 @@ TEST_F(MetadataPlainRewritableDiskTest, UnlinkNonExisting)
     {
         auto tx = metadata->createTransaction();
         tx->unlinkMetadata("non-existing/A");
+        EXPECT_ANY_THROW(tx->commit());
+    }
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->unlinkMetadata("A/non-existing");
         EXPECT_ANY_THROW(tx->commit());
     }
 
@@ -742,12 +754,24 @@ TEST_F(MetadataPlainRewritableDiskTest, UnlinkNonExisting)
         tx->unlinkFile("non-existing/A");
         tx->commit();
     }
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->unlinkFile("A/non-existing");
+        tx->commit();
+    }
 }
 
 TEST_F(MetadataPlainRewritableDiskTest, MoveReplaceNonExisting)
 {
     auto metadata = getMetadataStorage("MoveNonExisting");
     auto object_storage = getObjectStorage("MoveNonExisting");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectoryRecursive("A/B/C");
+        tx->commit();
+    }
 
     {
         auto tx = metadata->createTransaction();
@@ -758,6 +782,12 @@ TEST_F(MetadataPlainRewritableDiskTest, MoveReplaceNonExisting)
     {
         auto tx = metadata->createTransaction();
         tx->moveDirectory("non-existing/A", "other-place");
+        EXPECT_ANY_THROW(tx->commit());
+    }
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->moveDirectory("A/non-existing", "other-place");
         EXPECT_ANY_THROW(tx->commit());
     }
 
@@ -775,6 +805,12 @@ TEST_F(MetadataPlainRewritableDiskTest, MoveReplaceNonExisting)
 
     {
         auto tx = metadata->createTransaction();
+        tx->moveFile("A/non-existing", "other-place");
+        EXPECT_ANY_THROW(tx->commit());
+    }
+
+    {
+        auto tx = metadata->createTransaction();
         tx->replaceFile("non-existing", "other-place");
         EXPECT_ANY_THROW(tx->commit());
     }
@@ -784,12 +820,24 @@ TEST_F(MetadataPlainRewritableDiskTest, MoveReplaceNonExisting)
         tx->replaceFile("non-existing/A", "other-place");
         EXPECT_ANY_THROW(tx->commit());
     }
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->replaceFile("A/non-existing", "other-place");
+        EXPECT_ANY_THROW(tx->commit());
+    }
 }
 
 TEST_F(MetadataPlainRewritableDiskTest, RemoveNonExisting)
 {
     auto metadata = getMetadataStorage("RemoveNonExisting");
     auto object_storage = getObjectStorage("RemoveNonExisting");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectoryRecursive("A/B/C");
+        tx->commit();
+    }
 
     {
         auto tx = metadata->createTransaction();
@@ -805,6 +853,12 @@ TEST_F(MetadataPlainRewritableDiskTest, RemoveNonExisting)
 
     {
         auto tx = metadata->createTransaction();
+        tx->removeDirectory("A/non-existing");
+        EXPECT_ANY_THROW(tx->commit());
+    }
+
+    {
+        auto tx = metadata->createTransaction();
         tx->removeRecursive("non-existing");
         tx->commit();
     }
@@ -814,12 +868,24 @@ TEST_F(MetadataPlainRewritableDiskTest, RemoveNonExisting)
         tx->removeRecursive("non-existing/A");
         tx->commit();
     }
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->removeRecursive("A/non-existing");
+        tx->commit();
+    }
 }
 
 TEST_F(MetadataPlainRewritableDiskTest, HardLinkNonExisting)
 {
     auto metadata = getMetadataStorage("HardLinkNonExisting");
     auto object_storage = getObjectStorage("HardLinkNonExisting");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectoryRecursive("A/B/C");
+        tx->commit();
+    }
 
     {
         auto tx = metadata->createTransaction();
@@ -832,12 +898,24 @@ TEST_F(MetadataPlainRewritableDiskTest, HardLinkNonExisting)
         tx->createHardLink("non-existing/A", "other-place");
         EXPECT_ANY_THROW(tx->commit());
     }
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createHardLink("A/non-existing", "other-place");
+        EXPECT_ANY_THROW(tx->commit());
+    }
 }
 
 TEST_F(MetadataPlainRewritableDiskTest, LookupBlobs)
 {
     auto metadata = getMetadataStorage("LookupBlobs");
     auto object_storage = getObjectStorage("LookupBlobs");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectoryRecursive("A/B/C");
+        tx->commit();
+    }
 
     {
         auto tx = metadata->createTransaction();
@@ -850,6 +928,18 @@ TEST_F(MetadataPlainRewritableDiskTest, LookupBlobs)
         EXPECT_EQ(tx->tryGetBlobsFromTransactionIfExists("non-existing/A"), std::nullopt);
         tx->commit();
     }
+
+    {
+        auto tx = metadata->createTransaction();
+        EXPECT_EQ(tx->tryGetBlobsFromTransactionIfExists("A/B"), std::nullopt);
+        tx->commit();
+    }
+
+    {
+        auto tx = metadata->createTransaction();
+        EXPECT_EQ(tx->tryGetBlobsFromTransactionIfExists("A/X"), std::nullopt);
+        tx->commit();
+    }
 }
 
 TEST_F(MetadataPlainRewritableDiskTest, OperationsNonExisting)
@@ -857,31 +947,48 @@ TEST_F(MetadataPlainRewritableDiskTest, OperationsNonExisting)
     auto metadata = getMetadataStorage("OperationsNonExisting");
     auto object_storage = getObjectStorage("OperationsNonExisting");
 
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectoryRecursive("A/B/C");
+        tx->commit();
+    }
+
     EXPECT_FALSE(metadata->existsFile("non-existing"));
     EXPECT_FALSE(metadata->existsDirectory("non-existing"));
     EXPECT_FALSE(metadata->existsFileOrDirectory("non-existing"));
     EXPECT_FALSE(metadata->existsFile("non-existing/A"));
     EXPECT_FALSE(metadata->existsDirectory("non-existing/A"));
     EXPECT_FALSE(metadata->existsFileOrDirectory("non-existing/A"));
+    EXPECT_FALSE(metadata->existsFile("A/non-existing"));
+    EXPECT_FALSE(metadata->existsDirectory("A/non-existing"));
+    EXPECT_FALSE(metadata->existsFileOrDirectory("A/non-existing"));
 
     EXPECT_ANY_THROW(metadata->getFileSize("non-existing"));
     EXPECT_EQ(metadata->getFileSizeIfExists("non-existing"), std::nullopt);
     EXPECT_ANY_THROW(metadata->getFileSize("non-existing/A"));
     EXPECT_EQ(metadata->getFileSizeIfExists("non-existing/A"), std::nullopt);
+    EXPECT_ANY_THROW(metadata->getFileSize("A/non-existing"));
+    EXPECT_EQ(metadata->getFileSizeIfExists("A/non-existing"), std::nullopt);
 
     EXPECT_EQ(metadata->listDirectory("non-existing"), std::vector<std::string>());
     EXPECT_FALSE(metadata->iterateDirectory("non-existing")->isValid());
     EXPECT_EQ(metadata->listDirectory("non-existing/A"), std::vector<std::string>());
     EXPECT_FALSE(metadata->iterateDirectory("non-existing/A")->isValid());
+    EXPECT_EQ(metadata->listDirectory("A/non-existing"), std::vector<std::string>());
+    EXPECT_FALSE(metadata->iterateDirectory("A/non-existing")->isValid());
 
     EXPECT_ANY_THROW(metadata->getStorageObjects("non-existing"));
     EXPECT_EQ(metadata->getStorageObjectsIfExist("non-existing"), std::nullopt);
     EXPECT_ANY_THROW(metadata->getStorageObjects("non-existing/A"));
     EXPECT_EQ(metadata->getStorageObjectsIfExist("non-existing/A"), std::nullopt);
+    EXPECT_ANY_THROW(metadata->getStorageObjects("A/non-existing"));
+    EXPECT_EQ(metadata->getStorageObjectsIfExist("A/non-existing"), std::nullopt);
 
     EXPECT_ANY_THROW(metadata->getLastModified("non-existing"));
     EXPECT_EQ(metadata->getLastModifiedIfExists("non-existing"), std::nullopt);
     EXPECT_ANY_THROW(metadata->getLastModified("non-existing/A"));
     EXPECT_EQ(metadata->getLastModifiedIfExists("non-existing/A"), std::nullopt);
+    EXPECT_ANY_THROW(metadata->getLastModified("A/non-existing"));
+    EXPECT_EQ(metadata->getLastModifiedIfExists("A/non-existing"), std::nullopt);
 }
 

@@ -5,15 +5,8 @@
 #include <Common/ObjectStorageKey.h>
 #include <Common/getRandomASCIIString.h>
 
-namespace fs = std::filesystem;
-
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 FlatDirectoryStructureKeyGenerator::FlatDirectoryStructureKeyGenerator(
     String storage_key_prefix_, std::weak_ptr<InMemoryDirectoryTree> tree_)
@@ -23,39 +16,30 @@ FlatDirectoryStructureKeyGenerator::FlatDirectoryStructureKeyGenerator(
 
 ObjectStorageKey FlatDirectoryStructureKeyGenerator::generate(const String & path, bool is_directory, const std::optional<String> & key_prefix) const
 {
-    const auto tree_ptr = tree.lock();
-    const auto fs_path = std::filesystem::path(path);
-    const auto prefix = key_prefix.has_value() ? *key_prefix : storage_key_prefix;
-
     if (is_directory)
+        chassert(path.empty() || path.ends_with('/'));
+
+    const auto fs_path = std::filesystem::path(path);
+    std::filesystem::path directory = fs_path.parent_path();
+
+    std::optional<std::filesystem::path> remote_path;
     {
-        auto [exists_direcotory, remote_info] = tree_ptr->existsDirectory(fs_path);
-        if (exists_direcotory && !remote_info)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' is virtual", fs_path.string());
+        const auto ptr = tree.lock();
+        if (auto [exists, remote_info] = ptr->existsDirectory(fs_path); exists && remote_info)
+            return ObjectStorageKey::createAsRelative(key_prefix.has_value() ? *key_prefix : storage_key_prefix, remote_info->remote_path);
 
-        if (exists_direcotory)
-            return ObjectStorageKey::createAsRelative(prefix, remote_info->remote_path);
-
-        return ObjectStorageKey::createAsRelative(prefix, getRandomASCIIString(32));
+        if (auto [exists, remote_info] = ptr->existsDirectory(directory); exists && remote_info)
+            remote_path = remote_info->remote_path;
     }
-    else
-    {
-        const auto directory = fs_path.parent_path();
-        const auto filename = fs_path.filename();
-        if (filename.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "File name is empty for path '{}'", fs_path.string());
+    constexpr size_t part_size = 32;
+    std::filesystem::path key = remote_path.has_value() ? *remote_path
+        : is_directory                                  ? std::filesystem::path(getRandomASCIIString(part_size))
+                                                        : directory;
 
-        auto [exists_direcotory, remote_info] = tree_ptr->existsDirectory(directory);
-        if (exists_direcotory && !remote_info)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' is virtual", directory.string());
+    if (!is_directory)
+        key /= fs_path.filename();
 
-        /// This is invalid in 100% cases, but because plain-rewritable disk based on top of plain disk we can not throw logical error here.
-        /// So let's return some path that will not exist for plain-rewritable
-        if (!exists_direcotory)
-            return ObjectStorageKey::createAsRelative(prefix, fs::path(directory) / filename);
-
-        return ObjectStorageKey::createAsRelative(prefix, fs::path(remote_info->remote_path) / filename);
-    }
+    return ObjectStorageKey::createAsRelative(key_prefix.has_value() ? *key_prefix : storage_key_prefix, key);
 }
 
 }
