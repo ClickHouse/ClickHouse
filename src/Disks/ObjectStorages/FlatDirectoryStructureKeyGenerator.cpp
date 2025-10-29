@@ -1,6 +1,5 @@
 #include <Disks/ObjectStorages/FlatDirectoryStructureKeyGenerator.h>
 #include <Disks/ObjectStorages/InMemoryDirectoryTree.h>
-#include <Processors/Transforms/SelectByIndicesTransform.h>
 
 #include <Common/ObjectStorageKey.h>
 #include <Common/getRandomASCIIString.h>

@@ -588,7 +588,7 @@ MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::MetadataStorageFr
 
 void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::execute()
 {
-    /// Unfortunatelly we are able to create merge tree unlinked from database directory.
+    /// Unfortunately we are able to create merge tree unlinked from database directory.
     /// In this case during the dropAllData method removeRecursive can be called pointing to the root folder.
     /// I don't know what to do in this case, so right now it is a no-op.
     if (path.empty())
