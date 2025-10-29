@@ -1,239 +1,53 @@
 === Test 1: ORDER BY a (sorting key) ===
-Expression (Project names)
-Actions: INPUT : 0 -> __table1.a UInt64 : 0
-         INPUT : 1 -> __table1.b String : 1
-         INPUT : 2 -> __table1.c String : 2
-         INPUT : 3 -> __table1.d String : 3
-         INPUT : 4 -> __table1.e UInt64 : 4
-         ALIAS __table1.a :: 0 -> a UInt64 : 5
-         ALIAS __table1.b :: 1 -> b String : 0
-         ALIAS __table1.c :: 2 -> c String : 1
-         ALIAS __table1.d :: 3 -> d String : 2
-         ALIAS __table1.e :: 4 -> e UInt64 : 3
-Positions: 5 0 1 2 3
-  LazilyRead (Lazily Read)
-  Lazily read columns: e, d, b, c
-    Limit (preliminary LIMIT (without OFFSET))
-    Limit 5
-    Offset 0
-      Sorting (Sorting for ORDER BY)
-      Prefix sort description: __table1.a ASC
-      Result sort description: __table1.a ASC
-      Limit 5
-        Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
-        Actions: INPUT : 0 -> a UInt64 : 0
-                 INPUT : 1 -> b String : 1
-                 INPUT : 2 -> c String : 2
-                 INPUT : 3 -> d String : 3
-                 INPUT : 4 -> e UInt64 : 4
-                 ALIAS a :: 0 -> __table1.a UInt64 : 5
-                 ALIAS b :: 1 -> __table1.b String : 0
-                 ALIAS c :: 2 -> __table1.c String : 1
-                 ALIAS d :: 3 -> __table1.d String : 2
-                 ALIAS e :: 4 -> __table1.e UInt64 : 3
-        Positions: 5 0 1 2 3
-          ReadFromMergeTree (default.test_lazy_read_in_order)
-          ReadType: InOrder
-          Parts: 1
-          Granules: 1
+LazilyRead (Lazily Read)
+Lazily read columns: e, d, b, c
+Prefix sort description: __table1.a ASC
+Result sort description: __table1.a ASC
+ReadType: InOrder
 0	0
 1	2
 2	4
 3	6
 4	8
 === Test 2: ORDER BY a with WHERE ===
-Expression (Project names)
-Actions: INPUT : 0 -> __table1.a UInt64 : 0
-         INPUT : 1 -> __table1.b String : 1
-         INPUT : 2 -> __table1.c String : 2
-         INPUT : 3 -> __table1.d String : 3
-         INPUT : 4 -> __table1.e UInt64 : 4
-         ALIAS __table1.a :: 0 -> a UInt64 : 5
-         ALIAS __table1.b :: 1 -> b String : 0
-         ALIAS __table1.c :: 2 -> c String : 1
-         ALIAS __table1.d :: 3 -> d String : 2
-         ALIAS __table1.e :: 4 -> e UInt64 : 3
-Positions: 5 0 1 2 3
-  LazilyRead (Lazily Read)
-  Lazily read columns: d, b, c
-    Limit (preliminary LIMIT (without OFFSET))
-    Limit 5
-    Offset 0
-      Sorting (Sorting for ORDER BY)
-      Prefix sort description: __table1.a ASC
-      Result sort description: __table1.a ASC
-      Limit 5
-        Expression ((Before ORDER BY + Projection))
-        Actions: INPUT :: 0 -> __table1.a UInt64 : 0
-                 INPUT :: 1 -> __table1.b String : 1
-                 INPUT :: 2 -> __table1.c String : 2
-                 INPUT :: 3 -> __table1.d String : 3
-                 INPUT :: 4 -> __table1.e UInt64 : 4
-        Positions: 0 1 2 3 4
-          Expression ((WHERE + Change column names to column identifiers))
-          Actions: INPUT : 0 -> a UInt64 : 0
-                   INPUT : 1 -> b String : 1
-                   INPUT : 2 -> c String : 2
-                   INPUT : 3 -> d String : 3
-                   INPUT : 4 -> e UInt64 : 4
-                   ALIAS a :: 0 -> __table1.a UInt64 : 5
-                   ALIAS b :: 1 -> __table1.b String : 0
-                   ALIAS c :: 2 -> __table1.c String : 1
-                   ALIAS d :: 3 -> __table1.d String : 2
-                   ALIAS e :: 4 -> __table1.e UInt64 : 3
-          Positions: 5 0 1 2 3
-            ReadFromMergeTree (default.test_lazy_read_in_order)
-            ReadType: InOrder
-            Parts: 1
-            Granules: 1
-            Prewhere info
-            Need filter: 1
-              Prewhere filter
-              Prewhere filter column: greater(__table1.e, 100_UInt8) (removed)
-              Actions: INPUT : 0 -> e UInt64 : 0
-                       COLUMN Const(UInt8) -> 100_UInt8 UInt8 : 1
-                       FUNCTION greater(e : 0, 100_UInt8 :: 1) -> greater(__table1.e, 100_UInt8) UInt8 : 2
-              Positions: 0 2
+LazilyRead (Lazily Read)
+Lazily read columns: d, b, c
+Prefix sort description: __table1.a ASC
+Result sort description: __table1.a ASC
+ReadType: InOrder
 51	102
 52	104
 53	106
 54	108
 55	110
 === Test 3: ORDER BY a with PREWHERE ===
-Expression (Project names)
-Actions: INPUT : 0 -> __table1.e UInt64 : 0
-         INPUT : 1 -> __table1.a UInt64 : 1
-         INPUT : 2 -> __table1.b String : 2
-         INPUT : 3 -> __table1.c String : 3
-         INPUT : 4 -> __table1.d String : 4
-         ALIAS __table1.e :: 0 -> e UInt64 : 5
-         ALIAS __table1.a :: 1 -> a UInt64 : 0
-         ALIAS __table1.b :: 2 -> b String : 1
-         ALIAS __table1.c :: 3 -> c String : 2
-         ALIAS __table1.d :: 4 -> d String : 3
-Positions: 0 1 2 3 5
-  LazilyRead (Lazily Read)
-  Lazily read columns: d, b, c
-    Limit (preliminary LIMIT (without OFFSET))
-    Limit 5
-    Offset 0
-      Sorting (Sorting for ORDER BY)
-      Prefix sort description: __table1.a ASC
-      Result sort description: __table1.a ASC
-      Limit 5
-        Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
-        Actions: INPUT : 0 -> e UInt64 : 0
-                 INPUT : 1 -> a UInt64 : 1
-                 INPUT : 2 -> b String : 2
-                 INPUT : 3 -> c String : 3
-                 INPUT : 4 -> d String : 4
-                 ALIAS e :: 0 -> __table1.e UInt64 : 5
-                 ALIAS a :: 1 -> __table1.a UInt64 : 0
-                 ALIAS b :: 2 -> __table1.b String : 1
-                 ALIAS c :: 3 -> __table1.c String : 2
-                 ALIAS d :: 4 -> __table1.d String : 3
-        Positions: 0 5 1 2 3
-          ReadFromMergeTree (default.test_lazy_read_in_order)
-          ReadType: InOrder
-          Parts: 1
-          Granules: 1
-          Prewhere info
-          Need filter: 1
-            Prewhere filter
-            Prewhere filter column: greater(e, 100_UInt8) (removed)
-            Actions: INPUT : 0 -> e UInt64 : 0
-                     COLUMN Const(UInt8) -> 100_UInt8 UInt8 : 1
-                     FUNCTION greater(e : 0, 100_UInt8 :: 1) -> greater(e, 100_UInt8) UInt8 : 2
-            Positions: 2 0
+LazilyRead (Lazily Read)
+Lazily read columns: d, b, c
+Prefix sort description: __table1.a ASC
+Result sort description: __table1.a ASC
+ReadType: InOrder
 51	102
 52	104
 53	106
 54	108
 55	110
 === Test 4: ORDER BY a, e (e should not be lazy) ===
-Expression (Project names)
-Actions: INPUT : 0 -> __table1.a UInt64 : 0
-         INPUT : 1 -> __table1.b String : 1
-         INPUT : 2 -> __table1.c String : 2
-         INPUT : 3 -> __table1.d String : 3
-         INPUT : 4 -> __table1.e UInt64 : 4
-         ALIAS __table1.a :: 0 -> a UInt64 : 5
-         ALIAS __table1.b :: 1 -> b String : 0
-         ALIAS __table1.c :: 2 -> c String : 1
-         ALIAS __table1.d :: 3 -> d String : 2
-         ALIAS __table1.e :: 4 -> e UInt64 : 3
-Positions: 5 0 1 2 3
-  LazilyRead (Lazily Read)
-  Lazily read columns: d, b, c
-    Limit (preliminary LIMIT (without OFFSET))
-    Limit 5
-    Offset 0
-      Sorting (Sorting for ORDER BY)
-      Prefix sort description: __table1.a ASC
-      Result sort description: __table1.a ASC, __table1.e ASC
-      Limit 5
-        Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
-        Actions: INPUT : 0 -> a UInt64 : 0
-                 INPUT : 1 -> b String : 1
-                 INPUT : 2 -> c String : 2
-                 INPUT : 3 -> d String : 3
-                 INPUT : 4 -> e UInt64 : 4
-                 ALIAS a :: 0 -> __table1.a UInt64 : 5
-                 ALIAS b :: 1 -> __table1.b String : 0
-                 ALIAS c :: 2 -> __table1.c String : 1
-                 ALIAS d :: 3 -> __table1.d String : 2
-                 ALIAS e :: 4 -> __table1.e UInt64 : 3
-        Positions: 5 3 0 1 2
-          ReadFromMergeTree (default.test_lazy_read_in_order)
-          ReadType: InOrder
-          Parts: 1
-          Granules: 1
+LazilyRead (Lazily Read)
+Lazily read columns: d, b, c
+Prefix sort description: __table1.a ASC
+Result sort description: __table1.a ASC, __table1.e ASC
+ReadType: InOrder
 0	0
 1	2
 2	4
 3	6
 4	8
 === Test 5: ORDER BY a, a+1 ===
-Expression (Project names)
-Actions: INPUT : 0 -> __table1.a UInt64 : 0
-         INPUT : 1 -> __table1.b String : 1
-         INPUT : 2 -> __table1.c String : 2
-         INPUT : 3 -> __table1.d String : 3
-         INPUT : 4 -> __table1.e UInt64 : 4
-         INPUT :: 5 -> plus(__table1.a, 1_UInt8) UInt64 : 5
-         ALIAS __table1.a :: 0 -> a UInt64 : 6
-         ALIAS __table1.b :: 1 -> b String : 0
-         ALIAS __table1.c :: 2 -> c String : 1
-         ALIAS __table1.d :: 3 -> d String : 2
-         ALIAS __table1.e :: 4 -> e UInt64 : 3
-Positions: 6 0 1 2 3
-  LazilyRead (Lazily Read)
-  Lazily read columns: e, d, b, c
-    Limit (preliminary LIMIT (without OFFSET))
-    Limit 5
-    Offset 0
-      Sorting (Sorting for ORDER BY)
-      Prefix sort description: __table1.a ASC
-      Result sort description: __table1.a ASC, plus(__table1.a, 1_UInt8) ASC
-      Limit 5
-        Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
-        Actions: INPUT : 0 -> a UInt64 : 0
-                 INPUT : 1 -> b String : 1
-                 INPUT : 2 -> c String : 2
-                 INPUT : 3 -> d String : 3
-                 INPUT : 4 -> e UInt64 : 4
-                 COLUMN Const(UInt8) -> 1_UInt8 UInt8 : 5
-                 ALIAS a :: 0 -> __table1.a UInt64 : 6
-                 ALIAS b :: 1 -> __table1.b String : 0
-                 ALIAS c :: 2 -> __table1.c String : 1
-                 ALIAS d :: 3 -> __table1.d String : 2
-                 ALIAS e :: 4 -> __table1.e UInt64 : 3
-                 FUNCTION plus(__table1.a : 6, 1_UInt8 :: 5) -> plus(__table1.a, 1_UInt8) UInt64 : 4
-        Positions: 6 4 0 1 2 3
-          ReadFromMergeTree (default.test_lazy_read_in_order)
-          ReadType: InOrder
-          Parts: 1
-          Granules: 1
+LazilyRead (Lazily Read)
+Lazily read columns: e, d, b, c
+Prefix sort description: __table1.a ASC
+Result sort description: __table1.a ASC, plus(__table1.a, 1_UInt8) ASC
+ReadType: InOrder
 0	0
 1	2
 2	4
@@ -265,9 +79,4 @@ Positions: 6 0 1 2 3
 4	four	40
 5	five	50
 === Test 10: Verify EXPLAIN shows both optimizations ===
-Expression (Project names)
-  LazilyRead (Lazily Read)
-    Limit (preliminary LIMIT (without OFFSET))
-      Sorting (Sorting for ORDER BY)
-        Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
-          ReadFromMergeTree (default.test_correctness)
+LazilyRead (Lazily Read)
