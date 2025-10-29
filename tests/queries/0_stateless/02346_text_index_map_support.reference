@@ -12,36 +12,36 @@ Function mapKeys
 0
 -- -- Check that the text index actually gets used (String)
 -- -- -- key exists only in the first granule
-Description: text GRANULARITY 64
+Description: text GRANULARITY 128
 Parts: 1/2
 Granules: 1/2
 -- -- -- key exists only in the second granule
-Description: text GRANULARITY 64
+Description: text GRANULARITY 128
 Parts: 1/2
 Granules: 1/2
 -- -- -- key exists only in both granules
-Description: text GRANULARITY 64
+Description: text GRANULARITY 128
 Parts: 2/2
 Granules: 2/2
 -- -- -- key does not exist in granules
-Description: text GRANULARITY 64
+Description: text GRANULARITY 128
 Parts: 0/2
 Granules: 0/2
 -- -- Check that the text index actually gets used (FixedString)
 -- -- -- key exists only in the first granule
-Description: text GRANULARITY 64
+Description: text GRANULARITY 128
 Parts: 1/2
 Granules: 1/2
 -- -- -- key exists only in the second granule
-Description: text GRANULARITY 64
+Description: text GRANULARITY 128
 Parts: 1/2
 Granules: 1/2
 -- -- -- key exists only in both granules
-Description: text GRANULARITY 64
+Description: text GRANULARITY 128
 Parts: 2/2
 Granules: 2/2
 -- -- -- key does not exist in granules
-Description: text GRANULARITY 64
+Description: text GRANULARITY 128
 Parts: 0/2
 Granules: 0/2
 -- operator[] support
@@ -57,36 +57,36 @@ Granules: 0/2
 0
 -- -- Check that the text index actually gets used (String)
 -- -- -- key exists only in the first granule
-Description: text GRANULARITY 64
+Description: text GRANULARITY 128
 Parts: 1/2
 Granules: 1/2
 -- -- -- key exists only in the second granule
-Description: text GRANULARITY 64
+Description: text GRANULARITY 128
 Parts: 1/2
 Granules: 1/2
 -- -- -- key exists only in both granules
-Description: text GRANULARITY 64
+Description: text GRANULARITY 128
 Parts: 2/2
 Granules: 2/2
 -- -- -- key does not exist in granules
-Description: text GRANULARITY 64
+Description: text GRANULARITY 128
 Parts: 0/2
 Granules: 0/2
 -- -- Check that the text index actually gets used (FixedString)
 -- -- -- key exists only in the first granule
-Description: text GRANULARITY 64
+Description: text GRANULARITY 128
 Parts: 1/2
 Granules: 1/2
 -- -- -- key exists only in the second granule
-Description: text GRANULARITY 64
+Description: text GRANULARITY 128
 Parts: 1/2
 Granules: 1/2
 -- -- -- key exists only in both granules
-Description: text GRANULARITY 64
+Description: text GRANULARITY 128
 Parts: 2/2
 Granules: 2/2
 -- -- -- key does not exist in granules
-Description: text GRANULARITY 64
+Description: text GRANULARITY 128
 Parts: 0/2
 Granules: 0/2
 -- has support
@@ -102,36 +102,36 @@ Granules: 0/2
 0
 -- -- Check that the text index actually gets used (String)
 -- -- -- key exists only in the first granule
-Description: text GRANULARITY 64
+Description: text GRANULARITY 128
 Parts: 1/2
 Granules: 1/2
 -- -- -- key exists only in the second granule
-Description: text GRANULARITY 64
+Description: text GRANULARITY 128
 Parts: 1/2
 Granules: 1/2
 -- -- -- key exists only in both granules
-Description: text GRANULARITY 64
+Description: text GRANULARITY 128
 Parts: 2/2
 Granules: 2/2
 -- -- -- key does not exist in granules
-Description: text GRANULARITY 64
+Description: text GRANULARITY 128
 Parts: 0/2
 Granules: 0/2
 -- -- Check that the text index actually gets used (FixedString)
 -- -- -- key exists only in the first granule
-Description: text GRANULARITY 64
+Description: text GRANULARITY 128
 Parts: 1/2
 Granules: 1/2
 -- -- -- key exists only in the second granule
-Description: text GRANULARITY 64
+Description: text GRANULARITY 128
 Parts: 1/2
 Granules: 1/2
 -- -- -- key exists only in both granules
-Description: text GRANULARITY 64
+Description: text GRANULARITY 128
 Parts: 2/2
 Granules: 2/2
 -- -- -- key does not exist in granules
-Description: text GRANULARITY 64
+Description: text GRANULARITY 128
 Parts: 0/2
 Granules: 0/2
 Function mapValues
@@ -148,70 +148,70 @@ Function mapValues
 0
 -- -- Check that the text index actually gets used (String)
 -- -- -- key exists only in the first granule
-Description: text GRANULARITY 64
+Description: text GRANULARITY 128
 Parts: 1/2
 Granules: 1/2
 -- -- -- key exists only in the second granule
-Description: text GRANULARITY 64
+Description: text GRANULARITY 128
 Parts: 1/2
 Granules: 1/2
 -- -- -- key exists only in both granules
-Description: text GRANULARITY 64
+Description: text GRANULARITY 128
 Parts: 2/2
 Granules: 2/2
 -- -- -- key does not exist in granules
-Description: text GRANULARITY 64
+Description: text GRANULARITY 128
 Parts: 0/2
 Granules: 0/2
 -- -- Check that the text index actually gets used (FixedString)
 -- -- -- key exists only in the first granule
-Description: text GRANULARITY 64
+Description: text GRANULARITY 128
 Parts: 1/2
 Granules: 1/2
 -- -- -- key exists only in the second granule
-Description: text GRANULARITY 64
+Description: text GRANULARITY 128
 Parts: 1/2
 Granules: 1/2
 -- -- -- key exists only in both granules
-Description: text GRANULARITY 64
+Description: text GRANULARITY 128
 Parts: 2/2
 Granules: 2/2
 -- -- -- key does not exist in granules
-Description: text GRANULARITY 64
+Description: text GRANULARITY 128
 Parts: 0/2
 Granules: 0/2
 -- has support
 -- -- Check that the text index actually gets used (String)
 -- -- -- key exists only in the first granule
-Description: text GRANULARITY 64
+Description: text GRANULARITY 128
 Parts: 1/2
 Granules: 1/2
 -- -- -- key exists only in the second granule
-Description: text GRANULARITY 64
+Description: text GRANULARITY 128
 Parts: 1/2
 Granules: 1/2
 -- -- -- key exists only in both granules
-Description: text GRANULARITY 64
+Description: text GRANULARITY 128
 Parts: 2/2
 Granules: 2/2
 -- -- -- key does not exist in granules
-Description: text GRANULARITY 64
+Description: text GRANULARITY 128
 Parts: 0/2
 Granules: 0/2
 -- -- Check that the text index actually gets used (FixedString)
 -- -- -- key exists only in the first granule
-Description: text GRANULARITY 64
+Description: text GRANULARITY 128
 Parts: 1/2
 Granules: 1/2
 -- -- -- key exists only in the second granule
-Description: text GRANULARITY 64
+Description: text GRANULARITY 128
 Parts: 1/2
 Granules: 1/2
 -- -- -- key exists only in both granules
-Description: text GRANULARITY 64
+Description: text GRANULARITY 128
 Parts: 2/2
 Granules: 2/2
 -- -- -- key does not exist in granules
-Description: text GRANULARITY 64
+Description: text GRANULARITY 128
 Parts: 0/2
 Granules: 0/2
