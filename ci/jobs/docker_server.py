@@ -304,7 +304,9 @@ def test_docker_library(test_results) -> None:
         run_sh = (repo_path / "test/run.sh").absolute()
         for image in check_images:
             cmd = f"{run_sh} {image} -c {repo_path / 'test/config.sh'} -c {config_override}"
-            test_results.append(Result.from_commands_run(name=test_name, command=cmd))
+            test_results.append(
+                Result.from_commands_run(name=f"{test_name} ({image})", command=cmd)
+            )
 
     except Exception as e:
         logging.error("Failed while testing the docker library image: %s", e)
