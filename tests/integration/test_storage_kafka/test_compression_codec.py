@@ -72,6 +72,7 @@ def assert_compression_codec_in_logs(instance, table_name, compression_codec):
 def assert_compression_level_in_logs(instance, table_name, compression_level):
     assert_producer_property_set_in_logs(instance, table_name, r"compression\.level", compression_level)
 
+
 # Test for different compression codec values
 @pytest.mark.parametrize(
     "compression_codec",
