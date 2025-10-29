@@ -33,6 +33,7 @@
 #include <Analyzer/Passes/IfTransformStringsToEnumPass.h>
 #include <Analyzer/Passes/InjectRandomOrderIfNoOrderByPass.h>
 #include <Analyzer/Passes/L2DistanceTransposedPartialReadsPass.h>
+#include <Analyzer/Passes/LikePerfectAffixRewritePass.h>
 #include <Analyzer/Passes/LogicalExpressionOptimizerPass.h>
 #include <Analyzer/Passes/MultiIfToIfPass.h>
 #include <Analyzer/Passes/NormalizeCountVariantsPass.h>
@@ -309,6 +310,7 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
 
     manager.addPass(std::make_unique<ConvertOrLikeChainPass>());
 
+    manager.addPass(std::make_unique<LikePerfectAffixRewritePass>());
     manager.addPass(std::make_unique<LogicalExpressionOptimizerPass>());
 
     manager.addPass(std::make_unique<CrossToInnerJoinPass>());
