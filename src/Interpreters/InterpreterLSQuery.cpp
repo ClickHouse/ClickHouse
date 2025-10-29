@@ -11,7 +11,7 @@ namespace DB
 
 BlockIO InterpreterLSQuery::execute()
 {
-    return executeQuery("SELECT _file FROM file('*', 'RawBlob')", getContext(), QueryFlags{ .internal = true }).second;
+    return executeQuery("SELECT _file FROM file('*', 'One')", getContext(), QueryFlags{ .internal = true }).second;
 }
 
 void registerInterpreterLSQuery(InterpreterFactory & factory)
