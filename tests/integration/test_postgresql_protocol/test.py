@@ -80,6 +80,7 @@ def test_psql_client(started_cluster):
         "query4.sql",
         "query5.sql",
         "query6.sql",
+        "query7.sql",
     ]:
         started_cluster.copy_file_to_container(
             started_cluster.postgres_id,
@@ -111,11 +112,11 @@ def test_psql_client(started_cluster):
     logging.debug(res)
     assert res == "\n".join(
         [
-            "SELECT 0",
-            "SELECT 0",
-            "SELECT 0",
-            "INSERT 0 0",
-            "INSERT 0 0",
+            "CREATE DATABASE",
+            "USE",
+            "CREATE TABLE",
+            "INSERT 0 3",
+            "INSERT 0 3",
             "column",
             "0",
             "0",
@@ -124,7 +125,7 @@ def test_psql_client(started_cluster):
             "5",
             "5",
             "(6 rows)",
-            "SELECT 0\n",
+            "DROP DATABASE\n",
         ]
     )
 
@@ -133,7 +134,7 @@ def test_psql_client(started_cluster):
     )
     logging.debug(res)
     assert res == "\n".join(
-        ["SELECT 0", "INSERT 0 0", "tmp_column", "0", "1", "(2 rows)", "SELECT 0\n"]
+        ["CREATE TABLE", "INSERT 0 2", "tmp_column", "0", "1", "(2 rows)", "DROP TABLE\n"]
     )
 
     res = started_cluster.exec_in_container(
@@ -142,13 +143,13 @@ def test_psql_client(started_cluster):
     logging.debug(res)
     assert res == "\n".join(
         [
-            "SELECT 0",
-            "SELECT 0",
-            "SELECT 0",
-            "INSERT 0 0",
-            "SELECT 0",
-            "INSERT 0 0",
-            "SELECT 0\n",
+            "CREATE DATABASE",
+            "USE",
+            "CREATE TABLE",
+            "INSERT 0 3",
+            "CREATE TABLE",
+            "INSERT 0 3",
+            "DROP DATABASE\n",
         ]
     )
 
@@ -159,6 +160,32 @@ def test_psql_client(started_cluster):
     # PostgreSQL should return boolean values as 't' or 'f'
     assert res == "\n".join(
         ["bool_true bool_false", "t f", "(1 row)", ""]
+    )
+
+    res = started_cluster.exec_in_container(
+        started_cluster.postgres_id, cmd_prefix + ["-f", "/query7.sql"], shell=True
+    )
+    logging.debug(res)
+    # Test all DDL command tags
+    assert res == "\n".join(
+        [
+            "CREATE DATABASE",
+            "USE",
+            "CREATE TABLE",
+            "CREATE TABLE",
+            "ALTER TABLE",
+            "INSERT 0 3",
+            "id name age",
+            "1 Alice 25",
+            "2 Bob 30",
+            "3 Charlie 35",
+            "(3 rows)",
+            "SET",
+            "TRUNCATE",
+            "DROP TABLE",
+            "DROP TABLE",
+            "DROP DATABASE\n",
+        ]
     )
 
 def test_psql_client_secure(started_cluster):

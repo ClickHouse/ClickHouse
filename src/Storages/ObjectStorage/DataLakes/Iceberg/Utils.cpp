@@ -37,7 +37,7 @@
 #include <filesystem>
 
 #include <Interpreters/Context.h>
-#include <Storages/ObjectStorage/DataLakes/Common.h>
+#include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
@@ -575,6 +575,9 @@ Poco::JSON::Object::Ptr getPartitionField(
     for (const auto & child : partition_function->children)
     {
         const auto * expression_list = child->as<ASTExpressionList>();
+        if (!expression_list)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported partitioning for Iceberg table.");
+
         for (const auto & expression_list_child : expression_list->children)
         {
             const auto * identifier = expression_list_child->as<ASTIdentifier>();
