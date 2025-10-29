@@ -19,15 +19,15 @@ select udf_type_of_int(2)
 SELECT '';
 
 -- ... and this not!
-select udf_type_of_int(number) from numbers(5);
+select udf_type_of_int(number) from numbers(5) order by number;
 
 SELECT '';
 
-select number as id, udf_type_of_int(id) from numbers(5);
+select number as id, udf_type_of_int(id) from numbers(5) order by number;
 
 SELECT '';
 
-select number as id, udf_type_of_int(id or id = 1) from numbers(5);
+select number as id, udf_type_of_int(id or id = 1) from numbers(5) order by number;
 
 DROP FUNCTION udf_type_of_int;
 DROP TABLE dict;
