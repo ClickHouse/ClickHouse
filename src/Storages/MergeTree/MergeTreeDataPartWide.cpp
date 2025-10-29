@@ -255,7 +255,7 @@ void MergeTreeDataPartWide::loadMarksToCache(const Names & column_names, MarkCac
                 return;
 
             loaders.emplace_back(std::make_unique<MergeTreeMarksLoader>(
-                info_for_read,
+                info_for_read->getDataPartStorage(),
                 mark_cache,
                 index_granularity_info.getMarksFilePath(*stream_name),
                 index_granularity->getMarksCount(),

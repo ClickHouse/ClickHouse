@@ -167,7 +167,7 @@ void MergeTreeDataPartCompact::loadMarksToCache(const Names & column_names, Mark
     LOG_TEST(getLogger("MergeTreeDataPartCompact"), "Loading marks into mark cache for columns {} of part {}", toString(column_names), name);
 
     MergeTreeMarksLoader loader(
-        info_for_read,
+        info_for_read->getDataPartStorage(),
         mark_cache,
         index_granularity_info.getMarksFilePath(DATA_FILE_NAME),
         index_granularity->getMarksCount(),
