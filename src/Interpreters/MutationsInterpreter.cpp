@@ -69,6 +69,7 @@ namespace Setting
 
 namespace MergeTreeSetting
 {
+    extern const MergeTreeSettingsAlterColumnSecondaryIndexMode alter_column_secondary_index_mode;
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
     extern const MergeTreeSettingsBool materialize_ttl_recalculate_only;
     extern const MergeTreeSettingsBool ttl_only_drop_parts;
@@ -1068,8 +1069,8 @@ void MutationsInterpreter::prepare(bool dry_run)
             read_columns.emplace_back(command.column_name);
             materialized_statistics.insert(command.column_name);
 
-            /// Check if the type of this column is changed and there are projections that
-            /// have this column in the primary key. We should rebuild such projections.
+            /// Check if the type of this column is changed and there are projections that have this column in the primary key or indices
+            /// that depend on it. We should rebuild such projections and indices
             if (const auto & merge_tree_data_part = source.getMergeTreeDataPart())
             {
                 const auto & column = merge_tree_data_part->tryGetColumn(command.column_name);
@@ -1083,6 +1084,35 @@ void MutationsInterpreter::prepare(bool dry_run)
                             for (const auto & col : projection.required_columns)
                                 dependencies.emplace(col, ColumnDependency::PROJECTION);
                             materialized_projections.insert(projection.name);
+                        }
+                    }
+
+                    const auto index_mode = (*source.getMergeTreeData()->getSettings())[MergeTreeSetting::alter_column_secondary_index_mode];
+
+                    if (index_mode != AlterColumnSecondaryIndexMode::IGNORE)
+                    {
+                        for (const auto & index : metadata_snapshot->getSecondaryIndices())
+                        {
+                            const auto & index_cols = index.expression->getRequiredColumns();
+                            if (std::ranges::find(index_cols, command.column_name) != index_cols.end())
+                            {
+                                for (const auto & col : index_cols)
+                                    dependencies.emplace(col, ColumnDependency::SKIP_INDEX);
+
+                                switch (index_mode)
+                                {
+                                    case AlterColumnSecondaryIndexMode::IGNORE:
+                                        break;
+                                    case AlterColumnSecondaryIndexMode::THROW:
+                                    case AlterColumnSecondaryIndexMode::COMPATIBILITY:
+                                        throw Exception(
+                                            ErrorCodes::BAD_ARGUMENTS,
+                                            "Cannot ALTER column `{}` because index `{}`", command.column_name, index.name);
+                                    case AlterColumnSecondaryIndexMode::REBUILD:
+                                    case AlterColumnSecondaryIndexMode::DROP:
+                                        materialized_indices.insert(index.name);
+                                }
+                            }
                         }
                     }
                 }

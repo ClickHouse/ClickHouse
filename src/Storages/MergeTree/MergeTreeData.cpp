@@ -211,6 +211,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool allow_suspicious_indices;
     extern const MergeTreeSettingsBool allow_summing_columns_in_partition_or_order_key;
     extern const MergeTreeSettingsBool allow_coalescing_columns_in_partition_or_order_key;
+    extern const MergeTreeSettingsAlterColumnSecondaryIndexMode alter_column_secondary_index_mode;
     extern const MergeTreeSettingsBool assign_part_uuids;
     extern const MergeTreeSettingsBool async_insert;
     extern const MergeTreeSettingsBool check_sample_column_is_correct;
@@ -4350,13 +4351,19 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                     boost::join(column_to_subcolumns_used_in_keys[command.column_name], ", "));
             }
 
-            if (auto it = columns_in_indices.find(command.column_name); it != columns_in_indices.end())
+            if ((*settings_from_storage)[MergeTreeSetting::alter_column_secondary_index_mode] == AlterColumnSecondaryIndexMode::THROW
+                || ((*settings_from_storage)[MergeTreeSetting::alter_column_secondary_index_mode]
+                    == AlterColumnSecondaryIndexMode::COMPATIBILITY))
             {
-                throw Exception(
-                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                    "Trying to ALTER {} column which is a part of index {}",
-                    backQuoteIfNeed(command.column_name),
-                    it->second);
+                if (auto it = columns_in_indices.find(command.column_name); it != columns_in_indices.end())
+                {
+                    throw Exception(
+                        ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                        "The ALTER of the column '{}' is forbidden because it is used by the index '{}'. Check the MergeTree setting "
+                        "'alter_column_secondary_index_mode' to change this behaviour",
+                        backQuoteIfNeed(command.column_name),
+                        it->second);
+                }
             }
 
             /// Don't check columns in projections here. If required columns of projections get

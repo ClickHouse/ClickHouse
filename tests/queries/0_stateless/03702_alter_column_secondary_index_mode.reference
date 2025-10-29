@@ -1,0 +1,156 @@
+IP column tests
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_table)
+        Indexes:
+          MinMax
+            Condition: true
+            Parts: 3/3
+            Granules: 3/3
+          Partition
+            Condition: true
+            Parts: 3/3
+            Granules: 3/3
+          PrimaryKey
+            Condition: true
+            Parts: 3/3
+            Granules: 3/3
+          Skip
+            Name: idx_ip_bloom
+            Description: ngrambf_v1 GRANULARITY 1
+            Parts: 1/3
+            Granules: 1/3
+          Ranges: 1
+1
+STRING TO FIXEDSTRING tests
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_table)
+        Indexes:
+          MinMax
+            Condition: true
+            Parts: 3/3
+            Granules: 3/3
+          Partition
+            Condition: true
+            Parts: 3/3
+            Granules: 3/3
+          PrimaryKey
+            Condition: true
+            Parts: 3/3
+            Granules: 3/3
+          Skip
+            Name: idx_ip_set
+            Description: set GRANULARITY 1
+            Parts: 1/3
+            Granules: 1/3
+          Ranges: 1
+1
+Status after ALTER is issued, before merges happen, max_threads=1
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_table)
+        Indexes:
+          MinMax
+            Condition: true
+            Parts: 3/3
+            Granules: 3/3
+          Partition
+            Condition: true
+            Parts: 3/3
+            Granules: 3/3
+          PrimaryKey
+            Condition: true
+            Parts: 3/3
+            Granules: 3/3
+          Skip
+            Name: idx_ip_set
+            Description: set GRANULARITY 1
+            Parts: 3/3
+            Granules: 3/3
+          Ranges: 3
+1
+Status after ALTER is issued, before merges happen, max_threads=2;
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_table)
+        Indexes:
+          MinMax
+            Condition: true
+            Parts: 3/3
+            Granules: 3/3
+          Partition
+            Condition: true
+            Parts: 3/3
+            Granules: 3/3
+          PrimaryKey
+            Condition: true
+            Parts: 3/3
+            Granules: 3/3
+          Skip
+            Name: idx_ip_set
+            Description: set GRANULARITY 1
+            Parts: 3/3
+            Granules: 3/3
+          Ranges: 3
+1
+Status after ALTER is applied
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_table)
+        Indexes:
+          MinMax
+            Condition: true
+            Parts: 3/3
+            Granules: 3/3
+          Partition
+            Condition: true
+            Parts: 3/3
+            Granules: 3/3
+          PrimaryKey
+            Condition: true
+            Parts: 3/3
+            Granules: 3/3
+          Skip
+            Name: idx_ip_set
+            Description: set GRANULARITY 1
+            Parts: 1/3
+            Granules: 1/3
+          Ranges: 1
+1
+Status after ALTER full table rewrite (should be the same)
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_table)
+        Indexes:
+          MinMax
+            Condition: true
+            Parts: 3/3
+            Granules: 3/3
+          Partition
+            Condition: true
+            Parts: 3/3
+            Granules: 3/3
+          PrimaryKey
+            Condition: true
+            Parts: 3/3
+            Granules: 3/3
+          Skip
+            Name: idx_ip_set
+            Description: set GRANULARITY 1
+            Parts: 1/3
+            Granules: 1/3
+          Ranges: 1
+1
