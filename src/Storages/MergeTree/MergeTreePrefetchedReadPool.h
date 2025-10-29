@@ -6,12 +6,13 @@
 #include <boost/heap/priority_queue.hpp>
 #include <queue>
 
-#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
-
 namespace DB
 {
 class IMergeTreeReader;
 using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
+
+class Updater;
+using UpdaterPtr = std::shared_ptr<Updater>;
 
 /// A class which is responsible for creating read tasks
 /// which are later taken by readers via getTask method.

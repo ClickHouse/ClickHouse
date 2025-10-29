@@ -162,9 +162,7 @@ MergeTreeReadTaskPtr MergeTreeReadPool::getTask(size_t task_idx, MergeTreeReadTa
     }
 
     /// createTask() is costly and not needed guarded by mutex.
-    auto res = createTask(per_part_infos[part_idx], std::move(ranges_to_get_from_part), previous_task);
-    res->updater = updater;
-    return res;
+    return createTask(per_part_infos[part_idx], std::move(ranges_to_get_from_part), previous_task, updater);
 }
 
 void MergeTreeReadPool::profileFeedback(ReadBufferFromFileBase::ProfileInfo info)

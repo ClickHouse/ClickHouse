@@ -1379,27 +1379,7 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
 
                     // Block might be empty in case of timeout, i.e. there is no data to process
                     if (!block.empty() && !state.io.null_format)
-                    {
-                        for (const auto & column : block)
-                        {
-                            using BLOB = PODArray<char>;
-                            BLOB blob;
-                            WriteBufferFromVector<BLOB> wbuf(blob);
-                            CompressedWriteBuffer compressed_buffer(wbuf);
-                            auto serialization = NativeWriter::getSerialization(client_tcp_protocol_version, column);
-                            NativeWriter::writeData(
-                                *serialization,
-                                column.column,
-                                compressed_buffer,
-                                getFormatSettings(state.query_context),
-                                0,
-                                column.column->size(),
-                                client_tcp_protocol_version);
-                            compressed_buffer.finalize();
-                            state.sizes["all"] += blob.size();
-                        }
                         sendData(state, block);
-                    }
                 }
             }
         }
@@ -1428,11 +1408,6 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
         sendProgress(state);
         sendLogs(state);
         sendSelectProfileEvents(state);
-
-        if (state.query_context->getCurrentQueryId() != state.query_context->getInitialQueryId())
-            LOG_DEBUG(&Poco::Logger::get("sizes"), "sizes={}", state.sizes["all"]);
-        else
-            LOG_DEBUG(&Poco::Logger::get("sizes"), "------------------");
 
         sendData(state, {});
 

@@ -170,7 +170,8 @@ public:
         MarkRanges mark_ranges_,
         std::vector<MarkRanges> patches_mark_ranges_,
         const BlockSizeParams & block_size_params_,
-        MergeTreeBlockSizePredictorPtr size_predictor_);
+        MergeTreeBlockSizePredictorPtr size_predictor_,
+        UpdaterPtr updater_ = nullptr);
 
     void initializeReadersChain(
         const PrewhereExprInfo & prewhere_actions,
@@ -231,7 +232,6 @@ private:
     /// Used to satistfy preferred_block_size_bytes limitation
     MergeTreeBlockSizePredictorPtr size_predictor;
 
-public:
     UpdaterPtr updater;
 };
 

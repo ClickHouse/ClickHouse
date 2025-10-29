@@ -17,8 +17,6 @@
 #include <Common/logger_useful.h>
 #include <Common/threadPoolCallbackRunner.h>
 
-#include <Storages/MergeTree/MergeTreeReadTask.h>
-
 
 namespace ProfileEvents
 {
@@ -333,13 +331,10 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::stealTask(size_t thread, Merge
 
 MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::createTask(ThreadTask & task, MergeTreeReadTask * previous_task)
 {
-    MergeTreeReadTaskPtr res;
     if (task.isValidReadersFuture())
-        res = MergeTreeReadPoolBase::createTask(task.read_info, task.readers_future->get(), task.ranges, task.patches_ranges);
+        return MergeTreeReadPoolBase::createTask(task.read_info, task.readers_future->get(), task.ranges, task.patches_ranges, updater);
     else
-        res = MergeTreeReadPoolBase::createTask(task.read_info, task.ranges, task.patches_ranges, previous_task);
-    res->updater = updater;
-    return res;
+        return MergeTreeReadPoolBase::createTask(task.read_info, task.ranges, task.patches_ranges, previous_task, updater);
 }
 
 void MergeTreePrefetchedReadPool::fillPerPartStatistics()

@@ -948,7 +948,7 @@ static size_t getTotalBytesInColumns(const Columns & columns)
     {
         if (column)
         {
-            if (auto * col_str = typeid_cast<const ColumnString *>(column.get()))
+            if (const auto * col_str = typeid_cast<const ColumnString *>(column.get()))
                 total_bytes += col_str->getChars().size();
             else
                 total_bytes += column->byteSize();
