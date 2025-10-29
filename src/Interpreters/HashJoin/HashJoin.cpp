@@ -1341,38 +1341,16 @@ struct AdderNonJoined
         }
         else
         {
-            const Columns * current_columns = nullptr;
-            size_t run_start = 0;
-            size_t run_length = 0;
-
-            auto flush_run = [&]()
-            {
-                if (!run_length)
-                    return;
-                for (size_t j = 0; j < columns_right.size(); ++j)
-                    columns_right[j]->insertRangeFrom(*(*current_columns)[j], run_start, run_length);
-                rows_added += run_length;
-                run_length = 0;
-            };
-
             for (auto it = mapped.begin(); it.ok(); ++it)
             {
-                const auto & cols = it->columns_info->columns;
-                size_t row = it->row_num;
+                for (size_t j = 0; j < columns_right.size(); ++j)
+                {
+                    const auto & mapped_column = it->columns_info->columns[j];
+                    columns_right[j]->insertFrom(*mapped_column, it->row_num);
+                }
 
-                if (*current_columns == cols && row == run_start + run_length)
-                {
-                    ++run_length;
-                }
-                else
-                {
-                    flush_run();
-                    current_columns = &cols;
-                    run_start = row;
-                    run_length = 1;
-                }
+                ++rows_added;
             }
-            flush_run();
         }
     }
 };
@@ -1508,8 +1486,6 @@ private:
                     }
                 }
 
-
-                    
                 for (size_t colnum = 0; colnum < columns_keys_and_right.size(); ++colnum)
                 {
                     auto col = mapped_block.columns_info.columns[colnum]->filter(filter, rows_added);
@@ -1769,8 +1745,8 @@ template <JoinKind KIND, typename Map, JoinStrictness STRICTNESS>
 void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
 {
     constexpr JoinFeatures<KIND, STRICTNESS, Map> join_features;
-    if constexpr (!join_features.is_all_join)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Only ALL join table can be reranged.");
+    if constexpr (!join_features.is_all_join || (!join_features.left && !join_features.inner))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Only left or inner join table can be reranged.");
     else
     {
         auto merge_rows_into_one_block = [&](ScatteredColumnsList & columns_list, RowRefList & rows_ref)
