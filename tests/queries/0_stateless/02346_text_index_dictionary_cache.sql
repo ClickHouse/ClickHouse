@@ -14,10 +14,11 @@ CREATE TABLE tab
 (
     id UInt32,
     message String,
-    INDEX idx(message) TYPE text(tokenizer = array, dictionary_block_size = 128)
+    INDEX idx(message) TYPE text(tokenizer = array, dictionary_block_size = 128) GRANULARITY 1
 )
 ENGINE = MergeTree
-ORDER BY (id);
+ORDER BY (id)
+SETTINGS index_granularity = 128;
 
 --- The text index would have two dictionary blocks.
 INSERT INTO tab
@@ -33,7 +34,7 @@ CREATE VIEW text_index_cache_stats AS (
   FROM system.query_log
   WHERE query_kind ='Select'
       AND current_database = currentDatabase()
-      AND endsWith(trimRight(query), concat('hasAnyTokens(message, [\'', {filter:String}, '\']);'))
+      AND endsWith(trimRight(query), concat('hasAnyTokens(message, \'', {filter:String}, '\');'))
       AND type='QueryFinish'
   LIMIT 1
 );
@@ -41,19 +42,19 @@ CREATE VIEW text_index_cache_stats AS (
 SELECT 'Tokens between text_000 -> text_127 are in the first dictionary block and text_128 -> text_255 are in the second dictionary block.';
 
 SELECT '--- cache miss on the first dictionary block.';
-SELECT count() FROM tab WHERE hasAnyTokens(message, ['text_000']);
+SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_000');
 
 SYSTEM FLUSH LOGS query_log;
 SELECT * FROM text_index_cache_stats(filter = 'text_000');
 
 SELECT '--- cache miss on the second dictionary block.';
-SELECT count() FROM tab WHERE hasAnyTokens(message, ['text_128']);
+SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_128');
 
 SYSTEM FLUSH LOGS query_log;
 SELECT * FROM text_index_cache_stats(filter = 'text_128');
 
 SELECT '--- cache hit on the first dictionary block.';
-SELECT count() FROM tab WHERE hasAnyTokens(message, ['text_127']);
+SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_127');
 
 SYSTEM FLUSH LOGS query_log;
 SELECT * FROM text_index_cache_stats(filter = 'text_127');
@@ -62,7 +63,7 @@ SELECT '--- no profile events when cache is disabled.';
 
 SET use_text_index_dictionary_cache = 0;
 
-SELECT count() FROM tab WHERE hasAnyTokens(message, ['text_126']);
+SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_126');
 
 SET use_text_index_dictionary_cache = 1;
 
@@ -74,13 +75,13 @@ SELECT 'Clear text index cache';
 SYSTEM DROP TEXT INDEX DICTIONARY CACHE;
 
 SELECT '--- cache miss on the first dictionary block.';
-SELECT count() FROM tab WHERE hasAnyTokens(message, ['text_125']);
+SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_125');
 
 SYSTEM FLUSH LOGS query_log;
 SELECT * FROM text_index_cache_stats(filter = 'text_125');
 
 SELECT '--- cache miss on the second dictionary block.';
-SELECT count() FROM tab WHERE hasAnyTokens(message, ['text_129']);
+SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_129');
 
 SYSTEM FLUSH LOGS query_log;
 SELECT * FROM text_index_cache_stats(filter = 'text_129');
