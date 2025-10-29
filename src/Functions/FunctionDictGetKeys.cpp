@@ -368,13 +368,17 @@ private:
 REGISTER_FUNCTION(DictGetKeys)
 {
     FunctionDocumentation::Description description = "Inverse dictionary lookup: return keys where attribute equals the given value.";
-    FunctionDocumentation::Syntax syntax = "dictGetKeys('dictionary_name', 'attribute_column_name', value_expr)";
+    FunctionDocumentation::Syntax syntax = "dictGetKeys('dict_name', 'attr_name', value_expr)";
     FunctionDocumentation::Arguments arguments
-        = {{"dictionary_name", "Name of the dictionary.", {"String"}},
-           {"attribute_column_name", "Attribute to match.", {"String"}},
-           {"value_expr", "Value to match. Vector or constant. Casts to attribute type.", {}}};
+        = {{"dict_name", "Name of the dictionary.", {"String"}},
+           {"attr_name", "Attribute to match.", {"String"}},
+           {"value_expr", "Value to match against the attribute.", {"Expression"}}};
     FunctionDocumentation::ReturnedValue returned_value
-        = {"Array of keys. Element is UInt64 for simple key or Tuple(...) for complex key.", {}};
+        = {"For single key dictionaries: an array of keys whose attribute equals `value_expr`. For multi key dictionaries: an array of "
+           "tuples of keys whose attribute equals `value_expr`. If there is no attribute corresponding to `value_expr` in the dictionary, "
+           "then an empty array is returned. ClickHouse throws an exception if it cannot parse the value of the attribute or the value "
+           "cannot be converted to the attribute data type.",
+           {}};
     FunctionDocumentation::IntroducedIn introduced_in = {25, 11};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Dictionary;
     FunctionDocumentation docs{description, syntax, arguments, returned_value, {}, introduced_in, category};
