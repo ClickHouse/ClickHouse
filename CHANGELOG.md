@@ -63,6 +63,7 @@
 * Functions `searchAll` and `searchAny` now work on top of columns without text columns. In those cases, they use the default tokenizer. [#87722](https://github.com/ClickHouse/ClickHouse/pull/87722) ([Jimmy Aguilar Mena](https://github.com/Ergus)).
 
 #### Performance Improvement
+* Implement lazy columns replication in JOIN and ARRAY JOIN. Avoid converting special columns representation like Sparse and Replicated to full columns in some output formats. This avoids unnecessary data copy in memory. [#88752](https://github.com/ClickHouse/ClickHouse/pull/88752) ([Pavel Kruglov](https://github.com/Avogar)).
 * Add optional `.size` subcolumn serialization for top-level String columns in MergeTree tables to improve compression and enable efficient subcolumn access. Introduce new MergeTree settings for serialization version control and expression optimization for empty strings. [#82850](https://github.com/ClickHouse/ClickHouse/pull/82850) ([Amos Bird](https://github.com/amosbird)).
 * Support for read in order for Iceberg. [#88454](https://github.com/ClickHouse/ClickHouse/pull/88454) ([scanhex12](https://github.com/scanhex12)).
 * Speed up some JOIN queries by building a bloom filter from the right subtree at runtime and pass this filter to the scan in the left subtree. This can be beneficial for queries like `SELECT avg(o_totalprice) FROM orders, customer, nation WHERE c_custkey = o_custkey AND c_nationkey=n_nationkey AND n_name = 'FRANCE'`. [#84772](https://github.com/ClickHouse/ClickHouse/pull/84772) ([Alexander Gololobov](https://github.com/davenger)).
