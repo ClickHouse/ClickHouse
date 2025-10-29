@@ -13,7 +13,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
-
+#include <Common/HashTable/HashMap.h>
 
 namespace DB
 {
@@ -237,7 +237,10 @@ public:
         /// to check if the current row's attribute value previousely seen or not.
         /// If yes, we get the bucket id from `row_id_to_bucket_id`. If not, we create a new bucket.
 
-        std::unordered_map<UInt64, std::vector<size_t>> hash_to_bucket_ids;
+        using BucketIdList = PODArray<UInt64, 2 * sizeof(UInt64)>;
+        using Map = HashMap<UInt64, BucketIdList, HashCRC32<UInt64>>;
+
+        Map hash_to_bucket_ids;
         hash_to_bucket_ids.reserve(input_rows_count);
 
         std::vector<size_t> row_id_to_bucket_id(input_rows_count);
@@ -280,7 +283,6 @@ public:
                 buckets[bucket_id].key_cols.emplace_back(key_type->createColumn());
         }
 
-
         /// Stream dictionary: keys... column + attribute column
         Names column_names = structure.getKeysNames();
         column_names.push_back(attribute_column_name);
@@ -303,12 +305,12 @@ public:
             {
                 const UInt64 hash = hashAt(*attribute_column, cur_row_id);
 
-                auto it = hash_to_bucket_ids.find(hash);
+                auto * it = hash_to_bucket_ids.find(hash);
                 if (it == hash_to_bucket_ids.end())
                     continue;
 
                 /// We cannot be sure yet that the attribute is part of values_column, because multiple unique attribute values can hash to same value.
-                const auto & potential_bucket_ids = it->second;
+                const auto & potential_bucket_ids = it->getMapped();
                 for (size_t bucket_id : potential_bucket_ids)
                 {
                     const size_t bucket_representative_row_id = bucket_id_to_representative_row_id[bucket_id];
