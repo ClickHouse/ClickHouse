@@ -18,7 +18,7 @@ QueryPlanResourceHolder & QueryPlanResourceHolder::append(const QueryPlanResourc
 
 QueryPlanResourceHolder & QueryPlanResourceHolder::operator=(QueryPlanResourceHolder && rhs) noexcept
 {
-    append(std::move(rhs));
+    append(rhs);
     return *this;
 }
 

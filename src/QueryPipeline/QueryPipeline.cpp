@@ -728,7 +728,7 @@ void QueryPipeline::addCompletedPipeline(QueryPipeline && other)
     if (!other.completed())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add not completed pipeline");
 
-    resources.append(std::move(other.resources));
+    resources.append(other.resources);
     processors->insert(processors->end(), std::make_move_iterator(other.processors->begin()), std::make_move_iterator(other.processors->end()));
 }
 
