@@ -716,9 +716,7 @@ void InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind kind, ContextPtr 
 
         /// We need to propagate settings related to drop size limits,
         ///  otherwise we will not be able to drop large inner tables.
-        const auto & current_settings = current_context->getSettingsRef();
-        drop_context->setSetting("max_table_size_to_drop", current_settings[Setting::max_table_size_to_drop].value);
-        drop_context->setSetting("max_partition_size_to_drop", current_settings[Setting::max_partition_size_to_drop].value);
+        drop_context->setSettings(current_context->getSettingsRef());
 
         if (ignore_sync_setting)
             drop_context->setSetting("database_atomic_wait_for_drop_and_detach_synchronously", false);
