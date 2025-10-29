@@ -1503,11 +1503,11 @@ private:
 
             for (; it != end; ++it)
             {
-                const Mapped & mapped = it->getMapped();
-
                 size_t offset = map.offsetInternal(it.getPtr());
                 if (parent.isUsed(offset))
                     continue;
+
+                const Mapped & mapped = it->getMapped();
                 AdderNonJoined<Mapped>::add(mapped, rows_added, columns_keys_and_right);
 
                 if (rows_added >= max_block_size)
