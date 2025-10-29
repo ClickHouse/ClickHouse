@@ -7,8 +7,6 @@
 namespace DB
 {
 
-/** Return list of files in the current directory.
-  */
 class InterpreterLSQuery : public IInterpreter, WithMutableContext
 {
 public:

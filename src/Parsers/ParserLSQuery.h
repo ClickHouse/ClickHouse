@@ -8,9 +8,6 @@
 namespace DB
 {
 
-/** Query LS
-  * Lists files in the current directory
-  */
 class ParserLSQuery : public IParserBase
 {
 protected:
