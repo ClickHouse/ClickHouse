@@ -1128,6 +1128,28 @@ String StatementGenerator::getTableStructure(RandomGenerator & rg, const SQLTabl
     return buf;
 }
 
+static void dupTableDef(SQLTable & next, const SQLTable & t)
+{
+    next.cols.clear();
+    for (const auto & col : t.cols)
+    {
+        next.cols[col.first] = col.second;
+    }
+    next.idxs.clear();
+    for (const auto & idx : t.idxs)
+    {
+        next.idxs[idx.first] = idx.second;
+    }
+    next.projs.clear();
+    next.projs.insert(t.projs.begin(), t.projs.end());
+    next.constrs.clear();
+    next.constrs.insert(t.constrs.begin(), t.constrs.end());
+    next.col_counter = t.col_counter;
+    next.idx_counter = t.idx_counter;
+    next.proj_counter = t.proj_counter;
+    next.constr_counter = t.constr_counter;
+}
+
 void StatementGenerator::generateEngineDetails(
     RandomGenerator & rg, const SQLRelation & rel, SQLBase & b, const bool add_pkey, TableEngine * te)
 {
@@ -1217,6 +1239,8 @@ void StatementGenerator::generateEngineDetails(
     }
     else if (te->has_engine() && (b.isDistributedEngine() || b.isBufferEngine() || b.isAliasEngine()))
     {
+        SQLTable * bt = dynamic_cast<SQLTable *>(&b);
+        const SQLTable * tt = nullptr;
         const bool has_tables = collectionHas<SQLTable>(hasTableOrView<SQLTable>(b));
         const bool has_views = collectionHas<SQLView>(hasTableOrView<SQLView>(b));
         const bool has_dictionaries = collectionHas<SQLDictionary>(hasTableOrView<SQLDictionary>(b));
@@ -1234,11 +1258,11 @@ void StatementGenerator::generateEngineDetails(
         }
         if (dist_table && nopt < (dist_table + 1))
         {
-            const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(hasTableOrView<SQLTable>(b)));
+            tt = &rg.pickRandomly(filterCollection<SQLTable>(hasTableOrView<SQLTable>(b))).get();
 
-            t.setName(te);
+            tt->setName(te);
             /// For the sharding key
-            b.sub = t.teng;
+            b.sub = tt->teng;
         }
         else if (dist_view && nopt < (dist_table + dist_view + 1))
         {
@@ -1268,12 +1292,15 @@ void StatementGenerator::generateEngineDetails(
             chassert(0);
         }
 
+        if (bt && tt)
+        {
+            /// Dup table definition
+            dupTableDef(*bt, *tt);
+        }
         if (b.isDistributedEngine() && rg.nextBool())
         {
             /// Optional sharding key
-            SQLTable * t = dynamic_cast<SQLTable *>(&b);
-
-            setRandomShardKey(rg, t ? std::make_optional<SQLTable>(*t) : std::nullopt, te->add_params()->mutable_expr());
+            setRandomShardKey(rg, bt ? std::make_optional<SQLTable>(*bt) : std::nullopt, te->add_params()->mutable_expr());
             /// Optional policy name
             if (!fc.storage_policies.empty() && rg.nextBool())
             {
@@ -2280,21 +2307,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
         te->set_engine(val);
         cta->set_clone(next.isMergeTreeFamily() && t.isMergeTreeFamily() && rg.nextBool());
         t.setName(cta->mutable_est(), false);
-        for (const auto & col : t.cols)
-        {
-            next.cols[col.first] = col.second;
-        }
-        for (const auto & idx : t.idxs)
-        {
-            next.idxs[idx.first] = idx.second;
-        }
-        next.projs.insert(t.projs.begin(), t.projs.end());
-        next.constrs.insert(t.constrs.begin(), t.constrs.end());
-        next.col_counter = t.col_counter;
-        next.idx_counter = t.idx_counter;
-        next.proj_counter = t.proj_counter;
-        next.constr_counter = t.constr_counter;
-        next.is_temp = t.is_temp;
+        dupTableDef(next, t);
     }
 
     flatTableColumnPath(flat_tuple | flat_nested | flat_json | skip_nested_node, next.cols, [](const SQLColumn &) { return true; });
@@ -2311,7 +2324,8 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
         ct->mutable_cluster()->set_cluster(next.cluster.value());
     }
     if ((next.isAnyIcebergEngine() && next.integration == IntegrationCall::Dolor && next.getLakeCatalog() == LakeCatalog::None)
-        || next.isAliasEngine() || (next.projs.empty() && next.idxs.empty() && next.constrs.empty() && rg.nextMediumNumber() < 11))
+        || ((next.isDistributedEngine() || next.isBufferEngine() || next.isAliasEngine()) && rg.nextMediumNumber() < 96)
+        || (next.projs.empty() && next.idxs.empty() && next.constrs.empty() && rg.nextMediumNumber() < 11))
     {
         /// For Iceberg tables created from Spark, don't give table schema
         ct->clear_table_def();
