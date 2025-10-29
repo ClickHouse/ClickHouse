@@ -76,7 +76,6 @@ public:
 
     ColumnPtr convertToFullColumnIfSparse() const override;
 
-    /// Will insert null value if pos=nullptr
     void insertData(const char * pos, size_t length) override;
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     StringRef serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
@@ -264,5 +263,8 @@ private:
 };
 
 ColumnPtr recursiveRemoveSparse(const ColumnPtr & column);
+
+/// Remove all special representations (for now Sparse and Replicated).
+ColumnPtr removeSpecialRepresentations(const ColumnPtr & column);
 
 }
