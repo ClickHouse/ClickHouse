@@ -24,6 +24,48 @@ extern const int TYPE_MISMATCH;
 extern const int BAD_ARGUMENTS;
 }
 
+static inline UInt64 hashAt(const IColumn & column, size_t row)
+{
+    SipHash h;
+    column.updateHashWithValue(row, h);
+    return h.get64();
+}
+
+static inline bool equalAt(const IColumn & left_column, size_t left_row_id, const IColumn & right_column, size_t right_row_id)
+{
+    if (const auto * left_nullable = checkAndGetColumn<ColumnNullable>(&left_column))
+    {
+        if (const auto * right_nullable = checkAndGetColumn<ColumnNullable>(&right_column))
+        {
+            const bool left_is_null = left_nullable->isNullAt(left_row_id);
+            const bool right_is_null = right_nullable->isNullAt(right_row_id);
+            if (left_is_null | right_is_null)
+                return left_is_null & right_is_null;
+
+            /// Both not null
+            return left_nullable->getNestedColumn().compareAt(
+                       left_row_id, right_row_id, right_nullable->getNestedColumn(), /*nan_direction_hint*/ 1)
+                == 0;
+        }
+
+        if (left_nullable->isNullAt(left_row_id))
+            return false;
+
+        /// Right is not nullable
+        return left_nullable->getNestedColumn().compareAt(left_row_id, right_row_id, right_column, /*nan_direction_hint*/ 1) == 0;
+    }
+
+    if (const auto * right_nullable = checkAndGetColumn<ColumnNullable>(&right_column))
+    {
+        if (right_nullable->isNullAt(right_row_id))
+            return false;
+
+        return left_column.compareAt(left_row_id, right_row_id, right_nullable->getNestedColumn(), /*nan_direction_hint*/ 1) == 0;
+    }
+
+    return left_column.compareAt(left_row_id, right_row_id, right_column, /*nan_direction_hint*/ 1) == 0;
+}
+
 class FunctionDictGetKeys final : public IFunction
 {
 public:
