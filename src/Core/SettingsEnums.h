@@ -483,6 +483,14 @@ enum class DecorrelationJoinKind : uint8_t
 
 DECLARE_SETTING_ENUM(DecorrelationJoinKind)
 
+enum class ObjectStorageGranularityLevel : uint8_t
+{
+    BUCKET,
+    FILE,
+};
+
+DECLARE_SETTING_ENUM(ObjectStorageGranularityLevel)
+
 enum class IcebergMetadataLogLevel : uint8_t
 {
     None = 0,
@@ -494,13 +502,5 @@ enum class IcebergMetadataLogLevel : uint8_t
 };
 
 DECLARE_SETTING_ENUM(IcebergMetadataLogLevel)
-
-enum class ObjectStorageGranularityLevel : uint8_t
-{
-    BUCKET,
-    FILE,
-};
-
-DECLARE_SETTING_ENUM(ObjectStorageGranularityLevel)
 
 }
