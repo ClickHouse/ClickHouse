@@ -251,8 +251,8 @@ public:
                     continue;
 
                 /// We cannot be sure yet that the attribute is part of values_column, because multiple unique attribute values can hash to same value.
-                const auto & bucket_ids = it->second;
-                for (size_t bucket_id : bucket_ids)
+                const auto & potential_bucket_ids = it->second;
+                for (size_t bucket_id : potential_bucket_ids)
                 {
                     const size_t bucket_representative_row_id = bucket_id_to_representative_row_id[bucket_id];
                     if (!equalAt(*attribute_column, cur_row_id, *values_column, bucket_representative_row_id))
@@ -295,15 +295,15 @@ public:
         auto & offsets = offsets_column->getData();
         offsets.resize(input_rows_count);
 
-        size_t total = 0;
+        size_t position = 0;
         for (size_t row_id = 0; row_id < input_rows_count; ++row_id)
         {
             const size_t bucket_id = row_id_to_bucket_id[row_id];
             const size_t num_matched_keys = buckets[bucket_id].key_cols[0]->size();
             for (size_t key_id = 0; key_id < keys_cnt; ++key_id)
                 result_columns[key_id]->insertRangeFrom(*buckets[bucket_id].key_cols[key_id], 0, num_matched_keys);
-            total += num_matched_keys;
-            offsets[row_id] = total;
+            position += num_matched_keys;
+            offsets[row_id] = position;
         }
 
         if (keys_cnt == 1)
