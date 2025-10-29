@@ -51,20 +51,20 @@ MergeTreeReadPool::MergeTreeReadPool(
     const ContextPtr & context_,
     UpdaterPtr updater_)
     : MergeTreeReadPoolBase(
-        std::move(parts_),
-        std::move(mutations_snapshot_),
-        std::move(shared_virtual_fields_),
-        index_read_tasks_,
-        storage_snapshot_,
-        row_level_filter_,
-        prewhere_info_,
-        actions_settings_,
-        reader_settings_,
-        column_names_,
-        settings_,
-        params_,
-        context_)
-    , updater(updater_)
+          std::move(parts_),
+          std::move(mutations_snapshot_),
+          std::move(shared_virtual_fields_),
+          index_read_tasks_,
+          storage_snapshot_,
+          row_level_filter_,
+          prewhere_info_,
+          actions_settings_,
+          reader_settings_,
+          column_names_,
+          settings_,
+          params_,
+          context_)
+    , updater(std::move(updater_))
     , backoff_settings{context_->getSettingsRef()}
     , backoff_state{pool_settings.threads}
 {

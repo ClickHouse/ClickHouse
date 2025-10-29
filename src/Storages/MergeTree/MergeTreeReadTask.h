@@ -12,8 +12,6 @@
 #include <Storages/StorageSnapshot.h>
 #include <boost/core/noncopyable.hpp>
 
-#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
-
 namespace DB
 {
 
@@ -38,6 +36,9 @@ using MergeTreeIndexReadResultPtr = std::shared_ptr<MergeTreeIndexReadResult>;
 
 struct MergeTreeIndexBuildContext;
 using MergeTreeIndexBuildContextPtr = std::shared_ptr<MergeTreeIndexBuildContext>;
+
+class Updater;
+using UpdaterPtr = std::shared_ptr<Updater>;
 
 enum class MergeTreeReadType : uint8_t
 {

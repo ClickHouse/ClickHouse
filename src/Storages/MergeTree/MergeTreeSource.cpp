@@ -5,6 +5,8 @@
 #include <IO/SharedThreadPools.h>
 #include <Common/EventFD.h>
 
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
+
 namespace DB
 {
 

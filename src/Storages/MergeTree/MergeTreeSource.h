@@ -1,9 +1,6 @@
 #pragma once
 #include <Processors/ISource.h>
 
-#include <IO/Progress.h>
-#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
-
 namespace DB
 {
 
@@ -12,7 +9,8 @@ using MergeTreeSelectProcessorPtr = std::unique_ptr<MergeTreeSelectProcessor>;
 
 struct ChunkAndProgress;
 
-using DataflowStatisticsCallback = std::function<void(const RuntimeDataflowStatistics & statistics)>;
+class Updater;
+using UpdaterPtr = std::shared_ptr<Updater>;
 
 class MergeTreeSource final : public ISource
 {
