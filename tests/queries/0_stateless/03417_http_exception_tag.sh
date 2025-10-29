@@ -9,10 +9,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 echo "Test 1: Check that X-ClickHouse-Exception-Tag header is present"
-${CLICKHOUSE_CURL} -sS -D - "${CLICKHOUSE_URL}" --data-binary "SELECT 1" | grep "X-ClickHouse-Exception-Tag" | head -1 | cut -d':' -f1 | sed 's/$/:/g'
+${CLICKHOUSE_CURL} -sS -D - "${CLICKHOUSE_URL}" --data-binary "SELECT 1" | grep -v "Access-Control-Expose-Headers" | grep "X-ClickHouse-Exception-Tag" | head -1 | cut -d':' -f1 | sed 's/$/:/g'
 
 echo "Test 2: Verify exception tag is alphanumeric"
-TAG=$(${CLICKHOUSE_CURL} -sS -D - "${CLICKHOUSE_URL}" --data-binary "SELECT 1" | grep "X-ClickHouse-Exception-Tag" | cut -d':' -f2 | tr -d ' \r\n')
+TAG=$(${CLICKHOUSE_CURL} -sS -D - "${CLICKHOUSE_URL}" --data-binary "SELECT 1" | grep -v "Access-Control-Expose-Headers" | grep "X-ClickHouse-Exception-Tag" | cut -d':' -f2 | tr -d ' \r\n')
 if [[ "$TAG" =~ ^[A-Za-z0-9]+$ ]] && [[ ${#TAG} -eq 8 ]]; then
     echo "Tag is 8-char alphanumeric: OK"
 else
@@ -22,7 +22,7 @@ fi
 echo "Test 3: Check exception marker format on error"
 # Get a fresh TAG from the error response itself
 RESPONSE=$(${CLICKHOUSE_CURL} -sS -D - "${CLICKHOUSE_URL}&http_response_buffer_size=1" --data-binary "SELECT throwIf(number=3, 'there is a exception') FROM system.numbers SETTINGS max_block_size=1" 2>&1 || true)
-TAG=$(echo "$RESPONSE" | grep "X-ClickHouse-Exception-Tag" | cut -d':' -f2 | tr -d ' \r\n')
+TAG=$(echo "$RESPONSE" | grep -v "Access-Control-Expose-Headers" | grep "X-ClickHouse-Exception-Tag" | cut -d':' -f2 | tr -d ' \r\n')
 # Check if the response contains __exception__ followed by newline, then TAG, then newline
 if echo "$RESPONSE" | grep -Pzo "__exception__\r?\n${TAG}\r?\n" > /dev/null 2>&1; then
     echo "Tagged exception marker found: OK"
@@ -34,7 +34,7 @@ echo "Test 4: Check reverse marker format (length + tag + __exception__)"
 # Use a query that deterministically sends some data first, then throws
 # By using LIMIT with max_result_rows slightly less, we ensure data is sent before exception
 RESPONSE=$(${CLICKHOUSE_CURL} -sS -D - "${CLICKHOUSE_URL}&wait_end_of_query=0&http_response_buffer_size=1" --data-binary "SELECT number FROM system.numbers LIMIT 100 SETTINGS max_result_rows=3, max_block_size=1" 2>&1 || true)
-TAG=$(echo "$RESPONSE" | grep "X-ClickHouse-Exception-Tag" | cut -d':' -f2 | tr -d ' \r\n')
+TAG=$(echo "$RESPONSE" | grep -v "Access-Control-Expose-Headers" |  grep "X-ClickHouse-Exception-Tag" | cut -d':' -f2 | tr -d ' \r\n')
 # Check for pattern: <number> <TAG> on a line (this is the reverse marker before __exception__)
 if echo "$RESPONSE" | grep -q "[0-9]\+ ${TAG}"; then
     echo "Reverse marker found: OK"

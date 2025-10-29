@@ -15,6 +15,7 @@
 #include <Poco/Net/HTTPResponse.h>
 
 #include <fmt/core.h>
+#include <cstddef>
 #include <iterator>
 #include <sstream>
 #include <string>
@@ -328,21 +329,29 @@ bool WriteBufferFromHTTPServerResponse::cancelWithException(HTTPServerRequest & 
 
             auto & out = use_compression_buffer ? *compression_buffer : *this;
 
-            // Write the exception block in response in new format as follows
+            // Write the exception block in response in new format as follows.
+            // The whole exception block should not exceed MAX_EXCEPTION_SIZE
             // __exception__
             // <TAG>
             // <error message of max 16K bytes>
             // <message_length> <TAG>
             // __exception__
 
+            // 2 bytes represents - \r\n
+            // 1 byte represents - ' ' (space between <message_length> <TAG>) in the above exception block format
+            size_t size_message_excluded = 2 + EXCEPTION_MARKER.size() + 2 + EXCEPTION_TAG_LENGTH + 2 + sizeof(size_t) + 1 + EXCEPTION_TAG_LENGTH + 2 + EXCEPTION_MARKER.size() + 2;
+
+            size_t max_exception_message_size = MAX_EXCEPTION_SIZE - size_message_excluded;
+
+            writeCString("\r\n", out);
             writeString(EXCEPTION_MARKER, out);
             writeCString("\r\n", out);
             writeString(exception_tag, out);
             writeCString("\r\n", out);
 
             std::string limited_message = message;
-            if (limited_message.size() > MAX_EXCEPTION_SIZE)
-                limited_message = limited_message.substr(0, MAX_EXCEPTION_SIZE);
+            if (limited_message.size() > max_exception_message_size)
+                limited_message = limited_message.substr(0, max_exception_message_size);
 
             writeString(limited_message, out);
             if (!limited_message.ends_with('\n'))
