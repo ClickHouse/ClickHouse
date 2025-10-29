@@ -6,6 +6,7 @@
 #include <Common/HashTable/HashSet.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
+#include <Common/typeid_cast.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationString.h>
@@ -23,6 +24,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/MergeTreeWriterStream.h>
+
 
 #include <base/range.h>
 #include <fmt/ranges.h>
@@ -1463,6 +1465,18 @@ Tuple parseNamedArgumentFromAST(const ASTFunction * ast_equal_function)
     return result;
 }
 
+bool isValidTextIndexType(const DataTypePtr type)
+{
+    if (isStringOrFixedString(type))
+        return true;
+
+    const DataTypeArray * array_type = typeid_cast<const DataTypeArray*>(type.get());
+    if (array_type != nullptr && isStringOrFixedString(array_type->getNestedType()))
+        return true;
+
+    return false;
+}
+
 }
 
 FieldVector MergeTreeIndexText::parseArgumentsListFromAST(const ASTPtr & arguments)
@@ -1579,6 +1593,14 @@ ExpressionActions MergeTreePreprocessor::parseExpression(const IndexDescription 
 
     ActionsDAG actions = visitor_data.getActions();
     actions.project(NamesWithAliases({{name, alias}}));
+
+    /// Lets check expresion outputs
+    ActionsDAG::NodeRawConstPtrs & outputs = actions.getOutputs();
+    if (outputs.size() != 1)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "The preprocessor expression have to return one argument");
+
+    if (!isValidTextIndexType(outputs.front()->result_type))
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "The preprocessor expression should return a String, FixedString or an array of them.");
 
     return ExpressionActions(std::move(actions));
 }

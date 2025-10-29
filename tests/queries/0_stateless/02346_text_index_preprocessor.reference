@@ -5,4 +5,11 @@ Test single tokenizer and preprocessor argument.
 1
 1
 1
+Test preprocessor declaration using column more than once.
+1
+0
+1
+1
+0
+0
 Test preprocessor validations.
