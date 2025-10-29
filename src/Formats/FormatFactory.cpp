@@ -376,39 +376,19 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     return format_settings;
 }
 
-
-FileBucketInfoPtr FormatFactory::createFromBuckets(const String & format, const std::vector<size_t> & buckets)
+FileBucketInfoPtr FormatFactory::getFileBucketInfo(const String & format)
 {
-    if (!instances_file_buckets_info.contains(format))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Format {} not found", format);
-    return instances_file_buckets_info.at(format)->createFromBuckets(buckets);
+    auto creator = getCreators(format);
+    return creator.file_bucket_info_creator();
 }
 
-void FormatFactory::serializeFileFormatName(FileBucketInfoPtr file_bucket_info, WriteBuffer & buffer)
+void FormatFactory::registerFileBucketInfo(const String & format, FileBucketInfoCreator bucket_info)
 {
-    if (!file_bucket_info)
-    {
-        writeString("", buffer);
-        return;
-    }
-    writeString(file_bucket_info->getFormatName(), buffer);
-}
-
-void FormatFactory::deserializeFileFormatName(FileBucketInfoPtr & file_bucket_info, ReadBuffer & buffer)
-{
-    String format;
-    readString(format, buffer);
-    if (format.empty())
-    {
-        file_bucket_info = nullptr;
-        return;
-    }
-    file_bucket_info = instances_file_buckets_info.at(format)->clone();
-}
-
-void FormatFactory::registerFileBucketInfo(const String & format, FileBucketInfoPtr bucket_info)
-{
-    instances_file_buckets_info.emplace(format, bucket_info);
+    chassert(bucket_info);
+    auto & creators = getOrCreateCreators(format);
+    if (creators.file_bucket_info_creator)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Bucket splitter for format {} is already registered", format);
+    creators.file_bucket_info_creator = std::move(bucket_info);
 }
 
 InputFormatPtr FormatFactory::getInput(
@@ -731,14 +711,19 @@ void FormatFactory::registerInputFormat(const String & name, InputCreator input_
     KnownFormatNames::instance().add(name, /* case_insensitive = */ true);
 }
 
-void FormatFactory::registerSplitter(const String & format, BucketSplitter splitter)
+void FormatFactory::registerSplitter(const String & format, BucketSplitterCreator splitter)
 {
-    instances_splitters.emplace(format, splitter);
+    chassert(splitter);
+    auto & creators = getOrCreateCreators(format);
+    if (creators.bucket_splitter_creator)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Bucket splitter for format {} is already registered", format);
+    creators.bucket_splitter_creator = std::move(splitter);
 }
 
 BucketSplitter FormatFactory::getSplitter(const String & format)
 {
-    return instances_splitters.at(format);
+    auto creator = getCreators(format);
+    return creator.bucket_splitter_creator();
 }
 
 void FormatFactory::registerRandomAccessInputFormat(const String & name, RandomAccessInputCreator input_creator)

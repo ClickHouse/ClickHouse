@@ -85,9 +85,4 @@ void IInputFormat::setBucketsToRead(const FileBucketInfoPtr & /*buckets_to_read*
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not skip chunks for format {}", getName());
 }
 
-std::optional<std::vector<size_t>> IInputFormat::getChunksByteSizes()
-{
-    return std::nullopt;
-}
-
 }

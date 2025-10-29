@@ -70,9 +70,17 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t protoc
 
     if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_FILE_BUCKETS_INFO)
     {
-        FormatFactory::instance().serializeFileFormatName(file_bucket_info, out);
         if (file_bucket_info)
+        {
+            /// Write format name so we can create appropriate file bucket info during deserialization.
+            writeStringBinary(file_bucket_info->getFormatName(), out);
             file_bucket_info->serialize(out);
+        }
+        else
+        {
+            /// Write empty string as format name if file_bucket_info is not set.
+            writeStringBinary("", out);
+        }
     }
 }
 
@@ -103,9 +111,13 @@ void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
 
     if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_FILE_BUCKETS_INFO)
     {
-        FormatFactory::instance().deserializeFileFormatName(file_bucket_info, in);
-        if (file_bucket_info)
+        String format;
+        readStringBinary(format, in);
+        if (!format.empty())
+        {
+            file_bucket_info = FormatFactory::instance().getFileBucketInfo(format);
             file_bucket_info->deserialize(in);
+        }
     }
 }
 

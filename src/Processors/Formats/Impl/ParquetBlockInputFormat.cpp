@@ -696,16 +696,6 @@ ParquetBlockInputFormat::ParquetBlockInputFormat(
             parser_shared_resources->getIOThreadsPerReader());
 }
 
-std::optional<std::vector<size_t>> ParquetBlockInputFormat::getChunksByteSizes()
-{
-    arrow_file = asArrowFile(*in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES, /* avoid_buffering */ true, io_pool);
-    metadata = parquet::ReadMetaData(arrow_file);
-    std::vector<size_t> sizes;
-    for (int i = 0; i < metadata->num_row_groups(); ++i)
-        sizes.push_back(metadata->RowGroup(i)->total_byte_size());
-    return sizes;
-}
-
 ParquetBlockInputFormat::~ParquetBlockInputFormat()
 {
     is_stopped = true;
@@ -1420,7 +1410,6 @@ std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(size_t buck
 
     std::vector<std::vector<size_t>> buckets;
     size_t current_weight = 0;
-    buckets.push_back({});
     for (size_t i = 0; i < bucket_sizes.size(); ++i)
     {
         if (current_weight + bucket_sizes[i] <= bucket_size)
@@ -1440,7 +1429,7 @@ std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(size_t buck
     std::vector<FileBucketInfoPtr> result;
     for (const auto & bucket : buckets)
     {
-        result.push_back(FormatFactory::instance().createFromBuckets("PARQUET", bucket));
+        result.push_back(std::make_shared<ParquetFileBucketInfo>(bucket)->createFromBuckets(bucket));
     }
     return result;
 }
@@ -1449,7 +1438,10 @@ void registerInputFormatParquet(FormatFactory & factory)
 {
     factory.registerFileBucketInfo(
         "PARQUET",
-        std::make_shared<ParquetFileBucketInfo>(std::nullopt)
+        []
+        {
+            return std::make_shared<ParquetFileBucketInfo>(std::nullopt);
+        }
     );
 
     factory.registerRandomAccessInputFormat(
@@ -1494,7 +1486,10 @@ void registerInputFormatParquet(FormatFactory & factory)
 
 void registerParquetSchemaReader(FormatFactory & factory)
 {
-    factory.registerSplitter("Parquet", std::make_shared<ParquetBucketSplitter>());
+    factory.registerSplitter("Parquet", []
+        {
+            return std::make_shared<ParquetBucketSplitter>();
+        });
     factory.registerSchemaReader(
         "Parquet",
         [](ReadBuffer & buf, const FormatSettings & settings) -> SchemaReaderPtr

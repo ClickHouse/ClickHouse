@@ -98,6 +98,10 @@ private:
             const RowInputFormatParams & params,
             const FormatSettings & settings)>;
 
+    using FileBucketInfoCreator = std::function<FileBucketInfoPtr()>;
+
+    using BucketSplitterCreator = std::function<BucketSplitter()>;
+
     // Incompatible with FileSegmentationEngine.
     using RandomAccessInputCreator = std::function<InputFormatPtr(
         ReadBuffer & buf,
@@ -146,6 +150,8 @@ private:
     {
         String name;
         InputCreator input_creator;
+        FileBucketInfoCreator file_bucket_info_creator;
+        BucketSplitterCreator bucket_splitter_creator;
         RandomAccessInputCreator random_access_input_creator;
         OutputCreator output_creator;
         FileSegmentationEngineCreator file_segmentation_engine_creator;
@@ -290,17 +296,12 @@ public:
     void checkFormatName(const String & name) const;
     bool exists(const String & name) const;
 
-    FileBucketInfoPtr createFromBuckets(const String & format, const std::vector<size_t> & buckets);
-    void serializeFileFormatName(FileBucketInfoPtr file_bucket_info, WriteBuffer & buffer);
-    void deserializeFileFormatName(FileBucketInfoPtr & file_bucket_info, ReadBuffer & buffer);
-    void registerFileBucketInfo(const String & format, FileBucketInfoPtr bucket_info);
-    void registerSplitter(const String & format, BucketSplitter splitter);
+    FileBucketInfoPtr getFileBucketInfo(const String & format);
+    void registerFileBucketInfo(const String & format, FileBucketInfoCreator bucket_info);
+    void registerSplitter(const String & format, BucketSplitterCreator splitter);
     BucketSplitter getSplitter(const String & format);
 
 private:
-    std::unordered_map<String, FileBucketInfoPtr> instances_file_buckets_info;
-    std::unordered_map<String, BucketSplitter> instances_splitters;
-
     FormatsDictionary dict;
     FileExtensionFormats file_extension_formats;
 

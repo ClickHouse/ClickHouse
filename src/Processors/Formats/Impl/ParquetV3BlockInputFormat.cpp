@@ -122,19 +122,6 @@ Chunk ParquetV3BlockInputFormat::read()
     return std::move(res.chunk);
 }
 
-std::optional<std::vector<size_t>> ParquetV3BlockInputFormat::getChunksByteSizes()
-{
-    buckets_to_read = std::make_shared<ParquetFileBucketInfo>(std::vector<size_t>{});
-    initializeIfNeeded();
-
-    std::vector<size_t> result;
-    for (const auto & row_group_info : reader->reader.file_metadata.row_groups)
-    {
-        result.push_back(row_group_info.total_byte_size);
-    }
-    return result;
-}
-
 void ParquetV3BlockInputFormat::setBucketsToRead(const FileBucketInfoPtr & buckets_to_read_)
 {
     if (reader)

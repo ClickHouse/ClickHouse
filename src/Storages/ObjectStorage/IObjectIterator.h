@@ -4,6 +4,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <Common/Logger.h>
 #include <Common/Macros.h>
+#include "Formats/FormatSettings.h"
 
 namespace DB
 {
@@ -62,8 +63,8 @@ private:
     const ObjectIterator iterator;
     String format;
     ObjectStoragePtr object_storage;
+    FormatSettings format_settings;
 
-    std::vector<std::vector<size_t>> splitObjectToBuckets(const std::vector<size_t> bucket_sizes);
     std::queue<ObjectInfoPtr> pending_objects_info;
     const LoggerPtr log = getLogger("GlobIterator");
 };

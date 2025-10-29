@@ -3,7 +3,6 @@
 #include <Core/SettingsEnums.h>
 
 #include <Common/Exception.h>
-#include <Storages/ObjectStorage/StorageObjectStorageStableTaskDistributor.h>
 
 namespace DB
 {

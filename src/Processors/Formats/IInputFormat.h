@@ -47,12 +47,12 @@ struct ChunkInfoRowNumbers : public ChunkInfo
     std::optional<IColumnFilter> applied_filter;
 };
 
+/// Structure for storing information about buckets that IInputFormat needs to read.
 struct FileBucketInfo
 {
     virtual void serialize(WriteBuffer & buffer) = 0;
     virtual void deserialize(ReadBuffer & buffer) = 0;
     virtual String getIdentifier() const = 0;
-    virtual std::shared_ptr<FileBucketInfo> createFromBuckets(std::vector<size_t> buckets_ids) = 0;
     virtual std::shared_ptr<FileBucketInfo> clone() const = 0;
     virtual String getFormatName() const = 0;
 
@@ -60,9 +60,13 @@ struct FileBucketInfo
 };
 using FileBucketInfoPtr = std::shared_ptr<FileBucketInfo>;
 
+/// Interface for splitting a file into buckets.
 struct IBucketSplitter
 {
+    /// Splits a file into buckets using the given read buffer and format settings.
+    /// Returns information about the resulting buckets (see the structure above for details).
     virtual std::vector<FileBucketInfoPtr> splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_) = 0;
+
     virtual ~IBucketSplitter() = default;
 };
 using BucketSplitter = std::shared_ptr<IBucketSplitter>;
@@ -89,8 +93,6 @@ public:
 
     /// All data reading from the read buffer must be performed by this method.
     virtual Chunk read() = 0;
-
-    virtual std::optional<std::vector<size_t>> getChunksByteSizes();
 
     virtual void setBucketsToRead(const FileBucketInfoPtr & buckets_to_read);
     /** In some usecase (hello Kafka) we need to read a lot of tiny streams in exactly the same format.

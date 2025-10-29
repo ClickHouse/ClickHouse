@@ -33,7 +33,6 @@ public:
         return previous_approx_bytes_read_for_chunk;
     }
 
-    std::optional<std::vector<size_t>> getChunksByteSizes() override;
     void setBucketsToRead(const FileBucketInfoPtr & buckets_to_read_) override;
 
 private:

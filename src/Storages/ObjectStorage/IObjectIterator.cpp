@@ -85,31 +85,8 @@ ObjectIteratorSplitByBuckets::ObjectIteratorSplitByBuckets(
     , iterator(iterator_)
     , format(format_)
     , object_storage(object_storage_)
+    , format_settings(getFormatSettings(context_))
 {
-}
-
-std::vector<std::vector<size_t>> ObjectIteratorSplitByBuckets::splitObjectToBuckets(const std::vector<size_t> bucket_sizes)
-{
-    size_t bucket_size = getContext()->getSettingsRef()[Setting::cluster_table_function_buckets_batch_size];
-    std::vector<std::vector<size_t>> buckets;
-    size_t current_weight = 0;
-    buckets.push_back({});
-    for (size_t i = 0; i < bucket_sizes.size(); ++i)
-    {
-        if (current_weight + bucket_sizes[i] <= bucket_size)
-        {
-            buckets.back().push_back(i);
-            current_weight += bucket_sizes[i];
-        }
-        else
-        {
-            current_weight = 0;
-            buckets.push_back({});
-            buckets.back().push_back(i);
-            current_weight += bucket_sizes[i];
-        }
-    }
-    return buckets;
 }
 
 ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
@@ -125,12 +102,12 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
         return {};
 
     auto buffer = createReadBuffer(*last_object_info, object_storage, getContext(), log);
-    size_t bucket_size = getContext()->getSettingsRef()[Setting::cluster_table_function_buckets_batch_size];
 
     auto splitter = FormatFactory::instance().getSplitter(format);
     if (splitter)
     {
-        auto file_bucket_info = splitter->splitToBuckets(bucket_size, *buffer, {});
+        size_t bucket_size = getContext()->getSettingsRef()[Setting::cluster_table_function_buckets_batch_size];
+        auto file_bucket_info = splitter->splitToBuckets(bucket_size, *buffer, format_settings);
         for (const auto & file_bucket : file_bucket_info)
         {
             auto copy_object_info = *last_object_info;

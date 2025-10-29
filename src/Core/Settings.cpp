@@ -6913,7 +6913,7 @@ Choosing finer granularity (like `bucket`) can improve parallelism when working 
 For instance, if a Parquet file contains multiple row groups, enabling `bucket` granularity allows each group to be processed independently by different workers.
 )", 0) \
     DECLARE(UInt64, cluster_table_function_buckets_batch_size, 0, R"(
-Defines the approximate size of a batch (in bytes) used in distributed processing. The system accumulates data until at least this amount is reached; the actual size may be slightly larger to align with data boundaries
+Defines the approximate size of a batch (in bytes) used in distributed processing of tasks in cluster table functions with `bucket` split granularity. The system accumulates data until at least this amount is reached. The actual size may be slightly larger to align with data boundaries.
 )", 0) \
     DECLARE(UInt64, merge_table_max_tables_to_look_for_schema_inference, 1000, R"(
 When creating a `Merge` table without an explicit schema or when using the `merge` table function, infer schema as a union of not more than the specified number of matching tables.

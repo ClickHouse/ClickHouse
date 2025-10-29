@@ -65,7 +65,7 @@ struct ParquetFileBucketInfo : public FileBucketInfo
     }
     std::shared_ptr<FileBucketInfo> clone() const override;
 
-    std::shared_ptr<FileBucketInfo> createFromBuckets(std::vector<size_t> buckets_ids) override;
+    std::shared_ptr<FileBucketInfo> createFromBuckets(std::vector<size_t> buckets_ids);
 };
 using ParquetFileBucketInfoPtr = std::shared_ptr<ParquetFileBucketInfo>;
 
@@ -74,8 +74,6 @@ struct ParquetBucketSplitter : public IBucketSplitter
     ParquetBucketSplitter() = default;
     std::vector<FileBucketInfoPtr> splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_) override;
 };
-
-void registerParquetFileBucketInfo(std::unordered_map<String, FileBucketInfoPtr> & instances);
 
 class ParquetBlockInputFormat : public IInputFormat
 {
@@ -98,7 +96,6 @@ public:
 
     size_t getApproxBytesReadForChunk() const override { return previous_approx_bytes_read_for_chunk; }
 
-    std::optional<std::vector<size_t>> getChunksByteSizes() override;
     void setBucketsToRead(const FileBucketInfoPtr & buckets_to_read_) override;
 
 private:
