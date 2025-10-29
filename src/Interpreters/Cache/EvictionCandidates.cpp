@@ -54,12 +54,6 @@ EvictionInfo::EvictionInfo(QueueID queue_id, QueueEvictionInfoPtr info)
     addImpl(queue_id, std::move(info));
 }
 
-EvictionInfo::~EvictionInfo()
-{
-    if (on_finish_func)
-        on_finish_func();
-}
-
 std::string EvictionInfo::toString() const
 {
     WriteBufferFromOwnString wb;
@@ -101,26 +95,19 @@ void EvictionInfo::addImpl(const QueueID & queue_id, QueueEvictionInfoPtr info)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Queue with id {} already exists", queue_id);
 }
 
-const QueueEvictionInfoPtr & EvictionInfo::get(const QueueID & queue_id) const
+const QueueEvictionInfo & EvictionInfo::get(const QueueID & queue_id) const
 {
     if (auto it = find(queue_id); it != end())
     {
-        return it->second;
+        return *it->second;
     }
     else
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Eviction info for queue  with id {} does not exist ({})",
-            queue_id,toString());
+            queue_id, toString());
     }
-}
-
-void EvictionInfo::setOnFinishFunc(std::function<void()> func)
-{
-    if (on_finish_func)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "On finish function is already set");
-    on_finish_func = func;
 }
 
 std::string EvictionCandidates::FailedCandidates::getFirstErrorMessage() const

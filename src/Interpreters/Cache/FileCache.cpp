@@ -1307,10 +1307,6 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
     FileCacheReserveStat stat;
     EvictionCandidates eviction_candidates;
 
-    LOG_TRACE(
-        log, "Size to evict: {}, elements to evict: {}",
-        eviction_info->getSizeToEvict(), eviction_info->getElementsToEvict());
-
     IFileCachePriority::CollectStatus desired_size_status =  IFileCachePriority::CollectStatus::CANNOT_EVICT;
     /// Collect at most `keep_up_free_space_remove_batch` elements to evict,
     /// (we use batches to make sure we do not block cache for too long,
@@ -1807,6 +1803,8 @@ void FileCache::assertCacheCorrectness()
         chassert(file_segment_metadata->file_segment->assertCorrectness());
         return IFileCachePriority::IterationResult::CONTINUE;
     }, stat, cache_guard.readLock());
+
+    main_priority->check(cache_state_guard.lock());
 }
 
 void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, FileCacheSettings & actual_settings)

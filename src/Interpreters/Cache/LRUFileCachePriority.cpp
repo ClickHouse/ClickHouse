@@ -393,8 +393,8 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
     CacheStateGuard &)
 {
     const auto & info = eviction_info.get(queue_id);
-    size_t size = info->size_to_evict;
-    size_t elements = info->elements_to_evict;
+    size_t size = info.size_to_evict;
+    size_t elements = info.elements_to_evict;
 
     if (!size && !elements)
         return true;

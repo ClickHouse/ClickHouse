@@ -491,7 +491,7 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
         {
             while (!key_candidates.candidates.empty())
             {
-                auto iterator = key_candidates.candidates.front()->getQueueIterator();
+                auto iterator = key_candidates.candidates.back()->getQueueIterator();
                 auto * slru_iterator = assert_cast<SLRUIterator *>(iterator->getNestedOrThis());
                 auto entry = slru_iterator->getEntry();
                 chassert(entry->size > 0);
@@ -504,7 +504,7 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
                     slru_iterator->lru_iterator,
                     new_iterator
                 });
-                key_candidates.candidates.pop_front();
+                key_candidates.candidates.pop_back();
             }
         }
     });

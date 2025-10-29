@@ -26,9 +26,6 @@ struct QueueEvictionInfo
     bool hasHoldSpace() const { return hold_space != nullptr; }
     /// Release hold space if still hold.
     void releaseHoldSpace(const CacheStateGuard::Lock & lock);
-
-    size_t getTotalSize() const { return size_to_evict + (hold_space ? hold_space->size : 0); }
-    size_t getTotalElements() const { return elements_to_evict + (hold_space ? hold_space->elements : 0); }
 };
 using QueueEvictionInfoPtr = std::unique_ptr<QueueEvictionInfo>;
 using QueueID = size_t;
@@ -47,16 +44,8 @@ public:
     /// More infos can be added via add() method.
     explicit EvictionInfo(QueueID queue_id, QueueEvictionInfoPtr info);
 
-    ~EvictionInfo();
-
-    std::string toString() const;
-
-    size_t getSizeToEvict() const { return size_to_evict; }
-
-    const QueueEvictionInfoPtr & get(const QueueID & queue_id) const;
-
-    size_t getElementsToEvict() const { return elements_to_evict; }
-
+    /// Get eviction info by queue id.
+    const QueueEvictionInfo & get(const QueueID & queue_id) const;
     /// Add eviction info under the queue_id.
     /// Throws exception if eviction info with the same queue_id already exists.
     void add(EvictionInfoPtr && info);
@@ -68,17 +57,13 @@ public:
     /// Release hold space if still hold.
     void releaseHoldSpace(const CacheStateGuard::Lock & lock);
 
-    /// Set on finish function,
-    /// which will be called when this EvictionInfo object is destructed.
-    void setOnFinishFunc(std::function<void()> func);
+    std::string toString() const;
 
 private:
     void addImpl(const QueueID & queue_id, QueueEvictionInfoPtr info);
 
     size_t size_to_evict = 0; /// Total size to evict among all eviction infos.
     size_t elements_to_evict = 0; /// Total elements to evict among all eviction infos.
-
-    std::function<void()> on_finish_func;
 };
 
 class EvictionCandidates : private boost::noncopyable
@@ -128,7 +113,7 @@ public:
     struct KeyCandidates
     {
         KeyMetadataPtr key_metadata;
-        std::deque<FileSegmentMetadataPtr> candidates;
+        std::vector<FileSegmentMetadataPtr> candidates;
         std::vector<std::string> error_messages;
     };
     /// Get eviction candidates which failed to be evicted during evict().
