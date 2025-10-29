@@ -52,7 +52,8 @@ namespace ErrorCodes
 ThreadFuzzer::ThreadFuzzer()
 {
     initConfiguration();
-    start();
+    if (isEffective())
+        started.store(true, std::memory_order_relaxed);
 }
 
 template <typename T>
