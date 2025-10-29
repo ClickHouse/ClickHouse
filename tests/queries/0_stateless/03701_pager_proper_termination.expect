@@ -27,25 +27,19 @@ expect_after {
 }
 
 spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file --pager=less"
-expect "\n:) "
+expect ":) "
 
-send -- "SELECT sleepEachRow(1) FROM numbers(180) SETTINGS max_block_size=1, function_sleep_max_microseconds_per_block=180e6"
-
-# Ctrl+C
+send -- "SELECT 'foobar' || number::String, sleepEachRow(.1) FROM numbers(1000) FORMAT LineAsString SETTINGS max_block_size=1\r"
+# Wait for the first line
+expect "foobar0"
+# Cancel the query with Ctrl+C
 send "\3"
 
 # We should make sure, the query is terminated
 set timeout 30
-expect "\n:) "
-
-# There should be no extra output from pager
-expect {
-    "\n" {
-        exit 1
-    }
-    default {
-    }
-}
+expect "Query was cancelled."
+expect " in set."
+expect ":) "
 
 # Ctrl+D
 send -- "\4"
