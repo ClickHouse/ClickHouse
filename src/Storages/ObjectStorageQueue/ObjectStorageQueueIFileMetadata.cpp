@@ -153,15 +153,21 @@ ObjectStorageQueueIFileMetadata::~ObjectStorageQueueIFileMetadata()
 {
     if (created_processing_node)
     {
+        std::string current_exception;
         if (file_status->getException().empty())
         {
             if (std::current_exception())
-                file_status->onFailed(getCurrentExceptionMessage(true));
+            {
+                current_exception = getCurrentExceptionMessage(true);
+                file_status->onFailed(current_exception);
+            }
             else
                 file_status->onFailed("Unprocessed exception");
         }
 
-        LOG_TEST(log, "Removing processing node in destructor for file: {}", path);
+        LOG_TEST(log, "Removing processing node in destructor for file: {} "
+                 "(state: {}, exception: {})",
+                 path, file_status->state.load(), current_exception);
         try
         {
             Coordination::Error code;
