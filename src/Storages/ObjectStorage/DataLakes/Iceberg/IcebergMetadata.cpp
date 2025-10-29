@@ -924,7 +924,15 @@ Strings IcebergMetadata::getDataFiles(const ActionsDAG * filter_dag, ContextPtr 
             {
                 if (manifest_file_entry.status != ManifestEntryStatus::DELETED)
                 {
-                    if (!pruner.canBePruned(manifest_file_entry))
+                    bool can_be_pruned = pruner.canBePruned(manifest_file_entry);
+                    LOG_DEBUG(
+                        log,
+                        "Iceberg manifest pruning for data file {}, can_be_pruned: {}",
+                        std::holds_alternative<DataFileEntry>(manifest_file_entry.file)
+                            ? std::get<DataFileEntry>(manifest_file_entry.file).file_name
+                            : "unknown",
+                        can_be_pruned);
+                    if (!can_be_pruned)
                     {
                         if (std::holds_alternative<DataFileEntry>(manifest_file_entry.file))
                             data_files.push_back(std::get<DataFileEntry>(manifest_file_entry.file).file_name);
