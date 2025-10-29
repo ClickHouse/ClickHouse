@@ -115,13 +115,6 @@ class JobConfigs:
         run_in_docker="clickhouse/style-test",
         enable_commit_status=True,
     )
-    pr_body = Job.Config(
-        name=JobNames.PR_BODY,
-        runs_on=RunnerLabels.STYLE_CHECK_ARM,
-        command="python3 ./ci/jobs/pr_formatter_job.py",
-        allow_merge_on_failure=True,
-        enable_gh_auth=True,
-    )
     fast_test = Job.Config(
         name=JobNames.FAST_TEST,
         runs_on=RunnerLabels.AMD_LARGE,
@@ -932,7 +925,7 @@ class JobConfigs:
         ),
     )
     docs_job = Job.Config(
-        name=JobNames.DOCS,
+        name=JobNames.Docs,
         runs_on=RunnerLabels.FUNC_TESTER_ARM,
         command="python3 ./ci/jobs/docs_job.py",
         digest_config=Job.CacheDigestConfig(
@@ -941,7 +934,6 @@ class JobConfigs:
                 "./docs",
                 "./ci/jobs/docs_job.py",
                 "CHANGELOG.md",
-                "./src/Functions"
             ],
         ),
         run_in_docker="clickhouse/docs-builder",

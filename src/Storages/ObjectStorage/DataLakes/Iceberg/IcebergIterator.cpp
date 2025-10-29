@@ -281,7 +281,39 @@ IcebergIterator::IcebergIterator(
           data_snapshot_,
           persistent_components_)
     , blocking_queue(100)
-    , producer_task(std::nullopt)
+    , producer_task(local_context_->getSchedulePool().createTask(
+          "IcebergMetaReaderThread",
+          [this]
+          {
+              while (!blocking_queue.isFinished())
+              {
+                  std::optional<ManifestFileEntry> entry;
+                  try
+                  {
+                      entry = data_files_iterator.next();
+                  }
+                  catch (...)
+                  {
+                      std::lock_guard lock(exception_mutex);
+                      if (!exception)
+                      {
+                          exception = std::current_exception();
+                      }
+                      blocking_queue.finish();
+                      break;
+                  }
+                  if (!entry.has_value())
+                      break;
+                  while (!blocking_queue.push(std::move(entry.value())))
+                  {
+                      if (blocking_queue.isFinished())
+                      {
+                          break;
+                      }
+                  }
+              }
+              blocking_queue.finish();
+          }))
     , callback(std::move(callback_))
 {
     auto delete_file = deletes_iterator.next();
@@ -299,38 +331,8 @@ IcebergIterator::IcebergIterator(
     }
     std::sort(equality_deletes_files.begin(), equality_deletes_files.end());
     std::sort(position_deletes_files.begin(), position_deletes_files.end());
-    producer_task.emplace(
-        [this]()
-        {
-            while (!blocking_queue.isFinished())
-            {
-                std::optional<ManifestFileEntry> entry;
-                try
-                {
-                    entry = data_files_iterator.next();
-                }
-                catch (...)
-                {
-                    std::lock_guard lock(exception_mutex);
-                    if (!exception)
-                    {
-                        exception = std::current_exception();
-                    }
-                    blocking_queue.finish();
-                    break;
-                }
-                if (!entry.has_value())
-                    break;
-                while (!blocking_queue.push(std::move(entry.value())))
-                {
-                    if (blocking_queue.isFinished())
-                    {
-                        break;
-                    }
-                }
-            }
-            blocking_queue.finish();
-        });
+
+    producer_task->activateAndSchedule();
 }
 
 ObjectInfoPtr IcebergIterator::next(size_t)
@@ -374,10 +376,7 @@ size_t IcebergIterator::estimatedKeysCount()
 IcebergIterator::~IcebergIterator()
 {
     blocking_queue.finish();
-    if (producer_task)
-    {
-        producer_task->join();
-    }
+    producer_task->deactivate();
 }
 }
 

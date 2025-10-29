@@ -340,7 +340,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 background_pool_size;
     extern const ServerSettingsUInt64 background_schedule_pool_size;
     extern const ServerSettingsFloat background_schedule_pool_max_parallel_tasks_per_type_ratio;
-    extern const ServerSettingsBool disable_insertion_and_mutation;
     extern const ServerSettingsBool display_secrets_in_show_and_select;
     extern const ServerSettingsUInt64 max_backup_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_build_vector_similarity_index_thread_pool_size;
@@ -4906,8 +4905,7 @@ void Context::setOSCPUOverloadSettings(double min_os_cpu_wait_time_ratio_to_drop
 bool Context::getS3QueueDisableStreaming() const
 {
     SharedLockGuard lock(shared->mutex);
-    return shared->server_settings[ServerSetting::s3queue_disable_streaming]
-        || shared->server_settings[ServerSetting::disable_insertion_and_mutation];
+    return shared->server_settings[ServerSetting::s3queue_disable_streaming];
 }
 
 void Context::setS3QueueDisableStreaming(bool s3queue_disable_streaming) const

@@ -310,7 +310,7 @@ public:
         struct ffi::KernelStringSlice path,
         int64_t size,
         const ffi::Stats * stats,
-        const ffi::CDvInfo * dv_info,
+        const ffi::DvInfo * dv_info,
         const ffi::Expression * transform,
         const struct ffi::CStringMap * deprecated)
     {
@@ -332,7 +332,7 @@ public:
         struct ffi::KernelStringSlice path,
         int64_t size,
         const ffi::Stats * stats,
-        const ffi::CDvInfo * /* dv_info */,
+        const ffi::DvInfo * /* dv_info */,
         const ffi::Expression * transform,
         const struct ffi::CStringMap * /* deprecated */)
     {

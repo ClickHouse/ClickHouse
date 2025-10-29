@@ -92,7 +92,6 @@ CREATE TABLE system.columns
     `numeric_scale` Nullable(UInt64),
     `datetime_precision` Nullable(UInt64),
     `serialization_hint` Nullable(String),
-    `statistics` String,
     `column` String ALIAS name
 )
 ENGINE = SystemColumns

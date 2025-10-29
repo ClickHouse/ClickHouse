@@ -257,7 +257,7 @@ def build_and_push_image(
         result.append(
             Result.from_commands_run(name=f"{image.name}:{tag}-{arch}", command=cmd)
         )
-        if not result[-1].is_ok():
+        if result[-1].is_ok():
             return result
         with open(metadata_path, "rb") as m:
             metadata = json.load(m)
@@ -269,7 +269,7 @@ def build_and_push_image(
         )
         logging.info("Pushing merged %s:%s image: %s", image.name, tag, cmd)
         result.append(Result.from_commands_run(name=f"{image.name}:{tag}", command=cmd))
-        if not result[-1].is_ok():
+        if result[-1].is_ok():
             return result
     else:
         logging.info(

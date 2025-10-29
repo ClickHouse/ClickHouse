@@ -328,8 +328,7 @@ static bool writeMetadataFiles(
     std::optional<ChunkPartitioner> & chunk_partitioner,
     Iceberg::FileContentType content_type,
     SharedHeader sample_block,
-    CompressionMethod compression_method,
-    bool write_metadata_json_file)
+    CompressionMethod compression_method)
 {
     auto [metadata_name, storage_metadata_name] = filename_generator.generateMetadataName();
     Int64 parent_snapshot = -1;
@@ -338,12 +337,10 @@ static bool writeMetadataFiles(
 
     Int32 total_rows = 0;
     Int32 total_bytes = 0;
-    Int32 total_files = 0;
     for (const auto & [_, delete_filename] : delete_filenames.delete_file)
     {
         total_rows += delete_filename.total_rows;
         total_bytes += delete_filename.total_bytes;
-        ++total_files;
     }
 
     Poco::JSON::Object::Ptr new_snapshot;
@@ -359,8 +356,8 @@ static bool writeMetadataFiles(
                 /* added_files */0,
                 /* added_records */0,
                 total_bytes,
-                /* num_partitions */total_files,
-                /* added_delete_files */total_files,
+                /* num_partitions */1,
+                /* added_delete_files */1,
                 total_rows);
         new_snapshot = result_generation_metadata.snapshot;
         manifest_list_name = result_generation_metadata.metadata_path;
@@ -373,10 +370,10 @@ static bool writeMetadataFiles(
                 filename_generator,
                 metadata_name,
                 parent_snapshot,
-                /* added_files */total_files,
+                /* added_files */1,
                 /* added_records */total_rows,
                 total_bytes,
-                /* num_partitions */total_files,
+                /* num_partitions */1,
                 /* added_delete_files */0,
                 /*num_deleted_rows*/0);
         new_snapshot = result_generation_metadata.snapshot;
@@ -475,7 +472,6 @@ static bool writeMetadataFiles(
             }
         }
 
-        if (write_metadata_json_file)
         {
             std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
             Poco::JSON::Stringifier::stringify(metadata, oss, 4);
@@ -577,43 +573,13 @@ void mutate(
 
         if (mutation_files)
         {
-            auto result_delete_files_metadata = writeMetadataFiles(
-                mutation_files->delete_file,
-                object_storage,
-                configuration,
-                context,
-                filename_generator,
-                catalog,
-                storage_id,
-                metadata,
-                partititon_spec,
-                partition_spec_id,
-                chunk_partitioner,
-                Iceberg::FileContentType::POSITION_DELETE,
-                std::make_shared<const Block>(getPositionDeleteFileSampleBlock()),
-                compression_method,
-                !mutation_files->data_file);
+            auto result_delete_files_metadata = writeMetadataFiles(mutation_files->delete_file, object_storage, configuration, context, filename_generator, catalog, storage_id, metadata, partititon_spec, partition_spec_id, chunk_partitioner, Iceberg::FileContentType::POSITION_DELETE, std::make_shared<const Block>(getPositionDeleteFileSampleBlock()), compression_method);
             if (!result_delete_files_metadata)
                 continue;
 
             if (mutation_files->data_file)
             {
-                auto result_data_files_metadata = writeMetadataFiles(
-                    *mutation_files->data_file,
-                    object_storage,
-                    configuration,
-                    context,
-                    filename_generator,
-                    catalog,
-                    storage_id,
-                    metadata,
-                    partititon_spec,
-                    partition_spec_id,
-                    chunk_partitioner,
-                    Iceberg::FileContentType::DATA,
-                    sample_block,
-                    compression_method,
-                    true);
+                auto result_data_files_metadata = writeMetadataFiles(*mutation_files->data_file, object_storage, configuration, context, filename_generator, catalog, storage_id, metadata, partititon_spec, partition_spec_id, chunk_partitioner, Iceberg::FileContentType::DATA, sample_block, compression_method);
                 if (!result_data_files_metadata)
                 {
                     continue;
