@@ -161,7 +161,8 @@ void StatementGenerator::refColumn(RandomGenerator & rg, const GroupCol & gcol, 
 
 void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, const bool complex, Expr * expr)
 {
-    const bool allow_floats = (this->next_type_mask & (allow_bfloat16 | allow_float32 | allow_float64)) != 0 && this->fc.fuzz_floating_points;
+    const bool allow_floats
+        = (this->next_type_mask & (allow_bfloat16 | allow_float32 | allow_float64)) != 0 && this->fc.fuzz_floating_points;
     uint32_t nested_prob = 0;
     LiteralValue * lv = expr->mutable_lit_val();
     const uint32_t hugeint_lit = 20;
