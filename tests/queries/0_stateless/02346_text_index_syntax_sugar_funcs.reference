@@ -1,0 +1,77 @@
+-- {echoOn}
+-- basic functional tests
+SELECT hasToken(str, 'foo') FROM tab ORDER BY id;
+1
+0
+1
+1
+0
+SELECT str HAS_TOKEN 'foo' FROM tab ORDER BY id;
+1
+0
+1
+1
+0
+SELECT * FROM tab WHERE hasToken(str, 'foo') ORDER BY id;
+1	foo bar baz
+3	hello foo
+4	foo bar bar foo
+SELECT * FROM tab WHERE str HAS_TOKEN 'foo' ORDER BY id;
+1	foo bar baz
+3	hello foo
+4	foo bar bar foo
+SELECT hasAnyTokens(str, 'foo') FROM tab ORDER BY id;
+1
+0
+1
+1
+0
+SELECT str HAS_ANY_TOKENS 'foo' FROM tab ORDER BY id;
+1
+0
+1
+1
+0
+SELECT * FROM tab WHERE hasAnyTokens(str, 'foo') ORDER BY id;
+1	foo bar baz
+3	hello foo
+4	foo bar bar foo
+SELECT * FROM tab WHERE str HAS_ANY_TOKENS 'foo' ORDER BY id;
+1	foo bar baz
+3	hello foo
+4	foo bar bar foo
+SELECT * FROM tab WHERE str HAS_ANY_TOKENS ['foo'] ORDER BY id;
+1	foo bar baz
+3	hello foo
+4	foo bar bar foo
+SELECT hasAllTokens(str, 'foo bar') FROM tab ORDER BY id;
+1
+0
+0
+1
+0
+SELECT str HAS_ALL_TOKENS 'foo bar' FROM tab ORDER BY id;
+1
+0
+0
+1
+0
+SELECT * FROM tab WHERE hasAllTokens(str, 'foo bar') ORDER BY id;
+1	foo bar baz
+4	foo bar bar foo
+SELECT * FROM tab WHERE str HAS_ALL_TOKENS 'foo bar' ORDER BY id;
+1	foo bar baz
+4	foo bar bar foo
+SELECT * FROM tab WHERE str HAS_ALL_TOKENS ['foo', 'bar'] ORDER BY id;
+1	foo bar baz
+4	foo bar bar foo
+SELECT * FROM tab WHERE str HAS_ALL_TOKENS ['foo bar'] ORDER BY id; -- should be none
+SELECT * FROM tab WHERE str HAS_ANY_TOKENS 'foo bar' ORDER BY id;
+1	foo bar baz
+3	hello foo
+4	foo bar bar foo
+SELECT * FROM tab WHERE str HAS_ANY_TOKENS ['foo bar'] ORDER BY id; -- should be none
+SELECT * FROM tab WHERE str HAS_ANY_TOKENS ['foo', 'bar'] ORDER BY id;
+1	foo bar baz
+3	hello foo
+4	foo bar bar foo
