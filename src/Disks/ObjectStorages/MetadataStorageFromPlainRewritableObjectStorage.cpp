@@ -103,7 +103,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load)
             LOG_WARNING(log, "Legacy layout is likely used for disk '{}'", object_storage->getCommonKeyPrefix());
         }
 
-        if (!has_metadata)
+        if (!has_data && !has_metadata)
         {
             LOG_DEBUG(log, "Loaded metadata (empty)");
             fs_tree->apply(std::move(remote_layout));
@@ -283,11 +283,7 @@ bool MetadataStorageFromPlainRewritableObjectStorage::supportsPartitionCommand(c
 
 bool MetadataStorageFromPlainRewritableObjectStorage::existsFile(const std::string & path) const
 {
-    auto [exists, remote_info] = fs_tree->existsDirectory(fs::path(path).parent_path());
-    if (!exists || !remote_info.has_value())
-        return false;
-
-    return getObjectMetadataEntryWithCache(path) != nullptr;
+    return fs_tree->existsFile(path);
 }
 
 bool MetadataStorageFromPlainRewritableObjectStorage::existsDirectory(const std::string & path) const
@@ -302,7 +298,6 @@ std::vector<std::string> MetadataStorageFromPlainRewritableObjectStorage::listDi
 
 std::optional<Poco::Timestamp> MetadataStorageFromPlainRewritableObjectStorage::getLastModifiedIfExists(const String & path) const
 {
-    /// Path corresponds to a directory.
     if (auto [exists, remote_info] = fs_tree->existsDirectory(path); exists)
     {
         if (!remote_info)
@@ -311,9 +306,8 @@ std::optional<Poco::Timestamp> MetadataStorageFromPlainRewritableObjectStorage::
         return Poco::Timestamp::fromEpochTime(remote_info->last_modified);
     }
 
-    /// A file.
-    if (auto res = getObjectMetadataEntryWithCache(path))
-        return Poco::Timestamp::fromEpochTime(res->last_modified);
+    if (auto object_metadata = getObjectMetadataEntryWithCache(path))
+        return Poco::Timestamp::fromEpochTime(object_metadata->last_modified);
 
     return std::nullopt;
 }

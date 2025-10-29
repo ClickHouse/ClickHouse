@@ -320,11 +320,11 @@ void MetadataStorageFromPlainObjectStorageWriteFileOperation::execute()
 {
     LOG_TEST(getLogger("MetadataStorageFromPlainObjectStorageWriteFileOperation"), "Creating metadata for a file '{}'", path);
 
-    if (fs_tree.existsFile(path))
-        throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "File '{}' already exists", path);
-
-    fs_tree.addFile(path);
-    written = true;
+    if (!fs_tree.existsFile(path))
+    {
+        fs_tree.addFile(path);
+        written = true;
+    }
 }
 
 void MetadataStorageFromPlainObjectStorageWriteFileOperation::undo()

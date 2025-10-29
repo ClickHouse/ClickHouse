@@ -44,7 +44,8 @@ public:
     std::shared_ptr<IMetadataStorage> restartMetadataStorage(const std::string & key_prefix)
     {
         std::unique_lock<std::mutex> lock(active_metadatas_mutex);
-        active_metadatas.at(key_prefix)->refresh(0);
+        auto object_storage = active_object_storages.at(key_prefix);
+        active_metadatas[key_prefix] = std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, "", 0);
         return active_metadatas.at(key_prefix);
     }
 
@@ -174,6 +175,13 @@ TEST_F(MetadataPlainRewritableDiskTest, Ls)
         auto tx = metadata->createTransaction();
         tx->createDirectoryRecursive("D/E/F/G/H");
         tx->createDirectoryRecursive("/D/E/F/K");
+        tx->commit();
+    }
+
+    /// For now we can not create file under the directory created in the same tx.
+    {
+        auto tx = metadata->createTransaction();
+        writeObject(object_storage, object_storage->generateObjectKeyForPath("D/E/F/G/H/file", std::nullopt).serialize(), "file");
         tx->createMetadataFile("D/E/F/G/H/file", {StoredObject()});
         tx->commit();
     }
@@ -372,6 +380,57 @@ TEST_F(MetadataPlainRewritableDiskTest, RemoveDirectory)
     EXPECT_FALSE(metadata->existsDirectory("A/B/C"));
 
     metadata = restartMetadataStorage("RemoveDirectory");
+    EXPECT_FALSE(metadata->existsDirectory("A"));
+    EXPECT_FALSE(metadata->existsDirectory("A/B"));
+    EXPECT_FALSE(metadata->existsDirectory("A/B/C"));
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, RemoveDirectoryUndo)
+{
+    auto metadata = getMetadataStorage("RemoveDirectoryUndo");
+    auto object_storage = getObjectStorage("RemoveDirectoryUndo");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("A");
+        tx->createDirectory("A/B");
+        tx->createDirectory("A/B/C");
+        tx->commit();
+    }
+
+    EXPECT_TRUE(metadata->existsDirectory("A"));
+    EXPECT_TRUE(metadata->existsDirectory("A/B"));
+    EXPECT_TRUE(metadata->existsDirectory("A/B/C"));
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->removeDirectory("A/B/C");
+        tx->removeDirectory("A");
+        EXPECT_ANY_THROW(tx->commit());
+    }
+
+    EXPECT_TRUE(metadata->existsDirectory("A"));
+    EXPECT_TRUE(metadata->existsDirectory("A/B"));
+    EXPECT_TRUE(metadata->existsDirectory("A/B/C"));
+
+    metadata = restartMetadataStorage("RemoveDirectoryUndo");
+    EXPECT_TRUE(metadata->existsDirectory("A"));
+    EXPECT_TRUE(metadata->existsDirectory("A/B"));
+    EXPECT_TRUE(metadata->existsDirectory("A/B/C"));
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->removeDirectory("A/B/C");
+        tx->removeDirectory("A/B");
+        tx->removeDirectory("A");
+        tx->commit();
+    }
+
+    EXPECT_FALSE(metadata->existsDirectory("A"));
+    EXPECT_FALSE(metadata->existsDirectory("A/B"));
+    EXPECT_FALSE(metadata->existsDirectory("A/B/C"));
+
+    metadata = restartMetadataStorage("RemoveDirectoryUndo");
     EXPECT_FALSE(metadata->existsDirectory("A"));
     EXPECT_FALSE(metadata->existsDirectory("A/B"));
     EXPECT_FALSE(metadata->existsDirectory("A/B/C"));
@@ -657,6 +716,11 @@ TEST_F(MetadataPlainRewritableDiskTest, RootFiles)
     EXPECT_TRUE(metadata->existsFile("/C"));
 
     metadata = restartMetadataStorage("RootFiles");
+
+    EXPECT_FALSE(metadata->existsFile("A"));
+    EXPECT_FALSE(metadata->existsFile("/A"));
+    EXPECT_TRUE(metadata->existsFile("C"));
+    EXPECT_TRUE(metadata->existsFile("/C"));
 
     {
         auto tx = metadata->createTransaction();
@@ -992,3 +1056,63 @@ TEST_F(MetadataPlainRewritableDiskTest, OperationsNonExisting)
     EXPECT_EQ(metadata->getLastModifiedIfExists("A/non-existing"), std::nullopt);
 }
 
+TEST_F(MetadataPlainRewritableDiskTest, CreateFiles)
+{
+    auto metadata = getMetadataStorage("CreateFiles");
+    auto object_storage = getObjectStorage("CreateFiles");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("/A");
+        tx->commit();
+    }
+
+    EXPECT_TRUE(metadata->existsDirectory("/A"));
+    EXPECT_FALSE(metadata->existsFile("/A/f1"));
+
+    {
+        auto tx = metadata->createTransaction();
+        writeObject(object_storage, object_storage->generateObjectKeyForPath("/A/f1", std::nullopt).serialize(), "f1");
+        tx->createMetadataFile("/A/f1", {StoredObject("A")});
+        tx->commit();
+    }
+
+    EXPECT_TRUE(metadata->existsFile("/A/f1"));
+
+    metadata = restartMetadataStorage("CreateFiles");
+    EXPECT_TRUE(metadata->existsDirectory("/A"));
+    EXPECT_TRUE(metadata->existsFile("/A/f1"));
+
+    /// Some rewrites
+    {
+        auto tx = metadata->createTransaction();
+        tx->createMetadataFile("/A/f1", {StoredObject("B")});
+        tx->createMetadataFile("/A/f1", {StoredObject("C")});
+        tx->createMetadataFile("/A/f1", {StoredObject("D")});
+        tx->createMetadataFile("/A/f1", {StoredObject("E")});
+        tx->createMetadataFile("/A/f1", {StoredObject("F")});
+        tx->createMetadataFile("/A/f1", {StoredObject("G")});
+        tx->commit();
+    }
+
+    EXPECT_TRUE(metadata->existsFile("/A/f1"));
+
+    metadata = restartMetadataStorage("CreateFiles");
+    EXPECT_TRUE(metadata->existsDirectory("/A"));
+    EXPECT_TRUE(metadata->existsFile("/A/f1"));
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->unlinkMetadata("/A/f1");
+        tx->commit();
+    }
+
+    EXPECT_TRUE(metadata->existsDirectory("/A"));
+    EXPECT_FALSE(metadata->existsFile("/A/f1"));
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->unlinkMetadata("/A/f1");
+        EXPECT_ANY_THROW(tx->commit());
+    }
+}
