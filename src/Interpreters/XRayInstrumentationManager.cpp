@@ -154,7 +154,7 @@ void XRayInstrumentationManager::setHandlerAndPatch(ContextPtr context, const St
                 "and making sure they are not decorated with '[[clang::xray_never_instrument]]'", function_name);
     }
 
-    SharedLockGuard lock(shared_mutex);
+    std::lock_guard lock(shared_mutex);
     auto it = instrumented_points.find(InstrumentedPointKey{function_id, entry_type, handler_name_lower});
     if (it != instrumented_points.end())
     {
@@ -174,7 +174,7 @@ void XRayInstrumentationManager::setHandlerAndPatch(ContextPtr context, const St
 
 void XRayInstrumentationManager::unpatchFunction(std::variant<UInt64, bool> id)
 {
-    SharedLockGuard lock(shared_mutex);
+    std::lock_guard lock(shared_mutex);
 
     if (std::holds_alternative<bool>(id))
     {
