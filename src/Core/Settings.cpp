@@ -7097,7 +7097,7 @@ If set to true, allow using the experimental text index.
 Allow to perform full text search filtering using only the inverted index in query plan.
 )", 0) \
     DECLARE(Bool, use_text_index_dictionary_cache, false, R"(
-Whether to use a cache of deserialized text index dictionary block. Accepts 0 or 1. By default, 0 (disabled).
+Whether to use a cache of deserialized text index dictionary block.
 Using the text index dictionary block cache can significantly reduce latency and increase throughput when working with a large number of text index queries.
 )", 0) \
     DECLARE(Bool, allow_experimental_window_view, false, R"(
