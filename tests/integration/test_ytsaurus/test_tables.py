@@ -302,11 +302,11 @@ def test_ytsaurus_composite_types(
     print(create_command)
     yt.exec(create_command)
     if len(yt_data) > 0:
-        yt.write_table(table_path, yt_data_json)
+        yt.write_table(table_path, yt_data_json, False)
     instance.query(
         f"CREATE TABLE yt_test(a {ch_column_type}) ENGINE=YTsaurus('{yt_uri_helper.uri}', '{table_path}', '{yt_uri_helper.token}')"
     )
-    yt.write_table(table_path, yt_data_json)
+    yt.write_table(table_path, yt_data_json, False)
     try:
         assert instance.query("SELECT a FROM yt_test") == f"{ch_data_expected}\n"
     except:
