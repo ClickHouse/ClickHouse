@@ -1070,28 +1070,18 @@ bool FileCache::doTryReserve(
     }
     else if (!invalidated_entries.empty())
     {
-        auto lock = cache_guard.tryWriteLock();
-        if (lock.owns_lock())
-        {
+        if (auto lock = cache_guard.tryWriteLock(); lock.owns_lock())
             IFileCachePriority::removeEntries(invalidated_entries, lock);
-        }
-        else
-        {
-            /// add to cleanup queue
-        }
     }
 
     try
     {
         auto lock = cache_state_guard.lock();
-
         main_eviction_info->releaseHoldSpace(lock);
         if (query_eviction_info)
             query_eviction_info->releaseHoldSpace(lock);
 
         eviction_candidates.afterEvictState(lock);
-
-        chassert(main_priority_iterator);
         main_priority_iterator->incrementSize(size, lock);
 
         if (query_priority_iterator)
@@ -1109,10 +1099,7 @@ bool FileCache::doTryReserve(
 
     /// Mark that size was successfully updated.
     if (added_new_main_entry)
-    {
         file_segment.setQueueIterator(main_priority_iterator);
-        added_new_main_entry = false;
-    }
 
     file_segment.reserved_size += size;
     chassert(file_segment.reserved_size == main_priority_iterator->getEntry()->size);
