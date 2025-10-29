@@ -12,7 +12,7 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 32, index_granularity_bytes = 0;
+SETTINGS index_granularity = 32, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
 
 INSERT INTO tab VALUES (0,'a'),(1,'b'),(2,'c');
 
