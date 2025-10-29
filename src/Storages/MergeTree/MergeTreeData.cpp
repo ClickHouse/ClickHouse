@@ -3660,12 +3660,14 @@ size_t MergeTreeData::clearEmptyParts()
 
 size_t MergeTreeData::clearUnusedPatchParts()
 {
-    if (!(*getSettings())[MergeTreeSetting::remove_unused_patch_parts])
+    if (!supportsLightweightUpdate() || !(*getSettings())[MergeTreeSetting::remove_unused_patch_parts])
         return 0;
 
     auto patch_parts = getPatchPartsVectorForInternalUsage();
-    auto regular_parts = getDataPartsVectorForInternalUsage();
+    if (patch_parts.empty())
+        return 0;
 
+    auto regular_parts = getDataPartsVectorForInternalUsage();
     std::unordered_map<std::string_view, UInt64> min_data_version_by_partition;
 
     for (const auto & part : regular_parts)
