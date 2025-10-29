@@ -475,16 +475,17 @@ void ColumnAggregateFunction::get(size_t n, Field & res) const
     res = operator[](n);
 }
 
-DataTypePtr ColumnAggregateFunction::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+std::pair<String, DataTypePtr> ColumnAggregateFunction::getValueNameAndType(size_t n) const
 {
-    if (options.notFull(name_buf))
+    String state;
     {
         WriteBufferFromOwnString buffer;
         func->serialize(data[n], buffer, version);
-        writeQuoted(buffer.str(), name_buf);
+        WriteBufferFromString wb(state);
+        writeQuoted(buffer.str(), wb);
     }
 
-    return DataTypeFactory::instance().get(type_string);
+    return {state, DataTypeFactory::instance().get(type_string)};
 }
 
 StringRef ColumnAggregateFunction::getDataAt(size_t n) const
