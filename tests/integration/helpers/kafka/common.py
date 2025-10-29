@@ -298,7 +298,7 @@ def avro_confluent_message(schema_registry_client, value):
 
 
 def create_settings_string(settings):
-    if settings is None:
+    if settings is None or len(settings) == 0:
         return ""
 
     def format_value(value):

@@ -54,44 +54,50 @@ def get_applicable_compression_level(compression_codec):
         return 12
     elif compression_codec == "zstd":
         return 11
-    elif compression_codec == "none":
+    elif compression_codec == "none" or compression_codec is None:
         return None
 
     raise ValueError(f"Unknown compression codec: {compression_codec}")
 
 
 def assert_producer_property_set_in_logs(instance, table_name, property_name, property_value):
-    maybe_uuid_regex = "( \([a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}\))?"
-    instance.wait_for_log_line(f"StorageKafka2? \(test\.{table_name}{maybe_uuid_regex}\): Producer set property {property_name}:{property_value}")
+    maybe_uuid_regex = r"( \([a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}\))?"
+    instance.wait_for_log_line(fr"StorageKafka2? \(test\.{table_name}{maybe_uuid_regex}\): Producer set property {property_name}:{property_value}")
 
 
 def assert_compression_codec_in_logs(instance, table_name, compression_codec):
-    assert_producer_property_set_in_logs(instance, table_name, "compression\.codec", compression_codec)
+    assert_producer_property_set_in_logs(instance, table_name, r"compression\.codec", compression_codec)
 
 
 def assert_compression_level_in_logs(instance, table_name, compression_level):
-    assert_producer_property_set_in_logs(instance, table_name, "compression\.level", compression_level)
-
+    assert_producer_property_set_in_logs(instance, table_name, r"compression\.level", compression_level)
 
 # Test for different compression codec values
 @pytest.mark.parametrize(
     "compression_codec",
-    ["none", "gzip", "snappy", "lz4", "zstd"],
+    [None, "none", "gzip", "snappy", "lz4", "zstd"],
 )
 @pytest.mark.parametrize(
     "create_query_generator",
     [k.generate_old_create_table_query, k.generate_new_create_table_query],
 )
 def test_kafka_compression_codec(kafka_cluster, compression_codec, create_query_generator):
+    # The difference between (the python object) None and (the string) "none":
+    #  - None means that the setting is not set at all, thus the default value ("none") will be used
+    #  - "none" means that the setting is explicitly set to "none"
+    # As a result both cases should lead to the same behavior, i.e. no compression, but for different reasons.
     """Test that kafka_compression_codec setting works correctly for both producing and consuming messages"""
     storage_version = create_query_generator.__name__.replace("generate_", "").replace("_create_table_query", "")
     # It is better to use a random string, because it makes logs more unique and avoids false positive test runs
-    suffix = f"{storage_version}_{compression_codec}_{k.random_string(6)}"
+    suffix = f"{storage_version}_{compression_codec if compression_codec is not None else 'default'}_{k.random_string(6)}"
     kafka_table_producer = f"kafka_producer_{suffix}"
     kafka_table_consumer = f"kafka_consumer_{suffix}"
     topic_name = f"compression_codec_{suffix}"
     compression_level = get_applicable_compression_level(compression_codec)
-    table_settings = {"kafka_compression_codec": compression_codec}
+    table_settings = {}
+
+    if compression_codec is not None:
+        table_settings["kafka_compression_codec"] = compression_codec
 
     if compression_level is not None:
         table_settings["kafka_compression_level"] = compression_level
@@ -99,7 +105,7 @@ def test_kafka_compression_codec(kafka_cluster, compression_codec, create_query_
     admin_client = k.get_admin_client(kafka_cluster)
 
     with k.kafka_topic(admin_client, topic_name):
-        logging.debug(f"Testing compression codec: {compression_codec}")
+        logging.debug(f"Testing compression codec: {compression_codec if compression_codec is not None else 'default'}")
 
         # Create producer table with compression codec using generator
         producer_create_query = create_query_generator(
@@ -142,7 +148,7 @@ def test_kafka_compression_codec(kafka_cluster, compression_codec, create_query_
         instance.query(f"INSERT INTO test.{kafka_table_producer} VALUES {values_str}")
 
         # Unfortunately there is no way to directly verify the compression codec using the python client
-        assert_compression_codec_in_logs(instance, kafka_table_producer, compression_codec)
+        assert_compression_codec_in_logs(instance, kafka_table_producer, compression_codec if compression_codec is not None else "none")
         if compression_level is not None:
             assert_compression_level_in_logs(instance, kafka_table_producer, compression_level)
 
