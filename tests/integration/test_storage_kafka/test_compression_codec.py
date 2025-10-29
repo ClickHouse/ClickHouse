@@ -1,16 +1,14 @@
 """Tests for kafka_compression_codec setting"""
 
-import json
 import logging
-import time
 
 import pytest
-from kafka import KafkaAdminClient
 
 from helpers.cluster import ClickHouseCluster, is_arm
 from helpers.kafka.common_direct import *
 import helpers.kafka.common as k
 from helpers.test_tools import TSV
+from contextlib import contextmanager
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
@@ -44,6 +42,13 @@ def kafka_cluster():
 def kafka_setup_teardown():
     k.clean_test_database_and_topics(instance, cluster)
     yield  # run test
+
+
+@contextmanager
+def restart_clickhouse_after():
+    yield
+    instance.restart_clickhouse()
+
 
 def get_applicable_compression_level(compression_codec):
     if compression_codec == "gzip":
@@ -207,40 +212,42 @@ def test_settings_precedence(kafka_cluster, create_query_generator):
 """
     config_file_path = "/etc/clickhouse-server/config.d/compression_codec.xml"
 
-    # The topic doesn't need to be created, because we only check the applied compression codec in producer creation logs
-    with instance.with_replace_config(config_file_path, producer_specific_config):
-        instance.restart_clickhouse()
+    # Clickhouse has to be restarted to apply the default config
+    with restart_clickhouse_after():
+        # The topic doesn't need to be created, because we only check the applied compression codec in producer creation logs
+        with instance.with_replace_config(config_file_path, producer_specific_config):
+            instance.restart_clickhouse()
 
-        instance.query(create_query_generator(
-            table_name,
-            "key UInt64, value String",
-            topic_list=topic_name,
-            consumer_group=f"{topic_name}_consumer",
-            settings={"kafka_compression_codec": "gzip"}
-        ))
+            instance.query(create_query_generator(
+                table_name,
+                "key UInt64, value String",
+                topic_list=topic_name,
+                consumer_group=f"{topic_name}_consumer",
+                settings={"kafka_compression_codec": "gzip"}
+            ))
 
-        instance.query(f"INSERT INTO test.{table_name} VALUES (1, 'test_message')")
-        # The value from the create query takes precedence over the setting in general kafka section
-        assert_compression_codec_in_logs(instance, table_name, "gzip")
+            instance.query(f"INSERT INTO test.{table_name} VALUES (1, 'test_message')")
+            # The value from the create query takes precedence over the setting in general kafka section
+            assert_compression_codec_in_logs(instance, table_name, "gzip")
+
+            instance.query(f"DROP TABLE test.{table_name} SYNC")
+
+            # Let's create a table without kafka_compression_codec setting in the create query
+            instance.query(create_query_generator(
+                table_name,
+                "key UInt64, value String",
+                topic_list=topic_name,
+                consumer_group=f"{topic_name}_consumer",
+            ))
+            instance.query(f"INSERT INTO test.{table_name} VALUES (2, 'test_message 2')")
+            assert_compression_codec_in_logs(instance, table_name, "snappy")
+
+        with instance.with_replace_config(config_file_path, general_kafka_config):
+            instance.restart_clickhouse()
+            instance.query(f"INSERT INTO test.{table_name} VALUES (3, 'test_message 3')")
+            assert_compression_codec_in_logs(instance, table_name, "lz4")
 
         instance.query(f"DROP TABLE test.{table_name} SYNC")
-
-        # Let's create a table without kafka_compression_codec setting in the create query
-        instance.query(create_query_generator(
-            table_name,
-            "key UInt64, value String",
-            topic_list=topic_name,
-            consumer_group=f"{topic_name}_consumer",
-        ))
-        instance.query(f"INSERT INTO test.{table_name} VALUES (2, 'test_message 2')")
-        assert_compression_codec_in_logs(instance, table_name, "snappy")
-
-    with instance.with_replace_config(config_file_path, general_kafka_config):
-        instance.restart_clickhouse()
-        instance.query(f"INSERT INTO test.{table_name} VALUES (3, 'test_message 3')")
-        assert_compression_codec_in_logs(instance, table_name, "lz4")
-
-    instance.query(f"DROP TABLE test.{table_name} SYNC")
 
 
 if __name__ == "__main__":
