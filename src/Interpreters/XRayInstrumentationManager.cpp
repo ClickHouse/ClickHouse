@@ -45,6 +45,7 @@ namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int CANNOT_READ_ALL_DATA;
+extern const int LOGICAL_ERROR;
 }
 
 static constexpr String SLEEP_HANDLER = "sleep";
@@ -135,13 +136,38 @@ void XRayInstrumentationManager::setHandlerAndPatch(ContextPtr context, const St
             function_id, function_name);
     }
 
-    __xray_patch_function(function_id);
+    patchFunctionIfNeeded(function_id);
+
     instrumented_points.emplace(std::make_pair(
         InstrumentedPointKey{function_id, entry_type, handler_name_lower},
         InstrumentedPointInfo{context, instrumentation_point_ids, function_id, function_name, handler_name_lower, entry_type, parameters}));
     instrumentation_point_ids++;
 }
 
+void XRayInstrumentationManager::patchFunctionIfNeeded(Int32 function_id)
+{
+    if (instrumented_functions.contains(function_id))
+    {
+        instrumented_functions[function_id]++;
+    }
+    else
+    {
+        instrumented_functions.emplace(std::make_pair(function_id, 1));
+        __xray_patch_function(function_id);
+    }
+}
+
+void XRayInstrumentationManager::unpatchFunctionIfNeeded(Int32 function_id)
+{
+    if (!instrumented_functions.contains(function_id))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Function id {} to unpatch not previously patched", function_id);
+
+    if (--instrumented_functions[function_id] <= 0)
+    {
+        __xray_unpatch_function(function_id);
+        instrumented_functions.erase(function_id);
+    }
+}
 
 void XRayInstrumentationManager::unpatchFunction(std::variant<UInt64, bool> id)
 {
@@ -150,7 +176,7 @@ void XRayInstrumentationManager::unpatchFunction(std::variant<UInt64, bool> id)
     if (std::holds_alternative<bool>(id))
     {
         for (const auto & [function_id, info] : instrumented_points)
-            __xray_unpatch_function(info.function_id);
+            unpatchFunctionIfNeeded(info.function_id);
         instrumented_points.clear();
     }
     else
@@ -168,7 +194,7 @@ void XRayInstrumentationManager::unpatchFunction(std::variant<UInt64, bool> id)
         if (!function_key.has_value())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown instrumentation point id to remove: ({})", std::get<UInt64>(id));
 
-        __xray_unpatch_function(function_key->function_id);
+        unpatchFunctionIfNeeded(function_key->function_id);
         instrumented_points.erase(function_key.value());
     }
 }

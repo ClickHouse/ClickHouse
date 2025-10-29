@@ -115,6 +115,9 @@ private:
     void registerHandler(const String & name, XRayHandlerFunction handler);
     void parseXRayInstrumentationMap();
 
+    [[clang::xray_never_instrument]] void patchFunctionIfNeeded(Int32 function) TSA_REQUIRES_SHARED(shared_mutex);
+    [[clang::xray_never_instrument]] void unpatchFunctionIfNeeded(Int32 function) TSA_REQUIRES_SHARED(shared_mutex);
+
     [[clang::xray_never_instrument]] static void dispatchHandler(Int32 func_id, XRayEntryType entry_type);
     [[clang::xray_never_instrument]] void dispatchHandlerImpl(Int32 func_id, XRayEntryType entry_type);
     [[clang::xray_never_instrument]] void sleep(XRayEntryType entry_type, const InstrumentedPointInfo & instrumented_point);
@@ -127,6 +130,7 @@ private:
     SharedMutex shared_mutex;
     std::atomic<UInt64> instrumentation_point_ids;
     std::unordered_map<InstrumentedPointKey, InstrumentedPointInfo, InstrumentedPointHash> instrumented_points TSA_GUARDED_BY(shared_mutex);
+    std::unordered_map<Int32, Int32> instrumented_functions TSA_GUARDED_BY(shared_mutex);
 
     enum class InitializationStatus
     {

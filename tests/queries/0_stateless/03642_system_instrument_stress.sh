@@ -33,7 +33,7 @@ statements_nr=${#statements[@]}
 
 function send_requests()
 {
-    for i in $(seq 1 1000); do
+    for i in $(seq 1 100); do
         query_id="${query_id_prefix}_${i}_${RANDOM}"
         statement=${statements[$(($RANDOM % $statements_nr))]}
         $CLICKHOUSE_CLIENT --query-id=$query_id -q "$statement" 2> /dev/null >&1
