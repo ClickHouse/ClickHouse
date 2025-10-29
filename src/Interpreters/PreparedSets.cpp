@@ -266,6 +266,9 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
         if (set->hasExplicitSetElements())
             return set;
 
+
+        LOG_DEBUG(&Poco::Logger::get("FutureSetFromSubquery::buildOrderedSetInplace"), "Set doesn't have explicit elements.");
+
         return nullptr;
     }
 

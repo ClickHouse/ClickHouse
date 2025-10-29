@@ -174,8 +174,22 @@ void Set::setHeader(const ColumnsWithTypeAndName & header)
     data.init(SetVariants::chooseMethod(key_columns, key_sizes));
 }
 
+bool Set::hasExplicitSetElements() const
+{
+    LOG_DEBUG(
+        &Poco::Logger::get("Set::hasExplicitSetElements"),
+        "fill_set_elements: {}, set_elements size: {}, set_elements front size: {}, data total row count: {}",
+        fill_set_elements,
+        set_elements.size(),
+        set_elements.empty() ? 0 : set_elements.front()->size(),
+        data.getTotalRowCount());
+    return fill_set_elements || (!set_elements.empty() && set_elements.front()->size() == data.getTotalRowCount());
+}
+
+
 void Set::fillSetElements()
 {
+    LOG_DEBUG(&Poco::Logger::get("Set::fillSetElements"), "Filling set elements.");
     fill_set_elements = true;
     set_elements.reserve(keys_size);
     for (const auto & type : set_elements_types)
@@ -205,6 +219,9 @@ bool Set::insertFromColumns(const Columns & columns)
     {
         if (max_elements_to_fill && max_elements_to_fill < data.getTotalRowCount())
         {
+            LOG_DEBUG(
+                &Poco::Logger::get("Set::insertFromColumns"), "Drop filled set elements because max_elements_to_fill limit exceeded.");
+
             /// Drop filled elementes
             fill_set_elements = false;
             set_elements.clear();

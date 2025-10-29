@@ -1296,8 +1296,17 @@ bool KeyCondition::tryPrepareSetIndex(
         return false;
 
     auto prepared_set = future_set->buildOrderedSetInplace(right_arg.getTreeContext().getQueryContext());
+
+    LOG_DEBUG(
+        &Poco::Logger::get("KeyCondition::tryPrepareSetIndex"),
+        "Trying to prepare set index for KeyCondition. Prepared set: {}, left args count: {}, indexes mapping size: {}",
+        (prepared_set != nullptr),
+        left_args_count,
+        indexes_mapping.size());
+
     if (!prepared_set)
         return false;
+
 
     /// The index can be prepared if the elements of the set were saved in advance.
     if (!prepared_set->hasExplicitSetElements())

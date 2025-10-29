@@ -81,7 +81,10 @@ void buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context)
                 if (!future_set->get())
                 {
                     if (auto * set_from_subquery = typeid_cast<FutureSetFromSubquery *>(future_set.get()))
+                    {
+                        LOG_DEBUG(&Poco::Logger::get("VirtualColumnUtils"), "Building set from subquery for column '{}'", node.result_name);
                         set_from_subquery->buildSetInplace(context);
+                    }
                 }
             }
         }
