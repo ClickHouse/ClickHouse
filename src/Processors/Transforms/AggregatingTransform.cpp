@@ -395,8 +395,6 @@ private:
         auto & output = outputs.front();
         auto chunk = std::move(single_level_chunks.back());
         single_level_chunks.pop_back();
-        // if (updater)
-        //     updater->addOutputBytes(chunk);
         output.push(std::move(chunk));
 
         if (finished && single_level_chunks.empty())
@@ -480,8 +478,6 @@ private:
             const auto has_rows = chunk.hasRows();
             if (has_rows)
             {
-                // if (updater)
-                //     updater->addOutputBytes(chunk);
                 chunk.getChunkInfos().get<AggregatedChunkInfo>()->out_of_order_buckets = out_of_order_buckets;
                 output.push(std::move(chunk));
                 return Status::PortFull;
@@ -557,7 +553,7 @@ private:
         {
             params->aggregator.mergeWithoutKeyDataImpl(*data, shared_data->is_cancelled);
             if (updater)
-                updater->addOutputBytes(params->aggregator, *first, -1);
+                updater->addOutputBytes(params->aggregator, *first, /*bucket=*/-1);
             auto block = params->aggregator.prepareBlockAndFillWithoutKey(
                 *first, params->final, first->type != AggregatedDataVariants::Type::without_key);
             if (updater)
@@ -846,8 +842,6 @@ void AggregatingTransform::initGenerate()
         if (!skip_merging)
         {
             auto prepared_data = params->aggregator.prepareVariantsToMerge(std::move(many_data->variants));
-            // if (updater)
-            //     updater->addOutputBytes(params->aggregator, prepared_data);
             auto prepared_data_ptr = std::make_shared<ManyAggregatedDataVariants>(std::move(prepared_data));
             processors.emplace_back(
                 std::make_shared<ConvertingAggregatedToChunksTransform>(params, std::move(prepared_data_ptr), max_threads, updater));

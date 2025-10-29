@@ -11,8 +11,6 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 
-#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
-
 
 namespace CurrentMetrics
 {
@@ -35,6 +33,9 @@ public:
 
 using AggregatorList = std::list<Aggregator>;
 using AggregatorListPtr = std::shared_ptr<AggregatorList>;
+
+class Updater;
+using UpdaterPtr = std::shared_ptr<Updater>;
 
 struct AggregatingTransformParams
 {

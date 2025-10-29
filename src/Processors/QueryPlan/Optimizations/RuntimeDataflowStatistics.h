@@ -113,9 +113,9 @@ public:
 
     void addOutputBytes(const Aggregator & aggregator, const Block & block);
 
-    void addInputBytes(const IMergeTreeDataPart::ColumnSizeByName & column_sizes, const Block & block, size_t bytes);
+    void addInputBytes(const ColumnsWithTypeAndName & columns, const IMergeTreeDataPart::ColumnSizeByName & column_sizes, size_t bytes);
 
-    void addInputBytes(const IMergeTreeDataPart::ColumnSizeByName & column_sizes, const ColumnWithTypeAndName & column);
+    void addInputBytes(const ColumnsWithTypeAndName & columns, const IMergeTreeDataPart::ColumnSizeByName & column_sizes);
 
 private:
     size_t compressedColumnSize(const ColumnWithTypeAndName & column)

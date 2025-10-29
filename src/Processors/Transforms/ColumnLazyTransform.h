@@ -2,8 +2,6 @@
 
 #include <Processors/ISimpleTransform.h>
 
-#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
-
 namespace DB
 {
 
@@ -12,6 +10,9 @@ using LazilyReadInfoPtr = std::shared_ptr<LazilyReadInfo>;
 
 class MergeTreeLazilyReader;
 using MergeTreeLazilyReaderPtr = std::unique_ptr<MergeTreeLazilyReader>;
+
+class Updater;
+using UpdaterPtr = std::shared_ptr<Updater>;
 
 class ColumnLazyTransform : public ISimpleTransform
 {

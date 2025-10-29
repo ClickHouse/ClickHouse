@@ -3,6 +3,8 @@
 #include <Columns/ColumnLazy.h>
 #include <Storages/MergeTree/MergeTreeLazilyReader.h>
 
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
+
 namespace DB
 {
 
@@ -45,10 +47,7 @@ void ColumnLazyTransform::transform(Chunk & chunk)
     }
 
     if (updater)
-    {
-        for (auto & column_with_type_and_name : res_columns)
-            updater->addInputBytes(lazy_column_reader->getColumnSizes(), column_with_type_and_name);
-    }
+        updater->addInputBytes(res_columns, lazy_column_reader->getColumnSizes());
 
     for (auto & column_with_type_and_name : res_columns)
     {

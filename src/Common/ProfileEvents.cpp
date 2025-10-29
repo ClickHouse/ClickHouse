@@ -1217,8 +1217,8 @@ The server successfully detected this situation and will download merged part fr
     \
     M(LoadedStatisticsMicroseconds, "Elapsed time of loading statistics from parts", ValueType::Microseconds) \
     \
-    M(RuntimeDataflowStatisticsInputBytes, "How many times refreshable materialized views refreshed", ValueType::Number) \
-    M(RuntimeDataflowStatisticsOutputBytes, "How many times refreshable materialized views failed to refresh", ValueType::Number) \
+    M(RuntimeDataflowStatisticsInputBytes, "Collected statistics on the number of bytes read within the query", ValueType::Number) \
+    M(RuntimeDataflowStatisticsOutputBytes, "Collected statistics on the number of bytes the query will output if executed with parallel replicas", ValueType::Number) \
 
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS

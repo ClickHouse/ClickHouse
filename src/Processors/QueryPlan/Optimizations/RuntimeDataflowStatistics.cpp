@@ -2,6 +2,7 @@
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
 #include <Interpreters/Aggregator.h>
+#include "Core/ColumnsWithTypeAndName.h"
 
 namespace DB
 {
@@ -114,7 +115,7 @@ void Updater::addOutputBytes(const Aggregator & aggregator, const Block & block)
     }
 }
 
-void Updater::addInputBytes(const IMergeTreeDataPart::ColumnSizeByName & column_sizes, const Block & block, size_t bytes)
+void Updater::addInputBytes(const ColumnsWithTypeAndName & columns, const IMergeTreeDataPart::ColumnSizeByName & column_sizes, size_t bytes)
 {
     if (!cache_key)
         return;
@@ -123,7 +124,7 @@ void Updater::addInputBytes(const IMergeTreeDataPart::ColumnSizeByName & column_
     statistics.input_bytes += bytes;
     if (bytes)
     {
-        for (const auto & column : block.getColumnsWithTypeAndName())
+        for (const auto & column : columns)
         {
             if (!column_sizes.contains(column.name))
                 continue;
@@ -133,19 +134,22 @@ void Updater::addInputBytes(const IMergeTreeDataPart::ColumnSizeByName & column_
     }
 }
 
-void Updater::addInputBytes(const IMergeTreeDataPart::ColumnSizeByName & column_sizes, const ColumnWithTypeAndName & column)
+void Updater::addInputBytes(const ColumnsWithTypeAndName & columns, const IMergeTreeDataPart::ColumnSizeByName & column_sizes)
 {
     if (!cache_key)
         return;
 
     std::lock_guard lock(mutex);
-    statistics.input_bytes += column.column->byteSize();
-    if (!column.column->empty())
+    for (auto & column : columns)
     {
-        if (!column_sizes.contains(column.name))
-            return;
-        input_bytes_sample += column_sizes.at(column.name).data_uncompressed;
-        input_bytes_compressed += column_sizes.at(column.name).data_compressed;
+        statistics.input_bytes += column.column->byteSize();
+        if (!column.column->empty())
+        {
+            if (!column_sizes.contains(column.name))
+                return;
+            input_bytes_sample += column_sizes.at(column.name).data_uncompressed;
+            input_bytes_compressed += column_sizes.at(column.name).data_compressed;
+        }
     }
 }
 }

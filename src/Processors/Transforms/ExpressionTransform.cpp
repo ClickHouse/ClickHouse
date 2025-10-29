@@ -3,6 +3,8 @@
 #include <Core/Block.h>
 #include <memory>
 
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
+
 
 namespace DB
 {

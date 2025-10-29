@@ -468,7 +468,7 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
             reader_settings,
             index_build_context);
 
-        auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName(), nullptr);
+        auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName(), /*updater=*/nullptr);
         pipes.emplace_back(std::move(source));
     }
 

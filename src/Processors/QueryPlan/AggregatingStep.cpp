@@ -27,6 +27,8 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
 
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
+
 namespace DB
 {
 
@@ -756,7 +758,6 @@ void AggregatingStep::serialize(Serialization & ctx) const
     /// Overall, the rule is not strict.
 
     UInt8 flags = 0;
-    // `final` value differs for `AggregatingStep` in single-node and distributed query plans. This breaks matching by hash.
     if (final && !ctx.skip_final_flag)
         flags |= 1;
     if (params.overflow_row)

@@ -10,8 +10,6 @@
 #include <Core/Block.h>
 #include <Core/Block_fwd.h>
 #include <Core/ColumnNumbers.h>
-#include <IO/WriteBuffer.h>
-#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Common/ThreadPool.h>
 #include <Common/filesystemHelpers.h>
 
@@ -54,6 +52,9 @@ struct GroupingSetsParams
 };
 
 using GroupingSetsParamsList = std::vector<GroupingSetsParams>;
+
+class Updater;
+using UpdaterPtr = std::shared_ptr<Updater>;
 
 /** How are "total" values calculated with WITH TOTALS?
   * (For more details, see TotalsHavingTransform.)
@@ -522,12 +523,8 @@ private:
     Block convertOneBucketToBlock(AggregatedDataVariants & variants, Arena * arena, bool final, Int32 bucket) const;
 
     Block mergeAndConvertOneBucketToBlock(
-        ManyAggregatedDataVariants & variants,
-        Arena * arena,
-        bool final,
-        Int32 bucket,
-        std::atomic<bool> & is_cancelled,
-        UpdaterPtr updater) const;
+        ManyAggregatedDataVariants & variants, Arena * arena, bool final, Int32 bucket, std::atomic<bool> & is_cancelled, UpdaterPtr updater)
+        const;
 
     Block prepareBlockAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final, bool is_overflows) const;
     BlocksList prepareBlocksAndFillTwoLevel(AggregatedDataVariants & data_variants, bool final) const;

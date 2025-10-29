@@ -3,6 +3,8 @@
 #include <Columns/IColumn.h>
 #include <Processors/Port.h>
 
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
+
 namespace DB
 {
 
