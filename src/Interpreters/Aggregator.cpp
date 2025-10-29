@@ -1935,11 +1935,13 @@ Block Aggregator::mergeAndConvertOneBucketToBlock(
     else if (method == AggregatedDataVariants::Type::NAME) \
     { \
         mergeBucketImpl<decltype(merged_data.NAME)::element_type>(variants, bucket, arena, is_cancelled); \
-        updater->addOutputBytes(*this, merged_data, bucket); \
+        if (updater) \
+            updater->addOutputBytes(*this, merged_data, bucket); \
         if (is_cancelled.load(std::memory_order_seq_cst)) \
             return {}; \
         block = convertOneBucketToBlock(merged_data, *merged_data.NAME, arena, final, bucket); \
-        updater->addOutputBytes(*this, block); \
+        if (updater) \
+            updater->addOutputBytes(*this, block); \
     }
 
     APPLY_FOR_VARIANTS_TWO_LEVEL(M)

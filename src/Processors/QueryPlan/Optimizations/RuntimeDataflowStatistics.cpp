@@ -57,6 +57,9 @@ void Updater::addOutputBytes(const Chunk & chunk)
 
 void Updater::addOutputBytes(const Aggregator &, const ManyAggregatedDataVariants & variants)
 {
+    if (!cache_key)
+        return;
+
     WriteBufferFromOwnString wb;
     CompressedWriteBuffer wbuf(wb);
     for (const auto & variant : variants)
@@ -76,6 +79,9 @@ void Updater::addOutputBytes(const Aggregator &, const ManyAggregatedDataVariant
 
 void Updater::addOutputBytes(const Aggregator &, AggregatedDataVariants & variant, size_t bucket)
 {
+    if (!cache_key)
+        return;
+
     WriteBufferFromOwnString wb;
     CompressedWriteBuffer wbuf(wb);
     if (!variant.aggregator)
@@ -92,6 +98,9 @@ void Updater::addOutputBytes(const Aggregator &, AggregatedDataVariants & varian
 
 void Updater::addOutputBytes(const Aggregator & aggregator, const Block & block)
 {
+    if (!cache_key)
+        return;
+
     for (size_t i = 0; i < aggregator.getParams().keys_size; ++i)
     {
         const auto & key_column_name = aggregator.getParams().keys[i];
