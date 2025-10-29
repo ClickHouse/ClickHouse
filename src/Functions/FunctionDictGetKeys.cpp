@@ -189,6 +189,7 @@ public:
                     if (hashAt(*attribute_column, cur_row_id) != const_value_hash)
                         continue;
 
+                    /// Different unique attribute values can have same hash, so we need to compare actual values too
                     if (!equalAt(*attribute_column, cur_row_id, *values_column, 0))
                         continue;
 
@@ -226,14 +227,14 @@ public:
                 values_column->size(),
                 input_rows_count);
 
-        /// Each unique value of attribute column will have a unique bucket.
+        /// Each unique value of `values_column` (3rd argument) will have a unique bucket.
         /// For each input row, we need to find the bucket id corresponding to its attribute value which is tracked via `row_id_to_bucket_id`.
-        /// For example, if input rows 0, 3, 5 have same attribute value, they will map to same bucket id say 2.
+        /// For example, if input rows 0, 3, 5 of the `values_column` have same value, they will map to same bucket id say 2.
 
-        /// Different attribute values can map to the same hash. As a result, comparing the hash value alone is not
-        /// sufficient to confirm if two values are the same. So we maintain the buckets ids of different attribute value that map to the same hash in `hash_to_bucket_ids`.
-        /// Then, we iterate over the bucket ids, and get representative attribute value for each bucket and compare with the current attribute value to
-        /// to check if the current row's attribute value previousely seen or not.
+        /// Different values can map to the same hash. As a result, comparing the hash value alone is not
+        /// sufficient to confirm if two values are the same. So we maintain the buckets ids of different values that map to the same hash in `hash_to_bucket_ids`.
+        /// Then, we iterate over the bucket ids, and get representative value for each bucket and compare with the current value to
+        /// to check if the current row's value previousely seen or not.
         /// If yes, we get the bucket id from `row_id_to_bucket_id`. If not, we create a new bucket.
 
         using BucketIdList = PODArray<UInt64, 2 * sizeof(UInt64)>;
@@ -260,6 +261,8 @@ public:
                     break;
                 }
             }
+
+            /// New unique value, create a new bucket
             if (!previously_seen)
             {
                 const size_t new_bucket_id = bucket_id_to_representative_row_id.size();
@@ -289,9 +292,14 @@ public:
         QueryPipeline pipeline(std::move(pipe));
         PullingPipelineExecutor executor(pipeline);
 
+
+        /// For each row in the dictionary, find which bucket it belongs to (based on attribute value) if any,
+        /// and insert the corresponding keys into that bucket
         Block block;
         while (executor.pull(block))
         {
+            /// Currently, dictionary attribute column cannot be LowCardinality. However, in future if it changes, we should
+            /// be able to handle that too.
             ColumnPtr attribute_column = block.getByPosition(keys_cnt).column->convertToFullColumnIfLowCardinality();
 
             std::vector<ColumnPtr> key_source(keys_cnt);
@@ -304,10 +312,10 @@ public:
                 const UInt64 hash = hashAt(*attribute_column, cur_row_id);
 
                 auto * it = hash_to_bucket_ids.find(hash);
-                if (it == hash_to_bucket_ids.end())
+                if (it == hash_to_bucket_ids.end()) /// Not in the `values_column`
                     continue;
 
-                /// We cannot be sure yet that the attribute is part of values_column, because multiple unique attribute values can hash to same value.
+                /// We cannot be sure yet that the attribute is part of `values_column`, because multiple unique attribute values can hash to same value
                 const auto & potential_bucket_ids = it->getMapped();
                 for (size_t bucket_id : potential_bucket_ids)
                 {
@@ -318,6 +326,7 @@ public:
                     for (size_t key_id = 0; key_id < keys_cnt; ++key_id)
                         buckets[bucket_id].key_cols[key_id]->insertFrom(*key_source[key_id], cur_row_id);
 
+                    /// Only one bucket can match. We break here and save expensive operations at `equalAt`
                     break;
                 }
             }
