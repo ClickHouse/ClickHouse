@@ -1240,7 +1240,6 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
         if (global_ctx->future_part->part_format.part_type == MergeTreeDataPartType::Wide)
             max_dynamic_subcolumns = (*merge_tree_settings)[MergeTreeSetting::merge_max_dynamic_subcolumns_in_wide_part].valueOrNullopt();
 
-        bool is_result_sparse = global_ctx->new_data_part->getSerialization(column_name)->getKind() == ISerialization::Kind::SPARSE;
         bool is_result_sparse = ISerialization::hasKind(global_ctx->new_data_part->getSerialization(column_name)->getKindStack(), ISerialization::Kind::SPARSE);
         auto merge_step = std::make_unique<ColumnGathererStep>(
             merge_column_query_plan.getCurrentHeader(),
