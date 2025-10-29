@@ -30,8 +30,6 @@
 #include <Common/assert_cast.h>
 #include <Common/formatReadable.h>
 #include <Common/typeid_cast.h>
-#include "Columns/IColumn_fwd.h"
-#include <Columns/ColumnsCommon.h>
 #include <Interpreters/IJoin.h>
 
 #include <Interpreters/HashJoin/HashJoinMethods.h>
