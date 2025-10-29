@@ -1654,6 +1654,7 @@ void ClientBase::resetOutput()
     if (pager_cmd)
     {
         pager_cmd->in.close();
+        /// The process will terminated in destructor anyway (due to terminate_in_destructor_strategy.terminate_in_destructor=true)
         if (!cancelled)
             pager_cmd->wait();
 
