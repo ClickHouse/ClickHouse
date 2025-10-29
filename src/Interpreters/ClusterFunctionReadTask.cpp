@@ -22,6 +22,7 @@ namespace Setting
     extern const SettingsBool cluster_function_process_archive_on_multiple_nodes;
 }
 
+#if USE_AVRO
 static IcebergObjectSerializableInfo extractIcebergMetadata(const IcebergDataObjectInfo & object)
 {
     IcebergObjectSerializableInfo info;
@@ -46,7 +47,7 @@ static IcebergObjectSerializableInfo setIcebergMetadata(IcebergDataObjectInfo & 
     object.file_format = info.file_format;
     return info;
 }
-
+#endif
 
 ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr object, const ContextPtr & context)
 {
@@ -56,10 +57,13 @@ ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr o
     if (object->data_lake_metadata.has_value())
         data_lake_metadata = object->data_lake_metadata.value();
 
+#if USE_AVRO
+
     if (std::dynamic_pointer_cast<IcebergDataObjectInfo>(object))
     {
         iceberg_info = extractIcebergMetadata(dynamic_cast<IcebergDataObjectInfo &>(*object));
     }
+#endif
 
     const bool send_over_whole_archive = !context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes];
     path = send_over_whole_archive ? object->getPathOrPathToArchiveIfArchive() : object->getPath();
@@ -79,9 +83,13 @@ ObjectInfoPtr ClusterFunctionReadTaskResponse::getObjectInfo() const
 
     if (iceberg_info.has_value())
     {
+#if USE_AVRO
         auto iceberg_object = std::make_shared<IcebergDataObjectInfo>(path);
         setIcebergMetadata(*iceberg_object, iceberg_info.value());
         object = iceberg_object;
+#else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Iceberg support is disabled");
+#endif
     }
     else
     {
