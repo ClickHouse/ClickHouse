@@ -415,30 +415,34 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
     /// (when doing so for protected queue),
     /// because we cannot know how much space we will need to downgrade
     /// (because downgraded space >= space to reserve in protected).
-    const_cast<EvictionInfo &>(eviction_info).add(probationary_queue.collectEvictionInfo(
+    auto evict_info = probationary_queue.collectEvictionInfo(
         stat.total_stat.releasable_size,
         stat.total_stat.releasable_count,
         /* reservee */nullptr,
         /* is_total_space_cleanup */false,
-        state_guard.lock()));
+        state_guard.lock());
 
-    /// If not enough space - we need to "downgrade" lowest priority entries
-    /// from protected queue to probationary queue,
-    /// so collect eviction candidates in probationary now.
-    if (!probationary_queue.collectCandidatesForEviction(
-        eviction_info,
-        stat,
-        res,
-        invalidated_entries,
-        reservee,
-        continue_from_last_eviction_pos,
-        max_candidates_size,
-        is_total_space_cleanup,
-        user_id,
-        cache_guard,
-        state_guard))
+    if (evict_info->requiresEviction())
     {
-        return false;
+        const_cast<EvictionInfo &>(eviction_info).add(std::move(evict_info));
+        /// If not enough space - we need to "downgrade" lowest priority entries
+        /// from protected queue to probationary queue,
+        /// so collect eviction candidates in probationary now.
+        if (!probationary_queue.collectCandidatesForEviction(
+            eviction_info,
+            stat,
+            res,
+            invalidated_entries,
+            reservee,
+            continue_from_last_eviction_pos,
+            max_candidates_size,
+            is_total_space_cleanup,
+            user_id,
+            cache_guard,
+            state_guard))
+        {
+            return false;
+        }
     }
 
     struct DowngradedEntryInfo
