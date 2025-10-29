@@ -8,6 +8,7 @@
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/ZooKeeper/WatchSnapshot.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ShuffleHost.h>
@@ -223,6 +224,9 @@ public:
 
     const KeeperFeatureFlags * getKeeperFeatureFlags() const override { return &keeper_feature_flags; }
 
+    /// Snapshot currently registered watches with metadata
+    std::vector<WatchSnapshot> getWatchesSnapshot();
+
 private:
     const Int32 send_receive_os_threads_nice_value;
 
@@ -286,6 +290,8 @@ private:
     std::mutex operations_mutex;
 
     Watches watches TSA_GUARDED_BY(watches_mutex);
+    using WatchInfos = std::unordered_map<String /* path, relative of root_path */, std::vector<WatchSnapshot>>;
+    WatchInfos watch_infos TSA_GUARDED_BY(watches_mutex);
 
     /// A wrapper around ThreadFromGlobalPool that allows to call join() on it from multiple threads.
     class ThreadReference
