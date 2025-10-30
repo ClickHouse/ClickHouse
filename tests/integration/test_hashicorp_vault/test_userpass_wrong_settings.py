@@ -1,7 +1,7 @@
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from .common_userpass import *
+from .common import *
 
 
 def start_clickhouse(config, users, err_msg):
@@ -12,7 +12,7 @@ def start_clickhouse(config, users, err_msg):
         user_configs=[users],
         with_hashicorp_vault=True,
     )
-    cluster.set_hashicorp_vault_startup_command(vault_startup_command)
+    cluster.set_hashicorp_vault_startup_command(vault_startup_command_userpass)
 
     failed_to_start = False
 

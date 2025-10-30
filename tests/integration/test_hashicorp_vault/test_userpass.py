@@ -1,6 +1,6 @@
 import pytest
 from helpers.cluster import ClickHouseCluster
-from .common_userpass import *
+from .common import *
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
@@ -14,7 +14,7 @@ instance = cluster.add_instance(
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
-        cluster.set_hashicorp_vault_startup_command(vault_startup_command)
+        cluster.set_hashicorp_vault_startup_command(vault_startup_command_userpass)
         cluster.start()
         yield cluster
 
