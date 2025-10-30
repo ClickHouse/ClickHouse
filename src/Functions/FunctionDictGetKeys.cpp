@@ -148,11 +148,6 @@ public:
         const auto key_types = structure.getKeyTypes();
         const size_t keys_cnt = key_types.size();
 
-        struct Bucket
-        {
-            std::vector<MutableColumnPtr> key_cols;
-        };
-
         const bool is_values_column_const = isColumnConst(*arguments[2].column);
 
         if (is_values_column_const)
@@ -213,6 +208,16 @@ public:
             return ColumnConst::create(std::move(array_column), input_rows_count);
         }
 
+        /*
+        The algorithm works in three main steps:
+          Step 1: Map each unique value from the `values_column` (3rd argument) to a unique bucket id.
+          Step 2: For each bucket id, now find all the keys (in the form of row id) in the dictionary that fall into that bucket (based on matching attribute value).
+          Step 3: Finally, for each input row, get the bucket id and concatenate all the keys corresponding to that bucket id to form the final result.
+        */
+
+
+        /// Step 1
+
         ColumnWithTypeAndName values_column_raw{arguments[2].column->convertToFullColumnIfConst(), arguments[2].type, arguments[2].name};
         ColumnPtr values_column = castColumnAccurate(values_column_raw, attribute_column_type)->convertToFullColumnIfLowCardinality();
 
@@ -270,16 +275,25 @@ public:
         }
 
 
-        /// Prepare storage for keys corresponding to each bucket
-        const size_t num_buckets = bucket_id_to_representative_row_id.size();
+        /// Step 2
 
-        std::vector<Bucket> buckets(num_buckets);
-        for (size_t bucket_id = 0; bucket_id < num_buckets; ++bucket_id)
-        {
-            buckets[bucket_id].key_cols.reserve(keys_cnt);
-            for (const auto & key_type : key_types)
-                buckets[bucket_id].key_cols.emplace_back(key_type->createColumn());
-        }
+        /// If the dictionary row has matching attribute value, then we store the its keys in `payload_key_cols`
+        std::vector<MutableColumnPtr> payload_key_cols;
+        payload_key_cols.reserve(keys_cnt);
+        for (const auto & key_type : key_types)
+            payload_key_cols.emplace_back(key_type->createColumn());
+
+        /// The following data structures help us find the key indices inside `payload_key_cols` for each bucket
+        /// We populate the data structure such that for `bucket_id`, we get the last key's position via `last_key_pos_for_bucket`.
+        /// Once we have it, we can get the other keys for that bucket by following the `next_key_pos` linked list.
+        constexpr size_t npos = std::numeric_limits<size_t>::max(); // end of linked list marker
+        const size_t num_buckets = bucket_id_to_representative_row_id.size();
+        std::vector<size_t> last_key_pos_for_bucket(num_buckets, npos);
+        PODArray<size_t> next_key_pos;
+        next_key_pos.reserve(
+            input_rows_count); /// We do not know how many rows of the dictionary will match; so we use input_rows_count as a reasonable estimate
+
+        std::vector<size_t> num_dict_rows_in_bucket(num_buckets, 0);
 
         /// Stream dictionary: keys... column + attribute column
         Names column_names = structure.getKeysNames();
@@ -290,8 +304,6 @@ public:
         PullingPipelineExecutor executor(pipeline);
 
 
-        /// For each row in the dictionary, find which bucket it belongs to (based on attribute value) if any,
-        /// and insert the corresponding keys into that bucket
         Block block;
         while (executor.pull(block))
         {
@@ -320,8 +332,15 @@ public:
                     if (!equalAt(*attribute_column, cur_row_id, *values_column, bucket_representative_row_id))
                         continue;
 
+                    const size_t cur_key_pos = payload_key_cols[0]->size();
                     for (size_t key_id = 0; key_id < keys_cnt; ++key_id)
-                        buckets[bucket_id].key_cols[key_id]->insertFrom(*key_source[key_id], cur_row_id);
+                        payload_key_cols[key_id]->insertFrom(*key_source[key_id], cur_row_id);
+
+                    /// Both `cur_key_pos` and `last_key_pos_for_bucket[bucket_id]` belong to same bucket, so we can link them
+                    next_key_pos.push_back(last_key_pos_for_bucket[bucket_id]); //  next_key_pos[cur_key_pos] = old last_key_pos_for_bucket
+
+                    last_key_pos_for_bucket[bucket_id] = cur_key_pos; // new last_key_pos_for_bucket
+                    ++num_dict_rows_in_bucket[bucket_id];
 
                     /// Only one bucket can match. We break here and save expensive operations at `equalAt`
                     break;
@@ -329,23 +348,43 @@ public:
             }
         }
 
+        /// Step 3
+
+        /// Compute total output size and reserve result columns once
+        size_t total_keys_across_all_input_rows = 0;
+        for (size_t row_id = 0; row_id < input_rows_count; ++row_id)
+            total_keys_across_all_input_rows += num_dict_rows_in_bucket[row_id_to_bucket_id[row_id]];
+
         MutableColumns result_columns;
         result_columns.reserve(keys_cnt);
         for (const auto & key_type : key_types)
-            result_columns.emplace_back(key_type->createColumn());
+        {
+            auto col = key_type->createColumn();
+            col->reserve(total_keys_across_all_input_rows);
+            result_columns.emplace_back(std::move(col));
+        }
+
 
         auto offsets_column = ColumnArray::ColumnOffsets::create();
         auto & offsets = offsets_column->getData();
         offsets.resize(input_rows_count);
 
+        /// Materialize result in row order by walking each row's bucket's key index list
         size_t position = 0;
         for (size_t row_id = 0; row_id < input_rows_count; ++row_id)
         {
             const size_t bucket_id = row_id_to_bucket_id[row_id];
-            const size_t num_matched_keys = buckets[bucket_id].key_cols[0]->size();
-            for (size_t key_id = 0; key_id < keys_cnt; ++key_id)
-                result_columns[key_id]->insertRangeFrom(*buckets[bucket_id].key_cols[key_id], 0, num_matched_keys);
-            position += num_matched_keys;
+            size_t cur_key_pos = last_key_pos_for_bucket[bucket_id];
+
+            while (cur_key_pos != npos)
+            {
+                for (size_t key_id = 0; key_id < keys_cnt; ++key_id)
+                    result_columns[key_id]->insertFrom(*payload_key_cols[key_id], cur_key_pos);
+
+                cur_key_pos = next_key_pos[cur_key_pos];
+                ++position;
+            }
+
             offsets[row_id] = position;
         }
 
