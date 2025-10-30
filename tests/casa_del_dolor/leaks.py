@@ -206,7 +206,9 @@ class ElOracloDeLeaks:
                         or not isinstance(result2, str)
                         or result2 == ""
                     ):
-                        self.logger.warning(f"Could not fetch number of merges or mutations")
+                        self.logger.warning(
+                            f"Could not fetch number of merges or mutations"
+                        )
                         return False
 
                     active_merges = int(result1)
