@@ -276,17 +276,17 @@ ISerialization::KindStack SerializationInfo::chooseKindStack(const Data & data, 
 SerializationInfoByName::SerializationInfoByName(const SerializationInfo::Settings & settings_)
     : settings(settings_)
 {
-    /// Downgrade to DEFAULT version if `string_serialization_version` is DEFAULT.
+    /// Downgrade to DEFAULT version if `string_serialization_version` is SINGLE_STREAM.
     ///
     /// Rationale:
-    /// - `DEFAULT` means old serialization format (no per-type specialization).
+    /// - `SINGLE_STREAM` means old serialization format (no per-type specialization).
     /// - `WITH_TYPES` means new format that supports per-type serialization versions,
     ///   where `string_serialization_version` is currently the only one specialization.
     ///
-    /// If `string_serialization_version` is DEFAULT, there is no effective type specialization
+    /// If `string_serialization_version` is SINGLE_STREAM, there is no effective type specialization
     /// in use, so writing `WITH_TYPES` would add no benefit but reduce compatibility.
-    /// Falling back to `DEFAULT` keeps the output fully compatible with older servers.
-    if (settings.string_serialization_version == MergeTreeStringSerializationVersion::DEFAULT)
+    /// Falling back to `SINGLE_STREAM` keeps the output fully compatible with older servers.
+    if (settings.string_serialization_version == MergeTreeStringSerializationVersion::SINGLE_STREAM)
         settings.version = MergeTreeSerializationInfoVersion::DEFAULT;
 }
 
@@ -458,7 +458,7 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
         }
     }
 
-    MergeTreeStringSerializationVersion string_serialization_version = MergeTreeStringSerializationVersion::DEFAULT;
+    MergeTreeStringSerializationVersion string_serialization_version = MergeTreeStringSerializationVersion::SINGLE_STREAM;
     if (version >= MergeTreeSerializationInfoVersion::WITH_TYPES)
     {
         /// types_serialization_versions is mandatory in WITH_TYPES mode

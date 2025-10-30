@@ -433,7 +433,7 @@ DECLARE_SETTING_ENUM(MergeTreeSerializationInfoVersion)
 
 enum class MergeTreeStringSerializationVersion : uint8_t
 {
-    DEFAULT = 0,
+    SINGLE_STREAM = 0,
     WITH_SIZE_STREAM = 1,
 };
 

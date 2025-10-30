@@ -269,7 +269,7 @@ namespace ErrorCodes
     data parts compatible with old servers. After the upgrade completes,
     switch to `WITH_TYPES` to enable per-type serialization versions.
     )", 0) \
-    DECLARE(MergeTreeStringSerializationVersion, string_serialization_version, "default", R"(
+    DECLARE(MergeTreeStringSerializationVersion, string_serialization_version, "single_stream", R"(
     Controls the serialization format for top-level `String` columns.
 
     This setting is only effective when `serialization_info_version` is set to "with_types".
@@ -282,7 +282,7 @@ namespace ErrorCodes
 
     Possible values:
 
-    - `DEFAULT` — Use the standard serialization format with inline sizes.
+    - `SINGLE_STREAM` — Use the standard serialization format with inline sizes.
     - `WITH_SIZE_STREAM` — Use a separate size stream for top-level `String` columns.
     )", 0) \
     DECLARE(MergeTreeObjectSerializationVersion, object_serialization_version, "v2", R"(

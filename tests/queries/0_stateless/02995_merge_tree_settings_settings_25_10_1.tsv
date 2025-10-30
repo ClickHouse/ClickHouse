@@ -269,7 +269,7 @@ simultaneous_parts_removal_limit	0
 sleep_before_commit_local_part_in_replicated_table_ms	0
 sleep_before_loading_outdated_parts_ms	0
 storage_policy	default
-string_serialization_version	default
+string_serialization_version	single_stream
 table_disk	0
 temporary_directories_lifetime	86400
 try_fetch_recompressed_part_timeout	7200

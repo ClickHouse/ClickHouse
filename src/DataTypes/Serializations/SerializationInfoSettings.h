@@ -11,7 +11,7 @@ struct SerializationInfoSettings
     bool choose_kind = false;
 
     MergeTreeSerializationInfoVersion version = MergeTreeSerializationInfoVersion::DEFAULT;
-    MergeTreeStringSerializationVersion string_serialization_version = MergeTreeStringSerializationVersion::DEFAULT;
+    MergeTreeStringSerializationVersion string_serialization_version = MergeTreeStringSerializationVersion::SINGLE_STREAM;
 
     SerializationInfoSettings() = default;
 
@@ -28,7 +28,7 @@ struct SerializationInfoSettings
         /// New string_serialization_version is valid only when using MergeTreeSerializationInfoVersion::WITH_TYPES.
         /// For older versions, it is automatically defaulted to preserve compatibility.
         if (version < MergeTreeSerializationInfoVersion::WITH_TYPES)
-            string_serialization_version = MergeTreeStringSerializationVersion::DEFAULT;
+            string_serialization_version = MergeTreeStringSerializationVersion::SINGLE_STREAM;
     }
 
     bool isAlwaysDefault() const { return ratio_of_defaults_for_sparse >= 1.0; }
