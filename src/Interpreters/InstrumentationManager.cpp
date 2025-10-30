@@ -101,7 +101,7 @@ void InstrumentationManager::unpatchFunctionIfNeeded(Int32 function_id)
     }
 }
 
-void InstrumentationManager::setHandlerAndPatch(ContextPtr context, const String & function_name, const String & handler_name, std::optional<XRayEntryType> entry_type, std::optional<std::vector<InstrumentedParameter>> & parameters)
+void InstrumentationManager::patchFunction(ContextPtr context, const String & function_name, const String & handler_name, std::optional<XRayEntryType> entry_type, std::optional<std::vector<InstrumentedParameter>> & parameters)
 {
     auto handler_name_lower = Poco::toLower(handler_name);
 

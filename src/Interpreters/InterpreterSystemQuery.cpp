@@ -1750,7 +1750,7 @@ void InterpreterSystemQuery::instrumentWithXRay(bool add, ASTSystemQuery & query
     {
         if (add)
         {
-            InstrumentationManager::instance().setHandlerAndPatch(getContext(), query.instrumentation_function_name, query.instrumentation_handler_name, query.instrumentation_entry_type, query.instrumentation_parameters);
+            InstrumentationManager::instance().patchFunction(getContext(), query.instrumentation_function_name, query.instrumentation_handler_name, query.instrumentation_entry_type, query.instrumentation_parameters);
         }
         else
         {

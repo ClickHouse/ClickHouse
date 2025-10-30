@@ -73,7 +73,7 @@ public:
 
     static InstrumentationManager & instance();
 
-    void setHandlerAndPatch(ContextPtr context, const String & function_name, const String & handler_name, std::optional<XRayEntryType> entry_type, std::optional<std::vector<InstrumentedParameter>> & parameters);
+    void patchFunction(ContextPtr context, const String & function_name, const String & handler_name, std::optional<XRayEntryType> entry_type, std::optional<std::vector<InstrumentedParameter>> & parameters);
     void unpatchFunction(std::variant<UInt64, bool> id);
 
     using InstrumentedPoints = std::vector<InstrumentedPointInfo>;
