@@ -207,9 +207,8 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::execute()
         throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Directory '{}' does not exist", path_from);
     else if (!remote_info.has_value())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' is virtual", path_from);
-
-    if (fs_tree.existsDirectory(path_to).first)
-        throw Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS, "Directory '{}' already exists", path_from);
+    else if (fs_tree.existsDirectory(path_to).first)
+        throw Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS, "Directory '{}' already exists", path_to);
 
     from_tree_info = fs_tree.getSubtreeRemoteInfo(path_from);
 
@@ -231,13 +230,14 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::execute()
     }
 
     fs_tree.moveDirectory(path_from, path_to);
+    moved_in_memory = true;
 }
 
 void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::undo()
 {
     LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageMoveDirectoryOperation"), "Reversing directory move from '{}' to '{}'", path_from, path_to);
 
-    if (fs_tree.existsDirectory(path_to).first)
+    if (moved_in_memory)
         fs_tree.moveDirectory(path_to, path_from);
 
     for (const auto & [subdir, remote_info] : from_tree_info)
@@ -270,8 +270,7 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::execute( /* 
         throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Directory '{}' does not exist", path);
     else if (!remote_info.has_value())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' is virtual", path);
-
-    if (auto children = fs_tree.listDirectory(path); !children.empty())
+    else if (auto children = fs_tree.listDirectory(path); !children.empty())
         throw Exception(ErrorCodes::CANNOT_RMDIR, "Directory '{}' is not empty. Children: [{}]", path, fmt::join(children, ", "));
 
     info = std::move(remote_info.value());
@@ -386,13 +385,11 @@ void MetadataStorageFromPlainObjectStorageCopyFileOperation::execute()
 
     if (!fs_tree.existsFile(path_from))
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Metadata object for the source path '{}' does not exist", path_from);
-
-    if (auto [exists, remote_info] = fs_tree.existsDirectory(path_to.parent_path()); !exists)
+    else if (auto [exists, remote_info] = fs_tree.existsDirectory(path_to.parent_path()); !exists)
         throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Directory '{}' does not exist", path_to.parent_path());
     else if (!remote_info.has_value())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' is virtual", path_to.parent_path());
-
-    if (fs_tree.existsFile(path_to))
+    else if (fs_tree.existsFile(path_to))
         throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Target file '{}' already exists", path_to);
 
     copy_attempted = true;
@@ -444,8 +441,7 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
 
     if (!fs_tree.existsFile(path_from))
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File '{}' does not exist", path_from);
-
-    if (auto [exists, remote_info] = fs_tree.existsDirectory(path_to.parent_path()); !exists)
+    else if (auto [exists, remote_info] = fs_tree.existsDirectory(path_to.parent_path()); !exists)
         throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Directory '{}' does not exist", path_to.parent_path());
     else if (!remote_info.has_value())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' is virtual", path_to.parent_path());

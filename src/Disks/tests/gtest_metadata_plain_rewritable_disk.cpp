@@ -413,6 +413,17 @@ TEST_F(MetadataPlainRewritableDiskTest, RemoveDirectoryUndo)
     EXPECT_TRUE(metadata->existsDirectory("A/B"));
     EXPECT_TRUE(metadata->existsDirectory("A/B/C"));
 
+    {
+        auto tx = metadata->createTransaction();
+        tx->removeDirectory("X");
+        EXPECT_ANY_THROW(tx->commit());
+    }
+
+    EXPECT_TRUE(metadata->existsDirectory("A"));
+    EXPECT_TRUE(metadata->existsDirectory("A/B"));
+    EXPECT_TRUE(metadata->existsDirectory("A/B/C"));
+    EXPECT_FALSE(metadata->existsDirectory("X"));
+
     metadata = restartMetadataStorage("RemoveDirectoryUndo");
     EXPECT_TRUE(metadata->existsDirectory("A"));
     EXPECT_TRUE(metadata->existsDirectory("A/B"));
@@ -1115,4 +1126,32 @@ TEST_F(MetadataPlainRewritableDiskTest, CreateFiles)
         tx->unlinkMetadata("/A/f1");
         EXPECT_ANY_THROW(tx->commit());
     }
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, MoveToExisting)
+{
+    auto metadata = getMetadataStorage("MoveToExisting");
+    auto object_storage = getObjectStorage("MoveToExisting");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("/A");
+        tx->createDirectory("/B");
+        tx->createDirectory("/B/A");
+        tx->commit();
+    }
+
+    EXPECT_TRUE(metadata->existsDirectory("/A"));
+    EXPECT_TRUE(metadata->existsDirectory("/B"));
+    EXPECT_TRUE(metadata->existsDirectory("/B/A"));
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->moveDirectory("/A", "/B/A");
+        EXPECT_ANY_THROW(tx->commit());
+    }
+
+    EXPECT_TRUE(metadata->existsDirectory("/A"));
+    EXPECT_TRUE(metadata->existsDirectory("/B"));
+    EXPECT_TRUE(metadata->existsDirectory("/B/A"));
 }
