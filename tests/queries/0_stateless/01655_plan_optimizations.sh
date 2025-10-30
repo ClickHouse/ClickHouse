@@ -63,20 +63,20 @@ $CLICKHOUSE_CLIENT -q "
     ) where y != 0 and s != 4 order by s, y
     settings enable_optimize_predicate_expression=0"
 
-echo "> one condition of filter should be pushed down after aggregating, other condition is casted"
+echo "> one condition of filter should be pushed down after aggregating, other condition is cast"
 $CLICKHOUSE_CLIENT --enable_analyzer=0 -q "
     explain actions = 1 select s, y from (
         select sum(x) as s, y from (select number as x, number + 1 as y from numbers(10)) group by y
     ) where y != 0 and s - 4
     settings enable_optimize_predicate_expression=0" |
-    grep -o "Aggregating\|Filter column\|Filter column: notEquals(y, 0)\|FUNCTION and(minus(s, 4) :: 5, 1 :: 3) -> and(notEquals(y, 0), minus(s, 4))"
-echo "> (analyzer) one condition of filter should be pushed down after aggregating, other condition is casted"
+    grep -o "Aggregating\|Filter column\|Filter column: notEquals(y, 0)\|FUNCTION minus(sum(x) :: 1, 4 :: 2) -> minus(s, 4)"
+echo "> (analyzer) one condition of filter should be pushed down after aggregating, other condition is cast"
 $CLICKHOUSE_CLIENT --enable_analyzer=1 -q "
     explain actions = 1 select s, y from (
         select sum(x) as s, y from (select number as x, number + 1 as y from numbers(10)) group by y
     ) where y != 0 and s - 4
     settings enable_optimize_predicate_expression=0" |
-        grep -o "Aggregating\|Filter column\|Filter column: notEquals(__table1.y, 0_UInt8)\|FUNCTION and(minus(__table1.s, 4_UInt8) :: 1, 1 :: 3) -> and(notEquals(__table1.y, 0_UInt8), minus(__table1.s, 4_UInt8))"
+        grep -o "Aggregating\|Filter column\|Filter column: notEquals(__table1.y, 0_UInt8)\|FUNCTION minus(sum(__table2.x) :: 0, 4_UInt8 :: 2) -> minus(__table1.s, 4_UInt8)"
 $CLICKHOUSE_CLIENT -q "
     select s, y from (
         select sum(x) as s, y from (select number as x, number + 1 as y from numbers(10)) group by y
@@ -89,14 +89,14 @@ $CLICKHOUSE_CLIENT --enable_analyzer=0 --convert_query_to_cnf=0 -q "
         select sum(x) as s, y from (select number as x, number + 1 as y from numbers(10)) group by y
     ) where y != 0 and s - 8 and s - 4
     settings enable_optimize_predicate_expression=0" |
-    grep -o "Aggregating\|Filter column\|Filter column: notEquals(y, 0)\|FUNCTION and(minus(s, 8) :: 5, minus(s, 4) :: 2) -> and(notEquals(y, 0), minus(s, 8), minus(s, 4))"
+    grep -o "Aggregating\|Filter column\|Filter column: notEquals(y, 0)\|FUNCTION and(minus(s, 8) :: 3, minus(s, 4) :: 5) -> and(notEquals(y, 0), minus(s, 8), minus(s, 4))"
 echo "> (analyzer) one condition of filter should be pushed down after aggregating, other two conditions are ANDed"
 $CLICKHOUSE_CLIENT --enable_analyzer=1 --convert_query_to_cnf=0 -q "
     explain actions = 1 select s, y from (
         select sum(x) as s, y from (select number as x, number + 1 as y from numbers(10)) group by y
     ) where y != 0 and s - 8 and s - 4
     settings enable_optimize_predicate_expression=0" |
-        grep -o "Aggregating\|Filter column\|Filter column: notEquals(__table1.y, 0_UInt8)\|FUNCTION and(minus(__table1.s, 8_UInt8) :: 1, minus(__table1.s, 4_UInt8) :: 2) -> and(notEquals(__table1.y, 0_UInt8), minus(__table1.s, 8_UInt8), minus(__table1.s, 4_UInt8))"
+        grep -o "Aggregating\|Filter column\|Filter column: notEquals(__table1.y, 0_UInt8)\|FUNCTION and(minus(__table1.s, 8_UInt8) :: 3, minus(__table1.s, 4_UInt8) :: 5) -> and(notEquals(__table1.y, 0_UInt8), minus(__table1.s, 8_UInt8), minus(__table1.s, 4_UInt8))"
 $CLICKHOUSE_CLIENT -q "
     select s, y from (
         select sum(x) as s, y from (select number as x, number + 1 as y from numbers(10)) group by y
@@ -134,7 +134,7 @@ $CLICKHOUSE_CLIENT --enable_analyzer=1 -q "
     explain actions = 1 select x, y from (
         select range(number) as x, number + 1 as y from numbers(3)
     ) array join x where y != 2 and x != 0" |
-    grep -o "Filter column: and(notEquals(__table2.y, 2_UInt8), notEquals(__table1.x, 0_UInt8))\|ARRAY JOIN __table1.x\|Filter column: notEquals(__table2.y, 2_UInt8)"
+    grep -o "Filter column: and(notEquals(__table2.y, 2_UInt8), notEquals(__array_join_exp_1, 0_UInt8))\|ARRAY JOIN __array_join_exp_1\|Filter column: notEquals(__table2.y, 2_UInt8)"
 $CLICKHOUSE_CLIENT -q "
     select x, y from (
         select range(number) as x, number + 1 as y from numbers(3)
@@ -223,43 +223,44 @@ $CLICKHOUSE_CLIENT -q "
         select number from numbers(5) where number in (select 1 + number from numbers(3))
     ) where number != 2 settings enable_optimize_predicate_expression=0"
 
+# `query_plan_join_swap_table = 0` below to fix the query plan
 echo "> one condition of filter is pushed down before LEFT JOIN"
 $CLICKHOUSE_CLIENT --enable_analyzer=0 -q "
     explain actions = 1
     select number as a, r.b from numbers(4) as l any left join (
         select number + 2 as b from numbers(3)
-    ) as r on a = r.b where a != 1 and b != 2 settings enable_optimize_predicate_expression = 0" |
-    grep -o "Join\|Filter column: notEquals(number, 1)"
+    ) as r on a = r.b where a != 1 and b != 2 settings enable_optimize_predicate_expression = 0, query_plan_join_swap_table = 0" |
+    grep -o "  Join\|Filter column: notEquals(number, 1)"
 echo "> (analyzer) one condition of filter is pushed down before LEFT JOIN"
 $CLICKHOUSE_CLIENT --enable_analyzer=1 -q "
     explain actions = 1
     select number as a, r.b from numbers(4) as l any left join (
         select number + 2 as b from numbers(3)
-    ) as r on a = r.b where a != 1 and b != 2 settings enable_optimize_predicate_expression = 0" |
-    grep -o "Join\|Filter column: notEquals(__table1.number, 1_UInt8)"
+    ) as r on a = r.b where a != 1 and b != 2 settings enable_optimize_predicate_expression = 0, query_plan_join_swap_table = 0" |
+    grep -o "  Join\|Filter column: notEquals(__table1.number, 1_UInt8)"
 $CLICKHOUSE_CLIENT -q "
     select number as a, r.b from numbers(4) as l any left join (
         select number + 2 as b from numbers(3)
-    ) as r on a = r.b where a != 1 and b != 2 settings enable_optimize_predicate_expression = 0" | sort
+    ) as r on a = r.b where a != 1 and b != 2 settings enable_optimize_predicate_expression = 0, query_plan_join_swap_table = 0" | sort
 
 echo "> one condition of filter is pushed down before INNER JOIN"
 $CLICKHOUSE_CLIENT --enable_analyzer=0 -q "
     explain actions = 1
     select number as a, r.b from numbers(4) as l any inner join (
         select number + 2 as b from numbers(3)
-    ) as r on a = r.b where a != 1 and b != 2 settings enable_optimize_predicate_expression = 0" |
-    grep -o "Join\|Filter column: and(notEquals(number, 1), notEquals(number, 2))\|Filter column: and(notEquals(b, 2), notEquals(b, 1))"
+    ) as r on a = r.b where a != 1 and b != 2 settings enable_optimize_predicate_expression = 0, query_plan_join_swap_table = 0" |
+    grep -o "  Join\|Filter column: and(notEquals(number, 1), notEquals(number, 2))\|Filter column: and(notEquals(b, 2), notEquals(b, 1))"
 echo "> (analyzer) one condition of filter is pushed down before INNER JOIN"
 $CLICKHOUSE_CLIENT --enable_analyzer=1 -q "
     explain actions = 1
     select number as a, r.b from numbers(4) as l any inner join (
         select number + 2 as b from numbers(3)
-    ) as r on a = r.b where a != 1 and b != 2 settings enable_optimize_predicate_expression = 0" |
-        grep -o "Join\|Filter column: and(notEquals(__table1.number, 1_UInt8), notEquals(__table1.number, 2_UInt8))\|Filter column: and(notEquals(__table2.b, 2_UInt8), notEquals(__table2.b, 1_UInt8))"
+    ) as r on a = r.b where a != 1 and b != 2 settings enable_optimize_predicate_expression = 0, query_plan_join_swap_table = 0" |
+        grep -o "  Join\|Filter column: and(notEquals(__table1.number, 1_UInt8), notEquals(__table1.number, 2_UInt8))\|Filter column: and(notEquals(__table2.b, 2_UInt8), notEquals(__table2.b, 1_UInt8))"
 $CLICKHOUSE_CLIENT -q "
     select number as a, r.b from numbers(4) as l any inner join (
         select number + 2 as b from numbers(3)
-    ) as r on a = r.b where a != 1 and b != 2 settings enable_optimize_predicate_expression = 0"
+    ) as r on a = r.b where a != 1 and b != 2 settings enable_optimize_predicate_expression = 0, query_plan_join_swap_table = 0"
 
 echo "> filter is pushed down before UNION"
 $CLICKHOUSE_CLIENT -q "

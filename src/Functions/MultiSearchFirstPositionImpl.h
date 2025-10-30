@@ -45,7 +45,7 @@ struct MultiSearchFirstPositionImpl
         std::vector<std::string_view> needles;
         needles.reserve(needles_arr.size());
         for (const auto & needle : needles_arr)
-            needles.emplace_back(needle.get<String>());
+            needles.emplace_back(needle.safeGet<String>());
 
         auto res_callback = [](const UInt8 * start, const UInt8 * end) -> UInt64
         {
@@ -62,7 +62,7 @@ struct MultiSearchFirstPositionImpl
             for (size_t j = 0; j < input_rows_count; ++j)
             {
                 const auto * haystack = &haystack_data[prev_haystack_offset];
-                const auto * haystack_end = haystack + haystack_offsets[j] - prev_haystack_offset - 1;
+                const auto * haystack_end = haystack + haystack_offsets[j] - prev_haystack_offset;
                 if (iteration == 0 || res[j] == 0)
                     res[j] = searcher.searchOneFirstPosition(haystack, haystack_end, res_callback);
                 else
@@ -116,7 +116,7 @@ struct MultiSearchFirstPositionImpl
             auto searcher = Impl::createMultiSearcherInBigHaystack(needles); // sub-optimal
 
             const auto * const haystack = &haystack_data[prev_haystack_offset];
-            const auto * haystack_end = haystack + haystack_offsets[i] - prev_haystack_offset - 1;
+            const auto * haystack_end = haystack + haystack_offsets[i] - prev_haystack_offset;
 
             size_t iteration = 0;
             while (searcher.hasMoreToSearch())

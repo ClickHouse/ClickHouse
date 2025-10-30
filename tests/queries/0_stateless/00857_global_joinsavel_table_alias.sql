@@ -1,4 +1,3 @@
-
 DROP TABLE IF EXISTS local_table;
 DROP TABLE IF EXISTS other_table;
 

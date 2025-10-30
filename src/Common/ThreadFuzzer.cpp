@@ -1,4 +1,4 @@
-// NOLINTBEGIN(readability-inconsistent-declaration-parameter-name)
+// NOLINTBEGIN(readability-inconsistent-declaration-parameter-name,readability-else-after-return)
 
 #include <csignal>
 #include <sys/time.h>
@@ -52,8 +52,6 @@ namespace ErrorCodes
 ThreadFuzzer::ThreadFuzzer()
 {
     initConfiguration();
-    if (needsSetup())
-        setup();
 
     if (!isEffective())
     {
@@ -280,6 +278,9 @@ void ThreadFuzzer::signalHandler(int)
 
 void ThreadFuzzer::setup() const
 {
+    if (!needsSetup())
+        return;
+
     struct sigaction sa{};
     sa.sa_handler = signalHandler;
     sa.sa_flags = SA_RESTART;
@@ -450,4 +451,4 @@ FOR_EACH_WRAPPED_FUNCTION(MAKE_WRAPPER_USING_INTERNAL_SYMBOLS)
 #endif
 }
 
-// NOLINTEND(readability-inconsistent-declaration-parameter-name)
+// NOLINTEND(readability-inconsistent-declaration-parameter-name,readability-else-after-return)

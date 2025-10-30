@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Common/FieldVisitorToString.h>
+#include <DataTypes/FieldToDataType.h>
 #include <base/sort.h>
 #include <base/TypeName.h>
 #include <Core/Field.h>
@@ -39,13 +41,14 @@ private:
     {}
 
 public:
-    const char * getFamilyName() const override { return TypeName<T>.data(); }
-    TypeIndex getDataType() const override { return TypeToTypeIndex<T>; }
+    const char * getFamilyName() const override;
+    TypeIndex getDataType() const override;
 
     bool isNumeric() const override { return false; }
     bool canBeInsideNullable() const override { return true; }
     bool isFixedAndContiguous() const final { return true; }
     size_t sizeOfValueIfFixed() const override { return sizeof(T); }
+    std::span<char> insertRawUninitialized(size_t count) override;
 
     size_t size() const override { return data.size(); }
     size_t byteSize() const override { return data.size() * sizeof(data[0]); }
@@ -53,6 +56,7 @@ public:
     size_t allocatedBytes() const override { return data.allocated_bytes(); }
     void protect() override { data.protect(); }
     void reserve(size_t n) override { data.reserve_exact(n); }
+    size_t capacity() const override { return data.capacity(); }
     void shrinkToFit() override { data.shrink_to_fit(); }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -74,7 +78,7 @@ public:
     void insertData(const char * src, size_t /*length*/) override;
     void insertDefault() override { data.push_back(T()); }
     void insertManyDefaults(size_t length) override { data.resize_fill(data.size() + length); }
-    void insert(const Field & x) override { data.push_back(x.get<T>()); }
+    void insert(const Field & x) override { data.push_back(x.safeGet<T>()); }
     bool tryInsert(const Field & x) override;
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
@@ -97,7 +101,7 @@ public:
         return StringRef(reinterpret_cast<const char *>(&data[n]), sizeof(data[n]));
     }
 
-    Float64 getFloat64(size_t n) const final { return DecimalUtils::convertTo<Float64>(data[n], scale); }
+    Float64 getFloat64(size_t n) const final;
 
     const char * deserializeAndInsertFromArena(const char * pos) override;
     const char * skipSerializedInArena(const char * pos) const override;
@@ -118,8 +122,12 @@ public:
 
     MutableColumnPtr cloneResized(size_t size) const override;
 
-    Field operator[](size_t n) const override { return DecimalField(data[n], scale); }
+    Field operator[](size_t n) const override { return DecimalField<ValueType>(data[n], scale); }
     void get(size_t n, Field & res) const override { res = (*this)[n]; }
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override
+    {
+        return {FieldVisitorToString()(data[n], scale), FieldToDataType()(data[n], scale)};
+    }
     bool getBool(size_t n) const override { return bool(data[n].value); }
     Int64 getInt(size_t n) const override { return Int64(data[n].value); }
     UInt64 get64(size_t n) const override;
@@ -144,7 +152,9 @@ public:
         return false;
     }
 
-    ColumnPtr compress() const override;
+    void updateAt(const IColumn & src, size_t dst_pos, size_t src_pos) override;
+
+    ColumnPtr compress(bool force_compression) const override;
 
     void insertValue(const T value) { data.push_back(value); }
     Container & getData() { return data; }
@@ -194,6 +204,7 @@ extern template class ColumnDecimal<Decimal64>;
 extern template class ColumnDecimal<Decimal128>;
 extern template class ColumnDecimal<Decimal256>;
 extern template class ColumnDecimal<DateTime64>;
+extern template class ColumnDecimal<Time64>;
 
 
 }

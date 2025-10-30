@@ -3,6 +3,11 @@
 #include <Processors/Merges/IMergingTransform.h>
 #include <Processors/Merges/Algorithms/AggregatingSortedAlgorithm.h>
 
+namespace ProfileEvents
+{
+    extern const Event AggregatingSortedMilliseconds;
+}
+
 namespace DB
 {
 
@@ -13,7 +18,7 @@ class AggregatingSortedTransform final : public IMergingTransform<AggregatingSor
 {
 public:
     AggregatingSortedTransform(
-        const Block & header,
+        SharedHeader header,
         size_t num_inputs,
         SortDescription description_,
         size_t max_block_size_rows,
@@ -29,6 +34,11 @@ public:
     }
 
     String getName() const override { return "AggregatingSortedTransform"; }
+
+    void onFinish() override
+    {
+        logMergedStats(ProfileEvents::AggregatingSortedMilliseconds, "Aggregated sorted", getLogger("AggregatingSortedTransform"));
+    }
 };
 
 }

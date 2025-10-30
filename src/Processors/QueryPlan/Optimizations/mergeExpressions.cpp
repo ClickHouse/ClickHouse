@@ -21,7 +21,7 @@ static void removeFromOutputs(ActionsDAG & dag, const ActionsDAG::Node & node)
     }
 }
 
-size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
+size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings & settings)
 {
     if (parent_node->children.size() != 1)
         return false;
@@ -48,14 +48,14 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
 
         auto merged = ActionsDAG::merge(std::move(child_actions), std::move(parent_actions));
 
-        auto expr = std::make_unique<ExpressionStep>(child_expr->getInputStreams().front(), std::move(merged));
-        expr->setStepDescription("(" + parent_expr->getStepDescription() + " + " + child_expr->getStepDescription() + ")");
+        auto expr = std::make_unique<ExpressionStep>(child_expr->getInputHeaders().front(), std::move(merged));
+        expr->setStepDescription(fmt::format("({} + {})", parent_expr->getStepDescription(), child_expr->getStepDescription()), settings.max_step_description_length);
 
         parent_node->step = std::move(expr);
         parent_node->children.swap(child_node->children);
         return 1;
     }
-    else if (parent_filter && child_expr)
+    if (parent_filter && child_expr)
     {
         auto & child_actions = child_expr->getExpression();
         auto & parent_actions = parent_filter->getExpression();
@@ -65,11 +65,12 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
 
         auto merged = ActionsDAG::merge(std::move(child_actions), std::move(parent_actions));
 
-        auto filter = std::make_unique<FilterStep>(child_expr->getInputStreams().front(),
-                                                   std::move(merged),
-                                                   parent_filter->getFilterColumnName(),
-                                                   parent_filter->removesFilterColumn());
-        filter->setStepDescription("(" + parent_filter->getStepDescription() + " + " + child_expr->getStepDescription() + ")");
+        auto filter = std::make_unique<FilterStep>(
+            child_expr->getInputHeaders().front(),
+            std::move(merged),
+            parent_filter->getFilterColumnName(),
+            parent_filter->removesFilterColumn());
+        filter->setStepDescription(fmt::format("({} + {})", parent_filter->getStepDescription(), child_expr->getStepDescription()), settings.max_step_description_length);
 
         parent_node->step = std::move(filter);
         parent_node->children.swap(child_node->children);
@@ -78,7 +79,7 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
 
     return 0;
 }
-size_t tryMergeFilters(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
+size_t tryMergeFilters(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings & settings)
 {
     if (parent_node->children.size() != 1)
         return false;
@@ -116,11 +117,11 @@ size_t tryMergeFilters(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
 
         child_actions.removeUnusedActions(false);
 
-        auto filter = std::make_unique<FilterStep>(child_filter->getInputStreams().front(),
+        auto filter = std::make_unique<FilterStep>(child_filter->getInputHeaders().front(),
                                                    std::move(child_actions),
                                                    condition.result_name,
                                                    true);
-        filter->setStepDescription("(" + parent_filter->getStepDescription() + " + " + child_filter->getStepDescription() + ")");
+        filter->setStepDescription(fmt::format("({} + {})", parent_filter->getStepDescription(), child_filter->getStepDescription()), settings.max_step_description_length);
 
         parent_node->step = std::move(filter);
         parent_node->children.swap(child_node->children);

@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 
-from http.server import SimpleHTTPRequestHandler, HTTPServer
-import socket
 import csv
+import gzip
+import lzma
+import os
+import socket
+import subprocess
 import sys
 import tempfile
 import threading
-import os
-import gzip
 import traceback
 import urllib.request
-import subprocess
-import lzma
+from http.server import HTTPServer, SimpleHTTPRequestHandler
 
 
 def is_ipv6(host):

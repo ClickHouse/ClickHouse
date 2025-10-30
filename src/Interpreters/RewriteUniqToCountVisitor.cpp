@@ -28,30 +28,27 @@ bool matchFnUniq(String name)
 bool expressionEquals(const ASTPtr & lhs, const ASTPtr & rhs, const Aliases & alias)
 {
     if (lhs->getTreeHash(/*ignore_aliases=*/ true) == rhs->getTreeHash(/*ignore_aliases=*/ true))
-    {
         return true;
-    }
-    else
+
+    auto * lhs_idf = lhs->as<ASTIdentifier>();
+    auto * rhs_idf = rhs->as<ASTIdentifier>();
+    if (lhs_idf && rhs_idf)
     {
-        auto * lhs_idf = lhs->as<ASTIdentifier>();
-        auto * rhs_idf = rhs->as<ASTIdentifier>();
-        if (lhs_idf && rhs_idf)
-        {
-            /// compound identifiers, such as: <t.name, name>
-            if (lhs_idf->shortName() == rhs_idf->shortName())
-                return true;
+        /// compound identifiers, such as: <t.name, name>
+        if (lhs_idf->shortName() == rhs_idf->shortName())
+            return true;
 
-            /// translate alias
-            if (alias.find(lhs_idf->shortName()) != alias.end())
-                lhs_idf = alias.find(lhs_idf->shortName())->second->as<ASTIdentifier>();
+        /// translate alias
+        if (alias.find(lhs_idf->shortName()) != alias.end())
+            lhs_idf = alias.find(lhs_idf->shortName())->second->as<ASTIdentifier>();
 
-            if (alias.find(rhs_idf->shortName()) != alias.end())
-                rhs_idf = alias.find(rhs_idf->shortName())->second->as<ASTIdentifier>();
+        if (alias.find(rhs_idf->shortName()) != alias.end())
+            rhs_idf = alias.find(rhs_idf->shortName())->second->as<ASTIdentifier>();
 
-            if (lhs_idf && rhs_idf && lhs_idf->shortName() == rhs_idf->shortName())
-                return true;
-        }
+        if (lhs_idf && rhs_idf && lhs_idf->shortName() == rhs_idf->shortName())
+            return true;
     }
+
     return false;
 }
 

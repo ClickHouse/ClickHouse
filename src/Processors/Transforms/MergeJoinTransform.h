@@ -232,10 +232,10 @@ public:
     MergeJoinAlgorithm(JoinKind kind_,
                        JoinStrictness strictness_,
                        const TableJoin::JoinOnClause & on_clause_,
-                       const Blocks & input_headers,
+                       SharedHeaders & input_headers,
                        size_t max_block_size_);
 
-    MergeJoinAlgorithm(JoinPtr join_ptr, const Blocks & input_headers, size_t max_block_size_);
+    MergeJoinAlgorithm(JoinPtr join_ptr, SharedHeaders & input_headers, size_t max_block_size_);
 
     const char * getName() const override { return "MergeJoinAlgorithm"; }
     void initialize(Inputs inputs) override;
@@ -245,6 +245,8 @@ public:
     void setAsofInequality(ASOFJoinInequality asof_inequality_);
 
     void logElapsed(double seconds);
+    MergedStats getMergedStats() const override;
+
 private:
     std::optional<Status> handleAnyJoinState();
     Status anyJoin();
@@ -280,6 +282,7 @@ private:
     {
         size_t num_blocks[2] = {0, 0};
         size_t num_rows[2] = {0, 0};
+        size_t num_bytes[2] = {0, 0};
 
         size_t max_blocks_loaded = 0;
     };
@@ -296,8 +299,8 @@ class MergeJoinTransform final : public IMergingTransform<MergeJoinAlgorithm>
 public:
     MergeJoinTransform(
         JoinPtr table_join,
-        const Blocks & input_headers,
-        const Block & output_header,
+        SharedHeaders & input_headers,
+        SharedHeader output_header,
         size_t max_block_size,
         UInt64 limit_hint = 0);
 
@@ -305,8 +308,8 @@ public:
         JoinKind kind_,
         JoinStrictness strictness_,
         const TableJoin::JoinOnClause & on_clause_,
-        const Blocks & input_headers,
-        const Block & output_header,
+        SharedHeaders & input_headers,
+        SharedHeader output_header,
         size_t max_block_size,
         UInt64 limit_hint_ = 0);
 

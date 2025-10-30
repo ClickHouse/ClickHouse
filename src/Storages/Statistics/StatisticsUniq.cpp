@@ -2,17 +2,14 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnSparse.h>
 
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int ILLEGAL_STATISTICS;
-}
-
-StatisticsUniq::StatisticsUniq(const SingleStatisticsDescription & stat_, const DataTypePtr & data_type)
-    : IStatistics(stat_)
+StatisticsUniq::StatisticsUniq(const SingleStatisticsDescription & description, const DataTypePtr & data_type)
+    : IStatistics(description)
 {
     arena = std::make_unique<Arena>();
     AggregateFunctionProperties properties;
@@ -26,13 +23,32 @@ StatisticsUniq::~StatisticsUniq()
     collector->destroy(data);
 }
 
-void StatisticsUniq::update(const ColumnPtr & column)
+void StatisticsUniq::build(const ColumnPtr & column)
 {
-    /// TODO(hanfei): For low cardinality, it's very slow to convert to full column. We can read the dictionary directly.
-    /// Here we intend to avoid crash in CI.
-    auto col_ptr = column->convertToFullColumnIfLowCardinality();
-    const IColumn * raw_ptr = col_ptr.get();
-    collector->addBatchSinglePlace(0, column->size(), data, &(raw_ptr), nullptr);
+    const IColumn * raw_column_ptr = nullptr;
+
+    /// For sparse and low cardinality columns an extra default
+    /// value may be added. That is ok since the uniq count is an estimation.
+    if (const auto * column_sparse = typeid_cast<const ColumnSparse *>(column.get()))
+    {
+        raw_column_ptr = &column_sparse->getValuesColumn();
+    }
+    else if (const auto * column_low_cardinality = typeid_cast<const ColumnLowCardinality *>(column.get()))
+    {
+        raw_column_ptr = column_low_cardinality->getDictionary().getNestedColumn().get();
+    }
+    else
+    {
+        raw_column_ptr = column.get();
+    }
+
+    collector->addBatchSinglePlace(0, raw_column_ptr->size(), data, &(raw_column_ptr), nullptr);
+}
+
+void StatisticsUniq::merge(const StatisticsPtr & other_stats)
+{
+    const StatisticsUniq * other = typeid_cast<const StatisticsUniq *>(other_stats.get());
+    collector->merge(data, other->data, arena.get());
 }
 
 void StatisticsUniq::serialize(WriteBuffer & buf)
@@ -52,17 +68,16 @@ UInt64 StatisticsUniq::estimateCardinality() const
     return column->getUInt(0);
 }
 
-void uniqValidator(const SingleStatisticsDescription &, DataTypePtr data_type)
+bool uniqStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & data_type)
 {
-    data_type = removeNullable(data_type);
-    data_type = removeLowCardinalityAndNullable(data_type);
-    if (!data_type->isValueRepresentedByNumber())
-        throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type 'uniq' do not support type {}", data_type->getName());
+    DataTypePtr inner_data_type = removeNullable(data_type);
+    inner_data_type = removeLowCardinalityAndNullable(inner_data_type);
+    return inner_data_type->isValueRepresentedByNumber() || isStringOrFixedString(inner_data_type);
 }
 
-StatisticsPtr uniqCreator(const SingleStatisticsDescription & stat, DataTypePtr data_type)
+StatisticsPtr uniqStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type)
 {
-    return std::make_shared<StatisticsUniq>(stat, data_type);
+    return std::make_shared<StatisticsUniq>(description, data_type);
 }
 
 }

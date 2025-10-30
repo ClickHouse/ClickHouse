@@ -70,7 +70,7 @@ namespace
                 {
                     break;
                 }
-                else if (*src_curr_pos == '<')
+                if (*src_curr_pos == '<')
                 {
                     size_t bytes_to_copy = src_curr_pos - src_prev_pos;
                     memcpySmallAllowReadWriteOverflow15(dst_pos, src_prev_pos, bytes_to_copy);
@@ -139,6 +139,33 @@ namespace
 
 REGISTER_FUNCTION(EncodeXMLComponent)
 {
-    factory.registerFunction<FunctionEncodeXMLComponent>();
+    FunctionDocumentation::Description description = R"(
+Escapes characters to place string into XML text node or attribute.
+)";
+    FunctionDocumentation::Syntax syntax = "encodeXMLComponent(s)";
+    FunctionDocumentation::Arguments arguments = {
+        {"s", "String to escape.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the escaped string.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+SELECT
+    '<tag>Hello & "World"</tag>' AS original,
+    encodeXMLComponent('<tag>Hello & "World"</tag>') AS xml_encoded;
+        )",
+        R"(
+┌─original───────────────────┬─xml_encoded──────────────────────────────────────────┐
+│ <tag>Hello & "World"</tag> │ &lt;tag&gt;Hello &amp; &quot;World&quot;&lt;/tag&gt; │
+└────────────────────────────┴──────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionEncodeXMLComponent>(documentation);
 }
 }

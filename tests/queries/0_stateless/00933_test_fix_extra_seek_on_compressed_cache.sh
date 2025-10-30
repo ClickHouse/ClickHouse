@@ -18,7 +18,7 @@ cached_query="SELECT count() FROM small_table WHERE n > 0;"
 $CLICKHOUSE_CLIENT --log_queries 1 --use_uncompressed_cache 1 --query="$cached_query"
 $CLICKHOUSE_CLIENT --log_queries 1 --use_uncompressed_cache 1 --allow_prefetched_read_pool_for_remote_filesystem 0 --allow_prefetched_read_pool_for_local_filesystem 0 --query_id="test-query-uncompressed-cache" --query="$cached_query"
 
-$CLICKHOUSE_CLIENT --query="SYSTEM FLUSH LOGS"
+$CLICKHOUSE_CLIENT --query="SYSTEM FLUSH LOGS query_log"
 
 $CLICKHOUSE_CLIENT --query="
     SELECT

@@ -1,0 +1,1946 @@
+<!DOCTYPE html><html lang=en><head><meta charset=UTF-8><meta name=viewport content="width=device-width, initial-scale=1.0"><title>praktika report</title><style>
+
+        /* Default (Day Theme) */
+        :root {
+            --background-color: white;
+            --text-color: #000;
+            --tile-background: #f9f9f9;
+            --info-background: #e4e4e4;
+            --footer-background: #f1f1f1;
+            --footer-text-color: #000;
+            --status-width: 300px;
+            --pending-bar-color: #f5e6a3;
+            --skipped-bar-color: #ccc;
+        }
+
+        .hidden {
+            transform: translateX(-100%); /* Moves status-container out of view */
+        }
+
+        .expanded {
+            left: 10px !important; /* Move result-container to the left */
+        }
+
+        .button-moved {
+            left: 0 !important; /* Move button to the left when sidebar is hidden */
+        }
+
+        body {
+            background-color: var(--background-color);
+            color: var(--text-color);
+            height: 100%;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            font-family: 'Source Code Pro', monospace, sans-serif;
+            letter-spacing: -0.5px;
+            --header-background-color: #f4f4f4;
+            --link-color: blue;
+            --link-hover-color: darkblue;
+            --job-name-color: var(--text-color);
+            --file-link-color: blue;
+            --file-link-hover-color: darkblue;
+            --table-border-color: #ccc;
+        }
+
+        body.night-theme {
+            --background-color: #1F1F1C;
+            --text-color: #dedede;
+            --tile-background: #1F1F1F;
+            --info-background: #575757;
+            --header-background-color: #1F1F1C;
+            --pending-bar-color: #595801;
+            --skipped-bar-color: #575757;
+            --table-border-color: #444;
+            --job-name-color: var(--text-color);
+            --link-color: #ffea00;
+            --link-hover-color: #ffaa00;
+            --file-link-color: #007efc;
+            --file-link-hover-color: #004d9a;
+        }
+
+        #status-container {
+            position: fixed;
+            top: 0;
+            bottom: 40px;
+            left: 0;
+            width: var(--status-width);
+            background-color: var(--tile-background);
+            padding: 0;
+            box-sizing: border-box;
+            /*font-size: 18px;*/
+            margin: 0;
+            overflow-y: auto;
+        }
+
+        .status-widget {
+            border: 1px solid var(--table-border-color, #ccc); /* fallback to #ccc */
+            padding: 10px;
+            margin-bottom: 5px;
+            text-align: right;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+        }
+
+        #toggle-status-bar {
+            position: fixed;
+            top: 40%;
+            left: calc(var(--status-width));
+            background-color: var(--pending-bar-color);
+            color: var(--tile-background);
+            border: none;
+            padding: 20px 4px 20px 4px;
+            cursor: pointer;
+            border-top-right-radius: 8px;
+            border-bottom-right-radius: 8px;
+        }
+
+        @media (min-width: 1200px) {
+            #toggle-status-bar {
+                display: none;
+            }
+        }
+
+        .file-link {
+            color: var(--file-link-color);
+            font-weight: bold;
+            font-size: 0.7em;
+            font-family: 'Roboto Condensed', sans-serif;
+            font-stretch: ultra-condensed;
+            cursor: pointer;
+            display: inline-block;
+            margin-top: 5px;
+            text-decoration: none;
+            word-break: break-word;       /* allows long strings to wrap mid-word */
+            white-space: normal;          /* enables wrapping */
+            max-width: 100%;              /* make sure it doesn’t overflow parent */
+        }
+
+        .file-link:hover {
+            color: var(--file-link-hover-color);
+            text-decoration: none;
+        }
+
+        .json-key {
+            font-weight: bold;
+        }
+        .external-link {
+            color: var(--file-link-color);
+            font-family: 'Source Code Pro', monospace, sans-serif;
+            cursor: pointer;
+            display: inline-block;
+            text-decoration: none;
+        }
+
+        .external-link:hover {
+            color: var(--file-link-hover-color);
+            text-decoration: underline;
+        }
+        .dropdown-value {
+            width: 100px;
+            font-weight: normal;
+            font-family: inherit;
+            background-color: transparent;
+            color: inherit;
+            /*border: none;*/
+            /*outline: none;*/
+            /*cursor: pointer;*/
+        }
+
+        #result-container {
+            background-color: var(--tile-background);
+            position: fixed;
+            top: 0;
+            bottom: 40px;
+            left: calc(var(--status-width) + 10px); /* Align with status container */
+            right: 0; /* Stretch to the right edge */
+
+            padding: 0;
+            box-sizing: border-box;
+            font-weight: normal;
+
+            overflow: auto;
+            white-space: nowrap;
+        }
+
+        .info-text {
+            white-space: normal; /* Allow text to wrap */
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            max-width: 100%; /* Prevent overflow */
+            background-color: var(--info-background);
+        }
+        #info-content {
+            text-align: left;
+            padding: 10px;
+        }
+
+        #footer {
+            padding: 10px;
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background-color: #1F1F1C;
+            color: white;
+            font-size: 14px;
+            display: flex;
+            justify-content: space-between; /* Ensure the .left expands, and .right and .settings are aligned to the right */
+            align-items: center;
+        }
+
+        #footer a {
+            color: white;
+            text-decoration: none;
+        }
+
+        #footer .left {
+            flex-grow: 1; /* Takes up all the available space */
+        }
+
+        #footer .left span.separator {
+            margin-left: 5px;
+            margin-right: 5px;
+        }
+
+        #footer .right, #footer .settings {
+            display: flex;
+            align-items: center;
+            margin-right: 20px;
+        }
+
+        #footer .right a::before {
+            content: "#";
+            margin-left: 10px;
+            color: #e0e0e0;
+        }
+
+        #footer .right::before, #footer .settings::before {
+            content: "|"; /* Add separator before right and settings sections */
+            margin-left: 0px;
+            margin-right: 10px;
+            color: #e0e0e0;
+        }
+
+        #theme-toggle, #status-filter-toggle {
+            cursor: pointer;
+            color: white;
+            margin-left: 10px;
+        }
+
+        #theme-toggle:hover {
+            color: #e0e0e0;
+        }
+
+        #footer a:hover {
+            text-decoration: underline;
+        }
+
+        table {
+            table-layout: fixed; /* Ensures columns behave properly */
+            width: auto; /* Table shrinks to fit content */
+            max-width: 100%; /* Prevents overflow */
+            border-collapse: collapse;
+        }
+
+        th, td {
+            white-space: nowrap; /* Prevent text wrapping */
+        }
+
+        th.name-column, td.name-column,
+        th.status-column, td.status-column,
+        td.dur-column, th.dur-column {
+            width: 1px;
+            max-width: fit-content;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        td.dur-column {
+            text-align: right;
+        }
+
+        th.time-column, td.time-column {
+            width: auto; /* This column takes remaining space */
+            text-align: left;
+        }
+
+        .name-column a {
+            color: var(--job-name-color);
+            text-decoration: underline;
+            display: inline-block;
+        }
+
+        /*.name-column a:hover {*/
+        /*    color: var(--link-hover-color);*/
+        /*}*/
+
+        /* Non-clickable text should look similar but without underline */
+        .name-column .disabled {
+            color: var(--job-name-color); /* Same color as links */
+            cursor: default; /* No pointer cursor */
+            text-decoration: none; /* No underline */
+        }
+
+        .status-column span[style*="pointer"] {
+            text-decoration: underline;
+        }
+
+        th, td {
+            padding: 8px;
+            border: 1px solid var(--table-border-color);
+            text-align: left;
+        }
+
+        .status-success {
+            color: green;
+            font-weight: bold;
+        }
+
+        .status-fail {
+            color: red;
+            font-weight: bold;
+        }
+
+        .status-pending {
+            color: #d4a017;
+            font-weight: bold;
+        }
+
+        .status-broken {
+            color: purple;
+            font-weight: bold;
+        }
+
+        .status-run {
+            color: #0080ff;
+            font-weight: bold;
+        }
+
+        .status-error {
+            color: darkred;
+            font-weight: bold;
+        }
+
+        .status-dropped {
+            color: rgb(78, 0, 194);
+            font-weight: bold;
+        }
+
+        .status-other {
+            color: grey;
+            font-weight: bold;
+        }
+    </style></head><body><div id=status-container></div><div id=result-container></div><button id=toggle-status-bar onclick=toggleStatusBar()>‖</button><footer id=footer><div class=left></div><div class=right></div><div class=settings><span id=status-filter-toggle></span><span id=theme-toggle>🔆️</span></div></footer><script>
+    // Track all interval timers for cleanup
+    const activeTimers = {
+        intervals: [],
+        addInterval: function(timer) {
+            this.intervals.push(timer);
+            return timer;
+        },
+        clearAll: function() {
+            this.intervals.forEach(clearInterval);
+            this.intervals = [];
+        }
+    };
+
+    // Track event listeners for cleanup
+    const activeListeners = {
+        listeners: [],
+        add: function(element, type, listener) {
+            element.addEventListener(type, listener);
+            this.listeners.push({ element, type, listener });
+            return listener;
+        },
+        removeAll: function() {
+            this.listeners.forEach(({ element, type, listener }) => {
+                if (element && element.removeEventListener) {
+                    element.removeEventListener(type, listener);
+                }
+            });
+            this.listeners = [];
+        }
+    };
+
+    function toggleTheme() {
+        document.body.classList.toggle('night-theme');
+        if (document.body.classList.contains('night-theme')) {
+            localStorage.setItem('theme', 'night');
+        } else {
+            localStorage.setItem('theme', 'day');
+        }
+    }
+
+    function filterRowsByStatus() {
+        const filter = localStorage.getItem('filter');
+        const showOnlyFailures = filter === 'failures';
+        const showOnlyWarnings = filter === 'warnings';
+
+        const rows = document.querySelectorAll('tr[data-status]');
+
+        if (!showOnlyFailures && !showOnlyWarnings) {
+            rows.forEach(row => row.style.display = '');
+            return;
+        }
+        rows.forEach(row => {
+            row.style.display = shouldShowRow(filter, row.dataset.status) ? '' : 'none';
+        });
+    }
+
+    function shouldShowRow(filter, status) {
+        const status_ = status.toLowerCase();
+
+        const isFailure =
+            status_.includes('fail') || status_.includes('error') || status_.includes('dropped');
+        const isWarning =
+            status_.includes('pending') || status_.includes('running');
+
+        if (filter === 'failures') {
+            return isFailure;
+        }
+
+        if (filter === 'warnings') {
+            // Show both warnings and failures under 'warnings' filter
+            return isWarning || isFailure;
+        }
+
+        // If no filter is set, show all
+        return true;
+    }
+
+    function toggleStatusFilter(setValue=false) {
+        if (setValue instanceof Event) {
+            setValue = false;
+        }
+        let current = localStorage.getItem('filter');
+
+        if (!['all', 'failures', 'warnings'].includes(current)) {
+            current = 'all';
+        }
+        let newFilter;
+        if (setValue) {
+            newFilter = current;
+        } else {
+            if (current === 'all') {
+                newFilter = 'warnings';
+            } else if (current === 'warnings') {
+                newFilter = 'failures';
+            } else {
+                newFilter = 'all';
+            }
+        }
+        localStorage.setItem('filter', newFilter);
+        const toggle = document.getElementById('status-filter-toggle');
+        if (toggle) {
+            const greenTick = `<img alt="all" src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMiIgaGVpZ2h0PSIxMiIgdmlld0JveD0iMCAwIDIwIDIwIj4KICA8cGF0aCBmaWxsPSJncmVlbiIgZD0iTTAgMTEgTDcgMTggTDIwIDIgTDE4IDAgTDcgMTQgTDIgOSBaIi8+Cjwvc3ZnPgoK">`;
+            const redCross = `<img alt="failures" src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMiIgaGVpZ2h0PSIxMiIgdmlld0JveD0iMCAwIDIwIDIwIj4KICA8bGluZSB4MT0iMiIgeTE9IjIiIHgyPSIxOCIgeTI9IjE4IiBzdHJva2U9InJlZCIgc3Ryb2tlLXdpZHRoPSIyIi8+CiAgPGxpbmUgeDE9IjIiIHkxPSIxOCIgeDI9IjE4IiB5Mj0iMiIgc3Ryb2tlPSJyZWQiIHN0cm9rZS13aWR0aD0iMiIvPgo8L3N2Zz4KCg==">`;
+            const yellowExclamationMark = `<img alt="warnings" src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMiIgaGVpZ2h0PSIxMiIgdmlld0JveD0iMCAwIDIwIDIwIj4KICA8cG9seWdvbiBwb2ludHM9IjEwLDAgMCwyMCAyMCwyMCIgZmlsbD0ieWVsbG93Ii8+CiAgPHJlY3QgeD0iOSIgeT0iNiIgd2lkdGg9IjIiIGhlaWdodD0iNyIgZmlsbD0iYmxhY2siLz4KICA8Y2lyY2xlIGN4PSIxMCIgY3k9IjE2IiByPSIxIiBmaWxsPSJibGFjayIvPgo8L3N2Zz4KCg==">`;
+            toggle.innerHTML =
+                newFilter === 'failures' ? redCross :
+                    newFilter === 'warnings' ? yellowExclamationMark :
+                        greenTick;
+        }
+
+        filterRowsByStatus();
+    }
+
+    function toggleStatusBar() {
+        var statusContainer = document.getElementById("status-container");
+        var resultContainer = document.getElementById("result-container");
+        var toggleButton = document.getElementById("toggle-status-bar");
+
+        if (statusContainer.classList.contains("hidden")) {
+            statusContainer.classList.remove("hidden");
+            resultContainer.classList.remove("expanded");
+            toggleButton.classList.remove("button-moved");
+        } else {
+            statusContainer.classList.add("hidden");
+            resultContainer.classList.add("expanded");
+            toggleButton.classList.add("button-moved");
+        }
+    }
+
+    function updateUrlParameter(paramName, paramValue) {
+        const url = new URL(window.location.href);
+        url.searchParams.set(paramName, paramValue);
+        window.location.href = url.toString();
+    }
+
+    document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
+    document.getElementById('status-filter-toggle').addEventListener('click', toggleStatusFilter);
+
+    function formatTimestamp(timestamp, showDate = true) {
+        const date = new Date(timestamp * 1000);
+        const day = String(date.getDate()).padStart(2, '0');
+        const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+            "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+        const month = monthNames[date.getMonth()];
+        //const year = date.getFullYear();
+        const hours = String(date.getHours()).padStart(2, '0');
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        const seconds = String(date.getSeconds()).padStart(2, '0');
+        //const milliseconds = String(date.getMilliseconds()).padStart(2, '0');
+
+        return showDate
+            ? `${day}'${month} ${hours}:${minutes}:${seconds}`
+            : `${hours}:${minutes}:${seconds}`;
+    }
+
+    function formatDuration(durationInSeconds, detailed = false) {
+        // Check if the duration is empty, null, or not a number
+        if (!durationInSeconds || isNaN(durationInSeconds)) {
+            return '00s';
+        }
+
+        // Ensure duration is a floating-point number
+        const duration = parseFloat(durationInSeconds);
+
+        if (detailed) {
+            // Format in the detailed format with hours, minutes, and seconds
+            const hours = Math.floor(duration / 3600);
+            const minutes = Math.floor((duration % 3600) / 60);
+            const seconds = Math.floor(duration % 60);
+
+            const formattedHours = hours > 0 ? `${hours}h ` : '';
+            const formattedMinutes = minutes > 0 ? `${minutes}m ` : '';
+            const formattedSeconds = `${String(seconds).padStart(2, '0')}s`;
+
+            return `${formattedHours}${formattedMinutes}${formattedSeconds}`.trim();
+        } else {
+            // Format in the default format with seconds and milliseconds
+            const seconds = Math.floor(duration);
+            const milliseconds = Math.floor((duration % 1) * 1000);
+
+            const formattedSeconds = String(seconds);
+            const formattedMilliseconds = String(milliseconds).padStart(2, '0').slice(-2);
+
+            return `${formattedSeconds}.${formattedMilliseconds}`;
+        }
+    }
+
+    // Function to determine status class based on value
+    function getStatusClass(status) {
+        const lowerStatus = status.toLowerCase();
+        if (lowerStatus.includes('success') || lowerStatus === 'ok') return 'status-success';
+        if (lowerStatus.includes('fail')) return 'status-fail';
+        if (lowerStatus.includes('pending')) return 'status-pending';
+        if (lowerStatus.includes('broken')) return 'status-broken';
+        if (lowerStatus.includes('run')) return 'status-run';
+        if (lowerStatus.includes('error')) return 'status-error';
+        if (lowerStatus.includes('dropped')) return 'status-dropped';
+        return 'status-other';
+    }
+
+    // Color utility
+    function stringToColor(str, dark = false) {
+        let hash = 0;
+        for (let i = 0; i < str.length; i++) {
+            hash = str.charCodeAt(i) + ((hash << 5) - hash);
+        }
+        const hue = Math.abs(hash % 360);
+        const saturation = dark ? 90 : 60; // Higher = more vivid
+        const lightness = dark ? 45 : 60;  // Slightly darker = more contrast
+        return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+    }
+
+    function addFileLinksWidget(links) {
+        if (!Array.isArray(links) || links.length === 0) return;
+
+        const statusContainer = document.getElementById('status-container');
+        const widget = document.createElement('div');
+        widget.className = 'status-widget';
+        widget.style.textAlign = 'left';
+
+        const base_url = window.location.origin + window.location.pathname;
+
+        links.forEach(link => {
+            const fileLink = document.createElement('a');
+            fileLink.href = link;
+            fileLink.target = '_blank';
+            fileLink.className = 'file-link';
+            fileLink.textContent = link.includes(base_url) ? "Report" : link.split('/').pop();
+
+            // Wrap each link in its own line for spacing
+            const line = document.createElement('div');
+            line.appendChild(fileLink);
+            widget.appendChild(line);
+        });
+
+        statusContainer.appendChild(widget);
+    }
+
+    function addDetailsWidget(runtimeCache, sha, PR) {
+        const statusContainer = document.getElementById('status-container');
+
+        // Widget container
+        const widget = document.createElement('div');
+        widget.className = 'status-widget'
+
+        function addLine(text, options = {}) {
+            const el = document.createElement(options.tag || 'div');
+            el.textContent = text || 'N/A';
+            if (options.bold) el.style.fontWeight = "bold";
+            if (options.small) el.style.fontSize = "12px";
+            if (options.link) {
+                el.href = options.link;
+                el.target = "_blank";
+                el.className = "external-link";
+            }
+            widget.appendChild(el);
+        }
+
+        function createDropdown(selected, options, optionValues, key) {
+            const select = document.createElement('select');
+            select.className = 'dropdown-value';
+
+            options.forEach((label, i) => {
+                const opt = document.createElement('option');
+                opt.textContent = label;
+                opt.value = optionValues[i];
+                if (optionValues[i] === selected) opt.selected = true;
+                select.appendChild(opt);
+            });
+
+            select.addEventListener('change', (event) => {
+                const selectedValue = event.target.value;
+                updateUrlParameter(key, selectedValue);
+            });
+
+            return select;
+        }
+
+        // === PR + SHA ROW ===
+        const topRow = document.createElement("div");
+        topRow.style.display = "flex";
+        topRow.style.justifyContent = "space-between";
+        topRow.style.alignItems = "center";
+        topRow.style.margin = "8px 0";
+
+        // PR on the left
+        const prLabel = document.createElement("div");
+        if (PR > 0 && runtimeCache.prLink) {
+            const prLink = document.createElement("a");
+            prLink.textContent = `PR ${PR}`;
+            prLink.href = runtimeCache.prLink;
+            prLink.target = "_blank";
+            prLink.style.fontWeight = "bold";
+            prLink.className = "external-link";
+            prLabel.appendChild(prLink);
+        }
+        topRow.appendChild(prLabel);
+
+        // SHA dropdown on the right
+        const commits = runtimeCache.commits || [];
+        const shaSelectorText = commits.map(({ sha, message }) => {
+            const shortSha = (sha || "").substring(0, 8);
+            return message ? `${shortSha}: ${message}` : shortSha;
+        });
+        const shaSelectorValues = commits.map(c => c.sha);
+        shaSelectorText.push("latest");
+        shaSelectorValues.push("latest");
+
+        const shaDropdown = createDropdown(sha, shaSelectorText, shaSelectorValues, "sha");
+        topRow.appendChild(shaDropdown);
+
+        widget.appendChild(topRow);
+
+        // PR title / branch
+        if (PR > 0) {
+            const ext = runtimeCache.json0?.ext || {};
+            if (ext.pr_title) addLine(ext.pr_title, { small: true });
+            if (ext.git_branch) addLine(ext.git_branch, { small: true });
+        }
+
+        // Current SHA (full), small
+        const real_sha = sha === "latest" ? commits.at(-1)?.sha : sha
+        addLine(real_sha, { small: true });
+        addLine(": " + commits.find(c => c.sha === real_sha)?.message || "", { small: true });
+
+        statusContainer.appendChild(widget);
+    }
+
+    function addStatisticsWidget(jobName, duration) {
+        const statusContainer = document.getElementById("status-container");
+        const chartWrapper = document.createElement("div");
+        chartWrapper.className = 'status-widget';
+
+        const stats = persistentStorage.statisticsObject?.[jobName]?.["3d"];
+        if (!stats) {
+            console.warn(`No stats found for job: ${jobName}`);
+            return;
+        }
+
+        const quantiles = stats.quantiles;
+        const keys = Object.keys(quantiles).map(Number).sort((a, b) => a - b);
+        const values = keys.map(k => quantiles[k]);
+        values[0] = Math.min(duration, values[0]);
+        values[values.length - 1] = Math.max(duration, values[values.length - 1]);
+
+        const minValue = values[0];
+        const maxValue = values[values.length - 1];
+        const range = maxValue - minValue;
+
+        // --- Density Segments
+        const densitySegments = [];
+        for (let i = 0; i < keys.length - 1; i++) {
+            const q1 = keys[i], q2 = keys[i + 1];
+            const v1 = quantiles[q1], v2 = quantiles[q2];
+
+            const x1 = ((v1 - minValue) / range) * 100;
+            const x2 = ((v2 - minValue) / range) * 100;
+            const dq = q2 - q1;
+            const dv = v2 - v1 || 1e-6;
+
+            const density = dq / dv;
+            densitySegments.push({ x1, x2, density });
+        }
+
+        // --- Normalize densities
+        const allDensities = densitySegments.map(seg => seg.density);
+        const maxDensity = Math.max(...allDensities);
+        const minDensity = Math.min(...allDensities);
+
+        const gradientStops = densitySegments.flatMap((seg, i) => {
+            const next = densitySegments[i + 1] ?? seg;
+
+            const norm1 = (seg.density - minDensity) / (maxDensity - minDensity || 1);
+            const norm2 = (next.density - minDensity) / (maxDensity - minDensity || 1);
+
+            const curved1 = Math.pow(norm1, 0.5);
+            const curved2 = Math.pow(norm2, 0.5);
+
+            const alpha1 = (0.3 + 0.7 * curved1).toFixed(2);
+            const alpha2 = (0.3 + 0.7 * curved2).toFixed(2);
+
+            const color1 = `rgba(0, 123, 255, ${alpha1})`;
+            const color2 = `rgba(0, 123, 255, ${alpha2})`;
+
+            return [
+                `${color1} ${seg.x1.toFixed(2)}%`,
+                `${color2} ${seg.x2.toFixed(2)}%`
+            ];
+        });
+
+        const gradient = `linear-gradient(to right, ${gradientStops.join(', ')})`;
+
+        const clampedDuration = Math.max(minValue, Math.min(duration, maxValue));
+        const durationLeft = ((clampedDuration - minValue) / range) * 100;
+
+        const topLabelBox = document.createElement("div");
+        //topLabelBox.style.fontSize = "10px";
+        topLabelBox.style.marginBottom = "4px";
+
+        const currentLabel = document.createElement("div");
+        currentLabel.style.textAlign = "left";
+        currentLabel.textContent = `duration: ${formatDuration(duration)}`;
+
+        topLabelBox.appendChild(currentLabel);
+
+        topLabelBox.appendChild(currentLabel);
+        chartWrapper.appendChild(topLabelBox);
+
+        // --- Bar
+        const bar = document.createElement("div");
+        bar.style.position = "relative";
+        bar.style.height = "24px";
+        bar.style.background = gradient;
+
+        const durationLine = document.createElement("div");
+        durationLine.style.position = "absolute";
+        durationLine.style.left = `${durationLeft}%`;
+        durationLine.style.top = "0";
+        durationLine.style.bottom = "0";
+        durationLine.style.width = "2px";
+        durationLine.style.background = "red";
+        bar.appendChild(durationLine);
+
+        chartWrapper.appendChild(bar);
+
+        // --- Min / Max labels below bar
+        const bottomLabels = document.createElement("div");
+        bottomLabels.style.display = "flex";
+        bottomLabels.style.justifyContent = "space-between";
+        bottomLabels.style.fontSize = "10px";
+        bottomLabels.style.color = "#444";
+
+        const minLabel = document.createElement("div");
+        minLabel.textContent = formatDuration(minValue);
+
+        const maxLabel = document.createElement("div");
+        maxLabel.textContent = formatDuration(maxValue);
+
+        bottomLabels.appendChild(minLabel);
+        bottomLabels.appendChild(maxLabel);
+        chartWrapper.appendChild(bottomLabels);
+
+        // --- Final assemble
+        statusContainer.appendChild(chartWrapper);
+
+        function formatDuration(ms) {
+            const s = Math.floor(ms / 1000);
+            const h = Math.floor(s / 3600);
+            const m = Math.floor((s % 3600) / 60);
+            const sec = s % 60;
+
+            const parts = [];
+            if (h > 0) parts.push(`${h}h`);
+            parts.push(`${m}m`);
+            parts.push(`${sec}s`);
+
+            return parts.join(' ');
+        }
+    }
+
+    function addStorageUsageChartToStatus(usage_data) {
+        const statusContainer = document.getElementById("status-container");
+        
+        // Note: We don't need the extra style element anymore as we now handle margins directly
+
+        if (!usage_data || !usage_data.uploaded || !usage_data.uploaded_details) {
+            console.error("Invalid or missing storage usage data.");
+            return;
+        }
+
+        const uploaded = usage_data.uploaded;
+        const originalDetails = usage_data.uploaded_details;
+        // Calculate total size in MB - define it at this scope level so it's available throughout the function
+        const uploadedMB = (uploaded / (1024 * 1024)).toFixed(2);
+
+        // Group small files and sort
+        let sortedEntries = Object.entries(originalDetails)
+            .map(([name, size]) => [name, size])
+            .sort((a, b) => b[1] - a[1]);
+
+        // Take top 20, rest go to "other"
+        let grouped = sortedEntries.slice(0, 20);
+        const rest = sortedEntries.slice(20);
+        const otherTotal = rest.reduce((sum, [, value]) => sum + value, 0);
+        if (otherTotal > 0) grouped.push(["other", otherTotal]);
+
+        const labels = grouped.map(([label]) => label);
+        const values = grouped.map(([, value]) => value);
+
+        const chartWrapper = document.createElement("div");
+        chartWrapper.className = 'status-widget';
+
+        // Create fixed-height info container (2 lines)
+        const infoContainer = document.createElement("div");
+        infoContainer.style.height = "2.2em";
+        infoContainer.style.display = "flex";
+        infoContainer.style.flexDirection = "column";
+        infoContainer.style.fontSize = "0.8em";
+
+        // First line: Item name or "total uploaded"
+        const nameRow = document.createElement("div");
+        nameRow.style.height = "1.3em";
+        nameRow.style.lineHeight = "1.3em";
+        nameRow.style.overflow = "hidden";
+        nameRow.style.whiteSpace = "nowrap";
+        nameRow.style.textOverflow = "ellipsis";
+        nameRow.style.letterSpacing = "-0.02em"; // Slightly condensed letter spacing
+        nameRow.id = "storage-usage-name";
+        nameRow.textContent = "uploaded:";
+        
+        // Second line: XX% ...padding... YYYMB
+        const detailsRow = document.createElement("div");
+        detailsRow.style.display = "flex";
+        detailsRow.style.justifyContent = "space-between";
+        detailsRow.style.height = "1.3em";
+        detailsRow.style.lineHeight = "1.3em";
+        detailsRow.id = "storage-usage-details";
+        detailsRow.style.fontSize = "0.85em";
+        detailsRow.style.color = "#666";
+        
+        // Combined size and percentage info (right-aligned)
+        const sizeAndPercentEl = document.createElement("span");
+        sizeAndPercentEl.id = "storage-usage-size-percent";
+        sizeAndPercentEl.style.marginLeft = "auto"; // Push to the right
+        sizeAndPercentEl.textContent = `${uploadedMB} MB (100%)`; // Both size and percentage
+        
+        detailsRow.appendChild(sizeAndPercentEl);
+        
+        infoContainer.appendChild(nameRow);
+        infoContainer.appendChild(detailsRow);
+        chartWrapper.appendChild(infoContainer);
+
+        // Fixed dimensions for the horizontal bar chart
+        const barHeight = 24; // Thick bar
+        
+        // Bar chart container - use 100% width to fit the widget perfectly
+        const chartContainer = document.createElement("div");
+        chartContainer.style.height = `${barHeight}px`;
+        chartContainer.style.position = "relative";
+        chartContainer.style.margin = "10px 0 0 0";
+        chartContainer.style.cursor = "pointer";
+        
+        // Create bars for each entry
+        const barData = [];
+        
+        // Use percentage-based widths instead of fixed pixels
+        labels.forEach((label, index) => {
+            const value = values[index];
+            const percent = value / uploaded;
+            // Convert to percentage width with minimum visibility
+            const percentWidth = Math.max(percent * 100, 0.5);
+            const color = stringToColor(label);
+            
+            const bar = document.createElement("div");
+            bar.style.position = "absolute";
+            bar.style.left = barData.length > 0 ? `${barData.reduce((sum, b) => sum + b.percentWidth, 0)}%` : "0";
+            bar.style.width = `${percentWidth}%`;
+            bar.style.height = `${barHeight}px`;
+            bar.style.backgroundColor = color;
+            bar.style.transition = "opacity 0.2s";
+            bar.dataset.label = label;
+            
+            // Create tooltip data for this bar
+            const sizeMB = (value / (1024 * 1024)).toFixed(2);
+            const percentValue = ((value / uploaded) * 100).toFixed(1);
+            bar.dataset.tooltip = `${label}: ${sizeMB} MB (${percentValue}%)`;
+            
+            chartContainer.appendChild(bar);
+            
+            barData.push({
+                label,
+                element: bar,
+                percentWidth,
+                color,
+                value,
+                tooltip: `${label}: ${sizeMB} MB (${percentValue}%)`
+            });
+        });
+        
+        chartWrapper.appendChild(chartContainer);
+        statusContainer.appendChild(chartWrapper);
+
+        // Helper function to update display elements
+        const updateDisplay = (name, sizeMB, percent) => {
+            const nameEl = document.getElementById("storage-usage-name");
+            const sizePercentEl = document.getElementById("storage-usage-size-percent");
+            
+            if (nameEl && sizePercentEl) {
+                nameEl.textContent = name;
+                sizePercentEl.textContent = `${sizeMB} MB (${percent}%)`;
+            }
+        };
+        
+        // Show the total uploaded by default
+        const showTotalUploaded = () => {
+            updateDisplay("uploaded:", uploadedMB, 100);
+        };
+
+        // Show details for specific segment
+        const showSegmentDetails = (segment) => {
+            const sizeMB = (segment.value / (1024 * 1024)).toFixed(2);
+            const percent = ((segment.value / uploaded) * 100).toFixed(1);
+            updateDisplay(segment.label, sizeMB, percent);
+        };
+        
+        // Highlight bar function
+        function highlightBar(hoveredLabel) {
+            let hoveredSegment = null;
+            
+            barData.forEach(bar => {
+                if (bar.label === hoveredLabel) {
+                    bar.element.style.opacity = "1";
+                    //bar.element.style.boxShadow = "0 0 0 2px #000";
+                    hoveredSegment = bar;
+                } else {
+                    bar.element.style.opacity = "0.5";
+                }
+            });
+            
+            // Show details for hovered segment
+            if (hoveredSegment) {
+                showSegmentDetails(hoveredSegment);
+            }
+        }
+
+        // Reset bars function
+        function resetBars() {
+            barData.forEach(bar => {
+                bar.element.style.opacity = "1";
+                bar.element.style.boxShadow = "none";
+            });
+            
+            // Reset to show total uploaded
+            showTotalUploaded();
+        }
+        
+        // Add hover effects to the bar segments
+        barData.forEach(bar => {
+            bar.element.addEventListener("mouseenter", () => highlightBar(bar.label));
+            bar.element.addEventListener("mouseleave", () => resetBars());
+        });
+        
+        // Reset wrapper padding to default for text, but adjust for the bar
+        chartWrapper.style.padding = "10px"; // Restore the standard padding
+        chartWrapper.style.paddingBottom = "10px"; // Add extra bottom padding
+        
+        // Only adjust the chart container (bar) to have full width
+        chartContainer.style.marginLeft = "-10px"; // Offset the parent padding
+        chartContainer.style.marginRight = "-10px"; // Offset the parent padding
+        chartContainer.style.width = "calc(100% + 20px)"; // Compensate for the negative margins
+    }
+
+    function addTimeTraceWidget(results, statusWidget, originalTask) {
+        const statusContainer = document.getElementById("status-container");
+        if (!results || results.length === 0) {
+            console.error("No results to visualize.");
+            return;
+        }
+
+        const lineWidth = 5;
+        const padding = 1;
+        const totalHeight = (lineWidth + padding) * results.length;
+
+        const widget = document.createElement("div");
+        widget.className = 'status-widget'
+        widget.style.height = `${totalHeight}px`;
+        widget.style.padding = "0";
+        statusContainer.appendChild(widget);
+
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+
+        canvas.style.width = "100%";
+        canvas.style.height = `${totalHeight}px`;
+        canvas.style.display = "block";
+        widget.appendChild(canvas);
+        
+        // Move taskRects to outer scope so event handlers can access it
+        let taskRects = [];
+
+        function resizeCanvas() {
+            canvas.width = widget.clientWidth;
+            canvas.height = totalHeight;
+            drawTimeline();
+        }
+        resizeCanvas();
+        // Use our event tracker instead of direct attachment
+        activeListeners.add(window, "resize", resizeCanvas);
+
+        function getColorFromName(name) {
+            let hash = 0;
+            for (let i = 0; i < name.length; i++) {
+                hash = name.charCodeAt(i) + ((hash << 5) - hash);
+            }
+            const hue = Math.abs(hash % 360);
+            return `hsl(${hue}, 70%, 60%)`;
+        }
+
+        function drawTimeline() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            taskRects = []; // Reset the array instead of declaring a new one
+            const failedMarkers = [];
+
+            const minStartTime = runtimeCache.json0.start_time;
+            const currentUtcTimestamp = Date.now() / 1000;
+            const maxTime = runtimeCache.json0?.duration ?? (currentUtcTimestamp - minStartTime);
+            const scaleX = canvas.width / maxTime;
+
+            results.forEach((task, index) => {
+                const y = index * (lineWidth + padding);
+                const height = lineWidth;
+
+                let x, width, color;
+                if (task.start_time === null) {
+                    x = 0;
+                    width = canvas.width;
+                    const getCss = (name) => getComputedStyle(document.body).getPropertyValue(name).trim();
+                    color = task.status === "pending" ? getCss('--pending-bar-color') : getCss('--skipped-bar-color');
+                } else if (task.duration === null) {
+                    x = (task.start_time - minStartTime) * scaleX;
+                    width = (maxTime - (task.start_time - minStartTime)) * scaleX;
+                    color = getColorFromName(task.name);
+                } else {
+                    x = (task.start_time - minStartTime) * scaleX;
+                    width = task.duration * scaleX;
+                    color = getColorFromName(task.name);
+                }
+                
+                ctx.fillStyle = color;
+                ctx.fillRect(x, y, width, height);
+
+                taskRects.push({ x, y, width, height, task });
+
+                // Save failure marker position for second pass
+                if (task.status === "failure" || task.status === "error" || task.status === "dropped") {
+                    failedMarkers.push({ x: x + width, y: y + height / 2 });
+                }
+            });
+
+            // Draw failure markers on top
+            failedMarkers.forEach(({ x, y }) => {
+                ctx.font = "8px sans-serif";
+                ctx.fillText("❌", Math.max(x - 14, 0), y + 4);
+            });
+        }
+
+        activeListeners.add(canvas, "mousemove", (event) => {
+            const rect = canvas.getBoundingClientRect();
+            const mouseY = event.clientY - rect.top;
+
+            let hoveredTask = null;
+            for (let { y, height, task } of taskRects) {
+                if (mouseY >= y && mouseY <= y + height) {
+                    hoveredTask = task;
+                    break;
+                }
+            }
+
+            if (hoveredTask && statusWidget?.update) {
+                statusWidget.update(
+                    hoveredTask.name,
+                    hoveredTask.status,
+                    hoveredTask.start_time,
+                    hoveredTask.duration
+                );
+            }
+        });
+
+        activeListeners.add(canvas, "mouseleave", () => {
+            if (statusWidget?.update && originalTask) {
+                statusWidget.update(
+                    originalTask.name,
+                    originalTask.status,
+                    originalTask.start_time,
+                    originalTask.duration
+                );
+            }
+        });
+
+        drawTimeline();
+
+        activeTimers.addInterval(setInterval(drawTimeline, 5000));
+    }
+
+    function addStatusWidget(name, status, start_time, duration, container = null) {
+        const statusContainer = container || document.getElementById('status-container');
+
+        // Widget container
+        const widget = document.createElement('div');
+        widget.className = 'status-widget'
+
+        // Helper to create a line
+        function addLine(value, className = '') {
+            const line = document.createElement('div');
+            line.textContent = value;
+
+            if (className) line.classList.add(className);
+            widget.appendChild(line);
+        }
+
+        // Make widget re-usable by external updates
+        widget.update = function (name, status, start_time, duration) {
+            widget.innerHTML = '';
+            
+            // Create name line with fixed height for two lines
+            const nameLine = document.createElement('div');
+            nameLine.textContent = name;
+            nameLine.style.whiteSpace = "normal";
+            nameLine.style.overflow = "hidden";
+            nameLine.style.maxWidth = "100%";
+            nameLine.style.height = "2.6em"; // Reserve space for 2 lines
+            nameLine.style.lineHeight = "1.3em";
+            nameLine.style.textAlign = "left";
+            widget.appendChild(nameLine);
+            
+            addLine(status, getStatusClass(status));
+            addLine(start_time ? formatTimestamp(start_time) : "0:00:00");
+            if (duration != null) {
+                addLine(formatDuration(duration, true));
+            } else if (start_time != null) {
+                const durationLine = document.createElement('div');
+                let seconds = Math.floor(Date.now() / 1000 - start_time);
+                durationLine.textContent = formatDuration(seconds, true);
+
+                activeTimers.addInterval(setInterval(() => {
+                    seconds++;
+                    durationLine.textContent = formatDuration(seconds, true);
+                }, 1000));
+
+                widget.appendChild(durationLine);
+            } else {
+                addLine("--s");
+            }
+        };
+
+        // Initial fill
+        widget.update(name, status, start_time, duration);
+        statusContainer.appendChild(widget);
+        return widget;
+    }
+
+    const columns = ['status', 'name', 'duration', 'start_time'];
+
+    const columnSymbols = {
+        // name: '🗂️',
+        // status: '✅',
+        start_time: 'start time',
+        duration: 'duration',
+        // info: '📝',
+        files: '📎'
+    };
+
+    function createResultsTable(results, nest_level) {
+        if (results && Array.isArray(results) && results.length > 0) {
+            const table = document.createElement('table');
+            const thead = document.createElement('thead');
+            const tbody = document.createElement('tbody');
+
+            let existing_columns = {};
+            columns.forEach(column => {
+                existing_columns[column] = results.some(result => result[column]);
+            });
+
+            // Build an ordered list of columns that actually exist
+            const existingColumnsList = columns.filter(column => existing_columns[column]);
+            const lastColumn = existingColumnsList[existingColumnsList.length - 1];
+
+            // Create table headers based on the fixed columns
+            const headerRow = document.createElement('tr');
+            existingColumnsList.forEach(column => {
+                const th = document.createElement('th');
+                th.textContent = columnSymbols[column] || column;
+                th.style.cursor = 'pointer';
+                th.style.textDecoration = 'underline';
+                th.setAttribute('data-sort-direction', 'asc'); // Default sort direction
+                if (column === lastColumn) th.classList.add('time-column');
+                th.addEventListener('click', () => sortTable(results, column, columnSymbols[column] || column, tbody, nest_level, existingColumnsList));
+                headerRow.appendChild(th);
+            });
+            thead.appendChild(headerRow);
+
+            // Create table rows
+            populateTableRows(tbody, results, nest_level, existingColumnsList);
+
+            table.appendChild(thead);
+            table.appendChild(tbody);
+
+            return table;
+        }
+        return null;
+    }
+
+    function populateTableRows(tbody, results, nest_level, existingColumnsList) {
+        const currentUrl = new URL(window.location.href);
+        // Clear existing rows
+        tbody.innerHTML = '';
+        const filter = localStorage.getItem('filter');
+        const lastColumn = existingColumnsList[existingColumnsList.length - 1];
+
+        results.forEach((result, _index) => {
+            const row = document.createElement('tr');
+            const labels = result?.ext?.labels;
+            const linklabels = result?.ext?.hlabels;
+
+            existingColumnsList.forEach(column => {
+                const td = document.createElement('td');
+                const value = result[column];
+
+                // Make the last column the expanding one regardless of its name
+                if (column === lastColumn) td.classList.add('time-column');
+
+                if (column === 'status') {
+                    const span = document.createElement('span');
+                    span.className = getStatusClass(value);
+                    span.textContent = value;
+                    td.classList.add('status-column');
+                    row.dataset.status = value ? value.toLowerCase() : "";
+                    if ((result.info && result.info.trim() !== "") || (Array.isArray(result.links) && result.links.length > 0) || (Array.isArray(result.results) && result.results.length > 0)) {
+                        span.style.cursor = "pointer";
+                        span.addEventListener('click', () => toggleInfoRow(row, result.info, result.results, result.links));
+                    }
+                    td.appendChild(span);
+                    row.style.display = shouldShowRow(filter, row.dataset.status) ? '' : 'none';
+                } else if (column === 'name') {
+                    const statusValue = result["status"] ? result["status"].toLowerCase() : "";
+
+                    if (
+                        (nest_level === 1 && ["pending", "skipped", "running"].includes(statusValue)) ||
+                        (nest_level > 1 && (!Array.isArray(result.results) || result.results.length === 0) ||
+                            nest_level === 0)
+                    ) {
+                        const span = document.createElement('span');
+                        span.textContent = value;
+                        span.classList.add('disabled');
+                        td.classList.add('name-column');
+                        td.appendChild(span);
+                    } else {
+                        const newUrl = new URL(currentUrl);
+                        newUrl.searchParams.set(`name_${nest_level}`, value);
+
+                        const link = document.createElement('a');
+                        link.href = newUrl.toString();
+                        link.textContent = value;
+                        td.classList.add('name-column');
+                        td.appendChild(link);
+                    }
+
+                    // Create a container for labels and linklabels
+                    const labelsContainer = document.createElement('span');
+                    labelsContainer.className = 'labels-container';
+                    labelsContainer.style.userSelect = 'none'; // Prevent selection
+                    labelsContainer.style.marginLeft = '4px';
+
+                    if (Array.isArray(labels)) {
+                        labels.forEach(labelStr => {
+                            const label = document.createElement('span');
+                            label.textContent = labelStr;
+                            label.style.marginLeft = '6px';
+                            label.style.padding = '2px 8px';
+                            label.style.backgroundColor = stringToColor(labelStr, true);
+                            label.style.color = 'white';
+                            label.style.fontSize = '12px';
+                            label.style.borderRadius = '8px';
+                            label.style.fontWeight = 'bold';
+                            label.style.display = 'inline-block';
+                            label.style.verticalAlign = 'middle';
+                            labelsContainer.appendChild(label);
+                        });
+                    }
+
+                    if (Array.isArray(linklabels)) {
+                        linklabels.forEach(item => {
+                            let text, href;
+                            if (Array.isArray(item)) {
+                                [text, href] = item;
+                            } else if (item && typeof item === 'object') {
+                                text = item.text || item.label || '';
+                                href = item.href || item.url || '';
+                            } else if (typeof item === 'string') {
+                                text = item;
+                                href = '';
+                            }
+                            if (!text) return;
+                            if (href) {
+                                const a = document.createElement('a');
+                                a.textContent = text;
+                                a.href = href;
+                                a.target = '_blank';
+                                a.rel = 'noopener noreferrer';
+                                a.style.marginLeft = '6px';
+                                a.style.padding = '2px 8px';
+                                a.style.backgroundColor = stringToColor(text, true);
+                                a.style.color = 'white';
+                                a.style.fontSize = '12px';
+                                a.style.borderRadius = '8px';
+                                a.style.fontWeight = 'bold';
+                                a.style.display = 'inline-block';
+                                labelsContainer.appendChild(a);
+                            } else {
+                                const label = document.createElement('span');
+                                label.textContent = text;
+                                label.style.marginLeft = '6px';
+                                label.style.padding = '2px 8px';
+                                label.style.backgroundColor = stringToColor(text, true);
+                                label.style.color = 'white';
+                                label.style.fontSize = '12px';
+                                label.style.borderRadius = '8px';
+                                label.style.fontWeight = 'bold';
+                                label.style.display = 'inline-block';
+                                labelsContainer.appendChild(label);
+                            }
+                        });
+                    }
+
+                    // Only append if there are labels
+                    if (labelsContainer.childNodes.length > 0) {
+                        td.appendChild(labelsContainer);
+                    }
+
+                } else if (column === 'start_time') {
+                    td.textContent = value ? formatTimestamp(value, false) : '';
+
+                } else if (column === 'duration') {
+                    td.classList.add('dur-column');
+                    td.textContent = value ? formatDuration(value) : '';
+                }
+
+                row.appendChild(td);
+            });
+
+            tbody.appendChild(row);
+
+            // unfold all for preview mode (nest_level = 0 in this case)
+            if (nest_level === 0 && result.results.length > 0) {
+                toggleInfoRow(row, result.info, result.results, result.links);
+            }
+
+        });
+    }
+
+    /**
+     * Toggles an additional row below the clicked row to display the "info" text.
+     */
+    function toggleInfoRow(row, infoText, sub_results = [], links = []) {
+        let nextRow = row.nextElementSibling;
+
+        // Check if the next row is already an "info" row
+        if (nextRow && nextRow.classList.contains('info-row')) {
+            nextRow.remove(); // If it's there, remove it
+            closedInfoCnt++;
+            console.log(`Info row closed. Count: ${openedInfoCnt - closedInfoCnt}. Auto-refresh ${openedInfoCnt - closedInfoCnt > 0 ? 'disabled' : 'enabled'}.`);
+        } else {
+            // Otherwise, create a new row for the info text
+            openedInfoCnt++;
+            console.log(`Info row opened. Count: ${openedInfoCnt - closedInfoCnt}. Auto-refresh ${openedInfoCnt - closedInfoCnt > 0 ? 'disabled' : 'enabled'}.`);
+            const infoRow = document.createElement('tr');
+            infoRow.classList.add('info-row');
+
+            const infoCell = document.createElement('td');
+            infoCell.colSpan = row.children.length; // Make it span the full width
+            infoCell.classList.add('info-text');
+
+            if (infoText) {
+                let content = document.createElement('div');
+                infoCell.innerHTML = '<pre></pre>';
+                // Append content securely, without interpreting HTML tags.
+                infoCell.firstChild.textContent = infoText;
+                infoCell.appendChild(content);
+            }
+
+            // Handle subResults
+            if (sub_results) {
+                if (Array.isArray(sub_results) && sub_results.length > 0) {
+                    const table = createResultsTable(sub_results, 0);
+                    if (table) {
+                        infoCell.appendChild(table); // Appends table correctly
+                    }
+                }
+            }
+
+            // If there are links, create a list of links
+            if (Array.isArray(links) && links.length > 0) {
+                const linksContainer = document.createElement('div');
+                linksContainer.classList.add('file-link');
+                let base_url = window.location.origin + window.location.pathname;
+
+                links.forEach(link => {
+                    let linkElement = document.createElement('a');
+                    linkElement.href = link;
+                    linkElement.target = "_blank"; // Open in a new tab
+                    linkElement.style.display = "block"; // Each link on a new line
+
+                    if (!link.includes(base_url)) {
+                        // External link: Show file name
+                        linkElement.textContent = link.split('/').pop();
+                    } else {
+                        linkElement.textContent = "Report";
+                    }
+                    linksContainer.appendChild(linkElement);
+                });
+
+                infoCell.appendChild(linksContainer);
+            }
+
+            infoRow.appendChild(infoCell);
+            row.parentNode.insertBefore(infoRow, row.nextSibling); // Insert below the clicked row
+        }
+    }
+
+    function sortTable(results, column, key, tbody, nest_level, existingColumnsList) {
+        // Find the table header element for the given key
+        const tableHeaders = document.querySelectorAll('th');
+        let th = Array.from(tableHeaders).find(header => header.textContent === key);
+
+        if (!th) {
+            console.error(`No table header found for key: ${key}`);
+            return;
+        }
+
+        const ascending = th.getAttribute('data-sort-direction') === 'asc';
+        th.setAttribute('data-sort-direction', ascending ? 'desc' : 'asc');
+
+        results.sort((a, b) => {
+            if (a[column] < b[column]) return ascending ? -1 : 1;
+            if (a[column] > b[column]) return ascending ? 1 : -1;
+            return 0;
+        });
+
+        // Clear the existing rows in tbody
+        tbody.innerHTML = '';
+
+        // Re-populate the table with sorted data
+        populateTableRows(tbody, results, nest_level, existingColumnsList);
+    }
+
+    async function fetchJson(path, lastModifiedTime = null, eTag = null) {
+        try {
+            // Set headers if lastModifiedTime or eTag are available
+            const headers = {};
+            if (lastModifiedTime) headers["If-Modified-Since"] = lastModifiedTime;
+            if (eTag) headers["If-None-Match"] = eTag;
+
+            // Fetch with conditional headers
+            const response = await fetch(path, {
+                cache: "no-cache",
+                headers
+            });
+
+            // If the response is 304 (Not Modified), return existing metadata without fetching new data
+            if (response.status === 304) {
+                return { data: null, lastModifiedTime, eTag, updated: false };
+            } else if (response.status === 403)
+                return { data: null, lastModifiedTime: null, eTag: null, updated: true };
+            // Extract headers
+            const newLastModifiedTime = response.headers.get('Last-Modified');
+            const newETag = response.headers.get('ETag');
+            const jsonData = await response.json();
+
+            return { data: jsonData, lastModifiedTime: newLastModifiedTime, eTag: newETag, updated: true };
+        } catch (error) {
+            console.error('Error loading Results:', error);
+            return { data: null, lastModifiedTime: null, eTag: null, updated: true };
+        }
+    }
+
+    const runtimeCache = {
+        commits: null,
+        json0: null,
+        json1: null,
+        prLink: null,
+        commitLink: null,
+        runLink: null,
+        sha: null
+    };
+
+    function storeLink(link) {
+        if (link.includes('/pull/')) runtimeCache.prLink = link;
+        else if (link.includes('/commit/')) runtimeCache.commitLink = link;
+        else if (link.includes('/actions/runs/')) runtimeCache.runLink = link;
+    }
+
+    function getTargetResults(nameParams) {
+        let resolvedNames = [];
+        let data = runtimeCache.json0;
+
+        if (data !== null) {
+            resolvedNames.push(nameParams[0]);  // Initialize resolvedNames with the first parameter
+        } else {
+            return null;  // Return an object containing data and resolvedNames
+        }
+
+        // Check if we have more than one name to resolve
+        if (nameParams.length > 1) {
+            if (runtimeCache.json1) {
+                data = runtimeCache.json1;  // If json1 exists, use it directly
+            } else {
+                let found = false;
+                // Iterate through data.results to find the target name in json0
+                for (let result of data.results) {
+                    if (result.name === nameParams[1]) {
+                        resolvedNames.push(nameParams[1]);
+                        data = result;
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    console.log("No data for", nameParams[1]);
+                    return data;  // Return current data and resolvedNames if no match is found
+                }
+            }
+
+            // Now resolve remaining names starting from index 2
+            for (let i = 2; i < nameParams.length; i++) {
+                let name = nameParams[i];
+                let found = false;
+
+                // Iterate through data.results to find the target name
+                for (let result of data.results) {
+                    if (result.name === name) {
+                        resolvedNames.push(name);
+                        data = result;
+                        found = true;
+                        break;
+                    }
+                }
+
+                if (!found) {
+                    console.log("No data for", name);
+                    return data;  // Return current data and resolvedNames if no match is found
+                }
+            }
+        }
+
+        return data;  // Return the resolved data and names at the end
+    }
+
+    function fillInNavigationBar(nameArray) {
+        let baseParams = new URLSearchParams(window.location.search);
+        let keysToDelete = [];
+        baseParams.forEach((value, key) => {
+            if (key.startsWith('name_')) {
+                keysToDelete.push(key);
+            }
+        });
+        keysToDelete.forEach((key) => baseParams.delete(key));
+
+        let pathNames = [];
+        let pathLinks = [];
+        for (const [index, name] of nameArray.entries()) {
+            baseParams.set(`name_${index}`, name);
+            pathNames.push(name);
+            pathLinks.push(`<span class="separator">/</span><a href="${window.location.pathname}?${baseParams.toString()}" class="nav-link">${name}</a>`);
+        }
+
+        const footerLeft = document.querySelector('#footer .left');
+        footerLeft.innerHTML = pathLinks.join('');
+    }
+
+    function renderFooter(nameParams) {
+        const footerRight = document.querySelector('#footer .right');
+        function createLinkElement(href, textContent, footer) {
+            const a = document.createElement('a');
+            a.href = href;
+            a.textContent = textContent;
+            a.target = '_blank';
+            footer.appendChild(a);
+        }
+        if (runtimeCache.prLink) createLinkElement(runtimeCache.prLink, 'PR', footerRight);
+        if (runtimeCache.commitLink) createLinkElement(runtimeCache.commitLink, 'Commit', footerRight);
+        if (runtimeCache.runLink) createLinkElement(runtimeCache.runLink, 'Run', footerRight);
+        const result = getTargetResults(nameParams)
+        let i = 1;
+        for (const name of nameParams) {
+            if (name === result.name) {
+                break;
+            }
+            i++;
+        }
+        fillInNavigationBar(nameParams.slice(0, i + 1))
+    }
+
+    async function renderResults(PR, sha, nameParams) {
+        const result = getTargetResults(nameParams)
+        let i = 1;
+        for (const name of nameParams) {
+            if (name === result.name) {
+                break;
+            }
+            i++;
+        }
+
+        const resultsDiv = document.getElementById('result-container');
+        if (result.info) {
+            const textDiv = document.createElement('div');
+            textDiv.id = 'info-content';
+            textDiv.innerHTML = (result.info || '').replace(/\n/g, '<br>');
+            resultsDiv.appendChild(textDiv);
+        }
+
+        const resultsData = result.results;
+        if (Array.isArray(resultsData) && resultsData.length > 0) {
+            const table = createResultsTable(resultsData, i);
+            if (table) {
+                resultsDiv.appendChild(table); // Appends table correctly
+            }
+        }
+        addDetailsWidget(runtimeCache, sha, PR)
+        //addInfoLineToStatus(current_sha);
+        const originalWorkflowDetails = {
+            name: result.name,
+            status: result.status,
+            start_time: result.start_time,
+            duration: result.duration
+        };
+        let statusWidget = addStatusWidget(result.name, result.status, result.start_time, result.duration);
+        if (nameParams.length > 1) {
+            addFileLinksWidget(result.links);
+            if (nameParams.length === 2) {
+                addStatisticsWidget(nameParams[1], result.duration * 1000)
+            }
+        } else {
+            addTimeTraceWidget(result.results, statusWidget, originalWorkflowDetails);
+        }
+        addStorageUsageChartToStatus(result.ext?.storage_usage)
+    }
+
+    const persistentStorage = {
+        get updatedAt() {
+            const value = localStorage.getItem('updatedAt');
+            return value ? parseInt(value, 10) : null;
+        },
+
+        set updatedAt(timestamp) {
+            localStorage.setItem('updatedAt', timestamp.toString());
+        },
+
+        get statisticsObject() {
+            const value = localStorage.getItem('statisticsObject');
+            return value ? JSON.parse(value) : null;
+        },
+
+        set statisticsObject(obj) {
+            localStorage.setItem('statisticsObject', JSON.stringify(obj));
+        },
+    };
+
+    async function fetchStatistics(name) {
+        const HALF_DAY = 12 * 60 * 60 * 1000;
+        const now = Date.now();
+
+        // Get the first path segment after the domain
+        const pathParts = window.location.pathname.split('/');
+        const bucketName = pathParts.length >= 2 ? pathParts[1] : 'default-bucket';
+
+        if (
+            !persistentStorage.updatedAt ||
+            now > persistentStorage.updatedAt + HALF_DAY
+        ) {
+            const url = `https://s3.amazonaws.com/${bucketName}/statistics/statistics.json.gz`;
+
+            try {
+                const response = await fetch(url);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                persistentStorage.statisticsObject = await response.json();
+                persistentStorage.updatedAt = now;
+            } catch (error) {
+                console.error('Error fetching statistics:', error);
+            }
+        } else {
+            console.log('statistics updated at:', new Date(persistentStorage.updatedAt).toISOString());
+        }
+    }
+
+    async function fetchData(PR, REF, sha, nameParams, base_url) {
+        function normalizeTaskName(name) {
+            return name.toLowerCase()
+                .replace(/[^a-z0-9]/g, '_')
+                .replace(/_+/g, '_')
+                .replace(/_+$/, '');
+        }
+
+        // Use base_url from param if provided, else fallback to old logic
+        let baseUrl = base_url;
+        if (!baseUrl) {
+            baseUrl = window.location.origin + window.location.pathname.split('/').slice(0, -1).join('/');
+        }
+        let suffix = '';
+
+        if (PR) {
+            suffix = `PRs/${encodeURIComponent(PR)}`;
+        } else if (REF) {
+            suffix = `REFs/${encodeURIComponent(REF)}`;
+        }
+
+        let hasNewData = false;
+
+        if (!runtimeCache.commits || sha === 'latest') {
+            const { data, updated } = await fetchJson(`${baseUrl}/${suffix}/commits.json`);
+            if (updated) {
+                runtimeCache.commits = data ? data : [];
+                hasNewData = true;
+            }
+        }
+
+        const shaToLoad = (sha === 'latest') ? runtimeCache.commits[runtimeCache.commits.length - 1]?.sha : sha;
+
+        const fetchTasks = [];
+        if (nameParams.length > 1) {
+            const task1 = normalizeTaskName(nameParams[1]);
+            const path1 = `${baseUrl}/${suffix}/${encodeURIComponent(shaToLoad)}/result_${task1}.json`;
+            fetchTasks.push(fetchJson(path1));
+        }
+
+        const task0 = normalizeTaskName(nameParams[0]);
+        const path0 = `${baseUrl}/${suffix}/${encodeURIComponent(shaToLoad)}/result_${task0}.json`;
+        fetchTasks.push(fetchJson(path0));
+
+        // Run fetchJson calls in parallel
+        const results = await Promise.all(fetchTasks);
+
+        if (nameParams.length > 1) {
+            const { data, updated } = results[0]; // First request result
+            if (updated) {
+                runtimeCache.json1 = data;
+                hasNewData = true;
+            }
+        }
+
+        const { data, updated } = results[fetchTasks.length - 1]; // Last request result (always task0)
+        if (updated) {
+            runtimeCache.json0 = data;
+            hasNewData = true;
+            data.links.forEach(storeLink);
+        }
+
+        return hasNewData;
+    }
+
+    // Track for autorefresh toggle
+    let openedInfoCnt = 0;
+    let closedInfoCnt = 0;
+    
+    async function renderResultsAuto(PR, REF, sha, nameParams, base_url) {
+        let autoRefreshTimer = null; // Store the main refresh interval timer
+
+        function clearPage() {
+            // First, clean up any existing timers and event listeners
+            activeTimers.clearAll();
+            activeListeners.removeAll();
+
+            // Then clear the DOM content
+            document.getElementById('result-container').innerHTML = '';
+            document.getElementById('status-container').innerHTML = '';
+        }
+
+        async function checkForUpdatesAndRender(force = false) {
+            // Stop autoreload if info panels are open
+            if (openedInfoCnt - closedInfoCnt > 0) {
+                return;
+            }
+
+            // If not forced, only continue autoreload when status is "running" or "pending"
+            if (!force) {
+                let shouldContinue = false;
+
+                if (nameParams?.length === 1) {
+                    // For single-level results, check json0 status
+                    shouldContinue = ["running", "pending"].includes(runtimeCache?.json0?.status);
+                } else if (nameParams?.length === 2) {
+                    // For two-level results, check json1 status (or json0 if json1 is null)
+                    if (runtimeCache?.json1) {
+                        shouldContinue = ["running", "pending"].includes(runtimeCache?.json1?.status);
+                    } else {
+                        // If json1 is null, we might still be loading, so continue
+                        shouldContinue = true;
+                    }
+                }
+
+                if (!shouldContinue) {
+                    console.log(`Auto-reload stopped: status is ${runtimeCache?.json0?.status || runtimeCache?.json1?.status || 'unknown'}`);
+                    return;
+                }
+            }
+
+            const statusContainer = document.getElementById('status-container');
+            const scrollTop = statusContainer ? statusContainer.scrollTop : 0;
+
+            if (await fetchData(PR, REF, sha, nameParams, base_url)) {
+                // Clear timers, event listeners, and DOM before refreshing content
+                clearPage();
+
+                // Rebuild the page with new data
+                await renderResults(PR, sha, nameParams);
+
+                // Restore scroll position
+                if (statusContainer) {
+                    statusContainer.scrollTop = scrollTop;
+                }
+
+                console.log(`Data refreshed at ${new Date().toLocaleTimeString()}`);
+            }
+        }
+
+        // Initial render
+        await checkForUpdatesAndRender(true);
+
+        // Setup periodic refresh using our timer management
+        autoRefreshTimer = activeTimers.addInterval(setInterval(() => {
+            checkForUpdatesAndRender(false);
+        }, 30000));
+
+        console.log("Auto-reload started");
+    }
+
+    function updatePageTitle(PR, REF, sha, nameParams) {
+        let title = "";
+        if (Array.isArray(nameParams) && nameParams.length > 0) {
+            title += ` ${nameParams[0]}`;
+        }
+        if (Array.isArray(nameParams) && nameParams.length > 1) {
+            title += `/${nameParams[1]}`;
+        }
+        if (PR > 0) {
+            title += `, PR#${PR}`;
+        } else {
+            title += `, sha#${sha.substring(0, 8)}`;
+        }
+        document.title = title.trim();
+    }
+
+    async function init() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const PR = urlParams.get('PR');
+        const REF = urlParams.get('REF');
+        const sha = urlParams.get('sha');
+        const base_url = urlParams.get('base_url');
+        const nameParams = [];
+        urlParams.forEach((value, key) => {
+            if (key.startsWith('name_')) {
+                const index = parseInt(key.split('_')[1], 10);
+                nameParams[index] = value;
+            }
+        });
+        await renderResultsAuto(PR, REF, sha, nameParams, base_url);
+        renderFooter(nameParams)
+        updatePageTitle(PR, REF, sha, nameParams)
+        fetchStatistics(nameParams[0])
+    }
+
+    document.addEventListener('DOMContentLoaded', async () => {
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme === 'night') {
+            document.body.classList.add('night-theme');
+        }
+        await init();
+        toggleStatusFilter(true);
+    });
+
+    function createFavicon() {
+        const width = 32;
+        const height = 32;
+        const lineColor = "rgb(0, 0, 0)";
+        const lineWidth = 4;
+        const spaceWidth = 3;
+        const lineNumber = 4;
+
+        // Create a canvas
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+
+        // Set transparent background
+        ctx.clearRect(0, 0, width, height);
+
+        // Draw vertical lines
+        let xStart = spaceWidth;
+        for (let i = 0; i < lineNumber; i++) {
+            let yStart = Math.floor(Math.random() * height); // Random Y start position
+
+            ctx.fillStyle = lineColor;
+            for (let y = 0; y < height - spaceWidth; y++) {
+                let yPos = (y + yStart) % height;
+                ctx.fillRect(xStart, yPos, lineWidth, 1); // Draw a 1-pixel high line segment
+            }
+
+            xStart += lineWidth + spaceWidth;
+        }
+
+        // Convert canvas to Data URL (PNG format)
+        const faviconURL = canvas.toDataURL("image/png");
+
+        // Set the favicon dynamically
+        let link = document.querySelector("link[rel='icon']");
+        if (!link) {
+            link = document.createElement("link");
+            link.rel = "icon";
+            document.head.appendChild(link);
+        }
+        link.href = faviconURL;
+    }
+    createFavicon();
+</script></body></html>

@@ -9,9 +9,10 @@ namespace DB
 class StatisticsTDigest : public IStatistics
 {
 public:
-    explicit StatisticsTDigest(const SingleStatisticsDescription & stat_);
+    explicit StatisticsTDigest(const SingleStatisticsDescription & description, const DataTypePtr & data_type_);
 
-    void update(const ColumnPtr & column) override;
+    void build(const ColumnPtr & column) override;
+    void merge(const StatisticsPtr & other_stats) override;
 
     void serialize(WriteBuffer & buf) override;
     void deserialize(ReadBuffer & buf) override;
@@ -19,11 +20,14 @@ public:
     Float64 estimateLess(const Field & val) const override;
     Float64 estimateEqual(const Field & val) const override;
 
+    String getNameForLogs() const override { return "TDigest"; }
+
 private:
     QuantileTDigest<Float64> t_digest;
+    DataTypePtr data_type;
 };
 
-void tdigestValidator(const SingleStatisticsDescription &, DataTypePtr data_type);
-StatisticsPtr tdigestCreator(const SingleStatisticsDescription & stat, DataTypePtr);
+bool tdigestStatisticsValidator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
+StatisticsPtr tdigestStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
 
 }

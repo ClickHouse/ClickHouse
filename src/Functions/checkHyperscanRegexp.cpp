@@ -34,7 +34,7 @@ namespace
 bool isLargerThanFifty(std::string_view str)
 {
     int number;
-    auto [_, ec] = std::from_chars(str.begin(), str.end(), number);
+    auto [_, ec] = std::from_chars(str.data(), str.data() + str.size(), number);
     if (ec != std::errc())
         return false;
     return number > 50;
@@ -97,7 +97,7 @@ bool SlowWithHyperscanChecker::isSlow(std::string_view regexp)
 {
     if (isSlowOneRepeat(regexp))
         return true;
-    else if (isSlowTwoRepeats(regexp))
+    if (isSlowTwoRepeats(regexp))
         return true;
     return false;
 }

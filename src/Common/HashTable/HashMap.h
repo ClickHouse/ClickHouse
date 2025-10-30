@@ -8,7 +8,7 @@
 
 /** NOTE HashMap could only be used for memmoveable (position independent) types.
   * Example: std::string is not position independent in libstdc++ with C++11 ABI or in libc++.
-  * Also, key in hash table must be of type, that zero bytes is compared equals to zero key.
+  * Also, key in hash table must be of a type, such as that zero bytes are compared equals to zero key.
   *
   * Please keep in sync with PackedHashMap.h
   */
@@ -46,6 +46,8 @@ struct PairNoInit
         , second(std::forward<SecondValue>(second_))
     {
     }
+
+    auto operator<=>(const PairNoInit &) const = default;
 };
 
 template <typename First, typename Second>
@@ -125,10 +127,6 @@ struct HashMapCell
         DB::assertChar(',', rb);
         DB::readDoubleQuoted(value.second, rb);
     }
-
-    static bool constexpr need_to_notify_cell_during_move = false;
-
-    static void move(HashMapCell * /* old_location */, HashMapCell * /* new_location */) {}
 
     template <size_t I>
     auto & get() & {
@@ -297,7 +295,7 @@ public:
     }
 
     /// Only inserts the value if key isn't already present
-    void ALWAYS_INLINE insertIfNotPresent(const Key & x, const Cell::Mapped & value)
+    void ALWAYS_INLINE insertIfNotPresent(const Key & x, const typename Cell::Mapped & value)
     {
         LookupResult it;
         bool inserted;

@@ -3,7 +3,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/HashTable/HashSet.h>
 #include <bit>
-#include "ColumnsCommon.h"
+#include <Columns/ColumnsCommon.h>
 
 
 namespace DB
@@ -90,7 +90,7 @@ size_t countBytesInFilterWithNull(const IColumn::Filter & filt, const UInt8 * nu
     return count;
 }
 
-std::vector<size_t> countColumnsSizeInSelector(IColumn::ColumnIndex num_columns, const IColumn::Selector & selector)
+std::vector<size_t> countColumnsSizeInSelector(size_t num_columns, const IColumn::Selector & selector)
 {
     std::vector<size_t> counts(num_columns);
     for (auto idx : selector)
@@ -328,6 +328,7 @@ INSTANTIATE(Int32)
 INSTANTIATE(Int64)
 INSTANTIATE(Int128)
 INSTANTIATE(Int256)
+INSTANTIATE(BFloat16)
 INSTANTIATE(Float32)
 INSTANTIATE(Float64)
 INSTANTIATE(Decimal32)

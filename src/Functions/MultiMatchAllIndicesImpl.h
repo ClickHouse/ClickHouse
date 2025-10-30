@@ -77,7 +77,7 @@ struct MultiMatchAllIndicesImpl
         std::vector<std::string_view> needles;
         needles.reserve(needles_arr.size());
         for (const auto & needle : needles_arr)
-            needles.emplace_back(needle.get<String>());
+            needles.emplace_back(needle.safeGet<String>());
 
         checkHyperscanRegexp(needles, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
 
@@ -119,7 +119,7 @@ struct MultiMatchAllIndicesImpl
         UInt64 offset = 0;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            UInt64 length = haystack_offsets[i] - offset - 1;
+            UInt64 length = haystack_offsets[i] - offset;
             /// vectorscan restriction.
             if (length > std::numeric_limits<UInt32>::max())
                 throw Exception(ErrorCodes::TOO_MANY_BYTES, "Too long string to search");
@@ -240,7 +240,7 @@ struct MultiMatchAllIndicesImpl
                 return 0;
             };
 
-            const size_t cur_haystack_length = haystack_offsets[i] - prev_haystack_offset - 1;
+            const size_t cur_haystack_length = haystack_offsets[i] - prev_haystack_offset;
 
             /// vectorscan restriction.
             if (cur_haystack_length > std::numeric_limits<UInt32>::max())

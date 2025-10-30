@@ -22,7 +22,7 @@ class GraphiteRollupSortedAlgorithm final : public IMergingAlgorithmWithSharedCh
 {
 public:
     GraphiteRollupSortedAlgorithm(
-        const Block & header,
+        SharedHeader header,
         size_t num_inputs,
         SortDescription description_,
         size_t max_block_size_rows_,
@@ -32,6 +32,8 @@ public:
 
     const char * getName() const override { return "GraphiteRollupSortedAlgorithm"; }
     Status merge() override;
+
+    MergedStats getMergedStats() const override { return merged_data->getMergedStats(); }
 
     struct ColumnsDefinition
     {

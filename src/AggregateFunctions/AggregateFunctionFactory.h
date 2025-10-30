@@ -1,8 +1,8 @@
 #pragma once
 
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/NullsAction.h>
+#include <Common/FunctionDocumentation.h>
 #include <Common/IFactoryWithAliases.h>
 
 #include <functional>
@@ -23,6 +23,8 @@ class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 using DataTypes = std::vector<DataTypePtr>;
 
+class ASTFunction;
+
 /**
  * The invoker has arguments: name of aggregate function, types of arguments, values of parameters.
  * Parameters are for "parametric" aggregate functions.
@@ -34,6 +36,7 @@ struct AggregateFunctionWithProperties
 {
     AggregateFunctionCreator creator;
     AggregateFunctionProperties properties;
+    FunctionDocumentation documentation = {}; /// TODO remove default initialization ... all aggregate functions should have documentation
 
     AggregateFunctionWithProperties() = default;
     AggregateFunctionWithProperties(const AggregateFunctionWithProperties &) = default;
@@ -41,8 +44,8 @@ struct AggregateFunctionWithProperties
 
     template <typename Creator>
     requires (!std::is_same_v<Creator, AggregateFunctionWithProperties>)
-    AggregateFunctionWithProperties(Creator creator_, AggregateFunctionProperties properties_ = {}) /// NOLINT
-        : creator(std::forward<Creator>(creator_)), properties(std::move(properties_))
+    AggregateFunctionWithProperties(Creator creator_, AggregateFunctionProperties properties_ = {}, FunctionDocumentation documentation_ = {}) /// NOLINT
+        : creator(std::forward<Creator>(creator_)), properties(std::move(properties_)), documentation(std::move(documentation_))
     {
     }
 };
@@ -81,6 +84,8 @@ public:
 
     bool isAggregateFunctionName(const String & name) const;
 
+    FunctionDocumentation getDocumentation(const String & name) const;
+
 private:
     AggregateFunctionPtr getImpl(
         const String & name,
@@ -114,10 +119,7 @@ private:
 
 struct AggregateUtils
 {
-    static bool isAggregateFunction(const ASTFunction & node)
-    {
-        return AggregateFunctionFactory::instance().isAggregateFunctionName(node.name);
-    }
+    static bool isAggregateFunction(const ASTFunction & node);
 };
 
 const String & getAggregateFunctionCanonicalNameIfAny(const String & name);

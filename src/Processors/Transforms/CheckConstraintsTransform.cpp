@@ -6,11 +6,13 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Parsers/formatAST.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
+#include <Common/UTF8Helpers.h>
+#include <Parsers/ASTConstraintDeclaration.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/ConstraintsDescription.h>
 
 
 namespace DB
@@ -25,13 +27,13 @@ namespace ErrorCodes
 
 CheckConstraintsTransform::CheckConstraintsTransform(
     const StorageID & table_id_,
-    const Block & header,
+    SharedHeader header,
     const ConstraintsDescription & constraints_,
     ContextPtr context_)
     : ExceptionKeepingTransform(header, header)
     , table_id(table_id_)
     , constraints_to_check(constraints_.filterConstraints(ConstraintsDescription::ConstraintType::CHECK))
-    , expressions(constraints_.getExpressions(context_, header.getNamesAndTypesList()))
+    , expressions(constraints_.getExpressions(context_, header->getNamesAndTypesList()))
     , context(std::move(context_))
 {
 }
@@ -61,7 +63,7 @@ void CheckConstraintsTransform::onConsume(Chunk chunk)
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Constraint {} does not return a value of type UInt8",
                     backQuote(constraint_ptr->name));
 
-            auto result_column = res_column.column->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality();
+            auto result_column = res_column.column->convertToFullIfNeeded();
 
             if (const auto * column_nullable = checkAndGetColumn<ColumnNullable>(&*result_column))
             {
@@ -79,7 +81,7 @@ void CheckConstraintsTransform::onConsume(Chunk chunk)
                         "Constraint expression returns nullable column that contains null value",
                         backQuote(constraint_ptr->name),
                         table_id.getNameForLogs(),
-                        serializeAST(*(constraint_ptr->expr)));
+                        constraint_ptr->expr->formatForErrorMessage());
 
                 result_column = nested_column;
             }
@@ -112,7 +114,22 @@ void CheckConstraintsTransform::onConsume(Chunk chunk)
                         column_values_msg.append(", ");
                     column_values_msg.append(backQuoteIfNeed(name));
                     column_values_msg.append(" = ");
-                    column_values_msg.append(applyVisitor(FieldVisitorToString(), column[row_idx]));
+
+                    String value = applyVisitor(FieldVisitorToString(), column[row_idx]);
+                    /// Limit the length, as we don't want too long exception messages.
+                    static constexpr size_t max_value_length = 100;
+                    size_t value_max_bytes = UTF8::computeBytesBeforeWidth(
+                        reinterpret_cast<const UInt8 *>(value.data()), value.size(), 0, max_value_length);
+                    if (value_max_bytes < value.size())
+                    {
+                        value.resize(value_max_bytes);
+                        value.append("…");
+                        /// Cosmetics.
+                        if (value.starts_with("'"))
+                            value.append("'");
+                    }
+
+                    column_values_msg.append(value);
                     first = false;
                 }
 
@@ -122,7 +139,7 @@ void CheckConstraintsTransform::onConsume(Chunk chunk)
                     backQuote(constraint_ptr->name),
                     table_id.getNameForLogs(),
                     rows_written + row_idx + 1,
-                    serializeAST(*(constraint_ptr->expr)),
+                    constraint_ptr->expr->formatForErrorMessage(),
                     column_values_msg);
             }
         }

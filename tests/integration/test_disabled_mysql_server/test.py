@@ -1,13 +1,15 @@
-import time
 import contextlib
-import pymysql.cursors
-import pytest
 import os
 import subprocess
+import time
+
+import pymysql.cursors
+import pytest
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster, get_docker_compose_path
 from helpers.network import PartitionManager
+from helpers.config_cluster import mysql_pass
 
 cluster = ClickHouseCluster(__file__)
 clickhouse_node = cluster.add_instance(
@@ -25,7 +27,7 @@ def started_cluster():
 
 
 class MySQLNodeInstance:
-    def __init__(self, started_cluster, user="root", password="clickhouse"):
+    def __init__(self, started_cluster, user="root", password=mysql_pass):
         self.user = user
         self.port = cluster.mysql8_port
         self.hostname = cluster.mysql8_ip
@@ -62,7 +64,7 @@ def test_disabled_mysql_server(started_cluster):
 
     with PartitionManager() as pm:
         clickhouse_node.query(
-            "CREATE DATABASE test_db_disabled ENGINE = MySQL('mysql80:3306', 'test_db_disabled', 'root', 'clickhouse')"
+            f"CREATE DATABASE test_db_disabled ENGINE = MySQL('mysql80:3306', 'test_db_disabled', 'root', '{mysql_pass}')"
         )
 
         pm._add_rule(

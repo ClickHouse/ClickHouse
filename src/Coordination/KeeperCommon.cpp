@@ -2,44 +2,21 @@
 
 #include <string>
 #include <filesystem>
+#include <thread>
 
 #include <Common/logger_useful.h>
 #include <Disks/IDisk.h>
 #include <Coordination/KeeperContext.h>
 #include <Coordination/CoordinationSettings.h>
+#include <IO/WriteBufferFromFileBase.h>
 
 namespace DB
 {
 
-static size_t findLastSlash(StringRef path)
+namespace CoordinationSetting
 {
-    if (path.size == 0)
-        return std::string::npos;
-
-    for (size_t i = path.size - 1; i > 0; --i)
-    {
-        if (path.data[i] == '/')
-            return i;
-    }
-
-    if (path.data[0] == '/')
-        return 0;
-
-    return std::string::npos;
-}
-
-StringRef parentNodePath(StringRef path)
-{
-    auto rslash_pos = findLastSlash(path);
-    if (rslash_pos > 0)
-        return StringRef{path.data, rslash_pos};
-    return "/";
-}
-
-StringRef getBaseNodeName(StringRef path)
-{
-    size_t basename_start = findLastSlash(path);
-    return StringRef{path.data + basename_start + 1, path.size - basename_start - 1};
+    extern const CoordinationSettingsUInt64 disk_move_retries_during_init;
+    extern const CoordinationSettingsUInt64 disk_move_retries_wait_ms;
 }
 
 void moveFileBetweenDisks(
@@ -60,8 +37,8 @@ void moveFileBetweenDisks(
     auto tmp_file_name = from_path.parent_path() / (std::string{tmp_keeper_file_prefix} + from_path.filename().string());
 
     const auto & coordination_settings = keeper_context->getCoordinationSettings();
-    auto max_retries_on_init = coordination_settings->disk_move_retries_during_init.value;
-    auto retries_sleep = std::chrono::milliseconds(coordination_settings->disk_move_retries_wait_ms);
+    auto max_retries_on_init = coordination_settings[CoordinationSetting::disk_move_retries_during_init].value;
+    auto retries_sleep = std::chrono::milliseconds(coordination_settings[CoordinationSetting::disk_move_retries_wait_ms]);
     auto run_with_retries = [&](const auto & op, std::string_view operation_description)
     {
         size_t retry_num = 0;

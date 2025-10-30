@@ -1,7 +1,9 @@
 #include <Parsers/ASTViewTargets.h>
 
+#include <Common/quoteString.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/CommonParsers.h>
+#include <Parsers/IAST_erase.h>
 #include <IO/WriteHelpers.h>
 
 
@@ -21,6 +23,9 @@ std::string_view toString(ViewTarget::Kind kind)
     {
         case ViewTarget::To:      return "to";
         case ViewTarget::Inner:   return "inner";
+        case ViewTarget::Data:    return "data";
+        case ViewTarget::Tags:    return "tags";
+        case ViewTarget::Metrics: return "metrics";
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "{} doesn't support kind {}", __FUNCTION__, kind);
 }
@@ -201,30 +206,30 @@ ASTPtr ASTViewTargets::clone() const
     return res;
 }
 
-void ASTViewTargets::formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
+void ASTViewTargets::formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
 {
     for (const auto & target : targets)
-        formatTarget(target, s, state, frame);
+        formatTarget(target, ostr, s, state, frame);
 }
 
-void ASTViewTargets::formatTarget(ViewTarget::Kind kind, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
+void ASTViewTargets::formatTarget(ViewTarget::Kind kind, WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
 {
     for (const auto & target : targets)
     {
         if (target.kind == kind)
-            formatTarget(target, s, state, frame);
+            formatTarget(target, ostr, s, state, frame);
     }
 }
 
-void ASTViewTargets::formatTarget(const ViewTarget & target, const FormatSettings & s, FormatState & state, FormatStateStacked frame)
+void ASTViewTargets::formatTarget(const ViewTarget & target, WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame)
 {
     if (target.table_id)
     {
         auto keyword = getKeywordForTableID(target.kind);
         if (!keyword)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No keyword for table name of kind {}", toString(target.kind));
-        s.ostr <<  " " << (s.hilite ? hilite_keyword : "") << toStringView(*keyword)
-               << (s.hilite ? hilite_none : "") << " "
+        ostr <<  " " << toStringView(*keyword)
+               << " "
                << (!target.table_id.database_name.empty() ? backQuoteIfNeed(target.table_id.database_name) + "." : "")
                << backQuoteIfNeed(target.table_id.table_name);
     }
@@ -234,8 +239,8 @@ void ASTViewTargets::formatTarget(const ViewTarget & target, const FormatSetting
         auto keyword = getKeywordForInnerUUID(target.kind);
         if (!keyword)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No prefix keyword for inner UUID of kind {}", toString(target.kind));
-        s.ostr << " " << (s.hilite ? hilite_keyword : "") << toStringView(*keyword)
-               << (s.hilite ? hilite_none : "") << " " << quoteString(toString(target.inner_uuid));
+        ostr << " " << toStringView(*keyword)
+               << " " << quoteString(toString(target.inner_uuid));
     }
 
     if (target.inner_engine)
@@ -243,8 +248,8 @@ void ASTViewTargets::formatTarget(const ViewTarget & target, const FormatSetting
         auto keyword = getKeywordForInnerStorage(target.kind);
         if (!keyword)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No prefix keyword for table engine of kind {}", toString(target.kind));
-        s.ostr << " " << (s.hilite ? hilite_keyword : "") << toStringView(*keyword) << (s.hilite ? hilite_none : "");
-        target.inner_engine->formatImpl(s, state, frame);
+        ostr << " " << toStringView(*keyword);
+        target.inner_engine->format(ostr, s, state, frame);
     }
 }
 
@@ -254,6 +259,9 @@ std::optional<Keyword> ASTViewTargets::getKeywordForTableID(ViewTarget::Kind kin
     {
         case ViewTarget::To:      return Keyword::TO;      /// TO mydb.mydata
         case ViewTarget::Inner:   return std::nullopt;
+        case ViewTarget::Data:    return Keyword::DATA;    /// DATA mydb.mydata
+        case ViewTarget::Tags:    return Keyword::TAGS;    /// TAGS mydb.mytags
+        case ViewTarget::Metrics: return Keyword::METRICS; /// METRICS mydb.mymetrics
     }
     UNREACHABLE();
 }
@@ -264,6 +272,9 @@ std::optional<Keyword> ASTViewTargets::getKeywordForInnerStorage(ViewTarget::Kin
     {
         case ViewTarget::To:      return std::nullopt;      /// ENGINE = MergeTree()
         case ViewTarget::Inner:   return Keyword::INNER;    /// INNER ENGINE = MergeTree()
+        case ViewTarget::Data:    return Keyword::DATA;     /// DATA ENGINE = MergeTree()
+        case ViewTarget::Tags:    return Keyword::TAGS;     /// TAGS ENGINE = MergeTree()
+        case ViewTarget::Metrics: return Keyword::METRICS;  /// METRICS ENGINE = MergeTree()
     }
     UNREACHABLE();
 }
@@ -274,6 +285,9 @@ std::optional<Keyword> ASTViewTargets::getKeywordForInnerUUID(ViewTarget::Kind k
     {
         case ViewTarget::To:      return Keyword::TO_INNER_UUID;       /// TO INNER UUID 'XXX'
         case ViewTarget::Inner:   return std::nullopt;
+        case ViewTarget::Data:    return Keyword::DATA_INNER_UUID;     /// DATA INNER UUID 'XXX'
+        case ViewTarget::Tags:    return Keyword::TAGS_INNER_UUID;     /// TAGS INNER UUID 'XXX'
+        case ViewTarget::Metrics: return Keyword::METRICS_INNER_UUID;  /// METRICS INNER UUID 'XXX'
     }
     UNREACHABLE();
 }
@@ -297,4 +311,40 @@ void ASTViewTargets::forEachPointerToChild(std::function<void(void**)> f)
     }
 }
 
+void ASTViewTargets::setTableASTWithQueryParams(ViewTarget::Kind kind, const ASTPtr & table_)
+{
+    for (auto & target : targets)
+    {
+        if (target.kind == kind)
+        {
+            target.table_ast = table_;
+            return;
+        }
+    }
+    if (table_)
+        targets.emplace_back(kind).table_ast = table_;
+}
+
+bool ASTViewTargets::hasTableASTWithQueryParams(ViewTarget::Kind kind) const
+{
+    for (const auto & target : targets)
+        if (target.kind == kind)
+            return target.table_ast != nullptr;
+    return false;
+}
+
+ASTPtr ASTViewTargets::getTableASTWithQueryParams(ViewTarget::Kind kind)
+{
+    for (const auto & target : targets)
+        if (target.kind == kind)
+            return target.table_ast;
+    return nullptr;
+}
+
+void ASTViewTargets::resetTableASTWithQueryParams(ViewTarget::Kind kind)
+{
+    for (auto & target : targets)
+        if (target.kind == kind)
+            target.table_ast.reset();
+}
 }

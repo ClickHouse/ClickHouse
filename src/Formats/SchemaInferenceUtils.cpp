@@ -7,12 +7,14 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/transformTypesRecursively.h>
-#include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeObjectDeprecated.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeDynamic.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/parseDateTimeBestEffort.h>
@@ -22,6 +24,7 @@
 #include <Core/Block.h>
 #include <Common/assert_cast.h>
 #include <Common/SipHash.h>
+#include <Core/TypeId.h>
 
 namespace DB
 {
@@ -306,37 +309,72 @@ namespace
         type_indexes.erase(TypeIndex::UInt64);
     }
 
-    /// If we have only Date and DateTime types, convert Date to DateTime,
-    /// otherwise, convert all Date and DateTime to String.
+    /// if setting 'try_infer_variant' is true then we convert to type variant.
+    void transformVariant(DataTypes & data_types, TypeIndexesSet & type_indexes)
+    {
+        if (checkIfTypesAreEqual(data_types))
+            return;
+
+        DataTypes variant_types;
+        for (const auto & type : data_types)
+        {
+            if (const auto * variant_type = typeid_cast<const DataTypeVariant *>(type.get()))
+            {
+                const auto & current_variants = variant_type->getVariants();
+                variant_types.insert(variant_types.end(), current_variants.begin(), current_variants.end());
+            }
+            else
+            {
+                variant_types.push_back(type);
+            }
+        }
+
+        auto variant_type = std::make_shared<DataTypeVariant>(variant_types);
+
+        for (auto & type : data_types)
+            type = variant_type;
+        type_indexes = {TypeIndex::Variant};
+    }
+
+    /// If we have only date/datetimes types (Date/DateTime/DateTime64), convert all of them to the common type,
+    /// otherwise, convert all Date, DateTime and DateTime64 to String.
     void transformDatesAndDateTimes(DataTypes & data_types, TypeIndexesSet & type_indexes)
     {
         bool have_dates = type_indexes.contains(TypeIndex::Date);
-        bool have_datetimes = type_indexes.contains(TypeIndex::DateTime64);
-        bool all_dates_or_datetimes = (type_indexes.size() == (static_cast<size_t>(have_dates) + static_cast<size_t>(have_datetimes)));
+        bool have_datetimes = type_indexes.contains(TypeIndex::DateTime);
+        bool have_datetimes64 = type_indexes.contains(TypeIndex::DateTime64);
+        bool all_dates_or_datetimes = (type_indexes.size() == (static_cast<size_t>(have_dates) + static_cast<size_t>(have_datetimes) + static_cast<size_t>(have_datetimes64)));
 
-        if (!all_dates_or_datetimes && (have_dates || have_datetimes))
+        if (!all_dates_or_datetimes && (have_dates || have_datetimes || have_datetimes64))
         {
             for (auto & type : data_types)
             {
-                if (isDate(type) || isDateTime64(type))
+                if (isDate(type) || isDateTime(type) || isDateTime64(type))
                     type = std::make_shared<DataTypeString>();
             }
 
             type_indexes.erase(TypeIndex::Date);
             type_indexes.erase(TypeIndex::DateTime);
+            type_indexes.erase(TypeIndex::DateTime64);
             type_indexes.insert(TypeIndex::String);
             return;
         }
 
-        if (have_dates && have_datetimes)
+        for (auto & type : data_types)
         {
-            for (auto & type : data_types)
+            if (isDate(type) && (have_datetimes || have_datetimes64))
             {
-                if (isDate(type))
+                if (have_datetimes64)
                     type = std::make_shared<DataTypeDateTime64>(9);
+                else
+                    type = std::make_shared<DataTypeDateTime>();
+                type_indexes.erase(TypeIndex::Date);
             }
-
-            type_indexes.erase(TypeIndex::Date);
+            else if (isDateTime(type) && have_datetimes64)
+            {
+                type = std::make_shared<DataTypeDateTime64>(9);
+                type_indexes.erase(TypeIndex::DateTime);
+            }
         }
     }
 
@@ -464,7 +502,7 @@ namespace
             if (isTuple(type))
             {
                 const auto * tuple_type = assert_cast<const DataTypeTuple *>(type.get());
-                if (tuple_type->haveExplicitNames())
+                if (tuple_type->hasExplicitNames())
                     return;
 
                 if (checkIfTypesAreEqual(tuple_type->getElements()))
@@ -499,7 +537,7 @@ namespace
             if (isTuple(type))
             {
                 const auto & tuple_type = assert_cast<const DataTypeTuple &>(*type);
-                if (tuple_type.haveExplicitNames())
+                if (tuple_type.hasExplicitNames())
                     return;
 
                 const auto & current_tuple_size = tuple_type.getElements().size();
@@ -538,6 +576,31 @@ namespace
 
             type_indexes.erase(TypeIndex::Tuple);
         }
+    }
+
+    /// If we have unnamed Tuple and possibly Array types that were not transformed
+    /// into single Array type with common type, change them all to Array(Dynamic).
+    void transformUnnamedTuplesAndArraysToArrayOfDynamic(DataTypes & data_types, TypeIndexesSet & type_indexes)
+    {
+        if (!type_indexes.contains(TypeIndex::Tuple))
+            return;
+
+        /// First check if we have any named Tuple. In this case we should do nothing.
+        /// Only unnamed Tuple types can be inferred from arrays.
+        for (const auto & type : data_types)
+        {
+            if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()); tuple_type && tuple_type->hasExplicitNames())
+                return;
+        }
+
+        /// Next, change all Arrays and Tuples to Array(Dynamic).
+        for (auto & type : data_types)
+        {
+            if (isArray(type) || isTuple(type))
+                type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeDynamic>());
+        }
+
+        type_indexes.erase(TypeIndex::Tuple);
     }
 
     void transformMapsAndStringsToStrings(DataTypes & data_types, TypeIndexesSet & type_indexes)
@@ -587,7 +650,7 @@ namespace
         for (auto & type : data_types)
         {
             const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
-            if (tuple_type && tuple_type->haveExplicitNames())
+            if (tuple_type && tuple_type->hasExplicitNames())
             {
                 const auto & elements = tuple_type->getElements();
                 const auto & names = tuple_type->getElementNames();
@@ -618,7 +681,7 @@ namespace
         for (auto & type : data_types)
         {
             const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
-            if (tuple_type && tuple_type->haveExplicitNames())
+            if (tuple_type && tuple_type->hasExplicitNames())
                 type = result_tuple;
         }
     }
@@ -644,7 +707,11 @@ namespace
                 transformDatesAndDateTimes(data_types, type_indexes);
 
             if constexpr (!is_json)
+            {
+                if (settings.try_infer_variant)
+                    transformVariant(data_types, type_indexes);
                 return;
+            }
 
             /// Check settings specific for JSON formats.
 
@@ -662,6 +729,10 @@ namespace
 
             if (settings.json.try_infer_objects_as_tuples)
                 mergeJSONPaths(data_types, type_indexes, settings, json_info);
+
+            if (settings.try_infer_variant)
+                transformVariant(data_types, type_indexes);
+
         };
 
         auto transform_complex_types = [&](DataTypes & data_types, TypeIndexesSet & type_indexes)
@@ -674,7 +745,11 @@ namespace
             transformNothingComplexTypes(data_types, type_indexes);
 
             if constexpr (!is_json)
+            {
+                if (settings.try_infer_variant)
+                    transformVariant(data_types, type_indexes);
                 return;
+            }
 
             /// Convert JSON tuples with same nested types to arrays.
             transformTuplesWithEqualNestedTypesToArrays(data_types, type_indexes);
@@ -682,11 +757,18 @@ namespace
             /// Convert JSON tuples and arrays to arrays if possible.
             transformJSONTuplesAndArraysToArrays(data_types, settings, type_indexes, json_info);
 
+            /// If we still have unnamed Tuples, change them to Array(Dynamic) if needed.
+            if (settings.json.infer_array_of_dynamic_from_array_of_different_values)
+                transformUnnamedTuplesAndArraysToArrayOfDynamic(data_types, type_indexes);
+
             if (settings.json.read_objects_as_strings)
                 transformMapsAndStringsToStrings(data_types, type_indexes);
 
             if (json_info && json_info->allow_merging_named_tuples)
                 mergeNamedTuples(data_types, type_indexes, settings, json_info);
+
+            if (settings.try_infer_variant)
+                transformVariant(data_types, type_indexes);
         };
 
         transformTypesRecursively(types, transform_simple_types, transform_complex_types);
@@ -697,55 +779,87 @@ namespace
 
     bool tryInferDate(std::string_view field)
     {
-        if (field.empty())
+        /// Minimum length of Date text representation is 8 (YYYY-M-D) and maximum is 10 (YYYY-MM-DD)
+        if (field.size() < 8 || field.size() > 10)
             return false;
 
-        ReadBufferFromString buf(field);
-        Float64 tmp_float;
         /// Check if it's just a number, and if so, don't try to infer Date from it,
         /// because we can interpret this number as a Date (for example 20000101 will be 2000-01-01)
         /// and it will lead to inferring Date instead of simple Int64/UInt64 in some cases.
-        if (tryReadFloatText(tmp_float, buf) && buf.eof())
-            return false;
-
-        buf.seek(0, SEEK_SET); /// Return position to the beginning
-
-        DayNum tmp;
-        return tryReadDateText(tmp, buf) && buf.eof();
-    }
-
-    bool tryInferDateTime(std::string_view field, const FormatSettings & settings)
-    {
-        if (field.empty())
+        if (std::all_of(field.begin(), field.end(), isNumericASCII))
             return false;
 
         ReadBufferFromString buf(field);
-        Float64 tmp_float;
+        DayNum tmp;
+        return tryReadDateText(tmp, buf, DateLUT::instance(), /*allowed_delimiters=*/"-/:") && buf.eof();
+    }
+
+    DataTypePtr tryInferDateTimeOrDateTime64(std::string_view field, const FormatSettings & settings)
+    {
+        /// Don't try to infer DateTime if string is too long.
+        /// It's difficult to say what is the real maximum length of
+        /// DateTime we can parse using BestEffort approach.
+        /// 50 symbols is more or less valid limit for date times that makes sense.
+        if (field.empty() || field.size() > 50)
+            return nullptr;
+
+        /// Check that we have at least one digit, don't infer datetime form strings like "Apr"/"May"/etc.
+        if (!std::any_of(field.begin(), field.end(), isNumericASCII))
+            return nullptr;
+
         /// Check if it's just a number, and if so, don't try to infer DateTime from it,
         /// because we can interpret this number as a timestamp and it will lead to
-        /// inferring DateTime instead of simple Int64/Float64 in some cases.
+        /// inferring DateTime instead of simple Int64 in some cases.
+        if (std::all_of(field.begin(), field.end(), isNumericASCII))
+            return nullptr;
+
+        ReadBufferFromString buf(field);
+        Float64 tmp_float;
+        /// Check if it's a float value, and if so, don't try to infer DateTime from it,
+        /// because it will lead to inferring DateTime instead of simple Float64 in some cases.
         if (tryReadFloatText(tmp_float, buf) && buf.eof())
-            return false;
+            return nullptr;
+
+        buf.seek(0, SEEK_SET); /// Return position to the beginning
+        if (!settings.try_infer_datetimes_only_datetime64)
+        {
+            time_t tmp;
+            switch (settings.date_time_input_format)
+            {
+                case FormatSettings::DateTimeInputFormat::Basic:
+                    if (tryReadDateTimeText(tmp, buf, DateLUT::instance(), /*allowed_date_delimiters=*/"-/:", /*allowed_time_delimiters=*/":") && buf.eof())
+                        return std::make_shared<DataTypeDateTime>();
+                    break;
+                case FormatSettings::DateTimeInputFormat::BestEffort:
+                    if (tryParseDateTimeBestEffortStrict(tmp, buf, DateLUT::instance(), DateLUT::instance("UTC"), /*allowed_date_delimiters=*/"-/:") && buf.eof())
+                        return std::make_shared<DataTypeDateTime>();
+                    break;
+                case FormatSettings::DateTimeInputFormat::BestEffortUS:
+                    if (tryParseDateTimeBestEffortUSStrict(tmp, buf, DateLUT::instance(), DateLUT::instance("UTC"), /*allowed_date_delimiters=*/"-/:") && buf.eof())
+                        return std::make_shared<DataTypeDateTime>();
+                    break;
+            }
+        }
 
         buf.seek(0, SEEK_SET); /// Return position to the beginning
         DateTime64 tmp;
         switch (settings.date_time_input_format)
         {
             case FormatSettings::DateTimeInputFormat::Basic:
-                if (tryReadDateTime64Text(tmp, 9, buf) && buf.eof())
-                    return true;
+                if (tryReadDateTime64Text(tmp, 9, buf, DateLUT::instance(), /*allowed_date_delimiters=*/"-/:", /*allowed_time_delimiters=*/":") && buf.eof())
+                    return std::make_shared<DataTypeDateTime64>(9);
                 break;
             case FormatSettings::DateTimeInputFormat::BestEffort:
-                if (tryParseDateTime64BestEffort(tmp, 9, buf, DateLUT::instance(), DateLUT::instance("UTC")) && buf.eof())
-                    return true;
+                if (tryParseDateTime64BestEffortStrict(tmp, 9, buf, DateLUT::instance(), DateLUT::instance("UTC"), /*allowed_date_delimiters=*/"-/:") && buf.eof())
+                    return std::make_shared<DataTypeDateTime64>(9);
                 break;
             case FormatSettings::DateTimeInputFormat::BestEffortUS:
-                if (tryParseDateTime64BestEffortUS(tmp, 9, buf, DateLUT::instance(), DateLUT::instance("UTC")) && buf.eof())
-                    return true;
+                if (tryParseDateTime64BestEffortUSStrict(tmp, 9, buf, DateLUT::instance(), DateLUT::instance("UTC"), /*allowed_date_delimiters=*/"-/:") && buf.eof())
+                    return std::make_shared<DataTypeDateTime64>(9);
                 break;
         }
 
-        return false;
+        return nullptr;
     }
 
     template <bool is_json>
@@ -817,11 +931,15 @@ namespace
             }
 
             auto nested_types_copy = nested_types;
-            transformInferredTypesIfNeededImpl<is_json>(nested_types_copy, settings, json_info);
+            /// Disable read_numbers_as_strings in json settings to avoid
+            /// inferring array with numbers and strings as Array(String) here.
+            /// It will be done later if needed in transformFinal*.
+            auto settings_copy = settings;
+            settings_copy.json.read_numbers_as_strings = false;
+            transformInferredTypesIfNeededImpl<is_json>(nested_types_copy, settings_copy, json_info);
 
             if (checkIfTypesAreEqual(nested_types_copy))
                 return std::make_shared<DataTypeArray>(nested_types_copy.back());
-
             return std::make_shared<DataTypeTuple>(nested_types);
         }
         else
@@ -896,7 +1014,7 @@ namespace
         if (settings.try_infer_integers)
         {
             /// If we read from String, we can do it in a more efficient way.
-            if (auto * string_buf = dynamic_cast<ReadBufferFromString *>(&buf))
+            if (auto * /*string_buf*/ _ = dynamic_cast<ReadBufferFromString *>(&buf))
             {
                 /// Remember the pointer to the start of the number to rollback to it.
                 /// We can safely get back to the start of the number, because we read from a string and we didn't reach eof.
@@ -1176,8 +1294,8 @@ namespace
         {
             if constexpr (is_json)
             {
-                if (settings.json.allow_object_type)
-                    return std::make_shared<DataTypeObject>("json", true);
+                if (settings.json.allow_deprecated_object_type)
+                    return std::make_shared<DataTypeObjectDeprecated>("json", true);
             }
 
             /// Empty Map is Map(Nothing, Nothing)
@@ -1186,8 +1304,8 @@ namespace
 
         if constexpr (is_json)
         {
-            if (settings.json.allow_object_type)
-                return std::make_shared<DataTypeObject>("json", true);
+            if (settings.json.allow_deprecated_object_type)
+                return std::make_shared<DataTypeObjectDeprecated>("json", true);
 
             if (settings.json.read_objects_as_strings)
                 return std::make_shared<DataTypeString>();
@@ -1242,7 +1360,7 @@ namespace
         {
             if constexpr (is_json)
             {
-                if (!settings.json.allow_object_type && settings.json.try_infer_objects_as_tuples)
+                if (!settings.json.allow_deprecated_object_type && settings.json.try_infer_objects_as_tuples)
                     return tryInferJSONPaths(buf, settings, json_info, depth);
             }
 
@@ -1262,8 +1380,12 @@ namespace
         if (checkCharCaseInsensitive('n', buf))
         {
             if (checkStringCaseInsensitive("ull", buf))
+            {
+                if (settings.schema_inference_make_columns_nullable == 0)
+                    return std::make_shared<DataTypeNothing>();
                 return makeNullable(std::make_shared<DataTypeNothing>());
-            else if (checkStringCaseInsensitive("an", buf))
+            }
+            if (checkStringCaseInsensitive("an", buf))
                 return std::make_shared<DataTypeFloat64>();
         }
 
@@ -1373,7 +1495,7 @@ void transformFinalInferredJSONTypeIfNeededImpl(DataTypePtr & data_type, const F
     {
         auto nested_types = tuple_type->getElements();
 
-        if (tuple_type->haveExplicitNames())
+        if (tuple_type->hasExplicitNames())
         {
             for (auto & nested_type : nested_types)
                 transformFinalInferredJSONTypeIfNeededImpl(nested_type, settings, json_info, remain_nothing_types);
@@ -1383,7 +1505,11 @@ void transformFinalInferredJSONTypeIfNeededImpl(DataTypePtr & data_type, const F
 
         /// First, try to transform nested types without final transformations to see if there is a common type.
         auto nested_types_copy = nested_types;
-        transformInferredTypesIfNeededImpl<true>(nested_types_copy, settings, json_info);
+        /// Disable read_numbers_as_strings in json settings to avoid
+        /// inferring array with numbers and strings as Array(String) here.
+        auto settings_copy = settings;
+        settings_copy.json.read_numbers_as_strings = false;
+        transformInferredTypesIfNeededImpl<true>(nested_types_copy, settings_copy, json_info);
         if (checkIfTypesAreEqual(nested_types_copy))
         {
             data_type = std::make_shared<DataTypeArray>(nested_types_copy.back());
@@ -1397,23 +1523,48 @@ void transformFinalInferredJSONTypeIfNeededImpl(DataTypePtr & data_type, const F
             transformFinalInferredJSONTypeIfNeededImpl(nested_type, settings, json_info, /*remain_nothing_types=*/ true);
 
         nested_types_copy = nested_types;
-        transformInferredTypesIfNeededImpl<true>(nested_types_copy, settings, json_info);
+        transformInferredTypesIfNeededImpl<true>(nested_types_copy, settings_copy, json_info);
         if (checkIfTypesAreEqual(nested_types_copy))
         {
             data_type = std::make_shared<DataTypeArray>(nested_types_copy.back());
         }
+        /// If we couldn't infer common type for array elements, use Array(Dynamic) or keep it as unnamed Tuple.
+        else if (settings.json.infer_array_of_dynamic_from_array_of_different_values)
+        {
+            data_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeDynamic>());
+        }
         else
         {
-            /// Now we should run transform one more time to convert Nothing to String if needed.
-            if (!remain_nothing_types)
+            /// Try to transform types one more time but without disabled read_numbers_as_strings so we
+            /// can infer array of numbers and strings as Array(String). We couldn't do it before to be able
+            /// to use Array(Dynamic) in this case if corresponding setting is enabled.
+            transformInferredTypesIfNeededImpl<true>(nested_types_copy, settings, json_info);
+            if (checkIfTypesAreEqual(nested_types_copy))
             {
-                for (auto & nested_type : nested_types)
-                    transformFinalInferredJSONTypeIfNeededImpl(nested_type, settings, json_info);
+                data_type = std::make_shared<DataTypeArray>(nested_types_copy.back());
             }
+            else
+            {
+                /// Now we should run transform one more time to convert Nothing to String if needed.
+                if (!remain_nothing_types)
+                {
+                    for (auto & nested_type : nested_types)
+                        transformFinalInferredJSONTypeIfNeededImpl(nested_type, settings, json_info);
+                }
 
-            data_type = std::make_shared<DataTypeTuple>(nested_types);
+                data_type = std::make_shared<DataTypeTuple>(nested_types);
+            }
         }
 
+        return;
+    }
+
+    if (const auto * variant_type = typeid_cast<const DataTypeVariant *>(data_type.get()))
+    {
+        auto nested_types = variant_type->getVariants();
+        for (auto & nested_type : nested_types)
+            transformFinalInferredJSONTypeIfNeededImpl(nested_type, settings, json_info, remain_nothing_types);
+        data_type = std::make_shared<DataTypeVariant>(nested_types);
         return;
     }
 }
@@ -1439,8 +1590,11 @@ DataTypePtr tryInferDateOrDateTimeFromString(std::string_view field, const Forma
     if (settings.try_infer_dates && tryInferDate(field))
         return std::make_shared<DataTypeDate>();
 
-    if (settings.try_infer_datetimes && tryInferDateTime(field, settings))
-        return std::make_shared<DataTypeDateTime64>(9);
+    if (settings.try_infer_datetimes)
+    {
+        if (auto type = tryInferDateTimeOrDateTime64(field, settings))
+            return type;
+    }
 
     return nullptr;
 }
@@ -1475,7 +1629,7 @@ DataTypePtr tryInferDataTypeForSingleJSONField(std::string_view field, const For
     return type;
 }
 
-DataTypePtr makeNullableRecursively(DataTypePtr type)
+static DataTypePtr adjustNullableRecursively(DataTypePtr type, bool make_nullable, const FormatSettings & settings)
 {
     if (!type)
         return nullptr;
@@ -1483,13 +1637,32 @@ DataTypePtr makeNullableRecursively(DataTypePtr type)
     WhichDataType which(type);
 
     if (which.isNullable())
-        return type;
+        return make_nullable ? type : removeNullable(type);
+
+    /// Leave named compound types unchanged.
+    /// E.g. don't turn `Point` into `Tuple(Nullable(Float64), Nullable(Float64))`.
+    if (type->hasCustomName())
+        return makeNullableSafe(type);
 
     if (which.isArray())
     {
         const auto * array_type = assert_cast<const DataTypeArray *>(type.get());
-        auto nested_type = makeNullableRecursively(array_type->getNestedType());
+        auto nested_type = adjustNullableRecursively(array_type->getNestedType(), make_nullable, settings);
         return nested_type ? std::make_shared<DataTypeArray>(nested_type) : nullptr;
+    }
+
+    if (which.isVariant())
+    {
+        const auto * variant_type = assert_cast<const DataTypeVariant *>(type.get());
+        DataTypes nested_types;
+        for (const auto & nested_type: variant_type->getVariants())
+        {
+            if (!make_nullable || (!nested_type->lowCardinality() && nested_type->haveSubtypes()))
+                nested_types.push_back(adjustNullableRecursively(nested_type, make_nullable, settings));
+            else
+                nested_types.push_back(nested_type);
+        }
+        return std::make_shared<DataTypeVariant>(nested_types);
     }
 
     if (which.isTuple())
@@ -1498,13 +1671,13 @@ DataTypePtr makeNullableRecursively(DataTypePtr type)
         DataTypes nested_types;
         for (const auto & element : tuple_type->getElements())
         {
-            auto nested_type = makeNullableRecursively(element);
+            auto nested_type = adjustNullableRecursively(element, make_nullable, settings);
             if (!nested_type)
                 return nullptr;
             nested_types.push_back(nested_type);
         }
 
-        if (tuple_type->haveExplicitNames())
+        if (tuple_type->hasExplicitNames())
             return std::make_shared<DataTypeTuple>(std::move(nested_types), tuple_type->getElementNames());
 
         return std::make_shared<DataTypeTuple>(std::move(nested_types));
@@ -1513,34 +1686,47 @@ DataTypePtr makeNullableRecursively(DataTypePtr type)
     if (which.isMap())
     {
         const auto * map_type = assert_cast<const DataTypeMap *>(type.get());
-        auto key_type = makeNullableRecursively(map_type->getKeyType());
-        auto value_type = makeNullableRecursively(map_type->getValueType());
+        auto key_type = adjustNullableRecursively(map_type->getKeyType(), make_nullable, settings);
+        auto value_type = adjustNullableRecursively(map_type->getValueType(), make_nullable, settings);
         return key_type && value_type ? std::make_shared<DataTypeMap>(removeNullable(key_type), value_type) : nullptr;
     }
 
     if (which.isLowCardinality())
     {
         const auto * lc_type = assert_cast<const DataTypeLowCardinality *>(type.get());
-        auto nested_type = makeNullableRecursively(lc_type->getDictionaryType());
+        auto nested_type = adjustNullableRecursively(lc_type->getDictionaryType(), make_nullable, settings);
         return nested_type ? std::make_shared<DataTypeLowCardinality>(nested_type) : nullptr;
     }
 
-    if (which.isObject())
+    if (which.isObjectDeprecated())
     {
-        const auto * object_type = assert_cast<const DataTypeObject *>(type.get());
-        if (object_type->hasNullableSubcolumns())
+        const auto * object_type = assert_cast<const DataTypeObjectDeprecated *>(type.get());
+        if (object_type->hasNullableSubcolumns() == make_nullable)
             return type;
-        return std::make_shared<DataTypeObject>(object_type->getSchemaFormat(), true);
+        return std::make_shared<DataTypeObjectDeprecated>(object_type->getSchemaFormat(), make_nullable);
     }
 
-    return makeNullable(type);
+    if (which.isObject() && !settings.schema_inference_make_json_columns_nullable)
+        return type;
+
+    return make_nullable ? makeNullableSafe(type) : type;
 }
 
-NamesAndTypesList getNamesAndRecursivelyNullableTypes(const Block & header)
+DataTypePtr makeNullableRecursively(DataTypePtr type, const FormatSettings & settings)
+{
+    return adjustNullableRecursively(type, true, settings);
+}
+
+DataTypePtr removeNullableRecursively(DataTypePtr type, const FormatSettings & settings)
+{
+    return adjustNullableRecursively(type, false, settings);
+}
+
+NamesAndTypesList getNamesAndRecursivelyNullableTypes(const Block & header, const FormatSettings & settings)
 {
     NamesAndTypesList result;
     for (auto & [name, type] : header.getNamesAndTypesList())
-        result.emplace_back(name, makeNullableRecursively(type));
+        result.emplace_back(name, makeNullableRecursively(type, settings));
     return result;
 }
 
