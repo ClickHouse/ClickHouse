@@ -1578,7 +1578,7 @@ ExpressionActions MergeTreePreprocessor::parseExpression(const IndexDescription 
     ColumnNumbersList aggregation_keys_indexes_list;
 
     ActionsVisitor::Data visitor_data(
-        nullptr,
+        Context::getGlobalContextInstance(),
         SizeLimits() /* set_size_limit */,
         0 /* subquery_depth */,
         source_columns,
@@ -1601,6 +1601,9 @@ ExpressionActions MergeTreePreprocessor::parseExpression(const IndexDescription 
 
     if (!isValidTextIndexType(outputs.front()->result_type))
         throw Exception(ErrorCodes::INCORRECT_QUERY, "The preprocessor expression should return a String, FixedString or an array of them.");
+
+    if (actions.hasNonDeterministic())
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "The preprocessor expression contain only deterministic members.");
 
     return ExpressionActions(std::move(actions));
 }

@@ -136,6 +136,65 @@ CREATE TABLE tab
 ENGINE = MergeTree
 ORDER BY tuple();   -- { serverError INCORRECT_QUERY }
 
+CREATE TABLE tab
+(
+    key UInt64,
+    str String,
+    INDEX idx(lower(str)) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(str))
+)
+ENGINE = MergeTree
+ORDER BY tuple();   -- { serverError BAD_ARGUMENTS }
+
+CREATE TABLE tab
+(
+    key UInt64,
+    str String,
+    INDEX idx(upper(str)) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(upper(str)))
+)
+ENGINE = MergeTree
+ORDER BY tuple();   -- { serverError BAD_ARGUMENTS }
+
+-- Not a function
+CREATE TABLE tab
+(
+    key UInt64,
+    str String,
+    INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = nonExistingFunction)
+)
+ENGINE = MergeTree
+ORDER BY key;   -- { serverError INCORRECT_QUERY }
+
+-- Function not known
+CREATE TABLE tab
+(
+    key UInt64,
+    str String,
+    INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = nonExistingFunction(str))
+)
+ENGINE = MergeTree
+ORDER BY tuple();   -- { serverError UNKNOWN_FUNCTION }
+
+-- Needs to have column identifier
+CREATE TABLE tab
+(
+    key UInt64,
+    str String,
+    INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = rand())
+)
+ENGINE = MergeTree
+ORDER BY tuple();   -- { serverError INCORRECT_QUERY }
+
+
+-- All functions need to be deterministic
+CREATE TABLE tab
+(
+    key UInt64,
+    str String,
+    INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = concat(str, toString(rand())))
+)
+ENGINE = MergeTree
+ORDER BY tuple();   -- { serverError INCORRECT_QUERY }
+
 DROP TABLE IF EXISTS tab;
 
 
