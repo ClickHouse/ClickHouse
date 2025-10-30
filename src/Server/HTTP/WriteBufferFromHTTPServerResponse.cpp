@@ -339,7 +339,8 @@ bool WriteBufferFromHTTPServerResponse::cancelWithException(HTTPServerRequest & 
 
             // 2 bytes represents - \r\n
             // 1 byte represents - ' ' (space between <message_length> <TAG>) in the above exception block format
-            size_t size_message_excluded = 2 + EXCEPTION_MARKER.size() + 2 + EXCEPTION_TAG_LENGTH + 2 + sizeof(size_t) + 1 + EXCEPTION_TAG_LENGTH + 2 + EXCEPTION_MARKER.size() + 2;
+            // 8 byte represents - <message_length>
+            size_t size_message_excluded = 2 + EXCEPTION_MARKER.size() + 2 + EXCEPTION_TAG_LENGTH + 2 + 8 + 1 + EXCEPTION_TAG_LENGTH + 2 + EXCEPTION_MARKER.size() + 2;
 
             size_t max_exception_message_size = MAX_EXCEPTION_SIZE - size_message_excluded;
 

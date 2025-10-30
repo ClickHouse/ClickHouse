@@ -11,8 +11,8 @@ ${CLICKHOUSE_CURL} -sS -D - "${CLICKHOUSE_URL}" --data-binary "SELECT 1" | grep 
 
 echo "Test 2: Verify exception tag is alphanumeric"
 TAG=$(${CLICKHOUSE_CURL} -sS -D - "${CLICKHOUSE_URL}" --data-binary "SELECT 1" | grep -v "Access-Control-Expose-Headers" | grep "X-ClickHouse-Exception-Tag" | cut -d':' -f2 | tr -d ' \r\n')
-if [[ "$TAG" =~ ^[A-Za-z0-9]+$ ]] && [[ ${#TAG} -eq 8 ]]; then
-    echo "Tag is 8-char alphanumeric: OK"
+if [[ "$TAG" =~ ^[A-Za-z0-9]+$ ]] && [[ ${#TAG} -eq 16 ]]; then
+    echo "Tag is 16-char alphanumeric: OK"
 else
     echo "Tag format incorrect"
 fi

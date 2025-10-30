@@ -26,7 +26,7 @@ class WriteBufferFromHTTPServerResponse final : public HTTPWriteBuffer
 {
 public:
     static constexpr std::string_view EXCEPTION_MARKER = "__exception__";
-    static constexpr size_t EXCEPTION_TAG_LENGTH = 8;
+    static constexpr size_t EXCEPTION_TAG_LENGTH = 16;
     static constexpr size_t MAX_EXCEPTION_SIZE= 16 * 1024; // 16K
 
     WriteBufferFromHTTPServerResponse(
