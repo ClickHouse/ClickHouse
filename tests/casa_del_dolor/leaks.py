@@ -21,9 +21,7 @@ class MemorySnapshot:
     """Represents a memory measurement at a point in time."""
 
     timestamp: datetime
-    memory_tracking: int
     memory_resident: int
-    memory_virtual: int
     phase: str
 
 
@@ -49,7 +47,7 @@ class ElOracloDeLeaks:
                 """
                 SELECT metric, value
                 FROM system.asynchronous_metrics
-                WHERE metric IN ('MemoryTracking', 'MemoryResident', 'MemoryVirtual');
+                WHERE metric = 'MemoryResident';
                 """
             )
             if not isinstance(metrics_str, str) or metrics_str == "":
@@ -64,9 +62,7 @@ class ElOracloDeLeaks:
             metrics = {row[0]: int(row[1]) for row in fetched_metrics}
             return MemorySnapshot(
                 timestamp=datetime.now(),
-                memory_tracking=metrics.get("MemoryTracking", 0),
                 memory_resident=metrics.get("MemoryResident", 0),
-                memory_virtual=metrics.get("MemoryVirtual", 0),
                 phase=phase,
             )
         except Exception as ex:
@@ -89,13 +85,7 @@ class ElOracloDeLeaks:
         """Pretty print a memory snapshot."""
         self.logger.info(f"Iteration ({snapshot.phase}):")
         self.logger.info(
-            f"MemoryTracking: {snapshot.memory_tracking / 1024 / 1024:.2f} MB"
-        )
-        self.logger.info(
             f"MemoryResident: {snapshot.memory_resident / 1024 / 1024:.2f} MB"
-        )
-        self.logger.info(
-            f"MemoryVirtual:  {snapshot.memory_virtual / 1024 / 1024:.2f} MB"
         )
 
     def calculate_growth(self, snapshot: MemorySnapshot) -> Dict[str, float]:
