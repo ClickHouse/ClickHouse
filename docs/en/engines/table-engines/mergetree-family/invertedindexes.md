@@ -90,7 +90,7 @@ returns
 Optional argument `preprocessor` is an expression which transforms the input string into another one before tokenization.
 
 Typical use of the preprocessor argument includes
-1. Lowercasing (or uppercasing) the input strings to enable case-insensitive matching (i.e [lower](/sql-reference/functions/string-functions.md/#lower), [lowerUTF8](/sql-reference/functions/string-functions.md/#lowerUTF8)), see the first example below.
+1. Lower-casing (or upper-casing) the input strings to enable case-insensitive matching (i.e [lower](/sql-reference/functions/string-functions.md/#lower), [lowerUTF8](/sql-reference/functions/string-functions.md/#lowerUTF8)), see the first example below.
 2. Perform UTF-8 normalization (i.e [normalizeUTF8NFC](/sql-reference/functions/string-functions.md/#normalizeUTF8NFC), [normalizeUTF8NFD](/sql-reference/functions/string-functions.md/#normalizeUTF8NFD), [normalizeUTF8NFKC](/sql-reference/functions/string-functions.md/#normalizeUTF8NFKC), [normalizeUTF8NFKD](/sql-reference/functions/string-functions.md/#normalizeUTF8NFKD), [toValidUTF8](/sql-reference/functions/string-functions.md/#toValidUTF8))
 3. Filtering out or transforming unwanted characters or substrings (i.e [extractTextFromHTML](/sql-reference/functions/string-functions.md/#extractTextFromHTML), [substring](/sql-reference/functions/string-functions.md/#substring), [idnaEncode](/sql-reference/functions/string-functions.md/#idnaEncode)).
 

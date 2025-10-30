@@ -1600,7 +1600,7 @@ ExpressionActions MergeTreeIndexTextPreprocessor::parseExpression(const IndexDes
 
     /// With the dag we can create an ExpressionActions. But before that is better to perform some validations.
 
-    /// Lets check expresion outputs
+    /// Lets check expression outputs
     ActionsDAG::NodeRawConstPtrs & outputs = actions.getOutputs();
     if (outputs.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "The preprocessor expression must return only one argument");
@@ -1611,7 +1611,7 @@ ExpressionActions MergeTreeIndexTextPreprocessor::parseExpression(const IndexDes
     if (actions.hasNonDeterministic())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "The preprocessor expression must contain only deterministic members.");
 
-    /// FINALLY! Lets build the ExpressionActions. 
+    /// FINALLY! Lets build the ExpressionActions.
     return ExpressionActions(std::move(actions));
 }
 

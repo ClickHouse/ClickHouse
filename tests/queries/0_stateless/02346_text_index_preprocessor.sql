@@ -1,7 +1,7 @@
 SET allow_experimental_full_text_index = 1;
 SET use_skip_indexes_on_data_read = 1;
 
--- Basic test preprocessor clause usage with lower
+-- Tests the preprocessor argument for tokenizers in the text index definitions
 DROP TABLE IF EXISTS tab;
 
 SELECT 'Test single tokenizer and preprocessor argument.';
@@ -54,9 +54,7 @@ SELECT count() FROM tab WHERE hasToken(str, 'baz');
 DROP TABLE tab;
 
 -- Negative tests
-
--- -- Basic test preprocessor validations
-SELECT 'Test preprocessor validations.';
+SELECT 'TestNegative tests on preprocessor construction validations.';
 
 -- Dependency only on indexed column
 CREATE TABLE tab
