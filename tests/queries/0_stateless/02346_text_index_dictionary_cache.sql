@@ -1,4 +1,5 @@
--- Tags: no-parallel-replicas
+-- Tags: no-parallel, no-parallel-replicas
+-- no-parallel: looks at server-wide metrics
 
 --- These tests verify the caching of a deserialized text index dictionary block in the consecutive executions.
 
