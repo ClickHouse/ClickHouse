@@ -461,7 +461,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
         cdf->set_all_replicas(rg.nextBool());
         cdf->mutable_cluster()->set_cluster(cluster.has_value() ? cluster.value() : rg.pickRandomly(fc.clusters));
         t.setName(cdf->mutable_tof()->mutable_est(), true);
-        if (rg.nextSmallNumber() < 4)
+        if (this->allow_not_deterministic && rg.nextSmallNumber() < 4)
         {
             /// Optional sharding key
             setRandomShardKey(rg, std::make_optional<SQLTable>(t), cdf->mutable_sharding_key());
@@ -488,7 +488,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
             rfunc->set_address(fc.getConnectionHostAndPort(fname == RemoteFunc::remoteSecure));
             rfunc->set_user("default");
             rfunc->set_password("");
-            if (rg.nextSmallNumber() < 4)
+            if (this->allow_not_deterministic && rg.nextSmallNumber() < 4)
             {
                 /// Optional sharding key
                 setRandomShardKey(rg, std::make_optional<SQLTable>(t), rfunc->mutable_sharding_key());
