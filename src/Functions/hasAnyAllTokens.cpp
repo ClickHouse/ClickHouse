@@ -318,6 +318,7 @@ For example, ['ClickHouse', 'ClickHouse'] is treated the same as ['ClickHouse'].
     )";
     FunctionDocumentation::Syntax syntax_hasAnyTokens = R"(
 hasAnyTokens(input, needles)
+input HAS_ANY_TOKENS needles; -- operator alias
 )";
     FunctionDocumentation::Arguments arguments_hasAnyTokens = {
         {"input", "The input column.", {"String", "FixedString"}},
@@ -399,6 +400,7 @@ For example, needles = ['ClickHouse', 'ClickHouse'] is treated the same as ['Cli
     )";
     FunctionDocumentation::Syntax syntax_hasAllTokens = R"(
 hasAllTokens(input, needles)
+input HAS_ALL_TOKENS needles; -- operator alias
 )";
     FunctionDocumentation::Arguments arguments_hasAllTokens = {
         {"input", "The input column.", {"String", "FixedString"}},

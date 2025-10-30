@@ -402,20 +402,20 @@ These operators are analogous to their text search function counterparts.
 
 ### HAS_TOKEN {#has_token}
 
-Equivalent to the [hasToken](sql-reference/functions/string-search-functions#hasToken) function.
+Equivalent to the [hasToken](../../sql-reference/functions/string-search-functions#hasToken) function.
 
 `col HAS_TOKEN 'token'` – The `hasToken(col, 'token')` function.
 
 ### HAS_ANY_TOKENS {#has_any_tokens}
 
-Equivalent to the [hasAnyTokens](sql-reference/functions/string-search-functions#hasAnyTokens) function.
+Equivalent to the [hasAnyTokens](../../sql-reference/functions/string-search-functions#hasAnyTokens) function.
 
 `col HAS_ANY_TOKENS 'string of tokens'` – The `hasAnyTokens(col, 'string of tokens')` function.
 `col HAS_ANY_TOKENS ['token1', ... , 'tokenN']` – The `hasAnyTokens(col, ['token1', ... , 'tokenN'])` function.
 
 ### HAS_ALL_TOKENS {#has_all_tokens}
 
-Equivalent to the [hasAllTokens](sql-reference/functions/string-search-functions#hasAllTokens) function.
+Equivalent to the [hasAllTokens](../../sql-reference/functions/string-search-functions#hasAllTokens) function.
 
 `col HAS_ALL_TOKENS 'string of tokens'` – The `hasAllTokens(col, 'string of tokens')` function.
 `col HAS_ALL_TOKENS ['token1', ... , 'tokenN']` – The `hasAllTokens(col, ['token1', ... , 'tokenN'])` function.

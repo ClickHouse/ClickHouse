@@ -213,6 +213,7 @@ Example:
 
 ```sql
 SELECT count() FROM tab WHERE hasToken(comment, 'clickhouse');
+SELECT count() FROM tab WHERE comment HAS_TOKEN 'clickhouse'; -- function alias
 ```
 
 Functions `hasToken` and `hasTokenOrNull` are the most performant functions to use with the `text` index.
@@ -234,6 +235,10 @@ SELECT count() FROM tab WHERE hasAllTokens(comment, 'clickhouse olap');
 -- Search tokens passed as Array(String)
 SELECT count() FROM tab WHERE hasAnyTokens(comment, ['clickhouse', 'olap']);
 SELECT count() FROM tab WHERE hasAllTokens(comment, ['clickhouse', 'olap']);
+
+-- Aliases for the above functions, also support array needle format
+SELECT count() FROM tab WHERE comment HAS_ANY_TOKENS 'clickhouse olap';
+SELECT count() FROM tab WHERE comment HAS_ALL_TOKENS 'clickhouse olap';
 ```
 
 #### `has` {#functions-example-has}
