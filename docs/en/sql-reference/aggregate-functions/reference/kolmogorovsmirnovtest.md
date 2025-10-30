@@ -1,7 +1,10 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/kolmogorovsmirnovtest
+description: 'Applies Kolmogorov-Smirnov''s test to samples from two populations.'
+sidebar_label: 'kolmogorovSmirnovTest'
 sidebar_position: 156
-sidebar_label: kolmogorovSmirnovTest
+slug: /sql-reference/aggregate-functions/reference/kolmogorovsmirnovtest
+title: 'kolmogorovSmirnovTest'
+doc_type: 'reference'
 ---
 
 # kolmogorovSmirnovTest
@@ -10,7 +13,7 @@ Applies Kolmogorov-Smirnov's test to samples from two populations.
 
 **Syntax**
 
-``` sql
+```sql
 kolmogorovSmirnovTest([alternative, computation_method])(sample_data, sample_index)
 ```
 
@@ -26,22 +29,21 @@ Samples must belong to continuous, one-dimensional probability distributions.
 
 - `alternative` — alternative hypothesis. (Optional, default: `'two-sided'`.) [String](../../../sql-reference/data-types/string.md).
     Let F(x) and G(x) be the CDFs of the first and second distributions respectively.
-    - `'two-sided'`
-        The null hypothesis is that samples come from the same distribution, e.g. F(x) = G(x) for all x.
+  - `'two-sided'`
+        The null hypothesis is that samples come from the same distribution, e.g. `F(x) = G(x)` for all x.
         And the alternative is that the distributions are not identical.
-    - `'greater'`
+  - `'greater'`
         The null hypothesis is that values in the first sample are *stochastically smaller* than those in the second one,
         e.g. the CDF of first distribution lies above and hence to the left of that for the second one.
-        Which in fact means that F(x) >= G(x) for all x. And the alternative in this case is that F(x) < G(x) for at least one x.
-    - `'less'`.
+        Which in fact means that `F(x) >= G(x)` for all x. And the alternative in this case is that `F(x) < G(x)` for at least one x.
+  - `'less'`.
         The null hypothesis is that values in the first sample are *stochastically greater* than those in the second one,
         e.g. the CDF of first distribution lies below and hence to the right of that for the second one.
-        Which in fact means that F(x) <= G(x) for all x. And the alternative in this case is that F(x) > G(x) for at least one x.
+        Which in fact means that `F(x) <= G(x)` for all x. And the alternative in this case is that `F(x) > G(x)` for at least one x.
 - `computation_method` — the method used to compute p-value. (Optional, default: `'auto'`.) [String](../../../sql-reference/data-types/string.md).
-    - `'exact'` - calculation is performed using precise probability distribution of the test statistics. Compute intensive and wasteful except for small samples.
-    - `'asymp'` (`'asymptotic'`) - calculation is performed using an approximation. For large sample sizes, the exact and asymptotic p-values are very similar.
-    - `'auto'`  - the `'exact'` method is used when a maximum number of samples is less than 10'000.
-
+  - `'exact'` - calculation is performed using precise probability distribution of the test statistics. Compute intensive and wasteful except for small samples.
+  - `'asymp'` (`'asymptotic'`) - calculation is performed using an approximation. For large sample sizes, the exact and asymptotic p-values are very similar.
+  - `'auto'`  - the `'exact'` method is used when a maximum number of samples is less than 10'000.
 
 **Returned values**
 
@@ -50,12 +52,11 @@ Samples must belong to continuous, one-dimensional probability distributions.
 - calculated statistic. [Float64](../../../sql-reference/data-types/float.md).
 - calculated p-value. [Float64](../../../sql-reference/data-types/float.md).
 
-
 **Example**
 
 Query:
 
-``` sql
+```sql
 SELECT kolmogorovSmirnovTest('less', 'exact')(value, num)
 FROM
 (
@@ -73,7 +74,7 @@ FROM
 
 Result:
 
-``` text
+```text
 ┌─kolmogorovSmirnovTest('less', 'exact')(value, num)─┐
 │ (0.009899999999999996,0.37528595205132287)         │
 └────────────────────────────────────────────────────┘
@@ -82,10 +83,9 @@ Result:
 Note:
 P-value is bigger than 0.05 (for confidence level of 95%), so null hypothesis is not rejected.
 
-
 Query:
 
-``` sql
+```sql
 SELECT kolmogorovSmirnovTest('two-sided', 'exact')(value, num)
 FROM
 (
@@ -103,7 +103,7 @@ FROM
 
 Result:
 
-``` text
+```text
 ┌─kolmogorovSmirnovTest('two-sided', 'exact')(value, num)─┐
 │ (0.4100000000000002,6.61735760482795e-8)                │
 └─────────────────────────────────────────────────────────┘
@@ -111,7 +111,6 @@ Result:
 
 Note:
 P-value is less than 0.05 (for confidence level of 95%), so null hypothesis is rejected.
-
 
 **See Also**
 

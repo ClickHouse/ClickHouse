@@ -1,8 +1,8 @@
-#include "IPAddressDictionary.h"
+#include <Dictionaries/IPAddressDictionary.h>
 
 #include <Common/assert_cast.h>
 #include <Common/IPv6ToBinary.h>
-#include <Common/memcmpSmall.h>
+#include <base/memcmpSmall.h>
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
@@ -12,8 +12,8 @@
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <Poco/ByteOrder.h>
 #include <Common/formatIPv6.h>
+#include <Interpreters/Context.h>
 #include <base/itoa.h>
-#include <base/map.h>
 #include <base/range.h>
 #include <base/sort.h>
 #include <Dictionaries/ClickHouseDictionarySource.h>
@@ -23,12 +23,18 @@
 #include <Dictionaries/DictionaryFactory.h>
 #include <Functions/FunctionHelpers.h>
 
-#include <stack>
 #include <charconv>
+#include <ranges>
+#include <stack>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool dictionary_use_async_executor;
+}
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -119,14 +125,15 @@ static std::pair<Poco::Net::IPAddress, UInt8> parseIPFromString(const std::strin
     }
 }
 
-static size_t formatIPWithPrefix(const unsigned char * src, UInt8 prefix_len, bool isv4, char * dst)
+static size_t formatIPWithPrefix(const unsigned char * src, UInt8 prefix_len, bool is_v4, char * dst)
 {
     char * ptr = dst;
-    if (isv4)
+    if (is_v4)
         formatIPv4(src, ptr);
     else
         formatIPv6(src, ptr);
-    *(ptr - 1) = '/';
+    *ptr = '/';
+    ++ptr;
     ptr = itoa(prefix_len, ptr);
     return ptr - dst;
 }
@@ -407,6 +414,7 @@ void IPAddressDictionary::loadData()
     bool has_ipv6 = false;
 
     DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
+    pipeline.setConcurrencyControl(false);
     Block block;
     while (executor.pull(block))
     {
@@ -414,9 +422,10 @@ void IPAddressDictionary::loadData()
         element_count += rows;
 
         const ColumnPtr key_column_ptr = block.safeGetByPosition(0).column;
-        const auto attribute_column_ptrs = collections::map<Columns>(
-            collections::range(0, dict_struct.attributes.size()),
-            [&](const size_t attribute_idx) { return block.safeGetByPosition(attribute_idx + 1).column; });
+        const auto attribute_column_ptrs = Columns{
+            std::from_range_t{},
+            collections::range(0, dict_struct.attributes.size())
+                | std::views::transform([&](const size_t attribute_idx) { return block.safeGetByPosition(attribute_idx + 1).column; })};
 
         for (const auto row : collections::range(0, rows))
         {
@@ -613,14 +622,14 @@ void IPAddressDictionary::calculateBytesAllocated()
 template <typename T>
 void IPAddressDictionary::createAttributeImpl(Attribute & attribute, const Field & null_value)
 {
-    attribute.null_values = null_value.isNull() ? T{} : T(null_value.get<T>());
+    attribute.null_values = null_value.isNull() ? T{} : T(null_value.safeGet<T>());
     attribute.maps.emplace<ContainerType<T>>();
 }
 
 template <>
 void IPAddressDictionary::createAttributeImpl<String>(Attribute & attribute, const Field & null_value)
 {
-    attribute.null_values = null_value.isNull() ? String() : null_value.get<String>();
+    attribute.null_values = null_value.isNull() ? String() : null_value.safeGet<String>();
     attribute.maps.emplace<ContainerType<StringRef>>();
     attribute.string_arena = std::make_unique<Arena>();
 }
@@ -976,13 +985,13 @@ void IPAddressDictionary::setAttributeValue(Attribute & attribute, const Field &
 
         if constexpr (std::is_same_v<AttributeType, String>)
         {
-            const auto & string = value.get<String>();
+            const auto & string = value.safeGet<String>();
             const auto * string_in_arena = attribute.string_arena->insert(string.data(), string.size());
             setAttributeValueImpl<StringRef>(attribute, StringRef{string_in_arena, string.size()});
         }
         else
         {
-            setAttributeValueImpl<AttributeType>(attribute, static_cast<AttributeType>(value.get<AttributeType>()));
+            setAttributeValueImpl<AttributeType>(attribute, static_cast<AttributeType>(value.safeGet<AttributeType>()));
         }
     };
 
@@ -1064,7 +1073,8 @@ Pipe IPAddressDictionary::read(const Names & column_names, size_t max_block_size
     else
         key_type = std::make_shared<DataTypeFixedString>(IPV6_BINARY_LENGTH);
 
-    ColumnsWithTypeAndName key_columns_with_type = {
+    ColumnsWithTypeAndName key_columns_with_type =
+    {
         ColumnWithTypeAndName(key_columns.front(), key_type, ""),
         ColumnWithTypeAndName(key_columns.back(), std::make_shared<DataTypeUInt8>(), "")
     };
@@ -1187,7 +1197,8 @@ void registerDictionaryTrie(DictionaryFactory & factory)
 
         auto context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
         const auto * clickhouse_source = dynamic_cast<const ClickHouseDictionarySource *>(source_ptr.get());
-        bool use_async_executor = clickhouse_source && clickhouse_source->isLocal() && context->getSettingsRef().dictionary_use_async_executor;
+        bool use_async_executor
+            = clickhouse_source && clickhouse_source->isLocal() && context->getSettingsRef()[Setting::dictionary_use_async_executor];
 
         IPAddressDictionary::Configuration configuration{
             .dict_lifetime = dict_lifetime,

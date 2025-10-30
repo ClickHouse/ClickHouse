@@ -53,6 +53,10 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeString>();
+    }
 
     template <typename DataType>
     bool executeConstant(ColumnPtr col_times, ColumnString::Offsets & res_offsets, ColumnString::Chars & res_chars, size_t input_rows_count) const
@@ -72,7 +76,7 @@ public:
         checkRepeatTime(times);
 
         res_offsets.resize(input_rows_count);
-        res_chars.resize(input_rows_count * (times + 1));
+        res_chars.resize(input_rows_count * times);
 
         size_t pos = 0;
 
@@ -80,10 +84,6 @@ public:
         {
             memset(res_chars.begin() + pos, space, times);
             pos += times;
-
-            *(res_chars.begin() + pos) = '\0';
-            pos += 1;
-
             res_offsets[i] = pos;
         }
 
@@ -115,13 +115,10 @@ public:
             checkRepeatTime(times);
 
             if (pos + times + 1 > res_chars.size())
-                res_chars.resize(std::max(2 * res_chars.size(), static_cast<size_t>(pos + times + 1)));
+                res_chars.resize(std::max(2 * res_chars.size(), static_cast<size_t>(pos + times)));
 
             memset(res_chars.begin() + pos, space, times);
             pos += times;
-
-            *(res_chars.begin() + pos) = '\0';
-            pos += 1;
 
             res_offsets[i] = pos;
         }
@@ -141,7 +138,7 @@ public:
         ColumnString::Offsets & res_offsets = col_res->getOffsets();
         ColumnString::Chars & res_chars = col_res->getChars();
 
-        if (const ColumnConst * col_num_const = checkAndGetColumn<ColumnConst>(col_num.get()))
+        if (const ColumnConst * /*col_num_const*/ _ = checkAndGetColumn<ColumnConst>(col_num.get()))
         {
             if ((executeConstant<DataTypeUInt8>(col_num, res_offsets, res_chars, input_rows_count))
                 || (executeConstant<DataTypeUInt16>(col_num, res_offsets, res_chars, input_rows_count))
@@ -173,7 +170,30 @@ public:
 
 REGISTER_FUNCTION(Space)
 {
-    factory.registerFunction<FunctionSpace>({}, FunctionFactory::Case::Insensitive);
+    FunctionDocumentation::Description description = R"(
+Concatenates a space (` `) as many times with itself as specified.
+)";
+    FunctionDocumentation::Syntax syntax = "space(n)";
+    FunctionDocumentation::Arguments arguments = {
+        {"n", "The number of times to repeat the space.", {"(U)Int*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns astring containing a space repeated `n` times. If `n <= 0`, the function returns the empty string.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        "SELECT space(3) AS res, length(res);",
+        R"(
+┌─res─┬─length(res)─┐
+│     │           3 │
+└─────┴─────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {23, 5};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionSpace>(documentation, FunctionFactory::Case::Insensitive);
 }
 
 }

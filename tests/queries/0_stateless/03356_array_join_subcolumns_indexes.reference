@@ -1,0 +1,20 @@
+[0,1,2]
+[0,1,2]
+[0,1,2]
+[0,1,2]
+Expression ((Project names + (Projection + WHERE [split])))
+  ArrayJoin (ARRAY JOIN)
+    Expression (((WHERE [split] + WHERE) + (DROP unused columns before ARRAY JOIN + (ARRAY JOIN actions + Change column names to column identifiers))))
+      ReadFromMergeTree (default.test)
+      Indexes:
+        Skip
+          Name: idx2
+          Description: minmax GRANULARITY 1
+          Parts: 1/1
+          Granules: 5/10
+        Skip
+          Name: idx1
+          Description: set GRANULARITY 1
+          Parts: 1/1
+          Granules: 1/5
+        Ranges: 1

@@ -20,19 +20,23 @@ void registerTableFunctionURLCluster(TableFunctionFactory & factory);
 void registerTableFunctionValues(TableFunctionFactory & factory);
 void registerTableFunctionInput(TableFunctionFactory & factory);
 void registerTableFunctionGenerate(TableFunctionFactory & factory);
+#if USE_MONGODB
 void registerTableFunctionMongoDB(TableFunctionFactory & factory);
+#endif
+#if USE_YTSAURUS
+void registerTableFunctionYTsaurus(TableFunctionFactory & factory);
+#endif
 void registerTableFunctionRedis(TableFunctionFactory & factory);
-void registerTableFunctionMergeTreeIndex(TableFunctionFactory & factory);
-#if USE_RAPIDJSON || USE_SIMDJSON
-void registerTableFunctionFuzzJSON(TableFunctionFactory & factory);
+
+#if USE_ARROWFLIGHT
+void registerTableFunctionArrowFlight(TableFunctionFactory & factory);
 #endif
 
-#if USE_AWS_S3
-void registerTableFunctionS3(TableFunctionFactory & factory);
-void registerTableFunctionS3Cluster(TableFunctionFactory & factory);
-void registerTableFunctionCOS(TableFunctionFactory & factory);
-void registerTableFunctionOSS(TableFunctionFactory & factory);
-void registerTableFunctionGCS(TableFunctionFactory & factory);
+void registerTableFunctionMergeTreeIndex(TableFunctionFactory & factory);
+void registerTableFunctionMergeTreeProjection(TableFunctionFactory & factory);
+void registerTableFunctionFuzzQuery(TableFunctionFactory & factory);
+#if USE_RAPIDJSON || USE_SIMDJSON
+void registerTableFunctionFuzzJSON(TableFunctionFactory & factory);
 #endif
 
 #if USE_HIVE
@@ -66,6 +70,9 @@ void registerTableFunctionExplain(TableFunctionFactory & factory);
 void registerTableFunctionObjectStorage(TableFunctionFactory & factory);
 void registerTableFunctionObjectStorageCluster(TableFunctionFactory & factory);
 void registerDataLakeTableFunctions(TableFunctionFactory & factory);
+void registerDataLakeClusterTableFunctions(TableFunctionFactory & factory);
+
+void registerTableFunctionTimeSeries(TableFunctionFactory & factory);
 
 void registerTableFunctions();
 

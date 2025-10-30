@@ -156,14 +156,14 @@ namespace
                 ++dst_pos;
                 return 1;
             }
-            else if (code_point < (1 << 11))
+            if (code_point < (1 << 11))
             {
                 dst_pos[0] = ((code_point >> 6) & 0x1F) + 0xC0;
                 dst_pos[1] = (code_point & 0x3F) + 0x80;
                 dst_pos += 2;
                 return 2;
             }
-            else if (code_point < (1 << 16))
+            if (code_point < (1 << 16))
             {
                 dst_pos[0] = ((code_point >> 12) & 0x0F) + 0xE0;
                 dst_pos[1] = ((code_point >> 6) & 0x3F) + 0x80;
@@ -171,15 +171,13 @@ namespace
                 dst_pos += 3;
                 return 3;
             }
-            else
-            {
-                dst_pos[0] = ((code_point >> 18) & 0x07) + 0xF0;
-                dst_pos[1] = ((code_point >> 12) & 0x3F) + 0x80;
-                dst_pos[2] = ((code_point >> 6) & 0x3F) + 0x80;
-                dst_pos[3] = (code_point & 0x3F) + 0x80;
-                dst_pos += 4;
-                return 4;
-            }
+
+            dst_pos[0] = ((code_point >> 18) & 0x07) + 0xF0;
+            dst_pos[1] = ((code_point >> 12) & 0x3F) + 0x80;
+            dst_pos[2] = ((code_point >> 6) & 0x3F) + 0x80;
+            dst_pos[3] = (code_point & 0x3F) + 0x80;
+            dst_pos += 4;
+            return 4;
         }
 
         [[maybe_unused]] static bool isValidNumericEntity(const char * src, const char * end, uint32_t & code_point)
@@ -222,6 +220,29 @@ namespace
 
 REGISTER_FUNCTION(DecodeHTMLComponent)
 {
-    factory.registerFunction<FunctionDecodeHTMLComponent>();
+    FunctionDocumentation::Description description = R"(
+Decodes HTML entities in a string to their corresponding characters.
+)";
+    FunctionDocumentation::Syntax syntax = "decodeHTMLComponent(s)";
+    FunctionDocumentation::Arguments arguments = {
+        {"s", "String containing HTML entities to decode.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the string with HTML entities decoded.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        "SELECT decodeHTMLComponent('&lt;div&gt;Hello &amp; &quot;World&quot;&lt;/div&gt;')",
+        R"(
+┌─decodeHTMLComponent('&lt;div&gt;Hello &amp; &quot;World&quot;&lt;/div&gt;')─┐
+│ <div>Hello & "World"</div>                                                  │
+└─────────────────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {23, 9};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionDecodeHTMLComponent>(documentation);
 }
 }

@@ -1,5 +1,7 @@
 #include <Processors/LimitTransform.h>
 
+#include <Columns/IColumn.h>
+#include <Processors/Port.h>
 
 namespace DB
 {
@@ -10,7 +12,7 @@ namespace ErrorCodes
 }
 
 LimitTransform::LimitTransform(
-    const Block & header_, UInt64 limit_, UInt64 offset_, size_t num_streams,
+    SharedHeader header_, UInt64 limit_, UInt64 offset_, size_t num_streams,
     bool always_read_till_end_, bool with_ties_,
     SortDescription description_)
     : IProcessor(InputPorts(num_streams, header_), OutputPorts(num_streams, header_))
@@ -38,7 +40,7 @@ LimitTransform::LimitTransform(
     }
 
     for (const auto & desc : description)
-        sort_column_positions.push_back(header_.getPositionByName(desc.column_name));
+        sort_column_positions.push_back(header_->getPositionByName(desc.column_name));
 }
 
 Chunk LimitTransform::makeChunkWithPreviousRow(const Chunk & chunk, UInt64 row) const
@@ -317,8 +319,9 @@ void LimitTransform::splitChunk(PortsData & data)
             length = offset + limit - (rows_read - num_rows) - start;
     }
 
-    /// check if other rows in current block equals to last one in limit
-    if (with_ties && length)
+    /// Check if other rows in current block equals to last one in limit
+    /// when rows read >= offset + limit.
+    if (with_ties && offset + limit <= rows_read && length)
     {
         UInt64 current_row_num = start + length;
         previous_row_chunk = makeChunkWithPreviousRow(data.current_chunk, current_row_num - 1);

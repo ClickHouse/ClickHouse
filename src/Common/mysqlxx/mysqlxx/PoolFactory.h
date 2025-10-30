@@ -7,9 +7,11 @@
 #include <mysqlxx/PoolWithFailover.h>
 
 
+/// NOLINTBEGIN(modernize-macro-to-enum)
 #define MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_START_CONNECTIONS 1
 #define MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_CONNECTIONS 16
 #define MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES 3
+/// NOLINTEND(modernize-macro-to-enum)
 
 
 namespace mysqlxx

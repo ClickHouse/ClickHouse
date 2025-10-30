@@ -1,3 +1,6 @@
+#include <base/getFQDNOrHostName.h>
+#include <Common/DateLUTImpl.h>
+#include <Common/ErrorCodes.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -5,10 +8,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/ErrorLog.h>
-#include <base/getFQDNOrHostName.h>
-#include <Common/DateLUTImpl.h>
-#include <Common/ThreadPool.h>
-#include <Common/ErrorCodes.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
 
@@ -87,8 +86,7 @@ struct ValuePair
 
 void ErrorLog::stepFunction(TimePoint current_time)
 {
-    /// Static lazy initialization to avoid polluting the header with implementation details
-    static std::vector<ValuePair> previous_values(ErrorCodes::end());
+    std::lock_guard lock(previous_values_mutex);
 
     auto event_time = std::chrono::system_clock::to_time_t(current_time);
 
@@ -114,7 +112,7 @@ void ErrorLog::stepFunction(TimePoint current_time)
                 .value=error.remote.count - previous_values.at(code).remote,
                 .remote=true
             };
-            this->add(std::move(remote_elem));
+            add(std::move(remote_elem));
             previous_values[code].remote = error.remote.count;
         }
     }

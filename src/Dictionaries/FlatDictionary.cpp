@@ -1,4 +1,5 @@
-#include "FlatDictionary.h"
+#include <memory>
+#include <Dictionaries/FlatDictionary.h>
 
 #include <Core/Defines.h>
 #include <Common/HashTable/HashMap.h>
@@ -245,7 +246,7 @@ ColumnPtr FlatDictionary::getHierarchy(ColumnPtr key_column, const DataTypePtr &
     std::optional<UInt64> null_value;
 
     if (!dictionary_attribute.null_value.isNull())
-        null_value = dictionary_attribute.null_value.get<UInt64>();
+        null_value = dictionary_attribute.null_value.safeGet<UInt64>();
 
     const ContainerType<UInt64> & parent_keys = std::get<ContainerType<UInt64>>(hierarchical_attribute.container);
 
@@ -300,7 +301,7 @@ ColumnUInt8::Ptr FlatDictionary::isInHierarchy(
     std::optional<UInt64> null_value;
 
     if (!dictionary_attribute.null_value.isNull())
-        null_value = dictionary_attribute.null_value.get<UInt64>();
+        null_value = dictionary_attribute.null_value.safeGet<UInt64>();
 
     const ContainerType<UInt64> & parent_keys = std::get<ContainerType<UInt64>>(hierarchical_attribute.container);
 
@@ -454,6 +455,7 @@ void FlatDictionary::updateData()
     {
         QueryPipeline pipeline(source_ptr->loadUpdatedAll());
         DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
+        pipeline.setConcurrencyControl(false);
         update_field_loaded_block.reset();
         Block block;
 
@@ -462,7 +464,7 @@ void FlatDictionary::updateData()
             if (!block.rows())
                 continue;
 
-            convertToFullIfSparse(block);
+            removeSpecialColumnRepresentations(block);
 
             /// We are using this to keep saved data if input stream consists of multiple blocks
             if (!update_field_loaded_block)
@@ -479,10 +481,10 @@ void FlatDictionary::updateData()
     else
     {
         auto pipeline(source_ptr->loadUpdatedAll());
-        mergeBlockWithPipe<DictionaryKeyType::Simple>(
+        update_field_loaded_block = std::make_shared<Block>(mergeBlockWithPipe<DictionaryKeyType::Simple>(
             dict_struct.getKeysSize(),
             *update_field_loaded_block,
-            std::move(pipeline));
+            std::move(pipeline)));
     }
 
     if (update_field_loaded_block)
@@ -495,6 +497,7 @@ void FlatDictionary::loadData()
     {
         QueryPipeline pipeline(source_ptr->loadAll());
         DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
+        pipeline.setConcurrencyControl(false);
 
         Block block;
         while (executor.pull(block))
@@ -701,7 +704,7 @@ void FlatDictionary::setAttributeValue(Attribute & attribute, const UInt64 key, 
             return;
         }
 
-        auto & attribute_value = value.get<AttributeType>();
+        auto & attribute_value = value.safeGet<AttributeType>();
 
         auto & container = std::get<ContainerType<ValueType>>(attribute.container);
         loaded_keys[key] = true;

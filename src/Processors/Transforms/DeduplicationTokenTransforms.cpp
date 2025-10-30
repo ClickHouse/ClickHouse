@@ -1,13 +1,11 @@
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
 
 #include <IO/WriteHelpers.h>
-
+#include <Columns/IColumn.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
-
-
-#include <fmt/core.h>
+#include <fmt/format.h>
 
 
 namespace DB
@@ -142,7 +140,7 @@ size_t TokenInfo::getTotalSize() const
     return size + parts.size() - 1;
 }
 
-#ifdef ABORT_ON_LOGICAL_ERROR
+#ifdef DEBUG_OR_SANITIZER_BUILD
 void CheckTokenTransform::transform(Chunk & chunk)
 {
     auto token_info = chunk.getChunkInfos().get<TokenInfo>();
@@ -151,8 +149,6 @@ void CheckTokenTransform::transform(Chunk & chunk)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk has to have DedupTokenInfo as ChunkInfo, {}", debug);
     }
-
-    LOG_TEST(log, "debug: {}, token: {}, columns {} rows {}", debug, token_info->debugToken(), chunk.getNumColumns(), chunk.getNumRows());
 }
 #endif
 

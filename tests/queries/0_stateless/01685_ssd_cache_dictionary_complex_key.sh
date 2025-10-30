@@ -4,7 +4,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT -n --query="
+$CLICKHOUSE_CLIENT --query="
     CREATE TABLE complex_key_simple_attributes_source_table
     (
     id UInt64,

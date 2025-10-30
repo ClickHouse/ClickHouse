@@ -5,6 +5,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
 #include <Common/isLocalAddress.h>
+#include <Common/quoteString.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -180,7 +181,7 @@ namespace
 
         if (database_name_field && table_name_field)
         {
-            QualifiedTableName qualified_name{database_name_field->get<String>(), table_name_field->get<String>()};
+            QualifiedTableName qualified_name{database_name_field->safeGet<String>(), table_name_field->safeGet<String>()};
             if (!qualified_name.database.empty() && !qualified_name.table.empty())
             {
                 auto new_qualified_name = data.renaming_map.getNewTableName(qualified_name);
@@ -207,7 +208,7 @@ namespace
             if (literal->value.getType() != Field::Types::String)
                 return;
 
-            auto maybe_qualified_name = QualifiedTableName::tryParseFromString(literal->value.get<String>());
+            auto maybe_qualified_name = QualifiedTableName::tryParseFromString(literal->value.safeGet<String>());
             /// Just return if name if invalid
             if (!maybe_qualified_name || maybe_qualified_name->database.empty() || maybe_qualified_name->table.empty())
                 return;
@@ -247,7 +248,7 @@ namespace
         if (!literal || (literal->value.getType() != Field::Types::String))
             return;
 
-        auto database_name = literal->value.get<String>();
+        auto database_name = literal->value.safeGet<String>();
         if (database_name.empty())
             return;
 
@@ -353,7 +354,7 @@ void DDLRenamingMap::setNewDatabaseName(const String & old_database_name, const 
 }
 
 
-const String & DDLRenamingMap::getNewDatabaseName(const String & old_database_name) const
+String DDLRenamingMap::getNewDatabaseName(const String & old_database_name) const
 {
     auto it = old_to_new_database_names.find(old_database_name);
     if (it != old_to_new_database_names.end())

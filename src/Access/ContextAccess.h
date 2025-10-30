@@ -1,18 +1,16 @@
 #pragma once
 
-#include <Access/AccessRights.h>
-#include <Access/ContextAccessParams.h>
-#include <Access/EnabledRowPolicies.h>
-#include <Interpreters/ClientInfo.h>
-#include <Access/QuotaUsage.h>
-#include <Common/SettingsChanges.h>
-#include <Core/UUID.h>
-#include <base/scope_guard.h>
-#include <boost/container/flat_set.hpp>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <unordered_map>
+#include <Access/AccessRights.h>
+#include <Access/ContextAccessParams.h>
+#include <Access/EnabledRowPolicies.h>
+#include <Access/QuotaUsage.h>
+#include <Core/UUID.h>
+#include <base/scope_guard.h>
+#include <Common/SettingsChanges.h>
 
 
 namespace Poco { class Logger; }
@@ -36,7 +34,6 @@ struct IAccessEntity;
 using ASTPtr = std::shared_ptr<IAST>;
 class Context;
 using ContextPtr = std::shared_ptr<const Context>;
-
 
 class ContextAccess : public std::enable_shared_from_this<ContextAccess>
 {
@@ -133,6 +130,15 @@ public:
     /// Checks if grantees are allowed for the current user, throws an exception if not.
     void checkGranteesAreAllowed(const std::vector<UUID> & grantee_ids) const;
 
+    /// Checks access of grants with parameter where a filter can be applied.
+    /// For example, for `GRANT READ ON S3('s3://foo.*') TO user` calling `checkAccess(READ, "S3")` will throw an error
+    /// because we are checking for `READ` permissions for all possible URLs.
+    ///
+    /// But calling `checkAccessWithFilter(READ, "S3", "s3://foo/bar.csv")` will succeed, because we have just enough rights.
+    void checkAccessWithFilter(const ContextPtr & context, const AccessFlags & flags, std::string_view parameter, std::string_view filter) const;
+
+    static AccessRights addImplicitAccessRights(const AccessRights & access, const AccessControl & access_control);
+
     ContextAccess(const AccessControl & access_control_, const Params & params_);
     ~ContextAccess();
 
@@ -144,22 +150,22 @@ private:
     void setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> & roles_info_) const TSA_REQUIRES(mutex);
     void calculateAccessRights() const TSA_REQUIRES(mutex);
 
-    template <bool throw_if_denied, bool grant_option>
+    template <bool throw_if_denied, bool grant_option, bool wildcard>
     bool checkAccessImpl(const ContextPtr & context, const AccessFlags & flags) const;
 
-    template <bool throw_if_denied, bool grant_option, typename... Args>
+    template <bool throw_if_denied, bool grant_option, bool wildcard, typename... Args>
     bool checkAccessImpl(const ContextPtr & context, const AccessFlags & flags, std::string_view database, const Args &... args) const;
 
-    template <bool throw_if_denied, bool grant_option>
+    template <bool throw_if_denied, bool grant_option, bool wildcard>
     bool checkAccessImpl(const ContextPtr & context, const AccessRightsElement & element) const;
 
-    template <bool throw_if_denied, bool grant_option>
+    template <bool throw_if_denied, bool grant_option, bool wildcard>
     bool checkAccessImpl(const ContextPtr & context, const AccessRightsElements & elements) const;
 
-    template <bool throw_if_denied, bool grant_option, typename... Args>
+    template <bool throw_if_denied, bool grant_option, bool wildcard, typename... Args>
     bool checkAccessImplHelper(const ContextPtr & context, AccessFlags flags, const Args &... args) const;
 
-    template <bool throw_if_denied, bool grant_option>
+    template <bool throw_if_denied, bool grant_option, bool wildcard>
     bool checkAccessImplHelper(const ContextPtr & context, const AccessRightsElement & element) const;
 
     template <bool throw_if_denied>
@@ -310,6 +316,9 @@ public:
     ALWAYS_INLINE void checkGranteeIsAllowed(const UUID & grantee_id, const IAccessEntity & grantee) const { access->checkGranteeIsAllowed(grantee_id, grantee); }
     /// Checks if grantees are allowed for the current user, throws an exception if not.
     ALWAYS_INLINE void checkGranteesAreAllowed(const std::vector<UUID> & grantee_ids) const { access->checkGranteesAreAllowed(grantee_ids); }
+
+    /// Checks access of grants with parameter where a filter can be applied.
+    ALWAYS_INLINE void checkAccessWithFilter(const AccessFlags & flags, std::string_view parameter, std::string_view filter) const { access->checkAccessWithFilter(context, flags, parameter, filter); }
 
 private:
     ContextAccessPtr access;

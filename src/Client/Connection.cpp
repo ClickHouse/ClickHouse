@@ -5,17 +5,17 @@
 #include <Core/Settings.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
-#include <IO/ReadBufferFromPocoSocket.h>
-#include <IO/WriteBufferFromPocoSocket.h>
+#include <IO/LimitReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <IO/TimeoutSetter.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
-#include <Client/ClientBase.h>
+#include <Client/ClientApplicationBase.h>
 #include <Client/Connection.h>
 #include <Client/ConnectionParameters.h>
+#include <Common/logger_useful.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Exception.h>
 #include <Common/NetException.h>
@@ -23,23 +23,26 @@
 #include <Common/DNSResolver.h>
 #include <Common/StringUtils.h>
 #include <Common/OpenSSLHelpers.h>
+#include <Common/formatReadable.h>
 #include <Common/randomSeed.h>
-#include <Common/logger_useful.h>
 #include <Core/Block.h>
+#include <Core/ProtocolDefines.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
+#include <Interpreters/ClusterFunctionReadTask.h>
 #include <Compression/CompressionFactory.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/ISink.h>
 #include <Processors/Executors/PipelineExecutor.h>
-#include <pcg_random.hpp>
-#include <base/scope_guard.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Common/FailPoint.h>
 
 #include <Common/config_version.h>
 #include <Core/Types.h>
 #include "config.h"
+
+#include <fmt/ranges.h>
 
 #if USE_SSL
 #    include <Poco/Net/SecureStreamSocket.h>
@@ -51,8 +54,22 @@ namespace CurrentMetrics
     extern const Metric SendExternalTables;
 }
 
+namespace ProfileEvents
+{
+    extern const Event DistributedConnectionReconnectCount;
+}
+
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_codecs;
+    extern const SettingsBool allow_suspicious_codecs;
+    extern const SettingsBool enable_deflate_qpl_codec;
+    extern const SettingsBool enable_zstd_qat_codec;
+    extern const SettingsString network_compression_method;
+    extern const SettingsInt64 network_zstd_compression_level;
+}
 
 namespace FailPoints
 {
@@ -72,39 +89,39 @@ namespace ErrorCodes
 
 Connection::~Connection()
 {
-    try{
-        if (connected)
-            Connection::disconnect();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    if (Connection::isConnected())
+        Connection::disconnect();
 }
 
 Connection::Connection(const String & host_, UInt16 port_,
     const String & default_database_,
     const String & user_, const String & password_,
+    const String & proto_send_chunked_, const String & proto_recv_chunked_,
     [[maybe_unused]] const SSHKey & ssh_private_key_,
-    const String & jwt_,
+    [[maybe_unused]] const String & jwt_,
     const String & quota_key_,
     const String & cluster_,
     const String & cluster_secret_,
     const String & client_name_,
     Protocol::Compression compression_,
-    Protocol::Secure secure_)
+    Protocol::Secure secure_,
+    const String & bind_host_)
     : host(host_), port(port_), default_database(default_database_)
     , user(user_), password(password_)
+    , proto_send_chunked(proto_send_chunked_), proto_recv_chunked(proto_recv_chunked_)
 #if USE_SSH
     , ssh_private_key(ssh_private_key_)
 #endif
     , quota_key(quota_key_)
+#if USE_JWT_CPP && USE_SSL
     , jwt(jwt_)
+#endif
     , cluster(cluster_)
     , cluster_secret(cluster_secret_)
     , client_name(client_name_)
     , compression(compression_)
     , secure(secure_)
+    , bind_host(bind_host_)
     , log_wrapper(*this)
 {
     /// Don't connect immediately, only on first need.
@@ -118,13 +135,17 @@ Connection::Connection(const String & host_, UInt16 port_,
 
 void Connection::connect(const ConnectionTimeouts & timeouts)
 {
+    /// if connection was broken it is necessary to cancel it before reconnecting
+    disconnect();
+
     try
     {
-        LOG_TRACE(log_wrapper.get(), "Connecting. Database: {}. User: {}{}{}",
+        LOG_TRACE(log_wrapper.get(), "Connecting. Database: {}. User: {}{}{}. Bind_Host: {}",
             default_database.empty() ? "(not specified)" : default_database,
             user,
             static_cast<bool>(secure) ? ". Secure" : "",
-            static_cast<bool>(compression) ? "" : ". Uncompressed");
+            static_cast<bool>(compression) ? "" : ". Uncompressed",
+            bind_host.empty() ? "(not specified)" : bind_host);
 
         auto addresses = DNSResolver::instance().resolveAddressList(host, port);
         const auto & connection_timeout = static_cast<bool>(secure) ? timeouts.secure_connection_timeout : timeouts.connection_timeout;
@@ -133,7 +154,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         {
             have_more_addresses_to_connect = it != std::prev(addresses.end());
 
-            if (connected)
+            if (isConnected())
                 disconnect();
 
             if (static_cast<bool>(secure))
@@ -145,6 +166,16 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
                 /// work we need to pass host name separately. It will be send into TLS Hello packet to let
                 /// the server know which host we want to talk with (single IP can process requests for multiple hosts using SNI).
                 static_cast<Poco::Net::SecureStreamSocket*>(socket.get())->setPeerHostName(host);
+                /// we want to postpone SSL handshake until first read or write operation
+                /// so any errors during negotiation would be properly processed
+                static_cast<Poco::Net::SecureStreamSocket*>(socket.get())->setLazyHandshake(true);
+
+                if (!bind_host.empty())
+                {
+                    Poco::Net::SocketAddress socket_address(bind_host, 0);
+
+                    static_cast<Poco::Net::SecureStreamSocket*>(socket.get())->bind(socket_address, true);
+                }
 #else
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "tcp_secure protocol is disabled because poco library was built without NetSSL support.");
 #endif
@@ -152,6 +183,13 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
             else
             {
                 socket = std::make_unique<Poco::Net::StreamSocket>();
+
+                if (!bind_host.empty())
+                {
+                    Poco::Net::SocketAddress socket_address(bind_host, 0);
+
+                    static_cast<Poco::Net::StreamSocket*>(socket.get())->bind(socket_address, true);
+                }
             }
 
             try
@@ -211,19 +249,71 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
                 , tcp_keep_alive_timeout_in_sec);
         }
 
-        in = std::make_shared<ReadBufferFromPocoSocket>(*socket);
+        in = std::make_shared<ReadBufferFromPocoSocketChunked>(*socket);
         in->setAsyncCallback(async_callback);
 
-        out = std::make_shared<WriteBufferFromPocoSocket>(*socket);
+        out = std::make_shared<WriteBufferFromPocoSocketChunked>(*socket);
         out->setAsyncCallback(async_callback);
         connected = true;
         setDescription();
 
-        sendHello();
+        sendHello(timeouts.handshake_timeout);
         receiveHello(timeouts.handshake_timeout);
+
+        if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_CHUNKED_PACKETS)
+        {
+            /// Client side of chunked protocol negotiation.
+            /// Server advertises its protocol capabilities (separate for send and receive channels) by sending
+            /// in its 'Hello' response one of four types - chunked, notchunked, chunked_optional, notchunked_optional.
+            /// Not optional types are strict meaning that server only supports this type, optional means that
+            /// server prefer this type but capable to work in opposite.
+            /// Client selects which type it is going to communicate based on the settings from config or arguments,
+            /// and sends either "chunked" or "notchunked" protocol request in addendum section of handshake.
+            /// Client can detect if server's protocol capabilities are not compatible with client's settings (for example
+            /// server strictly requires chunked protocol but client's settings only allows notchunked protocol) - in such case
+            /// client should interrupt this connection. However if client continues with incompatible protocol type request, server
+            /// will send appropriate exception and disconnect client.
+
+            auto is_chunked = [](const String & chunked_srv_str, const String & chunked_cl_str, const String & direction)
+            {
+                bool chunked_srv = chunked_srv_str.starts_with("chunked");
+                bool optional_srv = chunked_srv_str.ends_with("_optional");
+                bool chunked_cl = chunked_cl_str.starts_with("chunked");
+                bool optional_cl = chunked_cl_str.ends_with("_optional");
+
+                if (optional_srv)
+                    return chunked_cl;
+                if (optional_cl)
+                    return chunked_srv;
+                if (chunked_cl != chunked_srv)
+                    throw NetException(
+                        ErrorCodes::NETWORK_ERROR,
+                        "Incompatible protocol: {} set to {}, server requires {}",
+                        direction,
+                        chunked_cl ? "chunked" : "notchunked",
+                        chunked_srv ? "chunked" : "notchunked");
+
+                return chunked_srv;
+            };
+
+            proto_send_chunked = is_chunked(proto_recv_chunked_srv, proto_send_chunked, "send") ? "chunked" : "notchunked";
+            proto_recv_chunked = is_chunked(proto_send_chunked_srv, proto_recv_chunked, "recv") ? "chunked" : "notchunked";
+        }
+        else
+        {
+            if (proto_send_chunked == "chunked" || proto_recv_chunked == "chunked")
+                throw NetException(
+                        ErrorCodes::NETWORK_ERROR,
+                        "Incompatible protocol: server's version is too old and doesn't support chunked protocol while client settings require it.");
+        }
 
         if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_ADDENDUM)
             sendAddendum();
+
+        if (proto_send_chunked == "chunked")
+            out->enableChunked();
+        if (proto_recv_chunked == "chunked")
+            in->enableChunked();
 
         LOG_TRACE(log_wrapper.get(), "Connected to {} server version {}.{}.{}.",
             server_name, server_version_major, server_version_minor, server_version_patch);
@@ -266,59 +356,49 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
             getDescription(/*with_extra*/ true),
             connection_timeout.totalMilliseconds());
     }
+    catch (...)
+    {
+        disconnect();
+        throw;
+    }
+}
+
+void Connection::cancel() noexcept
+{
+    if (maybe_compressed_out)
+        maybe_compressed_out->cancel();
+
+    if (out)
+        out->cancel();
+
+    if (socket)
+        socket->close();
+
+    reset();
+}
+
+void Connection::reset() noexcept
+{
+    maybe_compressed_out.reset();
+    out.reset();
+    socket.reset();
+    nonce.reset();
+
+    connected = false;
 }
 
 
 void Connection::disconnect()
 {
-    in = nullptr;
+    in.reset();
     last_input_packet_type.reset();
-    std::exception_ptr finalize_exception;
 
-    try
-    {
-        // finalize() can write and throw an exception.
-        if (maybe_compressed_out)
-            maybe_compressed_out->finalize();
-    }
-    catch (...)
-    {
-        /// Don't throw an exception here, it will leave Connection in invalid state.
-        finalize_exception = std::current_exception();
-
-        if (out)
-        {
-            out->cancel();
-            out = nullptr;
-        }
-    }
-    maybe_compressed_out = nullptr;
-
-    try
-    {
-        if (out)
-            out->finalize();
-    }
-    catch (...)
-    {
-        /// Don't throw an exception here, it will leave Connection in invalid state.
-        finalize_exception = std::current_exception();
-    }
-    out = nullptr;
-
-    if (socket)
-        socket->close();
-
-    socket = nullptr;
-    connected = false;
-    nonce.reset();
-
-    if (finalize_exception)
-        std::rethrow_exception(finalize_exception);
+    // no point to finalize tcp connections
+    cancel();
 }
 
 
-void Connection::sendHello()
+void Connection::sendHello([[maybe_unused]] const Poco::Timespan & handshake_timeout)
 {
     /** Disallow control characters in user controlled parameters
       *  to mitigate the possibility of SSRF.
@@ -371,14 +451,16 @@ void Connection::sendHello()
         writeStringBinary(String(EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER) + user, *out);
         writeStringBinary(password, *out);
 
-        performHandshakeForSSHAuth();
+        performHandshakeForSSHAuth(handshake_timeout);
     }
 #endif
+#if USE_JWT_CPP && USE_SSL
     else if (!jwt.empty())
     {
         writeStringBinary(EncodedUserInfo::JWT_AUTHENTICAION_MARKER, *out);
         writeStringBinary(jwt, *out);
     }
+#endif
     else
     {
         writeStringBinary(user, *out);
@@ -393,13 +475,25 @@ void Connection::sendAddendum()
 {
     if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_QUOTA_KEY)
         writeStringBinary(quota_key, *out);
+
+    if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_CHUNKED_PACKETS)
+    {
+        writeStringBinary(proto_send_chunked, *out);
+        writeStringBinary(proto_recv_chunked, *out);
+    }
+
+    if (server_revision >= DBMS_MIN_REVISION_WITH_VERSIONED_PARALLEL_REPLICAS_PROTOCOL)
+        writeVarUInt(DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION, *out);
+
     out->next();
 }
 
 
 #if USE_SSH
-void Connection::performHandshakeForSSHAuth()
+void Connection::performHandshakeForSSHAuth(const Poco::Timespan & handshake_timeout)
 {
+    TimeoutSetter timeout_setter(*socket, handshake_timeout, handshake_timeout);
+
     String challenge;
     {
         writeVarUInt(Protocol::Client::SSHChallengeRequest, *out);
@@ -416,11 +510,7 @@ void Connection::performHandshakeForSSHAuth()
         else if (packet_type == Protocol::Server::Exception)
             receiveException()->rethrow();
         else
-        {
-            /// Close connection, to not stay in unsynchronised state.
-            disconnect();
-            throwUnexpectedPacket(packet_type, "SSHChallenge or Exception");
-        }
+            throwUnexpectedPacket(timeout_setter, packet_type, "SSHChallenge or Exception");
     }
 
     writeVarUInt(Protocol::Client::SSHChallengeResponse, *out);
@@ -463,6 +553,8 @@ void Connection::receiveHello(const Poco::Timespan & handshake_timeout)
         readVarUInt(server_version_major, *in);
         readVarUInt(server_version_minor, *in);
         readVarUInt(server_revision, *in);
+        if (server_revision >= DBMS_MIN_REVISION_WITH_VERSIONED_PARALLEL_REPLICAS_PROTOCOL)
+            readVarUInt(server_parallel_replicas_protocol_version, *in);
         if (server_revision >= DBMS_MIN_REVISION_WITH_SERVER_TIMEZONE)
             readStringBinary(server_timezone, *in);
         if (server_revision >= DBMS_MIN_REVISION_WITH_SERVER_DISPLAY_NAME)
@@ -472,6 +564,12 @@ void Connection::receiveHello(const Poco::Timespan & handshake_timeout)
         else
             server_version_patch = server_revision;
 
+        if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_CHUNKED_PACKETS)
+        {
+            readStringBinary(proto_send_chunked_srv, *in);
+            readStringBinary(proto_recv_chunked_srv, *in);
+        }
+
         if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_PASSWORD_COMPLEXITY_RULES)
         {
             UInt64 rules_size;
@@ -480,7 +578,8 @@ void Connection::receiveHello(const Poco::Timespan & handshake_timeout)
 
             for (size_t i = 0; i < rules_size; ++i)
             {
-                String original_pattern, exception_message;
+                String original_pattern;
+                String exception_message;
                 readStringBinary(original_pattern, *in);
                 readStringBinary(exception_message, *in);
                 password_complexity_rules.push_back({std::move(original_pattern), std::move(exception_message)});
@@ -494,19 +593,29 @@ void Connection::receiveHello(const Poco::Timespan & handshake_timeout)
             readIntBinary(read_nonce, *in);
             nonce.emplace(read_nonce);
         }
+
+        if (server_revision >= DBMS_MIN_REVISION_WITH_SERVER_SETTINGS)
+        {
+            Settings settings;
+            settings.read(*in, SettingsWriteFormat::STRINGS_WITH_FLAGS);
+            settings_from_server = settings.changes();
+        }
+
+        if (server_revision >= DBMS_MIN_REVISION_WITH_QUERY_PLAN_SERIALIZATION)
+        {
+            readVarUInt(server_query_plan_serialization_version, *in);
+        }
+
+        server_cluster_function_protocol_version = DBMS_CLUSTER_INITIAL_PROCESSING_PROTOCOL_VERSION;
+        if (server_revision >= DBMS_MIN_REVISION_WITH_VERSIONED_CLUSTER_FUNCTION_PROTOCOL)
+        {
+            readVarUInt(server_cluster_function_protocol_version, *in);
+        }
     }
     else if (packet_type == Protocol::Server::Exception)
         receiveException()->rethrow();
     else
-    {
-        /// Reset timeout_setter before disconnect,
-        /// because after disconnect socket will be invalid.
-        timeout_setter.reset();
-
-        /// Close connection, to not stay in unsynchronised state.
-        disconnect();
-        throwUnexpectedPacket(packet_type, "Hello or Exception");
-    }
+        throwUnexpectedPacket(timeout_setter, packet_type, "Hello or Exception");
 }
 
 void Connection::setDefaultDatabase(const String & database)
@@ -517,6 +626,12 @@ void Connection::setDefaultDatabase(const String & database)
 const String & Connection::getDefaultDatabase() const
 {
     return default_database;
+}
+
+const SettingsChanges & Connection::settingsFromServer() const
+{
+    chassert(isConnected());
+    return settings_from_server;
 }
 
 const String & Connection::getDescription(bool with_extra) const /// NOLINT
@@ -543,7 +658,7 @@ void Connection::getServerVersion(const ConnectionTimeouts & timeouts,
                                   UInt64 & version_patch,
                                   UInt64 & revision)
 {
-    if (!connected)
+    if (!isConnected())
         connect(timeouts);
 
     name = server_name;
@@ -555,7 +670,7 @@ void Connection::getServerVersion(const ConnectionTimeouts & timeouts,
 
 UInt64 Connection::getServerRevision(const ConnectionTimeouts & timeouts)
 {
-    if (!connected)
+    if (!isConnected())
         connect(timeouts);
 
     return server_revision;
@@ -563,7 +678,7 @@ UInt64 Connection::getServerRevision(const ConnectionTimeouts & timeouts)
 
 const String & Connection::getServerTimezone(const ConnectionTimeouts & timeouts)
 {
-    if (!connected)
+    if (!isConnected())
         connect(timeouts);
 
     return server_timezone;
@@ -571,7 +686,7 @@ const String & Connection::getServerTimezone(const ConnectionTimeouts & timeouts
 
 const String & Connection::getServerDisplayName(const ConnectionTimeouts & timeouts)
 {
-    if (!connected)
+    if (!isConnected())
         connect(timeouts);
 
     return server_display_name;
@@ -579,12 +694,13 @@ const String & Connection::getServerDisplayName(const ConnectionTimeouts & timeo
 
 void Connection::forceConnected(const ConnectionTimeouts & timeouts)
 {
-    if (!connected)
+    if (!isConnected())
     {
         connect(timeouts);
     }
     else if (!ping(timeouts))
     {
+        ProfileEvents::increment(ProfileEvents::DistributedConnectionReconnectCount);
         LOG_TRACE(log_wrapper.get(), "Connection was closed, will reconnect.");
         connect(timeouts);
     }
@@ -611,6 +727,7 @@ bool Connection::ping(const ConnectionTimeouts & timeouts)
 
         UInt64 pong = 0;
         writeVarUInt(Protocol::Client::Ping, *out);
+        out->finishChunk();
         out->next();
 
         if (in->eof())
@@ -630,7 +747,7 @@ bool Connection::ping(const ConnectionTimeouts & timeouts)
         }
 
         if (pong != Protocol::Server::Pong)
-            throwUnexpectedPacket(pong, "Pong");
+            throwUnexpectedPacket(timeout_setter, pong, "Pong");
     }
     catch (const Poco::Exception & e)
     {
@@ -648,7 +765,7 @@ bool Connection::ping(const ConnectionTimeouts & timeouts)
 TablesStatusResponse Connection::getTablesStatus(const ConnectionTimeouts & timeouts,
                                                  const TablesStatusRequest & request)
 {
-    if (!connected)
+    if (!isConnected())
         connect(timeouts);
 
     fiu_do_on(FailPoints::receive_timeout_on_table_status_response, {
@@ -660,6 +777,7 @@ TablesStatusResponse Connection::getTablesStatus(const ConnectionTimeouts & time
 
     writeVarUInt(Protocol::Client::TablesStatusRequest, *out);
     request.write(*out, server_revision);
+    out->finishChunk();
     out->next();
 
     UInt64 response_type = 0;
@@ -668,7 +786,7 @@ TablesStatusResponse Connection::getTablesStatus(const ConnectionTimeouts & time
     if (response_type == Protocol::Server::Exception)
         receiveException()->rethrow();
     else if (response_type != Protocol::Server::TablesStatusResponse)
-        throwUnexpectedPacket(response_type, "TablesStatusResponse");
+        throwUnexpectedPacket(timeout_setter, response_type, "TablesStatusResponse");
 
     TablesStatusResponse response;
     response.read(*in, server_revision);
@@ -685,6 +803,7 @@ void Connection::sendQuery(
     const Settings * settings,
     const ClientInfo * client_info,
     bool with_pending_data,
+    const std::vector<String> & external_roles,
     std::function<void(const Progress &)>)
 {
     OpenTelemetry::SpanHolder span("Connection::sendQuery()", OpenTelemetry::SpanKind::CLIENT);
@@ -703,7 +822,7 @@ void Connection::sendQuery(
         client_info = &new_client_info;
     }
 
-    if (!connected)
+    if (!isConnected())
         connect(timeouts);
 
     /// Query is not executed within sendQuery() function.
@@ -716,25 +835,41 @@ void Connection::sendQuery(
     if (settings)
     {
         std::optional<int> level;
-        std::string method = Poco::toUpper(settings->network_compression_method.toString());
+        std::string method = Poco::toUpper((*settings)[Setting::network_compression_method].toString());
 
         /// Bad custom logic
+        /// We only allow any of following generic codecs. CompressionCodecFactory will happily return other
+        /// codecs (e.g. T64) but these may be specialized and not support all data types, i.e. SELECT 'abc' may
+        /// be broken afterwards.
+        if (method != "NONE" && method != "ZSTD" && method != "LZ4" && method != "LZ4HC")
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Setting 'network_compression_method' must be NONE, ZSTD, LZ4 or LZ4HC");
+
+        /// More bad custom logic
         if (method == "ZSTD")
-            level = settings->network_zstd_compression_level;
+            level = (*settings)[Setting::network_zstd_compression_level];
 
         CompressionCodecFactory::instance().validateCodec(
             method,
             level,
-            !settings->allow_suspicious_codecs,
-            settings->allow_experimental_codecs,
-            settings->enable_deflate_qpl_codec,
-            settings->enable_zstd_qat_codec);
+            !(*settings)[Setting::allow_suspicious_codecs],
+            (*settings)[Setting::allow_experimental_codecs],
+            (*settings)[Setting::enable_deflate_qpl_codec],
+            (*settings)[Setting::enable_zstd_qat_codec]);
         compression_codec = CompressionCodecFactory::instance().get(method, level);
     }
     else
         compression_codec = CompressionCodecFactory::instance().getDefaultCodec();
 
     query_id = query_id_;
+
+    /// Avoid reusing connections that had been left in the intermediate state
+    /// (i.e. not all packets had been sent).
+    bool completed = false;
+    SCOPE_EXIT({
+        if (!completed)
+            disconnect();
+    });
 
     writeVarUInt(Protocol::Client::Query, *out);
     writeStringBinary(query_id, *out);
@@ -751,12 +886,43 @@ void Connection::sendQuery(
     /// Per query settings.
     if (settings)
     {
+        std::optional<Settings> modified_settings;
+        const Settings * settings_to_send = settings;
+        if (!settings_from_server.empty())
+        {
+            /// Don't send settings that we got from the server in the first place.
+            modified_settings.emplace(*settings);
+            for (const SettingChange & change : settings_from_server)
+            {
+                Field value;
+                if (settings->tryGet(change.name, value) && value == change.value)
+                {
+                    // Mark as unchanged so it's not sent.
+                    modified_settings->setDefaultValue(change.name);
+                    chassert(!modified_settings->isChanged(change.name));
+                }
+            }
+            settings_to_send = &*modified_settings;
+        }
+
         auto settings_format = (server_revision >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsWriteFormat::STRINGS_WITH_FLAGS
                                                                                                           : SettingsWriteFormat::BINARY;
-        settings->write(*out, settings_format);
+        settings_to_send->write(*out, settings_format);
     }
     else
         writeStringBinary("" /* empty string is a marker of the end of settings */, *out);
+
+    String external_roles_str;
+    if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INTERSERVER_EXTERNALLY_GRANTED_ROLES)
+    {
+        WriteBufferFromString buffer(external_roles_str);
+        writeVectorBinary(external_roles, buffer);
+        buffer.finalize();
+
+        LOG_TRACE(log_wrapper.get(), "Sending external_roles with query: [{}] ({})", fmt::join(external_roles, ", "), external_roles.size());
+
+        writeStringBinary(external_roles_str, *out);
+    }
 
     /// Interserver secret
     if (server_revision >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET)
@@ -778,6 +944,9 @@ void Connection::sendQuery(
             data += query;
             data += query_id;
             data += client_info->initial_user;
+            // Also for backwards compatibility
+            if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INTERSERVER_EXTERNALLY_GRANTED_ROLES)
+                data += external_roles_str;
             /// TODO: add source/target host/ip-address
 
             std::string hash = encodeSHA256(data);
@@ -806,12 +975,14 @@ void Connection::sendQuery(
 
     maybe_compressed_in.reset();
     if (maybe_compressed_out && maybe_compressed_out != out)
-        maybe_compressed_out->cancel();
+        maybe_compressed_out->finalize();
     maybe_compressed_out.reset();
     block_in.reset();
     block_logs_in.reset();
     block_profile_events_in.reset();
     block_out.reset();
+
+    out->finishChunk();
 
     /// Send empty block which means end of data.
     if (!with_pending_data)
@@ -819,8 +990,16 @@ void Connection::sendQuery(
         sendData(Block(), "", false);
         out->next();
     }
+
+    completed = true;
 }
 
+
+void Connection::sendQueryPlan(const QueryPlan & query_plan)
+{
+    writeVarUInt(Protocol::Client::QueryPlan, *out);
+    query_plan.serialize(*out, server_query_plan_serialization_version);
+}
 
 void Connection::sendCancel()
 {
@@ -829,6 +1008,7 @@ void Connection::sendCancel()
         return;
 
     writeVarUInt(Protocol::Client::Cancel, *out);
+    out->finishChunk();
     out->next();
 }
 
@@ -842,7 +1022,7 @@ void Connection::sendData(const Block & block, const String & name, bool scalar)
         else
             maybe_compressed_out = out;
 
-        block_out = std::make_unique<NativeWriter>(*maybe_compressed_out, server_revision, block.cloneEmpty());
+        block_out = std::make_unique<NativeWriter>(*maybe_compressed_out, server_revision, std::make_shared<const Block>(block.cloneEmpty()), format_settings);
     }
 
     if (scalar)
@@ -854,26 +1034,30 @@ void Connection::sendData(const Block & block, const String & name, bool scalar)
     size_t prev_bytes = out->count();
 
     block_out->write(block);
-    maybe_compressed_out->next();
+    if (maybe_compressed_out != out)
+        maybe_compressed_out->next();
+    if (block.empty())
+        out->finishChunk();
     out->next();
 
     if (throttler)
-        throttler->add(out->count() - prev_bytes);
+        throttler->throttle(out->count() - prev_bytes);
 }
 
 void Connection::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
 {
     writeVarUInt(Protocol::Client::IgnoredPartUUIDs, *out);
     writeVectorBinary(uuids, *out);
+    out->finishChunk();
     out->next();
 }
 
 
-void Connection::sendReadTaskResponse(const String & response)
+void Connection::sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse & response)
 {
     writeVarUInt(Protocol::Client::ReadTaskResponse, *out);
-    writeVarUInt(DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION, *out);
-    writeStringBinary(response, *out);
+    response.serialize(*out, server_cluster_function_protocol_version);
+    out->finishChunk();
     out->next();
 }
 
@@ -881,7 +1065,8 @@ void Connection::sendReadTaskResponse(const String & response)
 void Connection::sendMergeTreeReadTaskResponse(const ParallelReadResponse & response)
 {
     writeVarUInt(Protocol::Client::MergeTreeReadTaskResponse, *out);
-    response.serialize(*out);
+    response.serialize(*out, server_parallel_replicas_protocol_version);
+    out->finishChunk();
     out->next();
 }
 
@@ -899,6 +1084,8 @@ void Connection::sendPreparedData(ReadBuffer & input, size_t size, const String 
         copyData(input, *out);
     else
         copyData(input, *out, size);
+
+    out->finishChunk();
     out->next();
 }
 
@@ -926,6 +1113,8 @@ void Connection::sendScalarsData(Scalars & data)
         rows += elem.second.rows();
         sendData(elem.second, elem.first, true /* scalar */);
     }
+
+    out->finishChunk();
 
     out_bytes = out->count() - out_bytes;
     maybe_compressed_out_bytes = maybe_compressed_out->count() - maybe_compressed_out_bytes;
@@ -958,7 +1147,7 @@ class ExternalTableDataSink : public ISink
 public:
     using OnCancell = std::function<void()>;
 
-    ExternalTableDataSink(Block header, Connection & connection_, ExternalTableData & table_data_, OnCancell callback)
+    ExternalTableDataSink(SharedHeader header, Connection & connection_, ExternalTableData & table_data_, OnCancell callback)
             : ISink(std::move(header)), connection(connection_), table_data(table_data_),
               on_cancell(std::move(callback))
     {}
@@ -1017,8 +1206,8 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
         QueryPipelineBuilder pipeline = std::move(*elem->pipe);
         elem->pipe.reset();
         pipeline.resize(1);
-        auto sink = std::make_shared<ExternalTableDataSink>(pipeline.getHeader(), *this, *elem, std::move(on_cancel));
-        pipeline.setSinks([&](const Block &, QueryPipelineBuilder::StreamType type) -> ProcessorPtr
+        auto sink = std::make_shared<ExternalTableDataSink>(pipeline.getSharedHeader(), *this, *elem, std::move(on_cancel));
+        pipeline.setSinks([&](const SharedHeader &, QueryPipelineBuilder::StreamType type) -> ProcessorPtr
         {
             if (type != QueryPipelineBuilder::StreamType::Main)
                 return nullptr;
@@ -1069,13 +1258,13 @@ std::optional<Poco::Net::SocketAddress> Connection::getResolvedAddress() const
 
 bool Connection::poll(size_t timeout_microseconds)
 {
-    return static_cast<ReadBufferFromPocoSocket &>(*in).poll(timeout_microseconds);
+    return in->poll(timeout_microseconds);
 }
 
 
 bool Connection::hasReadPendingData() const
 {
-    return last_input_packet_type.has_value() || static_cast<const ReadBufferFromPocoSocket &>(*in).hasPendingData();
+    return last_input_packet_type.has_value() || in->hasBufferedData();
 }
 
 
@@ -1094,6 +1283,18 @@ std::optional<UInt64> Connection::checkPacket(size_t timeout_microseconds)
     }
 
     return {};
+}
+
+
+UInt64 Connection::receivePacketType()
+{
+    /// Have we already read packet type?
+    if (last_input_packet_type)
+        return *last_input_packet_type;
+
+    UInt64 type;
+    readVarUInt(type, *in);
+    return last_input_packet_type.emplace(type);
 }
 
 
@@ -1139,7 +1340,7 @@ Packet Connection::receivePacket()
                 return res;
 
             case Protocol::Server::TableColumns:
-                res.multistring_message = receiveMultistringMessage(res.type);
+                res.columns_description = receiveTableColumns();
                 return res;
 
             case Protocol::Server::EndOfStream:
@@ -1171,20 +1372,26 @@ Packet Connection::receivePacket()
 
             default:
                 /// In unknown state, disconnect - to not leave unsynchronised connection.
-                disconnect();
                 throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from server {}",
                     toString(res.type), getDescription());
         }
     }
     catch (Exception & e)
     {
+        disconnect();
+
         /// This is to consider ATTEMPT_TO_READ_AFTER_EOF as a remote exception.
         e.setRemoteException();
 
         /// Add server address to exception message, if need.
         if (e.code() != ErrorCodes::UNKNOWN_PACKET_FROM_SERVER)
-            e.addMessage("while receiving packet from " + getDescription());
+            e.addMessage("while receiving packet from " + getDescription(true));
 
+        throw;
+    }
+    catch (...)
+    {
+        disconnect();
         throw;
     }
 }
@@ -1215,7 +1422,7 @@ Block Connection::receiveDataImpl(NativeReader & reader)
     Block res = reader.read();
 
     if (throttler)
-        throttler->add(in->count() - prev_bytes);
+        throttler->throttle(in->count() - prev_bytes);
 
     return res;
 }
@@ -1230,7 +1437,19 @@ Block Connection::receiveProfileEvents()
 
 void Connection::initInputBuffers()
 {
+}
 
+
+void Connection::initMaybeCompressedInput()
+{
+    if (!maybe_compressed_in)
+    {
+        if (compression == Protocol::Compression::Enable)
+            // Different codecs in this case are the default (e.g. LZ4) and codec NONE to skip compression in case of ColumnBLOB.
+            maybe_compressed_in = std::make_shared<CompressedReadBuffer>(*in, /*allow_different_codec=*/true);
+        else
+            maybe_compressed_in = in;
+    }
 }
 
 
@@ -1238,15 +1457,8 @@ void Connection::initBlockInput()
 {
     if (!block_in)
     {
-        if (!maybe_compressed_in)
-        {
-            if (compression == Protocol::Compression::Enable)
-                maybe_compressed_in = std::make_shared<CompressedReadBuffer>(*in);
-            else
-                maybe_compressed_in = in;
-        }
-
-        block_in = std::make_unique<NativeReader>(*maybe_compressed_in, server_revision);
+        initMaybeCompressedInput();
+        block_in = std::make_unique<NativeReader>(*maybe_compressed_in, server_revision, format_settings);
     }
 }
 
@@ -1255,8 +1467,15 @@ void Connection::initBlockLogsInput()
 {
     if (!block_logs_in)
     {
+        ReadBuffer * logs_buf = in.get();
+        if (server_revision >= DBMS_MIN_REVISION_WITH_COMPRESSED_LOGS_PROFILE_EVENTS_COLUMNS)
+        {
+            initMaybeCompressedInput();
+            logs_buf = maybe_compressed_in.get();
+        }
+
         /// Have to return superset of SystemLogsQueue::getSampleBlock() columns
-        block_logs_in = std::make_unique<NativeReader>(*in, server_revision);
+        block_logs_in = std::make_unique<NativeReader>(*logs_buf, server_revision, format_settings);
     }
 }
 
@@ -1265,7 +1484,14 @@ void Connection::initBlockProfileEventsInput()
 {
     if (!block_profile_events_in)
     {
-        block_profile_events_in = std::make_unique<NativeReader>(*in, server_revision);
+        ReadBuffer * profile_events_buf = in.get();
+        if (server_revision >= DBMS_MIN_REVISION_WITH_COMPRESSED_LOGS_PROFILE_EVENTS_COLUMNS)
+        {
+            initMaybeCompressedInput();
+            profile_events_buf = maybe_compressed_in.get();
+        }
+
+        block_profile_events_in = std::make_unique<NativeReader>(*profile_events_buf, server_revision, format_settings);
     }
 }
 
@@ -1298,13 +1524,21 @@ std::unique_ptr<Exception> Connection::receiveException() const
 }
 
 
-std::vector<String> Connection::receiveMultistringMessage(UInt64 msg_type) const
+String Connection::receiveTableColumns()
 {
-    size_t num = Protocol::Server::stringsInMessage(msg_type);
-    std::vector<String> strings(num);
-    for (size_t i = 0; i < num; ++i)
-        readStringBinary(strings[i], *in);
-    return strings;
+    ReadBuffer * columns_buf = in.get();
+    if (server_revision >= DBMS_MIN_REVISION_WITH_COMPRESSED_LOGS_PROFILE_EVENTS_COLUMNS)
+    {
+        initMaybeCompressedInput();
+        columns_buf = maybe_compressed_in.get();
+    }
+
+    String table_name_ignored;
+    readStringBinary(table_name_ignored, *columns_buf);
+
+    String columns;
+    readStringBinary(columns, *columns_buf);
+    return columns;
 }
 
 
@@ -1319,23 +1553,29 @@ Progress Connection::receiveProgress() const
 ProfileInfo Connection::receiveProfileInfo() const
 {
     ProfileInfo profile_info;
-    profile_info.read(*in);
+    profile_info.read(*in, server_revision);
     return profile_info;
 }
 
 ParallelReadRequest Connection::receiveParallelReadRequest() const
 {
-    return ParallelReadRequest::deserialize(*in);
+    return ParallelReadRequest::deserialize(*in, server_parallel_replicas_protocol_version);
 }
 
 InitialAllRangesAnnouncement Connection::receiveInitialParallelReadAnnouncement() const
 {
-    return InitialAllRangesAnnouncement::deserialize(*in);
+    return InitialAllRangesAnnouncement::deserialize(*in, server_parallel_replicas_protocol_version);
 }
 
 
-void Connection::throwUnexpectedPacket(UInt64 packet_type, const char * expected) const
+void Connection::throwUnexpectedPacket(TimeoutSetter & timeout_setter, UInt64 packet_type, const char * expected)
 {
+    /// Reset timeout_setter before disconnect, because after disconnect socket will be invalid.
+    timeout_setter.reset();
+
+    /// Close connection, to avoid leaving it in an unsynchronised state.
+    disconnect();
+
     throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
             "Unexpected packet from server {} (expected {}, got {})",
                        getDescription(), expected, String(Protocol::Server::toString(packet_type)));
@@ -1349,6 +1589,8 @@ ServerConnectionPtr Connection::createConnection(const ConnectionParameters & pa
         parameters.default_database,
         parameters.user,
         parameters.password,
+        parameters.proto_send_chunked,
+        parameters.proto_recv_chunked,
         parameters.ssh_private_key,
         parameters.jwt,
         parameters.quota_key,
@@ -1356,7 +1598,8 @@ ServerConnectionPtr Connection::createConnection(const ConnectionParameters & pa
         "", /* cluster_secret */
         std::string(DEFAULT_CLIENT_NAME),
         parameters.compression,
-        parameters.security);
+        parameters.security,
+        parameters.bind_host);
 }
 
 }

@@ -1,0 +1,270 @@
+create table test (id UInt64, json JSON(a UInt32), data String, index idx1 json.a type minmax, index idx2 json.b::String type minmax, index idx3 json.a || json.b::String type minmax) engine=MergeTree order by tuple() settings min_rows_for_wide_part=100000000, min_bytes_for_wide_part=1000000000, index_granularity=1;
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+1	{"a":1,"b":"str_1","c":[0]}	Hello, World!
+ReadFromMergeTree (default.test)
+Indexes:
+Skip
+Name: idx1
+Description: minmax GRANULARITY 1
+Parts: 1/2
+Granules: 2/8
+Ranges: 1
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+1	{"a":1,"b":"str_1","c":[0]}	Hello, World!
+ReadFromMergeTree (default.test)
+Indexes:
+Skip
+Name: idx2
+Description: minmax GRANULARITY 1
+Parts: 1/2
+Granules: 2/8
+Ranges: 1
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+ReadFromMergeTree (default.test)
+Indexes:
+Skip
+Name: idx1
+Description: minmax GRANULARITY 1
+Parts: 1/2
+Granules: 2/8
+Skip
+Name: idx2
+Description: minmax GRANULARITY 1
+Parts: 1/1
+Granules: 1/2
+Ranges: 1
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+1	{"a":1,"b":"str_1","c":[0]}	Hello, World!
+ReadFromMergeTree (default.test)
+Indexes:
+Skip
+Name: idx3
+Description: minmax GRANULARITY 1
+Parts: 1/2
+Granules: 2/8
+Ranges: 1
+1
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+1	{"a":1,"b":"str_1","c":[0]}	Hello, World!
+ReadFromMergeTree (default.test)
+Indexes:
+Skip
+Name: idx1
+Description: minmax GRANULARITY 1
+Parts: 1/1
+Granules: 2/8
+Ranges: 1
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+1	{"a":1,"b":"str_1","c":[0]}	Hello, World!
+ReadFromMergeTree (default.test)
+Indexes:
+Skip
+Name: idx2
+Description: minmax GRANULARITY 1
+Parts: 1/1
+Granules: 2/8
+Ranges: 1
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+ReadFromMergeTree (default.test)
+Indexes:
+Skip
+Name: idx1
+Description: minmax GRANULARITY 1
+Parts: 1/1
+Granules: 2/8
+Skip
+Name: idx2
+Description: minmax GRANULARITY 1
+Parts: 1/1
+Granules: 1/2
+Ranges: 1
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+1	{"a":1,"b":"str_1","c":[0]}	Hello, World!
+ReadFromMergeTree (default.test)
+Indexes:
+Skip
+Name: idx3
+Description: minmax GRANULARITY 1
+Parts: 1/1
+Granules: 2/8
+Ranges: 1
+create table test (id UInt64, json JSON(a UInt32), data String, index idx1 json.a type minmax, index idx2 json.b::String type minmax, index idx3 json.a || json.b::String type minmax) engine=MergeTree order by tuple() settings min_rows_for_wide_part=1, min_bytes_for_wide_part=1, vertical_merge_algorithm_min_columns_to_activate=10, vertical_merge_algorithm_min_rows_to_activate=1000000000, index_granularity=1;
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+1	{"a":1,"b":"str_1","c":[0]}	Hello, World!
+ReadFromMergeTree (default.test)
+Indexes:
+Skip
+Name: idx1
+Description: minmax GRANULARITY 1
+Parts: 1/2
+Granules: 2/8
+Ranges: 1
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+1	{"a":1,"b":"str_1","c":[0]}	Hello, World!
+ReadFromMergeTree (default.test)
+Indexes:
+Skip
+Name: idx2
+Description: minmax GRANULARITY 1
+Parts: 1/2
+Granules: 2/8
+Ranges: 1
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+ReadFromMergeTree (default.test)
+Indexes:
+Skip
+Name: idx1
+Description: minmax GRANULARITY 1
+Parts: 1/2
+Granules: 2/8
+Skip
+Name: idx2
+Description: minmax GRANULARITY 1
+Parts: 1/1
+Granules: 1/2
+Ranges: 1
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+1	{"a":1,"b":"str_1","c":[0]}	Hello, World!
+ReadFromMergeTree (default.test)
+Indexes:
+Skip
+Name: idx3
+Description: minmax GRANULARITY 1
+Parts: 1/2
+Granules: 2/8
+Ranges: 1
+1
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+1	{"a":1,"b":"str_1","c":[0]}	Hello, World!
+ReadFromMergeTree (default.test)
+Indexes:
+Skip
+Name: idx1
+Description: minmax GRANULARITY 1
+Parts: 1/1
+Granules: 2/8
+Ranges: 1
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+1	{"a":1,"b":"str_1","c":[0]}	Hello, World!
+ReadFromMergeTree (default.test)
+Indexes:
+Skip
+Name: idx2
+Description: minmax GRANULARITY 1
+Parts: 1/1
+Granules: 2/8
+Ranges: 1
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+ReadFromMergeTree (default.test)
+Indexes:
+Skip
+Name: idx1
+Description: minmax GRANULARITY 1
+Parts: 1/1
+Granules: 2/8
+Skip
+Name: idx2
+Description: minmax GRANULARITY 1
+Parts: 1/1
+Granules: 1/2
+Ranges: 1
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+1	{"a":1,"b":"str_1","c":[0]}	Hello, World!
+ReadFromMergeTree (default.test)
+Indexes:
+Skip
+Name: idx3
+Description: minmax GRANULARITY 1
+Parts: 1/1
+Granules: 2/8
+Ranges: 1
+create table test (id UInt64, json JSON(a UInt32), data String, index idx1 json.a type minmax, index idx2 json.b::String type minmax, index idx3 json.a || json.b::String type minmax) engine=MergeTree order by tuple() settings min_rows_for_wide_part=1, min_bytes_for_wide_part=1, vertical_merge_algorithm_min_columns_to_activate=1, vertical_merge_algorithm_min_rows_to_activate=1, index_granularity=1;
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+1	{"a":1,"b":"str_1","c":[0]}	Hello, World!
+ReadFromMergeTree (default.test)
+Indexes:
+Skip
+Name: idx1
+Description: minmax GRANULARITY 1
+Parts: 1/2
+Granules: 2/8
+Ranges: 1
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+1	{"a":1,"b":"str_1","c":[0]}	Hello, World!
+ReadFromMergeTree (default.test)
+Indexes:
+Skip
+Name: idx2
+Description: minmax GRANULARITY 1
+Parts: 1/2
+Granules: 2/8
+Ranges: 1
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+ReadFromMergeTree (default.test)
+Indexes:
+Skip
+Name: idx1
+Description: minmax GRANULARITY 1
+Parts: 1/2
+Granules: 2/8
+Skip
+Name: idx2
+Description: minmax GRANULARITY 1
+Parts: 1/1
+Granules: 1/2
+Ranges: 1
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+1	{"a":1,"b":"str_1","c":[0]}	Hello, World!
+ReadFromMergeTree (default.test)
+Indexes:
+Skip
+Name: idx3
+Description: minmax GRANULARITY 1
+Parts: 1/2
+Granules: 2/8
+Ranges: 1
+1
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+1	{"a":1,"b":"str_1","c":[0]}	Hello, World!
+ReadFromMergeTree (default.test)
+Indexes:
+Skip
+Name: idx1
+Description: minmax GRANULARITY 1
+Parts: 1/1
+Granules: 2/8
+Ranges: 1
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+1	{"a":1,"b":"str_1","c":[0]}	Hello, World!
+ReadFromMergeTree (default.test)
+Indexes:
+Skip
+Name: idx2
+Description: minmax GRANULARITY 1
+Parts: 1/1
+Granules: 2/8
+Ranges: 1
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+ReadFromMergeTree (default.test)
+Indexes:
+Skip
+Name: idx1
+Description: minmax GRANULARITY 1
+Parts: 1/1
+Granules: 2/8
+Skip
+Name: idx2
+Description: minmax GRANULARITY 1
+Parts: 1/1
+Granules: 1/2
+Ranges: 1
+0	{"a":0,"b":"str_0","c":[]}	Hello, World!
+1	{"a":1,"b":"str_1","c":[0]}	Hello, World!
+ReadFromMergeTree (default.test)
+Indexes:
+Skip
+Name: idx3
+Description: minmax GRANULARITY 1
+Parts: 1/1
+Granules: 2/8
+Ranges: 1

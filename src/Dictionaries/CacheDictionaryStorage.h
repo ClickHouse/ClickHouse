@@ -9,7 +9,6 @@
 #include <Common/Arena.h>
 #include <Common/ArenaWithFreeLists.h>
 #include <Common/ArenaUtils.h>
-#include <Common/HashTable/LRUHashMap.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/ICacheDictionaryStorage.h>
 
@@ -64,8 +63,7 @@ public:
     {
         if (dictionary_key_type == DictionaryKeyType::Simple)
             return "Cache";
-        else
-            return "ComplexKeyCache";
+        return "ComplexKeyCache";
     }
 
     bool supportsSimpleKeys() const override { return dictionary_key_type == DictionaryKeyType::Simple; }
@@ -395,13 +393,13 @@ private:
                         }
                         else if constexpr (std::is_same_v<ElementType, StringRef>)
                         {
-                            const String & string_value = column_value.get<String>();
+                            const String & string_value = column_value.safeGet<String>();
                             StringRef inserted_value = copyStringInArena(arena, string_value);
                             container.back() = inserted_value;
                         }
                         else
                         {
-                            container.back() = static_cast<ElementType>(column_value.get<ElementType>());
+                            container.back() = static_cast<ElementType>(column_value.safeGet<ElementType>());
                         }
                     });
                 }
@@ -441,7 +439,7 @@ private:
                         }
                         else if constexpr (std::is_same_v<ElementType, StringRef>)
                         {
-                            const String & string_value = column_value.get<String>();
+                            const String & string_value = column_value.safeGet<String>();
                             StringRef inserted_value = copyStringInArena(arena, string_value);
 
                             if (!cell_was_default)
@@ -454,7 +452,7 @@ private:
                         }
                         else
                         {
-                            container[index_to_use] = static_cast<ElementType>(column_value.get<ElementType>());
+                            container[index_to_use] = static_cast<ElementType>(column_value.safeGet<ElementType>());
                         }
                     });
                 }
@@ -585,7 +583,7 @@ private:
     template <typename GetContainerFunc>
     void getAttributeContainer(size_t attribute_index, GetContainerFunc && func) const
     {
-        return const_cast<std::decay_t<decltype(*this)> *>(this)->template getAttributeContainer(attribute_index, std::forward<GetContainerFunc>(func));
+        return const_cast<std::decay_t<decltype(*this)> *>(this)->getAttributeContainer(attribute_index, std::forward<GetContainerFunc>(func));
     }
 
     template<typename ValueType>
@@ -651,12 +649,12 @@ private:
                 }
                 else if constexpr (std::is_same_v<ValueType, StringRef>)
                 {
-                    auto & value = default_value.get<String>();
+                    auto & value = default_value.safeGet<String>();
                     value_setter(value);
                 }
                 else
                 {
-                    value_setter(default_value.get<ValueType>());
+                    value_setter(default_value.safeGet<ValueType>());
                 }
             }
             else

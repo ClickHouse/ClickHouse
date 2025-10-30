@@ -1,4 +1,5 @@
--- Tags: long
+-- Tags: long, no-shared-merge-tree
+-- no-shared-merge-tree: depend on replication queue/fetches
 
 SET insert_keeper_fault_injection_probability=0; -- disable fault injection; part ids are non-deterministic in case of insert retries
 
@@ -146,7 +147,7 @@ optimize table rmt2;
 
 select sleepEachRow(2) from url('http://localhost:8123/?param_tries={1..10}&query=' || encodeURLComponent(
             'select value from system.zookeeper where path=''/test/02448/' || currentDatabase() || '/rmt/replicas/1'' and name=''is_lost'' and value=''0'''
-    ), 'LineAsString', 's String') settings max_threads=1 format Null;
+    ), 'LineAsString', 's String') settings max_threads=1, http_make_head_request=0 format Null;
 
 -- rmt1 will mimic rmt2, but will not be able to fetch parts for a while
 system stop replicated sends rmt2;

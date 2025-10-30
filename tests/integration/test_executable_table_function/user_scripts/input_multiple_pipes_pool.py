@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 
-import sys
 import os
+import sys
 
 if __name__ == "__main__":
     fd3 = os.fdopen(3)

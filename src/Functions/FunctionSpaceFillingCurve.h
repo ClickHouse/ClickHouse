@@ -47,6 +47,10 @@ public:
             vector_start_index = 1;
             const auto * type_tuple = typeid_cast<const DataTypeTuple *>(arguments[0].get());
             auto tuple_size = type_tuple->getElements().size();
+            if (tuple_size == 0)
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "Empty tuple is not allowed for function {}",
+                                getName());
             if (tuple_size != (arguments.size() - 1))
                 throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                                 "Illegal argument {} for function {}, tuple size should be equal to number of UInt arguments",
@@ -68,6 +72,11 @@ public:
                                 "Illegal type {} of argument for function {}, should be a native UInt",
                                 arg->getName(), getName());
         }
+        return std::make_shared<DataTypeUInt64>();
+    }
+
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
         return std::make_shared<DataTypeUInt64>();
     }
 };

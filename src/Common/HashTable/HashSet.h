@@ -6,8 +6,6 @@
 #include <Common/HashTable/TwoLevelHashTable.h>
 
 #include <IO/WriteBuffer.h>
-#include <IO/WriteHelpers.h>
-#include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
 
@@ -16,13 +14,12 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 }
 
 /** NOTE HashSet could only be used for memmoveable (position independent) types.
   * Example: std::string is not position independent in libstdc++ with C++11 ABI or in libc++.
-  * Also, key must be of type, that zero bytes is compared equals to zero key.
+  * Also, key must be of a type, such as that zero bytes is compared equals to zero key.
   */
 
 
@@ -55,26 +52,6 @@ public:
             if (!rhs.buf[i].isZero(*this))
                 this->insert(rhs.buf[i].getValue());
     }
-
-
-    void readAndMerge(DB::ReadBuffer & rb)
-    {
-        Cell::State::read(rb);
-
-        size_t new_size = 0;
-        DB::readVarUInt(new_size, rb);
-        if (new_size > 100'000'000'000)
-            throw DB::Exception(DB::ErrorCodes::TOO_LARGE_ARRAY_SIZE, "The size of serialized hash table is suspiciously large: {}", new_size);
-
-        this->resize(new_size);
-
-        for (size_t i = 0; i < new_size; ++i)
-        {
-            Cell x;
-            x.read(rb);
-            this->insert(x.getValue());
-        }
-    }
 };
 
 
@@ -92,6 +69,13 @@ public:
     using Base = TwoLevelHashTable<Key, TCell, Hash, Grower, Allocator, HashSetTable<Key, TCell, Hash, Grower, Allocator>>;
 
     using Base::Base;
+
+    template <typename... Args>
+    void merge(const HashSetTable<Key, Args...> & rhs)
+    {
+        for (auto it = rhs.begin(), end = rhs.end(); it != end; ++it)
+            this->insert(it->getValue());
+    }
 
     /// Writes its content in a way that it will be correctly read by HashSetTable.
     /// Used by uniqExact to preserve backward compatibility.

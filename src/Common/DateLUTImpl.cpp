@@ -22,7 +22,7 @@ namespace ErrorCodes
 }
 
 /// Embedded timezones.
-std::string_view getTimeZone(const char * name);
+std::string_view getTimeZone(const char * name);  /// NOLINT(misc-use-internal-linkage)
 
 
 namespace
@@ -64,7 +64,7 @@ inline cctz::time_point<cctz::seconds> lookupTz(const cctz::time_zone & cctz_tim
 
 __attribute__((__weak__)) extern bool inside_main;
 
-DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
+DateLUTImpl::DateLUTImpl(std::string_view time_zone_)
     : time_zone(time_zone_)
 {
     /// DateLUT should not be initialized in global constructors for the following reasons:
@@ -267,11 +267,9 @@ namespace cctz_extension
                     size -= offset;
                     return 0;
                 }
-                else
-                {
-                    errno = EINVAL;
-                    return -1;
-                }
+
+                errno = EINVAL;
+                return -1;
             }
         private:
             const char * data;

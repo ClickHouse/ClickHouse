@@ -8,13 +8,14 @@ namespace DB
 class SerializationInfoTuple : public SerializationInfo
 {
 public:
-    SerializationInfoTuple(MutableSerializationInfos elems_, Names names_, const Settings & settings_);
+    SerializationInfoTuple(MutableSerializationInfos elems_, Names names_);
 
     bool hasCustomSerialization() const override;
     bool structureEquals(const SerializationInfo & rhs) const override;
 
     void add(const IColumn & column) override;
     void add(const SerializationInfo & other) override;
+    void remove(const SerializationInfo & other) override;
     void addDefaults(size_t length) override;
     void replaceData(const SerializationInfo & other) override;
 
@@ -25,14 +26,14 @@ public:
         const IDataType & new_type,
         const Settings & new_settings) const override;
 
-    void serialializeKindBinary(WriteBuffer & out) const override;
+    void serialializeKindStackBinary(WriteBuffer & out) const override;
     void deserializeFromKindsBinary(ReadBuffer & in) override;
 
-    Poco::JSON::Object toJSON() const override;
+    void toJSON(Poco::JSON::Object & object) const override;
     void fromJSON(const Poco::JSON::Object & object) override;
 
     const MutableSerializationInfoPtr & getElementInfo(size_t i) const { return elems[i]; }
-    ISerialization::Kind getElementKind(size_t i) const { return elems[i]->getKind(); }
+    ISerialization::KindStack getElementKindStack(size_t i) const { return elems[i]->getKindStack(); }
 
 private:
     MutableSerializationInfos elems;

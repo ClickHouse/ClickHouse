@@ -44,17 +44,9 @@ private:
         {
             if (is_literal)
                 return executeLiteral(format);
-            else if (isColumnConst(*input.column))
+            if (isColumnConst(*input.column))
                 return executeConstant(input);
-            else
-                return executeNonconstant(input);
-        }
-
-        [[maybe_unused]] String toString() const
-        {
-            WriteBufferFromOwnString buf;
-            buf << "format:" << format << ", rows:" << rows << ", is_literal:" << is_literal << ", input:" << input.dumpStructure() << "\n";
-            return buf.str();
+            return executeNonconstant(input);
         }
 
     private:
@@ -93,11 +85,9 @@ private:
                 T a = data[i];
                 s = fmt::sprintf(format, static_cast<NearestFieldType<T>>(a));
 
-                res_chars.resize(curr_offset + s.size() + 1);
+                res_chars.resize(curr_offset + s.size());
                 memcpy(&res_chars[curr_offset], s.data(), s.size());
-                res_chars[curr_offset + s.size()] = 0;
-
-                curr_offset += s.size() + 1;
+                curr_offset += s.size();
                 res_offsets[i] = curr_offset;
             }
             return true;
@@ -117,11 +107,9 @@ private:
                 auto a = concrete_column->getDataAt(i).toView();
                 s = fmt::sprintf(format, a);
 
-                res_chars.resize(curr_offset + s.size() + 1);
+                res_chars.resize(curr_offset + s.size());
                 memcpy(&res_chars[curr_offset], s.data(), s.size());
-                res_chars[curr_offset + s.size()] = 0;
-
-                curr_offset += s.size() + 1;
+                curr_offset += s.size();
                 res_offsets[i] = curr_offset;
             }
             return true;
@@ -150,19 +138,17 @@ private:
             {
                 return {std::move(res_col), std::make_shared<DataTypeString>(), arg.name};
             }
-            else if (
-                which.isStringOrFixedString()
+            if (which.isStringOrFixedString()
                 && (executeString<ColumnString>(*arg.column, res_chars, res_offsets)
                     || executeString<ColumnFixedString>(*arg.column, res_chars, res_offsets)))
             {
                 return {std::move(res_col), std::make_shared<DataTypeString>(), arg.name};
             }
-            else
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "The argument type of function {} is {}, but native numeric or string type is expected",
-                    FunctionPrintf::name,
-                    arg.type->getName());
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "The argument type of function {} is {}, but native numeric or string type is expected",
+                FunctionPrintf::name,
+                arg.type->getName());
         }
     };
 
@@ -231,11 +217,9 @@ public:
             const auto & instruction = instructions[i];
             try
             {
-                // std::cout << "instruction[" << i << "]:" << instructions[i].toString() << std::endl;
                 concat_args[i] = instruction.execute();
-                // std::cout << "concat_args[" << i << "]:" << concat_args[i].dumpStructure() << std::endl;
             }
-            catch (const fmt::v9::format_error & e)
+            catch (const fmt::v11::format_error & e)
             {
                 if (instruction.is_literal)
                     throw Exception(
@@ -244,18 +228,17 @@ public:
                         instruction.format,
                         getName(),
                         e.what());
-                else
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "Bad format {} in function {} with {} as input argument, reason: {}",
-                        instructions[i].format,
-                        getName(),
-                        instruction.input.dumpStructure(),
-                        e.what());
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Bad format {} in function {} with {} as input argument, reason: {}",
+                    instructions[i].format,
+                    getName(),
+                    instruction.input.dumpStructure(),
+                    e.what());
             }
         }
 
-        auto res = function_concat->build(concat_args)->execute(concat_args, std::make_shared<DataTypeString>(), input_rows_count);
+        auto res = function_concat->build(concat_args)->execute(concat_args, std::make_shared<DataTypeString>(), input_rows_count, /* dry_run = */ false);
         return res;
     }
 
@@ -358,7 +341,34 @@ private:
 
 REGISTER_FUNCTION(Printf)
 {
-    factory.registerFunction<FunctionPrintf>();
+    FunctionDocumentation::Description description = R"(
+The `printf` function formats the given string with the values (strings, integers, floating-points etc.) listed in the arguments, similar to printf function in C++.
+The format string can contain format specifiers starting with `%` character.
+Anything not contained in `%` and the following format specifier is considered literal text and copied verbatim into the output.
+Literal `%` character can be escaped by `%%`.
+)";
+    FunctionDocumentation::Syntax syntax = "printf(format[, sub1, sub2, ...])";
+    FunctionDocumentation::Arguments arguments = {
+        {"format", "The format string with `%` specifiers.", {"String"}},
+        {"sub1, sub2, ...", "Optional. Zero or more values to substitute into the format string.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a formatted string.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "C++-style formatting",
+        "SELECT printf('%%%s %s %d', 'Hello', 'World', 2024);",
+        R"(
+┌─printf('%%%s %s %d', 'Hello', 'World', 2024)─┐
+│ %Hello World 2024                            │
+└──────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {24, 8};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::StringReplacement;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionPrintf>(documentation);
 }
 
 }

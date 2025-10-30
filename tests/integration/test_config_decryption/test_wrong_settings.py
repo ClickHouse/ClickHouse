@@ -1,4 +1,5 @@
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 
 
@@ -29,7 +30,7 @@ def test_invalid_chars():
 def test_no_encryption_key():
     start_clickhouse(
         "configs/config_no_encryption_key.xml",
-        "There is no key 0 in config for AES_128_GCM_SIV encryption codec",
+        "Empty params in CompressionCodecEncrypted configuration",
     )
 
 

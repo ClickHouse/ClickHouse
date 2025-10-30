@@ -3,8 +3,6 @@
 #include <DataTypes/Serializations/SerializationDecimalBase.h>
 #include <DataTypes/TimezoneMixin.h>
 
-class DateLUTImpl;
-
 namespace DB
 {
 

@@ -1,4 +1,3 @@
-
 #include <Storages/Statistics/StatisticsCountMinSketch.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -13,8 +12,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int LOGICAL_ERROR;
-extern const int ILLEGAL_STATISTICS;
+    extern const int LOGICAL_ERROR;
 }
 
 /// Constants chosen based on rolling dices.
@@ -25,10 +23,10 @@ extern const int ILLEGAL_STATISTICS;
 static constexpr auto num_hashes = 7uz;
 static constexpr auto num_buckets = 2718uz;
 
-StatisticsCountMinSketch::StatisticsCountMinSketch(const SingleStatisticsDescription & stat_, DataTypePtr data_type_)
-    : IStatistics(stat_)
+StatisticsCountMinSketch::StatisticsCountMinSketch(const SingleStatisticsDescription & description, const DataTypePtr & data_type_)
+    : IStatistics(description)
     , sketch(num_hashes, num_buckets)
-    , data_type(data_type_)
+    , data_type(removeNullable(data_type_))
 {
 }
 
@@ -48,12 +46,12 @@ Float64 StatisticsCountMinSketch::estimateEqual(const Field & val) const
         return sketch.get_estimate(&val_converted, data_type->getSizeOfValueInMemory());
 
     if (isStringOrFixedString(data_type))
-        return sketch.get_estimate(val.get<String>());
+        return sketch.get_estimate(val.safeGet<String>());
 
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistics 'count_min' does not support estimate data type of {}", data_type->getName());
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistics 'countmin' does not support estimate data type of {}", data_type->getName());
 }
 
-void StatisticsCountMinSketch::update(const ColumnPtr & column)
+void StatisticsCountMinSketch::build(const ColumnPtr & column)
 {
     for (size_t row = 0; row < column->size(); ++row)
     {
@@ -62,6 +60,12 @@ void StatisticsCountMinSketch::update(const ColumnPtr & column)
         auto data = column->getDataAt(row);
         sketch.update(data.data, data.size, 1);
     }
+}
+
+void StatisticsCountMinSketch::merge(const StatisticsPtr & other_stats)
+{
+    const StatisticsCountMinSketch * other = typeid_cast<const StatisticsCountMinSketch *>(other_stats.get());
+    sketch.merge(other->sketch);
 }
 
 void StatisticsCountMinSketch::serialize(WriteBuffer & buf)
@@ -83,18 +87,16 @@ void StatisticsCountMinSketch::deserialize(ReadBuffer & buf)
     sketch = Sketch::deserialize(bytes.data(), size);
 }
 
-
-void countMinSketchValidator(const SingleStatisticsDescription &, DataTypePtr data_type)
+bool countMinSketchStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & data_type)
 {
-    data_type = removeNullable(data_type);
-    data_type = removeLowCardinalityAndNullable(data_type);
-    if (!data_type->isValueRepresentedByNumber() && !isStringOrFixedString(data_type))
-        throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type 'count_min' does not support type {}", data_type->getName());
+    DataTypePtr inner_data_type = removeNullable(data_type);
+    inner_data_type = removeLowCardinalityAndNullable(inner_data_type);
+    return inner_data_type->isValueRepresentedByNumber() || isStringOrFixedString(inner_data_type);
 }
 
-StatisticsPtr countMinSketchCreator(const SingleStatisticsDescription & stat, DataTypePtr data_type)
+StatisticsPtr countMinSketchStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type)
 {
-    return std::make_shared<StatisticsCountMinSketch>(stat, data_type);
+    return std::make_shared<StatisticsCountMinSketch>(description, data_type);
 }
 
 }

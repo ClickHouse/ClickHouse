@@ -1,0 +1,8 @@
+---- HASH
+1	10	alpha	1	5	ALPHA
+2	15	beta	2	10	beta
+3	20	gamma	0	0	
+---- PARALLEL HASH
+1	10	alpha	1	5	ALPHA
+2	15	beta	2	10	beta
+3	20	gamma	0	0	

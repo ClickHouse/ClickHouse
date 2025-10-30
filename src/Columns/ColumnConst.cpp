@@ -19,8 +19,9 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
-    extern const int LOGICAL_ERROR;
+extern const int LOGICAL_ERROR;
+extern const int NOT_IMPLEMENTED;
+extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
 }
 
 ColumnConst::ColumnConst(const ColumnPtr & data_, size_t s_)
@@ -46,6 +47,8 @@ ColumnConst::ColumnConst(const ColumnPtr & data_, size_t s_)
 
 ColumnPtr ColumnConst::convertToFullColumn() const
 {
+    if (s == 1)
+        return data;
     return data->replicate(Offsets(1, s));
 }
 
@@ -75,7 +78,7 @@ void ColumnConst::expand(const Filter & mask, bool inverted)
 
     if (bytes_count < s)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Not enough bytes in mask");
-    else if (bytes_count > s)
+    if (bytes_count > s)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Too many bytes in mask");
 
     s = mask.size();
@@ -110,7 +113,7 @@ ColumnPtr ColumnConst::index(const IColumn & indexes, size_t limit) const
     return ColumnConst::create(data, limit);
 }
 
-MutableColumns ColumnConst::scatter(ColumnIndex num_columns, const Selector & selector) const
+MutableColumns ColumnConst::scatter(size_t num_columns, const Selector & selector) const
 {
     if (s != selector.size())
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of selector ({}) doesn't match size of column ({})",
@@ -123,6 +126,11 @@ MutableColumns ColumnConst::scatter(ColumnIndex num_columns, const Selector & se
         res[i] = cloneResized(counts[i]);
 
     return res;
+}
+
+void ColumnConst::gather(ColumnGathererStream &)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot gather into constant column {}", getName());
 }
 
 void ColumnConst::getPermutation(PermutationSortDirection /*direction*/, PermutationSortStability /*stability*/,

@@ -1,7 +1,11 @@
 #pragma once
 
+#if !defined(LEXER_STANDALONE_BUILD)
+
 #include <stddef.h>
-#include <cstdint>
+#include <stdint.h>
+
+#endif
 
 
 namespace DB
@@ -45,6 +49,7 @@ namespace DB
     M(Arrow)                  /** ->. Should be distinguished from minus operator. */ \
     M(QuestionMark) \
     M(Colon) \
+    M(Caret) \
     M(DoubleColon) \
     M(Equals) \
     M(NotEquals) \
@@ -83,8 +88,10 @@ APPLY_FOR_TOKENS(M)
 #undef M
 };
 
+#if !defined(LEXER_STANDALONE_BUILD)
 const char * getTokenName(TokenType type);
 const char * getErrorTokenDescription(TokenType type);
+#endif
 
 
 struct Token

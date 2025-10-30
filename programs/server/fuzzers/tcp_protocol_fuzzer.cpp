@@ -10,6 +10,7 @@
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Net/StreamSocket.h>
 
+#include <Daemon/BaseDaemon.h>
 #include <Interpreters/Context.h>
 
 
@@ -24,6 +25,12 @@ static char * host = s_host.data();
 static int64_t port = 9000;
 
 using namespace std::chrono_literals;
+
+void on_exit()
+{
+    BaseDaemon::terminate();
+    main_app.wait();
+}
 
 extern "C"
 int LLVMFuzzerInitialize(int * argc, char ***argv)
@@ -59,6 +66,8 @@ int LLVMFuzzerInitialize(int * argc, char ***argv)
         if (main_app.wait_for(0s) == std::future_status::ready)
             exit(-1);
     }
+
+    atexit(on_exit);
 
     return 0;
 }

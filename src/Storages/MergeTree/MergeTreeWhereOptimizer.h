@@ -1,10 +1,8 @@
 #pragma once
 
-#include <Core/Block.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/RPNBuilder.h>
-#include <Storages/Statistics/ConditionSelectivityEstimator.h>
 
 #include <boost/noncopyable.hpp>
 
@@ -32,13 +30,16 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
  *  Otherwise any condition with minimal summary column size can be transferred to PREWHERE.
  *  If column sizes are unknown (in compact parts), the number of columns, participating in condition is used instead.
  */
+
+class ConditionSelectivityEstimator;
+using ConditionSelectivityEstimatorPtr = std::shared_ptr<ConditionSelectivityEstimator>;
 class MergeTreeWhereOptimizer : private boost::noncopyable
 {
 public:
     MergeTreeWhereOptimizer(
         std::unordered_map<std::string, UInt64> column_sizes_,
-        const StorageMetadataPtr & metadata_snapshot,
-        const ConditionSelectivityEstimator & estimator_,
+        const StorageSnapshotPtr & storage_snapshot,
+        ConditionSelectivityEstimatorPtr estimator_,
         const Names & queried_columns_,
         const std::optional<NameSet> & supported_columns_,
         LoggerPtr log_);
@@ -83,6 +84,21 @@ private:
         /// column in this condition because this condition have bigger chances to be already satisfied by PK analysis.
         Int64 min_position_in_primary_key = std::numeric_limits<Int64>::max() - 1;
 
+        /// For debugging purposes
+        String toString() const
+        {
+            return fmt::format(
+                "Condition(exp:{} viable: {}, good: {}, min_position_in_primary_key: {}, estimated_row_count: {}, "
+                "columns_size: {}, table_columns.size: {})",
+                node.getColumnName(),
+                viable,
+                good,
+                min_position_in_primary_key,
+                estimated_row_count,
+                columns_size,
+                table_columns.size());
+        }
+
         auto tuple() const
         {
             return std::make_tuple(!viable, !good, -min_position_in_primary_key, estimated_row_count, columns_size, table_columns.size());
@@ -103,6 +119,7 @@ private:
         NameSet array_joined_names;
         bool move_all_conditions_to_prewhere = false;
         bool move_primary_key_columns_to_end_of_prewhere = false;
+        bool allow_reorder_prewhere_conditions = false;
         bool is_final = false;
         bool use_statistics = false;
     };
@@ -147,7 +164,7 @@ private:
 
     static NameSet determineArrayJoinedNames(const ASTSelectQuery & select);
 
-    const ConditionSelectivityEstimator estimator;
+    ConditionSelectivityEstimatorPtr estimator;
 
     const NameSet table_columns;
     const Names queried_columns;

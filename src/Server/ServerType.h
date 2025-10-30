@@ -13,11 +13,13 @@ public:
     {
         TCP_WITH_PROXY,
         TCP_SECURE,
+        TCP_SSH,
         TCP,
         HTTP,
         HTTPS,
         MYSQL,
         GRPC,
+        ARROW_FLIGHT,
         POSTGRESQL,
         PROMETHEUS,
         CUSTOM,

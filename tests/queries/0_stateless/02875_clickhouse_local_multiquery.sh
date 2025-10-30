@@ -9,7 +9,7 @@ $CLICKHOUSE_CLIENT -q "select 1; select 2;"
 $CLICKHOUSE_LOCAL -q "select 1; select 2;"
 
 # -n is a no-op
-$CLICKHOUSE_CLIENT -n -q "select 1; select 2;"
-$CLICKHOUSE_LOCAL -n -q "select 1; select 2;"
+$CLICKHOUSE_CLIENT -q "select 1; select 2;"
+$CLICKHOUSE_LOCAL -q "select 1; select 2;"
 
 exit 0

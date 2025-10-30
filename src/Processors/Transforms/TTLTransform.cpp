@@ -1,16 +1,15 @@
 #include <Processors/Transforms/TTLTransform.h>
-#include <DataTypes/DataTypeDate.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Columns/ColumnConst.h>
 #include <Interpreters/addTypeConversionToAST.h>
-#include <Storages/TTLMode.h>
 #include <Interpreters/Context.h>
 
-#include <Processors/TTL/TTLDeleteAlgorithm.h>
-#include <Processors/TTL/TTLColumnAlgorithm.h>
+#include <Processors/Port.h>
 #include <Processors/TTL/TTLAggregationAlgorithm.h>
+#include <Processors/TTL/TTLColumnAlgorithm.h>
+#include <Processors/TTL/TTLDeleteAlgorithm.h>
 #include <Processors/TTL/TTLUpdateInfoAlgorithm.h>
 
 namespace DB
@@ -34,7 +33,7 @@ static TTLExpressions getExpressions(const TTLDescription & ttl_descr, PreparedS
 
 TTLTransform::TTLTransform(
     const ContextPtr & context,
-    const Block & header_,
+    SharedHeader header_,
     const MergeTreeData & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
     const MergeTreeData::MutableDataPartPtr & data_part_,
@@ -129,13 +128,13 @@ void TTLTransform::consume(Chunk chunk)
         return;
     }
 
-    convertToFullIfSparse(chunk);
+    removeSpecialColumnRepresentations(chunk);
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
 
     for (const auto & algorithm : algorithms)
         algorithm->execute(block);
 
-    if (!block)
+    if (block.empty())
         return;
 
     size_t num_rows = block.rows();
@@ -148,7 +147,7 @@ Chunk TTLTransform::generate()
     for (const auto & algorithm : algorithms)
         algorithm->execute(block);
 
-    if (!block)
+    if (block.empty())
         return {};
 
     size_t num_rows = block.rows();

@@ -49,7 +49,7 @@ CREATE TABLE tab
 (
     id UInt64,
     tup Tuple(UInt64, UInt64) SETTINGS (min_compress_block_size = 81920, max_compress_block_size = 163840),
-    json JSON SETTINGS (min_compress_block_size = 81920, max_compress_block_size = 163840),
+    json Object('json') SETTINGS (min_compress_block_size = 81920, max_compress_block_size = 163840),
 )
 ENGINE = MergeTree
 ORDER BY id

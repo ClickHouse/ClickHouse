@@ -9,16 +9,18 @@
 
 namespace Poco
 {
-    namespace Util
-    {
-        class AbstractConfiguration;
-    }
-    class Logger;
+namespace Util
+{
+    class AbstractConfiguration;
+}
+class Logger;
 }
 
 
 namespace DB
 {
+
+using LoggerPtr = std::shared_ptr<Poco::Logger>;
 
 /** Apply substitutions from the macros in config to the string.
   */
@@ -36,6 +38,7 @@ public:
         StorageID table_id = StorageID::createEmpty();
         bool ignore_unknown = false;
         bool expand_special_macros_only = false;
+        bool expand_for_database = false;
         std::optional<String> shard = {};
         std::optional<String> replica = {};
 
@@ -66,6 +69,7 @@ public:
     MacroMap getMacroMap() const { return macros; }
 
     String getValue(const String & key) const;
+    std::optional<String> tryGetValue(const String & key) const;
 
 private:
     MacroMap macros;

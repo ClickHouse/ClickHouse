@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/Exception.h>
 #include <Common/ICachePolicyUserQuota.h>
 #include <base/UUID.h>
 
@@ -27,7 +26,7 @@ public:
     using Key = TKey;
     using Mapped = TMapped;
     using MappedPtr = std::shared_ptr<Mapped>;
-    using OnWeightLossFunction = std::function<void(size_t)>;
+    using OnRemoveEntryFunction = std::function<void(size_t, const MappedPtr &)>;  /// For per-item callback
 
     struct KeyMapped
     {
@@ -52,9 +51,15 @@ public:
     virtual MappedPtr get(const Key & key) = 0;
     virtual std::optional<KeyMapped> getWithKey(const Key &) = 0;
 
+    /// Like `get(key) != nullptr`, but doesn't consider it an "access".
+    /// E.g. doesn't move it to the front of LRU list.
+    /// Not allowed to allocate memory (see PageCache::contains).
+    virtual bool contains(const Key & key) const = 0;
+
     virtual void set(const Key & key, const MappedPtr & mapped) = 0;
 
     virtual void remove(const Key & key) = 0;
+    virtual void remove(std::function<bool(const Key & key, const MappedPtr & mapped)> predicate) = 0;
 
     virtual void clear() = 0;
     virtual std::vector<KeyMapped> dump() const = 0;
