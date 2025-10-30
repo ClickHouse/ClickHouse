@@ -151,6 +151,10 @@ namespace ProfileEvents
     extern const Event RejectedLightweightUpdates;
     extern const Event PartsLockWaitMicroseconds;
     extern const Event PartsLockHoldMicroseconds;
+    extern const Event PartsLocks;
+    extern const Event SharedPartsLockWaitMicroseconds;
+    extern const Event SharedPartsLockHoldMicroseconds;
+    extern const Event SharedPartsLocks;
     extern const Event LoadedDataParts;
     extern const Event LoadedDataPartsMicroseconds;
     extern const Event RestorePartsSkippedFiles;
@@ -478,6 +482,7 @@ DataPartsLock::DataPartsLock(DB::SharedMutex & data_parts_mutex_, std::function<
     , callback(std::move(callback_))
 {
     ProfileEvents::increment(ProfileEvents::PartsLockWaitMicroseconds, wait_watch->elapsedMicroseconds());
+    ProfileEvents::increment(ProfileEvents::PartsLocks);
 }
 
 
@@ -493,14 +498,15 @@ DataPartsSharedLock::DataPartsSharedLock(DB::SharedMutex & data_parts_mutex_)
     , lock(data_parts_mutex_)
     , lock_watch(Stopwatch(CLOCK_MONOTONIC))
 {
-    ProfileEvents::increment(ProfileEvents::PartsLockWaitMicroseconds, wait_watch->elapsedMicroseconds());
+    ProfileEvents::increment(ProfileEvents::SharedPartsLockWaitMicroseconds, wait_watch->elapsedMicroseconds());
+    ProfileEvents::increment(ProfileEvents::SharedPartsLocks);
 }
 
 
 DataPartsSharedLock::~DataPartsSharedLock()
 {
     if (lock_watch.has_value())
-        ProfileEvents::increment(ProfileEvents::PartsLockHoldMicroseconds, lock_watch->elapsedMicroseconds());
+        ProfileEvents::increment(ProfileEvents::SharedPartsLockHoldMicroseconds, lock_watch->elapsedMicroseconds());
 }
 
 static Int64 extractVersion(const auto & versions, const String & partition_id, Int64 default_value)
