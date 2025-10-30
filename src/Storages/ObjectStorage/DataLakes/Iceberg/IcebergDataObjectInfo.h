@@ -9,7 +9,8 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteObject.h>
 
 
-namespace DB::Iceberg {
+namespace DB::Iceberg
+{
 struct IcebergObjectSerializableInfo
 {
     String data_object_file_path_key;
