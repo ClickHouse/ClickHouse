@@ -1,0 +1,23 @@
+<test>
+    <settings>
+        <max_threads>8</max_threads>
+        <min_count_to_compile_sort_description>0</min_count_to_compile_sort_description>
+    </settings>
+    <create_query>CREATE TABLE str_sort (a String, b UInt64, c FixedString(5), d String, e UInt32, f UInt32) ENGINE = Memory</create_query>
+    <fill_query>
+        INSERT INTO str_sort
+        SELECT 
+            randomString(4) AS a,
+            rand()  AS b, cast(randomString(5) AS FixedString(5)) as c,
+            toString(rand() % 100000) as d,
+            rand() % 1000 as e,
+            rand() % 1000 as f
+        FROM numbers(1e7)
+    </fill_query>
+
+    <query>SELECT a, b FROM str_sort ORDER BY a, b, e, f FORMAT Null</query>
+    <query>SELECT b, c FROM str_sort ORDER BY b, c, e, f FORMAT Null</query>
+    <query>SELECT a, d FROM str_sort ORDER BY c, d, e, f FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS str_sort</drop_query>
+</test>
