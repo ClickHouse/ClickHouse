@@ -950,7 +950,7 @@ static size_t getTotalBytesInColumns(const Columns & columns)
         {
             if (const auto * col_str = typeid_cast<const ColumnString *>(column.get()))
             {
-                const auto avg_size = std::max<double>(1, col_str->getOffsets().back() / col_str->size());
+                const auto avg_size = std::max<double>(1, static_cast<double>(col_str->getOffsets().back()) / col_str->size());
                 const auto avg_byte_len = (static_cast<size_t>(log2(avg_size)) + 7) / 8;
                 total_bytes += col_str->getChars().size() + col_str->size() * avg_byte_len;
             }
