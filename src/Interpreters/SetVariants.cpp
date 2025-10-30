@@ -146,6 +146,8 @@ typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::choose
     }
 
     /// If the keys fit in N bits, we will use a hash table for N-bit-packed keys
+    if (all_fixed && keys_bytes <= 8)
+        return Type::keys64;
     if (all_fixed && keys_bytes <= 16)
         return Type::keys128;
     if (all_fixed && keys_bytes <= 32)

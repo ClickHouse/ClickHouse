@@ -196,6 +196,7 @@ struct NonClearableSet
     std::unique_ptr<SetMethodOneNumber<UInt64, HashSet<UInt64, HashCRC32<UInt64>>>>          key64;
     std::unique_ptr<SetMethodString<HashSetWithSavedHash<StringRef>>>                        key_string;
     std::unique_ptr<SetMethodFixedString<HashSetWithSavedHash<StringRef>>>                   key_fixed_string;
+    std::unique_ptr<SetMethodKeysFixed<HashSet<UInt64,HashCRC32<UInt64>>>>                   keys64;
     std::unique_ptr<SetMethodKeysFixed<HashSet<UInt128, UInt128HashCRC32>>>                  keys128;
     std::unique_ptr<SetMethodKeysFixed<HashSet<UInt256, UInt256HashCRC32>>>                  keys256;
     std::unique_ptr<SetMethodHashed<HashSet<UInt128, UInt128TrivialHash>>>                   hashed;
@@ -218,6 +219,7 @@ struct ClearableSet
     std::unique_ptr<SetMethodOneNumber<UInt64, ClearableHashSet<UInt64, HashCRC32<UInt64>>>>         key64;
     std::unique_ptr<SetMethodString<ClearableHashSetWithSavedHash<StringRef>>>                       key_string;
     std::unique_ptr<SetMethodFixedString<ClearableHashSetWithSavedHash<StringRef>>>                  key_fixed_string;
+    std::unique_ptr<SetMethodKeysFixed<ClearableHashSet<UInt64, HashCRC32<UInt64>>>>                 keys64;
     std::unique_ptr<SetMethodKeysFixed<ClearableHashSet<UInt128, UInt128HashCRC32>>>                 keys128;
     std::unique_ptr<SetMethodKeysFixed<ClearableHashSet<UInt256, UInt256HashCRC32>>>                 keys256;
     std::unique_ptr<SetMethodHashed<ClearableHashSet<UInt128, UInt128TrivialHash>>>                  hashed;
@@ -243,6 +245,7 @@ struct SetVariantsTemplate: public Variant
         M(key64)                \
         M(key_string)           \
         M(key_fixed_string)     \
+        M(keys64)               \
         M(keys128)              \
         M(keys256)              \
         M(nullable_keys128)     \

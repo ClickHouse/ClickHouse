@@ -41,6 +41,7 @@
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/ReadFromRecursiveCTEStep.h>
+#include <Processors/QueryPlan/PartitionedDistinctStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Interpreters/Context.h>
@@ -148,6 +149,7 @@ namespace Setting
     extern const SettingsOverflowMode transfer_overflow_mode;
     extern const SettingsBool enable_producing_buckets_out_of_order_in_aggregation;
     extern const SettingsBool enable_parallel_blocks_marshalling;
+    extern const SettingsBool enable_partition_distinct;
 }
 
 namespace ServerSetting
@@ -775,6 +777,45 @@ void addCubeOrRollupStepIfNeeded(QueryPlan & query_plan,
     }
 }
 
+void addPartitionedDistinctStep(QueryPlan & query_plan,
+    const QueryAnalysisResult & query_analysis_result,
+    const PlannerContextPtr & planner_context,
+    const Names & column_names,
+    const QueryNode & query_node,
+    bool before_order)
+{
+    const Settings & settings = planner_context->getQueryContext()->getSettingsRef();
+    auto max_threads = settings[Setting::max_threads];
+
+    UInt64 limit_offset = query_analysis_result.limit_offset;
+    UInt64 limit_length = query_analysis_result.limit_length;
+
+    UInt64 limit_hint_for_distinct = 0;
+
+    /** If after this stage of DISTINCT
+      * 1. ORDER BY is not executed.
+      * 2. There is no LIMIT BY.
+      * Then you can get no more than limit_length + limit_offset of different rows.
+      */
+    if ((!query_node.hasOrderBy() || !before_order) && !query_node.hasLimitBy())
+    {
+        if (limit_length <= std::numeric_limits<UInt64>::max() - limit_offset)
+            limit_hint_for_distinct = limit_length + limit_offset;
+    }
+
+    SizeLimits limits(settings[Setting::max_rows_in_distinct], settings[Setting::max_bytes_in_distinct], settings[Setting::distinct_overflow_mode]);
+
+    auto distinct_step = std::make_unique<PartitionedDistinctStep>(
+        query_plan.getCurrentHeader(),
+        column_names,
+        limits,
+        limit_hint_for_distinct,
+        max_threads);
+
+    distinct_step->setStepDescription("Partitioned DISTINCT");
+    query_plan.addStep(std::move(distinct_step));
+}
+
 void addDistinctStep(QueryPlan & query_plan,
     const QueryAnalysisResult & query_analysis_result,
     const PlannerContextPtr & planner_context,
@@ -1143,13 +1184,27 @@ void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(
       */
     if (query_node.hasLimit() && query_node.isDistinct())
     {
-        addDistinctStep(query_plan,
-            query_analysis_result,
-            planner_context,
-            expressions_analysis_result.getProjection().projection_column_names,
-            query_node,
-            false /*before_order*/,
-            false /*pre_distinct*/);
+        const auto & settings = planner_context->getQueryContext()->getSettingsRef();
+        auto enable_partition_distinct = settings[Setting::enable_partition_distinct];
+        if (enable_partition_distinct)
+        {
+            addPartitionedDistinctStep(query_plan,
+                query_analysis_result,
+                planner_context,
+                expressions_analysis_result.getProjection().projection_column_names,
+                query_node,
+                false /*before_order*/);
+        }
+        else
+        {
+            addDistinctStep(query_plan,
+                query_analysis_result,
+                planner_context,
+                expressions_analysis_result.getProjection().projection_column_names,
+                query_node,
+                false /*before_order*/,
+                false /*pre_distinct*/);
+        }
     }
 
     if (expressions_analysis_result.hasLimitBy())
@@ -1875,13 +1930,25 @@ void Planner::buildPlanForQueryNode()
 
                 if (query_node.isDistinct())
                 {
-                    addDistinctStep(query_plan,
-                        query_analysis_result,
-                        planner_context,
-                        expression_analysis_result.getProjection().projection_column_names,
-                        query_node,
-                        true /*before_order*/,
-                        true /*pre_distinct*/);
+                    if (settings[Setting::enable_partition_distinct])
+                    {
+                        addPartitionedDistinctStep(query_plan,
+                            query_analysis_result,
+                            planner_context,
+                            expression_analysis_result.getProjection().projection_column_names,
+                            query_node,
+                            true /*before_order*/);
+                    }
+                    else
+                    {
+                        addDistinctStep(query_plan,
+                            query_analysis_result,
+                            planner_context,
+                            expression_analysis_result.getProjection().projection_column_names,
+                            query_node,
+                            true /*before_order*/,
+                            true /*pre_distinct*/);
+                    }
                 }
 
                 if (expression_analysis_result.hasSort())
@@ -1978,13 +2045,25 @@ void Planner::buildPlanForQueryNode()
 
             if (query_node.isDistinct())
             {
-                addDistinctStep(query_plan,
-                    query_analysis_result,
-                    planner_context,
-                    expression_analysis_result.getProjection().projection_column_names,
-                    query_node,
-                    true /*before_order*/,
-                    true /*pre_distinct*/);
+                if (settings[Setting::enable_partition_distinct])
+                {
+                    addPartitionedDistinctStep(query_plan,
+                        query_analysis_result,
+                        planner_context,
+                        expression_analysis_result.getProjection().projection_column_names,
+                        query_node,
+                        true /*before_order*/);
+                }
+                else
+                {
+                    addDistinctStep(query_plan,
+                        query_analysis_result,
+                        planner_context,
+                        expression_analysis_result.getProjection().projection_column_names,
+                        query_node,
+                        true /*before_order*/,
+                        true /*pre_distinct*/);
+                }
             }
 
             if (expression_analysis_result.hasSort())
@@ -2038,13 +2117,16 @@ void Planner::buildPlanForQueryNode()
         //// If there was more than one stream, then DISTINCT needs to be performed once again after merging all streams.
         if (!query_processing_info.isFromAggregationState() && query_node.isDistinct())
         {
-            addDistinctStep(query_plan,
-                query_analysis_result,
-                planner_context,
-                expression_analysis_result.getProjection().projection_column_names,
-                query_node,
-                false /*before_order*/,
-                false /*pre_distinct*/);
+            if (!settings[Setting::enable_partition_distinct])
+            {
+                addDistinctStep(query_plan,
+                    query_analysis_result,
+                    planner_context,
+                    expression_analysis_result.getProjection().projection_column_names,
+                    query_node,
+                    false /*before_order*/,
+                    false /*pre_distinct*/);
+            }
         }
 
         if (!query_processing_info.isFromAggregationState() && expression_analysis_result.hasLimitBy())

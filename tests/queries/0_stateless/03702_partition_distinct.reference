@@ -1,0 +1,23 @@
+-- { echoOn }
+select distinct a, b from t_partition_distinct order by a, b;
+0	0
+1	1
+2	2
+3	3
+4	4
+5	0
+6	1
+7	2
+8	3
+9	4
+select distinct a, c from t_partition_distinct order by a, c;
+0	xxxxxxxxxx0
+1	xxxxxxxxxx1
+2	xxxxxxxxxx2
+3	xxxxxxxxxx3
+4	xxxxxxxxxx4
+5	xxxxxxxxxx0
+6	xxxxxxxxxx1
+7	xxxxxxxxxx2
+8	xxxxxxxxxx3
+9	xxxxxxxxxx4
