@@ -11,6 +11,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
+#include <Databases/enableAllExperimentalSettings.h>
 #include <Disks/SingleDiskVolume.h>
 #include <IO/ReadBufferFromEmptyFile.h>
 #include <Interpreters/Context.h>
@@ -18,6 +19,7 @@
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
+#include <Interpreters/inplaceBlockConversions.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/CoalescingSortedTransform.h>
@@ -270,7 +272,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
     Names sort_key_columns_vec = sorting_key_expr->getRequiredColumns();
 
     /// Collect columns used in the sorting key expressions.
-    std::set<String> key_columns;
+    NameSet key_columns;
     auto storage_columns = global_ctx->storage_columns.getNameSet();
     for (const auto & name : sort_key_columns_vec)
     {
@@ -306,6 +308,11 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
         auto minmax_columns = MergeTreeData::getMinMaxColumnsNames(global_ctx->metadata_snapshot->getPartitionKey());
         key_columns.insert(minmax_columns.begin(), minmax_columns.end());
     }
+
+    key_columns.insert(global_ctx->deduplicate_by_columns.begin(), global_ctx->deduplicate_by_columns.end());
+
+    /// Key columns required for merge, must not be expired early.
+    global_ctx->merge_required_key_columns = key_columns;
 
     const auto & skip_indexes = global_ctx->metadata_snapshot->getSecondaryIndices();
 
@@ -528,8 +535,34 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     if (!expired_columns.empty())
     {
         global_ctx->gathering_columns = global_ctx->gathering_columns.eraseNames(expired_columns);
-        global_ctx->merging_columns = global_ctx->merging_columns.eraseNames(expired_columns);
-        global_ctx->storage_columns = global_ctx->storage_columns.eraseNames(expired_columns);
+
+        NamesAndTypesList merging_columns;
+        for (const auto & column : global_ctx->merging_columns)
+        {
+            bool is_expired = expired_columns.contains(column.name);
+            bool is_required_for_merge = global_ctx->merge_required_key_columns.contains(column.name);
+
+            if (is_expired)
+                global_ctx->merging_columns_expired_by_ttl.push_back(column);
+
+            if (!is_expired || is_required_for_merge)
+                merging_columns.push_back(column);
+        }
+        global_ctx->merging_columns = std::move(merging_columns);
+
+        NamesAndTypesList storage_columns;
+        for (const auto & column : global_ctx->storage_columns)
+        {
+            bool is_expired = expired_columns.contains(column.name);
+            bool is_required_for_merge = global_ctx->merge_required_key_columns.contains(column.name);
+
+            if (is_expired)
+                global_ctx->storage_columns_expired_by_ttl.push_back(column);
+
+            if (!is_expired || is_required_for_merge)
+                storage_columns.push_back(column);
+        }
+        global_ctx->storage_columns = std::move(storage_columns);
     }
 
     global_ctx->new_data_part->uuid = global_ctx->future_part->uuid;
@@ -631,6 +664,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         case MergeAlgorithm::Horizontal:
         {
             global_ctx->merging_columns = global_ctx->storage_columns;
+            global_ctx->merging_columns_expired_by_ttl = global_ctx->storage_columns_expired_by_ttl;
 
             if (exclude_index_names.empty())
                 global_ctx->merging_skip_indexes = global_ctx->metadata_snapshot->getSecondaryIndices();
@@ -1866,11 +1900,13 @@ public:
         const MergeTreeData & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         const MergeTreeData::MutableDataPartPtr & data_part_,
+        const NamesAndTypesList & expired_columns_,
         time_t current_time,
         bool force_)
-        : ITransformingStep(input_header_, input_header_, getTraits())
+        : ITransformingStep(input_header_, TTLTransform::addExpiredColumnsToBlock(input_header_, expired_columns_), getTraits())
     {
-        transform = std::make_shared<TTLTransform>(context_, input_header_, storage_, metadata_snapshot_, data_part_, current_time, force_);
+        transform = std::make_shared<TTLTransform>(
+            context_, input_header_, storage_, metadata_snapshot_, data_part_, expired_columns_, current_time, force_);
         subqueries_for_sets = transform->getSubqueries();
     }
 
@@ -2106,10 +2142,17 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
     PreparedSets::Subqueries subqueries;
 
     /// TTL step
-    if (ctx->need_remove_expired_values)
+    if (ctx->need_remove_expired_values || !global_ctx->merging_columns_expired_by_ttl.empty())
     {
         auto ttl_step = std::make_unique<TTLStep>(
-            merge_parts_query_plan.getCurrentHeader(), global_ctx->context, *global_ctx->data, global_ctx->metadata_snapshot, global_ctx->new_data_part, global_ctx->time_of_merge, ctx->force_ttl);
+            merge_parts_query_plan.getCurrentHeader(),
+            global_ctx->context,
+            *global_ctx->data,
+            global_ctx->metadata_snapshot,
+            global_ctx->new_data_part,
+            global_ctx->merging_columns_expired_by_ttl,
+            global_ctx->time_of_merge,
+            ctx->force_ttl);
         subqueries = ttl_step->getSubqueries();
         ttl_step->setStepDescription("TTL step");
         merge_parts_query_plan.addStep(std::move(ttl_step));
