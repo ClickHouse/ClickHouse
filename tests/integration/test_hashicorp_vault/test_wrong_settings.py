@@ -27,6 +27,22 @@ def start_clickhouse(config, users, err_msg):
     assert message_found
 
 
+def test_missing_url():
+    start_clickhouse(
+        "configs/config_missing_url.xml",
+        "configs/users.xml",
+        "DB::Exception: url is not specified for vault",
+    )
+
+
+def test_empty_url():
+    start_clickhouse(
+        "configs/config_empty_url.xml",
+        "configs/users.xml",
+        "DB::Exception: url is not specified for vault",
+    )
+
+
 def test_wrong_url():
     start_clickhouse(
         "configs/config_wrong_url.xml",
@@ -51,9 +67,9 @@ def test_wrong_token():
     )
 
 
-def test_token_empty():
+def test_empty_token():
     start_clickhouse(
-        "configs/config_token_empty.xml",
+        "configs/config_empty_token.xml",
         "configs/users.xml",
         "DB::Exception: token is not specified for vault",
     )

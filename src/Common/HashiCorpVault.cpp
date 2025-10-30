@@ -52,7 +52,9 @@ void HashiCorpVault::load(const Poco::Util::AbstractConfiguration & config, cons
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "username is not specified for vault.");
 
             auth_method = HashiCorpVaultAuthMethod::Userpass;
-        } else {
+        }
+        else
+        {
             if (!config.has(config_prefix + ".token"))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Auth sections are not specified for vault.");
 

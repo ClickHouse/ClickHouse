@@ -35,9 +35,9 @@ def test_missing_username():
     )
 
 
-def test_username_empty():
+def test_empty_username():
     start_clickhouse(
-        "configs/config_userpass_username_empty.xml",
+        "configs/config_userpass_empty_username.xml",
         "configs/users.xml",
         "DB::Exception: username is not specified for vault",
     )
