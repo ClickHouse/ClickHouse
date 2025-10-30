@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # Tags: use_xray, no-fasttest
-# no-parallel: avoid other tests interfering with the global system.instrumentation table
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -13,7 +12,8 @@ function cleanup()
 
 trap cleanup EXIT
 
-$CLICKHOUSE_CLIENT -q "SYSTEM INSTRUMENT REMOVE ALL;"
+# In this test, we just care of sending several queries in parallel so make sure the server
+# can handle them without race conditions that may cause a crash.
 
 query_id_prefix="${CLICKHOUSE_DATABASE}"
 
