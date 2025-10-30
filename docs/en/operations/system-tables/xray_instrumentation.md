@@ -39,4 +39,4 @@ SELECT * FROM system.instrumentation;
 **See also**
 
 - [SYSTEM INSTRUMENT](../../sql-reference/statements/system.md) — Add or remove instrumentation points.
-- [system.instrumentation_profiling_log](../../operations/system-tables/instrumentation_profiling_log.md) - Inspect profiling log.
+- [system.instrumentation_trace_log](../../operations/system-tables/instrumentation_trace_log.md) - Inspect profiling log.

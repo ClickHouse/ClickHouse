@@ -1,8 +1,8 @@
 ---
 description: 'System table containing the profiling log for instrumented functions'
-keywords: ['system table', 'instrumentation_profiling_log']
-slug: /operations/system-tables/instrumentation_profiling_log
-title: 'system.instrumentation_profiling_log'
+keywords: ['system table', 'instrumentation_trace_log']
+slug: /operations/system-tables/instrumentation_trace_log
+title: 'system.instrumentation_trace_log'
 doc_type: 'reference'
 ---
 
@@ -28,7 +28,7 @@ Columns:
 **Example**
 
 ```sql
-SELECT * FROM system.instrumentation_profiling_log;
+SELECT * FROM system.instrumentation_trace_log;
 ```
 
 ```text
@@ -79,7 +79,7 @@ SELECT
             ','
         )
     ) AS trace_json
-FROM system.instrumentation_profiling_log
+FROM system.instrumentation_trace_log
 WHERE event_date >= today();
 ```
 

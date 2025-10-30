@@ -5180,7 +5180,7 @@ std::shared_ptr<InstrumentationProfilingLog> Context::getInstrumentationProfilin
     if (!shared->system_logs)
         return {};
 
-    return shared->system_logs->instrumentation_profiling_log;
+    return shared->system_logs->instrumentation_trace_log;
 }
 
 
