@@ -130,6 +130,14 @@ RestCatalog::RestCatalog(
     config = loadConfig();
 }
 
+std::string RestCatalog::getFullEndpoint(const std::string & path) const
+{
+    if (config.prefix.empty())
+        return (base_url / path).string();
+
+    return (base_url / config.prefix / path).string();
+}
+
 RestCatalog::Config RestCatalog::loadConfig()
 {
     Poco::URI::QueryParameters params = {{"warehouse", warehouse}};
@@ -728,7 +736,7 @@ void RestCatalog::sendRequest(const String & endpoint, Poco::JSON::Object::Ptr r
 
 void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, const String & location) const
 {
-    const std::string endpoint = fmt::format("{}/namespaces", base_url);
+    const std::string endpoint = getFullEndpoint(NAMESPACES_ENDPOINT);
 
     Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
     {
@@ -756,7 +764,7 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
 {
     createNamespaceIfNotExists(namespace_name, metadata_content->getValue<String>("location"));
 
-    const std::string endpoint = fmt::format("{}/namespaces/{}/tables", base_url, namespace_name);
+    const std::string endpoint = getFullEndpoint(fmt::format("namespaces/{}/tables", namespace_name));
 
     Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
     request_body->set("name", table_name);
@@ -793,7 +801,7 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
 
 bool RestCatalog::updateMetadata(const String & namespace_name, const String & table_name, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr new_snapshot) const
 {
-    const std::string endpoint = fmt::format("{}/namespaces/{}/tables/{}", base_url, namespace_name, table_name);
+    const std::string endpoint = getFullEndpoint(fmt::format("namespaces/{}/tables/{}", namespace_name, table_name));
 
     Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
     {
@@ -858,7 +866,8 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
 
 void RestCatalog::dropTable(const String & namespace_name, const String & table_name) const
 {
-    const std::string endpoint = fmt::format("{}/namespaces/{}/tables/{}?purgeRequested=False", base_url, namespace_name, table_name);
+    const std::string endpoint = getFullEndpoint(
+        fmt::format("namespaces/{}/tables/{}?purgeRequested=False", namespace_name, table_name));
 
     Poco::JSON::Object::Ptr request_body = nullptr;
     try

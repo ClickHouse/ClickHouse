@@ -138,6 +138,7 @@ private:
         Poco::JSON::Object::Ptr request_body,
         const String & method = Poco::Net::HTTPRequest::HTTP_POST,
         bool ignore_result = false) const;
+    std::string getFullEndpoint(const std::string & path) const;
 };
 
 }

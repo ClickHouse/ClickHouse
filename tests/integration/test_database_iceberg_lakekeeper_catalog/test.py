@@ -30,7 +30,6 @@ DEFAULT_CREATE_TABLE = "CREATE TABLE {}.`{}.{}`\n(\n    `id` Nullable(Float64),\
 
 def create_warehouse(minio_ip):
     minio_endpoint = f"http://{minio_ip}:9000"
-
     warehouse_data = {
         "warehouse-name": "demo",
         "project-id": "00000000-0000-0000-0000-000000000000",
@@ -271,6 +270,41 @@ SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     assert "HIDDEN" in show_result
 
 
+def create_clickhouse_iceberg_table(
+    started_cluster, node, database_name, table_name, schema, additional_settings={}
+):
+    """Create an Iceberg table via ClickHouse SQL using IcebergS3 engine with REST catalog"""
+    settings = {
+        "storage_catalog_type": "rest",
+        "storage_warehouse": WAREHOUSE_NAME,
+        "object_storage_endpoint": "http://minio:9000/warehouse-rest",
+        "storage_region": "local-01",
+        "storage_catalog_url": BASE_URL,
+    }
+
+    settings.update(additional_settings)
+
+    node.query(
+        f"""
+SET allow_experimental_database_iceberg=true;
+SET write_full_path_in_iceberg_metadata=1;
+CREATE TABLE {CATALOG_NAME}.`{database_name}.{table_name}` {schema} ENGINE = IcebergS3('http://minio:9000/warehouse-rest/{table_name}/', '{minio_access_key}', '{minio_secret_key}')
+SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
+    """
+    )
+
+
+def drop_clickhouse_iceberg_table(
+    node, database_name, table_name
+):
+    """Drop an Iceberg table via ClickHouse SQL"""
+    node.query(
+        f"""
+DROP TABLE {CATALOG_NAME}.`{database_name}.{table_name}`
+    """
+    )
+
+
 def test_hide_sensitive_info(started_cluster):
     node = started_cluster.instances["node1"]
 
@@ -364,4 +398,112 @@ def test_tables_with_same_location(started_cluster):
     assert 'bbb\nbbb\nbbb' == node.query(
         f"SELECT symbol FROM {CATALOG_NAME}.`{namespace[0]}.{table_name_2}`"
     ).strip()
+
+
+def test_create(started_cluster):
+    """Test CREATE TABLE from ClickHouse SQL with Lakekeeper REST catalog"""
+    node = started_cluster.instances["node1"]
+
+    catalog = load_catalog_impl(started_cluster)
+
+    test_ref = f"test_create_{uuid.uuid4().hex[:8]}"
+    test_namespace = (f"{test_ref}_namespace",)
+    table_name = f"{test_ref}_table"
+
+    # Create namespace first
+    catalog.create_namespace(test_namespace)
+
+    # Create database connection
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    # Create table via ClickHouse SQL - this will test RestCatalog::createTable with prefix
+    create_clickhouse_iceberg_table(
+        started_cluster, node, test_namespace[0], table_name, "(x String)"
+    )
+
+    # Verify table exists in Lakekeeper catalog
+    tables = catalog.list_tables(test_namespace)
+    table_identifier = (test_namespace[0], table_name)
+    assert table_identifier in tables, f"Table {table_identifier} not found in catalog. Available tables: {tables}"
+
+    # Insert and verify data
+    node.query(
+        f"INSERT INTO {CATALOG_NAME}.`{test_namespace[0]}.{table_name}` VALUES ('test_value');",
+        settings={"allow_experimental_insert_into_iceberg": 1, 'write_full_path_in_iceberg_metadata': 1}
+    )
+
+    result = node.query(f"SELECT * FROM {CATALOG_NAME}.`{test_namespace[0]}.{table_name}`")
+    assert result.strip() == "test_value"
+
+
+def test_drop_table(started_cluster):
+    """Test DROP TABLE from ClickHouse SQL with Lakekeeper REST catalog"""
+    node = started_cluster.instances["node1"]
+
+    catalog = load_catalog_impl(started_cluster)
+
+    test_ref = f"test_drop_table_{uuid.uuid4().hex[:8]}"
+    test_namespace = (f"{test_ref}_namespace",)
+    table_name = f"{test_ref}_table"
+
+    # Create namespace
+    catalog.create_namespace(test_namespace)
+
+    # Create database and table
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_table(
+        started_cluster, node, test_namespace[0], table_name, "(x String)"
+    )
+
+    # Verify table exists
+    tables = catalog.list_tables(test_namespace)
+    assert len(tables) == 1, f"Expected 1 table, found {len(tables)}"
+
+    # Drop table via ClickHouse - this will test RestCatalog::dropTable with prefix
+    drop_clickhouse_iceberg_table(node, test_namespace[0], table_name)
+
+    # Verify table was removed from Lakekeeper catalog
+    tables = catalog.list_tables(test_namespace)
+    assert len(tables) == 0, f"Expected 0 tables after drop, found {len(tables)}"
+
+
+def test_insert(started_cluster):
+    """Test INSERT into table created from ClickHouse SQL"""
+    node = started_cluster.instances["node1"]
+
+    catalog = load_catalog_impl(started_cluster)
+
+    test_ref = f"test_insert_{uuid.uuid4().hex[:8]}"
+    test_namespace = (f"{test_ref}_namespace",)
+    table_name = f"{test_ref}_table"
+
+    # Create namespace
+    catalog.create_namespace(test_namespace)
+
+    # Create database connection
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    # Create table via ClickHouse SQL
+    create_clickhouse_iceberg_table(
+        started_cluster, node, test_namespace[0], table_name,
+        "(id Nullable(Float64), data Nullable(String))"
+    )
+
+    # Insert multiple rows via ClickHouse
+    node.query(
+        f"INSERT INTO {CATALOG_NAME}.`{test_namespace[0]}.{table_name}` VALUES (1.0, 'first'), (2.0, 'second'), (3.0, 'third');",
+        settings={"allow_experimental_insert_into_iceberg": 1, 'write_full_path_in_iceberg_metadata': 1}
+    )
+
+    # Verify via ClickHouse SELECT
+    result = node.query(f"SELECT * FROM {CATALOG_NAME}.`{test_namespace[0]}.{table_name}` ORDER BY id")
+    expected_lines = ["1\tfirst", "2\tsecond", "3\tthird"]
+    assert result.strip().split('\n') == expected_lines
+
+    # Also verify via PyIceberg catalog
+    table = catalog.load_table((test_namespace[0], table_name))
+    scan_result = table.scan().to_pandas()
+    assert len(scan_result) == 3
+    assert list(scan_result["id"]) == [1.0, 2.0, 3.0]
+    assert list(scan_result["data"]) == ["first", "second", "third"]
 
