@@ -521,6 +521,52 @@ TEST_F(MetadataPlainRewritableDiskTest, RemoveDirectoryRecursive)
     }));
 }
 
+TEST_F(MetadataPlainRewritableDiskTest, RemoveDirectoryRecursiveVirtualNodes)
+{
+    thread_local_rng.seed(42);
+
+    auto metadata = getMetadataStorage("RemoveDirectoryRecursiveVirtualNodes");
+    auto object_storage = getObjectStorage("RemoveDirectoryRecursiveVirtualNodes");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("root");
+        tx->createDirectory("root/A");
+        tx->createDirectoryRecursive("root/A/B/C/D");
+        tx->commit();
+    }
+
+    EXPECT_TRUE(metadata->existsDirectory("root/A"));
+    EXPECT_TRUE(metadata->existsDirectory("root/A/B"));
+    EXPECT_TRUE(metadata->existsDirectory("root/A/B/C"));
+    EXPECT_TRUE(metadata->existsDirectory("root/A/B/C/D"));
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->removeRecursive("root/A");
+        tx->commit();
+    }
+
+    EXPECT_TRUE(metadata->existsDirectory("root"));
+    EXPECT_FALSE(metadata->existsDirectory("root/A"));
+    EXPECT_FALSE(metadata->existsDirectory("root/A/B"));
+    EXPECT_FALSE(metadata->existsDirectory("root/A/B/C"));
+    EXPECT_FALSE(metadata->existsDirectory("root/A/B/C/D"));
+
+    metadata = restartMetadataStorage("RemoveDirectoryRecursiveVirtualNodes");
+    EXPECT_TRUE(metadata->existsDirectory("root"));
+    EXPECT_FALSE(metadata->existsDirectory("root/A"));
+    EXPECT_FALSE(metadata->existsDirectory("root/A/B"));
+    EXPECT_FALSE(metadata->existsDirectory("root/A/B/C"));
+    EXPECT_FALSE(metadata->existsDirectory("root/A/B/C/D"));
+
+    EXPECT_EQ(listAllBlobs("RemoveDirectoryRecursiveVirtualNodes"), std::vector<std::string>({
+        "./RemoveDirectoryRecursiveVirtualNodes/__meta",
+        "./RemoveDirectoryRecursiveVirtualNodes/__meta/faefxnlkbtfqgxcbfqfjtztsocaqrnqn",
+        "./RemoveDirectoryRecursiveVirtualNodes/__meta/faefxnlkbtfqgxcbfqfjtztsocaqrnqn/prefix.path",
+    }));
+}
+
 TEST_F(MetadataPlainRewritableDiskTest, MoveFile)
 {
     auto metadata = getMetadataStorage("MoveFile");

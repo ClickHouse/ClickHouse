@@ -618,6 +618,7 @@ void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::finalize()
         if (!remote_info.has_value())
         {
             LOG_TRACE(log, "Directory '{}' is virtual, will not cleanup remote", subdir_path);
+            continue;
         }
 
         LOG_TRACE(log, "Removing directory '{}'", subdir_path);
