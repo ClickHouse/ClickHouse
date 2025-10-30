@@ -26,12 +26,14 @@ SortNode::SortNode(QueryTreeNodePtr expression_,
     SortDirection sort_direction_,
     std::optional<SortDirection> nulls_sort_direction_,
     std::shared_ptr<Collator> collator_,
-    bool with_fill_)
+    bool with_fill_,
+    bool is_natural_)
     : IQueryTreeNode(children_size)
     , sort_direction(sort_direction_)
     , nulls_sort_direction(nulls_sort_direction_)
     , collator(std::move(collator_))
     , with_fill(with_fill_)
+    , is_natural(is_natural_)
 {
     children[sort_expression_child_index] = std::move(expression_);
 }
@@ -48,6 +50,8 @@ void SortNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, si
         buffer << ", collator: " << collator->getLocale();
 
     buffer << ", with_fill: " << with_fill;
+
+    buffer << ", is_natural: " << is_natural;
 
     buffer << '\n' << std::string(indent + 2, ' ') << "EXPRESSION\n";
     getExpression()->dumpTreeImpl(buffer, format_state, indent + 4);
@@ -82,7 +86,8 @@ bool SortNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
     const auto & rhs_typed = assert_cast<const SortNode &>(rhs);
     if (sort_direction != rhs_typed.sort_direction ||
         nulls_sort_direction != rhs_typed.nulls_sort_direction ||
-        with_fill != rhs_typed.with_fill)
+        with_fill != rhs_typed.with_fill ||
+        is_natural != rhs_typed.is_natural)
         return false;
 
     if (!collator && !rhs_typed.collator)
@@ -101,6 +106,7 @@ void SortNode::updateTreeHashImpl(HashState & hash_state, CompareOptions) const
     /// use some determined value if `nulls_sort_direction` is `nullopt`
     hash_state.update(nulls_sort_direction.value_or(sort_direction));
     hash_state.update(with_fill);
+    hash_state.update(is_natural);
 
     if (collator)
     {
@@ -113,7 +119,7 @@ void SortNode::updateTreeHashImpl(HashState & hash_state, CompareOptions) const
 
 QueryTreeNodePtr SortNode::cloneImpl() const
 {
-    return std::make_shared<SortNode>(nullptr /*expression*/, sort_direction, nulls_sort_direction, collator, with_fill);
+    return std::make_shared<SortNode>(nullptr /*expression*/, sort_direction, nulls_sort_direction, collator, with_fill, is_natural);
 }
 
 ASTPtr SortNode::toASTImpl(const ConvertToASTOptions & options) const
@@ -132,6 +138,7 @@ ASTPtr SortNode::toASTImpl(const ConvertToASTOptions & options) const
         result->setCollation(std::make_shared<ASTLiteral>(Field(collator->getLocale())));
 
     result->with_fill = with_fill;
+    result->is_natural = is_natural;
     if (hasFillFrom())
         result->setFillFrom(getFillFrom()->toAST(options));
     if (hasFillTo())
