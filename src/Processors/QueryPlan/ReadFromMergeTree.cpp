@@ -3357,5 +3357,4 @@ ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstim
     return data.getConditionSelectivityEstimator(getParts(), getContext());
 }
 
-
 }
