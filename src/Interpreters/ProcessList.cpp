@@ -115,7 +115,7 @@ ProcessList::EntryPtr ProcessList::insert(
     if (client_info.current_query_id.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query id cannot be empty");
 
-    bool is_unlimited_query = isUnlimitedQuery(ast);
+    bool is_unlimited_query = isUnlimitedQuery(ast) || is_internal;
     std::shared_ptr<QueryStatus> query;
 
     // Acquire a query slot from resource scheduler if necessary.
