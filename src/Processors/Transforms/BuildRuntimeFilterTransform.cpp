@@ -28,10 +28,7 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
 {
     const auto & filter_column = header_->getByPosition(filter_column_position);
     if (!filter_column_target_type->equals(*filter_column_original_type))
-    {
-        auto query_context = CurrentThread::get().getQueryContext();
-        cast_to_target_type = createInternalCast(filter_column, filter_column_target_type, CastType::nonAccurate, {}, query_context);
-    }
+        cast_to_target_type = createInternalCast(filter_column, filter_column_target_type, CastType::nonAccurate, {});
 }
 
 
