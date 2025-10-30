@@ -258,16 +258,22 @@ SYSTEM INSTRUMENT ADD `QueryMetricLog::startQuery` PROFILE
 
 ### SYSTEM INSTRUMENT REMOVE {#instrument-remove}
 
-Removes either a specific instrumentation point with:
+Removes either a single instrumentation point with:
 
 ```sql
 SYSTEM INSTRUMENT REMOVE ID
 ```
 
-or all of them using the `ALL` parameter:
+all of them using the `ALL` parameter:
 
 ```sql
 SYSTEM INSTRUMENT REMOVE ALL
+```
+
+or a set of IDs from a subquery:
+
+```sql
+SYSTEM INSTRUMENT REMOVE (SELECT id FROM system.instrumentation WHERE handler = 'log')
 ```
 
 The instrumentation point ID can be collected from [`system.instrumentation`](../../operations/system-tables/instrumentation.md) system table.
