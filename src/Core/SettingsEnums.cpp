@@ -331,7 +331,7 @@ IMPLEMENT_SETTING_ENUM(
 IMPLEMENT_SETTING_ENUM(
     MergeTreeSerializationInfoVersion,
     ErrorCodes::BAD_ARGUMENTS,
-    {{"default", MergeTreeSerializationInfoVersion::DEFAULT},
+    {{"basic", MergeTreeSerializationInfoVersion::BASIC},
      {"with_types", MergeTreeSerializationInfoVersion::WITH_TYPES}})
 
 IMPLEMENT_SETTING_ENUM(

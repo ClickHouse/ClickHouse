@@ -10,7 +10,7 @@ struct SerializationInfoSettings
     double ratio_of_defaults_for_sparse = 1.0;
     bool choose_kind = false;
 
-    MergeTreeSerializationInfoVersion version = MergeTreeSerializationInfoVersion::DEFAULT;
+    MergeTreeSerializationInfoVersion version = MergeTreeSerializationInfoVersion::BASIC;
     MergeTreeStringSerializationVersion string_serialization_version = MergeTreeStringSerializationVersion::SINGLE_STREAM;
 
     SerializationInfoSettings() = default;

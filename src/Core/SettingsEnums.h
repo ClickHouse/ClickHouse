@@ -425,7 +425,7 @@ DECLARE_SETTING_ENUM(GeoToH3ArgumentOrder)
 
 enum class MergeTreeSerializationInfoVersion : uint8_t
 {
-    DEFAULT = 0,
+    BASIC = 0,
     WITH_TYPES = 1,
 };
 
