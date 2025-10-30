@@ -5,6 +5,7 @@
 #include <Analyzer/ConstantValue.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Columns/IColumn_fwd.h>
+#include <Parsers/ASTLiteral.h>
 
 namespace DB
 {
@@ -105,9 +106,9 @@ public:
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
-    std::pair<String, DataTypePtr> getValueNameAndType() const
+    std::pair<String, DataTypePtr> getValueNameAndType(const IColumn::Options & options) const
     {
-        return constant_value.getValueNameAndType();
+        return constant_value.getValueNameAndType(options);
     }
 
 protected:
@@ -117,6 +118,8 @@ protected:
 
     QueryTreeNodePtr cloneImpl() const override;
 
+    template <typename F>
+    std::shared_ptr<ASTLiteral> getCachedAST(const F &ast_generator) const;
     ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
 private:
@@ -125,6 +128,11 @@ private:
     size_t mask_id = 0;
 
     static constexpr size_t children_size = 0;
+
+    /// Converting to AST maybe costly (for example for large arrays), so we want
+    /// to cache it using hash to check for update
+    mutable std::shared_ptr<ASTLiteral> cached_ast;
+    mutable Hash hash_ast;
 };
 
 }
