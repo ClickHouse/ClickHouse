@@ -2647,7 +2647,10 @@ bool ReadFromMergeTree::supportsSkipIndexesOnDataRead() const
     if (is_parallel_reading_from_replicas)
         return false;
 
-    if (settings[Setting::read_overflow_mode] == OverflowMode::THROW && settings[Setting::max_rows_to_read]) /// Need to do full index analysis to get row count estimate
+    /// Settings `read_overflow_mode = 'throw'` and `max_rows_to_read` are evaluated early during execution,
+    /// during initialization of the pipeline based on estimated row counts. Estimation doesn't work properly
+    /// if the skip index is evaluated during data read (scan).
+    if (settings[Setting::read_overflow_mode] == OverflowMode::THROW && settings[Setting::max_rows_to_read])
         return false;
 
     return true;
