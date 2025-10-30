@@ -1,6 +1,5 @@
 #include "config.h"
 
-#if USE_AVRO
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Poco/JSON/Array.h>
@@ -10,7 +9,6 @@
 #include <Core/Types.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Interpreters/Context_fwd.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 #include <base/defines.h>
@@ -36,6 +34,8 @@ namespace Setting
 {
 extern const SettingsBool use_roaring_bitmap_iceberg_positional_deletes;
 };
+
+#if USE_AVRO
 
 IcebergDataObjectInfo::IcebergDataObjectInfo(Iceberg::ManifestFileEntry data_manifest_file_entry_, Int32 schema_id_relevant_to_iterator_)
     : RelativePathWithMetadata(data_manifest_file_entry_.file_path)
@@ -106,6 +106,9 @@ void IcebergObjectSerializableInfo::checkVersion(size_t protocol_version) const
             protocol_version);
     }
 }
+
+#endif
+
 
 void IcebergObjectSerializableInfo::serializeForClusterFunctionProtocol(WriteBuffer & out, size_t protocol_version) const
 {
@@ -213,4 +216,3 @@ void IcebergObjectSerializableInfo::deserializeForClusterFunctionProtocol(ReadBu
 }
 }
 
-#endif

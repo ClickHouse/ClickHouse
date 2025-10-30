@@ -31,7 +31,6 @@ ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr o
         data_lake_metadata = object->data_lake_metadata.value();
 
 #if USE_AVRO
-
     if (std::dynamic_pointer_cast<IcebergDataObjectInfo>(object))
     {
         iceberg_info = dynamic_cast<IcebergDataObjectInfo &>(*object).info;

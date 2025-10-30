@@ -22,7 +22,7 @@ struct ClusterFunctionReadTaskResponse
     /// Object metadata path, in case of data lake object.
     DataLakeObjectMetadata data_lake_metadata;
     /// Iceberg object metadata
-    std::optional<IcebergObjectSerializableInfo> iceberg_info;
+    std::optional<Iceberg::IcebergObjectSerializableInfo> iceberg_info;
 
     /// Convert received response into ObjectInfo.
     ObjectInfoPtr getObjectInfo() const;

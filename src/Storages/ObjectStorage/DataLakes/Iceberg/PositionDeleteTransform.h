@@ -1,4 +1,4 @@
-#pragma once
+`#pragma once
 #include <Processors/Formats/IInputFormat.h>
 #include <Poco/JSON/Array.h>
 #include "config.h"

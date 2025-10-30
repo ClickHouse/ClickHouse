@@ -1,21 +1,15 @@
 #pragma once
-#include <IO/VarInt.h>
 #include "config.h"
 
-#if USE_AVRO
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/EqualityDeleteObject.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteObject.h>
-#include <base/defines.h>
 
 
-namespace DB
-{
-
+namespace DB::Iceberg {
 struct IcebergObjectSerializableInfo
 {
     String data_object_file_path_key;
@@ -33,6 +27,16 @@ private:
     void checkVersion(size_t protocol_version) const;
 };
 
+}
+
+#if USE_AVRO
+
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
+#include <base/defines.h>
+
+
+namespace DB
+{
 struct IcebergDataObjectInfo : public RelativePathWithMetadata, std::enable_shared_from_this<IcebergDataObjectInfo>
 {
     using IcebergDataObjectInfoPtr = std::shared_ptr<IcebergDataObjectInfo>;
@@ -55,7 +59,7 @@ struct IcebergDataObjectInfo : public RelativePathWithMetadata, std::enable_shar
     void addPositionDeleteObject(Iceberg::ManifestFileEntry position_delete_object);
 
     void addEqualityDeleteObject(const Iceberg::ManifestFileEntry & equality_delete_object);
-    IcebergObjectSerializableInfo info;
+    Iceberg::IcebergObjectSerializableInfo info;
 };
 
 using IcebergDataObjectInfoPtr = std::shared_ptr<IcebergDataObjectInfo>;
