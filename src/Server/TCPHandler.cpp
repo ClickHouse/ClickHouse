@@ -2003,7 +2003,7 @@ void TCPHandler::sendHello()
 
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_VERSIONED_CLUSTER_FUNCTION_PROTOCOL)
     {
-        writeVarUInt(DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION, *out);
+        writeVarUInt(DBMS_CLUSTER_PROCESSING_LAST_PROTOCOL_VERSION, *out);
     }
 
     out->next();

@@ -611,6 +611,17 @@ void Connection::receiveHello(const Poco::Timespan & handshake_timeout)
         {
             readVarUInt(server_cluster_function_protocol_version, *in);
         }
+        if (server_cluster_function_protocol_version != DBMS_CLUSTER_PROCESSING_LAST_PROTOCOL_VERSION)
+        {
+            LOG_WARNING(
+                log_wrapper.get(),
+                "Cluster function processing protocol versions mismatch. "
+                "Replica supports version `{}` while coordinator supports version `{}`. "
+                "It is better to update all nodes in the cluster to the ClickHouse version with"
+                " the latest protocol version as soon as possible.",
+                server_cluster_function_protocol_version,
+                DBMS_CLUSTER_PROCESSING_LAST_PROTOCOL_VERSION);
+        }
     }
     else if (packet_type == Protocol::Server::Exception)
         receiveException()->rethrow();
