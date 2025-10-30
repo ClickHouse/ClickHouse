@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-parallel, deadlock
+# Tags: long, no-parallel, deadlock, replica
 # TODO: exclude from fasttest
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -8,14 +8,14 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -euo pipefail
 
-RUNS=${RUNS:-100}
+RUNS=${RUNS:-50}
 THREADS_PER_JOB=${THREADS_PER_JOB:-4}
 PRINT_LOGS=${PRINT_LOGS:-0}
 QUERY_TIMEOUT=${QUERY_TIMEOUT:-10}
 
 # clickhouse-client sometimes hangs forever along with the server despite of timeout settings, so we use the timeout util here.
 CLICKHOUSE_CLIENT="timeout $QUERY_TIMEOUT $CLICKHOUSE_CLIENT"
-CLICKHOUSE_DATABASE_TEST="${CLICKHOUSE_DATABASE}_test_alters_CHANGE_ME"
+CLICKHOUSE_DATABASE_TEST="${CLICKHOUSE_DATABASE}_03703_parallel_alter_comment_rename_selects"
 
 
 log() {
@@ -100,7 +100,7 @@ run_for_engine() {
   test_query "
     DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE_TEST};
     DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE_TEST}_2;
-    CREATE DATABASE ${CLICKHOUSE_DATABASE_TEST} ENGINE=$1;
+    CREATE DATABASE ${CLICKHOUSE_DATABASE_TEST} ENGINE=${1}${2};
   "
   log "⚙️ Created database ${CLICKHOUSE_DATABASE_TEST}"
   log "⚙️ Will execute $RUNS runs, $THREADS_PER_JOB threads per job."
@@ -121,5 +121,5 @@ run_for_engine() {
 }
 
 
-run_for_engine "Atomic"
-# TODO: Replicated
+run_for_engine "Atomic" ""
+run_for_engine "Replicated" "('/clickhouse/databases/${CLICKHOUSE_TEST_ZOOKEEPER_PREFIX}/${CLICKHOUSE_DATABASE}_db', '{shard}', '{replica}')"
