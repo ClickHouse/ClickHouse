@@ -132,7 +132,7 @@ void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
         readVarUInt(has_iceberg_metadata, in);
         if (has_iceberg_metadata)
         {
-            iceberg_info = IcebergObjectSerializableInfo{};
+            iceberg_info = Iceberg::IcebergObjectSerializableInfo{};
             iceberg_info->deserializeForClusterFunctionProtocol(in, protocol_version);
         }
     }

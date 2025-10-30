@@ -18,6 +18,9 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+
 namespace DB::ErrorCodes
 {
 extern const int NOT_IMPLEMENTED;
