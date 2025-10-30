@@ -73,6 +73,18 @@ String QuotaCache::QuotaInfo::calculateKey(const EnabledQuota & enabled, bool th
         }
         case QuotaKeyType::FORWARDED_IP_ADDRESS:
         {
+            if (!params.forwarded_address.empty())
+            {
+                try
+                {
+                    Poco::Net::IPAddress forwarded_ip(params.forwarded_address);
+                    return mask_address(forwarded_ip);
+                }
+                catch (...)
+                {
+                    return params.forwarded_address;
+                }
+            }
             return params.forwarded_address;
         }
         case QuotaKeyType::CLIENT_KEY:
