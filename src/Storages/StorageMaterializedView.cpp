@@ -367,7 +367,17 @@ void StorageMaterializedView::read(
         query_info.input_order_info = query_info.order_optimizer->getInputOrder(target_metadata_snapshot, context);
 
     if (!getInMemoryMetadataPtr()->select.select_table_id.empty())
-        context->checkAccess(AccessType::SELECT, getInMemoryMetadataPtr()->select.select_table_id, column_names);
+    {
+        // filter column_names down to those that actually exist in source table
+        Names select_table_column_names;
+        StorageInMemoryMetadata select_table_metadata = DatabaseCatalog::instance().getTable(getInMemoryMetadataPtr()->select.select_table_id, context)->getInMemoryMetadata();
+        for (const auto & name : column_names)
+        {
+            if (select_table_metadata.columns.has(name))
+                select_table_column_names.push_back(name);
+        }
+        context->checkAccess(AccessType::SELECT, getInMemoryMetadataPtr()->select.select_table_id, select_table_column_names);
+    }
 
     auto storage_id = storage->getStorageID();
 
