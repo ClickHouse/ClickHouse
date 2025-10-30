@@ -235,10 +235,15 @@ SELECT count() FROM tab WHERE hasAllTokens(comment, 'clickhouse olap');
 -- Search tokens passed as Array(String)
 SELECT count() FROM tab WHERE hasAnyTokens(comment, ['clickhouse', 'olap']);
 SELECT count() FROM tab WHERE hasAllTokens(comment, ['clickhouse', 'olap']);
+```
 
--- Aliases for the above functions, also support array needle format
+The above functions also have [operator aliases](/sql-reference/operators#text-search-operators) as shown below:
+```sql
 SELECT count() FROM tab WHERE comment HAS_ANY_TOKENS 'clickhouse olap';
+SELECT count() FROM tab WHERE comment HAS_ANY_TOKENS ['clickhouse', 'olap'];
+
 SELECT count() FROM tab WHERE comment HAS_ALL_TOKENS 'clickhouse olap';
+SELECT count() FROM tab WHERE comment HAS_ALL_TOKENS ['clickhouse', 'olap'];
 ```
 
 #### `has` {#functions-example-has}
