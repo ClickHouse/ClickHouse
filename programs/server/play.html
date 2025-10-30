@@ -385,6 +385,25 @@
             background-color: var(--button-active-color);
         }
 
+
+        #copy_button
+        {
+            grid-area: copy;
+            user-select: none;
+            color: var(--button-text-color);
+            background-color: var(--button-color);
+            padding: 0.25rem 1rem;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 100%; /* Otherwise button element will have a lower font size. */
+        }
+
+        #copy_button:hover, #copy_button:focus
+        {
+            color: var(--button-active-text-color);
+            background-color: var(--button-active-color);
+        }
+
         #hint
         {
             grid-area: hint;
@@ -406,24 +425,6 @@
             display: none;
             font-size: 110%;
             color: #080;
-        }
-
-        #copy_button
-        {
-            grid-area: copy;
-            user-select: none;
-            color: var(--button-text-color);
-            background-color: var(--button-color);
-            padding: 0.25rem 1rem;
-            cursor: pointer;
-            font-weight: bold;
-            font-size: 100%; /* Otherwise button element will have a lower font size. */
-        }
-
-        #copy_button:hover, #copy_button:focus
-        {
-            color: var(--button-active-text-color);
-            background-color: var(--button-active-color);
         }
 
         #stats
@@ -781,8 +782,8 @@
                 <div id="hint">&nbsp;(Ctrl/Cmd+Enter)</div>
                 <div id="hourglass">⧗</div>
                 <div id="check-mark">✔</div>
-                <button type="submit" onclick="copyResultsToClipboard()" id="copy_button">Copy to clipboard</button>
                 <div id="progress"></div>
+                <button type="submit" onclick="copyResultsToClipboard()" id="copy_button">Copy to clipboard</button>
                 <div id="stats"></div>
                 <div id="theme"><span id="toggle-dark">🌘</span><span id="toggle-light">☀️</span></div>
             </div>
@@ -1105,6 +1106,10 @@ let header = {};
 const default_format = 'JSONStringsEachRowWithProgress';
 
 let controller = null;
+
+/// Buffer to copy data from query into clipboard
+let clipboard_buffer = '';
+
 async function postImpl(posted_request_num, query)
 {
     const user = user_elem.value;
@@ -1286,6 +1291,7 @@ async function postImpl(posted_request_num, query)
         }
         document.title = title;
         previous_query = query;
+        clipboard_buffer = state.data;
     }
 }
 
@@ -2228,40 +2234,16 @@ async function getQueryUnderCursor() {
     return all_queries;
 }
 
-function getDataAsJson() {
-    const dataTable = document.getElementById('data-table');
-    const tableData = [];
-    if (dataTable.rows.length > 0) {
-        const tbody = dataTable.querySelector('tbody');
-        if (tbody) {
-            for (let i = 0; i < tbody.rows.length; i++) {
-                const row = tbody.rows[i];
-                const rowData = {};
-                for (let j = 1; j < row.cells.length; j++) { // Skip row number column
-                    const columnName = header[j-1].name;
-                    if (row.cells[j].textContent === "ᴺᵁᴸᴸ") {
-                        rowData[columnName] = null;
-                    } else {
-                        rowData[columnName] = row.cells[j].textContent;
-                    }
-                }
-                tableData.push(rowData);
-            }
-        }
-    }
-    return tableData;
-}
 
-
-async function copyResultsToClipboard() {
+function copyResultsToClipboard() {
     try {
-        const data = JSON.stringify(getDataAsJson(), null, 4);
+        const data = clipboard_buffer;
         let copy_button = document.getElementById('copy_button')
         if (navigator.clipboard && navigator.clipboard.writeText) {
             // Modern clipboard API
             await navigator.clipboard.writeText(data);
         } else {
-            // Fallback for older browsers and disabled browsers in HTTP
+            // Fallback for older browsers and security disabled browsers in HTTP
             const textArea = document.createElement('textarea');
             textArea.value = data;
             textArea.style.position = 'fixed';
@@ -2270,9 +2252,7 @@ async function copyResultsToClipboard() {
             document.body.appendChild(textArea);
             textArea.focus();
             textArea.select();
-            if (!document.execCommand('copy')) {
-                throw new Error('Copy command failed');
-            }
+            document.execCommand('copy')
             document.body.removeChild(textArea);
         }
         copy_button.innerText = "Copied !";
