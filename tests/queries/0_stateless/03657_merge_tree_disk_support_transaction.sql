@@ -1,4 +1,4 @@
--- Tags: no-ordinary-database, no-fasttest, no-encrypted-storage
+-- Tags: no-ordinary-database, no-fasttest, no-encrypted-storage, no-async-insert
 
 CREATE OR REPLACE TABLE t (x INT) ENGINE=MergeTree ORDER BY x;
 SET implicit_transaction=True;
