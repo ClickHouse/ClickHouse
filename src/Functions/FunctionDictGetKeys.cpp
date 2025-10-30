@@ -30,14 +30,14 @@ extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int ILLEGAL_COLUMN;
 }
 
-static inline UInt64 hashAt(const IColumn & column, UInt64 row)
+static inline UInt64 hashAt(const IColumn & column, size_t row)
 {
     SipHash h;
     column.updateHashWithValue(row, h);
     return h.get64();
 }
 
-static inline bool equalAt(const IColumn & left_column, UInt64 left_row_id, const IColumn & right_column, UInt64 right_row_id)
+static inline bool equalAt(const IColumn & left_column, size_t left_row_id, const IColumn & right_column, size_t right_row_id)
 {
     if (const auto * left_nullable = checkAndGetColumn<ColumnNullable>(&left_column))
     {
@@ -86,7 +86,7 @@ public:
 
     String getName() const override { return name; }
 
-    UInt64 getNumberOfArguments() const override { return 3; }
+    size_t getNumberOfArguments() const override { return 3; }
 
     bool isVariadic() const override { return false; }
 
@@ -136,7 +136,7 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(key_types));
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, UInt64 input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         if (input_rows_count == 0)
             return result_type->createColumn();
@@ -146,7 +146,7 @@ public:
         const auto & structure = dict->getStructure();
         const auto & attribute_column_type = structure.getAttribute(attribute_column_name).type;
         const auto key_types = structure.getKeyTypes();
-        const UInt64 keys_cnt = key_types.size();
+        const size_t keys_cnt = key_types.size();
 
         const bool is_values_column_const = isColumnConst(*arguments[2].column);
 
@@ -175,11 +175,11 @@ public:
                 ColumnPtr attribute_column = block.getByPosition(keys_cnt).column->convertToFullColumnIfLowCardinality();
 
                 std::vector<ColumnPtr> key_source(keys_cnt);
-                for (UInt64 key_id = 0; key_id < keys_cnt; ++key_id)
+                for (size_t key_id = 0; key_id < keys_cnt; ++key_id)
                     key_source[key_id] = block.getByPosition(key_id).column->convertToFullColumnIfLowCardinality();
 
-                const UInt64 num_rows_in_block = attribute_column->size();
-                for (UInt64 cur_row_id = 0; cur_row_id < num_rows_in_block; ++cur_row_id)
+                const size_t num_rows_in_block = attribute_column->size();
+                for (size_t cur_row_id = 0; cur_row_id < num_rows_in_block; ++cur_row_id)
                 {
                     if (hashAt(*attribute_column, cur_row_id) != const_value_hash)
                         continue;
@@ -188,13 +188,13 @@ public:
                     if (!equalAt(*attribute_column, cur_row_id, *values_column, 0))
                         continue;
 
-                    for (UInt64 key_id = 0; key_id < keys_cnt; ++key_id)
+                    for (size_t key_id = 0; key_id < keys_cnt; ++key_id)
                         results_column[key_id]->insertFrom(*key_source[key_id], cur_row_id);
                 }
             }
 
             auto offsets_column = ColumnArray::ColumnOffsets::create();
-            const UInt64 matches = keys_cnt == 0 ? 0 : results_column[0]->size();
+            const size_t matches = keys_cnt == 0 ? 0 : results_column[0]->size();
             offsets_column->getData().push_back(matches);
 
             if (keys_cnt == 1)
@@ -244,18 +244,18 @@ public:
         Map hash_to_bucket_ids;
         hash_to_bucket_ids.reserve(input_rows_count);
 
-        std::vector<UInt64> row_id_to_bucket_id(input_rows_count);
+        std::vector<size_t> row_id_to_bucket_id(input_rows_count);
 
-        std::vector<UInt64> bucket_id_to_representative_row_id;
+        std::vector<size_t> bucket_id_to_representative_row_id;
         bucket_id_to_representative_row_id.reserve(input_rows_count);
-        for (UInt64 cur_row_id = 0; cur_row_id < input_rows_count; ++cur_row_id)
+        for (size_t cur_row_id = 0; cur_row_id < input_rows_count; ++cur_row_id)
         {
             const UInt64 hash = hashAt(*values_column, cur_row_id);
             auto & potential_bucket_ids = hash_to_bucket_ids[hash];
             bool previously_seen = false;
-            for (UInt64 bucket_id : potential_bucket_ids)
+            for (size_t bucket_id : potential_bucket_ids)
             {
-                const UInt64 bucket_representative_row_id = bucket_id_to_representative_row_id[bucket_id];
+                const size_t bucket_representative_row_id = bucket_id_to_representative_row_id[bucket_id];
                 if (equalAt(*values_column, cur_row_id, *values_column, bucket_representative_row_id))
                 {
                     previously_seen = true;
@@ -267,7 +267,7 @@ public:
             /// New unique value, create a new bucket
             if (!previously_seen)
             {
-                const UInt64 new_bucket_id = bucket_id_to_representative_row_id.size();
+                const size_t new_bucket_id = bucket_id_to_representative_row_id.size();
                 bucket_id_to_representative_row_id.push_back(cur_row_id);
                 potential_bucket_ids.push_back(new_bucket_id);
                 row_id_to_bucket_id[cur_row_id] = new_bucket_id;
@@ -286,14 +286,14 @@ public:
         /// The following data structures help us find the key indices inside `payload_key_cols` for each bucket
         /// We populate the data structure such that for `bucket_id`, we get the last key's position via `last_key_pos_for_bucket`.
         /// Once we have it, we can get the other keys for that bucket by following the `next_key_pos` linked list.
-        constexpr UInt64 npos = std::numeric_limits<UInt64>::max(); // end of linked list marker
-        const UInt64 num_buckets = bucket_id_to_representative_row_id.size();
-        std::vector<UInt64> last_key_pos_for_bucket(num_buckets, npos);
-        PODArray<UInt64> next_key_pos;
+        constexpr size_t npos = std::numeric_limits<size_t>::max(); // end of linked list marker
+        const size_t num_buckets = bucket_id_to_representative_row_id.size();
+        std::vector<size_t> last_key_pos_for_bucket(num_buckets, npos);
+        PODArray<size_t> next_key_pos;
         next_key_pos.reserve(
             input_rows_count); /// We do not know how many rows of the dictionary will match; so we use input_rows_count as a reasonable estimate
 
-        std::vector<UInt64> num_dict_rows_in_bucket(num_buckets, 0);
+        std::vector<size_t> num_dict_rows_in_bucket(num_buckets, 0);
 
         /// Stream dictionary: keys... column + attribute column
         Names column_names = structure.getKeysNames();
@@ -312,11 +312,11 @@ public:
             ColumnPtr attribute_column = block.getByPosition(keys_cnt).column->convertToFullColumnIfLowCardinality();
 
             std::vector<ColumnPtr> key_source(keys_cnt);
-            for (UInt64 key_id = 0; key_id < keys_cnt; ++key_id)
+            for (size_t key_id = 0; key_id < keys_cnt; ++key_id)
                 key_source[key_id] = block.getByPosition(key_id).column->convertToFullColumnIfLowCardinality();
 
-            const UInt64 num_rows_in_block = attribute_column->size();
-            for (UInt64 cur_row_id = 0; cur_row_id < num_rows_in_block; ++cur_row_id)
+            const size_t num_rows_in_block = attribute_column->size();
+            for (size_t cur_row_id = 0; cur_row_id < num_rows_in_block; ++cur_row_id)
             {
                 const UInt64 hash = hashAt(*attribute_column, cur_row_id);
 
@@ -326,14 +326,14 @@ public:
 
                 /// We cannot be sure yet that the attribute is part of `values_column`, because multiple unique attribute values can hash to same value
                 const auto & potential_bucket_ids = it->getMapped();
-                for (UInt64 bucket_id : potential_bucket_ids)
+                for (size_t bucket_id : potential_bucket_ids)
                 {
-                    const UInt64 bucket_representative_row_id = bucket_id_to_representative_row_id[bucket_id];
+                    const size_t bucket_representative_row_id = bucket_id_to_representative_row_id[bucket_id];
                     if (!equalAt(*attribute_column, cur_row_id, *values_column, bucket_representative_row_id))
                         continue;
 
-                    const UInt64 cur_key_pos = payload_key_cols[0]->size();
-                    for (UInt64 key_id = 0; key_id < keys_cnt; ++key_id)
+                    const size_t cur_key_pos = payload_key_cols[0]->size();
+                    for (size_t key_id = 0; key_id < keys_cnt; ++key_id)
                         payload_key_cols[key_id]->insertFrom(*key_source[key_id], cur_row_id);
 
                     /// Both `cur_key_pos` and `last_key_pos_for_bucket[bucket_id]` belong to same bucket, so we can link them
@@ -353,7 +353,7 @@ public:
         /// For each bucket, we gather all its keys from `payload_key_cols` into `bucket_key_cols` sequentially for cache-friendly access while building final result
         std::vector<MutableColumnPtr> bucket_key_cols;
         bucket_key_cols.reserve(keys_cnt);
-        const UInt64 total_matched = payload_key_cols[0]->size(); /// Number of matching dict rows across all buckets
+        const size_t total_matched = payload_key_cols[0]->size(); /// Number of matching dict rows across all buckets
         for (const auto & key_type : key_types)
         {
             auto col = key_type->createColumn();
@@ -361,17 +361,17 @@ public:
             bucket_key_cols.emplace_back(std::move(col));
         }
 
-        std::vector<UInt64> bucket_start(num_buckets, 0);
-        std::vector<UInt64> bucket_size(num_buckets, 0);
+        std::vector<size_t> bucket_start(num_buckets, 0);
+        std::vector<size_t> bucket_size(num_buckets, 0);
 
-        for (UInt64 bucket_id = 0; bucket_id < num_buckets; ++bucket_id)
+        for (size_t bucket_id = 0; bucket_id < num_buckets; ++bucket_id)
         {
             bucket_start[bucket_id] = bucket_key_cols[0]->size();
 
-            UInt64 cur_key_pos = last_key_pos_for_bucket[bucket_id];
+            size_t cur_key_pos = last_key_pos_for_bucket[bucket_id];
             while (cur_key_pos != npos)
             {
-                for (UInt64 key_id = 0; key_id < keys_cnt; ++key_id)
+                for (size_t key_id = 0; key_id < keys_cnt; ++key_id)
                     bucket_key_cols[key_id]->insertFrom(*payload_key_cols[key_id], cur_key_pos);
 
                 cur_key_pos = next_key_pos[cur_key_pos];
@@ -381,8 +381,8 @@ public:
 
 
         /// Compute total output size and reserve result columns once
-        UInt64 total_keys_across_all_input_rows = 0;
-        for (UInt64 row_id = 0; row_id < input_rows_count; ++row_id)
+        size_t total_keys_across_all_input_rows = 0;
+        for (size_t row_id = 0; row_id < input_rows_count; ++row_id)
             total_keys_across_all_input_rows += num_dict_rows_in_bucket[row_id_to_bucket_id[row_id]];
 
         MutableColumns result_columns;
@@ -400,13 +400,13 @@ public:
         offsets.resize(input_rows_count);
 
         /// Now materialize the final result using `bucket_key_cols`
-        UInt64 position = 0;
-        for (UInt64 row_id = 0; row_id < input_rows_count; ++row_id)
+        size_t position = 0;
+        for (size_t row_id = 0; row_id < input_rows_count; ++row_id)
         {
-            const UInt64 bucket_id = row_id_to_bucket_id[row_id];
-            const UInt64 len = bucket_size[bucket_id];
+            const size_t bucket_id = row_id_to_bucket_id[row_id];
+            const size_t len = bucket_size[bucket_id];
 
-            for (UInt64 key_id = 0; key_id < keys_cnt; ++key_id)
+            for (size_t key_id = 0; key_id < keys_cnt; ++key_id)
                 result_columns[key_id]->insertRangeFrom(*bucket_key_cols[key_id], bucket_start[bucket_id], len);
 
             position += len;
