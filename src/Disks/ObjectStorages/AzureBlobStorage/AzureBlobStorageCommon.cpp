@@ -690,5 +690,4 @@ std::optional<AzureBlobStorage::RequestSettings> AzureSettingsByEndpoint::getSet
     return {};
 }
 
-
 }
