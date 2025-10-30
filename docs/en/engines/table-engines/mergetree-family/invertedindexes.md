@@ -714,7 +714,7 @@ For this specific case, `hasAnyTokens(comment, ['ClickHouse', 'clickhouse'])` wo
 
 Currently, there is a cache for the deserialized dictionary blocks of the text index to reduce I/O.
 
-It can be enabled via the setting [use_text_index_dictionary_cache](/operations/settings/settings.md#use_text_index_dictionary_cache). By default, it is disabled.
+It can be enabled via the setting [use_text_index_dictionary_cache](/operations/settings/settings/#use_text_index_dictionary_cache). By default, it is disabled.
 
 Refer the following server settings to configure the cache.
 
@@ -722,10 +722,10 @@ Refer the following server settings to configure the cache.
 
 | Setting                                                                                                                                                  | Description                                                                                                          | Default      |
 |----------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------|--------------|
-| [text_index_dictionary_block_cache_policy](/operations/server-configuration-parameters/settings.md#text_index_dictionary_block_cache_policy)             | Text index dictionary block cache policy name.                                                                       | `SLRU`       |
-| [text_index_dictionary_block_cache_size](/operations/server-configuration-parameters/settings.md#text_index_dictionary_block_cache_size)                 | Maximum cache size in bytes.                                                                                         | `1073741824` |
-| [text_index_dictionary_block_cache_max_entries](/operations/server-configuration-parameters/settings.md#text_index_dictionary_block_cache_max_entries)   | Maximum number of deserialized dictionary blocks in cache.                                                           | `1'000'000`  |
-| [text_index_dictionary_block_cache_size_ratio](/operations/server-configuration-parameters/settings.md#text_index_dictionary_block_cache_size_ratio)     | The size of the protected queue in the text index dictionary block cache relative to the cache\'s total size.        | `0.5`        |
+| [text_index_dictionary_block_cache_policy](/operations/server-configuration-parameters/settings#text_index_dictionary_block_cache_policy)             | Text index dictionary block cache policy name.                                                                       | `SLRU`       |
+| [text_index_dictionary_block_cache_size](/operations/server-configuration-parameters/settings#text_index_dictionary_block_cache_size)                 | Maximum cache size in bytes.                                                                                         | `1073741824` |
+| [text_index_dictionary_block_cache_max_entries](/operations/server-configuration-parameters/settings#text_index_dictionary_block_cache_max_entries)   | Maximum number of deserialized dictionary blocks in cache.                                                           | `1'000'000`  |
+| [text_index_dictionary_block_cache_size_ratio](/operations/server-configuration-parameters/settings#text_index_dictionary_block_cache_size_ratio)     | The size of the protected queue in the text index dictionary block cache relative to the cache\'s total size.        | `0.5`        |
 
 ## Related content {#related-content}
 
