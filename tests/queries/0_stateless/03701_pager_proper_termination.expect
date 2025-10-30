@@ -26,7 +26,10 @@ expect_after {
     -i $any_spawn_id timeout { exit 1 }
 }
 
-spawn bash -c "source $basedir/../shell_config.sh ; TERM=xterm \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file --pager=less"
+# Override some envs:
+# - TERM - do not rely on env (i.e. avoids "WARNING: terminal is not fully functional")
+# - LESS - remove any default options that may change less behavior (i.e. when it does not require Q for quiting if amount of output is less then screen size)
+spawn bash -c "source $basedir/../shell_config.sh ; TERM=xterm LESS= \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file --pager=less"
 expect ":) "
 
 send -- "SELECT 'foobar' || number::String, sleepEachRow(.1) FROM numbers(1000) FORMAT LineAsString SETTINGS max_block_size=1\r"
@@ -40,6 +43,10 @@ set timeout 30
 expect "Query was cancelled."
 expect " in set."
 expect ":) "
+
+# Exit from less - q + Ctrl-C (just in case)
+send "q"
+send "\3"
 
 # Ctrl+D
 send -- "\4"
