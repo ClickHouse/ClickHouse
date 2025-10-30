@@ -21,7 +21,7 @@
     M(QueryViewsLogElement) \
     M(SessionLogElement) \
     M(TraceLogElement) \
-    M(XRayInstrumentationProfilingLogElement) \
+    M(InstrumentationProfilingLogElement) \
     M(TransactionsInfoLogElement) \
     M(ZooKeeperLogElement) \
     M(ProcessorProfileLogElement) \

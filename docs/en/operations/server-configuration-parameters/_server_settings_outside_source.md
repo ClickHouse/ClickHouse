@@ -1667,36 +1667,36 @@ The default server configuration file `config.xml` contains the following settin
 </trace_log>
 ```
 
-## xray_instrumentation_profiling_log {#xray_instrumentation_profiling_log}
+## instrumentation_profiling_log {#instrumentation_profiling_log}
 
 It is disabled by default.
 
 **Enabling**
 
-To allow storing the profiling information for instrumented functions from [`system.xray_instrumentation`](../../operations/system-tables/xray_instrumentation.md), create `/etc/clickhouse-server/config.d/xray_instrumentation_profiling_log.xml` with the following content:
+To allow storing the profiling information for instrumented functions from [`system.instrumentation`](../../operations/system-tables/instrumentation.md), create `/etc/clickhouse-server/config.d/instrumentation_profiling_log.xml` with the following content:
 
 ```xml
 <clickhouse>
-    <xray_instrumentation_profiling_log>
+    <instrumentation_profiling_log>
         <database>system</database>
-        <table>xray_instrumentation_profiling_log</table>
+        <table>instrumentation_profiling_log</table>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
         <collect_interval_milliseconds>1000</collect_interval_milliseconds>
         <max_size_rows>1048576</max_size_rows>
         <reserved_size_rows>8192</reserved_size_rows>
         <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
         <flush_on_crash>false</flush_on_crash>
-    </xray_instrumentation_profiling_log>
+    </instrumentation_profiling_log>
 </clickhouse>
 ```
 
 **Disabling**
 
-To disable `xray_instrumentation_profiling_log` setting, you should create the following file `/etc/clickhouse-server/config.d/disable_xray_instrumentation_profiling_log.xml` with the following content:
+To disable `instrumentation_profiling_log` setting, you should create the following file `/etc/clickhouse-server/config.d/disable_instrumentation_profiling_log.xml` with the following content:
 
 ```xml
 <clickhouse>
-    <xray_instrumentation_profiling_log remove="1" />
+    <instrumentation_profiling_log remove="1" />
 </clickhouse>
 ```
 

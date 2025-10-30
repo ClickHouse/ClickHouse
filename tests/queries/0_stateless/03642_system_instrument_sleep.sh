@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: use_xray, no-parallel, no-fasttest
-# no-parallel: avoid other tests interfering with the global system.xray_instrumentation table
+# no-parallel: avoid other tests interfering with the global system.instrumentation table
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

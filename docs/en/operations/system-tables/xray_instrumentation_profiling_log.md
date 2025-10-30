@@ -1,14 +1,14 @@
 ---
 description: 'System table containing the profiling log for instrumented functions'
-keywords: ['system table', 'xray_instrumentation_profiling_log']
-slug: /operations/system-tables/xray_instrumentation_profiling_log
-title: 'system.xray_instrumentation_profiling_log'
+keywords: ['system table', 'instrumentation_profiling_log']
+slug: /operations/system-tables/instrumentation_profiling_log
+title: 'system.instrumentation_profiling_log'
 doc_type: 'reference'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 
-# system.xray_instrumentation
+# system.instrumentation
 
 <SystemTableCloud/>
 
@@ -28,7 +28,7 @@ Columns:
 **Example**
 
 ```sql
-SELECT * FROM system.xray_instrumentation_profiling_log;
+SELECT * FROM system.instrumentation_profiling_log;
 ```
 
 ```text
@@ -79,7 +79,7 @@ SELECT
             ','
         )
     ) AS trace_json
-FROM system.xray_instrumentation_profiling_log
+FROM system.instrumentation_profiling_log
 WHERE event_date >= today();
 ```
 
@@ -92,4 +92,4 @@ clickhouse client --query "$(cat chrome_trace.sql)" > trace.json
 **See also**
 
 - [SYSTEM INSTRUMENT](../../sql-reference/statements/system.md) — Add or remove instrumentation points.
-- [system.xray_instrumentation](../../operations/system-tables/xray_instrumentation.md) - Inspect instrumented functions.
+- [system.instrumentation](../../operations/system-tables/instrumentation.md) - Inspect instrumented functions.

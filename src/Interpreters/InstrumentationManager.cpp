@@ -1,4 +1,4 @@
-#include <Interpreters/XRayInstrumentationManager.h>
+#include <Interpreters/InstrumentationManager.h>
 
 #if USE_XRAY
 
@@ -11,7 +11,7 @@
 #include <latch>
 
 #include <base/getThreadId.h>
-#include <Interpreters/XRayInstrumentationProfilingLog.h>
+#include <Interpreters/InstrumentationProfilingLog.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/ErrorCodes.h>
@@ -54,14 +54,14 @@ static constexpr String PROFILE_HANDLER = "profile";
 
 static constexpr String UNKNOWN = "<unknown>";
 
-auto logger = getLogger("XRayInstrumentationManager");
+auto logger = getLogger("InstrumentationManager");
 
-void XRayInstrumentationManager::registerHandler(const String & name, XRayHandlerFunction handler)
+void InstrumentationManager::registerHandler(const String & name, XRayHandlerFunction handler)
 {
     handler_name_to_function.emplace_back(std::make_pair(name, handler));
 }
 
-XRayInstrumentationManager::XRayInstrumentationManager()
+InstrumentationManager::InstrumentationManager()
 {
     /// The order in which handlers are registered is important because they will be executed in that same order.
     registerHandler(LOG_HANDLER, [this](XRayEntryType entry_type, const InstrumentedPointInfo & ip) { log(entry_type, ip); });
@@ -69,14 +69,14 @@ XRayInstrumentationManager::XRayInstrumentationManager()
     registerHandler(SLEEP_HANDLER, [this](XRayEntryType entry_type, const InstrumentedPointInfo & ip) { sleep(entry_type, ip); });
 }
 
-XRayInstrumentationManager & XRayInstrumentationManager::instance()
+InstrumentationManager & InstrumentationManager::instance()
 {
-    static XRayInstrumentationManager instance;
+    static InstrumentationManager instance;
     return instance;
 }
 
 
-void XRayInstrumentationManager::patchFunctionIfNeeded(Int32 function_id)
+void InstrumentationManager::patchFunctionIfNeeded(Int32 function_id)
 {
     if (instrumented_functions.contains(function_id))
     {
@@ -89,7 +89,7 @@ void XRayInstrumentationManager::patchFunctionIfNeeded(Int32 function_id)
     }
 }
 
-void XRayInstrumentationManager::unpatchFunctionIfNeeded(Int32 function_id)
+void InstrumentationManager::unpatchFunctionIfNeeded(Int32 function_id)
 {
     if (!instrumented_functions.contains(function_id))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Function id {} to unpatch not previously patched", function_id);
@@ -101,7 +101,7 @@ void XRayInstrumentationManager::unpatchFunctionIfNeeded(Int32 function_id)
     }
 }
 
-void XRayInstrumentationManager::setHandlerAndPatch(ContextPtr context, const String & function_name, const String & handler_name, std::optional<XRayEntryType> entry_type, std::optional<std::vector<InstrumentedParameter>> & parameters)
+void InstrumentationManager::setHandlerAndPatch(ContextPtr context, const String & function_name, const String & handler_name, std::optional<XRayEntryType> entry_type, std::optional<std::vector<InstrumentedParameter>> & parameters)
 {
     auto handler_name_lower = Poco::toLower(handler_name);
 
@@ -124,18 +124,18 @@ void XRayInstrumentationManager::setHandlerAndPatch(ContextPtr context, const St
         auto expected_status = InitializationStatus::UNINITIALIZED;
         if (initialization_status.compare_exchange_strong(expected_status, InitializationStatus::INITIALIZING))
         {
-            LOG_DEBUG(logger, "Initializing XRayInstrumentationManager by reading the instrumentation map");
-            parseXRayInstrumentationMap();
-            __xray_set_handler(&XRayInstrumentationManager::dispatchHandler);
+            LOG_DEBUG(logger, "Initializing InstrumentationManager by reading the instrumentation map");
+            parseInstrumentationMap();
+            __xray_set_handler(&InstrumentationManager::dispatchHandler);
             initialization_status = InitializationStatus::INITIALIZED;
-            LOG_DEBUG(logger, "XRayInstrumentationManager initialized in this thread. Setting up handler");
+            LOG_DEBUG(logger, "InstrumentationManager initialized in this thread. Setting up handler");
             initialization_status.notify_all();
         }
         else
         {
-            LOG_DEBUG(logger, "XRayInstrumentationManager is initializing. Waiting for it");
+            LOG_DEBUG(logger, "InstrumentationManager is initializing. Waiting for it");
             initialization_status.wait(InitializationStatus::INITIALIZING);
-            LOG_DEBUG(logger, "XRayInstrumentationManager initialized by some other query. Setting up handler");
+            LOG_DEBUG(logger, "InstrumentationManager initialized by some other query. Setting up handler");
         }
     }
 
@@ -172,7 +172,7 @@ void XRayInstrumentationManager::setHandlerAndPatch(ContextPtr context, const St
     instrumentation_point_ids++;
 }
 
-void XRayInstrumentationManager::unpatchFunction(std::variant<UInt64, bool> id)
+void InstrumentationManager::unpatchFunction(std::variant<UInt64, bool> id)
 {
     std::lock_guard lock(shared_mutex);
 
@@ -206,7 +206,7 @@ void XRayInstrumentationManager::unpatchFunction(std::variant<UInt64, bool> id)
     }
 }
 
-XRayInstrumentationManager::InstrumentedPoints XRayInstrumentationManager::getInstrumentedPoints()
+InstrumentationManager::InstrumentedPoints InstrumentationManager::getInstrumentedPoints()
 {
     SharedLockGuard lock(shared_mutex);
     InstrumentedPoints points;
@@ -218,12 +218,12 @@ XRayInstrumentationManager::InstrumentedPoints XRayInstrumentationManager::getIn
     return points;
 }
 
-void XRayInstrumentationManager::dispatchHandler(Int32 func_id, XRayEntryType entry_type)
+void InstrumentationManager::dispatchHandler(Int32 func_id, XRayEntryType entry_type)
 {
-    XRayInstrumentationManager::instance().dispatchHandlerImpl(func_id, entry_type);
+    InstrumentationManager::instance().dispatchHandlerImpl(func_id, entry_type);
 }
 
-void XRayInstrumentationManager::dispatchHandlerImpl(Int32 func_id, XRayEntryType entry_type)
+void InstrumentationManager::dispatchHandlerImpl(Int32 func_id, XRayEntryType entry_type)
 {
     /// We don't need to distinguish between a normal EXIT and a TAIL EXIT, so we convert
     /// the latter to the former to simplify the rest of the logic.
@@ -257,7 +257,7 @@ void XRayInstrumentationManager::dispatchHandlerImpl(Int32 func_id, XRayEntryTyp
 
 /// Takes path to the elf-binary file(that should contain xray_instr_map section),
 /// and gets mapping of functionIDs to the addresses, then resolves IDs into human-readable names
-void XRayInstrumentationManager::parseXRayInstrumentationMap()
+void InstrumentationManager::parseInstrumentationMap()
 {
     auto binary_path = std::filesystem::canonical(std::filesystem::path("/proc/self/exe")).string();
 
@@ -356,7 +356,7 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
     LOG_DEBUG(logger, "Finished parsing the XRay instrumentation map");
 }
 
-void XRayInstrumentationManager::sleep([[maybe_unused]] XRayEntryType entry_type, const InstrumentedPointInfo & instrumented_point)
+void InstrumentationManager::sleep([[maybe_unused]] XRayEntryType entry_type, const InstrumentedPointInfo & instrumented_point)
 {
     const auto & params_opt = instrumented_point.parameters;
     if (!params_opt.has_value())
@@ -399,7 +399,7 @@ void XRayInstrumentationManager::sleep([[maybe_unused]] XRayEntryType entry_type
     }
 }
 
-void XRayInstrumentationManager::log(XRayEntryType entry_type, const InstrumentedPointInfo & instrumented_point)
+void InstrumentationManager::log(XRayEntryType entry_type, const InstrumentedPointInfo & instrumented_point)
 {
     const auto & params_opt = instrumented_point.parameters;
     if (!params_opt.has_value())
@@ -424,14 +424,14 @@ void XRayInstrumentationManager::log(XRayEntryType entry_type, const Instrumente
     }
 }
 
-void XRayInstrumentationManager::profile(XRayEntryType entry_type, const InstrumentedPointInfo & instrumented_point)
+void InstrumentationManager::profile(XRayEntryType entry_type, const InstrumentedPointInfo & instrumented_point)
 {
-    static thread_local std::unordered_map<Int32, XRayInstrumentationProfilingLogElement> active_elements;
+    static thread_local std::unordered_map<Int32, InstrumentationProfilingLogElement> active_elements;
 
     LOG_TRACE(logger, "Profile: function with id {}", instrumented_point.function_id);
     if (entry_type == XRayEntryType::ENTRY)
     {
-        XRayInstrumentationProfilingLogElement element;
+        InstrumentationProfilingLogElement element;
         element.function_name = functions_container.get<FunctionId>().find(instrumented_point.function_id)->stripped_function_name;
         element.tid = getThreadId();
         using namespace std::chrono;
@@ -469,7 +469,7 @@ void XRayInstrumentationManager::profile(XRayEntryType entry_type, const Instrum
     }
 }
 
-std::string_view XRayInstrumentationManager::removeTemplateArgs(std::string_view input)
+std::string_view InstrumentationManager::removeTemplateArgs(std::string_view input)
 {
     std::string_view result = input;
     size_t pos = result.find('<');
@@ -479,7 +479,7 @@ std::string_view XRayInstrumentationManager::removeTemplateArgs(std::string_view
     return result.substr(0, pos);
 }
 
-String XRayInstrumentationManager::extractNearestNamespaceAndFunction(std::string_view signature)
+String InstrumentationManager::extractNearestNamespaceAndFunction(std::string_view signature)
 {
     size_t paren_pos = signature.find('(');
     if (paren_pos == std::string_view::npos)

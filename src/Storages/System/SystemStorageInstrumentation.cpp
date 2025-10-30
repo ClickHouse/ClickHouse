@@ -1,4 +1,4 @@
-#include <Storages/System/SystemStorageXRayInstrumentation.h>
+#include <Storages/System/SystemStorageInstrumentation.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -10,7 +10,7 @@
 #include <Access/User.h>
 #include <Access/EnabledRolesInfo.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/XRayInstrumentationManager.h>
+#include <Interpreters/InstrumentationManager.h>
 #include <xray/xray_interface.h>
 
 #if USE_XRAY
@@ -18,7 +18,7 @@
 namespace DB
 {
 
-ColumnsDescription SystemStorageXRayInstrumentation::getColumnsDescription()
+ColumnsDescription SystemStorageInstrumentation::getColumnsDescription()
 {
     return ColumnsDescription
     {
@@ -32,9 +32,9 @@ ColumnsDescription SystemStorageXRayInstrumentation::getColumnsDescription()
 }
 
 
-void SystemStorageXRayInstrumentation::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
+void SystemStorageInstrumentation::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
-    auto instrumented_points = XRayInstrumentationManager::instance().getInstrumentedPoints();
+    auto instrumented_points = InstrumentationManager::instance().getInstrumentedPoints();
 
     size_t column_index = 0;
     auto & column_id = assert_cast<ColumnUInt32 &>(*res_columns[column_index++]).getData();
@@ -44,7 +44,7 @@ void SystemStorageXRayInstrumentation::fillData(MutableColumns & res_columns, Co
     auto & column_entry_type = assert_cast<ColumnLowCardinality &>(*res_columns[column_index++]);
     auto & column_parameters = assert_cast<ColumnDynamic&>(*res_columns[column_index++]);
 
-    auto add_row = [&](UInt32 id, Int32 function_id, const String & function_name, const String & handler_name, std::optional<XRayEntryType> entry_type, std::optional<std::vector<XRayInstrumentationManager::InstrumentedParameter>> parameters)
+    auto add_row = [&](UInt32 id, Int32 function_id, const String & function_name, const String & handler_name, std::optional<XRayEntryType> entry_type, std::optional<std::vector<InstrumentationManager::InstrumentedParameter>> parameters)
     {
         column_id.push_back(id);
         column_function_id.insert(function_id);

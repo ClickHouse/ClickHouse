@@ -18,12 +18,12 @@
 #include <boost/multi_index/member.hpp>
 
 
-class XRayInstrumentationManagerTest;
+class InstrumentationManagerTest;
 
 namespace DB
 {
 
-class XRayInstrumentationManager
+class InstrumentationManager
 {
 public:
     using InstrumentedParameter = std::variant<String, Int64, Float64>;
@@ -71,7 +71,7 @@ public:
 
     using XRayHandlerFunction = std::function<void(XRayEntryType, const InstrumentedPointInfo &)>;
 
-    static XRayInstrumentationManager & instance();
+    static InstrumentationManager & instance();
 
     void setHandlerAndPatch(ContextPtr context, const String & function_name, const String & handler_name, std::optional<XRayEntryType> entry_type, std::optional<std::vector<InstrumentedParameter>> & parameters);
     void unpatchFunction(std::variant<UInt64, bool> id);
@@ -98,7 +98,7 @@ private:
 
     struct InstrumentedPointHash
     {
-        std::size_t operator()(const XRayInstrumentationManager::InstrumentedPointKey& k) const
+        std::size_t operator()(const InstrumentationManager::InstrumentedPointKey& k) const
         {
             auto entry_type = !k.entry_type.has_value() ? XRayEntryType::TYPED_EVENT + 1 : k.entry_type.value();
             return ((std::hash<Int32>()(k.function_id)
@@ -134,9 +134,9 @@ private:
             boost::multi_index::hashed_non_unique<boost::multi_index::tag<StrippedFunctionName>, boost::multi_index::member<FunctionInfo, String, &FunctionInfo::stripped_function_name>>
         >>;
 
-    XRayInstrumentationManager();
+    InstrumentationManager();
     void registerHandler(const String & name, XRayHandlerFunction handler);
-    void parseXRayInstrumentationMap();
+    void parseInstrumentationMap();
 
     [[clang::xray_never_instrument]] void patchFunctionIfNeeded(Int32 function) TSA_REQUIRES(shared_mutex);
     [[clang::xray_never_instrument]] void unpatchFunctionIfNeeded(Int32 function) TSA_REQUIRES(shared_mutex);
@@ -162,9 +162,9 @@ private:
         INITIALIZED
     };
 
-    std::atomic<InitializationStatus> initialization_status = XRayInstrumentationManager::InitializationStatus::UNINITIALIZED;
+    std::atomic<InitializationStatus> initialization_status = InstrumentationManager::InitializationStatus::UNINITIALIZED;
 
-    friend class ::XRayInstrumentationManagerTest;
+    friend class ::InstrumentationManagerTest;
 };
 
 }

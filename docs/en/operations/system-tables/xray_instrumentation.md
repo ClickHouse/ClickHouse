@@ -1,14 +1,14 @@
 ---
 description: 'System table containing the instrumentation points'
-keywords: ['system table', 'xray_instrumentation']
-slug: /operations/system-tables/xray_instrumentation
-title: 'system.xray_instrumentation'
+keywords: ['system table', 'instrumentation']
+slug: /operations/system-tables/instrumentation
+title: 'system.instrumentation'
 doc_type: 'reference'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 
-# system.xray_instrumentation
+# system.instrumentation
 
 <SystemTableCloud/>
 
@@ -25,7 +25,7 @@ Columns:
 **Example**
 
 ```sql
-SELECT * FROM system.xray_instrumentation;
+SELECT * FROM system.instrumentation;
 ```
 
 ```text
@@ -39,4 +39,4 @@ SELECT * FROM system.xray_instrumentation;
 **See also**
 
 - [SYSTEM INSTRUMENT](../../sql-reference/statements/system.md) — Add or remove instrumentation points.
-- [system.xray_instrumentation_profiling_log](../../operations/system-tables/xray_instrumentation_profiling_log.md) - Inspect profiling log.
+- [system.instrumentation_profiling_log](../../operations/system-tables/instrumentation_profiling_log.md) - Inspect profiling log.

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: use_xray, no-fasttest
-# no-parallel: avoid other tests interfering with the global system.xray_instrumentation table
+# no-parallel: avoid other tests interfering with the global system.instrumentation table
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -18,8 +18,8 @@ $CLICKHOUSE_CLIENT -q "SYSTEM INSTRUMENT REMOVE ALL;"
 query_id_prefix="${CLICKHOUSE_DATABASE}"
 
 statements=(
-    "SELECT * FROM system.xray_instrumentation FORMAT NULL"
-    "SELECT * FROM system.xray_instrumentation_profiling_log FORMAT NULL"
+    "SELECT * FROM system.instrumentation FORMAT NULL"
+    "SELECT * FROM system.instrumentation_profiling_log FORMAT NULL"
     "SYSTEM INSTRUMENT REMOVE ALL"
     "SYSTEM INSTRUMENT ADD \`QueryMetricLog::startQuery\` LOG ENTRY 'entry log'"
     "SYSTEM INSTRUMENT ADD \`QueryMetricLog::startQuery\` LOG EXIT 'exit log'"
@@ -50,7 +50,7 @@ wait
 
 $CLICKHOUSE_CLIENT -q """
     SYSTEM INSTRUMENT REMOVE ALL;
-    SYSTEM FLUSH LOGS system.text_log, xray_instrumentation_profiling_log;
+    SYSTEM FLUSH LOGS system.text_log, instrumentation_profiling_log;
     SELECT count() >= 1 FROM system.text_log WHERE event_date >= yesterday() AND query_id ILIKE '$query_id_prefix%';
-    SELECT count() >= 1 FROM system.xray_instrumentation_profiling_log WHERE event_date >= yesterday() AND query_id ILIKE '$query_id_prefix%' AND function_name ILIKE 'QueryMetricLog%';
+    SELECT count() >= 1 FROM system.instrumentation_profiling_log WHERE event_date >= yesterday() AND query_id ILIKE '$query_id_prefix%' AND function_name ILIKE 'QueryMetricLog%';
 """

@@ -51,7 +51,7 @@
 #include <Interpreters/DeltaMetadataLog.h>
 #include <Interpreters/ZooKeeperLog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
-#include <Interpreters/XRayInstrumentationManager.h>
+#include <Interpreters/InstrumentationManager.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -1748,9 +1748,9 @@ void InterpreterSystemQuery::instrumentWithXRay(bool add, ASTSystemQuery & query
     try
     {
         if (add)
-            XRayInstrumentationManager::instance().setHandlerAndPatch(getContext(), query.instrumentation_function_name, query.instrumentation_handler_name, query.instrumentation_entry_type, query.instrumentation_parameters);
+            InstrumentationManager::instance().setHandlerAndPatch(getContext(), query.instrumentation_function_name, query.instrumentation_handler_name, query.instrumentation_entry_type, query.instrumentation_parameters);
         else
-            XRayInstrumentationManager::instance().unpatchFunction(query.instrumentation_point_id.value());
+            InstrumentationManager::instance().unpatchFunction(query.instrumentation_point_id.value());
     }
     catch (const DB::Exception & e)
     {

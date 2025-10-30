@@ -220,7 +220,7 @@ address at the prolog and epilog of those functions that are longer than 200 ins
 
 ### SYSTEM INSTRUMENT ADD {#instrument-add}
 
-Adds a new instrumentation point. Functions instrumented can be inspected in the [`system.xray_instrumentation`](../../operations/system-tables/xray_instrumentation.md) system table.
+Adds a new instrumentation point. Functions instrumented can be inspected in the [`system.instrumentation`](../../operations/system-tables/instrumentation.md) system table.
 There are three different kind of handlers to add to functions:
 
 **Syntax**
@@ -250,7 +250,7 @@ SYSTEM INSTRUMENT ADD `QueryMetricLog::startQuery` SLEEP ENTRY 0.5
 #### PROFILE {#instrument-add-profile}
 
 Measures the time spent between `ENTRY` and `EXIT` of a function.
-The result of the profiling is stored in [`system.xray_instrumentation_profiling_log`](../../operations/system-tables/xray_instrumentation_profiling_log.md).
+The result of the profiling is stored in [`system.instrumentation_profiling_log`](../../operations/system-tables/instrumentation_profiling_log.md).
 
 ```sql
 SYSTEM INSTRUMENT ADD `QueryMetricLog::startQuery` PROFILE
@@ -270,7 +270,7 @@ or all of them using the `ALL` parameter:
 SYSTEM INSTRUMENT REMOVE ALL
 ```
 
-The instrumentation point ID can be collected from [`system.xray_instrumentation`](../../operations/system-tables/xray_instrumentation.md) system table.
+The instrumentation point ID can be collected from [`system.instrumentation`](../../operations/system-tables/instrumentation.md) system table.
 
 ## Managing Distributed Tables {#managing-distributed-tables}
 
