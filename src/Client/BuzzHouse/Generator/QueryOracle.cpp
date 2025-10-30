@@ -16,28 +16,19 @@ namespace BuzzHouse
 {
 
 const std::vector<std::vector<OutFormat>> QueryOracle::oracleFormats
-    = {{OutFormat::OUT_CSV, OutFormat::OUT_CSVWithNames, OutFormat::OUT_CSVWithNamesAndTypes},
+    = {{OutFormat::OUT_CSV},
        {OutFormat::OUT_JSON,
         OutFormat::OUT_JSONColumns,
         OutFormat::OUT_JSONColumnsWithMetadata,
         OutFormat::OUT_JSONCompact,
         OutFormat::OUT_JSONCompactColumns,
         OutFormat::OUT_JSONCompactEachRow,
-        OutFormat::OUT_JSONCompactEachRowWithNames,
-        OutFormat::OUT_JSONCompactEachRowWithNamesAndTypes,
         OutFormat::OUT_JSONCompactStringsEachRow,
-        OutFormat::OUT_JSONCompactStringsEachRowWithNames,
-        OutFormat::OUT_JSONCompactStringsEachRowWithNamesAndTypes,
         OutFormat::OUT_JSONEachRow,
         OutFormat::OUT_JSONLines,
         OutFormat::OUT_JSONObjectEachRow,
         OutFormat::OUT_JSONStringsEachRow},
-       {OutFormat::OUT_TabSeparated,
-        OutFormat::OUT_TabSeparatedRaw,
-        OutFormat::OUT_TabSeparatedRawWithNames,
-        OutFormat::OUT_TabSeparatedRawWithNamesAndTypes,
-        OutFormat::OUT_TabSeparatedWithNames,
-        OutFormat::OUT_TabSeparatedWithNamesAndTypes},
+       {OutFormat::OUT_TabSeparated, OutFormat::OUT_TabSeparatedRaw},
        {OutFormat::OUT_Values}};
 
 /// Correctness query oracle
