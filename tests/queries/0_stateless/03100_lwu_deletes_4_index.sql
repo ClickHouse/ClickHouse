@@ -10,13 +10,13 @@ SETTINGS index_granularity = 1, enable_block_number_column = 1, enable_block_off
 
 INSERT INTO t_lwd_index SELECT * FROM numbers(1000);
 
-SET allow_experimental_lightweight_update = 1;
+SET enable_lightweight_update = 1;
 SET lightweight_delete_mode = 'lightweight_update_force';
 
 DELETE FROM t_lwd_index WHERE id = 200;
 DELETE FROM t_lwd_index WHERE id IN (100, 110, 120, 130);
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT read_rows FROM system.query_log
 WHERE type = 'QueryFinish' AND query like 'DELETE FROM t_lwd_index%' AND current_database = currentDatabase()

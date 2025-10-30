@@ -50,6 +50,8 @@ public:
         const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
 
     const char * getStorageEngineName() const override { return storage_engine_name; }
+    const String & getFunctionURI() const override { return hive_metastore_url; }
+
     ColumnsDescription getActualTableStructure(ContextPtr, bool is_insert_query) const override;
     void parseArguments(const ASTPtr & ast_function_, ContextPtr context_) override;
 

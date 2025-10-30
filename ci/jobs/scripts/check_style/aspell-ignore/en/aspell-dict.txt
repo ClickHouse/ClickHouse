@@ -1,4 +1,4 @@
-personal_ws-1.1 en 3286 
+personal_ws-1.1 en 3452
 AArch
 ACLs
 ALTERs
@@ -33,6 +33,7 @@ AppleClang
 Approximative
 ArrayJoin
 ArrowCompression
+ArrowFlight
 ArrowStream
 AsyncInsertCacheSize
 AsynchronousHeavyMetricsCalculationTimeSpent
@@ -280,6 +281,7 @@ DiskSpaceReservedForMerge
 DiskTotal
 DiskUnreserved
 DiskUsed
+DistanceTransposed
 DistributedCacheLogMode
 DistributedCachePoolBehaviourOnLimit
 DistributedDDLOutputMode
@@ -308,6 +310,7 @@ Eoan
 EphemeralNode
 EscapingRule
 Ethereum
+Eval
 ExactEdgeLengthKm
 ExactEdgeLengthM
 ExactEdgeLengthRads
@@ -495,25 +498,25 @@ JSONEachRow
 JSONEachRowWithProgress
 JSONExtract
 JSONExtractArrayRaw
-JSONExtractBool
-JSONExtractFloat
-JSONExtractInt
-JSONExtractKeys
-JSONExtractKeysAndValues
-JSONExtractKeysAndValuesRaw
-JSONExtractRaw
-JSONExtractString
-JSONExtractUInt
 JSONExtractArrayRawCaseInsensitive
+JSONExtractBool
 JSONExtractBoolCaseInsensitive
 JSONExtractCaseInsensitive
+JSONExtractFloat
 JSONExtractFloatCaseInsensitive
+JSONExtractInt
 JSONExtractIntCaseInsensitive
+JSONExtractKeys
+JSONExtractKeysAndValues
 JSONExtractKeysAndValuesCaseInsensitive
+JSONExtractKeysAndValuesRaw
 JSONExtractKeysAndValuesRawCaseInsensitive
 JSONExtractKeysCaseInsensitive
+JSONExtractRaw
 JSONExtractRawCaseInsensitive
+JSONExtractString
 JSONExtractStringCaseInsensitive
+JSONExtractUInt
 JSONExtractUIntCaseInsensitive
 JSONHas
 JSONLength
@@ -533,6 +536,7 @@ JavaHash
 Jemalloc
 Jepsen
 JetBrains
+JetStream
 Jitter
 Joda
 JoinAlgorithm
@@ -569,6 +573,8 @@ LGPL
 LIMITs
 LINEITEM
 LLDB
+LLM
+LLMs
 LLVM's
 LOCALTIME
 LOCALTIMESTAMP
@@ -831,6 +837,7 @@ PROXYv
 PRQL
 PSUN
 PagerDuty
+Paimon
 ParallelFormattingOutputFormatThreads
 ParallelFormattingOutputFormatThreadsActive
 ParallelParsingInputFormat
@@ -905,6 +912,7 @@ Punycode
 PyArrow
 PyCharm
 QATlib
+QBit
 QEMU
 QTCreator
 Quantile
@@ -940,6 +948,7 @@ RawBLOB
 RawSum
 RawWithNames
 RawWithNamesAndTypes
+REPL
 ReDoS
 ReadTaskRequestsSent
 ReadonlyReplica
@@ -1146,8 +1155,10 @@ ThreadPoolRemoteFSReaderThreads
 ThreadPoolRemoteFSReaderThreadsActive
 ThreadsActive
 ThreadsInOvercommitTracker
+Tiering
 TimeSeries
 TimescaleDB's
+TimestampType
 Timeunit
 TinyLog
 Tkachenko
@@ -1182,6 +1193,7 @@ UDFs
 UInt
 UIntN
 ULID
+ULIDs
 ULIDStringToDateTime
 UMTS
 UNDROP
@@ -1214,6 +1226,7 @@ Uptime
 Uptrace
 UserID
 Util
+VARBINARY
 VARCHAR
 VIEWs
 Vadim
@@ -1252,6 +1265,8 @@ XORs
 Xeon
 YAML
 YAMLRegExpTree
+YTsaurus
+YTsaurus
 YYYY
 YYYYMMDD
 YYYYMMDDToDate
@@ -1406,6 +1421,7 @@ arrayUniq
 arrayWithConstant
 arrayZip
 arrayZipUnaligned
+arrowFlight
 ascii
 asin
 asinh
@@ -1447,6 +1463,7 @@ backupview
 balancer
 basename
 bcrypt
+bcrypt's
 bech
 benchmarked
 benchmarking
@@ -1627,6 +1644,7 @@ const
 constexpr
 consumptio
 contrib
+conv
 conversio
 convertCharset
 cooldown
@@ -1953,6 +1971,7 @@ gRPC
 gaugehistogram
 gccMurmurHash
 gcem
+gdb's
 generateRandom
 generateRandomStructure
 generateSerialID
@@ -2056,6 +2075,7 @@ gtid
 gunzip
 gzip
 gzipped
+hackernews
 hadoop
 halfMD
 halfday
@@ -2064,7 +2084,9 @@ hardlinked
 hardlinking
 hardlinks
 hasAll
+hasAllTokens
 hasAny
+hasAnyTokens
 hasColumnInTable
 hasSubsequence
 hasSubsequenceCaseInsensitive
@@ -2166,6 +2188,7 @@ isNotDistinctFrom
 isNotNull
 isNull
 isNullable
+isValidASCII
 isValidJSON
 isValidUTF
 isZeroOrNull
@@ -2426,6 +2449,7 @@ multiline
 multilinestring
 multiplyDecimal
 multipolygon
+multiquery
 multiread
 multisearchany
 multisets
@@ -2436,6 +2460,7 @@ multiword
 munmap
 murmurHash
 murmurhash
+musl
 musqldump
 mutex
 mydb
@@ -2445,6 +2470,9 @@ mysql
 mysqldump
 mysqljs
 mytable
+Nagios
+naiveBayesClassifier
+Nambiar
 namedatabases
 namenetworks
 namenode
@@ -2534,6 +2562,7 @@ observability
 odbc
 ok
 omclickhouse
+oneof
 onstraints
 ontime
 onwards
@@ -2554,6 +2583,8 @@ overparallelization
 packetpool
 packetsize
 pageviews
+paimon
+paimonCluster
 parallelization
 parallelize
 parallelized
@@ -2680,6 +2711,8 @@ profiler
 projectio
 proleptic
 prometheus
+prometheusQuery
+prometheusQueryRange
 proportionsZTest
 proto
 protobuf
@@ -2699,6 +2732,7 @@ punycodeEncode
 pushdown
 pwrite
 py
+qbit
 qryn
 quantile
 quantileBFloat
@@ -2713,6 +2747,7 @@ quantileExactWeighted
 quantileExactWeightedInterpolated
 quantileGK
 quantileInterpolatedWeighted
+quantilePrometheusHistogram
 quantileTDigest
 quantileTDigestWeighted
 quantileTiming
@@ -2732,8 +2767,8 @@ quantiletdigest
 quantiletdigestweighted
 quantiletiming
 quantiletimingweighted
-quantized
 quantizations
+quantized
 quartile
 queryID
 queryString
@@ -2885,8 +2920,6 @@ satisfiable
 scala
 sccache
 schemas
-searchAll
-searchAny
 sectio
 seekable
 seektable
@@ -3015,7 +3048,9 @@ structs
 structureToCapnProtoSchema
 structureToProtobufSchema
 studentTTest
+studentTTestOneSample
 studentttest
+studentttestonesample
 subBitmap
 subDate
 subarray
@@ -3121,16 +3156,23 @@ throwIf
 throwif
 timeDiff
 timeSeries
+timeSeriesChangesToGrid
 timeSeriesData
 timeSeriesDeltaToGrid
 timeSeriesDerivToGrid
+timeSeriesFromGrid
+timeSeriesGroupArray
 timeSeriesInstantDeltaToGrid
 timeSeriesInstantRateToGrid
+timeSeriesLastToGrid
 timeSeriesLastTwoSamples
 timeSeriesMetrics
 timeSeriesPredictLinearToGrid
+timeSeriesRange
 timeSeriesRateToGrid
 timeSeriesResampleToGridWithStaleness
+timeSeriesResetsToGrid
+timeSeriesSelector
 timeSeriesTags
 timeSlot
 timeSlots
@@ -3242,6 +3284,8 @@ tokenization
 tokenize
 tokenized
 tokenizer
+tokenizers
+tokenizes
 tokenizing
 toml
 toolchain
@@ -3263,6 +3307,7 @@ transactionally
 translateUTF
 translocality
 trie
+trigrams
 trimBoth
 trimLeft
 trimRight
@@ -3350,10 +3395,10 @@ updateNode
 uploader
 uploaders
 upperUTF
-uptime
-uptrace
 upsert
 upserts
+uptime
+uptrace
 uring
 url
 urlCluster
@@ -3437,6 +3482,7 @@ xz
 yaml
 yandex
 youtube
+ytsaurus
 zLib
 zLinux
 zabbix

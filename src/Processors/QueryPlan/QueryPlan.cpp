@@ -18,6 +18,11 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Planner/Utils.h>
 
+namespace ProfileEvents
+{
+    extern const Event QueryPlanOptimizeMicroseconds;
+}
+
 namespace DB
 {
 
@@ -93,7 +98,7 @@ void QueryPlan::unitePlans(QueryPlanStepPtr step, std::vector<std::unique_ptr<Qu
                 ErrorCodes::LOGICAL_ERROR,
                 "Cannot unite QueryPlans using {} because it has incompatible header with plan {} plan header: {} step header: {}",
                 step->getName(),
-                root->step->getName(),
+                plans[i]->root->step->getName(),
                 plan_header->dumpStructure(),
                 step_header->dumpStructure());
     }
@@ -319,13 +324,16 @@ JSONBuilder::ItemPtr QueryPlan::explainPlan(const ExplainPlanOptions & options) 
 static void explainStep(
     IQueryPlanStep & step,
     IQueryPlanStep::FormatSettings & settings,
-    const ExplainPlanOptions & options)
+    const ExplainPlanOptions & options,
+    size_t max_description_lengs)
 {
     std::string prefix(settings.offset, ' ');
     settings.out << prefix;
     settings.out << step.getName();
 
-    const auto & description = step.getStepDescription();
+    auto description = step.getStepDescription();
+    if (max_description_lengs)
+        description = description.substr(0, max_description_lengs);
     if (options.description && !description.empty())
         settings.out <<" (" << description << ')';
 
@@ -387,11 +395,11 @@ std::string debugExplainStep(IQueryPlanStep & step)
     WriteBufferFromOwnString out;
     ExplainPlanOptions options{.actions = true};
     IQueryPlanStep::FormatSettings settings{.out = out};
-    explainStep(step, settings, options);
+    explainStep(step, settings, options, 0);
     return out.str();
 }
 
-void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t indent) const
+void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t indent, size_t max_description_lengs) const
 {
     checkInitialized();
 
@@ -414,7 +422,7 @@ void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & opt
         if (!frame.is_description_printed)
         {
             settings.offset = (indent + stack.size() - 1) * settings.indent;
-            explainStep(*frame.node->step, settings, options);
+            explainStep(*frame.node->step, settings, options, max_description_lengs);
             frame.is_description_printed = true;
         }
 
@@ -486,6 +494,8 @@ void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptio
 
 void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_settings)
 {
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::QueryPlanOptimizeMicroseconds);
+
     /// optimization need to be applied before "mergeExpressions" optimization
     /// it removes redundant sorting steps, but keep underlying expressions,
     /// so "mergeExpressions" optimization handles them afterwards
@@ -662,9 +672,10 @@ QueryPlan QueryPlan::extractSubplan(Node * subplan_root)
     return new_plan;
 }
 
-QueryPlan QueryPlan::clone() const
+void QueryPlan::cloneInplace(Node * node_to_replace, Node * subplan_root)
 {
-    QueryPlan result;
+    if (!subplan_root)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot clone subplan in place because subplan root is null");
 
     struct Frame
     {
@@ -673,10 +684,7 @@ QueryPlan QueryPlan::clone() const
         std::vector<Node *> children = {};
     };
 
-    result.nodes.emplace_back(Node{ .step = {}, .children = {} });
-    result.root = &result.nodes.back();
-
-    std::vector<Frame> nodes_to_process{ Frame{ .node = root, .clone = result.root } };
+    std::vector<Frame> nodes_to_process{ Frame{ .node = subplan_root, .clone = node_to_replace } };
 
     while (!nodes_to_process.empty())
     {
@@ -692,17 +700,66 @@ QueryPlan QueryPlan::clone() const
             size_t next_child = frame.children.size();
             auto * child = frame.node->children[next_child];
 
-            result.nodes.emplace_back(Node{ .step = {} });
-            result.nodes.back().children.reserve(child->children.size());
-            auto * child_clone = &result.nodes.back();
+            nodes.emplace_back(Node{ .step = {} });
+            nodes.back().children.reserve(child->children.size());
+            auto * child_clone = &nodes.back();
 
             frame.children.push_back(child_clone);
 
             nodes_to_process.push_back(Frame{ .node = child, .clone = child_clone });
         }
     }
+}
+
+QueryPlan QueryPlan::clone() const
+{
+    QueryPlan result;
+    result.nodes.emplace_back(Node{ .step = {}, .children = {} });
+    auto * current_subplan_copy_root = &result.nodes.back();
+
+    result.cloneInplace(current_subplan_copy_root, root);
+    result.root = current_subplan_copy_root;
 
     return result;
+}
+
+void QueryPlan::cloneSubplanAndReplace(Node * node_to_replace, Node * subplan_root, Nodes & nodes)
+{
+    if (!subplan_root)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot clone subplan in place because subplan root is null");
+
+    struct Frame
+    {
+        Node * node;
+        Node * clone;
+        std::vector<Node *> children = {};
+    };
+
+    std::vector<Frame> nodes_to_process{ Frame{ .node = subplan_root, .clone = node_to_replace } };
+
+    while (!nodes_to_process.empty())
+    {
+        auto & frame = nodes_to_process.back();
+        if (frame.children.size() == frame.node->children.size())
+        {
+            frame.clone->step = frame.node->step->clone();
+            frame.clone->children = std::move(frame.children);
+            nodes_to_process.pop_back();
+        }
+        else
+        {
+            size_t next_child = frame.children.size();
+            auto * child = frame.node->children[next_child];
+
+            nodes.emplace_back(Node{ .step = {} });
+            nodes.back().children.reserve(child->children.size());
+            auto * child_clone = &nodes.back();
+
+            frame.children.push_back(child_clone);
+
+            nodes_to_process.push_back(Frame{ .node = child, .clone = child_clone });
+        }
+    }
 }
 
 

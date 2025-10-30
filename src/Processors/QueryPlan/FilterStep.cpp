@@ -59,16 +59,6 @@ static ActionsAndName splitSingleAndFilter(ActionsDAG & dag, const ActionsDAG::N
     dag = std::move(split_result.second);
 
     const auto * split_filter_node = split_result.split_nodes_mapping[filter_node];
-    auto filter_type = removeLowCardinality(split_filter_node->result_type);
-    if (!filter_type->onlyNull() && !isUInt8(removeNullable(filter_type)))
-    {
-        DataTypePtr cast_type = DataTypeFactory::instance().get("Bool");
-        if (filter_type->isNullable())
-            cast_type = std::make_shared<DataTypeNullable>(std::move(cast_type));
-
-        split_filter_node = &split_result.first.addCast(*split_filter_node, cast_type, {});
-    }
-
     split_result.first.getOutputs().emplace(split_result.first.getOutputs().begin(), split_filter_node);
     auto name = split_filter_node->result_name;
     return ActionsAndName{std::move(split_result.first), std::move(name)};

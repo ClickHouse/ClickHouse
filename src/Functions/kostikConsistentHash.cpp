@@ -29,7 +29,7 @@ REGISTER_FUNCTION(KostikConsistentHash)
 {
     FunctionDocumentation::Description description = R"(
 An O(1) time and space consistent hash algorithm by Konstantin 'Kostik' Oblakov.
-Only efficient with n <= 32768.
+Only efficient with `n <= 32768`.
 )";
     FunctionDocumentation::Syntax syntax = "kostikConsistentHash(input, n)";
     FunctionDocumentation::Arguments arguments = {

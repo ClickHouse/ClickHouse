@@ -61,6 +61,8 @@ class WriteBuffer;
     M(CLASS_NAME, Double) \
     M(CLASS_NAME, EscapingRule) \
     M(CLASS_NAME, Float) \
+    M(CLASS_NAME, FloatAuto) \
+    M(CLASS_NAME, IcebergMetadataLogLevel) \
     M(CLASS_NAME, IdentifierQuotingRule) \
     M(CLASS_NAME, IdentifierQuotingStyle) \
     M(CLASS_NAME, Int32) \
@@ -105,7 +107,8 @@ class WriteBuffer;
     M(CLASS_NAME, UInt64Auto) \
     M(CLASS_NAME, URI) \
     M(CLASS_NAME, VectorSearchFilterStrategy) \
-    M(CLASS_NAME, GeoToH3ArgumentOrder)
+    M(CLASS_NAME, GeoToH3ArgumentOrder) \
+    M(CLASS_NAME, DecorrelationJoinKind) \
 
 
 COMMON_SETTINGS_SUPPORTED_TYPES(Settings, DECLARE_SETTING_TRAIT)
