@@ -714,7 +714,7 @@ For this specific case, `hasAnyTokens(comment, ['ClickHouse', 'clickhouse'])` wo
 
 Currently, there is a cache for the deserialized dictionary blocks of the text index to reduce I/O.
 
-It can be enabled via the setting [use_text_index_dictionary_cache](/operations/settings/settings/#use_text_index_dictionary_cache). By default, it is disabled.
+It can be enabled via the setting [use_text_index_dictionary_cache](/operations/settings/settings#use_text_index_dictionary_cache). By default, it is disabled.
 
 Refer the following server settings to configure the cache.
 
