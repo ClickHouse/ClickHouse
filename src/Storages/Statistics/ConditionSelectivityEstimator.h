@@ -24,6 +24,9 @@ struct RelationProfile
     std::unordered_map<String, ColumnStats> column_stats = {};
 };
 
+class IMergeTreeDataPart;
+using DataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
+
 /// Estimates the selectivity of a condition and cardinality of columns.
 class ConditionSelectivityEstimator : public WithContext
 {
@@ -38,6 +41,8 @@ public:
     RelationProfile estimateRelationProfile(const ActionsDAG::Node * node) const;
     RelationProfile estimateRelationProfile(const RPNBuilderTreeNode & node) const;
     RelationProfile estimateRelationProfile() const;
+
+    bool isStale(const std::vector<DataPartPtr> & data_parts) const;
 
     struct RPNElement
     {
@@ -93,6 +98,7 @@ private:
 
     UInt64 total_rows = 0;
     ColumnEstimators column_estimators;
+    Strings parts_names;
 };
 
 using ConditionSelectivityEstimatorPtr = std::shared_ptr<ConditionSelectivityEstimator>;
@@ -103,6 +109,7 @@ public:
     explicit ConditionSelectivityEstimatorBuilder(ContextPtr context_);
     void addStatistics(ColumnStatisticsPtr column_stats);
     void incrementRowCount(UInt64 rows);
+    void markDataPart(const DataPartPtr & data_part);
     ConditionSelectivityEstimatorPtr getEstimator() const;
 
 private:
