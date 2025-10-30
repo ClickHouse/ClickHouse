@@ -139,7 +139,7 @@ void Updater::addInputBytes(const ColumnsWithTypeAndName & columns, const IMerge
         return;
 
     std::lock_guard lock(mutex);
-    for (auto & column : columns)
+    for (const auto & column : columns)
     {
         statistics.input_bytes += column.column->byteSize();
         if (!column.column->empty())
