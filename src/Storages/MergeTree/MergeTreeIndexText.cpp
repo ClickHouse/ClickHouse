@@ -25,7 +25,6 @@
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/MergeTreeWriterStream.h>
 
-
 #include <base/range.h>
 #include <fmt/ranges.h>
 
@@ -1306,7 +1305,7 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
 
     /// No validation for max_cardinality_for_embedded_postings.
     extractOption<UInt64>(options, ARGUMENT_MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS);
-    auto preprocessor_str = extractOption<String>(options, ARGUMENT_PREPROCESSOR, false);
+    auto preprocessor = extractOption<String>(options, ARGUMENT_PREPROCESSOR, false);
 
     if (!options.empty())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Unexpected text index arguments: {}", fmt::join(std::views::keys(options), ", "));
@@ -1334,16 +1333,16 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
             "Text index must be created on columns of type `String`, `FixedString`, `LowCardinality(String)`, `LowCardinality(FixedString)`, `Array(String)` or `Array(FixedString)`");
     }
 
-    /// check preprocessor_str now, after data_type and column_names and index.data_types were already checked because we want to get
+    /// check preprocessor now, after data_type and column_names and index.data_types were already checked because we want to get
     /// accurate error messages.
-    if (preprocessor_str.has_value())
+    if (preprocessor.has_value())
     {
         /// For very strict validation of the expression we fully parse it here.  However it will be parsed again for index construction,
         /// generally immediately after this call.
         /// This is a bit redundant but I won't expect that this impact performance anyhow because the expression is intended to be simple
         /// enough.  But if this redundant construction represents an issue we could simple build the "intermediate" ASTPtr and use it for
         /// validation. That way we skip the ActionsDAG and ExpressionActions constructions.
-        ExpressionActions expression = MergeTreeIndexTextPreprocessor::parseExpression(index, preprocessor_str.value());
+        ExpressionActions expression = MergeTreeIndexTextPreprocessor::parseExpression(index, preprocessor.value());
 
         const Names required_columns = expression.getRequiredColumns();
 
@@ -1556,7 +1555,8 @@ ExpressionActions MergeTreeIndexTextPreprocessor::parseExpression(const IndexDes
     ASTPtr expression_ast;
 
     { /// Parse and verify the expression: String -> ASTPtr
-        if (!ParserExpression().parse(token_iterator, expression_ast, expected))
+        ParserExpression parser_expression;
+        if (!parser_expression.parse(token_iterator, expression_ast, expected))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error parsing preprocessor expression");
 
         /// Repeat expression validation here. after the string has been parsed into an AST.

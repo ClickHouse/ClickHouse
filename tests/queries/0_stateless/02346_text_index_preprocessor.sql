@@ -163,8 +163,3 @@ CREATE TABLE tab
 ENGINE = MergeTree ORDER BY tuple();   -- { serverError INCORRECT_QUERY }
 
 DROP TABLE IF EXISTS tab;
-
-
-
-
-
