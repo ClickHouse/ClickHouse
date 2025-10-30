@@ -42,9 +42,13 @@ WITH
 SELECT format('{} {} {}', res.1, res.2, res.3)
 FROM
 (
-    SELECT groupArray((log_comment, ProfileEvents['RuntimeDataflowStatisticsOutputBytes'])) AS res
-    FROM system.query_log
-    WHERE (event_date >= yesterday()) AND (event_time >= (NOW() - toIntervalMinute(15))) AND (current_database = currentDatabase()) AND (log_comment LIKE 'query_%') AND (type = 'QueryFinish')
+    SELECT groupArray((log_comment, output_bytes)) AS res
+    FROM (
+      SELECT log_comment, ProfileEvents['RuntimeDataflowStatisticsOutputBytes'] output_bytes
+      FROM system.query_log
+      WHERE (event_date >= yesterday()) AND (event_time >= (NOW() - toIntervalMinute(15))) AND (current_database = currentDatabase()) AND (log_comment LIKE 'query_%') AND (type = 'QueryFinish')
+      ORDER BY event_time_microseconds
+    )
 )
 WHERE (greatest(res.2, res.3) / least(res.2, res.3)) > 1.75 AND NOT (res.2 < 100 AND res.3 < 100);
 

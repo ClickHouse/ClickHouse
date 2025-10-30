@@ -44,6 +44,7 @@ FROM (
         --ProfileEvents['NetworkReceiveBytes'] statistics_output_bytes
     FROM system.query_log
     WHERE (event_date >= yesterday()) AND (event_time >= NOW() - INTERVAL '15 MINUTES') AND (current_database = currentDatabase()) AND (log_comment LIKE 'query_%') AND (type = 'QueryFinish')
+    ORDER BY event_time_microseconds
 )
 WHERE greatest(compressed_bytes, statistics_input_bytes) / least(compressed_bytes, statistics_input_bytes) > 1.75;
 
