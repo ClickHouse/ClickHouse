@@ -1603,13 +1603,13 @@ void StatementGenerator::addTableColumn(
     {
         this->next_type_mask &= ~(
             allow_int128 | allow_dynamic | allow_JSON | allow_array | allow_map | allow_tuple | allow_variant | allow_nested | allow_geo
-            | set_no_decimal_limit | allow_qbit);
+            | set_no_decimal_limit | allow_qbit | allow_aggregate | allow_simple_aggregate);
     }
     if ((t.isPostgreSQLEngine() && (t.is_deterministic || rg.nextSmallNumber() < 4)) || t.hasPostgreSQLPeer())
     {
         this->next_type_mask &= ~(
             allow_int128 | allow_unsigned_int | allow_dynamic | allow_JSON | allow_map | allow_tuple | allow_variant | allow_nested
-            | allow_geo | allow_qbit);
+            | allow_geo | allow_qbit | allow_aggregate | allow_simple_aggregate);
         if (t.hasPostgreSQLPeer())
         {
             /// Datetime must have 6 digits precision
@@ -1620,7 +1620,7 @@ void StatementGenerator::addTableColumn(
     {
         this->next_type_mask &= ~(
             allow_int128 | allow_unsigned_int | allow_dynamic | allow_JSON | allow_array | allow_map | allow_tuple | allow_variant
-            | allow_nested | allow_geo | allow_qbit);
+            | allow_nested | allow_geo | allow_qbit | allow_aggregate | allow_simple_aggregate);
         if (t.hasSQLitePeer())
         {
             /// For bool it maps to int type, then it outputs 0 as default instead of false
@@ -1630,7 +1630,8 @@ void StatementGenerator::addTableColumn(
     }
     if ((t.isMongoDBEngine() && (t.is_deterministic || rg.nextSmallNumber() < 4)))
     {
-        this->next_type_mask &= ~(allow_dynamic | allow_map | allow_tuple | allow_variant | allow_nested | allow_qbit);
+        this->next_type_mask &= ~(
+            allow_dynamic | allow_map | allow_tuple | allow_variant | allow_nested | allow_qbit | allow_aggregate | allow_simple_aggregate);
     }
     if (t.hasDatabasePeer())
     {

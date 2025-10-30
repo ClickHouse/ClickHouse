@@ -35,7 +35,8 @@ enum class SQLTypeClass
     TUPLE = 20,
     VARIANT = 21,
     QBIT = 22,
-    NESTED = 23
+    AGGREGATEFUNCTION = 23,
+    NESTED = 24
 };
 
 class SQLType
@@ -576,6 +577,33 @@ public:
     SQLTypeClass getTypeClass() const override { return SQLTypeClass::QBIT; }
 
     ~QBitType() override;
+};
+
+class AggregateFunctionType : public SQLType
+{
+public:
+    const bool simple;
+    const SQLFunc aggregate;
+    const std::vector<SQLType *> subtypes;
+
+    AggregateFunctionType(const bool s, const SQLFunc aggr, const std::vector<SQLType *> subs)
+        : simple(s)
+        , aggregate(aggr)
+        , subtypes(subs)
+    {
+    }
+
+    String typeName(bool, bool) const override;
+    String MySQLtypeName(RandomGenerator &, bool) const override;
+    String PostgreSQLtypeName(RandomGenerator &, bool) const override;
+    String SQLitetypeName(RandomGenerator &, bool) const override;
+    SQLType * typeDeepCopy() const override;
+    String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
+    String insertNumberEntry(RandomGenerator &, StatementGenerator &, uint32_t, uint32_t) const override;
+    bool isNullable() const override { return simple; }
+    SQLTypeClass getTypeClass() const override { return SQLTypeClass::AGGREGATEFUNCTION; }
+
+    ~AggregateFunctionType() override;
 };
 
 class NestedSubType

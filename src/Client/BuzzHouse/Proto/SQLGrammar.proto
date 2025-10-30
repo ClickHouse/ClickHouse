@@ -3007,6 +3007,12 @@ message QBit {
     required uint32 dimension = 2;
 }
 
+message AggregateFunction {
+    required bool simple = 1;
+    required SQLFunc aggr = 2;
+    repeated TopTypeName types = 3;
+}
+
 enum GeoTypes {
     Point = 1;
     Ring = 2;
@@ -3036,6 +3042,7 @@ message BottomTypeName {
         bool IPv6 = 15;
         QBit qbit = 16;
         GeoTypes geo = 17;
+        AggregateFunction aggr = 18;
     }
 }
 
