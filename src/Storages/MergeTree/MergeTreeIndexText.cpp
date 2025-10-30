@@ -895,7 +895,8 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
     if (rows_read == 0)
         return;
 
-    auto [processed_column, offset] = preprocessor->processColumn(block.getByName(index_column_name), *pos, rows_read);
+    const auto & index_column = block.getByName(index_column_name);
+    auto [processed_column, offset] = preprocessor->processColumn(index_column, *pos, rows_read);
 
     if (isArray(processed_column->getDataType()))
     {
@@ -920,7 +921,7 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
     {
         for (size_t i = 0; i < rows_read; ++i)
         {
-            auto ref = processed_column->getDataAt(offset + i);
+            const StringRef ref = processed_column->getDataAt(offset + i);
             granule_builder.addDocument(ref);
             granule_builder.incrementCurrentRow();
         }
@@ -1180,12 +1181,11 @@ MergeTreeIndexPtr textIndexCreator(const IndexDescription & index)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Tokenizer {} not supported", tokenizer);
     }
 
+    String preprocessor = extractOption<String>(options, ARGUMENT_PREPROCESSOR).value_or("");
     UInt64 dictionary_block_size = extractOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_SIZE).value_or(DEFAULT_DICTIONARY_BLOCK_SIZE);
     UInt64 dictionary_block_frontcoding_compression = extractOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION).value_or(DEFAULT_DICTIONARY_BLOCK_USE_FRONTCODING);
     UInt64 max_cardinality_for_embedded_postings = extractOption<UInt64>(options, ARGUMENT_MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS).value_or(DEFAULT_MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS);
     double bloom_filter_false_positive_rate = extractOption<double>(options, ARGUMENT_BLOOM_FILTER_FALSE_POSITIVE_RATE).value_or(DEFAULT_BLOOM_FILTER_FALSE_POSITIVE_RATE);
-
-    String preprocessor = extractOption<String>(options, ARGUMENT_PREPROCESSOR).value_or("");
 
     const auto [bits_per_rows, num_hashes] = BloomFilterHash::calculationBestPractices(bloom_filter_false_positive_rate);
     MergeTreeIndexTextParams index_params{
@@ -1419,7 +1419,7 @@ Tuple parseNamedArgumentFromAST(const ASTFunction * ast_equal_function)
     {
         const ASTFunction * preprocessor_function = arguments->children[1]->as<ASTFunction>();
         if (preprocessor_function == nullptr)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Text index preprocessor argument is intended to be a function");
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Text index preprocessor argument must be an expression");
 
         String identifier_name;
         validatePreprocessorASTExpression(preprocessor_function, identifier_name);
@@ -1429,6 +1429,8 @@ Tuple parseNamedArgumentFromAST(const ASTFunction * ast_equal_function)
         if (identifier_name.empty())
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Text index preprocessor expression needs to have the column identifier");
 
+        /// preprocessor_function->getColumnName() returns the string representation for the expression. That string will be parsed again on
+        /// index recreation but can also be stored in the index metadata as is.
         result.emplace_back(preprocessor_function->getColumnName());
     }
     else
@@ -1546,29 +1548,30 @@ ExpressionActions MergeTreeIndexTextPreprocessor::parseExpression(const IndexDes
     const char * expression_begin = &*expression.begin();
     const char * expression_end = &*expression.end();
 
-    // These are expression tokens, do not confuse with index tokens
+    /// These are expression tokens, do not confuse with index tokens
     Tokens tokens(expression_begin, expression_end);
     IParser::Pos token_iterator(tokens, 1000, 1000000);
 
     Expected expected;
     ASTPtr expression_ast;
 
-    { /// Parse and verify expression
+    { /// Parse and verify the expression: String -> ASTPtr
         if (!ParserExpression().parse(token_iterator, expression_ast, expected))
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Error parsing preprocessor expression");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error parsing preprocessor expression");
 
         /// Repeat expression validation here. after the string has been parsed into an AST.
         /// We already made this check during index construction, but "don't trust, verify"
         const ASTFunction * preprocessor_function = expression_ast->as<ASTFunction>();
         if (preprocessor_function == nullptr)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Text index preprocessor argument is intended to be a function");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index preprocessor argument must be an expression");
 
         // Now we know that the only valid identifier_name must be the text indexed column.
         String identifier_name = index_description.column_names.front();
         validatePreprocessorASTExpression(preprocessor_function, identifier_name);
     }
 
-    // TODO(JAM): Check this
+    /// Convert ASTPtr -> ActionsDAG
+    /// We can do less checks here because in porevious scope we tested that the ASTPtr es an ASTFunction.
     const String name = expression_ast->getColumnName();
     const String alias = expression_ast->getAliasOrColumnName();
 
@@ -1577,6 +1580,7 @@ ExpressionActions MergeTreeIndexTextPreprocessor::parseExpression(const IndexDes
     NamesAndTypesList aggregation_keys;
     ColumnNumbersList aggregation_keys_indexes_list;
 
+    /// Construct a visitor to parse the AST to build a DAG
     ActionsVisitor::Data visitor_data(
         Context::getGlobalContextInstance(),
         SizeLimits() /* set_size_limit */,
@@ -1594,17 +1598,20 @@ ExpressionActions MergeTreeIndexTextPreprocessor::parseExpression(const IndexDes
     ActionsDAG actions = visitor_data.getActions();
     actions.project(NamesWithAliases({{name, alias}}));
 
+    /// With the dag we can create an ExpressionActions. But before that is better to perform some validations.
+
     /// Lets check expresion outputs
     ActionsDAG::NodeRawConstPtrs & outputs = actions.getOutputs();
     if (outputs.size() != 1)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "The preprocessor expression have to return one argument");
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "The preprocessor expression must return only one argument");
 
     if (!isValidTextIndexType(outputs.front()->result_type))
         throw Exception(ErrorCodes::INCORRECT_QUERY, "The preprocessor expression should return a String, FixedString or an array of them.");
 
     if (actions.hasNonDeterministic())
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "The preprocessor expression contain only deterministic members.");
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "The preprocessor expression must contain only deterministic members.");
 
+    /// FINALLY! Lets build the ExpressionActions. 
     return ExpressionActions(std::move(actions));
 }
 
