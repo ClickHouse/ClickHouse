@@ -1,7 +1,7 @@
 -- { echo ON }
 
 drop table if exists test;
-create table test (s String) engine MergeTree order by () settings serialization_info_version = 'basic', string_serialization_version = 'default';
+create table test (s String) engine MergeTree order by () settings serialization_info_version = 'basic', string_serialization_version = 'single_stream';
 insert into test values ('hello world');
 -- Old string type also supports .size subcolumn
 select s.size from test;
@@ -16,7 +16,7 @@ insert into test values ('hello world');
 select column, substreams, subcolumns.names, subcolumns.types from system.parts_columns where database = currentDatabase() and table = 'test' and active order by column;
 s	['s.size','s']	['size']	['UInt64']
 drop table test;
--- When `serialization_info_version` is set to `default`, any per-type string serialization version (`string_serialization_version`) will be ignored and reset to `DEFAULT`.
+-- When `serialization_info_version` is set to `single_stream`, any per-type string serialization version (`string_serialization_version`) will be ignored and reset to `DEFAULT`.
 create table test (s String) engine MergeTree order by () settings serialization_info_version = 'basic', string_serialization_version = 'with_size_stream';
 insert into test values ('hello world');
 -- Verify that string type is not serialized with a physical .size stream
