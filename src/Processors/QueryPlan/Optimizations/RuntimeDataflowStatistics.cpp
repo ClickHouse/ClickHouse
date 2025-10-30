@@ -2,7 +2,6 @@
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
 #include <Interpreters/Aggregator.h>
-#include "Core/ColumnsWithTypeAndName.h"
 
 namespace DB
 {

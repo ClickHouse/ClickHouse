@@ -1,4 +1,4 @@
--- Tags: stateful
+-- Tags: stateful, no-random-settings
 
 SET optimize_read_in_order=0, query_plan_read_in_order=0, local_filesystem_read_prefetch=0, merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability=0, local_filesystem_read_method='pread_threadpool', use_uncompressed_cache=0;
 
@@ -35,15 +35,16 @@ SET enable_parallel_replicas=0, enable_automatic_parallel_replicas=0;
 SYSTEM FLUSH LOGS query_log;
 
 -- Just checking that the estimation is not too far off (within 75% error)
-SELECT format('{} {} {}', log_comment, compressed_bytes, statistics_input_bytes)
-FROM (
-    SELECT
-        log_comment,
-        ProfileEvents['ReadCompressedBytes'] compressed_bytes,
-        ProfileEvents['RuntimeDataflowStatisticsInputBytes'] statistics_input_bytes
-        --ProfileEvents['NetworkReceiveBytes'] statistics_output_bytes
+WITH
+    --[32+32+32, 2097152+1048576+1048576, 252512+133120+133120, 6389760+4069632+2129920, 1180160+589824+589824, 32+32, 22560+4224+3136, 41536+37088+8832, 16192+15616, 19931136+5726464+5406720, 135266304+72351744+67633152] AS expected_bytes,
+    [32, 2097152, 252512, 6389760, 1180160, 32, 22560, 41536, 16192, 19931136, 135266304] AS expected_bytes,
+    arrayJoin(arrayMap(x -> (untuple(x.1), x.2), arrayZip(res, expected_bytes))) AS res
+SELECT format('{} {} {}', res.1, res.2, res.3)
+FROM
+(
+    SELECT groupArray((log_comment, ProfileEvents['RuntimeDataflowStatisticsOutputBytes'])) AS res
     FROM system.query_log
-    WHERE (event_date >= yesterday()) AND (event_time >= NOW() - INTERVAL '15 MINUTES') AND (current_database = currentDatabase()) AND (log_comment LIKE 'query_%') AND (type = 'QueryFinish')
+    WHERE (event_date >= yesterday()) AND (event_time >= (NOW() - toIntervalMinute(15))) AND (current_database = currentDatabase()) AND (log_comment LIKE 'query_%') AND (type = 'QueryFinish')
 )
-WHERE greatest(compressed_bytes, statistics_input_bytes) / least(compressed_bytes, statistics_input_bytes) > 1.75;
+WHERE (greatest(res.2, res.3) / least(res.2, res.3)) > 1.75 AND NOT (res.2 < 100 AND res.3 < 100);
 
