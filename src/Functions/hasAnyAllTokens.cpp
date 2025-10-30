@@ -334,7 +334,7 @@ void execute(
     /// Array(String) or Array(FixedString)
     else if (const auto * col_input_array = checkAndGetColumn<ColumnArray>(col_input.get()))
     {
-        /// String)
+        /// String
         if (const auto * input_string = checkAndGetColumn<ColumnString>(&col_input_array->getData()))
             executeArray<HasTokensTraits>(col_input_array, *input_string, col_result, token_extractor, tokens);
         /// FixedString
@@ -360,7 +360,7 @@ ColumnPtr FunctionHasAnyAllTokens<HasTokensTraits>::executeImpl(
     if (token_extractor == nullptr)
     {
         /// If token_extractor == nullptr, we do a full-table scan on a column without index
-        /// By default, the default tokenizer will be used to tokenizer the input column.
+        /// By default, the default tokenizer will be used to tokenize the input column.
         /// Additionally, the search tokens need to be extract from the needle argument.
         chassert(!search_tokens.has_value());
 
