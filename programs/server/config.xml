@@ -1268,7 +1268,7 @@
         <flush_on_crash>false</flush_on_crash>
     </error_log>
 
-    <!-- Instrumentation profiling log contains rows with profiling information produced using XRay that we can export to Chrome trace format. -->
+    <!-- Instrumentation trace log contains rows with profile information of functions produced using XRay that we can export to Chrome trace format. -->
     <instrumentation_trace_log>
         <database>system</database>
         <table>instrumentation_trace_log</table>

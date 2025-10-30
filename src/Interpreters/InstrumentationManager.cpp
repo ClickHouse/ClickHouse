@@ -11,7 +11,7 @@
 #include <latch>
 
 #include <base/getThreadId.h>
-#include <Interpreters/InstrumentationProfilingLog.h>
+#include <Interpreters/InstrumentationTraceLog.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/ErrorCodes.h>
@@ -426,12 +426,12 @@ void InstrumentationManager::log(XRayEntryType entry_type, const InstrumentedPoi
 
 void InstrumentationManager::profile(XRayEntryType entry_type, const InstrumentedPointInfo & instrumented_point)
 {
-    static thread_local std::unordered_map<Int32, InstrumentationProfilingLogElement> active_elements;
+    static thread_local std::unordered_map<Int32, InstrumentationTraceLogElement> active_elements;
 
     LOG_TRACE(logger, "Profile: function with id {}", instrumented_point.function_id);
     if (entry_type == XRayEntryType::ENTRY)
     {
-        InstrumentationProfilingLogElement element;
+        InstrumentationTraceLogElement element;
         element.function_name = functions_container.get<FunctionId>().find(instrumented_point.function_id)->stripped_function_name;
         element.tid = getThreadId();
         using namespace std::chrono;
@@ -461,7 +461,7 @@ void InstrumentationManager::profile(XRayEntryType entry_type, const Instrumente
 
             if (instrumented_point.context)
             {
-                if (auto log = instrumented_point.context->getInstrumentationProfilingLog())
+                if (auto log = instrumented_point.context->getInstrumentationTraceLog())
                     log->add(std::move(element));
             }
             active_elements.erase(it);
