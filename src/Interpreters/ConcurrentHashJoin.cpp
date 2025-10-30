@@ -457,44 +457,71 @@ IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
         return hash_joins[0]->data->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size);
     }
 
-    /// Collect non-joined streams from each slot
-    std::vector<IBlocksStreamPtr> streams;
-    streams.reserve(slots);
-
     /// For joins with always false condition
     if (table_join->getOnlyClause().key_names_right.empty())
     {
         /// all rows should be considered non-joined
         /// we need to return all rows from the right table
         std::lock_guard lock(hash_joins[0]->mutex);
-        if (auto s = hash_joins[0]->data->getNonJoinedBlocks(
-                left_sample_block, result_sample_block, max_block_size))
-            streams.push_back(std::move(s));
+        return hash_joins[0]->data->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size);
     }
     else
     {
-        std::unordered_set<size_t> processed_rows;
-        for (const auto & hash_join : hash_joins)
+        // Decide by checking only the first hash_join's selectors.
+        bool use_merge = false;
         {
-            std::lock_guard lock(hash_join->mutex);
+            std::lock_guard lock(hash_joins[0]->mutex);
+            use_merge = getData(hash_joins[0])->columns.front().selector.isContinuousRange();
+        }
 
-            if (hash_join->data->hasNonJoinedRows())
+        if (!use_merge)
+        {
+            // Old per-slot streams approach
+            std::vector<IBlocksStreamPtr> streams;
+            streams.reserve(slots);
+            for (const auto & hash_join : hash_joins)
             {
-                if (auto s = hash_join->data->getNonJoinedBlocks(
-                        left_sample_block, result_sample_block, max_block_size))
+                std::lock_guard lock(hash_join->mutex);
+                if (hash_join->data->hasNonJoinedRows())
                 {
-                    streams.push_back(std::move(s));
+                    if (auto s = hash_join->data->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size))
+                        streams.push_back(std::move(s));
                 }
             }
+
+            if (streams.empty())
+                return {};
+            if (streams.size() == 1)
+                return streams[0];
+            return std::make_shared<ConcatStreams>(std::move(streams));
+        }
+        else
+        {
+            // Merge selector-based nullmaps into slot 0 and emit via slot 0
+            std::vector<std::unique_lock<std::mutex>> locks;
+            locks.reserve(slots);
+            for (size_t i = 0; i < slots; ++i)
+                locks.emplace_back(hash_joins[i]->mutex);
+
+            auto dst = getData(hash_joins[0]);
+            size_t added_bytes = 0;
+            for (size_t i = 1; i < slots; ++i)
+            {
+                auto src = getData(hash_joins[i]);
+                for (auto & h : src->nullmaps)
+                {
+                    dst->nullmaps.emplace_back(h.columns, h.column);
+                    dst->nullmaps.back().selector_rows = h.selector_rows;
+                    added_bytes += dst->nullmaps.back().allocatedBytes();
+                }
+                src->nullmaps.clear();
+                src->nullmaps_allocated_size = 0;
+            }
+            dst->nullmaps_allocated_size += added_bytes;
+
+            return hash_joins[0]->data->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size);
         }
     }
-
-    if (streams.empty())
-        return {};
-    if (streams.size() == 1)
-        return streams[0];
-
-    return std::make_shared<ConcatStreams>(std::move(streams));
 }
 
 template <typename HashTable>
