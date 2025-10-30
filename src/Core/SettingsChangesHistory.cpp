@@ -43,9 +43,13 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"correlated_subqueries_default_join_kind", "left", "right", "New setting. Default join kind for decorrelated query plan."},
             {"use_statistics_cache", 0, 0, "New setting"},
+            {"s3_retry_attempts", 500, 500, "Changed the value of the obsolete setting"},
+            {"optimize_const_name_size", -1, 256, "Replace with scalar and use hash as a name for large constants (size is estimated by name length)"},
         });
         addSettingsChanges(settings_changes_history, "25.10",
         {
+            {"allow_special_serialization_kinds_in_output_formats", true, false, "Add a setting to allow output of special columns representations like Sparse/Replicated without converting them to full columns"},
+            {"enable_lazy_columns_replication", true, false, "Add a setting to enable lazy columns replication in JOIN and ARRAY JOIN"},
             {"correlated_subqueries_default_join_kind", "left", "right", "New setting. Default join kind for decorrelated query plan."},
             {"show_data_lake_catalogs_in_system_tables", true, false, "Disable catalogs in system tables by default"},
             {"optimize_rewrite_like_perfect_affix", false, true, "New setting"},
@@ -225,6 +229,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_scopes_for_with_statement", true, true, "New setting for backward compatibility with the old analyzer."},
             {"backup_slow_all_threads_after_retryable_s3_error", false, false, "New setting"},
             {"s3_slow_all_threads_after_retryable_error", false, false, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
+            {"s3_retry_attempts", 500, 500, "Changed the value of the obsolete setting"},
             /// RELEASE CLOSED
         });
         addSettingsChanges(settings_changes_history, "25.5",
@@ -920,6 +925,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         addSettingsChanges(merge_tree_settings_changes_history, "25.11",
         {
             {"refresh_statistics_interval", 0, 0, "New setting"},
+            {"shared_merge_tree_create_per_replica_metadata_nodes", true, false, "Reduce the amount of metadata in Keeper."},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.10",
         {

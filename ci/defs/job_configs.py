@@ -20,6 +20,7 @@ build_digest_config = Job.CacheDigestConfig(
     include_paths=[
         "./src",
         "./contrib/",
+        "./.gitmodules",
         "./CMakeLists.txt",
         "./PreLoad.cmake",
         "./cmake",
@@ -136,6 +137,7 @@ class JobConfigs:
                 "./tests/clickhouse-test",
                 "./src",
                 "./contrib/",
+                "./.gitmodules",
                 "./CMakeLists.txt",
                 "./PreLoad.cmake",
                 "./cmake",
@@ -941,7 +943,7 @@ class JobConfigs:
                 "./docs",
                 "./ci/jobs/docs_job.py",
                 "CHANGELOG.md",
-                "./src/Functions"
+                "./src/Functions",
             ],
         ),
         run_in_docker="clickhouse/docs-builder",
