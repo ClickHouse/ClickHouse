@@ -1186,3 +1186,165 @@ TEST_F(MetadataPlainRewritableDiskTest, CreateDirectoryUndo)
     EXPECT_TRUE(metadata->existsDirectory("/A"));
     EXPECT_FALSE(metadata->existsDirectory("/A/B"));
 }
+
+TEST_F(MetadataPlainRewritableDiskTest, CreateHardLink)
+{
+    thread_local_rng.seed(42);
+
+    auto metadata = getMetadataStorage("CreateHardLink");
+    auto object_storage = getObjectStorage("CreateHardLink");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("/A");
+        tx->commit();
+    }
+
+    EXPECT_TRUE(metadata->existsDirectory("/A"));
+
+    {
+        auto tx = metadata->createTransaction();
+        writeObject(object_storage, object_storage->generateObjectKeyForPath("/A/f1", std::nullopt).serialize(), "f1");
+        tx->createMetadataFile("/A/f1", {StoredObject("f1")});
+        tx->commit();
+    }
+
+    EXPECT_TRUE(metadata->existsFile("/A/f1"));
+    EXPECT_FALSE(metadata->existsFile("/A/f2"));
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createHardLink("/A/f1", "A/f2");
+        tx->commit();
+    }
+
+    EXPECT_TRUE(metadata->existsFile("/A/f1"));
+    EXPECT_TRUE(metadata->existsFile("/A/f2"));
+
+    metadata = restartMetadataStorage("CreateHardLink");
+    EXPECT_TRUE(metadata->existsDirectory("/A"));
+    EXPECT_TRUE(metadata->existsFile("/A/f1"));
+    EXPECT_TRUE(metadata->existsFile("/A/f2"));
+
+    EXPECT_EQ(listAllBlobs("CreateHardLink"), std::vector<std::string>({
+        "./CreateHardLink/__meta",
+        "./CreateHardLink/__meta/faefxnlkbtfqgxcbfqfjtztsocaqrnqn",
+        "./CreateHardLink/__meta/faefxnlkbtfqgxcbfqfjtztsocaqrnqn/prefix.path",
+        "./CreateHardLink/faefxnlkbtfqgxcbfqfjtztsocaqrnqn",
+        "./CreateHardLink/faefxnlkbtfqgxcbfqfjtztsocaqrnqn/f1",
+        "./CreateHardLink/faefxnlkbtfqgxcbfqfjtztsocaqrnqn/f2"
+    }));
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, CreateHardLinkUndo)
+{
+    thread_local_rng.seed(42);
+
+    auto metadata = getMetadataStorage("CreateHardLinkUndo");
+    auto object_storage = getObjectStorage("CreateHardLinkUndo");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("/A");
+        tx->commit();
+    }
+
+    {
+        auto tx = metadata->createTransaction();
+        writeObject(object_storage, object_storage->generateObjectKeyForPath("/A/f1", std::nullopt).serialize(), "f1");
+        tx->createMetadataFile("/A/f1", {StoredObject("f1")});
+        tx->commit();
+    }
+
+    EXPECT_TRUE(metadata->existsDirectory("/A"));
+    EXPECT_TRUE(metadata->existsFile("/A/f1"));
+    EXPECT_FALSE(metadata->existsFile("/A/f2"));
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createHardLink("/A/f1", "A/f2");
+        tx->createHardLink("/B/f1", "A/f2");
+        EXPECT_ANY_THROW(tx->commit());
+    }
+
+    EXPECT_EQ(listAllBlobs("CreateHardLinkUndo").size(), 5);
+    EXPECT_TRUE(metadata->existsDirectory("/A"));
+    EXPECT_TRUE(metadata->existsFile("/A/f1"));
+    EXPECT_FALSE(metadata->existsFile("/A/f2"));
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createHardLink("/A/f1", "A/f2");
+        tx->createHardLink("f1", "f2");
+        EXPECT_ANY_THROW(tx->commit());
+    }
+
+    EXPECT_EQ(listAllBlobs("CreateHardLinkUndo").size(), 5);
+    EXPECT_TRUE(metadata->existsDirectory("/A"));
+    EXPECT_TRUE(metadata->existsFile("/A/f1"));
+    EXPECT_FALSE(metadata->existsFile("/A/f2"));
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createHardLink("/A/f1", "A/f2");
+        tx->createHardLink("/A/f1", "A/f2");
+        EXPECT_ANY_THROW(tx->commit());
+    }
+
+    metadata = restartMetadataStorage("CreateHardLinkUndo");
+    EXPECT_TRUE(metadata->existsDirectory("/A"));
+    EXPECT_TRUE(metadata->existsFile("/A/f1"));
+    EXPECT_FALSE(metadata->existsFile("/A/f2"));
+
+    EXPECT_EQ(listAllBlobs("CreateHardLinkUndo"), std::vector<std::string>({
+        "./CreateHardLinkUndo/__meta",
+        "./CreateHardLinkUndo/__meta/faefxnlkbtfqgxcbfqfjtztsocaqrnqn",
+        "./CreateHardLinkUndo/__meta/faefxnlkbtfqgxcbfqfjtztsocaqrnqn/prefix.path",
+        "./CreateHardLinkUndo/faefxnlkbtfqgxcbfqfjtztsocaqrnqn",
+        "./CreateHardLinkUndo/faefxnlkbtfqgxcbfqfjtztsocaqrnqn/f1",
+    }));
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, CreateHardLinkRootFiles)
+{
+    thread_local_rng.seed(42);
+
+    auto metadata = getMetadataStorage("CreateHardLinkRootFiles");
+    auto object_storage = getObjectStorage("CreateHardLinkRootFiles");
+
+    {
+        auto tx = metadata->createTransaction();
+        writeObject(object_storage, object_storage->generateObjectKeyForPath("f1", std::nullopt).serialize(), "f1");
+        tx->createMetadataFile("/f1", {StoredObject("f1")});
+        tx->commit();
+    }
+
+    EXPECT_TRUE(metadata->existsFile("/f1"));
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createHardLink("/f1", "/f2");
+        tx->commit();
+    }
+
+    EXPECT_TRUE(metadata->existsFile("/f1"));
+    EXPECT_TRUE(metadata->existsFile("/f2"));
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createHardLink("/f2", "/f3");
+        tx->createHardLink("/f1", "/f2");
+        EXPECT_ANY_THROW(tx->commit());
+    }
+
+    metadata = restartMetadataStorage("CreateHardLinkRootFiles");
+    EXPECT_TRUE(metadata->existsFile("/f1"));
+    EXPECT_TRUE(metadata->existsFile("/f2"));
+    EXPECT_FALSE(metadata->existsFile("/f3"));
+
+    EXPECT_EQ(listAllBlobs("CreateHardLinkRootFiles"), std::vector<std::string>({
+        "./CreateHardLinkRootFiles/__root",
+        "./CreateHardLinkRootFiles/__root/f1",
+        "./CreateHardLinkRootFiles/__root/f2",
+    }));
+}
