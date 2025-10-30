@@ -544,7 +544,7 @@ def _check_and_mark_flaky_tests(workflow_result: Result):
 
     flaky_catalog = TestCaseIssueCatalog.from_fs(name=catalog_name)
 
-    # Build a map of test_name -> issue info for quick lookup
+    # Build a lookup map: test_name -> issue (for fast matching)
     flaky_tests_map = {
         issue.test_name: issue
         for issue in flaky_catalog.active_test_issues
@@ -552,7 +552,7 @@ def _check_and_mark_flaky_tests(workflow_result: Result):
     }
     print(f"  Loaded {len(flaky_tests_map)} flaky test patterns")
 
-    # Recursive function to check all result leaves
+    # Walk the result tree and flag flaky leaves
     def check_and_mark_flaky(result: Result):
         if result.is_ok():
             return
@@ -562,9 +562,22 @@ def _check_and_mark_flaky_tests(workflow_result: Result):
                 check_and_mark_flaky(sub_result)
         else:
             for test_name, issue in flaky_tests_map.items():
-                if result.name.endswith(
+                name_in_report = result.name
+
+                # Normalize pytest parameterized names.
+                # If the issue already includes parameters (e.g. "test_x[param]"),
+                # do exact matching later. Otherwise, strip the "[param]" suffix
+                # from the reported test name so we can match the base test name.
+                if "[" in test_name:
+                    # Issue mentions a specific parametrization: keep full name for exact match
+                    pass
+                elif "[" in name_in_report:
+                    # Issue mentions only the base test: compare against the base part
+                    name_in_report = name_in_report.split("[")[0]
+
+                if name_in_report.endswith(
                     test_name
-                ):  # TODO: find the best way to match test name
+                ):  # TODO: Replace suffix match with a canonical test id matcher (e.g. full nodeid/path)
                     print(
                         f"  Marking '{result.name}' as flaky (matched: {test_name}, issue: #{issue.issue})"
                     )
