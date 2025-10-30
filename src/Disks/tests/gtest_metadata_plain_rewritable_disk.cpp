@@ -1155,3 +1155,34 @@ TEST_F(MetadataPlainRewritableDiskTest, MoveToExisting)
     EXPECT_TRUE(metadata->existsDirectory("/B"));
     EXPECT_TRUE(metadata->existsDirectory("/B/A"));
 }
+
+TEST_F(MetadataPlainRewritableDiskTest, CreateDirectoryUndo)
+{
+    auto metadata = getMetadataStorage("CreateDirectoryUndo");
+    auto object_storage = getObjectStorage("CreateDirectoryUndo");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("/A");
+        tx->commit();
+    }
+
+    EXPECT_TRUE(metadata->existsDirectory("/A"));
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("/A/B");
+        tx->createDirectory("/A/B");
+        tx->createDirectory("/A/B");
+        tx->createDirectory("/A/B");
+        tx->moveDirectory("non-existing", "other-place");
+        EXPECT_ANY_THROW(tx->commit());
+    }
+
+    EXPECT_TRUE(metadata->existsDirectory("/A"));
+    EXPECT_FALSE(metadata->existsDirectory("/A/B"));
+
+    metadata = restartMetadataStorage("CreateDirectoryUndo");
+    EXPECT_TRUE(metadata->existsDirectory("/A"));
+    EXPECT_FALSE(metadata->existsDirectory("/A/B"));
+}
