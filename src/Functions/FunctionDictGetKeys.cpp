@@ -162,10 +162,10 @@ public:
             ColumnPtr values_column = castColumnAccurate(values_column_raw, attribute_column_type)->convertToFullColumnIfLowCardinality();
             const UInt64 const_value_hash = hashAt(*values_column, 0);
 
-            std::vector<Bucket> buckets(1);
-            buckets[0].key_cols.reserve(keys_cnt);
+            std::vector<MutableColumnPtr> results_column;
+            results_column.reserve(keys_cnt);
             for (const auto & key_type : key_types)
-                buckets[0].key_cols.emplace_back(key_type->createColumn());
+                results_column.emplace_back(key_type->createColumn());
 
             Names column_names = structure.getKeysNames();
             column_names.push_back(attribute_column_name);
@@ -194,25 +194,22 @@ public:
                         continue;
 
                     for (size_t key_id = 0; key_id < keys_cnt; ++key_id)
-                        buckets[0].key_cols[key_id]->insertFrom(*key_source[key_id], cur_row_id);
+                        results_column[key_id]->insertFrom(*key_source[key_id], cur_row_id);
                 }
             }
 
             auto offsets_column = ColumnArray::ColumnOffsets::create();
-            offsets_column->getData().push_back(buckets[0].key_cols[0]->size());
+            const size_t matches = keys_cnt == 0 ? 0 : results_column[0]->size();
+            offsets_column->getData().push_back(matches);
 
             if (keys_cnt == 1)
             {
-                auto array_column = ColumnArray::create(std::move(buckets[0].key_cols[0]), std::move(offsets_column));
+                auto array_column = ColumnArray::create(std::move(results_column[0]), std::move(offsets_column));
                 return ColumnConst::create(std::move(array_column), input_rows_count);
             }
 
-            MutableColumns result_columns;
-            result_columns.reserve(keys_cnt);
-            for (size_t key_id = 0; key_id < keys_cnt; ++key_id)
-                result_columns.emplace_back(std::move(buckets[0].key_cols[key_id]));
-
-            auto array_column = ColumnArray::create(ColumnTuple::create(std::move(result_columns)), std::move(offsets_column));
+            auto tuple_column = ColumnTuple::create(std::move(results_column));
+            auto array_column = ColumnArray::create(std::move(tuple_column), std::move(offsets_column));
             return ColumnConst::create(std::move(array_column), input_rows_count);
         }
 
