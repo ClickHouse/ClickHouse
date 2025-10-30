@@ -343,10 +343,10 @@ where zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_pr
 def test_shards_distributed(started_cluster, mode, processing_threads):
     node = started_cluster.instances["instance"]
     node_2 = started_cluster.instances["instance2"]
-    table_name = f"test_shards_distributed_{mode}_{processing_threads}"
+    table_name = f"test_shards_distributed_{mode}_{processing_threads}_{generate_random_string()}"
     dst_table_name = f"{table_name}_dst"
     # A unique path is necessary for repeatable tests
-    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+    keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
     files_to_generate = 600
     row_num = 1000
@@ -445,18 +445,35 @@ select splitByChar('/', file_name)[-1] as file from system.s3queue where zookeep
 
         logging.debug(f"Intersecting files: {intersection(files1, files2)}")
 
-    for _ in range(30):
+    for _ in range(120):
         if (
             get_count(node, dst_table_name) + get_count(node_2, dst_table_name)
         ) == total_rows:
             break
         time.sleep(1)
 
-    if (
-        get_count(node, dst_table_name) + get_count(node_2, dst_table_name)
-    ) != total_rows:
-        print_debug_info()
-        assert False
+    count1 = get_count(node, dst_table_name)
+    count2 = get_count(node_2, dst_table_name)
+    if (count1 + count2) != total_rows:
+        expected_files = [f"{files_path}/test_{x}.csv" for x in range(files_to_generate)]
+        node.query("SYSTEM FLUSH LOGS")
+        node_2.query("SYSTEM FLUSH LOGS")
+        processed_files = (
+            node.query(
+                f"SELECT distinct(_path) FROM clusterAllReplicas(cluster, default.{dst_table_name})"
+            )
+            .strip()
+            .split("\n")
+        )
+        processed_files.sort()
+        logging.debug(f"Processed files: {processed_files}")
+        missing_files = [file for file in expected_files if file not in processed_files]
+        missing_files.sort()
+
+        assert (
+            False
+        ), f"Expected {total_rows} in total, got {count1} and {count2} ({count1 + count2}, having {len(missing_files)} missing files: ({missing_files})"
+
 
     get_query = f"SELECT column1, column2, column3 FROM {dst_table_name}"
     res1 = [list(map(int, l.split())) for l in run_query(node, get_query).splitlines()]
