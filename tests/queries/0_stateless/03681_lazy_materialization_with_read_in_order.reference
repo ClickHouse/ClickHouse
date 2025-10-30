@@ -80,3 +80,7 @@ ReadType: InOrder
 5	five	50
 === Test 10: Verify EXPLAIN shows both optimizations ===
 LazilyRead (Lazily Read)
+Lazily read columns: data, score, value
+Prefix sort description: __table1.id ASC
+Result sort description: __table1.id ASC
+ReadType: InOrder
