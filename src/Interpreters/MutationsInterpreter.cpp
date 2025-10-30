@@ -1089,29 +1089,24 @@ void MutationsInterpreter::prepare(bool dry_run)
 
                     const auto index_mode = (*source.getMergeTreeData()->getSettings())[MergeTreeSetting::alter_column_secondary_index_mode];
 
-                    if (index_mode != AlterColumnSecondaryIndexMode::IGNORE)
+                    for (const auto & index : metadata_snapshot->getSecondaryIndices())
                     {
-                        for (const auto & index : metadata_snapshot->getSecondaryIndices())
+                        const auto & index_cols = index.expression->getRequiredColumns();
+                        if (std::ranges::find(index_cols, command.column_name) != index_cols.end())
                         {
-                            const auto & index_cols = index.expression->getRequiredColumns();
-                            if (std::ranges::find(index_cols, command.column_name) != index_cols.end())
-                            {
-                                for (const auto & col : index_cols)
-                                    dependencies.emplace(col, ColumnDependency::SKIP_INDEX);
+                            for (const auto & col : index_cols)
+                                dependencies.emplace(col, ColumnDependency::SKIP_INDEX);
 
-                                switch (index_mode)
-                                {
-                                    case AlterColumnSecondaryIndexMode::IGNORE:
-                                        break;
-                                    case AlterColumnSecondaryIndexMode::THROW:
-                                    case AlterColumnSecondaryIndexMode::COMPATIBILITY:
-                                        throw Exception(
-                                            ErrorCodes::BAD_ARGUMENTS,
-                                            "Cannot ALTER column `{}` because index `{}`", command.column_name, index.name);
-                                    case AlterColumnSecondaryIndexMode::REBUILD:
-                                    case AlterColumnSecondaryIndexMode::DROP:
-                                        materialized_indices.insert(index.name);
-                                }
+                            switch (index_mode)
+                            {
+                                case AlterColumnSecondaryIndexMode::THROW:
+                                case AlterColumnSecondaryIndexMode::COMPATIBILITY:
+                                    throw Exception(
+                                        ErrorCodes::BAD_ARGUMENTS,
+                                        "Cannot ALTER column `{}` because index `{}`", command.column_name, index.name);
+                                case AlterColumnSecondaryIndexMode::REBUILD:
+                                case AlterColumnSecondaryIndexMode::DROP:
+                                    materialized_indices.insert(index.name);
                             }
                         }
                     }

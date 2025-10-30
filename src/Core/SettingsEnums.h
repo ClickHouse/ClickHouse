@@ -349,7 +349,6 @@ DECLARE_SETTING_ENUM(DeduplicateMergeProjectionMode)
 
 enum class AlterColumnSecondaryIndexMode : uint8_t
 {
-    IGNORE,
     THROW,
     DROP,
     REBUILD,

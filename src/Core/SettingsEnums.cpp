@@ -210,8 +210,7 @@ IMPLEMENT_SETTING_ENUM(DeduplicateMergeProjectionMode, ErrorCodes::BAD_ARGUMENTS
      {"rebuild", DeduplicateMergeProjectionMode::REBUILD}})
 
 IMPLEMENT_SETTING_ENUM(AlterColumnSecondaryIndexMode, ErrorCodes::BAD_ARGUMENTS,
-    {{"ignore", AlterColumnSecondaryIndexMode::IGNORE},
-     {"throw", AlterColumnSecondaryIndexMode::THROW},
+    {{"throw", AlterColumnSecondaryIndexMode::THROW},
      {"drop", AlterColumnSecondaryIndexMode::DROP},
      {"rebuild", AlterColumnSecondaryIndexMode::REBUILD},
      {"compatibility", AlterColumnSecondaryIndexMode::COMPATIBILITY}})

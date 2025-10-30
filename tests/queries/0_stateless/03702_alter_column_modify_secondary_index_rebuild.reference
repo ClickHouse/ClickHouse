@@ -1,4 +1,5 @@
 -- { echoOn }
+
 CREATE TABLE test_table
 (
     id UInt64,
@@ -14,13 +15,11 @@ ENGINE = MergeTree()
 ORDER BY id
 PARTITION BY id
 SETTINGS alter_column_secondary_index_mode = 'rebuild', min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage=0;
--- { echOff }
-
 -- Need it for proper explain
 SET use_skip_indexes_on_data_read = 0;
 -- Need it because we rerun some queries (with different settings) and we want to execute the full analysis
 SET use_query_condition_cache = 0;
-INSERT INTO test_table VALUES (1, 'a', '127.0.0.1'), (2, 'b', '127.0.0.2'), (3, 'c', '127.0.0.3');
+INSERT INTO test_table VALUES (1, '10', '127.0.0.1'), (2, '20', '127.0.0.2'), (3, '300', '127.0.0.3');
 SELECT 'IP column tests';
 IP column tests
 EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE ip = '127.0.0.1';
@@ -53,9 +52,9 @@ SELECT count() FROM test_table WHERE ip = '127.0.0.1';
 -- If we try to modify the column to a type incompatible with the index it should always throw an error and forbid the ALTER,
 -- independently of the alter_column_secondary_index_mode setting.
 ALTER TABLE test_table MODIFY COLUMN ip IPv4; -- { serverError INCORRECT_QUERY }
-SELECT 'STRING TO FIXEDSTRING tests';
-STRING TO FIXEDSTRING tests
-EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = 'c';
+SELECT 'STRING TO UInt64 tests';
+STRING TO UInt64 tests
+EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = '300';
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
@@ -80,16 +79,16 @@ Expression ((Project names + Projection))
             Parts: 1/3
             Granules: 1/3
           Ranges: 1
-SELECT count() FROM test_table WHERE value = 'c';
+SELECT count() FROM test_table WHERE value = '300';
 1
 SYSTEM STOP MERGES test_table;
-SET alter_sync = 0;
-ALTER TABLE test_table MODIFY COLUMN value FixedString(1);
+SET alter_sync = 0, mutations_sync = 0;
+ALTER TABLE test_table MODIFY COLUMN value UInt64;
 -- At this point the index is incompatible with the old parts so it should be ignored
 SELECT 'Status after ALTER is issued, before merges happen, max_threads=1';
 Status after ALTER is issued, before merges happen, max_threads=1
 SET max_threads = 1;
-EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = 'c';
+EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = '300';
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
@@ -114,12 +113,12 @@ Expression ((Project names + Projection))
             Parts: 3/3
             Granules: 3/3
           Ranges: 3
-SELECT count() FROM test_table WHERE value = 'c';
+SELECT count() FROM test_table WHERE value = '300';
 1
 SELECT 'Status after ALTER is issued, before merges happen, max_threads=2;';
 Status after ALTER is issued, before merges happen, max_threads=2;
 SET max_threads = 2;
-EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = 'c';
+EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = '300';
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
@@ -144,16 +143,16 @@ Expression ((Project names + Projection))
             Parts: 3/3
             Granules: 3/3
           Ranges: 3
-SELECT count() FROM test_table WHERE value = 'c';
+SELECT count() FROM test_table WHERE value = '300';
 1
 SET max_threads = DEFAULT;
 SYSTEM START MERGES test_table;
 -- Wait for mutations
-SET alter_sync = 1;
-ALTER TABLE test_table UPDATE ip = '127.0.0.1' WHERE true; -- Just a dummy mutation to wait for previous to finish
+SET alter_sync = 1, mutations_sync = 1;
+ALTER TABLE test_table UPDATE ip = '127.0.0.4' WHERE true; -- Just a dummy mutation to wait for previous to finish
 SELECT 'Status after ALTER is applied';
 Status after ALTER is applied
-EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = 'c';
+EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = '300';
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
@@ -178,13 +177,13 @@ Expression ((Project names + Projection))
             Parts: 1/3
             Granules: 1/3
           Ranges: 1
-SELECT count() FROM test_table WHERE value = 'c';
+SELECT count() FROM test_table WHERE value = '300';
 1
 -- Force a table rewrite to confirm it's the same
 OPTIMIZE TABLE test_table FINAL;
 SELECT 'Status after ALTER full table rewrite (should be the same)';
 Status after ALTER full table rewrite (should be the same)
-EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = 'c';
+EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = '300';
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
@@ -209,17 +208,17 @@ Expression ((Project names + Projection))
             Parts: 1/3
             Granules: 1/3
           Ranges: 1
-SELECT count() FROM test_table WHERE value = 'c';
+SELECT count() FROM test_table WHERE value = '300';
 1
 -- Doing a MODIFY COLUMN TTL should not affect the index
 SELECT 'ALTER TTL';
 ALTER TTL
 SYSTEM STOP MERGES test_table;
-SET alter_sync = 0;
+SET alter_sync = 0, mutations_sync = 0;
 ALTER TABLE test_table MODIFY COLUMN value MODIFY SETTING max_compress_block_size = 1048576;
 SELECT 'Status after unrelated ALTER MODIFY COLUMN is issued, before merges happen';
 Status after unrelated ALTER MODIFY COLUMN is issued, before merges happen
-EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = 'c';
+EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = '300';
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
@@ -244,15 +243,15 @@ Expression ((Project names + Projection))
             Parts: 1/3
             Granules: 1/3
           Ranges: 1
-SELECT count() FROM test_table WHERE value = 'c';
+SELECT count() FROM test_table WHERE value = '300';
 1
 SYSTEM START MERGES test_table;
 -- Wait for mutations
-SET alter_sync = 1;
-ALTER TABLE test_table UPDATE ip = '127.0.0.1' WHERE true; -- Just a dummy mutation to wait for previous to finish
+SET alter_sync = 1, mutations_sync = 1;
+ALTER TABLE test_table UPDATE ip = '127.0.0.5' WHERE true; -- Just a dummy mutation to wait for previous to finish
 SELECT 'Status after unrelated ALTER is applied';
 Status after unrelated ALTER is applied
-EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = 'c';
+EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = '300';
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
@@ -277,10 +276,9 @@ Expression ((Project names + Projection))
             Parts: 1/3
             Granules: 1/3
           Ranges: 1
-SELECT count() FROM test_table WHERE value = 'c';
+SELECT count() FROM test_table WHERE value = '300';
 1
-DROP TABLE IF EXISTS test_table;
--- { echoOn }
+DROP TABLE IF EXISTS test_table SYNC;
 CREATE TABLE test_table
 (
     id UInt64,
@@ -296,13 +294,11 @@ ENGINE = MergeTree()
 ORDER BY id
 PARTITION BY id
 SETTINGS alter_column_secondary_index_mode = 'rebuild', min_bytes_for_full_part_storage = '1G';
--- { echOff }
-
 -- Need it for proper explain
 SET use_skip_indexes_on_data_read = 0;
 -- Need it because we rerun some queries (with different settings) and we want to execute the full analysis
 SET use_query_condition_cache = 0;
-INSERT INTO test_table VALUES (1, 'a', '127.0.0.1'), (2, 'b', '127.0.0.2'), (3, 'c', '127.0.0.3');
+INSERT INTO test_table VALUES (1, '10', '127.0.0.1'), (2, '20', '127.0.0.2'), (3, '300', '127.0.0.3');
 SELECT 'IP column tests';
 IP column tests
 EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE ip = '127.0.0.1';
@@ -335,9 +331,9 @@ SELECT count() FROM test_table WHERE ip = '127.0.0.1';
 -- If we try to modify the column to a type incompatible with the index it should always throw an error and forbid the ALTER,
 -- independently of the alter_column_secondary_index_mode setting.
 ALTER TABLE test_table MODIFY COLUMN ip IPv4; -- { serverError INCORRECT_QUERY }
-SELECT 'STRING TO FIXEDSTRING tests';
-STRING TO FIXEDSTRING tests
-EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = 'c';
+SELECT 'STRING TO UInt64 tests';
+STRING TO UInt64 tests
+EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = '300';
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
@@ -362,16 +358,16 @@ Expression ((Project names + Projection))
             Parts: 1/3
             Granules: 1/3
           Ranges: 1
-SELECT count() FROM test_table WHERE value = 'c';
+SELECT count() FROM test_table WHERE value = '300';
 1
 SYSTEM STOP MERGES test_table;
-SET alter_sync = 0;
-ALTER TABLE test_table MODIFY COLUMN value FixedString(1);
+SET alter_sync = 0, mutations_sync = 0;
+ALTER TABLE test_table MODIFY COLUMN value UInt64;
 -- At this point the index is incompatible with the old parts so it should be ignored
 SELECT 'Status after ALTER is issued, before merges happen, max_threads=1';
 Status after ALTER is issued, before merges happen, max_threads=1
 SET max_threads = 1;
-EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = 'c';
+EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = '300';
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
@@ -396,12 +392,12 @@ Expression ((Project names + Projection))
             Parts: 3/3
             Granules: 3/3
           Ranges: 3
-SELECT count() FROM test_table WHERE value = 'c';
+SELECT count() FROM test_table WHERE value = '300';
 1
 SELECT 'Status after ALTER is issued, before merges happen, max_threads=2;';
 Status after ALTER is issued, before merges happen, max_threads=2;
 SET max_threads = 2;
-EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = 'c';
+EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = '300';
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
@@ -426,16 +422,16 @@ Expression ((Project names + Projection))
             Parts: 3/3
             Granules: 3/3
           Ranges: 3
-SELECT count() FROM test_table WHERE value = 'c';
+SELECT count() FROM test_table WHERE value = '300';
 1
 SET max_threads = DEFAULT;
 SYSTEM START MERGES test_table;
 -- Wait for mutations
-SET alter_sync = 1;
-ALTER TABLE test_table UPDATE ip = '127.0.0.1' WHERE true; -- Just a dummy mutation to wait for previous to finish
+SET alter_sync = 1, mutations_sync = 1;
+ALTER TABLE test_table UPDATE ip = '127.0.0.4' WHERE true; -- Just a dummy mutation to wait for previous to finish
 SELECT 'Status after ALTER is applied';
 Status after ALTER is applied
-EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = 'c';
+EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = '300';
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
@@ -460,13 +456,13 @@ Expression ((Project names + Projection))
             Parts: 1/3
             Granules: 1/3
           Ranges: 1
-SELECT count() FROM test_table WHERE value = 'c';
+SELECT count() FROM test_table WHERE value = '300';
 1
 -- Force a table rewrite to confirm it's the same
 OPTIMIZE TABLE test_table FINAL;
 SELECT 'Status after ALTER full table rewrite (should be the same)';
 Status after ALTER full table rewrite (should be the same)
-EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = 'c';
+EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = '300';
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
@@ -491,17 +487,17 @@ Expression ((Project names + Projection))
             Parts: 1/3
             Granules: 1/3
           Ranges: 1
-SELECT count() FROM test_table WHERE value = 'c';
+SELECT count() FROM test_table WHERE value = '300';
 1
 -- Doing a MODIFY COLUMN TTL should not affect the index
 SELECT 'ALTER TTL';
 ALTER TTL
 SYSTEM STOP MERGES test_table;
-SET alter_sync = 0;
+SET alter_sync = 0, mutations_sync = 0;
 ALTER TABLE test_table MODIFY COLUMN value MODIFY SETTING max_compress_block_size = 1048576;
 SELECT 'Status after unrelated ALTER MODIFY COLUMN is issued, before merges happen';
 Status after unrelated ALTER MODIFY COLUMN is issued, before merges happen
-EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = 'c';
+EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = '300';
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
@@ -526,15 +522,15 @@ Expression ((Project names + Projection))
             Parts: 1/3
             Granules: 1/3
           Ranges: 1
-SELECT count() FROM test_table WHERE value = 'c';
+SELECT count() FROM test_table WHERE value = '300';
 1
 SYSTEM START MERGES test_table;
 -- Wait for mutations
-SET alter_sync = 1;
-ALTER TABLE test_table UPDATE ip = '127.0.0.1' WHERE true; -- Just a dummy mutation to wait for previous to finish
+SET alter_sync = 1, mutations_sync = 1;
+ALTER TABLE test_table UPDATE ip = '127.0.0.5' WHERE true; -- Just a dummy mutation to wait for previous to finish
 SELECT 'Status after unrelated ALTER is applied';
 Status after unrelated ALTER is applied
-EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = 'c';
+EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = '300';
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
@@ -559,6 +555,6 @@ Expression ((Project names + Projection))
             Parts: 1/3
             Granules: 1/3
           Ranges: 1
-SELECT count() FROM test_table WHERE value = 'c';
+SELECT count() FROM test_table WHERE value = '300';
 1
-DROP TABLE IF EXISTS test_table;
+DROP TABLE IF EXISTS test_table SYNC;

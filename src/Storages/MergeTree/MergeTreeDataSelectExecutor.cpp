@@ -824,7 +824,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                     return std::unexpected(
                         PreformattedMessage::create(
-                            "Index {} is not used for part {} because it depends on column {} which will be updated on the fly",
+                            "Index {} is not used for part {} because it depends on column `{}` which will be updated on the fly",
                             index->index.name,
                             ranges.data_part->name,
                             it->getNameInStorage()));
