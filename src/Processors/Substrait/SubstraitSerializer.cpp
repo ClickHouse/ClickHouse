@@ -18,7 +18,6 @@
 #include <Common/Exception.h>
 #include <Storages/IStorage.h>
 
-// Include generated Substrait protobuf headers
 #include <substrait/plan.pb.h>
 #include <substrait/algebra.pb.h>
 #include <substrait/type.pb.h>
@@ -424,14 +423,63 @@ private:
         auto child_rel = convertNode(node->children[0]);
         sort_rel->mutable_input()->Swap(&child_rel);
         
-        // TODO: Convert sort description
-        // For now, create a simple sort by first column
-        auto * sort_field = sort_rel->add_sorts();
-        auto * expr = sort_field->mutable_expr();
-        auto * selection = expr->mutable_selection();
-        auto * direct_ref = selection->mutable_direct_reference();
-        direct_ref->mutable_struct_field()->set_field(0);
-        sort_field->set_direction(substrait::SortField::SORT_DIRECTION_ASC_NULLS_FIRST);
+        // Cast to SortingStep to access sort description
+        const auto * sorting_step = dynamic_cast<const SortingStep *>(node->step.get());
+        if (!sorting_step)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SortingStep but got {}", node->step->getName());
+        
+        // Get sort description
+        const auto & sort_description = sorting_step->getSortDescription();
+        
+        // Get input header to map column names to indices
+        const auto & input_header_ptr = node->children[0]->step->getOutputHeader();
+        const Block & input_header = *input_header_ptr;
+        
+        // Convert each sort column
+        for (const auto & sort_col : sort_description)
+        {
+            auto * sort_field = sort_rel->add_sorts();
+            
+            // Find column index by name
+            int field_index = -1;
+            for (size_t i = 0; i < input_header.columns(); ++i)
+            {
+                if (input_header.getByPosition(i).name == sort_col.column_name)
+                {
+                    field_index = static_cast<int>(i);
+                    break;
+                }
+            }
+            
+            if (field_index < 0)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, 
+                    "Sort column {} not found in input header", sort_col.column_name);
+            
+            // Create field selection expression
+            auto * expr = sort_field->mutable_expr();
+            auto * selection = expr->mutable_selection();
+            auto * direct_ref = selection->mutable_direct_reference();
+            direct_ref->mutable_struct_field()->set_field(field_index);
+            
+            // Map sort direction and nulls handling
+            // direction: 1 = ASC, -1 = DESC
+            // nulls_direction: 1 = NULLS LAST (when direction=1) or NULLS FIRST (when direction=-1)
+            //                 -1 = NULLS FIRST (when direction=1) or NULLS LAST (when direction=-1)
+            if (sort_col.direction == 1)  // ASC
+            {
+                if (sort_col.nulls_direction == 1)  // NULLS LAST
+                    sort_field->set_direction(substrait::SortField::SORT_DIRECTION_ASC_NULLS_LAST);
+                else  // NULLS FIRST
+                    sort_field->set_direction(substrait::SortField::SORT_DIRECTION_ASC_NULLS_FIRST);
+            }
+            else  // DESC
+            {
+                if (sort_col.nulls_direction == -1)  // NULLS LAST
+                    sort_field->set_direction(substrait::SortField::SORT_DIRECTION_DESC_NULLS_LAST);
+                else  // NULLS FIRST
+                    sort_field->set_direction(substrait::SortField::SORT_DIRECTION_DESC_NULLS_FIRST);
+            }
+        }
     }
 
     void convertAggregatingStep(const QueryPlan::Node * node, substrait::Rel * rel)
