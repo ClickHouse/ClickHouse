@@ -7,14 +7,17 @@
 #include <Disks/ObjectStorages/StoredObject.h>
 #include <Disks/WriteMode.h>
 
-#include <Core/ServerUUID.h>
-
 #include <IO/ReadSettings.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/Operators.h>
 
-#include <gtest/gtest.h>
+#include <Core/ServerUUID.h>
+
 #include <Common/thread_local_rng.h>
+
+#include <gtest/gtest.h>
+
+#include <ranges>
 
 using namespace DB;
 
@@ -127,7 +130,8 @@ std::vector<std::string> sorted(std::vector<std::string> array)
 std::vector<std::string> listAllBlobs(std::string test)
 {
     return sorted(std::filesystem::recursive_directory_iterator(fmt::format("./{}", test))
-                    | std::views::transform([](const auto & dir) { return dir.path(); })
+                    | std::views::filter([](const auto & inode) { return inode.is_regular_file(); })
+                    | std::views::transform([](const auto & file) { return file.path(); })
                     | std::ranges::to<std::vector<std::string>>());
 }
 
@@ -487,7 +491,7 @@ TEST_F(MetadataPlainRewritableDiskTest, RemoveDirectoryRecursive)
     EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("root/A/B/E/F/file_4").front().remote_path), "4");
 
     auto inodes_start = listAllBlobs("RemoveDirectoryRecursive");
-    EXPECT_EQ(inodes_start.size(), 23);
+    EXPECT_EQ(inodes_start.size(), 11);  /// 7 directories + 4 files
 
     /// Check undo
     {
@@ -512,12 +516,8 @@ TEST_F(MetadataPlainRewritableDiskTest, RemoveDirectoryRecursive)
     EXPECT_FALSE(metadata->existsDirectory("root/A/B/D"));
     EXPECT_FALSE(metadata->existsDirectory("root/A/B/E"));
     EXPECT_FALSE(metadata->existsDirectory("root/A/B/E/F"));
-
-    /// It is the directory 'root/'
     EXPECT_EQ(listAllBlobs("RemoveDirectoryRecursive"), std::vector<std::string>({
-        "./RemoveDirectoryRecursive/__meta",
-        "./RemoveDirectoryRecursive/__meta/faefxnlkbtfqgxcbfqfjtztsocaqrnqn",
-        "./RemoveDirectoryRecursive/__meta/faefxnlkbtfqgxcbfqfjtztsocaqrnqn/prefix.path",
+        "./RemoveDirectoryRecursive/__meta/faefxnlkbtfqgxcbfqfjtztsocaqrnqn/prefix.path",  /// /root
     }));
 }
 
@@ -559,11 +559,8 @@ TEST_F(MetadataPlainRewritableDiskTest, RemoveDirectoryRecursiveVirtualNodes)
     EXPECT_FALSE(metadata->existsDirectory("root/A/B"));
     EXPECT_FALSE(metadata->existsDirectory("root/A/B/C"));
     EXPECT_FALSE(metadata->existsDirectory("root/A/B/C/D"));
-
     EXPECT_EQ(listAllBlobs("RemoveDirectoryRecursiveVirtualNodes"), std::vector<std::string>({
-        "./RemoveDirectoryRecursiveVirtualNodes/__meta",
-        "./RemoveDirectoryRecursiveVirtualNodes/__meta/faefxnlkbtfqgxcbfqfjtztsocaqrnqn",
-        "./RemoveDirectoryRecursiveVirtualNodes/__meta/faefxnlkbtfqgxcbfqfjtztsocaqrnqn/prefix.path",
+        "./RemoveDirectoryRecursiveVirtualNodes/__meta/faefxnlkbtfqgxcbfqfjtztsocaqrnqn/prefix.path",  /// /root
     }));
 }
 
@@ -794,14 +791,9 @@ TEST_F(MetadataPlainRewritableDiskTest, RootFiles)
     EXPECT_FALSE(metadata->existsFile("/C"));
     EXPECT_TRUE(metadata->existsFile("X/C"));
     EXPECT_TRUE(metadata->existsFile("/X/C"));
-
     EXPECT_EQ(listAllBlobs("RootFiles"), std::vector<std::string>({
-        "./RootFiles/__meta",
-        "./RootFiles/__meta/ykwvvchguqasvfnkikaqtiebknfzafwv",
         "./RootFiles/__meta/ykwvvchguqasvfnkikaqtiebknfzafwv/prefix.path",  /// X
-        "./RootFiles/__root",
         "./RootFiles/__root/B",                                             /// /B
-        "./RootFiles/ykwvvchguqasvfnkikaqtiebknfzafwv",
         "./RootFiles/ykwvvchguqasvfnkikaqtiebknfzafwv/C"                    /// X/C
     }));
 }
@@ -832,7 +824,10 @@ TEST_F(MetadataPlainRewritableDiskTest, RemoveRoot)
         tx->commit();
     }
 
-    EXPECT_EQ(listAllBlobs("RemoveRecursiveRoot"), std::vector<std::string>({"./RemoveRecursiveRoot/__root", "./RemoveRecursiveRoot/__root/A", "./RemoveRecursiveRoot/__root/B"}));
+    EXPECT_EQ(listAllBlobs("RemoveRecursiveRoot"), std::vector<std::string>({
+        "./RemoveRecursiveRoot/__root/A",
+        "./RemoveRecursiveRoot/__root/B"
+    }));
 }
 
 TEST_F(MetadataPlainRewritableDiskTest, UnlinkNonExisting)
@@ -1271,14 +1266,10 @@ TEST_F(MetadataPlainRewritableDiskTest, CreateHardLink)
     EXPECT_TRUE(metadata->existsDirectory("/A"));
     EXPECT_TRUE(metadata->existsFile("/A/f1"));
     EXPECT_TRUE(metadata->existsFile("/A/f2"));
-
     EXPECT_EQ(listAllBlobs("CreateHardLink"), std::vector<std::string>({
-        "./CreateHardLink/__meta",
-        "./CreateHardLink/__meta/faefxnlkbtfqgxcbfqfjtztsocaqrnqn",
-        "./CreateHardLink/__meta/faefxnlkbtfqgxcbfqfjtztsocaqrnqn/prefix.path",
-        "./CreateHardLink/faefxnlkbtfqgxcbfqfjtztsocaqrnqn",
-        "./CreateHardLink/faefxnlkbtfqgxcbfqfjtztsocaqrnqn/f1",
-        "./CreateHardLink/faefxnlkbtfqgxcbfqfjtztsocaqrnqn/f2"
+        "./CreateHardLink/__meta/faefxnlkbtfqgxcbfqfjtztsocaqrnqn/prefix.path",  /// /A
+        "./CreateHardLink/faefxnlkbtfqgxcbfqfjtztsocaqrnqn/f1",                  /// /A/f1
+        "./CreateHardLink/faefxnlkbtfqgxcbfqfjtztsocaqrnqn/f2"                   /// /A/f2
     }));
 }
 
@@ -1313,7 +1304,7 @@ TEST_F(MetadataPlainRewritableDiskTest, CreateHardLinkUndo)
         EXPECT_ANY_THROW(tx->commit());
     }
 
-    EXPECT_EQ(listAllBlobs("CreateHardLinkUndo").size(), 5);
+    EXPECT_EQ(listAllBlobs("CreateHardLinkUndo").size(), 2);
     EXPECT_TRUE(metadata->existsDirectory("/A"));
     EXPECT_TRUE(metadata->existsFile("/A/f1"));
     EXPECT_FALSE(metadata->existsFile("/A/f2"));
@@ -1325,7 +1316,7 @@ TEST_F(MetadataPlainRewritableDiskTest, CreateHardLinkUndo)
         EXPECT_ANY_THROW(tx->commit());
     }
 
-    EXPECT_EQ(listAllBlobs("CreateHardLinkUndo").size(), 5);
+    EXPECT_EQ(listAllBlobs("CreateHardLinkUndo").size(), 2);
     EXPECT_TRUE(metadata->existsDirectory("/A"));
     EXPECT_TRUE(metadata->existsFile("/A/f1"));
     EXPECT_FALSE(metadata->existsFile("/A/f2"));
@@ -1341,13 +1332,9 @@ TEST_F(MetadataPlainRewritableDiskTest, CreateHardLinkUndo)
     EXPECT_TRUE(metadata->existsDirectory("/A"));
     EXPECT_TRUE(metadata->existsFile("/A/f1"));
     EXPECT_FALSE(metadata->existsFile("/A/f2"));
-
     EXPECT_EQ(listAllBlobs("CreateHardLinkUndo"), std::vector<std::string>({
-        "./CreateHardLinkUndo/__meta",
-        "./CreateHardLinkUndo/__meta/faefxnlkbtfqgxcbfqfjtztsocaqrnqn",
-        "./CreateHardLinkUndo/__meta/faefxnlkbtfqgxcbfqfjtztsocaqrnqn/prefix.path",
-        "./CreateHardLinkUndo/faefxnlkbtfqgxcbfqfjtztsocaqrnqn",
-        "./CreateHardLinkUndo/faefxnlkbtfqgxcbfqfjtztsocaqrnqn/f1",
+        "./CreateHardLinkUndo/__meta/faefxnlkbtfqgxcbfqfjtztsocaqrnqn/prefix.path",  /// /A
+        "./CreateHardLinkUndo/faefxnlkbtfqgxcbfqfjtztsocaqrnqn/f1",                  /// /A/f1
     }));
 }
 
@@ -1387,9 +1374,7 @@ TEST_F(MetadataPlainRewritableDiskTest, CreateHardLinkRootFiles)
     EXPECT_TRUE(metadata->existsFile("/f1"));
     EXPECT_TRUE(metadata->existsFile("/f2"));
     EXPECT_FALSE(metadata->existsFile("/f3"));
-
     EXPECT_EQ(listAllBlobs("CreateHardLinkRootFiles"), std::vector<std::string>({
-        "./CreateHardLinkRootFiles/__root",
         "./CreateHardLinkRootFiles/__root/f1",
         "./CreateHardLinkRootFiles/__root/f2",
     }));
