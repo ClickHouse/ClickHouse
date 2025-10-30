@@ -1465,12 +1465,20 @@ SQLType * AggregateFunctionType::typeDeepCopy() const
 String AggregateFunctionType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen) const
 {
     /// At the moment I am risking the output is the same as the first type's value
+    if (subtypes.empty())
+    {
+        return std::to_string(rg.nextRandomUInt64());
+    }
     return subtypes[0]->appendRandomRawValue(rg, gen);
 }
 
 String AggregateFunctionType::insertNumberEntry(
     RandomGenerator & rg, StatementGenerator & gen, const uint32_t max_strlen, const uint32_t max_nested_rows) const
 {
+    if (subtypes.empty())
+    {
+        return std::to_string(rg.nextRandomUInt64());
+    }
     return subtypes[0]->insertNumberEntry(rg, gen, max_strlen, max_nested_rows);
 }
 
