@@ -31,8 +31,8 @@ struct TextSearchQuery
 
 using TextSearchQueryPtr = std::shared_ptr<TextSearchQuery>;
 
-class MergeTreePreprocessor;
-using MergeTreePreprocessorPtr = std::shared_ptr<MergeTreePreprocessor>;
+class MergeTreeIndexTextPreprocessor;
+using MergeTreeIndexTextPreprocessorPtr = std::shared_ptr<MergeTreeIndexTextPreprocessor>;
 
 /// Condition for text index.
 /// Unlike conditions for other indexes, it can be used after analysis
@@ -45,7 +45,7 @@ public:
         ContextPtr context,
         const Block & index_sample_block,
         TokenExtractorPtr token_extactor_,
-        MergeTreePreprocessorPtr preprocessor_);
+        MergeTreeIndexTextPreprocessorPtr preprocessor_);
 
     ~MergeTreeIndexConditionText() override = default;
     static bool isSupportedFunctionForDirectRead(const String & function_name);
@@ -59,7 +59,7 @@ public:
     TextSearchMode getGlobalSearchMode() const { return global_search_mode; }
     const Block & getHeader() const { return header; }
 
-    /// Create text search query for the function node if it is suitable for optimization.
+    /// Create text search qupreprocessorery for the function node if it is suitable for optimization.
     TextSearchQueryPtr createTextSearchQuery(const ActionsDAG::Node & node) const;
     /// Returns generated virtual column name for the replacement of related function node.
     std::optional<String> replaceToVirtualColumn(const TextSearchQuery & query, const String & index_name);
@@ -130,7 +130,7 @@ private:
     TextSearchMode global_search_mode = TextSearchMode::All;
 
     /// Reference preprocessor expression
-    MergeTreePreprocessorPtr preprocessor;
+    MergeTreeIndexTextPreprocessorPtr preprocessor;
 };
 
 static constexpr std::string_view TEXT_INDEX_VIRTUAL_COLUMN_PREFIX = "__text_index_";

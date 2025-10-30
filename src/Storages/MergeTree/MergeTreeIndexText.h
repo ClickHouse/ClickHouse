@@ -304,10 +304,10 @@ struct MergeTreeIndexTextGranuleBuilder
     std::unique_ptr<Arena> arena;
 };
 
-class MergeTreePreprocessor
+class MergeTreeIndexTextPreprocessor
 {
 public:
-    MergeTreePreprocessor(const String & expression, const IndexDescription & index_description);
+    MergeTreeIndexTextPreprocessor(const String & expression, const IndexDescription & index_description);
     std::pair<ColumnPtr,size_t> processColumn(const ColumnWithTypeAndName & index_column_with_type_and_name, size_t start_row, size_t n_rows) const;
     String processString(const String &input) const;
 
@@ -318,7 +318,7 @@ private:
     String column_name;
 };
 
-using MergeTreePreprocessorPtr = std::shared_ptr<MergeTreePreprocessor>;
+using MergeTreeIndexTextPreprocessorPtr = std::shared_ptr<MergeTreeIndexTextPreprocessor>;
 
 struct MergeTreeIndexAggregatorText final : IMergeTreeIndexAggregator
 {
@@ -326,7 +326,7 @@ struct MergeTreeIndexAggregatorText final : IMergeTreeIndexAggregator
         String index_column_name_,
         MergeTreeIndexTextParams params_,
         TokenExtractorPtr token_extractor_,
-        MergeTreePreprocessorPtr preprocessor_);
+        MergeTreeIndexTextPreprocessorPtr preprocessor_);
 
     ~MergeTreeIndexAggregatorText() override = default;
 
@@ -338,7 +338,7 @@ struct MergeTreeIndexAggregatorText final : IMergeTreeIndexAggregator
     MergeTreeIndexTextParams params;
     TokenExtractorPtr token_extractor;
     MergeTreeIndexTextGranuleBuilder granule_builder;
-    MergeTreePreprocessorPtr preprocessor;
+    MergeTreeIndexTextPreprocessorPtr preprocessor;
 };
 
 class MergeTreeIndexText final : public IMergeTreeIndex
@@ -368,7 +368,7 @@ public:
     MergeTreeIndexTextParams params;
     std::unique_ptr<ITokenExtractor> token_extractor;
 
-    MergeTreePreprocessorPtr preprocessor;
+    MergeTreeIndexTextPreprocessorPtr preprocessor;
 };
 
 }

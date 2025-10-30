@@ -866,7 +866,7 @@ MergeTreeIndexAggregatorText::MergeTreeIndexAggregatorText(
     String index_column_name_,
     MergeTreeIndexTextParams params_,
     TokenExtractorPtr token_extractor_,
-    MergeTreePreprocessorPtr preprocessor_)
+    MergeTreeIndexTextPreprocessorPtr preprocessor_)
     : index_column_name(std::move(index_column_name_))
     , params(std::move(params_))
     , token_extractor(token_extractor_)
@@ -936,7 +936,7 @@ MergeTreeIndexText::MergeTreeIndexText(
     : IMergeTreeIndex(index_)
     , params(std::move(params_))
     , token_extractor(std::move(token_extractor_))
-    , preprocessor(std::make_shared<MergeTreePreprocessor>(params.preprocessor, index_))
+    , preprocessor(std::make_shared<MergeTreeIndexTextPreprocessor>(params.preprocessor, index_))
 {
 }
 
@@ -1343,7 +1343,7 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
         /// This is a bit redundant but I won't expect that this impact performance anyhow because the expression is intended to be simple
         /// enough.  But if this redundant construction represents an issue we could simple build the "intermediate" ASTPtr and use it for
         /// validation. That way we skip the ActionsDAG and ExpressionActions constructions.
-        ExpressionActions expression = MergeTreePreprocessor::parseExpression(index, preprocessor_str.value());
+        ExpressionActions expression = MergeTreeIndexTextPreprocessor::parseExpression(index, preprocessor_str.value());
 
         const Names required_columns = expression.getRequiredColumns();
 
@@ -1493,14 +1493,14 @@ FieldVector MergeTreeIndexText::parseArgumentsListFromAST(const ASTPtr & argumen
     return result;
 }
 
-MergeTreePreprocessor::MergeTreePreprocessor(const String & expression_str, const IndexDescription & index_description)
-    : expression(MergeTreePreprocessor::parseExpression(index_description, expression_str))
+MergeTreeIndexTextPreprocessor::MergeTreeIndexTextPreprocessor(const String & expression_str, const IndexDescription & index_description)
+    : expression(MergeTreeIndexTextPreprocessor::parseExpression(index_description, expression_str))
     , column_type(index_description.data_types.front())
     , column_name(index_description.column_names.front())
 {
 }
 
-std::pair<ColumnPtr,size_t> MergeTreePreprocessor::processColumn(const ColumnWithTypeAndName & index_column_with_type_and_name, size_t start_row, size_t n_rows) const
+std::pair<ColumnPtr,size_t> MergeTreeIndexTextPreprocessor::processColumn(const ColumnWithTypeAndName & index_column_with_type_and_name, size_t start_row, size_t n_rows) const
 {
     auto index_column = index_column_with_type_and_name.column;
 
@@ -1517,7 +1517,7 @@ std::pair<ColumnPtr,size_t> MergeTreePreprocessor::processColumn(const ColumnWit
     return {block.safeGetByPosition(0).column, 0};
 }
 
-String MergeTreePreprocessor::processString(const String &input) const
+String MergeTreeIndexTextPreprocessor::processString(const String &input) const
 {
     if (expression.getActions().empty())
         return input;
@@ -1534,7 +1534,7 @@ String MergeTreePreprocessor::processString(const String &input) const
     return block.safeGetByPosition(0).column->getDataAt(0).toString();
 }
 
-ExpressionActions MergeTreePreprocessor::parseExpression(const IndexDescription & index_description, const String & expression)
+ExpressionActions MergeTreeIndexTextPreprocessor::parseExpression(const IndexDescription & index_description, const String & expression)
 {
     chassert(index_description.column_names.size() == 1);
     chassert(index_description.data_types.size() == 1);
