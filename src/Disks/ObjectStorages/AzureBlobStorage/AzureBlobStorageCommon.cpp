@@ -93,8 +93,6 @@ namespace ErrorCodes
 namespace AzureBlobStorage
 {
 
-#if USE_AZURE_BLOB_STORAGE
-
 static void validateStorageAccountUrl(const String & storage_account_url)
 {
     const auto * storage_account_url_pattern_str = R"(http(()|s)://[a-z0-9-.:]+(()|/)[a-z0-9]*(()|/))";
@@ -121,9 +119,19 @@ static void validateContainerName(const String & container_name)
                         container_name_pattern_str, container_name);
 }
 
+#if USE_AZURE_BLOB_STORAGE
+
 static bool isConnectionString(const std::string & candidate)
 {
     return !candidate.starts_with("http");
+}
+
+/// As ManagedIdentityCredential is related to the machine/pod, it's ok to have it as a singleton.
+/// It is beneficial because creating this object can take a lot of time and lead to throttling.
+static std::shared_ptr<Azure::Identity::ManagedIdentityCredential> getManagedIdentityCredential()
+{
+    static auto credential = std::make_shared<Azure::Identity::ManagedIdentityCredential>();
+    return credential;
 }
 
 ContainerClientWrapper::ContainerClientWrapper(RawContainerClient client_, String blob_prefix_)
@@ -215,113 +223,6 @@ std::unique_ptr<ContainerClient> ConnectionParams::createForContainer() const
     }, auth_method);
 }
 
-Endpoint processEndpoint(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
-{
-    String storage_url;
-    String account_name;
-    String container_name;
-    String prefix;
-
-    auto get_container_name = [&]
-    {
-        if (config.has(config_prefix + ".container_name"))
-            return config.getString(config_prefix + ".container_name");
-
-        if (config.has(config_prefix + ".container"))
-            return config.getString(config_prefix + ".container");
-
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected either `container` or `container_name` parameter in config");
-    };
-
-    if (config.has(config_prefix + ".endpoint"))
-    {
-        String endpoint = config.getString(config_prefix + ".endpoint");
-
-        /// For some authentication methods account name is not present in the endpoint
-        /// 'endpoint_contains_account_name' bool is used to understand how to split the endpoint (default : true)
-        bool endpoint_contains_account_name = config.getBool(config_prefix + ".endpoint_contains_account_name", true);
-
-        size_t pos = endpoint.find("//");
-        if (pos == std::string::npos)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected '//' in endpoint");
-
-        if (endpoint_contains_account_name)
-        {
-            size_t acc_pos_begin = endpoint.find('/', pos + 2);
-            if (acc_pos_begin == std::string::npos)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected account_name in endpoint");
-
-            storage_url = endpoint.substr(0, acc_pos_begin);
-            size_t acc_pos_end = endpoint.find('/', acc_pos_begin + 1);
-
-            if (acc_pos_end == std::string::npos)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected container_name in endpoint");
-
-            account_name = endpoint.substr(acc_pos_begin + 1, acc_pos_end - acc_pos_begin - 1);
-
-            size_t cont_pos_end = endpoint.find('/', acc_pos_end + 1);
-
-            if (cont_pos_end != std::string::npos)
-            {
-                container_name = endpoint.substr(acc_pos_end + 1, cont_pos_end - acc_pos_end - 1);
-                prefix = endpoint.substr(cont_pos_end + 1);
-            }
-            else
-            {
-                container_name = endpoint.substr(acc_pos_end + 1);
-            }
-        }
-        else
-        {
-            size_t cont_pos_begin = endpoint.find('/', pos + 2);
-
-            if (cont_pos_begin == std::string::npos)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected container_name in endpoint");
-
-            storage_url = endpoint.substr(0, cont_pos_begin);
-            size_t cont_pos_end = endpoint.find('/', cont_pos_begin + 1);
-
-            if (cont_pos_end != std::string::npos)
-            {
-                container_name = endpoint.substr(cont_pos_begin + 1,cont_pos_end - cont_pos_begin - 1);
-                prefix = endpoint.substr(cont_pos_end + 1);
-            }
-            else
-            {
-                container_name = endpoint.substr(cont_pos_begin + 1);
-            }
-        }
-
-        if (config.has(config_prefix + ".endpoint_subpath"))
-        {
-            String endpoint_subpath = config.getString(config_prefix + ".endpoint_subpath");
-            prefix = fs::path(prefix) / endpoint_subpath;
-        }
-    }
-    else if (config.has(config_prefix + ".connection_string"))
-    {
-        storage_url = config.getString(config_prefix + ".connection_string");
-        container_name = get_container_name();
-    }
-    else if (config.has(config_prefix + ".storage_account_url"))
-    {
-        storage_url = config.getString(config_prefix + ".storage_account_url");
-        validateStorageAccountUrl(storage_url);
-        container_name = get_container_name();
-    }
-    else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected either `storage_account_url` or `connection_string` or `endpoint` in config");
-
-    if (!container_name.empty())
-        validateContainerName(container_name);
-
-    std::optional<bool> container_already_exists {};
-    if (config.has(config_prefix + ".container_already_exists"))
-        container_already_exists = {config.getBool(config_prefix + ".container_already_exists")};
-
-    return {storage_url, account_name, container_name, prefix, "", container_already_exists};
-}
-
 void processURL(const String & url, const String & container_name, Endpoint & endpoint, AuthMethod & auth_method)
 {
     endpoint.container_name = container_name;
@@ -345,7 +246,7 @@ void processURL(const String & url, const String & container_name, Endpoint & en
     {
         endpoint.storage_account_url = url.substr(0, pos);
         endpoint.sas_auth = url.substr(pos + 1);
-        auth_method = std::make_shared<Azure::Identity::ManagedIdentityCredential>();
+        auth_method = getManagedIdentityCredential();
     }
 }
 
@@ -422,61 +323,65 @@ AuthMethod getAuthMethod(const Poco::Util::AbstractConfiguration & config, const
     if (config.getBool(config_prefix + ".use_workload_identity", false))
         return std::make_shared<Azure::Identity::WorkloadIdentityCredential>();
 
-    return std::make_shared<Azure::Identity::ManagedIdentityCredential>();
+    return getManagedIdentityCredential();
 }
 
-BlobClientOptions getClientOptions(ContextPtr context, const RequestSettings & settings, bool for_disk)
+BlobClientOptions getClientOptions(
+    const ContextPtr & context,
+    const Settings & settings,
+    const RequestSettings & request_settings,
+    bool for_disk)
 {
     Azure::Core::Http::Policies::RetryOptions retry_options;
-    retry_options.MaxRetries = static_cast<Int32>(settings.sdk_max_retries);
-    retry_options.RetryDelay = std::chrono::milliseconds(settings.sdk_retry_initial_backoff_ms);
-    retry_options.MaxRetryDelay = std::chrono::milliseconds(settings.sdk_retry_max_backoff_ms);
+    retry_options.MaxRetries = static_cast<Int32>(request_settings.sdk_max_retries);
+    retry_options.RetryDelay = std::chrono::milliseconds(request_settings.sdk_retry_initial_backoff_ms);
+    retry_options.MaxRetryDelay = std::chrono::milliseconds(request_settings.sdk_retry_max_backoff_ms);
     Azure::Storage::Blobs::BlobClientOptions client_options;
     client_options.Retry = retry_options;
     client_options.ClickhouseOptions = Azure::Storage::Blobs::ClickhouseClientOptions{.IsClientForDisk=for_disk};
 
-    if (context->getSettingsRef()[Setting::azure_sdk_use_native_client])
+    if (settings[Setting::azure_sdk_use_native_client])
     {
         ThrottlerPtr get_request_throttler;
         ThrottlerPtr put_request_throttler;
 
-        if (context->getSettingsRef()[Setting::azure_max_get_rps] > 0 || context->getSettingsRef()[Setting::azure_max_get_burst] > 0)
+        if (settings[Setting::azure_max_get_rps] > 0 || settings[Setting::azure_max_get_burst] > 0)
         {
             get_request_throttler = std::make_shared<Throttler>(
-                context->getSettingsRef()[Setting::azure_max_get_rps],
-                context->getSettingsRef()[Setting::azure_max_get_burst],
+                settings[Setting::azure_max_get_rps],
+                settings[Setting::azure_max_get_burst],
                 ProfileEvents::AzureGetRequestThrottlerCount,
                 ProfileEvents::AzureGetRequestThrottlerSleepMicroseconds);
         }
 
-        if (context->getSettingsRef()[Setting::azure_max_put_rps] > 0 || context->getSettingsRef()[Setting::azure_max_put_burst] > 0)
+        if (settings[Setting::azure_max_put_rps] > 0 || settings[Setting::azure_max_put_burst] > 0)
         {
             put_request_throttler = std::make_shared<Throttler>(
-                context->getSettingsRef()[Setting::azure_max_put_rps],
-                context->getSettingsRef()[Setting::azure_max_put_burst],
+                settings[Setting::azure_max_put_rps],
+                settings[Setting::azure_max_put_burst],
                 ProfileEvents::AzurePutRequestThrottlerCount,
                 ProfileEvents::AzurePutRequestThrottlerSleepMicroseconds);
         }
 
         auto http_keep_alive_seconds = static_cast<size_t>(context->getServerSettings()[ServerSetting::keep_alive_timeout].totalSeconds());
-        auto tcp_keep_alive_milliseconds = static_cast<size_t>(context->getSettingsRef()[Setting::tcp_keep_alive_timeout].totalMilliseconds());
+        auto tcp_keep_alive_milliseconds = static_cast<size_t>(settings[Setting::tcp_keep_alive_timeout].totalMilliseconds());
 
         PocoAzureHTTPClientConfiguration conf{
             .remote_host_filter = context->getRemoteHostFilter(),
-            .max_redirects = context->getSettingsRef()[Setting::azure_max_redirects],
+            .max_redirects = settings[Setting::azure_max_redirects],
             .for_disk_azure = for_disk,
             .get_request_throttler = get_request_throttler,
             .put_request_throttler = put_request_throttler,
             .extra_headers = HTTPHeaderEntries{}, /// No extra headers so far
-            .connect_timeout_ms = context->getSettingsRef()[Setting::azure_connect_timeout_ms],
-            .request_timeout_ms = context->getSettingsRef()[Setting::azure_request_timeout_ms],
+            .connect_timeout_ms = settings[Setting::azure_connect_timeout_ms],
+            .request_timeout_ms = settings[Setting::azure_request_timeout_ms],
             .tcp_keep_alive_interval_ms = tcp_keep_alive_milliseconds,
-            .use_adaptive_timeouts = context->getSettingsRef()[Setting::azure_use_adaptive_timeouts],
+            .use_adaptive_timeouts = settings[Setting::azure_use_adaptive_timeouts],
             .http_keep_alive_timeout = http_keep_alive_seconds, // Convert seconds to milliseconds
             .http_keep_alive_max_requests = context->getServerSettings()[ServerSetting::max_keep_alive_requests],
-            .http_max_fields = context->getSettingsRef()[Setting::http_max_fields],
-            .http_max_field_name_size = context->getSettingsRef()[Setting::http_max_field_name_size],
-            .http_max_field_value_size = context->getSettingsRef()[Setting::http_max_field_value_size]};
+            .http_max_fields = settings[Setting::http_max_fields],
+            .http_max_field_name_size = settings[Setting::http_max_field_name_size],
+            .http_max_field_value_size = settings[Setting::http_max_field_value_size]};
 
         client_options.Transport.Transport = std::make_shared<PocoAzureHTTPClient>(conf);
     }
@@ -484,7 +389,7 @@ BlobClientOptions getClientOptions(ContextPtr context, const RequestSettings & s
     {
         Azure::Core::Http::CurlTransportOptions curl_options;
         curl_options.NoSignal = true;
-        curl_options.IPResolve = settings.curl_ip_resolve;
+        curl_options.IPResolve = request_settings.curl_ip_resolve;
         client_options.Transport.Transport = std::make_shared<Azure::Core::Http::CurlTransport>(curl_options);
     }
 
@@ -492,6 +397,113 @@ BlobClientOptions getClientOptions(ContextPtr context, const RequestSettings & s
 }
 
 #endif
+
+Endpoint processEndpoint(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+{
+    String storage_url;
+    String account_name;
+    String container_name;
+    String prefix;
+
+    auto get_container_name = [&]
+    {
+        if (config.has(config_prefix + ".container_name"))
+            return config.getString(config_prefix + ".container_name");
+
+        if (config.has(config_prefix + ".container"))
+            return config.getString(config_prefix + ".container");
+
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Expected either `container` or `container_name` parameter in config");
+    };
+
+    if (config.has(config_prefix + ".endpoint"))
+    {
+        String endpoint = config.getString(config_prefix + ".endpoint");
+
+        /// For some authentication methods account name is not present in the endpoint
+        /// 'endpoint_contains_account_name' bool is used to understand how to split the endpoint (default : true)
+        bool endpoint_contains_account_name = config.getBool(config_prefix + ".endpoint_contains_account_name", true);
+
+        size_t pos = endpoint.find("//");
+        if (pos == std::string::npos)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected '//' in endpoint");
+
+        if (endpoint_contains_account_name)
+        {
+            size_t acc_pos_begin = endpoint.find('/', pos + 2);
+            if (acc_pos_begin == std::string::npos)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected account_name in endpoint");
+
+            storage_url = endpoint.substr(0, acc_pos_begin);
+            size_t acc_pos_end = endpoint.find('/', acc_pos_begin + 1);
+
+            if (acc_pos_end == std::string::npos)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected container_name in endpoint");
+
+            account_name = endpoint.substr(acc_pos_begin + 1, acc_pos_end - acc_pos_begin - 1);
+
+            size_t cont_pos_end = endpoint.find('/', acc_pos_end + 1);
+
+            if (cont_pos_end != std::string::npos)
+            {
+                container_name = endpoint.substr(acc_pos_end + 1, cont_pos_end - acc_pos_end - 1);
+                prefix = endpoint.substr(cont_pos_end + 1);
+            }
+            else
+            {
+                container_name = endpoint.substr(acc_pos_end + 1);
+            }
+        }
+        else
+        {
+            size_t cont_pos_begin = endpoint.find('/', pos + 2);
+
+            if (cont_pos_begin == std::string::npos)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected container_name in endpoint");
+
+            storage_url = endpoint.substr(0, cont_pos_begin);
+            size_t cont_pos_end = endpoint.find('/', cont_pos_begin + 1);
+
+            if (cont_pos_end != std::string::npos)
+            {
+                container_name = endpoint.substr(cont_pos_begin + 1,cont_pos_end - cont_pos_begin - 1);
+                prefix = endpoint.substr(cont_pos_end + 1);
+            }
+            else
+            {
+                container_name = endpoint.substr(cont_pos_begin + 1);
+            }
+        }
+        if (config.has(config_prefix + ".endpoint_subpath"))
+        {
+            String endpoint_subpath = config.getString(config_prefix + ".endpoint_subpath");
+            prefix = fs::path(prefix) / endpoint_subpath;
+        }
+    }
+    else if (config.has(config_prefix + ".connection_string"))
+    {
+        storage_url = config.getString(config_prefix + ".connection_string");
+        container_name = get_container_name();
+    }
+    else if (config.has(config_prefix + ".storage_account_url"))
+    {
+        storage_url = config.getString(config_prefix + ".storage_account_url");
+        validateStorageAccountUrl(storage_url);
+        container_name = get_container_name();
+    }
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected either `storage_account_url` or `connection_string` or `endpoint` in config");
+
+    if (!container_name.empty())
+        validateContainerName(container_name);
+
+    std::optional<bool> container_already_exists {};
+    if (config.has(config_prefix + ".container_already_exists"))
+        container_already_exists = {config.getBool(config_prefix + ".container_already_exists")};
+
+    return {storage_url, account_name, container_name, prefix, "", container_already_exists};
+}
 
 std::unique_ptr<RequestSettings> getRequestSettings(const Settings & query_settings)
 {
@@ -596,31 +608,41 @@ void AzureSettingsByEndpoint::loadFromConfig(
 
     for (const String & key : config_keys)
     {
-        const auto key_path = config_prefix + "." + key;
-        String endpoint_path = key_path + ".connection_string";
-
-        if (!config.has(endpoint_path))
+        if (config.has(config_prefix + "." + key + ".object_storage_type"))
         {
-            endpoint_path = key_path + ".storage_account_url";
+            const auto &object_storage_type = config.getString(config_prefix + "." + key + ".object_storage_type");
+            if (object_storage_type != "azure" && object_storage_type != "azure_blob_storage")
+            {
+                /// Then its not an azure config
+                continue;
+            }
+
+            const auto key_path = config_prefix + "." + key;
+            String endpoint_path = key_path + ".connection_string";
 
             if (!config.has(endpoint_path))
             {
-                endpoint_path = key_path + ".endpoint";
+                endpoint_path = key_path + ".storage_account_url";
 
                 if (!config.has(endpoint_path))
                 {
-                    /// Error, shouldn't hit this todo:: throw error
-                    continue;
+                    endpoint_path = key_path + ".endpoint";
+
+                    if (!config.has(endpoint_path))
+                    {
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "URL not provided for azure blob storage disk {}",
+                                        object_storage_type);
+                    }
                 }
             }
+
+            auto endpoint = AzureBlobStorage::processEndpoint(config, key_path);
+            auto request_settings = AzureBlobStorage::getRequestSettings(config, key_path, settings);
+
+            azure_settings.emplace(
+                    endpoint.storage_account_url,
+                    std::move(*request_settings));
         }
-
-        auto request_settings = AzureBlobStorage::getRequestSettings(config, key_path, settings);
-
-        azure_settings.emplace(
-                config.getString(endpoint_path),
-                std::move(*request_settings));
-
     }
 }
 
@@ -641,5 +663,6 @@ std::optional<AzureBlobStorage::RequestSettings> AzureSettingsByEndpoint::getSet
 
     return {};
 }
+
 
 }

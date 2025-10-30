@@ -22,6 +22,14 @@ class InMemoryDirectoryPathMap;
 struct UnlinkMetadataFileOperationOutcome;
 using UnlinkMetadataFileOperationOutcomePtr = std::shared_ptr<UnlinkMetadataFileOperationOutcome>;
 
+struct ObjectMetadataEntry
+{
+    uint64_t file_size;
+    time_t last_modified;
+};
+using ObjectMetadataEntryPtr = std::shared_ptr<ObjectMetadataEntry>;
+using ObjectMetadataCachePtr = std::shared_ptr<CacheBase<UInt128, ObjectMetadataEntry>>;
+
 /// Object storage is used as a filesystem, in a limited form:
 /// - no directory concept, files only
 /// - no stat/chmod/...
@@ -38,18 +46,11 @@ private:
     friend class MetadataStorageFromPlainObjectStorageTransaction;
 
 protected:
-    struct ObjectMetadataEntry
-    {
-        uint64_t file_size;
-        time_t last_modified;
-    };
-    using ObjectMetadataEntryPtr = std::shared_ptr<ObjectMetadataEntry>;
-
     ObjectStoragePtr object_storage;
     const String storage_path_prefix;
     const String storage_path_full;
 
-    mutable std::optional<CacheBase<UInt128, ObjectMetadataEntry>> object_metadata_cache;
+    mutable ObjectMetadataCachePtr object_metadata_cache;
 
     mutable SharedMutex metadata_mutex;
 
@@ -90,6 +91,11 @@ public:
     bool supportsStat() const override { return false; }
     bool supportsPartitionCommand(const PartitionCommand & command) const override;
 
+    bool isReadOnly() const override { return true; }
+
+private:
+    ObjectStorageKey getObjectKeyForPath(const std::string & path) const;
+
 protected:
     /// Get the object storage prefix for storing metadata files.
     virtual std::string getMetadataKeyPrefix() const { return object_storage->getCommonKeyPrefix(); }
@@ -101,13 +107,13 @@ protected:
 };
 
 
-class MetadataStorageFromPlainObjectStorageTransaction : public IMetadataTransaction, private MetadataOperationsHolder
+class MetadataStorageFromPlainObjectStorageTransaction : public IMetadataTransaction
 {
 protected:
     MetadataStorageFromPlainObjectStorage & metadata_storage;
     ObjectStoragePtr object_storage;
 
-    std::vector<MetadataOperationPtr> operations;
+    MetadataOperationsHolder operations;
 
 public:
     explicit MetadataStorageFromPlainObjectStorageTransaction(
@@ -116,11 +122,6 @@ public:
     {}
 
     const IMetadataStorage & getStorageForNonTransactionalReads() const override;
-
-    void addBlobToMetadata(const std::string & /* path */, ObjectStorageKey /* object_key */, uint64_t /* size_in_bytes */) override
-    {
-        /// Noop
-    }
 
     void setLastModified(const String &, const Poco::Timestamp &) override
     {
@@ -133,9 +134,7 @@ public:
         /// Noop
     }
 
-    void createEmptyMetadataFile(const std::string & /* path */) override;
-
-    void createMetadataFile(const std::string & /* path */, ObjectStorageKey /* object_key */, uint64_t /* size_in_bytes */) override;
+    void createMetadataFile(const std::string & /* path */, const StoredObjects & /* objects */) override;
 
     void createDirectory(const std::string & path) override;
 
@@ -145,6 +144,7 @@ public:
 
     void unlinkFile(const std::string & path) override;
     void removeDirectory(const std::string & path) override;
+    void removeRecursive(const std::string &) override;
 
     /// Hard links are simulated using server-side copying.
     void createHardLink(const std::string & path_from, const std::string & path_to) override;
@@ -155,7 +155,9 @@ public:
 
     UnlinkMetadataFileOperationOutcomePtr unlinkMetadata(const std::string & path) override;
 
-    void commit() override;
+    std::optional<StoredObjects> tryGetBlobsFromTransactionIfExists(const std::string & path) const override;
+
+    void commit(const TransactionCommitOptionsVariant & options) override;
 
     bool supportsChmod() const override { return false; }
 };

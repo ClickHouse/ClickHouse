@@ -248,9 +248,6 @@ def test_query_after_restore_db_replica(
         node_2, exclusive_database_name
     )
 
-    if need_restart:
-        node_1.restart_clickhouse()
-
     assert (
         zk.exists(f"/clickhouse/{exclusive_database_name}/metadata/{exists_table_name}")
         is None
@@ -261,6 +258,9 @@ def test_query_after_restore_db_replica(
     )
 
     node_1.query(f"SYSTEM RESTORE DATABASE REPLICA {exclusive_database_name}")
+
+    if need_restart:
+        node_1.restart_clickhouse()
 
     assert (
         zk.exists(f"/clickhouse/{exclusive_database_name}/metadata/{process_table}")
@@ -335,9 +335,6 @@ def test_query_after_restore_db_replica(
         f"{exclusive_database_name}.{changed_table}",
     )
 
-    if need_restart:
-        node_1.restart_clickhouse()
-
     assert (
         zk.exists(f"/clickhouse/{exclusive_database_name}/metadata/{exists_table_name}")
         is None
@@ -349,6 +346,9 @@ def test_query_after_restore_db_replica(
 
     node_1.query(f"SYSTEM RESTORE DATABASE REPLICA {exclusive_database_name}")
     node_2.query(f"SYSTEM RESTORE DATABASE REPLICA {exclusive_database_name}")
+
+    if need_restart:
+        node_1.restart_clickhouse()
 
     if exists_table:
         assert zk.exists(
@@ -479,10 +479,7 @@ def test_restore_db_replica_with_diffrent_table_metadata(
 
     for node in nodes:
         node.query(f"SYSTEM RESTORE DATABASE REPLICA {exclusive_database_name}")
-        assert node.wait_for_log_line(
-            f"{exclusive_database_name}): All tables are created successfully",
-            look_behind_lines=1000,
-        )
+        assert node.wait_for_log_line(f"{exclusive_database_name}): All tables are created successfully")
 
     assert node_1.query_with_retry(
         f"SELECT count(*) FROM {exclusive_database_name}.{test_table_1}",
@@ -625,10 +622,7 @@ def test_restore_db_replica_on_cluster(
     assert zk.exists(f"/clickhouse/{exclusive_database_name}") is None
 
     node_1.query(f"SYSTEM RESTORE DATABASE REPLICA ON CLUSTER `test_cluster` {exclusive_database_name}")
-    assert node_1.wait_for_log_line(
-        f"{exclusive_database_name}): All tables are created successfully",
-        look_behind_lines=1000,
-    )
+    assert node_1.wait_for_log_line(f"{exclusive_database_name}): All tables are created successfully")
 
     assert node_1.query(
         f"SELECT count(*) FROM system.databases WHERE name='{exclusive_database_name}'"

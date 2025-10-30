@@ -64,7 +64,7 @@ inline cctz::time_point<cctz::seconds> lookupTz(const cctz::time_zone & cctz_tim
 
 __attribute__((__weak__)) extern bool inside_main;
 
-DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
+DateLUTImpl::DateLUTImpl(std::string_view time_zone_)
     : time_zone(time_zone_)
 {
     /// DateLUT should not be initialized in global constructors for the following reasons:

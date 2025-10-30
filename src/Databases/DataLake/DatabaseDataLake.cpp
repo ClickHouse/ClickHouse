@@ -3,6 +3,10 @@
 #include <Databases/DataLake/HiveCatalog.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Databases/DataLake/DatabaseDataLakeSettings.h>
+#include <Databases/DataLake/Common.h>
+#include <Databases/DataLake/ICatalog.h>
+#include <Common/Exception.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 
 #if USE_AVRO && USE_PARQUET
 
@@ -19,6 +23,7 @@
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/StorageNull.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
+#include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
@@ -56,7 +61,11 @@ namespace Setting
     extern const SettingsBool allow_experimental_database_glue_catalog;
     extern const SettingsBool allow_experimental_database_hms_catalog;
     extern const SettingsBool use_hive_partitioning;
+    extern const SettingsBool parallel_replicas_for_cluster_engines;
+    extern const SettingsString cluster_for_parallel_replicas;
+
 }
+
 namespace DataLakeStorageSetting
 {
     extern const DataLakeStorageSettingsString iceberg_metadata_file_path;
@@ -69,24 +78,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int DATALAKE_DATABASE_ERROR;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
-}
-
-namespace
-{
-    /// Parse a string, containing at least one dot, into a two substrings:
-    /// A.B.C.D.E -> A.B.C.D and E, where
-    /// `A.B.C.D` is a table "namespace".
-    /// `E` is a table name.
-    std::pair<std::string, std::string> parseTableName(const std::string & name)
-    {
-        auto pos = name.rfind('.');
-        if (pos == std::string::npos)
-            throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Table cannot have empty namespace: {}", name);
-
-        auto table_name = name.substr(pos + 1);
-        auto namespace_name = name.substr(0, name.size() - table_name.size() - 1);
-        return {namespace_name, table_name};
-    }
+    extern const int LOGICAL_ERROR;
 }
 
 DatabaseDataLake::DatabaseDataLake(
@@ -126,8 +118,18 @@ void DatabaseDataLake::validateSettings()
 
 std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
 {
+    if (settings[DatabaseDataLakeSetting::catalog_type].value == DatabaseDataLakeCatalogType::NONE)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unspecified catalog type");
+
     if (catalog_impl)
         return catalog_impl;
+
+    auto catalog_parameters = DataLake::CatalogSettings{
+        .storage_endpoint = settings[DatabaseDataLakeSetting::storage_endpoint].value,
+        .aws_access_key_id = settings[DatabaseDataLakeSetting::aws_access_key_id].value,
+        .aws_secret_access_key = settings[DatabaseDataLakeSetting::aws_secret_access_key].value,
+        .region = settings[DatabaseDataLakeSetting::region].value,
+    };
 
     switch (settings[DatabaseDataLakeSetting::catalog_type].value)
     {
@@ -159,7 +161,7 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
             catalog_impl = std::make_shared<DataLake::GlueCatalog>(
                 url,
                 Context::getGlobalContextInstance(),
-                settings,
+                catalog_parameters,
                 table_engine_definition);
             break;
         }
@@ -174,6 +176,11 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
 #else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot use 'hive' database engine: ClickHouse was compiled without USE_HIVE built option");
 #endif
+        }
+        case DB::DatabaseDataLakeCatalogType::NONE:
+        {
+            catalog_impl = nullptr;
+            break;
         }
     }
     return catalog_impl;
@@ -245,6 +252,12 @@ std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfigur
                     return std::make_shared<StorageS3DeltaLakeConfiguration>(storage_settings);
                 }
 #endif
+#if USE_AZURE_BLOB_STORAGE
+                case DB::DatabaseDataLakeStorageType::Azure:
+                {
+                    return std::make_shared<StorageAzureDeltaLakeConfiguration>(storage_settings);
+                }
+#endif
                 case DB::DatabaseDataLakeStorageType::Local:
                 {
                     return std::make_shared<StorageLocalDeltaLakeConfiguration>(storage_settings);
@@ -287,6 +300,8 @@ std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfigur
                                     type);
             }
         }
+        case DatabaseDataLakeCatalogType::NONE:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unspecified catalog type");
     }
 }
 
@@ -295,8 +310,7 @@ std::string DatabaseDataLake::getStorageEndpointForTable(const DataLake::TableMe
     auto endpoint_from_settings = settings[DatabaseDataLakeSetting::storage_endpoint].value;
     if (endpoint_from_settings.empty())
         return table_metadata.getLocation();
-    else
-        return table_metadata.getLocationWithEndpoint(endpoint_from_settings);
+    return table_metadata.getLocationWithEndpoint(endpoint_from_settings);
 }
 
 bool DatabaseDataLake::empty() const
@@ -306,7 +320,7 @@ bool DatabaseDataLake::empty() const
 
 bool DatabaseDataLake::isTableExist(const String & name, ContextPtr /* context_ */) const
 {
-    const auto [namespace_name, table_name] = parseTableName(name);
+    const auto [namespace_name, table_name] = DataLake::parseTableName(name);
     return getCatalog()->existsTable(namespace_name, table_name);
 }
 
@@ -324,7 +338,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     if (!lightweight && with_vended_credentials)
         table_metadata = table_metadata.withStorageCredentials();
 
-    auto [namespace_name, table_name] = parseTableName(name);
+    auto [namespace_name, table_name] = DataLake::parseTableName(name);
 
     if (!catalog->tryGetTableMetadata(namespace_name, table_name, table_metadata))
         return nullptr;
@@ -409,12 +423,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         auto metadata_location = table_specific_properties->iceberg_metadata_file_location;
         if (!metadata_location.empty())
         {
-            const auto data_location = table_metadata.getLocation();
-            if (metadata_location.starts_with(data_location))
-            {
-                size_t remove_slash = metadata_location[data_location.size()] == '/' ? 1 : 0;
-                metadata_location = metadata_location.substr(data_location.size() + remove_slash);
-            }
+            metadata_location = table_metadata.getMetadataLocation(metadata_location);
         }
 
         (*storage_settings)[DB::DataLakeStorageSetting::iceberg_metadata_file_path] = metadata_location;
@@ -432,6 +441,36 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     /// no table structure in table definition AST.
     StorageObjectStorageConfiguration::initialize(*configuration, args, context_copy, /* with_table_structure */false);
 
+    const auto & query_settings = context_->getSettingsRef();
+
+    const auto parallel_replicas_cluster_name = query_settings[Setting::cluster_for_parallel_replicas].toString();
+    const auto can_use_parallel_replicas = !parallel_replicas_cluster_name.empty()
+        && query_settings[Setting::parallel_replicas_for_cluster_engines]
+        && context_->canUseTaskBasedParallelReplicas()
+        && !context_->isDistributed();
+
+    const auto is_secondary_query = context_->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+
+    if (can_use_parallel_replicas && !is_secondary_query)
+    {
+        auto storage_cluster = std::make_shared<StorageObjectStorageCluster>(
+            parallel_replicas_cluster_name,
+            configuration,
+            configuration->createObjectStorage(context_copy, /* is_readonly */ false),
+            StorageID(getDatabaseName(), name),
+            columns,
+            ConstraintsDescription{},
+            nullptr,
+            context_);
+
+        storage_cluster->startup();
+        return storage_cluster;
+    }
+
+    bool can_use_distributed_iterator =
+        context_->getClientInfo().collaborate_with_initiator &&
+        can_use_parallel_replicas;
+
     return std::make_shared<StorageObjectStorage>(
         configuration,
         configuration->createObjectStorage(context_copy, /* is_readonly */ false),
@@ -442,12 +481,25 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         /* comment */"",
         getFormatSettings(context_copy),
         LoadingStrictnessLevel::CREATE,
+        getCatalog(),
         /* if_not_exists*/true,
         /* is_datalake_query*/true,
-        /* distributed_processing */false,
+        /* distributed_processing */can_use_distributed_iterator,
         /* partition_by */nullptr,
         /* is_table_function */false,
         /* lazy_init */true);
+}
+
+void DatabaseDataLake::dropTable( /// NOLINT
+    ContextPtr context_,
+    const String & name,
+    bool /*sync*/)
+{
+    auto table = tryGetTable(name, context_);
+    if (table)
+        table->drop();
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot drop table {} because it does not exist", name);
 }
 
 DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIterator(
@@ -494,7 +546,6 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIterator(
                     }
                     catch (...)
                     {
-                        tryLogCurrentException(log, fmt::format("Ignoring table {}", table_name));
                         promise->set_exception(std::current_exception());
                     }
                 });
@@ -530,6 +581,7 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getLightweightTablesIterator(
     bool skip_not_loaded) const
 {
     Tables tables;
+
     auto catalog = getCatalog();
     DB::Names iceberg_tables;
 
@@ -576,7 +628,7 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getLightweightTablesIterator(
                     }
                     catch (...)
                     {
-                        tryLogCurrentException(log, fmt::format("ignoring table {}", table_name));
+                        tryLogCurrentException(log, fmt::format("Ignoring table {}", table_name));
                     }
                     promise->set_value(storage);
                 });
@@ -619,17 +671,18 @@ ASTPtr DatabaseDataLake::getCreateDatabaseQuery() const
 ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
     const String & name,
     ContextPtr /* context_ */,
-    bool /* throw_on_error */) const
+    bool throw_on_error) const
 {
     auto catalog = getCatalog();
     auto table_metadata = DataLake::TableMetadata().withLocation().withSchema();
 
-    const auto [namespace_name, table_name] = parseTableName(name);
+    const auto [namespace_name, table_name] = DataLake::parseTableName(name);
 
     if (!catalog->tryGetTableMetadata(namespace_name, table_name, table_metadata))
     {
-        throw Exception(
-            ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY, "Table `{}` doesn't exist", name);
+        if (throw_on_error)
+            throw Exception(ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY, "Table `{}` doesn't exist", name);
+        return {};
     }
 
     auto create_table_query = std::make_shared<ASTCreateQuery>();
@@ -692,7 +745,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
 
         DatabaseDataLakeSettings database_settings;
         if (database_engine_define->settings)
-            database_settings.loadFromQuery(*database_engine_define);
+            database_settings.loadFromQuery(*database_engine_define, args.create_query.attach);
 
         auto catalog_type = database_settings[DB::DatabaseDataLakeSetting::catalog_type].value;
         /// Glue catalog is one per region, so it's fully identified by aws keys and region
@@ -740,8 +793,8 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                     && !args.context->getSettingsRef()[Setting::allow_experimental_database_iceberg])
                 {
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                                    "DatabaseDataLake with Iceberg Rest catalog is experimental. "
-                                    "To allow its usage, enable setting allow_experimental_database_iceberg");
+                                    "DatabaseDataLake with Iceberg Rest catalog is beta. "
+                                    "To allow its usage, enable setting allow_database_iceberg");
                 }
 
                 engine_func->name = "Iceberg";
@@ -753,8 +806,8 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                     && !args.context->getSettingsRef()[Setting::allow_experimental_database_glue_catalog])
                 {
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                                    "DatabaseDataLake with Glue catalog is experimental. "
-                                    "To allow its usage, enable setting allow_experimental_database_glue_catalog");
+                                    "DatabaseDataLake with Glue catalog is beta. "
+                                    "To allow its usage, enable setting allow_database_glue_catalog");
                 }
 
                 engine_func->name = "Iceberg";
@@ -766,8 +819,8 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                     && !args.context->getSettingsRef()[Setting::allow_experimental_database_unity_catalog])
                 {
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                                    "DataLake database with Unity catalog catalog is experimental. "
-                                    "To allow its usage, enable setting allow_experimental_database_unity_catalog");
+                                    "DataLake database with Unity catalog catalog is beta. "
+                                    "To allow its usage, enable setting allow_database_unity_catalog");
                 }
 
                 engine_func->name = "DeltaLake";
@@ -786,6 +839,8 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                 engine_func->name = "Iceberg";
                 break;
             }
+            case DatabaseDataLakeCatalogType::NONE:
+                break;
         }
 
         return std::make_shared<DatabaseDataLake>(

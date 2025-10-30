@@ -3,6 +3,7 @@
 #include <chrono>
 #include <shared_mutex>
 #include <Coordination/CoordinationSettings.h>
+#include <Coordination/KeeperCommon.h>
 #include <Coordination/KeeperDispatcher.h>
 #include <Coordination/KeeperReconfiguration.h>
 #include <Common/thread_local_rng.h>
@@ -302,6 +303,9 @@ std::shared_ptr<KeeperRequestForSession> IKeeperStateMachine::parseRequest(
 
     int32_t length;
     Coordination::read(length, buffer);
+    /// Request should not exceed max_request_size (this is verified in KeeperTCPHandler)
+    if (length < 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid request length: {}", length);
 
     /// because of backwards compatibility, only 32bit xid could be written
     /// for that reason we serialize XID in 2 parts:
@@ -410,19 +414,20 @@ std::shared_ptr<KeeperRequestForSession> IKeeperStateMachine::parseRequest(
 }
 
 template<typename Storage>
-bool KeeperStateMachine<Storage>::preprocess(const KeeperRequestForSession & request_for_session)
+std::optional<KeeperDigest> KeeperStateMachine<Storage>::preprocess(const KeeperRequestForSession & request_for_session)
 {
     const auto op_num = request_for_session.request->getOpNum();
     if (op_num == Coordination::OpNum::SessionID || op_num == Coordination::OpNum::Reconfig)
-        return true;
+        return storage->getNodesDigest(false, /*lock_transaction_mutex=*/true);
 
     if (storage->isFinalized())
-        return false;
+        return std::nullopt;
 
+    KeeperDigest digest_after_preprocessing;
     try
     {
         LockGuardWithStats<true> lock(storage_mutex);
-        storage->preprocessRequest(
+        digest_after_preprocessing = storage->preprocessRequest(
             request_for_session.request,
             request_for_session.session_id,
             request_for_session.time,
@@ -445,13 +450,13 @@ bool KeeperStateMachine<Storage>::preprocess(const KeeperRequestForSession & req
     if (keeper_context->digestEnabled() && request_for_session.digest)
         assertDigest(
             *request_for_session.digest,
-            storage->getNodesDigest(false, /*lock_transaction_mutex=*/true),
+            digest_after_preprocessing,
             *request_for_session.request,
             request_for_session.log_idx,
             request_for_session.session_id,
             false);
 
-    return true;
+    return digest_after_preprocessing;
 }
 
 template<typename Storage>
@@ -459,6 +464,7 @@ void KeeperStateMachine<Storage>::reconfigure(const KeeperRequestForSession& req
 {
     LockGuardWithStats<false> lock(storage_mutex);
     KeeperResponseForSession response = processReconfiguration(request_for_session);
+    response.response->enqueue_ts = std::chrono::steady_clock::now();
     if (!responses_queue.push(response))
     {
         ProfileEvents::increment(ProfileEvents::KeeperCommitsFailed);
@@ -550,6 +556,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t l
 
     auto try_push = [&](const KeeperResponseForSession & response)
     {
+        response.response->enqueue_ts = std::chrono::steady_clock::now();
         if (!responses_queue.push(response))
         {
             ProfileEvents::increment(ProfileEvents::KeeperCommitsFailed);
@@ -948,6 +955,7 @@ void KeeperStateMachine<Storage>::processReadRequest(const KeeperRequestForSessi
     {
         if (response_for_session.response->xid != Coordination::WATCH_XID)
             response_for_session.request = request_for_session.request;
+        response_for_session.response->enqueue_ts = std::chrono::steady_clock::now();
         if (!responses_queue.push(response_for_session))
             LOG_WARNING(log, "Failed to push response with session id {} to the queue, probably because of shutdown", response_for_session.session_id);
     }
@@ -963,7 +971,7 @@ void KeeperStateMachine<Storage>::shutdownStorage()
 template<typename Storage>
 std::vector<int64_t> KeeperStateMachine<Storage>::getDeadSessions()
 {
-    LockGuardWithStats<false> lock(storage_mutex);
+    LockGuardWithStats<true> lock(storage_mutex);
     return storage->getDeadSessions();
 }
 

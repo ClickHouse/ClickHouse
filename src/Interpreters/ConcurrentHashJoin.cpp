@@ -447,7 +447,7 @@ IColumn::Selector selectDispatchBlock(const HashJoin & join, size_t num_shards, 
     for (const auto & key_name : key_columns_names)
     {
         const auto & key_col = from_block.getByName(key_name).column->convertToFullColumnIfConst();
-        const auto & key_col_no_lc = recursiveRemoveLowCardinality(recursiveRemoveSparse(key_col));
+        const auto & key_col_no_lc = recursiveRemoveLowCardinality(removeSpecialRepresentations(key_col));
         key_column_holders.push_back(key_col_no_lc);
         key_columns.push_back(key_col_no_lc.get());
     }
@@ -621,6 +621,14 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
                 getData(hash_joins[0])->maps.at(0));
         }
     }
+
+    /// Synchronize all `HashJoin`s on the `all_values_unique` flag.
+    bool all_values_unique = true;
+    for (const auto & hash_join : hash_joins)
+        all_values_unique &= hash_join->data->all_values_unique;
+
+    for (const auto & hash_join : hash_joins)
+        hash_join->data->all_values_unique = all_values_unique;
 
     // `onBuildPhaseFinish` cannot be called concurrently with other IJoin methods, so we don't need a lock to access internal joins.
     // The following calls must be done after the final common map is constructed, otherwise we will incorrectly initialize `used_flags`.
