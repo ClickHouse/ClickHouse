@@ -7,6 +7,8 @@
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/Aggregator.h>
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
@@ -14,6 +16,7 @@
 #include <Core/Field.h>
 #include <Functions/IFunction.h>
 #include <Common/Exception.h>
+#include <Storages/IStorage.h>
 
 // Include generated Substrait protobuf headers
 #include <substrait/plan.pb.h>
@@ -219,9 +222,18 @@ private:
                     {"lessOrEquals", 4},
                     {"greater", 5},
                     {"greaterOrEquals", 6},
-                    {"and", 10},
-                    {"or", 11},
-                    {"not", 12}
+                    {"plus", 7},
+                    {"minus", 8},
+                    {"multiply", 9},
+                    {"divide", 10},
+                    {"and", 11},
+                    {"or", 12},
+                    {"not", 13},
+                    {"sum", 20},
+                    {"avg", 21},
+                    {"count", 22},
+                    {"min", 23},
+                    {"max", 24}
                 };
                 
                 auto it = function_map.find(func_name);
@@ -313,9 +325,26 @@ private:
         }
         
         // Create a named table reference
-        // For now, we'll use a placeholder table name
         auto * named_table = read_rel->mutable_named_table();
-        named_table->add_names("table");
+        
+        // Try to extract table name from ReadFromMergeTree step
+        if (step.getName() == "ReadFromMergeTree")
+        {
+            // Use static_cast since we've already verified the type by name
+            const auto * read_from_mt = static_cast<const ReadFromMergeTree *>(&step);
+            const auto & storage_id = read_from_mt->getStorageID();
+            if (!storage_id.database_name.empty())
+                named_table->add_names(storage_id.database_name);
+            if (!storage_id.table_name.empty())
+                named_table->add_names(storage_id.table_name);
+            else
+                named_table->add_names("table");  // Fallback if table_name is empty
+        }
+        else
+        {
+            // Fallback for other read steps
+            named_table->add_names("table");
+        }
     }
 
     void convertFilterStep(const QueryPlan::Node * node, substrait::Rel * rel)
@@ -363,20 +392,26 @@ private:
         auto child_rel = convertNode(node->children[0]);
         project_rel->mutable_input()->Swap(&child_rel);
         
-        // TODO: Convert expressions to projections
-        // For now, just pass through all columns
-        const auto & header_ptr = node->step->getOutputHeader();
-        const Block & header = *header_ptr;
-        int field_index = 0;
-        for (const auto & column : header)
+        // Cast to ExpressionStep to access the ActionsDAG
+        const auto * expr_step = dynamic_cast<const ExpressionStep *>(node->step.get());
+        if (!expr_step)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected ExpressionStep but got {}", node->step->getName());
+        
+        // Get the ActionsDAG containing the expressions
+        const auto & actions_dag = expr_step->getExpression();
+        
+        // Get input header from child node
+        const auto & input_header_ptr = node->children[0]->step->getOutputHeader();
+        const Block & input_header = *input_header_ptr;
+        
+        // Convert each output column expression
+        const auto & outputs = actions_dag.getOutputs();
+        for (const auto * output_node : outputs)
         {
-            (void)column; // Suppress unused variable warning
-            auto * expr = project_rel->add_expressions();
-            auto * selection = expr->mutable_selection();
-            auto * direct_ref = selection->mutable_direct_reference();
-            direct_ref->mutable_struct_field()->set_field(field_index++);
+            auto expr = convertExpression(output_node, input_header);
+            project_rel->add_expressions()->Swap(&expr);
         }
-    }
+    }   
 
     void convertSortingStep(const QueryPlan::Node * node, substrait::Rel * rel)
     {
@@ -410,8 +445,91 @@ private:
         auto child_rel = convertNode(node->children[0]);
         agg_rel->mutable_input()->Swap(&child_rel);
         
-        // TODO: Convert grouping keys and aggregate functions
-        // For now, create empty aggregation
+        // Cast to AggregatingStep to access aggregation parameters
+        const auto * agg_step = dynamic_cast<const AggregatingStep *>(node->step.get());
+        if (!agg_step)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected AggregatingStep but got {}", node->step->getName());
+        
+        const auto & params = agg_step->getParams();
+        
+        // Get input header from child node
+        const auto & input_header_ptr = node->children[0]->step->getOutputHeader();
+        const Block & input_header = *input_header_ptr;
+        
+        // Convert grouping keys
+        for (const auto & key : params.keys)
+        {
+            auto * grouping_expr = agg_rel->add_groupings()->add_grouping_expressions();
+            
+            // Find the column index for the grouping key
+            int field_index = -1;
+            for (size_t i = 0; i < input_header.columns(); ++i)
+            {
+                if (input_header.getByPosition(i).name == key)
+                {
+                    field_index = static_cast<int>(i);
+                    break;
+                }
+            }
+            
+            if (field_index < 0)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Grouping key {} not found in input", key);
+            
+            auto * selection = grouping_expr->mutable_selection();
+            auto * direct_ref = selection->mutable_direct_reference();
+            direct_ref->mutable_struct_field()->set_field(field_index);
+        }
+        
+        // Convert aggregate functions
+        for (const auto & aggregate : params.aggregates)
+        {
+            auto * measure = agg_rel->add_measures();
+            auto * agg_func = measure->mutable_measure();
+            
+            // Map aggregate function name
+            static const std::unordered_map<String, int> agg_function_map = {
+                {"sum", 20},
+                {"avg", 21},
+                {"count", 22},
+                {"min", 23},
+                {"max", 24}
+            };
+            
+            auto it = agg_function_map.find(aggregate.function->getName());
+            if (it == agg_function_map.end())
+            {
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Aggregate function {} not yet supported for Substrait conversion",
+                    aggregate.function->getName());
+            }
+            
+            agg_func->set_function_reference(it->second);
+            
+            // Convert aggregate arguments
+            for (const auto & arg_column : aggregate.argument_names)
+            {
+                // Find the column index
+                int field_index = -1;
+                for (size_t i = 0; i < input_header.columns(); ++i)
+                {
+                    if (input_header.getByPosition(i).name == arg_column)
+                    {
+                        field_index = static_cast<int>(i);
+                        break;
+                    }
+                }
+                
+                if (field_index < 0)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, 
+                        "Aggregate argument {} not found in input", arg_column);
+                
+                auto * arg = agg_func->add_arguments();
+                auto * arg_expr = arg->mutable_value();
+                auto * selection = arg_expr->mutable_selection();
+                auto * direct_ref = selection->mutable_direct_reference();
+                direct_ref->mutable_struct_field()->set_field(field_index);
+            }
+        }
     }
 
 public:
