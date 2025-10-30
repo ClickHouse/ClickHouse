@@ -1123,9 +1123,9 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
 
     FunctionOverloadResolverPtr function_builder;
 
-    auto current_context = data.tryGetContext();
+    auto current_context = data.getContext();
 
-    if (current_context && UserDefinedExecutableFunctionFactory::instance().has(node.name, current_context)) /// NOLINT(readability-static-accessed-through-instance)
+    if (UserDefinedExecutableFunctionFactory::instance().has(node.name, current_context)) /// NOLINT(readability-static-accessed-through-instance)
     {
         Array parameters;
         if (node.parameters)
