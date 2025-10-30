@@ -87,19 +87,26 @@ returns
 +---------------------------------+
 ```
 
-Optional parameter `preprocessor` is intended to be an expression that transforms the input string into another one before
-tokenization. The main purposes for this argument are:
-1. Perform some transformations to the string to generate indices with specific purposes (i.e. case insensitive indices)
-2. Cleanup the data (i.e remove HTML tags)
-3. Optimize the index information (i.e remove accents, reduce cardinality limiting input to UTF-8)
+Optional argument `preprocessor` is an expression which transforms the input string into another one before tokenization.
 
-The expression's input and output are intended to be of the same types, but they are intended to work if they return any of the supported
-types mentioned above ([String](/sql-reference/data-types/string.md), [FixedString](/sql-reference/data-types/fixedstring.md),
-[Array(String)](/sql-reference/data-types/array.md), [Array(FixedString)](/sql-reference/data-types/array.md)). The expression should be
-expressed as a function of the index column name and should not depend of any other column. When using a `preprocessor` the index argument
-for construction will be limited only to the column name for simplicity in the interface and to avoid potential corner cases.
+Typical use of the preprocessor argument includes
+1. Lowercasing (or uppercasing) the input strings to enable case-insensitive matching (i.e [lower](/sql-reference/functions/string-functions.md/#lower), [lowerUTF8](/sql-reference/functions/string-functions.md/#lowerUTF8)), see the first example below.
+2. Perform UTF-8 normalization (i.e [normalizeUTF8NFC](/sql-reference/functions/string-functions.md/#normalizeUTF8NFC), [normalizeUTF8NFD](/sql-reference/functions/string-functions.md/#normalizeUTF8NFD), [normalizeUTF8NFKC](/sql-reference/functions/string-functions.md/#normalizeUTF8NFKC), [normalizeUTF8NFKD](/sql-reference/functions/string-functions.md/#normalizeUTF8NFKD), [toValidUTF8](/sql-reference/functions/string-functions.md/#toValidUTF8))
+3. Filtering out or transforming unwanted characters or substrings (i.e [extractTextFromHTML](/sql-reference/functions/string-functions.md/#extractTextFromHTML), [substring](/sql-reference/functions/string-functions.md/#substring), [idnaEncode](/sql-reference/functions/string-functions.md/#idnaEncode)).
 
-The preprocessor expression is also used to transform the input before performing function comparisons. This means that:
+The expression must transform an input value of type [String](/sql-reference/data-types/string.md), [FixedString](/sql-reference/data-types/fixedstring.md), [Array(String)](/sql-reference/data-types/array.md) or [Array(FixedString)](/sql-reference/data-types/array.md) to a value of the same type.
+
+Examples:
+- `INDEX idx(col) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(col))`
+- `INDEX idx(col) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = substringIndex(col, '\n', 1))`
+- `INDEX idx(col) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(extractTextFromHTML(col))`
+
+The preprocessor expression must only reference the column on top of which the text index is defined.
+It is not allowed to use Non-deterministic functions in the preprocessor expression.
+
+Functions [hasToken](/sql-reference/functions/string-search-functions.md/#hasToken), [hasAllTokens](/sql-reference/functions/string-search-functions.md/#hasAllTokens) and [hasAnyTokens](/sql-reference/functions/string-search-functions.md/#hasAnyTokens) use the preprocessor to first transform the search term before tokenizing it.
+
+For example:
 
 ```sql
 CREATE TABLE tab
@@ -110,8 +117,6 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree
 ORDER BY tuple();
-
-...
 
 SELECT count() FROM tab WHERE hasToken(str, 'Foo');
 ```
@@ -128,14 +133,8 @@ CREATE TABLE tab
 ENGINE = MergeTree
 ORDER BY tuple();
 
-...
-
 SELECT count() FROM tab WHERE hasToken(str, lower('Foo'));
 ```
-
-:::note
-User Defined Functions [UDFs](sql-reference/functions/udf.md) are not supported in the preprocessor expression.
-:::
 
 Text indexes in ClickHouse are implemented as [secondary indexes](/engines/table-engines/mergetree-family/mergetree.md/#skip-index-types).
 However, unlike other skipping indexes, text indexes have a default index GRANULARITY of 64.
