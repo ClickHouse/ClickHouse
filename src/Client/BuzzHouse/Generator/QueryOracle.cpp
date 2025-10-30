@@ -1037,12 +1037,30 @@ void QueryOracle::replaceQueryWithTablePeers(
     }
     for (const auto & entry : found_tables)
     {
-        SQLQuery next;
+        SQLQuery next2;
         const SQLTable & t = gen.tables.at(entry);
-        Insert * ins = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_insert();
-        SelectParen * sparen = ins->mutable_select();
-        SelectStatementCore * sel = sparen->mutable_select()->mutable_select_core();
+        Insert * ins = next2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_insert();
+        SelectStatementCore * sel = ins->mutable_select()->mutable_select()->mutable_select_core();
 
+        if (t.isMergeTreeFamily())
+        {
+            /// Apply delete mask
+            SQLQuery next;
+            const std::optional<String> & cluster = t.getCluster();
+            Alter * alter = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_alter();
+
+            alter->set_sobject(SQLObject::TABLE);
+            t.setName(alter->mutable_object()->mutable_est(), false);
+            if (cluster.has_value())
+            {
+                alter->mutable_cluster()->set_cluster(cluster.value());
+            }
+            alter->mutable_alter()->mutable_delete_mask();
+            SetValue * sv = alter->mutable_setting_values()->mutable_set_value();
+            sv->set_property("mutations_sync");
+            sv->set_value("2");
+            peer_queries.emplace_back(next);
+        }
         /// Then insert the data
         insertOnTableOrCluster(rg, gen, t, true, ins->mutable_tof());
         JoinedTableOrFunction * jtf = sel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
@@ -1056,7 +1074,7 @@ void QueryOracle::replaceQueryWithTablePeers(
             gen.columnPathRef(colRef, sel->add_result_columns()->mutable_etc()->mutable_col()->mutable_path());
         }
         gen.entries.clear();
-        peer_queries.emplace_back(next);
+        peer_queries.emplace_back(next2);
     }
 }
 
