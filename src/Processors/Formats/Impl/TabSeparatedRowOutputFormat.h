@@ -20,7 +20,7 @@ public:
       */
     TabSeparatedRowOutputFormat(
         WriteBuffer & out_,
-        SharedHeader header_,
+        const Block & header_,
         bool with_names_,
         bool with_types_,
         bool is_raw_,

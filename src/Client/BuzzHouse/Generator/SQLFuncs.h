@@ -226,8 +226,6 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCmultiplyDecimal, 0, 0, 2, 3),
     CHFunction(SQLFunc::FUNCdivideDecimal, 0, 0, 2, 3),
     CHFunction(SQLFunc::FUNCbyteSwap, 0, 0, 1, 1),
-    CHFunction(SQLFunc::FUNCicebergBucket, 0, 0, 2, 2),
-    CHFunction(SQLFunc::FUNCicebergTruncate, 0, 0, 2, 2),
     /// String and array functions
     CHFunction(SQLFunc::FUNCempty, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCnotEmpty, 0, 0, 1, 1),
@@ -1329,8 +1327,7 @@ const std::vector<CHFunction> CHTableFuncs = {
     CHFunction(SQLTableFunc::TFgenerateSeries, 0, 0, 2, 3),
     CHFunction(SQLTableFunc::TFgenerateRandom, 0, 0, 1, 4),
     CHFunction(SQLTableFunc::TFmerge, 0, 0, 1, 2),
-    CHFunction(SQLTableFunc::TFmergeTreeIndex, 0, 0, 2, 4),
-    CHFunction(SQLTableFunc::TFmergeTreeProjection, 0, 0, 3, 3),
+    CHFunction(SQLTableFunc::TFmergeTreeIndex, 0, 0, 2, 3),
     CHFunction(SQLTableFunc::TFmysql, 0, 0, 5, 7),
     CHFunction(SQLTableFunc::TFpostgresql, 0, 0, 5, 7),
     CHFunction(SQLTableFunc::TFremote, 0, 0, 1, 6),

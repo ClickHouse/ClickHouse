@@ -10,19 +10,18 @@ using FunctionSubtractYears = FunctionDateOrDateTimeAddInterval<SubtractYearsImp
 
 REGISTER_FUNCTION(SubtractYears)
 {
-    FunctionDocumentation::Description description = R"(
+    FunctionDocumentation::Description description_subtractYears = R"(
 Subtracts a specified number of years from a date, a date with time or a string-encoded date or date with time.
     )";
-    FunctionDocumentation::Syntax syntax = R"(
+    FunctionDocumentation::Syntax syntax_subtractYears = R"(
 subtractYears(datetime, num)
     )";
-    FunctionDocumentation::Arguments arguments =
-    {
-        {"datetime", "Date or date with time to subtract specified number of years from.", {"Date", "Date32", "DateTime", "DateTime64", "String"}},
-        {"num", "Number of years to subtract.", {"(U)Int*", "Float*"}}
+    FunctionDocumentation::Arguments arguments_subtractYears = {
+        {"datetime", "Date or date with time to subtract specified number of years from. [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)/[`String`](../data-types/string.md)."},
+        {"num", "Number of years to subtract. [`(U)Int*`](../data-types/int-uint.md)/[`Float*`](../data-types/float.md)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns `datetime` minus `num` years", {"Date", "Date32", "DateTime", "DateTime64"}};
-    FunctionDocumentation::Examples examples = {
+    FunctionDocumentation::ReturnedValue returned_value_subtractYears = "Returns `datetime` minus `num` years. [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md).";
+    FunctionDocumentation::Examples examples_subtractYears = {
         {"Subtract years from different date types", R"(
 WITH
     toDate('2024-01-01') AS date,
@@ -47,11 +46,19 @@ SELECT dateSub('1998-06-16'::Date, INTERVAL 10 year)
 └──────────────────────────┘
         )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation::IntroducedIn introduced_in_subtractYears = {1, 1};
+    FunctionDocumentation::Category category_subtractYears = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation_subtractYears = {
+        description_subtractYears,
+        syntax_subtractYears,
+        arguments_subtractYears,
+        returned_value_subtractYears,
+        examples_subtractYears,
+        introduced_in_subtractYears,
+        category_subtractYears
+    };
 
-    factory.registerFunction<FunctionSubtractYears>(documentation);
+    factory.registerFunction<FunctionSubtractYears>(documentation_subtractYears);
 }
 
 }

@@ -54,11 +54,8 @@ public:
     void increaseThreadsCount(size_t new_threads_count);
 
     static BackgroundSchedulePoolPtr create(size_t size, CurrentMetrics::Metric tasks_metric, CurrentMetrics::Metric size_metric, const char * thread_name);
-    ~BackgroundSchedulePool();
 
-    /// Shutdown the pool (set flag, destroy threads)
-    /// Should be called explicitly before destroying object.
-    void join();
+    ~BackgroundSchedulePool();
 
 private:
     using TaskInfoPtr = std::shared_ptr<TaskInfo>;

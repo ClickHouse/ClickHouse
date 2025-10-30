@@ -1,4 +1,4 @@
-#include <Runner.h>
+#include "Runner.h"
 #include <atomic>
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -576,8 +576,8 @@ struct ZooKeeperRequestFromLogReader
             context,
             context->getSettingsRef()[DB::Setting::max_block_size],
             format_settings,
-            DB::FormatParserSharedResources::singleThreaded(context->getSettingsRef()),
-            nullptr,
+            1,
+            std::nullopt,
             /*is_remote_fs*/ false,
             DB::CompressionMethod::None,
             false);

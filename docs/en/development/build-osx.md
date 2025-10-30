@@ -4,7 +4,6 @@ sidebar_label: 'Build on macOS for macOS'
 sidebar_position: 15
 slug: /development/build-osx
 title: 'Build on macOS for macOS'
-keywords: ['MacOS', 'Mac', 'build']
 ---
 
 # How to Build ClickHouse on macOS for macOS
@@ -17,7 +16,7 @@ ClickHouse can be compiled on macOS x86_64 (Intel) and arm64 (Apple Silicon) usi
 
 As compiler, only Clang from homebrew is supported.
 
-## Install prerequisites {#install-prerequisites}
+## Install Prerequisites {#install-prerequisites}
 
 First, see the generic [prerequisites documentation](developer-instruction.md).
 
@@ -27,7 +26,7 @@ Then run:
 
 ```bash
 brew update
-brew install ccache cmake ninja libtool gettext llvm lld binutils grep findutils nasm bash
+brew install ccache cmake ninja libtool gettext llvm binutils grep findutils nasm bash
 ```
 
 :::note

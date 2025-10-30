@@ -57,9 +57,9 @@ REGISTER_FUNCTION(StringBytesEntropy)
     FunctionDocumentation::Description description = "Calculates Shannon's entropy of byte distribution in a string.";
     FunctionDocumentation::Syntax syntax = "stringBytesEntropy(s);";
     FunctionDocumentation::Arguments arguments = {
-        {"s", "The string to analyze.", {"String"}}
+        {"s", "The string to analyze. [String](../../sql-reference/data-types/string.md))"}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"The Shannon entropy of the byte distribution", {"Float64"}};
+    FunctionDocumentation::ReturnedValue returned_value = "The Shannon entropy of the byte distribution. [Float64](../../sql-reference/data-types/float.md).";
     FunctionDocumentation::Examples examples = {
         {"Example", "SELECT stringBytesEntropy('Hello, world!');", "3.180832987205441"}
     };

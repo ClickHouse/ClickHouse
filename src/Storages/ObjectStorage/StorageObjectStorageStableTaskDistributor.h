@@ -17,22 +17,20 @@ class StorageObjectStorageStableTaskDistributor
 public:
     StorageObjectStorageStableTaskDistributor(
         std::shared_ptr<IObjectIterator> iterator_,
-        size_t number_of_replicas_,
-        bool send_over_whole_archive_);
+        size_t number_of_replicas_);
 
-    ObjectInfoPtr getNextTask(size_t number_of_current_replica);
+    std::optional<String> getNextTask(size_t number_of_current_replica);
 
 private:
     size_t getReplicaForFile(const String & file_path);
-    ObjectInfoPtr getPreQueuedFile(size_t number_of_current_replica);
-    ObjectInfoPtr getMatchingFileFromIterator(size_t number_of_current_replica);
-    ObjectInfoPtr getAnyUnprocessedFile(size_t number_of_current_replica);
+    std::optional<String> getPreQueuedFile(size_t number_of_current_replica);
+    std::optional<String> getMatchingFileFromIterator(size_t number_of_current_replica);
+    std::optional<String> getAnyUnprocessedFile(size_t number_of_current_replica);
 
-    const std::shared_ptr<IObjectIterator> iterator;
-    const bool send_over_whole_archive;
+    std::shared_ptr<IObjectIterator> iterator;
 
-    std::vector<std::vector<ObjectInfoPtr>> connection_to_files;
-    std::unordered_map<std::string, ObjectInfoPtr> unprocessed_files;
+    std::vector<std::vector<String>> connection_to_files;
+    std::unordered_set<String> unprocessed_files;
 
     std::mutex mutex;
     bool iterator_exhausted = false;

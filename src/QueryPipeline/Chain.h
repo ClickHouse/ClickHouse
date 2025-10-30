@@ -3,7 +3,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Processors/IProcessor.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
-
+#include "base/defines.h"
 #include <memory>
 
 namespace DB
@@ -49,9 +49,7 @@ public:
     OutputPort & getOutputPort() const;
 
     const Block & getInputHeader() const;
-    const SharedHeader & getInputSharedHeader() const;
     const Block & getOutputHeader() const;
-    const SharedHeader & getOutputSharedHeader() const;
 
     const std::list<ProcessorPtr> & getProcessors() const { return processors; }
     static std::list<ProcessorPtr> getProcessors(Chain chain) { return std::move(chain.processors); }

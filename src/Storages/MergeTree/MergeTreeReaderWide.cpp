@@ -70,9 +70,6 @@ void MergeTreeReaderWide::prefetchBeginOfRange(Priority priority)
 {
     prefetched_streams.clear();
 
-    if (all_mark_ranges.getNumberOfMarks() == 0)
-        return;
-
     try
     {
         /// Start prefetches for all columns. But don't deserialize prefixes, because it can be a heavy operation
@@ -109,9 +106,7 @@ void MergeTreeReaderWide::prefetchForAllColumns(
         ? settings.read_settings.remote_fs_prefetch
         : settings.read_settings.local_fs_prefetch;
 
-    if (!do_prefetch || all_mark_ranges.getNumberOfMarks() == 0)
-        return;
-    if (settings.filesystem_prefetches_limit && num_columns > settings.filesystem_prefetches_limit)
+    if (!do_prefetch)
         return;
 
     if (deserialize_prefixes)

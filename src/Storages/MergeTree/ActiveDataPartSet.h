@@ -28,15 +28,14 @@ public:
         HasIntersectingPart,
     };
 
-    ActiveDataPartSet() : ActiveDataPartSet(MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING) {}
     explicit ActiveDataPartSet(MergeTreeDataFormatVersion format_version_) : format_version(format_version_) {}
     ActiveDataPartSet(MergeTreeDataFormatVersion format_version_, const Strings & names);
 
     ActiveDataPartSet(const ActiveDataPartSet & other) = default;
-    ActiveDataPartSet(ActiveDataPartSet && other) noexcept = default;
 
     ActiveDataPartSet & operator=(const ActiveDataPartSet & other) = default;
-    ActiveDataPartSet & operator=(ActiveDataPartSet && other) = default;
+
+    ActiveDataPartSet(ActiveDataPartSet && other) noexcept = default;
 
     void swap(ActiveDataPartSet & other) noexcept
     {
@@ -97,8 +96,6 @@ public:
     Strings getParts() const;
     Strings getPartsWithLimit(size_t limit) const;
     std::vector<MergeTreePartInfo> getPartInfos() const;
-    std::vector<MergeTreePartInfo> getPatchPartInfos() const;
-    bool hasPartitionId(const String & partition_id) const;
 
     size_t size() const;
 

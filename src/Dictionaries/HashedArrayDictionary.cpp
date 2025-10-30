@@ -1,4 +1,4 @@
-#include <Dictionaries/HashedArrayDictionary.h>
+#include "HashedArrayDictionary.h"
 
 #include <Common/ArenaUtils.h>
 #include <Core/Defines.h>

@@ -14,7 +14,7 @@ class Block;
 class CopyTransform : public IProcessor
 {
 public:
-    CopyTransform(SharedHeader header, size_t num_outputs);
+    CopyTransform(const Block & header, size_t num_outputs);
 
     String getName() const override { return "Copy"; }
     Status prepare() override;

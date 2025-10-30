@@ -1,4 +1,4 @@
-#include <IO/ReadWriteBufferFromHTTP.h>
+#include "ReadWriteBufferFromHTTP.h"
 
 #include <IO/HTTPCommon.h>
 #include <Common/NetException.h>

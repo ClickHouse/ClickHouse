@@ -5,7 +5,7 @@ slug: /sql-reference/aggregate-functions/reference/quantiles
 title: 'quantiles Functions'
 ---
 
-# quantiles functions
+# quantiles Functions
 
 ## quantiles {#quantiles}
 
@@ -140,6 +140,7 @@ Type of array values:
 **Example**
 
 Query:
+
 
 ```sql
 SELECT quantilesGK(1, 0.25, 0.5, 0.75)(number + 1)

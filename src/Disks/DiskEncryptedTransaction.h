@@ -6,7 +6,6 @@
 
 #include <Disks/IDiskTransaction.h>
 #include <Disks/IDisk.h>
-#include <Disks/DiskCommitTransactionOptions.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
 
@@ -49,19 +48,14 @@ public:
 
     /// Tries to commit all accumulated operations simultaneously.
     /// If something fails rollback and throw exception.
-    void commit(const TransactionCommitOptionsVariant & options = NoCommitOptions{}) override // NOLINT
+    void commit() override // NOLINT
     {
-        delegate_transaction->commit(options);
+        delegate_transaction->commit();
     }
 
     void undo() override
     {
         delegate_transaction->undo();
-    }
-
-    TransactionCommitOutcomeVariant tryCommit(const TransactionCommitOptionsVariant & options) override
-    {
-        return delegate_transaction->tryCommit(options);
     }
 
     ~DiskEncryptedTransaction() override = default;
@@ -194,11 +188,15 @@ public:
     /// Third param determines which files cannot be removed even if second is true.
     void removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override
     {
-        auto wrapped_path_files = files;
-        for (auto & file : wrapped_path_files)
-            file.path = wrappedPath(file.path);
-
-        delegate_transaction->removeSharedFiles(wrapped_path_files, keep_all_batch_data, file_names_remove_metadata_only);
+        for (const auto & file : files)
+        {
+            auto wrapped_path = wrappedPath(file.path);
+            bool keep = keep_all_batch_data || file_names_remove_metadata_only.contains(fs::path(file.path).filename());
+            if (file.if_exists)
+                delegate_transaction->removeSharedFileIfExists(wrapped_path, keep);
+            else
+                delegate_transaction->removeSharedFile(wrapped_path, keep);
+        }
     }
 
     /// Set last modified time to file or directory at `path`.
@@ -252,6 +250,7 @@ public:
         auto wrapped_path = wrappedPath(src_path);
         delegate_transaction->truncateFile(wrapped_path, target_size);
     }
+
 
 private:
 

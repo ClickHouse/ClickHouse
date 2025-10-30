@@ -19,7 +19,7 @@ TTLUpdateInfoAlgorithm::TTLUpdateInfoAlgorithm(
 
 void TTLUpdateInfoAlgorithm::execute(Block & block)
 {
-    if (block.empty())
+    if (!block)
         return;
 
     auto ttl_column = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column);

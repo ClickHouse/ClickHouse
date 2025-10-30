@@ -187,8 +187,7 @@ struct AlterCommand
     /// Command removing some property from column or table
     bool isRemovingProperty() const;
 
-    /// Checks that command will drop something or rename column.
-    bool isDropOrRename() const;
+    bool isDropSomething() const;
 
     /// If possible, convert alter command to mutation command. In other case
     /// return empty optional. Some storages may execute mutations after
@@ -239,6 +238,13 @@ public:
 
     /// Check if commands have a text index
     static bool hasTextIndex(const StorageInMemoryMetadata & metadata);
+    /// ------------------------------------------------------------
+    /// Legacy names for text index.
+    /// Remove this block one year after full-text indexes became GA.
+    static bool hasLegacyGinIndex(const StorageInMemoryMetadata & metadata);
+    static bool hasLegacyFullTextIndex(const StorageInMemoryMetadata & metadata);
+    static bool hasLegacyInvertedIndex(const StorageInMemoryMetadata & metadata);
+/// ------------------------------------------------------------
 
     /// Check if commands have any vector similarity index
     static bool hasVectorSimilarityIndex(const StorageInMemoryMetadata & metadata);

@@ -1,4 +1,4 @@
-#include <Interpreters/QueryViewsLog.h>
+#include "QueryViewsLog.h"
 
 #include <base/getFQDNOrHostName.h>
 #include <Columns/IColumn.h>

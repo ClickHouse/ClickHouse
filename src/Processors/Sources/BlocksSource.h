@@ -24,7 +24,7 @@ class BlocksSource : public ISource
 {
 public:
     /// Acquires shared ownership of the blocks vector
-    BlocksSource(BlocksPtr blocks_ptr_, SharedHeader header)
+    BlocksSource(BlocksPtr blocks_ptr_, Block header)
         : ISource(std::move(header))
         , blocks(blocks_ptr_), it(blocks_ptr_->begin()), end(blocks_ptr_->end()) {}
 

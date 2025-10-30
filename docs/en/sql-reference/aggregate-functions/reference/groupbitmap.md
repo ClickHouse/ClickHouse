@@ -37,7 +37,7 @@ UserID
 Query:
 
 ```sql
-SELECT groupBitmap(UserID) AS num FROM t
+SELECT groupBitmap(UserID) as num FROM t
 ```
 
 Result:

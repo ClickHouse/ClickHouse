@@ -125,6 +125,8 @@ public:
 
     bool isReadOnly() const override { return true; }
 
+    void startupImpl(ContextPtr context) override;
+
     void shutdown() override;
 
 private:

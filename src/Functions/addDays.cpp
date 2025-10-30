@@ -9,18 +9,18 @@ using FunctionAddDays = FunctionDateOrDateTimeAddInterval<AddDaysImpl>;
 
 REGISTER_FUNCTION(AddDays)
 {
-    FunctionDocumentation::Description description = R"(
+    FunctionDocumentation::Description description_addDays = R"(
 Adds a specified number of days to a date, a date with time or a string-encoded date or date with time.
     )";
-    FunctionDocumentation::Syntax syntax = R"(
+    FunctionDocumentation::Syntax syntax_addDays = R"(
 addDays(datetime, num)
     )";
-    FunctionDocumentation::Arguments arguments = {
-        {"datetime", "Date or date with time to add specified number of days to.", {"Date", "Date32", "DateTime", "DateTime64", "String"}},
-        {"num", "Number of days to add.", {"(U)Int*", "Float*"}}
+    FunctionDocumentation::Arguments arguments_addDays = {
+        {"datetime", "Date or date with time to add specified number of days to. [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)/[`String`](../data-types/string.md)."},
+        {"num", "Number of days to add. [`(U)Int*`](../data-types/int-uint.md)/[`Float*`](../data-types/float.md)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns `datetime` plus `num` days.", {"Date", "Date32", "DateTime", "DateTime64"}};
-    FunctionDocumentation::Examples examples = {
+    FunctionDocumentation::ReturnedValue returned_value_addDays = "Returns `datetime` plus `num` days. [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md).";
+    FunctionDocumentation::Examples examples_addDays = {
         {"Add days to different date types", R"(
 WITH
     toDate('2024-01-01') AS date,
@@ -45,11 +45,19 @@ SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 day)
 └──────────────────────────┘
         )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation::IntroducedIn introduced_in_addDays = {1, 1};
+    FunctionDocumentation::Category category_addDays = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation_addDays = {
+        description_addDays,
+        syntax_addDays,
+        arguments_addDays,
+        returned_value_addDays,
+        examples_addDays,
+        introduced_in_addDays,
+        category_addDays
+    };
 
-    factory.registerFunction<FunctionAddDays>(documentation);
+    factory.registerFunction<FunctionAddDays>(documentation_addDays);
 }
 
 }

@@ -1,5 +1,4 @@
--- Tags: stateful, no-random-settings, no-parallel
--- no-parallel: Heavy query
+-- Tags: stateful, no-random-settings
 
 SET max_memory_usage = '10G';
 SELECT sum(cityHash64(*)) FROM test.hits SETTINGS max_threads=40;

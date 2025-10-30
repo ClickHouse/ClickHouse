@@ -73,7 +73,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             ("query", po::value<std::string>(), "query to format")
             ("help,h", "produce help message")
             ("comments", "keep comments in the output")
-            ("hilite,highlight", "add syntax highlight with ANSI terminal escape sequences (can also use --highlight)")
+            ("hilite", "add syntax highlight with ANSI terminal escape sequences")
             ("oneline", "format in single line")
             ("max_line_length", po::value<size_t>()->default_value(0), "format in single line queries with length less than specified")
             ("quiet,q", "just check syntax, no output on success")
@@ -111,19 +111,6 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
         std::function<void(std::string_view)> comments_callback;
         if (options.count("comments"))
             comments_callback = [](const std::string_view comment) { std::cout << comment << '\n'; };
-
-        SharedContextHolder shared_context = Context::createShared();
-        auto context = Context::createGlobal(shared_context.get());
-        auto context_const = WithContext(context).getContext();
-        context->makeGlobalContext();
-
-#if !USE_REPLXX
-        if (hilite)
-        {
-            std::cerr << "Option 'hilite' is only available if ClickHouse is built with replxx library." << std::endl;
-            return 2;
-        }
-#endif
 
         if (quiet && (hilite || oneline || obfuscate))
         {
@@ -171,6 +158,11 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             {
                 hash_func.update(options["seed"].as<std::string>());
             }
+
+            SharedContextHolder shared_context = Context::createShared();
+            auto context = Context::createGlobal(shared_context.get());
+            auto context_const = WithContext(context).getContext();
+            context->makeGlobalContext();
 
             registerInterpreters();
             registerFunctions();
@@ -263,19 +255,11 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                     if (!backslash)
                     {
                         WriteBufferFromOwnString str_buf;
-
-                        WriteBufferFromOwnString query_buf;
                         bool oneline_current_query = oneline || approx_query_length < max_line_length;
-                        IAST::FormatSettings settings(oneline_current_query);
+                        IAST::FormatSettings settings(oneline_current_query, hilite);
                         settings.show_secrets = true;
                         settings.print_pretty_type_names = !oneline_current_query;
-                        res->format(query_buf, settings);
-                        String formatted_query = query_buf.str();
-#if USE_REPLXX
-                        if (hilite)
-                            formatted_query = highlighted(formatted_query, *context);
-#endif
-                        str_buf.write(formatted_query.data(), formatted_query.size());
+                        res->format(str_buf, settings);
 
                         if (insert_query_payload)
                         {
@@ -319,20 +303,16 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                     {
                         WriteBufferFromOwnString str_buf;
                         bool oneline_current_query = oneline || approx_query_length < max_line_length;
-                        IAST::FormatSettings settings(oneline_current_query);
+                        IAST::FormatSettings settings(oneline_current_query, hilite);
                         settings.show_secrets = true;
                         settings.print_pretty_type_names = !oneline_current_query;
                         res->format(str_buf, settings);
 
-                        String formatted_query = str_buf.str();
-#if USE_REPLXX
-                        if (hilite)
-                            formatted_query = highlighted(formatted_query, *context);
-#endif
+                        auto res_string = str_buf.str();
                         WriteBufferFromOStream res_cout(std::cout, 4096);
 
-                        const char * s_pos = formatted_query.data();
-                        const char * s_end = s_pos + formatted_query.size();
+                        const char * s_pos= res_string.data();
+                        const char * s_end = s_pos + res_string.size();
 
                         while (s_pos != s_end)
                         {

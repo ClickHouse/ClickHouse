@@ -448,8 +448,6 @@ void DistributedAsyncInsertDirectoryQueue::processFile(std::string & file_path, 
             distributed_header.insert_query,
             insert_settings,
             distributed_header.client_info};
-        remote.initialize();
-
         bool compression_expected = connection->getCompression() == Protocol::Compression::Enable;
         writeRemoteConvert(distributed_header, remote, compression_expected, in, log);
         remote.onFinish();
@@ -591,22 +589,22 @@ void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching(bool force, 
                     total_bytes += distributed_header.bytes;
                 }
 
-                if (!distributed_header.block_header.empty())
+                if (distributed_header.block_header)
                     header = distributed_header.block_header;
 
-                if (!total_rows || header.empty())
+                if (!total_rows || !header)
                 {
                     LOG_DEBUG(log, "Processing batch {} with old format (no header/rows)", in.getFileName());
 
                     CompressedReadBuffer decompressing_in(in);
                     NativeReader block_in(decompressing_in, distributed_header.revision);
 
-                    for (Block block = block_in.read(); !block.empty(); block = block_in.read())
+                    while (Block block = block_in.read())
                     {
                         total_rows += block.rows();
                         total_bytes += block.bytes();
 
-                        if (header.empty())
+                        if (!header)
                             header = block.cloneEmpty();
                     }
                 }

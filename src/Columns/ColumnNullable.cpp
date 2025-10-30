@@ -85,7 +85,7 @@ void ColumnNullable::updateHashFast(SipHash & hash) const
 MutableColumnPtr ColumnNullable::cloneResized(size_t new_size) const
 {
     MutableColumnPtr new_nested_col = getNestedColumn().cloneResized(new_size);
-    auto new_null_map = ColumnUInt8::create(new_size);
+    auto new_null_map = ColumnUInt8::create();
 
     if (new_size > 0)
     {
@@ -925,13 +925,6 @@ ColumnPtr ColumnNullable::createWithOffsets(const IColumn::Offsets & offsets, co
     }
 
     return ColumnNullable::create(new_values, new_null_map);
-}
-
-void ColumnNullable::updateAt(const IColumn & src, size_t dst_pos, size_t src_pos)
-{
-    const auto & src_nullable = assert_cast<const ColumnNullable &>(src);
-    nested_column->updateAt(src_nullable.getNestedColumn(), dst_pos, src_pos);
-    null_map->updateAt(src_nullable.getNullMapColumn(), dst_pos, src_pos);
 }
 
 ColumnPtr ColumnNullable::getNestedColumnWithDefaultOnNull() const

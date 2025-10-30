@@ -1,4 +1,4 @@
-#include <Databases/SQLite/DatabaseSQLite.h>
+#include "DatabaseSQLite.h"
 
 #if USE_SQLITE
 

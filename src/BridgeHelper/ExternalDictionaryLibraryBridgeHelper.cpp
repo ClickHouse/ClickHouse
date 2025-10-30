@@ -1,4 +1,4 @@
-#include <BridgeHelper/ExternalDictionaryLibraryBridgeHelper.h>
+#include "ExternalDictionaryLibraryBridgeHelper.h"
 
 #include <Core/Block.h>
 #include <Formats/formatBlock.h>

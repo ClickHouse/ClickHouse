@@ -49,9 +49,7 @@ function thread_insert
 {
     # supress "Killed" messages from bash
     i=0
-    local TIMELIMIT=$((SECONDS+TIMEOUT))
-    while [ $SECONDS -lt "$TIMELIMIT" ]
-    do
+    while true; do
         export ID="$TEST_MARK$RANDOM-$RANDOM-$i"
         bash -c insert_data 2>&1| grep -Fav "Killed"
         i=$((i + 1))
@@ -60,9 +58,7 @@ function thread_insert
 
 function thread_select
 {
-    local TIMELIMIT=$((SECONDS+TIMEOUT))
-    while [ $SECONDS -lt "$TIMELIMIT" ]
-    do
+    while true; do
         $CLICKHOUSE_CLIENT -q "with (select count() from dedup_test) as c select throwIf(c != 5000000, 'Expected 5000000 rows, got ' || toString(c)) format Null"
         sleep 0.$RANDOM;
     done
@@ -70,9 +66,7 @@ function thread_select
 
 function thread_cancel
 {
-    local TIMELIMIT=$((SECONDS+TIMEOUT))
-    while [ $SECONDS -lt "$TIMELIMIT" ]
-    do
+    while true; do
         SIGNAL="INT"
         if (( RANDOM % 2 )); then
             SIGNAL="KILL"
@@ -85,11 +79,15 @@ function thread_cancel
     done
 }
 
+export -f thread_insert;
+export -f thread_select;
+export -f thread_cancel;
+
 TIMEOUT=40
 
-thread_insert &
-thread_select &
-thread_cancel 2> /dev/null &
+timeout $TIMEOUT bash -c thread_insert &
+timeout $TIMEOUT bash -c thread_select &
+timeout $TIMEOUT bash -c thread_cancel 2> /dev/null &
 
 wait
 

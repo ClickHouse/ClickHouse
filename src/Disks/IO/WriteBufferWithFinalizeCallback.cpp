@@ -1,4 +1,4 @@
-#include <Disks/IO/WriteBufferWithFinalizeCallback.h>
+#include "WriteBufferWithFinalizeCallback.h"
 
 namespace DB
 {

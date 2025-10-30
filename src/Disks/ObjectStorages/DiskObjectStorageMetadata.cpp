@@ -93,24 +93,10 @@ void DiskObjectStorageMetadata::deserialize(ReadBuffer & buf)
     }
 }
 
-void DiskObjectStorageMetadata::createFromSingleObject(ObjectStorageKey object_key, size_t bytes_size, size_t ref_count_, bool read_only_)
-{
-    keys_with_meta.emplace_back(std::move(object_key), ObjectMetadata{.size_bytes = bytes_size, .last_modified = {}, .etag = "", .attributes = {}});
-    total_size = bytes_size;
-    ref_count = static_cast<uint32_t>(ref_count_);
-    read_only = read_only_;
-}
-
-void DiskObjectStorageMetadata::deserializeFromString(const std::string & data)
-try
+void DiskObjectStorageMetadata::deserializeFromString(const String & data)
 {
     ReadBufferFromString buf(data);
     deserialize(buf);
-}
-catch (Exception & e)
-{
-    e.addMessage("while parsing: '{}'", data);
-    throw;
 }
 
 void DiskObjectStorageMetadata::serialize(WriteBuffer & buf, bool sync) const

@@ -16,8 +16,6 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/LimitReadBuffer.h>
-#include <IO/EmptyReadBuffer.h>
-#include <IO/ReadBuffer.h>
 #include <IO/copyData.h>
 
 #include <QueryPipeline/BlockIO.h>
@@ -69,7 +67,6 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/ProfileEvents.h>
-#include <Parsers/ASTIdentifier_fwd.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 
@@ -921,67 +918,14 @@ void validateAnalyzerSettings(ASTPtr ast, bool context_value)
     }
 }
 
-class ImplicitTransactionControlExecutor
-{
-public:
-    void begin(const ContextMutablePtr & query_context)
-    {
-        ASTPtr tcl_ast = std::make_shared<ASTTransactionControl>(ASTTransactionControl::BEGIN);
-        InterpreterTransactionControlQuery tc(tcl_ast, query_context);
-        tc.execute();
-        auto txn = query_context->getCurrentTransaction();
-        LOG_TRACE(getLogger("ImplicitTransactionControlExecutor"), "Begin implicit transaction {}", txn->tid);
-
-        transaction_running = true;
-    }
-
-    void commit(const ContextMutablePtr & query_context)
-    {
-        chassert(transaction_running);
-
-        auto txn = query_context->getCurrentTransaction();
-        chassert(txn);
-        LOG_TRACE(getLogger("ImplicitTransactionControlExecutor"), "Commit implicit transaction {}", txn->tid);
-
-        SCOPE_EXIT({ transaction_running = false; });
-
-        ASTPtr tcl_ast = std::make_shared<ASTTransactionControl>(ASTTransactionControl::COMMIT);
-        InterpreterTransactionControlQuery tc(tcl_ast, query_context);
-        tc.execute();
-    }
-
-    void rollback(const ContextMutablePtr & query_context)
-    {
-        chassert(transaction_running);
-
-        auto txn = query_context->getCurrentTransaction();
-        chassert(txn);
-        LOG_TRACE(getLogger("ImplicitTransactionControlExecutor"), "Rollback implicit transaction {}", txn->tid);
-
-        SCOPE_EXIT({ transaction_running = false; });
-
-        ASTPtr tcl_ast = std::make_shared<ASTTransactionControl>(ASTTransactionControl::ROLLBACK);
-        InterpreterTransactionControlQuery tc(tcl_ast, query_context);
-        tc.execute();
-    }
-    bool transactionRunning() const { return transaction_running; }
-
-private:
-    bool transaction_running{false};
-};
-
-using ImplicitTransactionControlExecutorPtr = std::shared_ptr<ImplicitTransactionControlExecutor>;
-
-
 static BlockIO executeQueryImpl(
     const char * begin,
     const char * end,
     ContextMutablePtr context,
     QueryFlags flags,
     QueryProcessingStage::Enum stage,
-    ReadBufferUniquePtr & istr,
-    ASTPtr & out_ast,
-    ImplicitTransactionControlExecutorPtr implicit_tcl_executor)
+    ReadBuffer * istr,
+    ASTPtr & out_ast)
 {
     const bool internal = flags.internal;
 
@@ -1198,8 +1142,23 @@ static BlockIO executeQueryImpl(
     /// Avoid early destruction of process_list_entry if it was not saved to `res` yet (in case of exception)
     ProcessList::EntryPtr process_list_entry;
     BlockIO res;
+    auto implicit_txn_control = std::make_shared<bool>(false);
     String query_database;
     String query_table;
+
+    auto execute_implicit_tcl_query = [implicit_txn_control](const ContextMutablePtr & query_context, ASTTransactionControl::QueryType tcl_type)
+    {
+        /// Unset the flag on COMMIT and ROLLBACK
+        SCOPE_EXIT({ if (tcl_type != ASTTransactionControl::BEGIN) *implicit_txn_control = false; });
+
+        ASTPtr tcl_ast = std::make_shared<ASTTransactionControl>(tcl_type);
+        InterpreterTransactionControlQuery tc(tcl_ast, query_context);
+        tc.execute();
+
+        /// Set the flag after successful BIGIN
+        if (tcl_type == ASTTransactionControl::BEGIN)
+            *implicit_txn_control = true;
+    };
 
     try
     {
@@ -1244,7 +1203,7 @@ static BlockIO executeQueryImpl(
             }
 
             if (auto * insert_query = out_ast->as<ASTInsertQuery>())
-                insert_query->tail = std::move(istr);
+                insert_query->tail = istr;
 
             if (const auto * query_with_table_output = dynamic_cast<const ASTQueryWithTableAndOutput *>(out_ast.get()))
             {
@@ -1308,7 +1267,7 @@ static BlockIO executeQueryImpl(
         if (insert_query && insert_query->select)
         {
             /// Prepare Input storage before executing interpreter if we already got a buffer with data.
-            if (insert_query->tail)
+            if (istr)
             {
                 ASTPtr input_function;
                 insert_query->tryFindInputFunction(input_function);
@@ -1317,10 +1276,8 @@ static BlockIO executeQueryImpl(
                     StoragePtr storage = context->executeTableFunction(input_function, insert_query->select->as<ASTSelectQuery>());
                     auto & input_storage = dynamic_cast<StorageInput &>(*storage);
                     auto input_metadata_snapshot = input_storage.getInMemoryMetadataPtr();
-
                     auto pipe = getSourceFromASTInsertQuery(
                         out_ast, true, input_metadata_snapshot->getSampleBlock(), context, input_function);
-
                     input_storage.setPipe(std::move(pipe));
                 }
             }
@@ -1355,6 +1312,7 @@ static BlockIO executeQueryImpl(
         }
 
         bool quota_checked = false;
+        std::unique_ptr<ReadBuffer> insert_data_buffer_holder;
 
         if (async_insert)
         {
@@ -1396,7 +1354,7 @@ static BlockIO executeQueryImpl(
                     auto timeout = settings[Setting::wait_for_async_insert_timeout].totalMilliseconds();
                     auto source = std::make_shared<WaitForAsyncInsertSource>(std::move(result.future), timeout);
                     res.pipeline = QueryPipeline(Pipe(std::move(source)));
-                    res.pipeline.complete(std::make_shared<NullOutputFormat>(std::make_shared<const Block>(Block())));
+                    res.pipeline.complete(std::make_shared<NullOutputFormat>(Block()));
                 }
 
                 const auto & table_id = insert_query->table_id;
@@ -1406,6 +1364,7 @@ static BlockIO executeQueryImpl(
             else if (result.status == AsynchronousInsertQueue::PushResult::TOO_MUCH_DATA)
             {
                 async_insert = false;
+                insert_data_buffer_holder = std::move(result.insert_data_buffer);
 
                 if (insert_query->data)
                 {
@@ -1415,7 +1374,7 @@ static BlockIO executeQueryImpl(
                     insert_query->data = nullptr;
                 }
 
-                insert_query->tail = std::move(result.insert_data_buffer);
+                insert_query->tail = insert_data_buffer_holder.get();
                 LOG_DEBUG(logger, "Setting async_insert=1, but INSERT query will be executed synchronously because it has too much data");
             }
         }
@@ -1483,7 +1442,7 @@ static BlockIO executeQueryImpl(
                         if (context->isGlobalContext())
                             throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot create transactions");
 
-                        implicit_tcl_executor->begin(context);
+                        execute_implicit_tcl_query(context, ASTTransactionControl::BEGIN);
                     }
                     catch (Exception & e)
                     {
@@ -1542,6 +1501,9 @@ static BlockIO executeQueryImpl(
                         auto table_id = insert_interpreter->getDatabaseTable();
                         if (!table_id.empty())
                             context->setInsertionTable(std::move(table_id), insert_interpreter->getInsertColumnNames());
+
+                        if (insert_data_buffer_holder)
+                            insert_interpreter->addBuffer(std::move(insert_data_buffer_holder));
                     }
 
                     if (auto * create_interpreter = typeid_cast<InterpreterCreateQuery *>(interpreter.get()))
@@ -1587,7 +1549,7 @@ static BlockIO executeQueryImpl(
                             && (!ast_contains_system_tables || system_table_handling == QueryResultCacheSystemTableHandling::Save))
                         {
                             QueryResultCache::Key key(
-                                out_ast, context->getCurrentDatabase(), *settings_copy, res.pipeline.getSharedHeader(),
+                                out_ast, context->getCurrentDatabase(), *settings_copy, res.pipeline.getHeader(),
                                 context->getCurrentQueryId(),
                                 context->getUserID(), context->getCurrentRoles(),
                                 settings[Setting::query_cache_share_between_users],
@@ -1685,7 +1647,8 @@ static BlockIO executeQueryImpl(
                                     out_ast,
                                     query_result_cache_usage,
                                     internal,
-                                    implicit_tcl_executor,
+                                    implicit_txn_control,
+                                    execute_implicit_tcl_query,
                                     // Need to be cached, since will be changed after complete()
                                     pulling_pipeline = pipeline.pulling(),
                                     query_span](QueryPipeline && query_pipeline, std::chrono::system_clock::time_point finish_time) mutable
@@ -1695,54 +1658,37 @@ static BlockIO executeQueryImpl(
                     /// prevent partial/garbage results in case of exceptions during query execution.
                     query_pipeline.finalizeWriteInQueryResultCache();
 
-                logQueryFinishImpl(
-                    elem,
-                    context,
-                    out_ast,
-                    std::move(query_pipeline),
-                    pulling_pipeline,
-                    query_span,
-                    query_result_cache_usage,
-                    internal,
-                    finish_time);
+                logQueryFinishImpl(elem, context, out_ast, std::move(query_pipeline), pulling_pipeline, query_span, query_result_cache_usage, internal, finish_time);
 
-                if (implicit_tcl_executor->transactionRunning())
-                {
-                    implicit_tcl_executor->commit(context);
-                }
+                if (*implicit_txn_control)
+                    execute_implicit_tcl_query(context, ASTTransactionControl::COMMIT);
             };
 
             auto exception_callback =
-                [start_watch, elem, context, out_ast, internal, my_quota(quota), implicit_tcl_executor, query_span](bool log_error) mutable
+                [start_watch, elem, context, out_ast, internal, my_quota(quota), implicit_txn_control, execute_implicit_tcl_query, query_span](
+                    bool log_error) mutable
             {
-                if (implicit_tcl_executor->transactionRunning())
-                {
-                    implicit_tcl_executor->rollback(context);
-                }
+                if (*implicit_txn_control)
+                    execute_implicit_tcl_query(context, ASTTransactionControl::ROLLBACK);
                 else if (auto txn = context->getCurrentTransaction())
-                {
                     txn->onException();
-                }
 
                 if (my_quota)
                     my_quota->used(QuotaType::ERRORS, 1, /* check_exceeded = */ false);
 
                 logQueryException(elem, context, start_watch, out_ast, query_span, internal, log_error);
             };
+
             res.finish_callback = std::move(finish_callback);
             res.exception_callback = std::move(exception_callback);
         }
     }
     catch (...)
     {
-        if (implicit_tcl_executor->transactionRunning())
-        {
-            implicit_tcl_executor->rollback(context);
-        }
+        if (*implicit_txn_control)
+            execute_implicit_tcl_query(context, ASTTransactionControl::ROLLBACK);
         else if (auto txn = context->getCurrentTransaction())
-        {
             txn->onException();
-        }
 
         if (!internal)
             logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, out_ast, query_span, start_watch.elapsedMilliseconds());
@@ -1765,9 +1711,9 @@ std::pair<ASTPtr, BlockIO> executeQuery(
             /*should_throw*/ true);
     ASTPtr ast;
     BlockIO res;
-    auto implicit_tcl_executor = std::make_shared<ImplicitTransactionControlExecutor>();
-    ReadBufferUniquePtr no_input_buffer;
-    res = executeQueryImpl(query.data(), query.data() + query.size(), context, flags, stage, no_input_buffer, ast, implicit_tcl_executor);
+
+    res = executeQueryImpl(query.data(), query.data() + query.size(), context, flags, stage, nullptr, ast);
+
     if (const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
     {
         String format_name = ast_query_with_output->format_ast
@@ -1792,29 +1738,13 @@ void executeQuery(
     HandleExceptionInOutputFormatFunc handle_exception_in_output_format,
     QueryFinishCallback query_finish_callback)
 {
-    executeQuery(
-        wrapReadBufferReference(istr), ostr, allow_into_outfile, context, std::move(set_result_details), flags,
-        output_format_settings, std::move(handle_exception_in_output_format), std::move(query_finish_callback));
-}
-
-void executeQuery(
-    ReadBufferUniquePtr istr,
-    WriteBuffer & ostr,
-    bool allow_into_outfile,
-    ContextMutablePtr context,
-    SetResultDetailsFunc set_result_details,
-    QueryFlags flags,
-    const std::optional<FormatSettings> & output_format_settings,
-    HandleExceptionInOutputFormatFunc handle_exception_in_output_format,
-    QueryFinishCallback query_finish_callback)
-{
     PODArray<char> parse_buf;
     const char * begin;
     const char * end;
 
     try
     {
-        istr->nextIfAtEnd();
+        istr.nextIfAtEnd();
     }
     catch (...)
     {
@@ -1830,12 +1760,12 @@ void executeQuery(
             context->getSettingsRef()[Setting::max_os_cpu_wait_time_ratio_to_throw],
             /*should_throw*/ true);
 
-    if (istr->available() > max_query_size)
+    if (istr.buffer().end() - istr.position() > static_cast<ssize_t>(max_query_size))
     {
         /// If remaining buffer space in 'istr' is enough to parse query up to 'max_query_size' bytes, then parse inplace.
-        begin = istr->position();
-        end = istr->buffer().end();
-        istr->position() += end - begin;
+        begin = istr.position();
+        end = istr.buffer().end();
+        istr.position() += end - begin;
     }
     else
     {
@@ -1843,7 +1773,7 @@ void executeQuery(
 
         /// If not - copy enough data into 'parse_buf'.
         WriteBufferFromVector<PODArray<char>> out(parse_buf);
-        LimitReadBuffer limit(*istr, {.read_no_more = max_query_size + 1});
+        LimitReadBuffer limit(istr, {.read_no_more = max_query_size + 1});
         copyData(limit, out);
         out.finalize();
 
@@ -1922,10 +1852,10 @@ void executeQuery(
             }
         }
     };
-    auto implicit_tcl_executor = std::make_shared<ImplicitTransactionControlExecutor>();
+
     try
     {
-        streams = executeQueryImpl(begin, end, context, flags, QueryProcessingStage::Complete, istr, ast, implicit_tcl_executor);
+        streams = executeQueryImpl(begin, end, context, flags, QueryProcessingStage::Complete, &istr, ast);
     }
     catch (...)
     {
@@ -2042,11 +1972,6 @@ void executeQuery(
             pipeline.setProgressCallback(context->getProgressCallback());
         }
 
-        /// input stream might be consumed into some source proceccors/format readers
-        /// that is the case with insert queries, but select quries could read from it but they do not take ownership of the input stream,
-        /// here we reset it in order not to hold the reference to the input stream
-        istr.reset();
-
         if (set_result_details)
         {
             /// The call of set_result_details itself might throw exception,
@@ -2067,7 +1992,6 @@ void executeQuery(
         {
             /// It's possible to have queries without input and output.
         }
-
     }
     catch (...)
     {
@@ -2084,14 +2008,6 @@ void executeQuery(
         }
         throw;
     }
-
-    /// Query with `implicit_transaction` is committed here because:
-    /// 1. `onFinish` is invoked after the transaction is committed.
-    /// 2. When handling HTTP requests, in `HTTPHandler::processQuery`, there is `query_finish_callback` which is invoked before `onFinish`.
-    /// It releases the session and finalizes the output. The client might use the same session to query other queries. Hence, the transaction must be committed before `query_finish_callback`.
-    /// Refer: https://github.com/ClickHouse/ClickHouse/issues/80428
-    if (implicit_tcl_executor->transactionRunning())
-        implicit_tcl_executor->commit(context);
 
     /// The order is important here:
     /// - first we save the finish_time that will be used for the entry in query_log/opentelemetry_span_log.finish_time_us

@@ -2,7 +2,7 @@
 
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
-#include <Core/Block_fwd.h>
+#include <Core/Block.h>
 #include <Core/SortDescription.h>
 #include <Core/SortCursor.h>
 
@@ -15,7 +15,7 @@ class MergingSortedAlgorithm final : public IMergingAlgorithm
 {
 public:
     MergingSortedAlgorithm(
-        SharedHeader header_,
+        Block header_,
         size_t num_inputs,
         const SortDescription & description_,
         size_t max_block_size_,
@@ -36,7 +36,7 @@ public:
     MergedStats getMergedStats() const override { return merged_data.getMergedStats(); }
 
 private:
-    SharedHeader header;
+    Block header;
 
     MergedData merged_data;
 

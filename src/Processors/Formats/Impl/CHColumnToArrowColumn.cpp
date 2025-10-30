@@ -1,4 +1,4 @@
-#include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
+#include "CHColumnToArrowColumn.h"
 
 #if USE_ARROW || USE_PARQUET
 

@@ -10,7 +10,7 @@
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
-#include <base/types.h>
+#include "base/types.h"
 
 #if USE_ARROW
 #    include <arrow/util/key_value_metadata.h>

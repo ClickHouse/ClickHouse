@@ -74,7 +74,7 @@ bool ParserSQLSecurity::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             s_eq.ignore(pos, expected);
             if (s_current_user.ignore(pos, expected))
                 is_definer_current_user = true;
-            else if (!ParserUserNameWithHost(/*allow_query_parameter=*/ false).parse(pos, definer, expected))
+            else if (!ParserUserNameWithHost{}.parse(pos, definer, expected))
                 return false;
 
             continue;
@@ -177,22 +177,14 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     auto index = std::make_shared<ASTIndexDeclaration>(expr, type, name->as<ASTIdentifier &>().name());
 
     if (granularity)
-    {
         index->granularity = granularity->as<ASTLiteral &>().value.safeGet<UInt64>();
-    }
     else
     {
-        index->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
-
-        if (auto index_type = index->getType())
-        {
-            const std::string_view index_type_name = index_type->name;
-
-            if (index_type_name == "vector_similarity")
-                index->granularity = ASTIndexDeclaration::DEFAULT_VECTOR_SIMILARITY_INDEX_GRANULARITY;
-            else if (index_type_name == "text")
-                index->granularity = ASTIndexDeclaration::DEFAULT_TEXT_INDEX_GRANULARITY;
-        }
+        auto index_type = index->getType();
+        if (index_type->name == "vector_similarity")
+            index->granularity = ASTIndexDeclaration::DEFAULT_VECTOR_SIMILARITY_INDEX_GRANULARITY;
+        else
+            index->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
     }
 
     node = index;

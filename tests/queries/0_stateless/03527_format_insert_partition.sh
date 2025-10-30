@@ -5,7 +5,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-QUERY="INSERT INTO FUNCTION
+$CLICKHOUSE_FORMAT --query "INSERT INTO FUNCTION
    s3(
        'https://a_path_to_s3/bucket_name/test.parquet',
        'access_key',
@@ -15,9 +15,4 @@ QUERY="INSERT INTO FUNCTION
     *
 FROM TestTable
 LIMIT 10;
-"
-
-$CLICKHOUSE_FORMAT --query "$QUERY" --hilite
-
-$CLICKHOUSE_FORMAT --query "$QUERY" --highlight
-
+" --hilite

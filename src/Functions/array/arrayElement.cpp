@@ -2220,7 +2220,7 @@ Operator `[n]` provides the same functionality.
         {"arr", "The array to search. [`Array(T)`](/sql-reference/data-types/array)."},
         {"n", "Position of the element to get. [`(U)Int*`](/sql-reference/data-types/int-uint)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns a single combined array from the provided array arguments", {"Array(T)"}};
+    FunctionDocumentation::ReturnedValue returned_value = "Returns a single combined array from the provided array arguments. [`Array(T)`](/sql-reference/data-types/array).";
     FunctionDocumentation::Examples examples = {
         {"Usage example", "SELECT arrayElement(arr, 2) FROM (SELECT [1, 2, 3] AS arr)", "2"},
         {"Negative indexing", "SELECT arrayElement(arr, -1) FROM (SELECT [1, 2, 3] AS arr)", "3"},
@@ -2245,9 +2245,9 @@ Negative indexes are supported. In this case, it selects the corresponding eleme
 )";
     FunctionDocumentation::Syntax syntax_null = "arrayElementOrNull(arrays)";
     FunctionDocumentation::Arguments arguments_null = {
-        {"arrays", "Arbitrary number of array arguments.", {"Array"}}
+        {"arrays", "Arbitrary number of arguments of [`Array`](/sql-reference/data-types/array) type."}
     };
-    FunctionDocumentation::ReturnedValue returned_value_null = {"Returns a single combined array from the provided array arguments.", {"Array(T)"}};
+    FunctionDocumentation::ReturnedValue returned_value_null = "Returns a single combined array from the provided array arguments.";
     FunctionDocumentation::Examples examples_null = {
         {"Usage example", "SELECT arrayElementOrNull(arr, 2) FROM (SELECT [1, 2, 3] AS arr)", "2"},
         {"Negative indexing", "SELECT arrayElementOrNull(arr, -1) FROM (SELECT [1, 2, 3] AS arr)", "3"},

@@ -16,7 +16,7 @@ class CoalescingSortedTransform final : public IMergingTransform<SummingSortedAl
 public:
 
     CoalescingSortedTransform(
-        SharedHeader header, size_t num_inputs,
+        const Block & header, size_t num_inputs,
         SortDescription description_,
         const Names & partition_and_sorting_required_columns,
         const Names & partition_key_columns,
@@ -32,10 +32,7 @@ public:
             partition_key_columns,
             max_block_size_rows,
             max_block_size_bytes,
-            "last_value",
-            "last_value",
-            /*remove_default_values*/ false,
-            /*aggregate_all_columns*/ true)
+            "last_value")
     {
     }
 

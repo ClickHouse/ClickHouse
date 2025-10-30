@@ -202,10 +202,10 @@ REGISTER_FUNCTION(ArrayStringConcat)
     FunctionDocumentation::Description description = "Concatenates the elements of an array of strings into a single string, using the specified delimiter between elements.";
     FunctionDocumentation::Syntax syntax = "arrayStringConcat(arr[, delimiter])";
     FunctionDocumentation::Arguments arguments = {
-        {"arr", "The source array of strings.", {"Array(String)"}},
-        {"delimiter", "Optional.The delimiter to insert between elements. Defaults to empty string if not specified.", {"String"}}
+        {"arr", "The source array of strings. [`Array(String)`](/sql-reference/data-types/array)."},
+        {"delimiter", "Optional. The delimiter to insert between elements. [`String`](/sql-reference/data-types/string). Defaults to empty string if not specified."}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"A string consisting of the array elements joined by the delimiter.", {"String"}};
+    FunctionDocumentation::ReturnedValue returned_value = "A string consisting of the array elements joined by the delimiter. String.";
     FunctionDocumentation::Examples examples = {
         {"Basic usage", "SELECT arrayStringConcat(['a', 'b', 'c']);", "'abc'"},
         {"With delimiter", "SELECT arrayStringConcat(['a', 'b', 'c'], ',');", "a, b, c"}

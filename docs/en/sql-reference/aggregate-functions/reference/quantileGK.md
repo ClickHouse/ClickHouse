@@ -28,9 +28,11 @@ Alias: `medianGK`.
 
 - `expr` — Expression over the column values resulting in numeric [data types](/sql-reference/data-types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
 
+
 **Returned value**
 
 - Quantile of the specified level and accuracy.
+
 
 Type:
 
@@ -69,6 +71,7 @@ FROM numbers(1000)
 │                                     249 │
 └─────────────────────────────────────────┘
 ```
+
 
 **See Also**
 

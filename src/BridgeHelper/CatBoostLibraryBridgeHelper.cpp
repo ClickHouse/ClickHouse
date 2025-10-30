@@ -1,4 +1,4 @@
-#include <BridgeHelper/CatBoostLibraryBridgeHelper.h>
+#include "CatBoostLibraryBridgeHelper.h"
 
 #include <Columns/ColumnsNumber.h>
 #include <Common/escapeForFileName.h>
@@ -180,9 +180,9 @@ ColumnPtr CatBoostLibraryBridgeHelper::evaluate(const ColumnsWithTypeAndName & c
     startBridgeSync();
 
     WriteBufferFromOwnString string_write_buf;
-    auto block = std::make_shared<const Block>(columns);
+    Block block(columns);
     NativeWriter serializer(string_write_buf, /*client_revision*/ 0, block);
-    serializer.write(*block);
+    serializer.write(block);
 
     assert(model_path);
 
