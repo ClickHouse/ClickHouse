@@ -63,6 +63,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"joined_block_split_single_row", false, false, "New setting"},
             {"temporary_files_buffer_size", DBMS_DEFAULT_BUFFER_SIZE, DBMS_DEFAULT_BUFFER_SIZE, "New setting"},
             {"rewrite_in_to_join", false, false, "New experimental setting"},
+            {"iceberg_insert_max_rows_in_data_file", 100000, 1000000, "Changed default value."},
+            {"delta_lake_insert_max_rows_in_data_file", 100000, 1000000, "Changed default value."},
             {"delta_lake_log_metadata", false, false, "New setting."},
             {"distributed_cache_prefer_bigger_buffer_size", false, false, "New setting."},
             {"allow_experimental_qbit_type", false, false, "New experimental setting"},
