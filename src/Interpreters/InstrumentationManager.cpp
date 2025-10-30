@@ -78,27 +78,27 @@ InstrumentationManager & InstrumentationManager::instance()
 
 void InstrumentationManager::patchFunctionIfNeeded(Int32 function_id)
 {
-    if (instrumented_functions.contains(function_id))
-    {
-        instrumented_functions[function_id]++;
-    }
-    else
-    {
-        instrumented_functions.emplace(std::make_pair(function_id, 1));
-        __xray_patch_function(function_id);
-    }
+    if (instrumented_points.get<FunctionId>().contains(function_id))
+        return;
+    __xray_patch_function(function_id);
 }
 
 void InstrumentationManager::unpatchFunctionIfNeeded(Int32 function_id)
 {
-    if (!instrumented_functions.contains(function_id))
+    auto it = instrumented_points.get<FunctionId>().find(function_id);
+    const auto end_it = instrumented_points.get<FunctionId>().end();
+    if (it == end_it)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Function id {} to unpatch not previously patched", function_id);
 
-    if (--instrumented_functions[function_id] <= 0)
+    size_t count = 0;
+    while (it != end_it)
     {
-        __xray_unpatch_function(function_id);
-        instrumented_functions.erase(function_id);
+        count++;
+        it++;
     }
+
+    if (count <= 1)
+        __xray_unpatch_function(function_id);
 }
 
 void InstrumentationManager::patchFunction(ContextPtr context, const String & function_name, const String & handler_name, std::optional<XRayEntryType> entry_type, std::optional<std::vector<InstrumentedParameter>> & parameters)
@@ -155,8 +155,8 @@ void InstrumentationManager::patchFunction(ContextPtr context, const String & fu
     }
 
     std::lock_guard lock(shared_mutex);
-    auto it = instrumented_points.find(InstrumentedPointKey{function_id, entry_type, handler_name_lower});
-    if (it != instrumented_points.end())
+    auto it = instrumented_points.get<InstrumentedPointKey>().find(InstrumentedPointKey{function_id, entry_type, handler_name_lower});
+    if (it != instrumented_points.get<InstrumentedPointKey>().end())
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Handler of this type is already installed for function_id '{}', function name '{}'",
             function_id, function_name);
@@ -166,9 +166,7 @@ void InstrumentationManager::patchFunction(ContextPtr context, const String & fu
 
     InstrumentedPointInfo info{context, instrumentation_point_ids, function_id, function_name, handler_name_lower, entry_type, parameters};
     LOG_DEBUG(logger, "Adding instrumentation point for {}", info.toString());
-    instrumented_points.emplace(std::make_pair(
-        InstrumentedPointKey{function_id, entry_type, handler_name_lower},
-        std::move(info)));
+    instrumented_points.emplace(std::move(info));
     instrumentation_point_ids++;
 }
 
@@ -179,7 +177,7 @@ void InstrumentationManager::unpatchFunction(std::variant<UInt64, bool> id)
     if (std::holds_alternative<bool>(id))
     {
         LOG_DEBUG(logger, "Removing all instrumented functions");
-        for (const auto & [function_id, info] : instrumented_points)
+        for (const auto & info : instrumented_points)
             unpatchFunctionIfNeeded(info.function_id);
         instrumented_points.clear();
     }
@@ -187,11 +185,11 @@ void InstrumentationManager::unpatchFunction(std::variant<UInt64, bool> id)
     {
         std::optional<InstrumentedPointKey> function_key;
         InstrumentedPointInfo instrumented_info;
-        for (const auto & [key, info] : instrumented_points)
+        for (const auto & info : instrumented_points)
         {
             if (info.id == std::get<UInt64>(id))
             {
-                function_key = key;
+                function_key = InstrumentedPointKeyExtractor()(info);
                 instrumented_info = info;
                 break;
             }
@@ -202,7 +200,7 @@ void InstrumentationManager::unpatchFunction(std::variant<UInt64, bool> id)
 
         LOG_DEBUG(logger, "Removing instrumented function {}", instrumented_info.toString());
         unpatchFunctionIfNeeded(function_key->function_id);
-        instrumented_points.erase(function_key.value());
+        instrumented_points.get<InstrumentedPointKey>().erase(function_key.value());
     }
 }
 
@@ -212,7 +210,7 @@ InstrumentationManager::InstrumentedPoints InstrumentationManager::getInstrument
     InstrumentedPoints points;
     points.reserve(instrumented_points.size());
 
-    for (const auto & [key, info] : instrumented_points)
+    for (const auto & info : instrumented_points)
         points.emplace_back(info);
 
     return points;
@@ -233,15 +231,15 @@ void InstrumentationManager::dispatchHandlerImpl(Int32 func_id, XRayEntryType en
     for (const auto & [handler_name, handler_function] : handler_name_to_function)
     {
         SharedLockGuard lock(shared_mutex);
-        auto ip = instrumented_points.find(InstrumentedPointKey{func_id, entry_type, handler_name});
+        auto ip_info = instrumented_points.get<InstrumentedPointKey>().find(InstrumentedPointKey{func_id, entry_type, handler_name});
 
         /// If the key couldn't be found for entry/exit type, let's try without any entry type for those handlers that don't need it.
-        if (ip == instrumented_points.end())
-            ip = instrumented_points.find(InstrumentedPointKey{func_id, std::nullopt, handler_name});
+        if (ip_info == instrumented_points.get<InstrumentedPointKey>().end())
+            ip_info = instrumented_points.get<InstrumentedPointKey>().find(InstrumentedPointKey{func_id, std::nullopt, handler_name});
 
-        if (ip != instrumented_points.end())
+        if (ip_info != instrumented_points.get<InstrumentedPointKey>().end())
         {
-            const auto info = ip->second;
+            auto info = *ip_info;
             lock.unlock();
             try
             {
@@ -321,7 +319,7 @@ void InstrumentationManager::parseInstrumentationMap()
             if (function_name != UNKNOWN)
             {
                 auto stripped_function_name = extractNearestNamespaceAndFunction(function_name);
-                job.functions_container.get<FunctionId>().emplace(func_id, function_name, stripped_function_name);
+                job.functions_container.emplace(func_id, function_name, stripped_function_name);
             }
         }
 
@@ -350,7 +348,7 @@ void InstrumentationManager::parseInstrumentationMap()
     for (const auto & job : jobs)
     {
         for (const auto & function_info : job.functions_container)
-            functions_container.get<FunctionId>().emplace(function_info);
+            functions_container.emplace(function_info);
     }
 
     LOG_DEBUG(logger, "Finished parsing the XRay instrumentation map");

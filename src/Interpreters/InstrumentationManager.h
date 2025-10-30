@@ -34,7 +34,6 @@ public:
         LOG,
         PROFILE,
     };
-
     struct InstrumentedPointInfo
     {
         ContextPtr context;
@@ -96,7 +95,7 @@ private:
         }
     };
 
-    struct InstrumentedPointHash
+    struct InstrumentedPointKeyHash
     {
         std::size_t operator()(const InstrumentationManager::InstrumentedPointKey& k) const
         {
@@ -104,6 +103,16 @@ private:
             return ((std::hash<Int32>()(k.function_id)
                     ^ (std::hash<uint8_t>()(static_cast<uint8_t>(entry_type)) << 1)) >> 1)
                     ^ (std::hash<String>()(k.handler_name) << 1);
+        }
+    };
+
+    struct InstrumentedPointKeyExtractor
+    {
+        using result_type = InstrumentedPointKey;
+
+        result_type operator()(const InstrumentedPointInfo& info) const
+        {
+            return InstrumentedPointKey{info.function_id, info.entry_type, info.handler_name};
         }
     };
 
@@ -134,6 +143,13 @@ private:
             boost::multi_index::hashed_non_unique<boost::multi_index::tag<StrippedFunctionName>, boost::multi_index::member<FunctionInfo, String, &FunctionInfo::stripped_function_name>>
         >>;
 
+    using InstrumentedPointContainer = boost::multi_index_container<
+        InstrumentedPointInfo,
+        boost::multi_index::indexed_by<
+            boost::multi_index::hashed_non_unique<boost::multi_index::tag<FunctionId>, boost::multi_index::member<InstrumentedPointInfo, Int32, &InstrumentedPointInfo::function_id>>,
+            boost::multi_index::hashed_unique<boost::multi_index::tag<InstrumentedPointKey>, InstrumentedPointKeyExtractor, InstrumentedPointKeyHash>
+        >>;
+
     InstrumentationManager();
     void registerHandler(const String & name, XRayHandlerFunction handler);
     void parseInstrumentationMap();
@@ -152,8 +168,7 @@ private:
 
     SharedMutex shared_mutex;
     std::atomic<UInt64> instrumentation_point_ids;
-    std::unordered_map<InstrumentedPointKey, InstrumentedPointInfo, InstrumentedPointHash> instrumented_points TSA_GUARDED_BY(shared_mutex);
-    std::unordered_map<Int32, Int32> instrumented_functions TSA_GUARDED_BY(shared_mutex);
+    InstrumentedPointContainer instrumented_points TSA_GUARDED_BY(shared_mutex);
 
     enum class InitializationStatus
     {
