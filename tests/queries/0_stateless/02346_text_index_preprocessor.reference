@@ -12,4 +12,4 @@ Test preprocessor declaration using column more than once.
 1
 0
 0
-Test preprocessor validations.
+Negative tests on preprocessor construction validations.

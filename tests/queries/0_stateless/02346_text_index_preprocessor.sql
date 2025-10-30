@@ -2,6 +2,7 @@ SET allow_experimental_full_text_index = 1;
 SET use_skip_indexes_on_data_read = 1;
 
 -- Tests the preprocessor argument for tokenizers in the text index definitions
+
 DROP TABLE IF EXISTS tab;
 
 SELECT 'Test single tokenizer and preprocessor argument.';
@@ -28,7 +29,6 @@ SELECT count() FROM tab WHERE hasToken(str, 'baz');
 
 DROP TABLE tab;
 
--- Test preprocessor declaration using column more than once
 SELECT 'Test preprocessor declaration using column more than once.';
 CREATE TABLE tab
 (
@@ -53,40 +53,36 @@ SELECT count() FROM tab WHERE hasToken(str, 'baz');
 
 DROP TABLE tab;
 
--- Negative tests
-SELECT 'TestNegative tests on preprocessor construction validations.';
+SELECT 'Negative tests on preprocessor construction validations.';
 
--- Dependency only on indexed column
+-- The preprocessor argument must reference the index column
 CREATE TABLE tab
 (
     key UInt64,
     str String,
-    str2 String,
-    INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(str2))
+    other_str String,
+    INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(other_str))
 )
-ENGINE = MergeTree
-ORDER BY tuple();  -- { serverError BAD_ARGUMENTS }
+ENGINE = MergeTree ORDER BY tuple();  -- { serverError BAD_ARGUMENTS }
 
--- Dependency only on 1 column
+-- The preprocessor argument must not reference non-indexed columns
 CREATE TABLE tab
 (
     key UInt64,
     str String,
-    str2 String,
-    INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = concat(lower(str), lower(str2)))
+    other_str String,
+    INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = concat(str, other_str))
 )
-ENGINE = MergeTree
-ORDER BY tuple();   -- { serverError BAD_ARGUMENTS }
+ENGINE = MergeTree ORDER BY tuple();   -- { serverError BAD_ARGUMENTS }
 
--- When using preprocessor, the index expression should be only the column (with no expressions)
+-- The preprocessor argument must contain the index expression
 CREATE TABLE tab
 (
     key UInt64,
     str String,
     INDEX idx(upper(str)) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(str))
 )
-ENGINE = MergeTree
-ORDER BY tuple();   -- { serverError BAD_ARGUMENTS }
+ENGINE = MergeTree ORDER BY tuple();   -- { serverError BAD_ARGUMENTS }
 
 CREATE TABLE tab
 (
@@ -94,8 +90,7 @@ CREATE TABLE tab
     str String,
     INDEX idx(lower(str)) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(str))
 )
-ENGINE = MergeTree
-ORDER BY tuple();   -- { serverError BAD_ARGUMENTS }
+ENGINE = MergeTree ORDER BY tuple();   -- { serverError BAD_ARGUMENTS }
 
 CREATE TABLE tab
 (
@@ -103,17 +98,16 @@ CREATE TABLE tab
     str String,
     INDEX idx(upper(str)) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(upper(str)))
 )
-ENGINE = MergeTree
-ORDER BY tuple();   -- { serverError BAD_ARGUMENTS }
+ENGINE = MergeTree ORDER BY tuple();   -- { serverError BAD_ARGUMENTS }
 
+-- The preprocessor argument must reference actual functions
 CREATE TABLE tab
 (
     key UInt64,
     str String,
     INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = nonExistingFunction)
 )
-ENGINE = MergeTree
-ORDER BY key;   -- { serverError INCORRECT_QUERY }
+ENGINE = MergeTree ORDER BY key;   -- { serverError INCORRECT_QUERY }
 
 
 CREATE TABLE tab
@@ -122,17 +116,16 @@ CREATE TABLE tab
     str String,
     INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = nonExistingFunction(str))
 )
-ENGINE = MergeTree
-ORDER BY tuple();   -- { serverError UNKNOWN_FUNCTION }
+ENGINE = MergeTree ORDER BY tuple();   -- { serverError UNKNOWN_FUNCTION }
 
+-- The preprocessor argument must have input and output values of the same type (here: String)
 CREATE TABLE tab
 (
     key UInt64,
     str String,
     INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = length(str))
 )
-ENGINE = MergeTree
-ORDER BY tuple();   -- { serverError INCORRECT_QUERY }
+ENGINE = MergeTree ORDER BY tuple();   -- { serverError INCORRECT_QUERY }
 
 CREATE TABLE tab
 (
@@ -140,8 +133,7 @@ CREATE TABLE tab
     str String,
     INDEX idx(lower(str)) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(str))
 )
-ENGINE = MergeTree
-ORDER BY tuple();   -- { serverError BAD_ARGUMENTS }
+ENGINE = MergeTree ORDER BY tuple();   -- { serverError BAD_ARGUMENTS }
 
 CREATE TABLE tab
 (
@@ -149,28 +141,7 @@ CREATE TABLE tab
     str String,
     INDEX idx(upper(str)) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(upper(str)))
 )
-ENGINE = MergeTree
-ORDER BY tuple();   -- { serverError BAD_ARGUMENTS }
-
--- Not a function
-CREATE TABLE tab
-(
-    key UInt64,
-    str String,
-    INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = nonExistingFunction)
-)
-ENGINE = MergeTree
-ORDER BY key;   -- { serverError INCORRECT_QUERY }
-
--- Function not known
-CREATE TABLE tab
-(
-    key UInt64,
-    str String,
-    INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = nonExistingFunction(str))
-)
-ENGINE = MergeTree
-ORDER BY tuple();   -- { serverError UNKNOWN_FUNCTION }
+ENGINE = MergeTree ORDER BY tuple();   -- { serverError BAD_ARGUMENTS }
 
 -- Needs to have column identifier
 CREATE TABLE tab
@@ -179,8 +150,7 @@ CREATE TABLE tab
     str String,
     INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = rand())
 )
-ENGINE = MergeTree
-ORDER BY tuple();   -- { serverError INCORRECT_QUERY }
+ENGINE = MergeTree ORDER BY tuple();   -- { serverError INCORRECT_QUERY }
 
 
 -- All functions need to be deterministic
@@ -190,8 +160,7 @@ CREATE TABLE tab
     str String,
     INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = concat(str, toString(rand())))
 )
-ENGINE = MergeTree
-ORDER BY tuple();   -- { serverError INCORRECT_QUERY }
+ENGINE = MergeTree ORDER BY tuple();   -- { serverError INCORRECT_QUERY }
 
 DROP TABLE IF EXISTS tab;
 
