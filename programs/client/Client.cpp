@@ -274,6 +274,16 @@ void Client::initialize(Poco::Util::Application & self)
             configuration.setString("prompt", overrides.prompt.value());
 
         config().add(loaded_config.configuration);
+
+#if USE_JWT_CPP && USE_SSL
+        /// If config file has user/password credentials, don't use auto-detected OAuth login for cloud endpoints
+        if (login_was_auto_added &&
+            (loaded_config.configuration->has("user") || loaded_config.configuration->has("password")))
+        {
+            /// Config file has auth credentials, so disable the auto-added login flag
+            config().setBool("login", false);
+        }
+#endif
     }
     else if (config().has("connection"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "--connection was specified, but config does not exist");
@@ -1021,35 +1031,60 @@ void Client::readArguments(
 #if USE_JWT_CPP && USE_SSL
     if (argc >= 2)
     {
-        std::string hostname(argv[1]);
-        std::string port;
+        std::string_view first_arg(argv[1]);
 
-        try
+        /// Only process as positional hostname if it doesn't start with '-' (i.e., it's not a flag)
+        if (!first_arg.starts_with('-'))
         {
-            Poco::URI uri{hostname};
-            if (const auto & host = uri.getHost(); !host.empty())
+            std::string hostname(argv[1]);
+            std::string port;
+
+            try
             {
-                hostname = host;
-                port = std::to_string(uri.getPort());
+                Poco::URI uri{hostname};
+                if (const auto & host = uri.getHost(); !host.empty())
+                {
+                    hostname = host;
+                    port = std::to_string(uri.getPort());
+                }
             }
-        }
-        catch (const Poco::URISyntaxException &) // NOLINT(bugprone-empty-catch)
-        {
-            // intentionally ignored. argv[1] is not a uri, but could be a query.
-        }
+            catch (const Poco::URISyntaxException &) // NOLINT(bugprone-empty-catch)
+            {
+                // intentionally ignored. argv[1] is not a uri, but could be a query.
+            }
 
-        if (isCloudEndpoint(hostname))
-        {
-            is_hostname_argument = true;
+            if (isCloudEndpoint(hostname))
+            {
+                is_hostname_argument = true;
 
-            common_arguments.emplace_back("--login");
-            common_arguments.emplace_back("--secure");
+                /// Check if user provided authentication credentials via command line
+                bool has_auth_in_cmdline = false;
+                for (int i = 1; i < argc; ++i)
+                {
+                    std::string_view arg(argv[i]);
+                    if (arg.starts_with("--user") || arg.starts_with("--password") ||
+                        arg.starts_with("--jwt") || arg.starts_with("--ssh-key-file") ||
+                        arg == "-u")
+                    {
+                        has_auth_in_cmdline = true;
+                        break;
+                    }
+                }
 
-            std::vector<std::string> host_and_port;
-            host_and_port.push_back("--host=" + hostname);
-            if (!port.empty())
-                host_and_port.push_back("--port=" + port);
-            hosts_and_ports_arguments.push_back(std::move(host_and_port));
+                /// Only auto-add --login if no authentication credentials provided via command line
+                if (!has_auth_in_cmdline)
+                {
+                    common_arguments.emplace_back("--login");
+                    login_was_auto_added = true;
+                }
+                common_arguments.emplace_back("--secure");
+
+                std::vector<std::string> host_and_port;
+                host_and_port.push_back("--host=" + hostname);
+                if (!port.empty())
+                    host_and_port.push_back("--port=" + port);
+                hosts_and_ports_arguments.push_back(std::move(host_and_port));
+            }
         }
     }
 #endif

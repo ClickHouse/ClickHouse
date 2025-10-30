@@ -78,6 +78,7 @@ private:
 
 #if USE_JWT_CPP && USE_SSL
     std::shared_ptr<JWTProvider> jwt_provider;
+    bool login_was_auto_added = false;
 #endif
 };
 }
