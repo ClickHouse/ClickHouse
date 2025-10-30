@@ -31,6 +31,8 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/parseGlobs.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Mutations.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/ReadFromTableChangesStep.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
 #include <Interpreters/StorageID.h>
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 #include <Databases/LoadingStrictnessLevel.h>
@@ -47,6 +49,8 @@ namespace Setting
 {
     extern const SettingsBool optimize_count_from_files;
     extern const SettingsBool use_hive_partitioning;
+    extern const SettingsInt64 delta_lake_snapshot_start_version;
+    extern const SettingsInt64 delta_lake_snapshot_end_version;
 }
 
 namespace ErrorCodes
@@ -344,6 +348,50 @@ void StorageObjectStorage::read(
                         getName());
     }
 
+    const auto & settings = local_context->getSettingsRef();
+#if USE_DELTA_KERNEL_RS
+    if (configuration->isDataLakeConfiguration())
+    {
+        static constexpr auto LATEST_SNAPSHOT_VERSION = -1;
+        if (auto start_version = settings[Setting::delta_lake_snapshot_start_version].value; start_version != LATEST_SNAPSHOT_VERSION)
+        {
+            if (start_version < 0)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Snapshot start version cannot be a negative value ({})", start_version);
+
+            const auto end_version = settings[Setting::delta_lake_snapshot_end_version].value;
+            if (end_version != LATEST_SNAPSHOT_VERSION && end_version < 0)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Snapshot end version cannot be a negative value ({})", end_version);
+
+            const auto * delta_lake_metadata = dynamic_cast<const DeltaLakeMetadataDeltaKernel *>(configuration->getExternalMetadata());
+            if (delta_lake_metadata)
+            {
+                DeltaLake::TableChangesPtr table_changes;
+                if (end_version == LATEST_SNAPSHOT_VERSION)
+                    table_changes = delta_lake_metadata->getTableChanges(start_version);
+                else
+                    table_changes = delta_lake_metadata->getTableChanges({start_version, end_version});
+
+                auto read_step = std::make_unique<ReadFromDeltaLakeTableChangesStep>(
+                    std::move(table_changes),
+                    Block{},
+                    column_names,
+                    query_info,
+                    storage_snapshot,
+                    num_streams,
+                    local_context);
+                query_plan.addStep(std::move(read_step));
+                return;
+            }
+        }
+        else if (auto end_version = settings[Setting::delta_lake_snapshot_start_version].value; end_version != LATEST_SNAPSHOT_VERSION)
+        {
+            throw DB::Exception(
+                DB::ErrorCodes::BAD_ARGUMENTS,
+                "Cannot use delta_lake_snapshot_end_version without delta_lake_snapshot_start_version");
+        }
+    }
+#endif
+
     auto read_from_format_info = configuration->prepareReadingFromFormat(
         object_storage,
         column_names,
@@ -355,8 +403,11 @@ void StorageObjectStorage::read(
     if (query_info.prewhere_info || query_info.row_level_filter)
         read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.row_level_filter, query_info.prewhere_info);
 
-    const bool need_only_count = (query_info.optimize_trivial_count || (read_from_format_info.requested_columns.empty() && !read_from_format_info.prewhere_info && !read_from_format_info.row_level_filter))
-        && local_context->getSettingsRef()[Setting::optimize_count_from_files];
+    const bool need_only_count = (query_info.optimize_trivial_count
+                                  || (read_from_format_info.requested_columns.empty()
+                                      && !read_from_format_info.prewhere_info
+                                      && !read_from_format_info.row_level_filter))
+        && settings[Setting::optimize_count_from_files];
 
     auto modified_format_settings{format_settings};
     if (!modified_format_settings.has_value())

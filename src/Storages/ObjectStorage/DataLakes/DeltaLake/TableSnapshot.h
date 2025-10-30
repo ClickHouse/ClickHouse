@@ -95,8 +95,6 @@ private:
     void updateSettings(const DB::ContextPtr & context);
 };
 
-/// TODO; Enable event tracing in DeltaKernel.
-
 }
 
 #endif

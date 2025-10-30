@@ -15,6 +15,8 @@
 namespace DeltaLake
 {
 class TableSnapshot;
+class TableChanges;
+using TableChangesPtr = std::shared_ptr<TableChanges>;
 }
 
 namespace DB
@@ -69,6 +71,9 @@ public:
         ContextPtr context) const override;
 
     DeltaLake::KernelHelperPtr getKernelHelper() const { return kernel_helper; }
+
+    DeltaLake::TableChangesPtr getTableChanges(const std::pair<size_t, size_t> & version_range) const;
+    DeltaLake::TableChangesPtr getTableChanges(size_t from_version) const;
 
     SinkToStoragePtr write(
         SharedHeader sample_block,

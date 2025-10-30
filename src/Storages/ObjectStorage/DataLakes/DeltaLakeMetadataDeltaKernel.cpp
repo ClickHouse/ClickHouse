@@ -4,6 +4,7 @@
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/TableChanges.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaLakeSink.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaLakePartitionedSink.h>
@@ -102,6 +103,16 @@ void DeltaLakeMetadataDeltaKernel::update(const ContextPtr & context)
 {
     std::lock_guard lock(table_snapshot_mutex);
     table_snapshot->update(context);
+}
+
+DeltaLake::TableChangesPtr DeltaLakeMetadataDeltaKernel::getTableChanges(const std::pair<size_t, size_t> & version_range) const
+{
+    return std::make_shared<DeltaLake::TableChanges>(version_range, kernel_helper);
+}
+
+DeltaLake::TableChangesPtr DeltaLakeMetadataDeltaKernel::getTableChanges(size_t from_version) const
+{
+    return std::make_shared<DeltaLake::TableChanges>(from_version, kernel_helper);
 }
 
 ObjectIterator DeltaLakeMetadataDeltaKernel::iterate(
