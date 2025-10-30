@@ -38,26 +38,30 @@ void HashiCorpVault::load(const Poco::Util::AbstractConfiguration & config, cons
         url = config.getString(config_prefix + ".url", "");
 
         if (url.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "url is not given for vault.");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "url is not specified for vault.");
 
-        token = config.getString(config_prefix + ".token", "");
-        username = config.getString(config_prefix + ".userpass.username", "");
-        password = config.getString(config_prefix + ".userpass.password", "");
-
-        if (!password.empty() && username.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "username is not given for vault.");
-
-        if (!username.empty())
+        if (config.has(config_prefix + ".userpass"))
         {
-            // userpass auth
+            if (config.has(config_prefix + ".token"))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple auth methods are specified for vault.");
+
+            username = config.getString(config_prefix + ".userpass.username", "");
+            password = config.getString(config_prefix + ".userpass.password", "");
+
+            if (username.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "username is not specified for vault.");
+
             auth_method = HashiCorpVaultAuthMethod::Userpass;
-        }
-        else
-        {
-            // token auth
-            auth_method = HashiCorpVaultAuthMethod::Token;
+        } else {
+            if (!config.has(config_prefix + ".token"))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Auth sections are not specified for vault.");
+
+            token = config.getString(config_prefix + ".token", "");
+
             if (token.empty())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "token is not given for vault.");
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "token is not specified for vault.");
+
+            auth_method = HashiCorpVaultAuthMethod::Token;
         }
 
         loaded = true;
@@ -169,7 +173,6 @@ String HashiCorpVault::readSecret(const String & secret, const String & key)
     Poco::Dynamic::Var res_json;
     try
     {
-        // json_str = "{data=";
         res_json = parser.parse(json_str);
     }
     catch (const Poco::Exception & e)

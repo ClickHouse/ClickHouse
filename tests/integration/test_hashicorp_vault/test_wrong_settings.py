@@ -6,7 +6,12 @@ from .common import *
 
 def start_clickhouse(config, users, err_msg):
     cluster = ClickHouseCluster(__file__)
-    instance = cluster.add_instance("instance", main_configs=[config], user_configs=[users], with_hashicorp_vault=True)
+    instance = cluster.add_instance(
+        "instance",
+        main_configs=[config],
+        user_configs=[users],
+        with_hashicorp_vault=True,
+    )
     cluster.set_hashicorp_vault_startup_command(vault_startup_command)
 
     failed_to_start = False
@@ -30,11 +35,27 @@ def test_wrong_url():
     )
 
 
+def test_missing_auth_info():
+    start_clickhouse(
+        "configs/config_missing_auth_info.xml",
+        "configs/users.xml",
+        "DB::Exception: Auth sections are not specified for vault",
+    )
+
+
 def test_wrong_token():
     start_clickhouse(
         "configs/config_wrong_token.xml",
         "configs/users.xml",
-        "HTTP status code: 403 'Forbidden'"
+        "HTTP status code: 403 'Forbidden'",
+    )
+
+
+def test_token_empty():
+    start_clickhouse(
+        "configs/config_token_empty.xml",
+        "configs/users.xml",
+        "DB::Exception: token is not specified for vault",
     )
 
 
@@ -42,7 +63,7 @@ def test_wrong_secret():
     start_clickhouse(
         "configs/config.xml",
         "configs/users_wrong_secret.xml",
-        "HTTP status code: 404 'Not Found'"
+        "HTTP status code: 404 'Not Found'",
     )
 
 

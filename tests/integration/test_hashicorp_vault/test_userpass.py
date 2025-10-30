@@ -22,7 +22,7 @@ def started_cluster():
         cluster.shutdown()
 
 
-def test_config_with_hashicorp_vault_userpass(started_cluster):
+def test_userpass_config_with_hashicorp_vault(started_cluster):
     assert (
         instance.query(
             "SELECT currentUser()", user="test_user", password="test_password"
