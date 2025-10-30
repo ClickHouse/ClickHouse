@@ -1141,6 +1141,11 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
             ActionsDAG::MatchColumnsMode::Position
         );
     }
+
+    if (getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
+        InterpreterSelectQueryAnalyzer(create.select->clone(), getContext(), SelectQueryOptions().analyze());
+    else
+        InterpreterSelectWithUnionQuery(create.select->clone(), getContext(), SelectQueryOptions().analyze());
 }
 
 namespace
