@@ -350,6 +350,36 @@ public:
 
         /// Step 3
 
+        /// For each bucket, we gather all its keys from `payload_key_cols` into `bucket_key_cols` sequentially for cache-friendly access while building final result
+        std::vector<MutableColumnPtr> bucket_key_cols;
+        bucket_key_cols.reserve(keys_cnt);
+        const size_t total_matched = payload_key_cols[0]->size(); /// Number of matching dict rows across all buckets
+        for (const auto & key_type : key_types)
+        {
+            auto col = key_type->createColumn();
+            col->reserve(total_matched);
+            bucket_key_cols.emplace_back(std::move(col));
+        }
+
+        std::vector<size_t> bucket_start(num_buckets, 0);
+        std::vector<size_t> bucket_size(num_buckets, 0);
+
+        for (size_t bucket_id = 0; bucket_id < num_buckets; ++bucket_id)
+        {
+            bucket_start[bucket_id] = bucket_key_cols[0]->size();
+
+            size_t cur_key_pos = last_key_pos_for_bucket[bucket_id];
+            while (cur_key_pos != npos)
+            {
+                for (size_t key_id = 0; key_id < keys_cnt; ++key_id)
+                    bucket_key_cols[key_id]->insertFrom(*payload_key_cols[key_id], cur_key_pos);
+
+                cur_key_pos = next_key_pos[cur_key_pos];
+                ++bucket_size[bucket_id];
+            }
+        }
+
+
         /// Compute total output size and reserve result columns once
         size_t total_keys_across_all_input_rows = 0;
         for (size_t row_id = 0; row_id < input_rows_count; ++row_id)
@@ -369,22 +399,17 @@ public:
         auto & offsets = offsets_column->getData();
         offsets.resize(input_rows_count);
 
-        /// Materialize result in row order by walking each row's bucket's key index list
+        /// Now materialize the final result using `bucket_key_cols`
         size_t position = 0;
         for (size_t row_id = 0; row_id < input_rows_count; ++row_id)
         {
             const size_t bucket_id = row_id_to_bucket_id[row_id];
-            size_t cur_key_pos = last_key_pos_for_bucket[bucket_id];
+            const size_t len = bucket_size[bucket_id];
 
-            while (cur_key_pos != npos)
-            {
-                for (size_t key_id = 0; key_id < keys_cnt; ++key_id)
-                    result_columns[key_id]->insertFrom(*payload_key_cols[key_id], cur_key_pos);
+            for (size_t key_id = 0; key_id < keys_cnt; ++key_id)
+                result_columns[key_id]->insertRangeFrom(*bucket_key_cols[key_id], bucket_start[bucket_id], len);
 
-                cur_key_pos = next_key_pos[cur_key_pos];
-                ++position;
-            }
-
+            position += len;
             offsets[row_id] = position;
         }
 
