@@ -113,14 +113,9 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
         "Failed to set file processing, last error: {}", code);
 }
 
-void ObjectStorageQueueUnorderedFileMetadata::prepareProcessedAtStartRequests(Coordination::Requests & requests)
-{
-    requests.push_back(
-        zkutil::makeCreateRequest(
-            processed_node_path, node_metadata.toString(), zkutil::CreateMode::Persistent));
-}
-
-void ObjectStorageQueueUnorderedFileMetadata::prepareProcessedRequestsImpl(Coordination::Requests & requests)
+void ObjectStorageQueueUnorderedFileMetadata::prepareProcessedRequestsImpl(
+    Coordination::Requests & requests,
+    LastProcessedFileInfoMapPtr /* created_nodes */)
 {
     requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
     requests.push_back(
