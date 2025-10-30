@@ -44,10 +44,29 @@ expect "Query was cancelled."
 expect " in set."
 expect ":) "
 
-# Exit from less - q + Ctrl-C (just in case)
-send "q"
-send "\3"
-
-# Ctrl+D
-send -- "\4"
-expect eof
+# Try to exit from less and client in a loop, since client will hang if less is still alive
+set is_done 0
+set timeout 1
+set total_wait 0
+while {$is_done == 0 && $total_wait < 60} {
+    # Exit from less with q + Ctrl-C (just in case)
+    send "q"
+    send "\3"
+    # And try to exit from client (will hang if less is still alive)
+    send -- "\4"
+    expect {
+        eof {
+            set is_done 1
+        }
+        timeout {
+            incr total_wait 1
+        }
+        default {
+            # Reset the expect_after
+        }
+    }
+}
+if {$is_done == 0} {
+    send_user "less did not quit\n"
+    exit 1
+}
