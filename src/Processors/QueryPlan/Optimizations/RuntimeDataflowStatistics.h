@@ -42,6 +42,11 @@ struct RuntimeDataflowStatistics
     size_t output_bytes = 0;
 };
 
+inline RuntimeDataflowStatistics operator+(const RuntimeDataflowStatistics & lhs, const RuntimeDataflowStatistics & rhs)
+{
+    return RuntimeDataflowStatistics{lhs.input_bytes + rhs.input_bytes, lhs.output_bytes + rhs.output_bytes};
+}
+
 class RuntimeDataflowStatisticsCache
 {
 public:
@@ -135,8 +140,11 @@ private:
 
     size_t output_bytes_sample = 0;
     size_t output_bytes_compressed = 0;
-
     RuntimeDataflowStatistics statistics{};
+
+    size_t output_bytes_sample2 = 0;
+    size_t output_bytes_compressed2 = 0;
+    RuntimeDataflowStatistics statistics2{};
 
     size_t cnt = 0;
 };

@@ -26,8 +26,10 @@ Updater::~Updater()
         statistics.input_bytes = static_cast<size_t>(statistics.input_bytes / (input_bytes_sample / input_bytes_compressed));
     if (output_bytes_compressed && (output_bytes_sample / output_bytes_compressed))
         statistics.output_bytes = static_cast<size_t>(statistics.output_bytes / (output_bytes_sample / output_bytes_compressed));
+    if (output_bytes_compressed2 && (output_bytes_sample2 / output_bytes_compressed2))
+        statistics2.output_bytes = static_cast<size_t>(statistics2.output_bytes / (output_bytes_sample2 / output_bytes_compressed2));
     auto & dataflow_cache = getRuntimeDataflowStatisticsCache();
-    dataflow_cache.update(*cache_key, statistics);
+    dataflow_cache.update(*cache_key, statistics + statistics2);
 }
 
 void Updater::addOutputBytes(const Chunk & chunk)
@@ -101,16 +103,25 @@ void Updater::addOutputBytes(const Aggregator & aggregator, const Block & block)
     if (!cache_key)
         return;
 
-    for (size_t i = 0; i < aggregator.getParams().keys_size; ++i)
+    auto getKeyColumnsSize = [&](bool compressed)
     {
-        const auto & key_column_name = aggregator.getParams().keys[i];
-        // LOG_DEBUG(&Poco::Logger::get("debug"), "key_column_name={}", key_column_name);
-        const auto & column = block.getByName(key_column_name);
-        const auto compressed = compressedColumnSize(column);
-        std::lock_guard lock(mutex);
-        statistics.output_bytes += compressed;
-        output_bytes_sample += compressed;
-        output_bytes_compressed += compressed;
+        size_t total_size = 0;
+        for (size_t i = 0; i < aggregator.getParams().keys_size; ++i)
+        {
+            const auto & key_column_name = aggregator.getParams().keys[i];
+            const auto & column = block.getByName(key_column_name);
+            total_size += compressed ? compressedColumnSize(column) : column.column->byteSize();
+        }
+        return total_size;
+    };
+
+    std::lock_guard lock(mutex);
+    const auto source_bytes = getKeyColumnsSize(/*compressed=*/true);
+    statistics2.output_bytes += source_bytes;
+    if (cnt++ % 1 == 0 && block.rows())
+    {
+        output_bytes_sample2 += source_bytes;
+        output_bytes_compressed2 += getKeyColumnsSize(/*compressed=*/true);
     }
 }
 
