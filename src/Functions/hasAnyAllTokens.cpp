@@ -58,7 +58,7 @@ void FunctionHasAnyAllTokens<HasTokensTraits>::setSearchTokens(const std::vector
     if (search_tokens.has_value())
         return;
 
-    search_tokens = Tokens();
+    search_tokens = TokensWithPosition();
     for (UInt64 pos = 0; const auto & new_search_token : new_search_tokens)
         if (auto [_, inserted] = search_tokens->emplace(new_search_token, pos); inserted)
             ++pos;
@@ -89,7 +89,7 @@ bool isStringOrArrayOfStringType(const IDataType & type)
 }
 
 
-Tokens extractTokensFromString(std::string_view value)
+TokensWithPosition extractTokensFromString(std::string_view value)
 {
     DefaultTokenExtractor default_token_extractor;
 
@@ -99,7 +99,7 @@ Tokens extractTokensFromString(std::string_view value)
     size_t length = value.size();
     size_t pos = 0;
 
-    Tokens tokens;
+    TokensWithPosition tokens;
     while (cur < length && default_token_extractor.nextInStringPadded(static_cast<const char *>(value.data()), length, &cur, &token_start, &token_len))
     {
         tokens.emplace(std::string{value.data() + token_start, token_len}, pos);
@@ -139,7 +139,7 @@ void executeHasAnyTokens(
     const ITokenExtractor * token_extractor,
     const StringColumnType auto & col_input,
     size_t input_rows_count,
-    const Tokens & tokens,
+    const TokensWithPosition & tokens,
     PaddedPODArray<UInt8> & col_result)
 {
     for (size_t i = 0; i < input_rows_count; ++i)
@@ -164,7 +164,7 @@ void executeHasAllTokens(
     const ITokenExtractor * token_extractor,
     const StringColumnType auto & col_input,
     size_t input_rows_count,
-    const Tokens & needles,
+    const TokensWithPosition & needles,
     PaddedPODArray<UInt8> & col_result)
 {
     const size_t ns = needles.size();
@@ -201,7 +201,7 @@ void execute(
     const ITokenExtractor * token_extractor,
     const StringColumnType auto & col_input,
     size_t input_rows_count,
-    const Tokens & needles,
+    const TokensWithPosition & needles,
     PaddedPODArray<UInt8> & col_result)
 {
     if (needles.empty())
@@ -242,7 +242,7 @@ ColumnPtr FunctionHasAnyAllTokens<HasTokensTraits>::executeImpl(
         chassert(!search_tokens.has_value());
 
         /// Populate needles from function arguments
-        Tokens search_tokens_from_args;
+        TokensWithPosition search_tokens_from_args;
         const ColumnPtr col_needles = arguments[arg_needles].column;
 
         if (const ColumnConst * col_needles_str_const = checkAndGetColumnConst<ColumnString>(col_needles.get()))
@@ -380,7 +380,7 @@ SELECT count() FROM table WHERE hasAnyTokens(msg, tokens('a()d', 'splitByString'
 REGISTER_FUNCTION(HasAllTokens)
 {
     FunctionDocumentation::Description description_hasAllTokens = R"(
-Like [`hasAnyTokens`](#hasanytokens), but returns 1, if all tokens in the `needle` string or array match the `input` string, and 0 otherwise. If `input` is a column, returns all rows that satisfy this condition.
+Like [`hasAnyTokens`](#hasAnyTokens), but returns 1, if all tokens in the `needle` string or array match the `input` string, and 0 otherwise. If `input` is a column, returns all rows that satisfy this condition.
 
 :::note
 Column `input` should have a [text index](../../engines/table-engines/mergetree-family/invertedindexes) defined for optimal performance.
