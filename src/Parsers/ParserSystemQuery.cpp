@@ -10,6 +10,7 @@
 #include <Poco/String.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromString.h>
 
 #include <base/EnumReflection.h>
 
@@ -752,6 +753,19 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::INSTRUMENT_REMOVE:
         {
             ASTPtr temporary_identifier;
+
+            if (ParserSubquery{}.parse(pos, temporary_identifier, expected))
+            {
+                if (!temporary_identifier->children.empty())
+                {
+                    WriteBufferFromOwnString query_buffer;
+                    IAST::FormatSettings settings(true);
+                    temporary_identifier->children[0]->format(query_buffer, settings);
+                    res->instrumentation_subquery = query_buffer.str();
+                }
+                break;
+            }
+
             if (!ParserLiteral{}.parse(pos, temporary_identifier, expected))
             {
                 if (!ParserIdentifier{}.parse(pos, temporary_identifier, expected))

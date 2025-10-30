@@ -21,6 +21,7 @@ statements=(
     "SELECT * FROM system.instrumentation FORMAT NULL"
     "SELECT * FROM system.instrumentation_trace_log FORMAT NULL"
     "SYSTEM INSTRUMENT REMOVE ALL"
+    "SYSTEM INSTRUMENT REMOVE (SELECT id FROM system.instrumentation LIMIT 2)"
     "SYSTEM INSTRUMENT ADD \`QueryMetricLog::startQuery\` LOG ENTRY 'entry log'"
     "SYSTEM INSTRUMENT ADD \`QueryMetricLog::startQuery\` LOG EXIT 'exit log'"
     "SYSTEM INSTRUMENT ADD \`QueryMetricLog::finishQuery\` SLEEP ENTRY 0"

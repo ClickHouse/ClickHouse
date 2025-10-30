@@ -193,6 +193,7 @@ public:
     std::optional<XRayEntryType> instrumentation_entry_type;
     std::optional<std::variant<UInt64, bool>> instrumentation_point_id;
     std::optional<std::vector<InstrumentParameter>> instrumentation_parameters;
+    String instrumentation_subquery;
 #endif
 
     /// For SYSTEM TEST VIEW <name> (SET FAKE TIME <time> | UNSET FAKE TIME).

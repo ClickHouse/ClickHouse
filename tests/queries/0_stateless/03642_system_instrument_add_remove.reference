@@ -1,9 +1,19 @@
+-- Empty table
 0
+-- Add one entry
 DB::executeQuery	log	entry	my log in executeQuery
+-- Adding the same entry produces an error
 DB::executeQuery	log	entry	my log in executeQuery
+-- Add another entry
 DB::executeQuery	log	entry	my log in executeQuery
 QueryMetricLog::startQuery	log	entry	my log in startQuery
+-- Remove one specific id
 DB::executeQuery	log	entry	my log in executeQuery
+-- Add 2 more entries
 DB::executeQuery	log	entry	my log in executeQuery
-QueryMetricLog::startQuery	log	entry	my other in startQuery
+QueryMetricLog::startQuery	log	exit	my other in startQuery
+QueryMetricLog::finishQuery	log	exit	my other in finishQuery
+-- Remove the entries with entry_type = exit
+DB::executeQuery	log	entry	my log in executeQuery
+-- Remove everything
 0

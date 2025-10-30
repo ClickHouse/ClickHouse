@@ -520,7 +520,11 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         }
         case Type::INSTRUMENT_REMOVE:
         {
-            if (instrumentation_point_id)
+            if (!instrumentation_subquery.empty())
+            {
+                ostr << " (" << instrumentation_subquery << ')';
+            }
+            else if (instrumentation_point_id)
             {
                 if (std::holds_alternative<bool>(instrumentation_point_id.value()))
                     ostr << " ALL";

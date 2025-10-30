@@ -58,6 +58,7 @@
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Storages/Freeze.h>
@@ -1748,9 +1749,40 @@ void InterpreterSystemQuery::instrumentWithXRay(bool add, ASTSystemQuery & query
     try
     {
         if (add)
+        {
             InstrumentationManager::instance().setHandlerAndPatch(getContext(), query.instrumentation_function_name, query.instrumentation_handler_name, query.instrumentation_entry_type, query.instrumentation_parameters);
+        }
         else
-            InstrumentationManager::instance().unpatchFunction(query.instrumentation_point_id.value());
+        {
+            if (!query.instrumentation_subquery.empty())
+            {
+                auto [_, block_io] = executeQuery(query.instrumentation_subquery, getContext(), QueryFlags{ .internal = true });
+
+                if (!block_io.pipeline.initialized())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to execute subquery");
+
+                PullingPipelineExecutor executor(block_io.pipeline);
+                Block block;
+
+                while (executor.pull(block))
+                {
+                    if (block.columns() == 0)
+                        continue;
+
+                    const auto & column = block.getByPosition(0).column;
+
+                    for (size_t i = 0; i < column->size(); ++i)
+                    {
+                        UInt64 id = column->getUInt(i);
+                        InstrumentationManager::instance().unpatchFunction(id);
+                    }
+                }
+            }
+            else
+            {
+                InstrumentationManager::instance().unpatchFunction(query.instrumentation_point_id.value());
+            }
+        }
     }
     catch (const DB::Exception & e)
     {
