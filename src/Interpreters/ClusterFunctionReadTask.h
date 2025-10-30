@@ -10,7 +10,6 @@ namespace DB
 class ReadBuffer;
 class WriteBuffer;
 
-
 /// A response send from initiator in Cluster functions (S3Cluster, etc)
 struct ClusterFunctionReadTaskResponse
 {
@@ -33,7 +32,7 @@ struct ClusterFunctionReadTaskResponse
     bool isEmpty() const { return path.empty(); }
 
     /// Serialize according to the protocol version.
-    void serialize(WriteBuffer & out, size_t protocol_version) const;
+    void serialize(WriteBuffer & out, size_t worker_protocol_version) const;
     /// Deserialize. Protocol version will be received from `in`
     /// and the result will be deserialized accordingly.
     void deserialize(ReadBuffer & in);

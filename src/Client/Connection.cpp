@@ -606,20 +606,20 @@ void Connection::receiveHello(const Poco::Timespan & handshake_timeout)
             readVarUInt(server_query_plan_serialization_version, *in);
         }
 
-        server_cluster_function_protocol_version = DBMS_CLUSTER_INITIAL_PROCESSING_PROTOCOL_VERSION;
+        worker_cluster_function_protocol_version = DBMS_CLUSTER_INITIAL_PROCESSING_PROTOCOL_VERSION;
         if (server_revision >= DBMS_MIN_REVISION_WITH_VERSIONED_CLUSTER_FUNCTION_PROTOCOL)
         {
-            readVarUInt(server_cluster_function_protocol_version, *in);
+            readVarUInt(worker_cluster_function_protocol_version, *in);
         }
-        if (server_cluster_function_protocol_version != DBMS_CLUSTER_PROCESSING_LAST_PROTOCOL_VERSION)
+        if (worker_cluster_function_protocol_version != DBMS_CLUSTER_PROCESSING_LAST_PROTOCOL_VERSION)
         {
             LOG_WARNING(
                 log_wrapper.get(),
                 "Cluster function processing protocol versions mismatch. "
-                "Replica supports version `{}` while coordinator supports version `{}`. "
+                "Worker supports version `{}` while coordinator supports version `{}`. "
                 "It is better to update all nodes in the cluster to the ClickHouse version with"
                 " the latest protocol version as soon as possible.",
-                server_cluster_function_protocol_version,
+                worker_cluster_function_protocol_version,
                 DBMS_CLUSTER_PROCESSING_LAST_PROTOCOL_VERSION);
         }
     }
@@ -1067,7 +1067,7 @@ void Connection::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
 void Connection::sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse & response)
 {
     writeVarUInt(Protocol::Client::ReadTaskResponse, *out);
-    response.serialize(*out, server_cluster_function_protocol_version);
+    response.serialize(*out, worker_cluster_function_protocol_version);
     out->finishChunk();
     out->next();
 }

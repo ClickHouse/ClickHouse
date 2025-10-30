@@ -22,7 +22,6 @@ namespace Setting
     extern const SettingsBool cluster_function_process_archive_on_multiple_nodes;
 }
 
-
 ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr object, const ContextPtr & context)
 {
     if (!object)
@@ -70,16 +69,14 @@ ObjectInfoPtr ClusterFunctionReadTaskResponse::getObjectInfo() const
         object = std::make_shared<ObjectInfo>(path);
     }
     object->data_lake_metadata = data_lake_metadata;
-
     return object;
 }
 
-void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t protocol_version) const
+void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t worker_protocol_version) const
 {
-    protocol_version = std::min(protocol_version, static_cast<UInt64>(DBMS_CLUSTER_PROCESSING_LAST_PROTOCOL_VERSION));
+    auto protocol_version = std::min(worker_protocol_version, static_cast<UInt64>(DBMS_CLUSTER_PROCESSING_LAST_PROTOCOL_VERSION));
     writeVarUInt(protocol_version, out);
     writeStringBinary(path, out);
-
 
     if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_METADATA)
     {
