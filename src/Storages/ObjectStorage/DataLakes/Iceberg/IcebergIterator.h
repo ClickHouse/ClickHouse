@@ -106,7 +106,7 @@ private:
     Iceberg::SingleThreadIcebergKeysIterator data_files_iterator;
     Iceberg::SingleThreadIcebergKeysIterator deletes_iterator;
     ConcurrentBoundedQueue<Iceberg::ManifestFileEntry> blocking_queue;
-    BackgroundSchedulePool::TaskHolder producer_task;
+    std::optional<ThreadFromGlobalPool> producer_task;
     IDataLakeMetadata::FileProgressCallback callback;
     std::vector<Iceberg::ManifestFileEntry> position_deletes_files;
     std::vector<Iceberg::ManifestFileEntry> equality_deletes_files;
