@@ -485,16 +485,15 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     std::shared_ptr<ISource> source;
     std::unique_ptr<ReadBuffer> read_buf;
 
+    auto actual_format = object_info->getFileFormat().value_or(configuration->format);
+
     auto try_get_num_rows_from_cache = [&]() -> std::optional<size_t>
     {
         if (!schema_cache)
             return std::nullopt;
 
-        const auto cache_key = getKeyForSchemaCache(
-            getUniqueStoragePathIdentifier(*configuration, *object_info),
-            object_info->getFileFormat().value_or(configuration->format),
-            format_settings,
-            context_);
+        const auto cache_key
+            = getKeyForSchemaCache(getUniqueStoragePathIdentifier(*configuration, *object_info), actual_format, format_settings, context_);
 
         auto get_last_mod_time = [&]() -> std::optional<time_t>
         {
@@ -553,16 +552,24 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         }
         auto filter_info = [&]()
         {
-            if (!schema_changed)
-                return format_filter_info;
+            bool need_to_remove_prewhere_info = (configuration->format != actual_format) && (format_filter_info->prewhere_info != nullptr)
+                && (FormatFactory::instance().checkIfFormatSupportsPrewhere(actual_format, context_, format_settings));
+
             auto mapper = configuration->getColumnMapperForObject(object_info);
-            if (!mapper)
+            if (!mapper && !need_to_remove_prewhere_info)
+            {
                 return format_filter_info;
-            return std::make_shared<FormatFilterInfo>(format_filter_info->filter_actions_dag, format_filter_info->context.lock(), mapper, nullptr, nullptr);
+            }
+            return std::make_shared<FormatFilterInfo>(
+                format_filter_info->filter_actions_dag,
+                format_filter_info->context.lock(),
+                mapper,
+                format_filter_info->row_level_filter,
+                need_to_remove_prewhere_info ? format_filter_info->prewhere_info : nullptr);
         }();
 
         auto input_format = FormatFactory::instance().getInput(
-            object_info->getFileFormat().value_or(configuration->format),
+            actual_format,
             *read_buf,
             initial_header,
             context_,
