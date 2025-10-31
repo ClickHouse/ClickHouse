@@ -1426,10 +1426,10 @@ String AggregateFunctionType::typeName(const bool escape, const bool simplified)
 
     buf += "AggregateFunction(";
     buf += SQLFunc_Name(aggregate).substr(4);
-    for (size_t i = 0; i < subtypes.size(); i++)
+    for (const auto & entry : subtypes)
     {
         buf += ",";
-        buf += subtypes[i]->typeName(escape, simplified);
+        buf += entry->typeName(escape, simplified);
     }
     buf += ")";
     return buf;
