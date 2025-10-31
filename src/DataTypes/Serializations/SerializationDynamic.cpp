@@ -16,7 +16,7 @@
 #include <Interpreters/castColumn.h>
 #include <Formats/EscapingRuleUtils.h>
 
-#include <regex>
+#include <re2/re2.h>
 
 namespace DB
 {
@@ -730,7 +730,9 @@ namespace
 /// Replace all types JSON(...) to just JSON. We want to have identical hashes for JSON with the same data regardless of parameters.
 String removeJSONParametersFromTypeName(const String & name)
 {
-    return std::regex_replace(name, std::regex(R"(JSON\([^)]*\))"), "JSON");
+    String result = name;
+    RE2::GlobalReplace(&result, RE2(R"(JSON\([^)]*\))"), "JSON");
+    return result;
 }
 
 }
