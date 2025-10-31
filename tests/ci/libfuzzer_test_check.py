@@ -294,10 +294,6 @@ def main():
     fuzzers_path.mkdir(parents=True, exist_ok=True)
 
     download_corpus(fuzzers_path)
-
-    # TESTING TESTING TESTING
-    exit(0)
-
     download_fuzzers(check_name, reports_path, fuzzers_path)
 
     for file in os.listdir(fuzzers_path):

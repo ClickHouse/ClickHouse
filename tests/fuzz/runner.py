@@ -50,6 +50,9 @@ def run_fuzzer(fuzzer: str, timeout: int):
     active_corpus_dir = f"corpus/{fuzzer}"
     if not os.path.exists(active_corpus_dir):
         os.makedirs(active_corpus_dir)
+    mini_corpus_dir = f"corpus/{fuzzer}_mini"
+    if not os.path.exists(mini_corpus_dir):
+        os.makedirs(mini_corpus_dir)
     options_file = f"{fuzzer}.options"
     custom_libfuzzer_options = ""
     fuzzer_arguments = ""
@@ -99,6 +102,25 @@ def run_fuzzer(fuzzer: str, timeout: int):
     status_path = f"{results_path}/status.txt"
     out_path = f"{results_path}/out.txt"
     stdout_path = f"{results_path}/stdout.txt"
+
+
+    merge_libfuzzer_options = f" -artifact_prefix={artifact_prefix} -merge=1 {mini_corpus_dir} {active_corpus_dir}"
+    cmd_line = f"{DEBUGGER} ./{fuzzer} {fuzzer_arguments}"
+
+    env = None
+    with_fuzzer_args = ""
+    if use_fuzzer_args:
+        env["FUZZER_ARGS"] = f"{merge_libfuzzer_options}".strip()
+        with_fuzzer_args = f" with FUZZER_ARGS '{env['FUZZER_ARGS']}'"
+    else:
+        cmd_line += f" {merge_libfuzzer_options}"
+
+    logging.info("...will execute merge: '%s'%s", cmd_line, with_fuzzer_args)
+
+
+# TESTING TESTING TESTING
+    exit(0)
+
 
     if not "-dict=" in custom_libfuzzer_options and Path(f"{fuzzer}.dict").exists():
         custom_libfuzzer_options += f" -dict={fuzzer}.dict"
