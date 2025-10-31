@@ -181,16 +181,19 @@ TEST_F(MetadataPlainRewritableDiskTest, MoveTree)
         tx->commit();
     }
 
-    /// This is a bug. Should be MOVED everywhere
     EXPECT_EQ(readObject(object_storage, a_path), "MOVED/");
     EXPECT_EQ(readObject(object_storage, ab_path), "MOVED/B/");
-    EXPECT_EQ(readObject(object_storage, abc_path), "A/B/C/");
-    EXPECT_EQ(readObject(object_storage, abcd_path), "A/B/C/D/");
+    EXPECT_EQ(readObject(object_storage, abc_path), "MOVED/B/C/");
+    EXPECT_EQ(readObject(object_storage, abcd_path), "MOVED/B/C/D/");
 
     EXPECT_FALSE(metadata->existsDirectory("A"));
     EXPECT_FALSE(metadata->existsDirectory("A/B"));
-    EXPECT_TRUE(metadata->existsDirectory("A/B/C"));
-    EXPECT_TRUE(metadata->existsDirectory("A/B/C/D"));
+    EXPECT_FALSE(metadata->existsDirectory("A/B/C"));
+    EXPECT_FALSE(metadata->existsDirectory("A/B/C/D"));
+    EXPECT_TRUE(metadata->existsDirectory("MOVED"));
+    EXPECT_TRUE(metadata->existsDirectory("MOVED/B"));
+    EXPECT_TRUE(metadata->existsDirectory("MOVED/B/C"));
+    EXPECT_TRUE(metadata->existsDirectory("MOVED/B/C/D"));
 }
 
 TEST_F(MetadataPlainRewritableDiskTest, MoveUndo)
@@ -264,6 +267,88 @@ TEST_F(MetadataPlainRewritableDiskTest, RemoveDirectory)
     EXPECT_FALSE(metadata->existsDirectory("A"));
     EXPECT_TRUE(metadata->existsDirectory("A/B"));
     EXPECT_TRUE(metadata->existsDirectory("A/B/C"));
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, RemoveDirectoryRecursive)
+{
+    auto metadata = getMetadataStorage("RemoveDirectoryRecursive");
+    auto object_storage = getObjectStorage("RemoveDirectoryRecursive");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("root");
+        tx->createDirectory("root/A");
+        tx->createDirectory("root/A/B");
+        tx->createDirectory("root/A/C");
+        tx->createDirectory("root/A/B/D");
+        tx->createDirectory("root/A/B/E");
+        tx->createDirectory("root/A/B/E/F");
+        tx->commit();
+    }
+
+    {
+        auto tx = metadata->createTransaction();
+        writeObject(object_storage, object_storage->generateObjectKeyForPath("root/A/file_1", std::nullopt).serialize(), "1");
+        writeObject(object_storage, object_storage->generateObjectKeyForPath("root/A/B/file_2", std::nullopt).serialize(), "2");
+        writeObject(object_storage, object_storage->generateObjectKeyForPath("root/A/C/file_3", std::nullopt).serialize(), "3");
+        writeObject(object_storage, object_storage->generateObjectKeyForPath("root/A/B/E/F/file_4", std::nullopt).serialize(), "4");
+        tx->createMetadataFile("root/A/file_1", {StoredObject("root/A/file_1")});
+        tx->createMetadataFile("root/A/B/file_2", {StoredObject("root/A/B/file_2")});
+        tx->createMetadataFile("root/A/C/file_3", {StoredObject("root/A/C/file_3")});
+        tx->createMetadataFile("root/A/B/E/F/file_4", {StoredObject("root/A/B/E/F/file_4")});
+        tx->commit();
+    }
+
+    EXPECT_TRUE(metadata->existsDirectory("root/A/B"));
+    EXPECT_TRUE(metadata->existsDirectory("root/A/B/E/F"));
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("root/A/file_1").front().remote_path), "1");
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("root/A/B/file_2").front().remote_path), "2");
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("root/A/C/file_3").front().remote_path), "3");
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("root/A/B/E/F/file_4").front().remote_path), "4");
+
+    auto inodes_start = std::filesystem::recursive_directory_iterator("./RemoveDirectoryRecursive")
+                            | std::views::transform([](const auto & dir) { return dir.path(); })
+                            | std::ranges::to<std::vector<std::string>>();
+    EXPECT_EQ(inodes_start.size(), 23);
+
+    /// Check undo
+    {
+        auto tx = metadata->createTransaction();
+        tx->removeRecursive("root/A");
+        tx->moveFile("non-existing", "other-place");
+        EXPECT_ANY_THROW(tx->commit());
+    }
+
+    {
+        auto inodes = std::filesystem::recursive_directory_iterator("./RemoveDirectoryRecursive")
+                        | std::views::transform([](const auto & dir) { return dir.path(); })
+                        | std::ranges::to<std::vector<std::string>>();
+        EXPECT_EQ(inodes, inodes_start);
+    }
+
+    /// Remove fs tree
+    {
+        auto tx = metadata->createTransaction();
+        tx->removeRecursive("root/A");
+        tx->commit();
+    }
+
+    EXPECT_FALSE(metadata->existsDirectory("root/A"));
+    EXPECT_FALSE(metadata->existsDirectory("root/A/B"));
+    EXPECT_FALSE(metadata->existsDirectory("root/A/C"));
+    EXPECT_FALSE(metadata->existsDirectory("root/A/B/D"));
+    EXPECT_FALSE(metadata->existsDirectory("root/A/B/E"));
+    EXPECT_FALSE(metadata->existsDirectory("root/A/B/E/F"));
+
+    {
+        auto inodes = std::filesystem::recursive_directory_iterator("./RemoveDirectoryRecursive")
+                        | std::views::transform([](const auto & dir) { return dir.path(); })
+                        | std::ranges::to<std::vector<std::string>>();
+
+        /// Left nodes example: '/__meta', '/__meta/cixdezesimoamhzozymbalencsyqaakx', '/__meta/cixdezesimoamhzozymbalencsyqaakx/prefix.path'
+        /// It is the directory 'root/'
+        EXPECT_EQ(inodes.size(), 3);
+    }
 }
 
 TEST_F(MetadataPlainRewritableDiskTest, MoveFile)
@@ -348,4 +433,36 @@ TEST_F(MetadataPlainRewritableDiskTest, MoveFileUndo)
     EXPECT_EQ(readObject(object_storage, path_2), "Hello world!");
 
     EXPECT_EQ(path_1, path_2);
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, DirectoryFileNameCollision)
+{
+    auto metadata = getMetadataStorage("DirectoryFileNameCollision");
+    auto object_storage = getObjectStorage("DirectoryFileNameCollision");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("A");
+        tx->commit();
+    }
+
+    {
+        auto tx = metadata->createTransaction();
+        writeObject(object_storage, object_storage->generateObjectKeyForPath("A/B", std::nullopt).serialize(), "Hello world!");
+        tx->createMetadataFile("A/B", {StoredObject("A/B")});
+        tx->commit();
+    }
+
+    EXPECT_FALSE(metadata->existsDirectory("A/B"));
+    EXPECT_TRUE(metadata->existsFile("A/B"));
+
+    /// This is a bug. Directory should not be created in this case.
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("A/B");
+        tx->commit();
+    }
+
+    EXPECT_TRUE(metadata->existsDirectory("A/B"));
+    EXPECT_FALSE(metadata->existsFile("A/B"));
 }

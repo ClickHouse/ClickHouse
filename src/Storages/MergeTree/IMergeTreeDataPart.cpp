@@ -1525,7 +1525,7 @@ void IMergeTreeDataPart::loadRowsCount()
             /// Most trivial types
             if (column.type->isValueRepresentedByNumber()
                 && !column.type->haveSubtypes()
-                && getSerialization(column.name)->getKind() == ISerialization::Kind::DEFAULT)
+                && getSerialization(column.name)->getKindStack() == ISerialization::KindStack{ISerialization::Kind::DEFAULT})
             {
                 auto size = getColumnSize(column.name);
 
@@ -2474,6 +2474,14 @@ ColumnSize IMergeTreeDataPart::getColumnSize(const String & column_name) const
         return it->second;
 
     return ColumnSize{};
+}
+
+IMergeTreeDataPart::ColumnSizeByName IMergeTreeDataPart::getColumnSizes() const
+{
+    std::unique_lock lock(columns_and_secondary_indices_sizes_mutex);
+    if (!are_columns_and_secondary_indices_sizes_calculated && areChecksumsLoaded())
+        calculateColumnsAndSecondaryIndicesSizesOnDisk();
+    return columns_sizes;
 }
 
 ColumnSize IMergeTreeDataPart::getTotalColumnsSize() const

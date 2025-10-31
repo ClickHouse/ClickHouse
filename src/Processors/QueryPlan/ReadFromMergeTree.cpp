@@ -36,6 +36,7 @@
 #include <Storages/LazilyReadInfo.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
+#include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeIndexVectorSimilarity.h>
 #include <Storages/MergeTree/MergeTreePrefetchedReadPool.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
@@ -1791,6 +1792,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool 
         indexes,
         find_exact_ranges,
         is_parallel_reading_from_replicas);
+
     return analyzed_result_ptr;
 }
 
@@ -1907,6 +1909,7 @@ static void buildIndexes(
     {
         std::vector<size_t> index_sizes;
         index_sizes.reserve(skip_indexes.useful_indices.size());
+
         for (const auto & part : parts)
         {
             auto & index_order = skip_indexes.per_part_index_orders.emplace_back();
@@ -1918,7 +1921,7 @@ static void buildIndexes(
             for (const auto & idx : skip_indexes.useful_indices)
             {
                 size_t index_size = 0;
-                auto format = idx.index->getDeserializedFormat(part.data_part->getDataPartStorage(), idx.index->getFileName());
+                auto format = idx.index->getDeserializedFormat(part.data_part->checksums, idx.index->getFileName());
 
                 for (const auto & substream : format.substreams)
                     index_size += part.data_part->getFileSizeOrZero(idx.index->getFileName() + substream.suffix + substream.extension);
@@ -1986,6 +1989,23 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
             query_info,
             storage_snapshot->metadata);
     }
+}
+
+/// Check if all columns with the given skip indexes are also part of the primary key
+bool ReadFromMergeTree::areSkipIndexColumnsInPrimaryKey(const Names & primary_key_columns, const UsefulSkipIndexes & skip_indexes)
+{
+    NameSet primary_key_columns_set(primary_key_columns.begin(), primary_key_columns.end());
+
+    for (const auto & skip_index : skip_indexes.useful_indices)
+    {
+        for (const auto & column : skip_index.index->index.column_names)
+        {
+            if (!primary_key_columns_set.contains(column))
+                return false;
+        }
+    }
+
+    return true;
 }
 
 ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
@@ -2116,7 +2136,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             is_parallel_reading_from_replicas_);
 
         if (indexes->use_skip_indexes && !indexes->skip_indexes.empty() && query_info_.isFinal()
-            && settings[Setting::use_skip_indexes_if_final_exact_mode])
+            && settings[Setting::use_skip_indexes_if_final_exact_mode]
+            && !areSkipIndexColumnsInPrimaryKey(primary_key_column_names, indexes->skip_indexes))
         {
             result.parts_with_ranges
                 = findPKRangesForFinalAfterSkipIndex(primary_key, metadata_snapshot->getSortingKey(), result.parts_with_ranges, log);
@@ -2124,7 +2145,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         }
 
         std::optional<size_t> condition_hash;
-        if (reader_settings.use_query_condition_cache && query_info_.filter_actions_dag)
+        if (reader_settings.use_query_condition_cache && query_info_.filter_actions_dag && !query_info_.isFinal())
         {
             const auto & outputs = query_info_.filter_actions_dag->getOutputs();
             if (outputs.size() == 1 && VirtualColumnUtils::isDeterministic(outputs.front()))
@@ -2606,7 +2627,27 @@ Pipe ReadFromMergeTree::groupStreamsByPartition(
 
 QueryPlanStepPtr ReadFromMergeTree::clone() const
 {
-    return std::make_unique<ReadFromMergeTree>(*this);
+    AnalysisResultPtr analysis_result_copy;
+    if (analyzed_result_ptr)
+        analysis_result_copy = std::make_shared<AnalysisResult>(*analyzed_result_ptr);
+
+    return std::make_unique<ReadFromMergeTree>(
+        prepared_parts,
+        mutations_snapshot,
+        all_column_names,
+        data,
+        query_info,
+        storage_snapshot,
+        context,
+        block_size.max_block_size_rows,
+        requested_num_streams,
+        max_block_numbers_to_read,
+        log,
+        std::move(analysis_result_copy),
+        is_parallel_reading_from_replicas,
+        all_ranges_callback,
+        read_task_callback,
+        number_of_current_replica);
 }
 
 bool ReadFromMergeTree::supportsSkipIndexesOnDataRead() const
@@ -2622,6 +2663,12 @@ bool ReadFromMergeTree::supportsSkipIndexesOnDataRead() const
         return false;
 
     if (is_parallel_reading_from_replicas)
+        return false;
+
+    /// Settings `read_overflow_mode = 'throw'` and `max_rows_to_read` are evaluated early during execution,
+    /// during initialization of the pipeline based on estimated row counts. Estimation doesn't work properly
+    /// if the skip index is evaluated during data read (scan).
+    if (settings[Setting::read_overflow_mode] == OverflowMode::THROW && settings[Setting::max_rows_to_read])
         return false;
 
     return true;
@@ -3229,8 +3276,10 @@ std::shared_ptr<ParallelReadingExtension> ReadFromMergeTree::getParallelReadingE
         context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount());
 }
 
-void ReadFromMergeTree::replaceColumnsForTextSearch(const IndexReadColumns & added_columns, const Names & removed_columns)
+void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & skip_indexes, const IndexReadColumns & added_columns, const Names & removed_columns)
 {
+    index_read_tasks.clear();
+
     if (added_columns.empty())
         return;
 
@@ -3271,6 +3320,17 @@ void ReadFromMergeTree::replaceColumnsForTextSearch(const IndexReadColumns & add
             all_column_names.push_back(column_name);
             new_virtual_columns->addEphemeral(column_name, column_type, "");
             index_task.columns.emplace_back(column_name, column_type);
+        }
+    }
+
+    for (const auto & index : skip_indexes.useful_indices)
+    {
+        if (dynamic_cast<const MergeTreeIndexText *>(index.index.get()))
+        {
+            /// Create tasks for text indexes which don't read virtual columns.
+            /// It's required to always read text indexes on separate step on data read.
+            if (!index_read_tasks.contains(index.index->index.name))
+                index_read_tasks.emplace(index.index->index.name, IndexReadTask{.columns = {}, .index = index});
         }
     }
 

@@ -438,7 +438,7 @@ public:
 
         if constexpr (key_type == DictionaryKeyType::Simple)
         {
-            key_columns[0] = recursiveRemoveSparse(key_columns[0]->convertToFullColumnIfConst());
+            key_columns[0] = removeSpecialRepresentations(key_columns[0]->convertToFullColumnIfConst());
 
             const auto * vector_col = checkAndGetColumn<ColumnVector<UInt64>>(key_columns[0].get());
             if (!vector_col)
@@ -599,7 +599,7 @@ Block mergeBlockWithPipe(
 
     while (executor.pull(block))
     {
-        convertToFullIfSparse(block);
+        removeSpecialColumnRepresentations(block);
         block.checkNumberOfRows();
 
         Columns block_key_columns;
@@ -665,7 +665,7 @@ static const PaddedPODArray<T> & getColumnVectorData(
     PaddedPODArray<T> & backup_storage)
 {
     bool is_const_column = isColumnConst(*column);
-    auto full_column = recursiveRemoveSparse(column->convertToFullColumnIfConst());
+    auto full_column = removeSpecialRepresentations(column->convertToFullColumnIfConst());
     auto vector_col = checkAndGetColumn<ColumnVector<T>>(full_column.get());
 
     if (!vector_col)
