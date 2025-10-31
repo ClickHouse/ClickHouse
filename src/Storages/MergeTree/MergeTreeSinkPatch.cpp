@@ -35,7 +35,7 @@ void MergeTreeSinkPatch::finishDelayedChunk()
         partition.temp_part->finalize();
 
         auto & part = partition.temp_part->part;
-        bool added = commitPart(part, partition.block_dedup_token);
+        bool added = commitPart(part, partition.block, partition.deduplication_info);
 
         if (!added)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Patch part {} was deduplicated. It's a bug", part->name);

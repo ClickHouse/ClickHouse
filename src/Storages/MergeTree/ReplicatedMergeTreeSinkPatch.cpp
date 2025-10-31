@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeSinkPatch.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/MergeTree/MergeTreeDataWriter.h>
 
 namespace DB
 {
@@ -15,6 +16,7 @@ ReplicatedMergeTreeSinkPatch::ReplicatedMergeTreeSinkPatch(
     LightweightUpdateHolderInKeeper update_holder_,
     ContextPtr context_)
     : ReplicatedMergeTreeSink(
+        /*async_insert=*/ false,
         storage_,
         metadata_snapshot_,
         /*quorum=*/ 0,
@@ -44,7 +46,8 @@ void ReplicatedMergeTreeSinkPatch::finishDelayedChunk(const ZooKeeperWithFaultIn
 
         try
         {
-            bool part_deduplicated = commitPart(zookeeper, part, partition.block_id, false).second;
+            auto deduplication_blocks = partition.block_with_partition.deduplication_info->getBlockIds(partition.block_with_partition.partition_id);
+            bool part_deduplicated = commitPart(zookeeper, part, deduplication_blocks, false).second;
             if (part_deduplicated)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Patch part {} was deduplicated. It's a bug", part->name);
 
