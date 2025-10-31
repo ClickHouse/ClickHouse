@@ -141,7 +141,7 @@ def download_corpus(path):
             raise
 
     subprocess.check_call(f"ls -al {corpus_path}", shell=True)
-    logging.info("...downloaded %d corpora", len(corpus_path.glob("*.zip")))
+    logging.info("...downloaded %d corpora", len(list(corpus_path.glob("*.zip"))))
 
     total_units = 0
 
@@ -151,7 +151,7 @@ def download_corpus(path):
         with zipfile.ZipFile(zip_file, "r") as zf:
             zf.extractall(target_dir)
         zip_file.unlink()
-        units = len(target_dir.glob("*"))
+        units = len(list(target_dir.glob("*")))
         total_units += units
         logging.info("%s corpus having %d units...", zip_file.stem, units)
 
