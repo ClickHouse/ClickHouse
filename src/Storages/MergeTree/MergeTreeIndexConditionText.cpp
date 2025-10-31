@@ -5,6 +5,7 @@
 #include <Interpreters/misc.h>
 #include <Functions/hasAnyAllTokens.h>
 #include <Common/OptimizedRegularExpression.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <Interpreters/Set.h>
@@ -122,17 +123,14 @@ bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_na
         || function_name == "match";
 }
 
-TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const String & function_name) const
+TextIndexDirectReadMode MergeTreeIndexConditionText::getHintOrNoneMode() const
 {
     const auto & settings = getContext()->getSettingsRef();
+    return settings[Setting::query_plan_text_index_add_hint] ? TextIndexDirectReadMode::Hint : TextIndexDirectReadMode::None;
+}
 
-    auto get_hint_or_none_mode = [&]()
-    {
-        return settings[Setting::query_plan_text_index_add_hint]
-            ? TextIndexDirectReadMode::Hint
-            : TextIndexDirectReadMode::None;
-    };
-
+TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const String & function_name) const
+{
     if (function_name == "hasToken"
         || function_name == "hasAnyTokens"
         || function_name == "hasAllTokens")
@@ -146,14 +144,14 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
         || function_name == "mapContainsValue")
     {
         bool is_noop_extractor = typeid_cast<const NoOpTokenExtractor *>(token_extractor);
-        return is_noop_extractor ? TextIndexDirectReadMode::Exact : get_hint_or_none_mode();
+        return is_noop_extractor ? TextIndexDirectReadMode::Exact : getHintOrNoneMode();
     }
 
     if (function_name == "like"
         || function_name == "startsWith"
         || function_name == "endsWith")
     {
-        return get_hint_or_none_mode();
+        return getHintOrNoneMode();
     }
 
     return TextIndexDirectReadMode::None;
@@ -338,6 +336,9 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
         auto function_name = function.getFunctionName();
         size_t function_arguments_size = function.getArgumentsSize();
 
+        if (traverseMapElementKeyNode(function, out))
+            return true;
+
         if (function_arguments_size != 2)
             return false;
 
@@ -381,27 +382,6 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
     return false;
 }
 
-/**
-  * Since functions `mapKeys` and `mapValues` project data as Array(T) from Map, this function checks if an index column is defined for the Map.
-  * The expected data is either form of Array(String) or Array(FixedString).
-  */
-bool MergeTreeIndexConditionText::hasMapElementValuesIndex(const RPNBuilderTreeNode & index_column_node, const Field & const_value) const
-{
-    if (!index_column_node.isFunction())
-        return false;
-
-    const auto function = index_column_node.toFunctionNode();
-    const auto column_name = function.getArgumentAt(0).getColumnName();
-
-    if (function.getArgumentsSize() != 2 || function.getFunctionName() != "arrayElement")
-        return false;
-
-    if (const_value.getType() != Field::Types::String || const_value.safeGet<String>() == "")
-        return false;
-
-    return header.has(fmt::format("mapValues({})", column_name));
-}
-
 std::vector<String> MergeTreeIndexConditionText::stringToTokens(const Field & field) const
 {
     std::vector<String> tokens;
@@ -433,9 +413,22 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     const Field & value_field,
     RPNElement & out) const
 {
+    const String function_name = function_node.getFunctionName();
+    auto read_mode = getDirectReadMode(function_name);
+
+    bool has_index_column = header.has(index_column_node.getColumnName());
     bool has_map_keys_column = header.has(fmt::format("mapKeys({})", index_column_node.getColumnName()));
     bool has_map_values_column = header.has(fmt::format("mapValues({})", index_column_node.getColumnName()));
-    bool has_index_column = header.has(index_column_node.getColumnName()) || hasMapElementValuesIndex(index_column_node, value_field);
+
+    if (traverseMapElementValueNode(index_column_node, value_field))
+    {
+        has_index_column = true;
+
+        /// If we use index on `mapValues(m)` for `func(m['key'], 'value')`, we can use direct read only as a hint
+        /// because we have to match the specific key to the value and therefore execute a real filter.
+        if (read_mode == TextIndexDirectReadMode::Exact)
+            read_mode = getHintOrNoneMode();
+    }
 
     if (!has_index_column && !has_map_keys_column && !has_map_values_column)
         return false;
@@ -443,9 +436,6 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     auto value_data_type = WhichDataType(value_type);
     if (!value_data_type.isStringOrFixedString() && !value_data_type.isArray())
         return false;
-
-    const String & function_name = function_node.getFunctionName();
-    auto read_mode = getDirectReadMode(function_name);
 
     if (has_map_keys_column)
     {
@@ -613,6 +603,98 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
 
     return false;
+}
+
+bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const
+{
+    const auto * dag_node = function_node.getDAGNode();
+    if (!dag_node || !dag_node->function_base || !dag_node->isDeterministic() || !WhichDataType(dag_node->result_type).isUInt8())
+        return false;
+
+    auto subdag = ActionsDAG::cloneSubDAG({dag_node}, true);
+    auto required_columns = subdag.getRequiredColumns();
+    const auto & outputs = subdag.getOutputs();
+
+    if (required_columns.size() != 1 || outputs.size() != 1)
+        return false;
+
+    auto required_column = required_columns.front();
+    auto output_column_name = outputs.front()->result_name;
+
+    if (!isMap(required_column.type) || !header.has(fmt::format("mapKeys({})", required_column.name)))
+        return false;
+
+    std::optional<String> key_const_value;
+    std::vector<const ActionsDAG::Node *> stack;
+    stack.push_back(outputs.front());
+
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+
+        if (node->type == ActionsDAG::ActionType::FUNCTION
+            && node->children.size() == 2
+            && node->function_base
+            && node->function_base->getName() == "arrayElement")
+        {
+            if (key_const_value.has_value())
+                return false;
+
+            const auto & map_argument = node->children[0];
+            const auto & const_key_argument = node->children[1];
+
+            if (map_argument->type != ActionsDAG::ActionType::INPUT || map_argument->result_name != required_column.name)
+                return false;
+
+            if (const_key_argument->type != ActionsDAG::ActionType::COLUMN || !isStringOrFixedString(const_key_argument->result_type))
+                return false;
+
+            key_const_value = const_key_argument->column->getDataAt(0).toString();
+        }
+        else
+        {
+            for (const auto & child : node->children)
+                stack.push_back(child);
+        }
+    }
+
+    if (!key_const_value.has_value())
+        return false;
+
+    Block block{{required_column.type->createColumnConstWithDefaultValue(1), required_column.type, required_column.name}};
+    ExpressionActions actions(std::move(subdag));
+    actions.execute(block);
+    const auto & result_column = block.getByName(output_column_name).column;
+
+    if (result_column->getBool(0))
+        return false;
+
+    auto tokens = stringToTokens(*key_const_value);
+    out.function = RPNElement::FUNCTION_HAS;
+    out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>("mapContainsKey", TextSearchMode::All, getHintOrNoneMode(), std::move(tokens)));
+    return true;
+}
+
+/**
+  * Since functions `mapKeys` and `mapValues` project data as Array(T) from Map, this function checks if an index column is defined for the Map.
+  * The expected data is either form of Array(String) or Array(FixedString).
+  */
+bool MergeTreeIndexConditionText::traverseMapElementValueNode(const RPNBuilderTreeNode & index_column_node, const Field & const_value) const
+{
+    if (!index_column_node.isFunction())
+        return false;
+
+    const auto function = index_column_node.toFunctionNode();
+    const auto column_name = function.getArgumentAt(0).getColumnName();
+
+    if (function.getArgumentsSize() != 2 || function.getFunctionName() != "arrayElement")
+        return false;
+
+    if (const_value.getType() != Field::Types::String || const_value.safeGet<String>() == "")
+        return false;
+
+    return header.has(fmt::format("mapValues({})", column_name));
 }
 
 bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(

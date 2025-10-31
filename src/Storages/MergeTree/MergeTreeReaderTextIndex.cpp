@@ -281,9 +281,7 @@ double MergeTreeReaderTextIndex::estimateCardinality(const TextSearchQuery & que
                 cardinality *= it->second.getCardinality();
             }
 
-            for (size_t i = 0; i < query.tokens.size() - 1; ++i)
-                cardinality /= total_rows;
-
+            cardinality /= std::pow(total_rows, query.tokens.size() - 1);
             return cardinality;
         }
         case TextSearchMode::Any:

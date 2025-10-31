@@ -116,8 +116,6 @@ String optimizationInfoToString(const IndexReadColumns & added_columns, const Na
 /// then this class replaces some nodes in the ActionsDAG (and references to them) to generate an equivalent query:
 ///     SELECT count() FROM table where __text_index_text_col_idx_hasToken_0
 ///
-/// The supported functions can be found in MergeTreeIndexConditionText::isSupportedFunctionForDirectRead.
-///
 /// This class is a (C++) friend of ActionsDAG and can therefore access its private members.
 /// Some of the functions implemented here could be added to ActionsDAG directly, but this wrapper approach
 /// simplifies the work by avoiding conflicts and minimizing coupling between this optimization and ActionsDAG.
@@ -153,8 +151,10 @@ public:
 
             if (replaced.has_value())
             {
-                result.added_columns[replaced->index_name].emplace_back(replaced->column_name, std::make_shared<DataTypeUInt8>());
                 replacements[&node] = replaced->node;
+
+                for (const auto & [index_name, column_name] : replaced->index_name_to_virtual_column)
+                    result.added_columns[index_name].emplace_back(column_name, std::make_shared<DataTypeUInt8>());
             }
         }
 
@@ -190,117 +190,89 @@ public:
 private:
     struct NodeReplacement
     {
-        String index_name;
-        String column_name;
         const ActionsDAG::Node * node;
+        std::unordered_map<String, String> index_name_to_virtual_column;
     };
 
     ActionsDAG & actions_dag;
     IndexConditionsMap index_conditions;
 
-    bool isSupportedCondition(const String & function_name, const ActionsDAG::Node & lhs_arg, const ActionsDAG::Node & rhs_arg, const IMergeTreeIndexCondition & condition) const
-    {
-        using enum ActionsDAG::ActionType;
-        const auto & text_index_condition = typeid_cast<const MergeTreeIndexConditionText &>(condition);
-        const auto & header = text_index_condition.getHeader();
-
-        auto is_supported_map_argument = [&](const String & argument_name, const IDataType & argument_type)
-        {
-            if (!isMap(argument_type))
-                return false;
-
-            if (function_name == "mapContainsKey" || function_name == "has")
-                return header.has(fmt::format("mapKeys({})", argument_name));
-
-            if (function_name == "mapContainsValue")
-                return header.has(fmt::format("mapValues({})", argument_name));
-
-            return false;
-        };
-
-        if ((lhs_arg.type == INPUT || lhs_arg.type == FUNCTION) && rhs_arg.type == COLUMN)
-        {
-            auto lhs_name_without_aliases = getNameWithoutAliases(&lhs_arg);
-            return header.has(lhs_name_without_aliases) || is_supported_map_argument(lhs_name_without_aliases, *lhs_arg.result_type);
-        }
-
-        if (lhs_arg.type == COLUMN && (rhs_arg.type == INPUT || rhs_arg.type == FUNCTION))
-        {
-            auto rhs_name_without_aliases = getNameWithoutAliases(&rhs_arg);
-            return header.has(rhs_name_without_aliases);
-        }
-
-        return false;
-    }
-
     /// Attempts to add a new node with the replacement virtual column.
     /// Returns the pair of (index name, virtual column name) if the replacement is successful.
     std::optional<NodeReplacement> tryReplaceFunctionNode(ActionsDAG::Node & function_node, const ContextPtr & context)
     {
-        if (function_node.type != ActionsDAG::ActionType::FUNCTION || !function_node.function)
+        if (function_node.type != ActionsDAG::ActionType::FUNCTION || !function_node.function || !function_node.function_base)
             return std::nullopt;
 
-        if (function_node.children.size() != 2)
+        if (!WhichDataType(function_node.result_type).isUInt8())
             return std::nullopt;
 
-        auto function_name = function_node.function->getName();
-
-        auto selected_it = std::ranges::find_if(index_conditions, [&](const auto & index_with_condition)
+        struct SelectedCondition
         {
-            return isSupportedCondition(function_name, *function_node.children[0], *function_node.children[1], *index_with_condition.second->condition);
-        });
+            TextSearchQueryPtr search_query;
+            String index_name;
+            String virtual_column_name;
+        };
 
-        if (selected_it == index_conditions.end())
-            return std::nullopt;
+        NameSet used_index_columns;
+        std::vector<SelectedCondition> selected_conditions;
+        bool has_exact_search = false;
 
-        size_t num_supported_conditions = std::ranges::count_if(index_conditions, [&](const auto & index_with_condition)
+        for (const auto & [index_name, index] : index_conditions)
         {
-            return isSupportedCondition(function_name, *function_node.children[0], *function_node.children[1], *index_with_condition.second->condition);
-        });
+            auto & text_index_condition = typeid_cast<MergeTreeIndexConditionText &>(*index->condition);
+            const auto & index_header = text_index_condition.getHeader();
 
-        /// Do not optimize if there are multiple text indexes set for the column.
-        /// It is not clear which index to use.
-        if (num_supported_conditions != 1)
-            return std::nullopt;
+            /// Do not optimize if there are multiple text indexes set for the same expression.
+            /// It is abgious which index to use. However, we allow to use several indexes for different expressions.
+            /// for example, we can use indexes both for mapKeys(m) and mapValues(m) in one function m['key'] = 'value'.
+            if (index_header.columns() != 1 || used_index_columns.contains(index_header.begin()->name))
+                return std::nullopt;
 
-        const auto & [index_name, condition] = *selected_it;
-        auto & text_index_condition = typeid_cast<MergeTreeIndexConditionText &>(*condition->condition);
+            auto search_query = text_index_condition.createTextSearchQuery(function_node);
+            if (!search_query || search_query->read_mode == TextIndexDirectReadMode::None)
+                continue;
 
-        auto direct_read_mode = text_index_condition.getDirectReadMode(function_name);
-        if (direct_read_mode == TextIndexDirectReadMode::None)
-            return std::nullopt;
+            auto virtual_column_name = text_index_condition.replaceToVirtualColumn(*search_query, index_name);
+            if (!virtual_column_name)
+                continue;
 
-        auto search_query = text_index_condition.createTextSearchQuery(function_node);
-        if (!search_query)
-            return std::nullopt;
+            selected_conditions.push_back({search_query, index_name, *virtual_column_name});
+            used_index_columns.insert(index_header.begin()->name);
 
-        auto virtual_column_name = text_index_condition.replaceToVirtualColumn(*search_query, index_name);
-        if (!virtual_column_name)
+            if (search_query->read_mode == TextIndexDirectReadMode::Exact)
+                has_exact_search = true;
+        }
+
+        if (selected_conditions.empty())
             return std::nullopt;
 
         NodeReplacement replacement;
-        replacement.index_name = index_name;
-        replacement.column_name = virtual_column_name.value();
 
-        switch (direct_read_mode)
+        if (selected_conditions.size() == 1 && has_exact_search)
         {
-            case TextIndexDirectReadMode::None:
-            {
-                return std::nullopt;
-            }
-            case TextIndexDirectReadMode::Exact:
-            {
-                replacement.node = &actions_dag.addInput(virtual_column_name.value(), std::make_shared<DataTypeUInt8>());
-                return replacement;
-            }
-            case TextIndexDirectReadMode::Hint:
-            {
-                auto function_builder = FunctionFactory::instance().get("and", context);
-                const auto & input_virtual_column = actions_dag.addInput(virtual_column_name.value(), std::make_shared<DataTypeUInt8>());
-                replacement.node = &actions_dag.addFunction(function_builder, {&input_virtual_column, &function_node}, "");
-                return replacement;
-            }
+            const auto & condition = selected_conditions.front();
+            replacement.index_name_to_virtual_column[condition.index_name] = condition.virtual_column_name;
+            replacement.node = &actions_dag.addInput(condition.virtual_column_name, std::make_shared<DataTypeUInt8>());
+            return replacement;
         }
+
+        ActionsDAG::NodeRawConstPtrs children;
+        auto function_builder = FunctionFactory::instance().get("and", context);
+
+        for (const auto & condition : selected_conditions)
+        {
+            replacement.index_name_to_virtual_column[condition.index_name] = condition.virtual_column_name;
+            children.push_back(&actions_dag.addInput(condition.virtual_column_name, std::make_shared<DataTypeUInt8>()));
+        }
+
+        if (!has_exact_search)
+        {
+            children.push_back(&function_node);
+        }
+
+        replacement.node = &actions_dag.addFunction(function_builder, children, "");
+        return replacement;
     }
 };
 
