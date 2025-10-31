@@ -3263,7 +3263,7 @@ void InterpreterSelectQuery::executeLimitBy(QueryPlan & query_plan)
     if (is_limit_length_negative || is_limit_offset_negative)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Negative LIMIT/OFFSET with LIMIT BY is not supported yet");
 
-    auto limit_by = std::make_unique<LimitByStep>(query_plan.getCurrentHeader(), limit_length, limit_offset, columns);
+    auto limit_by = std::make_unique<LimitByStep>(query_plan.getCurrentHeader(), limit_length, limit_offset, /*in_order=*/false, columns);
     query_plan.addStep(std::move(limit_by));
 }
 
