@@ -46,6 +46,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_text_index_dictionary_cache", false, false, "New setting"},
             {"s3_retry_attempts", 500, 500, "Changed the value of the obsolete setting"},
             {"optimize_const_name_size", -1, 256, "Replace with scalar and use hash as a name for large constants (size is estimated by name length)"},
+            {"input_format_parquet_local_time_as_utc", false, true, "Use more appropriate type DateTime64(..., 'UTC') for parquet 'local time without timezone' type."},
         });
         addSettingsChanges(settings_changes_history, "25.10",
         {
@@ -79,7 +80,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"optimize_empty_string_comparisons", false, true, "A new setting."},
             {"query_plan_use_logical_join_step", true, true, "Added alias"},
             {"schema_inference_make_columns_nullable", 1, 3, "Take nullability information from Parquet/ORC/Arrow metadata by default, instead of making everything nullable."},
-            {"input_format_parquet_local_time_as_utc", false, true, "Use more appropriate type DateTime64(..., 'UTC') for parquet 'local time without timezone' type."}
             {"materialized_views_squash_parallel_inserts", false, true, "Added setting to preserve old behavior if needed."},
             {"distributed_cache_connect_timeout_ms", 50, 50, "New setting"},
             {"distributed_cache_receive_timeout_ms", 3000, 3000, "New setting"},
