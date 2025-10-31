@@ -458,8 +458,8 @@ static ScatteredBlock::IndexesPtr mergeIndexesPtrs(const std::vector<std::shared
     {
         const auto & sc = getData(sh)->columns.front();
         const auto & in = sc.selector.getIndexes().getData();
-        for (size_t i = 0; i < in.size(); ++i)
-            out[pos++] = in[i];
+        for (const auto & i : in)
+            out[pos++] = i;
     }
 
     return merged;
