@@ -6,7 +6,7 @@
 	url = https://github.com/Thalhammer/jwt-cpp
 [submodule "contrib/zstd"]
 	path = contrib/zstd
-	url = https://github.com/facebook/zstd
+	url = https://github.com/ClickHouse/zstd
 [submodule "contrib/lz4"]
 	path = contrib/lz4
 	url = https://github.com/lz4/lz4
@@ -45,7 +45,7 @@
 	url = https://github.com/ClickHouse/arrow
 [submodule "contrib/thrift"]
 	path = contrib/thrift
-	url = https://github.com/apache/thrift
+	url = https://github.com/ClickHouse/thrift
 [submodule "contrib/libhdfs3"]
 	path = contrib/libhdfs3
 	url = https://github.com/ClickHouse/libhdfs3

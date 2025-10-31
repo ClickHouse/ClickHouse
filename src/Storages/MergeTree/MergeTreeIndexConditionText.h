@@ -7,6 +7,8 @@
 namespace DB
 {
 
+class TextIndexDictionaryBlockCache;
+
 enum class TextSearchMode : uint8_t
 {
     Any,
@@ -61,6 +63,9 @@ public:
     /// Returns generated virtual column name for the replacement of related function node.
     std::optional<String> replaceToVirtualColumn(const TextSearchQuery & query, const String & index_name);
     TextSearchQueryPtr getSearchQueryForVirtualColumn(const String & column_name) const;
+
+    bool useDictionaryBlockCache() const { return use_dictionary_block_cache; }
+    TextIndexDictionaryBlockCache * dictionaryBlockCache() const { return dictionary_block_cache; }
 
 private:
     /// Uses RPN like KeyCondition
@@ -125,6 +130,10 @@ private:
     bool use_bloom_filter = true;
     /// If global mode is All, then we can exit analysis earlier if any token is missing in granule.
     TextSearchMode global_search_mode = TextSearchMode::All;
+    /// Using text index dictionary block cache can be enabled to reduce I/O
+    bool use_dictionary_block_cache;
+    /// Instance of the text index dictionary block cache
+    TextIndexDictionaryBlockCache * dictionary_block_cache;
 };
 
 static constexpr std::string_view TEXT_INDEX_VIRTUAL_COLUMN_PREFIX = "__text_index_";
