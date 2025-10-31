@@ -28,6 +28,7 @@ struct Base32DecodeTraits
     template <typename Col>
     static size_t getBufferSize(Col const & src_column)
     {
+        /// This function can be used for FixedString columns so we need to take into account NULL terminator
         auto const string_length = src_column.getChars().size() + src_column.size();
         /// decoded size is at most length of encoded (every 8 bytes becomes at most 5 bytes)
         return (string_length * 5 + 7) / 8;
