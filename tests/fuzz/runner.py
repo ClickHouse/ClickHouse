@@ -4,6 +4,7 @@ import configparser
 import datetime
 import logging
 import os
+import shutil
 import subprocess
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -99,9 +100,9 @@ def run_fuzzer(fuzzer: str, timeout: int):
     if not os.path.exists(results_path):
         os.makedirs(results_path)
     artifact_prefix = f"{results_path}"
-    status_path = f"{results_path}/status.txt"
-    out_path = f"{results_path}/out.txt"
-    stdout_path = f"{results_path}/stdout.txt"
+    #status_path = f"{results_path}/status.txt"
+    #out_path = f"{results_path}/out.txt"
+    #stdout_path = f"{results_path}/stdout.txt"
 
 
     merge_libfuzzer_options = f" -artifact_prefix={artifact_prefix} -merge=1 {mini_corpus_dir} {active_corpus_dir}"
@@ -117,9 +118,39 @@ def run_fuzzer(fuzzer: str, timeout: int):
 
     logging.info("...will execute merge: '%s'%s", cmd_line, with_fuzzer_args)
 
+    stopwatch = Stopwatch()
+    try:
+        subprocess.run(
+            cmd_line.split(),
+            stdin=subprocess.DEVNULL,
+            text=True,
+            check=True,
+            shell=False,
+            errors="replace",
+            env=env,
+        )
+    except subprocess.CalledProcessError:
+        logging.info("Fail running merge %s", fuzzer)
+        return
+    except Exception as e:
+        logging.info("Unexpected exception running merge %s: %s", fuzzer, e)
+
+    orig_corpus_size = len(list(active_corpus_dir.glob("*")))
+    mini_corpus_size = len(list(mini_corpus_dir.glob("*")))
+
+    logging.info("Successful run, merge for %s, original corpus size %d, minimized corpus size %d, reduced to %d%%",
+        fuzzer, orig_corpus_size, mini_corpus_size, mini_corpus_size * 100 / orig_corpus_size)
+
+    shutil.rmtree(active_corpus_dir)
+    os.rename(mini_corpus_dir, active_corpus_dir)
 
 # TESTING TESTING TESTING
     exit(0)
+
+
+    status_path = f"{results_path}/status.txt"
+    out_path = f"{results_path}/out.txt"
+    stdout_path = f"{results_path}/stdout.txt"
 
 
     if not "-dict=" in custom_libfuzzer_options and Path(f"{fuzzer}.dict").exists():
