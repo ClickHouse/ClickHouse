@@ -30,7 +30,7 @@ public:
     void run(QueryTreeNodePtr & query_tree_node, ContextPtr context) override;
 
 private:
-    void rewriteDictGetEqual(QueryTreeNodePtr & query_tree_node);
+    void rewriteDictGetEqual(QueryTreeNodePtr & query_tree_node) const;
 };
 
 }

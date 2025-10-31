@@ -10,7 +10,8 @@
 #include <Analyzer/Utils.h>
 
 #include <Interpreters/Context.h>
-#include <Interpreters/ExternalDictionariesLoader.h>
+
+#include <Functions/FunctionsExternalDictionaries.h>
 
 #include <Core/Settings.h>
 
@@ -157,7 +158,7 @@ public:
     }
 
 private:
-    void rewriteDictGetPredicateRecursively(QueryTreeNodePtr & node)
+    void rewriteDictGetPredicateRecursively(QueryTreeNodePtr & node) const
     {
         auto * node_function = node->as<FunctionNode>();
 
@@ -213,8 +214,8 @@ private:
         DataTypePtr dict_attr_col_type;
 
         /// Type of the attribute and key columns are not present in the query. So, we have to fetch dictionary and get the column types.
-        const auto & loader = getContext()->getExternalDictionariesLoader();
-        auto dict = loader.getDictionary(dictget_function_info.dict_name, getContext());
+        auto helper = FunctionDictHelper(getContext());
+        const auto dict = helper.getDictionary(dictget_function_info.dict_name);
         if (!dict)
             return;
 
