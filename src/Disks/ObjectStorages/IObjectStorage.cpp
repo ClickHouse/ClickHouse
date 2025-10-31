@@ -110,4 +110,12 @@ std::string RelativePathWithMetadata::getPathOrPathToArchiveIfArchive() const
     return getPath();
 }
 
+String RelativePathWithMetadata::getIdentifier() const
+{
+    String result = getPath();
+    if (file_bucket_info)
+        result += file_bucket_info->getIdentifier();
+    return result;
+}
+
 }
