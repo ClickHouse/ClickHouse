@@ -524,7 +524,7 @@ IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
 
             // Build streams from each slot (slot 0 has merged nullmaps; others only maps)
             std::vector<IBlocksStreamPtr> streams;
-            streams.reserve(slots);	
+            streams.reserve(slots);
             for (const auto & hash_join : hash_joins)
             {
                 std::lock_guard lock(hash_join->mutex);
