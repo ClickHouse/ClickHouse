@@ -16,8 +16,18 @@ def start_cluster():
     finally:
         cluster.shutdown()
 
+def ensure_query_log_exists():
+    nodes = [node1, node2]
 
-def test_log_quries_probability_one(start_cluster):
+    for node in nodes:
+        node.query("SELECT 1; SYSTEM FLUSH LOGS query_log;")
+
+    for node in nodes:
+        node.query_with_retry("SELECT count() > 0 FROM system.query_log", check_callback=lambda x: x.strip() == "1")
+        node.query("TRUNCATE TABLE system.query_log")
+
+
+def test_log_queries_probability_one(start_cluster):
     for i in range(100):
         node1.query("SELECT 12345", settings={"log_queries_probability": 0.5})
 
@@ -45,7 +55,9 @@ def test_log_quries_probability_one(start_cluster):
     node1.query("TRUNCATE TABLE system.query_log")
 
 
-def test_log_quries_probability_two(start_cluster):
+def test_log_queries_probability_two(start_cluster):
+    ensure_query_log_exists()
+
     for i in range(100):
         node1.query(
             "SELECT 12345 FROM remote('node2', system, one)",
