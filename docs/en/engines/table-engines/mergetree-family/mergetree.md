@@ -499,8 +499,8 @@ Indexes of type `set` can be utilized by all functions. The other index types ar
 | [like](/sql-reference/functions/string-search-functions.md/#like)                                                              | ✔           | ✔      | ✔          | ✔          | ✗            | ✔    |
 | [notLike](/sql-reference/functions/string-search-functions.md/#notlike)                                                        | ✔           | ✔      | ✔          | ✔          | ✗            | ✔    |
 | [match](/sql-reference/functions/string-search-functions.md/#match)                                                            | ✗           | ✗      | ✔          | ✔          | ✗            | ✔    |
-| [startsWith](/sql-reference/functions/string-functions.md/#startswith)                                                         | ✔           | ✔      | ✔          | ✔          | ✗            | ✔    |
-| [endsWith](/sql-reference/functions/string-functions.md/#endswith)                                                             | ✗           | ✗      | ✔          | ✔          | ✗            | ✔    |
+| [startsWith](/sql-reference/functions/string-functions.md/#startsWith)                                                         | ✔           | ✔      | ✔          | ✔          | ✗            | ✔    |
+| [endsWith](/sql-reference/functions/string-functions.md/#endsWith)                                                             | ✗           | ✗      | ✔          | ✔          | ✗            | ✔    |
 | [multiSearchAny](/sql-reference/functions/string-search-functions.md/#multisearchany)                                          | ✗           | ✗      | ✔          | ✗          | ✗            | ✗    |
 | [in](/sql-reference/functions/in-functions)                                                                                    | ✔           | ✔      | ✔          | ✔          | ✔            | ✔    |
 | [notIn](/sql-reference/functions/in-functions)                                                                                 | ✔           | ✔      | ✔          | ✔          | ✔            | ✔    |
