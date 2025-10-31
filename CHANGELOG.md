@@ -20,7 +20,7 @@
 
 # 2025 Changelog
 
-### <a id="2510"></a> ClickHouse release 25.10, 2025-10-30
+### <a id="2510"></a> ClickHouse release 25.10, 2025-10-31
 
 #### Backward Incompatible Change
 * Changed default `schema_inference_make_columns_nullable` setting to respect column `Nullable`-ness information from Parquet/ORC/Arrow metadata, instead of making everything Nullable. No change for text formats. [#71499](https://github.com/ClickHouse/ClickHouse/pull/71499) ([Michael Kolupaev](https://github.com/al13n321)).
