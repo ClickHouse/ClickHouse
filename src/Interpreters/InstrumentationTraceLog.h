@@ -22,6 +22,7 @@ struct InstrumentationTraceLogElement
     UInt64 duration_microseconds{};
     String query_id;
     Int32 function_id{};
+    UInt64 instrumented_point_id{};
 
     static std::string name() { return "InstrumentationTraceLog"; }
     static ColumnsDescription getColumnsDescription();

@@ -164,10 +164,10 @@ void InstrumentationManager::patchFunction(ContextPtr context, const String & fu
 
     patchFunctionIfNeeded(function_id);
 
-    InstrumentedPointInfo info{context, instrumentation_point_ids, function_id, function_name, handler_name_lower, entry_type, parameters};
+    InstrumentedPointInfo info{context, instrumented_point_ids, function_id, function_name, handler_name_lower, entry_type, parameters};
     LOG_DEBUG(logger, "Adding instrumentation point for {}", info.toString());
     instrumented_points.emplace(std::move(info));
-    instrumentation_point_ids++;
+    instrumented_point_ids++;
 }
 
 void InstrumentationManager::unpatchFunction(std::variant<UInt64, bool> id)
@@ -424,17 +424,25 @@ void InstrumentationManager::log(XRayEntryType entry_type, const InstrumentedPoi
 
 void InstrumentationManager::profile(XRayEntryType entry_type, const InstrumentedPointInfo & instrumented_point)
 {
+    /// This is the easiest way to do store the elements, because otherwise we'd need to have a mutex to protect a
+    /// shared std::unordered_map. However, there might be a race condition in which this handler is already triggered
+    /// on entry and the function is unpatched immediately afterwards. That's fine, since we're using the instrumented
+    /// point ID to know for sure whether this execution is tight to the stored element or not.
+    /// We also remove the element once we realize it's from a different generation, but it's not cleared until then.
     static thread_local std::unordered_map<Int32, InstrumentationTraceLogElement> active_elements;
 
+    using namespace std::chrono;
+    auto now = system_clock::now();
+
     LOG_TRACE(logger, "Profile: function with id {}", instrumented_point.function_id);
+
     if (entry_type == XRayEntryType::ENTRY)
     {
         InstrumentationTraceLogElement element;
+        element.instrumented_point_id = instrumented_point.id;
         element.function_name = functions_container.get<FunctionId>().find(instrumented_point.function_id)->stripped_function_name;
         element.tid = getThreadId();
-        using namespace std::chrono;
 
-        auto now = system_clock::now();
         auto now_us = duration_cast<microseconds>(now.time_since_epoch()).count();
 
         element.event_time = time_t(duration_cast<seconds>(now.time_since_epoch()).count());
@@ -451,7 +459,16 @@ void InstrumentationManager::profile(XRayEntryType entry_type, const Instrumente
         if (it != active_elements.end())
         {
             auto & element = it->second;
-            auto now = std::chrono::system_clock::now();
+
+            if (element.instrumented_point_id != instrumented_point.id)
+            {
+                LOG_TRACE(logger, "Profile exit called for a different ID than the one set up. "
+                    "Current ID is {}, but stored ID is {}. Instrumented point: {}",
+                    instrumented_point.id, element.instrumented_point_id, instrumented_point.toString());
+                active_elements.erase(it);
+                return;
+            }
+
             auto now_us = std::chrono::duration_cast<std::chrono::microseconds>(now.time_since_epoch()).count();
 
             auto start_us = Int64(element.event_time_microseconds);

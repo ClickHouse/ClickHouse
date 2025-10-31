@@ -44,7 +44,7 @@ public:
         std::optional<XRayEntryType> entry_type;
         std::optional<std::vector<InstrumentedParameter>> parameters;
 
-        String toString()
+        String toString() const
         {
             String entry_type_str = !entry_type.has_value() ? "none" : (entry_type.value() == XRayEntryType::ENTRY ? "entry" : "exit");
             String parameters_str;
@@ -167,7 +167,7 @@ private:
     std::vector<std::pair<String, XRayHandlerFunction>> handler_name_to_function;
 
     SharedMutex shared_mutex;
-    std::atomic<UInt64> instrumentation_point_ids;
+    std::atomic<UInt64> instrumented_point_ids;
     InstrumentedPointContainer instrumented_points TSA_GUARDED_BY(shared_mutex);
 
     enum class InitializationStatus
