@@ -6933,3 +6933,15 @@ Poco::Timespan HTTPContext::getSendTimeout() const
 }
 
 }
+
+namespace DB
+{
+namespace Setting
+{
+    extern const SettingsString default_dictionary_database;
+}
+}
+
+String Coordination::Context::getDefaultDictionaryDatabase() const {
+    return getSettingsRef()[DB::Setting::default_dictionary_database];
+}
