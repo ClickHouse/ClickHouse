@@ -73,7 +73,8 @@ ObjectInfoPtr ClusterFunctionReadTaskResponse::getObjectInfo() const
 
 void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t worker_protocol_version) const
 {
-    auto protocol_version = std::min(worker_protocol_version, static_cast<UInt64>(DBMS_CLUSTER_PROCESSING_LAST_PROTOCOL_VERSION));
+    auto protocol_version
+        = std::min(static_cast<UInt64>(worker_protocol_version), static_cast<UInt64>(DBMS_CLUSTER_PROCESSING_LAST_PROTOCOL_VERSION));
     writeVarUInt(protocol_version, out);
     writeStringBinary(path, out);
 
