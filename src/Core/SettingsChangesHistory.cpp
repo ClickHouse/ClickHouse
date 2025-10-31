@@ -41,6 +41,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.11",
         {
+            {"query_plan_optimize_join_order_limit", 1, 10, "Allow JOIN reordering with more tables by default"},
             {"correlated_subqueries_default_join_kind", "left", "right", "New setting. Default join kind for decorrelated query plan."},
             {"use_statistics_cache", 0, 0, "New setting"},
             {"use_text_index_dictionary_cache", false, false, "New setting"},
