@@ -318,7 +318,7 @@ void applyPatchesToBlockRaw(
             continue;
 
         auto & result_versions = addDataVersionForColumn(versions_block, result_column.name, result_block.rows(), source_data_version);
-        result_column.column = recursiveRemoveSparse(result_column.column);
+        result_column.column = removeSpecialRepresentations(result_column.column);
 
         for (const auto & patch_to_apply : patches)
         {
@@ -367,7 +367,7 @@ void applyPatchesToBlockCombined(
 
         auto & result_versions = addDataVersionForColumn(versions_block, result_column.name, result_block.rows(), source_data_version);
         auto multi_patch = builder.createPatchForColumn(result_column.name, result_versions);
-        result_column.column = recursiveRemoveSparse(result_column.column);
+        result_column.column = removeSpecialRepresentations(result_column.column);
 
         if (canApplyPatchInplace(*result_column.column))
             result_column.column->assumeMutableRef().updateInplaceFrom(multi_patch);

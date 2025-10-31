@@ -66,7 +66,7 @@ Header: "### Details"
     results = []
 
     os.environ["GH_TOKEN"] = Secret.Config(
-        name="/github-tokens/robot-2-copilot", type=Secret.Type.AWS_SSM_PARAMETER
+        name="/ci/robot-ch-test-poll-copilot", type=Secret.Type.AWS_SSM_PARAMETER
     ).get_value()
     if res:
         results.append(
