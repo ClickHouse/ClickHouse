@@ -1,6 +1,7 @@
 #include <cstdio>
 
 #include <Client/BuzzHouse/Generator/QueryOracle.h>
+#include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -702,6 +703,141 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
     }
 }
 
+void QueryOracle::swapQuery(RandomGenerator & rg, google::protobuf::Message & mes)
+{
+    checkStackSize();
+
+    if (mes.GetTypeName() == "BuzzHouse.Select")
+    {
+        auto & sel = static_cast<Select &>(mes);
+
+        if (sel.has_select_core())
+        {
+            swapQuery(rg, const_cast<SelectStatementCore &>(sel.select_core()));
+        }
+        else if (sel.has_set_query())
+        {
+            swapQuery(rg, const_cast<SetQuery &>(sel.set_query()));
+        }
+        if (sel.has_ctes())
+        {
+            if (sel.ctes().cte().has_cte_query())
+            {
+                swapQuery(rg, const_cast<Select &>(sel.ctes().cte().cte_query().query()));
+            }
+            for (int i = 0; i < sel.ctes().other_ctes_size(); i++)
+            {
+                if (sel.ctes().other_ctes(i).has_cte_query())
+                {
+                    swapQuery(rg, const_cast<Select &>(sel.ctes().other_ctes(i).cte_query().query()));
+                }
+            }
+        }
+    }
+    else if (mes.GetTypeName() == "BuzzHouse.SetQuery")
+    {
+        auto & setq = static_cast<SetQuery &>(mes);
+
+        swapQuery(rg, const_cast<Select &>(setq.sel1().inner_query().select().sel()));
+        swapQuery(rg, const_cast<Select &>(setq.sel2().inner_query().select().sel()));
+    }
+    else if (mes.GetTypeName() == "BuzzHouse.SelectStatementCore")
+    {
+        auto & ssc = static_cast<SelectStatementCore &>(mes);
+
+        if ((ssc.has_pre_where() || ssc.has_where()) && rg.nextSmallNumber() < 5)
+        {
+            /// Swap WHERE and PREWHERE
+            auto * prewhere = ssc.release_pre_where();
+            auto * where = ssc.release_where();
+
+            ssc.set_allocated_pre_where(where);
+            ssc.set_allocated_where(prewhere);
+        }
+        if (ssc.has_from())
+        {
+            swapQuery(rg, const_cast<JoinedQuery &>(ssc.from().tos()));
+        }
+    }
+    else if (mes.GetTypeName() == "BuzzHouse.JoinedQuery")
+    {
+        auto & jquery = static_cast<JoinedQuery &>(mes);
+
+        for (int i = 0; i < jquery.tos_list_size(); i++)
+        {
+            swapQuery(rg, const_cast<TableOrSubquery &>(jquery.tos_list(i)));
+        }
+        swapQuery(rg, const_cast<JoinClause &>(jquery.join_clause()));
+    }
+    else if (mes.GetTypeName() == "BuzzHouse.JoinClause")
+    {
+        auto & jclause = static_cast<JoinClause &>(mes);
+
+        for (int i = 0; i < jclause.clauses_size(); i++)
+        {
+            if (jclause.clauses(i).has_core())
+            {
+                swapQuery(rg, const_cast<TableOrSubquery &>(jclause.clauses(i).core().tos()));
+            }
+        }
+        swapQuery(rg, const_cast<TableOrSubquery &>(jclause.tos()));
+    }
+    else if (mes.GetTypeName() == "BuzzHouse.TableOrSubquery")
+    {
+        auto & tos = static_cast<TableOrSubquery &>(mes);
+
+        if (tos.has_joined_table())
+        {
+            auto & jtf = const_cast<JoinedTableOrFunction &>(tos.joined_table());
+
+            swapQuery(rg, const_cast<TableOrFunction &>(jtf.tof()));
+        }
+        else if (tos.has_joined_query())
+        {
+            swapQuery(rg, const_cast<JoinedQuery &>(tos.joined_query()));
+        }
+    }
+    else if (mes.GetTypeName() == "BuzzHouse.TableFunction")
+    {
+        auto & tfunc = static_cast<TableFunction &>(mes);
+
+        if (tfunc.has_loop())
+        {
+            swapQuery(rg, const_cast<TableOrFunction &>(tfunc.loop()));
+        }
+        else if (tfunc.has_remote() || tfunc.has_cluster())
+        {
+            swapQuery(rg, const_cast<TableOrFunction &>(tfunc.has_remote() ? tfunc.remote().tof() : tfunc.cluster().tof()));
+        }
+    }
+    else if (mes.GetTypeName() == "BuzzHouse.TableOrFunction")
+    {
+        auto & torfunc = static_cast<TableOrFunction &>(mes);
+
+        if (torfunc.has_tfunc())
+        {
+            swapQuery(rg, const_cast<TableFunction &>(torfunc.tfunc()));
+        }
+        else if (torfunc.has_select())
+        {
+            swapQuery(rg, const_cast<Select &>(torfunc.select().inner_query().select().sel()));
+        }
+    }
+}
+
+void QueryOracle::maybeUpdateOracleSelectQuery(RandomGenerator & rg, const SQLQuery & sq1, SQLQuery & sq2)
+{
+    sq2.CopyFrom(sq1);
+    if (rg.nextBool())
+    {
+        /// Swap query parts
+        const SQLQueryInner & sq2inner = sq2.single_query().explain().inner_query();
+        Select & nsel = const_cast<Select &>(measure_performance ? sq2inner.select().sel() : sq2inner.insert().select().select());
+
+        swapQuery(rg, nsel);
+    }
+}
+
 bool QueryOracle::findTablesWithPeersAndReplace(
     RandomGenerator & rg, google::protobuf::Message & mes, StatementGenerator & gen, const bool replace)
 {
@@ -978,7 +1114,11 @@ void QueryOracle::processSecondOracleQueryResult(const int errcode, ExternalInte
                     == fc.oracle_ignore_error_codes.end()))
         {
             throw DB::Exception(
-                DB::ErrorCodes::BUZZHOUSE, "{}: failed with different success results: {} vs {}", oracle_name, first_errcode, errcode);
+                DB::ErrorCodes::BUZZHOUSE,
+                "{}: failed with different success results: {} vs {}",
+                oracle_name,
+                DB::ErrorCodes::getName(first_errcode),
+                DB::ErrorCodes::getName(errcode));
         }
         if (!first_errcode && !errcode)
         {
