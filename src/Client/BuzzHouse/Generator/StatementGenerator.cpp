@@ -1605,7 +1605,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                 const uint32_t ncname = t.col_counter++;
                 AddColumn * add_col = ati->mutable_add_column();
                 ColumnDef * def = add_col->mutable_new_col();
-                const uint32_t type_mask_backup = this->next_type_mask;
+                const uint64_t type_mask_backup = this->next_type_mask;
                 std::vector<uint32_t> nested_ids;
 
                 if (next_option < 4)
@@ -1709,7 +1709,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                 const uint32_t next_option = rg.nextSmallNumber();
                 AddColumn * add_col = ati->mutable_modify_column();
                 ColumnDef * def = add_col->mutable_new_col();
-                const uint32_t type_mask_backup = this->next_type_mask;
+                const uint64_t type_mask_backup = this->next_type_mask;
                 std::vector<uint32_t> nested_ids;
 
                 if (next_option < 4)

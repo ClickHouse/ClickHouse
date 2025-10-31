@@ -1597,7 +1597,7 @@ void StatementGenerator::addTableColumn(
 {
     SQLColumn col;
     auto & to_add = staged ? t.staged_cols : t.cols;
-    const uint32_t type_mask_backup = this->next_type_mask;
+    const uint64_t type_mask_backup = this->next_type_mask;
 
     if ((t.isMySQLEngine() && (t.is_deterministic || rg.nextSmallNumber() < 4)) || t.hasMySQLPeer())
     {
@@ -2363,7 +2363,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
     const uint32_t dictionary_ncols = std::max(rg.randomInt<uint32_t>(1, fc.max_columns), isRange ? UINT32_C(2) : UINT32_C(1));
     SettingValues * svs = nullptr;
     DictionaryLayout * layout = cd->mutable_layout();
-    const uint32_t type_mask_backup = this->next_type_mask;
+    const uint64_t type_mask_backup = this->next_type_mask;
     const bool prev_enforce_final = this->enforce_final;
     const bool prev_allow_not_deterministic = this->allow_not_deterministic;
 
