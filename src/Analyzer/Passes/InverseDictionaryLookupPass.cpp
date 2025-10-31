@@ -285,7 +285,6 @@ private:
             subquery_node->getProjection().getNodes().push_back(std::make_shared<ColumnNode>(key_col_node, dict_table_function));
         }
         subquery_node->resolveProjectionColumns(key_cols);
-        resolveNode(subquery_node, getContext());
 
         auto in_function_node = std::make_shared<FunctionNode>("in");
         in_function_node->markAsOperator();
