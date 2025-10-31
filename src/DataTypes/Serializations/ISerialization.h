@@ -190,6 +190,7 @@ public:
 
             NullableElements,
             NullMap,
+            SparseNullMap,
 
             TupleElement,
             NamedOffsets,
