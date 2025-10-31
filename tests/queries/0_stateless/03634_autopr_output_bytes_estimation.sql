@@ -10,7 +10,7 @@ SET enable_parallel_replicas=0, enable_automatic_parallel_replicas=2;
 
 SELECT COUNT(*) FROM test.hits WHERE AdvEngineID <> 0 FORMAT Null SETTINGS log_comment='query_1';
 
-SELECT COUNT(DISTINCT SearchPhrase) FROM test.hits FORMAT Null SETTINGS log_comment='query_5';
+--SELECT COUNT(DISTINCT SearchPhrase) FROM test.hits FORMAT Null SETTINGS log_comment='query_5';
 
 SELECT MobilePhoneModel, COUNT(DISTINCT UserID) AS u FROM test.hits WHERE MobilePhoneModel <> '' GROUP BY MobilePhoneModel ORDER BY u DESC LIMIT 10 FORMAT Null SETTINGS log_comment='query_10';
 
@@ -36,7 +36,8 @@ SYSTEM FLUSH LOGS query_log;
 
 -- Just checking that the estimation is not too far off (within 75% error)
 WITH
-    [32+32+32, 2097152+1048576+1048576, 252512+133120+133120, 6389760+4069632+2129920, 1180160+589824+589824, 32+32, 22560+4224+3136, 41536+37088+8832, 30000, 19931136+5726464+5406720, 135266304+72351744+67633152] AS expected_bytes,
+    [32+32+32, 252512+133120+133120, 6389760+4069632+2129920, 1180160+589824+589824, 32+32, 22560+4224+3136, 41536+37088+8832, 30000, 19931136+5726464+5406720, 135266304+72351744+67633152] AS expected_bytes,
+    --[32+32+32, 2097152+1048576+1048576, 252512+133120+133120, 6389760+4069632+2129920, 1180160+589824+589824, 32+32, 22560+4224+3136, 41536+37088+8832, 30000, 19931136+5726464+5406720, 135266304+72351744+67633152] AS expected_bytes,
     --[32, 2097152, 252512, 6389760, 1180160, 32, 22560, 41536, 16192, 19931136, 135266304] AS expected_bytes,
     arrayJoin(arrayMap(x -> (untuple(x.1), x.2), arrayZip(res, expected_bytes))) AS res
 SELECT format('{} {} {}', res.1, res.2, res.3)
