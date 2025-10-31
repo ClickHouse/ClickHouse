@@ -9894,18 +9894,18 @@ MergeTreeData::PartitionIdToMinBlockPtr MergeTreeData::getMinDataVersionForEachP
     return std::make_shared<PartitionIdToMinBlock>(std::move(partition_to_min_data_version));
 }
 
-StorageMetadataPtr MergeTreeData::getInMemoryMetadataPtr() const
+StorageMetadataPtr MergeTreeData::getInMemoryMetadataPtr(bool bypass_metadata_cache) const /// NOLINT
 {
     auto query_context = CurrentThread::get().getQueryContext();
-    if (!query_context || !query_context->getSettingsRef()[Setting::enable_shared_storage_snapshot_in_query])
-        return IStorage::getInMemoryMetadataPtr();
+    if (!query_context || !query_context->getSettingsRef()[Setting::enable_shared_storage_snapshot_in_query] || bypass_metadata_cache)
+        return IStorage::getInMemoryMetadataPtr(bypass_metadata_cache);
 
     auto [cache, lock] = query_context->getStorageMetadataCache();
     auto it = cache->find(this);
     if (it != cache->end())
         return it->second;
 
-    return cache->emplace(this, IStorage::getInMemoryMetadataPtr()).first->second;
+    return cache->emplace(this, IStorage::getInMemoryMetadataPtr(bypass_metadata_cache)).first->second;
 }
 
 StorageSnapshotPtr MergeTreeData::createStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, bool without_data) const

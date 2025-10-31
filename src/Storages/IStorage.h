@@ -198,7 +198,10 @@ public:
     /// Get immutable version (snapshot) of storage metadata. Metadata object is
     /// multiversion, so it can be concurrently changed, but returned copy can be
     /// used without any locks.
-    virtual StorageMetadataPtr getInMemoryMetadataPtr() const { return metadata.get(); }
+    virtual StorageMetadataPtr getInMemoryMetadataPtr(bool /*bypass_metadata_cache*/ = false) const // NOLINT
+    {
+      return metadata.get();
+    }
 
     /// Update storage metadata. Used in ALTER or initialization of Storage.
     /// Metadata object is multiversion, so this method can be called without
