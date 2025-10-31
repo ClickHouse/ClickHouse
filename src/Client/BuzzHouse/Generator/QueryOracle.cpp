@@ -571,7 +571,7 @@ void QueryOracle::generateSecondSetting(
 
 void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuery pq, StatementGenerator & gen, SQLQuery & sq2)
 {
-    bool explain = false;
+    bool indexes = false;
     Select * sel = nullptr;
     SelectParen * sparen = nullptr;
     const uint32_t ncols = rg.randomInt<uint32_t>(1, 5);
@@ -579,12 +579,12 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
     peer_query = pq;
     if (peer_query == PeerQuery::ClickHouseOnly && (fc.measure_performance || fc.compare_explains) && rg.nextBool())
     {
-        const uint32_t next_opt = rg.nextSmallNumber();
+        const bool next_opt = rg.nextBool();
 
-        measure_performance = !fc.compare_explains || next_opt < 7;
-        explain = !fc.measure_performance || next_opt > 6;
+        measure_performance = fc.measure_performance && (!fc.compare_explains || next_opt);
+        compare_explain = fc.compare_explains && (!fc.measure_performance || !next_opt);
     }
-    const bool global_aggregate = !measure_performance && !explain && rg.nextSmallNumber() < 4;
+    const bool global_aggregate = !measure_performance && !compare_explain && rg.nextSmallNumber() < 4;
 
     if (measure_performance)
     {
@@ -615,7 +615,7 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
     gen.enforceFinal(true);
     gen.generatingPeerQuery(pq);
     gen.setAllowEngineUDF(peer_query != PeerQuery::ClickHouseOnly);
-    if (explain)
+    if (compare_explain)
     {
         /// INSERT INTO FILE EXPLAIN SELECT is not supported, so run
         /// INSERT INTO FILE SELECT * FROM (EXPLAIN SELECT);
@@ -634,6 +634,7 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
 
             eopt->set_opt(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_indexes);
             eopt->set_val(1);
+            indexes = true;
         }
         if (rg.nextBool())
         {
@@ -652,11 +653,12 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
     gen.generatingPeerQuery(PeerQuery::None);
     gen.setAllowEngineUDF(true);
 
-    if (!measure_performance && !explain && !global_aggregate)
+    if (!measure_performance && !compare_explain && !global_aggregate)
     {
         /// If not global aggregate, use ORDER BY clause
         Select * osel = sparen->release_select();
-        SelectStatementCore * nsel = sparen->mutable_select()->mutable_select_core();
+        sel = sparen->mutable_select();
+        SelectStatementCore * nsel = sel->mutable_select_core();
         nsel->mutable_from()
             ->mutable_tos()
             ->mutable_join_clause()
@@ -672,13 +674,12 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
     }
 
     /// Don't write statistics
-    if (!sparen->select().has_setting_values())
+    if (!sel->has_setting_values())
     {
-        Select & ssel = const_cast<Select &>(sparen->select());
-        const auto * news = ssel.mutable_setting_values();
+        const auto * news = sel->mutable_setting_values();
         UNUSED(news);
     }
-    SettingValues & svs = const_cast<SettingValues &>(sparen->select().setting_values());
+    SettingValues & svs = const_cast<SettingValues &>(sel->setting_values());
     SetValue * sv = svs.has_set_value() ? svs.add_other_values() : svs.mutable_set_value();
 
     sv->set_property("output_format_write_statistics");
@@ -690,6 +691,17 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
 
         sv2->set_property("log_comment");
         sv2->set_value("'measure_performance'");
+    }
+    else if (indexes)
+    {
+        /// These settings are relevant to show index information
+        SetValue * sv2 = svs.add_other_values();
+        SetValue * sv3 = svs.add_other_values();
+
+        sv2->set_property("use_query_condition_cache");
+        sv2->set_value("0");
+        sv3->set_property("use_skip_indexes_on_data_read");
+        sv3->set_value("0");
     }
 }
 
@@ -818,6 +830,7 @@ void QueryOracle::swapQuery(RandomGenerator & rg, google::protobuf::Message & me
 void QueryOracle::maybeUpdateOracleSelectQuery(RandomGenerator & rg, const SQLQuery & sq1, SQLQuery & sq2)
 {
     sq2.CopyFrom(sq1);
+    chassert(!compare_explain);
     if (rg.nextBool())
     {
         /// Swap query parts
@@ -1081,6 +1094,7 @@ void QueryOracle::replaceQueryWithTablePeers(
 void QueryOracle::resetOracleValues()
 {
     peer_query = PeerQuery::AllPeers;
+    compare_explain = false;
     measure_performance = false;
     first_errcode = 0;
     other_steps_sucess = true;

@@ -28,7 +28,7 @@ private:
 
     PeerQuery peer_query = PeerQuery::AllPeers;
     int first_errcode = 0;
-    bool other_steps_sucess = true, can_test_oracle_result, measure_performance;
+    bool other_steps_sucess = true, can_test_oracle_result, measure_performance, compare_explain;
 
     std::unordered_set<uint32_t> found_tables;
     DB::Strings nsettings;
