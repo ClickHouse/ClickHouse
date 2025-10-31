@@ -54,15 +54,28 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
     else
         uri_str = uri_;
 
+    // Check and encode '?' BEFORE parsing the URI
+    // This prevents '?' from being interpreted as query parameter separator
+    if (uri_str.contains('?'))
+    {
+        // Check if '?' is actually part of versionId parameter or a wildcard
+        size_t question_pos = uri_str.find('?');
+        if (question_pos != std::string::npos)
+        {
+            std::string after_question = uri_str.substr(question_pos + 1);
+            // If it's not followed by "versionId=", treat it as a wildcard and encode it
+            if (!after_question.starts_with("versionId="))
+            {
+                String uri_with_question_mark_encode;
+                Poco::URI::encode(uri_str, "?", uri_with_question_mark_encode);
+                uri_str = uri_with_question_mark_encode;
+            }
+        }
+    }
+
     uri = Poco::URI(uri_str);
-    String original_uri_str = uri_str;  // Save original for later use
 
     std::unordered_map<std::string, std::string> mapper;
-
-    mapper["s3"] = "https://{bucket}.s3.amazonaws.com";
-    mapper["gs"] = "https://storage.googleapis.com/{bucket}";
-    mapper["oss"] = "https://{bucket}.oss.aliyuncs.com";
-
     auto context = Context::getGlobalContextInstance();
     if (context)
     {
@@ -74,9 +87,16 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
             for (const std::string & config_key : config_keys)
                 mapper[config_key] = config->getString("url_scheme_mappers." + config_key + ".to");
         }
+        else
+        {
+            mapper["s3"] = "https://{bucket}.s3.amazonaws.com";
+            mapper["gs"] = "https://storage.googleapis.com/{bucket}";
+            mapper["oss"] = "https://{bucket}.oss.aliyuncs.com";
+        }
+
+        if (!mapper.empty())
+            URIConverter::modifyURI(uri, mapper);
     }
-    if (!mapper.empty())
-        URIConverter::modifyURI(uri, mapper);
 
     storage_name = "S3";
 
@@ -84,43 +104,19 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Host is empty in S3 URI.");
 
     /// Extract object version ID from query string.
-    bool has_version_id = false;
     for (const auto & [query_key, query_value] : uri.getQueryParameters())
     {
         if (query_key == "versionId")
         {
             version_id = query_value;
-            has_version_id = true;
+            break;
         }
     }
-
 
     String name;
     String endpoint_authority_from_uri;
 
     bool is_using_aws_private_link_interface = re2::RE2::FullMatch(uri.getAuthority(), aws_private_link_style_pattern);
-
-    /// Poco::URI will ignore '?' when parsing the path, but if there is a versionId in the http parameter,
-    /// '?' can not be used as a wildcard, otherwise it will be ambiguous.
-    /// If no "versionId" in the http parameter, '?' can be used as a wildcard.
-    /// It is necessary to encode '?' to avoid deletion during parsing path.
-    /// This must happen AFTER scheme mapping to avoid breaking the mapper
-    /// Also, DO NOT encode for pre-signed URLs where '?' introduces query parameters (e.g. X-Amz-*)
-    bool looks_like_presigned = false;
-    for (const auto & [qk, qv] : uri.getQueryParameters())
-    {
-        if (qk.starts_with("X-Amz-") || qk == "AWSAccessKeyId" || qk == "Signature" || qk == "Expires")
-        {
-            looks_like_presigned = true;
-            break;
-        }
-    }
-    if (!has_version_id && original_uri_str.contains('?') && !looks_like_presigned)
-    {
-        String uri_with_question_mark_encode;
-        Poco::URI::encode(uri.toString(), "?", uri_with_question_mark_encode);
-        uri = Poco::URI(uri_with_question_mark_encode);
-    }
 
     if (!is_using_aws_private_link_interface
         && re2::RE2::FullMatch(uri.getAuthority(), virtual_hosted_style_pattern, &bucket, &name, &endpoint_authority_from_uri))
