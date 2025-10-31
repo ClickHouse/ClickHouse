@@ -22,14 +22,6 @@ class InMemoryDirectoryPathMap;
 struct UnlinkMetadataFileOperationOutcome;
 using UnlinkMetadataFileOperationOutcomePtr = std::shared_ptr<UnlinkMetadataFileOperationOutcome>;
 
-struct ObjectMetadataEntry
-{
-    uint64_t file_size;
-    time_t last_modified;
-};
-using ObjectMetadataEntryPtr = std::shared_ptr<ObjectMetadataEntry>;
-using ObjectMetadataCachePtr = std::shared_ptr<CacheBase<UInt128, ObjectMetadataEntry>>;
-
 /// Object storage is used as a filesystem, in a limited form:
 /// - no directory concept, files only
 /// - no stat/chmod/...
@@ -46,11 +38,18 @@ private:
     friend class MetadataStorageFromPlainObjectStorageTransaction;
 
 protected:
+    struct ObjectMetadataEntry
+    {
+        uint64_t file_size;
+        time_t last_modified;
+    };
+    using ObjectMetadataEntryPtr = std::shared_ptr<ObjectMetadataEntry>;
+
     ObjectStoragePtr object_storage;
     const String storage_path_prefix;
     const String storage_path_full;
 
-    mutable ObjectMetadataCachePtr object_metadata_cache;
+    mutable std::optional<CacheBase<UInt128, ObjectMetadataEntry>> object_metadata_cache;
 
     mutable SharedMutex metadata_mutex;
 
@@ -107,13 +106,13 @@ protected:
 };
 
 
-class MetadataStorageFromPlainObjectStorageTransaction : public IMetadataTransaction
+class MetadataStorageFromPlainObjectStorageTransaction : public IMetadataTransaction, private MetadataOperationsHolder
 {
 protected:
     MetadataStorageFromPlainObjectStorage & metadata_storage;
     ObjectStoragePtr object_storage;
 
-    MetadataOperationsHolder operations;
+    std::vector<MetadataOperationPtr> operations;
 
 public:
     explicit MetadataStorageFromPlainObjectStorageTransaction(
@@ -134,7 +133,9 @@ public:
         /// Noop
     }
 
-    void createMetadataFile(const std::string & /* path */, const StoredObjects & /* objects */) override;
+    void createEmptyMetadataFile(const std::string & /* path */) override;
+
+    void createMetadataFile(const std::string & /* path */, ObjectStorageKey /* object_key */, uint64_t /* size_in_bytes */) override;
 
     void createDirectory(const std::string & path) override;
 
@@ -144,7 +145,6 @@ public:
 
     void unlinkFile(const std::string & path) override;
     void removeDirectory(const std::string & path) override;
-    void removeRecursive(const std::string &) override;
 
     /// Hard links are simulated using server-side copying.
     void createHardLink(const std::string & path_from, const std::string & path_to) override;

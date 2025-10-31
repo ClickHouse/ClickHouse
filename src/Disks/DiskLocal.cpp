@@ -281,6 +281,12 @@ void DiskLocal::createDirectories(const String & path)
     fs::create_directories(fs::path(disk_path) / path);
 }
 
+void DiskLocal::clearDirectory(const String & path)
+{
+    for (const auto & entry : fs::directory_iterator(fs::path(disk_path) / path))
+        (void)fs::remove(entry.path());
+}
+
 void DiskLocal::moveDirectory(const String & from_path, const String & to_path)
 {
     fs::rename(fs::path(disk_path) / from_path, fs::path(disk_path) / to_path);

@@ -66,9 +66,9 @@ public:
 
     void shutdown() override;
 
-    /// Return false if at least one underlying database is not external, otherwise return true
-    bool isExternal() const override;
-
+    bool canContainMergeTreeTables() const override;
+    bool canContainDistributedTables() const override;
+    bool canContainRocksDBTables() const override;
     void loadStoredObjects(ContextMutablePtr local_context, LoadingStrictnessLevel mode) override;
     bool supportsLoadingInTopologicalOrder() const override;
     void beforeLoadingMetadata(ContextMutablePtr local_context, LoadingStrictnessLevel mode) override;

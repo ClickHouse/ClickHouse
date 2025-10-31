@@ -70,7 +70,8 @@ psycopg-binary==3.2.4
 psycopg2-binary==2.9.6
 psycopg==3.2.4
 py4j==0.10.9.7
-pyarrow==22.0.0
+pyarrow-hotfix==0.6
+pyarrow==17.0.0
 pycparser==2.22
 pycryptodome==3.20.0
 pydantic==2.9.2
@@ -87,8 +88,8 @@ pytest-random-order==1.1.1
 pytest-repeat==0.9.3
 pytest-reportlog==0.4.0
 pytest-timeout==2.3.1
-pytest-xdist==3.8.0
-pytest==8.4.2
+pytest-xdist==3.5.0
+pytest==7.4.4
 python-dateutil==2.9.0.post0
 python-snappy==0.7.3
 pytz==2023.3.post1
@@ -102,6 +103,7 @@ setuptools==78.1.1
 simplejson==3.19.2
 sortedcontainers==2.4.0
 soupsieve==2.5
+strictyaml==1.7.3
 tenacity==8.5.0
 tomli==2.0.1
 typing_extensions==4.11.0

@@ -97,7 +97,7 @@ public:
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
     ColumnPtr replicate(const Offsets & offsets) const override;
-    MutableColumns scatter(size_t num_columns, const Selector & selector) const override;
+    MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
 #else
@@ -149,7 +149,6 @@ public:
     bool hasDynamicStructure() const override;
     bool dynamicStructureEquals(const IColumn & rhs) const override;
     void takeDynamicStructureFromSourceColumns(const Columns & source_columns) override;
-    void takeDynamicStructureFromColumn(const ColumnPtr & source_column) override;
 
     /// Empty tuple needs a public method to manage its size.
     void addSize(size_t delta) { column_length += delta; }

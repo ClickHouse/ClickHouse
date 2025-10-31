@@ -5,7 +5,7 @@
 #if USE_AVRO
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
-#include <Storages/ObjectStorage/DataLakes/Common/AvroForIcebergDeserializer.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/AvroForIcebergDeserializer.h>
 #include <Storages/KeyDescription.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Core/Field.h>
@@ -61,7 +61,6 @@ struct ManifestFileEntry
     String file_path_key;
     // It's a processed file path to be used by Object Storage
     String file_path;
-    Int64 row_number;
 
     ManifestEntryStatus status;
     Int64 added_sequence_number;

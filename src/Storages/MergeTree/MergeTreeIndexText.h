@@ -1,8 +1,8 @@
 #pragma once
+#include <vector>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Columns/IColumn.h>
-#include <Common/Logger.h>
 #include <Formats/MarkInCompressedFile.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/StringHashMap.h>
@@ -10,8 +10,6 @@
 #include <Interpreters/BloomFilter.h>
 #include <Interpreters/ITokenExtractor.h>
 #include <absl/container/flat_hash_map.h>
-
-#include <vector>
 
 #include <roaring.hh>
 
@@ -71,49 +69,12 @@ namespace DB
 struct MergeTreeIndexTextParams
 {
     size_t dictionary_block_size = 0;
-    size_t dictionary_block_frontcoding_compression = 1; /// enabled by default
     size_t max_cardinality_for_embedded_postings = 0;
     size_t bloom_filter_bits_per_row = 0;
     size_t bloom_filter_num_hashes = 0;
 };
 
 using PostingList = roaring::Roaring;
-
-/// A struct for building a posting list with optimization for infrequent tokens.
-/// Tokens with cardinality less than max_small_size are stored in a raw array allocated on the stack.
-/// It avoids allocations of Roaring Bitmap for infrequent tokens without increasing the memory usage.
-struct PostingListBuilder
-{
-public:
-    using PostingListsHolder = std::list<PostingList>;
-    using PostingListWithContext = std::pair<PostingList *, roaring::BulkContext>;
-
-    /// sizeof(PostingListWithContext) == 24 bytes.
-    /// Use small container of the same size to reuse this memory.
-    static constexpr size_t max_small_size = 6;
-    using SmallContainer = std::array<UInt32, max_small_size>;
-
-    PostingListBuilder() : small_size(0) {}
-
-    /// Adds a value to small array or to the large Roaring Bitmap.
-    /// If small array is converted to Roaring Bitmap after adding a value,
-    /// posting list is created in the postings_holder and reference to it is saved.
-    void add(UInt32 value, PostingListsHolder & postings_holder);
-
-    size_t size() const { return isSmall() ? small_size : large.first->cardinality(); }
-    bool isSmall() const { return small_size < max_small_size; }
-    SmallContainer & getSmall() { return small; }
-    PostingList & getLarge() const { return *large.first; }
-
-private:
-    union
-    {
-        SmallContainer small;
-        PostingListWithContext large;
-    };
-
-    UInt8 small_size;
-};
 
 struct PostingsSerialization
 {
@@ -126,7 +87,7 @@ struct PostingsSerialization
         EmbeddedPostings = 1ULL << 1,
     };
 
-    static UInt64 serialize(UInt64 header, PostingListBuilder && postings, WriteBuffer & ostr);
+    static void serialize(UInt64 header, PostingList && postings, WriteBuffer & ostr);
     static PostingList deserialize(UInt64 header, UInt32 cardinality, ReadBuffer & istr);
 };
 
@@ -235,9 +196,10 @@ private:
     TokenToPostingsInfosMap remaining_tokens;
 };
 
+using PostingListRawPtr = PostingList *;
 /// Save BulkContext to optimize consecutive insertions into the posting list.
-using TokenToPostingsMap = StringHashMap<PostingListBuilder>;
-using SortedTokensAndPostings = std::vector<std::pair<StringRef, PostingListBuilder *>>;
+using TokenToPostingsMap = StringHashMap<std::pair<PostingListRawPtr, roaring::BulkContext>>;
+using SortedTokensAndPostings = std::vector<std::pair<StringRef, PostingList *>>;
 
 /// Text index granule created on writing of the index.
 /// It differs from MergeTreeIndexGranuleText because it
@@ -270,7 +232,6 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
     TokenToPostingsMap tokens_map;
     std::list<PostingList> posting_lists;
     std::unique_ptr<Arena> arena;
-    LoggerPtr logger;
 };
 
 struct MergeTreeIndexTextGranuleBuilder
@@ -279,8 +240,6 @@ struct MergeTreeIndexTextGranuleBuilder
 
     /// Extracts tokens from the document and adds them to the granule.
     void addDocument(StringRef document);
-    void incrementCurrentRow() { ++current_row; }
-
     std::unique_ptr<MergeTreeIndexGranuleTextWritable> build();
     bool empty() const { return current_row == 0; }
     void reset();
@@ -322,18 +281,12 @@ public:
 
     ~MergeTreeIndexText() override = default;
 
-    bool supportsReadingOnParallelReplicas() const override { return true; }
     MergeTreeIndexSubstreams getSubstreams() const override;
     MergeTreeIndexFormat getDeserializedFormat(const MergeTreeDataPartChecksums & checksums, const std::string & path_prefix) const override;
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const override;
-
-    /// This function parses the arguments of a text index. Text indexes have a special syntax with complex arguments.
-    /// 1. Arguments are named, e.g.: argument = value
-    /// 2. The tokenizer argument can be a string, a function name (literal) or a function-like expression, e.g.: ngram(5)
-    static FieldVector parseArgumentsListFromAST(const ASTPtr & arguments);
 
     MergeTreeIndexTextParams params;
     std::unique_ptr<ITokenExtractor> token_extractor;

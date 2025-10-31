@@ -1096,7 +1096,7 @@ bool IStorageURLBase::canMoveConditionsToPrewhere() const
 
 std::optional<NameSet> IStorageURLBase::supportedPrewhereColumns() const
 {
-    return getInMemoryMetadataPtr()->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
+    return getInMemoryMetadataPtr()->getColumnsWithoutDefaultExpressions();
 }
 
 IStorage::ColumnSizeByName IStorageURLBase::getColumnSizes() const

@@ -7,6 +7,8 @@
 namespace DB
 {
 
+static constexpr std::string_view TEXT_INDEX_VIRTUAL_COLUMN_PREFIX = "__text_index_";
+
 enum class TextSearchMode : uint8_t
 {
     Any,
@@ -26,7 +28,7 @@ struct TextSearchQuery
     TextSearchMode mode;
     std::vector<String> tokens;
 
-    SipHash getHash() const;
+    UInt128 getHash() const;
 };
 
 using TextSearchQueryPtr = std::shared_ptr<TextSearchQuery>;
@@ -71,12 +73,11 @@ private:
             /// Atoms
             FUNCTION_EQUALS,
             FUNCTION_NOT_EQUALS,
-            FUNCTION_HAS,
             FUNCTION_IN,
             FUNCTION_NOT_IN,
             FUNCTION_MATCH,
-            FUNCTION_HAS_ANY_TOKENS,
-            FUNCTION_HAS_ALL_TOKENS,
+            FUNCTION_SEARCH_ANY,
+            FUNCTION_SEARCH_ALL,
             /// Can take any value
             FUNCTION_UNKNOWN,
             /// Operators
@@ -103,10 +104,6 @@ private:
         const Field & value_field,
         RPNElement & out) const;
 
-    std::vector<String> stringToTokens(const Field & field) const;
-    std::vector<String> substringToTokens(const Field & field, bool is_prefix, bool is_suffix) const;
-    std::vector<String> stringLikeToTokens(const Field & field) const;
-
     bool tryPrepareSetForTextSearch(const RPNBuilderTreeNode & lhs, const RPNBuilderTreeNode & rhs, const String & function_name, RPNElement & out) const;
     static TextSearchMode getTextSearchMode(const RPNElement & element);
 
@@ -117,8 +114,10 @@ private:
 
     /// Sorted unique tokens from all RPN elements.
     std::vector<String> all_search_tokens;
-    /// Search queries from all RPN elements
+    /// Search qieries from all RPN elements.s
     std::unordered_map<UInt128, TextSearchQueryPtr> all_search_queries;
+    /// Counters to generate unique virtual column names.
+    std::unordered_map<String, size_t> function_name_to_index;
     /// Mapping from virtual column (optimized for direct read from text index) to search query.
     std::unordered_map<String, TextSearchQueryPtr> virtual_column_to_search_query;
     /// Bloom filter can be disabled for better testing of dictionary analysis.
@@ -126,8 +125,5 @@ private:
     /// If global mode is All, then we can exit analysis earlier if any token is missing in granule.
     TextSearchMode global_search_mode = TextSearchMode::All;
 };
-
-static constexpr std::string_view TEXT_INDEX_VIRTUAL_COLUMN_PREFIX = "__text_index_";
-bool isTextIndexVirtualColumn(const String & column_name);
 
 }

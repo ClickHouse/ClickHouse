@@ -1,0 +1,1 @@
+`carat` Nullable(Float64), `depth` Nullable(Float64), `table` Nullable(Float64), `price` Nullable(Int64), `x` Nullable(Float64), `y` Nullable(Float64), `z` Nullable(Float64), `cut` Nullable(String), `__index_level_1__` Nullable(String), `clarity` Nullable(String)

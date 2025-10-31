@@ -449,7 +449,7 @@ void buildDisjunctiveJoinConditionsGeneral(const QueryTreeNodePtr & join_express
     addConditionsToJoinOperator(builder_context, std::move(built_clauses.at(join_expression.get())));
 }
 
-String getQueryDisplayLabel(const QueryTreeNodePtr & node, bool display_internal_aliases)
+static String getQueryDisplayLabel(const QueryTreeNodePtr & node, bool display_internal_aliases)
 {
     const auto & internal_alias = node->getAlias();
 

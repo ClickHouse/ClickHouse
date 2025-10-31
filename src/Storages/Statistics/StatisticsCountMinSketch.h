@@ -33,7 +33,7 @@ private:
 };
 
 
-bool countMinSketchStatisticsValidator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
+void countMinSketchStatisticsValidator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
 StatisticsPtr countMinSketchStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
 
 }

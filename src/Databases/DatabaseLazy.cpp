@@ -156,16 +156,7 @@ StoragePtr DatabaseLazy::tryGetTable(const String & table_name) const
         }
     }
 
-    try
-    {
-        return loadTable(table_name);
-    }
-    catch (const Exception & e)
-    {
-        if (e.code() == ErrorCodes::UNKNOWN_TABLE)
-            return {};
-        throw;
-    }
+    return loadTable(table_name);
 }
 
 DatabaseTablesIteratorPtr DatabaseLazy::getTablesIterator(ContextPtr, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */) const

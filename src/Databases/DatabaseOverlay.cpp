@@ -314,12 +314,28 @@ DatabaseTablesIteratorPtr DatabaseOverlay::getTablesIterator(ContextPtr context_
     return std::make_unique<DatabaseTablesSnapshotIterator>(std::move(tables), getDatabaseName());
 }
 
-bool DatabaseOverlay::isExternal() const
+bool DatabaseOverlay::canContainMergeTreeTables() const
 {
     for (const auto & db : databases)
-        if (!db->isExternal())
-            return false;
-    return true;
+        if (db->canContainMergeTreeTables())
+            return true;
+    return false;
+}
+
+bool DatabaseOverlay::canContainDistributedTables() const
+{
+    for (const auto & db : databases)
+        if (db->canContainDistributedTables())
+            return true;
+    return false;
+}
+
+bool DatabaseOverlay::canContainRocksDBTables() const
+{
+    for (const auto & db : databases)
+        if (db->canContainRocksDBTables())
+            return true;
+    return false;
 }
 
 void DatabaseOverlay::loadStoredObjects(ContextMutablePtr local_context, LoadingStrictnessLevel mode)

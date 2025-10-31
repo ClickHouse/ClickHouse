@@ -76,6 +76,7 @@ public:
 
     ColumnPtr convertToFullColumnIfSparse() const override;
 
+    /// Will insert null value if pos=nullptr
     void insertData(const char * pos, size_t length) override;
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     StringRef serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
@@ -171,7 +172,6 @@ public:
 
     bool hasDynamicStructure() const override { return values->hasDynamicStructure(); }
     void takeDynamicStructureFromSourceColumns(const Columns & source_columns) override;
-    void takeDynamicStructureFromColumn(const ColumnPtr & source_column) override;
 
     size_t getNumberOfTrailingDefaults() const
     {
@@ -263,8 +263,5 @@ private:
 };
 
 ColumnPtr recursiveRemoveSparse(const ColumnPtr & column);
-
-/// Remove all special representations (for now Sparse and Replicated).
-ColumnPtr removeSpecialRepresentations(const ColumnPtr & column);
 
 }

@@ -118,9 +118,4 @@ ActionsDAG::NodeRawConstPtrs getConjunctsList(ActionsDAG::Node * predicate);
 /// Returns true if the query always returns at least 1 row.
 bool optimizePlanForExists(QueryPlan & query_plan);
 
-/// Create ExpressionStep that projects only used columns
-QueryPlanStepPtr projectOnlyUsedColumns(
-    const SharedHeader & stream_header,
-    const ColumnIdentifiers & used_column_identifiers);
-
 }

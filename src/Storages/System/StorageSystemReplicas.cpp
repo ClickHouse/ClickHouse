@@ -171,10 +171,10 @@ void StorageSystemReplicas::read(
 
     /// We collect a set of replicated tables.
     std::map<String, std::map<String, StoragePtr>> replicated_tables;
-    for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
+    for (const auto & db : DatabaseCatalog::instance().getDatabases())
     {
         /// Check if database can contain replicated tables
-        if (db.second->isExternal())
+        if (!db.second->canContainMergeTreeTables())
             continue;
         const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, db.first);
         for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())

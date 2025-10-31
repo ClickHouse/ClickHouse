@@ -10,7 +10,6 @@
 
 #include <aws/core/Aws.h>
 #include <aws/core/client/CoreErrors.h>
-#include <aws/core/utils/cbor/CborValue.h>
 #include <aws/s3/model/HeadBucketRequest.h>
 #include <aws/s3/model/GetObjectRequest.h>
 #include <aws/s3/model/HeadObjectRequest.h>
@@ -272,7 +271,7 @@ Client::Client(
 
     provider_type = deduceProviderType(initial_endpoint);
     LOG_TRACE(log, "Provider type: {}", toString(provider_type));
-    LOG_TRACE(log, "Client configured with s3_retry_attempts: {}", client_configuration.retry_strategy.max_retries);
+
     if (provider_type == ProviderType::GCS)
     {
         /// GCS can operate in 2 modes for header and query params names:
@@ -692,25 +691,21 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
             continue;
         }
 
-        /// IllegalLocationConstraintException may indicate that we are working with an opt-in region (e.g. me-south-1)
-        /// In that case, we need to update the region and try again
-        bool is_illegal_constraint_exception = error.GetExceptionName() == "IllegalLocationConstraintException";
-        if (error.GetResponseCode() != Aws::Http::HttpResponseCode::MOVED_PERMANENTLY && !is_illegal_constraint_exception)
+        if (error.GetResponseCode() != Aws::Http::HttpResponseCode::MOVED_PERMANENTLY)
             return result;
 
         // maybe we detect a correct region
-        if (!detect_region || is_illegal_constraint_exception)
+        if (!detect_region)
         {
             if (auto region = GetErrorMarshaller()->ExtractRegion(error); !region.empty() && region != explicit_region)
             {
-                LOG_INFO(log, "Detected new region: {}", region);
                 request.overrideRegion(region);
                 insertRegionOverride(bucket, region);
             }
         }
 
         // we possibly got new location, need to try with that one
-        auto new_uri = is_illegal_constraint_exception ? std::optional<S3::URI>(initial_endpoint) : getURIFromError(error);
+        auto new_uri = getURIFromError(error);
         if (!new_uri)
             return result;
 
@@ -743,7 +738,6 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
         const Int64 max_attempts = client_configuration.retry_strategy.max_retries + 1;
         chassert(max_attempts > 0);
         std::exception_ptr last_exception = nullptr;
-        bool inside_retry_loop = false;
         for (Int64 attempt_no = 0; attempt_no < max_attempts; ++attempt_no)
         {
             incrementProfileEvents<IsReadMethod>(ProfileEvents::S3ReadRequestAttempts, ProfileEvents::S3WriteRequestAttempts);
@@ -781,13 +775,8 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
                             ProfileEvents::DiskS3ReadRequestRetryableErrors, ProfileEvents::DiskS3WriteRequestRetryableErrors);
 
                     updateNextTimeToRetryAfterRetryableError(outcome.GetError(), attempt_no);
-                    inside_retry_loop = true;
                     continue;
                 }
-
-                if (inside_retry_loop)
-                    LOG_TRACE(log, "Request succeeded after {} retries. Max retries: {}", attempt_no, max_attempts);
-
                 return outcome;
             }
             catch (Poco::Net::NetException &)
@@ -809,7 +798,6 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
                     break;
 
                 updateNextTimeToRetryAfterRetryableError(error, attempt_no);
-                inside_retry_loop = true;
             }
         }
 
@@ -874,7 +862,7 @@ void Client::slowDownAfterRetryableError() const
         if (current_time_ms >= next_time_ms)
         {
             if (next_time_ms != 0)
-                LOG_TRACE(log, "Retry time has passed; proceeding without delay");
+                LOG_TEST(log, "Retry time has passed; proceeding without delay");
             break;
         }
         UInt64 sleep_ms = next_time_ms - current_time_ms;

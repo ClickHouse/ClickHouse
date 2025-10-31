@@ -79,7 +79,6 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     String name_,
     ObjectStoragePtr object_storage_,
     StorageObjectStorageConfigurationPtr configuration_,
-    StorageSnapshotPtr storage_snapshot_,
     const ReadFromFormatInfo & info,
     const std::optional<FormatSettings> & format_settings_,
     ContextPtr context_,
@@ -92,7 +91,6 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     , name(std::move(name_))
     , object_storage(object_storage_)
     , configuration(configuration_)
-    , storage_snapshot(std::move(storage_snapshot_))
     , read_context(context_)
     , format_settings(format_settings_)
     , max_block_size(max_block_size_)
@@ -135,7 +133,6 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     StorageObjectStorageConfigurationPtr configuration,
     const StorageObjectStorageQuerySettings & query_settings,
     ObjectStoragePtr object_storage,
-    StorageMetadataPtr storage_metadata,
     bool distributed_processing,
     const ContextPtr & local_context,
     const ActionsDAG::Node * predicate,
@@ -194,7 +191,10 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     else if (configuration->supportsFileIterator())
     {
         auto iter = configuration->iterate(
-            filter_actions_dag, file_progress_callback, query_settings.list_object_keys_size, storage_metadata, local_context);
+            filter_actions_dag,
+            file_progress_callback,
+            query_settings.list_object_keys_size,
+            local_context);
 
         if (filter_actions_dag)
         {
@@ -251,8 +251,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
 
     if (is_archive)
     {
-        return std::make_shared<ArchiveIterator>(
-            object_storage, configuration, std::move(iterator), local_context, read_keys, ignore_archive_globs);
+        return std::make_shared<ArchiveIterator>(object_storage, configuration, std::move(iterator), local_context, read_keys, ignore_archive_globs);
     }
 
     return iterator;
@@ -271,6 +270,7 @@ void StorageObjectStorageSource::lazyInitialize()
 
 Chunk StorageObjectStorageSource::generate()
 {
+
     lazyInitialize();
 
     while (true)
@@ -657,7 +657,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         && DistributedCache::Registry::instance().isReady(
             effective_read_settings.distributed_cache_settings.read_only_from_current_az))
     {
-        connection_info = DistributedCache::getConnectionInfo(*object_storage);
+        connection_info = object_storage->getConnectionInfo();
         if (connection_info)
             use_distributed_cache = true;
     }
@@ -697,9 +697,16 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         && modified_read_settings.remote_fs_method == RemoteFSReadMethod::threadpool
         && modified_read_settings.remote_fs_prefetch;
 
-    /// FIXME: Use async buffer if use_cache,
-    /// because CachedOnDiskReadBufferFromFile does not work as an independent buffer currently.
-    bool use_async_buffer = use_prefetch || use_filesystem_cache || use_distributed_cache;
+    bool use_async_buffer = false;
+    ReadSettings nested_buffer_read_settings = modified_read_settings;
+    if (use_prefetch || use_filesystem_cache || use_distributed_cache)
+    {
+        nested_buffer_read_settings.remote_read_buffer_use_external_buffer = true;
+
+        /// FIXME: Use async buffer if use_cache,
+        /// because CachedOnDiskReadBufferFromFile does not work as an independent buffer currently.
+        use_async_buffer = true;
+    }
 
     std::unique_ptr<ReadBufferFromFileBase> impl;
 #if ENABLE_DISTRIBUTED_CACHE
@@ -742,11 +749,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
             const auto cache_key = FileCacheKey::fromKey(hash.get128());
             auto cache = FileCacheFactory::instance().get(filesystem_cache_name);
 
-            auto read_buffer_creator = [
-                path = object_info.getPath(),
-                nested_buffer_read_settings = modified_read_settings.withNestedBuffer(/* seekable */false),
-                object_size,
-                object_storage]()
+            auto read_buffer_creator = [path = object_info.getPath(), object_size, nested_buffer_read_settings, object_storage]()
             {
                 return object_storage->readObject(StoredObject(path, "", object_size), nested_buffer_read_settings);
             };
@@ -757,7 +760,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
                 cache,
                 FileCache::getCommonUser(),
                 read_buffer_creator,
-                use_async_buffer ? modified_read_settings.withNestedBuffer(/* seekable */true) : modified_read_settings,
+                use_async_buffer ? nested_buffer_read_settings : modified_read_settings,
                 std::string(CurrentThread::getQueryId()),
                 object_size,
                 /* allow_seeks */true,
@@ -776,11 +779,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     }
 
     if (!impl)
-    {
-        impl = object_storage->readObject(
-            StoredObject(object_info.getPath(), "", object_size),
-            use_async_buffer ? modified_read_settings.withNestedBuffer(/* seekable */true) : modified_read_settings);
-    }
+        impl = object_storage->readObject(StoredObject(object_info.getPath(), "", object_size), nested_buffer_read_settings);
 
     if (!use_async_buffer)
         return impl;

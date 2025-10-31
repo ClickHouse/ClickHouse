@@ -1303,8 +1303,7 @@ static std::shared_ptr<const ActionsDAG> getFilterFromQuery(const ASTPtr & ast, 
 }
 
 
-std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStorage(
-    const IStorageCluster & src_storage_cluster, const ASTInsertQuery & query, ContextPtr local_context) const
+std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStorage(const IStorageCluster & src_storage_cluster, const ASTInsertQuery & query, ContextPtr local_context) const
 {
     const auto & settings = local_context->getSettingsRef();
 
@@ -1343,7 +1342,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
 
     /// Select query is needed for pruining on virtual columns
     auto extension = src_storage_cluster.getTaskIteratorExtension(
-        predicate, filter.get(), local_context, cluster, src_storage_cluster.getInMemoryMetadataPtr());
+        predicate, filter.get(), local_context, cluster);
 
     /// Here we take addresses from destination cluster and assume source table exists on these nodes
     size_t replica_index = 0;
@@ -1856,7 +1855,7 @@ ClusterPtr StorageDistributed::skipUnusedShards(
             return nullptr;
 
         if (select_without_join.prewhere() && select_without_join.where())
-            condition_ast = makeASTOperator("and", select_without_join.prewhere()->clone(), select_without_join.where()->clone());
+            condition_ast = makeASTFunction("and", select_without_join.prewhere()->clone(), select_without_join.where()->clone());
         else
             condition_ast = select_without_join.prewhere() ? select_without_join.prewhere()->clone() : select_without_join.where()->clone();
     }

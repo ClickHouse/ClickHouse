@@ -1,15 +1,12 @@
-#include <memory>
 #include <Processors/Merges/Algorithms/SummingSortedAlgorithm.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnTuple.h>
-#include <Common/Exception.h>
 #include <Common/AlignedBuffer.h>
 #include <Common/Arena.h>
 #include <Common/FieldVisitorSum.h>
 #include <Common/StringUtils.h>
-#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/NestedUtils.h>
@@ -54,7 +51,7 @@ struct SummingSortedAlgorithm::AggregateDescription
     bool is_agg_func_type = false;
     bool is_simple_agg_func_type = false;
     bool remove_default_values;
-    bool aggregate_all_columns = false;
+    bool aggregate_all_columns;
 
     String sum_function_map_name;
 
@@ -260,45 +257,6 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
         const ColumnWithTypeAndName & column = header.safeGetByPosition(i);
 
         const auto * simple = dynamic_cast<const DataTypeCustomSimpleAggregateFunction *>(column.type->getCustomName());
-        bool is_non_empty_tuple = typeid_cast<const DataTypeTuple *>(column.type.get()) && !typeid_cast<const DataTypeTuple *>(column.type.get())->getElements().empty();
-        if (aggregate_all_columns && (is_non_empty_tuple || typeid_cast<const DataTypeArray *>(column.type.get())) && !simple)
-        {
-            const auto map_name = Nested::extractTableName(column.name);
-            /// if nested table name ends with `Map` it is a possible candidate for special handling
-            if (map_name == column.name || !endsWith(map_name, "Map"))
-            {
-                bool is_agg_func = WhichDataType(column.type).isAggregateFunction();
-
-                SummingSortedAlgorithm::AggregateDescription desc;
-                desc.remove_default_values = remove_default_values;
-                desc.aggregate_all_columns = aggregate_all_columns;
-                desc.sum_function_map_name = sum_function_map_name;
-                desc.is_agg_func_type = is_agg_func;
-                desc.column_numbers = {i};
-
-                desc.real_type = column.type;
-                desc.nested_type = recursiveRemoveLowCardinality(desc.real_type);
-                if (desc.real_type.get() == desc.nested_type.get())
-                    desc.nested_type = nullptr;
-
-                if (simple)
-                {
-                    // simple aggregate function
-                    desc.init(simple->getFunction(), true);
-                    if (desc.function->allocatesMemoryInArena())
-                        def.allocates_memory_in_arena = true;
-                }
-                else if (!is_agg_func)
-                {
-                    desc.init(sum_function_name.c_str(), {column.type});
-                }
-
-                def.columns_to_aggregate.emplace_back(std::move(desc));
-            }
-
-            continue;
-        }
-
         if (column.name == BlockNumberColumn::name || column.name == BlockOffsetColumn::name)
         {
             def.column_numbers_not_to_aggregate.push_back(i);
@@ -323,15 +281,7 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
             bool is_agg_func = WhichDataType(column.type).isAggregateFunction();
 
             /// There are special const columns for example after prewhere sections.
-            if (!aggregate_all_columns)
-            {
-                if ((!column.type->isSummable() && !is_agg_func && !simple) || isColumnConst(*column.column))
-                {
-                    def.column_numbers_not_to_aggregate.push_back(i);
-                    continue;
-                }
-            }
-            else if (column.type->getTypeId() == TypeIndex::Tuple)
+            if (!aggregate_all_columns && ((!column.type->isSummable() && !is_agg_func && !simple) || isColumnConst(*column.column)))
             {
                 def.column_numbers_not_to_aggregate.push_back(i);
                 continue;
@@ -502,17 +452,10 @@ static void postprocessChunk(
 
         if (!desc.is_agg_func_type && !desc.is_simple_agg_func_type && isTuple(desc.function->getResultType()))
         {
-            if (desc.aggregate_all_columns)
-            {
-                res_columns[desc.column_numbers[0]] = column;
-            }
-            else
-            {
-                /// Unpack tuple into block.
-                size_t tuple_size = desc.column_numbers.size();
-                for (size_t i = 0; i < tuple_size; ++i)
-                   res_columns[desc.column_numbers[i]] = assert_cast<const ColumnTuple &>(*column).getColumnPtr(i);
-            }
+            /// Unpack tuple into block.
+            size_t tuple_size = desc.column_numbers.size();
+            for (size_t i = 0; i < tuple_size; ++i)
+                res_columns[desc.column_numbers[i]] = assert_cast<const ColumnTuple &>(*column).getColumnPtr(i);
         }
         else if (desc.nested_type)
         {
@@ -592,24 +535,12 @@ void SummingSortedAlgorithm::SummingMergedData::initialize(const DB::Block & hea
         // Wrap aggregated columns in a tuple to match function signature
         if (!desc.is_agg_func_type && !desc.is_simple_agg_func_type && isTuple(desc.function->getResultType()))
         {
-            if (desc.aggregate_all_columns)
-            {
-                auto column = desc.real_type->createColumn();
-                size_t tuple_size = static_cast<const ColumnTuple &>(*column).tupleSize();
-                MutableColumns tuple_columns(tuple_size);
-                for (size_t i = 0; i < tuple_size; ++i)
-                    tuple_columns[i] = static_cast<const ColumnTuple &>(*column).getColumnPtr(i)->cloneEmpty();
-                new_columns.emplace_back(ColumnTuple::create(std::move(tuple_columns)));
-            }
-            else
-            {
-                size_t tuple_size = desc.column_numbers.size();
-                MutableColumns tuple_columns(tuple_size);
-                for (size_t i = 0; i < tuple_size; ++i)
-                    tuple_columns[i] = std::move(columns[desc.column_numbers[i]]);
+            size_t tuple_size = desc.column_numbers.size();
+            MutableColumns tuple_columns(tuple_size);
+            for (size_t i = 0; i < tuple_size; ++i)
+                tuple_columns[i] = std::move(columns[desc.column_numbers[i]]);
 
-                new_columns.emplace_back(ColumnTuple::create(std::move(tuple_columns)));
-            }
+            new_columns.emplace_back(ColumnTuple::create(std::move(tuple_columns)));
         }
         else
         {
@@ -803,6 +734,7 @@ Chunk SummingSortedAlgorithm::SummingMergedData::pull()
 {
     auto chunk = MergedData::pull();
     postprocessChunk(chunk, def.column_names.size(), def);
+
     initAggregateDescription();
 
     return chunk;
@@ -830,7 +762,6 @@ SummingSortedAlgorithm::SummingSortedAlgorithm(
 
 void SummingSortedAlgorithm::initialize(Inputs inputs)
 {
-    removeReplicatedFromSortingColumns(header, inputs, description);
     removeConstAndSparse(inputs);
     merged_data.initialize(*header, inputs);
 
@@ -843,7 +774,6 @@ void SummingSortedAlgorithm::initialize(Inputs inputs)
 
 void SummingSortedAlgorithm::consume(Input & input, size_t source_num)
 {
-    removeReplicatedFromSortingColumns(header, input, description);
     removeConstAndSparse(input);
     preprocessChunk(input.chunk, columns_definition);
     updateCursor(input, source_num);
