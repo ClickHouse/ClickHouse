@@ -198,16 +198,30 @@ private:
     ActionsDAG & actions_dag;
     IndexConditionsMap index_conditions;
 
-    bool isSupportedCondition(const ActionsDAG::Node & lhs_arg, const ActionsDAG::Node & rhs_arg, const IMergeTreeIndexCondition & condition) const
+    bool isSupportedCondition(const String & function_name, const ActionsDAG::Node & lhs_arg, const ActionsDAG::Node & rhs_arg, const IMergeTreeIndexCondition & condition) const
     {
         using enum ActionsDAG::ActionType;
         const auto & text_index_condition = typeid_cast<const MergeTreeIndexConditionText &>(condition);
         const auto & header = text_index_condition.getHeader();
 
+        auto is_supported_map_argument = [&](const String & argument_name, const IDataType & argument_type)
+        {
+            if (!isMap(argument_type))
+                return false;
+
+            if (function_name == "mapContainsKey" || function_name == "has")
+                return header.has(fmt::format("mapKeys({})", argument_name));
+
+            if (function_name == "mapContainsValue")
+                return header.has(fmt::format("mapValues({})", argument_name));
+
+            return false;
+        };
+
         if ((lhs_arg.type == INPUT || lhs_arg.type == FUNCTION) && rhs_arg.type == COLUMN)
         {
             auto lhs_name_without_aliases = getNameWithoutAliases(&lhs_arg);
-            return header.has(lhs_name_without_aliases);
+            return header.has(lhs_name_without_aliases) || is_supported_map_argument(lhs_name_without_aliases, *lhs_arg.result_type);
         }
 
         if (lhs_arg.type == COLUMN && (rhs_arg.type == INPUT || rhs_arg.type == FUNCTION))
@@ -229,9 +243,11 @@ private:
         if (function_node.children.size() != 2)
             return std::nullopt;
 
+        auto function_name = function_node.function->getName();
+
         auto selected_it = std::ranges::find_if(index_conditions, [&](const auto & index_with_condition)
         {
-            return isSupportedCondition(*function_node.children[0], *function_node.children[1], *index_with_condition.second->condition);
+            return isSupportedCondition(function_name, *function_node.children[0], *function_node.children[1], *index_with_condition.second->condition);
         });
 
         if (selected_it == index_conditions.end())
@@ -239,7 +255,7 @@ private:
 
         size_t num_supported_conditions = std::ranges::count_if(index_conditions, [&](const auto & index_with_condition)
         {
-            return isSupportedCondition(*function_node.children[0], *function_node.children[1], *index_with_condition.second->condition);
+            return isSupportedCondition(function_name, *function_node.children[0], *function_node.children[1], *index_with_condition.second->condition);
         });
 
         /// Do not optimize if there are multiple text indexes set for the column.
@@ -250,7 +266,7 @@ private:
         const auto & [index_name, condition] = *selected_it;
         auto & text_index_condition = typeid_cast<MergeTreeIndexConditionText &>(*condition->condition);
 
-        auto direct_read_mode = text_index_condition.getDirectReadMode(function_node.function->getName());
+        auto direct_read_mode = text_index_condition.getDirectReadMode(function_name);
         if (direct_read_mode == TextIndexDirectReadMode::None)
             return std::nullopt;
 

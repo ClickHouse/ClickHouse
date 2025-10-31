@@ -106,6 +106,8 @@ private:
         const Field & value_field,
         RPNElement & out) const;
 
+    bool hasMapElementValuesIndex(const RPNBuilderTreeNode & index_column_node, const Field & const_value) const;
+
     std::vector<String> stringToTokens(const Field & field) const;
     std::vector<String> substringToTokens(const Field & field, bool is_prefix, bool is_suffix) const;
     std::vector<String> stringLikeToTokens(const Field & field) const;

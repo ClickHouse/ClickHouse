@@ -56,7 +56,7 @@ private:
 
     using TokenToPostingsInfosMap = MergeTreeIndexGranuleText::TokenToPostingsInfosMap;
     size_t getNumRowsInGranule(size_t index_mark) const;
-    size_t estimateCardinality(const TextSearchQuery & query, const TokenToPostingsInfosMap & remaining_tokens, size_t total_rows) const;
+    double estimateCardinality(const TextSearchQuery & query, const TokenToPostingsInfosMap & remaining_tokens, size_t total_rows) const;
 
     MergeTreeIndexWithCondition index;
     MarkRanges all_index_ranges;
