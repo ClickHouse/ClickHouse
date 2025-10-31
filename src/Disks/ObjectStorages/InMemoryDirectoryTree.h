@@ -37,8 +37,9 @@ class InMemoryDirectoryTree
     std::shared_ptr<INode> walk(const std::filesystem::path & path, bool create_missing = false) const TSA_REQUIRES(mutex);
 
     /// For each inode in path subtree (including the inode related to path) will call observe.
-    /// Tree will be traversed in BFS order
-    void traverseSubtree(const std::filesystem::path & path, std::function<void(const std::string &, const std::shared_ptr<INode> &)> observe) const TSA_REQUIRES(mutex);
+    /// Tree will be traversed in BFS order.
+    using ObserveFunction = std::function<void(const std::string & /*path*/, const std::shared_ptr<INode> & /*inode*/)>;
+    void traverseSubtree(const std::filesystem::path & path, const ObserveFunction & observe) const TSA_REQUIRES(mutex);
 
     /// Constructs path which can be resolved (walked) to node.
     std::filesystem::path determineNodePath(std::shared_ptr<INode> node) const TSA_REQUIRES(mutex);

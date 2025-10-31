@@ -73,7 +73,7 @@ std::shared_ptr<InMemoryDirectoryTree::INode> InMemoryDirectoryTree::walk(const 
     return node;
 }
 
-void InMemoryDirectoryTree::traverseSubtree(const std::filesystem::path & path, std::function<void(const std::string &, const std::shared_ptr<INode> &)> observe) const
+void InMemoryDirectoryTree::traverseSubtree(const std::filesystem::path & path, const ObserveFunction & observe) const
 {
     chassert(normalizePath(path.string()) == path);
     std::deque<std::pair<fs::path, std::shared_ptr<INode>>> unvisited;
