@@ -1,7 +1,10 @@
+#include <algorithm>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
 #include <Interpreters/Aggregator.h>
+
+#include <AggregateFunctions/IAggregateFunction.h>
 
 namespace DB
 {
@@ -57,10 +60,19 @@ void Updater::addOutputBytes(const Chunk & chunk)
     }
 }
 
-void Updater::addOutputBytes(const Aggregator &, AggregatedDataVariants & variant, size_t bucket)
+void Updater::addOutputBytes(const Aggregator &, AggregatedDataVariants & variant, ssize_t bucket)
 {
     if (!cache_key)
         return;
+
+    if (bucket == -1
+        && std::ranges::any_of(
+            variant.aggregator->getParams().aggregates, [](auto agg_func) { return !agg_func.function->hasTrivialDestructor(); }))
+    {
+        std::lock_guard lock(mutex);
+        unsupported_case = true;
+        return;
+    }
 
     size_t res = variant.aggregator->applyToAllStates(variant, bucket);
 
@@ -87,15 +99,10 @@ void Updater::addOutputBytes(const Aggregator & aggregator, const Block & block)
         return total_size;
     };
 
-    const auto source_bytes = getKeyColumnsSize(/*compressed=*/false);
-    size_t compressed = 0;
-    if (cnt++ % 50 == 0 && cnt < 150 && block.rows())
-        compressed = getKeyColumnsSize(/*compressed=*/true);
-
     std::lock_guard lock(mutex);
+    const auto source_bytes = getKeyColumnsSize(/*compressed=*/false);
     statistics2.output_bytes += source_bytes;
-    // if (cnt++ % 10 == 0 && cnt < 100 && block.rows())
-    if (compressed)
+    if (cnt++ % 50 == 0 && cnt < 150 && block.rows())
     {
         output_bytes_sample2 += source_bytes;
         output_bytes_compressed2 += getKeyColumnsSize(/*compressed=*/true);

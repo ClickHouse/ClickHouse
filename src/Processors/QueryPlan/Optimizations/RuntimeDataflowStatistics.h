@@ -112,7 +112,7 @@ public:
 
     void addOutputBytes(const Chunk & chunk);
 
-    void addOutputBytes(const Aggregator & aggregator, AggregatedDataVariants & variant, size_t bucket);
+    void addOutputBytes(const Aggregator & aggregator, AggregatedDataVariants & variant, ssize_t bucket);
 
     void addOutputBytes(const Aggregator & aggregator, const Block & block);
 
@@ -143,6 +143,8 @@ private:
     size_t output_bytes_sample2 = 0;
     size_t output_bytes_compressed2 = 0;
     RuntimeDataflowStatistics statistics2{};
+
+    bool unsupported_case = false;
 
     size_t cnt = 0;
 };
