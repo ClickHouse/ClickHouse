@@ -193,7 +193,8 @@ bool Set::insertFromBlock(const ColumnsWithTypeAndName & columns)
 
 bool Set::insertFromColumns(const Columns & columns)
 {
-    size_t rows = columns.at(0)->size();
+    // Handle empty columns gracefully (e.g., creating a set from an empty tuple)
+    size_t rows = columns.empty() ? 0 : columns[0]->size();
 
     SetKeyColumns holder;
     /// Filter to extract distinct values from the block.
@@ -223,6 +224,12 @@ bool Set::insertFromColumns(const Columns & columns, SetKeyColumns & holder)
     if (data.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Method Set::setHeader must be called before Set::insertFromBlock");
 
+    // Validate that we have enough columns for the configured key size
+    if (columns.size() < keys_size)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Invalid number of columns for set. Expected at least {} got {}",
+                        keys_size, columns.size());
+
     holder.key_columns.reserve(keys_size);
     holder.materialized_columns.reserve(keys_size);
 
@@ -233,12 +240,13 @@ bool Set::insertFromColumns(const Columns & columns, SetKeyColumns & holder)
         holder.key_columns.emplace_back(holder.materialized_columns.back().get());
     }
 
-    size_t rows = columns.at(0)->size();
+    // If there are no key columns, treat as an empty set of elements
+    size_t rows = columns.empty() ? 0 : columns[0]->size();
 
     /// We will insert to the Set only keys, where all components are not NULL.
     ConstNullMapPtr null_map{};
     ColumnPtr null_map_holder;
-    if (!transform_null_in)
+    if (!transform_null_in && keys_size > 0)
         null_map_holder = extractNestedColumnsAndNullMap(holder.key_columns, null_map);
 
     switch (data.type)
@@ -262,7 +270,11 @@ void Set::appendSetElements(SetKeyColumns & holder)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid number of key columns for set. Expected {} got {} and {}",
                         keys_size, holder.key_columns.size(), set_elements.size());
 
-    size_t rows = holder.key_columns.at(0)->size();
+    // Nothing to append when there are no key columns
+    if (keys_size == 0)
+        return;
+
+    size_t rows = holder.key_columns.empty() ? 0 : holder.key_columns[0]->size();
     for (size_t i = 0; i < keys_size; ++i)
     {
         auto filtered_column = holder.key_columns[i]->filter(holder.filter->getData(), rows);
