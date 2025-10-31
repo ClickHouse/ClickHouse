@@ -44,6 +44,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"correlated_subqueries_default_join_kind", "left", "right", "New setting. Default join kind for decorrelated query plan."},
             {"use_statistics_cache", 0, 0, "New setting"},
             {"s3_retry_attempts", 500, 500, "Changed the value of the obsolete setting"},
+            {"http_write_exception_in_output_format", true, false, "Changed for consistency across formats"},
         });
         addSettingsChanges(settings_changes_history, "25.10",
         {
