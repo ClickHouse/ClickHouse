@@ -65,14 +65,14 @@ Result:
 
 ```response
    ┌─player──────────┬─salary─┬───────────cume_dist─┐
-1. │ Gary Chen       │ 195000 │  0.2857142857142857 │
-2. │ Robert George   │ 195000 │  0.2857142857142857 │
-3. │ Charles Juarez  │ 190000 │  0.4285714285714285 │
-4. │ Michael Stanley │ 150000 │                   1 │
-5. │ Scott Harrison  │ 150000 │                   1 │
-6. │ Douglas Benson  │ 150000 │                   1 │
+1. │ Robert George   │ 195000 │  0.2857142857142857 │
+2. │ Gary Chen       │ 195000 │  0.2857142857142857 │
+3. │ Charles Juarez  │ 190000 │ 0.42857142857142855 │
+4. │ Douglas Benson  │ 150000 │  0.8571428571428571 │
+5. │ Michael Stanley │ 150000 │  0.8571428571428571 │
+6. │ Scott Harrison  │ 150000 │  0.8571428571428571 │
 7. │ James Henderson │ 140000 │                   1 │
-   └─────────────────┴────────┴────────────────────┘
+   └─────────────────┴────────┴─────────────────────┘
 ```
 
 **Implementation Details**
