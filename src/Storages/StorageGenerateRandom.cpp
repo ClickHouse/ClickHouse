@@ -49,6 +49,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int TOO_LARGE_ARRAY_SIZE;
@@ -660,6 +661,11 @@ void registerStorageGenerateRandom(StorageFactory & factory)
 
         if (!engine_args.empty())
         {
+            if (!engine_args[0]->as<const ASTLiteral>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "GenerateRandom engine parameter #1 (random_seed) must be a literal value. "
+                    "Function calls like random() are not supported.");
+            
             const auto & ast_literal = engine_args[0]->as<const ASTLiteral &>();
             if (!ast_literal.value.isNull())
                 random_seed = checkAndGetLiteralArgument<UInt64>(ast_literal, "random_seed");
