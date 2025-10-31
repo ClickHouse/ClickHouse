@@ -10,8 +10,8 @@
 
   <query tag='RIGHT_1e2_1e7'>SELECT * FROM numbers_mt(100) AS l RIGHT JOIN numbers_mt(10000000) AS r USING (number)</query>
   <query tag='FULL_1e2_1e7'>SELECT * FROM numbers_mt(100) AS l FULL JOIN numbers_mt(10000000) AS r USING (number)</query>
-  <query tag='RIGHT_1e7_1e2'>SELECT * FROM numbers_mt(10000000) AS l RIGHT JOIN numbers_mt(100) AS r USING (number)</query>
-  <query tag='FULL_1e7_1e2'>SELECT * FROM numbers_mt(10000000) AS l FULL JOIN numbers_mt(100) AS r USING (number)</query>
+  <query tag='RIGHT_3e8_1e2'>SELECT * FROM numbers_mt(300000000) AS l RIGHT JOIN numbers_mt(100) AS r USING (number)</query>
+  <query tag='FULL_3e8_1e2'>SELECT * FROM numbers_mt(300000000) AS l FULL JOIN numbers_mt(100) AS r USING (number)</query>
   <query tag='RIGHT_1e7_1e7'>SELECT * FROM numbers_mt(10000000) AS l RIGHT JOIN numbers_mt(10000000) AS r USING (number)</query>
   <query tag='FULL_1e7_1e7'>SELECT * FROM numbers_mt(10000000) AS l FULL JOIN numbers_mt(10000000) AS r USING (number)</query>
 
