@@ -1216,7 +1216,6 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCfinancialNetPresentValue, 0, 0, 2, 3),
     CHFunction(SQLFunc::FUNCfinancialNetPresentValueExtended, 0, 0, 3, 4),
     /// Other
-    CHFunction(SQLFunc::FUNChostname, 0, 0, 0, 0),
     CHFunction(SQLFunc::FUNCfqdn, 0, 0, 0, 0),
     CHFunction(SQLFunc::FUNCbasename, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCvisibleWidth, 0, 0, 1, 1),
@@ -1301,6 +1300,7 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCrandFisherF, 0, 0, 2, 2),
     CHFunction(SQLFunc::FUNCfuzzBits, 0, 0, 2, 2),
     /// Other
+    CHFunction(SQLFunc::FUNChostname, 0, 0, 0, 0),
     CHFunction(SQLFunc::FUNCshowCertificate, 0, 0, 0, 0),
     CHFunction(SQLFunc::FUNCdisplayName, 0, 0, 0, 0),
     CHFunction(SQLFunc::FUNCcurrentDatabase, 0, 0, 0, 0),
