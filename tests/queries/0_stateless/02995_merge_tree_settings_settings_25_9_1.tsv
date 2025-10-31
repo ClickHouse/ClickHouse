@@ -263,6 +263,10 @@ simultaneous_parts_removal_limit	0
 sleep_before_commit_local_part_in_replicated_table_ms	0
 sleep_before_loading_outdated_parts_ms	0
 storage_policy	default
+<<<<<<< HEAD:tests/queries/0_stateless/02995_merge_tree_settings_settings_25_10_1.tsv
+string_serialization_version	single_stream
+=======
+>>>>>>> d854b4467659439f71b4169b99734ed44457250c:tests/queries/0_stateless/02995_merge_tree_settings_settings_25_9_1.tsv
 table_disk	0
 temporary_directories_lifetime	86400
 try_fetch_recompressed_part_timeout	7200
