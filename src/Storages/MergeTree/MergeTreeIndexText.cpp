@@ -1535,8 +1535,14 @@ ExpressionActions MergeTreeIndexTextPreprocessor::parseExpression(const IndexDes
     chassert(index_description.data_types.size() == 1);
 
     /// Empty expression still creates a preprocessor with empty actions.
-    if (std::ranges::all_of(expression, isspace))
+    if (expression.empty())
         return ExpressionActions(ActionsDAG());
+
+    /// This parser received the string stored from the expression's `column_name` or empty if no preprocessor set.
+    /// `column_name` (from the DAG) should never be a blank string.
+    /// But we add this tests in case someone decides to "manipulate" the expression before arriving here.
+    if (expression.find_first_not_of(" \t\n\v\f\r") == std::string::npos)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index preprocessor parser received a blank non empty string.");
 
     const char * expression_begin = &*expression.begin();
     const char * expression_end = &*expression.end();
@@ -1574,6 +1580,14 @@ ExpressionActions MergeTreeIndexTextPreprocessor::parseExpression(const IndexDes
     NamesAndTypesList aggregation_keys;
     ColumnNumbersList aggregation_keys_indexes_list;
 
+    /// ActionsVisitor::Data needs a context argument to select the UDF factory and to pass to IFunction constructors
+    /// The preprocessor expression is very simple and in most of the cases won't use the context at all. But it cannot be nullptr
+    ///
+    /// Strictly speaking we must use the local context instead of getGlobalContextInstance; but local context needs to be passed throw the
+    /// indices constructor call stack. Those changes will affect all the Indices' Constructors (and Visitors) interfaces and imply modifying
+    /// too many files with apparently no benefits.
+    /// I let this comment her to remember in case we face some issues in the future for using the global context.
+    ///
     /// Construct a visitor to parse the AST to build a DAG
     ActionsVisitor::Data visitor_data(
         Context::getGlobalContextInstance(),

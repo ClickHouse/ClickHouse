@@ -7,7 +7,7 @@ DROP TABLE IF EXISTS tab;
 
 SELECT 'Positive tests on preprocessor construction and use.';
 
-SELECT '-Test single tokenizer and preprocessor argument.';
+SELECT '- Test single tokenizer and preprocessor argument.';
 
 CREATE TABLE tab
 (
@@ -31,7 +31,7 @@ SELECT count() FROM tab WHERE hasToken(str, 'baz');
 
 DROP TABLE tab;
 
-SELECT 'Test preprocessor declaration using column more than once.';
+SELECT '- Test preprocessor declaration using column more than once.';
 CREATE TABLE tab
 (
     key UInt64,
@@ -55,7 +55,7 @@ SELECT count() FROM tab WHERE hasToken(str, 'baz');
 
 DROP TABLE tab;
 
-SELECT 'Test preprocessor declaration using udf.';
+SELECT '- Test preprocessor declaration using udf.';
 DROP FUNCTION IF EXISTS udf_preprocessor;
 CREATE FUNCTION udf_preprocessor AS (s) -> concat(str, lower(str));
 

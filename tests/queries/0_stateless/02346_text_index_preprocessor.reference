@@ -1,19 +1,19 @@
 Positive tests on preprocessor construction and use.
--Test single tokenizer and preprocessor argument.
+- Test single tokenizer and preprocessor argument.
 1
 1
 1
 1
 1
 1
-Test preprocessor declaration using column more than once.
-1
-0
-1
+- Test preprocessor declaration using column more than once.
 1
 0
+1
+1
 0
-Test preprocessor declaration using udf.
+0
+- Test preprocessor declaration using udf.
 1
 0
 1
