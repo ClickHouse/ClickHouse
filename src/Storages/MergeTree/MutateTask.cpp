@@ -1592,8 +1592,6 @@ private:
             }
         }
 
-        LOG_WARNING(&Poco::Logger::get("Prepare"), "To drop names MutateAllPartColumnTask: {}", fmt::join(ctx->indices_to_drop_names, ","));
-
         ColumnsStatistics stats_to_rewrite;
         const auto & columns = ctx->metadata_snapshot->getColumns();
         for (const auto & col : columns)
@@ -2713,9 +2711,6 @@ bool MutateTask::prepare()
             projections_to_skip,
             ctx->stats_to_recalc,
             updated_columns_in_patches);
-
-        LOG_WARNING(&Poco::Logger::get("Prepare"), "Files to skip: {}", fmt::join(ctx->files_to_skip, ","));
-
 
         ctx->files_to_rename = MutationHelpers::collectFilesForRenames(
             ctx->metadata_snapshot,

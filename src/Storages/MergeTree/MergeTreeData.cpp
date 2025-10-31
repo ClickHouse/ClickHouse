@@ -4163,6 +4163,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
     NamesAndTypesList columns_to_check_conversion;
 
+    const auto index_mode = (*settings_from_storage)[MergeTreeSetting::alter_column_secondary_index_mode];
     auto unfinished_mutations = getUnfinishedMutationCommands();
     std::optional<NameDependencies> name_deps{};
     for (const AlterCommand & command : commands)
@@ -4266,7 +4267,18 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                     boost::join(column_to_subcolumns_used_in_keys[command.column_name], ", "));
             }
 
-            /// Don't check columns in indices here. RENAME works fine with index columns.
+            if (index_mode == AlterColumnSecondaryIndexMode::THROW)
+            {
+                if (auto it = columns_in_indices.find(command.column_name); it != columns_in_indices.end())
+                {
+                    throw Exception(
+                        ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                        "The ALTER of the column '{}' is forbidden because it is used by the index '{}'. Check the MergeTree setting "
+                        "'alter_column_secondary_index_mode' to change this behaviour",
+                        backQuoteIfNeed(command.column_name),
+                        it->second);
+                }
+            }
 
             if (auto it = columns_in_projections.find(command.column_name); it != columns_in_projections.end())
             {
@@ -4351,9 +4363,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                     boost::join(column_to_subcolumns_used_in_keys[command.column_name], ", "));
             }
 
-            if ((*settings_from_storage)[MergeTreeSetting::alter_column_secondary_index_mode] == AlterColumnSecondaryIndexMode::THROW
-                || ((*settings_from_storage)[MergeTreeSetting::alter_column_secondary_index_mode]
-                    == AlterColumnSecondaryIndexMode::COMPATIBILITY))
+            if (index_mode == AlterColumnSecondaryIndexMode::THROW || index_mode == AlterColumnSecondaryIndexMode::COMPATIBILITY)
             {
                 if (auto it = columns_in_indices.find(command.column_name); it != columns_in_indices.end())
                 {
@@ -4511,11 +4521,25 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 }
 
 
-void MergeTreeData::checkMutationIsPossible(const MutationCommands & /*commands*/, const Settings & /*settings*/) const
+void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, const Settings & /*settings*/) const
 {
     for (const auto & disk : getDisks())
         if (!disk->supportsHardLinks())
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Mutations are not supported for immutable disk '{}'", disk->getName());
+
+    const auto index_mode = (*getSettings())[MergeTreeSetting::alter_column_secondary_index_mode];
+    if (index_mode == AlterColumnSecondaryIndexMode::THROW && getInMemoryMetadata().hasSecondaryIndices())
+    {
+        for (const auto & command : commands)
+        {
+            if (command.type == MutationCommand::UPDATE || command.type == MutationCommand::DELETE)
+                throw Exception(
+                    ErrorCodes::SUPPORT_IS_DISABLED,
+                    "UPDATE or DELETE over the table '{}' is forbidden because it has secondary indexes. Check the MergeTree setting "
+                    "'alter_column_secondary_index_mode' to change this behaviour",
+                    getStorageID().getNameForLogs());
+        }
+    }
 }
 
 MergeTreeDataPartFormat MergeTreeData::choosePartFormat(size_t bytes_uncompressed, size_t rows_count, UInt32 part_level) const

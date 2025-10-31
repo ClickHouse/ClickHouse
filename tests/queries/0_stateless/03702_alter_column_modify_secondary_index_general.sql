@@ -1,8 +1,9 @@
 -- Tests the behavior of MergeTree setting 'alter_column_secondary_index_mode' with tables in compact and wide format
+-- for UPDATE MODIFY COLUMN operations.
 
-set apply_mutations_on_fly = 0;
-set mutations_sync = 1;
-set alter_sync = 1;
+SET apply_mutations_on_fly = 0;
+SET mutations_sync = 1;
+SET alter_sync = 1;
 
 DROP TABLE IF EXISTS test_compact;
 DROP TABLE IF EXISTS test_wide;

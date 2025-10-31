@@ -711,6 +711,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         dependencies = getAllColumnDependencies(metadata_snapshot, updated_columns, has_dependency);
 
     bool need_rebuild_indexes = false;
+    bool need_rebuild_indexes_for_update_delete = false;
     bool need_rebuild_projections = false;
     std::vector<String> read_columns;
 
@@ -760,6 +761,8 @@ void MutationsInterpreter::prepare(bool dry_run)
         stage.filters.push_back(std::move(filter));
     }
 
+    const auto index_mode = (*source.getMergeTreeData()->getSettings())[MergeTreeSetting::alter_column_secondary_index_mode];
+
     /// First, break a sequence of commands into stages.
     for (const auto & command : commands)
     {
@@ -777,8 +780,8 @@ void MutationsInterpreter::prepare(bool dry_run)
             }
 
             /// ALTER DELETE can changes number of rows in the part, so we need to rebuild indexes and projection
-            need_rebuild_indexes = true;
             need_rebuild_projections = true;
+            need_rebuild_indexes_for_update_delete = true;
         }
         else if (command.type == MutationCommand::UPDATE)
         {
@@ -1087,8 +1090,6 @@ void MutationsInterpreter::prepare(bool dry_run)
                         }
                     }
 
-                    const auto index_mode
-                        = (*source.getMergeTreeData()->getSettings())[MergeTreeSetting::alter_column_secondary_index_mode];
                     for (const auto & index : metadata_snapshot->getSecondaryIndices())
                     {
                         const auto & index_cols = index.expression->getRequiredColumns();
@@ -1192,15 +1193,15 @@ void MutationsInterpreter::prepare(bool dry_run)
 
     for (const auto & index : metadata_snapshot->getSecondaryIndices())
     {
-        if (!source.hasSecondaryIndex(index.name))
+        if (!source.hasSecondaryIndex(index.name) || dropped_indices.contains(index.name))
             continue;
 
-        if (dropped_indices.contains(index.name))
-            continue;
-
-        if (need_rebuild_indexes)
+        if (need_rebuild_indexes_for_update_delete || need_rebuild_indexes)
         {
-            materialized_indices.insert(index.name);
+            if (index_mode == AlterColumnSecondaryIndexMode::DROP)
+                dropped_indices.insert(index.name);
+            else
+                materialized_indices.insert(index.name);
             continue;
         }
 
@@ -1211,7 +1212,12 @@ void MutationsInterpreter::prepare(bool dry_run)
             [&](const auto & col) { return updated_columns.contains(col) || changed_columns.contains(col); });
 
         if (changed)
-            materialized_indices.insert(index.name);
+        {
+            if (index_mode == AlterColumnSecondaryIndexMode::DROP)
+                dropped_indices.insert(index.name);
+            else
+                materialized_indices.insert(index.name);
+        }
     }
 
     for (const auto & projection : metadata_snapshot->getProjections())
