@@ -539,6 +539,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         Block initial_header = read_from_format_info.format_header;
 
+        bool schema_changed = false;
         if (auto initial_schema = configuration->getInitialSchemaByPath(context_, object_info))
         {
             Block sample_header;
@@ -547,6 +548,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 sample_header.insert({type->createColumn(), type, name});
             }
             initial_header = sample_header;
+            schema_changed = true;
         }
         auto filter_info = [&]()
         {
@@ -554,14 +556,14 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 && (FormatFactory::instance().checkIfFormatSupportsPrewhere(actual_format, context_, format_settings));
 
             auto mapper = configuration->getColumnMapperForObject(object_info);
-            if (!mapper && !need_to_remove_prewhere_info)
+            if (!(schema_changed && mapper) && !need_to_remove_prewhere_info)
             {
                 return format_filter_info;
             }
             return std::make_shared<FormatFilterInfo>(
                 format_filter_info->filter_actions_dag,
                 format_filter_info->context.lock(),
-                mapper,
+                (schema_changed && mapper) ? mapper : format_filter_info->column_mapper,
                 format_filter_info->row_level_filter,
                 need_to_remove_prewhere_info ? format_filter_info->prewhere_info : nullptr);
         }();
