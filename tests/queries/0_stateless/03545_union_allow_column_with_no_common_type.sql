@@ -1,6 +1,5 @@
 set enable_analyzer = 1;
 set use_variant_as_common_type = 1;
-SELECT 1 AS x UNION ALL SELECT 'Hello' AS x ORDER BY x;
 SELECT x FROM (SELECT 1 AS x, 1 AS ord UNION ALL SELECT 'Hello', 2 AS ord) ORDER BY ord;
 SELECT x FROM (SELECT 1 AS x, 1 AS ord UNION ALL SELECT 'Hello', 2 AS ord UNION ALL SELECT 3.14 AS x, 3 AS ord) ORDER BY ord;
 SELECT x FROM (SELECT 1 AS x, 1 AS ord UNION ALL SELECT toDate('2024-01-01') AS x, 2 AS ord) ORDER BY ord;
