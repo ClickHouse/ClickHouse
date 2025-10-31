@@ -340,6 +340,9 @@ class LocalFormatError : public Exception
 {
 public:
     using Exception::Exception;
+
+    LocalFormatError * clone() const override { return new LocalFormatError(*this); }
+    void rethrow() const override { throw *this; } /// NOLINT(cert-err60-cpp)
 };
 
 
