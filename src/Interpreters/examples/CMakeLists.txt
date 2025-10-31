@@ -33,4 +33,3 @@ target_link_libraries (two_level_hash_map PRIVATE dbms clickhouse_common_io clic
 
 clickhouse_add_executable (jit_example jit_example.cpp)
 target_link_libraries (jit_example PRIVATE dbms clickhouse_functions)
-
