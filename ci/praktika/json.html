@@ -560,7 +560,7 @@
         const items = links
             .map((link) => {
                 const file_name = link.includes(base_url) ? "Report" : link.split('/').pop();
-                return { href, file_name };
+                return { link, file_name };
             })
             .sort((a, b) =>
                 a.file_name.localeCompare(b.file_name, undefined, { numeric: true, sensitivity: 'base' })
