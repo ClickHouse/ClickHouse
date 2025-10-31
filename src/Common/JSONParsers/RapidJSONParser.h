@@ -4,8 +4,36 @@
 
 #if USE_RAPIDJSON
 
-/// Prevent stack overflow:
-#define RAPIDJSON_PARSE_DEFAULT_FLAGS (kParseIterativeFlag)
+// ParseFlag
+
+/*! \def RAPIDJSON_PARSE_DEFAULT_FLAGS
+    \ingroup RAPIDJSON_CONFIG
+    \brief User-defined kParseDefaultFlags definition.
+
+    User can define this as any \c ParseFlag combinations.
+*/
+#ifndef RAPIDJSON_PARSE_DEFAULT_FLAGS
+#define RAPIDJSON_PARSE_DEFAULT_FLAGS kParseIterativeFlag
+#endif
+
+//! Combination of parseFlags
+/*! \see Reader::Parse, Document::Parse, Document::ParseInsitu, Document::ParseStream
+ */
+enum ParseFlag {
+    kParseNoFlags = 0,              //!< No flags are set.
+    kParseInsituFlag = 1,           //!< In-situ(destructive) parsing.
+    kParseValidateEncodingFlag = 2, //!< Validate encoding of JSON strings.
+    kParseIterativeFlag = 4,        //!< Iterative(constant complexity in terms of function call stack size) parsing.
+    kParseStopWhenDoneFlag = 8,     //!< After parsing a complete JSON root from stream, stop further processing the rest of stream. When this flag is used, parser will not generate kParseErrorDocumentRootNotSingular error.
+    kParseFullPrecisionFlag = 16,   //!< Parse number in full precision (but slower).
+    kParseCommentsFlag = 32,        //!< Allow one-line (//) and multi-line (/**/) comments.
+    kParseNumbersAsStringsFlag = 64,    //!< Parse all numbers (ints/doubles) as strings.
+    kParseTrailingCommasFlag = 128, //!< Allow trailing commas at the end of objects and arrays.
+    kParseNanAndInfFlag = 256,      //!< Allow parsing NaN, Inf, Infinity, -Inf and -Infinity as doubles.
+    kParseDefaultFlags = RAPIDJSON_PARSE_DEFAULT_FLAGS  //!< Default parse flags. Can be customized by defining RAPIDJSON_PARSE_DEFAULT_FLAGS
+};
+
+
 
 #include <base/types.h>
 #include <base/defines.h>
@@ -44,6 +72,7 @@ struct RapidJSONParser
                 case rapidjson::kNullType: return ElementType::NULL_VALUE;
             }
         }
+
 
         ALWAYS_INLINE bool isInt64() const { return ptr->IsInt64(); }
         ALWAYS_INLINE bool isUInt64() const { return ptr->IsUint64(); }
