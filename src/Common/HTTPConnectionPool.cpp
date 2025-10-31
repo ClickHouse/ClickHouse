@@ -438,45 +438,38 @@ private:
 
         ~PooledConnection() override
         {
-            try
+            if (bool(response_stream))
             {
-                if (bool(response_stream))
+                if (auto * fixed_steam = dynamic_cast<Poco::Net::HTTPFixedLengthInputStream *>(response_stream))
                 {
-                    if (auto * fixed_steam = dynamic_cast<Poco::Net::HTTPFixedLengthInputStream *>(response_stream))
-                    {
-                        response_stream_completed = fixed_steam->isComplete();
-                    }
-                    else if (auto * chunked_steam = dynamic_cast<Poco::Net::HTTPChunkedInputStream *>(response_stream))
-                    {
-                        response_stream_completed = chunked_steam->isComplete();
-                    }
-                    else if (auto * http_stream = dynamic_cast<Poco::Net::HTTPInputStream *>(response_stream))
-                    {
-                        response_stream_completed = http_stream->isComplete();
-                    }
-                    else
-                    {
-                        response_stream_completed = false;
-                    }
+                    response_stream_completed = fixed_steam->isComplete();
                 }
-                response_stream = nullptr;
-                Session::setSendDataHooks();
-                Session::setReceiveDataHooks();
-                Session::setSendThrottler();
-                Session::setReceiveThrottler();
-
-                group->atConnectionDestroy();
-
-                if (!isExpired)
-                    if (auto lock = pool.lock())
-                        lock->atConnectionDestroy(*this);
-
-                CurrentMetrics::sub(metrics.active_count);
+                else if (auto * chunked_steam = dynamic_cast<Poco::Net::HTTPChunkedInputStream *>(response_stream))
+                {
+                    response_stream_completed = chunked_steam->isComplete();
+                }
+                else if (auto * http_stream = dynamic_cast<Poco::Net::HTTPInputStream *>(response_stream))
+                {
+                    response_stream_completed = http_stream->isComplete();
+                }
+                else
+                {
+                    response_stream_completed = false;
+                }
             }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
+            response_stream = nullptr;
+            Session::setSendDataHooks();
+            Session::setReceiveDataHooks();
+            Session::setSendThrottler();
+            Session::setReceiveThrottler();
+
+            group->atConnectionDestroy();
+
+            if (!isExpired)
+                if (auto lock = pool.lock())
+                    lock->atConnectionDestroy(*this);
+
+            CurrentMetrics::sub(metrics.active_count);
         }
 
     private:
