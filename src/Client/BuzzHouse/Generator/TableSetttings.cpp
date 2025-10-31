@@ -360,10 +360,10 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'default'", "'with_types'"};
+             static const DB::Strings & choices = {"'basic'", "'with_types'"};
              return rg.pickRandomly(choices);
          },
-         {"'default'", "'with_types'"},
+         {"'basic'", "'with_types'"},
          false)},
     /// ClickHouse cloud setting
     {"shared_merge_tree_activate_coordinated_merges_tasks", trueOrFalseSetting},
@@ -430,10 +430,10 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'default'", "'with_size_stream'"};
+             static const DB::Strings & choices = {"'single_stream'", "'with_size_stream'"};
              return rg.pickRandomly(choices);
          },
-         {"'default'", "'with_size_stream'"},
+         {"'single_stream'", "'with_size_stream'"},
          false)},
     {"table_disk", trueOrFalseSetting},
     {"ttl_only_drop_parts", trueOrFalseSetting},
