@@ -566,9 +566,9 @@
                 a.file_name.localeCompare(b.file_name, undefined, { numeric: true, sensitivity: 'base' })
             )
 
-        items.forEach(({href, file_name}) => {
+        items.forEach(({link, file_name}) => {
             const fileLink = document.createElement('a');
-            fileLink.href = href;
+            fileLink.href = link;
             fileLink.target = '_blank';
             fileLink.className = 'file-link';
             fileLink.textContent = file_name;
