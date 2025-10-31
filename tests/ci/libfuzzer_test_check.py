@@ -130,7 +130,7 @@ def download_corpus(path):
             bucket=S3_BUILDS_BUCKET,
             s3_path="fuzzer/corpus/",
             file_suffix=".zip",
-            local_file_path=corpus_path,
+            local_directory=corpus_path,
         )
     except ClientError as e:
         if e.response["Error"]["Code"] == "NoSuchKey":
