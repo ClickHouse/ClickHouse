@@ -1359,7 +1359,7 @@ namespace
 /// Early preprocessor argument validation.
 /// Maybe we could omit this validation and use only the validate function. But here we do it early and simpler to ensure that what we parse
 /// latter is correct
-void validatePreprocessorASTExpression(const ASTFunction * function, String &identifier_name)
+void validatePreprocessorASTExpression(const ASTFunction * function, String & identifier_name)
 {
     chassert(function != nullptr);
     if (function->arguments == nullptr)
@@ -1377,7 +1377,7 @@ void validatePreprocessorASTExpression(const ASTFunction * function, String &ide
             if (identifier_name.empty())
                 identifier_name = identifier->name();
             else if (identifier_name != identifier->name())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text preprocessor function should receive only one identifier, but there is {} and {}",
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index preprocessor function should receive only one identifier, but there is {} and {}",
                     identifier_name, identifier->name());
 
             continue;
@@ -1391,7 +1391,7 @@ void validatePreprocessorASTExpression(const ASTFunction * function, String &ide
             continue;
         }
 
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text preprocessor function expect a literal or identifier as argument");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index preprocessor function expect a literal or identifier as argument");
     }
 }
 
@@ -1414,7 +1414,7 @@ Tuple parseNamedArgumentFromAST(const ASTFunction * ast_equal_function)
         result.emplace_back(identifier->name());
     }
 
-    if (result.back() == "preprocessor")
+    if (result.back() == ARGUMENT_PREPROCESSOR)
     {
         const ASTFunction * preprocessor_function = arguments->children[1]->as<ASTFunction>();
         if (preprocessor_function == nullptr)
@@ -1518,7 +1518,7 @@ std::pair<ColumnPtr,size_t> MergeTreeIndexTextPreprocessor::processColumn(const 
     return {block.safeGetByPosition(0).column, 0};
 }
 
-String MergeTreeIndexTextPreprocessor::processString(const String &input) const
+String MergeTreeIndexTextPreprocessor::process(const String &input) const
 {
     if (expression.getActions().empty())
         return input;

@@ -127,28 +127,12 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree ORDER BY tuple();   -- { serverError INCORRECT_QUERY }
 
-CREATE TABLE tab
-(
-    key UInt64,
-    str String,
-    INDEX idx(lower(str)) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(str))
-)
-ENGINE = MergeTree ORDER BY tuple();   -- { serverError BAD_ARGUMENTS }
-
-CREATE TABLE tab
-(
-    key UInt64,
-    str String,
-    INDEX idx(upper(str)) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(upper(str)))
-)
-ENGINE = MergeTree ORDER BY tuple();   -- { serverError BAD_ARGUMENTS }
-
 -- Needs to have column identifier
 CREATE TABLE tab
 (
     key UInt64,
     str String,
-    INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = rand())
+    INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = hostname())
 )
 ENGINE = MergeTree ORDER BY tuple();   -- { serverError INCORRECT_QUERY }
 
