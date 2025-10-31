@@ -116,9 +116,9 @@ void Updater::addOutputBytes(const Aggregator & aggregator, const Block & block)
     };
 
     std::lock_guard lock(mutex);
-    const auto source_bytes = getKeyColumnsSize(/*compressed=*/true);
+    const auto source_bytes = getKeyColumnsSize(/*compressed=*/false);
     statistics2.output_bytes += source_bytes;
-    if (cnt++ % 1 == 0 && block.rows())
+    if (cnt++ % 10 == 0 && block.rows())
     {
         output_bytes_sample2 += source_bytes;
         output_bytes_compressed2 += getKeyColumnsSize(/*compressed=*/true);

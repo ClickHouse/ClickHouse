@@ -229,7 +229,7 @@ void Aggregator::applyToAllStates(AggregatedDataVariants & result, WriteBuffer &
     else if (method == AggregatedDataVariants::Type::NAME)      \
     {                                                           \
         serialize_states(result.NAME->data);                    \
-        return;                                                 \
+        return res;                                             \
     }
 
     APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)
@@ -242,7 +242,7 @@ void Aggregator::applyToAllStates(AggregatedDataVariants & result, WriteBuffer &
             serialize_states(result.NAME->data.impls[bucket]);  \
         else                                                    \
             serialize_states(result.NAME->data);                \
-        return;                                                 \
+        return res;                                             \
     }
 
     APPLY_FOR_VARIANTS_TWO_LEVEL(M)
