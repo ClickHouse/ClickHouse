@@ -568,7 +568,7 @@
 
         items.forEach(({href, file_name}) => {
             const fileLink = document.createElement('a');
-            fileLink.href = link;
+            fileLink.href = href;
             fileLink.target = '_blank';
             fileLink.className = 'file-link';
             fileLink.textContent = file_name;
