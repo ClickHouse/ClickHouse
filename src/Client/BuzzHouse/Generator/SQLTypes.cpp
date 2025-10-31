@@ -1795,9 +1795,12 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t al
     const uint32_t time_type = 15 * static_cast<uint32_t>((allowed_types & allow_time) != 0);
     const uint32_t qbit_type = 15 * static_cast<uint32_t>(!low_card && (allowed_types & allow_qbit) != 0 && allow_floats);
     const uint32_t geo_type = 10 * static_cast<uint32_t>((allowed_types & allow_geo) != 0 && allow_floats);
-    const uint32_t aggr_type = 15 * static_cast<uint32_t>((allowed_types & (allow_aggregate | allow_simple_aggregate)) != 0);
+    const uint32_t aggr_type = 10 * static_cast<uint32_t>(!low_card && (allowed_types & allow_aggregate) != 0);
+    const uint32_t simple_aggr_type
+        = 10 * static_cast<uint32_t>((allowed_types & allow_simple_aggregate) != 0 && this->depth < this->fc.max_depth);
     const uint32_t prob_space = int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + bool_type
-        + enum_type + uuid_type + ipv4_type + ipv6_type + j_type + dynamic_type + time_type + qbit_type + geo_type + aggr_type;
+        + enum_type + uuid_type + ipv4_type + ipv6_type + j_type + dynamic_type + time_type + qbit_type + geo_type + aggr_type
+        + simple_aggr_type;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
@@ -2104,15 +2107,17 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t al
         res = new GeoType(gt);
     }
     else if (
-        aggr_type
+        (aggr_type || simple_aggr_type)
         && nopt
             < (int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + bool_type + enum_type + uuid_type
-               + ipv4_type + ipv6_type + j_type + dynamic_type + time_type + qbit_type + geo_type + aggr_type + 1))
+               + ipv4_type + ipv6_type + j_type + dynamic_type + time_type + qbit_type + geo_type + aggr_type + simple_aggr_type + 1))
     {
         uint32_t col_counter = 0;
         std::vector<SQLType *> subtypes;
         AggregateFunction * af = tp ? tp->mutable_aggr() : nullptr;
-        const bool simple = ((allowed_types & allow_aggregate) == 0) || rg.nextBool();
+        const bool simple = nopt
+            < (int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + bool_type + enum_type + uuid_type
+               + ipv4_type + ipv6_type + j_type + dynamic_type + time_type + qbit_type + geo_type + aggr_type + simple_aggr_type + 1);
         static const std::vector<SQLFunc> & available_aggrs
             = {SQLFunc::FUNCany,
                SQLFunc::FUNCanyLast,
@@ -2129,8 +2134,12 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t al
                SQLFunc::FUNCsumMap,
                SQLFunc::FUNCminMap,
                SQLFunc::FUNCmaxMap};
-        const SQLFunc & aggr = this->depth >= this->fc.max_depth ? SQLFunc::FUNCcount : rg.pickRandomly(available_aggrs);
+        SQLFunc aggr = rg.pickRandomly(available_aggrs);
 
+        if (aggr == SQLFunc::FUNCcount && (simple || this->depth >= this->fc.max_depth))
+        {
+            aggr = SQLFunc::FUNCany;
+        }
         if (aggr != SQLFunc::FUNCcount)
         {
             this->depth++;
@@ -2172,11 +2181,8 @@ SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint64_
     {
         /// Non nullable
         const bool lcard = (allowed_types & allow_low_cardinality) != 0 && rg.nextMediumNumber() < 18;
-        SQLType * res = bottomType(
-            rg,
-            lcard ? (allowed_types & ~(allow_aggregate)) : allowed_types,
-            lcard,
-            tp ? (lcard ? tp->mutable_non_nullable_lcard() : tp->mutable_non_nullable()) : nullptr);
+        SQLType * res
+            = bottomType(rg, allowed_types, lcard, tp ? (lcard ? tp->mutable_non_nullable_lcard() : tp->mutable_non_nullable()) : nullptr);
         return lcard ? new LowCardinality(res) : res;
     }
     else if (nullable_type && nopt < (non_nullable_type + nullable_type + 1))
