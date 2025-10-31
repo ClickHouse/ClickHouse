@@ -44,7 +44,7 @@ do
     ENGINE = MergeTree()
     ORDER BY id
     PARTITION BY id
-    SETTINGS alter_column_secondary_index_mode = 'rebuild', ${part_type_setting};
+    SETTINGS alter_column_secondary_index_mode = 'drop', ${part_type_setting};
 
     INSERT INTO test_table VALUES (1, '10', '127.0.0.1'), (2, '20', '127.0.0.2'), (3, '300', '127.0.0.3');
 
@@ -80,11 +80,11 @@ do
     wait_for_mutations
 
     client """
-    SELECT 'Status after ALTER is applied';
+    SELECT 'Status after ALTER is applied (Index is dropped)';
     EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = '300';
     SELECT count() FROM test_table WHERE value = '300';
 
-    -- Force a table rewrite to confirm it's the same
+    -- Force a table rewrite. Index should be added back
     OPTIMIZE TABLE test_table FINAL;
     SELECT 'Status after ALTER full table rewrite (should be the same)';
     EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = '300';

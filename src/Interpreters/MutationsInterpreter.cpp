@@ -1087,26 +1087,30 @@ void MutationsInterpreter::prepare(bool dry_run)
                         }
                     }
 
-                    const auto index_mode = (*source.getMergeTreeData()->getSettings())[MergeTreeSetting::alter_column_secondary_index_mode];
-
+                    const auto index_mode
+                        = (*source.getMergeTreeData()->getSettings())[MergeTreeSetting::alter_column_secondary_index_mode];
                     for (const auto & index : metadata_snapshot->getSecondaryIndices())
                     {
                         const auto & index_cols = index.expression->getRequiredColumns();
                         if (std::ranges::find(index_cols, command.column_name) != index_cols.end())
                         {
-                            for (const auto & col : index_cols)
-                                dependencies.emplace(col, ColumnDependency::SKIP_INDEX);
-
                             switch (index_mode)
                             {
                                 case AlterColumnSecondaryIndexMode::THROW:
                                 case AlterColumnSecondaryIndexMode::COMPATIBILITY:
+                                    /// The only way to reach this would be if the ALTER was created and then the table setting changed
                                     throw Exception(
                                         ErrorCodes::BAD_ARGUMENTS,
-                                        "Cannot ALTER column `{}` because index `{}`", command.column_name, index.name);
+                                        "Cannot ALTER column `{}` because index `{}` depends on it", command.column_name, index.name);
                                 case AlterColumnSecondaryIndexMode::REBUILD:
-                                case AlterColumnSecondaryIndexMode::DROP:
+                                {
+                                    for (const auto & col : index_cols)
+                                        dependencies.emplace(col, ColumnDependency::SKIP_INDEX);
                                     materialized_indices.insert(index.name);
+                                    break;
+                                }
+                                case AlterColumnSecondaryIndexMode::DROP:
+                                    dropped_indices.insert(index.name);
                             }
                         }
                     }
@@ -1189,6 +1193,9 @@ void MutationsInterpreter::prepare(bool dry_run)
     for (const auto & index : metadata_snapshot->getSecondaryIndices())
     {
         if (!source.hasSecondaryIndex(index.name))
+            continue;
+
+        if (dropped_indices.contains(index.name))
             continue;
 
         if (need_rebuild_indexes)
