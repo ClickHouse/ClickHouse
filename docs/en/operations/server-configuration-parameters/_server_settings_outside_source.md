@@ -2508,25 +2508,33 @@ The same applies to GitLab, even though it has a leading dot. Both `gitlab.com` 
 
 ## hashicorp_vault {#hashicorp_vault}
 
-Configures HashiCorp Vault or OpenBao for secure secrets retrieval in configuration. Currently only token authentication is supported.
+Configures HashiCorp Vault or OpenBao for secure secrets retrieval in configuration. Currently token and username/password authentication methods are supported.
 
 The following settings can be configured by sub-tags:
 
 | Sub-tags             | Definition                                                                                                                                        |
-|----------------------|---------------------------------------------------------------------------------------------------------------------------------------------------|
-| `url`                | Scheme, site, port of Vault server without path.                                                           |
-| `token`                | Token used for token authentication with Vault                                                           |
+|----------------------|--------------------------------------------------------|
+| `url`                | Scheme, site, port of Vault server without path.       |
+| `token`              | Token used for token authentication.                   |
+| `userpass`           | Section used for username and password authentication. |
+
+`userpass` contains the following settings, which can be configured by sub-tags:
+
+| Sub-tags             | Definition                                                                                                                                        |
+|----------------------|--------------------------------------------------|
+| `username`           | Username for username and authentication method. |
+| `password`           | Password for username and authentication method. |
 
 Each section in ClickHouse configuration or users configuration may have the following attributes:
 
-| Attributes             | Definition                                                                                                                                        |
-|----------------------|---------------------------------------------------------------------------------------------------------------------------------------------------|
-| `from_hashicorp_vault`                 | Name of secret.                                                           |
-| `hashicorp_vault_key`                | Name of secret's key                                                           |
+| Attributes             | Definition            |
+|------------------------|-----------------------|
+| `from_hashicorp_vault` | Name of secret.       |
+| `hashicorp_vault_key`  | Name of secret's key. |
 
 **Example**
 
-ClickHouse configuration:
+ClickHouse configuration for token authentication method:
 
 ```xml
 <clickhouse>
@@ -2536,6 +2544,22 @@ ClickHouse configuration:
     </hashicorp_vault>
 </clickhouse>
 ```
+
+ClickHouse configuration for username and password authentication method:
+
+```xml
+<clickhouse>
+    <hashicorp_vault>
+      <url>http://hashicorpvault:8200</url>
+      <userpass>
+        <username>user1</username>
+        <password>test</password>
+      </userpass>
+    </hashicorp_vault>
+</clickhouse>
+```
+
+Only one auth method maybe specified in configuration file.
 
 Users configuration:
 
@@ -2548,15 +2572,6 @@ Users configuration:
         </default>
     </users>
 </clickhouse>
-```
-
-Secret maybe created by command:
-
-```bash
-curl --header "X-Vault-Token: foobar" \
-     --request POST \
-     --data '{"data": {"password": "test"}}' \
-     http://hashicorpvault:8200/v1/secret/data/username
 ```
 
 ## workload_path {#workload_path}
