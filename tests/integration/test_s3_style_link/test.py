@@ -97,7 +97,7 @@ def test_s3_question_mark_wildcards(started_cluster):
                 (
                     'minio://data/wildcard_test_a1.tsv.gz', 'minio', '{minio_secret_key}'
                 )
-            SELECT 'a1' as id, * FROM numbers(10);
+            SELECT 'a1' as id, * FROM numbers(10) SETTINGS s3_create_new_file_on_insert = 1;
         """
     )
     
@@ -107,7 +107,7 @@ def test_s3_question_mark_wildcards(started_cluster):
                 (
                     'minio://data/wildcard_test_a2.tsv.gz', 'minio', '{minio_secret_key}'
                 )
-            SELECT 'a2' as id, * FROM numbers(10);
+            SELECT 'a2' as id, * FROM numbers(10) SETTINGS s3_create_new_file_on_insert = 1;
         """
     )
     
@@ -117,19 +117,19 @@ def test_s3_question_mark_wildcards(started_cluster):
                 (
                     'minio://data/wildcard_test_b1.tsv.gz', 'minio', '{minio_secret_key}'
                 )
-            SELECT 'b1' as id, * FROM numbers(10);
+            SELECT 'b1' as id, * FROM numbers(10) SETTINGS s3_create_new_file_on_insert = 1;
         """
     )
-    
-    result_s3_scheme = node.query(f"""
-        SELECT count() AS c, arraySort(groupArray(DISTINCT id)) AS ids
-        FROM s3('s3://data/wildcard_test_??.tsv.gz', 'minio', '{minio_secret_key}')
-        FORMAT TSV
-    """)
 
     result_http_scheme = node.query(f"""
         SELECT count() AS c, arraySort(groupArray(DISTINCT id)) AS ids
         FROM s3('http://minio1:9001/data/wildcard_test_??.tsv.gz', 'minio', '{minio_secret_key}')
+        FORMAT TSV
+    """)
+    
+    result_s3_scheme = node.query(f"""
+        SELECT count() AS c, arraySort(groupArray(DISTINCT id)) AS ids
+        FROM s3('s3://data/wildcard_test_??.tsv.gz', 'minio', '{minio_secret_key}')
         FORMAT TSV
     """)
 

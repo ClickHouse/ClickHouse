@@ -54,23 +54,36 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
     else
         uri_str = uri_;
 
-    // Check and encode '?' BEFORE parsing the URI
-    // This prevents '?' from being interpreted as query parameter separator
+    // For s3://, gs://, oss:// schemes with wildcard '?', we need to encode
+    // the '?' before parsing to prevent it from being treated as query separator
+    bool should_encode_question_mark = false;
     if (uri_str.contains('?'))
     {
-        // Check if '?' is actually part of versionId parameter or a wildcard
+        // Check if this looks like a real query string or a wildcard
         size_t question_pos = uri_str.find('?');
         if (question_pos != std::string::npos)
         {
             std::string after_question = uri_str.substr(question_pos + 1);
-            // If it's not followed by "versionId=", treat it as a wildcard and encode it
-            if (!after_question.starts_with("versionId="))
+            // Check if it looks like a query string (has '=' or is at the end)
+            // If it doesn't have '=' and has more characters, it's likely a wildcard
+            if (!after_question.empty() && after_question.find('=') == std::string::npos)
             {
-                String uri_with_question_mark_encode;
-                Poco::URI::encode(uri_str, "?", uri_with_question_mark_encode);
-                uri_str = uri_with_question_mark_encode;
+                // This looks like a wildcard pattern, not a query string
+                should_encode_question_mark = true;
+            }
+            // Also check for patterns like "file-??.txt" where '?' is clearly a wildcard
+            else if (after_question.length() > 0 && after_question[0] == '?')
+            {
+                should_encode_question_mark = true;
             }
         }
+    }
+
+    if (should_encode_question_mark)
+    {
+        String uri_with_question_mark_encode;
+        Poco::URI::encode(uri_str, "?", uri_with_question_mark_encode);
+        uri_str = uri_with_question_mark_encode;
     }
 
     uri = Poco::URI(uri_str);
