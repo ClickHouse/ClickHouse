@@ -31,6 +31,8 @@ Updater::~Updater()
         statistics.output_bytes = static_cast<size_t>(statistics.output_bytes / (output_bytes_sample / output_bytes_compressed));
     if (output_bytes_compressed2 && (output_bytes_sample2 / output_bytes_compressed2))
         statistics2.output_bytes = static_cast<size_t>(statistics2.output_bytes / (output_bytes_sample2 / output_bytes_compressed2));
+    if (unsupported_case)
+        statistics.output_bytes = (1ULL << 60);
     auto & dataflow_cache = getRuntimeDataflowStatisticsCache();
     dataflow_cache.update(*cache_key, statistics + statistics2);
 }
@@ -43,7 +45,7 @@ void Updater::addOutputBytes(const Chunk & chunk)
     std::lock_guard lock(mutex);
     const auto source_bytes = chunk.bytes();
     statistics.output_bytes += source_bytes;
-    if (cnt++ % 50 == 0 && cnt < 150 && chunk.hasRows())
+    if (cnt % 50 == 0 && cnt < 150 && chunk.hasRows())
     {
         if (chunk.getNumColumns() != header.columns())
         {
@@ -58,6 +60,7 @@ void Updater::addOutputBytes(const Chunk & chunk)
         for (size_t i = 0; i < chunk.getNumColumns(); ++i)
             output_bytes_compressed += compressedColumnSize({chunk.getColumns()[i], header.getByPosition(i).type, ""});
     }
+    ++cnt;
 }
 
 void Updater::addOutputBytes(const Aggregator &, AggregatedDataVariants & variant, ssize_t bucket)
@@ -102,11 +105,12 @@ void Updater::addOutputBytes(const Aggregator & aggregator, const Block & block)
     std::lock_guard lock(mutex);
     const auto source_bytes = getKeyColumnsSize(/*compressed=*/false);
     statistics2.output_bytes += source_bytes;
-    if (cnt++ % 50 == 0 && cnt < 150 && block.rows())
+    if (cnt % 50 == 0 && cnt < 150 && block.rows())
     {
         output_bytes_sample2 += source_bytes;
         output_bytes_compressed2 += getKeyColumnsSize(/*compressed=*/true);
     }
+    ++cnt;
 }
 
 void Updater::addInputBytes(const ColumnsWithTypeAndName & columns, const IMergeTreeDataPart::ColumnSizeByName & column_sizes, size_t bytes)
