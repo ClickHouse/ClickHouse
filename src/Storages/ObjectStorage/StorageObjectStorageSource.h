@@ -65,7 +65,7 @@ public:
 
     static std::string getUniqueStoragePathIdentifier(
         const StorageObjectStorageConfiguration & configuration,
-        const RelativePathWithMetadata & relative_path_with_metadata,
+        const RelativePathWithMetadata & object_info,
         bool include_connection_info = true);
 
 protected:
