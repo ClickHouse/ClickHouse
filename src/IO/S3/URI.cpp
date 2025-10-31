@@ -72,7 +72,7 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
                 should_encode_question_mark = true;
             }
             // Also check for patterns like "file-??.txt" where '?' is clearly a wildcard
-            else if (after_question.length() > 0 && after_question[0] == '?')
+            else if (!after_question.empty() && after_question[0] == '?')
             {
                 should_encode_question_mark = true;
             }
