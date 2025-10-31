@@ -538,7 +538,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         }
 
         Block initial_header = read_from_format_info.format_header;
-        bool schema_changed = false;
 
         if (auto initial_schema = configuration->getInitialSchemaByPath(context_, object_info))
         {
@@ -548,7 +547,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 sample_header.insert({type->createColumn(), type, name});
             }
             initial_header = sample_header;
-            schema_changed = true;
         }
         auto filter_info = [&]()
         {
