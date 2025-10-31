@@ -21,7 +21,7 @@ async_block_ids_cache_update_wait_ms	100
 async_insert	0
 background_task_preferred_step_execution_time_ms	50
 cache_populated_by_fetch	0
-cache_populated_by_fetch_filename_regexp
+cache_populated_by_fetch_filename_regexp	
 check_delay_period	60
 check_sample_column_is_correct	1
 clean_deleted_rows	Never
@@ -30,7 +30,7 @@ cleanup_delay_period_random_add	10
 cleanup_thread_preferred_points_per_iteration	150
 cleanup_threads	128
 columns_and_secondary_indices_sizes_lazy_calculation	1
-columns_to_prewarm_mark_cache
+columns_to_prewarm_mark_cache	
 compact_parts_max_bytes_to_buffer	134217728
 compact_parts_max_granules_to_buffer	128
 compact_parts_merge_max_bytes_to_prefetch_part	16777216
@@ -39,13 +39,13 @@ compress_marks	1
 compress_primary_key	1
 concurrent_part_removal_threshold	100
 deduplicate_merge_projection_mode	throw
-default_compression_codec
+default_compression_codec	
 detach_not_byte_identical_parts	0
 detach_old_local_parts_when_cloning_replica	1
 disable_detach_partition_for_zero_copy_replication	1
 disable_fetch_partition_for_zero_copy_replication	1
 disable_freeze_partition_for_zero_copy_replication	1
-disk
+disk	
 dynamic_serialization_version	v2
 enable_block_number_column	0
 enable_block_offset_column	0
@@ -133,7 +133,7 @@ merge_tree_clear_old_temporary_directories_interval_seconds	60
 merge_tree_enable_clear_old_broken_detached	0
 merge_with_recompression_ttl_timeout	14400
 merge_with_ttl_timeout	14400
-merge_workload
+merge_workload	
 min_absolute_delay_to_close	0
 min_age_to_force_merge_on_partition_only	0
 min_age_to_force_merge_seconds	0
@@ -161,7 +161,7 @@ min_rows_for_compact_part	0
 min_rows_for_full_part_storage	0
 min_rows_for_wide_part	0
 min_rows_to_fsync_after_merge	0
-mutation_workload
+mutation_workload	
 non_replicated_deduplication_window	0
 notify_newest_block_number	0
 number_of_free_entries_in_pool_to_execute_mutation	20
@@ -263,7 +263,10 @@ simultaneous_parts_removal_limit	0
 sleep_before_commit_local_part_in_replicated_table_ms	0
 sleep_before_loading_outdated_parts_ms	0
 storage_policy	default
+<<<<<<< HEAD:tests/queries/0_stateless/02995_merge_tree_settings_settings_25_10_1.tsv
 string_serialization_version	single_stream
+=======
+>>>>>>> d854b4467659439f71b4169b99734ed44457250c:tests/queries/0_stateless/02995_merge_tree_settings_settings_25_9_1.tsv
 table_disk	0
 temporary_directories_lifetime	86400
 try_fetch_recompressed_part_timeout	7200
