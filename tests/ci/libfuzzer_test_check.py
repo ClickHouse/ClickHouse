@@ -122,27 +122,41 @@ def parse_args():
 def download_corpus(path):
     logging.info("Download corpus...")
 
+    corpus_path = path / "corpus"
+    corpus_path.mkdir(exist_ok=True)
+
     try:
-        s3.download_file(
+        s3.download_files(
             bucket=S3_BUILDS_BUCKET,
-            s3_path="fuzzer/corpus.zip",
-            local_file_path=path,
+            s3_path="fuzzer/corpus/",
+            file_suffix=".zip",
+            local_file_path=corpus_path,
         )
     except ClientError as e:
         if e.response["Error"]["Code"] == "NoSuchKey":
             logging.debug("No active corpus exists")
+            return
         else:
             raise
 
-    with zipfile.ZipFile(f"{path}/corpus.zip", "r") as zipf:
-        zipf.extractall(path)
-    os.remove(f"{path}/corpus.zip")
+    subprocess.check_call(f"ls -al {corpus_path}", shell=True)
+    logging.info("...downloaded %d corpora", len(corpus_path.glob("*.zip")))
 
-    units = 0
-    for _, _, files in os.walk(path):
-        units += len(files)
+    total_units = 0
 
-    logging.info("...downloaded %d units", units)
+    for zip_file in corpus_path.glob("*.zip"):
+        target_dir = corpus_path / zip_file.stem
+        target_dir.mkdir(exist_ok=True)
+        with zipfile.ZipFile(zip_file, "r") as zf:
+            zf.extractall(target_dir)
+        zip_file.unlink()
+        units = len(target_dir.glob("*"))
+        total_units += units
+        logging.info("%s corpus having %d units...", zip_file.stem, units)
+
+    subprocess.check_call(f"ls -al {corpus_path}", shell=True)
+
+    logging.info("...downloaded total %d units", total_units)
 
 
 def upload_corpus(path):
@@ -279,6 +293,10 @@ def main():
     fuzzers_path.mkdir(parents=True, exist_ok=True)
 
     download_corpus(fuzzers_path)
+
+    # TESTING TESTING TESTING
+    exit(0)
+
     download_fuzzers(check_name, reports_path, fuzzers_path)
 
     for file in os.listdir(fuzzers_path):
