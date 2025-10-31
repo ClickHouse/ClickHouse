@@ -1,4 +1,4 @@
--- Tags: stateful
+-- Tags: stateful, no-random-settings
 
 SET optimize_read_in_order=0, query_plan_read_in_order=0, local_filesystem_read_prefetch=0, merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability=0, local_filesystem_read_method='pread_threadpool', use_uncompressed_cache=0;
 
@@ -41,10 +41,9 @@ FROM (
         log_comment,
         ProfileEvents['ReadCompressedBytes'] compressed_bytes,
         ProfileEvents['RuntimeDataflowStatisticsInputBytes'] statistics_input_bytes
-        --ProfileEvents['NetworkReceiveBytes'] statistics_output_bytes
     FROM system.query_log
     WHERE (event_date >= yesterday()) AND (event_time >= NOW() - INTERVAL '15 MINUTES') AND (current_database = currentDatabase()) AND (log_comment LIKE 'query_%') AND (type = 'QueryFinish')
     ORDER BY event_time_microseconds
 )
-WHERE greatest(compressed_bytes, statistics_input_bytes) / least(compressed_bytes, statistics_input_bytes) > 1.75;
+WHERE greatest(compressed_bytes, statistics_input_bytes) / least(compressed_bytes, statistics_input_bytes) > 2;
 

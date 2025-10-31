@@ -287,7 +287,7 @@ public:
     /// Get data structure of the result.
     Block getHeader(bool final) const;
 
-    void applyToAllStates(AggregatedDataVariants & result, WriteBuffer & wb, ssize_t bucket) const;
+    size_t applyToAllStates(AggregatedDataVariants & result, ssize_t bucket) const;
 
 private:
 

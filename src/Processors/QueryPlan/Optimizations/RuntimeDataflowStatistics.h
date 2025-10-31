@@ -112,8 +112,6 @@ public:
 
     void addOutputBytes(const Chunk & chunk);
 
-    void addOutputBytes(const Aggregator & aggregator, const ManyAggregatedDataVariants & variants);
-
     void addOutputBytes(const Aggregator & aggregator, AggregatedDataVariants & variant, size_t bucket);
 
     void addOutputBytes(const Aggregator & aggregator, const Block & block);

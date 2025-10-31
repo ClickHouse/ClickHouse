@@ -187,21 +187,32 @@ UInt64 & getInlineCountState(DB::AggregateDataPtr & ptr)
 namespace DB
 {
 
-void Aggregator::applyToAllStates(AggregatedDataVariants & result, WriteBuffer & wb, ssize_t bucket) const
+size_t Aggregator::applyToAllStates(AggregatedDataVariants & result, ssize_t bucket) const
 {
+    size_t res = 0;
     auto serialize_states = [&](auto & table)
     {
         for (size_t j = 0; j < params.aggregates_size; ++j)
         {
+            WriteBufferFromOwnString wb;
+            CompressedWriteBuffer wbuf(wb);
+            size_t it = 0;
+            size_t processed = 0;
             table.forEachMapped(
                 [&](AggregateDataPtr place)
                 {
                     chassert(place);
+                    if (it++ % 100 != 0)
+                        return;
                     if (is_simple_count)
                         writeVarUInt(getInlineCountState(place), wb);
                     else
                         aggregate_functions[j]->serialize(place + offsets_of_aggregate_states[j], wb);
+                    ++processed;
                 });
+            wbuf.finalize();
+            if (processed)
+                res += static_cast<size_t>((static_cast<double>(table.size()) / processed) * wb.count());
         }
     };
 
@@ -217,12 +228,16 @@ void Aggregator::applyToAllStates(AggregatedDataVariants & result, WriteBuffer &
 
         for (size_t j = 0; j < params.aggregates_size; ++j)
         {
+            WriteBufferFromOwnString wb;
+            CompressedWriteBuffer wbuf(wb);
             if (is_simple_count)
                 writeVarUInt(getCountState(result.without_key), wb);
             else
                 aggregate_functions[j]->serialize(result.without_key + offsets_of_aggregate_states[j], wb);
+            wbuf.finalize();
+            res += wb.count();
         }
-        return;
+        return res;
     }
 
 #define M(NAME)                                                 \
