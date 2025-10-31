@@ -514,4 +514,4 @@ def test_ytsaurus_replicated_table(started_cluster):
     )
     assert instance.query("SELECT * FROM yt_test") == "10\t20\n20\t40\n"
     instance.query("DROP TABLE yt_test SYNC")
-    yt.remove_table(f"{table_path}")
+    yt.remove_replicated_table(f"{table_path}")

@@ -60,7 +60,7 @@ class YTsaurusCLI:
         data,
         schema,
         sorted_columns=set(),
-        retry_count=10,
+        retry_count=100,
         time_to_sleep=0.5,
     ):
         replica_path = self._generate_replica_name(table_path)
