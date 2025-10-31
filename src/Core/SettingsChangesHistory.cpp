@@ -41,8 +41,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.10",
         {
-            {"allow_special_serialization_kinds_in_output_formats", true, false, "Add a setting to allow output of special columns representations like Sparse/Replicated without converting them to full columns"},
-            {"enable_lazy_columns_replication", true, false, "Add a setting to enable lazy columns replication in JOIN and ARRAY JOIN"},
+            {"allow_special_serialization_kinds_in_output_formats", false, false, "Add a setting to allow output of special columns representations like Sparse/Replicated without converting them to full columns"},
+            {"enable_lazy_columns_replication", false, false, "Add a setting to enable lazy columns replication in JOIN and ARRAY JOIN"},
             {"correlated_subqueries_default_join_kind", "left", "right", "New setting. Default join kind for decorrelated query plan."},
             {"show_data_lake_catalogs_in_system_tables", true, false, "Disable catalogs in system tables by default"},
             {"optimize_rewrite_like_perfect_affix", false, true, "New setting"},
@@ -917,8 +917,8 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         {
             {"auto_statistics_types", "", "", "New setting"},
             {"exclude_materialize_skip_indexes_on_merge", "", "", "New setting."},
-            {"serialization_info_version", "default", "default", "New setting"},
-            {"string_serialization_version", "default", "default", "New setting"},
+            {"serialization_info_version", "basic", "basic", "New setting"},
+            {"string_serialization_version", "single_stream", "single_stream", "New setting"},
             {"replicated_deduplication_window_seconds", 7 * 24 * 60 * 60, 60*60, "decrease default value"},
             {"shared_merge_tree_activate_coordinated_merges_tasks", false, false, "New settings"},
             {"shared_merge_tree_merge_coordinator_factor", 1.1f, 1.1f, "Lower coordinator sleep time after load"},
