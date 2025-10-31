@@ -71,8 +71,11 @@ namespace ErrorCodes
     Minimum number of bytes/rows in a data part that can be stored in `Wide`
     format. You can set one, both or none of these settings.
     )", 0) \
+    DECLARE(UInt32, min_level_for_wide_part, 0, R"(
+    Minimal part level to create a data part in `Wide` format instead of `Compact`.
+    )", 0) \
     DECLARE(UInt64, min_rows_for_wide_part, 0, R"(
-    Minimal number of rows to create part in wide format instead of compact
+    Minimal number of rows to create a data part in `Wide` format instead of `Compact`.
     )", 0) \
     DECLARE(UInt64, max_merge_delayed_streams_for_parallel_write, 40, R"(
     The maximum number of streams (columns) that can be flushed in parallel
@@ -205,6 +208,10 @@ namespace ErrorCodes
     Only available in ClickHouse Cloud. Minimal uncompressed size in bytes to
     use full type of storage for data part instead of packed
     )", 0) \
+    DECLARE(UInt32, min_level_for_full_part_storage, 0, R"(
+    Only available in ClickHouse Cloud. Minimal part level to
+    use full type of storage for data part instead of packed
+    )", 0) \
     DECLARE(UInt64, min_rows_for_full_part_storage, 0, R"(
     Only available in ClickHouse Cloud. Minimal number of rows to use full type
     of storage for data part instead of packed
@@ -247,22 +254,22 @@ namespace ErrorCodes
     This mode allows to use significantly less memory for storing discriminators
     in parts when there is mostly one variant or a lot of NULL values.
     )", 0) \
-    DECLARE(MergeTreeSerializationInfoVersion, serialization_info_version, "default", R"(
+    DECLARE(MergeTreeSerializationInfoVersion, serialization_info_version, "basic", R"(
     Serialization info version used when writing `serialization.json`.
     This setting is required for compatibility during cluster upgrades.
 
     Possible values:
-    - `DEFAULT`
+    - `BASIC`
 
     - `WITH_TYPES`
       Write new format with `types_serialization_versions` field, allowing per-type serialization versions.
       This makes settings like `string_serialization_version` effective.
 
-    During rolling upgrades, set this to `DEFAULT` so that new servers produce
+    During rolling upgrades, set this to `BASIC` so that new servers produce
     data parts compatible with old servers. After the upgrade completes,
     switch to `WITH_TYPES` to enable per-type serialization versions.
     )", 0) \
-    DECLARE(MergeTreeStringSerializationVersion, string_serialization_version, "default", R"(
+    DECLARE(MergeTreeStringSerializationVersion, string_serialization_version, "single_stream", R"(
     Controls the serialization format for top-level `String` columns.
 
     This setting is only effective when `serialization_info_version` is set to "with_types".
@@ -275,7 +282,7 @@ namespace ErrorCodes
 
     Possible values:
 
-    - `DEFAULT` — Use the standard serialization format with inline sizes.
+    - `SINGLE_STREAM` — Use the standard serialization format with inline sizes.
     - `WITH_SIZE_STREAM` — Use a separate size stream for top-level `String` columns.
     )", 0) \
     DECLARE(MergeTreeObjectSerializationVersion, object_serialization_version, "v2", R"(
@@ -1385,7 +1392,7 @@ namespace ErrorCodes
     If enabled too many parts counter will rely on shared data in Keeper, not on
     local replica state. Only available in ClickHouse Cloud
     )", 0) \
-    DECLARE(Bool, shared_merge_tree_create_per_replica_metadata_nodes, true, R"(
+    DECLARE(Bool, shared_merge_tree_create_per_replica_metadata_nodes, false, R"(
     Enables creation of per-replica /metadata and /columns nodes in ZooKeeper.
     Only available in ClickHouse Cloud
     )", 0) \
@@ -1718,6 +1725,10 @@ namespace ErrorCodes
     DECLARE(Bool, add_minmax_index_for_string_columns, false, R"(
     When enabled, min-max (skipping) indices are added for all string columns of the table.
     )", 0) \
+    DECLARE(String, auto_statistics_types, "", R"(
+    Comma-separated list of statistics types to calculate automatically on all suitable columns.
+    Supported statistics types: tdigest, countmin, minmax, uniq.
+    )", 0) \
     DECLARE(Bool, allow_summing_columns_in_partition_or_order_key, false, R"(
     When enabled, allows summing columns in a SummingMergeTree table to be used in
     the partition or sorting key.
@@ -1986,6 +1997,9 @@ namespace ErrorCodes
     - any - scope is not limited.
     - local - scope is limited by local disks .
     - none - empty scope, do not search
+    )", 0) \
+    DECLARE(Seconds, refresh_statistics_interval, 0, R"(
+    The interval of refreshing statistics cache in seconds. If it is set to zero, the refreshing will be disabled.
     )", 0) \
 
 #define MAKE_OBSOLETE_MERGE_TREE_SETTING(M, TYPE, NAME, DEFAULT) \
@@ -2589,6 +2603,6 @@ void MergeTreeSettings::checkCanSet(std::string_view name, const Field & value)
 
 bool MergeTreeSettings::isPartFormatSetting(const String & name)
 {
-    return name == "min_bytes_for_wide_part" || name == "min_rows_for_wide_part";
+    return name == "min_bytes_for_wide_part" || name == "min_rows_for_wide_part" || name == "min_level_for_wide_part";
 }
 }

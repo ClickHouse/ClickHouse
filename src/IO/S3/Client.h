@@ -132,6 +132,8 @@ public:
 
     std::unique_ptr<Client> clone() const;
 
+    std::unique_ptr<Client> cloneWithConfigurationOverride(const PocoHTTPClientConfiguration & client_configuration_override) const;
+
     Client & operator=(const Client &) = delete;
 
     Client(Client && other) = delete;
@@ -226,17 +228,11 @@ public:
     }
 
     ProviderType getProviderType() const { return provider_type; }
-    std::string getGCSOAuthToken() const
-    {
-        if (provider_type != ProviderType::GCS)
-            return "";
 
-        const auto & client = PocoHTTPClientGCPOAuth(client_configuration);
-        return client.getBearerToken();
-    }
+    std::string getGCSOAuthToken() const;
 
-    ThrottlerPtr getPutRequestThrottler() const { return client_configuration.put_request_throttler; }
-    ThrottlerPtr getGetRequestThrottler() const { return client_configuration.get_request_throttler; }
+    ThrottlerPtr getPutRequestThrottler() const { return client_configuration.request_throttler.put_throttler; }
+    ThrottlerPtr getGetRequestThrottler() const { return client_configuration.request_throttler.get_throttler; }
 
     std::string getRegionForBucket(const std::string & bucket, bool force_detect = false) const;
 
@@ -301,6 +297,7 @@ private:
     void updateNextTimeToRetryAfterRetryableError(Aws::Client::AWSError<Aws::Client::CoreErrors> error, Int64 attempt_no) const;
     void slowDownAfterRetryableError() const;
 
+    void logConfiguration() const;
     String initial_endpoint;
     std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider;
     PocoHTTPClientConfiguration client_configuration;
@@ -357,8 +354,7 @@ public:
         bool enable_s3_requests_logging,
         bool for_disk_s3,
         std::optional<std::string> opt_disk_name,
-        const ThrottlerPtr & get_request_throttler,
-        const ThrottlerPtr & put_request_throttler,
+        const HTTPRequestThrottler & request_throttler,
         const String & protocol = "https");
 
 private:

@@ -14,7 +14,7 @@ for STORAGE_POLICY in 's3_cache' 'local_cache' 'azure_cache'; do
 
     $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS test_2242"
     $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS system.filesystem_cache_log"
-    $CLICKHOUSE_CLIENT --query "CREATE TABLE test_2242 (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='$STORAGE_POLICY', min_bytes_for_wide_part = 10485760, compress_marks=false, compress_primary_key=false, serialization_info_version = 'default'"
+    $CLICKHOUSE_CLIENT --query "CREATE TABLE test_2242 (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='$STORAGE_POLICY', min_bytes_for_wide_part = 10485760, compress_marks=false, compress_primary_key=false, serialization_info_version = 'basic'"
     $CLICKHOUSE_CLIENT --query "SYSTEM STOP MERGES test_2242"
     $CLICKHOUSE_CLIENT --enable_filesystem_cache_on_write_operations=0 --enable_filesystem_cache_log=1 --query "INSERT INTO test_2242 SELECT number, toString(number) FROM numbers(100000)"
 

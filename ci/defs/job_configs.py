@@ -20,6 +20,7 @@ build_digest_config = Job.CacheDigestConfig(
     include_paths=[
         "./src",
         "./contrib/",
+        "./.gitmodules",
         "./CMakeLists.txt",
         "./PreLoad.cmake",
         "./cmake",
@@ -115,6 +116,13 @@ class JobConfigs:
         run_in_docker="clickhouse/style-test",
         enable_commit_status=True,
     )
+    pr_body = Job.Config(
+        name=JobNames.PR_BODY,
+        runs_on=RunnerLabels.STYLE_CHECK_ARM,
+        command="python3 ./ci/jobs/pr_formatter_job.py",
+        allow_merge_on_failure=True,
+        enable_gh_auth=True,
+    )
     fast_test = Job.Config(
         name=JobNames.FAST_TEST,
         runs_on=RunnerLabels.AMD_LARGE,
@@ -129,6 +137,7 @@ class JobConfigs:
                 "./tests/clickhouse-test",
                 "./src",
                 "./contrib/",
+                "./.gitmodules",
                 "./CMakeLists.txt",
                 "./PreLoad.cmake",
                 "./cmake",
@@ -558,9 +567,13 @@ class JobConfigs:
             ),
         )
     )
-    bugfix_validation_it_job = common_integration_test_job_config.set_name(
-        JobNames.BUGFIX_VALIDATE_IT
-    ).set_runs_on(RunnerLabels.AMD_SMALL_MEM)
+    bugfix_validation_it_job = (
+        common_integration_test_job_config.set_name(JobNames.BUGFIX_VALIDATE_IT)
+        .set_runs_on(RunnerLabels.AMD_SMALL_MEM)
+        .set_command(
+            "python3 ./ci/jobs/integration_test_job.py --options BugfixValidation"
+        )
+    )
     unittest_jobs = Job.Config(
         name=JobNames.UNITTEST,
         runs_on=[],  # from parametrize()
@@ -921,7 +934,7 @@ class JobConfigs:
         ),
     )
     docs_job = Job.Config(
-        name=JobNames.Docs,
+        name=JobNames.DOCS,
         runs_on=RunnerLabels.FUNC_TESTER_ARM,
         command="python3 ./ci/jobs/docs_job.py",
         digest_config=Job.CacheDigestConfig(
@@ -930,6 +943,7 @@ class JobConfigs:
                 "./docs",
                 "./ci/jobs/docs_job.py",
                 "CHANGELOG.md",
+                "./src/Functions",
             ],
         ),
         run_in_docker="clickhouse/docs-builder",
@@ -938,11 +952,10 @@ class JobConfigs:
     docker_sever = Job.Config(
         name=JobNames.DOCKER_SERVER,
         runs_on=RunnerLabels.STYLE_CHECK_AMD,
-        command="cd ./tests/ci && python3 ci.py --run-from-praktika",
+        command="python3 ./ci/jobs/docker_server.py --tag-type head --allow-build-reuse",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
-                "tests/ci/docker_server.py",
-                "tests/ci/docker_images_helper.py",
+                "./ci/jobs/docker_server.py",
                 "./docker/server",
                 "./docker/keeper",
             ],
@@ -953,11 +966,10 @@ class JobConfigs:
     docker_keeper = Job.Config(
         name=JobNames.DOCKER_KEEPER,
         runs_on=RunnerLabels.STYLE_CHECK_AMD,
-        command="cd ./tests/ci && python3 ci.py --run-from-praktika",
+        command="python3 ./ci/jobs/docker_server.py --tag-type head --allow-build-reuse",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
-                "tests/ci/docker_server.py",
-                "tests/ci/docker_images_helper.py",
+                "./ci/jobs/docker_server.py",
                 "./docker/server",
                 "./docker/keeper",
             ],

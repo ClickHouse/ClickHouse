@@ -9,12 +9,12 @@ DROP TABLE IF EXISTS default_codec_synthetic;
 CREATE TABLE delta_codec_synthetic
 (
     id UInt64 Codec(Delta, ZSTD(3))
-) ENGINE MergeTree() ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0, compress_marks = false, compress_primary_key = false, ratio_of_defaults_for_sparse_serialization = 1, enable_block_number_column = 0, serialization_info_version = 'default';
+) ENGINE MergeTree() ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0, compress_marks = false, compress_primary_key = false, ratio_of_defaults_for_sparse_serialization = 1, enable_block_number_column = 0, serialization_info_version = 'basic', auto_statistics_types = '';
 
 CREATE TABLE default_codec_synthetic
 (
     id UInt64 Codec(ZSTD(3))
-) ENGINE MergeTree() ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0, compress_marks = false, compress_primary_key = false, ratio_of_defaults_for_sparse_serialization = 1, enable_block_number_column = 0;
+) ENGINE MergeTree() ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0, compress_marks = false, compress_primary_key = false, ratio_of_defaults_for_sparse_serialization = 1, enable_block_number_column = 0, auto_statistics_types = '';
 
 set max_insert_threads = 1;
 
@@ -49,12 +49,12 @@ DROP TABLE IF EXISTS default_codec_float;
 CREATE TABLE delta_codec_float
 (
     id Float64 Codec(Delta, LZ4HC)
-) ENGINE MergeTree() ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0, compress_marks = false, compress_primary_key = false, ratio_of_defaults_for_sparse_serialization = 1, enable_block_number_column = 0;
+) ENGINE MergeTree() ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0, compress_marks = false, compress_primary_key = false, ratio_of_defaults_for_sparse_serialization = 1, enable_block_number_column = 0, auto_statistics_types = '';
 
 CREATE TABLE default_codec_float
 (
     id Float64 Codec(LZ4HC)
-) ENGINE MergeTree() ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0, compress_marks = false, compress_primary_key = false, ratio_of_defaults_for_sparse_serialization = 1, enable_block_number_column = 0;
+) ENGINE MergeTree() ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0, compress_marks = false, compress_primary_key = false, ratio_of_defaults_for_sparse_serialization = 1, enable_block_number_column = 0, auto_statistics_types = '';
 
 INSERT INTO delta_codec_float SELECT number FROM numbers(1547510400, 500000) WHERE number % 3 == 0 OR number % 5 == 0 OR number % 7 == 0 OR number % 11 == 0;
 INSERT INTO default_codec_float SELECT * from delta_codec_float;
@@ -87,12 +87,12 @@ DROP TABLE IF EXISTS default_codec_string;
 CREATE TABLE delta_codec_string
 (
     id Float64 Codec(Delta, LZ4)
-) ENGINE MergeTree() ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0, compress_marks = false, compress_primary_key = false, ratio_of_defaults_for_sparse_serialization = 1, enable_block_number_column = 0;
+) ENGINE MergeTree() ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0, compress_marks = false, compress_primary_key = false, ratio_of_defaults_for_sparse_serialization = 1, enable_block_number_column = 0, auto_statistics_types = '';
 
 CREATE TABLE default_codec_string
 (
     id Float64 Codec(LZ4)
-) ENGINE MergeTree() ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0, compress_marks = false, compress_primary_key = false, ratio_of_defaults_for_sparse_serialization = 1, enable_block_number_column = 0;
+) ENGINE MergeTree() ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0, compress_marks = false, compress_primary_key = false, ratio_of_defaults_for_sparse_serialization = 1, enable_block_number_column = 0, auto_statistics_types = '';
 
 INSERT INTO delta_codec_string SELECT concat(toString(number), toString(number % 100)) FROM numbers(1547510400, 500000);
 INSERT INTO default_codec_string SELECT * from delta_codec_string;
