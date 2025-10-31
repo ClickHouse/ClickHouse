@@ -289,12 +289,9 @@ size_t HashJoin::NullMapHolder::allocatedBytes() const
     size_t rows = column->size();
     if (rows == 0)
         return 0;
-    // we use cached value. In concurrentHashJoin we can sometimes move the nullmaps to the first shard so it's sometimes not available here
-    size_t sel = selector_rows;
-    if (!sel)
-        sel = columns ? columns->selector.size() : rows;
-    sel = std::min(sel, rows);
-    return column->allocatedBytes() * sel / rows;
+    if (rows < selector_rows)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The column size is smaller than the cached size");
+    return column->allocatedBytes() * selector_rows / rows;
 }
 
 static HashJoin::Type chooseMethod(JoinKind kind, const ColumnRawPtrs & key_columns, Sizes & key_sizes)
@@ -769,16 +766,8 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
                     has_right_not_joined = true;
                 };
 
-                if (sel.isContinuousRange())
-                {
-                    auto [beg, end] = sel.getRange();
-                    for (size_t r = beg; r < end; ++r) mark_if_needed(r);
-                }
-                else
-                {
-                    const auto & idxs = sel.getIndexes().getData();
-                    for (size_t r : idxs) mark_if_needed(r);
-                }
+                for (size_t r : sel)
+                    mark_if_needed(r);
             }
 
             bool is_inserted = false;
@@ -813,14 +802,12 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
             if (!flag_per_row && save_nullmap && is_inserted)
             {
                 auto & h = data->nullmaps.emplace_back(stored_columns, null_map_holder);
-                h.selector_rows = stored_columns->selector.size();
                 data->nullmaps_allocated_size += h.allocatedBytes();
             }
 
             if (!flag_per_row && not_joined_map && (is_inserted || has_right_not_joined))
             {
                 auto & h = data->nullmaps.emplace_back(stored_columns, std::move(not_joined_map));
-                h.selector_rows = stored_columns->selector.size();
                 data->nullmaps_allocated_size += h.allocatedBytes();
             }
 
@@ -1286,10 +1273,10 @@ HashJoin::~HashJoin()
         getTotalRowCount());
 }
 
-bool HashJoin::hasNonJoinedRows() const
+bool HashJoin::hasNonJoinedRows()
 {
-    if (has_non_joined_rows_checked.load(std::memory_order_acquire))
-        return has_non_joined_rows.load(std::memory_order_acquire);
+    if (has_non_joined_rows_checked)
+        return has_non_joined_rows;
 
     if (!isRightOrFull(kind))
         return false;
@@ -1302,12 +1289,12 @@ bool HashJoin::hasNonJoinedRows() const
         return false;
 
     updateNonJoinedRowsStatus();
-    return has_non_joined_rows.load(std::memory_order_acquire);
+    return has_non_joined_rows;
 }
 
-void HashJoin::updateNonJoinedRowsStatus() const
+void HashJoin::updateNonJoinedRowsStatus()
 {
-    if (has_non_joined_rows_checked.load(std::memory_order_acquire))
+    if (has_non_joined_rows_checked)
         return;
 
     bool found_non_joined = false;
@@ -1324,8 +1311,8 @@ void HashJoin::updateNonJoinedRowsStatus() const
             found_non_joined = true;
     }
 
-    has_non_joined_rows.store(found_non_joined, std::memory_order_release);
-    has_non_joined_rows_checked.store(true, std::memory_order_release);
+    has_non_joined_rows = found_non_joined;
+    has_non_joined_rows_checked = true;
 }
 
 template <typename Mapped>
@@ -1514,11 +1501,11 @@ private:
 
             for (; it != end; ++it)
             {
-                const Mapped & mapped = it->getMapped();
-
                 size_t offset = map.offsetInternal(it.getPtr());
                 if (parent.isUsed(offset))
                     continue;
+
+                const Mapped & mapped = it->getMapped();
                 AdderNonJoined<Mapped>::add(mapped, rows_added, columns_keys_and_right);
 
                 if (rows_added >= max_block_size)

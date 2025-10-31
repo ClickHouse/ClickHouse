@@ -103,9 +103,6 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
         uri = Poco::URI(uri_with_question_mark_encode);
     }
 
-    if (context && !mapper.empty())
-        URIConverter::modifyURI(uri, mapper);
-
     String name;
     String endpoint_authority_from_uri;
 
@@ -153,6 +150,9 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
         if (!uri.getPath().empty())
             key = uri.getPath().substr(1);
     }
+
+    if (context && !mapper.empty())
+        URIConverter::modifyURI(uri, mapper);
 
     validateBucket(bucket, uri);
     validateKey(key, uri);

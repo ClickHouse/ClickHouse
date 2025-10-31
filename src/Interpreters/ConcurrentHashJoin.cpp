@@ -25,6 +25,7 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadPool.h>
+#include <Common/AllocatorWithMemoryTracking.h>
 #include <Common/WeakHash.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
@@ -38,6 +39,8 @@
 
 #include <algorithm>
 #include <numeric>
+#include <deque>
+#include <iterator>
 
 using namespace DB;
 
@@ -306,8 +309,13 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
 class ConcatStreams final : public IBlocksStream
 {
 public:
+    using Deque = std::deque<IBlocksStreamPtr, AllocatorWithMemoryTracking<IBlocksStreamPtr>>;
+
     explicit ConcatStreams(std::vector<IBlocksStreamPtr> children_)
-        : children(std::move(children_)) {}
+    {
+        children = Deque(std::make_move_iterator(children_.begin()), std::make_move_iterator(children_.end()),
+                         Deque::allocator_type{});
+    }
 
     Block nextImpl() override
     {
@@ -315,16 +323,20 @@ public:
         {
             auto & child = children.front();
             if (!child)
+            {
+                children.pop_front();
                 continue;
+            }
             Block b = child->next();
-            if (!b.empty()) return b;
-              children.erase(children.begin());
+            if (!b.empty())
+                return b;
+            children.pop_front();
         }
         return {};
     }
 
 private:
-    std::vector<IBlocksStreamPtr> children;
+    Deque children;
 };
 
 class ConcurrentHashJoinResult : public IJoinResult
@@ -427,50 +439,6 @@ bool ConcurrentHashJoin::alwaysReturnsEmptySet() const
     return true;
 }
 
-bool ConcurrentHashJoin::hasNonJoinedRows() const
-{
-    if (has_non_joined_rows_checked.load(std::memory_order_acquire))
-        return has_non_joined_rows.load(std::memory_order_acquire);
-
-    if (!isRightOrFull(table_join->kind()))
-        return false;
-
-    bool found_non_joined = false;
-    for (const auto & hash_join_ptr : hash_joins)
-    {
-        std::lock_guard lock(hash_join_ptr->mutex);
-        if (hash_join_ptr->data->hasNonJoinedRows() || hash_join_ptr->has_non_joined_rows.load(std::memory_order_relaxed))
-        {
-            found_non_joined = true;
-            break;
-        }
-    }
-
-    has_non_joined_rows.store(found_non_joined, std::memory_order_release);
-    has_non_joined_rows_checked.store(true, std::memory_order_release);
-    return found_non_joined;
-}
-
-bool ConcurrentHashJoin::isUsedByAnotherAlgorithm() const
-{
-    return table_join->isEnabledAlgorithm(JoinAlgorithm::AUTO) || table_join->isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH);
-}
-
-bool ConcurrentHashJoin::canRemoveColumnsFromLeftBlock() const
-{
-    return table_join->enableAnalyzer() && !table_join->hasUsing() && !isUsedByAnotherAlgorithm() && table_join->strictness() != JoinStrictness::RightAny;
-}
-
-bool ConcurrentHashJoin::needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJoin> table_join_) const
-{
-    if (!table_join_->oneDisjunct())
-        return true;
-    /// For example, if it's an all right join with inequal conditions, we need to mark each row
-    if (table_join_->getMixedJoinExpression() && isRightOrFull(table_join_->kind()))
-        return true;
-    return false;
-}
-
 IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
         const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const
 {
@@ -489,45 +457,91 @@ IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
         return hash_joins[0]->data->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size);
     }
 
-    /// Collect non-joined streams from each slot
-    std::vector<IBlocksStreamPtr> streams;
-    streams.reserve(slots);
-
     /// For joins with always false condition
     if (table_join->getOnlyClause().key_names_right.empty())
     {
         /// all rows should be considered non-joined
         /// we need to return all rows from the right table
         std::lock_guard lock(hash_joins[0]->mutex);
-        if (auto s = hash_joins[0]->data->getNonJoinedBlocks(
-                left_sample_block, result_sample_block, max_block_size))
-            streams.push_back(std::move(s));
+        return hash_joins[0]->data->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size);
     }
     else
     {
-        std::unordered_set<size_t> processed_rows;
-        for (const auto & hash_join : hash_joins)
+        // Decide by checking only the first hash_join's selectors.
+        bool use_merge = false;
         {
-            std::lock_guard lock(hash_join->mutex);
+            std::lock_guard lock(hash_joins[0]->mutex);
+            const auto & cols0 = getData(hash_joins[0])->columns;
+            use_merge = (!cols0.empty() && !cols0.front().selector.isContinuousRange());
+        }
 
-            if (hash_join->data->hasNonJoinedRows() ||
-                hash_join->has_non_joined_rows.load(std::memory_order_relaxed))
+        if (!use_merge)
+        {
+            // Old per-slot streams approach
+            std::vector<IBlocksStreamPtr> streams;
+            streams.reserve(slots);
+            for (const auto & hash_join : hash_joins)
             {
-                if (auto s = hash_join->data->getNonJoinedBlocks(
-                        left_sample_block, result_sample_block, max_block_size))
+                std::lock_guard lock(hash_join->mutex);
+                if (hash_join->data->hasNonJoinedRows())
                 {
-                    streams.push_back(std::move(s));
+                    if (auto s = hash_join->data->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size))
+                        streams.push_back(std::move(s));
                 }
             }
+
+            if (streams.empty())
+                return {};
+            if (streams.size() == 1)
+                return streams[0];
+            return std::make_shared<ConcatStreams>(std::move(streams));
+        }
+        else
+        {
+            // Merge selector-based nullmaps into slot 0 and then emit streams from all slots
+            {
+                std::vector<std::unique_lock<std::mutex>> locks;
+                locks.reserve(slots);
+                for (size_t i = 0; i < slots; ++i)
+                    locks.emplace_back(hash_joins[i]->mutex);
+
+                auto dst = getData(hash_joins[0]);
+                size_t added_bytes = 0;
+                for (size_t i = 1; i < slots; ++i)
+                {
+                    auto src = getData(hash_joins[i]);
+                    for (auto & h : src->nullmaps)
+                    {
+                        dst->nullmaps.emplace_back(h.columns, h.column);
+                        dst->nullmaps.back().selector_rows = h.selector_rows;
+                        added_bytes += dst->nullmaps.back().allocatedBytes();
+                    }
+                    src->nullmaps.clear();
+                    src->nullmaps_allocated_size = 0;
+                }
+                dst->nullmaps_allocated_size += added_bytes;
+            }
+
+            // Build streams from each slot (slot 0 has merged nullmaps; others only maps)
+            std::vector<IBlocksStreamPtr> streams;
+            streams.reserve(slots);
+            for (const auto & hash_join : hash_joins)
+            {
+                std::lock_guard lock(hash_join->mutex);
+                if (hash_join->data->hasNonJoinedRows())
+                {
+                    if (auto s = hash_join->data->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size))
+                        streams.push_back(std::move(s));
+                }
+            }
+
+            if (streams.empty())
+                return {};
+            if (streams.size() == 1)
+                return streams[0];
+            return std::make_shared<ConcatStreams>(std::move(streams));
         }
     }
-
-    if (streams.empty())
-        return {};
-    if (streams.size() == 1)
-        return streams[0];
-
-    return std::make_shared<ConcatStreams>(std::move(streams));
 }
 
 template <typename HashTable>
@@ -754,17 +768,16 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
             {
                 const auto * sc = holder.columns;
                 if (!sc)
-                    return; // skip broken holder
+                    return;
                 // matches the original right block rows referenced by this slot's ScatteredColumns
-                ColumnUInt8::MutablePtr filtered = ColumnUInt8::create(sc->columns.at(0)->size(), 0);
+                ColumnUInt8::MutablePtr filtered = ColumnUInt8::create(sc->columns_info.columns.at(0)->size(), 0);
                 // apply a contiguous [start, end) range from the source mask into the destination mask
-                // cap 'end' by source-mask length for safety, fill with 1s if NULLs only
+                // fill with 1s if NULLs only
                 auto apply_range = [&](size_t start, size_t end)
                 {
                     if (holder.column)
                     {
                         const auto & src_mask = assert_cast<const ColumnUInt8 &>(*holder.column).getData();
-                        end = std::min(end, src_mask.size());
                         for (size_t r = start; r < end; ++r)
                             filtered->getData()[r] = src_mask[r];
                     }
