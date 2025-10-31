@@ -207,7 +207,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     auto db_num_limit = getContext()->getGlobalContext()->getServerSettings()[ServerSetting::max_database_num_to_throw].value;
     if (db_num_limit > 0 && !internal)
     {
-        size_t db_count = DatabaseCatalog::instance().getDatabases().size();
+        size_t db_count = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true}).size();
         std::initializer_list<std::string_view> system_databases =
         {
             DatabaseCatalog::TEMPORARY_DATABASE,
@@ -306,16 +306,6 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         /// b) `RESTORE from backup` query generated it to ensure the same UUIDs are used on different hosts.
         create.uuid = UUIDHelpers::Nil;
         metadata_path = metadata_dir_path / database_name_escaped;
-    }
-
-    if (create.storage->engine->name == "Replicated" && !internal && !create.attach && create.storage->engine->arguments)
-    {
-        /// Fill in default parameters
-        if (create.storage->engine->arguments->children.size() == 1)
-            create.storage->engine->arguments->children.push_back(std::make_shared<ASTLiteral>("{shard}"));
-
-        if (create.storage->engine->arguments->children.size() == 2)
-            create.storage->engine->arguments->children.push_back(std::make_shared<ASTLiteral>("{replica}"));
     }
 
     if (create.storage->engine->name == "MaterializedPostgreSQL"
@@ -500,7 +490,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
             column_declaration->children.push_back(column_declaration->codec);
         }
 
-        if (!column.statistics.empty())
+        if (column.statistics.hasExplicitStatistics())
         {
             column_declaration->statistics_desc = column.statistics.getAST();
             column_declaration->children.push_back(column_declaration->statistics_desc);
@@ -711,7 +701,8 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
             if (!skip_checks && !context_->getSettingsRef()[Setting::allow_experimental_statistics])
                 throw Exception(
                     ErrorCodes::INCORRECT_QUERY, "Create table with statistics is now disabled. Turn on allow_experimental_statistics");
-            column.statistics = ColumnStatisticsDescription::fromColumnDeclaration(col_decl, column.type);
+
+            column.statistics = ColumnStatisticsDescription::fromStatisticsDescriptionAST(col_decl.statistics_desc, column.name, column.type);
         }
 
         if (col_decl.ttl)
@@ -811,6 +802,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     else if (!create.as_table.empty())
     {
         String as_database_name = getContext()->resolveDatabase(create.as_database);
+        getContext()->checkAccess(AccessType::SHOW_TABLES, as_database_name, create.as_table);
         StoragePtr as_storage = DatabaseCatalog::instance().getTable({as_database_name, create.as_table}, getContext());
 
         /// as_storage->getColumns() and setEngine(...) must be called under structure lock of other_table for CREATE ... AS other_table.
@@ -1256,7 +1248,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
     if (create.is_dictionary && getContext()->getSettingsRef()[Setting::restore_replace_external_dictionary_source_to_null])
         setNullDictionarySourceIfExternal(create);
 
-    if (create.is_dictionary || create.is_ordinary_view || create.is_live_view || create.is_window_view)
+    if (create.is_dictionary || create.is_ordinary_view || create.is_window_view)
         return;
 
     if (create.temporary)
@@ -1344,9 +1336,6 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
                 qualified_name,
                 as_create.getTargetTableID(ViewTarget::To).getFullTableName());
         }
-
-        if (as_create.is_live_view)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot CREATE a table AS {}, it is a Live View", qualified_name);
 
         if (as_create.is_window_view)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot CREATE a table AS {}, it is a Window View", qualified_name);
@@ -2248,7 +2237,7 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
 {
     /// If the query is a CREATE SELECT, insert the data into the table.
     if (create.select && !create.attach && !create.is_create_empty
-        && !create.is_ordinary_view && !create.is_live_view
+        && !create.is_ordinary_view
         && (!(create.is_materialized_view || create.is_window_view) || create.is_populate))
     {
         auto insert = std::make_shared<ASTInsertQuery>();
@@ -2272,7 +2261,7 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
     }
 
     /// If the query is a CREATE TABLE .. CLONE AS ..., attach all partitions of the source table to the newly created table.
-    if (create.is_clone_as && !as_table_saved.empty() && !create.is_create_empty && !create.is_ordinary_view && !create.is_live_view
+    if (create.is_clone_as && !as_table_saved.empty() && !create.is_create_empty && !create.is_ordinary_view
         && (!(create.is_materialized_view || create.is_window_view) || create.is_populate))
     {
         String as_database_name = getContext()->resolveDatabase(create.as_database);
@@ -2535,8 +2524,10 @@ void InterpreterCreateQuery::processSQLSecurityOption(ContextMutablePtr context_
     if (sql_security.definer && !skip_check_permissions)
     {
         auto definer_name = sql_security.definer->toString();
-        auto & access_control = context_->getAccessControl();
+        if (definer_name != current_user_name)
+            context_->checkAccess(AccessType::SET_DEFINER, definer_name);
 
+        auto & access_control = context_->getAccessControl();
         const auto user = access_control.read<User>(definer_name);
         if (access_control.isEphemeral(access_control.getID<User>(definer_name)))
         {
@@ -2548,9 +2539,6 @@ void InterpreterCreateQuery::processSQLSecurityOption(ContextMutablePtr context_
             new_user->authentication_methods.emplace_back(AuthenticationType::NO_AUTHENTICATION);
             access_control.insertOrReplace(new_user);
         }
-
-        if (definer_name != current_user_name)
-            context_->checkAccess(AccessType::SET_DEFINER, definer_name);
     }
 
     if (sql_security.type == SQLSecurityType::NONE && !skip_check_permissions)

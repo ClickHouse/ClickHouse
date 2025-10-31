@@ -240,14 +240,14 @@ void ColumnObjectDeprecated::Subcolumn::get(size_t n, Field & res) const
     throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Index ({}) for getting field is out of range", n);
 }
 
-std::pair<String, DataTypePtr> ColumnObjectDeprecated::Subcolumn::getValueNameAndType(size_t n) const
+DataTypePtr ColumnObjectDeprecated::Subcolumn::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
     if (isFinalized())
-        return getFinalizedColumn().getValueNameAndType(n);
+        return getFinalizedColumn().getValueNameAndTypeImpl(name_buf, n, options);
 
     size_t ind = n;
     if (ind < num_of_defaults_in_prefix)
-        return least_common_type.get()->createColumnConstWithDefaultValue(1)->getValueNameAndType(0);
+        return least_common_type.get()->createColumnConstWithDefaultValue(1)->getValueNameAndTypeImpl(name_buf, 0, options);
 
     ind -= num_of_defaults_in_prefix;
     for (const auto & part : data)
@@ -258,7 +258,7 @@ std::pair<String, DataTypePtr> ColumnObjectDeprecated::Subcolumn::getValueNameAn
             part->get(ind, field);
             const auto column = least_common_type.get()->createColumn();
             column->insert(convertFieldToTypeOrThrow(field, *least_common_type.get()));
-            return column->getValueNameAndType(0);
+            return column->getValueNameAndTypeImpl(name_buf, 0, options);
         }
 
         ind -= part->size();
@@ -291,7 +291,7 @@ void ColumnObjectDeprecated::Subcolumn::insert(Field field)
 
 void ColumnObjectDeprecated::Subcolumn::addNewColumnPart(DataTypePtr type)
 {
-    auto serialization = type->getSerialization(ISerialization::Kind::SPARSE);
+    auto serialization = type->getSerialization({ISerialization::Kind::DEFAULT, ISerialization::Kind::SPARSE});
     data.push_back(type->createColumn(*serialization));
     least_common_type = LeastCommonType{std::move(type)};
 }
@@ -812,28 +812,31 @@ void ColumnObjectDeprecated::get(size_t n, Field & res) const
     }
 }
 
-std::pair<String, DataTypePtr> ColumnObjectDeprecated::getValueNameAndType(size_t n) const
+DataTypePtr ColumnObjectDeprecated::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
-    WriteBufferFromOwnString wb;
-    wb << '{';
+    if (options.notFull(name_buf))
+        name_buf << '{';
 
     bool first = true;
 
     for (const auto & entry : subcolumns)
     {
+        if (!options.notFull(name_buf))
+            break;
+
         if (first)
             first = false;
         else
-            wb << ", ";
+            name_buf << ", ";
 
-        writeDoubleQuoted(entry->path.getPath(), wb);
-        const auto & [value, type] = entry->data.getValueNameAndType(n);
-        wb << ": " << value;
+        writeDoubleQuoted(entry->path.getPath(), name_buf);
+        name_buf << ": ";
+        entry->data.getValueNameAndTypeImpl(name_buf, n, options);
     }
+    if (options.notFull(name_buf))
+        name_buf << "}";
 
-    wb << "}";
-
-    return {wb.str(), std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON)};
+    return std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON);
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)

@@ -484,6 +484,14 @@ namespace DB
     :::)", 0) \
     DECLARE(UInt64, vector_similarity_index_cache_max_entries, DEFAULT_VECTOR_SIMILARITY_INDEX_CACHE_MAX_ENTRIES, "Size of cache for vector similarity index in entries. Zero means disabled.", 0) \
     DECLARE(Double, vector_similarity_index_cache_size_ratio, DEFAULT_VECTOR_SIMILARITY_INDEX_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the vector similarity index cache relative to the cache's total size.", 0) \
+    DECLARE(String, text_index_dictionary_block_cache_policy, DEFAULT_TEXT_INDEX_DICTIONARY_BLOCK_CACHE_POLICY, "Text index dictionary block cache policy name.", 0) \
+    DECLARE(UInt64, text_index_dictionary_block_cache_size, DEFAULT_TEXT_INDEX_DICTIONARY_BLOCK_CACHE_MAX_SIZE, R"(Size of cache for text index dictionary blocks. Zero means disabled.
+
+    :::note
+    This setting can be modified at runtime and will take effect immediately.
+    :::)", 0) \
+    DECLARE(UInt64, text_index_dictionary_block_cache_max_entries, DEFAULT_TEXT_INDEX_DICTIONARY_BLOCK_CACHE_MAX_ENTRIES, "Size of cache for text index dictionary block in entries. Zero means disabled.", 0) \
+    DECLARE(Double, text_index_dictionary_block_cache_size_ratio, DEFAULT_TEXT_INDEX_DICTIONARY_BLOCK_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the text index dictionary block cache relative to the cache's total size.", 0) \
     DECLARE(String, index_uncompressed_cache_policy, DEFAULT_INDEX_UNCOMPRESSED_CACHE_POLICY, R"(Secondary index uncompressed cache policy name.)", 0) \
     DECLARE(UInt64, index_uncompressed_cache_size, DEFAULT_INDEX_UNCOMPRESSED_CACHE_MAX_SIZE, R"(
     Maximum size of cache for uncompressed blocks of `MergeTree` indices.
@@ -925,6 +933,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     )", 0) \
     DECLARE(UInt32, max_database_replicated_create_table_thread_pool_size, 1, R"(The number of threads to create tables during replica recovery in DatabaseReplicated. Zero means number of threads equal number of cores.)", 0) \
     DECLARE(Bool, database_replicated_allow_detach_permanently, true, R"(Allow detaching tables permanently in Replicated databases)", 0) \
+    DECLARE(Bool, database_replicated_drop_broken_tables, false, R"(Drop unexpected tables from Replicated databases instead of moving them to a separate local database)", 0) \
     DECLARE(String, default_replica_path, "/clickhouse/tables/{uuid}/{shard}", R"(
     The path to the table in ZooKeeper.
 
@@ -952,8 +961,8 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(UInt64, http_connections_soft_limit, 100, R"(Connections above this limit have significantly shorter time to live. The limit applies to the http connections which do not belong to any disk or storage.)", 0) \
     DECLARE(UInt64, http_connections_warn_limit, 1000, R"(Warning massages are written to the logs if number of in-use connections are higher than this limit. The limit applies to the http connections which do not belong to any disk or storage.)", 0) \
     DECLARE(UInt64, http_connections_store_limit, 5000, R"(Connections above this limit reset after use. Set to 0 to turn connection cache off. The limit applies to the http connections which do not belong to any disk or storage.)", 0) \
-    DECLARE(UInt64, global_profiler_real_time_period_ns, 0, R"(Period for real clock timer of global profiler (in nanoseconds). Set 0 value to turn off the real clock global profiler. Recommended value is at least 10000000 (100 times a second) for single queries or 1000000000 (once a second) for cluster-wide profiling.)", 0) \
-    DECLARE(UInt64, global_profiler_cpu_time_period_ns, 0, R"(Period for CPU clock timer of global profiler (in nanoseconds). Set 0 value to turn off the CPU clock global profiler. Recommended value is at least 10000000 (100 times a second) for single queries or 1000000000 (once a second) for cluster-wide profiling.)", 0) \
+    DECLARE(UInt64, global_profiler_real_time_period_ns, 10000000000, R"(Period for real clock timer of global profiler (in nanoseconds). Set 0 value to turn off the real clock global profiler. Recommended value is at least 10000000 (100 times a second) for single queries or 1000000000 (once a second) for cluster-wide profiling.)", 0) \
+    DECLARE(UInt64, global_profiler_cpu_time_period_ns, 10000000000, R"(Period for CPU clock timer of global profiler (in nanoseconds). Set 0 value to turn off the CPU clock global profiler. Recommended value is at least 10000000 (100 times a second) for single queries or 1000000000 (once a second) for cluster-wide profiling.)", 0) \
     DECLARE(Bool, enable_azure_sdk_logging, false, R"(Enables logging from Azure sdk)", 0) \
     DECLARE(Bool, s3queue_disable_streaming, false, "Disable streaming in S3Queue even if the table is created and there are attached materiaized views", 0) \
     DECLARE(UInt64, max_entries_for_hash_table_stats, 10'000, R"(How many entries hash table statistics collected during aggregation is allowed to have)", 0) \

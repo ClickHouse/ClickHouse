@@ -497,11 +497,11 @@ Indexes of type `set` can be utilized by all functions. The other index types ar
 | [equals (=, ==)](/sql-reference/functions/comparison-functions.md/#equals)                                                     | ✔           | ✔      | ✔          | ✔          | ✔            | ✔    |
 | [notEquals(!=, &lt;&gt;)](/sql-reference/functions/comparison-functions.md/#notEquals)                                         | ✔           | ✔      | ✔          | ✔          | ✔            | ✔    |
 | [like](/sql-reference/functions/string-search-functions.md/#like)                                                              | ✔           | ✔      | ✔          | ✔          | ✗            | ✔    |
-| [notLike](/sql-reference/functions/string-search-functions.md/#notlike)                                                        | ✔           | ✔      | ✔          | ✔          | ✗            | ✔    |
+| [notLike](/sql-reference/functions/string-search-functions.md/#notLike)                                                        | ✔           | ✔      | ✔          | ✔          | ✗            | ✔    |
 | [match](/sql-reference/functions/string-search-functions.md/#match)                                                            | ✗           | ✗      | ✔          | ✔          | ✗            | ✔    |
-| [startsWith](/sql-reference/functions/string-functions.md/#startswith)                                                         | ✔           | ✔      | ✔          | ✔          | ✗            | ✔    |
-| [endsWith](/sql-reference/functions/string-functions.md/#endswith)                                                             | ✗           | ✗      | ✔          | ✔          | ✗            | ✔    |
-| [multiSearchAny](/sql-reference/functions/string-search-functions.md/#multisearchany)                                          | ✗           | ✗      | ✔          | ✗          | ✗            | ✗    |
+| [startsWith](/sql-reference/functions/string-functions.md/#startsWith)                                                         | ✔           | ✔      | ✔          | ✔          | ✗            | ✔    |
+| [endsWith](/sql-reference/functions/string-functions.md/#endsWith)                                                             | ✗           | ✗      | ✔          | ✔          | ✗            | ✔    |
+| [multiSearchAny](/sql-reference/functions/string-search-functions.md/#multiSearchAny)                                          | ✗           | ✗      | ✔          | ✗          | ✗            | ✗    |
 | [in](/sql-reference/functions/in-functions)                                                                                    | ✔           | ✔      | ✔          | ✔          | ✔            | ✔    |
 | [notIn](/sql-reference/functions/in-functions)                                                                                 | ✔           | ✔      | ✔          | ✔          | ✔            | ✔    |
 | [less (`<`)](/sql-reference/functions/comparison-functions.md/#less)                                                           | ✔           | ✔      | ✗          | ✗          | ✗            | ✗    |
@@ -513,12 +513,12 @@ Indexes of type `set` can be utilized by all functions. The other index types ar
 | [has](/sql-reference/functions/array-functions#has)                                                                            | ✗           | ✗      | ✔          | ✔          | ✔            | ✔    |
 | [hasAny](/sql-reference/functions/array-functions#hasAny)                                                                      | ✗           | ✗      | ✔          | ✔          | ✔            | ✗    |
 | [hasAll](/sql-reference/functions/array-functions#hasAll)                                                                      | ✗           | ✗      | ✔          | ✔          | ✔            | ✗    |
-| [hasToken](/sql-reference/functions/string-search-functions.md/#hastoken)                                                      | ✗           | ✗      | ✗          | ✔          | ✗            | ✔    |
-| [hasTokenOrNull](/sql-reference/functions/string-search-functions.md/#hastokenornull)                                          | ✗           | ✗      | ✗          | ✔          | ✗            | ✔    |
-| [hasTokenCaseInsensitive (`*`)](/sql-reference/functions/string-search-functions.md/#hastokencaseinsensitive)                  | ✗           | ✗      | ✗          | ✔          | ✗            | ✗    |
-| [hasTokenCaseInsensitiveOrNull (`*`)](/sql-reference/functions/string-search-functions.md/#hastokencaseinsensitiveornull)      | ✗           | ✗      | ✗          | ✔          | ✗            | ✗    |
-| [searchAny](/sql-reference/functions/string-search-functions.md/#searchany)                                                    | ✗           | ✗      | ✗          | ✗          | ✗            | ✔    |
-| [searchAll](/sql-reference/functions/string-search-functions.md/#searchall)                                                    | ✗           | ✗      | ✗          | ✗          | ✗            | ✔    |
+| [hasToken](/sql-reference/functions/string-search-functions.md/#hasToken)                                                      | ✗           | ✗      | ✗          | ✔          | ✗            | ✔    |
+| [hasTokenOrNull](/sql-reference/functions/string-search-functions.md/#hasTokenOrNull)                                          | ✗           | ✗      | ✗          | ✔          | ✗            | ✔    |
+| [hasTokenCaseInsensitive (`*`)](/sql-reference/functions/string-search-functions.md/#hasTokenCaseInsensitive)                  | ✗           | ✗      | ✗          | ✔          | ✗            | ✗    |
+| [hasTokenCaseInsensitiveOrNull (`*`)](/sql-reference/functions/string-search-functions.md/#hasTokenCaseInsensitiveOrNull)      | ✗           | ✗      | ✗          | ✔          | ✗            | ✗    |
+| [hasAnyTokens](/sql-reference/functions/string-search-functions.md/#hasAnyTokens)                                              | ✗           | ✗      | ✗          | ✗          | ✗            | ✔    |
+| [hasAllTokens](/sql-reference/functions/string-search-functions.md/#hasAllTokens)                                              | ✗           | ✗      | ✗          | ✗          | ✗            | ✔    |
 | [mapContains](/sql-reference/functions/tuple-map-functions#mapcontains)                                                        | ✗           | ✗      | ✗          | ✗          | ✗            | ✔    |
 
 Functions with a constant argument that is less than ngram size can't be used by `ngrambf_v1` for query optimization.
