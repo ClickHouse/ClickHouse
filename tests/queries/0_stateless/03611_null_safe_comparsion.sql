@@ -237,7 +237,8 @@ SELECT
     c_dynamic <=> c_dynamic AS c_dynamic_self_eq,
     c_dynamic IS DISTINCT FROM c_dynamic AS c_dynamic_self_distinct
 
-FROM 03611_nscmp_tbl;
+FROM 03611_nscmp_tbl
+ORDER BY key;
 
 
 SELECT '1.2 NaN behavior';
@@ -249,7 +250,8 @@ SELECT
     c_float32 IS DISTINCT FROM nan AS nan_distinct,
     c_float32 <=> 1.0 AS cmp_with_one,
     c_float32 IS DISTINCT FROM 1.0 AS cmp_with_one_distinct
-FROM 03611_nscmp_tbl;
+FROM 03611_nscmp_tbl
+ORDER BY key;
 
 -- 1.3 String, FixedString, Enum
 SELECT '1.3 String, FixedString, Enum';
@@ -273,7 +275,8 @@ SELECT
     c_enum16 IS DISTINCT FROM CAST('x' AS Enum16('x'=100,'y'=200)) AS enum16_check_distinct,
     c_enum16 <=> NULL AS enum16_vs_null,
     c_enum16 IS DISTINCT FROM NULL AS enum16_vs_null_distinct
-FROM 03611_nscmp_tbl;
+FROM 03611_nscmp_tbl
+ORDER BY key;
 
 -- 1.4 Date and time
 SELECT '1.4 Date and time';
@@ -298,7 +301,8 @@ SELECT
     NULL <=> c_dt64 AS null_vs_c_dt64,
     c_dt64 IS DISTINCT FROM NULL AS dt64_vs_null_distinct,
     NULL IS DISTINCT FROM c_dt64 AS null_vs_dt64_distinct
-FROM 03611_nscmp_tbl;
+FROM 03611_nscmp_tbl
+ORDER BY key;
 
 -- 1.5 Complex types: Array / Tuple / Map / Nullable / Variant / Dynamic / JSON
 SELECT '1.5 Complex types: Array / Tuple / Map / Variant / Dynamic / JSON';
@@ -393,6 +397,7 @@ SELECT
     NULL IS DISTINCT FROM c_dynamic AS null_vs_dynamic_distinct
 
 FROM 03611_nscmp_tbl
+ORDER BY key
 SETTINGS parallel_replicas_for_non_replicated_merge_tree = 0;
 
 -- 1.6 UUID / IPv4 / IPv6
@@ -419,59 +424,67 @@ SELECT
     NULL <=> c_ipv6 AS null_vs_ipv6,
     c_ipv6 IS DISTINCT FROM NULL AS ipv6_vs_null_distinct,
     NULL IS DISTINCT FROM c_ipv6 AS null_vs_ipv6_distinct
-FROM 03611_nscmp_tbl;
+FROM 03611_nscmp_tbl
+ORDER BY key;
 
 SELECT '1.7 Cross-type test cases';
 -- Variant vs Dynamic
 SELECT
     c_variant <=> c_dynamic,
     c_variant IS DISTINCT FROM c_dynamic
-FROM 03611_nscmp_tbl;
+FROM 03611_nscmp_tbl
+ORDER BY key;
 
 -- Dynamic vs IPv4/IPv6
-SELECT c_dynamic <=> c_ipv4 FROM 03611_nscmp_tbl;
+SELECT c_dynamic <=> c_ipv4 FROM 03611_nscmp_tbl ORDER BY key;
 
-SELECT c_dynamic IS DISTINCT FROM c_ipv4 FROM 03611_nscmp_tbl;
+SELECT c_dynamic IS DISTINCT FROM c_ipv4 FROM 03611_nscmp_tbl ORDER BY key;
 
-SELECT c_dynamic <=> c_ipv6 FROM 03611_nscmp_tbl;
+SELECT c_dynamic <=> c_ipv6 FROM 03611_nscmp_tbl ORDER BY key;
 
-SELECT c_dynamic IS DISTINCT FROM c_ipv6 FROM 03611_nscmp_tbl;
+SELECT c_dynamic IS DISTINCT FROM c_ipv6 FROM 03611_nscmp_tbl ORDER BY key;
 
 -- Dynamic vs String
 SELECT
     c_dynamic <=> c_string,
     c_dynamic <=> c_fstring
-FROM 03611_nscmp_tbl;
+FROM 03611_nscmp_tbl
+ORDER BY key;
 
 SELECT
     c_dynamic IS DISTINCT FROM c_string,
     c_dynamic IS DISTINCT FROM c_fstring
-FROM 03611_nscmp_tbl;
+FROM 03611_nscmp_tbl
+ORDER BY key;
 
 -- Array vs Dynamic
 SELECT
     c_array <=> c_dynamic,
     c_array IS DISTINCT FROM c_dynamic
-FROM 03611_nscmp_tbl;
+FROM 03611_nscmp_tbl
+ORDER BY key;
 
 -- Map vs Dynamic
 SELECT
     c_map <=> c_dynamic,
     c_map IS DISTINCT FROM c_dynamic
-FROM 03611_nscmp_tbl;
+FROM 03611_nscmp_tbl
+ORDER BY key;
 
 -- Nested vs Dynamic
 SELECT
     c_nested.id <=> c_dynamic,
     c_nested.value <=> c_dynamic
-FROM 03611_nscmp_tbl;
+FROM 03611_nscmp_tbl
+ORDER BY key;
 
 -- Tuple vs Dynamic
 
 SELECT
     c_tuple <=> c_dynamic,
     c_tuple IS DISTINCT FROM c_dynamic
-FROM 03611_nscmp_tbl;
+FROM 03611_nscmp_tbl
+ORDER BY key;
 
 
 SELECT '1.8 Some ILLEGAL_TYPE_OF_ARGUMENT case';
@@ -565,7 +578,8 @@ SELECT '1.9 WHERE Clause';
 SELECT id, a, b,
        (a <=> b) AS null_safe_equal,
        (a IS DISTINCT FROM b) AS null_safe_distinct
-FROM 03611_t_nullsafe;
+FROM 03611_t_nullsafe
+ORDER BY id;
 
 
 SELECT '1.10 ORDER BY Clause';
@@ -588,14 +602,16 @@ SELECT
     countIf(a <=> 1) AS cnt_equal_1,
     countIf(a IS DISTINCT FROM 1) AS cnt_distinct_1,
     count() AS total_count
-FROM 03611_t_nullsafe;
+FROM 03611_t_nullsafe
+ORDER BY cnt_equal_1;
 
 SELECT '1.12 HAVING Clause';
 SELECT
     max(a) AS max_a,
     max(b) AS max_b
 FROM `03611_t_nullsafe`
-HAVING (max_a <=> max_b) OR (max_a IS DISTINCT FROM max_b);
+HAVING (max_a <=> max_b) OR (max_a IS DISTINCT FROM max_b)
+ORDER BY max_a;
 
 SELECT '1.13 JOIN Clause';
 SELECT
@@ -604,7 +620,8 @@ SELECT
     l.a,
     r.b
 FROM 03611_t_nullsafe AS l
-INNER JOIN 03611_t_nullsafe AS r ON l.a <=> r.b;
+INNER JOIN 03611_t_nullsafe AS r ON l.a <=> r.b
+ORDER BY lid;
 
 SELECT
     l.id AS lid,
@@ -612,7 +629,8 @@ SELECT
     l.a,
     r.b
 FROM 03611_t_nullsafe AS l
-INNER JOIN 03611_t_nullsafe AS r ON l.a IS DISTINCT FROM r.b;
+INNER JOIN 03611_t_nullsafe AS r ON l.a IS DISTINCT FROM r.b
+ORDER BY lid;
 
 SELECT '1.14 CASE WHEN Clause';
 SELECT id, a, b,
@@ -626,26 +644,30 @@ SELECT id, a, b,
            WHEN a IS DISTINCT FROM b THEN 'different'
            ELSE 'unknown'
        END AS status
-FROM 03611_t_nullsafe;
+FROM 03611_t_nullsafe
+ORDER BY id;
 
 SELECT '1.15 IF function';
 SELECT id, a, b,
        IF(a <=> b, 'safe-equal', 'not_equal') AS equal_flag,
        IF(a IS DISTINCT FROM b, 'distinct', 'same') AS distinct_flag
-FROM 03611_t_nullsafe;
+FROM 03611_t_nullsafe
+ORDER BY id;
 
 SELECT '1.16 Window Func';
 SELECT (a IS DISTINCT FROM b) AS distinct_flag,
        count() OVER (PARTITION BY a <=> b) AS partition_by_eq,
        count() OVER (PARTITION BY a IS DISTINCT FROM b) AS partition_by_distinct,
        count() OVER (PARTITION BY a <=> b, a IS DISTINCT FROM b) AS partition_by_both
-FROM 03611_t_nullsafe;
+FROM 03611_t_nullsafe
+ORDER BY distinct_flag;
 
 SELECT '1.17 Subquery filter';
 SELECT id, a, b,
        EXISTS(SELECT 1 FROM 03611_t_nullsafe s WHERE t.a <=> s.b AND s.id <> t.id) AS has_equal_match,
        EXISTS(SELECT 1 FROM 03611_t_nullsafe s WHERE t.a IS DISTINCT FROM s.b AND s.id <> t.id) AS has_distinct_match
-FROM 03611_t_nullsafe t;
+FROM 03611_t_nullsafe t
+ORDER BY id;
 
 SELECT '1.18 OR / AND';
 select 1 <=> 1 AND 1 is DISTINCT FROM 1,

@@ -141,10 +141,10 @@ Map vs Variant cross-type test cases
 3	\N	\N	safe-equal	same
 4	2	2	safe-equal	same
 1.16 Window Func
+0	3	3	3
+0	3	3	3
+0	3	3	3
 1	1	1	1
-0	3	3	3
-0	3	3	3
-0	3	3	3
 1.17 Subquery filter
 1	1	1	0	1
 2	1	\N	1	1
