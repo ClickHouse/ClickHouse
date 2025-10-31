@@ -65,6 +65,11 @@ struct IndexDescription
     void recalculateWithNewColumns(const ColumnsDescription & new_columns, ContextPtr context);
 
     bool isImplicitlyCreated() const { return name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX); }
+
+    void initExpressionInfo(ASTPtr index_expression, const ColumnsDescription & columns, ContextPtr context);
+
+private:
+    static FieldVector parsePositionalArgumentsFromAST(const ASTPtr & arguments);
 };
 
 /// All secondary indices in storage
