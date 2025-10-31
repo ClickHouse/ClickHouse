@@ -176,7 +176,7 @@ private:
     std::map<Int64, PreparedSetsCachePtr::weak_type> mutation_prepared_sets_cache;
     PlainLightweightUpdatesSync lightweight_updates_sync;
 
-    bool support_transaction{true};
+    const bool support_transaction;
 
     void loadMutations();
 

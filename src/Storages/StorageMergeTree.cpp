@@ -147,6 +147,22 @@ static MergeTreeTransactionPtr tryGetTransactionForMutation(const MergeTreeMutat
     return {};
 }
 
+static bool supportTransaction(const Disks & disks, LoggerPtr log)
+{
+    for (const auto & disk : disks)
+    {
+        if (auto * object_storage = dynamic_cast<DiskObjectStorage *>(disk.get()))
+        {
+            if (!object_storage->getMetadataStorage()->supportWritingWithAppend())
+            {
+                LOG_DEBUG(log, "Disk {} does not support writing with append", object_storage->getName());
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 StorageMergeTree::StorageMergeTree(
     const StorageID & table_id_,
     const String & relative_data_path_,
@@ -157,17 +173,18 @@ StorageMergeTree::StorageMergeTree(
     const MergingParams & merging_params_,
     std::unique_ptr<MergeTreeSettings> storage_settings_)
     : MergeTreeData(
-        table_id_,
-        metadata_,
-        context_,
-        date_column_name,
-        merging_params_,
-        std::move(storage_settings_),
-        false,      /// require_part_metadata
-        mode)
+          table_id_,
+          metadata_,
+          context_,
+          date_column_name,
+          merging_params_,
+          std::move(storage_settings_),
+          false, /// require_part_metadata
+          mode)
     , reader(*this)
     , writer(*this)
     , merger_mutator(*this)
+    , support_transaction(supportTransaction(getDisks(), log.load()))
 {
     initializeDirectoriesAndFormatVersion(relative_data_path_, LoadingStrictnessLevel::ATTACH <= mode, date_column_name);
 
@@ -185,25 +202,7 @@ StorageMergeTree::StorageMergeTree(
     loadMutations();
     loadDeduplicationLog();
 
-    prewarmCaches(
-        getActivePartsLoadingThreadPool().get(),
-        getMarkCacheToPrewarm(0),
-        getPrimaryIndexCacheToPrewarm(0));
-
-    auto disks = getDisks();
-    support_transaction = true;
-    for (auto & disk : disks)
-    {
-        if (auto * object_storage = dynamic_cast<DiskObjectStorage *>(disk.get()))
-        {
-            if (!object_storage->getMetadataStorage()->supportWritingWithAppend())
-            {
-                LOG_DEBUG(log, "Disk {} does not support writing with append", object_storage->getName());
-                support_transaction = false;
-                break;
-            }
-        }
-    }
+    prewarmCaches(getActivePartsLoadingThreadPool().get(), getMarkCacheToPrewarm(0), getPrimaryIndexCacheToPrewarm(0));
 }
 
 
@@ -2941,5 +2940,4 @@ CommittingBlocksSet StorageMergeTree::getCommittingBlocks() const
     std::lock_guard lock(committing_blocks_mutex);
     return committing_blocks;
 }
-
 }
