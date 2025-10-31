@@ -32,7 +32,6 @@ tables_with_database_column=(
 # NOTE: it is not that accurate, but at least something.
 tests_with_database_column=( $(
     find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' |
-        grep -vP '03703_parallel_alter_comment_rename_selects' |
         xargs grep --with-filename $(printf -- "-e %s " "${tables_with_database_column[@]}") |
         grep -v -e ':--' -e ':#' |
         # to exclude clickhouse-local flags: --only-system-tables and --no-system-tables.
