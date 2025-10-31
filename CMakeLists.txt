@@ -63,11 +63,12 @@ option (ENABLE_FUZZING "Fuzzy testing using libfuzzer" OFF)
 option (ENABLE_BUZZHOUSE "Enable BuzzHouse fuzzer on the client" OFF)
 option (ENABLE_FUZZER_TEST "Build testing fuzzers in order to test libFuzzer functionality" OFF)
 
+set (ENABLE_SSL 1)
+
 if (ENABLE_FUZZING)
     message (STATUS "Fuzzing instrumentation enabled")
     set (FUZZER "libfuzzer")
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -nostdlib++")
-    set (ENABLE_SSL 1)
     set (ENABLE_EXAMPLES 0)
     set (ENABLE_UTILS 0)
     set (ENABLE_THINLTO 0)
@@ -82,7 +83,6 @@ if (ENABLE_FUZZING)
 endif()
 
 if (ENABLE_BUZZHOUSE)
-    set (ENABLE_SSL 1)
     set (ENABLE_PROTOBUF 1)
 endif()
 
