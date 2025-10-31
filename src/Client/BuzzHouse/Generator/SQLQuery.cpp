@@ -461,7 +461,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
         cdf->set_all_replicas(rg.nextBool());
         cdf->mutable_cluster()->set_cluster(cluster.has_value() ? cluster.value() : rg.pickRandomly(fc.clusters));
         t.setName(cdf->mutable_tof()->mutable_est(), true);
-        if (rg.nextSmallNumber() < 4)
+        if (this->allow_not_deterministic && rg.nextSmallNumber() < 4)
         {
             /// Optional sharding key
             setRandomShardKey(rg, std::make_optional<SQLTable>(t), cdf->mutable_sharding_key());
@@ -488,7 +488,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
             rfunc->set_address(fc.getConnectionHostAndPort(fname == RemoteFunc::remoteSecure));
             rfunc->set_user("default");
             rfunc->set_password("");
-            if (rg.nextSmallNumber() < 4)
+            if (this->allow_not_deterministic && rg.nextSmallNumber() < 4)
             {
                 /// Optional sharding key
                 setRandomShardKey(rg, std::make_optional<SQLTable>(t), rfunc->mutable_sharding_key());
@@ -1949,7 +1949,7 @@ void StatementGenerator::generateLimitExpr(RandomGenerator & rg, Expr * expr)
     }
 }
 
-void StatementGenerator::generateLimit(RandomGenerator & rg, const bool has_order_by, const uint32_t ncols, LimitStatement * ls)
+void StatementGenerator::generateLimit(RandomGenerator & rg, const bool has_order_by, LimitStatement * ls)
 {
     generateLimitExpr(rg, ls->mutable_limit());
     if (rg.nextBool())
@@ -1957,7 +1957,7 @@ void StatementGenerator::generateLimit(RandomGenerator & rg, const bool has_orde
         generateLimitExpr(rg, ls->mutable_offset());
     }
     ls->set_with_ties(has_order_by && (!this->allow_not_deterministic || rg.nextSmallNumber() < 7));
-    if (ncols && !ls->with_ties() && rg.nextSmallNumber() < 4)
+    if (!ls->with_ties() && rg.nextSmallNumber() < 4)
     {
         if (rg.nextSmallNumber() < 8)
         {
@@ -1967,7 +1967,7 @@ void StatementGenerator::generateLimit(RandomGenerator & rg, const bool has_orde
             {
                 LiteralValue * lv = expr->mutable_lit_val();
 
-                lv->mutable_int_lit()->set_uint_lit(rg.randomInt<uint32_t>(1, ncols));
+                lv->mutable_int_lit()->set_uint_lit(rg.randomInt<uint32_t>(0, 6));
             }
             else
             {
@@ -2252,7 +2252,7 @@ void StatementGenerator::generateSelect(
         {
             if (rg.nextBool())
             {
-                generateLimit(rg, ssc->has_orderby(), ncols, ssc->mutable_limit());
+                generateLimit(rg, ssc->has_orderby(), ssc->mutable_limit());
             }
             else
             {

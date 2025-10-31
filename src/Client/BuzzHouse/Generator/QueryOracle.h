@@ -28,14 +28,14 @@ private:
 
     PeerQuery peer_query = PeerQuery::AllPeers;
     int first_errcode = 0;
-    bool other_steps_sucess = true, can_test_oracle_result, measure_performance;
+    bool other_steps_sucess = true, can_test_oracle_result, measure_performance, compare_explain;
 
     std::unordered_set<uint32_t> found_tables;
     DB::Strings nsettings;
 
     void swapQuery(RandomGenerator & rg, google::protobuf::Message & mes);
     bool findTablesWithPeersAndReplace(RandomGenerator & rg, google::protobuf::Message & mes, StatementGenerator & gen, bool replace);
-    void addLimitOrOffset(RandomGenerator & rg, StatementGenerator & gen, uint32_t ncols, SelectStatementCore * ssc) const;
+    void addLimitOrOffset(RandomGenerator & rg, StatementGenerator & gen, SelectStatementCore * ssc) const;
     void insertOnTableOrCluster(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, bool peer, TableOrFunction * tof) const;
     void generateExportQuery(RandomGenerator & rg, StatementGenerator & gen, bool test_content, const SQLTable & t, SQLQuery & sq2);
     void

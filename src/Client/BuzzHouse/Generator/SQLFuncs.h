@@ -117,7 +117,7 @@ const std::vector<CHAggregate> CHAggrs = {
     CHAggregate(SQLFunc::FUNCsumMapWithOverflow, 0, 0, 1, 2, false),
     CHAggregate(SQLFunc::FUNCsumMapFiltered, 1, 1, 2, 2, false),
     CHAggregate(SQLFunc::FUNCsumMapFilteredWithOverflow, 1, 1, 2, 2, false),
-    CHAggregate(SQLFunc::FUNCminMap, 0, 0, 2, 2, false),
+    CHAggregate(SQLFunc::FUNCminMap, 0, 0, 1, 2, false),
     CHAggregate(SQLFunc::FUNCmaxMap, 0, 0, 1, 2, false),
     CHAggregate(SQLFunc::FUNCskewSamp, 0, 0, 1, 1, false),
     CHAggregate(SQLFunc::FUNCskewPop, 0, 0, 1, 1, false),

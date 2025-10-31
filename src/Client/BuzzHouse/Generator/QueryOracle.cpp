@@ -16,28 +16,19 @@ namespace BuzzHouse
 {
 
 const std::vector<std::vector<OutFormat>> QueryOracle::oracleFormats
-    = {{OutFormat::OUT_CSV, OutFormat::OUT_CSVWithNames, OutFormat::OUT_CSVWithNamesAndTypes},
+    = {{OutFormat::OUT_CSV},
        {OutFormat::OUT_JSON,
         OutFormat::OUT_JSONColumns,
         OutFormat::OUT_JSONColumnsWithMetadata,
         OutFormat::OUT_JSONCompact,
         OutFormat::OUT_JSONCompactColumns,
         OutFormat::OUT_JSONCompactEachRow,
-        OutFormat::OUT_JSONCompactEachRowWithNames,
-        OutFormat::OUT_JSONCompactEachRowWithNamesAndTypes,
         OutFormat::OUT_JSONCompactStringsEachRow,
-        OutFormat::OUT_JSONCompactStringsEachRowWithNames,
-        OutFormat::OUT_JSONCompactStringsEachRowWithNamesAndTypes,
         OutFormat::OUT_JSONEachRow,
         OutFormat::OUT_JSONLines,
         OutFormat::OUT_JSONObjectEachRow,
         OutFormat::OUT_JSONStringsEachRow},
-       {OutFormat::OUT_TabSeparated,
-        OutFormat::OUT_TabSeparatedRaw,
-        OutFormat::OUT_TabSeparatedRawWithNames,
-        OutFormat::OUT_TabSeparatedRawWithNamesAndTypes,
-        OutFormat::OUT_TabSeparatedWithNames,
-        OutFormat::OUT_TabSeparatedWithNamesAndTypes},
+       {OutFormat::OUT_TabSeparated, OutFormat::OUT_TabSeparatedRaw},
        {OutFormat::OUT_Values}};
 
 /// Correctness query oracle
@@ -135,7 +126,7 @@ void QueryOracle::generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & 
     sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
 }
 
-void QueryOracle::addLimitOrOffset(RandomGenerator & rg, StatementGenerator & gen, const uint32_t ncols, SelectStatementCore * ssc) const
+void QueryOracle::addLimitOrOffset(RandomGenerator & rg, StatementGenerator & gen, SelectStatementCore * ssc) const
 {
     const uint32_t noption = rg.nextSmallNumber();
 
@@ -146,7 +137,7 @@ void QueryOracle::addLimitOrOffset(RandomGenerator & rg, StatementGenerator & ge
         gen.setAllowEngineUDF(false);
         if (noption == 1)
         {
-            gen.generateLimit(rg, ssc->has_orderby(), ncols, ssc->mutable_limit());
+            gen.generateLimit(rg, ssc->has_orderby(), ssc->mutable_limit());
         }
         else
         {
@@ -199,7 +190,6 @@ void QueryOracle::dumpTableContent(
     jtf->set_final(t.supportsFinal());
 
     gen.flatTableColumnPath(0, t.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
-    const uint32_t ncols = static_cast<uint32_t>(gen.entries.size());
     for (const auto & entry : gen.entries)
     {
         ExprOrderingTerm * eot = first ? obs->mutable_ord_term() : obs->add_extra_ord_terms();
@@ -220,7 +210,7 @@ void QueryOracle::dumpTableContent(
     }
     gen.entries.clear();
 
-    addLimitOrOffset(rg, gen, ncols, ssc);
+    addLimitOrOffset(rg, gen, ssc);
     if (test_content)
     {
         /// Don't write statistics
@@ -581,7 +571,7 @@ void QueryOracle::generateSecondSetting(
 
 void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuery pq, StatementGenerator & gen, SQLQuery & sq2)
 {
-    bool explain = false;
+    bool indexes = false;
     Select * sel = nullptr;
     SelectParen * sparen = nullptr;
     const uint32_t ncols = rg.randomInt<uint32_t>(1, 5);
@@ -589,12 +579,12 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
     peer_query = pq;
     if (peer_query == PeerQuery::ClickHouseOnly && (fc.measure_performance || fc.compare_explains) && rg.nextBool())
     {
-        const uint32_t next_opt = rg.nextSmallNumber();
+        const bool next_opt = rg.nextBool();
 
-        measure_performance = !fc.compare_explains || next_opt < 7;
-        explain = !fc.measure_performance || next_opt > 6;
+        measure_performance = fc.measure_performance && (!fc.compare_explains || next_opt);
+        compare_explain = fc.compare_explains && (!fc.measure_performance || !next_opt);
     }
-    const bool global_aggregate = !measure_performance && !explain && rg.nextSmallNumber() < 4;
+    const bool global_aggregate = !measure_performance && !compare_explain && rg.nextSmallNumber() < 4;
 
     if (measure_performance)
     {
@@ -625,7 +615,7 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
     gen.enforceFinal(true);
     gen.generatingPeerQuery(pq);
     gen.setAllowEngineUDF(peer_query != PeerQuery::ClickHouseOnly);
-    if (explain)
+    if (compare_explain)
     {
         /// INSERT INTO FILE EXPLAIN SELECT is not supported, so run
         /// INSERT INTO FILE SELECT * FROM (EXPLAIN SELECT);
@@ -644,6 +634,7 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
 
             eopt->set_opt(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_indexes);
             eopt->set_val(1);
+            indexes = true;
         }
         if (rg.nextBool())
         {
@@ -662,11 +653,12 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
     gen.generatingPeerQuery(PeerQuery::None);
     gen.setAllowEngineUDF(true);
 
-    if (!measure_performance && !explain && !global_aggregate)
+    if (!measure_performance && !compare_explain && !global_aggregate)
     {
         /// If not global aggregate, use ORDER BY clause
         Select * osel = sparen->release_select();
-        SelectStatementCore * nsel = sparen->mutable_select()->mutable_select_core();
+        sel = sparen->mutable_select();
+        SelectStatementCore * nsel = sel->mutable_select_core();
         nsel->mutable_from()
             ->mutable_tos()
             ->mutable_join_clause()
@@ -678,17 +670,16 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
             ->mutable_select()
             ->set_allocated_sel(osel);
         nsel->mutable_orderby()->set_oall(true);
-        addLimitOrOffset(rg, gen, ncols, nsel);
+        addLimitOrOffset(rg, gen, nsel);
     }
 
     /// Don't write statistics
-    if (!sparen->select().has_setting_values())
+    if (!sel->has_setting_values())
     {
-        Select & ssel = const_cast<Select &>(sparen->select());
-        const auto * news = ssel.mutable_setting_values();
+        const auto * news = sel->mutable_setting_values();
         UNUSED(news);
     }
-    SettingValues & svs = const_cast<SettingValues &>(sparen->select().setting_values());
+    SettingValues & svs = const_cast<SettingValues &>(sel->setting_values());
     SetValue * sv = svs.has_set_value() ? svs.add_other_values() : svs.mutable_set_value();
 
     sv->set_property("output_format_write_statistics");
@@ -700,6 +691,17 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
 
         sv2->set_property("log_comment");
         sv2->set_value("'measure_performance'");
+    }
+    else if (indexes)
+    {
+        /// These settings are relevant to show index information
+        SetValue * sv2 = svs.add_other_values();
+        SetValue * sv3 = svs.add_other_values();
+
+        sv2->set_property("use_query_condition_cache");
+        sv2->set_value("0");
+        sv3->set_property("use_skip_indexes_on_data_read");
+        sv3->set_value("0");
     }
 }
 
@@ -828,6 +830,7 @@ void QueryOracle::swapQuery(RandomGenerator & rg, google::protobuf::Message & me
 void QueryOracle::maybeUpdateOracleSelectQuery(RandomGenerator & rg, const SQLQuery & sq1, SQLQuery & sq2)
 {
     sq2.CopyFrom(sq1);
+    chassert(!compare_explain);
     if (rg.nextBool())
     {
         /// Swap query parts
@@ -1047,12 +1050,30 @@ void QueryOracle::replaceQueryWithTablePeers(
     }
     for (const auto & entry : found_tables)
     {
-        SQLQuery next;
+        SQLQuery next2;
         const SQLTable & t = gen.tables.at(entry);
-        Insert * ins = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_insert();
-        SelectParen * sparen = ins->mutable_select();
-        SelectStatementCore * sel = sparen->mutable_select()->mutable_select_core();
+        Insert * ins = next2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_insert();
+        SelectStatementCore * sel = ins->mutable_select()->mutable_select()->mutable_select_core();
 
+        if (t.isMergeTreeFamily())
+        {
+            /// Apply delete mask
+            SQLQuery next;
+            const std::optional<String> & cluster = t.getCluster();
+            Alter * alter = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_alter();
+
+            alter->set_sobject(SQLObject::TABLE);
+            t.setName(alter->mutable_object()->mutable_est(), false);
+            if (cluster.has_value())
+            {
+                alter->mutable_cluster()->set_cluster(cluster.value());
+            }
+            alter->mutable_alter()->mutable_delete_mask();
+            SetValue * sv = alter->mutable_setting_values()->mutable_set_value();
+            sv->set_property("mutations_sync");
+            sv->set_value("2");
+            peer_queries.emplace_back(next);
+        }
         /// Then insert the data
         insertOnTableOrCluster(rg, gen, t, true, ins->mutable_tof());
         JoinedTableOrFunction * jtf = sel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
@@ -1066,13 +1087,14 @@ void QueryOracle::replaceQueryWithTablePeers(
             gen.columnPathRef(colRef, sel->add_result_columns()->mutable_etc()->mutable_col()->mutable_path());
         }
         gen.entries.clear();
-        peer_queries.emplace_back(next);
+        peer_queries.emplace_back(next2);
     }
 }
 
 void QueryOracle::resetOracleValues()
 {
     peer_query = PeerQuery::AllPeers;
+    compare_explain = false;
     measure_performance = false;
     first_errcode = 0;
     other_steps_sucess = true;
