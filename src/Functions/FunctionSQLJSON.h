@@ -6,15 +6,24 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/IColumn.h>
+#include <Columns/IColumn_fwd.h>
 #include <Core/Settings.h>
+#include <Core/TypeId.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeArray.h>
 #include <Common/JSONParsers/DummyJSONParser.h>
+#include <DataTypes/IDataType.h>
+#include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/JSONPath/Generator/GeneratorJSONPath.h>
 #include <Functions/JSONPath/Parsers/ParserJSONPath.h>
 #include <Common/JSONParsers/SimdJSONParser.h>
+#include <Common/assert_cast.h>
 #include <Interpreters/Context.h>
 #include <IO/ReadHelpers.h>
 #include <base/range.h>
@@ -118,7 +127,6 @@ private:
 
 };
 
-
 class FunctionSQLJSONHelpers
 {
 public:
@@ -147,35 +155,88 @@ public:
 
             const auto & json_path_column = arguments[1];
 
-            if (!isString(json_path_column.type))
+            if (!isString(json_path_column.type) && !isTuple(json_path_column.type) && !isArray(json_path_column.type))
             {
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                                 "JSONPath functions require second argument "
-                                "to be JSONPath of type string, illegal type: {}", json_path_column.type->getName());
+                                "to be JSONPath of type string/tuple/array, illegal type: {}", json_path_column.type->getName());
+            }
+            else
+            {
+                if (const auto * tuple_type = checkAndGetDataType<DataTypeTuple>(json_path_column.type.get()))
+                {
+                    for (const auto& element_type : tuple_type->getElements())
+                    {
+                        if (!isString(element_type))
+                        {
+                            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "JSONPath functions require second argument to be JSONPath of type Tuple(String)");
+                        }
+                    }
+                }
+                if (const auto * array_type = checkAndGetDataType<DataTypeArray>(json_path_column.type.get()))
+                {
+                    if (!isString(array_type->getNestedType()))
+                    {
+                        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "JSONPath functions require second argument to be JSONPath of type Array(String)");
+                    }
+                }
             }
             if (!isColumnConst(*json_path_column.column))
             {
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument (JSONPath) must be constant string");
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument (JSONPath) must be constant string/tuple/array");
             }
-
-            /// Prepare to parse 1 argument (JSONPath)
-            String query = typeid_cast<const ColumnConst &>(*json_path_column.column).getValue<String>();
-
-            /// Tokenize the query
-            Tokens tokens(query.data(), query.data() + query.size());
-            /// Max depth 0 indicates that depth is not limited
-            IParser::Pos token_iterator(tokens, parse_depth, parse_backtracks);
-
-            /// Parse query and create AST tree
-            Expected expected;
-            ASTPtr res;
-            ParserJSONPath parser;
-            const bool parse_res = parser.parse(token_iterator, res, expected);
-            if (!parse_res)
+            auto parse_json_path = [&](const String& query) -> std::shared_ptr<GeneratorJSONPath<JSONParser>>
             {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unable to parse JSONPath");
+                /// Tokenize the query
+                Tokens tokens(query.data(), query.data() + query.size());
+                /// Max depth 0 indicates that depth is not limited
+                IParser::Pos token_iterator(tokens, parse_depth, parse_backtracks);
+                /// Parse query and create AST tree
+                Expected expected;
+                ASTPtr res;
+                ParserJSONPath parser;
+                const bool parse_res = parser.parse(token_iterator, res, expected);
+                if (!parse_res)
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unable to parse JSONPath");
+                }
+                return std::make_shared<GeneratorJSONPath<JSONParser>>(res);
+            };
+            /// Prepare to parse 1 argument (JSONPath)
+            std::vector<std::shared_ptr<GeneratorJSONPath<JSONParser>>> generator_json_paths;
+            std::vector<bool> path_asterisks;
+            if (isString(json_path_column.type))
+            {
+                String query = typeid_cast<const ColumnConst &>(*json_path_column.column).getValue<String>();
+                generator_json_paths.emplace_back(parse_json_path(query));
             }
-
+            else
+            {
+                const ColumnPtr data_column = typeid_cast<const ColumnConst &>(*json_path_column.column).getDataColumnPtr();
+                const ColumnTuple* tuple_column = checkAndGetColumn<ColumnTuple>(data_column.get());
+                const ColumnArray* array_column = checkAndGetColumn<ColumnArray>(data_column.get());
+                if (tuple_column)
+                {
+                    for (size_t i = 0; i < tuple_column->tupleSize(); ++i)
+                    {
+                        const auto* path_column = checkAndGetColumn<ColumnString>(tuple_column->getColumnPtr(i).get());
+                        String path = path_column->getDataAt(0).toString();
+                        generator_json_paths.emplace_back(parse_json_path(path));
+                        path_asterisks.emplace_back(path.find("[*]") != std::string::npos);
+                    }
+                }
+                else if (array_column)
+                {
+                    const ColumnString* path_column = checkAndGetColumn<ColumnString>(array_column->getDataPtr().get());
+                    size_t path_size = array_column->getOffsetsPtr()->get64(0) - 0;
+                    for (size_t i = 0; i < path_size; ++i)
+                    {
+                        String path = path_column->getDataAt(i).toString();
+                        generator_json_paths.emplace_back(parse_json_path(path));
+                        path_asterisks.emplace_back(path.find("[*]") != std::string::npos);
+                    }
+                }
+            }
             JSONParser json_parser;
             using Element = typename JSONParser::Element;
             Element document;
@@ -183,7 +244,6 @@ public:
 
             /// Parse JSON for every row
             Impl impl;
-            GeneratorJSONPath<JSONParser> generator_json_path(res);
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 std::string_view json = json_column.column->getDataAt(i).toView();
@@ -193,8 +253,7 @@ public:
                 if (document_ok)
                 {
                     /// Instead of creating a new generator for each row, we can reuse the same one.
-                    generator_json_path.reinitialize();
-                    added_to_column = impl.insertResultToColumn(*to, document, generator_json_path, function_json_value_return_type_allow_complex);
+                    added_to_column = impl.insertResultToColumn(*to, document, generator_json_paths, path_asterisks, function_json_value_return_type_allow_complex);
                 }
                 if (!added_to_column)
                 {
@@ -313,6 +372,12 @@ public:
         }
         return true;
     }
+
+    static bool insertResultToColumn(IColumn & dest, const Element & root, std::vector<std::shared_ptr<GeneratorJSONPath<JSONParser>>> & generator_json_paths, std::vector<bool> &, bool)
+    {
+        generator_json_paths[0]->reinitialize();
+        return insertResultToColumn(dest, root, *generator_json_paths[0], false);
+    }
 };
 
 template <typename JSONParser, typename JSONStringSerializer>
@@ -321,14 +386,29 @@ class JSONValueImpl
 public:
     using Element = typename JSONParser::Element;
 
-    static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &, bool function_json_value_return_type_allow_nullable)
+    static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName & arguments, bool function_json_value_return_type_allow_nullable)
     {
+        if (isTuple(arguments[1].type))
+        {
+            const auto* tuple_type = checkAndGetDataType<DataTypeTuple>(arguments[1].type.get());
+            DataTypes data_types;
+            for (size_t i = 0; i < tuple_type->getElements().size(); ++i)
+            {
+                const auto element_type = std::make_shared<DataTypeString>();
+                data_types.emplace_back(makeNullable(element_type));
+            }
+            return std::make_shared<DataTypeTuple>(data_types);
+        }
+        else if (isArray(arguments[1].type))
+        {
+            const auto element_type = std::make_shared<DataTypeString>();
+            return std::make_shared<DataTypeArray>(makeNullable(element_type));
+        }
         if (function_json_value_return_type_allow_nullable)
         {
             DataTypePtr string_type = std::make_shared<DataTypeString>();
             return std::make_shared<DataTypeNullable>(string_type);
         }
-
         return std::make_shared<DataTypeString>();
     }
 
@@ -383,6 +463,96 @@ public:
         else
             json_serializer.addElement(current_element);
         json_serializer.commit();
+        return true;
+    }
+
+    static bool insertResultToColumn(IColumn & dest, const Element & root, std::vector<std::shared_ptr<GeneratorJSONPath<JSONParser>>> & json_paths, std::vector<bool> & path_asterisks, bool) 
+    {
+        if (dest.getDataType() == TypeIndex::String)
+        {
+            json_paths[0]->reinitialize();
+            return insertResultToColumn(dest, root, *json_paths[0], false);
+        }
+        for (size_t i = 0; i < json_paths.size(); ++i)
+        {
+            auto & col_element = dest.getDataType() == TypeIndex::Array ?
+                assert_cast<ColumnArray &>(dest).getData() : assert_cast<ColumnTuple &>(dest).getColumn(i);
+            ColumnNullable & col_null = assert_cast<ColumnNullable &>(col_element);
+            ColumnString & col_str = assert_cast<ColumnString &>(col_null.getNestedColumn());
+            ColumnUInt8 & col_null_map = col_null.getNullMapColumn();
+            Element current_element = root;
+            VisitorStatus status;
+            bool success = false;
+            auto generator_json_path = json_paths[i];
+            bool path_has_asterisk = path_asterisks[i];
+            generator_json_path->reinitialize();
+            JSONStringSerializer json_serializer(col_str);
+            std::vector<Element> elements_to_serialize;
+            while ((status = generator_json_path->getNextItem(current_element)) != VisitorStatus::Exhausted)
+            {
+                if (status == VisitorStatus::Ok)
+                {
+                    success = true;
+                    if (path_has_asterisk)
+                    {
+                        elements_to_serialize.emplace_back(current_element);
+                    }
+                    else if (current_element.isString())
+                    {
+                        auto str = current_element.getString();
+                        json_serializer.addRawString(str);
+                        col_null_map.insert(0);
+                    }
+                    else
+                    {
+                        json_serializer.addElement(current_element);
+                        col_null_map.insert(0);
+                    }
+                }
+                else if (status == VisitorStatus::Error)
+                {
+                    /// ON ERROR
+                    /// Here it is possible to handle errors with ON ERROR (as described in ISO/IEC TR 19075-6),
+                    /// however this functionality is not implemented yet
+                }
+                current_element = root;
+            }
+            if (!success)
+            {
+                json_serializer.rollback();
+                col_null.insertDefault();
+                continue;
+            }
+            /// If path has '[*]', e.g. `$.a[*].b`, then we should seriliaze multiple elements into a string.
+            /// E.g. Select('{"a":[{"b":"d", "b":"c"}]}', '$.a[*].b'), the result should be '["d", "c"]'.
+            if (path_has_asterisk)
+            {
+                if (elements_to_serialize.size() == 1)
+                {
+                    json_serializer.addElement(elements_to_serialize[0]);
+                }
+                else if (elements_to_serialize.size() > 1)
+                {
+                    json_serializer.addRawData("[", 1);
+                    size_t j = 0;
+                    while (j < elements_to_serialize.size() - 1)
+                    {
+                        json_serializer.addElement(elements_to_serialize[j]);
+                        json_serializer.addRawData(",", 1);
+                        ++j;
+                    }
+                    json_serializer.addElement(elements_to_serialize[j]);
+                    json_serializer.addRawData("]", 1);
+                }
+                col_null_map.insert(0);
+            }
+            json_serializer.commit();
+        }
+        if (dest.getDataType() == TypeIndex::Array)
+        {
+            auto& offsets = assert_cast<ColumnArray &>(dest).getOffsets();
+            offsets.push_back(offsets.back() + json_paths.size());
+        }
         return true;
     }
 };
@@ -440,6 +610,12 @@ public:
         json_serializer.addRawData(array_end, 1);
         json_serializer.commit();
         return true;
+    }
+
+    static bool insertResultToColumn(IColumn & dest, const Element & root, std::vector<std::shared_ptr<GeneratorJSONPath<JSONParser>>> & generator_json_paths, std::vector<bool> &, bool function_json_value_return_type_allow_complex) 
+    {
+        generator_json_paths[0]->reinitialize();
+        return insertResultToColumn(dest, root, *generator_json_paths[0], function_json_value_return_type_allow_complex);
     }
 };
 
