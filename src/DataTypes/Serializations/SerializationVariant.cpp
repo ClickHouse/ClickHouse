@@ -823,7 +823,7 @@ void SerializationVariant::serializeForHashCalculation(const IColumn & column, s
     auto global_discr = col.globalDiscriminatorAt(row_num);
     writeBinaryLittleEndian(global_discr, ostr);
     if (global_discr != ColumnVariant::NULL_DISCRIMINATOR)
- variant_serializations[global_discr]->serializeForHashCalculation(col.getVariantByGlobalDiscriminator(global_discr), col.offsetAt(row_num), ostr);
+        variant_serializations[global_discr]->serializeForHashCalculation(col.getVariantByGlobalDiscriminator(global_discr), col.offsetAt(row_num), ostr);
 }
 
 namespace
