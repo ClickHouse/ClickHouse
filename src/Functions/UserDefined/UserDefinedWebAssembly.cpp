@@ -37,6 +37,7 @@
 #include <Common/transformEndianness.h>
 #include <Columns/ColumnString.h>
 #include <base/extended_types.h>
+#include <base/arithmeticOverflow.h>
 
 
 #include <QueryPipeline/Pipe.h>
@@ -701,7 +702,11 @@ private:
 WebAssembly::WasmModule::Config getWasmModuleConfigFromFunctionSettings(const WebAssemblyFunctionSettings & function_settings)
 {
     WebAssembly::WasmModule::Config cfg;
-    cfg.fuel_limit = function_settings.getValue("max_fuel").safeGet<UInt64>();
+
+    UInt64 max_fuel = function_settings.getValue("max_fuel").safeGet<UInt64>();
+    if (common::mulOverflow(max_fuel, 1024, cfg.fuel_limit))
+        cfg.fuel_limit = std::numeric_limits<UInt64>::max();
+
     cfg.memory_limit = function_settings.getValue("max_memory").safeGet<UInt64>();
     return cfg;
 }
@@ -969,7 +974,7 @@ struct WebAssemblyFunctionSettingsConstraits : public IHints<>
 
     const std::unordered_map<String, SettingDeffinition> settings_def = {
         /// Fuel limit for a single instance
-        {"max_fuel", SettingUInt64Range{1'000, std::numeric_limits<UInt64>::max()}.withDefault(100'000'000)},
+        {"max_fuel", SettingUInt64Range{0, std::numeric_limits<UInt64>::max()}.withDefault(100'000)},
         /// Memory limit for a single instance
         {"max_memory", SettingUInt64Range{64_KiB, 4_GiB}.withDefault(100_MiB)},
         /// Serialization format for input/output data for ABI what uses serialization
