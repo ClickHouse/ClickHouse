@@ -141,6 +141,7 @@ node = cluster.add_instance(
         "configs/blob_log.xml",
         "configs/remote_servers.xml",
         "configs/query_log.xml",
+        "configs/data_file_name_generator.xml",
     ],
     user_configs=[
         "configs/zookeeper_retries.xml",
