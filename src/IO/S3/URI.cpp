@@ -64,7 +64,7 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
         {
             std::string after_question = uri_str.substr(question_pos + 1);
             // If it's not followed by "versionId=", treat it as a wildcard and encode it
-            if (after_question.find("versionId=") != 0)
+            if (!after_question.starts_with("versionId="))
             {
                 String uri_with_question_mark_encode;
                 Poco::URI::encode(uri_str, "?", uri_with_question_mark_encode);
