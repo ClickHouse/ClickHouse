@@ -315,32 +315,29 @@ bool ObjectStorageQueueIFileMetadata::trySetProcessing()
 std::optional<ObjectStorageQueueIFileMetadata::SetProcessingResponseIndexes>
 ObjectStorageQueueIFileMetadata::prepareSetProcessingRequests(Coordination::Requests & requests, const std::string & processing_id)
 {
-    if (metadata_ref_count.load() > 1)
+    std::unique_lock processing_lock(file_status->processing_lock, std::defer_lock);
+    if (!processing_lock.try_lock())
     {
-        std::unique_lock processing_lock(file_status->processing_lock, std::defer_lock);
-        if (!processing_lock.try_lock())
-        {
-            /// This is possible in case on the same server
-            /// there are more than one S3(Azure)Queue table processing the same keeper path.
-            LOG_TEST(log, "File {} is being processed on this server by another table on this server", path);
-            return std::nullopt;
-        }
+        /// This is possible in case on the same server
+        /// there are more than one S3(Azure)Queue table processing the same keeper path.
+        LOG_TEST(log, "File {} is being processed on this server by another table on this server", path);
+        return std::nullopt;
+    }
 
-        auto state = file_status->state.load();
-        if (state == FileStatus::State::Processing
-            || state == FileStatus::State::Processed
-            || (state == FileStatus::State::Failed
-                && file_status->retries
-                && file_status->retries >= max_loading_retries))
-        {
-            LOG_TEST(log, "File {} has non-processable state `{}` (retries: {}/{})",
-                    path, state, file_status->retries.load(), max_loading_retries);
+    auto state = file_status->state.load();
+    if (state == FileStatus::State::Processing
+        || state == FileStatus::State::Processed
+        || (state == FileStatus::State::Failed
+            && file_status->retries
+            && file_status->retries >= max_loading_retries))
+    {
+        LOG_TEST(log, "File {} has non-processable state `{}` (retries: {}/{})",
+                path, state, file_status->retries.load(), max_loading_retries);
 
-            /// This is possible in case on the same server
-            /// there are more than one S3(Azure)Queue table processing the same keeper path.
-            LOG_TEST(log, "File {} is being processed on this server by another table on this server", path);
-            return std::nullopt;
-        }
+        /// This is possible in case on the same server
+        /// there are more than one S3(Azure)Queue table processing the same keeper path.
+        LOG_TEST(log, "File {} is being processed on this server by another table on this server", path);
+        return std::nullopt;
     }
 
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingRequests);
