@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
-# Tag no-fasttest: Depends on Parquet
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -30,7 +28,7 @@ function run()
     $MY_CLICKHOUSE_CLIENT --query "
         SELECT trim(explain) FROM
         (
-            EXPLAIN actions = 1, indexes = 1 $query
+            EXPLAIN actions = 1, indexes = 1 $query SETTINGS use_skip_indexes_on_data_read = 1
         )
         WHERE explain ILIKE '%filter column%' OR explain ILIKE '%name: idx%'
     "
