@@ -98,20 +98,7 @@ void IcebergDataObjectInfo::addEqualityDeleteObject(const Iceberg::ManifestFileE
         equality_delete_object.schema_id);
 }
 
-void IcebergObjectSerializableInfo::checkVersion(size_t protocol_version) const
-{
-    if (protocol_version < DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_METADATA)
-    {
-        throw Exception(
-            ErrorCodes::UNKNOWN_PROTOCOL,
-            "IcebergObjectSerializableInfo serialization is supported since protocol version {}, got: {}",
-            DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_METADATA,
-            protocol_version);
-    }
-}
-
 #endif
-
 
 void IcebergObjectSerializableInfo::serializeForClusterFunctionProtocol(WriteBuffer & out, size_t protocol_version) const
 {
@@ -215,6 +202,18 @@ void IcebergObjectSerializableInfo::deserializeForClusterFunctionProtocol(ReadBu
                 }
             }
         }
+    }
+}
+
+void IcebergObjectSerializableInfo::checkVersion(size_t protocol_version) const
+{
+    if (protocol_version < DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_METADATA)
+    {
+        throw Exception(
+            ErrorCodes::UNKNOWN_PROTOCOL,
+            "IcebergObjectSerializableInfo serialization is supported since protocol version {}, got: {}",
+            DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_METADATA,
+            protocol_version);
     }
 }
 }
