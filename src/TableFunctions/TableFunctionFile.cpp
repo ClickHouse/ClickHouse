@@ -66,6 +66,7 @@ std::optional<String> TableFunctionFile::tryGetFormatFromFirstArgument()
     if (fd >= 0)
         return FormatFactory::instance().tryGetFormatFromFileDescriptor(fd);
 
+    chassert(file_source); /// TableFunctionFile::parseFirstArguments() initializes either `fd` or `file_source`.
     return file_source->format_from_filenames;
 }
 
@@ -95,6 +96,7 @@ StoragePtr TableFunctionFile::getStorage(
     if (fd >= 0)
         return std::make_shared<StorageFile>(fd, args);
 
+    chassert(file_source); /// TableFunctionFile::parseFirstArguments() initializes either `fd` or `file_source`.
     return std::make_shared<StorageFile>(*file_source, args);
 }
 
@@ -105,7 +107,7 @@ ColumnsDescription TableFunctionFile::getActualTableStructure(ContextPtr context
         if (fd >= 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Schema inference is not supported for table function '{}' with file descriptor", getName());
 
-        chassert(file_source);
+        chassert(file_source); /// TableFunctionFile::parseFirstArguments() initializes either `fd` or `file_source`.
 
         ColumnsDescription columns;
         if (format == "auto")

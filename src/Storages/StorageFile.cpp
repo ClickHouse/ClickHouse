@@ -285,14 +285,14 @@ std::pair<String, String> splitToArchivePathAndPathInArchive(const String & sour
     while (filename_view.starts_with(' '))
         filename_view.remove_prefix(1);
 
-    /// possible situations when the first part can be archive is only if one of the following is true:
-    /// - it contains supported extension
-    /// - it contains characters that could mean glob expression
-    if (filename_view.empty() || path_to_archive_view.empty()
-        || (!hasSupportedArchiveExtension(path_to_archive_view) && path_to_archive_view.find_first_of("*?{") == std::string_view::npos))
-    {
+    if (filename_view.empty() || path_to_archive_view.empty())
         return {{}, source};
-    }
+
+    /// possible situations when the first part can be archive is only if one of the following is true:
+    /// - it contains supported archive extension
+    /// - it contains characters that could mean glob expression
+    if (!hasSupportedArchiveExtension(path_to_archive_view) && path_to_archive_view.find_first_of("*?{") == std::string_view::npos)
+        return {{}, source};
 
     return {String{path_to_archive_view}, String{filename_view}};
 }
