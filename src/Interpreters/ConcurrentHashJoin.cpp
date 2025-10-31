@@ -439,32 +439,6 @@ bool ConcurrentHashJoin::alwaysReturnsEmptySet() const
     return true;
 }
 
-/// Merge selectors (lists of row indexes) from all shards into a single IndexesPtr
-/// Only the first shard is required to use an index-based selector; others may be range or indexes
-static ScatteredBlock::IndexesPtr mergeIndexesPtrs(const std::vector<std::shared_ptr<ConcurrentHashJoin::InternalHashJoin>> & shards)
-{
-    size_t total = 0;
-    for (const auto & sh : shards)
-    {
-        const auto & sc = getData(sh)->columns.front();
-        total += sc.selector.getIndexes().size();
-    }
-
-    auto merged = ScatteredBlock::Indexes::create(total);
-    auto & out = merged->getData();
-
-    size_t pos = 0;
-    for (const auto & sh : shards)
-    {
-        const auto & sc = getData(sh)->columns.front();
-        const auto & in = sc.selector.getIndexes().getData();
-        for (const auto & i : in)
-            out[pos++] = i;
-    }
-
-    return merged;
-}
-
 IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
         const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const
 {
@@ -549,35 +523,23 @@ IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
             }
 
             // Build streams from each slot (slot 0 has merged nullmaps; others only maps)
-            // Additionally, merge selector indexes into slot 0 and clear others
+            std::vector<IBlocksStreamPtr> streams;
+            streams.reserve(slots);	
+            for (const auto & hash_join : hash_joins)
             {
-                std::vector<std::unique_lock<std::mutex>> locks;
-                locks.reserve(slots);
-                for (size_t i = 0; i < slots; ++i)
-                    locks.emplace_back(hash_joins[i]->mutex);
-
-                auto dst0 = getData(hash_joins[0]);
-                if (!dst0->columns.empty() && !dst0->columns.front().selector.isContinuousRange())
+                std::lock_guard lock(hash_join->mutex);
+                if (hash_join->data->hasNonJoinedRows())
                 {
-                    auto merged_idx = mergeIndexesPtrs(hash_joins);
-                    dst0->columns.front().selector = ScatteredBlock::Selector(std::move(merged_idx));
-
-                    // Clean up selectors in other shards
-                    for (size_t i = 1; i < slots; ++i)
-                    {
-                        auto src = getData(hash_joins[i]);
-                        if (!src->columns.empty())
-                            src->columns.front().selector = ScatteredBlock::Selector();
-                    }
+                    if (auto s = hash_join->data->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size))
+                        streams.push_back(std::move(s));
                 }
             }
 
-            if (hash_joins[0]->data->hasNonJoinedRows())
-            {
-                std::lock_guard lock(hash_joins[0]->mutex);
-                return hash_joins[0]->data->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size);
-            }
-            return {};
+            if (streams.empty())
+                return {};
+            if (streams.size() == 1)
+                return streams[0];
+            return std::make_shared<ConcatStreams>(std::move(streams));
         }
     }
 }
