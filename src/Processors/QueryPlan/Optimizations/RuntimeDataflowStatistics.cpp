@@ -40,7 +40,7 @@ void Updater::addOutputBytes(const Chunk & chunk)
     std::lock_guard lock(mutex);
     const auto source_bytes = chunk.bytes();
     statistics.output_bytes += source_bytes;
-    if (cnt++ % 10 == 0 && cnt < 100 && chunk.hasRows())
+    if (cnt++ % 50 == 0 && cnt < 150 && chunk.hasRows())
     {
         if (chunk.getNumColumns() != header.columns())
         {
@@ -70,31 +70,36 @@ void Updater::addOutputBytes(const Aggregator &, AggregatedDataVariants & varian
     output_bytes_compressed += res;
 }
 
-void Updater::addOutputBytes(const Aggregator &, const Block &)
+void Updater::addOutputBytes(const Aggregator & aggregator, const Block & block)
 {
     if (!cache_key)
         return;
 
-    // auto getKeyColumnsSize = [&](bool compressed)
-    // {
-    //     size_t total_size = 0;
-    //     for (size_t i = 0; i < aggregator.getParams().keys_size; ++i)
-    //     {
-    //         const auto & key_column_name = aggregator.getParams().keys[i];
-    //         const auto & column = block.getByName(key_column_name);
-    //         total_size += compressed ? compressedColumnSize(column) : column.column->byteSize();
-    //     }
-    //     return total_size;
-    // };
-    //
-    // std::lock_guard lock(mutex);
-    // const auto source_bytes = getKeyColumnsSize(/*compressed=*/false);
-    // statistics2.output_bytes += source_bytes;
+    auto getKeyColumnsSize = [&](bool compressed)
+    {
+        size_t total_size = 0;
+        for (size_t i = 0; i < aggregator.getParams().keys_size; ++i)
+        {
+            const auto & key_column_name = aggregator.getParams().keys[i];
+            const auto & column = block.getByName(key_column_name);
+            total_size += compressed ? compressedColumnSize(column) : column.column->byteSize();
+        }
+        return total_size;
+    };
+
+    const auto source_bytes = getKeyColumnsSize(/*compressed=*/false);
+    size_t compressed = 0;
+    if (cnt++ % 50 == 0 && cnt < 150 && block.rows())
+        compressed = getKeyColumnsSize(/*compressed=*/true);
+
+    std::lock_guard lock(mutex);
+    statistics2.output_bytes += source_bytes;
     // if (cnt++ % 10 == 0 && cnt < 100 && block.rows())
-    // {
-    //     output_bytes_sample2 += source_bytes;
-    //     output_bytes_compressed2 += getKeyColumnsSize(/*compressed=*/true);
-    // }
+    if (compressed)
+    {
+        output_bytes_sample2 += source_bytes;
+        output_bytes_compressed2 += getKeyColumnsSize(/*compressed=*/true);
+    }
 }
 
 void Updater::addInputBytes(const ColumnsWithTypeAndName & columns, const IMergeTreeDataPart::ColumnSizeByName & column_sizes, size_t bytes)
