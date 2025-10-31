@@ -263,12 +263,6 @@ private:
             attr_col_node_casted = createCastFunction(attr_col_node, dictget_function_info.return_type, getContext());
         }
 
-        QueryTreeNodes key_col_nodes;
-        for (const auto & key_col : key_cols)
-        {
-            key_col_nodes.push_back(std::make_shared<ColumnNode>(key_col, dict_table_function));
-        }
-
         auto attr_comparison_function_node = std::make_shared<FunctionNode>(attr_comparison_function_name);
         attr_comparison_function_node->markAsOperator();
         if (dict_side == Side::LHS)
@@ -286,9 +280,9 @@ private:
         subquery_node->getJoinTree() = dict_table_function;
         subquery_node->getWhere() = attr_comparison_function_node;
 
-        for (const auto & key_col_node : key_col_nodes)
+        for (const auto & key_col_node : key_cols)
         {
-            subquery_node->getProjection().getNodes().push_back(key_col_node);
+            subquery_node->getProjection().getNodes().push_back(std::make_shared<ColumnNode>(key_col_node, dict_table_function));
         }
         subquery_node->resolveProjectionColumns(key_cols);
         resolveNode(subquery_node, getContext());
