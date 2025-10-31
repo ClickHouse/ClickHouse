@@ -676,6 +676,7 @@ public:
 
     void updateGenerator(const SQLQuery & sq, ExternalIntegrations & ei, bool success);
     void setInTransaction(const bool value) { in_transaction = value; }
+    bool getAllowNotDetermistic() const { return allow_not_deterministic; }
 
     friend class QueryOracle;
 };

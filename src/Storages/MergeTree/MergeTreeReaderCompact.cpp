@@ -207,8 +207,7 @@ void MergeTreeReaderCompact::readData(
         deserialize_settings.get_avg_value_size_hint_callback
             = [&](const ISerialization::SubstreamPath & substream_path) -> double
         {
-            auto stream_name
-                = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, data_part_info_for_read->getChecksums());
+            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums());
             if (!stream_name)
                 return 0.0;
 
@@ -218,8 +217,7 @@ void MergeTreeReaderCompact::readData(
         deserialize_settings.update_avg_value_size_hint_callback
             = [&](const ISerialization::SubstreamPath & substream_path, const IColumn & column_)
         {
-            auto stream_name
-                = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, data_part_info_for_read->getChecksums());
+            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums());
             if (!stream_name)
                 return;
 

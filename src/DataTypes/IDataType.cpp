@@ -2,6 +2,7 @@
 #include <Columns/IColumn.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSparse.h>
+#include <Columns/ColumnReplicated.h>
 
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
@@ -13,6 +14,7 @@
 #include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationSparse.h>
+#include <DataTypes/Serializations/SerializationReplicated.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 
 #include <DataTypes/Serializations/SerializationDetached.h>
@@ -77,9 +79,15 @@ void IDataType::updateAvgValueSizeHint(const IColumn & column, double & avg_valu
 
 MutableColumnPtr IDataType::createColumn(const ISerialization & serialization) const
 {
+    auto kind_stack = serialization.getKindStack();
     auto column = createColumn();
-    if (serialization.getKind() == ISerialization::Kind::SPARSE || serialization.getKind() == ISerialization::Kind::DETACHED_OVER_SPARSE)
-        return ColumnSparse::create(std::move(column));
+    for (auto kind : kind_stack)
+    {
+        if (kind == ISerialization::Kind::SPARSE)
+            column = ColumnSparse::create(std::move(column));
+        else if (kind == ISerialization::Kind::REPLICATED)
+            column = ColumnReplicated::create(std::move(column), ColumnUInt8::create());
+    }
 
     return column;
 }
@@ -281,7 +289,7 @@ void IDataType::setCustomization(DataTypeCustomDescPtr custom_desc_) const
 
 MutableSerializationInfoPtr IDataType::createSerializationInfo(const SerializationInfoSettings & settings) const
 {
-    return std::make_shared<SerializationInfo>(ISerialization::Kind::DEFAULT, settings);
+    return std::make_shared<SerializationInfo>(ISerialization::KindStack{ISerialization::Kind::DEFAULT}, settings);
 }
 
 SerializationInfoPtr IDataType::getSerializationInfo(const IColumn & column) const
@@ -289,7 +297,7 @@ SerializationInfoPtr IDataType::getSerializationInfo(const IColumn & column) con
     if (const auto * column_const = checkAndGetColumn<ColumnConst>(&column))
         return getSerializationInfo(column_const->getDataColumn());
 
-    return std::make_shared<SerializationInfo>(ISerialization::getKind(column), SerializationInfo::Settings{});
+    return std::make_shared<SerializationInfo>(ISerialization::getKindStack(column), SerializationInfo::Settings{});
 }
 
 SerializationPtr IDataType::getDefaultSerialization(SerializationPtr override_default) const
@@ -303,29 +311,25 @@ SerializationPtr IDataType::getDefaultSerialization(SerializationPtr override_de
     return doGetDefaultSerialization();
 }
 
-SerializationPtr IDataType::getSparseSerialization(SerializationPtr override_default) const
+SerializationPtr IDataType::getSerialization(ISerialization::KindStack kind_stack, SerializationPtr override_default) const
 {
-    return std::make_shared<SerializationSparse>(getDefaultSerialization(override_default));
-}
+    auto serialization = getDefaultSerialization(override_default);
+    for (auto kind : kind_stack)
+    {
+        if (supportsSparseSerialization() && kind == ISerialization::Kind::SPARSE)
+            serialization = std::make_shared<SerializationSparse>(serialization);
+        else if (kind == ISerialization::Kind::DETACHED)
+            serialization = std::make_shared<SerializationDetached>(serialization);
+        else if (kind == ISerialization::Kind::REPLICATED)
+            serialization = std::make_shared<SerializationReplicated>(serialization);
+    }
 
-SerializationPtr IDataType::getSerialization(ISerialization::Kind kind, SerializationPtr override_default) const
-{
-    if (supportsSparseSerialization() && kind == ISerialization::Kind::SPARSE)
-        return getSparseSerialization(override_default);
-
-    if (kind == ISerialization::Kind::DETACHED)
-        return std::make_shared<SerializationDetached>(getDefaultSerialization(override_default));
-
-    if (kind == ISerialization::Kind::DETACHED_OVER_SPARSE)
-        return std::make_shared<SerializationDetached>(
-            supportsSparseSerialization() ? getSparseSerialization(override_default) : getDefaultSerialization(override_default));
-
-    return getDefaultSerialization(override_default);
+    return serialization;
 }
 
 SerializationPtr IDataType::getSerialization(const SerializationInfo & info) const
 {
-    return getSerialization(info.getKind());
+    return getSerialization(info.getKindStack());
 }
 
 SerializationPtr IDataType::getSerialization(const SerializationInfoSettings & settings) const
@@ -404,6 +408,7 @@ bool isDecimal(TYPE data_type) { return WhichDataType(data_type).isDecimal(); } 
 \
 bool isFloat(TYPE data_type) { return WhichDataType(data_type).isFloat(); } \
 \
+bool isIntegerOrDecimal(TYPE data_type) { return WhichDataType(data_type).isIntegerOrDecimal(); } \
 bool isNativeNumber(TYPE data_type) { return WhichDataType(data_type).isNativeNumber(); } \
 bool isNumber(TYPE data_type) { return WhichDataType(data_type).isNumber(); } \
 \
