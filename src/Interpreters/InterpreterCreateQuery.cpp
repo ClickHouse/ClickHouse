@@ -2029,8 +2029,8 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         
         if (subcolumn_count > max_subcolumns)
             throw Exception(ErrorCodes::TOO_MANY_SUBCOLUMNS,
-                                    "Too many subcolumns. The limit is set to {}, the current number is {}",
-                                    max_subcolumns, max_subcolumns);
+                                    "Too many subcolumns. The limit is set to {}, the subcolumns in table is {}",
+                                    max_subcolumns, subcolumn_count);
     }
 
     auto * replicated_storage = typeid_cast<StorageReplicatedMergeTree *>(res.get());
