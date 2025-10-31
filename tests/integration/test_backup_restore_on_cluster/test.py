@@ -2,7 +2,6 @@ import os.path
 import random
 import re
 import string
-import xml.etree.ElementTree as ET
 
 import pytest
 
@@ -54,16 +53,6 @@ node3 = cluster.add_instance(
 )
 
 
-def format_settings(settings):
-    if not settings:
-        return ""
-
-    def vstr(v):
-        return "'" + v + "'" if type(v) == str else str(v)
-
-    return "SETTINGS " + ",".join(f"{k}={vstr(v)}" for k, v in settings.items())
-
-
 @pytest.fixture(scope="module", autouse=True)
 def start_cluster():
     try:
@@ -99,14 +88,7 @@ def get_path_to_backup(backup_name):
     return os.path.join(node1.cluster.instances_dir, "backups", name)
 
 
-@pytest.mark.parametrize(
-    "key_prefix_length",
-    [
-        pytest.param(None, id="no_prefix"),
-        pytest.param(3, id="prefix_length=3"),
-    ],
-)
-def test_replicated_table(key_prefix_length):
+def test_replicated_table():
     node1.query(
         "CREATE TABLE tbl ON CLUSTER 'cluster' ("
         "x UInt8, y String"
@@ -123,12 +105,8 @@ def test_replicated_table(key_prefix_length):
     backup_name = new_backup_name()
 
     # Make backup on node 1.
-    backup_settings = (
-        {"key_prefix_length": key_prefix_length} if key_prefix_length else None
-    )
-    backup_settings = {"replica_num": 1} | (backup_settings or {})
     node1.query(
-        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} {format_settings(backup_settings)}"
+        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} SETTINGS replica_num=1"
     )
 
     # Drop table on both nodes.
@@ -147,14 +125,7 @@ def test_replicated_table(key_prefix_length):
     )
 
 
-@pytest.mark.parametrize(
-    "key_prefix_length",
-    [
-        pytest.param(None, id="no_prefix"),
-        pytest.param(3, id="prefix_length=3"),
-    ],
-)
-def test_empty_replicated_table(key_prefix_length):
+def test_empty_replicated_table():
     node1.query(
         "CREATE TABLE tbl ON CLUSTER 'cluster' ("
         "x UInt8, y String"
@@ -165,12 +136,8 @@ def test_empty_replicated_table(key_prefix_length):
     backup_name = new_backup_name()
 
     # Make backup on node 1.
-    backup_settings = (
-        {"key_prefix_length": key_prefix_length} if key_prefix_length else None
-    )
-    backup_settings = {"replica_num": 1} | (backup_settings or {})
     node1.query(
-        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} {format_settings(backup_settings)}"
+        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} SETTINGS replica_num=1"
     )
 
     # Drop table on both nodes.
@@ -184,14 +151,7 @@ def test_empty_replicated_table(key_prefix_length):
     assert node2.query("SELECT * FROM tbl") == ""
 
 
-@pytest.mark.parametrize(
-    "key_prefix_length",
-    [
-        pytest.param(None, id="no_prefix"),
-        pytest.param(3, id="prefix_length=3"),
-    ],
-)
-def test_replicated_database(key_prefix_length):
+def test_replicated_database():
     node1.query(
         "CREATE DATABASE mydb ON CLUSTER 'cluster' ENGINE=Replicated('/clickhouse/path/','{shard}','{replica}')"
     )
@@ -217,12 +177,8 @@ def test_replicated_database(key_prefix_length):
 
     # Make backup.
     backup_name = new_backup_name()
-    backup_settings = (
-        {"key_prefix_length": key_prefix_length} if key_prefix_length else None
-    )
-    backup_settings = {"replica_num": 2} | (backup_settings or {})
     node1.query(
-        f"BACKUP DATABASE mydb ON CLUSTER 'cluster' TO {backup_name} {format_settings(backup_settings)}"
+        f"BACKUP DATABASE mydb ON CLUSTER 'cluster' TO {backup_name} SETTINGS replica_num=2"
     )
 
     # Drop table on both nodes.
@@ -236,14 +192,7 @@ def test_replicated_database(key_prefix_length):
     assert node2.query("SELECT * FROM mydb.tbl ORDER BY x") == expect
 
 
-@pytest.mark.parametrize(
-    "key_prefix_length",
-    [
-        pytest.param(None, id="no_prefix"),
-        pytest.param(3, id="prefix_length=3"),
-    ],
-)
-def test_replicated_database_compare_parts(key_prefix_length):
+def test_replicated_database_compare_parts():
     """
     stop merges and fetches then write data to two nodes and
     compare that parts are restored from single node (second) after backup
@@ -275,12 +224,8 @@ def test_replicated_database_compare_parts(key_prefix_length):
 
     # Make backup.
     backup_name = new_backup_name()
-    backup_settings = (
-        {"key_prefix_length": key_prefix_length} if key_prefix_length else None
-    )
-    backup_settings = {"replica_num": 2} | (backup_settings or {})
     node1.query(
-        f"BACKUP DATABASE mydb ON CLUSTER 'cluster' TO {backup_name} {format_settings(backup_settings)}"
+        f"BACKUP DATABASE mydb ON CLUSTER 'cluster' TO {backup_name} SETTINGS replica_num=2"
     )
 
     # Drop table on both nodes.
@@ -301,14 +246,7 @@ def test_replicated_database_compare_parts(key_prefix_length):
     assert p2 == node2.query("SELECT * FROM mydb.tbl ORDER BY x")
 
 
-@pytest.mark.parametrize(
-    "key_prefix_length",
-    [
-        pytest.param(None, id="no_prefix"),
-        pytest.param(3, id="prefix_length=3"),
-    ],
-)
-def test_different_tables_on_nodes(key_prefix_length):
+def test_different_tables_on_nodes():
     node1.query(
         "CREATE TABLE tbl (`x` UInt8, `y` String) ENGINE = MergeTree ORDER BY x"
     )
@@ -320,12 +258,7 @@ def test_different_tables_on_nodes(key_prefix_length):
     node2.query("INSERT INTO tbl VALUES (-333), (-222), (-111), (0), (111)")
 
     backup_name = new_backup_name()
-    backup_settings = (
-        {"key_prefix_length": key_prefix_length} if key_prefix_length else None
-    )
-    node1.query(
-        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} {format_settings(backup_settings)}"
-    )
+    node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
 
     node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
@@ -337,14 +270,7 @@ def test_different_tables_on_nodes(key_prefix_length):
     assert node2.query("SELECT * FROM tbl") == TSV([-333, -222, -111, 0, 111])
 
 
-@pytest.mark.parametrize(
-    "key_prefix_length",
-    [
-        pytest.param(None, id="no_prefix"),
-        pytest.param(3, id="prefix_length=3"),
-    ],
-)
-def test_backup_restore_on_single_replica(key_prefix_length):
+def test_backup_restore_on_single_replica():
     node1.query(
         "CREATE DATABASE mydb ON CLUSTER 'cluster' ENGINE=Replicated('/clickhouse/path/','{shard}','{replica}')"
     )
@@ -355,12 +281,7 @@ def test_backup_restore_on_single_replica(key_prefix_length):
     node1.query("INSERT INTO mydb.test VALUES ('ghi', 3)")
 
     backup_name = new_backup_name()
-    backup_settings = (
-        {"key_prefix_length": key_prefix_length} if key_prefix_length else None
-    )
-    node1.query(
-        f"BACKUP DATABASE mydb TO {backup_name} {format_settings(backup_settings)}"
-    )
+    node1.query(f"BACKUP DATABASE mydb TO {backup_name}")
 
     node1.query("DROP DATABASE mydb SYNC")
 
@@ -392,14 +313,7 @@ def test_backup_restore_on_single_replica(key_prefix_length):
     )
 
 
-@pytest.mark.parametrize(
-    "key_prefix_length",
-    [
-        pytest.param(None, id="no_prefix"),
-        pytest.param(3, id="prefix_length=3"),
-    ],
-)
-def test_table_with_parts_in_queue_considered_non_empty(key_prefix_length):
+def test_table_with_parts_in_queue_considered_non_empty():
     node1.query(
         "CREATE DATABASE mydb ON CLUSTER 'cluster' ENGINE=Replicated('/clickhouse/path/','{shard}','{replica}')"
     )
@@ -409,12 +323,7 @@ def test_table_with_parts_in_queue_considered_non_empty(key_prefix_length):
     node1.query("INSERT INTO mydb.test SELECT number AS x FROM numbers(10000000)")
 
     backup_name = new_backup_name()
-    backup_settings = (
-        {"key_prefix_length": key_prefix_length} if key_prefix_length else None
-    )
-    node1.query(
-        f"BACKUP DATABASE mydb TO {backup_name} {format_settings(backup_settings)}"
-    )
+    node1.query(f"BACKUP DATABASE mydb TO {backup_name}")
 
     node1.query("DROP DATABASE mydb SYNC")
 
@@ -425,14 +334,7 @@ def test_table_with_parts_in_queue_considered_non_empty(key_prefix_length):
     )
 
 
-@pytest.mark.parametrize(
-    "key_prefix_length",
-    [
-        pytest.param(None, id="no_prefix"),
-        pytest.param(3, id="prefix_length=3"),
-    ],
-)
-def test_replicated_table_with_uuid_in_zkpath(key_prefix_length):
+def test_replicated_table_with_uuid_in_zkpath():
     node1.query(
         "CREATE TABLE tbl ON CLUSTER 'cluster' ("
         "x UInt8, y String"
@@ -444,12 +346,7 @@ def test_replicated_table_with_uuid_in_zkpath(key_prefix_length):
     node2.query("INSERT INTO tbl VALUES (2, 'BB')")
 
     backup_name = new_backup_name()
-    backup_settings = (
-        {"key_prefix_length": key_prefix_length} if key_prefix_length else None
-    )
-    node1.query(
-        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} {format_settings(backup_settings)}"
-    )
+    node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
 
     # The table `tbl2` is expected to have a different UUID so it's ok to have both `tbl` and `tbl2` at the same time.
     node2.query(f"RESTORE TABLE tbl AS tbl2 ON CLUSTER 'cluster' FROM {backup_name}")
@@ -468,14 +365,7 @@ def test_replicated_table_with_uuid_in_zkpath(key_prefix_length):
         )
 
 
-@pytest.mark.parametrize(
-    "key_prefix_length",
-    [
-        pytest.param(None, id="no_prefix"),
-        pytest.param(3, id="prefix_length=3"),
-    ],
-)
-def test_replicated_table_with_not_synced_insert(key_prefix_length):
+def test_replicated_table_with_not_synced_insert():
     node1.query(
         "CREATE TABLE tbl ON CLUSTER 'cluster' ("
         "x UInt32"
@@ -493,12 +383,7 @@ def test_replicated_table_with_not_synced_insert(key_prefix_length):
     node2.query("INSERT INTO tbl VALUES (444)")
 
     backup_name = new_backup_name()
-    backup_settings = (
-        {"key_prefix_length": key_prefix_length} if key_prefix_length else None
-    )
-    node1.query(
-        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} {format_settings(backup_settings)}"
-    )
+    node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
 
     node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
@@ -509,14 +394,7 @@ def test_replicated_table_with_not_synced_insert(key_prefix_length):
     assert node2.query("SELECT * FROM tbl ORDER BY x") == TSV([111, 222, 333, 444])
 
 
-@pytest.mark.parametrize(
-    "key_prefix_length",
-    [
-        pytest.param(None, id="no_prefix"),
-        pytest.param(3, id="prefix_length=3"),
-    ],
-)
-def test_replicated_table_with_not_synced_merge(key_prefix_length):
+def test_replicated_table_with_not_synced_merge():
     node1.query(
         "CREATE TABLE tbl ON CLUSTER 'cluster' ("
         "x UInt32"
@@ -535,12 +413,7 @@ def test_replicated_table_with_not_synced_merge(key_prefix_length):
     node2.query("OPTIMIZE TABLE tbl FINAL")
 
     backup_name = new_backup_name()
-    backup_settings = (
-        {"key_prefix_length": key_prefix_length} if key_prefix_length else None
-    )
-    node1.query(
-        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} {format_settings(backup_settings)}"
-    )
+    node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
 
     node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
@@ -551,14 +424,7 @@ def test_replicated_table_with_not_synced_merge(key_prefix_length):
     assert node2.query("SELECT * FROM tbl ORDER BY x") == TSV([111, 222])
 
 
-@pytest.mark.parametrize(
-    "key_prefix_length",
-    [
-        pytest.param(None, id="no_prefix"),
-        pytest.param(3, id="prefix_length=3"),
-    ],
-)
-def test_replicated_table_restored_into_bigger_cluster(key_prefix_length):
+def test_replicated_table_restored_into_bigger_cluster():
     node1.query(
         "CREATE TABLE tbl ON CLUSTER 'cluster' ("
         "x UInt32"
@@ -570,12 +436,7 @@ def test_replicated_table_restored_into_bigger_cluster(key_prefix_length):
     node2.query("INSERT INTO tbl VALUES (222)")
 
     backup_name = new_backup_name()
-    backup_settings = (
-        {"key_prefix_length": key_prefix_length} if key_prefix_length else None
-    )
-    node1.query(
-        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} {format_settings(backup_settings)}"
-    )
+    node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
 
     node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
@@ -964,14 +825,7 @@ def test_system_functions():
     node1.query("DROP FUNCTION parity_str")
 
 
-@pytest.mark.parametrize(
-    "key_prefix_length",
-    [
-        pytest.param(None, id="no_prefix"),
-        pytest.param(3, id="prefix_length=3"),
-    ],
-)
-def test_projection(key_prefix_length):
+def test_projection():
     node1.query(
         "CREATE TABLE tbl ON CLUSTER 'cluster' (x UInt32, y String) ENGINE=ReplicatedMergeTree('/clickhouse/tables/tbl/', '{replica}') "
         "ORDER BY y PARTITION BY x%10"
@@ -989,12 +843,7 @@ def test_projection(key_prefix_length):
     )
 
     backup_name = new_backup_name()
-    backup_settings = (
-        {"key_prefix_length": key_prefix_length} if key_prefix_length else None
-    )
-    node1.query(
-        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} {format_settings(backup_settings)}"
-    )
+    node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
 
     node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
@@ -1167,50 +1016,29 @@ def test_table_in_replicated_database_with_not_synced_def():
 
 
 def has_mutation_in_backup(mutation_id, backup_name, database, table):
-    metadata_path = os.path.join(get_path_to_backup(backup_name), ".backup")
-    with open(metadata_path, "r") as f:
-        xml_root = ET.fromstring(f.read())
-
-    data_file_name_generator_elem = xml_root.find("data_file_name_generator")
-    data_file_name_generator = (
-        data_file_name_generator_elem.text
-        if data_file_name_generator_elem is not None
-        else "default"
+    return (
+        os.path.exists(
+            os.path.join(
+                get_path_to_backup(backup_name),
+                f"shards/1/replicas/1/data/{database}/{table}/mutations/{mutation_id}.txt",
+            )
+        )
+        or os.path.exists(
+            os.path.join(
+                get_path_to_backup(backup_name),
+                f"shards/1/replicas/2/data/{database}/{table}/mutations/{mutation_id}.txt",
+            )
+        )
+        or os.path.exists(
+            os.path.join(
+                get_path_to_backup(backup_name),
+                f"shards/1/replicas/3/data/{database}/{table}/mutations/{mutation_id}.txt",
+            )
+        )
     )
 
-    contents = xml_root.find("contents")
-    file_map = {}
-    if contents is not None:
-        for file_elem in contents.findall("file"):
-            name_elem = file_elem.find("name")
-            data_elem = file_elem.find("data_file")
-            if name_elem is not None and data_elem is not None:
-                file_map[name_elem.text] = data_elem.text
 
-    for replica in [1, 2, 3]:
-        file_name = f"shards/1/replicas/{replica}/data/{database}/{table}/mutations/{mutation_id}.txt"
-        data_file_name = (
-            file_name
-            if data_file_name_generator == "default"
-            else file_map.get(file_name)
-        )
-
-        if data_file_name and os.path.exists(
-            os.path.join(get_path_to_backup(backup_name), data_file_name)
-        ):
-            return True
-
-    return False
-
-
-@pytest.mark.parametrize(
-    "key_prefix_length",
-    [
-        pytest.param(None, id="no_prefix"),
-        pytest.param(3, id="prefix_length=3"),
-    ],
-)
-def test_mutation(key_prefix_length):
+def test_mutation():
     node1.query(
         "CREATE TABLE tbl ON CLUSTER 'cluster' ("
         "x UInt8, y String"
@@ -1229,35 +1057,15 @@ def test_mutation(key_prefix_length):
     node1.query("ALTER TABLE tbl UPDATE x=x+1+sleep(3) WHERE 1")
 
     backup_name = new_backup_name()
-    backup_settings = (
-        {"key_prefix_length": key_prefix_length} if key_prefix_length else None
-    )
-    node1.query(
-        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} {format_settings(backup_settings)}"
-    )
+    node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
 
     # mutation #0000000000: "UPDATE x=x+1 WHERE 1" could already finish before starting the backup
     # mutation #0000000001: "UPDATE x=x+1+sleep(3) WHERE 1"
-    assert has_mutation_in_backup(
-        "0000000001",
-        backup_name,
-        "default",
-        "tbl",
-    )
+    assert has_mutation_in_backup("0000000001", backup_name, "default", "tbl")
     # mutation #0000000002: "UPDATE x=x+1+sleep(3) WHERE 1"
-    assert has_mutation_in_backup(
-        "0000000002",
-        backup_name,
-        "default",
-        "tbl",
-    )
+    assert has_mutation_in_backup("0000000002", backup_name, "default", "tbl")
     # mutation #0000000003: not expected
-    assert not has_mutation_in_backup(
-        "0000000003",
-        backup_name,
-        "default",
-        "tbl",
-    )
+    assert not has_mutation_in_backup("0000000003", backup_name, "default", "tbl")
 
     node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
