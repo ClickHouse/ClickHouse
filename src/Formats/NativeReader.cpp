@@ -103,13 +103,13 @@ void NativeReader::readData(
     {
         settings.get_avg_value_size_hint_callback = [&](const ISerialization::SubstreamPath & substream_path) -> double
         {
-            auto stream_name = ISerialization::getFileNameForStream(*name_and_type, substream_path);
+            auto stream_name = ISerialization::getFileNameForStream(*name_and_type, substream_path, {});
             return (*avg_value_size_hints_)[stream_name];
         };
 
         settings.update_avg_value_size_hint_callback = [&](const ISerialization::SubstreamPath & substream_path, const IColumn & column_)
         {
-            auto stream_name = ISerialization::getFileNameForStream(*name_and_type, substream_path);
+            auto stream_name = ISerialization::getFileNameForStream(*name_and_type, substream_path, {});
             IDataType::updateAvgValueSizeHint(column_, (*avg_value_size_hints_)[stream_name]);
         };
     }
