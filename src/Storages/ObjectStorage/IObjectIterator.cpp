@@ -63,4 +63,11 @@ ObjectInfoPtr ObjectIteratorWithPathAndFileFilter::next(size_t id)
     return {};
 }
 
+std::string ObjectInfo::getPathOrPathToArchiveIfArchive() const
+{
+    if (isArchive())
+        return getPathToArchive();
+    return getPath();
+}
+
 }
