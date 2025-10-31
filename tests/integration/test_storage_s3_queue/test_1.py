@@ -28,6 +28,7 @@ AVAILABLE_MODES = ["unordered", "ordered"]
 DEFAULT_AUTH = ["'minio'", f"'{minio_secret_key}'"]
 NO_AUTH = ["NOSIGN"]
 
+#test
 
 @pytest.fixture(autouse=True)
 def s3_queue_setup_teardown(started_cluster):
