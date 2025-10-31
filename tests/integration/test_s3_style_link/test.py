@@ -36,7 +36,6 @@ def test_s3_table_functions(started_cluster):
     """
     Simple test to check s3 table function functionalities
     """
-    node.query("SET s3_truncate_on_insert=1")
     node.query(
         f"""
             INSERT INTO FUNCTION s3
@@ -61,7 +60,6 @@ def test_s3_table_functions(started_cluster):
 
 
 def test_s3_table_functions_line_as_string(started_cluster):
-    node.query("SET s3_truncate_on_insert=1")
     node.query(
         f"""
             INSERT INTO FUNCTION s3
@@ -93,14 +91,13 @@ def test_s3_table_functions_line_as_string(started_cluster):
 
 
 def test_s3_question_mark_wildcards(started_cluster):
-    node.query("SET s3_truncate_on_insert=1")
     node.query(
         f"""
             INSERT INTO FUNCTION s3
                 (
                     'minio://data/wildcard_test_a1.tsv.gz', 'minio', '{minio_secret_key}'
                 )
-            SELECT 'a1' as id, * FROM numbers(10);
+            SELECT 'a1' as id, * FROM numbers(10) SETTINGS s3_create_new_file_on_insert = 1;
         """
     )
     
@@ -110,7 +107,7 @@ def test_s3_question_mark_wildcards(started_cluster):
                 (
                     'minio://data/wildcard_test_a2.tsv.gz', 'minio', '{minio_secret_key}'
                 )
-            SELECT 'a2' as id, * FROM numbers(10);
+            SELECT 'a2' as id, * FROM numbers(10) SETTINGS s3_create_new_file_on_insert = 1;
         """
     )
     
@@ -120,7 +117,7 @@ def test_s3_question_mark_wildcards(started_cluster):
                 (
                     'minio://data/wildcard_test_b1.tsv.gz', 'minio', '{minio_secret_key}'
                 )
-            SELECT 'b1' as id, * FROM numbers(10);
+            SELECT 'b1' as id, * FROM numbers(10) SETTINGS s3_create_new_file_on_insert = 1;
         """
     )
 
