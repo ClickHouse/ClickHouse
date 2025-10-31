@@ -2145,7 +2145,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         }
 
         std::optional<size_t> condition_hash;
-        if (reader_settings.use_query_condition_cache && query_info_.filter_actions_dag && !query_info_.isFinal())
+        if (reader_settings.use_query_condition_cache && query_info_.filter_actions_dag)
         {
             const auto & outputs = query_info_.filter_actions_dag->getOutputs();
             if (outputs.size() == 1 && VirtualColumnUtils::isDeterministic(outputs.front()))
@@ -2663,12 +2663,6 @@ bool ReadFromMergeTree::supportsSkipIndexesOnDataRead() const
         return false;
 
     if (is_parallel_reading_from_replicas)
-        return false;
-
-    /// Settings `read_overflow_mode = 'throw'` and `max_rows_to_read` are evaluated early during execution,
-    /// during initialization of the pipeline based on estimated row counts. Estimation doesn't work properly
-    /// if the skip index is evaluated during data read (scan).
-    if (settings[Setting::read_overflow_mode] == OverflowMode::THROW && settings[Setting::max_rows_to_read])
         return false;
 
     return true;

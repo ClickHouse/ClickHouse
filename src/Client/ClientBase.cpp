@@ -95,7 +95,6 @@
 #include <mutex>
 #include <string_view>
 #include <unordered_map>
-#include <csignal>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/split.hpp>
@@ -654,13 +653,18 @@ try
         {
             if (SIG_ERR == signal(SIGPIPE, SIG_IGN))
                 throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler for SIGPIPE");
+            /// We need to reset signals that had been installed in the
+            /// setupSignalHandler() since terminal will send signals to both
+            /// processes and so signals will be delivered to the
+            /// clickhouse-client/local as well, which will be terminated when
+            /// signal will be delivered second time.
+            if (SIG_ERR == signal(SIGINT, SIG_IGN))
+                throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler for SIGINT");
             if (SIG_ERR == signal(SIGQUIT, SIG_IGN))
                 throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler for SIGQUIT");
 
             ShellCommand::Config config(pager);
             config.pipe_stdin_only = true;
-            config.terminate_in_destructor_strategy.terminate_in_destructor = true;
-            config.terminate_in_destructor_strategy.termination_signal = SIGTERM;
             pager_cmd = ShellCommand::execute(config);
             out_buf = &pager_cmd->in;
         }
@@ -1656,12 +1660,12 @@ void ClientBase::resetOutput()
     if (pager_cmd)
     {
         pager_cmd->in.close();
-        /// The process will terminated in destructor anyway (due to terminate_in_destructor_strategy.terminate_in_destructor=true)
-        if (!cancelled)
-            pager_cmd->wait();
+        pager_cmd->wait();
 
         if (SIG_ERR == signal(SIGPIPE, SIG_DFL))
             throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler for SIGPIPE");
+        if (SIG_ERR == signal(SIGINT, SIG_DFL))
+            throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler for SIGINT");
         if (SIG_ERR == signal(SIGQUIT, SIG_DFL))
             throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler for SIGQUIT");
 

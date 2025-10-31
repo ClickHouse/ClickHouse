@@ -2808,10 +2808,7 @@ message LimitStatement {
     required Expr limit = 1;
     optional Expr offset = 2;
     optional bool with_ties = 3;
-    oneof limit_by_oneof {
-        Expr by_expr = 4;
-        bool lall = 5;
-    }
+    optional Expr limit_by = 4;
 }
 
 message FetchStatement {
@@ -4038,9 +4035,8 @@ message SystemCommand {
         FailPoint enable_failpoint = 68;
         FailPoint disable_failpoint = 69;
         bool iceberg_metadata_cache = 70;
-        bool reconnect_keeper = 71;
     }
-    optional Cluster cluster = 72;
+    optional Cluster cluster = 71;
 }
 
 message BackupRestoreObject {

@@ -31,10 +31,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
 #include <Interpreters/RowRefs.h>
-#include <Common/SipHash.h>
-
-using Hash = CityHash_v1_0_2::uint128;
-using HashState = SipHash;
 
 namespace DB
 {
@@ -45,19 +41,6 @@ extern const int BAD_COLLATION;
 extern const int CANNOT_GET_SIZE_OF_FIELD;
 extern const int LOGICAL_ERROR;
 extern const int NOT_IMPLEMENTED;
-}
-
-std::pair<String, DataTypePtr> IColumn::getValueNameAndType(size_t n, const Options & options) const
-{
-    WriteBufferFromOwnString name_buf;
-    const auto & type = getValueNameAndTypeImpl(name_buf, n, options);
-    if (options.notFull(name_buf))
-        return {name_buf.str(), type};
-
-    HashState h;
-    updateHashWithValue(n, h);
-    auto p = getSipHash128AsPair(h);
-    return {fmt::format("{}_{}", p.high64, p.low64), type};
 }
 
 String IColumn::dumpStructure() const

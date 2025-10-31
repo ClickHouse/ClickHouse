@@ -82,9 +82,9 @@ void ColumnReplicated::get(size_t n, Field & res) const
     nested_column->get(indexes.getIndexAt(n), res);
 }
 
-DataTypePtr ColumnReplicated::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options & options) const
+std::pair<String, DataTypePtr> ColumnReplicated::getValueNameAndType(size_t n) const
 {
-    return nested_column->getValueNameAndTypeImpl(name_buf, indexes.getIndexAt(n), options);
+    return nested_column->getValueNameAndType(indexes.getIndexAt(n));
 }
 
 bool ColumnReplicated::getBool(size_t n) const

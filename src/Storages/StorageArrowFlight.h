@@ -3,19 +3,21 @@
 #include "config.h"
 
 #if USE_ARROWFLIGHT
+#include <Core/Names.h>
 #include <Storages/IStorage.h>
-
+#include <Storages/StorageConfiguration.h>
+#include <Storages/StorageFactory.h>
+#include <arrow/flight/client.h>
 
 namespace DB
 {
 class ArrowFlightConnection;
 class NamedCollection;
-class StorageFactory;
 
 class StorageArrowFlight : public IStorage, protected WithContext
 {
 public:
-    struct Configuration
+    struct Configuration : public StatelessTableEngineConfiguration
     {
         String host;
         int port;

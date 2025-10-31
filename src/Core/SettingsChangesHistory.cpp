@@ -39,14 +39,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
-        addSettingsChanges(settings_changes_history, "25.11",
-        {
-            {"correlated_subqueries_default_join_kind", "left", "right", "New setting. Default join kind for decorrelated query plan."},
-            {"use_statistics_cache", 0, 0, "New setting"},
-            {"use_text_index_dictionary_cache", false, false, "New setting"},
-            {"s3_retry_attempts", 500, 500, "Changed the value of the obsolete setting"},
-            {"optimize_const_name_size", -1, 256, "Replace with scalar and use hash as a name for large constants (size is estimated by name length)"},
-        });
         addSettingsChanges(settings_changes_history, "25.10",
         {
             {"allow_special_serialization_kinds_in_output_formats", false, false, "Add a setting to allow output of special columns representations like Sparse/Replicated without converting them to full columns"},
@@ -64,8 +56,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"joined_block_split_single_row", false, false, "New setting"},
             {"temporary_files_buffer_size", DBMS_DEFAULT_BUFFER_SIZE, DBMS_DEFAULT_BUFFER_SIZE, "New setting"},
             {"rewrite_in_to_join", false, false, "New experimental setting"},
-            {"iceberg_insert_max_rows_in_data_file", 100000, 1000000, "Changed default value."},
-            {"delta_lake_insert_max_rows_in_data_file", 100000, 1000000, "Changed default value."},
+            {"iceberg_insert_max_rows_in_data_file", 100000, 1000000, "New setting."},
+            {"iceberg_insert_max_bytes_in_data_file", 100000000, 100000000, "New setting."},
+            {"delta_lake_insert_max_rows_in_data_file", 100000, 1000000, "New setting."},
             {"delta_lake_log_metadata", false, false, "New setting."},
             {"distributed_cache_prefer_bigger_buffer_size", false, false, "New setting."},
             {"allow_experimental_qbit_type", false, false, "New experimental setting"},
@@ -229,7 +222,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_scopes_for_with_statement", true, true, "New setting for backward compatibility with the old analyzer."},
             {"backup_slow_all_threads_after_retryable_s3_error", false, false, "New setting"},
             {"s3_slow_all_threads_after_retryable_error", false, false, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
-            {"s3_retry_attempts", 500, 500, "Changed the value of the obsolete setting"},
             /// RELEASE CLOSED
         });
         addSettingsChanges(settings_changes_history, "25.5",
@@ -922,11 +914,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
-        addSettingsChanges(merge_tree_settings_changes_history, "25.11",
-        {
-            {"refresh_statistics_interval", 0, 0, "New setting"},
-            {"shared_merge_tree_create_per_replica_metadata_nodes", true, false, "Reduce the amount of metadata in Keeper."},
-        });
         addSettingsChanges(merge_tree_settings_changes_history, "25.10",
         {
             {"auto_statistics_types", "", "", "New setting"},

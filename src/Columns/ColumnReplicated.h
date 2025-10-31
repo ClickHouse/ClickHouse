@@ -67,7 +67,7 @@ public:
     bool isNullAt(size_t n) const override;
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options & options) const override;
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
     bool getBool(size_t n) const override;
     Float64 getFloat64(size_t n) const override;
     Float32 getFloat32(size_t n) const override;

@@ -1,5 +1,5 @@
 #pragma once
-
+#include <vector>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Columns/IColumn.h>
@@ -11,8 +11,6 @@
 #include <Interpreters/BloomFilter.h>
 #include <Interpreters/ITokenExtractor.h>
 #include <absl/container/flat_hash_map.h>
-
-#include <vector>
 
 #include <roaring.hh>
 
@@ -175,7 +173,9 @@ struct DictionaryBlockBase
     bool empty() const;
     size_t size() const;
 
+    size_t lowerBound(const StringRef & token) const;
     size_t upperBound(const StringRef & token) const;
+    std::optional<size_t> binarySearch(const StringRef & token) const;
 };
 
 struct DictionarySparseIndex : public DictionaryBlockBase
@@ -328,11 +328,6 @@ public:
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const override;
-
-    /// This function parses the arguments of a text index. Text indexes have a special syntax with complex arguments.
-    /// 1. Arguments are named, e.g.: argument = value
-    /// 2. The tokenizer argument can be a string, a function name (literal) or a function-like expression, e.g.: ngram(5)
-    static FieldVector parseArgumentsListFromAST(const ASTPtr & arguments);
 
     MergeTreeIndexTextParams params;
     std::unique_ptr<ITokenExtractor> token_extractor;

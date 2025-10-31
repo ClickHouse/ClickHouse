@@ -6,7 +6,6 @@
 
 #include <atomic>
 #include <memory>
-#include <mutex>
 #include <shared_mutex>
 #include <unordered_map>
 #include <vector>
@@ -49,7 +48,6 @@ namespace HistogramMetrics
 
     public:
         MetricFamily(String name_, String documentation_, Buckets buckets_, Labels labels_);
-
         Metric & withLabels(LabelValues label_values);
 
         template <typename Func>
@@ -80,14 +78,12 @@ namespace HistogramMetrics
     using MetricFamilies = std::vector<MetricFamilyPtr>;
 
     void observe(MetricFamily & metric, LabelValues labels, Value value);
-    void observe(Metric & metric, Value value);
 
     class Factory
     {
     public:
         static Factory & instance();
         MetricFamily & registerMetric(String name, String documentation, Buckets buckets, Labels labels);
-        Metric & registerMetric(String name, String documentation, Buckets buckets);
 
         template <typename Func>
         void forEachFamily(Func && func) const

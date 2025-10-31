@@ -794,6 +794,14 @@ def main():
     errors = [e for e in (bpp.error, cpp.error) if e is not None]
     if any(errors):
         logging.error("Finished successfully, but errors occurred!")
+        if IS_CI:
+            ci_buddy = CIBuddy()
+            ci_buddy.post_job_error(
+                f"The backport process finished with errors: {errors[0]}",
+                with_instance_info=True,
+                with_wf_link=True,
+                critical=True,
+            )
         raise errors[0]
 
 
@@ -801,20 +809,9 @@ if __name__ == "__main__":
     logging.getLogger().setLevel(level=logging.INFO)
 
     assert not is_shallow()
-    try:
-        with stash():
-            if os.getenv("ROBOT_CLICKHOUSE_SSH_KEY", ""):
-                with SSHKey("ROBOT_CLICKHOUSE_SSH_KEY"):
-                    main()
-            else:
+    with stash():
+        if os.getenv("ROBOT_CLICKHOUSE_SSH_KEY", ""):
+            with SSHKey("ROBOT_CLICKHOUSE_SSH_KEY"):
                 main()
-
-    except Exception as e:
-        if IS_CI:
-            ci_buddy = CIBuddy()
-            ci_buddy.post_job_error(
-                f"The backport process finished with errors: {e}",
-                with_instance_info=True,
-                with_wf_link=True,
-                critical=True,
-            )
+        else:
+            main()

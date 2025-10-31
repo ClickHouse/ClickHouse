@@ -126,7 +126,8 @@ struct ClientFake : DB::S3::Client
                   true,
                   false,
                   {},
-                  /* request_throttler = */ {},
+                  {},
+                  {},
                   "http"),
               Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
               DB::S3::ClientSettings())
