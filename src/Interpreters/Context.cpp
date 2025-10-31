@@ -5216,6 +5216,16 @@ std::shared_ptr<TraceLog> Context::getTraceLog() const
     return shared->system_logs->trace_log;
 }
 
+std::shared_ptr<InstrumentationTraceLog> Context::getInstrumentationTraceLog() const
+{
+    SharedLockGuard lock(shared->mutex);
+
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->instrumentation_trace_log;
+}
+
 
 std::shared_ptr<TextLog> Context::getTextLog() const
 {
