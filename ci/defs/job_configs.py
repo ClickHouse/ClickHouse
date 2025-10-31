@@ -223,17 +223,18 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
-            parameter=BuildTypes.ARM_COVERAGE,
-            provides=[
-                ArtifactNames.DEB_COV,
-                ArtifactNames.CH_COV_BIN,
-            ],
-            runs_on=RunnerLabels.ARM_LARGE,
-        ),
-        Job.ParamSet(
             parameter=BuildTypes.ARM_BINARY,
             provides=[ArtifactNames.CH_ARM_BINARY],
             runs_on=RunnerLabels.ARM_LARGE,
+        ),
+    )
+    coverage_build_jobs = common_build_job_config.parametrize(
+        Job.ParamSet(
+            parameter=BuildTypes.AMD_COVERAGE,
+            provides=[
+                ArtifactNames.CH_COV_BIN,
+            ],
+            runs_on=RunnerLabels.AMD_LARGE,
         ),
     )
     release_build_jobs = common_build_job_config.set_post_hooks(
@@ -543,13 +544,13 @@ class JobConfigs:
         True
     ).parametrize(
         Job.ParamSet(
-            parameter=f"arm_coverage, parallel",
-            runs_on=RunnerLabels.ARM_MEDIUM,
+            parameter=f"amd_coverage, parallel",
+            runs_on=RunnerLabels.AMD_MEDIUM,
             requires=[ArtifactNames.CH_COV_BIN],
         ),
         Job.ParamSet(
-            parameter=f"arm_coverage, sequential",
-            runs_on=RunnerLabels.ARM_SMALL_MEM,
+            parameter=f"amd_coverage, sequential",
+            runs_on=RunnerLabels.AMD_SMALL_MEM,
             requires=[ArtifactNames.CH_COV_BIN],
         ),
     )
