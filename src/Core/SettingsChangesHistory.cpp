@@ -45,6 +45,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_statistics_cache", 0, 0, "New setting"},
             {"use_text_index_dictionary_cache", false, false, "New setting"},
             {"s3_retry_attempts", 500, 500, "Changed the value of the obsolete setting"},
+            {"enable_join_runtime_filters", false, true, "Enabled this optimization"},
             {"optimize_const_name_size", -1, 256, "Replace with scalar and use hash as a name for large constants (size is estimated by name length)"},
         });
         addSettingsChanges(settings_changes_history, "25.10",
