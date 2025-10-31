@@ -6,7 +6,6 @@
 #include <Databases/DataLake/Common.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Common/Exception.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
 
 #if USE_AVRO && USE_PARQUET
 
@@ -23,7 +22,6 @@
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/StorageNull.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
-#include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
@@ -61,11 +59,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_database_glue_catalog;
     extern const SettingsBool allow_experimental_database_hms_catalog;
     extern const SettingsBool use_hive_partitioning;
-    extern const SettingsBool parallel_replicas_for_cluster_engines;
-    extern const SettingsString cluster_for_parallel_replicas;
-
 }
-
 namespace DataLakeStorageSetting
 {
     extern const DataLakeStorageSettingsString iceberg_metadata_file_path;
@@ -78,7 +72,6 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int DATALAKE_DATABASE_ERROR;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
-    extern const int LOGICAL_ERROR;
 }
 
 DatabaseDataLake::DatabaseDataLake(
@@ -118,9 +111,6 @@ void DatabaseDataLake::validateSettings()
 
 std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
 {
-    if (settings[DatabaseDataLakeSetting::catalog_type].value == DatabaseDataLakeCatalogType::NONE)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unspecified catalog type");
-
     if (catalog_impl)
         return catalog_impl;
 
@@ -252,12 +242,6 @@ std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfigur
                     return std::make_shared<StorageS3DeltaLakeConfiguration>(storage_settings);
                 }
 #endif
-#if USE_AZURE_BLOB_STORAGE
-                case DB::DatabaseDataLakeStorageType::Azure:
-                {
-                    return std::make_shared<StorageAzureDeltaLakeConfiguration>(storage_settings);
-                }
-#endif
                 case DB::DatabaseDataLakeStorageType::Local:
                 {
                     return std::make_shared<StorageLocalDeltaLakeConfiguration>(storage_settings);
@@ -301,7 +285,7 @@ std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfigur
             }
         }
         case DatabaseDataLakeCatalogType::NONE:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unspecified catalog type");
+            return nullptr;
     }
 }
 
@@ -441,36 +425,6 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     /// no table structure in table definition AST.
     StorageObjectStorageConfiguration::initialize(*configuration, args, context_copy, /* with_table_structure */false);
 
-    const auto & query_settings = context_->getSettingsRef();
-
-    const auto parallel_replicas_cluster_name = query_settings[Setting::cluster_for_parallel_replicas].toString();
-    const auto can_use_parallel_replicas = !parallel_replicas_cluster_name.empty()
-        && query_settings[Setting::parallel_replicas_for_cluster_engines]
-        && context_->canUseTaskBasedParallelReplicas()
-        && !context_->isDistributed();
-
-    const auto is_secondary_query = context_->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
-
-    if (can_use_parallel_replicas && !is_secondary_query)
-    {
-        auto storage_cluster = std::make_shared<StorageObjectStorageCluster>(
-            parallel_replicas_cluster_name,
-            configuration,
-            configuration->createObjectStorage(context_copy, /* is_readonly */ false),
-            StorageID(getDatabaseName(), name),
-            columns,
-            ConstraintsDescription{},
-            nullptr,
-            context_);
-
-        storage_cluster->startup();
-        return storage_cluster;
-    }
-
-    bool can_use_distributed_iterator =
-        context_->getClientInfo().collaborate_with_initiator &&
-        can_use_parallel_replicas;
-
     return std::make_shared<StorageObjectStorage>(
         configuration,
         configuration->createObjectStorage(context_copy, /* is_readonly */ false),
@@ -484,7 +438,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         getCatalog(),
         /* if_not_exists*/true,
         /* is_datalake_query*/true,
-        /* distributed_processing */can_use_distributed_iterator,
+        /* distributed_processing */false,
         /* partition_by */nullptr,
         /* is_table_function */false,
         /* lazy_init */true);
@@ -578,9 +532,13 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIterator(
 DatabaseTablesIteratorPtr DatabaseDataLake::getLightweightTablesIterator(
     ContextPtr context_,
     const FilterByNameFunction & filter_by_table_name,
-    bool skip_not_loaded) const
+    bool skip_not_loaded,
+    bool skip_data_lake_catalog) const
 {
     Tables tables;
+
+    if (skip_data_lake_catalog)
+        return std::make_unique<DatabaseTablesSnapshotIterator>(tables, getDatabaseName());
 
     auto catalog = getCatalog();
     DB::Names iceberg_tables;

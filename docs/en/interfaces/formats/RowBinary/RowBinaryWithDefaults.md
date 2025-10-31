@@ -6,7 +6,6 @@ keywords: ['RowBinaryWithDefaults']
 output_format: false
 slug: /interfaces/formats/RowBinaryWithDefaults
 title: 'RowBinaryWithDefaults'
-doc_type: 'reference'
 ---
 
 import RowBinaryFormatSettings from './_snippets/common-row-binary-format-settings.md'

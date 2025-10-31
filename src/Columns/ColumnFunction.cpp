@@ -218,7 +218,7 @@ ColumnPtr ColumnFunction::index(const IColumn & indexes, size_t limit) const
         column.column = column.column->index(indexes, limit);
 
     return ColumnFunction::create(
-        limit == 0 ? indexes.size() : limit,
+        limit,
         function,
         capture,
         is_short_circuit_argument,
@@ -226,7 +226,7 @@ ColumnPtr ColumnFunction::index(const IColumn & indexes, size_t limit) const
         recursively_convert_result_to_full_column_if_low_cardinality);
 }
 
-std::vector<MutableColumnPtr> ColumnFunction::scatter(size_t num_columns,
+std::vector<MutableColumnPtr> ColumnFunction::scatter(IColumn::ColumnIndex num_columns,
                                                       const IColumn::Selector & selector) const
 {
     if (elements_size != selector.size())
@@ -242,13 +242,13 @@ std::vector<MutableColumnPtr> ColumnFunction::scatter(size_t num_columns,
     for (size_t capture = 0; capture < captured_columns.size(); ++capture)
     {
         auto parts = captured_columns[capture].column->scatter(num_columns, selector);
-        for (size_t part = 0; part < num_columns; ++part)
+        for (IColumn::ColumnIndex part = 0; part < num_columns; ++part)
             captures[part][capture].column = std::move(parts[part]);
     }
 
     std::vector<MutableColumnPtr> columns;
     columns.reserve(num_columns);
-    for (size_t part = 0; part < num_columns; ++part)
+    for (IColumn::ColumnIndex part = 0; part < num_columns; ++part)
     {
         auto & capture = captures[part];
         size_t capture_size = capture.empty() ? counts[part] : capture.front().column->size();
@@ -315,7 +315,7 @@ void ColumnFunction::appendArgument(const ColumnWithTypeAndName & column)
                         "got {}, but {} is expected.", argument_types.size(), column.type->getName(), argument_types[index]->getName());
 
     auto captured_column = column;
-    captured_column.column = captured_column.column->convertToFullColumnIfReplicated()->convertToFullColumnIfSparse();
+    captured_column.column = captured_column.column->convertToFullColumnIfSparse();
     captured_columns.push_back(std::move(captured_column));
 }
 

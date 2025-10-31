@@ -4,7 +4,6 @@ sidebar_label: 'SHOW'
 sidebar_position: 37
 slug: /sql-reference/statements/show
 title: 'SHOW Statements'
-doc_type: 'reference'
 ---
 
 :::note
@@ -435,7 +434,7 @@ SHOW USERS
 
 The `SHOW ROLES` statement returns a list of [roles](../../guides/sre/user-management/index.md#role-management). 
 To view other parameters, 
-see system tables [`system.roles`](/operations/system-tables/roles) and [`system.role_grants`](/operations/system-tables/role_grants).
+see system tables [`system.roles`](/operations/system-tables/roles) and [`system.role_grants`](/operations/system-tables/role-grants).
 
 ### Syntax {#syntax-14}
 

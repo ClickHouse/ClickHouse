@@ -487,9 +487,9 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::RESET_COVERAGE:
         case Type::RESTART_REPLICAS:
         case Type::JEMALLOC_PURGE:
-        case Type::JEMALLOC_FLUSH_PROFILE:
         case Type::JEMALLOC_ENABLE_PROFILE:
         case Type::JEMALLOC_DISABLE_PROFILE:
+        case Type::JEMALLOC_FLUSH_PROFILE:
         case Type::SYNC_TRANSACTION_LOG:
         case Type::SYNC_FILE_CACHE:
         case Type::SYNC_FILESYSTEM_CACHE:
@@ -510,7 +510,6 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::DROP_PAGE_CACHE:
         case Type::STOP_REPLICATED_DDL_QUERIES:
         case Type::START_REPLICATED_DDL_QUERIES:
-        case Type::RECONNECT_ZOOKEEPER:
             break;
         case Type::UNKNOWN:
         case Type::END:

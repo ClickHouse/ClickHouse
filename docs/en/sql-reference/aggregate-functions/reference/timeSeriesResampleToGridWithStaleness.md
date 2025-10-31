@@ -3,7 +3,6 @@ description: 'Aggregate function that re-samples time series data to the specifi
 sidebar_position: 226
 slug: /sql-reference/aggregate-functions/reference/timeSeriesResampleToGridWithStaleness
 title: 'timeSeriesResampleToGridWithStaleness'
-doc_type: 'reference'
 ---
 
 Aggregate function that takes time series data as pairs of timestamps and values and re-samples this data to a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the most recent (within the specified time window) sample is chosen.
@@ -28,7 +27,7 @@ The following query re-samples time series data to the grid [90, 105, 120, 135, 
 
 ```sql
 WITH
-    -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to staleness window parameter
+    -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to staleness window paramater
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
     [1, 1, 3, 4, 5, 5, 8, 12, 13]::Array(Float32) AS values, -- array of values corresponding to timestamps above
     90 AS start_ts,       -- start of timestamp grid

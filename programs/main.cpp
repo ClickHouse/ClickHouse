@@ -155,6 +155,7 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
     {"checksum-for-compressed-block", mainEntryClickHouseChecksumForCompressedBlock},
     {"zookeeper-dump-tree", mainEntryClickHouseZooKeeperDumpTree},
     {"zookeeper-remove-by-list", mainEntryClickHouseZooKeeperRemoveByList},
+    {"fst-dump-tree", mainEntryClickHouseFstDumpTree},
 
     // keeper
 #if ENABLE_CLICKHOUSE_KEEPER

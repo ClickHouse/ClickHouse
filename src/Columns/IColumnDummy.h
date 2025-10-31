@@ -110,7 +110,7 @@ public:
 
     ColumnPtr replicate(const Offsets & offsets) const override;
 
-    MutableColumns scatter(size_t num_columns, const Selector & selector) const override;
+    MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
 
     double getRatioOfDefaultRows(double) const override;
     UInt64 getNumberOfDefaultRows() const override;

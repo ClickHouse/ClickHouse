@@ -5,7 +5,6 @@ sidebar_label: 'TABLE'
 sidebar_position: 36
 slug: /sql-reference/statements/create/table
 title: 'CREATE TABLE'
-doc_type: 'reference'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
@@ -81,6 +80,28 @@ Creates a table with a structure like the result of the `SELECT` query, with the
 If the table already exists and `IF NOT EXISTS` is specified, the query won't do anything.
 
 There can be other clauses after the `ENGINE` clause in the query. See detailed documentation on how to create tables in the descriptions of [table engines](/engines/table-engines).
+
+:::tip
+In ClickHouse Cloud please split this into two steps:
+1. Create the table structure
+
+  ```sql
+  CREATE TABLE t1
+  ENGINE = MergeTree
+  ORDER BY ...
+  -- highlight-next-line
+  EMPTY AS
+  SELECT ...
+  ```
+
+2. Populate the table
+
+  ```sql
+  INSERT INTO t1
+  SELECT ...
+  ```
+
+:::
 
 **Example**
 

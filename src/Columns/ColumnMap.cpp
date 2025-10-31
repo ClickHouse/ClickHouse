@@ -258,7 +258,7 @@ ColumnPtr ColumnMap::replicate(const Offsets & offsets) const
     return ColumnMap::create(std::move(replicated));
 }
 
-MutableColumns ColumnMap::scatter(size_t num_columns, const Selector & selector) const
+MutableColumns ColumnMap::scatter(ColumnIndex num_columns, const Selector & selector) const
 {
     auto scattered_columns = nested->scatter(num_columns, selector);
     MutableColumns res;
@@ -450,11 +450,5 @@ void ColumnMap::takeDynamicStructureFromSourceColumns(const Columns & source_col
         nested_source_columns.push_back(assert_cast<const ColumnMap &>(*source_column).getNestedColumnPtr());
     nested->takeDynamicStructureFromSourceColumns(nested_source_columns);
 }
-
-void ColumnMap::takeDynamicStructureFromColumn(const ColumnPtr & source_column)
-{
-    nested->takeDynamicStructureFromColumn(assert_cast<const ColumnMap &>(*source_column).getNestedColumnPtr());
-}
-
 
 }

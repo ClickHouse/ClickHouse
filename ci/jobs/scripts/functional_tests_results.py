@@ -1,5 +1,4 @@
 import dataclasses
-import re
 import traceback
 from typing import List
 
@@ -18,14 +17,6 @@ DATABASE_SIGN = "Database: "
 SUCCESS_FINISH_SIGNS = ["All tests have finished", "No tests were run"]
 
 RETRIES_SIGN = "Some tests were restarted"
-
-# Regex pattern to match test result lines
-# Format: "2025-10-21 04:08:13 test_name: [ STATUS ] time sec."
-# This ensures we only match actual test result lines, not patterns embedded in error messages
-# Note: Test names can contain letters, digits, underscores, hyphens, and dots
-TEST_RESULT_PATTERN = re.compile(
-    r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} ([\w\-\.]+):\s+(\[ (?:OK|FAIL|SKIPPED|UNKNOWN|Timeout!) \])\s+([\d.]+) sec\."
-)
 
 
 # def write_results(results_file, status_file, results, status):
@@ -85,14 +76,11 @@ class FTResultsProcessor:
                     server_died = True
                 if RETRIES_SIGN in line:
                     retries = True
-
-                # Use regex to match test result lines precisely
-                # This prevents false matches from error messages containing test patterns
-                match = TEST_RESULT_PATTERN.match(line)
-                if match:
-                    test_name = match.group(1)
-                    status_marker = match.group(2)
-                    test_time = match.group(3)
+                if any(
+                    sign in line
+                    for sign in (OK_SIGN, FAIL_SIGN, UNKNOWN_SIGN, SKIPPED_SIGN)
+                ):
+                    test_name = line.split(" ")[2].split(":")[0]
 
                     if test_name == "+":
                         # TODO: investigate and remove
@@ -102,21 +90,29 @@ class FTResultsProcessor:
                         )
                         continue
 
+                    test_time = None
+                    try:
+                        time_token = line.split("]")[1].strip().split()[0]
+                        float(time_token)
+                        test_time = time_token
+                    except:
+                        print(f"ERROR: Failed to parse time str from line [{line}]")
+
                     total += 1
-                    if TIMEOUT_SIGN in status_marker:
+                    if TIMEOUT_SIGN in line:
                         failed += 1
                         test_results.append((test_name, "Timeout", test_time, []))
-                    elif FAIL_SIGN in status_marker:
+                    elif FAIL_SIGN in line:
                         failed += 1
                         test_results.append((test_name, "FAIL", test_time, []))
-                    elif UNKNOWN_SIGN in status_marker:
+                    elif UNKNOWN_SIGN in line:
                         unknown += 1
                         test_results.append((test_name, "FAIL", test_time, []))
-                    elif SKIPPED_SIGN in status_marker:
+                    elif SKIPPED_SIGN in line:
                         skipped += 1
                         test_results.append((test_name, "SKIPPED", test_time, []))
                     else:
-                        success += int(OK_SIGN in status_marker)
+                        success += int(OK_SIGN in line)
                         test_results.append((test_name, "OK", test_time, []))
                     test_end = False
                 elif (

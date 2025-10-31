@@ -596,10 +596,7 @@ void DatabaseOnDisk::drop(ContextPtr local_context)
     waitDatabaseStarted();
 
     auto db_disk = getDisk();
-    {
-        std::lock_guard lock(mutex);
-        assert(tables.empty());
-    }
+    assert(TSA_SUPPRESS_WARNING_FOR_READ(tables).empty());
     if (local_context->getSettingsRef()[Setting::force_remove_data_recursively_on_drop])
     {
         db_disk->removeRecursive(data_path);
@@ -701,12 +698,6 @@ void DatabaseOnDisk::iterateMetadataFiles(const IteratingFunction & process_meta
         {
             /// There are files that we tried to delete previously
             metadata_files.emplace_back(file_name, false);
-        }
-        else if (endsWith(file_name, ".tmp_move_from") || endsWith(file_name, ".tmp_move_to"))
-        {
-            /// There are temp files generated in MetadataStorageFromPlainObjectStorageMoveFileOperation
-            LOG_INFO(log, "Removing file {}", sub_path.string());
-            db_disk->removeFileIfExists(sub_path);
         }
         else if (endsWith(file_name, ".sql.tmp"))
         {
