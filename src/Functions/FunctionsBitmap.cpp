@@ -478,7 +478,7 @@ Changes up to N bits in a bitmap by swapping specific bit values in `from_array`
     factory.registerFunction<FunctionBitmapXor>(documentation_bitmapXor);
 
     /// Documentation for bitmapAndnot
-    FunctionDocumentation::Description description_bitmapAndnot = "Computes the logical conjunction of two bitmaps and negates the result (AND-NOT).";
+    FunctionDocumentation::Description description_bitmapAndnot = "Computes the set difference A AND-NOT B of two bitmaps.";
     FunctionDocumentation::Syntax syntax_bitmapAndnot = "bitmapAndnot(bitmap1, bitmap2)";
     FunctionDocumentation::Arguments arguments_bitmapAndnot = {
         {"bitmap1", "First bitmap object. [`AggregateFunction(groupBitmap, T)`](/sql-reference/data-types/aggregatefunction)."},

@@ -23,6 +23,7 @@ namespace Setting
 {
     extern const SettingsBool text_index_use_bloom_filter;
     extern const SettingsBool query_plan_text_index_add_hint;
+    extern const SettingsBool use_text_index_dictionary_cache;
 }
 
 TextSearchQuery::TextSearchQuery(String function_name_, TextSearchMode search_mode_, TextIndexDirectReadMode read_mode_, std::vector<String> tokens_)
@@ -57,6 +58,8 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     , header(index_sample_block)
     , token_extractor(token_extactor_)
     , use_bloom_filter(context_->getSettingsRef()[Setting::text_index_use_bloom_filter])
+    , use_dictionary_block_cache(context_->getSettingsRef()[Setting::use_text_index_dictionary_cache])
+    , dictionary_block_cache(context_->getTextIndexDictionaryBlockCache().get())
 {
     if (!predicate)
     {
