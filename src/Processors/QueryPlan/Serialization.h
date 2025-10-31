@@ -12,6 +12,11 @@ struct IQueryPlanStep::Serialization
 {
     WriteBuffer & out;
     SerializedSetsRegistry & registry;
+
+    // A durty hack used by the automatic parallel replicas implementation:
+    // the `final` value differs for `AggregatingStep` in single-node and distributed query plans.
+    // This breaks matching by hash.
+    bool skip_final_flag = false;
 };
 
 struct SerializedSetsRegistry;

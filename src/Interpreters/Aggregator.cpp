@@ -1,8 +1,11 @@
 #include <algorithm>
+#include <mutex>
 #include <optional>
 #include <Core/Settings.h>
 #include <base/defines.h>
 #include <Poco/Util/Application.h>
+
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
 #ifdef OS_LINUX
 #    include <unistd.h>
@@ -183,6 +186,85 @@ UInt64 & getInlineCountState(DB::AggregateDataPtr & ptr)
 
 namespace DB
 {
+
+size_t Aggregator::applyToAllStates(AggregatedDataVariants & result, ssize_t bucket) const
+{
+    size_t res = 0;
+    auto serialize_states = [&](auto & table)
+    {
+        for (size_t j = 0; j < params.aggregates_size; ++j)
+        {
+            WriteBufferFromOwnString wb;
+            CompressedWriteBuffer wbuf(wb);
+            size_t it = 0;
+            size_t processed = 0;
+            table.forEachMapped(
+                [&](AggregateDataPtr place)
+                {
+                    chassert(place);
+                    if (it++ % 100 != 0)
+                        return;
+                    if (is_simple_count)
+                        writeVarUInt(getInlineCountState(place), wb);
+                    else
+                        aggregate_functions[j]->serialize(place + offsets_of_aggregate_states[j], wb);
+                    ++processed;
+                });
+            wbuf.finalize();
+            if (processed)
+                res += static_cast<size_t>((static_cast<double>(table.size()) / processed) * wb.count());
+        }
+    };
+
+    const auto method = result.type;
+    if (method == AggregatedDataVariants::Type::EMPTY)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty data passed to Aggregator::applyToAllStates");
+    }
+    else if (method == AggregatedDataVariants::Type::without_key)
+    {
+        if (!result.without_key)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty without_key data passed to Aggregator::applyToAllStates");
+
+        for (size_t j = 0; j < params.aggregates_size; ++j)
+        {
+            WriteBufferFromOwnString wb;
+            CompressedWriteBuffer wbuf(wb);
+            if (is_simple_count)
+                writeVarUInt(getCountState(result.without_key), wb);
+            else
+                aggregate_functions[j]->serialize(result.without_key + offsets_of_aggregate_states[j], wb);
+            wbuf.finalize();
+            res += wb.count();
+        }
+        return res;
+    }
+
+#define M(NAME)                                                 \
+    else if (method == AggregatedDataVariants::Type::NAME)      \
+    {                                                           \
+        serialize_states(result.NAME->data);                    \
+        return res;                                             \
+    }
+
+    APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)
+#undef M
+
+#define M(NAME)                                                 \
+    else if (method == AggregatedDataVariants::Type::NAME)      \
+    {                                                           \
+        if (bucket >= 0)                                        \
+            serialize_states(result.NAME->data.impls[bucket]);  \
+        else                                                    \
+            serialize_states(result.NAME->data);                \
+        return res;                                             \
+    }
+
+    APPLY_FOR_VARIANTS_TWO_LEVEL(M)
+#undef M
+
+    UNREACHABLE();
+}
 
 Block Aggregator::getHeader(bool final) const
 {
@@ -1855,7 +1937,8 @@ Block Aggregator::mergeAndConvertOneBucketToBlock(
     Arena * arena,
     bool final,
     Int32 bucket,
-    std::atomic<bool> & is_cancelled) const
+    std::atomic<bool> & is_cancelled,
+    UpdaterPtr updater) const
 {
     auto & merged_data = *variants[0];
     auto method = merged_data.type;
@@ -1866,9 +1949,13 @@ Block Aggregator::mergeAndConvertOneBucketToBlock(
     else if (method == AggregatedDataVariants::Type::NAME) \
     { \
         mergeBucketImpl<decltype(merged_data.NAME)::element_type>(variants, bucket, arena, is_cancelled); \
+        if (updater) \
+            updater->addOutputBytes(*this, merged_data, bucket); \
         if (is_cancelled.load(std::memory_order_seq_cst)) \
             return {}; \
         block = convertOneBucketToBlock(merged_data, *merged_data.NAME, arena, final, bucket); \
+        if (updater) \
+            updater->addOutputBytes(*this, block); \
     }
 
     APPLY_FOR_VARIANTS_TWO_LEVEL(M)

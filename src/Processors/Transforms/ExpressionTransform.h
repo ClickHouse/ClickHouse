@@ -11,6 +11,9 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 class ActionsDAG;
 
+class Updater;
+using UpdaterPtr = std::shared_ptr<Updater>;
+
 /** Executes a certain expression over the block.
   * The expression consists of column identifiers from the block, constants, common functions.
   * For example: hits * 2 + 3, url LIKE '%clickhouse%'
@@ -19,7 +22,7 @@ class ActionsDAG;
 class ExpressionTransform final : public ISimpleTransform
 {
 public:
-    ExpressionTransform(SharedHeader header_, ExpressionActionsPtr expression_);
+    ExpressionTransform(SharedHeader header_, ExpressionActionsPtr expression_, UpdaterPtr updater_ = nullptr);
 
     String getName() const override { return "ExpressionTransform"; }
 
@@ -30,6 +33,8 @@ protected:
 
 private:
     ExpressionActionsPtr expression;
+
+    UpdaterPtr updater;
 };
 
 class ConvertingTransform final : public ExceptionKeepingTransform

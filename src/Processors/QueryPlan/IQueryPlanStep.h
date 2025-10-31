@@ -118,6 +118,9 @@ public:
 
     virtual bool hasCorrelatedExpressions() const;
 
+    virtual bool supportsDataflowStatisticsCollection() const { return false; }
+    void setDataflowCacheKey(size_t key) { dataflow_cache_key = key; }
+
 protected:
     virtual void updateOutputHeader() = 0;
 
@@ -132,6 +135,8 @@ protected:
     /// This field is used to store added processors from this step.
     /// It is used only for introspection (EXPLAIN PIPELINE).
     Processors processors;
+
+    std::optional<size_t> dataflow_cache_key;
 
     static void describePipeline(const Processors & processors, FormatSettings & settings);
 

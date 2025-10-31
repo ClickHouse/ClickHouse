@@ -9,10 +9,13 @@ using MergeTreeSelectProcessorPtr = std::unique_ptr<MergeTreeSelectProcessor>;
 
 struct ChunkAndProgress;
 
+class Updater;
+using UpdaterPtr = std::shared_ptr<Updater>;
+
 class MergeTreeSource final : public ISource
 {
 public:
-    explicit MergeTreeSource(MergeTreeSelectProcessorPtr processor_, const std::string & log_name_);
+    MergeTreeSource(MergeTreeSelectProcessorPtr processor_, const std::string & log_name_, UpdaterPtr updater_);
     ~MergeTreeSource() override;
 
     std::string getName() const override;
@@ -31,6 +34,8 @@ protected:
 private:
     MergeTreeSelectProcessorPtr processor;
     const std::string log_name;
+
+    UpdaterPtr updater;
 
 #if defined(OS_LINUX)
     struct AsyncReadingState;

@@ -1,5 +1,6 @@
 #pragma once
 #include <Storages/LazilyReadInfo.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
 namespace DB
@@ -35,6 +36,8 @@ public:
     void transformLazyColumns(
         const ColumnLazy & column_lazy,
         ColumnsWithTypeAndName & res_columns);
+
+    IMergeTreeDataPart::ColumnSizeByName getColumnSizes() const { return storage.getColumnSizes(); }
 
 private:
     void readLazyColumns(

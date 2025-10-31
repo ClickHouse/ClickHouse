@@ -1,16 +1,16 @@
 #pragma once
 
 #include <vector>
-#include <Storages/MergeTree/MergeTreeRangeReader.h>
-#include <boost/core/noncopyable.hpp>
 #include <Core/NamesAndTypes.h>
-#include <Storages/StorageSnapshot.h>
-#include <Storages/MergeTree/RangesInDataPart.h>
-#include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/AlterConversions.h>
+#include <Storages/MergeTree/IMergeTreeReader.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/MergeTreeReadersChain.h>
 #include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
-#include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Storages/MergeTree/RangesInDataPart.h>
+#include <Storages/StorageSnapshot.h>
+#include <boost/core/noncopyable.hpp>
 
 namespace DB
 {
@@ -36,6 +36,9 @@ using MergeTreeIndexReadResultPtr = std::shared_ptr<MergeTreeIndexReadResult>;
 
 struct MergeTreeIndexBuildContext;
 using MergeTreeIndexBuildContextPtr = std::shared_ptr<MergeTreeIndexBuildContext>;
+
+class Updater;
+using UpdaterPtr = std::shared_ptr<Updater>;
 
 enum class MergeTreeReadType : uint8_t
 {
@@ -168,7 +171,8 @@ public:
         MarkRanges mark_ranges_,
         std::vector<MarkRanges> patches_mark_ranges_,
         const BlockSizeParams & block_size_params_,
-        MergeTreeBlockSizePredictorPtr size_predictor_);
+        MergeTreeBlockSizePredictorPtr size_predictor_,
+        UpdaterPtr updater_ = nullptr);
 
     void initializeReadersChain(
         const PrewhereExprInfo & prewhere_actions,
@@ -228,6 +232,8 @@ private:
 
     /// Used to satistfy preferred_block_size_bytes limitation
     MergeTreeBlockSizePredictorPtr size_predictor;
+
+    UpdaterPtr updater;
 };
 
 using MergeTreeReadTaskPtr = std::unique_ptr<MergeTreeReadTask>;

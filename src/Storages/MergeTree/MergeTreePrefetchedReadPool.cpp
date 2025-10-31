@@ -119,7 +119,8 @@ MergeTreePrefetchedReadPool::MergeTreePrefetchedReadPool(
     const Names & column_names_,
     const PoolSettings & settings_,
     const MergeTreeReadTask::BlockSizeParams & params_,
-    const ContextPtr & context_)
+    const ContextPtr & context_,
+    UpdaterPtr updater_)
     : MergeTreeReadPoolBase(
         std::move(parts_),
         std::move(mutations_snapshot_),
@@ -134,6 +135,7 @@ MergeTreePrefetchedReadPool::MergeTreePrefetchedReadPool(
         settings_,
         params_,
         context_)
+    , updater(std::move(updater_))
     , prefetch_threadpool(getContext()->getPrefetchThreadpool())
     , log(getLogger(
           "MergeTreePrefetchedReadPool("
@@ -330,9 +332,9 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::stealTask(size_t thread, Merge
 MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::createTask(ThreadTask & task, MergeTreeReadTask * previous_task)
 {
     if (task.isValidReadersFuture())
-        return MergeTreeReadPoolBase::createTask(task.read_info, task.readers_future->get(), task.ranges, task.patches_ranges);
-
-    return MergeTreeReadPoolBase::createTask(task.read_info, task.ranges, task.patches_ranges, previous_task);
+        return MergeTreeReadPoolBase::createTask(task.read_info, task.readers_future->get(), task.ranges, task.patches_ranges, updater);
+    else
+        return MergeTreeReadPoolBase::createTask(task.read_info, task.ranges, task.patches_ranges, previous_task, updater);
 }
 
 void MergeTreePrefetchedReadPool::fillPerPartStatistics()

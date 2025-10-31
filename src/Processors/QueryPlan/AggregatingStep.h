@@ -101,6 +101,8 @@ public:
     bool shouldProduceResultsInBucketOrder() const noexcept { return should_produce_results_in_order_of_bucket_number; }
     bool usingMemoryBoundMerging() const noexcept { return memory_bound_merging_of_aggregation_results_enabled; }
 
+    bool supportsDataflowStatisticsCollection() const override { return true; }
+
 private:
     void updateOutputHeader() override;
 

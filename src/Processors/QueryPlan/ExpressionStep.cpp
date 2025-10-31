@@ -9,6 +9,8 @@
 #include <Interpreters/JoinSwitcher.h>
 #include <Common/JSONBuilder.h>
 
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
+
 namespace DB
 {
 
@@ -45,10 +47,12 @@ void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
 {
     auto expression = std::make_shared<ExpressionActions>(std::move(actions_dag), settings.getActionsSettings());
 
+    auto updater = std::make_shared<Updater>(dataflow_cache_key);
+
     pipeline.addSimpleTransform([&](const SharedHeader & header)
-    {
-        return std::make_shared<ExpressionTransform>(header, expression);
-    });
+                                { return std::make_shared<ExpressionTransform>(header, expression, updater); });
+
+    updater->setHeader(pipeline.getHeader());
 
     if (!blocksHaveEqualStructure(pipeline.getHeader(), *output_header))
     {

@@ -53,6 +53,9 @@ struct GroupingSetsParams
 
 using GroupingSetsParamsList = std::vector<GroupingSetsParams>;
 
+class Updater;
+using UpdaterPtr = std::shared_ptr<Updater>;
+
 /** How are "total" values calculated with WITH TOTALS?
   * (For more details, see TotalsHavingTransform.)
   *
@@ -178,6 +181,8 @@ public:
 
     explicit Aggregator(const Block & header_, const Params & params_);
 
+    const Params & getParams() const { return params; }
+
     /// Process one block. Return false if the processing should be aborted (with group_by_overflow_mode = 'break').
     bool executeOnBlock(const Block & block,
         AggregatedDataVariants & result,
@@ -281,6 +286,8 @@ public:
 
     /// Get data structure of the result.
     Block getHeader(bool final) const;
+
+    size_t applyToAllStates(AggregatedDataVariants & result, ssize_t bucket) const;
 
 private:
 
@@ -548,11 +555,8 @@ private:
     Block convertOneBucketToBlock(AggregatedDataVariants & variants, Arena * arena, bool final, Int32 bucket) const;
 
     Block mergeAndConvertOneBucketToBlock(
-        ManyAggregatedDataVariants & variants,
-        Arena * arena,
-        bool final,
-        Int32 bucket,
-        std::atomic<bool> & is_cancelled) const;
+        ManyAggregatedDataVariants & variants, Arena * arena, bool final, Int32 bucket, std::atomic<bool> & is_cancelled, UpdaterPtr updater)
+        const;
 
     Block prepareBlockAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final, bool is_overflows) const;
     BlocksList prepareBlocksAndFillTwoLevel(AggregatedDataVariants & data_variants, bool final) const;
