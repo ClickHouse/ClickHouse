@@ -105,6 +105,11 @@ namespace
     }
 }
 
+namespace DB::ErrorCodes
+{
+    extern const int QUERY_WAS_CANCELLED;
+}
+
 /** ZooKeeper wire protocol.
 
 Debugging example:
@@ -1355,6 +1360,9 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
 
 void ZooKeeper::pushRequest(RequestInfo && info)
 {
+    if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
+        throw DB::Exception(DB::ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+
     try
     {
         info.request->create_ts = clock::now();
