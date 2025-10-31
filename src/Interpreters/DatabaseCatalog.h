@@ -126,7 +126,8 @@ struct GetDatabasesOptions
     bool with_datalake_catalogs{false};
 };
 
-/// For some reason Context is required to get Storage from Database object
+/// For some reason Context is required to get Storage from Database object.
+/// This must not hold the Database mutex.
 class DatabaseCatalog : boost::noncopyable, WithMutableContext
 {
 public:
@@ -282,7 +283,7 @@ public:
     void startReplicatedDDLQueries();
     bool canPerformReplicatedDDLQueries() const;
 
-    void updateMetadataFile(const DatabasePtr & database);
+    void updateMetadataFile(const String & database_name, const ASTPtr & create_query);
     bool hasDatalakeCatalogs() const;
     bool isDatalakeCatalog(const String & database_name) const;
 
