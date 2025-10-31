@@ -17,7 +17,6 @@
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/AsyncBlockIDsCache.h>
-#include <DataTypes/ObjectUtils.h>
 #include <Core/Block.h>
 #include <IO/Operators.h>
 #include <fmt/core.h>
@@ -282,9 +281,6 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk & chunk)
       * TODO Too complex logic, you can do better.
       */
     size_t replicas_num = checkQuorumPrecondition(zookeeper);
-
-    if (!storage_snapshot->object_columns.empty())
-        convertDynamicColumnsToTuples(block, storage_snapshot);
 
     AsyncInsertInfoPtr async_insert_info;
 

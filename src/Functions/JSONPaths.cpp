@@ -12,6 +12,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
+#include <IO/ReadBufferFromMemory.h>
 
 
 namespace DB
