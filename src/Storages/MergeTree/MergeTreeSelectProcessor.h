@@ -6,7 +6,6 @@
 #include <Storages/MergeTree/MergeTreeSelectAlgorithms.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
-#include <Interpreters/Cache/QueryConditionCache.h>
 #include <Processors/Chunk.h>
 
 namespace DB
@@ -95,6 +94,7 @@ public:
     MergeTreeSelectProcessor(
         MergeTreeReadPoolPtr pool_,
         MergeTreeSelectAlgorithmPtr algorithm_,
+        const FilterDAGInfoPtr & row_level_filter_,
         const PrewhereInfoPtr & prewhere_info_,
         const LazilyReadInfoPtr & lazily_read_info_,
         const IndexReadTasks & index_read_tasks_,
@@ -107,6 +107,7 @@ public:
     static Block transformHeader(
         Block block,
         const LazilyReadInfoPtr & lazily_read_info,
+        const FilterDAGInfoPtr & row_level_filter,
         const PrewhereInfoPtr & prewhere_info);
 
     Block getHeader() const { return result_header; }
@@ -118,7 +119,8 @@ public:
     const MergeTreeReaderSettings & getSettings() const { return reader_settings; }
 
     static PrewhereExprInfo getPrewhereActions(
-        PrewhereInfoPtr prewhere_info,
+        const FilterDAGInfoPtr & row_level_filter,
+        const PrewhereInfoPtr & prewhere_info,
         const IndexReadTasks & index_read_tasks,
         const ExpressionActionsSettings & actions_settings,
         bool enable_multiple_prewhere_read_steps,
@@ -137,6 +139,7 @@ private:
     const MergeTreeReadPoolPtr pool;
     const MergeTreeSelectAlgorithmPtr algorithm;
 
+    const FilterDAGInfoPtr row_level_filter;
     const PrewhereInfoPtr prewhere_info;
     const ExpressionActionsSettings actions_settings;
     const PrewhereExprInfo prewhere_actions;
@@ -150,8 +153,6 @@ private:
     MergeTreeReadTaskPtr task;
     /// A result of getHeader(). A chunk which this header is returned from read().
     Block result_header;
-
-    QueryConditionCacheWriterPtr query_condition_cache_writer;
 
     ReadStepsPerformanceCounters read_steps_performance_counters;
 
