@@ -3,10 +3,17 @@
 #include <type_traits>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Common/typeid_cast.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnNullable.h>
+#include <DataTypes/NullableUtils.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDate32.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionSum.h>
 #include <Core/DecimalFunctions.h>
@@ -224,15 +231,23 @@ public:
 
 #endif
 
+protected:
+    // allow derived classes to read scales safely
+    UInt32 getNumScale() const { return num_scale; }
+    UInt32 getDenomScale() const { return denom_scale; }
+
 private:
     UInt32 num_scale;
     UInt32 denom_scale;
 };
 
 template <typename T>
-using AvgFieldType = std::conditional_t<is_decimal<T>,
-    std::conditional_t<std::is_same_v<T, Decimal256>, Decimal256, Decimal128>,
-    NearestFieldType<T>>;
+using AvgFieldType = std::conditional_t<
+    std::is_same_v<T, DateTime64>,
+    Decimal128,
+    std::conditional_t<is_decimal<T>,
+        std::conditional_t<std::is_same_v<T, Decimal256>, Decimal256, Decimal128>,
+        NearestFieldType<T>>>;
 
 template <typename T>
 class AggregateFunctionAvg : public AggregateFunctionAvgBase<AvgFieldType<T>, UInt64, AggregateFunctionAvg<T>>
@@ -240,6 +255,11 @@ class AggregateFunctionAvg : public AggregateFunctionAvgBase<AvgFieldType<T>, UI
 public:
     using Base = AggregateFunctionAvgBase<AvgFieldType<T>, UInt64, AggregateFunctionAvg<T>>;
     using Base::Base;
+
+    /// Modified constructor to handle Date/DateTime return types
+    explicit AggregateFunctionAvg(const DataTypes & argument_types_, const DataTypePtr & result_type_)
+        : Base(argument_types_, result_type_)
+    {}
 
     using Numerator = typename Base::Numerator;
     using Denominator = typename Base::Denominator;
@@ -322,6 +342,24 @@ public:
         increment(place, sum_data.sum);
     }
 
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
+    {
+        WhichDataType which(removeNullable(this->getResultType()));
+
+        if (which.isDate() || which.isDate32() || which.isDateTime() || which.isDateTime64())
+        {
+            insertDateTimeResult(place, to, which);
+        }
+        else
+        {
+            if constexpr (is_decimal<typename Base::Numerator> || is_decimal<typename Base::Denominator>)
+                assert_cast<ColumnVector<Float64> &>(to).getData().push_back(
+                    this->data(place).divideIfAnyDecimal(this->getNumScale(), this->getDenomScale()));
+            else
+                assert_cast<ColumnVector<Float64> &>(to).getData().push_back(this->data(place).divide());
+        }
+    }
+
     String getName() const override { return "avg"; }
 
 #if USE_EMBEDDED_COMPILER
@@ -358,6 +396,44 @@ private:
     void NO_SANITIZE_UNDEFINED increment(AggregateDataPtr __restrict place, Numerator inc) const
     {
         this->data(place).numerator += inc;
+    }
+
+    void insertDateTimeResult(AggregateDataPtr __restrict place, IColumn & to, const WhichDataType & which) const
+    {
+        /// For empty Date/DateTime sets, return NULL since NaN cannot be represented in integer types
+        /// and 0 would correspond to 1970-01-01, which is misleading.
+        if (this->data(place).denominator == 0)
+        {
+            to.insertDefault();
+            return;
+        }
+
+        /// For Date/DateTime types, compute integer quotient (no fractional rounding)
+        Numerator quotient = this->data(place).numerator / static_cast<Numerator>(this->data(place).denominator);
+
+        auto * nullable_col = typeid_cast<ColumnNullable *>(&to);
+        IColumn & target_col = nullable_col ? nullable_col->getNestedColumn() : to;
+
+        /// DateTime64 requires special handling because it stores values in ColumnDecimal
+        if (which.isDateTime64())
+        {
+            auto & decimal_col = assert_cast<ColumnDecimal<DateTime64> &>(target_col);
+            Int64 value;
+            if constexpr (is_decimal<Numerator>)
+                value = static_cast<Int64>(quotient.value);
+            else
+                value = static_cast<Int64>(quotient);
+
+            decimal_col.getData().push_back(DateTime64(value));
+        }
+        else
+        {
+            auto & vec_col = assert_cast<ColVecType &>(target_col);
+            vec_col.getData().push_back(static_cast<T>(quotient));
+        }
+
+        if (nullable_col)
+            nullable_col->getNullMapData().push_back(0);
     }
 };
 }

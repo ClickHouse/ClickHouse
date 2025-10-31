@@ -18,12 +18,14 @@ avg(x)
 
 **Arguments**
 
-- `x` — input values, must be [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md), or [Decimal](../../../sql-reference/data-types/decimal.md).
+- `x` — input values, must be [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md), [Decimal](../../../sql-reference/data-types/decimal.md), [Date](../../../sql-reference/data-types/date.md), [Date32](../../../sql-reference/data-types/date32.md), [DateTime](../../../sql-reference/data-types/datetime.md), or [DateTime64](../../../sql-reference/data-types/datetime64.md).
 
 **Returned value**
 
-- The arithmetic mean, always as [Float64](../../../sql-reference/data-types/float.md).
-- `NaN` if the input parameter `x` is empty.
+- For numeric types: the arithmetic mean, always as [Float64](../../../sql-reference/data-types/float.md).
+- For Date/DateTime types: the arithmetic mean as [Nullable](../../../sql-reference/data-types/nullable.md) of the same type as the input (preserves type and timezone/scale).
+- `NaN` if the input parameter `x` is empty for numeric types.
+- `NULL` if the input parameter `x` is empty for Date/DateTime types.
 
 **Example**
 
@@ -41,7 +43,23 @@ Result:
 └────────┘
 ```
 
-**Example**
+**Example with Date/DateTime**
+
+Query:
+
+```sql
+SELECT avg(d) FROM VALUES('d Date', '2024-01-01', '2024-01-03');
+```
+
+Result:
+
+```text
+┌─avg(d)─────┐
+│ 2024-01-02 │
+└────────────┘
+```
+
+**Example with empty result**
 
 Create a temp table:
 
@@ -62,7 +80,23 @@ SELECT avg(t) FROM test;
 Result:
 
 ```text
-┌─avg(x)─┐
+┌─avg(t)─┐
 │    nan │
+└────────┘
+```
+
+**Example with empty Date result**
+
+Query:
+
+```sql
+SELECT avg(d) FROM (SELECT toDate('2024-01-01') AS d WHERE 0);
+```
+
+Result:
+
+```text
+┌─avg(d)─┐
+│   ᴺᵁᴸᴸ │
 └────────┘
 ```
