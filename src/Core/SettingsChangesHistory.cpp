@@ -41,6 +41,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.11",
         {
+            {"date_time_input_format", "basic", "best_effort", "Better usability"},
+            {"cast_string_to_date_time_mode", "basic", "best_effort", "Better usability"},
+            {"create_table_empty_primary_key_by_default", false, true, "Better usability"},
             {"correlated_subqueries_default_join_kind", "left", "right", "New setting. Default join kind for decorrelated query plan."},
             {"use_statistics_cache", 0, 0, "New setting"},
             {"use_text_index_dictionary_cache", false, false, "New setting"},
