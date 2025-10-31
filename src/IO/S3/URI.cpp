@@ -54,7 +54,7 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
     else
         uri_str = uri_;
 
-    // For s3://, gs://, oss:// schemes with wildcard '?', we need to encode 
+    // For s3://, gs://, oss:// schemes with wildcard '?', we need to encode
     // the '?' before parsing to prevent it from being treated as query separator
     bool should_encode_question_mark = false;
     if (uri_str.contains('?'))
