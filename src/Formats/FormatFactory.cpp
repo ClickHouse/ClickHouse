@@ -50,6 +50,7 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
     extern const SettingsInt64 zstd_window_log_max;
     extern const SettingsUInt64 output_format_compression_level;
     extern const SettingsUInt64 interactive_delay;
+    extern const SettingsBool allow_special_serialization_kinds_in_output_formats;
 }
 
 namespace ErrorCodes
@@ -71,7 +72,8 @@ const FormatFactory::Creators & FormatFactory::getCreators(const String & name) 
     auto it = dict.find(boost::to_lower_copy(name));
     if (dict.end() != it)
         return it->second;
-    throw Exception(ErrorCodes::UNKNOWN_FORMAT, "Unknown format {}", name);
+    auto hints = this->getHints(name);
+    throw Exception(ErrorCodes::UNKNOWN_FORMAT, "Unknown format {}. Maybe you meant: {}", name, toString(hints));
 }
 
 FormatFactory::Creators & FormatFactory::getOrCreateCreators(const String & name)
@@ -356,6 +358,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.client_protocol_version = context->getClientProtocolVersion();
     format_settings.allow_special_bool_values_inside_variant = settings[Setting::allow_special_bool_values_inside_variant];
     format_settings.max_block_size_bytes = settings[Setting::input_format_max_block_size_bytes];
+    format_settings.allow_special_serialization_kinds = settings[Setting::allow_special_serialization_kinds_in_output_formats];
 
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
     if (format_settings.schema.is_server)
@@ -400,8 +403,9 @@ InputFormatPtr FormatFactory::getInput(
     const FormatSettings format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
     const Settings & settings = context->getSettingsRef();
 
-    if (format_filter_info && format_filter_info->prewhere_info && (!creators.random_access_input_creator || !creators.prewhere_support_checker || !creators.prewhere_support_checker(format_settings)))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "PREWHERE passed to format that doesn't support it");
+    if (format_filter_info && (format_filter_info->prewhere_info || format_filter_info->row_level_filter) && (!creators.random_access_input_creator || !creators.prewhere_support_checker || !creators.prewhere_support_checker(format_settings)))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "{} passed to format that doesn't support it",
+            format_filter_info->prewhere_info ? "PREWHERE" : "ROW LEVEL FILTER");
 
     if (!parser_shared_resources)
         parser_shared_resources = std::make_shared<FormatParserSharedResources>(
@@ -1006,4 +1010,8 @@ FormatFactory & FormatFactory::instance()
     return ret;
 }
 
+std::vector<String> FormatFactory::getAllRegisteredNames() const
+{
+    return KnownFormatNames::instance().getAllRegisteredNames();
+}
 }

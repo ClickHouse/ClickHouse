@@ -44,10 +44,8 @@ template <
     typename Data,
     /// Structure with static member "name", containing the name of the aggregate function.
     typename Name,
-    /// If true, the function accepts the second argument
-    /// (in can be "weight" to calculate quantiles or "determinator" that is used instead of PRNG).
-    /// Second argument is always obtained through 'getUInt' method.
-    bool has_second_arg,
+    /// Type of the second argument. If there is no second argument, this should be void.
+    typename SecondArgumentType,
     /// If non-void, the function will return float of specified type with possibly interpolated results and NaN if there was no values.
     /// Otherwise it will return Value type and default value if there was no values.
     /// As an example, the function cannot return floats, if the SQL type of argument is Date or DateTime.
@@ -58,7 +56,7 @@ template <
     /// If the first parameter (before level) is accuracy.
     bool has_accuracy_parameter>
 class AggregateFunctionQuantile final
-    : public IAggregateFunctionDataHelper<Data, AggregateFunctionQuantile<Value, Data, Name, has_second_arg, FloatReturnType, returns_many, has_accuracy_parameter>>
+    : public IAggregateFunctionDataHelper<Data, AggregateFunctionQuantile<Value, Data, Name, SecondArgumentType, FloatReturnType, returns_many, has_accuracy_parameter>>
 {
 private:
     using ColVecType = ColumnVectorOrDecimal<Value>;
@@ -82,7 +80,7 @@ private:
 
 public:
     AggregateFunctionQuantile(const DataTypes & argument_types_, const Array & params)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionQuantile<Value, Data, Name, has_second_arg, FloatReturnType, returns_many, has_accuracy_parameter>>(
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionQuantile<Value, Data, Name, SecondArgumentType, FloatReturnType, returns_many, has_accuracy_parameter>>(
             argument_types_, params, createResultType(argument_types_))
         , levels(has_accuracy_parameter && !params.empty() ? Array(params.begin() + 1, params.end()) : params, returns_many)
         , level(levels.levels[0])
@@ -91,13 +89,23 @@ public:
         if (!returns_many && levels.size() > 1)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires one level parameter or less", getName());
 
-        if constexpr (has_second_arg)
+        if constexpr (std::is_same_v<SecondArgumentType, UInt64>)
         {
             assertBinary(Name::name, argument_types_);
             if (!isUInt(argument_types_[1]))
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Second argument (weight) for function {} must be unsigned integer, but it has type {}",
+                    Name::name,
+                    argument_types_[1]->getName());
+        }
+        else if constexpr (std::is_same_v<SecondArgumentType, Float64>)
+        {
+            assertBinary(Name::name, argument_types_);
+            if (!isFloat(argument_types_[1]))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Second argument for function {} must be float, but it has type {}",
                     Name::name,
                     argument_types_[1]->getName());
         }
@@ -225,8 +233,10 @@ public:
 #   pragma clang diagnostic pop
         }
 
-        if constexpr (has_second_arg)
+        if constexpr (std::is_same_v<SecondArgumentType, UInt64>)
             this->data(place).add(value, columns[1]->getUInt(row_num));
+        else if constexpr (std::is_same_v<SecondArgumentType, Float64>)
+            this->data(place).add(value, columns[1]->getFloat64(row_num));
         else
             this->data(place).add(value);
     }
@@ -338,5 +348,8 @@ struct NameQuantilesGK { static constexpr auto name = "quantilesGK"; };
 
 struct NameQuantileDD { static constexpr auto name = "quantileDD"; };
 struct NameQuantilesDD { static constexpr auto name = "quantilesDD"; };
+
+struct NameQuantilePrometheusHistogram { static constexpr auto name = "quantilePrometheusHistogram"; };
+struct NameQuantilesPrometheusHistogram { static constexpr auto name = "quantilesPrometheusHistogram"; };
 
 }
