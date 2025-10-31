@@ -558,7 +558,7 @@
 
         const base_url = window.location.origin + window.location.pathname;
         const items = links
-            .map((href) => {
+            .map((link) => {
                 const file_name = link.includes(base_url) ? "Report" : link.split('/').pop();
                 return { href, file_name };
             })
