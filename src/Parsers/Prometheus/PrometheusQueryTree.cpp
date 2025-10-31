@@ -130,6 +130,12 @@ PrometheusQueryResultType PrometheusQueryTree::getResultType() const
     return root->result_type;
 }
 
+void PrometheusQueryTree::setResultType(ResultType result_type)
+{
+    if (!root)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Prometheus query tree shouldn't be empty");
+    const_cast<PrometheusQueryResultType &>(root->result_type) = result_type;
+}
 
 namespace
 {
