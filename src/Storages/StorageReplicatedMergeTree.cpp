@@ -10731,27 +10731,27 @@ String StorageReplicatedMergeTree::findReplicaHavingPart(
     return {};
 }
 
-
 bool StorageReplicatedMergeTree::checkIfDetachedPartExists(const String & part_name)
 {
-    fs::directory_iterator dir_end;
-    for (const std::string & path : getDataPaths())
-        for (fs::directory_iterator dir_it{fs::path(path) / DETACHED_DIR_NAME}; dir_it != dir_end; ++dir_it)
-            if (dir_it->path().filename().string() == part_name)
+    for (const auto & disk : getStoragePolicy()->getDisks())
+    {
+        for (auto it = disk->iterateDirectory(fs::path(getRelativeDataPath()) / DETACHED_DIR_NAME); it->isValid(); it->next())
+        {
+            if (it->name() == part_name)
                 return true;
+        }
+    }
     return false;
 }
 
 
 bool StorageReplicatedMergeTree::checkIfDetachedPartitionExists(const String & partition_name)
 {
-    fs::directory_iterator dir_end;
-
-    for (const std::string & path : getDataPaths())
+    for (const auto & disk : getStoragePolicy()->getDisks())
     {
-        for (fs::directory_iterator dir_it{fs::path(path) / DETACHED_DIR_NAME}; dir_it != dir_end; ++dir_it)
+        for (auto it = disk->iterateDirectory(fs::path(getRelativeDataPath()) / DETACHED_DIR_NAME); it->isValid(); it->next())
         {
-            const String file_name = dir_it->path().filename().string();
+            const String file_name = it->name();
             auto part_info = MergeTreePartInfo::tryParsePartName(file_name, format_version);
 
             if (part_info && part_info->getPartitionId() == partition_name)

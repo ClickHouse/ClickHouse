@@ -5,7 +5,7 @@ DROP TABLE IF EXISTS t_index_hint;
 
 CREATE TABLE t_index_hint (a UInt64, b UInt64)
 ENGINE = MergeTree ORDER BY a
-SETTINGS index_granularity = 1, min_bytes_for_wide_part = 0, serialization_info_version = 'default';
+SETTINGS index_granularity = 1, min_bytes_for_wide_part = 0, serialization_info_version = 'basic';
 
 INSERT INTO t_index_hint SELECT number, number FROM numbers(1000);
 
@@ -40,7 +40,7 @@ CREATE TABLE t_index_hint
     INDEX idx_tokens s_tokens TYPE bloom_filter(0.01) GRANULARITY 1,
 )
 ENGINE = MergeTree ORDER BY a
-SETTINGS index_granularity = 1, min_bytes_for_wide_part = 0, serialization_info_version = 'default';
+SETTINGS index_granularity = 1, min_bytes_for_wide_part = 0, serialization_info_version = 'basic';
 
 INSERT INTO t_index_hint (a, s) VALUES (1, 'Text with my_token') (2, 'Another text');
 

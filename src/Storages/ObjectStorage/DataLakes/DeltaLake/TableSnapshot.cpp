@@ -60,7 +60,7 @@ Field parseFieldFromString(const String & value, DB::DataTypePtr data_type)
     {
         ReadBufferFromString buffer(value);
         auto col = data_type->createColumn();
-        auto serialization = data_type->getSerialization(ISerialization::Kind::DEFAULT);
+        auto serialization = data_type->getSerialization({ISerialization::Kind::DEFAULT});
         serialization->deserializeWholeText(*col, buffer, FormatSettings{});
         return (*col)[0];
     }
@@ -310,7 +310,7 @@ public:
         struct ffi::KernelStringSlice path,
         int64_t size,
         const ffi::Stats * stats,
-        const ffi::DvInfo * dv_info,
+        const ffi::CDvInfo * dv_info,
         const ffi::Expression * transform,
         const struct ffi::CStringMap * deprecated)
     {
@@ -332,7 +332,7 @@ public:
         struct ffi::KernelStringSlice path,
         int64_t size,
         const ffi::Stats * stats,
-        const ffi::DvInfo * /* dv_info */,
+        const ffi::CDvInfo * /* dv_info */,
         const ffi::Expression * transform,
         const struct ffi::CStringMap * /* deprecated */)
     {
