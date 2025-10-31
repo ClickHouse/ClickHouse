@@ -7,7 +7,7 @@
 #include <Core/SettingsChangesHistory.h>
 #include <Disks/DiskFromAST.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTFunction.hB>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/FieldFromAST.h>
 #include <Parsers/isDiskFunction.h>
