@@ -595,7 +595,8 @@ SELECT
     count() AS cnt,
     groupArray(id) AS ids
 FROM 03611_t_nullsafe
-GROUP BY eq, distinct_flag;
+GROUP BY eq, distinct_flag
+ORDER BY eq;
 
 SELECT '1.12 Aggregate Func';
 SELECT
@@ -621,7 +622,7 @@ SELECT
     r.b
 FROM 03611_t_nullsafe AS l
 INNER JOIN 03611_t_nullsafe AS r ON l.a <=> r.b
-ORDER BY lid;
+ORDER BY lid, rid;
 
 SELECT
     l.id AS lid,
@@ -630,7 +631,7 @@ SELECT
     r.b
 FROM 03611_t_nullsafe AS l
 INNER JOIN 03611_t_nullsafe AS r ON l.a IS DISTINCT FROM r.b
-ORDER BY lid;
+ORDER BY lid, rid;
 
 SELECT '1.14 CASE WHEN Clause';
 SELECT id, a, b,
