@@ -7,6 +7,8 @@
 namespace DB
 {
 
+class TextIndexDictionaryBlockCache;
+
 enum class TextSearchMode : uint8_t
 {
     Any,
@@ -44,7 +46,7 @@ public:
         const ActionsDAG::Node * predicate,
         ContextPtr context,
         const Block & index_sample_block,
-        TokenExtractorPtr token_extactor_,
+        TokenExtractorPtr token_extractor_,
         MergeTreeIndexTextPreprocessorPtr preprocessor_);
 
     ~MergeTreeIndexConditionText() override = default;
@@ -64,6 +66,9 @@ public:
     /// Returns generated virtual column name for the replacement of related function node.
     std::optional<String> replaceToVirtualColumn(const TextSearchQuery & query, const String & index_name);
     TextSearchQueryPtr getSearchQueryForVirtualColumn(const String & column_name) const;
+
+    bool useDictionaryBlockCache() const { return use_dictionary_block_cache; }
+    TextIndexDictionaryBlockCache * dictionaryBlockCache() const { return dictionary_block_cache; }
 
 private:
     /// Uses RPN like KeyCondition
@@ -130,6 +135,10 @@ private:
     TextSearchMode global_search_mode = TextSearchMode::All;
     /// Reference preprocessor expression
     MergeTreeIndexTextPreprocessorPtr preprocessor;
+    /// Using text index dictionary block cache can be enabled to reduce I/O
+    bool use_dictionary_block_cache;
+    /// Instance of the text index dictionary block cache
+    TextIndexDictionaryBlockCache * dictionary_block_cache;
 };
 
 static constexpr std::string_view TEXT_INDEX_VIRTUAL_COLUMN_PREFIX = "__text_index_";

@@ -1,4 +1,5 @@
 #pragma once
+
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Columns/IColumn.h>
@@ -179,9 +180,7 @@ struct DictionaryBlockBase
     bool empty() const;
     size_t size() const;
 
-    size_t lowerBound(const StringRef & token) const;
     size_t upperBound(const StringRef & token) const;
-    std::optional<size_t> binarySearch(const StringRef & token) const;
 };
 
 struct DictionarySparseIndex : public DictionaryBlockBase

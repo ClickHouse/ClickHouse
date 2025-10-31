@@ -58,7 +58,7 @@ ORDER BY key
   Note that each string can consist of multiple characters (`', '` in the example).
   The default separator list, if not specified explicitly (for example, `tokenizer = splitByString`), is a single whitespace `[' ']`.
 - `ngrams(N)` splits strings into equally large `N`-grams (also see function [ngrams](/sql-reference/functions/splitting-merging-functions.md/#ngrams)).
-  The ngram length can be specified using an optional integer parameter between 2 and 8, for example, `tokenizer = ngrams(3)`.
+ The ngram length can be specified using an optional integer parameter between 2 and 8, for example, `tokenizer = ngrams(3)`.
   The default ngram size, if not specified explicitly (for example, `tokenizer = ngrams`), is 3.
 - `array` performs no tokenization, i.e. every row value is a token (also see function [array](/sql-reference/functions/array-functions.md/#array)).
 - `sparseGrams(min_length, max_length, min_cutoff_length)` — uses the algorithm as in the [sparseGrams](/sql-reference/functions/string-functions#sparseGrams) function to split a string into all ngrams of `min_length` and several ngrams of larger size up to `max_length`, inclusive. If `min_cutoff_length` is specified, only N-grams with length greater than or equal to `min_cutoff_length` are saved in the index. Unlike `ngrams(N)`, which generates only fixed-length N-grams, `sparseGrams` produces a set of variable-length N-grams within the specified range, allowing for a more flexible representation of text context. For example, `tokenizer = sparseGrams(3, 5, 4)` will generate 3-, 4-, 5-grams from the input string and save only the 4- and 5-grams in the index.
@@ -70,6 +70,12 @@ For example, the separator strings `['%21', '%']` will cause `%21abc` to be toke
 In the most cases, you want that matching prefers longer separators first.
 This can generally be done by passing the separator strings in order of descending length.
 If the separator strings happen to form a [prefix code](https://en.wikipedia.org/wiki/Prefix_code), they can be passed in arbitrary order.
+:::
+
+:::warning
+It is at the moment not recommended to build text indexes on top of text in non-western languages, e.g. Chinese.
+The currently supported tokenizers may lead to huge index sizes and large query times.
+We plan to add specialized language-specific tokenizers in future which will handle these cases better.
 :::
 
 To test how the tokenizers split the input string, you can use ClickHouse's [tokens](/sql-reference/functions/splitting-merging-functions.md/#tokens) function:
@@ -323,7 +329,7 @@ See the following examples for the usage of `Array(T)` and `Map(K, V)` with the 
 
 ### Examples for the text index `Array` and `Map` support. {#text-index-array-and-map-examples}
 
-#### Indexing Array(String) {#text-indexi-example-array}
+#### Indexing Array(String) {#text-index-example-array}
 
 In a simple blogging platform, authors assign keywords to their posts to categorize content.
 A common feature allows users to discover related content by clicking on keywords or searching for topics.
@@ -754,6 +760,23 @@ SETTINGS query_plan_direct_read_from_text_index = 1, use_skip_indexes_on_data_re
 
 By combining the results from the index, the direct read query is 34 times faster (0.450s vs 0.013s) and avoids reading the 9.58 GB of column data.
 For this specific case, `hasAnyTokens(comment, ['ClickHouse', 'clickhouse'])` would be the preferred, more efficient syntax.
+
+## Tuning the text index {#tuning-the-text-index}
+
+Currently, there is a cache for the deserialized dictionary blocks of the text index to reduce I/O.
+
+It can be enabled via the setting [use_text_index_dictionary_cache](/operations/settings/settings#use_text_index_dictionary_cache). By default, it is disabled.
+
+Refer the following server settings to configure the cache.
+
+### Server Settings {#text-index-tuning-server-settings}
+
+| Setting                                                                                                                                                  | Description                                                                                                          | Default      |
+|----------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------|--------------|
+| [text_index_dictionary_block_cache_policy](/operations/server-configuration-parameters/settings#text_index_dictionary_block_cache_policy)             | Text index dictionary block cache policy name.                                                                       | `SLRU`       |
+| [text_index_dictionary_block_cache_size](/operations/server-configuration-parameters/settings#text_index_dictionary_block_cache_size)                 | Maximum cache size in bytes.                                                                                         | `1073741824` |
+| [text_index_dictionary_block_cache_max_entries](/operations/server-configuration-parameters/settings#text_index_dictionary_block_cache_max_entries)   | Maximum number of deserialized dictionary blocks in cache.                                                           | `1'000'000`  |
+| [text_index_dictionary_block_cache_size_ratio](/operations/server-configuration-parameters/settings#text_index_dictionary_block_cache_size_ratio)     | The size of the protected queue in the text index dictionary block cache relative to the cache\'s total size.        | `0.5`        |
 
 ## Related content {#related-content}
 

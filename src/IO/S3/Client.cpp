@@ -1212,8 +1212,7 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
     bool enable_s3_requests_logging,
     bool for_disk_s3,
     std::optional<std::string> opt_disk_name,
-    const ThrottlerPtr & get_request_throttler,
-    const ThrottlerPtr & put_request_throttler,
+    const HTTPRequestThrottler & request_throttler,
     const String & protocol)
 {
     auto context = Context::getGlobalContextInstance();
@@ -1235,8 +1234,7 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
         for_disk_s3,
         opt_disk_name,
         context->getGlobalContext()->getSettingsRef()[Setting::s3_use_adaptive_timeouts],
-        get_request_throttler,
-        put_request_throttler,
+        request_throttler,
         error_report);
 
     config.scheme = Aws::Http::SchemeMapper::FromString(protocol.c_str());
