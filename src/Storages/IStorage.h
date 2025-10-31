@@ -200,7 +200,7 @@ public:
     /// used without any locks.
     virtual StorageMetadataPtr getInMemoryMetadataPtr(bool /*bypass_metadata_cache*/ = false) const // NOLINT
     {
-      return metadata.get();
+        return metadata.get();
     }
 
     /// Update storage metadata. Used in ALTER or initialization of Storage.
