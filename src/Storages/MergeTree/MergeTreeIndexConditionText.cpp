@@ -691,7 +691,7 @@ bool MergeTreeIndexConditionText::traverseMapElementValueNode(const RPNBuilderTr
     if (function.getArgumentsSize() != 2 || function.getFunctionName() != "arrayElement")
         return false;
 
-    if (const_value.getType() != Field::Types::String || const_value.safeGet<String>() == "")
+    if (const_value.getType() != Field::Types::String || const_value.safeGet<String>().empty())
         return false;
 
     return header.has(fmt::format("mapValues({})", column_name));

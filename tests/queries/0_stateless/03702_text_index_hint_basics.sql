@@ -18,14 +18,14 @@ SELECT count() FROM t_text_index_hint WHERE s = '5555';
 
 SELECT trim(explain) FROM
 (
-    EXPLAIN actions = 1 SELECT count() FROM t_text_index_hint WHERE s = '5555'
+    EXPLAIN actions = 1 SELECT count() FROM t_text_index_hint WHERE s = '5555' SETTINGS use_skip_indexes_on_data_read = 1
 ) WHERE explain ILIKE '%filter column%';
 
 SELECT count() FROM t_text_index_hint WHERE s LIKE '%5555%';
 
 SELECT trim(explain) FROM
 (
-    EXPLAIN actions = 1 SELECT count() FROM t_text_index_hint WHERE s LIKE '%5555%'
+    EXPLAIN actions = 1 SELECT count() FROM t_text_index_hint WHERE s LIKE '%5555%' SETTINGS use_skip_indexes_on_data_read = 1
 ) WHERE explain ILIKE '%filter column%';
 
 DROP TABLE IF EXISTS t_text_index_hint;
@@ -44,14 +44,14 @@ SELECT count() FROM t_text_index_hint WHERE s = '5555';
 
 SELECT trim(explain) FROM
 (
-    EXPLAIN actions = 1 SELECT count() FROM t_text_index_hint WHERE s = '5555'
+    EXPLAIN actions = 1 SELECT count() FROM t_text_index_hint WHERE s = '5555' SETTINGS use_skip_indexes_on_data_read = 1
 ) WHERE explain ILIKE '%filter column%';
 
 SELECT count() FROM t_text_index_hint WHERE s LIKE '%5555%';
 
 SELECT trim(explain) FROM
 (
-    EXPLAIN actions = 1 SELECT count() FROM t_text_index_hint WHERE s LIKE '%5555%'
+    EXPLAIN actions = 1 SELECT count() FROM t_text_index_hint WHERE s LIKE '%5555%' SETTINGS use_skip_indexes_on_data_read = 1
 ) WHERE explain ILIKE '%filter column%';
 
 DROP TABLE IF EXISTS t_text_index_hint;
@@ -70,14 +70,14 @@ SELECT count() FROM t_text_index_hint WHERE s = '5555';
 
 SELECT trim(explain) FROM
 (
-    EXPLAIN actions = 1 SELECT count() FROM t_text_index_hint WHERE s = '5555'
+    EXPLAIN actions = 1 SELECT count() FROM t_text_index_hint WHERE s = '5555' SETTINGS use_skip_indexes_on_data_read = 1
 ) WHERE explain ILIKE '%filter column%';
 
 SELECT count() FROM t_text_index_hint WHERE s LIKE '%5555%';
 
 SELECT trim(explain) FROM
 (
-    EXPLAIN actions = 1 SELECT count() FROM t_text_index_hint WHERE s LIKE '%5555%'
+    EXPLAIN actions = 1 SELECT count() FROM t_text_index_hint WHERE s LIKE '%5555%' SETTINGS use_skip_indexes_on_data_read = 1
 ) WHERE explain ILIKE '%filter column%';
 
 DROP TABLE IF EXISTS t_text_index_hint;
