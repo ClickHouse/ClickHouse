@@ -4,11 +4,11 @@ description: 'This engine allows integrating ClickHouse with NATS to publish or 
 sidebar_label: 'NATS'
 sidebar_position: 140
 slug: /engines/table-engines/integrations/nats
-title: 'NATS Engine'
+title: 'NATS table engine'
 doc_type: 'guide'
 ---
 
-# NATS engine {#redisstreams-engine}
+# NATS table engine {#redisstreams-engine}
 
 This engine allows integrating ClickHouse with [NATS](https://nats.io/).
 
