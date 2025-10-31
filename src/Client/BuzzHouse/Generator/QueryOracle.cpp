@@ -1,5 +1,7 @@
 #include <cstdio>
 
+#include <Common/checkStackSize.h>
+
 #include <Client/BuzzHouse/Generator/QueryOracle.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
