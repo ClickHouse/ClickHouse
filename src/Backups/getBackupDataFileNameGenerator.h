@@ -10,6 +10,4 @@ namespace DB
 BackupDataFileNameGeneratorPtr
 getBackupDataFileNameGenerator(const Poco::Util::AbstractConfiguration & config, const BackupSettings & settings);
 
-BackupDataFileNameGeneratorPtr getBackupDataFileNameGenerator(const std::string & generator_name);
-
 }

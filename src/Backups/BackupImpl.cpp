@@ -491,13 +491,6 @@ void BackupImpl::readBackupMetadata()
     if (config_root->getNodeByPath("original_namespace"))
         original_namespace = getString(config_root, "original_namespace");
 
-    std::string data_file_name_gen_name = "default";
-    if (config_root->getNodeByPath("data_file_name_generator"))
-        data_file_name_gen_name = getString(config_root, "data_file_name_generator");
-
-    chassert(!data_file_name_gen);
-    data_file_name_gen = getBackupDataFileNameGenerator(data_file_name_gen_name);
-
     num_files = 0;
     total_size = 0;
     num_entries = 0;
@@ -563,7 +556,7 @@ void BackupImpl::readBackupMetadata()
 
             ++num_files;
             total_size += info.size;
-            bool has_entry = !params.deduplicate_files || (info.size && (info.size != info.base_size) && (info.data_file_name.empty() || info.data_file_name == data_file_name_gen->generate(info)));
+            bool has_entry = !params.deduplicate_files || (info.size && (info.size != info.base_size) && (info.data_file_name.empty() || info.data_file_name == info.file_name));
             if (has_entry)
             {
                 ++num_entries;
