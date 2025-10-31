@@ -213,46 +213,40 @@ private:
         DataTypePtr dict_attr_col_type;
 
         /// Type of the attribute and key columns are not present in the query. So, we have to fetch dictionary and get the column types.
-        try
+        const auto & loader = getContext()->getExternalDictionariesLoader();
+        auto dict = loader.getDictionary(dictget_function_info.dict_name, getContext());
+        if (!dict)
+            return;
+
+        const String dict_type_name = dict->getTypeName();
+
+        if (!isInMemoryLayout(dict_type_name))
+            return;
+
+        const auto & dict_structure = dict->getStructure();
+
+        if (dict_structure.id)
         {
-            const auto & loader = getContext()->getExternalDictionariesLoader();
-            auto dict = loader.getDictionary(dictget_function_info.dict_name, getContext());
-            if (!dict)
-                return;
-
-            const String dict_type_name = dict->getTypeName();
-
-            if (!isInMemoryLayout(dict_type_name))
-                return;
-
-            const auto & dict_structure = dict->getStructure();
-
-            if (dict_structure.id)
-            {
-                key_cols.emplace_back(dict_structure.id->name, dict_structure.id->type);
-            }
-            else if (dict_structure.key) /// composite key
-            {
-                for (const auto & id : *dict_structure.key)
-                {
-                    key_cols.emplace_back(id.name, id.type);
-                }
-            }
-            else
-            {
-                return;
-            }
-
-            assert(
-                dict_structure.hasAttribute(dictget_function_info.attr_col_name)
-                && "Attribute not found in dictionary structure of dictionary");
-
-            dict_attr_col_type = dict_structure.getAttribute(dictget_function_info.attr_col_name).type;
+            key_cols.emplace_back(dict_structure.id->name, dict_structure.id->type);
         }
-        catch (...)
+        else if (dict_structure.key) /// composite key
+        {
+            for (const auto & id : *dict_structure.key)
+            {
+                key_cols.emplace_back(id.name, id.type);
+            }
+        }
+        else
         {
             return;
         }
+
+        assert(
+            dict_structure.hasAttribute(dictget_function_info.attr_col_name)
+            && "Attribute not found in dictionary structure of dictionary");
+
+        dict_attr_col_type = dict_structure.getAttribute(dictget_function_info.attr_col_name).type;
+
 
         auto dict_table_function = std::make_shared<TableFunctionNode>("dictionary");
         dict_table_function->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(dictget_function_info.dict_name));
