@@ -39,6 +39,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
+#include <Storages/MergeTree/TextIndexCache.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadataFactory.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
@@ -169,6 +170,26 @@ namespace ProfileEvents
     extern const Event QueryRemoteWriteThrottlerSleepMicroseconds;
     extern const Event QueryBackupThrottlerBytes;
     extern const Event QueryBackupThrottlerSleepMicroseconds;
+
+    extern const Event MergeMutateBackgroundExecutorTaskExecuteStepMicroseconds;
+    extern const Event MergeMutateBackgroundExecutorTaskCancelMicroseconds;
+    extern const Event MergeMutateBackgroundExecutorTaskResetMicroseconds;
+    extern const Event MergeMutateBackgroundExecutorWaitMicroseconds;
+
+    extern const Event MoveBackgroundExecutorTaskExecuteStepMicroseconds;
+    extern const Event MoveBackgroundExecutorTaskCancelMicroseconds;
+    extern const Event MoveBackgroundExecutorTaskResetMicroseconds;
+    extern const Event MoveBackgroundExecutorWaitMicroseconds;
+
+    extern const Event FetchBackgroundExecutorTaskExecuteStepMicroseconds;
+    extern const Event FetchBackgroundExecutorTaskCancelMicroseconds;
+    extern const Event FetchBackgroundExecutorTaskResetMicroseconds;
+    extern const Event FetchBackgroundExecutorWaitMicroseconds;
+
+    extern const Event CommonBackgroundExecutorTaskExecuteStepMicroseconds;
+    extern const Event CommonBackgroundExecutorTaskCancelMicroseconds;
+    extern const Event CommonBackgroundExecutorTaskResetMicroseconds;
+    extern const Event CommonBackgroundExecutorWaitMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -320,6 +341,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 background_pool_size;
     extern const ServerSettingsUInt64 background_schedule_pool_size;
     extern const ServerSettingsFloat background_schedule_pool_max_parallel_tasks_per_type_ratio;
+    extern const ServerSettingsBool disable_insertion_and_mutation;
     extern const ServerSettingsBool display_secrets_in_show_and_select;
     extern const ServerSettingsUInt64 max_backup_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_build_vector_similarity_index_thread_pool_size;
@@ -493,6 +515,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::unique_ptr<ThreadPool> build_vector_similarity_index_threadpool; /// Threadpool for vector-similarity index creation.
     mutable UncompressedCachePtr index_uncompressed_cache TSA_GUARDED_BY(mutex);      /// The cache of decompressed blocks for MergeTree indices.
     mutable VectorSimilarityIndexCachePtr vector_similarity_index_cache TSA_GUARDED_BY(mutex);         /// Cache of deserialized secondary index granules.
+    mutable TextIndexDictionaryBlockCachePtr text_index_dictionary_block_cache TSA_GUARDED_BY(mutex);  /// Cache of deserialized text index dictionary blocks.
     mutable QueryConditionCachePtr query_condition_cache TSA_GUARDED_BY(mutex);       /// Cache of matching marks for predicates
     mutable QueryResultCachePtr query_result_cache TSA_GUARDED_BY(mutex);             /// Cache of query results.
     mutable MarkCachePtr index_mark_cache TSA_GUARDED_BY(mutex);                      /// Cache of marks in compressed files of MergeTree indices.
@@ -1136,7 +1159,6 @@ ContextData::ContextData(const ContextData &o) :
     classifier(o.classifier),
     prepared_sets_cache(o.prepared_sets_cache),
     offset_parallel_replicas_enabled(o.offset_parallel_replicas_enabled),
-    storage_alias_behaviour(o.storage_alias_behaviour),
     kitchen_sink(o.kitchen_sink),
     part_uuids(o.part_uuids),
     ignored_part_uuids(o.ignored_part_uuids),
@@ -3751,6 +3773,43 @@ void Context::clearVectorSimilarityIndexCache() const
         shared->vector_similarity_index_cache->clear();
 }
 
+void Context::setTextIndexDictionaryBlockCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->text_index_dictionary_block_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index dictionary block cache has been already created.");
+
+    shared->text_index_dictionary_block_cache = std::make_shared<TextIndexDictionaryBlockCache>(cache_policy, max_size_in_bytes, max_entries, size_ratio);
+}
+
+void Context::updateTextIndexDictionaryBlockCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (!shared->text_index_dictionary_block_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index dictionary block cache was not created yet.");
+
+    size_t max_size_in_bytes = config.getUInt64("text_index_dictionary_block_cache_size", DEFAULT_TEXT_INDEX_DICTIONARY_BLOCK_CACHE_MAX_SIZE);
+    size_t max_entries = config.getUInt64("text_index_dictionary_block_cache_max_entries", DEFAULT_TEXT_INDEX_DICTIONARY_BLOCK_CACHE_MAX_ENTRIES);
+    shared->text_index_dictionary_block_cache->setMaxSizeInBytes(max_size_in_bytes);
+    shared->text_index_dictionary_block_cache->setMaxCount(max_entries);
+}
+
+std::shared_ptr<TextIndexDictionaryBlockCache> Context::getTextIndexDictionaryBlockCache() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->text_index_dictionary_block_cache;
+}
+
+void Context::clearTextIndexDictionaryBlockCache() const
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->text_index_dictionary_block_cache)
+        shared->text_index_dictionary_block_cache->clear();
+}
+
 void Context::setMMappedFileCache(size_t max_cache_size_in_num_entries)
 {
     std::lock_guard lock(shared->mutex);
@@ -3930,6 +3989,10 @@ void Context::clearCaches() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Vector similarity index cache was not created yet.");
     shared->vector_similarity_index_cache->clear();
 
+    if (!shared->text_index_dictionary_block_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index dictionary block cache was not created yet.");
+    shared->text_index_dictionary_block_cache->clear();
+
     if (!shared->mmap_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mmapped file cache was not created yet.");
     shared->mmap_cache->clear();
@@ -4076,6 +4139,14 @@ BackgroundSchedulePool & Context::getMessageBrokerSchedulePool() const
     });
 
     return *shared->message_broker_schedule_pool;
+}
+
+void Context::configureServerWideThrottling()
+{
+    if (shared->application_type == ApplicationType::LOCAL || shared->application_type == ApplicationType::SERVER || shared->application_type == ApplicationType::DISKS)
+        shared->server_settings.loadSettingsFromConfig(Poco::Util::Application::instance().config());
+    if (shared->application_type == ApplicationType::SERVER)
+        shared->configureServerWideThrottling();
 }
 
 ThrottlerPtr Context::getReplicatedFetchesThrottler() const
@@ -4406,6 +4477,16 @@ UInt32 Context::getZooKeeperSessionUptime() const
     return shared->zookeeper->getSessionUptime();
 }
 
+void Context::reconnectZooKeeper(const String & reason) const
+{
+    std::lock_guard lock(shared->zookeeper_mutex);
+    if (shared->zookeeper)
+    {
+        shared->zookeeper->finalize(reason);
+        LOG_INFO(shared->log, "ZooKeeper connection closed: {}", reason);
+    }
+}
+
 void Context::handleSystemZooKeeperConnectionLogAfterInitializationIfNeeded()
 {
     std::shared_ptr<ZooKeeperConnectionLog> zookeeper_connection_log;
@@ -4595,7 +4676,8 @@ static void reloadZooKeeperIfChangedImpl(
 
         if (zk_concection_log)
         {
-            zk_concection_log->addDisconnected(keeper_name, *old_zk, reason);
+            if (old_zk)
+                zk_concection_log->addDisconnected(keeper_name, *old_zk, reason);
             zk_concection_log->addConnected(keeper_name, *zk, reason);
         }
 
@@ -4859,7 +4941,7 @@ double Context::getMaxOSCPUWaitTimeRatioToDropConnection() const
 
 void Context::setOSCPUOverloadSettings(double min_os_cpu_wait_time_ratio_to_drop_connection, double max_os_cpu_wait_time_ratio_to_drop_connection)
 {
-    SharedLockGuard lock(shared->mutex);
+    std::lock_guard lock(shared->mutex);
     shared->min_os_cpu_wait_time_ratio_to_drop_connection = min_os_cpu_wait_time_ratio_to_drop_connection;
     shared->max_os_cpu_wait_time_ratio_to_drop_connection = max_os_cpu_wait_time_ratio_to_drop_connection;
 }
@@ -4867,7 +4949,8 @@ void Context::setOSCPUOverloadSettings(double min_os_cpu_wait_time_ratio_to_drop
 bool Context::getS3QueueDisableStreaming() const
 {
     SharedLockGuard lock(shared->mutex);
-    return shared->server_settings[ServerSetting::s3queue_disable_streaming];
+    return shared->server_settings[ServerSetting::s3queue_disable_streaming]
+        || shared->server_settings[ServerSetting::disable_insertion_and_mutation];
 }
 
 void Context::setS3QueueDisableStreaming(bool s3queue_disable_streaming) const
@@ -5032,18 +5115,22 @@ void Context::initializeTraceCollector()
 /// Call after unexpected crash happen.
 void Context::handleCrash() const
 {
-    std::lock_guard<std::mutex> lock(mutex_shared_context);
-    if (!shared)
-        return;
-
     std::optional<SystemLogs> system_logs;
     {
-        SharedLockGuard lock2(shared->mutex);
-        if (!shared->system_logs)
+        std::lock_guard<std::mutex> lock(mutex_shared_context);
+        if (!shared)
             return;
-        system_logs.emplace(*shared->system_logs);
+
+        {
+            SharedLockGuard lock2(shared->mutex);
+            if (!shared->system_logs)
+                return;
+            system_logs.emplace(*shared->system_logs);
+        }
     }
 
+    /// Must be called without mutex_shared_context to avoid deadlock:
+    /// handleCrash() -> SystemLog<...>::prepareTable -> keeper -> Context::getZooKeeperLog() -> mutex_shared_context
     system_logs->handleCrash();
 }
 
@@ -5865,8 +5952,6 @@ void Context::setApplicationType(ApplicationType type)
     if (type == ApplicationType::LOCAL || type == ApplicationType::SERVER || type == ApplicationType::DISKS)
         shared->server_settings.loadSettingsFromConfig(Poco::Util::Application::instance().config());
 
-    if (type == ApplicationType::SERVER)
-        shared->configureServerWideThrottling();
 }
 
 void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & config)
@@ -6542,6 +6627,10 @@ void Context::initializeBackgroundExecutorsIfNeeded()
         /*max_tasks_count*/background_pool_max_tasks_count,
         CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
         CurrentMetrics::BackgroundMergesAndMutationsPoolSize,
+        ProfileEvents::MergeMutateBackgroundExecutorTaskExecuteStepMicroseconds,
+        ProfileEvents::MergeMutateBackgroundExecutorTaskCancelMicroseconds,
+        ProfileEvents::MergeMutateBackgroundExecutorTaskResetMicroseconds,
+        ProfileEvents::MergeMutateBackgroundExecutorWaitMicroseconds,
         background_merges_mutations_scheduling_policy
     );
     LOG_INFO(shared->log, "Initialized background executor for merges and mutations with num_threads={}, num_tasks={}, scheduling_policy={}",
@@ -6553,7 +6642,11 @@ void Context::initializeBackgroundExecutorsIfNeeded()
         background_move_pool_size,
         background_move_pool_size,
         CurrentMetrics::BackgroundMovePoolTask,
-        CurrentMetrics::BackgroundMovePoolSize
+        CurrentMetrics::BackgroundMovePoolSize,
+        ProfileEvents::MoveBackgroundExecutorTaskExecuteStepMicroseconds,
+        ProfileEvents::MoveBackgroundExecutorTaskCancelMicroseconds,
+        ProfileEvents::MoveBackgroundExecutorTaskResetMicroseconds,
+        ProfileEvents::MoveBackgroundExecutorWaitMicroseconds
     );
     LOG_INFO(shared->log, "Initialized background executor for move operations with num_threads={}, num_tasks={}", background_move_pool_size, background_move_pool_size);
 
@@ -6563,7 +6656,11 @@ void Context::initializeBackgroundExecutorsIfNeeded()
         background_fetches_pool_size,
         background_fetches_pool_size,
         CurrentMetrics::BackgroundFetchesPoolTask,
-        CurrentMetrics::BackgroundFetchesPoolSize
+        CurrentMetrics::BackgroundFetchesPoolSize,
+        ProfileEvents::FetchBackgroundExecutorTaskExecuteStepMicroseconds,
+        ProfileEvents::FetchBackgroundExecutorTaskCancelMicroseconds,
+        ProfileEvents::FetchBackgroundExecutorTaskResetMicroseconds,
+        ProfileEvents::FetchBackgroundExecutorWaitMicroseconds
     );
     LOG_INFO(shared->log, "Initialized background executor for fetches with num_threads={}, num_tasks={}", background_fetches_pool_size, background_fetches_pool_size);
 
@@ -6573,7 +6670,11 @@ void Context::initializeBackgroundExecutorsIfNeeded()
         background_common_pool_size,
         background_common_pool_size,
         CurrentMetrics::BackgroundCommonPoolTask,
-        CurrentMetrics::BackgroundCommonPoolSize
+        CurrentMetrics::BackgroundCommonPoolSize,
+        ProfileEvents::CommonBackgroundExecutorTaskExecuteStepMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorTaskCancelMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorTaskResetMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorWaitMicroseconds
     );
     LOG_INFO(shared->log, "Initialized background executor for common operations (e.g. clearing old parts) with num_threads={}, num_tasks={}", background_common_pool_size, background_common_pool_size);
 
@@ -6866,16 +6967,6 @@ void Context::setRuntimeFilterLookup(const RuntimeFilterLookupPtr & filter_looku
 RuntimeFilterLookupPtr Context::getRuntimeFilterLookup() const
 {
     return runtime_filter_lookup;
-}
-
-void Context::setStorageAliasBehaviour(uint8_t storage_alias_behaviour_)
-{
-    storage_alias_behaviour = storage_alias_behaviour_;
-}
-
-uint8_t Context::getStorageAliasBehaviour() const
-{
-    return storage_alias_behaviour;
 }
 
 UInt64 Context::getClientProtocolVersion() const

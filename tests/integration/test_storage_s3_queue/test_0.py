@@ -56,7 +56,25 @@ def started_cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "instance",
-            user_configs=["configs/users.xml"],
+            user_configs=[
+                "configs/users.xml",
+                "configs/enable_keeper_fault_injection.xml",
+            ],
+            with_minio=True,
+            with_azurite=True,
+            with_zookeeper=True,
+            main_configs=[
+                "configs/zookeeper.xml",
+                "configs/s3queue_log.xml",
+            ],
+            stay_alive=True,
+        )
+
+        cluster.add_instance(
+            "instance_no_keeper_fault_injection",
+            user_configs=[
+                "configs/users.xml",
+            ],
             with_minio=True,
             with_azurite=True,
             with_zookeeper=True,
@@ -232,7 +250,10 @@ def test_failed_retry(started_cluster, mode, engine_name):
 
 @pytest.mark.parametrize("mode", AVAILABLE_MODES)
 def test_direct_select_file(started_cluster, mode):
-    node = started_cluster.instances["instance"]
+    # Disabled keeper fault injection because this test uses direct select
+    # from s3queue (not via MV), so it is difficult to retry "fault injected after operation" for commit(),
+    # which we in fact do not want to retry, but in case of direct select this causes query failure.
+    node = started_cluster.instances["instance_no_keeper_fault_injection"]
     table_name = f"direct_select_file_{mode}"
     # A unique path is necessary for repeatable tests
     keeper_path = f"/clickhouse/test_{table_name}_{mode}_{generate_random_string()}"
@@ -338,7 +359,10 @@ def test_direct_select_file(started_cluster, mode):
 
 @pytest.mark.parametrize("mode", AVAILABLE_MODES)
 def test_direct_select_multiple_files(started_cluster, mode):
-    node = started_cluster.instances["instance"]
+    # Disabled keeper fault injection because this test uses direct select
+    # from s3queue (not via MV), so it is difficult to retry "fault injected after operation" for commit(),
+    # which we in fact do not want to retry, but in case of direct select this causes query failure.
+    node = started_cluster.instances["instance_no_keeper_fault_injection"]
     table_name = f"direct_select_multiple_files_{mode}"
     files_path = f"{table_name}_data"
     # A unique path is necessary for repeatable tests
@@ -398,7 +422,7 @@ def test_streaming_to_view(started_cluster, mode):
         selected_values = {
             tuple(map(int, l.split()))
             for l in node.query(
-                f"SELECT column1, column2, column3 FROM {dst_table_name}"
+                f"SELECT column1, column2, column3 FROM {dst_table_name} ORDER BY all"
             ).splitlines()
         }
         if selected_values == expected_values:
@@ -445,7 +469,7 @@ def test_streaming_to_many_views(started_cluster, mode):
     # ensure that streaming from S3 will be started only once all MVs has been created
     time.sleep(5)
 
-    def generate_files(files_num=20, row_num=100, file_prefix = "a"):
+    def generate_files(files_num=20, row_num=100, file_prefix="a"):
         files.extend(
             [
                 (f"{files_path}/{file_prefix}_{i}.csv", i)
@@ -504,21 +528,22 @@ def test_streaming_to_many_views(started_cluster, mode):
         broken_dst_table,
         mv_name=f"{table_name}_{expect_files_num[0] + 1}_mv",
         format="column1 String, column2 Array(UInt32)",
-        create_dst_table_first=False
+        create_dst_table_first=False,
     )
 
-    generate_files(file_prefix = "b")
+    generate_files(file_prefix="b")
     # there is no gurantee what is inserted to other MV because the insert is failed
     check([broken_dst_table], 0, 0)
 
     for i in range(20, 40):
-        log_message = f"File {files_path}/b_{i}.csv failed at try 2/2, retries node exists: true"
-
-        node.wait_for_log_line(
-            log_message,
-            timeout=120,
-            look_behind_lines=200000,
+        log_message = (
+            f"File {files_path}/b_{i}.csv failed at try 2/2, retries node exists: true"
         )
+
+        for _ in range(10):
+            if node.contains_in_log(log_message):
+                break
+            time.sleep(1)
 
         assert node.contains_in_log(
             log_message
@@ -637,7 +662,12 @@ def test_virtual_columns(started_cluster):
         files_path,
         additional_settings={"keeper_path": keeper_path},
     )
-    create_mv(node, table_name, dst_table_name, virtual_columns="_path String, _file String, _size UInt64, _time DateTime")
+    create_mv(
+        node,
+        table_name,
+        dst_table_name,
+        virtual_columns="_path String, _file String, _size UInt64, _time DateTime",
+    )
     expected_values = set([tuple(i) for i in total_values])
     for i in range(20):
         selected_values = {
@@ -652,7 +682,7 @@ def test_virtual_columns(started_cluster):
     assert selected_values == expected_values
     virtual_values = node.query(
         f"SELECT count(), _path, _file, _size, _time FROM {dst_table_name} GROUP BY _path, _file, _size, _time"
-        ).splitlines()
+    ).splitlines()
     assert len(virtual_values) > 0
     (_, res_path, res_file, res_size, res_time) = virtual_values[0].split("\t")
     finish_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")

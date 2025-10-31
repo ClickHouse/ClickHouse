@@ -304,9 +304,10 @@
     M(FilesystemCacheDelayedCleanupElements, "Filesystem cache elements in background cleanup queue") \
     M(FilesystemCacheHoldFileSegments, "Filesystem cache file segment which are currently hold as unreleasable") \
     M(FilesystemCacheKeys, "Number of keys in filesystem cache") \
+    M(FilesystemCacheReserveThreads, "Threads number trying to reserve space in cache") \
     M(AsyncInsertCacheSize, "Number of async insert hash id in cache") \
-    M(IcebergMetadataFilesCacheBytes, "Size of the iceberg metadata cache in bytes") \
-    M(IcebergMetadataFilesCacheFiles, "Number of cached files in the iceberg metadata cache") \
+    M(IcebergMetadataFilesCacheBytes, "Size of the Iceberg metadata cache in bytes") \
+    M(IcebergMetadataFilesCacheFiles, "Number of cached files in the Iceberg metadata cache") \
     M(AvroSchemaCacheBytes, "Size of the Avro schema cache in bytes") \
     M(AvroSchemaCacheCells, "Number of cached Avro schemas") \
     M(AvroSchemaRegistryCacheBytes, "Size of the Avro schema registry cache in bytes") \
@@ -316,7 +317,9 @@
     M(HiveMetadataFilesCacheBytes, "Size of the hive metadata cache in bytes") \
     M(HiveMetadataFilesCacheFiles, "Number of cached files in the hive metadata cache") \
     M(VectorSimilarityIndexCacheBytes, "Size of the vector similarity index cache in bytes") \
-    M(VectorSimilarityIndexCacheCells, "Number of entries in vector similarity index cache") \
+    M(VectorSimilarityIndexCacheCells, "Number of entries in the vector similarity index cache") \
+    M(TextIndexDictionaryBlockCacheBytes, "Size of the text index dictionary block cache in bytes") \
+    M(TextIndexDictionaryBlockCacheCells, "Number of entries in the text index dictionary block cache") \
     M(DNSHostsCacheBytes, "Size of the DNS hosts cache in bytes") \
     M(DNSHostsCacheSize, "Number of cached DNS hosts") \
     M(DNSAddressesCacheBytes, "Size of the DNS addresses cache in bytes") \
@@ -343,6 +346,8 @@
     M(CompiledExpressionCacheCount, "Total entries in the cache of JIT-compiled code") \
     M(MergeJoinBlocksCacheBytes, "Total bytes used for cached blocks in MergeJoin") \
     M(MergeJoinBlocksCacheCount, "Total cached blocks in MergeJoin") \
+    M(BcryptCacheBytes, "Total size of the bcrypt authentication cache in bytes") \
+    M(BcryptCacheSize, "Total number of entries in the bcrypt authentication cache") \
     M(S3Requests, "S3 requests count") \
     M(KeeperAliveConnections, "Number of alive connections") \
     M(KeeperOutstandingRequests, "Number of outstanding requests") \

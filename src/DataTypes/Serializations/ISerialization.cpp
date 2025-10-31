@@ -1,4 +1,6 @@
 #include <Columns/ColumnBLOB.h>
+#include <Columns/ColumnSparse.h>
+#include <Columns/ColumnReplicated.h>
 #include <Columns/IColumn.h>
 #include <Compression/CompressionFactory.h>
 #include <DataTypes/NestedUtils.h>
@@ -11,6 +13,7 @@
 #include <Common/assert_cast.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
+#include <boost/algorithm/string_regex.hpp>
 
 namespace DB
 {
@@ -27,47 +30,106 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-ISerialization::Kind ISerialization::getKind(const IColumn & column)
+ISerialization::KindStack ISerialization::getKindStack(const IColumn & column)
 {
-    if (column.isSparse())
-        return Kind::SPARSE;
+    if (const auto * column_sparse = typeid_cast<const ColumnSparse *>(&column))
+    {
+        auto kind_stack = getKindStack(*column_sparse->getValuesPtr());
+        kind_stack.push_back(Kind::SPARSE);
+        return kind_stack;
+    }
+
+    if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(&column))
+    {
+        auto kind_stack = getKindStack(*column_replicated->getNestedColumn());
+        kind_stack.push_back(Kind::REPLICATED);
+        return kind_stack;
+    }
 
     if (const auto * column_blob = typeid_cast<const ColumnBLOB *>(&column))
-        return column_blob->wrappedColumnIsSparse() ? Kind::DETACHED_OVER_SPARSE : Kind::DETACHED;
+    {
+        auto kind_stack = getKindStack(*column_blob->getWrappedColumn());
+        kind_stack.push_back(Kind::DETACHED);
+        return kind_stack;
+    }
 
-    return Kind::DEFAULT;
+    return {Kind::DEFAULT};
 }
 
-String ISerialization::kindToString(Kind kind)
+static String kindToString(ISerialization::Kind kind)
 {
     switch (kind)
     {
-        case Kind::DEFAULT:
+        case ISerialization::Kind::DEFAULT:
             return "Default";
-        case Kind::SPARSE:
+        case ISerialization::Kind::SPARSE:
             return "Sparse";
-        case Kind::DETACHED:
+        case ISerialization::Kind::DETACHED:
             return "Detached";
-        case Kind::DETACHED_OVER_SPARSE:
-            return "DetachedOverSparse";
+        case ISerialization::Kind::REPLICATED:
+            return "Replicated";
     }
 }
 
-ISerialization::Kind ISerialization::stringToKind(const String & str)
+String ISerialization::kindStackToString(const KindStack & kind_stack)
+{
+    chassert(!kind_stack.empty() && kind_stack.front() == Kind::DEFAULT);
+    /// For compatibility, names are formed like this:
+    /// [Default] -> "Default"
+    /// [Default, Kind1, Kind2, Kind3] -> Kind3OverKind2OverKind1
+    String result;
+    if (kind_stack.size() == 1)
+        return kindToString(kind_stack.front());
+
+    for (ssize_t i = kind_stack.size() - 1; i >= 1; i--)
+    {
+        if (!result.empty())
+            result += "Over";
+        result += kindToString(kind_stack[i]);
+    }
+
+    return result;
+}
+
+static ISerialization::Kind stringToKind(const String & str)
 {
     if (str == "Default")
-        return Kind::DEFAULT;
+        return ISerialization::Kind::DEFAULT;
     else if (str == "Sparse")
-        return Kind::SPARSE;
+        return ISerialization::Kind::SPARSE;
     else if (str == "Detached")
-        return Kind::DETACHED;
-    else if (str == "DetachedOverSparse")
-        return Kind::DETACHED_OVER_SPARSE;
+        return ISerialization::Kind::DETACHED;
+    else if (str == "Replicated")
+        return ISerialization::Kind::REPLICATED;
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown serialization kind '{}'", str);
+}
+
+ISerialization::KindStack ISerialization::stringToKindStack(const String & str)
+{
+    std::vector<String> kind_strings;
+    boost::algorithm::split_regex(kind_strings, str, boost::regex("Over"));
+    KindStack kind_stack;
+    for (size_t i = 0; i != kind_strings.size(); ++i)
+    {
+        auto kind = stringToKind(kind_strings[i]);
+        /// For compatibility we don't write first default kind in a chain of kinds.
+        if (i == 0 && kind != Kind::DEFAULT)
+            kind_stack.push_back(Kind::DEFAULT);
+        kind_stack.push_back(kind);
+    }
+
+    return kind_stack;
+}
+
+bool ISerialization::hasKind(const KindStack & kind_stack, Kind kind)
+{
+    return std::find(kind_stack.begin(), kind_stack.end(), kind) != kind_stack.end();
 }
 
 const std::set<SubstreamType> ISerialization::Substream::named_types
 {
+    StringSizes,
+    InlinedStringSizes,
     TupleElement,
     NamedOffsets,
     NamedNullMap,
@@ -123,6 +185,17 @@ void ISerialization::enumerateStreams(
     enumerateStreams(settings, callback, data);
 }
 
+void ISerialization::enumerateAllStreams(
+    const StreamCallback & callback,
+    const DataTypePtr & type,
+    const ColumnPtr & column) const
+{
+    EnumerateStreamsSettings settings;
+    settings.enumerate_virtual_streams = true;
+    auto data = SubstreamData(getPtr()).withType(type).withColumn(column);
+    enumerateStreams(settings, callback, data);
+}
+
 void ISerialization::serializeBinaryBulk(const IColumn & column, WriteBuffer &, size_t, size_t) const
 {
     throw Exception(ErrorCodes::MULTIPLE_STREAMS_REQUIRED, "Column {} must be serialized with multiple streams", column.getName());
@@ -164,9 +237,14 @@ void ISerialization::deserializeBinaryBulkWithMultipleStreams(
     {
         size_t prev_size = column->size();
         auto mutable_column = column->assumeMutable();
-        deserializeBinaryBulk(*mutable_column, *stream, rows_offset, limit, settings.avg_value_size_hint);
+        double avg_value_size_hint = 0.0;
+        if (settings.get_avg_value_size_hint_callback)
+            avg_value_size_hint = settings.get_avg_value_size_hint_callback(settings.path);
+        deserializeBinaryBulk(*mutable_column, *stream, rows_offset, limit, avg_value_size_hint);
         column = std::move(mutable_column);
         addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column, column->size() - prev_size);
+        if (settings.update_avg_value_size_hint_callback)
+            settings.update_avg_value_size_hint_callback(settings.path, *column);
     }
 
     settings.path.pop_back();
@@ -182,6 +260,7 @@ String getNameForSubstreamPath(
     SubstreamIterator begin,
     SubstreamIterator end,
     bool escape_for_file_name,
+    bool encode_sparse_stream,
     bool escape_variant_substreams)
 {
     using Substream = ISerialization::Substream;
@@ -195,12 +274,20 @@ String getNameForSubstreamPath(
             stream_name += ".size" + toString(array_level);
         else if (it->type == Substream::ArrayElements)
             ++array_level;
+        else if (it->type == Substream::StringSizes || it->type == Substream::InlinedStringSizes)
+            stream_name += ".size";
         else if (it->type == Substream::DictionaryKeys)
             stream_name += ".dict";
         else if (it->type == Substream::DictionaryKeysPrefix)
             stream_name += ".dict_prefix";
+        else if (it->type == Substream::SparseElements && encode_sparse_stream)
+            stream_name += ".sparse";
         else if (it->type == Substream::SparseOffsets)
             stream_name += ".sparse.idx";
+        else if (it->type == Substream::ReplicatedElements)
+            stream_name += ".repl";
+        else if (it->type == Substream::ReplicatedIndexes)
+            stream_name += ".repl.idx";
         else if (Substream::named_types.contains(it->type))
         {
             auto substream_name = "." + it->name_of_substream;
@@ -311,7 +398,7 @@ String ISerialization::getFileNameForStream(const String & name_in_storage, cons
     else
         stream_name = escapeForFileName(name_in_storage);
 
-    return getNameForSubstreamPath(std::move(stream_name), path.begin(), path.end(), true, settings.escape_variant_substreams);
+    return getNameForSubstreamPath(std::move(stream_name), path.begin(), path.end(), true, false, settings.escape_variant_substreams);
 }
 
 String ISerialization::getFileNameForRenamedColumnStream(const String & name_from, const String & name_to, const String & file_name)
@@ -332,14 +419,14 @@ String ISerialization::getFileNameForRenamedColumnStream(const NameAndTypePair &
     return getFileNameForRenamedColumnStream(column_from.getNameInStorage(), column_to.getNameInStorage(), file_name);
 }
 
-String ISerialization::getSubcolumnNameForStream(const SubstreamPath & path)
+String ISerialization::getSubcolumnNameForStream(const SubstreamPath & path, bool encode_sparse_stream)
 {
-    return getSubcolumnNameForStream(path, path.size());
+    return getSubcolumnNameForStream(path, path.size(), encode_sparse_stream);
 }
 
-String ISerialization::getSubcolumnNameForStream(const SubstreamPath & path, size_t prefix_len)
+String ISerialization::getSubcolumnNameForStream(const SubstreamPath & path, size_t prefix_len, bool encode_sparse_stream)
 {
-    auto subcolumn_name = getNameForSubstreamPath("", path.begin(), path.begin() + prefix_len, false, false);
+    auto subcolumn_name = getNameForSubstreamPath("", path.begin(), path.begin() + prefix_len, false, encode_sparse_stream, false);
     if (!subcolumn_name.empty())
         subcolumn_name = subcolumn_name.substr(1); // It starts with a dot.
 
@@ -381,7 +468,7 @@ void ISerialization::addElementToSubstreamsCache(ISerialization::SubstreamsCache
     if (!cache || path.empty())
         return;
 
-    cache->emplace(getSubcolumnNameForStream(path), std::move(element));
+    cache->emplace(getSubcolumnNameForStream(path, true), std::move(element));
 }
 
 ISerialization::ISubstreamsCacheElement * ISerialization::getElementFromSubstreamsCache(ISerialization::SubstreamsCache * cache, const ISerialization::SubstreamPath & path)
@@ -389,7 +476,7 @@ ISerialization::ISubstreamsCacheElement * ISerialization::getElementFromSubstrea
     if (!cache || path.empty())
         return nullptr;
 
-    auto it = cache->find(getSubcolumnNameForStream(path));
+    auto it = cache->find(getSubcolumnNameForStream(path, true));
     return it == cache->end() ? nullptr : it->second.get();
 }
 
@@ -398,7 +485,7 @@ void ISerialization::addToSubstreamsDeserializeStatesCache(SubstreamsDeserialize
     if (!cache || path.empty())
         return;
 
-    cache->emplace(getSubcolumnNameForStream(path), state);
+    cache->emplace(getSubcolumnNameForStream(path, true), state);
 }
 
 ISerialization::DeserializeBinaryBulkStatePtr ISerialization::getFromSubstreamsDeserializeStatesCache(SubstreamsDeserializeStatesCache * cache, const SubstreamPath & path)
@@ -406,7 +493,7 @@ ISerialization::DeserializeBinaryBulkStatePtr ISerialization::getFromSubstreamsD
     if (!cache || path.empty())
         return nullptr;
 
-    auto it = cache->find(getSubcolumnNameForStream(path));
+    auto it = cache->find(getSubcolumnNameForStream(path, true));
     return it == cache->end() ? nullptr : it->second;
 }
 
@@ -416,6 +503,7 @@ bool ISerialization::isSpecialCompressionAllowed(const SubstreamPath & path)
     {
         if (elem.type == Substream::NullMap
             || elem.type == Substream::ArraySizes
+            || elem.type == Substream::StringSizes
             || elem.type == Substream::DictionaryIndexes
             || elem.type == Substream::SparseOffsets)
             return false;
@@ -516,6 +604,8 @@ bool ISerialization::hasSubcolumnForPath(const SubstreamPath & path, size_t pref
     return path[last_elem].type == Substream::NullMap
             || path[last_elem].type == Substream::TupleElement
             || path[last_elem].type == Substream::ArraySizes
+            || path[last_elem].type == Substream::StringSizes
+            || path[last_elem].type == Substream::InlinedStringSizes
             || path[last_elem].type == Substream::VariantElement
             || path[last_elem].type == Substream::VariantElementNullMap
             || path[last_elem].type == Substream::ObjectTypedPath;
@@ -527,7 +617,7 @@ bool ISerialization::isEphemeralSubcolumn(const DB::ISerialization::SubstreamPat
         return false;
 
     size_t last_elem = prefix_len - 1;
-    return path[last_elem].type == Substream::VariantElementNullMap;
+    return path[last_elem].type == Substream::VariantElementNullMap || path[last_elem].type == Substream::InlinedStringSizes;
 }
 
 bool ISerialization::isDynamicSubcolumn(const DB::ISerialization::SubstreamPath & path, size_t prefix_len)

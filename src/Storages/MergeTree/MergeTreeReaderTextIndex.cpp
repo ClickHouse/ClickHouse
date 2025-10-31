@@ -98,6 +98,18 @@ void MergeTreeReaderTextIndex::updateAllIndexRanges()
     }
 }
 
+void MergeTreeReaderTextIndex::prefetchBeginOfRange(Priority priority)
+{
+    if (all_index_ranges.empty())
+        return;
+
+    size_t from_mark = all_index_ranges.front().begin;
+    size_t to_mark = all_index_ranges.back().end;
+
+    index_reader->adjustRightMark(to_mark);
+    index_reader->prefetchBeginOfRange(from_mark, priority);
+}
+
 bool MergeTreeReaderTextIndex::canSkipMark(size_t mark, size_t current_task_last_mark)
 {
     chassert(index_reader);
@@ -165,10 +177,7 @@ size_t MergeTreeReaderTextIndex::readRows(
 
     size_t read_rows = 0;
     createEmptyColumns(res_columns);
-
     size_t granularity = index.index->index.granularity;
-    size_t index_last_mark = (current_task_last_mark + granularity - 1) / granularity;
-    index_reader->adjustRightMark(index_last_mark);
 
     while (read_rows < max_rows_to_read)
     {

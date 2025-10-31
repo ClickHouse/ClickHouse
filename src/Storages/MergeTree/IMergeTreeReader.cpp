@@ -208,6 +208,7 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
         /// Default/materialized expression can contain experimental/suspicious types that can be disabled in current context.
         /// We should not perform any checks during reading from an existing table.
         enableAllExperimentalSettings(context_copy);
+        context_copy->setSetting("enable_analyzer", settings.enable_analyzer);
         auto dag = DB::evaluateMissingDefaults(
             additional_columns, full_requested_columns,
             storage_snapshot->metadata->getColumns(),
@@ -327,7 +328,7 @@ SerializationPtr IMergeTreeReader::getSerializationInPart(const NameAndTypePair 
     if (auto it = infos.find(column_in_part->getNameInStorage()); it != infos.end())
         return IDataType::getSerialization(*column_in_part, *it->second);
 
-    return IDataType::getSerialization(*column_in_part);
+    return IDataType::getSerialization(*column_in_part, infos.getSettings());
 }
 
 void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
