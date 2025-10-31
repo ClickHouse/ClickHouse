@@ -124,8 +124,7 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
             enable_s3_requests_logging,
             /* for_disk_s3 = */ false,
             /* opt_disk_name = */ {},
-            /* get_request_throttler = */ {},
-            /* put_request_throttler = */ {},
+            /* request_throttler = */ {},
             new_uri.uri.getScheme());
 
         client_configuration.endpointOverride = new_uri.endpoint;
