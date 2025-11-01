@@ -1173,7 +1173,9 @@ Chunk ParquetBlockInputFormat::read()
         if (background_exception)
         {
             is_stopped = true;
-            std::rethrow_exception(background_exception);
+            /// This exception can be mutated (addMessage()) in IInputFormat::generate(),
+            /// so we need to copy it (copyMutableException()) to avoid sharing mutable exception between multiple threads
+            std::rethrow_exception(copyMutableException(background_exception));
         }
         if (is_stopped)
             return {};
