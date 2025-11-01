@@ -137,26 +137,21 @@ Header: bx String
       Expression (Post Join Actions)
       Header: __table1.a2 String
               __table2.bx String
-              __table4.c2 String
         Join
         Header: __table1.a2 String
                 __table2.bx String
-                __table4.c2 String
           Expression (Left Pre Join Actions)
           Header: __table4.c1 UInt64
                   __table1.a2 String
                   __table2.bx String
-                  __table4.c2 String
             Expression (Post Join Actions)
             Header: __table1.a2 String
                     __table2.bx String
                     __table4.c1 UInt64
-                    __table4.c2 String
               Join
               Header: __table1.a2 String
                       __table2.bx String
                       __table4.c1 UInt64
-                      __table4.c2 String
                 Expression (Left Pre Join Actions)
                 Header: __table2.b1 UInt64
                         __table1.a2 String
@@ -189,10 +184,8 @@ Header: bx String
                                   b2 String
                 Expression (Right Pre Join Actions)
                 Header: __table4.c1 UInt64
-                        __table4.c2 String
                   Expression ((WHERE + Change column names to column identifiers))
                   Header: __table4.c1 UInt64
-                          __table4.c2 String
                     ReadFromMergeTree (default.c)
                     Header: c2 String
                             c1 UInt64
