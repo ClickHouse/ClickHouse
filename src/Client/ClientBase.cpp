@@ -129,6 +129,7 @@ namespace Setting
     extern const SettingsString promql_database;
     extern const SettingsString promql_table;
     extern const SettingsFloatAuto promql_evaluation_time;
+    extern const SettingsBool into_outfile_create_parent_directories;
 }
 
 namespace ErrorCodes
@@ -151,6 +152,7 @@ namespace ErrorCodes
     extern const int USER_EXPIRED;
     extern const int SUPPORT_IS_DISABLED;
     extern const int CANNOT_WRITE_TO_FILE;
+    extern const int CANNOT_CREATE_DIRECTORY;
 }
 
 }
@@ -1194,6 +1196,28 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
             {
                 out_file_if_truncated = out_file;
                 out_file = fmt::format("tmp_{}.{}", UUIDHelpers::generateV4(), out_file);
+            }
+
+            if (client_context->getSettingsRef()[Setting::into_outfile_create_parent_directories])
+            {
+                fs::path file_path(out_file);
+                fs::path parent_dir = file_path.parent_path();
+
+                if (!parent_dir.empty() && !fs::exists(parent_dir))
+                {
+                    try
+                    {
+                        fs::create_directories(parent_dir);
+                    }
+                    catch (const fs::filesystem_error & e)
+                    {
+                        throw Exception(
+                            ErrorCodes::CANNOT_CREATE_DIRECTORY,
+                            "Cannot create parent directories for INTO OUTFILE '{}': {}",
+                            parent_dir.string(),
+                            e.what());
+                    }
+                }
             }
 
             std::string compression_method_string;
