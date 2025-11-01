@@ -360,12 +360,13 @@ void extendQueryContextAndStoragesLifetime(QueryPlan & query_plan, const Planner
     }
 }
 
-std::tuple<UInt64, bool, Float32> getLimitAbsAndSignAndFraction(const Field & field)
+/// The LIMIT/OFFSET expression value can be either UInt64 or Float32, negative or positive.
+std::tuple<UInt64, Float32, bool> getLimitOffsetValue(const Field & field)
 {
     // First check if it is nonnegative limit since they are more common
     const Field converted_value_uint = convertFieldToType(field, DataTypeUInt64());
     if (!converted_value_uint.isNull())
-        return {converted_value_uint.safeGet<UInt64>(), false, 0};
+        return {converted_value_uint.safeGet<UInt64>(), 0, false};
 
     const Field converted_value_int = convertFieldToType(field, DataTypeInt64());
 
@@ -379,12 +380,12 @@ std::tuple<UInt64, bool, Float32> getLimitAbsAndSignAndFraction(const Field & fi
         const UInt64 magnitude = (int_value == std::numeric_limits<Int64>::min())
             ? (static_cast<UInt64>(std::numeric_limits<Int64>::max()) + 1ULL)
             : static_cast<UInt64>(-int_value);
-        return {magnitude, true, 0};
+        return {magnitude, 0, true};
     }
 
     Field converted_value_float = convertFieldToType(field, DataTypeFloat32());
     if (!converted_value_float.isNull())
-        return {0, false, converted_value_float.safeGet<Float32>()};
+        return {0, converted_value_float.safeGet<Float32>(), false};
 
     throw Exception(
         ErrorCodes::INVALID_LIMIT_EXPRESSION,
@@ -421,21 +422,21 @@ public:
         if (query_node.hasLimit())
         {
             /// Constness of limit is validated during query analysis stage
-            std::tie(limit_length, is_limit_length_negative, fractional_limit)
-                = getLimitAbsAndSignAndFraction(query_node.getLimit()->as<ConstantNode &>().getValue());
+            std::tie(limit_length, fractional_limit, is_limit_length_negative)
+                = getLimitOffsetValue(query_node.getLimit()->as<ConstantNode &>().getValue());
 
             if (query_node.hasOffset() && (limit_length || fractional_limit > 0))
             {
                 /// Constness of offset is validated during query analysis stage
-                std::tie(limit_offset, is_limit_offset_negative, fractional_offset)
-                    = getLimitAbsAndSignAndFraction(query_node.getOffset()->as<ConstantNode &>().getValue());
+                std::tie(limit_offset, fractional_offset, is_limit_offset_negative)
+                    = getLimitOffsetValue(query_node.getOffset()->as<ConstantNode &>().getValue());
             }
         }
         else if (query_node.hasOffset())
         {
             /// Constness of offset is validated during query analysis stage
-            std::tie(limit_offset, is_limit_offset_negative, fractional_offset)
-                = getLimitAbsAndSignAndFraction(query_node.getOffset()->as<ConstantNode &>().getValue());
+            std::tie(limit_offset, fractional_offset, is_limit_offset_negative)
+                = getLimitOffsetValue(query_node.getOffset()->as<ConstantNode &>().getValue());
         }
 
         /// Partial sort can be done if there is LIMIT, but no DISTINCT, LIMIT WITH TIES, LIMIT BY, ARRAY JOIN, NEGATIVE LIMIT, FRACTIONAL LIMIT/OFFSET
