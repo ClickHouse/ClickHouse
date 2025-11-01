@@ -3,8 +3,6 @@
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
-# Create test files with BOMs in user_files directory
-# file() function only allows reading from user_files for security
 
 # UTF-8 BOM (EF BB BF)
 printf '\xEF\xBB\xBF' > user_files/test_utf8_bom_${CLICKHOUSE_TEST_UNIQUE_NAME}.csv
@@ -21,8 +19,6 @@ printf '\xFE\xFF' > user_files/test_utf16be_bom_${CLICKHOUSE_TEST_UNIQUE_NAME}.c
 printf '\x00i\x00d\x00,\x00n\x00a\x00m\x00e\x00\n' >> user_files/test_utf16be_bom_${CLICKHOUSE_TEST_UNIQUE_NAME}.csv
 printf '\x001\x00,\x00A\x00l\x00i\x00c\x00e\x00\n' >> user_files/test_utf16be_bom_${CLICKHOUSE_TEST_UNIQUE_NAME}.csv
 
-# Run tests using CLICKHOUSE_CLIENT
-# Use relative paths - file() function looks in user_files by default
 ${CLICKHOUSE_CLIENT} --query="SELECT 'UTF-8 BOM Test:'"
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM file('test_utf8_bom_${CLICKHOUSE_TEST_UNIQUE_NAME}.csv', CSVWithNames) ORDER BY id"
 
@@ -33,4 +29,4 @@ ${CLICKHOUSE_CLIENT} --query="SELECT 'UTF-16 BE BOM Test:'"
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM file('test_utf16be_bom_${CLICKHOUSE_TEST_UNIQUE_NAME}.csv', CSVWithNames) ORDER BY id"
 
 # Cleanup
-#rm -f user_files/test_*_${CLICKHOUSE_TEST_UNIQUE_NAME}.csv
+rm -f user_files/test_*_${CLICKHOUSE_TEST_UNIQUE_NAME}.csv
