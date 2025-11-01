@@ -294,6 +294,9 @@ void StorageAzureConfiguration::fromDisk(const String & disk_name, ASTs & args, 
 
 void StorageAzureConfiguration::initializeForOneLake(ASTs & args, ContextPtr context)
 {
+    if (args.size() != 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only one argument should be provided in OneLake catalog");
+
     String connection_url = checkAndGetLiteralArgument<String>(args[0], "connection_string/storage_account_url");
     String container_name;
 

@@ -475,7 +475,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         if (!azure_configuration)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is not azure type for one lake catalog");
         auto rest_catalog = std::static_pointer_cast<DataLake::RestCatalog>(catalog);
-        if (!azure_configuration)
+        if (!rest_catalog)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Catalog is not equals to one lake");
 
         azure_configuration->setInitializationAsOneLake(
