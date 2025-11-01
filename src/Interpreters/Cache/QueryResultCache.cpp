@@ -42,6 +42,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsString query_cache_tag;
+    extern const SettingsBool query_result_cache_ignore_log_comment;
 }
 
 namespace
@@ -185,28 +186,41 @@ namespace
 
 bool isQueryResultCacheRelatedSetting(const String & setting_name)
 {
-    return ((setting_name.starts_with("query_cache_") || setting_name.ends_with("_query_cache")) && setting_name != "query_cache_tag") || setting_name == "log_comment";
+    return (setting_name.starts_with("query_cache_") || setting_name.ends_with("_query_cache")) && setting_name != "query_cache_tag";
+}
+
+bool isOtherIgnoredSetting(const String & setting_name, bool ignore_log_comment)
+{
+    if (ignore_log_comment)
+        /// Setting `log_comment` does not affect query execution, its only purpose is to
+        /// disambiguate entries in system.query_log.
+        return setting_name == "log_comment";
+    else
+        return false;
 }
 
 class RemoveQueryResultCacheSettingsMatcher
 {
 public:
-    struct Data {};
+    struct Data
+    {
+        bool ignore_log_comment;
+    };
 
     static bool needChildVisit(ASTPtr &, const ASTPtr &) { return true; }
 
-    static void visit(ASTPtr & ast, Data &)
+    static void visit(ASTPtr & ast, Data & data)
     {
         if (auto * set_clause = ast->as<ASTSetQuery>())
         {
             chassert(!set_clause->is_standalone);
 
-            auto is_query_cache_related_setting = [](const auto & change)
+            auto is_ignored_setting = [&](const auto & change)
             {
-                return isQueryResultCacheRelatedSetting(change.name);
+                return isQueryResultCacheRelatedSetting(change.name) || isOtherIgnoredSetting(change.name, data.ignore_log_comment);
             };
 
-            std::erase_if(set_clause->changes, is_query_cache_related_setting);
+            std::erase_if(set_clause->changes, is_ignored_setting);
         }
     }
 
@@ -229,11 +243,12 @@ using RemoveQueryResultCacheSettingsVisitor = InDepthNodeVisitor<RemoveQueryResu
 /// cache. However, query results are indexed by their query ASTs and therefore no result will be found. Insert and retrieval behave overall
 /// more natural if settings related to the query result cache are erased from the AST key. Note that at this point the settings themselves
 /// have been parsed already, they are not lost or discarded.
-ASTPtr removeQueryResultCacheSettings(ASTPtr ast)
+ASTPtr removeQueryResultCacheSettings(ASTPtr ast, const Settings & settings)
 {
     ASTPtr transformed_ast = ast->clone();
 
     RemoveQueryResultCacheSettingsMatcher::Data visitor_data;
+    visitor_data.ignore_log_comment = settings[Setting::query_result_cache_ignore_log_comment];
     RemoveQueryResultCacheSettingsVisitor(visitor_data).visit(transformed_ast);
 
     return transformed_ast;
@@ -241,7 +256,7 @@ ASTPtr removeQueryResultCacheSettings(ASTPtr ast)
 
 IASTHash calculateAstHash(ASTPtr ast, const String & current_database, const Settings & settings)
 {
-    ast = removeQueryResultCacheSettings(ast);
+    ast = removeQueryResultCacheSettings(ast, settings);
 
     /// Hash the AST, we must consider aliases (issue #56258)
     SipHash hash;
@@ -259,7 +274,8 @@ IASTHash calculateAstHash(ASTPtr ast, const String & current_database, const Set
     for (const auto & change : changed_settings)
     {
         const String & name = change.name;
-        if (!isQueryResultCacheRelatedSetting(name)) /// see removeQueryResultCacheSettings() why this is a good idea
+        /// See removeQueryResultCacheSettings() why this is a good idea
+        if (!(isQueryResultCacheRelatedSetting(name) || isOtherIgnoredSetting(name, settings[Setting::query_result_cache_ignore_log_comment])))
             changed_settings_sorted.push_back({name, Settings::valueToStringUtil(change.name, change.value)});
     }
     std::sort(changed_settings_sorted.begin(), changed_settings_sorted.end(), [](auto & lhs, auto & rhs) { return lhs.first < rhs.first; });

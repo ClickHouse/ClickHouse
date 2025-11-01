@@ -5080,6 +5080,14 @@ Possible values:
 
 - Any string
 )", 0) \
+    DECLARE(Bool, query_result_cache_ignore_log_comment, true, R"(
+If turned on, the [query cache](../query-cache.md) ignores setting 'log_comment' during cache lookups
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+)", 0) \
     DECLARE(Bool, enable_sharing_sets_for_mutations, true, R"(
 Allow sharing set objects build for IN subqueries between different tasks of the same mutation. This reduces memory usage and CPU consumption
 )", 0) \

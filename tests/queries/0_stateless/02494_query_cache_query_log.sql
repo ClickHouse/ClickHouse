@@ -5,8 +5,6 @@ SYSTEM DROP QUERY CACHE;
 
 -- DROP TABLE system.query_log; -- debugging
 
-
-
 SELECT '-- Run a query with query cache not enabled';
 SELECT 124437993;
 
