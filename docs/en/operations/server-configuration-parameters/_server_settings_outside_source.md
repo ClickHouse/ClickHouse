@@ -2506,6 +2506,74 @@ The same applies to GitLab, even though it has a leading dot. Both `gitlab.com` 
 </proxy>
 ```
 
+## hashicorp_vault {#hashicorp_vault}
+
+Configures HashiCorp Vault or OpenBao for secure secrets retrieval in configuration. Currently token and username/password authentication methods are supported.
+
+The following settings can be configured by sub-tags:
+
+| Sub-tags             | Definition                                                                                                                                        |
+|----------------------|--------------------------------------------------------|
+| `url`                | Scheme, site, port of Vault server without path.       |
+| `token`              | Token used for token authentication.                   |
+| `userpass`           | Section used for username and password authentication. |
+
+`userpass` contains the following settings, which can be configured by sub-tags:
+
+| Sub-tags             | Definition                                                                                                                                        |
+|----------------------|--------------------------------------------------|
+| `username`           | Username for username and authentication method. |
+| `password`           | Password for username and authentication method. |
+
+Each section in ClickHouse configuration or users configuration may have the following attributes:
+
+| Attributes             | Definition            |
+|------------------------|-----------------------|
+| `from_hashicorp_vault` | Name of secret.       |
+| `hashicorp_vault_key`  | Name of secret's key. |
+
+**Example**
+
+ClickHouse configuration for token authentication method:
+
+```xml
+<clickhouse>
+    <hashicorp_vault>
+      <url>http://hashicorpvault:8200</url>
+      <token>foobar</token>
+    </hashicorp_vault>
+</clickhouse>
+```
+
+ClickHouse configuration for username and password authentication method:
+
+```xml
+<clickhouse>
+    <hashicorp_vault>
+      <url>http://hashicorpvault:8200</url>
+      <userpass>
+        <username>user1</username>
+        <password>test</password>
+      </userpass>
+    </hashicorp_vault>
+</clickhouse>
+```
+
+Only one auth method maybe specified in configuration file.
+
+Users configuration:
+
+```xml
+<clickhouse>
+    <users>
+        <default>
+            <password from_hashicorp_vault="username" hashicorp_vault_key="password"/>
+            <profile>default</profile>
+        </default>
+    </users>
+</clickhouse>
+```
+
 ## workload_path {#workload_path}
 
 The directory used as a storage for all `CREATE WORKLOAD` and `CREATE RESOURCE` queries. By default `/workload/` folder under server working directory is used.
