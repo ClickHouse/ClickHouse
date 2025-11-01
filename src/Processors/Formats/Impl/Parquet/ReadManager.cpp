@@ -846,7 +846,7 @@ ReadManager::ReadResult ReadManager::read()
             bool thread_pool_was_idle = parser_shared_resources->parsing_runner.isIdle();
 
             if (exception)
-                std::rethrow_exception(exception);
+                std::rethrow_exception(copyMutableException(exception));
 
             /// If `preserve_order`, only deliver chunks from `first_incomplete_row_group`.
             /// This ensures that row groups are delivered in order. Within a row group, row
