@@ -26,8 +26,12 @@
 #include <Server/HTTP/authenticateUserByHTTP.h>
 #include <Server/HTTP/checkHTTPHeader.h>
 #include <Server/HTTP/setReadOnlyIfHTTPMethodIdempotent.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
+#include <Core/Settings.h>
 #include <Storages/TimeSeries/PrometheusRemoteReadProtocol.h>
 #include <Storages/TimeSeries/PrometheusRemoteWriteProtocol.h>
+#include <Storages/TimeSeries/PrometheusHTTPProtocolAPI.h>
 
 
 namespace DB
@@ -314,6 +318,184 @@ public:
     }
 };
 
+/// Handles Prometheus Query API endpoints (/api/v1/query, /api/v1/query_range, etc.)
+class PrometheusRequestHandler::QueryAPIImpl : public ImplWithContext
+{
+public:
+    using ImplWithContext::ImplWithContext;
+
+    void beforeHandlingRequest(HTTPServerRequest & request) override
+    {
+        LOG_INFO(log(), "Handling Prometheus Query API request from {}", request.get("User-Agent", ""));
+        chassert(config().type == PrometheusRequestHandlerConfig::Type::QueryAPI);
+    }
+
+    // Override handleRequest to create HTMLForm without Settings validation
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override
+    {
+        SCOPE_EXIT({
+            request_credentials.reset();
+            context.reset();
+            session.reset();
+            params.reset();
+        });
+
+        // Create HTMLForm with empty settings to avoid parameter validation
+        Settings empty_settings;
+
+        // Debug: Log request details before parsing
+        LOG_DEBUG(log(), "Request method: {}, Content-Type: {}, URI: {}", request.getMethod(), request.getContentType(), request.getURI());
+        LOG_DEBUG(log(), "Content-Length: {}", request.getContentLength());
+
+        // Handle both GET and POST requests properly
+        // For POST requests, we need to provide the request body stream
+        auto stream = request.getStream();
+        params = std::make_unique<HTMLForm>(empty_settings, request, *stream);
+
+        // Debug: Log all parameters that were parsed
+        LOG_DEBUG(log(), "Parsed {} parameters:", params->size());
+        for (auto it = params->begin(); it != params->end(); ++it)
+        {
+            LOG_DEBUG(log(), "Parameter: {} = {}", it->first, it->second);
+        }
+
+        // Specifically check for query parameter
+        String query_param = params->get("query", "NOT_FOUND");
+        LOG_DEBUG(log(), "Query parameter value: '{}'", query_param);
+
+        // Create session
+        session = std::make_unique<Session>(server().context(), ClientInfo::Interface::PROMETHEUS, request.isSecure());
+
+        // Authenticate user first
+        if (!authenticateUser(request, response))
+            return; // Authentication failed
+
+        // Now create query context after authentication
+        makeContext(request);
+
+        // Initialize query scope
+        std::optional<CurrentThread::QueryScope> query_scope;
+        if (context)
+            query_scope.emplace(context);
+
+        handlingRequestWithContext(request, response);
+    }
+
+    bool authenticateUser(HTTPServerRequest & request, HTTPServerResponse & response)
+    {
+        // Use the already created params instead of creating new HTMLForm
+        // to avoid consuming the request body twice
+        return authenticateUserByHTTP(request, *params, response, *session, request_credentials, config().connection_config, server().context(), log());
+    }
+
+    void makeContext(HTTPServerRequest & request)
+    {
+        context = session->makeQueryContext();
+
+        /// Anything else beside HTTP POST should be readonly queries.
+        setReadOnlyIfHTTPMethodIdempotent(context, request.getMethod());
+
+        // For Query API, we don't need to handle roles like regular HTTP handler
+    }
+
+    void handlingRequestWithContext(HTTPServerRequest & request, HTTPServerResponse & response) override
+    {
+        auto table = DatabaseCatalog::instance().getTable(StorageID{config().time_series_table_name}, context);
+        PrometheusHTTPProtocolAPI protocol{table, context};
+
+        // Use the params that were already created in handleRequest
+
+        const String & uri = request.getURI();
+
+        LOG_DEBUG(log(), "Processing Query API request: method={}, uri={}", request.getMethod(), uri);
+
+        response.setContentType("application/json");
+
+        try
+        {
+            if (uri.starts_with("/api/v1/query_range"))
+            {
+                String query = params->get("query", "");
+                String start = params->get("start", "");
+                String end = params->get("end", "");
+                String step = params->get("step", "");
+
+                /// TODO: Support the following **optional** query parameters:
+                /// - timeout=<duration>: Evaluation timeout
+                /// - limit=<number>: Maximum number of returned series
+                /// - lookback_delta=<number>: Override for the lookback period for this query.
+
+                protocol.executeRangeQuery(getOutputStream(response), query, start, end, step);
+            }
+            else if (uri.starts_with("/api/v1/query"))
+            {
+                String query = params->get("query", "");
+                String time = params->get("time", "");
+
+                /// TODO: Support optional parameters same as for the range query.
+
+                protocol.executeInstantQuery(getOutputStream(response), query, time);
+            }
+            else if (uri.starts_with("/api/v1/format_query"))
+            {
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The format_query endpoint is not implemented");
+            }
+            else if (uri.starts_with("/api/v1/parse_query"))
+            {
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The parse_query endpoint is not implemented");
+            }
+            else if (uri.starts_with("/api/v1/series"))
+            {
+                String match = params->get("match[]", "");
+                String start = params->get("start", "");
+                String end = params->get("end", "");
+
+                /// TODO: Support limit=<number> optional paramter
+
+                protocol.getSeries(getOutputStream(response), match, start, end);
+            }
+            else if (uri.starts_with("/api/v1/labels"))
+            {
+                String match = params->get("match[]", "");
+                String start = params->get("start", "");
+                String end = params->get("end", "");
+
+                protocol.getLabels(getOutputStream(response), match, start, end);
+            }
+            else if (uri.find("/api/v1/label/") != String::npos && uri.ends_with("/values"))
+            {
+                // Extract label name from URI: /api/v1/label/<name>/values
+                size_t start_pos = uri.find("/api/v1/label/") + 14; // length of "/api/v1/label/"
+                size_t end_pos = uri.find("/values");
+                String label_name = uri.substr(start_pos, end_pos - start_pos);
+
+                String match = params->get("match[]", "");
+                String start = params->get("start", "");
+                String end = params->get("end", "");
+
+                protocol.getLabelValues(getOutputStream(response), label_name, match, start, end);
+            }
+            else
+            {
+                LOG_ERROR(log(), "No matching endpoint found for URI: {}, method: {}", uri, request.getMethod());
+                response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
+                writeString(R"({"status":"error","errorType":"not_found","error":"API endpoint not found"})", getOutputStream(response));
+            }
+        }
+        catch (const Exception & e)
+        {
+            response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
+            String error_str;
+            WriteBufferFromString error_buf(error_str);
+            writeString(R"({"status":"error","errorType":"bad_data","error":")", error_buf);
+            writeString(e.message(), error_buf);
+            writeString(R"("})", error_buf);
+            error_buf.finalize();
+            writeString(error_str, getOutputStream(response));
+        }
+    }
+};
+
 
 PrometheusRequestHandler::PrometheusRequestHandler(
     IServer & server_,
@@ -350,6 +532,11 @@ void PrometheusRequestHandler::createImpl()
         case PrometheusRequestHandlerConfig::Type::RemoteRead:
         {
             impl = std::make_unique<RemoteReadImpl>(*this);
+            return;
+        }
+        case PrometheusRequestHandlerConfig::Type::QueryAPI:
+        {
+            impl = std::make_unique<QueryAPIImpl>(*this);
             return;
         }
     }
