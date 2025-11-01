@@ -39,6 +39,7 @@
 #include <azure/storage/common/storage_credential.hpp>
 #include <azure/identity/managed_identity_credential.hpp>
 #include <azure/identity/workload_identity_credential.hpp>
+#include <azure/identity/client_secret_credential.hpp>
 
 namespace DB::AzureBlobStorage
 {
@@ -69,6 +70,7 @@ using ConnectionString = StrongTypedef<String, struct ConnectionStringTag>;
 
 using AuthMethod = std::variant<
     ConnectionString,
+    std::shared_ptr<Azure::Identity::ClientSecretCredential>,
     std::shared_ptr<Azure::Storage::StorageSharedKeyCredential>,
     std::shared_ptr<Azure::Identity::WorkloadIdentityCredential>,
     std::shared_ptr<Azure::Identity::ManagedIdentityCredential>,
