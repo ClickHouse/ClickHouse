@@ -272,6 +272,8 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::execute( /* 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' is virtual", path);
     else if (auto children = fs_tree.listDirectory(path); !children.empty())
         throw Exception(ErrorCodes::CANNOT_RMDIR, "Directory '{}' is not empty. Children: [{}]", path, fmt::join(children, ", "));
+    else if (path == "/")
+        return;
 
     info = std::move(remote_info.value());
 

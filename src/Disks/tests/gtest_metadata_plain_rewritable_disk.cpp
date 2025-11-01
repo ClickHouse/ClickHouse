@@ -17,6 +17,7 @@
 
 #include <gtest/gtest.h>
 
+#include <filesystem>
 #include <ranges>
 
 using namespace DB;
@@ -129,6 +130,9 @@ std::vector<std::string> sorted(std::vector<std::string> array)
 
 std::vector<std::string> listAllBlobs(std::string test)
 {
+    if (!std::filesystem::exists(fmt::format("./{}", test)))
+        return {};
+
     return sorted(std::filesystem::recursive_directory_iterator(fmt::format("./{}", test))
                     | std::views::filter([](const auto & inode) { return inode.is_regular_file(); })
                     | std::views::transform([](const auto & file) { return file.path(); })
@@ -828,6 +832,38 @@ TEST_F(MetadataPlainRewritableDiskTest, RemoveRoot)
         "./RemoveRecursiveRoot/__root/A",
         "./RemoveRecursiveRoot/__root/B"
     }));
+
+    {
+        StoredObjects files_objects;
+        files_objects.append_range(metadata->getStorageObjects("/A"));
+        files_objects.append_range(metadata->getStorageObjects("/B"));
+
+        auto tx = metadata->createTransaction();
+        tx->unlinkMetadata("/A");
+        tx->unlinkMetadata("/B");
+        tx->commit();
+
+        object_storage->removeObjectsIfExist(files_objects);
+    }
+
+    EXPECT_EQ(listAllBlobs("RemoveRecursiveRoot"), std::vector<std::string>({}));
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->removeDirectory("/");
+        tx->commit();
+    }
+
+    EXPECT_TRUE(metadata->existsDirectory("/"));
+    metadata = restartMetadataStorage("RemoveRecursiveRoot");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->removeDirectory("/");
+        tx->commit();
+    }
+
+    EXPECT_TRUE(metadata->existsDirectory("/"));
 }
 
 TEST_F(MetadataPlainRewritableDiskTest, UnlinkNonExisting)
