@@ -40,9 +40,9 @@ python -m ci.praktika run "Integration tests (amd_binary, 4/5)" \
 ### Additional Customization Options
 - `--count N` to repeat each test N times (`--count` is passed to pytest with `--repeat-scope=function`).
 - `--debug` to open the Python debug console on exception (`--pdb` is passed to pytest).
-- `--path` custom ClickHouse server binary location (if not in default locations).
-- `--path_1` custom path to the ClickHouse server config directory (if not in `./programs/server/config/`).
-
+- `--path PATH` custom ClickHouse server binary location (if not in default locations).
+- `--path_1 PATH` custom path to the ClickHouse server config directory (if not in `./programs/server/config/`).
+- `--workers N` to override automatic calculation of the recommended maximum number of parallel pytest workers. The value is passed to pytest-xdist as `-n N`. Use a lower number on resource-constrained machines or increase it to utilize more CPU cores.
 ## Running Natively
 
 ### Prerequisites

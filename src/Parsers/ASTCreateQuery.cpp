@@ -334,8 +334,6 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
             what = "VIEW";
         else if (is_materialized_view)
             what = "MATERIALIZED VIEW";
-        else if (is_live_view)
-            what = "LIVE VIEW";
         else if (is_window_view)
             what = "WINDOW VIEW";
 
