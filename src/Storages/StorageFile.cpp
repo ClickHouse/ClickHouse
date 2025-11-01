@@ -65,13 +65,14 @@
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
-#include <fcntl.h>
-#include <unistd.h>
+#include <algorithm>
 #include <filesystem>
 #include <shared_mutex>
-#include <algorithm>
+#include <fcntl.h>
+#include <unistd.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
+#include "IO/UTFConvertingReadBuffer.h"
 
 #include <DataTypes/DataTypeLowCardinality.h>
 
@@ -490,7 +491,9 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
     std::unique_ptr<ReadBuffer> nested_buffer = selectReadBuffer(current_path, use_table_fd, table_fd, file_stat, context);
 
     int zstd_window_log_max = static_cast<int>(context->getSettingsRef()[Setting::zstd_window_log_max]);
-    return wrapReadBufferWithCompressionMethod(std::move(nested_buffer), method, zstd_window_log_max);
+    auto compressed_buffer = wrapReadBufferWithCompressionMethod(
+    std::move(nested_buffer), method, zstd_window_log_max);
+    return std::make_unique<UTFConvertingReadBuffer>(std::move(compressed_buffer));
 }
 
 }
