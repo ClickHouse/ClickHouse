@@ -4,6 +4,7 @@ import configparser
 import datetime
 import logging
 import os
+import shutil
 import subprocess
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -50,6 +51,9 @@ def run_fuzzer(fuzzer: str, timeout: int):
     active_corpus_dir = f"corpus/{fuzzer}"
     if not os.path.exists(active_corpus_dir):
         os.makedirs(active_corpus_dir)
+    mini_corpus_dir = f"corpus/{fuzzer}_mini"
+    if not os.path.exists(mini_corpus_dir):
+        os.makedirs(mini_corpus_dir)
     options_file = f"{fuzzer}.options"
     custom_libfuzzer_options = ""
     fuzzer_arguments = ""
@@ -92,14 +96,83 @@ def run_fuzzer(fuzzer: str, timeout: int):
 
             use_fuzzer_args = parser.getboolean("CI", "FUZZER_ARGS", fallback=False)
 
-    exact_artifact_path = f"{OUTPUT}/{fuzzer}.unit"
-    status_path = f"{OUTPUT}/{fuzzer}.status"
-    out_path = f"{OUTPUT}/{fuzzer}.out"
-    stdout_path = f"{OUTPUT}/{fuzzer}.stdout"
+    results_path = f"{OUTPUT}/{fuzzer}.results/"
+    if not os.path.exists(results_path):
+        os.makedirs(results_path)
+    artifact_prefix = f"{results_path}"
+
+    merge_libfuzzer_options = f" -artifact_prefix={artifact_prefix} -merge=1 {mini_corpus_dir} {active_corpus_dir}"
+    cmd_line = f"{DEBUGGER} ./{fuzzer} {fuzzer_arguments}"
+
+    env = None
+    with_fuzzer_args = ""
+    if use_fuzzer_args:
+        env["FUZZER_ARGS"] = f"{merge_libfuzzer_options}".strip()
+        with_fuzzer_args = f" with FUZZER_ARGS '{env['FUZZER_ARGS']}'"
+    else:
+        cmd_line += f" {merge_libfuzzer_options}"
+
+    logging.info("...will execute merge: '%s'%s", cmd_line, with_fuzzer_args)
+
+    status_path = f"{results_path}/status_mini.txt"
+    out_path = f"{results_path}/out_mini.txt"
+    stdout_path = f"{results_path}/stdout_mini.txt"
+
+    stopwatch = Stopwatch()
+    try:
+        with open(out_path, "wb") as out, open(stdout_path, "wb") as stdout:
+            subprocess.run(
+                cmd_line.split(),
+                stdin=subprocess.DEVNULL,
+                stdout=stdout,
+                stderr=out,
+                text=True,
+                check=True,
+                shell=False,
+                errors="replace",
+                env=env,
+            )
+    except subprocess.CalledProcessError:
+        logging.info("Fail running merge %s", fuzzer)
+        with open(status_path, "w", encoding="utf-8") as status:
+            status.write(
+                f"ERROR\n{stopwatch.start_time_str}\n{stopwatch.duration_seconds}\n"
+            )
+        return
+    except Exception as e:
+        logging.info("Unexpected exception running merge %s: %s", fuzzer, e)
+        with open(status_path, "w", encoding="utf-8") as status:
+            status.write(
+                f"ERROR\n{stopwatch.start_time_str}\n{stopwatch.duration_seconds}\n"
+            )
+        return
+
+    with open(status_path, "w", encoding="utf-8") as status:
+        status.write(
+            f"OK\n{stopwatch.start_time_str}\n{stopwatch.duration_seconds}\n"
+        )
+
+    orig_corpus_size = len(list(Path(active_corpus_dir).glob("*")))
+    mini_corpus_size = len(list(Path(mini_corpus_dir).glob("*")))
+
+    logging.info("Successful run, merge for %s, original corpus size %d, minimized corpus size %d, reduced to %d%%",
+        fuzzer, orig_corpus_size, mini_corpus_size, mini_corpus_size * 100 / orig_corpus_size)
+
+    shutil.rmtree(active_corpus_dir)
+    os.rename(mini_corpus_dir, active_corpus_dir)
+
+# TESTING TESTING TESTING
+    return
+
+
+    status_path = f"{results_path}/status.txt"
+    out_path = f"{results_path}/out.txt"
+    stdout_path = f"{results_path}/stdout.txt"
+
 
     if not "-dict=" in custom_libfuzzer_options and Path(f"{fuzzer}.dict").exists():
         custom_libfuzzer_options += f" -dict={fuzzer}.dict"
-    custom_libfuzzer_options += f" -exact_artifact_path={exact_artifact_path}"
+    custom_libfuzzer_options += f" -artifact_prefix={artifact_prefix}"
 
     custom_libfuzzer_options += f" -timeout={timeout}"
 
