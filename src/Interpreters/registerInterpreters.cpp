@@ -18,6 +18,7 @@ void registerInterpreterShowIndexesQuery(InterpreterFactory & factory);
 void registerInterpreterShowSettingQuery(InterpreterFactory & factory);
 void registerInterpreterShowEnginesQuery(InterpreterFactory & factory);
 void registerInterpreterShowFunctionsQuery(InterpreterFactory & factory);
+void registerInterpreterLSQuery(InterpreterFactory & factory);
 void registerInterpreterUseQuery(InterpreterFactory & factory);
 void registerInterpreterSetQuery(InterpreterFactory & factory);
 void registerInterpreterSetRoleQuery(InterpreterFactory & factory);
@@ -83,6 +84,7 @@ void registerInterpreters()
     registerInterpreterShowSettingQuery(factory);
     registerInterpreterShowEnginesQuery(factory);
     registerInterpreterShowFunctionsQuery(factory);
+    registerInterpreterLSQuery(factory);
     registerInterpreterUseQuery(factory);
     registerInterpreterSetQuery(factory);
     registerInterpreterSetRoleQuery(factory);

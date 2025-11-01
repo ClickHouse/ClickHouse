@@ -30,6 +30,7 @@
 #include <Parsers/ASTShowColumnsQuery.h>
 #include <Parsers/ASTShowIndexesQuery.h>
 #include <Parsers/ASTShowSettingQuery.h>
+#include <Parsers/ASTLSQuery.h>
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTWatchQuery.h>
 #include <Parsers/ASTCreateNamedCollectionQuery.h>
@@ -197,6 +198,10 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     else if (query->as<ASTShowFunctionsQuery>())
     {
         interpreter_name = "InterpreterShowFunctionsQuery";
+    }
+    else if (query->as<ASTLSQuery>())
+    {
+        interpreter_name = "InterpreterLSQuery";
     }
     else if (query->as<ASTUseQuery>())
     {
