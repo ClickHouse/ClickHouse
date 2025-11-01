@@ -217,7 +217,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_entries_for_hash_table_stats;
 }
 
-static std::tuple<UInt64, bool, Float32> getLimitOffsetAbsAndSignAndFraction(const ASTPtr & node, const ContextPtr & context, const std::string & expr);
+static std::tuple<UInt64, Float32, bool> getLimitOffsetValue(const ASTPtr & node, const ContextPtr & context, const std::string & expr);
 
 namespace ErrorCodes
 {
@@ -1484,7 +1484,8 @@ static SortDescription getSortDescriptionFromGroupBy(const ASTSelectQuery & quer
     return order_descr;
 }
 
-static std::tuple<UInt64, bool, Float32> getLimitOffsetAbsAndSignAndFraction(const ASTPtr & node, const ContextPtr & context, const std::string & expr)
+/// The LIMIT/OFFSET expression value can be either UInt64 or Float32, negative or positive.
+static std::tuple<UInt64, Float32, bool> getLimitOffsetValue(const ASTPtr & node, const ContextPtr & context, const std::string & expr)
 {
     const auto & [field, type] = evaluateConstantExpression(node, context);
 
@@ -1496,7 +1497,7 @@ static std::tuple<UInt64, bool, Float32> getLimitOffsetAbsAndSignAndFraction(con
     {
         const Field converted_value = convertFieldToType(field, DataTypeUInt64());
         if (!converted_value.isNull())
-            return {converted_value.safeGet<UInt64>(), false, 0};
+            return {converted_value.safeGet<UInt64>(), 0, false};
     }
 
     {
@@ -1510,7 +1511,7 @@ static std::tuple<UInt64, bool, Float32> getLimitOffsetAbsAndSignAndFraction(con
             const UInt64 magnitude = (int_value == std::numeric_limits<Int64>::min())
                 ? (static_cast<UInt64>(std::numeric_limits<Int64>::max()) + 1ULL)
                 : static_cast<UInt64>(-int_value);
-            return {magnitude, true, 0};
+            return {magnitude, 0, true};
         }
     }
 
@@ -1520,13 +1521,13 @@ static std::tuple<UInt64, bool, Float32> getLimitOffsetAbsAndSignAndFraction(con
         {
             auto value = converted_value.safeGet<Decimal32>().getValue() / 10000000.0;
             if (value < 1 && value > 0)
-                return {0, false, value};
+                return {0, value, false};
         }
     }
 
     throw Exception(
         ErrorCodes::INVALID_LIMIT_EXPRESSION,
-        "The value {} of {} expression is not representable as UInt64 or Int64 or Float32 [0.1 to 0.9]",
+        "The value {} of {} expression is not representable as UInt64 or Int64 or Float32 [0 - 1)",
         applyVisitor(FieldVisitorToString(), field),
         expr);
 }
@@ -1538,19 +1539,19 @@ InterpreterSelectQuery::LimitInfo InterpreterSelectQuery::getLimitLengthAndOffse
 
     if (query.limitLength())
     {
-        std::tie(lim_info.limit_length, lim_info.is_limit_length_negative, lim_info.fractional_limit)
-            = getLimitOffsetAbsAndSignAndFraction(query.limitLength(), context_, "LIMIT");
+        std::tie(lim_info.limit_length, lim_info.fractional_limit, lim_info.is_limit_length_negative)
+            = getLimitOffsetValue(query.limitLength(), context_, "LIMIT");
 
         if (query.limitOffset() && (lim_info.limit_length || lim_info.fractional_limit > 0))
         {
-            std::tie(lim_info.limit_offset, lim_info.is_limit_offset_negative, lim_info.fractional_offset)
-                = getLimitOffsetAbsAndSignAndFraction(query.limitOffset(), context_, "OFFSET");
+            std::tie(lim_info.limit_offset, lim_info.fractional_offset, lim_info.is_limit_offset_negative)
+                = getLimitOffsetValue(query.limitOffset(), context_, "OFFSET");
         }
     }
     else if (query.limitOffset())
     {
-        std::tie(lim_info.limit_offset, lim_info.is_limit_offset_negative, lim_info.fractional_offset)
-            = getLimitOffsetAbsAndSignAndFraction(query.limitOffset(), context_, "OFFSET");
+        std::tie(lim_info.limit_offset, lim_info.fractional_offset, lim_info.is_limit_offset_negative)
+            = getLimitOffsetValue(query.limitOffset(), context_, "OFFSET");
     }
     return lim_info;
 }
@@ -1558,7 +1559,7 @@ InterpreterSelectQuery::LimitInfo InterpreterSelectQuery::getLimitLengthAndOffse
 
 UInt64 InterpreterSelectQuery::getLimitForSorting(const ASTSelectQuery & query, const ContextPtr & context_)
 {
-    /// Partial sort can be done if there is LIMIT but no DISTINCT, LIMIT BY, ARRAY JOIN, FRACTIONAL OFFSET.
+    /// Partial sort can be done if there is LIMIT but no DISTINCT, LIMIT BY, ARRAY JOIN, Fractional Offset, Negative or Fractional Limit.
     if (!query.distinct && !query.limitBy() && !query.limit_with_ties && !query.arrayJoinExpressionList().first && query.limitLength())
     {
         const LimitInfo lim_info = getLimitLengthAndOffset(query, context_);
@@ -3219,8 +3220,11 @@ bool InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
     {
         LimitInfo lim_info = getLimitLengthAndOffset(query, context);
 
+        /// Preliminary Limits mustn't be added if there is a fractional limit/offset
+        /// because in order to correctly calculate the number of rows to be produced 
+        /// based on the given fraction the final limit/offset processor must count the entire dataset.
+        /// For example, LIMIT 0.1 and 30 rows in the sources - we must read all 30 rows to calculate that rows_cnt * 0.1 = 3. 
         if (lim_info.fractional_offset > 0 || lim_info.fractional_limit > 0)
-            // Preliminary Limits mustn't be added if there is a fractional limit/offset
             return false;
 
         if (do_not_skip_offset)
@@ -3285,12 +3289,12 @@ void InterpreterSelectQuery::executeLimitBy(QueryPlan & query_plan)
     for (const auto & elem : query.limitBy()->children)
         columns.emplace_back(elem->getColumnName());
 
-    auto [limit_length, is_limit_length_negative, fractional_limit]
-        = getLimitOffsetAbsAndSignAndFraction(query.limitByLength(), context, "LIMIT");
+    auto [limit_length, fractional_limit, is_limit_length_negative]
+        = getLimitOffsetValue(query.limitByLength(), context, "LIMIT");
 
-    auto [limit_offset, is_limit_offset_negative, fractional_offset]
-        = (query.limitByOffset() ? getLimitOffsetAbsAndSignAndFraction(query.limitByOffset(), context, "OFFSET")
-                                 : std::tuple<UInt64, bool, Float32>{0, false, 0});
+    auto [limit_offset, fractional_offset, is_limit_offset_negative]
+        = (query.limitByOffset() ? getLimitOffsetValue(query.limitByOffset(), context, "OFFSET")
+                                 : std::tuple<UInt64, Float32, bool>{0, 0, false});
 
     if (is_limit_length_negative || is_limit_offset_negative)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Negative LIMIT/OFFSET with LIMIT BY is not supported yet");
