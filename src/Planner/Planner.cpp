@@ -455,15 +455,16 @@ public:
 
         if (query_node.hasLimitBy())
         {
-            bool is_limitby_limit_negative;
-            Float32 fractional_limitby_limit;
+            bool is_limitby_limit_negative = false;
+            Float32 fractional_limitby_limit = 0;
             std::tie(std::ignore, fractional_limitby_limit, is_limitby_limit_negative)
                 = getLimitOffsetValue(query_node.getLimitByLimit()->as<ConstantNode &>().getValue());
 
-            bool is_limitby_offset_negative;
-            Float32 fractional_limitby_offset;
-            std::tie(std::ignore, fractional_limitby_offset, is_limitby_offset_negative)
-                = getLimitOffsetValue(query_node.getLimitByOffset()->as<ConstantNode &>().getValue());
+            bool is_limitby_offset_negative = false;
+            Float32 fractional_limitby_offset = 0;
+            if (query_node.hasLimitByOffset())
+                std::tie(std::ignore, fractional_limitby_offset, is_limitby_offset_negative)
+                    = getLimitOffsetValue(query_node.getLimitByOffset()->as<ConstantNode &>().getValue());
 
             if (is_limitby_limit_negative || is_limitby_offset_negative)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Negative LIMIT/OFFSET with LIMIT BY is not supported yet");
