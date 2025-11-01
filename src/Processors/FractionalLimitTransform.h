@@ -50,6 +50,7 @@ private:
 
         InputPort * input_port = nullptr;
         OutputPort * output_port = nullptr;
+        bool is_input_port_finished = false;
     };
 
     std::vector<PortsData> ports_data;

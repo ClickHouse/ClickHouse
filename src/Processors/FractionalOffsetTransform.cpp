@@ -8,7 +8,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int LOGICAL_ERROR;
+    extern const int LOGICAL_ERROR;
 }
 
 FractionalOffsetTransform::FractionalOffsetTransform(const Block & header_, Float32 fractional_offset_, size_t num_streams)
@@ -43,8 +43,13 @@ IProcessor::Status FractionalOffsetTransform::prepare(const PortNumbers & update
             auto status = pullData(ports_data[pos]);
             switch (status)
             {
-                case IProcessor::Status::Finished: {
-                    ++num_finished_input_ports;
+                case IProcessor::Status::Finished: 
+                {
+                    if (!ports_data[pos].is_input_port_finished)
+                    {
+                        ports_data[pos].is_input_port_finished = true;
+                        ++num_finished_input_ports;
+                    }
                     return;
                 }
                 case IProcessor::Status::NeedData:
@@ -52,7 +57,7 @@ IProcessor::Status FractionalOffsetTransform::prepare(const PortNumbers & update
                 default:
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
-                        "Unexpected status for FractionalLimitTransform::preparePair : {}",
+                        "Unexpected status for FractionalOffsetTransform::pullData : {}",
                         IProcessor::statusToName(status));
             }
         };

@@ -12,7 +12,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int LOGICAL_ERROR;
+    extern const int LOGICAL_ERROR;
 }
 
 FractionalLimitTransform::FractionalLimitTransform(
@@ -78,9 +78,13 @@ IProcessor::Status FractionalLimitTransform::prepare(const PortNumbers & updated
 
             switch (status)
             {
-                case IProcessor::Status::Finished: {
-                    if (ports_data[pos].input_port->isFinished())
+                case IProcessor::Status::Finished: 
+                {
+                    if (!ports_data[pos].is_input_port_finished)
+                    {
+                        ports_data[pos].is_input_port_finished = true;
                         ++num_finished_input_ports;
+                    }
                     return;
                 }
                 case IProcessor::Status::NeedData:
@@ -88,7 +92,7 @@ IProcessor::Status FractionalLimitTransform::prepare(const PortNumbers & updated
                 default:
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
-                        "Unexpected status for FractionalLimitTransform::preparePair : {}",
+                        "Unexpected status for FractionalLimitTransform::pullData : {}",
                         IProcessor::statusToName(status));
             }
         };
