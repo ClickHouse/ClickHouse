@@ -1,0 +1,7 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <inject_random_order_for_select_without_order_by>1</inject_random_order_for_select_without_order_by>
+        </default>
+    </profiles>
+</clickhouse>
