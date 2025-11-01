@@ -1,6 +1,7 @@
 #pragma once
 
 #include <mutex>
+#include <tuple>
 #include <base/defines.h>
 #include <Common/SimpleIncrement.h>
 #include <Common/SharedMutex.h>
@@ -1928,6 +1929,21 @@ private:
     bool isDiskEligibleForOrphanedPartsSearch(DiskPtr disk) const;
 
     ConditionSelectivityEstimatorPtr cached_selectivity_estimator;
+
+    struct NamesAndTypesListHash
+    {
+        size_t operator()(const NamesAndTypesList & list) const noexcept;
+    };
+    struct ColumnsDescriptionCache
+    {
+        std::shared_ptr<const ColumnsDescription> original;
+        std::shared_ptr<const ColumnsDescription> with_collected_nested;
+    };
+    mutable std::mutex columns_descriptions_cache_mutex;
+    mutable std::unordered_map<NamesAndTypesList, ColumnsDescriptionCache, NamesAndTypesListHash> columns_descriptions_cache TSA_GUARDED_BY(columns_descriptions_cache_mutex);
+
+public:
+    ColumnsDescriptionCache getColumnsDescriptionForColumns(const NamesAndTypesList & columns) const;
 };
 
 /// RAII struct to record big parts that are submerging or emerging.
