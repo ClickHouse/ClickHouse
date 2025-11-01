@@ -259,13 +259,11 @@ namespace ErrorCodes
     This setting is required for compatibility during cluster upgrades.
 
     Possible values:
-    - `BASIC`
+    - `basic` - Basic format.
+    - `with_types` - Format with additional `types_serialization_versions` field, allowing per-type serialization versions.
+    This makes settings like `string_serialization_version` effective.
 
-    - `WITH_TYPES`
-      Write new format with `types_serialization_versions` field, allowing per-type serialization versions.
-      This makes settings like `string_serialization_version` effective.
-
-    During rolling upgrades, set this to `BASIC` so that new servers produce
+    During rolling upgrades, set this to `basic` so that new servers produce
     data parts compatible with old servers. After the upgrade completes,
     switch to `WITH_TYPES` to enable per-type serialization versions.
     )", 0) \
@@ -282,8 +280,8 @@ namespace ErrorCodes
 
     Possible values:
 
-    - `SINGLE_STREAM` — Use the standard serialization format with inline sizes.
-    - `WITH_SIZE_STREAM` — Use a separate size stream for top-level `String` columns.
+    - `single_stream` — Use the standard serialization format with inline sizes.
+    - `with_size_stream` — Use a separate size stream for top-level `String` columns.
     )", 0) \
     DECLARE(MergeTreeObjectSerializationVersion, object_serialization_version, "v2", R"(
     Serialization version for JSON data type. Required for compatibility.
