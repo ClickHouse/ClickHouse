@@ -926,6 +926,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         addSettingsChanges(merge_tree_settings_changes_history, "25.11",
         {
             {"refresh_statistics_interval", 0, 0, "New setting"},
+            {"alter_column_secondary_index_mode", "compatibility", "rebuild", "Change the behaviour to allow ALTER `column` when they have dependent secondary indices"},
             {"shared_merge_tree_create_per_replica_metadata_nodes", true, false, "Reduce the amount of metadata in Keeper."},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.10",
