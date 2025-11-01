@@ -473,6 +473,58 @@ SELECT dictGetAll('regexp_dict', 'tag', 'foobarbaz', 2);
 └──────────────────────────────────────────────────┘
 ```
 
+## dictGetKeys {#dictgetkeys}
+
+Returns the dictionary key(s) whose attribute equals the specified value. This is the inverse of [`dictGet`](#dictget-dictgetordefault-dictgetornull) on a single attribute.
+
+
+**Syntax**
+
+```sql
+dictGetKeys('dict_name', 'attr_name', value_expr);
+```
+
+**Arguments**
+
+- `dict_name` — Name of the dictionary. [String literal](/sql-reference/syntax#string).
+- `attr_name` — Name of the attribute column of the dictionary. [String literal](/sql-reference/syntax#string).
+- `value_expr` — Value to match against the attribute. [Expression](/sql-reference/syntax#expressions) that is convertible to the attribute's data type.
+
+**Returned value**
+
+- For single key dictionaries: an array of keys whose attribute equals `value_expr`. [Array(T)](../data-types/array.md), where `T` is the dictionary key data type.
+
+- For multi key dictionaries: an array of tuples of keys whose attribute equals `value_expr`. [Array](../data-types/array.md)([Tuple(T1, T2, ...)](../data-types/tuple.md)), where each `Tuple` contains the dictionary key columns in order.
+
+- If there is no attribute corresponding to `value_expr` in the dictionary, then an empty array is returned.
+
+ClickHouse throws an exception if it cannot parse the value of the attribute or the value cannot be converted to the attribute data type.
+
+**Example**
+
+Consider the following dictionary:
+
+```txt
+ ┌─id─┬─level──┐
+ │  1 │ low    │
+ │  2 │ high   │
+ │  3 │ medium │
+ │  4 │ high   │
+ └────┴────────┘
+```
+
+Now to get all the ids with level `high`:
+
+```sql
+SELECT dictGetKeys('levels', 'level', 'high') AS ids;
+```
+
+```text
+ ┌─ids───┐
+ │ [4,2] │
+ └───────┘
+```
+
 ## Other Functions {#other-functions}
 
 ClickHouse supports specialized functions that convert dictionary attribute values to a specific data type regardless of the dictionary configuration.
