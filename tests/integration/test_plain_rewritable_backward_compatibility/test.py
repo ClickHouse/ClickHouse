@@ -3,6 +3,7 @@ import pytest
 import base64
 import shlex
 
+from minio.deleteobjects import DeleteObject
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -103,4 +104,7 @@ def test_backward_compatibility(start_cluster, storage_declaration, lost_blobs):
     assert len(blobs) == lost_blobs
 
     if len(blobs) != 0:
-        cluster.minio_client.remove_objects('root', blobs)
+        to_remove = [DeleteObject(blob) for blob in blobs]
+        errors = cluster.minio_client.remove_objects(cluster.minio_bucket, to_remove)
+        for error in errors:
+            logging.error(f"Error occurred when deleting object {error}")
