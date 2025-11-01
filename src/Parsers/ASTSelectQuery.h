@@ -29,6 +29,7 @@ public:
         WINDOW,
         QUALIFY,
         ORDER_BY,
+        SHUFFLE,
         LIMIT_BY_OFFSET,
         LIMIT_BY_LENGTH,
         LIMIT_BY,
@@ -66,6 +67,8 @@ public:
                 return "QUALIFY";
             case Expression::ORDER_BY:
                 return "ORDER BY";
+            case Expression::SHUFFLE:
+                return "SHUFFLE";
             case Expression::LIMIT_BY_OFFSET:
                 return "LIMIT BY OFFSET";
             case Expression::LIMIT_BY_LENGTH:
@@ -98,6 +101,7 @@ public:
     bool group_by_with_constant_keys = false;
     bool group_by_with_grouping_sets = false;
     bool order_by_all = false;
+    bool has_shuffle = false;
     bool limit_with_ties = false;
     bool limit_by_all = false;
 
@@ -122,6 +126,7 @@ public:
     ASTPtr window()         const { return getExpression(Expression::WINDOW); }
     ASTPtr qualify()         const { return getExpression(Expression::QUALIFY); }
     ASTPtr orderBy()        const { return getExpression(Expression::ORDER_BY); }
+    ASTPtr shuffle()        const { return getExpression(Expression::SHUFFLE); }
     ASTPtr limitByOffset()  const { return getExpression(Expression::LIMIT_BY_OFFSET); }
     ASTPtr limitByLength()  const { return getExpression(Expression::LIMIT_BY_LENGTH); }
     ASTPtr limitBy()        const { return getExpression(Expression::LIMIT_BY); }
