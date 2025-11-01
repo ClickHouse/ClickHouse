@@ -526,6 +526,8 @@ http_write_exception_in_output_format	1
 http_zlib_compression_level	3
 iceberg_delete_data_on_drop	0
 iceberg_engine_ignore_schema_evolution	0
+iceberg_insert_max_bytes_in_data_file	
+iceberg_insert_max_rows_in_data_file	
 iceberg_metadata_compression_method	
 iceberg_metadata_log_level	none
 iceberg_snapshot_id	0
