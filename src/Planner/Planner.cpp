@@ -455,8 +455,21 @@ public:
 
         if (query_node.hasLimitBy())
         {
-            if (is_limit_length_negative || is_limit_offset_negative)
+            bool is_limitby_limit_negative;
+            Float32 fractional_limitby_limit;
+            std::tie(std::ignore, fractional_limitby_limit, is_limitby_limit_negative)
+                = getLimitOffsetValue(query_node.getLimitByLimit()->as<ConstantNode &>().getValue());
+
+            bool is_limitby_offset_negative;
+            Float32 fractional_limitby_offset;
+            std::tie(std::ignore, fractional_limitby_offset, is_limitby_offset_negative)
+                = getLimitOffsetValue(query_node.getLimitByOffset()->as<ConstantNode &>().getValue());
+
+            if (is_limitby_limit_negative || is_limitby_offset_negative)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Negative LIMIT/OFFSET with LIMIT BY is not supported yet");
+
+            if (fractional_limitby_limit > 0 || fractional_limitby_offset > 0)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Fractional LIMIT/OFFSET with LIMIT BY is not supported yet");
         }
 
 
@@ -1018,27 +1031,12 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
 void addLimitByStep(
     QueryPlan & query_plan, const LimitByAnalysisResult & limit_by_analysis_result, const QueryNode & query_node, bool do_not_skip_offset)
 {
-    Field limit_by_limit_field = query_node.getLimitByLimit()->as<ConstantNode &>().getValue();
-    const Field converted_limit_value_uint = convertFieldToType(limit_by_limit_field, DataTypeUInt64());
-    if (converted_limit_value_uint.isNull())
-        throw Exception(
-            ErrorCodes::INVALID_LIMIT_EXPRESSION,
-            "The value {} of LIMIT in LIMIT BY expression is not representable as UInt64",
-            applyVisitor(FieldVisitorToString(), limit_by_limit_field));
-
-    UInt64 limit_by_limit = limit_by_limit_field.safeGet<UInt64>();
+    UInt64 limit_by_limit = query_node.getLimitByLimit()->as<ConstantNode &>().getValue().safeGet<UInt64>();
     UInt64 limit_by_offset = 0;
 
     if (query_node.hasLimitByOffset())
     {
-        Field limit_by_offset_field = query_node.getLimitByOffset()->as<ConstantNode &>().getValue();
-        const Field converted_offset_value_uint = convertFieldToType(limit_by_offset_field, DataTypeUInt64());
-        if (converted_offset_value_uint.isNull())
-            throw Exception(
-                ErrorCodes::INVALID_LIMIT_EXPRESSION,
-                "The value {} of OFFSET in LIMIT BY expression is not representable as UInt64",
-                applyVisitor(FieldVisitorToString(), limit_by_offset_field));
-        limit_by_offset = limit_by_offset_field.safeGet<UInt64>();
+        limit_by_offset = query_node.getLimitByOffset()->as<ConstantNode &>().getValue().safeGet<UInt64>();
     }
 
     if (do_not_skip_offset)
@@ -1333,15 +1331,24 @@ void addLimitStep(
     bool is_limit_offset_negative = query_analysis_result.is_limit_offset_negative;
 
     if (is_limit_length_negative && fractional_offset > 0)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Negative Limits can't have a fractional Offset");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Negative LIMIT is not supported with fractional OFFSET");
 
     if (is_limit_offset_negative && fractional_limit > 0)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Fractional Limits can't have a negative Offset");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Fractional LIMIT is not supported with negative OFFSET");
 
-    // only one of limit_length or fractional_limit will have a value not both
-    // only one of limit_offset or fractional_offset will have a value not both
-    // if fractional_limit has value is_limit_length_negative should be always false
-    // if fractional_offset has value is_limit_offset_negative should be always false
+    /// only one of limit_length or fractional_limit should have a value not both
+    if (limit_length && fractional_limit > 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "LIMIT can't have both absolute and fractional values non-zero");
+    /// only one of limit_offset or fractional_offset should have a value not both
+    if (limit_offset && fractional_offset > 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "OFFSET can't have both absolute and fractional values non-zero");
+
+    /// if fractional_limit has value is_limit_length_negative should be always false
+    if (fractional_limit > 0 && is_limit_length_negative)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "LIMIT can't have both negative and fractional values non-zero");
+    /// if fractional_offset has value is_limit_offset_negative should be always false
+    if (fractional_offset > 0 && is_limit_offset_negative)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "OFFSET can't have both negative and fractional values non-zero");
 
     if (!is_limit_length_negative && !is_limit_offset_negative
             && fractional_offset == 0 && fractional_limit == 0) [[likely]]
@@ -1427,8 +1434,8 @@ void addExtremesStepIfNeeded(QueryPlan & query_plan, const PlannerContextPtr & p
 
 void addOffsetStep(QueryPlan & query_plan, const QueryAnalysisResult & query_analysis_result)
 {
-    /// If there is a LIMIT or there is no OFFSET
-    if (!query_analysis_result.limit_length && query_analysis_result.fractional_limit == 0
+    /// If there is not a LIMIT or but an OFFSET
+    if ((!query_analysis_result.limit_length && query_analysis_result.fractional_limit == 0)
         && (query_analysis_result.limit_offset || query_analysis_result.fractional_offset > 0))
     {
         // only one of limit_offset or fractional_offset will have a value
