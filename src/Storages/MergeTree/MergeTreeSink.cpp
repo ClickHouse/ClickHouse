@@ -256,7 +256,7 @@ bool MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr & part, const String 
         ///
         /// Hence, for now rename_in_transaction is false.
         added = storage.renameTempPartAndAdd(part, transaction, lock, /*rename_in_transaction=*/ false);
-        transaction.commit(&lock);
+        transaction.commit(lock);
     }
 
     return added;

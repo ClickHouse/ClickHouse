@@ -1479,7 +1479,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
 
 UInt32 StorageMergeTree::getMaxLevelInBetween(const PartProperties & left, const PartProperties & right) const
 {
-    auto parts_lock = lockParts();
+    auto parts_lock = readLockParts();
 
     auto begin = data_parts_by_info.find(left.info);
     if (begin == data_parts_by_info.end())
@@ -1873,7 +1873,11 @@ ActionLock StorageMergeTree::stopMergesAndWaitForPartition(String partition_id)
     /// This protects against "revival" of data for a removed partition after completion of merge.
     auto merge_blocker = merger_mutator.merges_blocker.cancelForPartition(partition_id);
 
-    const DataPartsVector parts_to_wait = getDataPartsVectorInPartitionForInternalUsage(MergeTreeDataPartState::Active, partition_id);
+    DataPartsVector parts_to_wait;
+    {
+        auto parts_lock = readLockParts();
+        parts_to_wait = getDataPartsVectorInPartitionForInternalUsage(MergeTreeDataPartState::Active, partition_id, parts_lock);
+    }
     LOG_TRACE(log, "StorageMergeTree::stopMergesAndWaitForPartition parts to wait: {} ({} items)",
         fmt::join(getNameWithState(parts_to_wait), ", "), parts_to_wait.size());
 
@@ -1934,7 +1938,7 @@ MergeTreeDataPartPtr StorageMergeTree::outdatePart(MergeTreeTransaction * txn, c
         if (!part)
             throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "Part {} not found, won't try to drop it.", part_name);
 
-        removePartsFromWorkingSet(txn, {part}, clear_without_timeout, &parts_lock);
+        removePartsFromWorkingSet(txn, {part}, clear_without_timeout, parts_lock);
         return part;
     }
 
@@ -1952,7 +1956,7 @@ MergeTreeDataPartPtr StorageMergeTree::outdatePart(MergeTreeTransaction * txn, c
     if (currently_merging_mutating_parts.contains(part))
         return nullptr;
 
-    removePartsFromWorkingSet(txn, {part}, clear_without_timeout, &parts_lock);
+    removePartsFromWorkingSet(txn, {part}, clear_without_timeout, parts_lock);
     return part;
 }
 
@@ -2029,17 +2033,20 @@ void StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVector & new_pa
 {
     DataPartsVector covered_parts;
 
-    for (auto & part: new_parts)
     {
-        DataPartsVector covered_parts_by_one_part = renameTempPartAndReplace(part, transaction, /*rename_in_transaction=*/ true);
+        auto part_lock = lockParts();
+        for (auto & part : new_parts)
+        {
+            DataPartsVector covered_parts_by_one_part = renameTempPartAndReplaceUnlocked(part, part_lock, transaction, /*rename_in_transaction=*/ true);
 
-        if (covered_parts_by_one_part.size() > 1)
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                            "Part {} expected to cover not more then 1 part. "
-                            "{} covered parts have been found. This is a bug.",
-                            part->name, covered_parts_by_one_part.size());
+            if (covered_parts_by_one_part.size() > 1)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                "Part {} expected to cover not more then 1 part. "
+                                "{} covered parts have been found. This is a bug.",
+                                part->name, covered_parts_by_one_part.size());
 
-        std::move(covered_parts_by_one_part.begin(), covered_parts_by_one_part.end(), std::back_inserter(covered_parts));
+            std::move(covered_parts_by_one_part.begin(), covered_parts_by_one_part.end(), std::back_inserter(covered_parts));
+        }
     }
     LOG_INFO(log, "Remove {} parts by covering them with empty {} parts. With txn {}.",
              covered_parts.size(), new_parts.size(), transaction.getTID());
@@ -2195,7 +2202,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
                     parts_to_remove = getVisibleDataPartsVectorUnlocked(query_context, data_parts_lock);
                 else
                 {
-                    String partition_id = getPartitionIDFromQuery(partition, query_context, &data_parts_lock);
+                    String partition_id = getPartitionIDFromQuery(partition, query_context, data_parts_lock);
                     parts_to_remove = getVisibleDataPartsVectorInPartition(query_context, partition_id, data_parts_lock);
                 }
                 removePartsFromWorkingSet(txn.get(), parts_to_remove, true, data_parts_lock);
@@ -2310,7 +2317,7 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
             auto lock = lockParts();
             auto block_holder = fillNewPartNameAndResetLevel(loaded_parts[i], lock);
             renameTempPartAndAdd(loaded_parts[i], transaction, lock, /*rename_in_transaction=*/ false);
-            transaction.commit(&lock);
+            transaction.commit(lock);
         }
 
         renamed_parts.old_and_new_names[i].old_name.clear();
@@ -2455,7 +2462,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
                 renameTempPartAndReplaceUnlocked(part, transaction, data_parts_lock, /*rename_in_transaction=*/ false);
             }
             /// Populate transaction
-            transaction.commit(&data_parts_lock);
+            transaction.commit(data_parts_lock);
 
             /// If it is REPLACE (not ATTACH), remove all parts which max_block_number less then min_block_number of the first new block
             if (replace)
@@ -2579,7 +2586,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
             }
 
             removePartsFromWorkingSet(local_context->getCurrentTransaction().get(), src_parts, true, src_data_parts_lock);
-            transaction.commit(&src_data_parts_lock);
+            transaction.commit(src_data_parts_lock);
         }
 
         clearOldPartsFromFilesystem();
@@ -2737,7 +2744,7 @@ void StorageMergeTree::attachRestoredParts(MutableDataPartsVector && parts)
             auto lock = lockParts();
             auto block_holder = fillNewPartName(part, lock);
             renameTempPartAndAdd(part, transaction, lock, /*rename_in_transaction=*/ false);
-            transaction.commit(&lock);
+            transaction.commit(lock);
         }
     }
 }
