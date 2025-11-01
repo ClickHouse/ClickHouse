@@ -142,8 +142,8 @@ def run_fuzzer(fuzzer: str, timeout: int):
         logging.info("Unexpected exception running merge %s: %s", fuzzer, e)
         return
 
-    orig_corpus_size = len(list(active_corpus_dir.glob("*")))
-    mini_corpus_size = len(list(mini_corpus_dir.glob("*")))
+    orig_corpus_size = len(list(Path(active_corpus_dir).glob("*")))
+    mini_corpus_size = len(list(Path(mini_corpus_dir).glob("*")))
 
     logging.info("Successful run, merge for %s, original corpus size %d, minimized corpus size %d, reduced to %d%%",
         fuzzer, orig_corpus_size, mini_corpus_size, mini_corpus_size * 100 / orig_corpus_size)
