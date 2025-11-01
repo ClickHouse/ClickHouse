@@ -128,51 +128,46 @@ void collectSymbolsFromProgramHeaders(
 
         size_t sym_cnt = 0;
         {
-            const auto * it = dyn_begin;
-            while (true)
+            for (const auto * it = dyn_begin; it->tag != DynamicTableTag::Null; ++it)
             {
                 __msan_unpoison(it, sizeof(*it));
-                if (it->tag != DynamicTableTag::Null)
-                    break;
+
+                if (it->tag != DynamicTableTag::GNU_HASH)
+                    continue;
 
                 uint64_t base_address = correct_address(info->addr, it->ptr);
 
-                if (it->tag == DynamicTableTag::GNU_HASH)
+                /// This code based on Musl-libc.
+
+                const uint32_t * buckets = nullptr;
+                const uint32_t * hashval = nullptr;
+
+                const uint32_t * hash = reinterpret_cast<const uint32_t *>(base_address);
+
+                __msan_unpoison(&hash[0], sizeof(*hash));
+                __msan_unpoison(&hash[1], sizeof(*hash));
+                __msan_unpoison(&hash[2], sizeof(*hash));
+
+                buckets = hash + 4 + (hash[2] * sizeof(size_t) / 4);
+
+                __msan_unpoison(buckets, hash[0] * sizeof(buckets[0]));
+
+                for (uint32_t i = 0; i < hash[0]; ++i)
+                    sym_cnt = std::max<size_t>(sym_cnt, buckets[i]);
+
+                if (sym_cnt)
                 {
-                    /// This code based on Musl-libc.
-
-                    const uint32_t * buckets = nullptr;
-                    const uint32_t * hashval = nullptr;
-
-                    const uint32_t * hash = reinterpret_cast<const uint32_t *>(base_address);
-
-                    __msan_unpoison(&hash[0], sizeof(*hash));
-                    __msan_unpoison(&hash[1], sizeof(*hash));
-                    __msan_unpoison(&hash[2], sizeof(*hash));
-
-                    buckets = hash + 4 + (hash[2] * sizeof(size_t) / 4);
-
-                    __msan_unpoison(buckets, hash[0] * sizeof(buckets[0]));
-
-                    for (uint32_t i = 0; i < hash[0]; ++i)
-                        sym_cnt = std::max<size_t>(sym_cnt, buckets[i]);
-
-                    if (sym_cnt)
+                    sym_cnt -= hash[1];
+                    hashval = buckets + hash[0] + sym_cnt;
+                    __msan_unpoison(&hashval, sizeof(hashval));
+                    do
                     {
-                        sym_cnt -= hash[1];
-                        hashval = buckets + hash[0] + sym_cnt;
-                        __msan_unpoison(&hashval, sizeof(hashval));
-                        do
-                        {
-                            ++sym_cnt;
-                        }
-                        while (!(*hashval++ & 1));
+                        ++sym_cnt;
                     }
-
-                    break;
+                    while (!(*hashval++ & 1));
                 }
 
-                ++it;
+                break;
             }
         }
 
