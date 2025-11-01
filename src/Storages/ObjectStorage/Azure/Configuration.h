@@ -107,7 +107,7 @@ protected:
     Paths blobs_paths;
     AzureBlobStorage::ConnectionParams connection_params;
     DiskPtr disk;
-    
+
     String onelake_client_id;
     String onelake_client_secret;
     String onelake_tenant_id;
