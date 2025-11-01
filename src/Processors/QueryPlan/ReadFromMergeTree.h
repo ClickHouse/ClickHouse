@@ -126,6 +126,11 @@ public:
         UInt64 selected_rows = 0;
         bool has_exact_ranges = false;
 
+        AnalysisResult() = default;
+
+        AnalysisResult(const AnalysisResult &) = default;
+        AnalysisResult(AnalysisResult &&) noexcept = default;
+
         bool readFromProjection() const { return !parts_with_ranges.empty() && parts_with_ranges.front().data_part->isProjectionPart(); }
         void checkLimits(const Settings & settings, const SelectQueryInfo & query_info_) const;
     };
@@ -198,6 +203,8 @@ public:
         bool use_skip_indexes;
         std::optional<std::unordered_set<String>> part_values;
     };
+
+    static bool areSkipIndexColumnsInPrimaryKey(const Names & primary_key_columns, const UsefulSkipIndexes & skip_indexes);
 
     static AnalysisResultPtr selectRangesToRead(
         RangesInDataParts parts,

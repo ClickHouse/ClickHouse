@@ -628,7 +628,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
                   * Otherwise `metadata_version` for not first replica will be initialized with 0 by default.
                   */
                 setInMemoryMetadata(metadata_snapshot->withMetadataVersion(metadata_version));
-                metadata_snapshot = getInMemoryMetadataPtr();
+                metadata_snapshot = getInMemoryMetadataPtr(/*bypass_metadata_cache=*/true);
             }
         }
         catch (Coordination::Exception & e)
@@ -7121,6 +7121,12 @@ bool StorageReplicatedMergeTree::existsNodeCached(const ZooKeeperWithFaultInject
     return res;
 }
 
+void StorageReplicatedMergeTree::tryRemoveNodeCache(const std::string & path) const
+{
+    std::lock_guard lock(existing_nodes_cache_mutex);
+    existing_nodes_cache.erase(path);
+}
+
 std::optional<EphemeralLockInZooKeeper> StorageReplicatedMergeTree::allocateBlockNumber(
     const String & partition_id,
     const zkutil::ZooKeeperPtr & zookeeper,
@@ -7885,6 +7891,8 @@ void StorageReplicatedMergeTree::forgetPartition(const ASTPtr & partition, Conte
         throw Exception(ErrorCodes::CANNOT_FORGET_PARTITION, "Partition {} is unknown", partition_id);
     else
         throw zkutil::KeeperException::fromPath(error_code, partition_path);
+
+    tryRemoveNodeCache(partition_path);
 }
 
 
@@ -10723,27 +10731,27 @@ String StorageReplicatedMergeTree::findReplicaHavingPart(
     return {};
 }
 
-
 bool StorageReplicatedMergeTree::checkIfDetachedPartExists(const String & part_name)
 {
-    fs::directory_iterator dir_end;
-    for (const std::string & path : getDataPaths())
-        for (fs::directory_iterator dir_it{fs::path(path) / DETACHED_DIR_NAME}; dir_it != dir_end; ++dir_it)
-            if (dir_it->path().filename().string() == part_name)
+    for (const auto & disk : getStoragePolicy()->getDisks())
+    {
+        for (auto it = disk->iterateDirectory(fs::path(getRelativeDataPath()) / DETACHED_DIR_NAME); it->isValid(); it->next())
+        {
+            if (it->name() == part_name)
                 return true;
+        }
+    }
     return false;
 }
 
 
 bool StorageReplicatedMergeTree::checkIfDetachedPartitionExists(const String & partition_name)
 {
-    fs::directory_iterator dir_end;
-
-    for (const std::string & path : getDataPaths())
+    for (const auto & disk : getStoragePolicy()->getDisks())
     {
-        for (fs::directory_iterator dir_it{fs::path(path) / DETACHED_DIR_NAME}; dir_it != dir_end; ++dir_it)
+        for (auto it = disk->iterateDirectory(fs::path(getRelativeDataPath()) / DETACHED_DIR_NAME); it->isValid(); it->next())
         {
-            const String file_name = dir_it->path().filename().string();
+            const String file_name = it->name();
             auto part_info = MergeTreePartInfo::tryParsePartName(file_name, format_version);
 
             if (part_info && part_info->getPartitionId() == partition_name)

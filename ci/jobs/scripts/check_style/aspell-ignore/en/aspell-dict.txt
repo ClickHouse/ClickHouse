@@ -310,6 +310,7 @@ Eoan
 EphemeralNode
 EscapingRule
 Ethereum
+Eval
 ExactEdgeLengthKm
 ExactEdgeLengthM
 ExactEdgeLengthRads
@@ -948,6 +949,7 @@ RawBLOB
 RawSum
 RawWithNames
 RawWithNamesAndTypes
+REPL
 ReDoS
 ReadTaskRequestsSent
 ReadonlyReplica
@@ -1192,6 +1194,7 @@ UDFs
 UInt
 UIntN
 ULID
+ULIDs
 ULIDStringToDateTime
 UMTS
 UNDROP
@@ -2468,6 +2471,9 @@ mysql
 mysqldump
 mysqljs
 mytable
+Nagios
+naiveBayesClassifier
+Nambiar
 namedatabases
 namenetworks
 namenode
@@ -3305,6 +3311,7 @@ transactionally
 translateUTF
 translocality
 trie
+trigrams
 trimBoth
 trimLeft
 trimRight
