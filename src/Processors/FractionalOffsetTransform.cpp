@@ -95,7 +95,7 @@ IProcessor::Status FractionalOffsetTransform::prepare(const PortNumbers & update
 FractionalOffsetTransform::Status FractionalOffsetTransform::prepare()
 {
     if (ports_data.size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "prepare without arguments is not supported for multi-port OffsetTransform");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "prepare without arguments is not supported for multi-port FractionalOffsetTransform");
 
     return prepare({0}, {0});
 }
@@ -119,7 +119,7 @@ FractionalOffsetTransform::Status FractionalOffsetTransform::pullData(PortsData 
     if (rows_before_limit_at_least)
         rows_before_limit_at_least->add(rows);
 
-    /// Process block.
+    /// Cache block.
     rows_cnt += rows;
     chunks_cache.push_back({data.output_port, std::move(data.current_chunk)});
 

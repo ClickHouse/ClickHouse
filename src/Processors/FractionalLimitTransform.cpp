@@ -22,13 +22,13 @@ FractionalLimitTransform::FractionalLimitTransform(
     UInt64 offset_,
     size_t num_streams,
     bool with_ties_,
-    SortDescription description_)
+    SortDescription limit_with_ties_sort_description_)
     : IProcessor(InputPorts(num_streams, header_), OutputPorts(num_streams, header_))
     , limit_fraction(limit_fraction_)
     , offset_fraction(offset_fraction_)
     , offset(offset_)
     , with_ties(with_ties_)
-    , description(std::move(description_))
+    , limit_with_ties_sort_description(std::move(limit_with_ties_sort_description_))
 {
     if (num_streams != 1 && with_ties)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot use FractionalLimitTransform with multiple ports and ties");
@@ -49,7 +49,7 @@ FractionalLimitTransform::FractionalLimitTransform(
         ++cur_stream;
     }
 
-    for (const auto & desc : description)
+    for (const auto & desc : limit_with_ties_sort_description)
         sort_column_positions.push_back(header_->getPositionByName(desc.column_name));
 }
 
@@ -130,7 +130,7 @@ IProcessor::Status FractionalLimitTransform::prepare(const PortNumbers & updated
 FractionalLimitTransform::Status FractionalLimitTransform::prepare()
 {
     if (ports_data.size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "prepare without arguments is not supported for multi-port LimitTransform");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "prepare without arguments is not supported for multi-port FractionalLimitTransform");
 
     return prepare({0}, {0});
 }
@@ -341,7 +341,7 @@ void FractionalLimitTransform::splitChunk(Chunk & current_chunk)
 ColumnRawPtrs FractionalLimitTransform::extractSortColumns(const Columns & columns) const
 {
     ColumnRawPtrs res;
-    res.reserve(description.size());
+    res.reserve(limit_with_ties_sort_description.size());
     for (size_t pos : sort_column_positions)
         res.push_back(columns[pos].get());
 

@@ -21,7 +21,10 @@ class FractionalOffsetTransform final : public IProcessor
 private:
     Float32 fractional_offset;
 
+    /// Variable to hold real OFFSET value to use
+    /// after (input_rows_cnt * offset_fraction) calculation.
     UInt64 offset = 0;
+
     UInt64 rows_read = 0; /// including the last read block
 
     RowsBeforeStepCounterPtr rows_before_limit_at_least;
@@ -40,10 +43,11 @@ private:
     std::vector<PortsData> ports_data;
     size_t num_finished_input_ports = 0;
 
-    // 1. cache all input chunks (with their output destination)
-    // 2. get total rows cnt from input
-    // 3. calculate target limit, offset
-    // 4. pull data from the cache like a normal limit, offset.
+    /// Processor workflow:
+    /// 1. read and cache all input chunks (with their output destination)
+    /// 2. get total rows count from input
+    /// 3. calculate target offset
+    /// 4. apply normal offset logic on cached data.
     UInt64 rows_cnt = 0;
     struct CacheEntity
     {

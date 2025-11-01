@@ -19,7 +19,7 @@ namespace DB
 /// This processor support multiple inputs and outputs (the same number).
 /// Each pair of input and output port works independently.
 /// The reason to have multiple ports is to be able to stop all sources when limit is reached, in a query like:
-///     SELECT * FROM numbers_mt(100) LIMIT 0.1
+///     SELECT * FROM system.numbers_mt WHERE number = 1000000 LIMIT 0.1
 ///
 /// with_ties - implementation of LIMIT WITH TIES. It works only for single port.
 class FractionalLimitTransform final : public IProcessor
@@ -29,12 +29,12 @@ private:
     Float32 offset_fraction;
 
     // Variables to hold real LIMIT and OFFSET values to
-    // use after (data_rows_cnt * fraction) calculation.
-    UInt64 offset = 0;
+    // use after (input_rows_cnt * fraction) calculation.
+    UInt64 offset = 0; // additionally hold UInt64 offset_ from constructor
     UInt64 limit = 0;
 
     bool with_ties;
-    const SortDescription description;
+    const SortDescription limit_with_ties_sort_description;
 
     Chunk previous_row_chunk; /// for WITH TIES, contains only sort columns
     std::vector<size_t> sort_column_positions;
@@ -56,10 +56,11 @@ private:
     std::vector<PortsData> ports_data;
     size_t num_finished_input_ports = 0;
 
-    // 1. cache all input chunks (with their output destination)
-    // 2. get total rows cnt from input
-    // 3. calculate target limit, offset
-    // 4. pull data from the cache like a normal limit, offset.
+    /// Processor workflow:
+    /// 1. read and cache all input chunks (with their output destination)
+    /// 2. get total rows count from input
+    /// 3. calculate target limit, offset
+    /// 4. apply normal limit, offset logic on cached data.
     size_t rows_cnt = 0;
     struct CacheEntry
     {
