@@ -43,7 +43,7 @@ IProcessor::Status FractionalOffsetTransform::prepare(const PortNumbers & update
             auto status = pullData(ports_data[pos]);
             switch (status)
             {
-                case IProcessor::Status::Finished: 
+                case IProcessor::Status::Finished:
                 {
                     if (!ports_data[pos].is_input_port_finished)
                     {
