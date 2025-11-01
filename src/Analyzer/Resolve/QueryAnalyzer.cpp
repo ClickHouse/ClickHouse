@@ -638,7 +638,7 @@ void QueryAnalyzer::convertLimitOffsetExpression(QueryTreeNodePtr & expression_n
             scope.scope_node->formatASTForErrorMessage());
 
 
-    // We support limit in the range [INT64_MIN, UINT64_MAX] or [0.1 - 0.9] for Fractional Percentages
+    // We support limit in the range [INT64_MIN, UINT64_MAX] or [0 - 1) for fractional limit
     // Consider the nonnegative limit case first as they are more common
     {
         Field converted_value = convertFieldToType(limit_offset_constant_node->getValue(), DataTypeUInt64());
@@ -684,7 +684,7 @@ void QueryAnalyzer::convertLimitOffsetExpression(QueryTreeNodePtr & expression_n
     }
 
     throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION,
-        "The value {} of {} expression is not representable as UInt64 or Int64 or Decimal32(8, 7) range [0.1 to 0.9]",
+        "The value {} of {} expression is not representable as UInt64 or Int64 or Float32 range [0 - 1)",
         applyVisitor(FieldVisitorToString(), limit_offset_constant_node->getValue()) , expression_description);
 }
 
