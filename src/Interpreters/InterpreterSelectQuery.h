@@ -14,7 +14,6 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/TableLockHolder.h>
 #include <QueryPipeline/Pipe.h>
-#include <base/BFloat16.h>
 
 namespace Poco
 {

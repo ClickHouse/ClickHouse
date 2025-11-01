@@ -1,4 +1,3 @@
-#include <Core/DecimalFunctions.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Planner/PlannerJoinTree.h>
 
@@ -80,8 +79,6 @@
 #include <Planner/Utils.h>
 #include <Planner/CollectSets.h>
 #include <Planner/CollectTableExpressionData.h>
-#include <base/BFloat16.h>
-#include <base/types.h>
 
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
