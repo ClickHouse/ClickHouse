@@ -156,7 +156,7 @@ FractionalLimitTransform::Status FractionalLimitTransform::pullData(PortsData & 
     /// Process block.
     rows_cnt += rows;
 
-    // ignore entire chunks that are not part of LIMIT
+    // Ignore entire chunks that are not part of LIMIT
     if (rows <= offset)
     {
         offset -= rows;
