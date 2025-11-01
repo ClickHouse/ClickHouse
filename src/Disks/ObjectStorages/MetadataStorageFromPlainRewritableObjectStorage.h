@@ -1,10 +1,9 @@
 #pragma once
 
+#include <Disks/ObjectStorages/InMemoryDirectoryTree.h>
 #include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorage.h>
 
 #include <memory>
-#include <unordered_set>
-
 
 namespace DB
 {
@@ -55,15 +54,14 @@ public:
 
 private:
     const std::string metadata_key_prefix;
-    std::shared_ptr<InMemoryDirectoryPathMap> path_map;
+    std::shared_ptr<InMemoryDirectoryTree> fs_tree;
     AtomicStopwatch previous_refresh;
 
     void load(bool is_initial_load);
     std::mutex load_mutex;
 
     std::string getMetadataKeyPrefix() const override { return metadata_key_prefix; }
-    std::shared_ptr<InMemoryDirectoryPathMap> getPathMap() const override { return path_map; }
-    std::vector<std::string> getDirectChildrenOnDisk(const std::filesystem::path & local_path) const;
+    std::shared_ptr<InMemoryDirectoryTree> getFsTree() const override { return fs_tree; }
 };
 
 }
