@@ -54,6 +54,38 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
     else
         uri_str = uri_;
 
+    // For s3://, gs://, oss:// schemes with wildcard '?', we need to encode
+    // the '?' before parsing to prevent it from being treated as query separator
+    bool should_encode_question_mark = false;
+    if (uri_str.contains('?'))
+    {
+        // Check if this looks like a real query string or a wildcard
+        size_t question_pos = uri_str.find('?');
+        if (question_pos != std::string::npos)
+        {
+            std::string after_question = uri_str.substr(question_pos + 1);
+            // Check if it looks like a query string (has '=' or is at the end)
+            // If it doesn't have '=' and has more characters, it's likely a wildcard
+            if (!after_question.empty() && after_question.find('=') == std::string::npos)
+            {
+                // This looks like a wildcard pattern, not a query string
+                should_encode_question_mark = true;
+            }
+            // Also check for patterns like "file-??.txt" where '?' is clearly a wildcard
+            else if (after_question.length() > 0 && after_question[0] == '?')
+            {
+                should_encode_question_mark = true;
+            }
+        }
+    }
+
+    if (should_encode_question_mark)
+    {
+        String uri_with_question_mark_encode;
+        Poco::URI::encode(uri_str, "?", uri_with_question_mark_encode);
+        uri_str = uri_with_question_mark_encode;
+    }
+
     uri = Poco::URI(uri_str);
 
     std::unordered_map<std::string, std::string> mapper;
@@ -85,25 +117,13 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Host is empty in S3 URI.");
 
     /// Extract object version ID from query string.
-    bool has_version_id = false;
     for (const auto & [query_key, query_value] : uri.getQueryParameters())
     {
         if (query_key == "versionId")
         {
             version_id = query_value;
-            has_version_id = true;
+            break;
         }
-    }
-
-    /// Poco::URI will ignore '?' when parsing the path, but if there is a versionId in the http parameter,
-    /// '?' can not be used as a wildcard, otherwise it will be ambiguous.
-    /// If no "versionId" in the http parameter, '?' can be used as a wildcard.
-    /// It is necessary to encode '?' to avoid deletion during parsing path.
-    if (!has_version_id && uri_.contains('?'))
-    {
-        String uri_with_question_mark_encode;
-        Poco::URI::encode(uri_, "?", uri_with_question_mark_encode);
-        uri = Poco::URI(uri_with_question_mark_encode);
     }
 
     String name;
