@@ -181,10 +181,13 @@ void AuthenticationData::setPassword(const String & password_, bool validate)
             setPasswordHashBinary(Util::encodeDoubleSHA1(password_), validate);
             return;
 
+        case AuthenticationType::JWT:
+            password_hash = Util::stringToDigest(password_);
+            return;
+
         case AuthenticationType::BCRYPT_PASSWORD:
         case AuthenticationType::NO_PASSWORD:
         case AuthenticationType::LDAP:
-        case AuthenticationType::JWT:
         case AuthenticationType::KERBEROS:
         case AuthenticationType::SSL_CERTIFICATE:
         case AuthenticationType::SSH_KEY:
