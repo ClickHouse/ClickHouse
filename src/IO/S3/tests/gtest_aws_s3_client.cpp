@@ -142,8 +142,7 @@ void testServerSideEncryption(
         enable_s3_requests_logging,
         /* for_disk_s3 = */ false,
         /* opt_disk_name = */ {},
-        /* get_request_throttler = */ {},
-        /* put_request_throttler = */ {},
+        /* request_throttler = */ {},
         uri.uri.getScheme());
 
     client_configuration.endpointOverride = uri.endpoint;
@@ -418,8 +417,7 @@ TEST(IOTestAwsS3Client, AssumeRole)
         enable_s3_requests_logging,
         /* for_disk_s3 = */ false,
         /* opt_disk_name = */ {},
-        /* get_request_throttler = */ {},
-        /* put_request_throttler = */ {},
+        /* request_throttler = */ {},
         "http");
 
     client_configuration.endpointOverride = uri.endpoint;

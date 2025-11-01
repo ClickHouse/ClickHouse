@@ -275,7 +275,7 @@ private:
     void receiveHello();
     bool receiveQueryPlan(QueryState & state);
     void receiveAddendum();
-    bool receivePacketsExpectQuery(std::optional<QueryState> & state);
+    bool receivePacketsExpectQuery(std::shared_ptr<QueryState> & state);
     bool receivePacketsExpectData(QueryState & state) TSA_REQUIRES(callback_mutex);
     bool receivePacketsExpectDataConcurrentWithExecutor(QueryState & state);
     void receivePacketsExpectCancel(QueryState & state) TSA_REQUIRES(callback_mutex);
@@ -285,7 +285,7 @@ private:
     std::optional<ParallelReadResponse> receivePartitionMergeTreeReadTaskResponse(QueryState & state) TSA_REQUIRES(callback_mutex);
 
     void processCancel(QueryState & state) TSA_REQUIRES(callback_mutex);
-    void processQuery(std::optional<QueryState> & state);
+    void processQuery(std::shared_ptr<QueryState> & state);
     void processIgnoredPartUUIDs();
     bool processData(QueryState & state, bool scalar) TSA_REQUIRES(callback_mutex);
     void processClusterNameAndSalt();
