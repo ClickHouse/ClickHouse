@@ -46,7 +46,7 @@ def zipdir(path, ziph):
         for file in files:
             ziph.write(
                 os.path.join(root, file),
-                os.path.relpath(os.path.join(root, file), os.path.join(path, "..")),
+                file,
             )
 
 
@@ -161,13 +161,17 @@ def download_corpus(path):
 
 
 def upload_corpus(path):
-    with zipfile.ZipFile(f"{path}/corpus.zip", "w", zipfile.ZIP_DEFLATED) as zipf:
-        zipdir(f"{path}/corpus/", zipf)
-    s3.upload_file(
-        bucket=S3_BUILDS_BUCKET,
-        file_path=f"{path}/corpus.zip",
-        s3_path="fuzzer/corpus.zip",
-    )
+    corpus_dir = Path(path) / "corpus"
+    for fuzzer_dir in corpus_dir.iterdir():
+        if fuzzer_dir.is_dir() and fuzzer_dir.name.endswith("_fuzzer"):
+            zip_file_path = corpus_dir / f"{fuzzer_dir.name}.zip"
+            with zipfile.ZipFile(zip_file_path, "w", zipfile.ZIP_DEFLATED) as zipf:
+                zipdir(fuzzer_dir, zipf)
+                s3.upload_file(
+                    bucket=S3_BUILDS_BUCKET,
+                    file_path=str(zip_file_path),
+                    s3_path=f"fuzzer/corpus/{zip_file_path.name}",
+                )
 
 
 def process_error(path: Path) -> list:
@@ -233,32 +237,83 @@ def process_results(result_path: Path):
     fails = 0
     for fuzzer_result_dir in result_path.glob("*.results"):
         fuzzer = fuzzer_result_dir.stem
-        file_path_status = fuzzer_result_dir / "status.txt"
-        file_path_out = fuzzer_result_dir / "out.txt"
-        file_path_stdout = fuzzer_result_dir / "stdout.txt"
 
-        status = read_status(file_path_status)
-        result = TestResult(fuzzer, status[0], float(status[2]))
-        if status[0] == "OK":
-            oks += 1
-        elif status[0] == "ERROR":
+        raw_logs = []
+        log_files = []
+
+        result = None
+
+        # Process corpus minimization results
+        file_path_status_mini = fuzzer_result_dir / "status_mini.txt"
+        file_path_out_mini = fuzzer_result_dir / "out_mini.txt"
+        file_path_stdout_mini = fuzzer_result_dir / "stdout_mini.txt"
+
+        status_mini = read_status(file_path_status_mini)
+
+        if status_mini[0] == "ERROR":
             errors += 1
-            if file_path_out.exists():
-                result.set_log_files(f"['{file_path_out}']")
-            elif file_path_stdout.exists():
-                result.set_log_files(f"['{file_path_stdout}']")
-        else:
-            fails += 1
-            if file_path_out.exists():
-                errors = process_error(file_path_out)
-                result.set_raw_logs("\n".join("\t".join(e) for e in errors))
-            # Collect all crash files and trace files
-            crash_files = list(fuzzer_result_dir.glob("crash-*"))
-            trace_files = list(fuzzer_result_dir.glob("*.trace"))
-            all_files = crash_files + trace_files
-            if all_files:
-                result.set_log_files("[" + ", ".join(f"'{f}'" for f in all_files) + "]")
+            raw_logs.append("Corpus minimization FAILED.")
+            if file_path_out_mini.exists():
+                errors = process_error(file_path_out_mini)
+                if len(errors):
+                    raw_logs.append("Possible regressions:")
+                    for line in errors:
+                        raw_logs("\t".join(s) for s in line)
 
+            if file_path_out.exists():
+                log_files.append(str(file_path_out_mini))
+            if file_path_stdout.exists():
+                log_files.append(str(file_path_stdout_mini))
+
+            result = TestResult(fuzzer, "ERROR", float(status_mini[2]))
+
+        else:
+            if file_path_out_mini.exists():
+                errors = process_error(file_path_out_mini)
+                if len(errors):
+                    raw_logs.append("Regressions:")
+                    for line in errors:
+                        raw_logs("\t".join(s) for s in line)
+
+            # Process fuzzing results
+            file_path_status = fuzzer_result_dir / "status.txt"
+            file_path_out = fuzzer_result_dir / "out.txt"
+            file_path_stdout = fuzzer_result_dir / "stdout.txt"
+
+            status = read_status(file_path_status)
+            result = TestResult(fuzzer, status[0], float(status_mini[2]) + float(status[2]))
+            if status[0] == "OK":
+                oks += 1
+            elif status[0] == "ERROR":
+                errors += 1
+                raw_logs.append(f"Fuzzing FAILED.")
+                if file_path_out.exists():
+                    log_files.append(str(file_path_out))
+                if file_path_stdout.exists():
+                    log_files.append(str(file_path_stdout))
+            else:
+                fails += 1
+                if file_path_out.exists():
+                    errors = process_error(file_path_out)
+                    if len(errors):
+                        raw_logs.append("New findings:")
+                        for line in errors:
+                            raw_logs("\t".join(s) for s in line)
+                    else:
+                        raw_logs.append("No stack traces found - this is unusual - check output files")
+                        if file_path_out.exists():
+                            log_files.append(str(file_path_out))
+                        if file_path_stdout.exists():
+                            log_files.append(str(file_path_stdout))
+
+        # Collect all crash files and trace files
+        for file in list(fuzzer_result_dir.glob("crash-*")):
+            log_files.append(str(file))
+        for file in list(fuzzer_result_dir.glob("*.trace")):
+            log_files.append(str(file))
+
+        result.set_raw_logs("\n".join(raw_logs))
+        result.set_log_files("[" + ", ".join(f"'{f}'" for f in log_files) + "]")
         test_results.append(result)
 
     return [oks, errors, fails, test_results]

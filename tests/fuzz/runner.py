@@ -100,10 +100,6 @@ def run_fuzzer(fuzzer: str, timeout: int):
     if not os.path.exists(results_path):
         os.makedirs(results_path)
     artifact_prefix = f"{results_path}"
-    #status_path = f"{results_path}/status.txt"
-    #out_path = f"{results_path}/out.txt"
-    #stdout_path = f"{results_path}/stdout.txt"
-
 
     merge_libfuzzer_options = f" -artifact_prefix={artifact_prefix} -merge=1 {mini_corpus_dir} {active_corpus_dir}"
     cmd_line = f"{DEBUGGER} ./{fuzzer} {fuzzer_arguments}"
@@ -118,6 +114,7 @@ def run_fuzzer(fuzzer: str, timeout: int):
 
     logging.info("...will execute merge: '%s'%s", cmd_line, with_fuzzer_args)
 
+    status_path = f"{results_path}/status_mini.txt"
     out_path = f"{results_path}/out_mini.txt"
     stdout_path = f"{results_path}/stdout_mini.txt"
 
@@ -137,10 +134,23 @@ def run_fuzzer(fuzzer: str, timeout: int):
             )
     except subprocess.CalledProcessError:
         logging.info("Fail running merge %s", fuzzer)
+        with open(status_path, "w", encoding="utf-8") as status:
+            status.write(
+                f"ERROR\n{stopwatch.start_time_str}\n{stopwatch.duration_seconds}\n"
+            )
         return
     except Exception as e:
         logging.info("Unexpected exception running merge %s: %s", fuzzer, e)
+        with open(status_path, "w", encoding="utf-8") as status:
+            status.write(
+                f"ERROR\n{stopwatch.start_time_str}\n{stopwatch.duration_seconds}\n"
+            )
         return
+
+    with open(status_path, "w", encoding="utf-8") as status:
+        status.write(
+            f"OK\n{stopwatch.start_time_str}\n{stopwatch.duration_seconds}\n"
+        )
 
     orig_corpus_size = len(list(Path(active_corpus_dir).glob("*")))
     mini_corpus_size = len(list(Path(mini_corpus_dir).glob("*")))
@@ -152,7 +162,7 @@ def run_fuzzer(fuzzer: str, timeout: int):
     os.rename(mini_corpus_dir, active_corpus_dir)
 
 # TESTING TESTING TESTING
-    exit(0)
+    return
 
 
     status_path = f"{results_path}/status.txt"
