@@ -4,6 +4,7 @@
 #include <Common/TargetSpecific.h>
 #include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
+#include <Common/quoteString.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
@@ -43,7 +44,6 @@
 #include <IO/ReadHelpers.h>
 
 #include <type_traits>
-
 namespace DB
 {
 
@@ -665,7 +665,7 @@ struct ComparisonParams
     ComparisonParams() = default;
 };
 
-template <template <typename, typename> class Op, typename Name>
+template <template <typename, typename> class Op, typename Name, bool is_null_safe_cmp_mode = false>
 class FunctionComparison : public IFunction
 {
 public:
@@ -675,6 +675,7 @@ public:
 
     explicit FunctionComparison(ComparisonParams params_) : params(std::move(params_)) {}
 
+    bool ALWAYS_INLINE  useDefaultImplementationForNulls() const override { return is_null_safe_cmp_mode ? false : true; }
 private:
     const ComparisonParams params;
 
@@ -966,7 +967,6 @@ private:
           *
           * x >= y:  x1 > y1 || (x1 == y1 && (x2 > y2 || (x2 == y2 ... && xn >= yn))
           */
-
         const size_t tuple_size = typeid_cast<const DataTypeTuple &>(*c0.type).getElements().size();
 
         if (0 == tuple_size)
@@ -1156,7 +1156,6 @@ private:
     ColumnPtr executeGeneric(const ColumnWithTypeAndName & c0, const ColumnWithTypeAndName & c1) const
     {
         DataTypePtr common_type = getLeastSupertype(DataTypes{c0.type, c1.type});
-
         ColumnPtr c0_converted = castColumn(c0, common_type);
         ColumnPtr c1_converted = castColumn(c1, common_type);
 
@@ -1185,9 +1184,9 @@ public:
                         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "Illegal types of arguments ({}, {}) of function {}, because some of them are not comparable for equality."
                         "Set setting allow_not_comparable_types_in_comparison_functions = 1 in order to allow it",
-                        arguments[0]->getName(),
-                        arguments[1]->getName(),
-                        getName());
+                        backQuote(arguments[0]->getName()),
+                        backQuote(arguments[1]->getName()),
+                        backQuote(getName()));
             }
             else if (!arguments[0]->isComparable() || !arguments[1]->isComparable())
             {
@@ -1195,9 +1194,9 @@ public:
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Illegal types of arguments ({}, {}) of function {}, because some of them are not comparable."
                     "Set setting allow_not_comparable_types_in_comparison_functions = 1 in order to allow it",
-                    arguments[0]->getName(),
-                    arguments[1]->getName(),
-                    getName());
+                    backQuote(arguments[0]->getName()),
+                    backQuote(arguments[1]->getName()),
+                    backQuote(getName()));
             }
         }
 
@@ -1222,7 +1221,7 @@ public:
         {
             if (!tryGetLeastSupertype(arguments))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types of arguments ({}, {})"
-                    " of function {}", arguments[0]->getName(), arguments[1]->getName(), getName());
+                    " of function {}", backQuote(arguments[0]->getName()), backQuote(arguments[1]->getName()), backQuote(getName()));
         }
 
         bool both_tuples = left_tuple && right_tuple;
@@ -1248,6 +1247,9 @@ public:
                 has_null = has_null || element_type->onlyNull();
             }
 
+            // In null-safe cmp mode, return DataTypeUInt8
+            if (is_null_safe_cmp_mode)
+                return std::make_shared<DataTypeUInt8>();
             /// If any element comparison is nullable, return type will also be nullable.
             /// We useDefaultImplementationForNulls, but it doesn't work for tuples.
             if (has_null)
