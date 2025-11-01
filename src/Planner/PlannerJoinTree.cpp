@@ -1856,7 +1856,7 @@ JoinTreeQueryPlan buildQueryPlanForCrossJoinNode(
             auto join_step_logical = std::make_unique<JoinStepLogical>(
                 left_header,
                 right_header,
-                JoinOperator{},
+                JoinOperator{JoinKind::Cross},
                 std::move(join_expression_actions),
                 outer_scope_columns,
                 std::unordered_map<String, const ActionsDAG::Node *>{},
