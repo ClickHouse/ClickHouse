@@ -37,6 +37,7 @@
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
 
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
@@ -52,6 +53,8 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/IStorage.h>
 
+#include <base/Decimal_fwd.h>
+#include <base/types.h>
 #include <boost/algorithm/string/predicate.hpp>
 #include <ranges>
 
@@ -634,8 +637,8 @@ void QueryAnalyzer::convertLimitOffsetExpression(QueryTreeNodePtr & expression_n
             expression_node->formatASTForErrorMessage(),
             scope.scope_node->formatASTForErrorMessage());
 
-    // We support limit in the range [INT64_MIN, UINT64_MAX]
 
+    // We support limit in the range [INT64_MIN, UINT64_MAX] or [0 - 1) for fractional limit
     // Consider the nonnegative limit case first as they are more common
     {
         Field converted_value = convertFieldToType(limit_offset_constant_node->getValue(), DataTypeUInt64());
@@ -665,10 +668,24 @@ void QueryAnalyzer::convertLimitOffsetExpression(QueryTreeNodePtr & expression_n
         }
     }
 
-    // If we are here, then the number is either outside the supported range or float
+    {
+        Field converted_value = convertFieldToType(limit_offset_constant_node->getValue(), DataTypeDecimal32(8, 7));
+        if (!converted_value.isNull())
+        {
+            auto value = converted_value.safeGet<Decimal32>().getValue() / 10000000.0;
+            if (value < 1 && value > 0)
+            {
+                auto result_constant_node = std::make_shared<ConstantNode>(Field(Float32(value)), std::make_shared<DataTypeFloat32>());
+                result_constant_node->getSourceExpression() = limit_offset_constant_node->getSourceExpression();
+                expression_node = std::move(result_constant_node);
+                return;
+            }
+        }
+    }
+
     throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION,
-        "{} numeric constant expression is not representable as UInt64 or Int64",
-        expression_description);
+        "The value {} of {} expression is not representable as UInt64 or Int64 or Float32 range [0 - 1)",
+        applyVisitor(FieldVisitorToString(), limit_offset_constant_node->getValue()) , expression_description);
 }
 
 void QueryAnalyzer::validateTableExpressionModifiers(const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope)

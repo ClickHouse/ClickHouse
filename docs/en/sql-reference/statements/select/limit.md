@@ -14,11 +14,29 @@ doc_type: 'reference'
 
 In the standard forms above, `n` and `m` are non-negative integers.
 
-Negative limits are also supported:
+Negative limits are supported:
 
 `LIMIT -m` selects the last `m` rows from the result.
 
 `LIMIT -m OFFSET -n` selects the last `m` rows after skipping the last `n` rows. The `LIMIT -n, -m` syntax is equivalent.
+
+Selecting a fraction of the result is also supported:
+
+`LIMIT m` - If 0 < m < 1 then the first (m * 100)% percent from the result is returned.
+
+`LIMIT m OFFSET n` - If 0 < m < 1 and 0 < n < 1 then the first (m * 100)% percent from the result is returned, after skipping the first (n * 100)% percent of rows.
+
+Examples:
+    • `LIMIT 0.1` - selects the first 10% of the result
+    • `LIMIT 0.5 OFFSET 1` - selects the median row
+    • `LIMIT 0.25 OFFSET 0.5` - selects 3rd quartile of the result
+
+> **Note**
+> • Fractions must be Float32 numbers less than 1 and greater than zero
+
+> **Note**
+> • You can combine standard limit with fractional offset and vice versa
+> • You can combine standard limit with negative offset and vice versa
 
 If there is no [ORDER BY](../../../sql-reference/statements/select/order-by.md) clause that explicitly sorts results, the choice of rows for the result may be arbitrary and non-deterministic.
 
@@ -40,7 +58,7 @@ For example, the following query
 ```sql
 SELECT * FROM (
     SELECT number%50 AS n FROM numbers(100)
-) ORDER BY n LIMIT 0,5
+) ORDER BY n LIMIT 0, 5
 ```
 
 returns
@@ -60,7 +78,7 @@ but after apply `WITH TIES` modifier
 ```sql
 SELECT * FROM (
     SELECT number%50 AS n FROM numbers(100)
-) ORDER BY n LIMIT 0,5 WITH TIES
+) ORDER BY n LIMIT 0, 5 WITH TIES
 ```
 
 it returns another rows set
