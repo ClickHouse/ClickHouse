@@ -1,8 +1,8 @@
 #include <IO/Operators.h>
 #include <IO/ReadBuffer.h>
+#include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
 #include <IO/WriteHelpers.h>
-#include <IO/readFloatText.h>
 #include <Processors/FractionalLimitTransform.h>
 #include <Processors/LimitTransform.h>
 #include <Processors/Port.h>
@@ -79,8 +79,8 @@ void FractionalLimitStep::serialize(Serialization & ctx) const
 
     writeIntBinary(flags, ctx.out);
 
-    writeFloatText(limit_fraction, ctx.out);
-    writeFloatText(offset_fraction, ctx.out);
+    writeFloatBinary(limit_fraction, ctx.out);
+    writeFloatBinary(offset_fraction, ctx.out);
     writeVarUInt(offset, ctx.out);
 
     if (with_ties)
@@ -97,8 +97,8 @@ std::unique_ptr<IQueryPlanStep> FractionalLimitStep::deserialize(Deserialization
     Float32 offset_fraction;
     UInt64 offset;
 
-    readFloatText(limit_fraction, ctx.in);
-    readFloatText(offset_fraction, ctx.in);
+    readFloatBinary(limit_fraction, ctx.in);
+    readFloatBinary(offset_fraction, ctx.in);
     readVarUInt(offset, ctx.in);
 
     SortDescription description;

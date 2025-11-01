@@ -1,6 +1,6 @@
 #include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <IO/readFloatText.h>
 #include <Processors/FractionalOffsetTransform.h>
 #include <Processors/OffsetTransform.h>
 #include <Processors/Port.h>
@@ -54,13 +54,13 @@ void FractionalOffsetStep::describeActions(JSONBuilder::JSONMap & map) const
 
 void FractionalOffsetStep::serialize(Serialization & ctx) const
 {
-    writeFloatText(fractional_offset, ctx.out);
+    writeFloatBinary(fractional_offset, ctx.out);
 }
 
 std::unique_ptr<IQueryPlanStep> FractionalOffsetStep::deserialize(Deserialization & ctx)
 {
     Float32 offset;
-    readFloatText(offset, ctx.in);
+    readFloatBinary(offset, ctx.in);
 
     return std::make_unique<FractionalOffsetStep>(ctx.input_headers.front(), offset);
 }
