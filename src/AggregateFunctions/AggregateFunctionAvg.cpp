@@ -18,7 +18,7 @@ namespace
 bool allowType(const DataTypePtr& type) noexcept
 {
     const WhichDataType t(type);
-    return t.isInt() || t.isUInt() || t.isFloat() || t.isDecimal();
+    return t.isInt() || t.isUInt() || t.isFloat() || t.isDecimal() || t.isDate() || t.isDate32() || t.isDateTime() || t.isDateTime64();
 }
 
 AggregateFunctionPtr createAggregateFunctionAvg(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
@@ -37,6 +37,8 @@ AggregateFunctionPtr createAggregateFunctionAvg(const std::string & name, const 
     if (isDecimal(data_type))
         res.reset(createWithDecimalType<AggregateFunctionAvg>(
             *data_type, argument_types, getDecimalScale(*data_type)));
+    else if (isDate(data_type) || isDate32(data_type) || isDateTime(data_type) || isDateTime64(data_type))
+        res.reset(createWithDateTimeTypeAndResultType<AggregateFunctionAvg>(*data_type, argument_types));
     else
         res.reset(createWithNumericType<AggregateFunctionAvg>(*data_type, argument_types));
 
