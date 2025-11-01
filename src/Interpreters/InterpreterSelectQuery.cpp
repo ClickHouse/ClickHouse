@@ -3375,15 +3375,24 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
         }
 
         if (lim_info.is_limit_length_negative && lim_info.fractional_offset > 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Negative Limits can't have a fractional Offset");
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Negative LIMIT is not supported with fractional OFFSET");
 
         if (lim_info.is_limit_offset_negative && lim_info.fractional_limit > 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Fractional Limits can't have a negative Offset");
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Fractional LIMIT is not supported with negative OFFSET");
 
-        // only one of limit_length or fractional_limit will have a value not both
-        // only one of limit_offset or fractional_offset will have a value
-        // if fractional_limit has value is_limit_length_negative should be always false
-        // if fractional_offset has value is_limit_offset_negative should be always false
+        /// only one of limit_length or fractional_limit should have a value not both
+        if (lim_info.limit_length && lim_info.fractional_limit > 0)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "LIMIT can't have both absolute and fractional values non-zero");
+        /// only one of limit_offset or fractional_offset should have a value not both
+        if (lim_info.limit_offset && lim_info.fractional_offset > 0)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "OFFSET can't have both absolute and fractional values non-zero");
+
+        /// if fractional_limit has value is_limit_length_negative should be always false
+        if (lim_info.fractional_limit > 0 && lim_info.is_limit_length_negative)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "LIMIT can't have both negative and fractional values non-zero");
+        /// if fractional_offset has value is_limit_offset_negative should be always false
+        if (lim_info.fractional_offset > 0 && lim_info.is_limit_offset_negative)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "OFFSET can't have both negative and fractional values non-zero");
 
         if (!lim_info.is_limit_length_negative && !lim_info.is_limit_offset_negative
             && lim_info.fractional_offset == 0 && lim_info.fractional_limit == 0) [[likely]]
