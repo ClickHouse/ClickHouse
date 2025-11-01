@@ -13,6 +13,38 @@ from ci.praktika.utils import MetaClasses, Shell, Utils
 
 temp_dir = f"{Utils.cwd()}/ci/tmp"
 
+# Query to fetch failed tests from CIDB for a given PR.
+# Only returns tests from commit_sha/check_name combinations that have less than 10 failures.
+# This helps filter out commits with widespread test failures
+FAILED_TESTS_QUERY = """\
+select distinct test_name
+from (
+    select test_name, commit_sha, check_name
+    from checks
+    where 1
+        and pull_request_number = {PR_NUMBER}
+        and check_name LIKE 'Stateless%'
+        and check_status = 'failure'
+        and match(test_name, '^[0-9]{{5}}_')
+        and test_status = 'FAIL'
+        and check_start_time >= now() - interval 300 day
+    order by check_start_time desc
+    limit 10000
+)
+where (commit_sha, check_name) IN (
+    select commit_sha, check_name
+    from checks
+    where 1
+        and pull_request_number = {PR_NUMBER}
+        and check_name LIKE 'Stateless%'
+        and check_status = 'failure'
+        and test_status = 'FAIL'
+        and check_start_time >= now() - interval 300 day
+    group by commit_sha, check_name
+    having count(test_name) < 20
+)
+"""
+
 
 class JobStages(metaclass=MetaClasses.WithIter):
     INSTALL_CLICKHOUSE = "install"
@@ -24,14 +56,22 @@ class JobStages(metaclass=MetaClasses.WithIter):
 
 def parse_args():
     parser = argparse.ArgumentParser(description="ClickHouse Build Job")
-    parser.add_argument("--ch-path", help="Path to clickhouse binary", default=temp_dir)
+    parser.add_argument("--path", help="Path to clickhouse binary", default=temp_dir)
     parser.add_argument(
         "--options",
         help="Comma separated option(s): parallel|non-parallel|BATCH_NUM/BTATCH_TOT|..",
         default="",
     )
-    parser.add_argument("--param", help="Optional job start stage", default=None)
-    parser.add_argument("--test", help="Optional test name pattern", default="")
+    parser.add_argument(
+        "--test",
+        help="Test name patterns (space-separated)",
+        default=[],
+        nargs="+",
+        action="extend",
+    )
+    parser.add_argument("--count", help="Rerun count", default=None)
+    parser.add_argument("--workers", help="Workers count", default=None)
+    parser.add_argument("--param", help="Job start stage", default=None)
     return parser.parse_args()
 
 
@@ -64,8 +104,10 @@ def get_changed_tests(info: Info):
 def run_tests(
     batch_num: int,
     batch_total: int,
-    test="",
+    tests: list[str] = None,
     extra_args="",
+    rerun_count=1,
+    random_order=False,
 ):
     test_output_file = f"{temp_dir}/test_result.txt"
     if batch_num and batch_total:
@@ -80,21 +122,10 @@ def run_tests(
         extra_args += " --zookeeper"
     # Remove --report-logs-stats, it hides sanitizer errors in def reportLogStats(args): clickhouse_execute(args, "SYSTEM FLUSH LOGS")
     command = f"clickhouse-test --testname --check-zookeeper-session --hung-check --trace \
-                --capture-client-stacktrace --queries ./tests/queries --test-runs 1 \
+                --capture-client-stacktrace --queries ./tests/queries --test-runs {rerun_count} \
                 {extra_args} \
-                --queries ./tests/queries -- '{test}' | ts '%Y-%m-%d %H:%M:%S' \
+                --queries ./tests/queries {('--order=random' if random_order else '')} -- {' '.join(tests) if tests else ''} | ts '%Y-%m-%d %H:%M:%S' \
                 | tee -a \"{test_output_file}\""
-    if Path(test_output_file).exists():
-        Path(test_output_file).unlink()
-    Shell.run(command, verbose=True)
-
-
-def run_specific_tests(tests, runs=1, extra_args=""):
-    test_output_file = f"{temp_dir}/test_result.txt"
-    # Remove --report-logs-stats, it hides sanitizer errors in def reportLogStats(args): clickhouse_execute(args, "SYSTEM FLUSH LOGS")
-    command = f"clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --trace \
-        --capture-client-stacktrace --queries ./tests/queries --test-runs {runs} \
-        {extra_args} --order=random -- {' '.join(tests)} | ts '%Y-%m-%d %H:%M:%S' | tee -a \"{test_output_file}\""
     if Path(test_output_file).exists():
         Path(test_output_file).unlink()
     Shell.run(command, verbose=True)
@@ -130,6 +161,7 @@ def main():
     batch_num, total_batches = 0, 0
     config_installs_args = ""
     is_flaky_check = False
+    is_targeted_check = False
     is_bugfix_validation = False
     is_s3_storage = False
     is_azure_storage = False
@@ -148,7 +180,12 @@ def main():
         elif to in OPTIONS_TO_INSTALL_ARGUMENTS:
             print(f"NOTE: Enabled config option [{OPTIONS_TO_INSTALL_ARGUMENTS[to]}]")
             config_installs_args += f" {OPTIONS_TO_INSTALL_ARGUMENTS[to]}"
-        elif to.startswith("amd_") or to.startswith("arm_") or "flaky" in to:
+        elif (
+            to.startswith("amd_")
+            or to.startswith("arm_")
+            or "flaky" in to
+            or "targeted" in to
+        ):
             pass
         elif to in OPTIONS_TO_TEST_RUNNER_ARGUMENTS:
             print(
@@ -160,7 +197,9 @@ def main():
         if to in OPTIONS_TO_TEST_RUNNER_ARGUMENTS:
             runner_options += f" {OPTIONS_TO_TEST_RUNNER_ARGUMENTS[to]}"
 
-        if "flaky" in to:
+        if "targeted" in to:
+            is_targeted_check = True
+        elif "flaky" in to:
             is_flaky_check = True
         elif "BugfixValidation" in to:
             is_bugfix_validation = True
@@ -187,7 +226,20 @@ def main():
         else:
             pass
 
-    runner_options += f" --jobs {nproc}"
+    if args.workers:
+        print(f"Workers count set from --workers: {args.workers}")
+        runner_options += f" --jobs {args.workers}"
+    else:
+        print(f"Workers count set to optimal value: {nproc}")
+        runner_options += f" --jobs {nproc}"
+
+    rerun_count = 1
+    if args.count:
+        print(f"Rerun count set from --count: {args.count}")
+        rerun_count = args.count
+    elif is_flaky_check:
+        print(f"Rerun count set to 50 for flaky check")
+        rerun_count = 50
 
     if not info.is_local_run:
         # TODO: find a way to work with Azure secret so it's ok for local tests as well, for now keep azure disabled
@@ -203,27 +255,50 @@ def main():
         config_installs_args += " --encrypted-storage"
         runner_options += f" --encrypted-storage"
 
-    ch_path = args.ch_path
+    ch_path = args.path
 
     stop_watch = Utils.Stopwatch()
 
     stages = list(JobStages)
 
-    tests = []
-    if is_flaky_check or is_bugfix_validation:
+    tests = args.test
+    if is_flaky_check or is_bugfix_validation or is_targeted_check:
         if info.is_local_run:
             assert (
                 args.test
             ), "For running flaky or bugfix_validation check locally, test case name must be provided via --test"
-            tests = [args.test]
         else:
             tests = get_changed_tests(info)
         if tests:
             print(f"Test list: [{tests}]")
-        else:
+        elif not is_targeted_check:
             # early exit
             Result.create_from(
                 status=Result.Status.SKIPPED, info="No tests to run"
+            ).complete_job()
+
+    if is_targeted_check:
+        from ci.praktika.cidb import CIDB
+        from ci.praktika.settings import Settings
+
+        cidb = CIDB(url=Settings.CI_DB_READ_URL, user="play", passwd="")
+        query = FAILED_TESTS_QUERY.format(PR_NUMBER=info.pr_number)
+        query_result = cidb.query(query, log_level="")
+        # Parse test names from the query result
+        for line in query_result.strip().split("\n"):
+            if line.strip():
+                # Split by whitespace and get the first column (test_name)
+                parts = line.split()
+                if parts:
+                    test_name = parts[0]
+                    tests.append(test_name)
+        print(f"Parsed {len(tests)} test names: {tests}")
+        tests = list(set(tests))
+        if not tests:
+            # early exit
+            Result.create_from(
+                status=Result.Status.SKIPPED,
+                info="No failed tests found from previous runs",
             ).complete_job()
 
     stage = args.param or JobStages.INSTALL_CLICKHOUSE
@@ -275,7 +350,7 @@ def main():
             CH.set_random_timezone,
         ]
 
-        if is_flaky_check:
+        if is_flaky_check or is_targeted_check:
             commands.append(CH.enable_thread_fuzzer_config)
         elif is_bugfix_validation:
             if Utils.is_arm():
@@ -355,17 +430,14 @@ def main():
         stop_watch_ = Utils.Stopwatch()
         step_name = "Tests"
         print(step_name)
-        if not is_flaky_check and not is_bugfix_validation:
-            run_tests(
-                batch_num=batch_num,
-                batch_total=total_batches,
-                test=args.test,
-                extra_args=runner_options,
-            )
-        else:
-            run_specific_tests(
-                tests=tests, runs=50 if is_flaky_check else 1, extra_args=runner_options
-            )
+        run_tests(
+            batch_num=batch_num,
+            batch_total=total_batches,
+            tests=tests,
+            extra_args=runner_options,
+            random_order=is_flaky_check or is_targeted_check or is_bugfix_validation,
+            rerun_count=rerun_count,
+        )
 
         if not info.is_local_run:
             CH.stop_log_exports()

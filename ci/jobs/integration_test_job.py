@@ -20,6 +20,39 @@ MAX_CPUS_PER_WORKER = 4
 MAX_MEM_PER_WORKER = 7
 
 
+# Query to fetch failed tests from CIDB for a given PR.
+# Only returns tests from commit_sha/check_name combinations that have less than 10 failures.
+# This helps filter out commits with widespread test failures
+FAILED_TESTS_QUERY = """\
+select distinct test_name
+from (
+    select test_name, commit_sha, check_name
+    from checks
+    where 1
+        and pull_request_number = {PR_NUMBER}
+        and check_name LIKE 'Integration%'
+        and check_status = 'failure'
+        and test_name LIKE 'test_%'
+        and test_status = 'FAIL'
+        and check_start_time >= now() - interval 300 day
+    order by check_start_time desc
+    limit 10000
+)
+where (commit_sha, check_name) IN (
+    select commit_sha, check_name
+    from checks
+    where 1
+        and pull_request_number = {PR_NUMBER}
+        and check_name LIKE 'Integration%'
+        and check_status = 'failure'
+        and test_status = 'FAIL'
+        and check_start_time >= now() - interval 300 day
+    group by commit_sha, check_name
+    having count(test_name) < 20
+)
+"""
+
+
 def _start_docker_in_docker():
     with open("./ci/tmp/docker-in-docker.log", "w") as log_file:
         dockerd_proc = subprocess.Popen(
@@ -147,6 +180,7 @@ def main():
     is_bugfix_validation = False
     is_parallel = False
     is_sequential = False
+    is_targeted_check = False
     java_path = Shell.get_output(
         "update-alternatives --config java | sed -n 's/.*(providing \/usr\/bin\/java): //p'",
         verbose=True,
@@ -173,6 +207,8 @@ def main():
             is_sequential = True
         elif "bugfix" in to.lower() or "validation" in to.lower():
             is_bugfix_validation = True
+        elif "targeted" in to:
+            is_targeted_check = True
         else:
             assert False, f"Unknown job option [{to}]"
 
@@ -180,6 +216,8 @@ def main():
         repeat_option = (
             f"--count {args.count or FLAKY_CHECK_TEST_REPEAT_COUNT} --random-order"
         )
+    elif is_targeted_check:
+        repeat_option = f"--count 5 --random-order"
 
     if args.workers:
         workers = args.workers
@@ -187,11 +225,17 @@ def main():
         workers = min(ncpu // MAX_CPUS_PER_WORKER, mem_gb // MAX_MEM_PER_WORKER) or 1
 
     changed_test_modules = []
-    if is_bugfix_validation or is_flaky_check:
-        changed_files = info.get_changed_files()
-        for file in changed_files:
-            if file.startswith("tests/integration/test") and file.endswith(".py"):
-                changed_test_modules.append(file.removeprefix("tests/integration/"))
+    if is_bugfix_validation or is_flaky_check or is_targeted_check:
+        if info.is_local_run:
+            assert (
+                args.test
+            ), "--test must be provided for flaky or bugfix job flavor with local run"
+        else:
+            # TODO: reduce scope to modified test cases instead of entire modules
+            changed_files = info.get_changed_files()
+            for file in changed_files:
+                if file.startswith("tests/integration/test") and file.endswith(".py"):
+                    changed_test_modules.append(file.removeprefix("tests/integration/"))
 
     if is_bugfix_validation:
         if Utils.is_arm():
@@ -209,6 +253,30 @@ def main():
                 verbose=True,
                 strict=True,
             )
+
+    targeted_tests = []
+    if is_targeted_check:
+        from ci.praktika.cidb import CIDB
+        from ci.praktika.settings import Settings
+
+        cidb = CIDB(url=Settings.CI_DB_READ_URL, user="play", passwd="")
+        query = FAILED_TESTS_QUERY.format(PR_NUMBER=info.pr_number)
+        query_result = cidb.query(query, log_level="")
+        # Parse test names from the query result
+        for line in query_result.strip().split("\n"):
+            if line.strip():
+                test_name = line.strip()
+                targeted_tests.append(
+                    test_name.split("[")[0]
+                )  # remove parametrization - does not work with test repeat with --count
+        print(f"Parsed {len(targeted_tests)} test names: {targeted_tests}")
+        targeted_tests = list(set(targeted_tests))
+        if not targeted_tests:
+            # early exit
+            Result.create_from(
+                status=Result.Status.SKIPPED,
+                info="No failed tests found from previous runs",
+            ).complete_job()
 
     clickhouse_path = f"{Utils.cwd()}/ci/tmp/clickhouse"
     clickhouse_server_config_dir = f"{Utils.cwd()}/programs/server"
@@ -246,21 +314,11 @@ def main():
     Shell.check("docker info > /dev/null", verbose=True, strict=True)
 
     parallel_test_modules, sequential_test_modules = tests_to_run(
-        batch_num, total_batches, args.test, workers
+        batch_num,
+        total_batches,
+        args.test or targeted_tests or changed_test_modules,
+        workers,
     )
-
-    if is_bugfix_validation or is_flaky_check:
-        # TODO: reduce scope to modified test cases instead of entire modules
-        sequential_test_modules = [
-            test_file
-            for test_file in changed_test_modules
-            if test_file in sequential_test_modules
-        ]
-        parallel_test_modules = [
-            test_file
-            for test_file in changed_test_modules
-            if test_file in parallel_test_modules
-        ]
 
     if is_sequential:
         parallel_test_modules = []
@@ -294,7 +352,10 @@ def main():
     has_error = False
     error_info = []
 
-    module_repeat_cnt = 1 if not is_flaky_check else FLAKY_CHECK_MODULE_REPEAT_COUNT
+    module_repeat_cnt = 1
+    if is_flaky_check:
+        module_repeat_cnt = FLAKY_CHECK_MODULE_REPEAT_COUNT
+
     if parallel_test_modules:
         for attempt in range(module_repeat_cnt):
             test_result_parallel = Result.from_pytest_run(
