@@ -118,22 +118,29 @@ def run_fuzzer(fuzzer: str, timeout: int):
 
     logging.info("...will execute merge: '%s'%s", cmd_line, with_fuzzer_args)
 
+    out_path = f"{results_path}/out_mini.txt"
+    stdout_path = f"{results_path}/stdout_mini.txt"
+
     stopwatch = Stopwatch()
     try:
-        subprocess.run(
-            cmd_line.split(),
-            stdin=subprocess.DEVNULL,
-            text=True,
-            check=True,
-            shell=False,
-            errors="replace",
-            env=env,
-        )
+        with open(out_path, "wb") as out, open(stdout_path, "wb") as stdout:
+            subprocess.run(
+                cmd_line.split(),
+                stdin=subprocess.DEVNULL,
+                stdout=stdout,
+                stderr=out,
+                text=True,
+                check=True,
+                shell=False,
+                errors="replace",
+                env=env,
+            )
     except subprocess.CalledProcessError:
         logging.info("Fail running merge %s", fuzzer)
         return
     except Exception as e:
         logging.info("Unexpected exception running merge %s: %s", fuzzer, e)
+        return
 
     orig_corpus_size = len(list(active_corpus_dir.glob("*")))
     mini_corpus_size = len(list(mini_corpus_dir.glob("*")))
