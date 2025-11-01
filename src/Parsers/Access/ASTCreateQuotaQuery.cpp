@@ -10,7 +10,8 @@ namespace DB
 {
 namespace
 {
-    void formatKeyType(const QuotaKeyType & key_type, WriteBuffer & ostr, const IAST::FormatSettings &)
+    void formatKeyType(const QuotaKeyType & key_type, const std::optional<MaskBits> & ipv4_prefix_bits, 
+                       const std::optional<MaskBits> & ipv6_prefix_bits, WriteBuffer & ostr, const IAST::FormatSettings &)
     {
         const auto & type_info = QuotaKeyTypeInfo::get(key_type);
         if (key_type == QuotaKeyType::NONE)
@@ -34,6 +35,15 @@ namespace
         }
 
         ostr << type_info.name;
+
+        // Format prefix bits for IP_ADDRESS key type
+        if (key_type == QuotaKeyType::IP_ADDRESS)
+        {
+            if (ipv4_prefix_bits)
+                ostr << " IPV4_PREFIX_BITS " << static_cast<UInt64>(*ipv4_prefix_bits);
+            if (ipv6_prefix_bits)
+                ostr << " IPV6_PREFIX_BITS " << static_cast<UInt64>(*ipv6_prefix_bits);
+        }
     }
 
 
@@ -174,7 +184,7 @@ void ASTCreateQuotaQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & 
         formatRenameTo(new_name, ostr, settings);
 
     if (key_type)
-        formatKeyType(*key_type, ostr, settings);
+        formatKeyType(*key_type, ipv4_prefix_bits, ipv6_prefix_bits, ostr, settings);
 
     formatIntervalsWithLimits(all_limits, ostr, settings);
 
