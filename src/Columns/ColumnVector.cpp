@@ -1179,6 +1179,7 @@ template class ColumnVector<Float64>;
 template class ColumnVector<UUID>;
 template class ColumnVector<IPv4>;
 template class ColumnVector<IPv6>;
+template class ColumnVector<MacAddress>;
 
 INSTANTIATE_INDEX_TEMPLATE_IMPL(ColumnVector)
 /// Used by ColumnVariant.cpp
