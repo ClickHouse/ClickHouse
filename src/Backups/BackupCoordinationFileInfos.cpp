@@ -194,7 +194,7 @@ void BackupCoordinationFileInfos::prepare() const
                 if (inserted)
                 {
                     /// Found a new file.
-                    info.data_file_name = info.file_name;
+                    info.data_file_name = data_file_name_gen->generate(info);
                     info.data_file_index = i;
                     ++num_files;
                     total_size_of_files += info.size - info.base_size;
