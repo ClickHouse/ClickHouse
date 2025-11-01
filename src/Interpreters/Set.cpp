@@ -7,6 +7,8 @@
 #include <Columns/ColumnTuple.h>
 
 #include <Common/typeid_cast.h>
+#include <Common/logger_useful.h>
+
 #include <Columns/ColumnDecimal.h>
 
 #include <DataTypes/DataTypeDateTime64.h>
@@ -627,6 +629,19 @@ void Set::checkTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) c
 MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_)
     : has_all_keys(set_elements.size() == indexes_mapping_.size()), indexes_mapping(std::move(indexes_mapping_))
 {
+   // std::cerr << "MergeTreeSetIndex::MergeTreeSetIndex "
+    //     << set_elements.size() << ' ' << indexes_mapping.size() << std::endl;
+    // for (const auto & vv : indexes_mapping)
+    //     std::cerr << vv.key_index << ' ' << vv.tuple_index << std::endl;
+
+
+    LOG_TRACE(&Poco::Logger::get("MergeTreeSetIndex"), "set_elements.size() {} , indexes_mapping.size() {}", set_elements.size(), indexes_mapping.size());
+    for (const auto & vv : indexes_mapping)
+        LOG_TRACE(&Poco::Logger::get("MergeTreeSetIndex"), "vv.key_index {}, vv.tuple_index {}, functions size {}", vv.key_index, vv.tuple_index, vv.functions.size());
+    for (const auto & se : set_elements)
+        LOG_TRACE(&Poco::Logger::get("MergeTreeSetIndex"), "set_element name {}, size {}", se->getName(), se->size());
+
+
     ::sort(indexes_mapping.begin(), indexes_mapping.end(),
         [](const KeyTuplePositionMapping & l, const KeyTuplePositionMapping & r)
         {
@@ -639,6 +654,10 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
         {
             return l.key_index == r.key_index;
         }), indexes_mapping.end());
+
+    for (const auto & vv : indexes_mapping)
+        LOG_TRACE(&Poco::Logger::get("MergeTreeSetIndex"), "After sort/erase vv.key_index {}, vv.tuple_index {}, functions size {}", vv.key_index, vv.tuple_index, vv.functions.size());
+
 
     size_t tuple_size = indexes_mapping.size();
     ordered_set.resize(tuple_size);
@@ -653,7 +672,10 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
         String column_name = "_" + toString(i);
         block_to_sort.insert({ordered_set[i], nullptr, column_name});
         sort_description.emplace_back(column_name, 1, 1);
+        LOG_TRACE(&Poco::Logger::get("MergeTreeSetIndex"), "sort_description column {}", column_name);
     }
+
+    LOG_TRACE(&Poco::Logger::get("MergeTreeSetIndex"), "block_to_sort.dumpStructure() {}", block_to_sort.dumpStructure());
 
     sortBlock(block_to_sort, sort_description);
 

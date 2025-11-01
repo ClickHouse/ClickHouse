@@ -26,6 +26,7 @@
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/MortonUtils.h>
 #include <Common/typeid_cast.h>
+#include <Common/logger_useful.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
@@ -1381,12 +1382,19 @@ bool KeyCondition::tryPrepareSetIndex(
       * we need to convert set column to primary key column.
       */
     auto set_columns = prepared_set->getSetElements();
+
+    for (const auto & a_set_column : set_columns)
+        LOG_TRACE(&Poco::Logger::get("KeyCondition"), "(1) set_column size {}, name {}", a_set_column->size(), a_set_column->getName());
+
+
+
     auto set_types = future_set->getTypes();
     {
         Columns new_columns;
         DataTypes new_types;
         while (set_columns.size() < left_args_count) /// If we have an unpacked tuple inside, we unpack it
         {
+            LOG_TRACE(&Poco::Logger::get("KeyCondition"), "unpacked tuple inside");
             bool has_tuple = false;
             for (size_t i = 0; i < set_columns.size(); ++i)
             {
@@ -1446,6 +1454,7 @@ bool KeyCondition::tryPrepareSetIndex(
         if (canBeSafelyCast(set_element_type, key_column_type))
         {
             transformed_set_columns[set_element_index] = castColumn({set_column, set_element_type, {}}, key_column_type);
+            LOG_TRACE(&Poco::Logger::get("KeyCondition"), "canBeSafelyCast");
             continue;
         }
 
@@ -1481,14 +1490,24 @@ bool KeyCondition::tryPrepareSetIndex(
             // Reassign set_column after we have obtained necessary references
             set_column = nested_column;
         }
+        LOG_TRACE(&Poco::Logger::get("KeyCondition"), "(2) set_column size {}", set_column->size());
 
         ColumnPtr nullable_set_column = castColumnAccurateOrNull({set_column, set_element_type, {}}, key_column_type);
         const auto * nullable_set_column_typed = typeid_cast<const ColumnNullable *>(nullable_set_column.get());
         if (!nullable_set_column_typed)
             return false;
 
+        if (set_columns.size() > 1)
+        {
+            // We cannot afford filtering rows because
+            //   sortBlock relies on equal number of rows in all columns
+            transformed_set_columns[set_element_index] = std::move(nullable_set_column);
+            continue;
+        }
+
         const NullMap & nullable_set_column_null_map = nullable_set_column_typed->getNullMapData();
         size_t nullable_set_column_null_map_size = nullable_set_column_null_map.size();
+        LOG_TRACE(&Poco::Logger::get("KeyCondition"), "nullable_set_column_null_map_size {}", nullable_set_column_null_map_size);
 
         IColumn::Filter filter(nullable_set_column_null_map_size);
 
@@ -1503,6 +1522,7 @@ bool KeyCondition::tryPrepareSetIndex(
             }
 
             set_column = nullable_set_column_typed->filter(filter, 0);
+            LOG_TRACE(&Poco::Logger::get("KeyCondition"), "(2.3) set_column size {}", set_column->size());
         }
         else
         {
@@ -1510,12 +1530,18 @@ bool KeyCondition::tryPrepareSetIndex(
                 filter[i] = !nullable_set_column_null_map[i];
 
             set_column = nullable_set_column_typed->getNestedColumn().filter(filter, 0);
+            // set_column = nullable_set_column;
+            LOG_TRACE(&Poco::Logger::get("KeyCondition"), "(2.4) set_column size {}", set_column->size());
         }
 
+        LOG_TRACE(&Poco::Logger::get("KeyCondition"), "(2.5) set_column size {}", set_column->size());
         transformed_set_columns[set_element_index] = std::move(set_column);
     }
 
     set_columns = std::move(transformed_set_columns);
+
+    for (const auto & a_set_column : set_columns)
+        LOG_TRACE(&Poco::Logger::get("KeyCondition"), "(3) set_column size {}, name {}", a_set_column->size(), a_set_column->getName());
 
     out.set_index = std::make_shared<MergeTreeSetIndex>(set_columns, std::move(indexes_mapping));
 
