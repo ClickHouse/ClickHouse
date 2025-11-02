@@ -338,7 +338,7 @@ void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableCo
     typeid_cast<ColumnUInt8 &>(*columns[i++]).getData().push_back(client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY);
 
     columns[i++]->insertData(client_info.current_user);
-    columns[i++]->insertData(client_info.auth_user);
+    columns[i++]->insertData(client_info.authenticated_user);
     columns[i++]->insertData(client_info.current_query_id);
     columns[i++]->insertData(IPv6ToBinary(client_info.current_address->host()).data(), 16);
     typeid_cast<ColumnUInt16 &>(*columns[i++]).getData().push_back(client_info.current_address->port());

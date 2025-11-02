@@ -18,7 +18,7 @@ public:
     static constexpr auto name = "authUser";
     static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionAuthUser>(context->getClientInfo().auth_user);
+        return std::make_shared<FunctionAuthUser>(context->getClientInfo().authenticated_user);
     }
 
     explicit FunctionAuthUser(const String & user_name_) : user_name{user_name_}

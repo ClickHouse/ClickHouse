@@ -1,62 +1,39 @@
 #include <Parsers/Access/ParserExecuteAsQuery.h>
-#include <Parsers/Access/ASTRolesOrUsersSet.h>
+
 #include <Parsers/Access/ASTExecuteAsQuery.h>
-#include <Parsers/Access/ParserRolesOrUsersSet.h>
-#include <Parsers/ParserSelectWithUnionQuery.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/Access/ASTUserNameWithHost.h>
+#include <Parsers/Access/ParserUserNameWithHost.h>
 #include <Parsers/CommonParsers.h>
 
 
 namespace DB
 {
-namespace
+
+ParserExecuteAsQuery::ParserExecuteAsQuery(IParser & subquery_parser_)
+    : subquery_parser(subquery_parser_)
 {
-    bool parseTargetUser(IParserBase::Pos & pos, Expected & expected, std::shared_ptr<ASTRolesOrUsersSet> & targetuser)
-    {
-        return IParserBase::wrapParseImpl(pos, [&]
-        {
-            ASTPtr ast;
-            ParserRolesOrUsersSet user_p;
-            user_p.allowUsers();
-            if (!user_p.parse(pos, ast, expected))
-                return false;
-
-            targetuser = typeid_cast<std::shared_ptr<ASTRolesOrUsersSet>>(ast);
-            targetuser->allow_roles = false;
-            return true;
-        });
-    }
 }
-
 
 bool ParserExecuteAsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    std::shared_ptr<ASTRolesOrUsersSet> targetuser;
+    if (!ParserKeyword{Keyword::EXECUTE_AS}.ignore(pos, expected))
+        return false;
 
-    if (ParserKeyword{Keyword::EXECUTE_AS}.ignore(pos, expected))
-    {
-        if (!parseTargetUser(pos, expected, targetuser))
-            return false;
-    }
-    else
+    ASTPtr target_user;
+    if (!ParserUserNameWithHost(/*allow_query_parameter=*/ false).parse(pos, target_user, expected))
         return false;
 
     auto query = std::make_shared<ASTExecuteAsQuery>();
     node = query;
 
-    query->targetuser = targetuser;
+    query->set(query->target_user, target_user);
 
     /// support 1) EXECUTE AS <user1>  2) EXECUTE AS <user1> SELECT ...
 
-    if (ParserKeyword{Keyword::SELECT}.checkWithoutMoving(pos, expected))
-    {
-        ParserSelectWithUnionQuery select_p;
-        ASTPtr select;
+    ASTPtr subquery;
+    if (subquery_parser.parse(pos, subquery, expected))
+        query->set(query->subquery, subquery);
 
-        if (!select_p.parse(pos, select, expected))
-            return false;
-        query->set(query->select, select);
-    }
     return true;
 }
 
