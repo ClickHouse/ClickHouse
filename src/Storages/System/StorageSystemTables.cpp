@@ -31,6 +31,7 @@
 
 #include <boost/range/adaptor/map.hpp>
 
+#include <unordered_set>
 
 namespace DB
 {
@@ -70,12 +71,45 @@ ColumnPtr getFilteredDatabases(const ActionsDAG::Node * predicate, ContextPtr co
 {
     MutableColumnPtr column = ColumnString::create();
 
+    const auto access = context->getAccess();
+    const bool need_to_check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
+
+    /// Optimization: For users with granular permissions, extract granted databases from access rights
+    /// to avoid calling isGranted() for each database (which is expensive for granular grants)
+    std::unordered_set<std::string> granted_databases;
+    bool has_wildcard_grant = false;
+
+    if (need_to_check_access_for_databases)
+    {
+        auto access_rights = access->getAccessRights();
+        auto elements = access_rights->getElements();
+
+        for (const auto & element : elements)
+        {
+            if (element.access_flags.contains(AccessType::SHOW_TABLES))
+            {
+                if (element.anyDatabase())
+                {
+                    has_wildcard_grant = true;
+                    break;
+                }
+                if (!element.database.empty())
+                    granted_databases.insert(element.database);
+            }
+        }
+    }
+
     const auto & settings = context->getSettingsRef();
     const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = settings[Setting::show_data_lake_catalogs_in_system_tables]});
     for (const auto & database_name : databases | boost::adaptors::map_keys)
     {
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
             continue; /// We don't want to show the internal database for temporary tables in system.tables
+
+        /// Check permission: either no check needed, wildcard grant, or database is in granted set
+        if (need_to_check_access_for_databases && !has_wildcard_grant &&
+            granted_databases.find(database_name) == granted_databases.end())
+            continue;
 
         column->insert(database_name);
     }
@@ -264,6 +298,42 @@ public:
         tables.reserve(size);
         for (size_t idx = 0; idx < size; ++idx)
             tables.insert(tables_->getDataAt(idx).toString());
+
+        /// Optimization: Pre-build granted tables map to avoid expensive isGranted() calls
+        const auto access = context->getAccess();
+        const bool need_to_check_access = !access->isGranted(AccessType::SHOW_TABLES);
+
+        if (need_to_check_access)
+        {
+            auto access_rights = access->getAccessRights();
+            auto elements = access_rights->getElements();
+
+            for (const auto & element : elements)
+            {
+                if (element.access_flags.contains(AccessType::SHOW_TABLES))
+                {
+                    if (element.anyDatabase())
+                    {
+                        has_wildcard_grant = true;
+                        break;
+                    }
+
+                    if (!element.database.empty())
+                    {
+                        if (element.anyTable())
+                        {
+                            /// Grant on all tables in a database: db.*
+                            granted_databases_all_tables.insert(element.database);
+                        }
+                        else if (!element.table.empty())
+                        {
+                            /// Grant on specific table: db.table
+                            granted_tables[element.database].insert(element.table);
+                        }
+                    }
+                }
+            }
+        }
     }
 
     String getName() const override { return "Tables"; }
@@ -469,8 +539,21 @@ protected:
                 if (!tables.contains(table_name))
                     continue;
 
-                if (need_to_check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
-                    continue;
+                /// Optimized permission check using pre-built granted tables map
+                if (need_to_check_access_for_tables)
+                {
+                    if (!has_wildcard_grant)
+                    {
+                        /// Check if database has wildcard grant (db.*)
+                        if (granted_databases_all_tables.find(database_name) == granted_databases_all_tables.end())
+                        {
+                            /// Check if specific table is granted (db.table)
+                            auto db_it = granted_tables.find(database_name);
+                            if (db_it == granted_tables.end() || db_it->second.find(table_name) == db_it->second.end())
+                                continue;
+                        }
+                    }
+                }
 
                 StoragePtr table = nullptr;
                 TableLockHolder lock;
@@ -864,6 +947,11 @@ private:
     bool done = false;
     DatabasePtr database;
     std::string database_name;
+
+    /// Optimization: Pre-computed granted tables to avoid expensive isGranted() calls
+    bool has_wildcard_grant = false;
+    std::unordered_set<std::string> granted_databases_all_tables;  /// Databases with db.* grants
+    std::unordered_map<std::string, std::unordered_set<std::string>> granted_tables;  /// db -> {table1, table2, ...}
 };
 
 class ReadFromSystemTables : public SourceStepWithFilter
