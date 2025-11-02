@@ -37,7 +37,6 @@
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
 
-#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
@@ -669,14 +668,15 @@ void QueryAnalyzer::convertLimitOffsetExpression(QueryTreeNodePtr & expression_n
     }
 
     {
-        Field converted_value = convertFieldToType(limit_offset_constant_node->getValue(), DataTypeDecimal32(8, 7));
+        Field converted_value = convertFieldToType(limit_offset_constant_node->getValue(), DataTypeFloat64());
         if (!converted_value.isNull())
         {
-            auto value = converted_value.safeGet<Decimal32>().getValue() / 10000000.0;
+            auto value = converted_value.safeGet<Float64>();
             if (value < 1 && value > 0)
             {
-                auto result_constant_node = std::make_shared<ConstantNode>(Field(Float32(value)), std::make_shared<DataTypeFloat32>());
+                auto result_constant_node = std::make_shared<ConstantNode>(Field(value), std::make_shared<DataTypeFloat64>());
                 result_constant_node->getSourceExpression() = limit_offset_constant_node->getSourceExpression();
+
                 expression_node = std::move(result_constant_node);
                 return;
             }
@@ -684,7 +684,7 @@ void QueryAnalyzer::convertLimitOffsetExpression(QueryTreeNodePtr & expression_n
     }
 
     throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION,
-        "The value {} of {} expression is not representable as UInt64 or Int64 or Float32 range [0 - 1)",
+        "The value {} of {} expression is not representable as UInt64 or Int64 or Float64 range [0 - 1)",
         applyVisitor(FieldVisitorToString(), limit_offset_constant_node->getValue()) , expression_description);
 }
 

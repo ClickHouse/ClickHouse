@@ -12,8 +12,8 @@ class FractionalLimitStep : public ITransformingStep
 public:
     FractionalLimitStep(
         const SharedHeader & input_header_,
-        Float32 limit_fraction_,
-        Float32 offset_fraction_,
+        Float64 limit_fraction_,
+        Float64 offset_fraction_,
         UInt64 offset = 0,
         bool with_ties_ = false, /// Limit with ties.
         SortDescription description_ = {});
@@ -25,7 +25,7 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
-    Float32 getLimitFraction() const { return limit_fraction; }
+    Float64 getLimitFraction() const { return limit_fraction; }
 
     bool withTies() const { return with_ties; }
 
@@ -39,8 +39,8 @@ public:
 private:
     void updateOutputHeader() override { output_header = input_headers.front(); }
 
-    Float32 limit_fraction;
-    Float32 offset_fraction;
+    Float64 limit_fraction;
+    Float64 offset_fraction;
 
     UInt64 offset;
 

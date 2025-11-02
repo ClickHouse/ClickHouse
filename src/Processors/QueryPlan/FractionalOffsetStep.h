@@ -10,7 +10,7 @@ namespace DB
 class FractionalOffsetStep : public ITransformingStep
 {
 public:
-    FractionalOffsetStep(const SharedHeader & input_header_, Float32 fractional_offset_);
+    FractionalOffsetStep(const SharedHeader & input_header_, Float64 fractional_offset_);
 
     String getName() const override { return "FractionalOffset"; }
 
@@ -27,7 +27,7 @@ public:
 private:
     void updateOutputHeader() override { output_header = input_headers.front(); }
 
-    Float32 fractional_offset;
+    Float64 fractional_offset;
 };
 
 }

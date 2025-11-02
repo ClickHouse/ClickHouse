@@ -17,8 +17,8 @@ namespace ErrorCodes
 
 FractionalLimitTransform::FractionalLimitTransform(
     SharedHeader header_,
-    Float32 limit_fraction_,
-    Float32 offset_fraction_,
+    Float64 limit_fraction_,
+    Float64 offset_fraction_,
     UInt64 offset_,
     size_t num_streams,
     bool with_ties_,

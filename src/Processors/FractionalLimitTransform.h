@@ -25,8 +25,8 @@ namespace DB
 class FractionalLimitTransform final : public IProcessor
 {
 private:
-    Float32 limit_fraction;
-    Float32 offset_fraction;
+    Float64 limit_fraction;
+    Float64 offset_fraction;
 
     // Variables to hold real LIMIT and OFFSET values to
     // use after (input_rows_cnt * fraction) calculation.
@@ -76,8 +76,8 @@ private:
 public:
     FractionalLimitTransform(
         SharedHeader header_,
-        Float32 limit_fraction_,
-        Float32 offset_fraction_,
+        Float64 limit_fraction_,
+        Float64 offset_fraction_,
         UInt64 offset_ = 0,
         size_t num_streams = 1,
         bool with_ties_ = false,

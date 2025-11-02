@@ -11,7 +11,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-FractionalOffsetTransform::FractionalOffsetTransform(const Block & header_, Float32 fractional_offset_, size_t num_streams)
+FractionalOffsetTransform::FractionalOffsetTransform(const Block & header_, Float64 fractional_offset_, size_t num_streams)
     : IProcessor(InputPorts(num_streams, header_), OutputPorts(num_streams, header_))
     , fractional_offset(fractional_offset_)
 {

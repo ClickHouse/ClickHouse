@@ -32,8 +32,8 @@ static ITransformingStep::Traits getTraits()
 
 FractionalLimitStep::FractionalLimitStep(
     const SharedHeader & input_header_,
-    Float32 limit_fraction_,
-    Float32 offset_fraction_,
+    Float64 limit_fraction_,
+    Float64 offset_fraction_,
     UInt64 offset_,
     bool with_ties_,
     SortDescription description_)
@@ -93,8 +93,8 @@ std::unique_ptr<IQueryPlanStep> FractionalLimitStep::deserialize(Deserialization
     readIntBinary(flags, ctx.in);
     bool with_ties = bool(flags & 1);
 
-    Float32 limit_fraction;
-    Float32 offset_fraction;
+    Float64 limit_fraction;
+    Float64 offset_fraction;
     UInt64 offset;
 
     readFloatBinary(limit_fraction, ctx.in);

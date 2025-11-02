@@ -360,8 +360,8 @@ void extendQueryContextAndStoragesLifetime(QueryPlan & query_plan, const Planner
     }
 }
 
-/// The LIMIT/OFFSET expression value can be either UInt64 or Float32, negative or positive.
-std::tuple<UInt64, Float32, bool> getLimitOffsetValue(const Field & field)
+/// The LIMIT/OFFSET expression value can be either UInt64 or Float64, negative or positive.
+std::tuple<UInt64, Float64, bool> getLimitOffsetValue(const Field & field)
 {
     // First check if it is nonnegative limit since they are more common
     const Field converted_value_uint = convertFieldToType(field, DataTypeUInt64());
@@ -383,13 +383,13 @@ std::tuple<UInt64, Float32, bool> getLimitOffsetValue(const Field & field)
         return {magnitude, 0, true};
     }
 
-    Field converted_value_float = convertFieldToType(field, DataTypeFloat32());
+    Field converted_value_float = convertFieldToType(field, DataTypeFloat64());
     if (!converted_value_float.isNull())
-        return {0, converted_value_float.safeGet<Float32>(), false};
+        return {0, converted_value_float.safeGet<Float64>(), false};
 
     throw Exception(
         ErrorCodes::INVALID_LIMIT_EXPRESSION,
-        "The value {} of LIMIT/OFFSET expression is not representable as UInt64 or Int64 or Float32 [0.1 to 0.9]",
+        "The value {} of LIMIT/OFFSET expression is not representable as UInt64 or Int64 or Float64 range [0 - 1)",
         applyVisitor(FieldVisitorToString(), field));
 }
 
@@ -456,12 +456,12 @@ public:
         if (query_node.hasLimitBy())
         {
             bool is_limitby_limit_negative = false;
-            Float32 fractional_limitby_limit = 0;
+            Float64 fractional_limitby_limit = 0;
             std::tie(std::ignore, fractional_limitby_limit, is_limitby_limit_negative)
                 = getLimitOffsetValue(query_node.getLimitByLimit()->as<ConstantNode &>().getValue());
 
             bool is_limitby_offset_negative = false;
-            Float32 fractional_limitby_offset = 0;
+            Float64 fractional_limitby_offset = 0;
             if (query_node.hasLimitByOffset())
                 std::tie(std::ignore, fractional_limitby_offset, is_limitby_offset_negative)
                     = getLimitOffsetValue(query_node.getLimitByOffset()->as<ConstantNode &>().getValue());
@@ -490,8 +490,8 @@ public:
     SortDescription sort_description;
     UInt64 limit_length = 0;
     UInt64 limit_offset = 0;
-    Float32 fractional_limit = 0;
-    Float32 fractional_offset = 0;
+    Float64 fractional_limit = 0;
+    Float64 fractional_offset = 0;
     UInt64 partial_sorting_limit = 0;
     bool is_limit_length_negative = false;
     bool is_limit_offset_negative = false;
@@ -1326,8 +1326,8 @@ void addLimitStep(
 
     UInt64 limit_length = query_analysis_result.limit_length;
     UInt64 limit_offset = query_analysis_result.limit_offset;
-    Float32 fractional_limit = query_analysis_result.fractional_limit;
-    Float32 fractional_offset = query_analysis_result.fractional_offset;
+    Float64 fractional_limit = query_analysis_result.fractional_limit;
+    Float64 fractional_offset = query_analysis_result.fractional_offset;
     bool is_limit_length_negative = query_analysis_result.is_limit_length_negative;
     bool is_limit_offset_negative = query_analysis_result.is_limit_offset_negative;
 

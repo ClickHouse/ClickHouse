@@ -19,7 +19,7 @@ namespace DB
 class FractionalOffsetTransform final : public IProcessor
 {
 private:
-    Float32 fractional_offset;
+    Float64 fractional_offset;
 
     /// Variable to hold real OFFSET value to use
     /// after (input_rows_cnt * offset_fraction) calculation.
@@ -57,7 +57,7 @@ private:
     std::deque<CacheEntity> chunks_cache;
 
 public:
-    FractionalOffsetTransform(const Block & header_, Float32 fractional_offset_, size_t num_streams = 1);
+    FractionalOffsetTransform(const Block & header_, Float64 fractional_offset_, size_t num_streams = 1);
 
     String getName() const override { return "FractionalOffset"; }
 

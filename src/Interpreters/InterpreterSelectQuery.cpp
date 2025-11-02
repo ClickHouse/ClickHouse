@@ -4,11 +4,9 @@
 #include <Access/AccessControl.h>
 
 #include <Core/Block.h>
-#include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeInterval.h>
 
-#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -106,7 +104,6 @@
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/IJoin.h>
 #include <QueryPipeline/SizeLimits.h>
-#include <base/Decimal.h>
 #include <base/types.h>
 #include <Common/Exception.h>
 #include <Common/FieldVisitorToString.h>
@@ -217,7 +214,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_entries_for_hash_table_stats;
 }
 
-static std::tuple<UInt64, Float32, bool> getLimitOffsetValue(const ASTPtr & node, const ContextPtr & context, const std::string & expr);
+static std::tuple<UInt64, Float64, bool> getLimitOffsetValue(const ASTPtr & node, const ContextPtr & context, const std::string & expr);
 
 namespace ErrorCodes
 {
@@ -1484,8 +1481,8 @@ static SortDescription getSortDescriptionFromGroupBy(const ASTSelectQuery & quer
     return order_descr;
 }
 
-/// The LIMIT/OFFSET expression value can be either UInt64 or Float32, negative or positive.
-static std::tuple<UInt64, Float32, bool> getLimitOffsetValue(const ASTPtr & node, const ContextPtr & context, const std::string & expr)
+/// The LIMIT/OFFSET expression value can be either UInt64 or Float64, negative or positive.
+static std::tuple<UInt64, Float64, bool> getLimitOffsetValue(const ASTPtr & node, const ContextPtr & context, const std::string & expr)
 {
     const auto & [field, type] = evaluateConstantExpression(node, context);
 
@@ -1516,10 +1513,10 @@ static std::tuple<UInt64, Float32, bool> getLimitOffsetValue(const ASTPtr & node
     }
 
     {
-        Field converted_value = convertFieldToType(field, DataTypeDecimal32(8, 7));
+        Field converted_value = convertFieldToType(field, DataTypeFloat64());
         if (!converted_value.isNull())
         {
-            auto value = converted_value.safeGet<Decimal32>().getValue() / 10000000.0;
+            auto value = converted_value.safeGet<Float64>();
             if (value < 1 && value > 0)
                 return {0, value, false};
         }
@@ -1527,7 +1524,7 @@ static std::tuple<UInt64, Float32, bool> getLimitOffsetValue(const ASTPtr & node
 
     throw Exception(
         ErrorCodes::INVALID_LIMIT_EXPRESSION,
-        "The value {} of {} expression is not representable as UInt64 or Int64 or Float32 [0 - 1)",
+        "The value {} of {} expression is not representable as UInt64 or Int64 or Float64 [0 - 1)",
         applyVisitor(FieldVisitorToString(), field),
         expr);
 }
@@ -3294,7 +3291,7 @@ void InterpreterSelectQuery::executeLimitBy(QueryPlan & query_plan)
 
     auto [limit_offset, fractional_offset, is_limit_offset_negative]
         = (query.limitByOffset() ? getLimitOffsetValue(query.limitByOffset(), context, "OFFSET")
-                                 : std::tuple<UInt64, Float32, bool>{0, 0, false});
+                                 : std::tuple<UInt64, Float64, bool>{0, 0, false});
 
     if (is_limit_length_negative || is_limit_offset_negative)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Negative LIMIT/OFFSET with LIMIT BY is not supported yet");
