@@ -96,10 +96,16 @@ static ColumnPtr getFilteredDatabases(const Databases & databases, const Actions
     MutableColumnPtr engine_column = ColumnString::create();
     MutableColumnPtr uuid_column = ColumnUUID::create();
 
+    const auto access = context->getAccess();
+    const bool need_to_check_access_for_databases = !access->isGranted(AccessType::SHOW_DATABASES);
+
     for (const auto & [database_name, database] : databases)
     {
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
             continue; /// We don't want to show the internal database for temporary tables in system.tables
+
+        if (need_to_check_access_for_databases && !access->isGranted(AccessType::SHOW_DATABASES, database_name))
+            continue;
 
         name_column->insert(database_name);
         engine_column->insert(database->getEngineName());
@@ -118,8 +124,6 @@ static ColumnPtr getFilteredDatabases(const Databases & databases, const Actions
 
 void StorageSystemDatabases::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node * predicate, std::vector<UInt8> columns_mask) const
 {
-    const auto access = context->getAccess();
-    const bool need_to_check_access_for_databases = !access->isGranted(AccessType::SHOW_DATABASES);
     const auto & settings = context->getSettingsRef();
     const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = settings[Setting::show_data_lake_catalogs_in_system_tables]});
     ColumnPtr filtered_databases_column = getFilteredDatabases(databases, predicate, context);
@@ -127,9 +131,6 @@ void StorageSystemDatabases::fillData(MutableColumns & res_columns, ContextPtr c
     for (size_t i = 0; i < filtered_databases_column->size(); ++i)
     {
         auto database_name = filtered_databases_column->getDataAt(i).toString();
-
-        if (need_to_check_access_for_databases && !access->isGranted(AccessType::SHOW_DATABASES, database_name))
-            continue;
 
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
             continue; /// filter out the internal database for temporary tables in system.databases, asynchronous metric "NumberOfDatabases" behaves the same way
