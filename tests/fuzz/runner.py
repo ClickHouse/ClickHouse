@@ -165,8 +165,16 @@ def run_fuzzer(fuzzer: str, timeout: int):
     orig_corpus_size = len(list(Path(active_corpus_dir).glob("*")))
 
     # Remove processed files from original corpus
+    processed_files = set()
     with open(merge_control_file, "r", encoding="utf-8") as f:
-        processed_files = set(line.strip() for line in f if line.strip())
+        for i, line in enumerate(f):
+            if i < 2:
+                continue
+            line = line.strip()
+            if not line or line.startswith("STARTED"):
+                break
+            processed_files.add(line)
+
     for fname in processed_files:
         orig_file = Path(active_corpus_dir) / fname
         if orig_file.exists():
