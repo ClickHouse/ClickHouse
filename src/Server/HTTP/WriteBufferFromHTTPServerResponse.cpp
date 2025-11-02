@@ -207,8 +207,8 @@ void WriteBufferFromHTTPServerResponse::finalizeImpl()
 
 void WriteBufferFromHTTPServerResponse::cancelImpl() noexcept
 {
-    // we have to close connection when it has been canceled
-    // client is waiting final empty chunk in the chunk encoding, chient has to receive EOF instead it ASAP
+    // Note: For normal cancellation without exception info, we still need to close the connection
+    // because we don't have exception details to send to the client
     response.setKeepAlive(false);
     HTTPWriteBuffer::cancelImpl();
 }
@@ -373,18 +373,19 @@ bool WriteBufferFromHTTPServerResponse::cancelWithException(HTTPServerRequest & 
             LOG_DEBUG(
                 getLogger("WriteBufferFromHTTPServerResponse"),
                 "Write buffer has been canceled with an error."
-                "Error has been sent at the end of the response. HTTP protocol has been broken by server."
+                "Error has been sent at the end of the response. HTTP protocol will be properly terminated."
                 " HTTP code: {}, message: <{}>, error code: {}, message: <{}>."
                 " use compression: {}, data has been send through buffers: {}, compression discarded data: {}, discarded data: {}",
             response.getStatus(), response.getReason(), exception_code_, message,
             use_compression_buffer,
             data_sent, compression_discarded_data, discarded_data);
 
-            // this prevent sending final empty chunk in case of Transfer-Encoding: chunked
-            // the aim is to break HTTP
+            // Properly terminate chunked encoding to maintain HTTP compliance
+            // This sends the "0\r\n\r\n" terminating chunk for chunked transfer encoding
+            // allowing standard HTTP clients to receive the complete response including exception details
             if (use_compression_buffer)
-                compression_buffer->cancel();
-            cancel();
+                compression_buffer->finalize();
+            finalize();
         }
 
         return true;
