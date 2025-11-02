@@ -114,6 +114,7 @@
 #include <unordered_set>
 #include <filesystem>
 
+#include <boost/container_hash/hash.hpp>
 #include <fmt/format.h>
 #include <Poco/Logger.h>
 #include <Poco/Net/NetException.h>
@@ -10224,6 +10225,30 @@ void MergeTreeData::verifySortingKey(const KeyDescription & sorting_key)
         if (dynamic_cast<const DataTypeCustomSimpleAggregateFunction *>(data_type->getCustomName()))
             throw Exception(ErrorCodes::DATA_TYPE_CANNOT_BE_USED_IN_KEY, "Column with type {} is not allowed in key expression", data_type->getCustomName()->getName());
     }
+}
+
+size_t MergeTreeData::NamesAndTypesListHash::operator()(const NamesAndTypesList & list) const noexcept
+{
+    size_t hash = 0;
+    for (const auto & name_type : list)
+        boost::hash_combine(hash, StringRefHash{}(std::string_view(name_type.name)));
+    return hash;
+}
+MergeTreeData::ColumnsDescriptionCache MergeTreeData::getColumnsDescriptionForColumns(const NamesAndTypesList & columns) const
+{
+    std::lock_guard lock(columns_descriptions_cache_mutex);
+    if (auto it = columns_descriptions_cache.find(columns); it != columns_descriptions_cache.end())
+        return it->second;
+
+    ColumnsDescriptionCache cache
+    {
+        .original = std::make_shared<ColumnsDescription>(columns),
+        .with_collected_nested = std::make_shared<ColumnsDescription>(Nested::collect(columns)),
+    };
+    if (*cache.with_collected_nested == *cache.original)
+        cache.with_collected_nested = cache.original;
+    columns_descriptions_cache.emplace(columns, cache);
+    return cache;
 }
 
 static void updateMutationsCounters(MutationCounters & mutation_counters, const MutationCommands & commands, Int64 increment)
