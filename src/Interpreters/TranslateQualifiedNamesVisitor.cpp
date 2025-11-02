@@ -145,7 +145,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTIdentifier & identifier, ASTPtr &,
 }
 
 /// As special case, treat count(*) as count(), not as count(list of all columns).
-/// This also applies to count functions with combinators like countIf(*,  condition).
+/// This also applies to count functions with combinators like countIf(*, condition).
 void TranslateQualifiedNamesMatcher::visit(ASTFunction & node, const ASTPtr &, Data &)
 {
     ASTPtr & func_arguments = node.arguments;
