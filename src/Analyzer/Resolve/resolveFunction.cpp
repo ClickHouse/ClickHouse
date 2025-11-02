@@ -17,6 +17,8 @@
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/SetUtils.h>
 
+#include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
+
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeFunction.h>
@@ -161,19 +163,27 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         is_special_function_exists = function_name == "exists";
         is_special_function_if = function_name == "if";
 
-        auto function_name_lowercase = Poco::toLower(function_name);
-
         /** Special handling for count and countState functions.
           *
           * Example: SELECT count(*) FROM test_table
           * Example: SELECT countState(*) FROM test_table;
           */
-        if (function_node_ptr->getArguments().getNodes().size() == 1 &&
-            (function_name_lowercase == "count" || function_name_lowercase == "countstate"))
+        String base_function_name = function_name;
+        while (AggregateFunctionCombinatorPtr combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix(base_function_name))
         {
-            auto * matcher_node = function_node_ptr->getArguments().getNodes().front()->as<MatcherNode>();
-            if (matcher_node && matcher_node->isUnqualified())
-                function_node_ptr->getArguments().getNodes().clear();
+            base_function_name = base_function_name.substr(0, base_function_name.size() - combinator->getName().size());
+        }
+
+        auto base_function_name_lowercase = Poco::toLower(base_function_name);
+        if (base_function_name_lowercase == "count" || base_function_name_lowercase == "countstate")
+        {
+            auto & arguments = function_node_ptr->getArguments().getNodes();
+
+            std::erase_if(arguments, [](const QueryTreeNodePtr & argument)
+            {
+                auto * matcher_node = argument->as<MatcherNode>();
+                return matcher_node && matcher_node->isUnqualified();
+            });
         }
     }
 
