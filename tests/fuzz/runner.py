@@ -54,7 +54,7 @@ def run_fuzzer(fuzzer: str, timeout: int):
     mini_corpus_dir = f"corpus/{fuzzer}_mini"
     if not os.path.exists(mini_corpus_dir):
         os.makedirs(mini_corpus_dir)
-    f"corpus/{fuzzer}" = f"{fuzzer}_merge_control.txt"
+    merge_control_file = f"{fuzzer}_merge_control.txt"
     options_file = f"{fuzzer}.options"
     custom_libfuzzer_options = ""
     fuzzer_arguments = ""
