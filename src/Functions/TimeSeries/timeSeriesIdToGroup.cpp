@@ -1,9 +1,7 @@
 #include <Functions/FunctionFactory.h>
 
 #include <Functions/TimeSeries/TimeSeriesTagsFunctionHelpers.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ContextTimeSeriesTagsCollector.h>
 
@@ -16,21 +14,21 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-/// Function timeSeriesIdToTags(id) returns Array(Tuple(String, String)) containing the names and values of tags associated with
-/// a specified identifier `id`.
-class FunctionTimeSeriesIdToTags : public IFunction, private WithContext
+/// Function timeSeriesIdToGroup(id) converts the specified identifier of a time series to its group index.
+/// Group indices are numbers 0, 1, 2, 3 associated with each unique set of tags in the context of the currently executed query.
+class FunctionTimeSeriesIdToGroup : public IFunction, private WithContext
 {
 public:
-    static constexpr auto name = "timeSeriesIdToTags";
+    static constexpr auto name = "timeSeriesIdToGroup";
 
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionTimeSeriesIdToTags>(context_); }
-    explicit FunctionTimeSeriesIdToTags(ContextPtr context_) : WithContext(context_) {}
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionTimeSeriesIdToGroup>(context_); }
+    explicit FunctionTimeSeriesIdToGroup(ContextPtr context_) : WithContext(context_) {}
 
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 1; }
 
-    /// Function timeSeriesIdToTags returns information stored in the query context, it's deterministic in the scope of the current query.
+    /// Function timeSeriesIdToGroup returns information stored in the query context, it's deterministic in the scope of the current query.
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return true; }
 
@@ -39,7 +37,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         checkArgumentTypes(arguments);
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()}));
+        return std::make_shared<DataTypeUInt64>();
     }
 
     static void checkArgumentTypes(const ColumnsWithTypeAndName & arguments)
@@ -69,26 +67,27 @@ public:
         auto ids = TimeSeriesTagsFunctionHelpers::extractIDFromArgument<IDType>(name, arguments, 0);
         
         auto & tags_collector = getContext()->getQueryContext()->getTimeSeriesTagsCollector();
-        auto tags = tags_collector.getTagsByID(ids);
+        auto groups = tags_collector.getGroupByID(ids);
 
-        chassert(tags.size() == input_rows_count);
-        return TimeSeriesTagsFunctionHelpers::makeColumnForTagNamesAndValues(tags);
+        chassert(groups.size() == input_rows_count);
+        return TimeSeriesTagsFunctionHelpers::makeColumnForGroup(groups);
     }
 };
 
 
-REGISTER_FUNCTION(TimeSeriesIdToTags)
+REGISTER_FUNCTION(TimeSeriesIdToGroup)
 {
-    FunctionDocumentation::Description description = R"(Finds tags associated with the specified identifier of a time series.)";
-    FunctionDocumentation::Syntax syntax = "timeSeriesIdToTags(id)";
+    FunctionDocumentation::Description description = R"(Converts the specified identifier of a time series to its group index. Group indices are numbers 0, 1, 2, 3 associated with each unique set of tags in the context of the currently executed query.)";
+    FunctionDocumentation::Syntax syntax = "timeSeriesIdToGroup(id)";
     FunctionDocumentation::Arguments arguments = {{"id", "Identifier of a time series.", {"UInt64", "UInt128", "UUID", "FixedString(16)"}}};
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of pairs (tag_name, tag_value).", {"Array(Tuple(String, String))"}};
-    FunctionDocumentation::Examples examples = {{"Example", "SELECT timeSeriesStoreTags(8374283493092, [('region', 'eu'), ('env', 'dev')], '__name__', 'http_requests_count') AS id, timeSeriesIdToTags(id)", "8374283493092    [('__name__', ''http_requests_count''), ('env', 'dev'), ('region', 'eu')]"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a group index associated with this set of tags.", {"UInt64"}};
+    FunctionDocumentation::Examples examples = {{"Example", "SELECT timeSeriesStoreTags(8374283493092, [('region', 'eu'), ('env', 'dev')], '__name__', 'http_requests_count') AS id, timeSeriesIdToGroup(id)", "8374283493092    0"}};
     FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::TimeSeries;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionTimeSeriesIdToTags>(documentation);
+    factory.registerFunction<FunctionTimeSeriesIdToGroup>(documentation);
+    factory.registerAlias("timeSeriesIdToTagsGroup", "timeSeriesIdToGroup");
 }
 
 }
