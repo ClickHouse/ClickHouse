@@ -163,19 +163,30 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         is_special_function_exists = function_name == "exists";
         is_special_function_if = function_name == "if";
 
-        /** Special handling for count and countState functions.
+        /** Special handling for count and countState functions (including with combinators like countIf, countIfState, etc.).
           *
           * Example: SELECT count(*) FROM test_table
           * Example: SELECT countState(*) FROM test_table;
+          *
+          * To determine if it's safe to remove the asterisk, we check the transformsArgumentTypes() method
+          * of each combinator. If any combinator transforms argument types (returns true), it's not safe to remove the asterisk.
           */
         String base_function_name = function_name;
+        bool safe_to_remove_asterisk = true;
+
         while (AggregateFunctionCombinatorPtr combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix(base_function_name))
         {
+            if (combinator->transformsArgumentTypes())
+            {
+                safe_to_remove_asterisk = false;
+                break;
+            }
+
             base_function_name = base_function_name.substr(0, base_function_name.size() - combinator->getName().size());
         }
 
         auto base_function_name_lowercase = Poco::toLower(base_function_name);
-        if (base_function_name_lowercase == "count" || base_function_name_lowercase == "countstate")
+        if (safe_to_remove_asterisk && (base_function_name_lowercase == "count" || base_function_name_lowercase == "countstate"))
         {
             auto & arguments = function_node_ptr->getArguments().getNodes();
 
