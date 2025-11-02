@@ -411,11 +411,8 @@ ASTPtr DatabaseBackup::getCreateDatabaseQueryImpl() const
 {
     const auto & settings = getContext()->getSettingsRef();
 
-    std::string creation_args;
-    creation_args += fmt::format("'{}'", config.database_name);
-    creation_args += fmt::format(", '{}'", config.backup_info.toString());
-
-    const String query = fmt::format("CREATE DATABASE {} ENGINE = Backup({})", backQuoteIfNeed(database_name), creation_args);
+    const String query = fmt::format("CREATE DATABASE {} ENGINE = Backup({}, {})",
+        backQuoteIfNeed(database_name), quoteString(config.database_name), quoteString(config.backup_info.toString()));
 
     ParserCreateQuery parser;
     ASTPtr ast = parseQuery(parser,
@@ -426,10 +423,10 @@ ASTPtr DatabaseBackup::getCreateDatabaseQueryImpl() const
         settings[Setting::max_parser_depth],
         settings[Setting::max_parser_backtracks]);
 
-    if (!comment.empty())
+    if (const auto database_comment = getDatabaseComment(); !database_comment.empty())
     {
         auto & ast_create_query = ast->as<ASTCreateQuery &>();
-        ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(comment));
+        ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(database_comment));
     }
 
     return ast;
