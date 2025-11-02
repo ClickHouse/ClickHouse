@@ -375,12 +375,6 @@ IMPLEMENT_SETTING_ENUM(
      {"right", DecorrelationJoinKind::RIGHT}})
 
 IMPLEMENT_SETTING_ENUM(
-    ObjectStorageGranularityLevel,
-    ErrorCodes::BAD_ARGUMENTS,
-    {{"bucket", ObjectStorageGranularityLevel::BUCKET},
-     {"file", ObjectStorageGranularityLevel::FILE}})
-
-IMPLEMENT_SETTING_ENUM(
     IcebergMetadataLogLevel,
     ErrorCodes::BAD_ARGUMENTS,
     {{"none", IcebergMetadataLogLevel::None},
@@ -389,4 +383,11 @@ IMPLEMENT_SETTING_ENUM(
      {"manifest_list_entry", IcebergMetadataLogLevel::ManifestListEntry},
      {"manifest_file_metadata", IcebergMetadataLogLevel::ManifestFileMetadata},
      {"manifest_file_entry", IcebergMetadataLogLevel::ManifestFileEntry}})
+
+IMPLEMENT_SETTING_ENUM(
+    ObjectStorageGranularityLevel,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"file", ObjectStorageGranularityLevel::FILE},
+    {"bucket", ObjectStorageGranularityLevel::BUCKET}})
+
 }

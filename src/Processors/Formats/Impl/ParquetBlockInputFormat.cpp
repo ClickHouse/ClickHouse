@@ -605,19 +605,19 @@ const parquet::ColumnDescriptor * getColumnDescriptorIfBloomFilterIsPresent(
 
 void ParquetFileBucketInfo::serialize(WriteBuffer & buffer)
 {
-    writeVarInt(row_group_ids.size(), buffer);
+    writeVarUInt(row_group_ids.size(), buffer);
     for (auto chunk : row_group_ids)
         writeVarUInt(chunk, buffer);
 }
 
 void ParquetFileBucketInfo::deserialize(ReadBuffer & buffer)
 {
-    Int64 size_chunks;
-    readVarInt(size_chunks, buffer);
+    size_t size_chunks;
+    readVarUInt(size_chunks, buffer);
     row_group_ids = std::vector<size_t>{};
     row_group_ids.resize(size_chunks);
     size_t bucket;
-    for (Int64 i = 0; i < size_chunks; ++i)
+    for (size_t i = 0; i < size_chunks; ++i)
     {
         readVarUInt(bucket, buffer);
         row_group_ids[i] = bucket;
