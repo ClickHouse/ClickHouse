@@ -54,6 +54,7 @@ def run_fuzzer(fuzzer: str, timeout: int):
     mini_corpus_dir = f"corpus/{fuzzer}_mini"
     if not os.path.exists(mini_corpus_dir):
         os.makedirs(mini_corpus_dir)
+    f"corpus/{fuzzer}" = f"{fuzzer}_merge_control.txt"
     options_file = f"{fuzzer}.options"
     custom_libfuzzer_options = ""
     fuzzer_arguments = ""
@@ -101,7 +102,7 @@ def run_fuzzer(fuzzer: str, timeout: int):
         os.makedirs(results_path)
     artifact_prefix = f"{results_path}"
 
-    merge_libfuzzer_options = f" -artifact_prefix={artifact_prefix} -merge=1 {mini_corpus_dir} {active_corpus_dir}"
+    merge_libfuzzer_options = f" -artifact_prefix={artifact_prefix} -merge=1 -max_total_time={timeout} -merge_control_file={merge_control_file} {mini_corpus_dir} {active_corpus_dir}"
     cmd_line = f"{DEBUGGER} ./{fuzzer} {fuzzer_arguments}"
 
     env = None
@@ -130,17 +131,26 @@ def run_fuzzer(fuzzer: str, timeout: int):
                 check=True,
                 shell=False,
                 errors="replace",
+                timeout=timeout_hard,
                 env=env,
             )
     except subprocess.CalledProcessError:
-        logging.info("Fail running merge %s", fuzzer)
+        logging.info("Unexpected termination while running merge %s", fuzzer)
         with open(status_path, "w", encoding="utf-8") as status:
             status.write(
                 f"ERROR\n{stopwatch.start_time_str}\n{stopwatch.duration_seconds}\n"
             )
         return
     except Exception as e:
-        logging.info("Unexpected exception running merge %s: %s", fuzzer, e)
+        logging.info("Unexpected exception while running merge %s: %s", fuzzer, e)
+        with open(status_path, "w", encoding="utf-8") as status:
+            status.write(
+                f"ERROR\n{stopwatch.start_time_str}\n{stopwatch.duration_seconds}\n"
+            )
+        return
+
+    if not os.path.exists(merge_control_file):
+        logging.info("Unexpected absence of merge_control_file while running merge %s", fuzzer)
         with open(status_path, "w", encoding="utf-8") as status:
             status.write(
                 f"ERROR\n{stopwatch.start_time_str}\n{stopwatch.duration_seconds}\n"
@@ -153,13 +163,34 @@ def run_fuzzer(fuzzer: str, timeout: int):
         )
 
     orig_corpus_size = len(list(Path(active_corpus_dir).glob("*")))
-    mini_corpus_size = len(list(Path(mini_corpus_dir).glob("*")))
 
-    logging.info("Successful run, merge for %s, original corpus size %d, minimized corpus size %d, reduced to %d%%",
-        fuzzer, orig_corpus_size, mini_corpus_size, mini_corpus_size * 100 / orig_corpus_size)
+    # Remove processed files from original corpus
+    with open(merge_control_file, "r", encoding="utf-8") as f:
+        processed_files = set(line.strip() for line in f if line.strip())
+    for fname in processed_files:
+        orig_file = Path(active_corpus_dir) / fname
+        if orig_file.exists():
+            orig_file.unlink()
 
-    shutil.rmtree(active_corpus_dir)
-    os.rename(mini_corpus_dir, active_corpus_dir)
+    not_processed_size = len(list(Path(active_corpus_dir).glob("*")))
+
+    # Copy minimized corpus files back to original corpus
+    for file in Path(mini_corpus_dir).iterdir():
+        if file.is_file():
+            shutil.copy2(file, Path(active_corpus_dir) / file.name)
+
+    # Delete minimized corpus directory
+    shutil.rmtree(mini_corpus_dir)
+
+    mini_corpus_size = len(list(Path(active_corpus_dir).glob("*")))
+
+    reduction = 0
+    if orig_corpus_size > 0
+        reduction = mini_corpus_size * 100 / orig_corpus_size
+
+    logging.info("Successful run, merge for %s, original corpus size %d, not processed corpus %d, minimized corpus size %d, reduced to %d%%",
+        fuzzer, orig_corpus_size, not_processed_size, mini_corpus_size, reduction)
+
 
 # TESTING TESTING TESTING
     return
