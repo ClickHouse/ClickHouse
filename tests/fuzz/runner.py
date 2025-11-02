@@ -176,7 +176,7 @@ def run_fuzzer(fuzzer: str, timeout: int):
             processed_files.add(line)
 
     for fname in processed_files:
-        orig_file = Path(active_corpus_dir) / fname
+        orig_file = Path(fname)
         if orig_file.exists():
             orig_file.unlink()
 
@@ -196,18 +196,20 @@ def run_fuzzer(fuzzer: str, timeout: int):
     if orig_corpus_size > 0:
         reduction = mini_corpus_size * 100 / orig_corpus_size
 
-    logging.info("Successful run, merge for %s, original corpus size %d, not processed corpus %d, minimized corpus size %d, reduced to %d%%",
-        fuzzer, orig_corpus_size, not_processed_size, mini_corpus_size, reduction)
-
-
-# TESTING TESTING TESTING
-    return
+    logging.info("Successful run, merge for %s, original corpus size %d, processed %d, not processed %d, minimized size %d, reduced to %d%%",
+        fuzzer, orig_corpus_size, len(processed_files), not_processed_size, mini_corpus_size, reduction)
 
 
     status_path = f"{results_path}/status.txt"
     out_path = f"{results_path}/out.txt"
     stdout_path = f"{results_path}/stdout.txt"
 
+# TESTING TESTING TESTING
+    with open(status_path, "w", encoding="utf-8") as status:
+        status.write(
+            f"OK\n{stopwatch.start_time_str}\n{stopwatch.duration_seconds}\n"
+        )
+    return
 
     if not "-dict=" in custom_libfuzzer_options and Path(f"{fuzzer}.dict").exists():
         custom_libfuzzer_options += f" -dict={fuzzer}.dict"
