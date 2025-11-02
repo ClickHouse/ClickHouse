@@ -116,7 +116,7 @@ run_for_engine() {
   while true; do
     local rc=0
     wait -n || rc=$?
-    (( rc == 127 )) && echo "OK for '$1'" && exit 0
+    (( rc == 127 )) && echo "OK for '$1'" && break
     (( rc != 0 )) && exit "$rc"
   done
 }
