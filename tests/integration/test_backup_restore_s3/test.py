@@ -133,7 +133,7 @@ def setup_minio_users(cluster):
 
 @pytest.fixture(
     params=[[], ["configs/data_file_name_generator_from_checksum.xml"]],
-    ids=["key_from_file_name", "key_from_checksum"],
+    ids=["data_file_name_from_first_file_name", "data_file_name_from_checksum"],
     scope="module",
 )
 def setup_cluster(request):
