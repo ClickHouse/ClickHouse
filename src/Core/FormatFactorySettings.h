@@ -1192,7 +1192,7 @@ Method to write Errors to text output.
     DECLARE(String, format_schema_source, "file", R"(
 Define the source of `format_schema`.
 Possible values:
-- 'file' (default):: The `format_schema` is the name of a schema file located in the `format_schemas` directory.
+- 'file' (default): The `format_schema` is the name of a schema file located in the `format_schemas` directory.
 - 'string': The `format_schema` is the literal content of the schema.
 - 'query': The `format_schema` is a query to retrieve the schema.
 When `format_schema_source` is set to 'query', the following conditions apply:

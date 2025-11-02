@@ -16,7 +16,7 @@ for STORAGE_POLICY in 's3_cache' 'local_cache' 'azure_cache'; do
     ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.filesystem_cache"
 
     ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS test_02240_storage_policy"
-    ${CLICKHOUSE_CLIENT} --query "CREATE TABLE test_02240_storage_policy (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='${STORAGE_POLICY}', min_bytes_for_wide_part = 1000000, compress_marks=false, compress_primary_key=false, serialization_info_version='default'"
+    ${CLICKHOUSE_CLIENT} --query "CREATE TABLE test_02240_storage_policy (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='${STORAGE_POLICY}', min_bytes_for_wide_part = 1000000, compress_marks=false, compress_primary_key=false, serialization_info_version='basic'"
     ${CLICKHOUSE_CLIENT} --query "SYSTEM STOP MERGES test_02240_storage_policy"
     ${CLICKHOUSE_CLIENT} --enable_filesystem_cache_on_write_operations=0 --query "INSERT INTO test_02240_storage_policy SELECT number, toString(number) FROM numbers(100)"
 

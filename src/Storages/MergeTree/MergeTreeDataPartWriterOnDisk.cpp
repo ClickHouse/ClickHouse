@@ -5,6 +5,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Compression/CompressionFactory.h>
 
@@ -16,10 +17,13 @@ extern const Event MergeTreeDataWriterStatisticsCalculationMicroseconds;
 
 namespace DB
 {
+
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsUInt64 index_granularity;
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
+    extern const MergeTreeSettingsBool replace_long_file_name_to_hash;
+    extern const MergeTreeSettingsUInt64 max_file_name_length;
 }
 
 namespace ErrorCodes
@@ -125,12 +129,17 @@ void MergeTreeDataPartWriterOnDisk::initStatistics()
 {
     for (const auto & stat_ptr : stats)
     {
-        String stats_name = stat_ptr->getFileName();
+        auto stats_filename = escapeForFileName(stat_ptr->getStatisticName());
+        if ((*storage_settings)[MergeTreeSetting::replace_long_file_name_to_hash] && stats_filename.size() > (*storage_settings)[MergeTreeSetting::max_file_name_length])
+            stats_filename = sipHash128String(stats_filename);
+
         stats_streams.emplace_back(std::make_unique<MergeTreeWriterStream<true>>(
-                                       stats_name,
+                                       stats_filename,
                                        data_part_storage,
-                                       stats_name, STATS_FILE_SUFFIX,
-                                       default_codec, settings.max_compress_block_size,
+                                       stats_filename,
+                                       STATS_FILE_SUFFIX,
+                                       default_codec,
+                                       settings.max_compress_block_size,
                                        settings.query_write_settings));
     }
 }
@@ -229,7 +238,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeStatistics(const Block 
     {
         const auto & stat_ptr = stats[i];
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterStatisticsCalculationMicroseconds);
-        stat_ptr->build(block.getByName(stat_ptr->columnName()).column);
+        stat_ptr->build(block.getByName(stat_ptr->getColumnName()).column);
         execution_stats.statistics_build_us[i] += watch.elapsed();
     }
 }
@@ -371,7 +380,7 @@ void MergeTreeDataPartWriterOnDisk::finishStatisticsSerialization(bool sync)
     }
 
     for (size_t i = 0; i < stats.size(); ++i)
-        LOG_DEBUG(log, "Spent {} ms calculating statistics {} for the part {}", execution_stats.statistics_build_us[i] / 1000, stats[i]->columnName(), data_part_name);
+        LOG_DEBUG(log, "Spent {} ms calculating statistics {} for the part {}", execution_stats.statistics_build_us[i] / 1000, stats[i]->getColumnName(), data_part_name);
 }
 
 void MergeTreeDataPartWriterOnDisk::fillStatisticsChecksums(MergeTreeData::DataPart::Checksums & checksums)
