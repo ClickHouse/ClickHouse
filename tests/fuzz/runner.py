@@ -185,7 +185,7 @@ def run_fuzzer(fuzzer: str, timeout: int):
     mini_corpus_size = len(list(Path(active_corpus_dir).glob("*")))
 
     reduction = 0
-    if orig_corpus_size > 0
+    if orig_corpus_size > 0:
         reduction = mini_corpus_size * 100 / orig_corpus_size
 
     logging.info("Successful run, merge for %s, original corpus size %d, not processed corpus %d, minimized corpus size %d, reduced to %d%%",
