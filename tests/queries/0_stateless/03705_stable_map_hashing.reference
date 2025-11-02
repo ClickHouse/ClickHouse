@@ -2,3 +2,7 @@
 0	0	0	0
 -- Test 2: Stable hashing enabled
 1	1	1	1
+-- Test 3: Maps with duplicate keys (different value order)
+1	1	1	1
+-- Test 4: Maps with duplicate keys and multiple keys
+1	1	1	1
