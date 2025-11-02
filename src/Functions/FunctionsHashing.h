@@ -1565,10 +1565,8 @@ private:
         if (!tuple_column || tuple_column->tupleSize() != 2)
             return column;
 
-        /// Get the keys column (first element of tuple)
-        const auto & keys_column = tuple_column->getColumn(0);
-
-        /// Create permutation to sort by keys within each map
+        /// Create permutation to sort by both key and value within each map
+        /// (maps can have duplicate keys with different values)
         size_t nested_size = nested_data.size();
         IColumn::Permutation permutation(nested_size);
         iota(permutation.data(), nested_size, IColumn::Permutation::value_type(0));
@@ -1577,13 +1575,13 @@ private:
         for (size_t i = 0; i < offsets.size(); ++i)
         {
             auto next_offset = offsets[i];
-            /// Sort each map's elements by key
+            /// Sort each map's elements by the entire tuple (key, value)
             std::sort(
                 &permutation[current_offset],
                 &permutation[next_offset],
-                [&keys_column](size_t lhs, size_t rhs)
+                [&nested_data](size_t lhs, size_t rhs)
                 {
-                    return keys_column.compareAt(lhs, rhs, keys_column, 1) < 0;
+                    return nested_data.compareAt(lhs, rhs, nested_data, 1) < 0;
                 });
             current_offset = next_offset;
         }
