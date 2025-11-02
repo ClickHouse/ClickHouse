@@ -8,7 +8,7 @@ namespace DB
 
 struct BackupFileInfo;
 
-/// Ensures consistent file naming in the backup destination during backup creation. Used in backup creation logic.
+/// Ensures consistent file naming in the backup destination during backup creation.
 class IBackupDataFileNameGenerator
 {
 public:

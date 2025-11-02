@@ -90,10 +90,11 @@ struct BackupSettings
     /// Is it allowed to use blob paths to calculate checksums of backup entries?
     bool allow_checksums_from_remote_paths = true;
 
-    /// If specified, should be one of ["first_file_name", "checksum"]
+    /// Generator for a unique and deterministic backup file name.
+    /// If specified, should be one of ["first_file_name", "checksum"]. Defaults to "first_file_name".
     String data_file_name_generator;
 
-    /// A length of backup key prefix. Only applicable to "checksum" generator.
+    /// A length of backup file name prefix. Only applicable to "checksum" generator.
     size_t data_file_name_prefix_length = 0;
 
     /// Internal, should not be specified by user.

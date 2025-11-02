@@ -63,7 +63,7 @@ private:
 class BackupDataFileNameGeneratorFromFirstFileName : public DB::IBackupDataFileNameGenerator
 {
 public:
-    std::string getName() const override { return "first_file_name"; }
+    std::string getName() const override { return FIRST_FILE_NAME_GENERATOR_NAME; }
 
     std::string generate(const DB::BackupFileInfo & file_info) override { return file_info.file_name; }
 };
