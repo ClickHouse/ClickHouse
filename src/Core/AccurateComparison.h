@@ -212,6 +212,13 @@ template <typename A, typename B> struct EqualsOp
     static constexpr bool compilable = true;
 };
 
+template <typename A, typename B> struct IsNotDistinctFromOp
+{
+    using SymmetricOp = IsNotDistinctFromOp<B, A>;
+    static UInt8 apply(A a, B b) { return accurate::equalsOp(a, b); }
+    static constexpr bool compilable = true;
+};
+
 template <typename A, typename B> struct NotEqualsOp
 {
     using SymmetricOp = NotEqualsOp<B, A>;

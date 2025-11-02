@@ -10,15 +10,6 @@
 namespace DB
 {
 
-template <typename A, typename B>
-struct IsNotDistinctFromOp
-{
-    /// An operation that gives the same result, if arguments are passed in reverse order.
-    using SymmetricOp = IsNotDistinctFromOp<B, A>;
-
-    static UInt8 apply(A a, B b) { return EqualsOp<A, B>::apply(a, b); }
-};
-
 struct NameFunctionIsNotDistinctFrom
 {
     static constexpr auto name = "isNotDistinctFrom";
