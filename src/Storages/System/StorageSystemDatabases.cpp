@@ -14,6 +14,8 @@
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
 
+#include <unordered_set>
+
 
 namespace DB
 {
@@ -99,12 +101,39 @@ static ColumnPtr getFilteredDatabases(const Databases & databases, const Actions
     const auto access = context->getAccess();
     const bool need_to_check_access_for_databases = !access->isGranted(AccessType::SHOW_DATABASES);
 
+    /// Optimization: For users with granular permissions, extract granted databases from access rights
+    /// to avoid calling isGranted() for each database (which is expensive for granular grants)
+    std::unordered_set<std::string> granted_databases;
+    bool has_wildcard_grant = false;
+
+    if (need_to_check_access_for_databases)
+    {
+        auto access_rights = access->getAccessRights();
+        auto elements = access_rights->getElements();
+
+        for (const auto & element : elements)
+        {
+            if (element.access_flags.contains(AccessType::SHOW_DATABASES))
+            {
+                if (element.anyDatabase())
+                {
+                    has_wildcard_grant = true;
+                    break;
+                }
+                if (!element.database.empty())
+                    granted_databases.insert(element.database);
+            }
+        }
+    }
+
     for (const auto & [database_name, database] : databases)
     {
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
-            continue; /// We don't want to show the internal database for temporary tables in system.tables
+            continue;
 
-        if (need_to_check_access_for_databases && !access->isGranted(AccessType::SHOW_DATABASES, database_name))
+        /// Check permission: either no check needed, wildcard grant, or database is in granted set
+        if (need_to_check_access_for_databases && !has_wildcard_grant &&
+            granted_databases.find(database_name) == granted_databases.end())
             continue;
 
         name_column->insert(database_name);
