@@ -3660,12 +3660,14 @@ size_t MergeTreeData::clearEmptyParts()
 
 size_t MergeTreeData::clearUnusedPatchParts()
 {
-    if (!(*getSettings())[MergeTreeSetting::remove_unused_patch_parts])
+    if (!supportsLightweightUpdate() || !(*getSettings())[MergeTreeSetting::remove_unused_patch_parts])
         return 0;
 
     auto patch_parts = getPatchPartsVectorForInternalUsage();
-    auto regular_parts = getDataPartsVectorForInternalUsage();
+    if (patch_parts.empty())
+        return 0;
 
+    auto regular_parts = getDataPartsVectorForInternalUsage();
     std::unordered_map<std::string_view, UInt64> min_data_version_by_partition;
 
     for (const auto & part : regular_parts)
@@ -9892,18 +9894,21 @@ MergeTreeData::PartitionIdToMinBlockPtr MergeTreeData::getMinDataVersionForEachP
     return std::make_shared<PartitionIdToMinBlock>(std::move(partition_to_min_data_version));
 }
 
-StorageMetadataPtr MergeTreeData::getInMemoryMetadataPtr() const
+StorageMetadataPtr MergeTreeData::getInMemoryMetadataPtr(bool bypass_metadata_cache) const /// NOLINT
 {
+    if (bypass_metadata_cache)
+        return IStorage::getInMemoryMetadataPtr(bypass_metadata_cache);
+
     auto query_context = CurrentThread::get().getQueryContext();
     if (!query_context || !query_context->getSettingsRef()[Setting::enable_shared_storage_snapshot_in_query])
-        return IStorage::getInMemoryMetadataPtr();
+        return IStorage::getInMemoryMetadataPtr(bypass_metadata_cache);
 
     auto [cache, lock] = query_context->getStorageMetadataCache();
     auto it = cache->find(this);
     if (it != cache->end())
         return it->second;
 
-    return cache->emplace(this, IStorage::getInMemoryMetadataPtr()).first->second;
+    return cache->emplace(this, IStorage::getInMemoryMetadataPtr(bypass_metadata_cache)).first->second;
 }
 
 StorageSnapshotPtr MergeTreeData::createStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, bool without_data) const

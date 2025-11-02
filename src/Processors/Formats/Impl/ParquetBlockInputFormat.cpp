@@ -825,7 +825,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
 
 void ParquetBlockInputFormat::initializeRowGroupBatchReader(size_t row_group_batch_idx)
 {
-    const bool row_group_prefetch = io_pool != nullptr;
+    bool row_group_prefetch = io_pool != nullptr;
     auto & row_group_batch = row_group_batches[row_group_batch_idx];
 
     parquet::ArrowReaderProperties arrow_properties;
@@ -877,7 +877,10 @@ void ParquetBlockInputFormat::initializeRowGroupBatchReader(size_t row_group_bat
     // other, failing an assert. So we disable pre-buffering in this case.
     // That version is >10 years old, so this is not very important.
     if (metadata->writer_version().VersionLt(parquet::ApplicationVersion::PARQUET_816_FIXED_VERSION()))
+    {
         arrow_properties.set_pre_buffer(false);
+        row_group_prefetch = false;
+    }
 
     if (format_settings.parquet.use_native_reader)
     {
@@ -1169,7 +1172,9 @@ Chunk ParquetBlockInputFormat::read()
         if (background_exception)
         {
             is_stopped = true;
-            std::rethrow_exception(background_exception);
+            /// This exception can be mutated (addMessage()) in IInputFormat::generate(),
+            /// so we need to copy it (copyMutableException()) to avoid sharing mutable exception between multiple threads
+            std::rethrow_exception(copyMutableException(background_exception));
         }
         if (is_stopped)
             return {};

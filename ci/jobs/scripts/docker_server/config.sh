@@ -10,12 +10,12 @@ currentDir="${PWD}/ci/jobs/scripts/docker_server"
 # interate over all directories in current path
 imageTestsDefinition='
 	'
-for testDir in ${currentDir}/tests/*/; do
+for testDir in "${currentDir}"/tests/*/; do
   customTestName=$(basename "${testDir}")
 	imageTestsDefinition="${imageTestsDefinition}	${customTestName}
 	"
 done
 
 imageTests+=(
-	[clickhouse]="${imageTestsDefinition}"
+	['clickhouse']="${imageTestsDefinition}"
 )
