@@ -24,6 +24,8 @@
 #    include <Common/ZooKeeper/ZooKeeperIO.h>
 #    include <Common/logger_useful.h>
 #    include <Common/setThreadName.h>
+#    include <Common/HistogramMetrics.h>
+
 #    include <Compression/CompressionFactory.h>
 
 #    include <boost/algorithm/string/trim.hpp>
@@ -38,6 +40,12 @@
 namespace ProfileEvents
 {
     extern const Event KeeperTotalElapsedMicroseconds;
+}
+
+namespace HistogramMetrics
+{
+    extern Metric & KeeperServerQueueDuration;
+    extern Metric & KeeperServerSendDuration;
 }
 
 
@@ -512,9 +520,24 @@ void KeeperTCPHandler::runImpl()
 
                 if (!responses->tryPop(request_with_response))
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "We must have ready response, but queue is empty. It's a bug.");
-                log_long_operation("Waiting for response to be ready");
+
+                auto dequeue_ts = std::chrono::steady_clock::now();
 
                 auto & response = request_with_response.response;
+
+                if (response->xid != Coordination::WATCH_XID && response->error != Coordination::Error::ZSESSIONEXPIRED)
+                {
+                    /// The same ZooKeeperWatchResponse pointer may be put into the `responses` queue multiple times (once for each session).
+                    /// So, to avoid a data race between the producer and consumer threads accessing response->enqueue_ts,
+                    /// we should just ignore watches in this thread.
+                    chassert(response->enqueue_ts != std::chrono::steady_clock::time_point{});
+                    HistogramMetrics::observe(
+                        HistogramMetrics::KeeperServerQueueDuration,
+                        std::chrono::duration_cast<std::chrono::milliseconds>(dequeue_ts - response->enqueue_ts).count());
+                }
+
+                log_long_operation("Waiting for response to be ready");
+
                 if (response->xid == close_xid)
                 {
                     LOG_DEBUG(log, "Session #{} successfully closed", session_id);
@@ -524,8 +547,17 @@ void KeeperTCPHandler::runImpl()
                 updateStats(response, request_with_response.request);
                 packageSent();
 
-                response->write(getWriteBuffer(), use_xid_64);
-                flushWriteBuffer();
+                {
+                    Stopwatch watch;
+
+                    response->write(getWriteBuffer(), use_xid_64);
+                    flushWriteBuffer();
+
+                    auto elapsed_ms = watch.elapsedMilliseconds();
+
+                    HistogramMetrics::observe(HistogramMetrics::KeeperServerSendDuration, elapsed_ms);
+                }
+
                 log_long_operation("Sending response");
                 if (response->error == Coordination::Error::ZSESSIONEXPIRED)
                 {
