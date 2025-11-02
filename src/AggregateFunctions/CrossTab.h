@@ -132,8 +132,8 @@ struct CrossTabData
         }
 
         // We compute Σ_{a,b} (count_ab² ) / (count_a * count_b) part of the formula first
-        Float64 sum = 0;
-        for (const auto & [key, value_ab] : count_ab)
+        Float64 sum = 0.0;
+        for (const auto & [key, value_ab_uint] : count_ab)
         {
             const Float64 value_a = count_a.at(key.items[UInt128::_impl::little(0)]);
             const Float64 value_b = count_b.at(key.items[UInt128::_impl::little(1)]);
@@ -141,7 +141,9 @@ struct CrossTabData
             assert(value_a > 0 && "frequency of value `a` must be positive");
             assert(value_b > 0 && "frequency of value `b` must be positive");
 
-            sum += (value_ab * value_ab) / (value_a * value_b);
+            const Float64 value_ab = value_ab_uint;
+
+            sum += (value_ab / value_a) * (value_ab / value_b);
         }
 
         Float64 phi_squared = sum - 1.0;
