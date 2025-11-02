@@ -35,7 +35,7 @@ class Stopwatch:
 
 
 def run_fuzzer(fuzzer: str, timeout: int):
-    timeout_hard = timeout + 60
+    timeout_hard = timeout + 5 * 60
     logging.info(
         "Running fuzzer %s for %d seconds (hard timeout is %d)...",
         fuzzer,
