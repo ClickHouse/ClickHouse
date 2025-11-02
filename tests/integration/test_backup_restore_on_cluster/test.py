@@ -2,6 +2,7 @@ import os.path
 import random
 import re
 import string
+import xml.etree.ElementTree as ET
 
 import pytest
 
@@ -77,6 +78,16 @@ def drop_after_test():
 backup_id_counter = 0
 
 
+def format_settings(settings):
+    if not settings:
+        return ""
+
+    def vstr(v):
+        return "'" + v + "'" if type(v) == str else str(v)
+
+    return "SETTINGS " + ",".join(f"{k}={vstr(v)}" for k, v in settings.items())
+
+
 def new_backup_name():
     global backup_id_counter
     backup_id_counter += 1
@@ -88,7 +99,14 @@ def get_path_to_backup(backup_name):
     return os.path.join(node1.cluster.instances_dir, "backups", name)
 
 
-def test_replicated_table():
+@pytest.mark.parametrize(
+    "name_gen",
+    [
+        pytest.param("", id="first_file_name"),
+        pytest.param("checksum"),
+    ],
+)
+def test_replicated_table(name_gen):
     node1.query(
         "CREATE TABLE tbl ON CLUSTER 'cluster' ("
         "x UInt8, y String"
@@ -103,10 +121,12 @@ def test_replicated_table():
     node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
 
     backup_name = new_backup_name()
+    backup_settings = {"data_file_name_generator": name_gen} if name_gen else None
+    backup_settings = {"replica_num": 1} | (backup_settings or {})
 
     # Make backup on node 1.
     node1.query(
-        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} SETTINGS replica_num=1"
+        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} {format_settings(backup_settings)}"
     )
 
     # Drop table on both nodes.
@@ -151,7 +171,14 @@ def test_empty_replicated_table():
     assert node2.query("SELECT * FROM tbl") == ""
 
 
-def test_replicated_database():
+@pytest.mark.parametrize(
+    "name_gen",
+    [
+        pytest.param("", id="first_file_name"),
+        pytest.param("checksum"),
+    ],
+)
+def test_replicated_database(name_gen):
     node1.query(
         "CREATE DATABASE mydb ON CLUSTER 'cluster' ENGINE=Replicated('/clickhouse/path/','{shard}','{replica}')"
     )
@@ -177,8 +204,11 @@ def test_replicated_database():
 
     # Make backup.
     backup_name = new_backup_name()
+    backup_settings = {"data_file_name_generator": name_gen} if name_gen else None
+    backup_settings = {"replica_num": 2} | (backup_settings or {})
+
     node1.query(
-        f"BACKUP DATABASE mydb ON CLUSTER 'cluster' TO {backup_name} SETTINGS replica_num=2"
+        f"BACKUP DATABASE mydb ON CLUSTER 'cluster' TO {backup_name} {format_settings(backup_settings)}"
     )
 
     # Drop table on both nodes.
@@ -424,7 +454,14 @@ def test_replicated_table_with_not_synced_merge():
     assert node2.query("SELECT * FROM tbl ORDER BY x") == TSV([111, 222])
 
 
-def test_replicated_table_restored_into_bigger_cluster():
+@pytest.mark.parametrize(
+    "name_gen",
+    [
+        pytest.param("", id="first_file_name"),
+        pytest.param("checksum"),
+    ],
+)
+def test_replicated_table_restored_into_bigger_cluster(name_gen):
     node1.query(
         "CREATE TABLE tbl ON CLUSTER 'cluster' ("
         "x UInt32"
@@ -436,7 +473,10 @@ def test_replicated_table_restored_into_bigger_cluster():
     node2.query("INSERT INTO tbl VALUES (222)")
 
     backup_name = new_backup_name()
-    node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
+    backup_settings = {"data_file_name_generator": name_gen} if name_gen else None
+    node1.query(
+        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} {format_settings(backup_settings)}"
+    )
 
     node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
@@ -448,7 +488,14 @@ def test_replicated_table_restored_into_bigger_cluster():
     assert node3.query("SELECT * FROM tbl ORDER BY x") == TSV([111, 222])
 
 
-def test_replicated_table_restored_into_smaller_cluster():
+@pytest.mark.parametrize(
+    "name_gen",
+    [
+        pytest.param("", id="first_file_name"),
+        pytest.param("checksum"),
+    ],
+)
+def test_replicated_table_restored_into_smaller_cluster(name_gen):
     node1.query(
         "CREATE TABLE tbl ON CLUSTER 'cluster' ("
         "x UInt32"
@@ -460,7 +507,10 @@ def test_replicated_table_restored_into_smaller_cluster():
     node2.query("INSERT INTO tbl VALUES (222)")
 
     backup_name = new_backup_name()
-    node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
+    backup_settings = {"data_file_name_generator": name_gen} if name_gen else None
+    node1.query(
+        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} {format_settings(backup_settings)}"
+    )
 
     node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
@@ -468,7 +518,14 @@ def test_replicated_table_restored_into_smaller_cluster():
     assert node1.query("SELECT * FROM tbl ORDER BY x") == TSV([111, 222])
 
 
-def test_replicated_database_async():
+@pytest.mark.parametrize(
+    "name_gen",
+    [
+        pytest.param("", id="first_file_name"),
+        pytest.param("checksum"),
+    ],
+)
+def test_replicated_database_async(name_gen):
     node1.query(
         "CREATE DATABASE mydb ON CLUSTER 'cluster' ENGINE=Replicated('/clickhouse/path/','{shard}','{replica}')"
     )
@@ -493,8 +550,9 @@ def test_replicated_database_async():
     node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' mydb.tbl2")
 
     backup_name = new_backup_name()
+    backup_settings = {"data_file_name_generator": name_gen} if name_gen else None
     [id, status] = node1.query(
-        f"BACKUP DATABASE mydb ON CLUSTER 'cluster' TO {backup_name} ASYNC"
+        f"BACKUP DATABASE mydb ON CLUSTER 'cluster' TO {backup_name} {format_settings(backup_settings)} ASYNC"
     ).split("\t")
 
     assert status == "CREATING_BACKUP\n" or status == "BACKUP_CREATED\n"
@@ -597,9 +655,16 @@ def test_keeper_value_max_size():
 
 
 @pytest.mark.parametrize(
+    "name_gen",
+    [
+        pytest.param("", id="first_file_name"),
+        pytest.param("checksum"),
+    ],
+)
+@pytest.mark.parametrize(
     "interface, on_cluster", [("native", True), ("http", True), ("http", False)]
 )
-def test_async_backups_to_same_destination(interface, on_cluster):
+def test_async_backups_to_same_destination(interface, on_cluster, name_gen):
     node1.query(
         "CREATE TABLE tbl ON CLUSTER 'cluster' ("
         "x UInt8"
@@ -611,6 +676,7 @@ def test_async_backups_to_same_destination(interface, on_cluster):
     node1.query("INSERT INTO tbl VALUES (1)")
 
     backup_name = new_backup_name()
+    backup_settings = {"data_file_name_generator": name_gen} if name_gen else None
     on_cluster_part = "ON CLUSTER 'cluster'" if on_cluster else ""
 
     # Multiple backups to the same destination.
@@ -618,11 +684,11 @@ def test_async_backups_to_same_destination(interface, on_cluster):
     for node in nodes:
         if interface == "http":
             res, err = node.http_query_and_get_answer_with_error(
-                f"BACKUP TABLE tbl {on_cluster_part} TO {backup_name} ASYNC"
+                f"BACKUP TABLE tbl {on_cluster_part} TO {backup_name} {format_settings(backup_settings)} ASYNC"
             )
         else:
             res, err = node.query_and_get_answer_with_error(
-                f"BACKUP TABLE tbl {on_cluster_part} TO {backup_name} ASYNC"
+                f"BACKUP TABLE tbl {on_cluster_part} TO {backup_name} {format_settings(backup_settings)} ASYNC"
             )
 
         # The second backup to the same destination is expected to fail. It can either fail immediately or after a while.
@@ -825,7 +891,14 @@ def test_system_functions():
     node1.query("DROP FUNCTION parity_str")
 
 
-def test_projection():
+@pytest.mark.parametrize(
+    "name_gen",
+    [
+        pytest.param("", id="first_file_name"),
+        pytest.param("checksum"),
+    ],
+)
+def test_projection(name_gen):
     node1.query(
         "CREATE TABLE tbl ON CLUSTER 'cluster' (x UInt32, y String) ENGINE=ReplicatedMergeTree('/clickhouse/tables/tbl/', '{replica}') "
         "ORDER BY y PARTITION BY x%10"
@@ -843,7 +916,10 @@ def test_projection():
     )
 
     backup_name = new_backup_name()
-    node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
+    backup_settings = {"data_file_name_generator": name_gen} if name_gen else None
+    node1.query(
+        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} {format_settings(backup_settings)}"
+    )
 
     node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
@@ -868,7 +944,14 @@ def test_projection():
     )
 
 
-def test_file_deduplication():
+@pytest.mark.parametrize(
+    "name_gen",
+    [
+        pytest.param("", id="first_file_name"),
+        pytest.param("checksum"),
+    ],
+)
+def test_file_deduplication(name_gen):
     # Random column name helps finding it in logs.
     column_name = "".join(random.choice(string.ascii_letters) for x in range(10))
 
@@ -899,15 +982,18 @@ def test_file_deduplication():
     node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl2")
 
     backup_name = new_backup_name()
-    node1.query(f"BACKUP TABLE tbl, TABLE tbl2 ON CLUSTER 'cluster' TO {backup_name}")
+    backup_settings = {"data_file_name_generator": name_gen} if name_gen else None
+    node1.query(
+        f"BACKUP TABLE tbl, TABLE tbl2 ON CLUSTER 'cluster' TO {backup_name} {format_settings(backup_settings)}"
+    )
 
     node1.query("SYSTEM FLUSH LOGS ON CLUSTER 'cluster'")
 
     # The bin file should be written to the backup once, and skipped three times (because there are four replicas in total).
     bin_file_writing_log_line = (
-        f"Writing backup for file .*{column_name}.bin .* (disk default)"
+        f"Writing backup .* from file .*{column_name}.bin (disk default)"
     )
-    bin_file_skip_log_line = f"Writing backup for file .*{column_name}.bin .* skipped"
+    bin_file_skip_log_line = f"Writing backup .* from file .*{column_name}.bin: skipped"
 
     num_bin_file_writings = int(node1.count_in_log(bin_file_writing_log_line)) + int(
         node2.count_in_log(bin_file_writing_log_line)
@@ -1016,29 +1102,50 @@ def test_table_in_replicated_database_with_not_synced_def():
 
 
 def has_mutation_in_backup(mutation_id, backup_name, database, table):
-    return (
-        os.path.exists(
-            os.path.join(
-                get_path_to_backup(backup_name),
-                f"shards/1/replicas/1/data/{database}/{table}/mutations/{mutation_id}.txt",
-            )
-        )
-        or os.path.exists(
-            os.path.join(
-                get_path_to_backup(backup_name),
-                f"shards/1/replicas/2/data/{database}/{table}/mutations/{mutation_id}.txt",
-            )
-        )
-        or os.path.exists(
-            os.path.join(
-                get_path_to_backup(backup_name),
-                f"shards/1/replicas/3/data/{database}/{table}/mutations/{mutation_id}.txt",
-            )
-        )
+    metadata_path = os.path.join(get_path_to_backup(backup_name), ".backup")
+    with open(metadata_path, "r") as f:
+        xml_root = ET.fromstring(f.read())
+
+    data_file_name_generator_elem = xml_root.find("data_file_name_generator")
+    data_file_name_generator = (
+        data_file_name_generator_elem.text
+        if data_file_name_generator_elem is not None
+        else "first_file_name"
     )
 
+    contents = xml_root.find("contents")
+    file_map = {}
+    if contents is not None:
+        for file_elem in contents.findall("file"):
+            name_elem = file_elem.find("name")
+            data_elem = file_elem.find("data_file")
+            if name_elem is not None and data_elem is not None:
+                file_map[name_elem.text] = data_elem.text
 
-def test_mutation():
+    for replica in [1, 2, 3]:
+        file_name = f"shards/1/replicas/{replica}/data/{database}/{table}/mutations/{mutation_id}.txt"
+        data_file_name = (
+            file_name
+            if data_file_name_generator == "first_file_name"
+            else file_map.get(file_name)
+        )
+
+        if data_file_name and os.path.exists(
+            os.path.join(get_path_to_backup(backup_name), data_file_name)
+        ):
+            return True
+
+    return False
+
+
+@pytest.mark.parametrize(
+    "name_gen",
+    [
+        pytest.param("", id="first_file_name"),
+        pytest.param("checksum"),
+    ],
+)
+def test_mutation(name_gen):
     node1.query(
         "CREATE TABLE tbl ON CLUSTER 'cluster' ("
         "x UInt8, y String"
@@ -1057,7 +1164,10 @@ def test_mutation():
     node1.query("ALTER TABLE tbl UPDATE x=x+1+sleep(3) WHERE 1")
 
     backup_name = new_backup_name()
-    node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
+    backup_settings = {"data_file_name_generator": name_gen} if name_gen else None
+    node1.query(
+        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} {format_settings(backup_settings)}"
+    )
 
     # mutation #0000000000: "UPDATE x=x+1 WHERE 1" could already finish before starting the backup
     # mutation #0000000001: "UPDATE x=x+1+sleep(3) WHERE 1"
