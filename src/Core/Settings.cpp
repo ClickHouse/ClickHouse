@@ -5227,6 +5227,29 @@ Enable collecting hash table statistics to optimize memory allocation
 For how many elements it is allowed to preallocate space in all hash tables in total before join
 )", 0) \
     \
+    DECLARE(Bool, enable_stable_map_hashing, false, R"(
+Enable stable (order-independent) hashing for Map data types.
+
+When enabled, hash functions will produce the same hash value for maps with identical key-value pairs regardless of their insertion order.
+This is achieved by sorting map elements by key before hashing.
+
+Possible values:
+- 0 — Hash depends on element order (default, faster).
+- 1 — Hash is order-independent (stable, slightly slower).
+
+**Example**
+
+```sql
+SET enable_stable_map_hashing = 1;
+SELECT cityHash64(map('a', 1, 'b', 2)) = cityHash64(map('b', 2, 'a', 1));
+```
+
+Result:
+```
+1
+```
+)", 0) \
+    \
     DECLARE(Bool, kafka_disable_num_consumers_limit, false, R"(
 Disable limit on kafka_num_consumers that depends on the number of available CPU cores.
 )", 0) \

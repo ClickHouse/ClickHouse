@@ -18,6 +18,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/safe_cast.h>
 #include <Common/HashTable/Hash.h>
+#include <Common/iota.h>
 
 #if USE_SSL
 #    include <openssl/evp.h>
@@ -56,6 +57,11 @@
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool enable_stable_map_hashing;
+}
 
 namespace ErrorCodes
 {
@@ -1490,7 +1496,7 @@ template <typename Impl, bool Keyed = false, typename KeyType = char, typename K
 class FunctionAnyHash : public TargetSpecific::Default::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>
 {
 public:
-    explicit FunctionAnyHash(ContextPtr context) : selector(context)
+    explicit FunctionAnyHash(ContextPtr context) : selector(context), enable_stable_map_hashing(context->getSettingsRef()[Setting::enable_stable_map_hashing])
     {
         selector
             .registerImplementation<TargetArch::Default, TargetSpecific::Default::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
@@ -1504,7 +1510,26 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        return selector.selectAndExecute(arguments, result_type, input_rows_count);
+        if (!enable_stable_map_hashing)
+            return selector.selectAndExecute(arguments, result_type, input_rows_count);
+
+        /// If stable map hashing is enabled, preprocess Map columns by sorting them
+        ColumnsWithTypeAndName processed_arguments = arguments;
+        bool has_maps = false;
+
+        for (size_t i = 0; i < processed_arguments.size(); ++i)
+        {
+            if (const auto * type_map = typeid_cast<const DataTypeMap *>(processed_arguments[i].type.get()))
+            {
+                has_maps = true;
+                processed_arguments[i].column = sortMapColumn(processed_arguments[i].column, type_map);
+            }
+        }
+
+        if (!has_maps)
+            return selector.selectAndExecute(arguments, result_type, input_rows_count);
+
+        return selector.selectAndExecute(processed_arguments, result_type, input_rows_count);
     }
 
     static FunctionPtr create(ContextPtr context)
@@ -1514,6 +1539,61 @@ public:
 
 private:
     ImplementationSelector<IFunction> selector;
+    bool enable_stable_map_hashing;
+
+    /// Sort a map column by keys to ensure stable hashing
+    static ColumnPtr sortMapColumn(const ColumnPtr & column, const DataTypeMap * type_map)
+    {
+        /// Handle const columns
+        if (const auto * const_column = typeid_cast<const ColumnConst *>(column.get()))
+        {
+            auto sorted_inner = sortMapColumn(const_column->getDataColumnPtr(), type_map);
+            return ColumnConst::create(sorted_inner, const_column->size());
+        }
+
+        const auto * column_map = typeid_cast<const ColumnMap *>(column.get());
+        if (!column_map)
+            return column;
+
+        /// Get the nested Array(Tuple(key, value))
+        const auto & nested_array = column_map->getNestedColumn();
+        const auto & nested_data = nested_array.getData();
+        const auto & offsets = nested_array.getOffsets();
+
+        /// The nested data should be a Tuple(key, value)
+        const auto * tuple_column = typeid_cast<const ColumnTuple *>(&nested_data);
+        if (!tuple_column || tuple_column->tupleSize() != 2)
+            return column;
+
+        /// Get the keys column (first element of tuple)
+        const auto & keys_column = tuple_column->getColumn(0);
+
+        /// Create permutation to sort by keys within each map
+        size_t nested_size = nested_data.size();
+        IColumn::Permutation permutation(nested_size);
+        iota(permutation.data(), nested_size, IColumn::Permutation::value_type(0));
+
+        ColumnArray::Offset current_offset = 0;
+        for (size_t i = 0; i < offsets.size(); ++i)
+        {
+            auto next_offset = offsets[i];
+            /// Sort each map's elements by key
+            std::sort(
+                &permutation[current_offset],
+                &permutation[next_offset],
+                [&keys_column](size_t lhs, size_t rhs)
+                {
+                    return keys_column.compareAt(lhs, rhs, keys_column, 1) < 0;
+                });
+            current_offset = next_offset;
+        }
+
+        /// Apply permutation to create sorted nested data
+        auto sorted_nested_data = nested_data.permute(permutation, 0);
+        auto sorted_nested_array = ColumnArray::create(sorted_nested_data, nested_array.getOffsetsPtr());
+
+        return ColumnMap::create(sorted_nested_array);
+    }
 };
 
 

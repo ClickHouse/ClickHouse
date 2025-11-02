@@ -1,0 +1,4 @@
+-- Test 1: Default behavior (setting disabled)
+0	0	0	0
+-- Test 2: Stable hashing enabled
+1	1	1	1
