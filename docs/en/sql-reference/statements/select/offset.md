@@ -21,10 +21,10 @@ Negative OFFSET is supported: `OFFSET -n` skips the last `n` rows from the resul
 Fractional OFFSET is also supported: `OFFSET n` - If 0 < n < 1 then skip the first (n * 100)% percent from the result.
 
 Examples:
-    • `OFFSET 0.1` - skips the first 10% of the result
+    • `OFFSET 0.1` - skips the first 10% of the result.
 
 > **Note**
-> • The fraction must be a Float64 number less than 1 and greater than zero
+> • The fraction must be a Float64 number less than 1 and greater than zero.
 
 The `FETCH` specifies the maximum number of rows that can be in the result of a query.
 
