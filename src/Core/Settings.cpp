@@ -1519,7 +1519,7 @@ Possible values:
     DECLARE(Bool, use_skip_indexes_if_final_exact_mode, true, R"(
 Controls whether granules returned by a skipping index are expanded in newer parts to return correct results when executing a query with the FINAL modifier.
 
-Using skip indexes may exclude rows (granules) containing the latest data which could lead to incorrect results. This setting can ensure that correct results are returned by scanning newer parts that overlap with the ranges returned by the skip index. This setting should be disabled only if approximate results based on looking up the skip index are okay for an application.
+Using skip indexes may exclude rows (granules) containing the latest data which could lead to incorrect results. This setting can ensure that correct results are returned by scanning newer parts that have overlap with the ranges returned by the skip index. This setting should be disabled only if approximate results based on looking up the skip index are okay for an application.
 
 Possible values:
 
@@ -4866,6 +4866,12 @@ Possible values:
 
 - string: name of preferred projection
 )", 0) \
+    DECLARE(UInt64, max_projection_rows_to_use_projection_index, 1'000'000, R"(
+If the number of rows to read from the projection index is less than or equal to this threshold, ClickHouse will try to apply the projection index during query execution.
+)", 0) \
+    DECLARE(UInt64, min_table_rows_to_use_projection_index, 1'000'000, R"(
+If the estimated number of rows to read from the table is greater than or equal to this threshold, ClickHouse will try to use the projection index during query execution.
+)", 0) \
     DECLARE(Bool, async_socket_for_remote, true, R"(
 Enables asynchronous read from socket while executing remote query.
 
@@ -5632,7 +5638,7 @@ Use query plan for lazy materialization optimization.
 )", 0) \
     DECLARE(UInt64, query_plan_max_limit_for_lazy_materialization, 10, R"(Control maximum limit value that allows to use query plan for lazy materialization optimization. If zero, there is no limit.
 )", 0) \
-    DECLARE(Bool, enable_lazy_columns_replication, false, R"(
+    DECLARE(Bool, enable_lazy_columns_replication, true, R"(
 Enables lazy columns replication in JOIN and ARRAY JOIN, it allows to avoid unnecessary copy of the same rows multiple times in memory.
 )", 0) \
     DECLARE_WITH_ALIAS(Bool, query_plan_use_new_logical_join_step, true, R"(

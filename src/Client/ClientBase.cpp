@@ -341,6 +341,9 @@ class LocalFormatError : public Exception
 {
 public:
     using Exception::Exception;
+
+    LocalFormatError * clone() const override { return new LocalFormatError(*this); }
+    void rethrow() const override { throw *this; } /// NOLINT(cert-err60-cpp)
 };
 
 
@@ -1917,9 +1920,8 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
             ConstraintsDescription{},
             String{},
             {},
-            String{},
         };
-        StoragePtr storage = std::make_shared<StorageFile>(in_file, client_context->getUserFilesPath(), args);
+        StoragePtr storage = std::make_shared<StorageFile>(StorageFile::FileSource::parse(in_file, client_context), args);
         storage->startup();
         SelectQueryInfo query_info;
 
