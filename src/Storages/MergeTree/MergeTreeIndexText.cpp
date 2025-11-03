@@ -190,7 +190,6 @@ PostingList PostingsSerialization::deserialize(UInt64 header, UInt32 cardinality
 
 MergeTreeIndexGranuleText::MergeTreeIndexGranuleText(MergeTreeIndexTextParams params_)
     : params(std::move(params_))
-    , bloom_filter(params.bloom_filter_bits_per_row, params.bloom_filter_num_hashes, 0)
 {
 }
 
@@ -202,15 +201,6 @@ void MergeTreeIndexGranuleText::serializeBinary(WriteBuffer &) const
 void MergeTreeIndexGranuleText::deserializeBinary(ReadBuffer &, MergeTreeIndexVersion)
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Index with type 'text' must be deserialized with 3 streams: index, dictionary, postings");
-}
-
-void MergeTreeIndexGranuleText::deserializeBloomFilter(ReadBuffer & istr)
-{
-    readVarUInt(num_tokens, istr);
-
-    size_t bytes_size = getBloomFilterSizeInBytes(params.bloom_filter_bits_per_row, num_tokens);
-    bloom_filter.resize(bytes_size);
-    istr.readStrict(reinterpret_cast<char *>(bloom_filter.getFilter().data()), bytes_size);
 }
 
 namespace
@@ -280,22 +270,62 @@ ColumnPtr deserializeTokensFrontCoding(ReadBuffer & istr, size_t num_tokens)
 
     return tokens_column;
 }
-}
 
 /// TODO: add cache for dictionary sparse index
-void MergeTreeIndexGranuleText::deserializeSparseIndex(ReadBuffer & istr)
+DictionarySparseIndex deserializeSparseIndex(ReadBuffer & istr)
 {
     ProfileEvents::increment(ProfileEvents::TextIndexReadSparseIndexBlocks);
 
     size_t num_sparse_index_tokens = 0;
     readVarUInt(num_sparse_index_tokens, istr);
 
+    DictionarySparseIndex sparse_index;
     sparse_index.tokens = deserializeTokensRaw(istr, num_sparse_index_tokens);
 
     auto offsets_in_file = ColumnUInt64::create();
     SerializationNumber<UInt64> serialization_number;
     serialization_number.deserializeBinaryBulk(*offsets_in_file, istr, 0, num_sparse_index_tokens, 0.0);
     sparse_index.offsets_in_file = std::move(offsets_in_file);
+
+    return sparse_index;
+}
+
+BloomFilter deserializeBloomFilter(ReadBuffer & istr, const MergeTreeIndexTextParams & params, size_t num_tokens)
+{
+    size_t bytes_size = getBloomFilterSizeInBytes(params.bloom_filter_bits_per_row, num_tokens);
+
+    BloomFilter bloom_filter(bytes_size, params.bloom_filter_num_hashes, 0);
+    istr.readStrict(reinterpret_cast<char *>(bloom_filter.getFilter().data()), bytes_size);
+
+    return bloom_filter;
+}
+}
+
+void MergeTreeIndexGranuleText::deserializeHeader(ReadBuffer & istr, const MergeTreeIndexDeserializationState & state)
+{
+    const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*state.condition);
+
+    /// Either retrieves a text index header from cache or from disk when cache is disabled.
+    const auto get_header = [&]() -> TextIndexHeaderPtr
+    {
+        const auto load_header = [&]
+        {
+            size_t num_tokens;
+            readVarUInt(num_tokens, istr);
+            auto bloom_filter = deserializeBloomFilter(istr, params, num_tokens);
+            auto sparse_index = deserializeSparseIndex(istr);
+            return std::make_shared<TextIndexHeader>(num_tokens, std::move(bloom_filter), std::move(sparse_index));
+        };
+
+        if (condition_text.useHeaderCache())
+            return condition_text.headerCache()->getOrSet(
+                TextIndexHeaderCache::hash(state.path_to_data_part, state.index_name, state.index_mark),
+                load_header);
+
+        return load_header();
+    };
+
+    header = get_header();
 }
 
 void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIndexInputStreams & streams, MergeTreeIndexDeserializationState & state)
@@ -308,8 +338,7 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
     if (!index_stream || !dictionary_stream)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index with type 'text' must be deserialized with 3 streams: index, dictionary, postings. One of the streams is missing");
 
-    deserializeBloomFilter(*index_stream->getDataBuffer());
-    deserializeSparseIndex(*index_stream->getDataBuffer());
+    deserializeHeader(*index_stream->getDataBuffer(), state);
 
     analyzeBloomFilter(*state.condition);
     analyzeDictionary(*dictionary_stream, state);
@@ -325,7 +354,7 @@ void MergeTreeIndexGranuleText::analyzeBloomFilter(const IMergeTreeIndexConditio
     {
         for (const auto & token : search_tokens)
         {
-            if (bloom_filter.find(token.data(), token.size()))
+            if (header->bloomFilter().find(token.data(), token.size()))
             {
                 /// Create empty postings info, it will be filled during the dictionary analysis.
                 remaining_tokens.emplace(token, TokenPostingsInfo{});
@@ -413,7 +442,7 @@ void MergeTreeIndexGranuleText::analyzeDictionary(MergeTreeIndexReaderStream & s
 
     for (const auto & [token, _] : remaining_tokens)
     {
-        size_t idx = sparse_index.upperBound(token);
+        size_t idx = header->sparseIndex().upperBound(token);
 
         if (idx != 0)
             --idx;
@@ -427,16 +456,17 @@ void MergeTreeIndexGranuleText::analyzeDictionary(MergeTreeIndexReaderStream & s
     /// Either retrieves a dictionary block from cache or from disk when cache is disabled.
     const auto get_dictionary_block = [&](size_t block_id)
     {
-        const auto dictionary_block_key = TextIndexDictionaryBlockCache::hash(state.path_to_data_part, state.index_name, state.index_mark, block_id);
         const auto load_dictionary_block = [&] -> TextIndexDictionaryBlockCacheEntryPtr
         {
-            UInt64 offset_in_file = sparse_index.getOffsetInFile(block_id);
+            UInt64 offset_in_file = header->sparseIndex().getOffsetInFile(block_id);
             compressed_buffer->seek(offset_in_file, 0);
             return std::make_shared<TextIndexDictionaryBlockCacheEntry>(deserializeDictionaryBlock(*data_buffer));
         };
 
         if (condition_text.useDictionaryBlockCache())
-            return condition_text.dictionaryBlockCache()->getOrSet(dictionary_block_key, load_dictionary_block);
+            return condition_text.dictionaryBlockCache()->getOrSet(
+                TextIndexDictionaryBlockCache::hash(state.path_to_data_part, state.index_name, state.index_mark, block_id),
+                load_dictionary_block);
 
         return load_dictionary_block();
     };
@@ -474,9 +504,7 @@ void MergeTreeIndexGranuleText::analyzeDictionary(MergeTreeIndexReaderStream & s
 size_t MergeTreeIndexGranuleText::memoryUsageBytes() const
 {
     return sizeof(*this)
-        + bloom_filter.getFilterSizeBytes()
-        + sparse_index.tokens->allocatedBytes()
-        + sparse_index.offsets_in_file->allocatedBytes()
+        + header->memoryUsageBytes()
         + remaining_tokens.capacity() * sizeof(*remaining_tokens.begin());
 }
 
@@ -504,8 +532,7 @@ void MergeTreeIndexGranuleText::resetAfterAnalysis()
 {
     /// Reset data that is not needed after the analysis.
     /// Keep only remaining tokens with postings lists.
-    bloom_filter = BloomFilter(1, 1, 0);
-    sparse_index = DictionarySparseIndex();
+    header = nullptr;
 }
 
 MergeTreeIndexGranuleTextWritable::MergeTreeIndexGranuleTextWritable(

@@ -46,6 +46,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"max_projection_rows_to_use_projection_index", 1'000'000, 1'000'000, "New setting"},
             {"min_table_rows_to_use_projection_index", 1'000'000, 1'000'000, "New setting"},
             {"use_text_index_dictionary_cache", false, false, "New setting"},
+            {"use_text_index_header_cache", false, false, "New setting"},
             {"s3_retry_attempts", 500, 500, "Changed the value of the obsolete setting"},
             {"optimize_const_name_size", -1, 256, "Replace with scalar and use hash as a name for large constants (size is estimated by name length)"},
             {"enable_lazy_columns_replication", false, true, "Enable lazy columns replication in JOIN and ARRAY JOIN by default"},

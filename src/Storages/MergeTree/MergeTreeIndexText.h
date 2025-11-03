@@ -195,6 +195,36 @@ struct DictionaryBlock : public DictionaryBlockBase
     std::vector<TokenPostingsInfo> token_infos;
 };
 
+class TextIndexHeader
+{
+public:
+    TextIndexHeader(size_t num_tokens_, BloomFilter bloom_filter_, DictionarySparseIndex sparse_index_)
+        : num_tokens(num_tokens_)
+        , bloom_filter(std::move(bloom_filter_))
+        , sparse_index(std::move(sparse_index_))
+    {
+    }
+
+    size_t numberOfTokens() const { return num_tokens; }
+    const BloomFilter & bloomFilter() const { return bloom_filter; }
+    const DictionarySparseIndex & sparseIndex() const { return sparse_index; }
+
+    size_t memoryUsageBytes() const
+    {
+        return sizeof(*this)
+            + bloom_filter.getFilterSizeBytes()
+            + sparse_index.tokens->allocatedBytes()
+            + sparse_index.offsets_in_file->allocatedBytes();
+    }
+
+private:
+    size_t num_tokens;
+    BloomFilter bloom_filter;
+    DictionarySparseIndex sparse_index;
+};
+
+using TextIndexHeaderPtr = std::shared_ptr<TextIndexHeader>;
+
 /// Text index granule created on reading of the index.
 struct MergeTreeIndexGranuleText final : public IMergeTreeIndexGranule
 {
@@ -208,7 +238,7 @@ public:
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
     void deserializeBinaryWithMultipleStreams(MergeTreeIndexInputStreams & streams, MergeTreeIndexDeserializationState & state) override;
 
-    bool empty() const override { return num_tokens == 0; }
+    bool empty() const override { return header->numberOfTokens() == 0; }
     size_t memoryUsageBytes() const override;
 
     bool hasAnyTokenFromQuery(const TextSearchQuery & query) const;
@@ -218,8 +248,8 @@ public:
     void resetAfterAnalysis();
 
 private:
-    void deserializeBloomFilter(ReadBuffer & istr);
-    void deserializeSparseIndex(ReadBuffer & istr);
+    /// Header of the text index contains the number of tokens, bloom filter and sparse index.
+    void deserializeHeader(ReadBuffer & istr, const MergeTreeIndexDeserializationState & state);
 
     /// Analyzes bloom filters. Removes tokens that are not present in the bloom filter.
     void analyzeBloomFilter(const IMergeTreeIndexCondition & condition);
@@ -227,9 +257,7 @@ private:
     void analyzeDictionary(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
 
     MergeTreeIndexTextParams params;
-    size_t num_tokens = 0;
-    BloomFilter bloom_filter;
-    DictionarySparseIndex sparse_index;
+    TextIndexHeaderPtr header;
     /// Tokens that are in the index granule after analysis.
     TokenToPostingsInfosMap remaining_tokens;
 };
