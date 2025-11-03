@@ -7,6 +7,7 @@
 #include <base/sort.h>
 
 #include <Common/AllocatorWithMemoryTracking.h>
+#include <Common/Exception.h>
 #include <Common/ArenaWithFreeLists.h>
 #include <Common/ArenaUtils.h>
 #include <Common/HashTable/Hash.h>
@@ -24,6 +25,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int SERIALIZATION_ERROR;
+}
 
 /*
  * Arena interface to allow specialized storage of keys.
@@ -308,11 +313,19 @@ public:
     {
         size_t alpha_size = 0;
         readVarUInt(alpha_size, rb);
-        for (size_t i = 0; i < alpha_size; ++i)
+
+        const size_t expected_size = nextAlphaSize(m_capacity);
+        if (unlikely(alpha_size != expected_size))
+            throw Exception(ErrorCodes::SERIALIZATION_ERROR,
+                            "Invalid alpha_map size {} for SpaceSaving state (expected {} for capacity {})",
+                            alpha_size, expected_size, m_capacity);
+
+        alpha_map.resize(expected_size);
+        for (size_t i = 0; i < expected_size; ++i)
         {
             UInt64 alpha = 0;
             readVarUInt(alpha, rb);
-            alpha_map.push_back(alpha);
+            alpha_map[i] = alpha;
         }
     }
 

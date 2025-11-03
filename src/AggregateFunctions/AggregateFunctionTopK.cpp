@@ -36,6 +36,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
+    extern const int SERIALIZATION_ERROR;
 }
 
 
@@ -197,6 +198,13 @@ struct AggregateFunctionTopKGenericData
     using Set = SpaceSaving<StringRef, StringRefHash>;
 
     Set value;
+    /// Indicates that this state was reconstructed via deserialize() from binary
+    /// For non-plain columns, finalization from such states is unsafe because keys contain
+    /// nested aggregation-state serialization without length boundaries, see
+    /// ColumnString::deserializeAndInsertAggregationStateValueFromArena. To avoid
+    /// potential memory overreads on malformed input, we prohibit finalization for
+    /// states loaded from binary for non-plain variants
+    bool loaded_from_state = false;
 };
 
 /** Template parameter with true value should be used for columns that store their elements in memory continuously.
@@ -266,10 +274,13 @@ public:
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
-        auto & set = this->data(place).value;
+        auto & state = this->data(place);
+        auto & set = state.value;
         set.clear();
 
-        // Specialized here because there's no deserialiser for StringRef
+        // Mark that this state came from external binary
+        state.loaded_from_state = true;
+
         size_t size = 0;
         readVarUInt(size, buf);
         if (unlikely(size > TOP_K_MAX_SIZE))
@@ -279,15 +290,23 @@ public:
                 size,
                 getName(),
                 TOP_K_MAX_SIZE);
-        set.resize(std::min(size + 1, size_t(reserved)));
+
+        // Ensure capacity matches reserved before reading alpha map to keep serialization consistent
+        set.resize(static_cast<size_t>(reserved));
+
+        // Read counters; fail hard on any malformed input
         for (size_t i = 0; i < size; ++i)
         {
-            auto ref = readStringBinaryInto(*arena, buf);
-            UInt64 count;
-            UInt64 error;
+            /// Key is stored as a serialized binary blob for non-plain columns
+            StringRef ref = readStringBinaryInto(*arena, buf);
+
+            UInt64 count = 0;
+            UInt64 error = 0;
             readVarUInt(count, buf);
             readVarUInt(error, buf);
+
             set.insert(ref, count, error);
+            // We copied the key into the set's arena; release temporary bytes from the external arena
             arena->rollback(ref.size);
         }
 
@@ -328,12 +347,23 @@ public:
         if (set.capacity() != reserved)
             set.resize(reserved);
         set.merge(this->data(rhs).value);
+
+        // if any side was loaded from state, treat result as loaded
+        this->data(place).loaded_from_state = this->data(place).loaded_from_state || this->data(rhs).loaded_from_state;
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
         ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
+
+        if constexpr (!is_plain_column)
+        {
+            if (this->data(place).loaded_from_state)
+                throw Exception(ErrorCodes::SERIALIZATION_ERROR,
+                                "Cannot finalize '{}' state loaded from binary for non-plain argument type",
+                                getName());
+        }
 
         const typename State::Set & set = this->data(place).value;
         auto result_vec = set.topK(threshold);
