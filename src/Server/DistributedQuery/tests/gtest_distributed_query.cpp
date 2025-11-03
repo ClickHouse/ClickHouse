@@ -284,6 +284,9 @@ QueryPlan createHashJoinQueryPlan(const String & data_a, const String & data_b)
         NameSet required_output_columns = {"t1.c1", "t1.c2", "t1.va", "t2.vb"};
         ContextPtr query_context = getContext().context;
 
+        auto join_settings = JoinSettings(query_context->getSettingsRef());
+        join_settings.enable_lazy_columns_replication = false;
+
         auto join_step = std::make_unique<JoinStepLogical>(
             header_a,
             header_b,
@@ -292,7 +295,7 @@ QueryPlan createHashJoinQueryPlan(const String & data_a, const String & data_b)
             std::move(required_output_columns),
             std::unordered_map<String, const ActionsDAG::Node *>{},
             false,
-            JoinSettings(query_context->getSettingsRef()),
+            join_settings,
             SortingStep::Settings(query_context->getSettingsRef()));
 
         join_step->setStepDescription("Join");
