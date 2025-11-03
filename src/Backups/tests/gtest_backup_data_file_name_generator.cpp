@@ -154,6 +154,9 @@ TEST(BackupDataFileNameGeneratorTest, ThrowsWhenChecksumPrefixOutOfBound)
 
 TEST(BackupDataFileNameGeneratorTest, ThrowsOnEmptyFileName)
 {
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    GTEST_SKIP() << "this test trigger LOGICAL_ERROR, runs only if DEBUG_OR_SANITIZER_BUILD is not defined";
+#else
     ConfigurationPtr config = Poco::AutoPtr<Poco::Util::MapConfiguration>(new Poco::Util::MapConfiguration());
     BackupSettings settings;
     settings.deduplicate_files = true;
@@ -168,10 +171,14 @@ TEST(BackupDataFileNameGeneratorTest, ThrowsOnEmptyFileName)
     info.checksum = 0x123;
 
     EXPECT_THROW(generator->generate(info), Exception);
+#endif
 }
 
 TEST(BackupDataFileNameGeneratorTest, ThrowsOnZeroChecksum)
 {
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    GTEST_SKIP() << "this test trigger LOGICAL_ERROR, runs only if DEBUG_OR_SANITIZER_BUILD is not defined";
+#else
     ConfigurationPtr config = Poco::AutoPtr<Poco::Util::MapConfiguration>(new Poco::Util::MapConfiguration());
     BackupSettings settings;
     settings.deduplicate_files = true;
@@ -186,4 +193,5 @@ TEST(BackupDataFileNameGeneratorTest, ThrowsOnZeroChecksum)
     info.checksum = 0;
 
     EXPECT_THROW(generator->generate(info), Exception);
+#endif
 }
