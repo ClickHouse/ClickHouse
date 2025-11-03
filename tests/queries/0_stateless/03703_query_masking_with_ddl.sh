@@ -7,8 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 db=${CLICKHOUSE_DATABASE}
 
-# config_path=${CLICKHOUSE_CONFIG_DIR}/config.d/query_masking_$db.xml
-config_path=/home/mburdukov/workspace/configs/config.d/query_masking_$db.xml
+config_path=${CLICKHOUSE_CONFIG_DIR}/config.d/query_masking_$db.xml
 echo "
 <clickhouse>
       <query_masking_rules>
