@@ -51,7 +51,7 @@ public:
         if (file_info.checksum == 0)
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Backup checksum should not be zero ({})", file_info.file_name);
 
-        const std::string checksum_hex = getHexUIntLowercase(file_info.checksum);
+        std::string checksum_hex = getHexUIntLowercase(file_info.checksum);
 
         if (prefix_length == 0 || prefix_length >= checksum_hex.size())
             return checksum_hex;
