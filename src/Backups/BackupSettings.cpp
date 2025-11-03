@@ -5,6 +5,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTLiteral.h>
+#include <Backups/SettingsFieldOptionalUInt64.h>
 #include <Backups/SettingsFieldOptionalUUID.h>
 
 
@@ -41,7 +42,7 @@ namespace ErrorCodes
     M(Bool, write_access_entities_dependents) \
     M(Bool, allow_checksums_from_remote_paths) \
     M(String, data_file_name_generator) \
-    M(UInt64, data_file_name_prefix_length) \
+    M(OptionalUInt64, data_file_name_prefix_length) \
     M(Bool, internal) \
     M(Bool, experimental_lightweight_snapshot) \
     M(String, host_id) \

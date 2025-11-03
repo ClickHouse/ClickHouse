@@ -49,11 +49,17 @@ public:
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Backup file name should not be empty");
 
         if (file_info.checksum == 0)
-            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Backup checksum should not be zero {}", file_info.file_name);
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Backup checksum should not be zero ({})", file_info.file_name);
 
-        auto checksum_hex = getHexUIntLowercase(file_info.checksum);
+        const std::string checksum_hex = getHexUIntLowercase(file_info.checksum);
 
-        return fs::path(checksum_hex.substr(0, prefix_length)) / checksum_hex.substr(prefix_length);
+        if (prefix_length == 0 || prefix_length >= checksum_hex.size())
+            return checksum_hex;
+
+        const std::string_view prefix = {checksum_hex.data(), prefix_length};
+        const std::string_view suffix = {checksum_hex.data() + prefix_length, checksum_hex.size() - prefix_length};
+
+        return (fs::path(prefix) / suffix).string();
     }
 
 private:
@@ -94,9 +100,9 @@ getBackupDataFileNameGenerator(const Poco::Util::AbstractConfiguration & config,
             CHECKSUM_GENERATOR_NAME);
     }
 
-    size_t prefix_length = backup_settings.data_file_name_prefix_length;
-    if (prefix_length == 0)
-        prefix_length = config.getUInt64("backups.data_file_name_prefix_length", generator == CHECKSUM_GENERATOR_NAME ? 3 : 0);
+    size_t prefix_length = backup_settings.data_file_name_prefix_length.has_value()
+        ? *backup_settings.data_file_name_prefix_length
+        : config.getUInt64("backups.data_file_name_prefix_length", generator == CHECKSUM_GENERATOR_NAME ? 3 : 0);
 
     if (generator == FIRST_FILE_NAME_GENERATOR_NAME && prefix_length != 0)
     {

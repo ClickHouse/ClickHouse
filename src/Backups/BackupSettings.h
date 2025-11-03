@@ -95,7 +95,7 @@ struct BackupSettings
     String data_file_name_generator;
 
     /// A length of backup file name prefix. Only applicable to "checksum" generator.
-    size_t data_file_name_prefix_length = 0;
+    std::optional<size_t> data_file_name_prefix_length;
 
     /// Internal, should not be specified by user.
     /// Whether this backup is a part of a distributed backup created by BACKUP ON CLUSTER.
