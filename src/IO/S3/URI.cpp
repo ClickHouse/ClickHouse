@@ -64,7 +64,7 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
         /// Heuristics: if query parameters look like pre-signed or real key=value, treat as query
         for (const auto & [qk, qv] : original_uri.getQueryParameters())
         {
-            if (qk == "versionId" || qk == "AWSAccessKeyId" || qk == "Signature" || qk == "Expires" || qk.rfind("X-Amz-", 0) == 0)
+            if (qk == "versionId" || qk == "AWSAccessKeyId" || qk == "Signature" || qk == "Expires" || qk.starts_with("X-Amz-"))
             {
                 looks_like_presigned = true;
                 break;
@@ -116,9 +116,9 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
         }
     }
 
-    /// encode only the PATH when '?' was used as a wildcard in the original string.
+    /// Fix B: encode only the PATH when '?' was used as a wildcard in the original string.
     /// We reconstruct the intended path by merging original path + '?' + original query,
-    /// percent-encode '?' in the path, and clear the query. This keeps mapped scheme/authority
+    /// percent-encode '?' in the path, and clear the query. This keeps mapped scheme/authority.
     if (wildcard_question_mark)
     {
         std::string combined_path = original_uri.getPath();
