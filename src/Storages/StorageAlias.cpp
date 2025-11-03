@@ -27,6 +27,8 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
+    extern const int UNKNOWN_DATABASE;
+    extern const int UNKNOWN_TABLE;
 }
 
 StorageAlias::StorageAlias(
@@ -225,6 +227,70 @@ void StorageAlias::rename(const String & /* new_path_to_table_data */, const Sto
 {
     // Only rename the alias itself, not the target table
     renameInMemory(new_table_id);
+}
+
+StorageInMemoryMetadata StorageAlias::getInMemoryMetadata() const
+{
+    try
+    {
+        return getTargetTable()->getInMemoryMetadata();
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() == ErrorCodes::UNKNOWN_DATABASE || e.code() == ErrorCodes::UNKNOWN_TABLE)
+            return IStorage::getInMemoryMetadata();
+        throw;
+    }
+}
+
+StorageMetadataPtr StorageAlias::getInMemoryMetadataPtr() const
+{
+    try
+    {
+        return getTargetTable()->getInMemoryMetadataPtr();
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() == ErrorCodes::UNKNOWN_DATABASE || e.code() == ErrorCodes::UNKNOWN_TABLE)
+            return IStorage::getInMemoryMetadataPtr();
+        throw;
+    }
+}
+
+Strings StorageAlias::getDataPaths() const
+{
+    try
+    {
+        return getTargetTable()->getDataPaths();
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() == ErrorCodes::UNKNOWN_DATABASE || e.code() == ErrorCodes::UNKNOWN_TABLE)
+            return {};
+        throw;
+    }
+}
+
+TableLockHolder StorageAlias::tryLockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout)
+{
+    TableLockHolder alias_lock = IStorage::tryLockForShare(query_id, acquire_timeout);
+    if (!alias_lock)
+        return nullptr;
+
+    try
+    {
+        auto target_lock = getTargetTable()->tryLockForShare(query_id, acquire_timeout);
+        if (!target_lock)
+            return nullptr;
+
+        return alias_lock;
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() == ErrorCodes::UNKNOWN_DATABASE || e.code() == ErrorCodes::UNKNOWN_TABLE)
+            return nullptr;
+        throw;
+    }
 }
 
 QueryProcessingStage::Enum StorageAlias::getQueryProcessingStage(

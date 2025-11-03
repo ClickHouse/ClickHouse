@@ -104,8 +104,8 @@ public:
 
     void updateExternalDynamicMetadataIfExists(ContextPtr local_context) override;
     void checkTableCanBeDropped(ContextPtr /*query_context*/) const override {}
-    StorageInMemoryMetadata getInMemoryMetadata() const override { return getTargetTable()->getInMemoryMetadata(); }
-    StorageMetadataPtr getInMemoryMetadataPtr() const override { return getTargetTable()->getInMemoryMetadataPtr(); }
+    StorageInMemoryMetadata getInMemoryMetadata() const override;
+    StorageMetadataPtr getInMemoryMetadataPtr() const override;
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
     StorageSnapshotPtr getStorageSnapshotForQuery(const StorageMetadataPtr & metadata_snapshot, const ASTPtr & query, ContextPtr query_context) const override;
     StorageSnapshotPtr getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
@@ -147,7 +147,7 @@ public:
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info) const override;
 
-    Strings getDataPaths() const override { return getTargetTable()->getDataPaths(); }
+    Strings getDataPaths() const override;
 
     ActionLock getActionLock(StorageActionBlockType type) override { return getTargetTable()->getActionLock(type); }
 
@@ -157,6 +157,8 @@ public:
     IndexSizeByName getSecondaryIndexSizes() const override { return getTargetTable()->getSecondaryIndexSizes(); }
 
     CancellationCode killPartMoveToShard(const UUID & task_uuid) override;
+
+    TableLockHolder tryLockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout);
 
     /// These operations are not proxied (executed on alias itself)
     /// Drop alias, not the target table
