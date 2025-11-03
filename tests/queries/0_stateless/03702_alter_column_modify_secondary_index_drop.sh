@@ -1,4 +1,7 @@
 #!/bin/bash
+# Tags: no-parallel-replicas
+# no-parallel-replicas: The EXPLAIN output is completely different
+
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
@@ -16,10 +19,9 @@ wait_for_mutations() {
 }
 
 client() {
-    # -- Need it for proper explain
-    # SET use_skip_indexes_on_data_read = 0;
-    # -- Need it because we rerun some queries (with different settings) and we want to execute the full analysis
-    # SET use_query_condition_cache = 0;
+    # SET enable_analyzer=1; -- Different EXPLAIN output
+    # SET use_skip_indexes_on_data_read = 0; -- Need it for proper explain
+    # SET use_query_condition_cache = 0; -- Need it because we rerun some queries (with different settings) and we want to execute the full analysis
     $CLICKHOUSE_CLIENT --echo --use_skip_indexes_on_data_read=0 --use_query_condition_cache=0 -q "$1"
 }
 
