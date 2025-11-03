@@ -62,11 +62,11 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
     if (first_question != std::string::npos)
     {
         std::string after_question = uri_str.substr(first_question + 1);
-        
+
         // Only encode if it's clearly a wildcard pattern:
         // - Starts with another '?' (like '??')
         // - Or doesn't contain '=' (not a query parameter)
-        if (!after_question.empty() && 
+        if (!after_question.empty() &&
             (after_question[0] == '?' || after_question.find('=') == std::string::npos))
         {
             is_wildcard_pattern = true;
