@@ -1508,7 +1508,7 @@ private:
                 /// Instead, check per-row used flags directly
                 if constexpr (std::is_same_v<Mapped, RowRef>)
                 {
-                    if (parent.isUsed(mapped.columns, mapped.row_num))
+                    if (parent.isUsed(&mapped.columns_info->columns, mapped.row_num))
                         continue;
                 }
                 else
