@@ -9,7 +9,7 @@ import subprocess
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import traceback
-from signal import SIGKILL, SIGUSR1
+import signal
 
 DEBUGGER = os.getenv("DEBUGGER", "")
 TIMEOUT = int(os.getenv("TIMEOUT", "0"))
