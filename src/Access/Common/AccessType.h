@@ -217,6 +217,7 @@ enum class AccessType : uint8_t
     \
     M(ALTER_DATABASE_SETTINGS, "ALTER DATABASE SETTING, ALTER MODIFY DATABASE SETTING, MODIFY DATABASE SETTING", DATABASE, ALTER_DATABASE) /* allows to execute ALTER MODIFY SETTING */\
     M(ALTER_NAMED_COLLECTION, "", NAMED_COLLECTION, NAMED_COLLECTION_ADMIN) /* allows to execute ALTER NAMED COLLECTION */\
+    M(ALTER_RULE, "", GLOBAL, ALTER) /* allows to execute ALTER RULE */\
     \
     M(ALTER_TABLE, "", GROUP, ALTER) \
     M(ALTER_DATABASE, "", GROUP, ALTER) \
@@ -244,6 +245,7 @@ enum class AccessType : uint8_t
     M(CREATE_WORKLOAD, "", GLOBAL, CREATE) /* allows to execute CREATE WORKLOAD */ \
     M(CREATE_RESOURCE, "", GLOBAL, CREATE) /* allows to execute CREATE RESOURCE */ \
     M(CREATE_NAMED_COLLECTION, "", NAMED_COLLECTION, NAMED_COLLECTION_ADMIN) /* allows to execute CREATE NAMED COLLECTION */ \
+    M(CREATE_RULE, "", GLOBAL, CREATE) /* allows to execute CREATE RULE */\
     M(CREATE, "", GROUP, ALL) /* allows to execute {CREATE|ATTACH} */ \
     \
     M(DROP_DATABASE, "", DATABASE, DROP) /* allows to execute {DROP|DETACH|TRUNCATE} DATABASE */\
@@ -255,6 +257,7 @@ enum class AccessType : uint8_t
     M(DROP_WORKLOAD, "", GLOBAL, DROP) /* allows to execute DROP WORKLOAD */\
     M(DROP_RESOURCE, "", GLOBAL, DROP) /* allows to execute DROP RESOURCE */\
     M(DROP_NAMED_COLLECTION, "", NAMED_COLLECTION, NAMED_COLLECTION_ADMIN) /* allows to execute DROP NAMED COLLECTION */\
+    M(DROP_RULE, "", GLOBAL, DROP) /* allows to execute DROP RULE */\
     M(DROP, "", GROUP, ALL) /* allows to execute {DROP|DETACH} */\
     \
     M(UNDROP_TABLE, "", TABLE, ALL) /* allows to execute {UNDROP} TABLE */\

@@ -118,6 +118,14 @@ IASTHash IAST::getTreeHash(bool ignore_aliases) const
 }
 
 
+IASTHash IAST::getCurrentNodeHash(bool ignore_aliases) const
+{
+    SipHash hash_state;
+    updateTreeHashImpl(hash_state, ignore_aliases);
+    return getSipHash128AsPair(hash_state);
+}
+
+
 void IAST::updateTreeHash(SipHash & hash_state, bool ignore_aliases) const
 {
     updateTreeHashImpl(hash_state, ignore_aliases);
