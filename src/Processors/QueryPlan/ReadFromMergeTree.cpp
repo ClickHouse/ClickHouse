@@ -2140,8 +2140,6 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         {
             result.parts_with_ranges = analyze_index(parts, result.index_stats);
 
-            MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(result.parts_with_ranges, query_info_, vector_search_parameters, context_, log);
-
             if (final_second_pass)
             {
                 result.parts_with_ranges
@@ -2240,8 +2238,6 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                 (distributed_analysis_results_callback_.value())(distributed_index_analysis);
 
             result.parts_with_ranges = std::move(result_parts_ranges);
-
-            MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(result.parts_with_ranges, query_info_, vector_search_parameters, context_, log);
         }
 
         std::optional<size_t> condition_hash;
