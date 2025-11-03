@@ -761,7 +761,9 @@ void MutationsInterpreter::prepare(bool dry_run)
         stage.filters.push_back(std::move(filter));
     }
 
-    const auto index_mode = (*source.getMergeTreeData()->getSettings())[MergeTreeSetting::alter_column_secondary_index_mode];
+    const auto index_mode = source.getMergeTreeData()
+        ? (*source.getMergeTreeData()->getSettings())[MergeTreeSetting::alter_column_secondary_index_mode]
+        : AlterColumnSecondaryIndexMode::REBUILD;
 
     /// First, break a sequence of commands into stages.
     for (const auto & command : commands)
