@@ -594,7 +594,7 @@
     <!-- NOTE: all files with `tmp` prefix will be removed at server startup -->
     <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
 
-    <!-- Disable AuthType plaintext_password and no_password for ACL. -->
+    <!-- Enable AuthType plaintext_password and no_password for ACL (1 = allow, 0 = forbid). -->
     <allow_plaintext_password>1</allow_plaintext_password>
     <allow_no_password>1</allow_no_password>
     <allow_implicit_no_password>1</allow_implicit_no_password>
