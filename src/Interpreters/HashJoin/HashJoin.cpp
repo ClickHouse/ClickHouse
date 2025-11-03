@@ -1501,23 +1501,11 @@ private:
 
             for (; it != end; ++it)
             {
+                size_t offset = map.offsetInternal(it.getPtr());
+                if (parent.isUsed(offset))
+                    continue;
+
                 const Mapped & mapped = it->getMapped();
-
-                /// Avoid TwoLevelHashTable::offsetInternal() for ANY-join (RowRef) on two-level maps
-                /// it performs an O(NUM_BUCKETS) scan over buckets to compute a global offset
-                /// Instead, check per-row used flags directly
-                if constexpr (std::is_same_v<Mapped, RowRef>)
-                {
-                    if (parent.isUsed(&mapped.columns_info->columns, mapped.row_num))
-                        continue;
-                }
-                else
-                {
-                    size_t offset = map.offsetInternal(it.getPtr());
-                    if (parent.isUsed(offset))
-                        continue;
-                }
-
                 AdderNonJoined<Mapped>::add(mapped, rows_added, columns_keys_and_right);
 
                 if (rows_added >= max_block_size)
