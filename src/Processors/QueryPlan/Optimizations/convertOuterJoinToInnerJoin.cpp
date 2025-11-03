@@ -113,7 +113,6 @@ size_t tryConvertAnyOuterJoinToInnerJoin(
     /// So, we need to revert such renaming to be able to compare columns with the aggregating step keys.
     if (auto * expr_step = typeid_cast<ExpressionStep *>(interesting_side_plan_node->step.get()))
     {
-        LOG_DEBUG(getLogger(__func__), "Skipping expression step on interesting side:\n{}", expr_step->getExpression().dumpDAG());
         for (const auto & output : expr_step->getExpression().getOutputs())
         {
             if (output->type == ActionsDAG::ActionType::ALIAS)
@@ -124,7 +123,6 @@ size_t tryConvertAnyOuterJoinToInnerJoin(
                     const auto & alias_child = output->children.front();
                     join_keys_interesting_side.erase(output->result_name);
                     join_keys_interesting_side.insert(alias_child->result_name);
-                    LOG_DEBUG(getLogger(__func__), "Found alias for join key: {} -> {}", output->result_name, alias_child->result_name);
                 }
             }
         }
@@ -142,10 +140,7 @@ size_t tryConvertAnyOuterJoinToInnerJoin(
     for (const auto & aggregation_key : aggregating_step->getParams().keys)
     {
         if (!join_keys_interesting_side.contains(aggregation_key))
-        {
-            LOG_DEBUG(getLogger(__func__), "Did not found key: {}", aggregation_key);
             return 0;
-        }
     }
 
     join_operator.kind = JoinKind::Inner;

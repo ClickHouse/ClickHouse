@@ -831,10 +831,6 @@ static ColumnWithTypeAndName executeActionForPartialResult(
     res_column.type = node->result_type;
     res_column.name = node->result_name;
 
-    LOG_DEBUG(getLogger(__func__), "Executing node '{}'", node->result_name);
-    for (const auto & arg : arguments)
-        LOG_DEBUG(getLogger(__func__), "  with argument: {}", arg.dumpStructure());
-
     switch (node->type)
     {
         case ActionsDAG::ActionType::FUNCTION:
@@ -845,7 +841,6 @@ static ColumnWithTypeAndName executeActionForPartialResult(
                     res_column.column = node->function->execute(arguments, res_column.type, input_rows_count, true);
                 else
                     res_column.column = node->function_base->getConstantResultForNonConstArguments(arguments, res_column.type);
-                LOG_DEBUG(getLogger(__func__), "Executed node '{}' to: {}", node->result_name, res_column.column != nullptr);
             }
             catch (Exception & e)
             {
