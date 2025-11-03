@@ -518,7 +518,7 @@ static ContextMutablePtr updateContextForParallelReplicas(const LoggerPtr & logg
     /// If parallel replicas executed over distributed table i.e. in scope of a shard,
     /// currently, local plan for parallel replicas is not created.
     /// Having local plan is prerequisite to use projection with parallel replicas.
-    /// So, curently, we disable projection support with parallel replicas when reading over distributed table with parallel replicas
+    /// So, currently, we disable projection support with parallel replicas when reading over distributed table with parallel replicas
     /// Otherwise, it can lead to incorrect results, in particular with use of implicit projection min_max_count
     if (shard_num > 0 && settings[Setting::parallel_replicas_support_projection].value)
     {
