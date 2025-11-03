@@ -9,10 +9,10 @@ namespace DB
 
 struct TSA_SCOPED_LOCKABLE LockGuardWithStopWatch final
 {
-#ifndef NDEBUG
-    static constexpr auto THRESHOLD_MILLISECONDS = 1000;
+#if defined(SANITIZER) || !defined(NDEBUG)
+    static constexpr auto THRESHOLD_MILLISECONDS = 10 * 1000;
 #else
-    static constexpr auto THRESHOLD_MILLISECONDS = 10000;
+    static constexpr auto THRESHOLD_MILLISECONDS = 1000;
 #endif
 
     const char * caller{nullptr};

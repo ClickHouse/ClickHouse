@@ -271,10 +271,10 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
         item_->is_done.set();
         item_.reset();
 
-#ifndef NDEBUG
-        static constexpr auto THRESHOLD_MILLISECONDS = 1000ULL;
-#else
+#if defined(SANITIZER) || !defined(NDEBUG)
         static constexpr auto THRESHOLD_MILLISECONDS = 10 * 1000ULL;
+#else
+        static constexpr auto THRESHOLD_MILLISECONDS = 1000ULL;
 #endif
         UInt64 elapsed_ms = destruction_watch.elapsedMilliseconds();
         NOEXCEPT_SCOPE({
