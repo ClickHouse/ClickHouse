@@ -8,6 +8,7 @@ import shutil
 import subprocess
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import traceback
 
 DEBUGGER = os.getenv("DEBUGGER", "")
 TIMEOUT = int(os.getenv("TIMEOUT", "0"))
@@ -295,6 +296,7 @@ def main():
                 logging.info("Thread for %s finished", fuzzer)
             except Exception as exc:
                 logging.info("Thread for %s generated an exception: %s", fuzzer, exc)
+                traceback.print_exc()
 
     subprocess.check_call(f"ls -al {OUTPUT}", shell=True)
 
