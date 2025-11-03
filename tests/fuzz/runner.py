@@ -106,7 +106,6 @@ def run_fuzzer(fuzzer: str, timeout: int):
     merge_libfuzzer_options = f" -artifact_prefix={artifact_prefix} -merge=1 -max_total_time={timeout} -merge_control_file={merge_control_file} {mini_corpus_dir} {active_corpus_dir}"
     cmd_line = f"{DEBUGGER} ./{fuzzer} {fuzzer_arguments}"
 
-    env = None
     with_fuzzer_args = ""
     if use_fuzzer_args:
         env["FUZZER_ARGS"] = f"{merge_libfuzzer_options}".strip()
@@ -214,6 +213,7 @@ def run_fuzzer(fuzzer: str, timeout: int):
         )
     return
 
+
     if not "-dict=" in custom_libfuzzer_options and Path(f"{fuzzer}.dict").exists():
         custom_libfuzzer_options += f" -dict={fuzzer}.dict"
     custom_libfuzzer_options += f" -artifact_prefix={artifact_prefix}"
@@ -224,7 +224,6 @@ def run_fuzzer(fuzzer: str, timeout: int):
 
     cmd_line = f"{DEBUGGER} ./{fuzzer} {fuzzer_arguments}"
 
-    env = None
     with_fuzzer_args = ""
     if use_fuzzer_args:
         env["FUZZER_ARGS"] = f"{custom_libfuzzer_options} {libfuzzer_corpora}".strip()
