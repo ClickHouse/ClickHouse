@@ -613,7 +613,7 @@ void Connection::receiveHello(const Poco::Timespan & handshake_timeout)
         }
         if (worker_cluster_function_protocol_version != DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION)
         {
-            LOG_WARNING(
+            LOG_INFO(
                 log_wrapper.get(),
                 "Cluster function processing protocol versions mismatch. "
                 "Worker supports version `{}` while coordinator supports version `{}`. "
