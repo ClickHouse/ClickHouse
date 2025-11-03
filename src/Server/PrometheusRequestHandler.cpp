@@ -41,6 +41,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 /// Base implementation of a prometheus protocol.
@@ -425,7 +426,17 @@ public:
                 /// - limit=<number>: Maximum number of returned series
                 /// - lookback_delta=<number>: Override for the lookback period for this query.
 
-                protocol.executeRangeQuery(getOutputStream(response), query, start, end, step);
+                PrometheusHTTPProtocolAPI::Params params
+                {
+                    .type = PrometheusHTTPProtocolAPI::Type::Range,
+                    .promql_query = query,
+                    .time_param = "",
+                    .start_param = start,
+                    .end_param = end,
+                    .step_param = step,
+                };
+
+                protocol.executePromQLQuery(getOutputStream(response), params);
             }
             else if (uri.starts_with("/api/v1/query"))
             {
@@ -434,7 +445,17 @@ public:
 
                 /// TODO: Support optional parameters same as for the range query.
 
-                protocol.executeInstantQuery(getOutputStream(response), query, time);
+                PrometheusHTTPProtocolAPI::Params params
+                {
+                    .type = PrometheusHTTPProtocolAPI::Type::Instant,
+                    .promql_query = query,
+                    .time_param = time,
+                    .start_param = "",
+                    .end_param = "",
+                    .step_param = "",
+                };
+
+                protocol.executePromQLQuery(getOutputStream(response), params);
             }
             else if (uri.starts_with("/api/v1/format_query"))
             {
@@ -450,7 +471,7 @@ public:
                 String start = params->get("start", "");
                 String end = params->get("end", "");
 
-                /// TODO: Support limit=<number> optional paramter
+                /// TODO: Support limit=<number> optional parameter
 
                 protocol.getSeries(getOutputStream(response), match, start, end);
             }

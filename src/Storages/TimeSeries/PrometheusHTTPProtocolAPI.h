@@ -19,19 +19,28 @@ public:
     PrometheusHTTPProtocolAPI(ConstStoragePtr time_series_storage_, const ContextPtr & context_);
     ~PrometheusHTTPProtocolAPI();
 
-    /// Execute an instant query (/api/v1/query)
-    void executeInstantQuery(
-        WriteBuffer & response,
-        const String & promql_query,
-        const String & time_param);
+    enum class Type
+    {
+        Instant,
+        Range,
+    };
 
-    /// Execute a range query (/api/v1/query_range)
-    void executeRangeQuery(
+    struct Params
+    {
+        Type type;
+        String promql_query;
+        /// Only for Instant query
+        String time_param;
+        /// Only for Range query
+        String start_param;
+        String end_param;
+        String step_param;
+    };
+
+    /// Execute an instant query (/api/v1/query) or range query (/api/v1/query_range)
+    void executePromQLQuery(
         WriteBuffer & response,
-        const String & promql_query,
-        const String & start_param,
-        const String & end_param,
-        const String & step_param);
+        const Params & params);
 
     /// Get series metadata (/api/v1/series)
     void getSeries(
@@ -62,11 +71,11 @@ private:
     /// Convert step parameter to Field
     Field parseStep(const String & step_param);
 
-    /// Parse PromQL query string to PrometheusQueryTree
-    std::unique_ptr<PrometheusQueryTree> parsePromQLQuery(const String & promql_query);
-
-    /// Write JSON response for instant query result
+    /// Write JSON response for instant query result (including scalars)
+    void writeInstantQueryHeader(WriteBuffer & response);
+    void writeScalarQueryResponse(WriteBuffer & response, const Block & result_block);
     void writeInstantQueryResponse(WriteBuffer & response, const Block & result_block);
+    void writeInstantQueryFooter(WriteBuffer & response);
 
     /// Helper methods for writeInstantQueryResponse
     void writeScalarResult(WriteBuffer & response, const Block & result_block);
