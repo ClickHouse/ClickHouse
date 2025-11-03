@@ -127,11 +127,7 @@ void IcebergObjectSerializableInfo::serializeForClusterFunctionProtocol(WriteBuf
             writeStringBinary(eq_delete_obj.file_path, out);
             writeStringBinary(eq_delete_obj.file_format, out);
             writeVarInt(eq_delete_obj.schema_id, out);
-            if (!eq_delete_obj.equality_ids)
-            {
-                writeVarUInt(0, out);
-            }
-            else
+            if (eq_delete_obj.equality_ids.has_value())
             {
                 writeVarUInt(1, out);
                 writeVarUInt(eq_delete_obj.equality_ids->size(), out);
@@ -139,6 +135,10 @@ void IcebergObjectSerializableInfo::serializeForClusterFunctionProtocol(WriteBuf
                 {
                     writeVarInt(equality_id, out);
                 }
+            }
+            else
+            {
+                writeVarUInt(0, out);
             }
         }
     }
