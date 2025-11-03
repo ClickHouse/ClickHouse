@@ -48,8 +48,8 @@ IcebergDataObjectInfo::IcebergDataObjectInfo(Iceberg::ManifestFileEntry data_man
           schema_id_relevant_to_iterator_,
           data_manifest_file_entry_.added_sequence_number,
           data_manifest_file_entry_.file_format,
-          {},
-          {}}
+          /* position_deletes_objects */ {},
+          /* equality_deletes_objects */ {}}
 {
 }
 
@@ -73,12 +73,7 @@ std::shared_ptr<ISimpleTransform> IcebergDataObjectInfo::getPositionDeleteTransf
 
 void IcebergDataObjectInfo::addPositionDeleteObject(Iceberg::ManifestFileEntry position_delete_object)
 {
-    auto toupper = [](String & str)
-    {
-        std::transform(str.begin(), str.end(), str.begin(), ::toupper);
-        return str;
-    };
-    if (toupper(info.file_format) != "PARQUET")
+    if (Poco::toUpper(info.file_format) != "PARQUET")
     {
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,

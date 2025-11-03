@@ -74,7 +74,7 @@ ObjectInfoPtr ClusterFunctionReadTaskResponse::getObjectInfo() const
 void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t worker_protocol_version) const
 {
     auto protocol_version
-        = std::min(static_cast<UInt64>(worker_protocol_version), static_cast<UInt64>(DBMS_CLUSTER_PROCESSING_LAST_PROTOCOL_VERSION));
+        = std::min(static_cast<UInt64>(worker_protocol_version), static_cast<UInt64>(DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION));
     writeVarUInt(protocol_version, out);
     writeStringBinary(path, out);
 
@@ -105,14 +105,13 @@ void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
 {
     size_t protocol_version = 0;
     readVarUInt(protocol_version, in);
-    if (protocol_version < DBMS_CLUSTER_INITIAL_PROCESSING_PROTOCOL_VERSION
-        || protocol_version > DBMS_CLUSTER_PROCESSING_LAST_PROTOCOL_VERSION)
+    if (protocol_version < DBMS_CLUSTER_INITIAL_PROCESSING_PROTOCOL_VERSION || protocol_version > DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION)
     {
         throw Exception(
             ErrorCodes::UNKNOWN_PROTOCOL,
             "Supported protocol versions are in range [{}, {}], got: {}",
             DBMS_CLUSTER_INITIAL_PROCESSING_PROTOCOL_VERSION,
-            DBMS_CLUSTER_PROCESSING_LAST_PROTOCOL_VERSION,
+            DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION,
             protocol_version);
     }
 

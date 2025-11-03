@@ -611,7 +611,7 @@ void Connection::receiveHello(const Poco::Timespan & handshake_timeout)
         {
             readVarUInt(worker_cluster_function_protocol_version, *in);
         }
-        if (worker_cluster_function_protocol_version != DBMS_CLUSTER_PROCESSING_LAST_PROTOCOL_VERSION)
+        if (worker_cluster_function_protocol_version != DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION)
         {
             LOG_WARNING(
                 log_wrapper.get(),
@@ -620,7 +620,7 @@ void Connection::receiveHello(const Poco::Timespan & handshake_timeout)
                 "It is better to update all nodes in the cluster to the ClickHouse version with"
                 " the latest protocol version as soon as possible.",
                 worker_cluster_function_protocol_version,
-                DBMS_CLUSTER_PROCESSING_LAST_PROTOCOL_VERSION);
+                DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION);
         }
     }
     else if (packet_type == Protocol::Server::Exception)
