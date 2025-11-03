@@ -56,7 +56,7 @@ struct ParquetFileBucketInfo : public FileBucketInfo
     std::vector<size_t> row_group_ids;
 
     ParquetFileBucketInfo() = default;
-    ParquetFileBucketInfo(const std::vector<size_t> & row_group_ids_);
+    explicit ParquetFileBucketInfo(const std::vector<size_t> & row_group_ids_);
     void serialize(WriteBuffer & buffer) override;
     void deserialize(ReadBuffer & buffer) override;
     String getIdentifier() const override;
