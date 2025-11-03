@@ -131,6 +131,12 @@ MetadataTransactionPtr MetadataStorageFromDisk::createTransaction()
     return std::make_shared<MetadataStorageFromDiskTransaction>(*this);
 }
 
+/// It supports writing with Append because `createTransaction` creates `MetadataStorageFromDiskTransaction` which has `supportAddingBlobToMetadata`
+bool MetadataStorageFromDisk::supportWritingWithAppend() const
+{
+    return true;
+}
+
 StoredObjects MetadataStorageFromDisk::getStorageObjects(const std::string & path) const
 {
     return readMetadata(path)->objects;
