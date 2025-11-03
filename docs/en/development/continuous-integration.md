@@ -54,6 +54,8 @@ Runs the tests from the [official Docker library](https://github.com/docker-libr
 
 To add new tests, create a directory `ci/jobs/scripts/docker_server/tests/$test_name` and the script `run.sh` there.
 
+Additional details about the tests can be found in the [CI jobs scripts documentation](https://github.com/ClickHouse/ClickHouse/tree/master/ci/jobs/scripts/docker_server).
+
 ## Marker check {#marker-check}
 
 This check means that the CI system started to process the pull request.
