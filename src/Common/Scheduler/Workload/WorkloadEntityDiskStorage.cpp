@@ -121,7 +121,11 @@ void WorkloadEntityDiskStorage::loadEntities(const Poco::Util::AbstractConfigura
 {
     WorkloadEntityStorageBase::loadEntities(config);
     if (!entities_loaded)
+    {
+        // Disk stored entities are loaded only once on startup to avoid overwriting memory changes due to races.
+        entities_loaded = true;
         loadEntitiesImpl();
+    }
 }
 
 
@@ -129,53 +133,53 @@ void WorkloadEntityDiskStorage::loadEntitiesImpl()
 {
     LOG_INFO(log, "Loading workload entities from {}", dir_path);
 
+    std::vector<std::pair<String, ASTPtr>> entities_name_and_queries;
+
     if (!std::filesystem::exists(dir_path))
     {
         LOG_DEBUG(log, "The directory for workload entities ({}) does not exist: nothing to load", dir_path);
-        return;
     }
-
-    std::vector<std::pair<String, ASTPtr>> entities_name_and_queries;
-
-    Poco::DirectoryIterator dir_end;
-    for (Poco::DirectoryIterator it(dir_path); it != dir_end; ++it)
+    else
     {
-        if (it->isDirectory())
-            continue;
-
-        const String & file_name = it.name();
-
-        if (file_name.starts_with(workload_prefix) && file_name.ends_with(sql_suffix))
+        Poco::DirectoryIterator dir_end;
+        for (Poco::DirectoryIterator it(dir_path); it != dir_end; ++it)
         {
-            String name = unescapeForFileName(file_name.substr(
-                workload_prefix.size(),
-                file_name.size() - workload_prefix.size() - sql_suffix.size()));
-
-            if (name.empty())
+            if (it->isDirectory())
                 continue;
 
-            ASTPtr ast = tryLoadEntity(WorkloadEntityType::Workload, name, dir_path + it.name(), /* check_file_exists= */ false);
-            if (ast)
-                entities_name_and_queries.emplace_back(name, ast);
-        }
+            const String & file_name = it.name();
 
-        if (file_name.starts_with(resource_prefix) && file_name.ends_with(sql_suffix))
-        {
-            String name = unescapeForFileName(file_name.substr(
-                resource_prefix.size(),
-                file_name.size() - resource_prefix.size() - sql_suffix.size()));
+            if (file_name.starts_with(workload_prefix) && file_name.ends_with(sql_suffix))
+            {
+                String name = unescapeForFileName(file_name.substr(
+                    workload_prefix.size(),
+                    file_name.size() - workload_prefix.size() - sql_suffix.size()));
 
-            if (name.empty())
-                continue;
+                if (name.empty())
+                    continue;
 
-            ASTPtr ast = tryLoadEntity(WorkloadEntityType::Resource, name, dir_path + it.name(), /* check_file_exists= */ false);
-            if (ast)
-                entities_name_and_queries.emplace_back(name, ast);
+                ASTPtr ast = tryLoadEntity(WorkloadEntityType::Workload, name, dir_path + it.name(), /* check_file_exists= */ false);
+                if (ast)
+                    entities_name_and_queries.emplace_back(name, ast);
+            }
+
+            if (file_name.starts_with(resource_prefix) && file_name.ends_with(sql_suffix))
+            {
+                String name = unescapeForFileName(file_name.substr(
+                    resource_prefix.size(),
+                    file_name.size() - resource_prefix.size() - sql_suffix.size()));
+
+                if (name.empty())
+                    continue;
+
+                ASTPtr ast = tryLoadEntity(WorkloadEntityType::Resource, name, dir_path + it.name(), /* check_file_exists= */ false);
+                if (ast)
+                    entities_name_and_queries.emplace_back(name, ast);
+            }
         }
     }
 
     setLocalEntities(entities_name_and_queries);
-    entities_loaded = true;
 
     LOG_DEBUG(log, "Workload entities loaded");
 }
