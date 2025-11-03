@@ -35,7 +35,7 @@ class Stopwatch:
 
 
 def run_fuzzer(fuzzer: str, timeout: int):
-    timeout_hard = timeout + 5 * 60
+    timeout_hard = timeout + 120
     logging.info(
         "Running fuzzer %s for %d seconds (hard timeout is %d)...",
         fuzzer,
@@ -141,6 +141,8 @@ def run_fuzzer(fuzzer: str, timeout: int):
                 f"ERROR\n{stopwatch.start_time_str}\n{stopwatch.duration_seconds}\n"
             )
         return
+    except subprocess.TimeoutExpired:
+        logging.info("Terminated by timeout while running merge %s", fuzzer)
     except Exception as e:
         logging.info("Unexpected exception while running merge %s: %s", fuzzer, e)
         with open(status_path, "w", encoding="utf-8") as status:
