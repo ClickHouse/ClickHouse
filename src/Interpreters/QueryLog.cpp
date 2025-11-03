@@ -97,7 +97,6 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
 
         {"is_initial_query", std::make_shared<DataTypeUInt8>(), "Query type. Possible values: 1 — query was initiated by the client, 0 — query was initiated by another query as part of distributed query execution."},
         {"user", low_cardinality_string, "Name of the user who initiated the current query."},
-        {"auth_user", low_cardinality_string, "Name of the user who was authenticated in the session."},
         {"query_id", std::make_shared<DataTypeString>(), "ID of the query."},
         {"address", DataTypeFactory::instance().get("IPv6"), "IP address that was used to make the query."},
         {"port", std::make_shared<DataTypeUInt16>(), "The client port that was used to make the query."},
@@ -107,6 +106,7 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"initial_port", std::make_shared<DataTypeUInt16>(), "The client port that was used to make the parent query."},
         {"initial_query_start_time", std::make_shared<DataTypeDateTime>(), "Initial query starting time (for distributed query execution)."},
         {"initial_query_start_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "Initial query starting time with microseconds precision (for distributed query execution)."},
+        {"authenticated_user", low_cardinality_string, "Name of the user who was authenticated in the session."},
         {"interface", std::make_shared<DataTypeUInt8>(), "Interface that the query was initiated from. Possible values: 1 — TCP, 2 — HTTP."},
         {"is_secure", std::make_shared<DataTypeUInt8>(), "The flag whether a query was executed over a secure interface"},
         {"os_user", low_cardinality_string, "Operating system username who runs clickhouse-client."},
@@ -338,7 +338,6 @@ void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableCo
     typeid_cast<ColumnUInt8 &>(*columns[i++]).getData().push_back(client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY);
 
     columns[i++]->insertData(client_info.current_user);
-    columns[i++]->insertData(client_info.authenticated_user);
     columns[i++]->insertData(client_info.current_query_id);
     columns[i++]->insertData(IPv6ToBinary(client_info.current_address->host()).data(), 16);
     typeid_cast<ColumnUInt16 &>(*columns[i++]).getData().push_back(client_info.current_address->port());
@@ -349,6 +348,8 @@ void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableCo
     typeid_cast<ColumnUInt16 &>(*columns[i++]).getData().push_back(client_info.initial_address->port());
     typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(client_info.initial_query_start_time);
     typeid_cast<ColumnDateTime64 &>(*columns[i++]).getData().push_back(client_info.initial_query_start_time_microseconds);
+
+    columns[i++]->insertData(client_info.authenticated_user);
 
     typeid_cast<ColumnUInt8 &>(*columns[i++]).getData().push_back(static_cast<UInt8>(client_info.interface));
     typeid_cast<ColumnUInt8 &>(*columns[i++]).getData().push_back(static_cast<UInt8>(client_info.is_secure));
