@@ -38,22 +38,22 @@
 2	10	0.6666666666666666
 2	20	1
 -- With NULL values in ordering column
+1	10	0.2
+2	20	0.4
+3	\N	1
+4	30	0.6
+5	\N	1
 1	10	0.6
 2	20	0.8
-3	0	0.4
+3	\N	0.4
 4	30	1
-5	0	0.4
-1	10	0.6
-2	20	0.8
-3	0	0.4
-4	30	1
-5	0	0.4
-1	10	0.6
-2	20	0.8
-3	0	0.4
-4	30	1
-5	0	0.4
+5	\N	0.4
+1	10	0.2
+2	20	0.4
+3	\N	1
+4	30	0.6
+5	\N	1
 -- Single-row partition
-3	0	1
+3	\N	1
 -- Empty partition
 -- Frame specification should produce an error

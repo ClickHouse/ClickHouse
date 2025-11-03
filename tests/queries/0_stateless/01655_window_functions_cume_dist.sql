@@ -14,7 +14,7 @@ SELECT '-- With DESC order';
 SELECT number, cume_dist() OVER (ORDER BY number DESC) FROM numbers(5);
 
 SELECT '-- With ties in ordering values';
-CREATE TABLE IF NOT EXISTS test_cume_dist (a Int, b Int) ENGINE = Memory;
+CREATE TABLE IF NOT EXISTS test_cume_dist (a Int, b Nullable(Int)) ENGINE = Memory;
 TRUNCATE TABLE test_cume_dist;
 INSERT INTO test_cume_dist VALUES (1, 10), (2, 20), (3, 20), (4, 30), (5, 30), (6, 30), (7, 40), (8, 50);
 SELECT a, b, cume_dist() OVER (ORDER BY b) FROM test_cume_dist ORDER BY b, a;
