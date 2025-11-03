@@ -171,10 +171,14 @@ void SystemLogQueue<LogElement>::waitFlush(SystemLogQueue<LogElement>::Index exp
     // In theory it should be possible to wait only for prepared_tables, but:
     // 1. It reflects the logic more precisely
     // 2. One extra comparison shouldn't matter here
-    auto result = confirm_event.wait_for(lock, std::chrono::seconds(timeout_seconds), [&]
-    {
-        return (flushed_index >= expected_flushed_index && prepared_tables >= expected_flushed_index) || is_shutdown;
-    });
+    auto result = confirm_event.wait_for(
+        lock,
+        std::chrono::seconds(timeout_seconds),
+        [&]
+        {
+            return (flushed_index >= expected_flushed_index && (!should_prepare_tables_anyway || prepared_tables >= expected_flushed_index))
+                || is_shutdown;
+        });
 
     if (!result)
     {
