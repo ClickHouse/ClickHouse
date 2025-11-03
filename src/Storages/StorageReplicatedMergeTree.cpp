@@ -628,7 +628,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
                   * Otherwise `metadata_version` for not first replica will be initialized with 0 by default.
                   */
                 setInMemoryMetadata(metadata_snapshot->withMetadataVersion(metadata_version));
-                metadata_snapshot = getInMemoryMetadataPtr();
+                metadata_snapshot = getInMemoryMetadataPtr(/*bypass_metadata_cache=*/true);
             }
         }
         catch (Coordination::Exception & e)
