@@ -573,6 +573,7 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
 {
     bool indexes = false;
     Select * sel = nullptr;
+    Select * query = nullptr;
     SelectParen * sparen = nullptr;
     const uint32_t ncols = rg.randomInt<uint32_t>(1, 5);
 
@@ -589,7 +590,7 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
     if (measure_performance)
     {
         /// When measuring performance, don't insert into file
-        sel = sq2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select()->mutable_sel();
+        sel = query = sq2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select()->mutable_sel();
     }
     else
     {
@@ -608,7 +609,7 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
         }
         ff->set_outformat(outf);
         ff->set_fname(FileFunc_FName::FileFunc_FName_file);
-        sel = sparen->mutable_select();
+        sel = query = sparen->mutable_select();
     }
 
     gen.setAllowNotDetermistic(false);
@@ -619,7 +620,7 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
     {
         /// INSERT INTO FILE EXPLAIN SELECT is not supported, so run
         /// INSERT INTO FILE SELECT * FROM (EXPLAIN SELECT);
-        ExplainQuery * eq = sel->mutable_select_core()
+        ExplainQuery * eq = query->mutable_select_core()
                                 ->mutable_from()
                                 ->mutable_tos()
                                 ->mutable_join_clause()
@@ -644,10 +645,10 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
             eopt->set_val(1);
         }
         eq->set_is_explain(true);
-        sel = eq->mutable_inner_query()->mutable_select()->mutable_sel();
+        query = eq->mutable_inner_query()->mutable_select()->mutable_sel();
     }
     gen.resetAliasCounter();
-    gen.generateSelect(rg, true, global_aggregate, ncols, std::numeric_limits<uint32_t>::max(), std::nullopt, sel);
+    gen.generateSelect(rg, true, global_aggregate, ncols, std::numeric_limits<uint32_t>::max(), std::nullopt, query);
     gen.setAllowNotDetermistic(true);
     gen.enforceFinal(false);
     gen.generatingPeerQuery(PeerQuery::None);
