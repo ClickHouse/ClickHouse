@@ -71,7 +71,7 @@ private:
     double explicit_sleep_probability = 0;
     double explicit_memory_exception_probability = 0;
 
-    inline static std::atomic<bool> started{true};
+    inline static std::atomic<bool> started{false};
 
     ThreadFuzzer();
 

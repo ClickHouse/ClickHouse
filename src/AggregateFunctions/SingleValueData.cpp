@@ -1452,7 +1452,7 @@ void SingleValueDataGenericWithColumn::set(const IColumn & column, size_t row_nu
     auto new_value = column.cloneEmpty();
     new_value->reserve(1);
     new_value->insertFrom(column, row_num);
-    value = recursiveRemoveSparse(std::move(new_value));
+    value = removeSpecialRepresentations(std::move(new_value));
 }
 
 void SingleValueDataGenericWithColumn::set(const SingleValueDataBase & other, Arena *)
