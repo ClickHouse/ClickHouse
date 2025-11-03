@@ -1,0 +1,642 @@
+CREATE TABLE test_table
+    (
+        id UInt64,
+
+        value String,
+        INDEX idx_ip_set (value) TYPE set(0) GRANULARITY 1,
+    )
+    ENGINE = MergeTree()
+    ORDER BY id
+    PARTITION BY intDiv(id, 100)
+    SETTINGS alter_column_secondary_index_mode = 'rebuild', min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage=0;
+INSERT INTO test_table SELECT number, number FROM numbers(10);
+SYSTEM STOP MERGES test_table;
+SET alter_sync = 0, mutations_sync = 0;
+ALTER TABLE test_table DELETE WHERE value = '3';
+-- The mutation is not applied yet. Using the index is ok since we are reading 'stale' data (it's not lightweight deletes)
+    SELECT 'Status after DELETE is issued, before merges happen, max_threads=1';
+Status after DELETE is issued, before merges happen, max_threads=1
+SET max_threads = 1;
+EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = '3';
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_table)
+        Indexes:
+          MinMax
+            Condition: true
+            Parts: 1/1
+            Granules: 1/1
+          Partition
+            Condition: true
+            Parts: 1/1
+            Granules: 1/1
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 1/1
+          Skip
+            Name: idx_ip_set
+            Description: set GRANULARITY 1
+            Parts: 1/1
+            Granules: 1/1
+          Ranges: 1
+SELECT count() FROM test_table WHERE value = '3';
+1
+SELECT 'Status after DELETE is issued, before merges happen, max_threads=2;';
+Status after DELETE is issued, before merges happen, max_threads=2;
+SET max_threads = 2;
+EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = '3';
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_table)
+        Indexes:
+          MinMax
+            Condition: true
+            Parts: 1/1
+            Granules: 1/1
+          Partition
+            Condition: true
+            Parts: 1/1
+            Granules: 1/1
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 1/1
+          Skip
+            Name: idx_ip_set
+            Description: set GRANULARITY 1
+            Parts: 1/1
+            Granules: 1/1
+          Ranges: 1
+SELECT count() FROM test_table WHERE value = '3';
+1
+SET max_threads = DEFAULT;
+SYSTEM START MERGES test_table;
+SELECT 'Status after DELETE is applied (Index was rebuilt)';
+Status after DELETE is applied (Index was rebuilt)
+EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = '3';
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_table)
+        Indexes:
+          MinMax
+            Condition: true
+            Parts: 1/1
+            Granules: 1/1
+          Partition
+            Condition: true
+            Parts: 1/1
+            Granules: 1/1
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 1/1
+          Skip
+            Name: idx_ip_set
+            Description: set GRANULARITY 1
+            Parts: 0/1
+            Granules: 0/1
+          Ranges: 0
+SELECT count() FROM test_table WHERE value = '3';
+0
+-- Force a table rewrite. Index should remain the same
+    OPTIMIZE TABLE test_table FINAL;
+SELECT 'Status after DELETE full table rewrite (should be the same)';
+Status after DELETE full table rewrite (should be the same)
+EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = '3';
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_table)
+        Indexes:
+          MinMax
+            Condition: true
+            Parts: 1/1
+            Granules: 1/1
+          Partition
+            Condition: true
+            Parts: 1/1
+            Granules: 1/1
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 1/1
+          Skip
+            Name: idx_ip_set
+            Description: set GRANULARITY 1
+            Parts: 0/1
+            Granules: 0/1
+          Ranges: 0
+SELECT count() FROM test_table WHERE value = '3';
+0
+INSERT INTO test_table SELECT number, number FROM numbers(1000, 10);
+EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = '1001';
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_table)
+        Indexes:
+          MinMax
+            Condition: true
+            Parts: 2/2
+            Granules: 2/2
+          Partition
+            Condition: true
+            Parts: 2/2
+            Granules: 2/2
+          PrimaryKey
+            Condition: true
+            Parts: 2/2
+            Granules: 2/2
+          Skip
+            Name: idx_ip_set
+            Description: set GRANULARITY 1
+            Parts: 1/2
+            Granules: 1/2
+          Ranges: 1
+SELECT count() FROM test_table WHERE value = '1001';
+1
+ALTER TABLE test_table DELETE WHERE value = '8';
+EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = '1001';
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_table)
+        Indexes:
+          MinMax
+            Condition: true
+            Parts: 2/2
+            Granules: 2/2
+          Partition
+            Condition: true
+            Parts: 2/2
+            Granules: 2/2
+          PrimaryKey
+            Condition: true
+            Parts: 2/2
+            Granules: 2/2
+          Skip
+            Name: idx_ip_set
+            Description: set GRANULARITY 1
+            Parts: 1/2
+            Granules: 1/2
+          Ranges: 1
+SELECT count() FROM test_table WHERE value = '1001';
+1
+SYSTEM STOP MERGES test_table;
+SET alter_sync = 0, mutations_sync = 0;
+ALTER TABLE test_table UPDATE value = '3' WHERE value = '5';
+-- The mutation is not applied yet. Using the index is ok since we are reading 'stale' data (it's not lightweight updates)
+    SELECT 'Status after UPDATE is issued, before merges happen, max_threads=1';
+Status after UPDATE is issued, before merges happen, max_threads=1
+SET max_threads = 1;
+EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = '5';
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_table)
+        Indexes:
+          MinMax
+            Condition: true
+            Parts: 2/2
+            Granules: 2/2
+          Partition
+            Condition: true
+            Parts: 2/2
+            Granules: 2/2
+          PrimaryKey
+            Condition: true
+            Parts: 2/2
+            Granules: 2/2
+          Skip
+            Name: idx_ip_set
+            Description: set GRANULARITY 1
+            Parts: 1/2
+            Granules: 1/2
+          Ranges: 1
+SELECT count() FROM test_table WHERE value = '5';
+1
+SELECT 'Status after UPDATE is issued, before merges happen, max_threads=2;';
+Status after UPDATE is issued, before merges happen, max_threads=2;
+SET max_threads = 2;
+EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = '5';
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_table)
+        Indexes:
+          MinMax
+            Condition: true
+            Parts: 2/2
+            Granules: 2/2
+          Partition
+            Condition: true
+            Parts: 2/2
+            Granules: 2/2
+          PrimaryKey
+            Condition: true
+            Parts: 2/2
+            Granules: 2/2
+          Skip
+            Name: idx_ip_set
+            Description: set GRANULARITY 1
+            Parts: 1/2
+            Granules: 1/2
+          Ranges: 1
+SELECT count() FROM test_table WHERE value = '5';
+1
+SET max_threads = DEFAULT;
+SYSTEM START MERGES test_table;
+SELECT 'Status after UPDATE is applied (Index was rebuilt)';
+Status after UPDATE is applied (Index was rebuilt)
+EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = '5';
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_table)
+        Indexes:
+          MinMax
+            Condition: true
+            Parts: 2/2
+            Granules: 2/2
+          Partition
+            Condition: true
+            Parts: 2/2
+            Granules: 2/2
+          PrimaryKey
+            Condition: true
+            Parts: 2/2
+            Granules: 2/2
+          Skip
+            Name: idx_ip_set
+            Description: set GRANULARITY 1
+            Parts: 0/2
+            Granules: 0/2
+          Ranges: 0
+SELECT count() FROM test_table WHERE value = '5';
+0
+-- Force a table rewrite. Index should remain the same
+    OPTIMIZE TABLE test_table FINAL;
+SELECT 'Status after DELETE full table rewrite (should be the same)';
+Status after DELETE full table rewrite (should be the same)
+EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = '5';
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_table)
+        Indexes:
+          MinMax
+            Condition: true
+            Parts: 2/2
+            Granules: 2/2
+          Partition
+            Condition: true
+            Parts: 2/2
+            Granules: 2/2
+          PrimaryKey
+            Condition: true
+            Parts: 2/2
+            Granules: 2/2
+          Skip
+            Name: idx_ip_set
+            Description: set GRANULARITY 1
+            Parts: 0/2
+            Granules: 0/2
+          Ranges: 0
+SELECT count() FROM test_table WHERE value = '5';
+0
+DROP TABLE IF EXISTS test_table SYNC;
+CREATE TABLE test_table
+    (
+        id UInt64,
+
+        value String,
+        INDEX idx_ip_set (value) TYPE set(0) GRANULARITY 1,
+    )
+    ENGINE = MergeTree()
+    ORDER BY id
+    PARTITION BY intDiv(id, 100)
+    SETTINGS alter_column_secondary_index_mode = 'rebuild', min_bytes_for_full_part_storage ='1G';
+INSERT INTO test_table SELECT number, number FROM numbers(10);
+SYSTEM STOP MERGES test_table;
+SET alter_sync = 0, mutations_sync = 0;
+ALTER TABLE test_table DELETE WHERE value = '3';
+-- The mutation is not applied yet. Using the index is ok since we are reading 'stale' data (it's not lightweight deletes)
+    SELECT 'Status after DELETE is issued, before merges happen, max_threads=1';
+Status after DELETE is issued, before merges happen, max_threads=1
+SET max_threads = 1;
+EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = '3';
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_table)
+        Indexes:
+          MinMax
+            Condition: true
+            Parts: 1/1
+            Granules: 1/1
+          Partition
+            Condition: true
+            Parts: 1/1
+            Granules: 1/1
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 1/1
+          Skip
+            Name: idx_ip_set
+            Description: set GRANULARITY 1
+            Parts: 1/1
+            Granules: 1/1
+          Ranges: 1
+SELECT count() FROM test_table WHERE value = '3';
+1
+SELECT 'Status after DELETE is issued, before merges happen, max_threads=2;';
+Status after DELETE is issued, before merges happen, max_threads=2;
+SET max_threads = 2;
+EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = '3';
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_table)
+        Indexes:
+          MinMax
+            Condition: true
+            Parts: 1/1
+            Granules: 1/1
+          Partition
+            Condition: true
+            Parts: 1/1
+            Granules: 1/1
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 1/1
+          Skip
+            Name: idx_ip_set
+            Description: set GRANULARITY 1
+            Parts: 1/1
+            Granules: 1/1
+          Ranges: 1
+SELECT count() FROM test_table WHERE value = '3';
+1
+SET max_threads = DEFAULT;
+SYSTEM START MERGES test_table;
+SELECT 'Status after DELETE is applied (Index was rebuilt)';
+Status after DELETE is applied (Index was rebuilt)
+EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = '3';
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_table)
+        Indexes:
+          MinMax
+            Condition: true
+            Parts: 1/1
+            Granules: 1/1
+          Partition
+            Condition: true
+            Parts: 1/1
+            Granules: 1/1
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 1/1
+          Skip
+            Name: idx_ip_set
+            Description: set GRANULARITY 1
+            Parts: 0/1
+            Granules: 0/1
+          Ranges: 0
+SELECT count() FROM test_table WHERE value = '3';
+0
+-- Force a table rewrite. Index should remain the same
+    OPTIMIZE TABLE test_table FINAL;
+SELECT 'Status after DELETE full table rewrite (should be the same)';
+Status after DELETE full table rewrite (should be the same)
+EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = '3';
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_table)
+        Indexes:
+          MinMax
+            Condition: true
+            Parts: 1/1
+            Granules: 1/1
+          Partition
+            Condition: true
+            Parts: 1/1
+            Granules: 1/1
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 1/1
+          Skip
+            Name: idx_ip_set
+            Description: set GRANULARITY 1
+            Parts: 0/1
+            Granules: 0/1
+          Ranges: 0
+SELECT count() FROM test_table WHERE value = '3';
+0
+INSERT INTO test_table SELECT number, number FROM numbers(1000, 10);
+EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = '1001';
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_table)
+        Indexes:
+          MinMax
+            Condition: true
+            Parts: 2/2
+            Granules: 2/2
+          Partition
+            Condition: true
+            Parts: 2/2
+            Granules: 2/2
+          PrimaryKey
+            Condition: true
+            Parts: 2/2
+            Granules: 2/2
+          Skip
+            Name: idx_ip_set
+            Description: set GRANULARITY 1
+            Parts: 1/2
+            Granules: 1/2
+          Ranges: 1
+SELECT count() FROM test_table WHERE value = '1001';
+1
+ALTER TABLE test_table DELETE WHERE value = '8';
+EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = '1001';
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_table)
+        Indexes:
+          MinMax
+            Condition: true
+            Parts: 2/2
+            Granules: 2/2
+          Partition
+            Condition: true
+            Parts: 2/2
+            Granules: 2/2
+          PrimaryKey
+            Condition: true
+            Parts: 2/2
+            Granules: 2/2
+          Skip
+            Name: idx_ip_set
+            Description: set GRANULARITY 1
+            Parts: 1/2
+            Granules: 1/2
+          Ranges: 1
+SELECT count() FROM test_table WHERE value = '1001';
+1
+SYSTEM STOP MERGES test_table;
+SET alter_sync = 0, mutations_sync = 0;
+ALTER TABLE test_table UPDATE value = '3' WHERE value = '5';
+-- The mutation is not applied yet. Using the index is ok since we are reading 'stale' data (it's not lightweight updates)
+    SELECT 'Status after UPDATE is issued, before merges happen, max_threads=1';
+Status after UPDATE is issued, before merges happen, max_threads=1
+SET max_threads = 1;
+EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = '5';
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_table)
+        Indexes:
+          MinMax
+            Condition: true
+            Parts: 2/2
+            Granules: 2/2
+          Partition
+            Condition: true
+            Parts: 2/2
+            Granules: 2/2
+          PrimaryKey
+            Condition: true
+            Parts: 2/2
+            Granules: 2/2
+          Skip
+            Name: idx_ip_set
+            Description: set GRANULARITY 1
+            Parts: 1/2
+            Granules: 1/2
+          Ranges: 1
+SELECT count() FROM test_table WHERE value = '5';
+1
+SELECT 'Status after UPDATE is issued, before merges happen, max_threads=2;';
+Status after UPDATE is issued, before merges happen, max_threads=2;
+SET max_threads = 2;
+EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = '5';
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_table)
+        Indexes:
+          MinMax
+            Condition: true
+            Parts: 2/2
+            Granules: 2/2
+          Partition
+            Condition: true
+            Parts: 2/2
+            Granules: 2/2
+          PrimaryKey
+            Condition: true
+            Parts: 2/2
+            Granules: 2/2
+          Skip
+            Name: idx_ip_set
+            Description: set GRANULARITY 1
+            Parts: 1/2
+            Granules: 1/2
+          Ranges: 1
+SELECT count() FROM test_table WHERE value = '5';
+1
+SET max_threads = DEFAULT;
+SYSTEM START MERGES test_table;
+SELECT 'Status after UPDATE is applied (Index was rebuilt)';
+Status after UPDATE is applied (Index was rebuilt)
+EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = '5';
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_table)
+        Indexes:
+          MinMax
+            Condition: true
+            Parts: 2/2
+            Granules: 2/2
+          Partition
+            Condition: true
+            Parts: 2/2
+            Granules: 2/2
+          PrimaryKey
+            Condition: true
+            Parts: 2/2
+            Granules: 2/2
+          Skip
+            Name: idx_ip_set
+            Description: set GRANULARITY 1
+            Parts: 0/2
+            Granules: 0/2
+          Ranges: 0
+SELECT count() FROM test_table WHERE value = '5';
+0
+-- Force a table rewrite. Index should remain the same
+    OPTIMIZE TABLE test_table FINAL;
+SELECT 'Status after DELETE full table rewrite (should be the same)';
+Status after DELETE full table rewrite (should be the same)
+EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = '5';
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_table)
+        Indexes:
+          MinMax
+            Condition: true
+            Parts: 2/2
+            Granules: 2/2
+          Partition
+            Condition: true
+            Parts: 2/2
+            Granules: 2/2
+          PrimaryKey
+            Condition: true
+            Parts: 2/2
+            Granules: 2/2
+          Skip
+            Name: idx_ip_set
+            Description: set GRANULARITY 1
+            Parts: 0/2
+            Granules: 0/2
+          Ranges: 0
+SELECT count() FROM test_table WHERE value = '5';
+0
+DROP TABLE IF EXISTS test_table SYNC;
