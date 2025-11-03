@@ -11,6 +11,7 @@ cluster = ClickHouseCluster(__file__)
 
 setup_settings = {
     'main_configs': ["configs/storage_conf.xml"],
+    'user_configs': ["configs/compatibility.xml"],
     'with_minio': True,
     'stay_alive': True,
     'with_remote_database_disk': False,
@@ -112,8 +113,9 @@ def test_backward_compatibility(start_cluster, storage_declaration, lost_blobs):
 
 
 def test_backward_compatibility_readonly_tables(start_cluster):
-    create_write_table_query = f"CREATE TABLE mt (version String) ENGINE = MergeTree ORDER BY () SETTINGS table_disk = 1, disk = 's3_plain_rewritable'"
-    create_readonly_table_query = f"CREATE TABLE mt (version String) ENGINE = MergeTree ORDER BY () settings table_disk = 1, disk = disk(readonly = 1, type = 's3_plain_rewritable', endpoint = 'http://minio1:9001/root/data/', access_key_id='minio', secret_access_key='{minio_secret_key}')"
+    settings = "table_disk = 1, disk = 's3_plain_rewritable'"
+    create_write_table_query = f"CREATE TABLE mt (version String) ENGINE = MergeTree ORDER BY () SETTINGS {settings}"
+    create_readonly_table_query = f"CREATE TABLE mt (version String) ENGINE = MergeTree ORDER BY () settings {settings}, disk = disk(readonly = 1, type = 's3_plain_rewritable', endpoint = 'http://minio1:9001/root/data/', access_key_id='minio', secret_access_key='{minio_secret_key}')"
 
     node_25_6.start_clickhouse()
     node_25_6.query(create_write_table_query)
