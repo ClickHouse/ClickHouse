@@ -934,6 +934,24 @@ void Client::BuildHttpRequest(const Aws::AmazonWebServiceRequest& request,
     }
 }
 
+std::string Client::getGCSOAuthToken() const
+{
+    if (provider_type != ProviderType::GCS)
+        return "";
+
+    const auto & http_client = GetHttpClient();
+
+    if (!http_client)
+        return "";
+
+    auto * gcp_oauth_client = dynamic_cast<PocoHTTPClientGCPOAuth *>(http_client.get());
+
+    if (!gcp_oauth_client)
+        return "";
+
+    return gcp_oauth_client->getBearerToken();
+}
+
 std::string Client::getRegionForBucket(const std::string & bucket, bool force_detect) const
 {
     std::lock_guard lock(cache->region_cache_mutex);
@@ -1212,8 +1230,7 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
     bool enable_s3_requests_logging,
     bool for_disk_s3,
     std::optional<std::string> opt_disk_name,
-    const ThrottlerPtr & get_request_throttler,
-    const ThrottlerPtr & put_request_throttler,
+    const HTTPRequestThrottler & request_throttler,
     const String & protocol)
 {
     auto context = Context::getGlobalContextInstance();
@@ -1235,8 +1252,7 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
         for_disk_s3,
         opt_disk_name,
         context->getGlobalContext()->getSettingsRef()[Setting::s3_use_adaptive_timeouts],
-        get_request_throttler,
-        put_request_throttler,
+        request_throttler,
         error_report);
 
     config.scheme = Aws::Http::SchemeMapper::FromString(protocol.c_str());
