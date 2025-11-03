@@ -76,18 +76,19 @@ std::shared_ptr<InMemoryDirectoryTree::INode> InMemoryDirectoryTree::walk(const 
 void InMemoryDirectoryTree::traverseSubtree(const std::filesystem::path & path, const ObserveFunction & observe) const
 {
     chassert(normalizePath(path.string()) == path);
-    std::deque<std::pair<fs::path, std::shared_ptr<INode>>> unvisited;
+    std::vector<std::pair<fs::path, std::shared_ptr<INode>>> unvisited;
 
     if (auto start_node = walk(path))
         unvisited.emplace_back("", std::move(start_node));
 
     while (!unvisited.empty())
     {
-        auto [node_path, node] = std::move(unvisited.front());
-        unvisited.pop_front();
+        auto [node_path, node] = std::move(unvisited.back());
+        unvisited.pop_back();
 
         observe(node_path, node);
 
+        unvisited.reserve(unvisited.size() + node->subdirectories.size());
         for (const auto & [subdir, subnode] : node->subdirectories)
             unvisited.emplace_back(node_path / subdir, subnode);
     }
@@ -127,6 +128,7 @@ void InMemoryDirectoryTree::apply(std::unordered_map<std::string, DirectoryRemot
     root->remote_info.reset();
     root->subdirectories.clear();
 
+    remote_path_to_inode.reserve(remote_layout.size());
     for (auto & [path, info] : remote_layout)
     {
         const auto inode = walk(normalizePath(path), /*create_missing=*/true);
