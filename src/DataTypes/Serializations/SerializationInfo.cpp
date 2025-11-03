@@ -276,18 +276,18 @@ ISerialization::KindStack SerializationInfo::chooseKindStack(const Data & data, 
 SerializationInfoByName::SerializationInfoByName(const SerializationInfo::Settings & settings_)
     : settings(settings_)
 {
-    /// Downgrade to DEFAULT version if `string_serialization_version` is DEFAULT.
+    /// Downgrade to BASIC version if `string_serialization_version` is SINGLE_STREAM.
     ///
     /// Rationale:
-    /// - `DEFAULT` means old serialization format (no per-type specialization).
+    /// - `BASIC` means old serialization format (no per-type specialization).
     /// - `WITH_TYPES` means new format that supports per-type serialization versions,
     ///   where `string_serialization_version` is currently the only one specialization.
     ///
-    /// If `string_serialization_version` is DEFAULT, there is no effective type specialization
+    /// If `string_serialization_version` is SINGLE_STREAM, there is no effective type specialization
     /// in use, so writing `WITH_TYPES` would add no benefit but reduce compatibility.
-    /// Falling back to `DEFAULT` keeps the output fully compatible with older servers.
-    if (settings.string_serialization_version == MergeTreeStringSerializationVersion::DEFAULT)
-        settings.version = MergeTreeSerializationInfoVersion::DEFAULT;
+    /// Falling back to `BASIC` keeps the output fully compatible with older servers.
+    if (settings.string_serialization_version == MergeTreeStringSerializationVersion::SINGLE_STREAM)
+        settings.version = MergeTreeSerializationInfoVersion::BASIC;
 }
 
 SerializationInfoByName::SerializationInfoByName(const NamesAndTypesList & columns, const SerializationInfo::Settings & settings_)
@@ -377,7 +377,7 @@ MergeTreeSerializationInfoVersion SerializationInfoByName::getVersion() const
 
 bool SerializationInfoByName::needsPersistence() const
 {
-    return !empty() || getVersion() > MergeTreeSerializationInfoVersion::DEFAULT;
+    return !empty() || getVersion() > MergeTreeSerializationInfoVersion::BASIC;
 }
 
 void SerializationInfoByName::writeJSON(WriteBuffer & out) const
@@ -427,7 +427,7 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
     if (!object->has(KEY_VERSION))
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Missed version of serialization infos");
 
-    MergeTreeSerializationInfoVersion version = MergeTreeSerializationInfoVersion::DEFAULT;
+    MergeTreeSerializationInfoVersion version = MergeTreeSerializationInfoVersion::BASIC;
     {
         size_t version_value = object->getValue<size_t>(KEY_VERSION);
         auto maybe_enum = magic_enum::enum_cast<MergeTreeSerializationInfoVersion>(version_value);
@@ -458,7 +458,7 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
         }
     }
 
-    MergeTreeStringSerializationVersion string_serialization_version = MergeTreeStringSerializationVersion::DEFAULT;
+    MergeTreeStringSerializationVersion string_serialization_version = MergeTreeStringSerializationVersion::SINGLE_STREAM;
     if (version >= MergeTreeSerializationInfoVersion::WITH_TYPES)
     {
         /// types_serialization_versions is mandatory in WITH_TYPES mode

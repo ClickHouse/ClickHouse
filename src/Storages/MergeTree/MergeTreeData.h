@@ -1075,7 +1075,7 @@ public:
         return storage_settings.get();
     }
 
-    StorageMetadataPtr getInMemoryMetadataPtr() const override;
+    StorageMetadataPtr getInMemoryMetadataPtr(bool bypass_metadata_cache = false) const override; /// NOLINT
 
     String getRelativeDataPath() const { return relative_data_path; }
 
