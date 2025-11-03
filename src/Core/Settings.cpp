@@ -622,7 +622,7 @@ Migrate old metadata structure of S3Queue table to a new one
     DECLARE(Bool, s3queue_enable_logging_to_s3queue_log, false, R"(
 Enable writing to system.s3queue_log. The value can be overwritten per table with table settings
 )", 0) \
-    DECLARE(Float, s3queue_keeper_fault_injection_probablility, 0.0, R"(
+    DECLARE(Float, s3queue_keeper_fault_injection_probability, 0.0, R"(
 Keeper fault injection probability for S3Queue.
 )", 0) \
     DECLARE(UInt64, hdfs_replication, 0, R"(
@@ -1324,7 +1324,7 @@ Possible values:
 )", 0) \
     \
     DECLARE(Bool, input_format_parallel_parsing, true, R"(
-Enables or disables order-preserving parallel parsing of data formats. Supported only for [TSV](../../interfaces/formats.md/#tabseparated), [TSKV](../../interfaces/formats.md/#tskv), [CSV](../../interfaces/formats.md/#csv) and [JSONEachRow](../../interfaces/formats.md/#jsoneachrow) formats.
+Enables or disables order-preserving parallel parsing of data formats. Supported only for [TabSeparated (TSV)](/interfaces/formats/TabSeparated), [TSKV](/interfaces/formats/TSKV), [CSV](/interfaces/formats/CSV) and [JSONEachRow](/interfaces/formats/JSONEachRow) formats.
 
 Possible values:
 
@@ -1338,7 +1338,7 @@ Possible values:
 The minimum chunk size in bytes, which each thread will parse in parallel.
 )", 0) \
     DECLARE(Bool, output_format_parallel_formatting, true, R"(
-Enables or disables parallel formatting of data formats. Supported only for [TSV](../../interfaces/formats.md/#tabseparated), [TSKV](../../interfaces/formats.md/#tskv), [CSV](../../interfaces/formats.md/#csv) and [JSONEachRow](../../interfaces/formats.md/#jsoneachrow) formats.
+Enables or disables parallel formatting of data formats. Supported only for [TSV](/interfaces/formats/TabSeparated), [TSKV](/interfaces/formats/TSKV), [CSV](/interfaces/formats/CSV) and [JSONEachRow](/interfaces/formats/JSONEachRow) formats.
 
 Possible values:
 
@@ -1354,6 +1354,10 @@ Possible values: from `1` to `22`
 Can be used when the output compression method is `zstd`. If greater than `0`, this setting explicitly sets compression window size (power of `2`) and enables a long-range mode for zstd compression. This can help to achieve a better compression ratio.
 
 Possible values: non-negative numbers. Note that if the value is too small or too big, `zstdlib` will throw an exception. Typical values are from `20` (window size = `1MB`) to `30` (window size = `1GB`).
+)", 0) \
+    DECLARE(Bool, allow_special_serialization_kinds_in_output_formats, false, R"(
+Allows to output columns with special serialization kinds like Sparse and Replicated without converting them to full column representation.
+It helps to avoid unnecessary data copy during formatting.
 )", 0) \
     DECLARE(Bool, enable_parsing_to_custom_serialization, true, R"(
 If true then data can be parsed directly to columns with custom serialization (e.g. Sparse) according to hints for serialization got from the table.
@@ -3626,7 +3630,7 @@ Maximal size of block in bytes accumulated during aggregation in order of primar
 Minimal number of parts to read to run preliminary merge step during multithread reading in order of primary key.
 )", 0) \
     DECLARE(Bool, low_cardinality_allow_in_native_format, true, R"(
-Allows or restricts using the [LowCardinality](../../sql-reference/data-types/lowcardinality.md) data type with the [Native](../../interfaces/formats.md/#native) format.
+Allows or restricts using the [LowCardinality](../../sql-reference/data-types/lowcardinality.md) data type with the [Native](/interfaces/formats/Native) format.
 
 If usage of `LowCardinality` is restricted, ClickHouse server converts `LowCardinality`-columns to ordinary ones for `SELECT` queries, and convert ordinary columns to `LowCardinality`-columns for `INSERT` queries.
 
@@ -3662,7 +3666,7 @@ If it is set to true, transforming expression to local filter is forbidden for q
 Allow functions that use Hyperscan library. Disable to avoid potentially long compilation times and excessive resource usage.
 )", 0) \
     DECLARE(UInt64, max_hyperscan_regexp_length, 0, R"(
-Defines the maximum length for each regular expression in the [hyperscan multi-match functions](/sql-reference/functions/string-search-functions#multimatchany).
+Defines the maximum length for each regular expression in the [hyperscan multi-match functions](/sql-reference/functions/string-search-functions#multiMatchAny).
 
 Possible values:
 
@@ -3702,7 +3706,7 @@ Exception: Regexp length too large.
 - [max_hyperscan_regexp_total_length](#max_hyperscan_regexp_total_length)
 )", 0) \
     DECLARE(UInt64, max_hyperscan_regexp_total_length, 0, R"(
-Sets the maximum length total of all regular expressions in each [hyperscan multi-match function](/sql-reference/functions/string-search-functions#multimatchany).
+Sets the maximum length total of all regular expressions in each [hyperscan multi-match function](/sql-reference/functions/string-search-functions#multiMatchAny).
 
 Possible values:
 
@@ -4381,9 +4385,6 @@ Possible values:
 Use this setting only for backward compatibility if your use cases depend on old syntax.
 :::
 )", 0) \
-    DECLARE(Seconds, periodic_live_view_refresh, 60, R"(
-Interval after which periodically refreshed live view is forced to refresh.
-)", 0) \
     DECLARE(Bool, transform_null_in, false, R"(
 Enables equality of [NULL](/sql-reference/syntax#null) values for [IN](../../sql-reference/operators/in.md) operator.
 
@@ -4864,6 +4865,12 @@ If it is set to a non-empty string, ClickHouse will try to apply specified proje
 Possible values:
 
 - string: name of preferred projection
+)", 0) \
+    DECLARE(UInt64, max_projection_rows_to_use_projection_index, 1'000'000, R"(
+If the number of rows to read from the projection index is less than or equal to this threshold, ClickHouse will try to apply the projection index during query execution.
+)", 0) \
+    DECLARE(UInt64, min_table_rows_to_use_projection_index, 1'000'000, R"(
+If the estimated number of rows to read from the table is greater than or equal to this threshold, ClickHouse will try to use the projection index during query execution.
 )", 0) \
     DECLARE(Bool, async_socket_for_remote, true, R"(
 Enables asynchronous read from socket while executing remote query.
@@ -5631,6 +5638,9 @@ Use query plan for lazy materialization optimization.
 )", 0) \
     DECLARE(UInt64, query_plan_max_limit_for_lazy_materialization, 10, R"(Control maximum limit value that allows to use query plan for lazy materialization optimization. If zero, there is no limit.
 )", 0) \
+    DECLARE(Bool, enable_lazy_columns_replication, true, R"(
+Enables lazy columns replication in JOIN and ARRAY JOIN, it allows to avoid unnecessary copy of the same rows multiple times in memory.
+)", 0) \
     DECLARE_WITH_ALIAS(Bool, query_plan_use_new_logical_join_step, true, R"(
 Use logical join step in query plan.
 Note: setting `query_plan_use_new_logical_join_step` is deprecated, use `query_plan_use_logical_join_step` instead.
@@ -5641,12 +5651,20 @@ Serialize query plan for distributed processing
     DECLARE(Bool, correlated_subqueries_substitute_equivalent_expressions, true, R"(
 Use filter expressions to inference equivalent expressions and substitute them instead of creating a CROSS JOIN.
 )", 0) \
+    DECLARE(DecorrelationJoinKind, correlated_subqueries_default_join_kind, DecorrelationJoinKind::RIGHT, R"(
+Controls the kind of joins in the decorrelated query plan. The default value is `right`, which means that decorrelated plan will contain RIGHT JOINs with subquery input on the right side.
+
+Possible values:
+
+- `left` - Decorrelation process will produce LEFT JOINs and input table will appear on the left side.
+- `right` - Decorrelation process will produce RIGHT JOINs and input table will appear on the right side.
+)", 0) \
     DECLARE(Bool, optimize_qbit_distance_function_reads, true, R"(
 Replace distance functions on `QBit` data type with equivalent ones that only read the columns necessary for the calculation from the storage.
 )", 0) \
     \
     DECLARE(UInt64, regexp_max_matches_per_row, 1000, R"(
-Sets the maximum number of matches for a single regular expression per row. Use it to protect against memory overload when using greedy regular expression in the [extractAllGroupsHorizontal](/sql-reference/functions/string-search-functions#extractallgroupshorizontal) function.
+Sets the maximum number of matches for a single regular expression per row. Use it to protect against memory overload when using greedy regular expression in the [extractAllGroupsHorizontal](/sql-reference/functions/string-search-functions#extractAllGroupsHorizontal) function.
 
 Possible values:
 
@@ -7017,6 +7035,16 @@ Applied only for subquery depth = 0. Subqueries and INSERT INTO ... SELECT are n
 If the top-level construct is UNION, 'ORDER BY rand()' is injected into all children independently.
 Only useful for testing and development (missing ORDER BY is a source of non-deterministic query results).
     )", 0) \
+    DECLARE(Int64, optimize_const_name_size, 256, R"(
+Replace with scalar and use hash as a name for large constants (size is estimated by the name length).
+
+Possible values:
+
+- positive integer - max length of the name,
+- 0 — always,
+- negative integer - never.
+)", 0) \
+    \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \
     /* ## ADD PRODUCTION / BETA FEATURES BEFORE THIS BLOCK  ## */ \
@@ -7076,6 +7104,7 @@ Allows using statistics to optimize queries
     DECLARE_WITH_ALIAS(Bool, allow_experimental_statistics, false, R"(
 Allows defining columns with [statistics](../../engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-creating-a-table) and [manipulate statistics](../../engines/table-engines/mergetree-family/mergetree.md/#column-statistics).
 )", EXPERIMENTAL, allow_experimental_statistic) \
+    DECLARE(Bool, use_statistics_cache, false, R"(Use statistics cache in a query to avoid the overhead of loading statistics of every parts)", EXPERIMENTAL) \
     \
     DECLARE(Bool, allow_experimental_full_text_index, false, R"(
 If set to true, allow using the experimental text index.
@@ -7083,21 +7112,10 @@ If set to true, allow using the experimental text index.
     DECLARE(Bool, query_plan_direct_read_from_text_index, true, R"(
 Allow to perform full text search filtering using only the inverted index in query plan.
 )", 0) \
-    DECLARE(Bool, allow_experimental_live_view, false, R"(
-Allows creation of a deprecated LIVE VIEW.
-
-Possible values:
-
-- 0 — Working with live views is disabled.
-- 1 — Working with live views is enabled.
-)", EXPERIMENTAL) \
-    DECLARE(Seconds, live_view_heartbeat_interval, 15, R"(
-The heartbeat interval in seconds to indicate live query is alive.
-)", EXPERIMENTAL) \
-    DECLARE(UInt64, max_live_view_insert_blocks_before_refresh, 64, R"(
-Limit maximum number of inserted blocks after which mergeable blocks are dropped and query is re-executed.
-)", EXPERIMENTAL) \
-    \
+    DECLARE(Bool, use_text_index_dictionary_cache, false, R"(
+Whether to use a cache of deserialized text index dictionary block.
+Using the text index dictionary block cache can significantly reduce latency and increase throughput when working with a large number of text index queries.
+)", 0) \
     DECLARE(Bool, allow_experimental_window_view, false, R"(
 Enable WINDOW VIEW. Not mature enough.
 )", EXPERIMENTAL) \
@@ -7298,6 +7316,10 @@ Sets the evaluation time to be used with promql dialect. 'auto' means the curren
     MAKE_OBSOLETE(M, DefaultDatabaseEngine, default_database_engine, DefaultDatabaseEngine::Atomic) \
     MAKE_OBSOLETE(M, UInt64, max_pipeline_depth, 0) \
     MAKE_OBSOLETE(M, Seconds, temporary_live_view_timeout, 1) \
+    MAKE_OBSOLETE(M, Seconds, periodic_live_view_refresh, 60) \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_live_view, false) \
+    MAKE_OBSOLETE(M, Seconds, live_view_heartbeat_interval, 15) \
+    MAKE_OBSOLETE(M, UInt64, max_live_view_insert_blocks_before_refresh, 64) \
     MAKE_OBSOLETE(M, Milliseconds, async_insert_cleanup_timeout_ms, 1000) \
     MAKE_OBSOLETE(M, Bool, optimize_fuse_sum_count_avg, 0) \
     MAKE_OBSOLETE(M, Seconds, drain_timeout, 3) \

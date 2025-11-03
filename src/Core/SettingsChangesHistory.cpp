@@ -41,14 +41,24 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.11",
         {
-
+            {"correlated_subqueries_default_join_kind", "left", "right", "New setting. Default join kind for decorrelated query plan."},
+            {"use_statistics_cache", 0, 0, "New setting"},
+            {"max_projection_rows_to_use_projection_index", 1'000'000, 1'000'000, "New setting"},
+            {"min_table_rows_to_use_projection_index", 1'000'000, 1'000'000, "New setting"},
+            {"use_text_index_dictionary_cache", false, false, "New setting"},
+            {"s3_retry_attempts", 500, 500, "Changed the value of the obsolete setting"},
+            {"optimize_const_name_size", -1, 256, "Replace with scalar and use hash as a name for large constants (size is estimated by name length)"},
+            {"enable_lazy_columns_replication", false, true, "Enable lazy columns replication in JOIN and ARRAY JOIN by default"},
         });
         addSettingsChanges(settings_changes_history, "25.10",
         {
+            {"allow_special_serialization_kinds_in_output_formats", false, false, "Add a setting to allow output of special columns representations like Sparse/Replicated without converting them to full columns"},
+            {"enable_lazy_columns_replication", false, false, "Add a setting to enable lazy columns replication in JOIN and ARRAY JOIN"},
+            {"correlated_subqueries_default_join_kind", "left", "right", "New setting. Default join kind for decorrelated query plan."},
             {"show_data_lake_catalogs_in_system_tables", true, false, "Disable catalogs in system tables by default"},
             {"optimize_rewrite_like_perfect_affix", false, true, "New setting"},
             {"allow_dynamic_type_in_join_keys", true, false, "Disallow using Dynamic type in JOIN keys by default"},
-            {"s3queue_keeper_fault_injection_probablility", 0, 0, "New setting."},
+            {"s3queue_keeper_fault_injection_probability", 0, 0, "New setting."},
             {"enable_join_runtime_filters", false, false, "New setting"},
             {"join_runtime_filter_exact_values_limit", 10000, 10000, "New setting"},
             {"join_runtime_bloom_filter_bytes", 512_KiB, 512_KiB, "New setting"},
@@ -57,9 +67,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"joined_block_split_single_row", false, false, "New setting"},
             {"temporary_files_buffer_size", DBMS_DEFAULT_BUFFER_SIZE, DBMS_DEFAULT_BUFFER_SIZE, "New setting"},
             {"rewrite_in_to_join", false, false, "New experimental setting"},
-            {"iceberg_insert_max_rows_in_data_file", 100000, 1000000, "New setting."},
-            {"iceberg_insert_max_bytes_in_data_file", 100000000, 100000000, "New setting."},
-            {"delta_lake_insert_max_rows_in_data_file", 100000, 1000000, "New setting."},
+            {"iceberg_insert_max_rows_in_data_file", 100000, 1000000, "Changed default value."},
+            {"delta_lake_insert_max_rows_in_data_file", 100000, 1000000, "Changed default value."},
             {"delta_lake_log_metadata", false, false, "New setting."},
             {"distributed_cache_prefer_bigger_buffer_size", false, false, "New setting."},
             {"allow_experimental_qbit_type", false, false, "New experimental setting"},
@@ -223,6 +232,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_scopes_for_with_statement", true, true, "New setting for backward compatibility with the old analyzer."},
             {"backup_slow_all_threads_after_retryable_s3_error", false, false, "New setting"},
             {"s3_slow_all_threads_after_retryable_error", false, false, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
+            {"s3_retry_attempts", 500, 500, "Changed the value of the obsolete setting"},
             /// RELEASE CLOSED
         });
         addSettingsChanges(settings_changes_history, "25.5",
@@ -917,14 +927,17 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "25.11",
         {
-
+            {"refresh_statistics_interval", 0, 0, "New setting"},
+            {"shared_merge_tree_create_per_replica_metadata_nodes", true, false, "Reduce the amount of metadata in Keeper."},
+            {"serialization_info_version", "basic", "with_types", "Change to the newer format allowing custom string serialization"},
+            {"string_serialization_version", "single_stream", "with_size_stream", "Change to the newer format with separate sizes"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.10",
         {
             {"auto_statistics_types", "", "", "New setting"},
             {"exclude_materialize_skip_indexes_on_merge", "", "", "New setting."},
-            {"serialization_info_version", "default", "default", "New setting"},
-            {"string_serialization_version", "default", "default", "New setting"},
+            {"serialization_info_version", "basic", "basic", "New setting"},
+            {"string_serialization_version", "single_stream", "single_stream", "New setting"},
             {"replicated_deduplication_window_seconds", 7 * 24 * 60 * 60, 60*60, "decrease default value"},
             {"shared_merge_tree_activate_coordinated_merges_tasks", false, false, "New settings"},
             {"shared_merge_tree_merge_coordinator_factor", 1.1f, 1.1f, "Lower coordinator sleep time after load"},

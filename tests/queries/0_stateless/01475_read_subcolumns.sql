@@ -18,7 +18,7 @@ WHERE (type = 'QueryFinish') AND (lower(query) LIKE lower('SELECT a.size0 FROM %
 
 SELECT '====tuple====';
 DROP TABLE IF EXISTS t_tup;
-CREATE TABLE t_tup (t Tuple(s String, u UInt32)) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0, serialization_info_version = 'default';
+CREATE TABLE t_tup (t Tuple(s String, u UInt32)) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0, serialization_info_version = 'basic';
 INSERT INTO t_tup VALUES (('foo', 1)) (('bar', 2)) (('baz', 42));
 
 SYSTEM DROP MARK CACHE;
@@ -49,7 +49,7 @@ WHERE (type = 'QueryFinish') AND (lower(query) LIKE lower('SELECT n.null FROM %t
 
 SELECT '====map====';
 DROP TABLE IF EXISTS t_map;
-CREATE TABLE t_map (m Map(String, UInt32)) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0, serialization_info_version = 'default';
+CREATE TABLE t_map (m Map(String, UInt32)) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0, serialization_info_version = 'basic';
 INSERT INTO t_map VALUES (map('a', 1, 'b', 2)) (map('a', 3, 'c', 4)), (map('b', 5, 'c', 6));
 
 --- will read 4 files: keys.bin, keys.mrk2, size0.bin, size0.mrk2

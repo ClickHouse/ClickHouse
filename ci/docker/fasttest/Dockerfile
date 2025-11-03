@@ -43,7 +43,7 @@ RUN curl -s https://apt.kitware.com/keys/kitware-archive-latest.asc | gpg --dear
     echo "deb [signed-by=/etc/apt/trusted.gpg.d/kitware.gpg] https://apt.kitware.com/ubuntu/ $(lsb_release -cs) main" >> /etc/apt/sources.list.d/kitware.list
 
 # moreutils - provides ts fo FT
-# expect, bzip2 - requried by FT
+# expect, bzip2, less - requried by FT
 # bsdmainutils - provides hexdump for FT
 # nasm - nasm copiler for one of submodules, required from normal build
 # yasm - asssembler for libhdfs3, required from normal build
@@ -63,6 +63,7 @@ RUN apt-get update \
         python3-pip \
         zstd \
         moreutils \
+        less \
         expect \
         bsdmainutils \
         pv \
