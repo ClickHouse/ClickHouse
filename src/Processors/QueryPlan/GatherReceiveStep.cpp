@@ -40,6 +40,7 @@ void GatherReceiveStep::initializePipeline(QueryPipelineBuilder & pipeline, cons
                 *maintain_sort_description,
                 /* merge_block_size_rows */ DEFAULT_BLOCK_SIZE,
                 /* merge_block_size_bytes */ 0,
+                /* max_dynamic_subcolumns */ std::nullopt,
                 SortingQueueStrategy::Batch,
                 /* limit */ 0,
                 /* always_read_till_end */ false,
