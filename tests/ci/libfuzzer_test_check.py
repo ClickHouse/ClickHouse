@@ -38,6 +38,7 @@ from tee_popen import TeePopen
 TIMEOUT = 10 * 60 # TESTING - return this after ->  60 * 60 # 60 minutes
 NO_CHANGES_MSG = "Nothing to run"
 s3 = S3Helper()
+RUNNER_OUTPUT = "/test_output"
 
 
 def zipdir(path, ziph):
@@ -107,7 +108,7 @@ def get_run_command(
         f"--workdir=/fuzzers "
         f"--volume={fuzzers_path}:/fuzzers "
         f"--volume={repo_path}/tests:/usr/share/clickhouse-test "
-        f"--volume={result_path}:/test_output "
+        f"--volume={result_path}:{RUNNER_OUTPUT} "
         "--security-opt seccomp=unconfined "  # required to issue io_uring sys-calls
         f"--cap-add=SYS_PTRACE {env_str} {additional_options_str} {image} "
         "python3 /usr/share/clickhouse-test/fuzz/runner.py"
@@ -206,7 +207,7 @@ def process_error(path: Path) -> list:
 
             match = re.search(TEST_UNIT_LINE, line)
             if match:
-                test_unit_path = match.group(1)
+                test_unit_path = match.group(1).replace(RUNNER_OUTPUT, result_path)
                 test_unit = os.path.basename(test_unit_path)
                 trace_file = f"{test_unit}.trace"
                 trace_path = f"{os.path.dirname(test_unit_path)}/{trace_file}"
