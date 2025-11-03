@@ -57,25 +57,13 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
     uri = Poco::URI(uri_str);
     /// Keep a copy of how Poco parsed the original string before any mapping
     Poco::URI original_uri(uri_str);
-    bool wildcard_question_mark = false;
     bool looks_like_presigned = false;
-    if (uri_str.find('?') != std::string::npos)
+    for (const auto & [qk, qv] : original_uri.getQueryParameters())
     {
-        /// Heuristics: if query parameters look like pre-signed or real key=value, treat as query
-        for (const auto & [qk, qv] : original_uri.getQueryParameters())
+        if (qk == "versionId" || qk == "AWSAccessKeyId" || qk == "Signature" || qk == "Expires" || qk.starts_with("X-Amz-"))
         {
-            if (qk == "versionId" || qk == "AWSAccessKeyId" || qk == "Signature" || qk == "Expires" || qk.starts_with("X-Amz-"))
-            {
-                looks_like_presigned = true;
-                break;
-            }
-        }
-        if (!looks_like_presigned)
-        {
-            const std::string query_str = original_uri.getQuery();
-            /// If there is no '=', it's very likely a wildcard part that was split by URI parsing
-            if (query_str.find('=') == std::string::npos)
-                wildcard_question_mark = true;
+            looks_like_presigned = true;
+            break;
         }
     }
 
@@ -108,37 +96,23 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Host is empty in S3 URI.");
 
     /// Extract object version ID from query string.
+    bool has_version_id = false;
     for (const auto & [query_key, query_value] : uri.getQueryParameters())
     {
         if (query_key == "versionId")
         {
             version_id = query_value;
+            has_version_id = true;
         }
     }
 
-    /// Fix B: encode only the PATH when '?' was used as a wildcard in the original string.
-    /// We reconstruct the intended path by merging original path + '?' + original query,
-    /// percent-encode '?' in the path, and clear the query. This keeps mapped scheme/authority.
-    if (wildcard_question_mark)
-    {
-        std::string combined_path = original_uri.getPath();
-        const std::string original_query = original_uri.getQuery();
-        if (!original_query.empty())
-        {
-            combined_path.push_back('?');
-            combined_path += original_query;
-        }
-
-        std::string encoded_path;
-        Poco::URI::encode(combined_path, "?", encoded_path);
-        uri.setPath(encoded_path);
-        uri.setQuery("");
-    }
+    /// Defer handling of non-versionId, non-presigned queries until after style detection.
 
     String name;
     String endpoint_authority_from_uri;
 
     bool is_using_aws_private_link_interface = re2::RE2::FullMatch(uri.getAuthority(), aws_private_link_style_pattern);
+    bool path_style_matched = false;
 
     if (!is_using_aws_private_link_interface
         && re2::RE2::FullMatch(uri.getAuthority(), virtual_hosted_style_pattern, &bucket, &name, &endpoint_authority_from_uri))
@@ -170,6 +144,7 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
     {
         is_virtual_hosted_style = false;
         endpoint = uri.getScheme() + "://" + uri.getAuthority();
+        path_style_matched = true;
     }
     else
     {
@@ -181,6 +156,29 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
         endpoint = uri.getScheme() + "://" + uri.getAuthority();
         if (!uri.getPath().empty())
             key = uri.getPath().substr(1);
+    }
+
+    /// Merge non-presigned, non-versionId query into key as required.
+    const std::string original_query = original_uri.getQuery();
+    if (!original_query.empty() && !has_version_id && !looks_like_presigned)
+    {
+        if (is_virtual_hosted_style || path_style_matched)
+        {
+            // AWS-style endpoints: always fold query into key (matches unit tests)
+            key += "?";
+            key += original_query;
+            uri.setQuery("");
+        }
+        else
+        {
+            // Custom endpoints: fold only wildcard-like queries (no '=')
+            if (original_query.find('=') == std::string::npos)
+            {
+                key += "?";
+                key += original_query;
+                uri.setQuery("");
+            }
+        }
     }
 
     validateBucket(bucket, uri);
