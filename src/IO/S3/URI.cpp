@@ -63,7 +63,7 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
     if (question_pos != std::string::npos)
     {
         std::string after_question = uri_str.substr(question_pos + 1);
-        
+
         // Check if this looks like a wildcard pattern:
         // - Either starts with another '?' (like '??')
         // - Or doesn't contain '=' (not a query parameter)
@@ -79,7 +79,7 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
                 is_wildcard = true;
             }
         }
-        
+
         if (is_wildcard)
         {
             String uri_with_question_mark_encode;
@@ -140,7 +140,7 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
         {
             std::string orig_after_question = uri_.substr(orig_question_pos + 1);
             // Only re-encode if this was a wildcard pattern (not a query parameter)
-            if (!orig_after_question.empty() && 
+            if (!orig_after_question.empty() &&
                 (orig_after_question[0] == '?' || orig_after_question.find('=') == std::string::npos))
             {
                 // Already handled above, don't re-encode
