@@ -11,7 +11,6 @@
 #include <Core/Types.h>
 #include <bit>
 
-
 namespace DB
 {
 
@@ -500,10 +499,15 @@ UInt32 compressData(const char * src, UInt32 bytes_size, char * dst)
     static constexpr const UInt32 matrix_size = 64;
     static constexpr const UInt32 header_size = 2 * sizeof(UInt64);
 
+    UInt8 bytes_to_skip = bytes_size % sizeof(T);
+    bytes_size -= bytes_to_skip;
+    memcpy(dst, src, bytes_to_skip);
+    src += bytes_to_skip;
+    dst += bytes_to_skip;
+
     if (bytes_size % sizeof(T))
         throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress with T64 codec, data size {} is not multiplier of {}",
                         bytes_size, sizeof(T));
-
     UInt32 src_size = bytes_size / sizeof(T);
     UInt32 num_full = src_size / matrix_size;
     UInt32 tail = src_size % matrix_size;
@@ -545,7 +549,7 @@ UInt32 compressData(const char * src, UInt32 bytes_size, char * dst)
         dst_bytes += dst_shift;
     }
 
-    return header_size + dst_bytes;
+    return header_size + dst_bytes + bytes_to_skip;
 }
 
 template <typename T, bool full>
@@ -555,6 +559,15 @@ void decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 unco
 
     static constexpr const UInt32 matrix_size = 64;
     static constexpr const UInt32 header_size = 2 * sizeof(UInt64);
+
+
+    UInt8 bytes_to_skip = uncompressed_size % sizeof(T);
+    memcpy(dst, src, bytes_to_skip);
+
+    uncompressed_size -= bytes_to_skip;
+    bytes_size -= bytes_to_skip;
+    src += bytes_to_skip;
+    dst += bytes_to_skip;
 
     if (bytes_size < header_size)
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress T64-encoded data, data size ({}) is less than the size of T64 header",
@@ -662,7 +675,6 @@ UInt32 CompressionCodecT64::doCompressData(const char * src, UInt32 src_size, ch
     UInt8 cookie = static_cast<UInt8>(serializeTypeId(type_idx)) | (static_cast<UInt8>(variant) << 7);
     memcpy(dst, &cookie, 1);
     dst += 1;
-
     switch (baseType(*type_idx))
     {
         case TypeIndex::Int8:
