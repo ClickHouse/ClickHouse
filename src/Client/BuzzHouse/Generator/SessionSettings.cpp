@@ -271,7 +271,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"allow_get_client_http_header", trueOrFalseSettingNoOracle},
     {"allow_introspection_functions", trueOrFalseSetting},
     {"allow_special_bool_values_inside_variant", trueOrFalseSettingNoOracle},
-    {"allow_special_serialization_kinds_in_output_formats", trueOrFalseSettingNoOracle},
+    {"allow_special_serialization_kinds_in_output_formats", trueOrFalseSetting},
     {"alter_move_to_space_execute_async", trueOrFalseSettingNoOracle},
     {"alter_partition_verbose_result", trueOrFalseSettingNoOracle},
     {"alter_sync", CHSetting(zeroOneTwo, {}, false)},
