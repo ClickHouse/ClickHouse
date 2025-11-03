@@ -228,14 +228,8 @@ public:
     }
 
     ProviderType getProviderType() const { return provider_type; }
-    std::string getGCSOAuthToken() const
-    {
-        if (provider_type != ProviderType::GCS)
-            return "";
 
-        const auto & client = PocoHTTPClientGCPOAuth(client_configuration);
-        return client.getBearerToken();
-    }
+    std::string getGCSOAuthToken() const;
 
     ThrottlerPtr getPutRequestThrottler() const { return client_configuration.request_throttler.put_throttler; }
     ThrottlerPtr getGetRequestThrottler() const { return client_configuration.request_throttler.get_throttler; }
