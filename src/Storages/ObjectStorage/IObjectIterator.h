@@ -12,6 +12,7 @@ extern const int LOGICAL_ERROR;
 
 struct ObjectInfo
 {
+    RelativePathWithMetadata relative_path_with_metadata;
     std::optional<DataLakeObjectMetadata> data_lake_metadata;
 
     ObjectInfo() = default;
@@ -37,10 +38,8 @@ struct ObjectInfo
     virtual std::string getPathOrPathToArchiveIfArchive() const;
     virtual std::optional<std::string> getFileFormat() const { return std::nullopt; }
 
-    std::optional<ObjectMetadata> getUnderlyingObjectMetadata() const { return relative_path_with_metadata.metadata; }
-    void setUnderlyingObjectMetadata(const ObjectMetadata & metadata) { relative_path_with_metadata.metadata = metadata; }
-
-    RelativePathWithMetadata relative_path_with_metadata;
+    std::optional<ObjectMetadata> getObjectMetadata() const { return relative_path_with_metadata.metadata; }
+    void setObjectMetadata(const ObjectMetadata & metadata) { relative_path_with_metadata.metadata = metadata; }
 };
 
 using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;

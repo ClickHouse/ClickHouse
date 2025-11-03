@@ -70,7 +70,7 @@ namespace ErrorCodes
 
 ObjectStorageQueueSource::ObjectStorageQueueObjectInfo::ObjectStorageQueueObjectInfo(
     const ObjectInfo & object_info, ObjectStorageQueueMetadata::FileMetadataPtr file_metadata_)
-    : ObjectInfo(RelativePathWithMetadata{object_info.getPath(), object_info.getUnderlyingObjectMetadata()})
+    : ObjectInfo(RelativePathWithMetadata{object_info.getPath(), object_info.getObjectMetadata()})
     , file_metadata(file_metadata_)
 {
 }
@@ -1045,7 +1045,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
             ProfileEvents::increment(ProfileEvents::ObjectStorageQueueReadRows, chunk.getNumRows());
             ProfileEvents::increment(ProfileEvents::ObjectStorageQueueReadBytes, chunk.bytes());
 
-            const auto & object_metadata = reader.getObjectInfo()->getUnderlyingObjectMetadata();
+            const auto & object_metadata = reader.getObjectInfo()->getObjectMetadata();
 
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
                 chunk,

@@ -75,16 +75,15 @@ std::optional<ColumnsDescription> ReadBufferIterator::tryGetColumnsFromCache(
         auto get_last_mod_time = [&] -> std::optional<time_t>
         {
             const auto & path = object_info->isArchive() ? object_info->getPathToArchive() : object_info->getPath();
-            if (!object_info->getUnderlyingObjectMetadata())
+            if (!object_info->getObjectMetadata())
             {
                 auto meta = object_storage->tryGetObjectMetadata(path);
                 if (meta)
-                    object_info->setUnderlyingObjectMetadata(*meta);
+                    object_info->setObjectMetadata(*meta);
             }
 
-            return object_info->getUnderlyingObjectMetadata()
-                ? std::optional<time_t>(object_info->getUnderlyingObjectMetadata()->last_modified.epochTime())
-                : std::nullopt;
+            return object_info->getObjectMetadata() ? std::optional<time_t>(object_info->getObjectMetadata()->last_modified.epochTime())
+                                                    : std::nullopt;
         };
 
         if (format)
@@ -253,8 +252,8 @@ ReadBufferIterator::Data ReadBufferIterator::next()
             prev_read_keys_size = read_keys.size();
         }
 
-        if (query_settings.skip_empty_files && current_object_info->getUnderlyingObjectMetadata()
-            && current_object_info->getUnderlyingObjectMetadata()->size_bytes == 0)
+        if (query_settings.skip_empty_files && current_object_info->getObjectMetadata()
+            && current_object_info->getObjectMetadata()->size_bytes == 0)
             continue;
 
         /// In union mode, check cached columns only for current key.

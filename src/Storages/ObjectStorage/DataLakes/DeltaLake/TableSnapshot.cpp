@@ -286,12 +286,12 @@ public:
                 continue;
             }
 
-            object->setUnderlyingObjectMetadata(object_storage->getObjectMetadata(object->getPath()));
+            object->setObjectMetadata(object_storage->getObjectMetadata(object->getPath()));
 
             if (callback)
             {
-                chassert(object->getUnderlyingObjectMetadata());
-                callback(DB::FileProgress(0, object->getUnderlyingObjectMetadata()->size_bytes));
+                chassert(object->getObjectMetadata());
+                callback(DB::FileProgress(0, object->getObjectMetadata()->size_bytes));
             }
             return object;
         }

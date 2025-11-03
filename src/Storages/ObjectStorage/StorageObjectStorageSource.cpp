@@ -301,7 +301,7 @@ Chunk StorageObjectStorageSource::generate()
             if (!full_path.starts_with(reading_path))
                 full_path = fs::path(reading_path) / object_info->getPath();
 
-            auto object_metadata = object_info->getUnderlyingObjectMetadata();
+            auto object_metadata = object_info->getObjectMetadata();
 
             chassert(object_metadata);
 
@@ -463,7 +463,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         if (!object_info || object_info->getPath().empty())
             return {};
 
-        if (!object_info->getUnderlyingObjectMetadata())
+        if (!object_info->getObjectMetadata())
         {
             const auto & path = object_info->isArchive() ? object_info->getPathToArchive() : object_info->getPath();
 
@@ -473,12 +473,12 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 if (!metadata)
                     return {};
 
-                object_info->setUnderlyingObjectMetadata(metadata.value());
+                object_info->setObjectMetadata(metadata.value());
             }
             else
-                object_info->setUnderlyingObjectMetadata(object_storage->getObjectMetadata(path));
+                object_info->setObjectMetadata(object_storage->getObjectMetadata(path));
         }
-    } while (query_settings.skip_empty_files && object_info->getUnderlyingObjectMetadata()->size_bytes == 0);
+    } while (query_settings.skip_empty_files && object_info->getObjectMetadata()->size_bytes == 0);
 
     QueryPipelineBuilder builder;
     std::shared_ptr<ISource> source;
@@ -497,9 +497,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         auto get_last_mod_time = [&]() -> std::optional<time_t>
         {
-            return object_info->getUnderlyingObjectMetadata()
-                ? std::optional<size_t>(object_info->getUnderlyingObjectMetadata()->last_modified.epochTime())
-                : std::nullopt;
+            return object_info->getObjectMetadata() ? std::optional<size_t>(object_info->getObjectMetadata()->last_modified.epochTime())
+                                                    : std::nullopt;
         };
         return schema_cache->tryGetNumRows(cache_key, get_last_mod_time);
     };
@@ -564,7 +563,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             log,
             "Reading object '{}', size: {} bytes, with format: {}",
             object_info->getPath(),
-            object_info->getUnderlyingObjectMetadata()->size_bytes,
+            object_info->getObjectMetadata()->size_bytes,
             object_info->getFileFormat().value_or(configuration->format));
 
         auto input_format = FormatFactory::instance().getInput(
@@ -957,8 +956,8 @@ ObjectInfoPtr StorageObjectStorageSource::GlobIterator::nextUnlocked(size_t /* p
         {
             for (const auto & object_info : object_infos)
             {
-                chassert(object_info->getUnderlyingObjectMetadata());
-                file_progress_callback(FileProgress(0, object_info->getUnderlyingObjectMetadata()->size_bytes));
+                chassert(object_info->getObjectMetadata());
+                file_progress_callback(FileProgress(0, object_info->getObjectMetadata()->size_bytes));
             }
         }
     }
@@ -1129,8 +1128,8 @@ ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::createObjectInfoInAr
     const std::string & path_in_archive)
 {
     auto archive_object = std::make_shared<ObjectInfo>(RelativePathWithMetadata{path_to_archive, std::nullopt});
-    if (!archive_object->getUnderlyingObjectMetadata())
-        archive_object->setUnderlyingObjectMetadata(object_storage->getObjectMetadata(archive_object->getPath()));
+    if (!archive_object->getObjectMetadata())
+        archive_object->setObjectMetadata(object_storage->getObjectMetadata(archive_object->getPath()));
 
     std::shared_ptr<IArchiveReader> archive_reader;
     {
@@ -1144,7 +1143,7 @@ ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::createObjectInfoInAr
             archive_reader = DB::createArchiveReader(
                 path_to_archive,
                 [=, this]() { return createReadBuffer(archive_object->relative_path_with_metadata, object_storage, getContext(), log); },
-                archive_object->getUnderlyingObjectMetadata()->size_bytes);
+                archive_object->getObjectMetadata()->size_bytes);
 
             archive_readers.emplace(path_to_archive, archive_reader);
         }
@@ -1197,7 +1196,7 @@ StorageObjectStorageSource::ArchiveIterator::ArchiveIterator(
 std::shared_ptr<IArchiveReader>
 StorageObjectStorageSource::ArchiveIterator::createArchiveReader(ObjectInfoPtr object_info) const
 {
-    const auto size = object_info->getUnderlyingObjectMetadata()->size_bytes;
+    const auto size = object_info->getObjectMetadata()->size_bytes;
     return DB::createArchiveReader(
         /* path_to_archive */
         object_info->getPath(),
@@ -1223,8 +1222,8 @@ ObjectInfoPtr StorageObjectStorageSource::ArchiveIterator::next(size_t processor
                     return {};
                 }
 
-                if (!archive_object->getUnderlyingObjectMetadata())
-                    archive_object->setUnderlyingObjectMetadata(object_storage->getObjectMetadata(archive_object->getPath()));
+                if (!archive_object->getObjectMetadata())
+                    archive_object->setObjectMetadata(object_storage->getObjectMetadata(archive_object->getPath()));
 
                 archive_reader = createArchiveReader(archive_object);
                 file_enumerator = archive_reader->firstFile();
@@ -1249,8 +1248,8 @@ ObjectInfoPtr StorageObjectStorageSource::ArchiveIterator::next(size_t processor
             if (!archive_object)
                 return {};
 
-            if (!archive_object->getUnderlyingObjectMetadata())
-                archive_object->setUnderlyingObjectMetadata(object_storage->getObjectMetadata(archive_object->getPath()));
+            if (!archive_object->getObjectMetadata())
+                archive_object->setObjectMetadata(object_storage->getObjectMetadata(archive_object->getPath()));
 
             archive_reader = createArchiveReader(archive_object);
             if (!archive_reader->fileExists(path_in_archive))
