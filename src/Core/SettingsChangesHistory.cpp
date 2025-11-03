@@ -44,6 +44,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"correlated_subqueries_default_join_kind", "left", "right", "New setting. Default join kind for decorrelated query plan."},
             {"use_statistics_cache", 0, 0, "New setting"},
             {"enable_shared_storage_snapshot_in_query", false, true, "Better consistency guarantees."},
+            {"max_projection_rows_to_use_projection_index", 1'000'000, 1'000'000, "New setting"},
+            {"min_table_rows_to_use_projection_index", 1'000'000, 1'000'000, "New setting"},
             {"use_text_index_dictionary_cache", false, false, "New setting"},
             {"s3_retry_attempts", 500, 500, "Changed the value of the obsolete setting"},
             {"optimize_const_name_size", -1, 256, "Replace with scalar and use hash as a name for large constants (size is estimated by name length)"},
@@ -928,6 +930,8 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         {
             {"refresh_statistics_interval", 0, 0, "New setting"},
             {"shared_merge_tree_create_per_replica_metadata_nodes", true, false, "Reduce the amount of metadata in Keeper."},
+            {"serialization_info_version", "basic", "with_types", "Change to the newer format allowing custom string serialization"},
+            {"string_serialization_version", "single_stream", "with_size_stream", "Change to the newer format with separate sizes"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.10",
         {
