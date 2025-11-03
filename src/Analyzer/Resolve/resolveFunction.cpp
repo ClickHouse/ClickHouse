@@ -186,7 +186,16 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
 
         auto base_function_name_lowercase = Poco::toLower(base_function_name);
-        if (safe_to_remove_asterisk && (base_function_name_lowercase == "count" || base_function_name_lowercase == "countstate"))
+        auto function_name_lowercase = Poco::toLower(function_name);
+
+        /// Only remove asterisks for exactly "count" or "countstate" (possibly with combinators),
+        /// not for other functions like "countDistinct" which is a separate function
+        /// countDistinct gets transformed to uniqExact and requires arguments
+        bool is_count_function = (base_function_name_lowercase == "count" || base_function_name_lowercase == "countstate");
+        bool is_count_variant = is_count_function && function_name_lowercase.starts_with(base_function_name_lowercase);
+        bool is_not_count_distinct = function_name_lowercase != "countdistinct";
+
+        if (safe_to_remove_asterisk && is_count_variant && is_not_count_distinct)
         {
             auto & arguments = function_node_ptr->getArguments().getNodes();
 
