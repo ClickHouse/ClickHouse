@@ -515,8 +515,11 @@ static ContextMutablePtr updateContextForParallelReplicas(const LoggerPtr & logg
         context_mutable->setSetting("use_hedged_requests", Field{false});
     }
 
-    /// If parallel replicas are scoped to a specific shard, The local plan for parallel replicas cannot be generated.
-    /// And projections may need to be read from the local plan in certain scenarios, such as min-max projection. So we disable it here.
+    /// If parallel replicas executed over distributed table i.e. in scope of a shard,
+    /// currently, local plan for parallel replicas is not created.
+    /// Having local plan is prerequisite to use projection with parallel replicas.
+    /// So, curently, we disable projection support with parallel replicas when reading over distributed table with parallel replicas
+    /// Otherwise, it can lead to incorrect results, in particular with use of implicit projection min_max_count
     if (shard_num > 0 && settings[Setting::parallel_replicas_support_projection].value)
     {
         LOG_TRACE(
