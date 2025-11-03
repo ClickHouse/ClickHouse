@@ -632,7 +632,7 @@ static std::optional<size_t> findLocalReplicaIndexAndUpdatePools(std::vector<Con
     if (!local_replica_index)
     {
         LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Address count: {}", shard.local_addresses.size());
-        for(auto addr : shard.local_addresses)
+        for (const auto & addr : shard.local_addresses)
             LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "{}:{}", addr.host_name, addr.port);
 
         throw Exception(
