@@ -243,16 +243,16 @@ StorageInMemoryMetadata StorageAlias::getInMemoryMetadata() const
     }
 }
 
-StorageMetadataPtr StorageAlias::getInMemoryMetadataPtr() const
+StorageMetadataPtr StorageAlias::getInMemoryMetadataPtr(bool bypass_metadata_cache) const
 {
     try
     {
-        return getTargetTable()->getInMemoryMetadataPtr();
+        return getTargetTable()->getInMemoryMetadataPtr(bypass_metadata_cache);
     }
     catch (const Exception & e)
     {
         if (e.code() == ErrorCodes::UNKNOWN_DATABASE || e.code() == ErrorCodes::UNKNOWN_TABLE)
-            return IStorage::getInMemoryMetadataPtr();
+            return IStorage::getInMemoryMetadataPtr(bypass_metadata_cache);
         throw;
     }
 }
