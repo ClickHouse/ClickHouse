@@ -1044,7 +1044,7 @@ void addPreliminaryLimitStep(QueryPlan & query_plan,
         if (do_not_skip_offset)
             limit->setStepDescription("preliminary LIMIT (with OFFSET)");
         else
-            limit->setStepDescription("preliminary LIMIT (without OFFSET)");
+            limit->setStepDescription("preliminary LIMIT");
         query_plan.addStep(std::move(limit));
     }
     else if (is_limit_length_negative && is_limit_offset_negative)
