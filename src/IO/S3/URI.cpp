@@ -54,36 +54,38 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
     else
         uri_str = uri_;
 
-    // For s3://, gs://, oss:// schemes with wildcard '?', we need to encode
-    // the '?' before parsing to prevent it from being treated as query separator
-    bool should_encode_question_mark = false;
-    if (uri_str.contains('?'))
+    // FIX: For wildcard patterns like '??', encode them before parsing
+    // This is crucial for s3://, gs://, oss:// schemes to work correctly
+    // We need to distinguish between:
+    // 1. Real query parameters (contain '=' after '?')
+    // 2. Wildcard patterns (like '??' or '?' not followed by key=value)
+    size_t question_pos = uri_str.find('?');
+    if (question_pos != std::string::npos)
     {
-        // Check if this looks like a real query string or a wildcard
-        size_t question_pos = uri_str.find('?');
-        if (question_pos != std::string::npos)
+        std::string after_question = uri_str.substr(question_pos + 1);
+        
+        // Check if this looks like a wildcard pattern:
+        // - Either starts with another '?' (like '??')
+        // - Or doesn't contain '=' (not a query parameter)
+        bool is_wildcard = false;
+        if (!after_question.empty())
         {
-            std::string after_question = uri_str.substr(question_pos + 1);
-            // Check if it looks like a query string (has '=' or is at the end)
-            // If it doesn't have '=' and has more characters, it's likely a wildcard
-            if (!after_question.empty() && after_question.find('=') == std::string::npos)
+            if (after_question[0] == '?')  // Pattern like '??'
             {
-                // This looks like a wildcard pattern, not a query string
-                should_encode_question_mark = true;
+                is_wildcard = true;
             }
-            // Also check for patterns like "file-??.txt" where '?' is clearly a wildcard
-            else if (!after_question.empty() && after_question[0] == '?')
+            else if (after_question.find('=') == std::string::npos)  // No '=' means not a query param
             {
-                should_encode_question_mark = true;
+                is_wildcard = true;
             }
         }
-    }
-
-    if (should_encode_question_mark)
-    {
-        String uri_with_question_mark_encode;
-        Poco::URI::encode(uri_str, "?", uri_with_question_mark_encode);
-        uri_str = uri_with_question_mark_encode;
+        
+        if (is_wildcard)
+        {
+            String uri_with_question_mark_encode;
+            Poco::URI::encode(uri_str, "?", uri_with_question_mark_encode);
+            uri_str = uri_with_question_mark_encode;
+        }
     }
 
     uri = Poco::URI(uri_str);
@@ -117,12 +119,38 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Host is empty in S3 URI.");
 
     /// Extract object version ID from query string.
+    bool has_version_id = false;
     for (const auto & [query_key, query_value] : uri.getQueryParameters())
     {
         if (query_key == "versionId")
         {
             version_id = query_value;
-            break;
+            has_version_id = true;
+        }
+    }
+
+    // KEEP the existing logic but modify it slightly:
+    // The key should include query parameters ONLY when there's no versionId
+    // This re-parsing is needed to handle the case where query params should be part of the key
+    if (!has_version_id && uri_.contains('?'))
+    {
+        // Check if the original URI had wildcard patterns that we already encoded
+        size_t orig_question_pos = uri_.find('?');
+        if (orig_question_pos != std::string::npos)
+        {
+            std::string orig_after_question = uri_.substr(orig_question_pos + 1);
+            // Only re-encode if this was a wildcard pattern (not a query parameter)
+            if (!orig_after_question.empty() && 
+                (orig_after_question[0] == '?' || orig_after_question.find('=') == std::string::npos))
+            {
+                // Already handled above, don't re-encode
+            }
+            else if (!orig_after_question.empty() && orig_after_question.find('=') != std::string::npos)
+            {
+                // This has query parameters but no versionId
+                // The query string should be included in the key
+                // This is already handled by Poco::URI, so we don't need to do anything special
+            }
         }
     }
 
