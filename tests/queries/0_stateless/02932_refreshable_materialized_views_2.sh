@@ -192,7 +192,7 @@ $CLICKHOUSE_CLIENT -q "
 
 # Failing to create inner table.
 $CLICKHOUSE_CLIENT -q "
-    create materialized view n refresh every 1 second (x Int64) engine MergeTree as select 1 as x from numbers(2); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH}"
+    create materialized view n refresh every 1 second (x Int64) engine MergeTree as select 1 as x from numbers(2); -- { serverError BAD_ARGUMENTS }"
 $CLICKHOUSE_CLIENT -q "
     create materialized view n refresh every 1 second (x Int64) engine MergeTree order by x as select 1 as x from numbers(2);
     drop table n;"

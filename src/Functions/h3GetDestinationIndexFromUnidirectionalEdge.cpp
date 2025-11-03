@@ -92,7 +92,32 @@ public:
 
 REGISTER_FUNCTION(H3GetDestinationIndexFromUnidirectionalEdge)
 {
-    factory.registerFunction<FunctionH3GetDestinationIndexFromUnidirectionalEdge>();
+    FunctionDocumentation::Description description = R"(
+Returns the destination hexagon index from the unidirectional edge [H3](#h3-index).
+    )";
+    FunctionDocumentation::Syntax syntax = "h3GetDestinationIndexFromUnidirectionalEdge(edge)";
+    FunctionDocumentation::Arguments arguments = {
+        {"edge", "Hexagon index number that represents a unidirectional edge.", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns the destination hexagon index from the unidirectional edge.",
+        {"UInt64"}
+    };
+    FunctionDocumentation::Examples examples = {
+        {
+            "Get destination index from a unidirectional edge",
+            "SELECT h3GetDestinationIndexFromUnidirectionalEdge(1248204388774707197) AS destination",
+            R"(
+┌────────destination─┐
+│ 599686043507097597 │
+└────────────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionH3GetDestinationIndexFromUnidirectionalEdge>(documentation);
 }
 
 }

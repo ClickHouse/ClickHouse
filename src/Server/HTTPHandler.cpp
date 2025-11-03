@@ -339,7 +339,6 @@ void HTTPHandler::processQuery(
     if (!params.has("http_wait_end_of_query"))
         wait_end_of_query = params.getParsedLast<bool>("wait_end_of_query", wait_end_of_query);
 
-
     bool enable_http_compression = params.getParsedLast<bool>("enable_http_compression", settings[Setting::enable_http_compression]);
     Int64 http_zlib_compression_level
         = params.getParsed<Int64>("http_zlib_compression_level", settings[Setting::http_zlib_compression_level]);

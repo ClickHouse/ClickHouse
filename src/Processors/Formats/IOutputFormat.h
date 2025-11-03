@@ -6,6 +6,7 @@
 #include <Processors/IProcessor.h>
 #include <Processors/RowsBeforeStepCounter.h>
 #include <Common/Stopwatch.h>
+#include <Formats/FormatSettings.h>
 
 namespace DB
 {
@@ -64,6 +65,7 @@ public:
     void finalize();
 
     virtual bool expectMaterializedColumns() const { return true; }
+    virtual bool supportsSpecialSerializationKinds() const { return false; }
 
     void setTotals(const Block & totals);
     void setExtremes(const Block & extremes);

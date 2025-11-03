@@ -52,13 +52,8 @@ namespace ErrorCodes
 ThreadFuzzer::ThreadFuzzer()
 {
     initConfiguration();
-
-    if (!isEffective())
-    {
-        /// It has no effect - disable it
-        stop();
-        return;
-    }
+    if (isEffective())
+        started.store(true, std::memory_order_relaxed);
 }
 
 template <typename T>

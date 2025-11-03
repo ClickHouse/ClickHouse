@@ -46,6 +46,8 @@ struct FormatSettings
     bool try_infer_datetimes_only_datetime64 = false;
     bool try_infer_exponent_floats = false;
 
+    bool allow_special_serialization_kinds = false;
+
     inline static const String FORMAT_SCHEMA_SOURCE_FILE = "file";
     inline static const String FORMAT_SCHEMA_SOURCE_STRING = "string";
     inline static const String FORMAT_SCHEMA_SOURCE_QUERY = "query";

@@ -700,6 +700,42 @@ def test_sqlite_odbc_cached_dictionary(started_cluster):
 
     node1.query("SYSTEM RELOAD DICTIONARIES")
 
+def test_postgres_insert(started_cluster):
+    skip_test_sanitizers(node1)
+
+    conn = get_postgres_conn(started_cluster)
+
+    # Also test with Servername containing '.' and '-' symbols (defined in
+    # postgres .yml file). This is needed to check parsing, validation and
+    # reconstruction of connection string.
+
+    try:
+        node1.query(
+            "create table pg_insert (id UInt64, column1 UInt8, column2 String) engine=ODBC('DSN=postgresql_odbc;Servername=postgre-sql.local', 'clickhouse', 'test_table')"
+        )
+        node1.query("insert into pg_insert values (1, 1, 'hello'), (2, 2, 'world')")
+        assert node1.query("select * from pg_insert") == "1\t1\thello\n2\t2\tworld\n"
+        node1.query(
+            "insert into table function odbc('DSN=postgresql_odbc', 'clickhouse', 'test_table') format CSV 3,3,test"
+        )
+        node1.query(
+            "insert into table function odbc('DSN=postgresql_odbc;Servername=postgre-sql.local', 'clickhouse', 'test_table')"
+            " select number, number, 's' || toString(number) from numbers (4, 7)"
+        )
+        assert (
+            node1.query("select sum(column1), count(column1) from pg_insert")
+            == "55\t10\n"
+        )
+        assert (
+            node1.query(
+                "select sum(n), count(n) from (select (*,).1 as n from (select * from odbc('DSN=postgresql_odbc', 'clickhouse', 'test_table')))"
+            )
+            == "55\t10\n"
+        )
+    finally:
+        node1.query("DROP TABLE IF EXISTS pg_insert")
+        conn.cursor().execute("truncate table clickhouse.test_table")
+
 
 def test_postgres_odbc_hashed_dictionary_with_schema(started_cluster):
     skip_test_sanitizers(node1)
@@ -783,43 +819,6 @@ def test_no_connection_pooling(started_cluster):
         )
     finally:
         cursor.execute("truncate table clickhouse.test_table")
-
-
-def test_postgres_insert(started_cluster):
-    skip_test_sanitizers(node1)
-
-    conn = get_postgres_conn(started_cluster)
-
-    # Also test with Servername containing '.' and '-' symbols (defined in
-    # postgres .yml file). This is needed to check parsing, validation and
-    # reconstruction of connection string.
-
-    try:
-        node1.query(
-            "create table pg_insert (id UInt64, column1 UInt8, column2 String) engine=ODBC('DSN=postgresql_odbc;Servername=postgre-sql.local', 'clickhouse', 'test_table')"
-        )
-        node1.query("insert into pg_insert values (1, 1, 'hello'), (2, 2, 'world')")
-        assert node1.query("select * from pg_insert") == "1\t1\thello\n2\t2\tworld\n"
-        node1.query(
-            "insert into table function odbc('DSN=postgresql_odbc', 'clickhouse', 'test_table') format CSV 3,3,test"
-        )
-        node1.query(
-            "insert into table function odbc('DSN=postgresql_odbc;Servername=postgre-sql.local', 'clickhouse', 'test_table')"
-            " select number, number, 's' || toString(number) from numbers (4, 7)"
-        )
-        assert (
-            node1.query("select sum(column1), count(column1) from pg_insert")
-            == "55\t10\n"
-        )
-        assert (
-            node1.query(
-                "select sum(n), count(n) from (select (*,).1 as n from (select * from odbc('DSN=postgresql_odbc', 'clickhouse', 'test_table')))"
-            )
-            == "55\t10\n"
-        )
-    finally:
-        node1.query("DROP TABLE IF EXISTS pg_insert")
-        conn.cursor().execute("truncate table clickhouse.test_table")
 
 
 def test_odbc_postgres_date_data_type(started_cluster):

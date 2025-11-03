@@ -6,6 +6,7 @@
 
 #include <filesystem>
 #include <map>
+#include <memory>
 
 
 namespace DB
@@ -42,10 +43,8 @@ private:
     ObjectStoragePtr object_storage;
     const std::string metadata_key_prefix;
 
-    bool write_finalized = false;
-
-    std::unique_ptr<WriteBufferFromFileBase>
-    createWriteBuf(const std::filesystem::path & expected_path, const std::filesystem::path & new_path, bool validate_content);
+    std::unique_ptr<WriteBufferFromFileBase> createWriteBuf(const std::filesystem::path & expected_path, const std::filesystem::path & new_path, bool validate_content);
+    void executeMoveImpl(const std::filesystem::path & from, const std::filesystem::path & to, bool validate_content);
 
 public:
     MetadataStorageFromPlainObjectStorageMoveDirectoryOperation(
@@ -200,4 +199,34 @@ public:
      */
     void finalize() override;
 };
+
+class MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation final : public IMetadataOperation
+{
+private:
+    std::filesystem::path path;
+
+    InMemoryDirectoryPathMap & path_map;
+    ObjectStoragePtr object_storage;
+    ObjectMetadataCachePtr object_metadata_cache;
+    const std::string metadata_key_prefix;
+    const LoggerPtr log;
+
+    std::filesystem::path tmp_path;
+    std::unique_ptr<MetadataStorageFromPlainObjectStorageMoveDirectoryOperation> move_to_tmp_op;
+    bool move_tried = false;
+
+public:
+    MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation(
+        /// path_ must end with a trailing '/'.
+        std::filesystem::path && path_,
+        InMemoryDirectoryPathMap & path_map_,
+        ObjectStoragePtr object_storage_,
+        ObjectMetadataCachePtr object_metadata_cache_,
+        const std::string & metadata_key_prefix_);
+
+    void execute() override;
+    void undo() override;
+    void finalize() override;
+};
+
 }

@@ -18,6 +18,7 @@ enum class DumpOracleStrategy
 class QueryOracle
 {
 private:
+    static const std::vector<std::vector<OutFormat>> oracleFormats;
     const FuzzConfig & fc;
     const std::filesystem::path qcfile, qsfile, qfile_peer;
 
@@ -32,6 +33,7 @@ private:
     std::unordered_set<uint32_t> found_tables;
     DB::Strings nsettings;
 
+    void swapQuery(RandomGenerator & rg, google::protobuf::Message & mes);
     bool findTablesWithPeersAndReplace(RandomGenerator & rg, google::protobuf::Message & mes, StatementGenerator & gen, bool replace);
     void addLimitOrOffset(RandomGenerator & rg, StatementGenerator & gen, uint32_t ncols, SelectStatementCore * ssc) const;
     void insertOnTableOrCluster(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, bool peer, TableOrFunction * tof) const;
@@ -75,6 +77,7 @@ public:
     bool generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1);
     void generateOracleSelectQuery(RandomGenerator & rg, PeerQuery pq, StatementGenerator & gen, SQLQuery & sq2);
     void generateSecondSetting(RandomGenerator & rg, StatementGenerator & gen, bool use_settings, const SQLQuery & sq1, SQLQuery & sq3);
+    void maybeUpdateOracleSelectQuery(RandomGenerator & rg, const SQLQuery & sq1, SQLQuery & sq2);
 
     /// Replace query with peer tables
     void truncatePeerTables(const StatementGenerator & gen);

@@ -1,5 +1,6 @@
 import uuid
-
+import time
+import logging
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -28,24 +29,41 @@ def test_memory_context_in_trace_log(started_cluster):
     if node.is_built_with_sanitizer():
         pytest.skip("sanitizers built without jemalloc")
 
+    # Clean start (note, event_time >= now()-uptime(), can be flaky)
+    node.query("TRUNCATE TABLE IF EXISTS system.trace_log")
+
     def get_trace_events(memory_context, memory_blocked_context, trace_type, query_id=None):
-        return int(node.query(f"""
+        res = int(node.query(f"""
         SELECT count() FROM system.trace_log
         WHERE
-            /* Do not take into account data from other test runs */
-            event_time >= now()-uptime()
-            AND memory_context = '{memory_context}'
+            memory_context = '{memory_context}'
             AND memory_blocked_context = '{memory_blocked_context}'
             AND trace_type = '{trace_type}'
             AND {'empty(query_id)' if query_id is None else f"query_id = '{query_id}'"}
         """).strip())
+        logging.info('memory_context=%s/memory_blocked_context=%s/trace_type=%s/query_id=%s: %s',
+                     memory_context, memory_blocked_context, trace_type, query_id, res)
+        return res
 
-    # Generate some logs to generate entries with memory_blocked_context=Global and trace_type=JemallocSample
-    for i in range(10):
-        node.query("SELECT logTrace('foo')")
-    query_id = uuid.uuid4().hex
-    node.query("SELECT * FROM numbers(100000) ORDER BY number", query_id=query_id)
-    node.query("SYSTEM FLUSH LOGS system.trace_log")
+    for _ in range(0, 15):
+        # Generate some logs to generate entries with memory_blocked_context=Global and trace_type=JemallocSample
+        for i in range(10):
+            node.query("SELECT logTrace('foo')")
+        query_id = uuid.uuid4().hex
+        node.query("SELECT * FROM numbers(100000) ORDER BY number", query_id=query_id)
+
+        node.query("SYSTEM FLUSH LOGS system.trace_log")
+        if (
+            get_trace_events("Unknown", "Max", "MemorySample", query_id) > 0 and
+            get_trace_events("Unknown", "Max", "JemallocSample", query_id) > 0 and
+            get_trace_events("Unknown", "Max", "JemallocSample") > 0 and
+            get_trace_events("Unknown", "Global", "JemallocSample") > 0 and
+            get_trace_events("Global", "Max", "Memory") > 0 and
+            get_trace_events("Global", "Max", "MemoryPeak") > 0 and
+            True
+        ):
+            break
+        time.sleep(1)
 
     # For JemallocSample we have Global (for i.e. logging) and Max (for regular allocations) blocked memory tracker
     for memory_blocked_context in ["Global", "Max"]:

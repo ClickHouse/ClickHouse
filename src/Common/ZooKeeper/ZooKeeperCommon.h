@@ -33,6 +33,9 @@ struct ZooKeeperResponse : virtual Response
     virtual OpNum getOpNum() const = 0;
     virtual void fillLogElements(LogElements & elems, size_t idx) const;
     virtual int32_t tryGetOpNum() const { return static_cast<int32_t>(getOpNum()); }
+
+    /// Timestamp of when the response was enqueued for sending by the keeper server
+    std::chrono::steady_clock::time_point enqueue_ts = {};
 };
 
 using ZooKeeperResponsePtr = std::shared_ptr<ZooKeeperResponse>;
@@ -53,6 +56,11 @@ struct ZooKeeperRequest : virtual Request
 
     UInt64 thread_id = 0;
     String query_id;
+
+    /// For histogram metrics.
+    std::chrono::steady_clock::time_point create_ts = {};
+    std::chrono::steady_clock::time_point enqueue_ts = {};
+    std::chrono::steady_clock::time_point send_ts = {};
 
     ZooKeeperRequest() = default;
     ZooKeeperRequest(const ZooKeeperRequest &) = default;

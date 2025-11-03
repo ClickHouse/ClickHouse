@@ -823,7 +823,7 @@ void copyDataToS3File(
 
 
 void copyS3File(
-    const std::shared_ptr<const S3::Client> & src_s3_client,
+    std::shared_ptr<const S3::Client> src_s3_client,
     const String & src_bucket,
     const String & src_key,
     size_t src_offset,

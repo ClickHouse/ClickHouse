@@ -42,6 +42,14 @@
                 <background_download_queue_size_limit>0</background_download_queue_size_limit>
                 <load_metadata_asynchronously>0</load_metadata_asynchronously>
             </s3_cache_02933>
+            <s3_plain_rewritable>
+                <type>object_storage</type>
+                <object_storage_type>s3</object_storage_type>
+                <metadata_type>plain_rewritable</metadata_type>
+                <endpoint>http://localhost:11111/test/s3_plain_rewritable/</endpoint>
+                <access_key_id>clickhouse</access_key_id>
+                <secret_access_key>clickhouse</secret_access_key>
+            </s3_plain_rewritable>
             <!-- local disks -->
             <local_disk>
                 <type>object_storage</type>
@@ -79,6 +87,12 @@
                 <max_size>22548578304</max_size>
                 <cache_on_write_operations>1</cache_on_write_operations>
             </local_cache_3>
+            <local_plain_rewritable>
+                <type>object_storage</type>
+                <object_storage_type>local</object_storage_type>
+                <path>disks/test/local_plain_rewritable/</path>
+                <metadata_type>plain_rewritable</metadata_type>
+            </local_plain_rewritable>
             <!-- multi layer cache -->
             <s3_cache_multi>
                 <type>cache</type>

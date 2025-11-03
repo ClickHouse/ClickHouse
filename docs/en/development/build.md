@@ -38,7 +38,7 @@ You can optionally install ccache to let the build reuse already compiled object
 
 ```bash
 sudo apt-get update
-sudo apt-get install git cmake ccache python3 ninja-build nasm yasm gawk lsb-release wget software-properties-common gnupg
+sudo apt-get install build-essential git cmake ccache python3 ninja-build nasm yasm gawk lsb-release wget software-properties-common gnupg
 ```
 
 ## Install the Clang compiler {#install-the-clang-compiler}

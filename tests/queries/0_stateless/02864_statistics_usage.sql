@@ -15,8 +15,7 @@ CREATE TABLE tab
     a Float64 STATISTICS(tdigest),
     b Int64 STATISTICS(tdigest)
 ) Engine = MergeTree() ORDER BY tuple()
-SETTINGS min_bytes_for_wide_part = 0,
-         min_bytes_for_full_part_storage = 0; -- DDL with statistics doesn't work reliably with packed parts
+SETTINGS auto_statistics_types = '';
 
 INSERT INTO tab select number, -number FROM system.numbers LIMIT 10000;
 SELECT 'After insert';

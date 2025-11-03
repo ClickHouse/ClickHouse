@@ -283,16 +283,23 @@ REGISTER_FUNCTION(Repeat)
 {
     FunctionDocumentation::Description description = R"(
 Concatenates a string as many times with itself as specified.
-
-)";
+    )";
     FunctionDocumentation::Syntax syntax = "repeat(s, n)";
     FunctionDocumentation::Arguments arguments = {
         {"s", "The string to repeat.", {"String"}},
         {"n", "The number of times to repeat the string.", {"(U)Int*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"A string containing string `s` repeated `n` times. If `n` <= 0, the function returns the empty string.", {"String"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"A string containing string `s` repeated `n` times. If `n` is negative, the function returns the empty string.", {"String"}};
     FunctionDocumentation::Examples examples = {
-        {"Usage example", "SELECT repeat('abc', 10)", "┌─repeat('abc', 10)──────────────┐\n│ abcabcabcabcabcabcabcabcabcabc │\n└────────────────────────────────┘"}
+    {
+        "Usage example",
+        "SELECT repeat('abc', 10)",
+        R"(
+┌─repeat('abc', 10)──────────────┐
+│ abcabcabcabcabcabcabcabcabcabc │
+└────────────────────────────────┘
+    )"
+    }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;

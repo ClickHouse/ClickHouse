@@ -53,6 +53,7 @@ private:
 };
 
 using RangesByIndex = std::unordered_map<size_t, RangesInDataPart>;
+using ProjectionRangesByIndex = std::unordered_map<size_t, RangesInDataParts>;
 class MergeTreeIndexReadResultPool;
 using MergeTreeIndexReadResultPoolPtr = std::shared_ptr<MergeTreeIndexReadResultPool>;
 
@@ -64,11 +65,14 @@ struct MutableAtomicSizeT
 
 using PartRemainingMarks = std::unordered_map<size_t, MutableAtomicSizeT>;
 
-/// Provides shared context needed to build filtering indexes (e.g., skip indexes) during data reads.
+/// Provides shared context needed to build filtering indexes (e.g., skip indexes or projection indexes) during data reads.
 struct MergeTreeIndexBuildContext
 {
     /// For each part, stores all ranges need to be read.
     const RangesByIndex read_ranges;
+
+    /// For each part, stores a set of read ranges grouped by projection.
+    const ProjectionRangesByIndex projection_read_ranges;
 
     /// Thread-safe shared pool for reading and building index filters. Must not be null (enforced in constructor).
     const MergeTreeIndexReadResultPoolPtr index_reader_pool;
@@ -79,7 +83,8 @@ struct MergeTreeIndexBuildContext
 
     MergeTreeIndexBuildContext(
         RangesByIndex read_ranges_,
-        MergeTreeIndexReadResultPoolPtr index_reader_,
+        ProjectionRangesByIndex projection_read_ranges_,
+        MergeTreeIndexReadResultPoolPtr index_reader_pool_,
         PartRemainingMarks part_remaining_marks_);
 
     MergeTreeIndexReadResultPtr getPreparedIndexReadResult(const MergeTreeReadTask & task) const;
@@ -94,6 +99,7 @@ public:
     MergeTreeSelectProcessor(
         MergeTreeReadPoolPtr pool_,
         MergeTreeSelectAlgorithmPtr algorithm_,
+        const FilterDAGInfoPtr & row_level_filter_,
         const PrewhereInfoPtr & prewhere_info_,
         const LazilyReadInfoPtr & lazily_read_info_,
         const IndexReadTasks & index_read_tasks_,
@@ -106,6 +112,7 @@ public:
     static Block transformHeader(
         Block block,
         const LazilyReadInfoPtr & lazily_read_info,
+        const FilterDAGInfoPtr & row_level_filter,
         const PrewhereInfoPtr & prewhere_info);
 
     Block getHeader() const { return result_header; }
@@ -117,7 +124,8 @@ public:
     const MergeTreeReaderSettings & getSettings() const { return reader_settings; }
 
     static PrewhereExprInfo getPrewhereActions(
-        PrewhereInfoPtr prewhere_info,
+        const FilterDAGInfoPtr & row_level_filter,
+        const PrewhereInfoPtr & prewhere_info,
         const IndexReadTasks & index_read_tasks,
         const ExpressionActionsSettings & actions_settings,
         bool enable_multiple_prewhere_read_steps,
@@ -128,6 +136,8 @@ public:
     void onFinish() const;
 
 private:
+    friend class SingleProjectionIndexReader;
+
     static void injectLazilyReadColumns(size_t rows, Block & block, size_t part_index, const LazilyReadInfoPtr & lazily_read_info);
 
     /// Sets up range readers corresponding to data readers
@@ -136,6 +146,7 @@ private:
     const MergeTreeReadPoolPtr pool;
     const MergeTreeSelectAlgorithmPtr algorithm;
 
+    const FilterDAGInfoPtr row_level_filter;
     const PrewhereInfoPtr prewhere_info;
     const ExpressionActionsSettings actions_settings;
     const PrewhereExprInfo prewhere_actions;
@@ -161,7 +172,5 @@ private:
     LoggerPtr log = getLogger("MergeTreeSelectProcessor");
     std::atomic<bool> is_cancelled{false};
 };
-
-using MergeTreeSelectProcessorPtr = std::unique_ptr<MergeTreeSelectProcessor>;
 
 }

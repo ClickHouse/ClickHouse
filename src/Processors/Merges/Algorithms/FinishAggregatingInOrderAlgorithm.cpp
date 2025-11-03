@@ -40,6 +40,7 @@ FinishAggregatingInOrderAlgorithm::FinishAggregatingInOrderAlgorithm(
 
 void FinishAggregatingInOrderAlgorithm::initialize(Inputs inputs)
 {
+    removeReplicatedFromSortingColumns(inputs, description);
     removeConstAndSparse(inputs);
     current_inputs = std::move(inputs);
     states.resize(num_inputs);
@@ -49,6 +50,7 @@ void FinishAggregatingInOrderAlgorithm::initialize(Inputs inputs)
 
 void FinishAggregatingInOrderAlgorithm::consume(Input & input, size_t source_num)
 {
+    removeReplicatedFromSortingColumns(input, description);
     removeConstAndSparse(input);
     if (!input.chunk.hasRows())
         return;

@@ -198,7 +198,7 @@ void MergeTreeLazilyReader::readLazyColumns(
             reader->performRequiredConversions(columns_to_read);
 
             for (auto & col : columns_to_read)
-                col = recursiveRemoveSparse(col->convertToFullColumnIfConst());
+                col = removeSpecialRepresentations(col->convertToFullColumnIfConst());
 
             for (size_t i = 0; i < columns_size; ++i)
                 lazily_read_columns[i]->insertFrom((*columns_to_read[i]), 0);
@@ -263,11 +263,10 @@ void MergeTreeLazilyReader::transformLazyColumns(
     const size_t rows_size = row_num_column->size();
 
     ReadSettings read_settings;
-    read_settings.direct_io_threshold = 1;
     MergeTreeReaderSettings reader_settings =
     {
         .read_settings = read_settings,
-        .save_marks_in_cache = false,
+        .save_marks_in_cache = true,
     };
 
     MutableColumns lazily_read_columns;

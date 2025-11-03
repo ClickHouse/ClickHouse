@@ -62,6 +62,13 @@ public:
         return expressions.back();
     }
 
+    [[maybe_unused]] const QueryTreeNodePtr & operator[](int32_t n) const
+    {
+        if (n < 0)
+            n = expressions.size() + n - 1;
+        return expressions[n];
+    }
+
     [[maybe_unused]] bool hasExpressionWithAlias(const std::string & alias) const
     {
         return alias_name_to_expressions.contains(alias);

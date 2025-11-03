@@ -66,6 +66,7 @@ public:
     {
         using HashesForColumns = std::vector<std::vector<uint64_t>>;
         HashesForColumns hashes_per_column;
+        /// Subset of RPNElement::key_columns.
         std::vector<std::size_t> key_columns;
     };
 
@@ -212,11 +213,13 @@ public:
 
         RPNElement();
         explicit RPNElement(Function function_);
-        RPNElement(Function function_, size_t key_column_);
-        RPNElement(Function function_, size_t key_column_, const Range & range_);
+        RPNElement(Function function_, std::vector<size_t> key_columns_);
+        RPNElement(Function function_, std::vector<size_t> key_columns_, const Range & range_);
 
-        String toString() const;
-        String toString(std::string_view column_name, bool print_constants) const;
+        /// If `key_names` is empty, prints column numbers instead.
+        String toString(const std::vector<String> & key_names = {}) const;
+
+        size_t getKeyColumn() const { chassert(key_columns.size() == 1); return key_columns.at(0); }
 
         Function function = FUNCTION_UNKNOWN;
 
@@ -225,11 +228,22 @@ public:
 
         /// For FUNCTION_IN_RANGE and FUNCTION_NOT_IN_RANGE.
         Range range = Range::createWholeUniverse();
-        size_t key_column = 0;
 
-        /// If the key_column is a space filling curve, e.g. mortonEncode(x, y),
-        /// we will analyze expressions of its arguments (x and y) similarly how we do for a normal key columns,
-        /// and this designates the argument number (0 for x, 1 for y):
+        /// Which columns are involved. E.g.:
+        ///  * if FUNCTION[_NOT]_IN_RANGE: exactly one element,
+        ///  * if FUNCTION[_NOT]_IN_SET: one or more elements in nondecreasing order, same as
+        ///    set_index->getIndexesMapping()[..].key_index,
+        ///  * if FUNCTION_POINT_IN_POLYGON: two elements (x, y) describing the point,
+        ///    as in pointInPolygon((x, y), ...).
+        std::vector<size_t> key_columns;
+
+        /// If a key column is a space filling curve, e.g. mortonEncode(x, y),
+        /// we will analyze expressions of its arguments (x and y) similarly how we do for normal
+        /// key columns. This field designates the argument number (0 for x, 1 for y), while
+        /// key_columns[0] points to the encoded column like mortonEncode(x, y).
+        /// Normally this field is only used during KeyCondition construction; by the end of
+        /// construction, such RPNElements get converted to FUNCTION_ARGS_IN_HYPERRECTANGLE operating
+        /// on the key column directly (see findHyperrectanglesForArgumentsOfSpaceFillingCurves).
         std::optional<size_t> argument_num_of_space_filling_curve;
 
         /// For FUNCTION_IN_SET, FUNCTION_NOT_IN_SET
@@ -240,18 +254,14 @@ public:
         Hyperrectangle space_filling_curve_args_hyperrectangle;
 
         /// For FUNCTION_POINT_IN_POLYGON.
-        /// Function like 'pointInPolygon' has multiple columns.
-        /// This struct description column part of the function, such as (x, y) in 'pointInPolygon'.
-        struct MultiColumnsFunctionDescription
-        {
-            String function_name;
-            std::vector<size_t> key_column_positions;
-            std::vector<String> key_columns;
-        };
-        std::optional<MultiColumnsFunctionDescription> point_in_polygon_column_description;
-
+        /// Function name (e.g. 'pointInPolygon') and the polygon.
+        /// Additionally, `key_columns` has two elements for point coordinates (x, y).
+        std::optional<String> point_in_polygon_function_name;
         std::shared_ptr<Polygon> polygon;
 
+        /// What functions are applied to the key column before doing the range/set/etc check.
+        /// E.g. toDate(key) > '2025-09-12'.
+        /// Applicable only for some FUNCTION_* types and only if key_columns.size() == 1.
         MonotonicFunctionsChain monotonic_functions_chain;
 
         std::optional<BloomFilterData> bloom_filter_data;
@@ -385,9 +395,7 @@ private:
         const RPNBuilderFunctionTreeNode & func,
         const BuildInfo & info,
         RPNElement & out,
-        size_t & out_key_column_num,
-        bool & allow_constant_transformation,
-        bool & is_constant_transformed);
+        bool allow_constant_transformation);
 
     /// Checks that the index can not be used.
     ///
@@ -437,6 +445,8 @@ private:
     bool has_filter;
 
     ColumnIndices key_columns;
+    /// `key_columns` may contain all columns of the key tuple or only the columns used in the
+    /// KeyCondition. Either way, num_key_columns is the length of the whole key tuple.
     size_t num_key_columns = 0;
 
     /// Space-filling curves in the key
@@ -520,7 +530,4 @@ private:
     /// on a given regular expression, which is relaxed for simplicity.
     bool relaxed = false;
 };
-
-std::tuple<String, bool> extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool requires_perfect_prefix);
-
 }

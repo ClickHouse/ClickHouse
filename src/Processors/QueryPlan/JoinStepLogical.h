@@ -158,6 +158,9 @@ public:
     bool isDisjunctionsOptimizationApplied() const { return disjunctions_optimization_applied; }
     void setDisjunctionsOptimizationApplied(bool v) { disjunctions_optimization_applied = v; }
 
+    UInt64 getRightHashTableCacheKey() const { return right_hash_table_cache_key; }
+    void setRightHashTableCacheKey(UInt64 right_hash_table_cache_key_) { right_hash_table_cache_key = right_hash_table_cache_key_; }
+
 protected:
     void updateOutputHeader() override;
 
@@ -180,6 +183,7 @@ protected:
     std::optional<UInt64> result_rows_estimation = {};
     std::optional<UInt64> left_rows_estimation = {};
     std::optional<UInt64> right_rows_estimation = {};
+    UInt64 right_hash_table_cache_key = 0;
 
     String left_table_label;
     String right_table_label;

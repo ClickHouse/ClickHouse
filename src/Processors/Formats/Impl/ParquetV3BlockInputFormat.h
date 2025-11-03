@@ -29,8 +29,7 @@ public:
 
     size_t getApproxBytesReadForChunk() const override
     {
-        /// TODO [parquet]:
-        return 0;
+        return previous_approx_bytes_read_for_chunk;
     }
 
 private:
@@ -47,6 +46,7 @@ private:
     bool reported_count = false; // if need_only_count
 
     BlockMissingValues previous_block_missing_values;
+    size_t previous_approx_bytes_read_for_chunk = 0;
 
     void initializeIfNeeded();
 };

@@ -2,7 +2,7 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 
-from .yt_helpers import YT_DEFAULT_TOKEN, YT_HOST, YT_PORT, YT_URI, YTsaurusCLI
+from .yt_helpers import YtsaurusURIHelper, YTsaurusCLI
 
 from helpers.cluster import is_arm
 
@@ -20,6 +20,7 @@ instance = cluster.add_instance(
     with_ytsaurus=True,
     stay_alive=True,
 )
+yt_uri_helper = YtsaurusURIHelper(cluster.ytsaurus_port)
 
 
 @pytest.fixture(scope="module")
@@ -44,7 +45,7 @@ def started_cluster():
     ],
 )
 def test_yt_dictionary_id(started_cluster, dynamic_table, layout):
-    yt = YTsaurusCLI(started_cluster, instance, YT_HOST, YT_PORT)
+    yt = YTsaurusCLI(started_cluster, instance, yt_uri_helper.host, yt_uri_helper.port)
     path = "//tmp/table"
 
     yt.create_table(
@@ -54,7 +55,7 @@ def test_yt_dictionary_id(started_cluster, dynamic_table, layout):
         dynamic=dynamic_table,
     )
     instance.query(
-        f"CREATE DICTIONARY yt_dict(id UInt64, value Int32) PRIMARY KEY id SOURCE(YTSAURUS(http_proxy_urls '{YT_URI}' cypress_path '{path}' oauth_token '{YT_DEFAULT_TOKEN}')) LAYOUT({layout}()) LIFETIME(MIN 0 MAX 1000)"
+        f"CREATE DICTIONARY yt_dict(id UInt64, value Int32) PRIMARY KEY id SOURCE(YTSAURUS(http_proxy_urls '{yt_uri_helper.uri}' cypress_path '{path}' oauth_token '{yt_uri_helper.token}')) LAYOUT({layout}()) LIFETIME(MIN 0 MAX 1000)"
     )
     assert (
         instance.query("SELECT dictGet('yt_dict', 'value', number + 1) FROM numbers(3)")
@@ -76,7 +77,7 @@ def test_yt_dictionary_id(started_cluster, dynamic_table, layout):
     ],
 )
 def test_yt_dictionary_complex_key(started_cluster, dynamic_table, layout):
-    yt = YTsaurusCLI(started_cluster, instance, YT_HOST, YT_PORT)
+    yt = YTsaurusCLI(started_cluster, instance, yt_uri_helper.host, yt_uri_helper.port)
     path = "//tmp/table"
     yt.create_table(
         path,
@@ -86,7 +87,7 @@ def test_yt_dictionary_complex_key(started_cluster, dynamic_table, layout):
     )
 
     instance.query(
-        f"CREATE DICTIONARY yt_dict(id1 Int32, id2 Int32, value Int32) PRIMARY KEY id1, id2 SOURCE(YTSAURUS(http_proxy_urls '{YT_URI}' cypress_path '{path}' oauth_token '{YT_DEFAULT_TOKEN}')) LAYOUT({layout}()) LIFETIME(MIN 0 MAX 1000)"
+        f"CREATE DICTIONARY yt_dict(id1 Int32, id2 Int32, value Int32) PRIMARY KEY id1, id2 SOURCE(YTSAURUS(http_proxy_urls '{yt_uri_helper.uri}' cypress_path '{path}' oauth_token '{yt_uri_helper.token}')) LAYOUT({layout}()) LIFETIME(MIN 0 MAX 1000)"
     )
     assert (
         instance.query(
@@ -108,7 +109,7 @@ def test_yt_dictionary_complex_key(started_cluster, dynamic_table, layout):
     ],
 )
 def test_yt_dictionary_cache_id(started_cluster, dynamic_table):
-    yt = YTsaurusCLI(started_cluster, instance, YT_HOST, YT_PORT)
+    yt = YTsaurusCLI(started_cluster, instance, yt_uri_helper.host, yt_uri_helper.port)
     path = "//tmp/table"
 
     yt.create_table(
@@ -119,7 +120,7 @@ def test_yt_dictionary_cache_id(started_cluster, dynamic_table):
         dynamic=dynamic_table,
     )
     instance.query(
-        f"CREATE DICTIONARY yt_dict(id UInt64, value Int32) PRIMARY KEY id SOURCE(YTSAURUS(http_proxy_urls '{YT_URI}' cypress_path '{path}' oauth_token '{YT_DEFAULT_TOKEN}')) LAYOUT(CACHE(SIZE_IN_CELLS 10)) LIFETIME(MIN 0 MAX 1000)"
+        f"CREATE DICTIONARY yt_dict(id UInt64, value Int32) PRIMARY KEY id SOURCE(YTSAURUS(http_proxy_urls '{yt_uri_helper.uri}' cypress_path '{path}' oauth_token '{yt_uri_helper.token}')) LAYOUT(CACHE(SIZE_IN_CELLS 10)) LIFETIME(MIN 0 MAX 1000)"
     )
     if dynamic_table:
         assert (
@@ -147,7 +148,7 @@ def test_yt_dictionary_cache_id(started_cluster, dynamic_table):
     ],
 )
 def test_yt_dictionary_cache_complex_key(started_cluster, dynamic_table):
-    yt = YTsaurusCLI(started_cluster, instance, YT_HOST, YT_PORT)
+    yt = YTsaurusCLI(started_cluster, instance, yt_uri_helper.host, yt_uri_helper.port)
     path = "//tmp/table"
     yt.create_table(
         path,
@@ -158,7 +159,7 @@ def test_yt_dictionary_cache_complex_key(started_cluster, dynamic_table):
     )
 
     instance.query(
-        f"CREATE DICTIONARY yt_dict(id1 UInt64, id2 UInt64, value Int32) PRIMARY KEY id1, id2 SOURCE(YTSAURUS(http_proxy_urls '{YT_URI}' cypress_path '{path}' oauth_token '{YT_DEFAULT_TOKEN}')) LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 10)) LIFETIME(MIN 0 MAX 1000)"
+        f"CREATE DICTIONARY yt_dict(id1 UInt64, id2 UInt64, value Int32) PRIMARY KEY id1, id2 SOURCE(YTSAURUS(http_proxy_urls '{yt_uri_helper.uri}' cypress_path '{path}' oauth_token '{yt_uri_helper.token}')) LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 10)) LIFETIME(MIN 0 MAX 1000)"
     )
     if dynamic_table:
         assert (
@@ -181,7 +182,7 @@ def test_yt_dictionary_cache_complex_key(started_cluster, dynamic_table):
 
 
 def test_yt_dictionary_multiple_enpoints(started_cluster):
-    yt = YTsaurusCLI(started_cluster, instance, YT_HOST, YT_PORT)
+    yt = YTsaurusCLI(started_cluster, instance, yt_uri_helper.host, yt_uri_helper.port)
     path = "//tmp/table"
 
     yt.create_table(
@@ -191,7 +192,7 @@ def test_yt_dictionary_multiple_enpoints(started_cluster):
         dynamic=False,
     )
     instance.query(
-        f"CREATE DICTIONARY yt_dict(id UInt64, value Int32) PRIMARY KEY id SOURCE(YTSAURUS(http_proxy_urls 'http://incorrect_endpoint|{YT_URI}' cypress_path '{path}' oauth_token '{YT_DEFAULT_TOKEN}')) LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 1000);"
+        f"CREATE DICTIONARY yt_dict(id UInt64, value Int32) PRIMARY KEY id SOURCE(YTSAURUS(http_proxy_urls 'http://incorrect_endpoint|{yt_uri_helper.uri}' cypress_path '{path}' oauth_token '{yt_uri_helper.token}')) LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 1000);"
     )
     assert (
         instance.query(
@@ -210,12 +211,35 @@ def test_yt_dictionary_multiple_enpoints(started_cluster):
     yt.remove_table(path)
 
 
+def test_yt_dictionary_cyrillic_strings(started_cluster):
+    yt = YTsaurusCLI(started_cluster, instance, yt_uri_helper.host, yt_uri_helper.port)
+    path = "//tmp/table"
+
+    yt.create_table(
+        path,
+        '{"id":1, "value":"привет"}{"id":2,"value":"привет"}{"id":3,"value":"привет!!!"}',
+    )
+    instance.query(
+        f"CREATE DICTIONARY yt_dict(id UInt64, value String) PRIMARY KEY id SOURCE(YTSAURUS(http_proxy_urls '{yt_uri_helper.uri}' cypress_path '{path}' oauth_token '{yt_uri_helper.token}' check_table_schema 0)) LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 1000);"
+    )
+
+    assert (
+        instance.query(
+            "SELECT dictGet('yt_dict', 'value', number + 1) FROM numbers(3) SETTINGS http_max_tries = 10, http_retry_max_backoff_ms=2000"
+        )
+        == "привет\nпривет\nпривет!!!\n"
+    )
+
+    instance.query("DROP DICTIONARY yt_dict")
+    yt.remove_table(path)
+
+
 @pytest.mark.parametrize(
     "primary_key_value, layout, dict_key",
     [("id", "RANGE_HASHED", "1"), ("id, id2", "COMPLEX_KEY_RANGE_HASHED", "(1,1)")],
 )
 def test_yt_range_hashed(started_cluster, primary_key_value, layout, dict_key):
-    yt = YTsaurusCLI(started_cluster, instance, YT_HOST, YT_PORT)
+    yt = YTsaurusCLI(started_cluster, instance, yt_uri_helper.host, yt_uri_helper.port)
     path = "//tmp/table"
     yt.create_table(
         path,
@@ -238,7 +262,7 @@ def test_yt_range_hashed(started_cluster, primary_key_value, layout, dict_key):
         f"""
         CREATE DICTIONARY yt_dict(id UInt64, id2 UInt64, range_start Date, range_end Date, value Int32) 
         PRIMARY KEY {primary_key_value} 
-        SOURCE(YTSAURUS(http_proxy_urls '{YT_URI}' cypress_path '{path}' oauth_token '{YT_DEFAULT_TOKEN}' check_table_schema 0))
+        SOURCE(YTSAURUS(http_proxy_urls '{yt_uri_helper.uri}' cypress_path '{path}' oauth_token '{yt_uri_helper.token}' check_table_schema 0))
         LAYOUT({layout}(range_lookup_strategy 'max'))
         LIFETIME(MIN 0 MAX 1000)
         RANGE(MIN range_start MAX range_end)

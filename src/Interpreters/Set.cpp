@@ -633,6 +633,10 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
             return std::tie(l.key_index, l.tuple_index) < std::tie(r.key_index, r.tuple_index);
         });
 
+    /// Deduplicate key columns. This can make the condition weaker, e.g.:
+    ///     (x + 1, x + 2) IN (10, 10)
+    /// effectively turns into:
+    ///     (x + 1) IN (10)
     indexes_mapping.erase(std::unique(
         indexes_mapping.begin(), indexes_mapping.end(),
         [](const KeyTuplePositionMapping & l, const KeyTuplePositionMapping & r)

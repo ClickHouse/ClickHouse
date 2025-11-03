@@ -62,8 +62,6 @@ class ITableFunctionXDBC : public ITableFunction
 
     void startBridgeIfNot(ContextPtr context) const;
 
-    const String & getFunctionURI() const override { return connection_string; }
-
     String connection_string;
     String schema_name;
     String remote_table_name;

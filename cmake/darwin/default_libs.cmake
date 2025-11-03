@@ -10,10 +10,8 @@ set(CMAKE_C_STANDARD_LIBRARIES ${DEFAULT_LIBS})
 # Minimal supported SDK version
 set(CMAKE_OSX_DEPLOYMENT_TARGET 10.15)
 
-# Unfortunately '-pthread' doesn't work with '-nodefaultlibs'.
-# Just make sure we have pthreads at all.
-set(THREADS_PREFER_PTHREAD_FLAG ON)
-find_package(Threads REQUIRED)
+add_library(Threads::Threads INTERFACE IMPORTED)
+set_target_properties(Threads::Threads PROPERTIES INTERFACE_LINK_LIBRARIES pthread)
 
 if(NOT CMAKE_CROSSCOMPILING)
     execute_process(

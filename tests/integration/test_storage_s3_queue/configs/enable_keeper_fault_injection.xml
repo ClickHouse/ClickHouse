@@ -1,0 +1,7 @@
+<clickhouse>
+    <profiles>
+        <default>
+          <s3queue_keeper_fault_injection_probability>0.0</s3queue_keeper_fault_injection_probability>
+        </default>
+    </profiles>
+</clickhouse>

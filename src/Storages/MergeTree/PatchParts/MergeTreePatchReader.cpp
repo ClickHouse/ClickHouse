@@ -48,7 +48,7 @@ MergeTreePatchReader::ReadResult MergeTreePatchReader::readPatchRanges(MarkRange
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read the full ranges ({}) for patch part {}", ranges.describe(), patch_part.part->getPartName());
 
     for (auto & column : read_result.columns)
-        column = recursiveRemoveSparse(column);
+        column = removeSpecialRepresentations(column);
 
     if (patch_part.perform_alter_conversions)
         range_reader.getReader()->performRequiredConversions(read_result.columns);

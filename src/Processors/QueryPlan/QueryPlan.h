@@ -139,7 +139,10 @@ public:
     void replaceNodeWithPlan(Node * node, QueryPlanPtr plan);
 
     QueryPlan extractSubplan(Node * subplan_root);
+    void cloneInplace(Node * node_to_replace, Node * subplan_root);
     QueryPlan clone() const;
+
+    static void cloneSubplanAndReplace(Node * node_to_replace, Node * subplan_root, Nodes & nodes);
 
 private:
     struct SerializationFlags;

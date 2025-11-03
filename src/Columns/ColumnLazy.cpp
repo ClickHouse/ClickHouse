@@ -72,7 +72,7 @@ void ColumnLazy::get(size_t, Field &) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method get is not supported for {}", getName());
 }
 
-std::pair<String, DataTypePtr> ColumnLazy::getValueNameAndType(size_t) const
+DataTypePtr ColumnLazy::getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t, const Options &) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getValueNameAndType is not supported for {}", getName());
 }
@@ -258,7 +258,7 @@ ColumnPtr ColumnLazy::replicate(const Offsets &) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method replicate is not supported for {}", getName());
 }
 
-MutableColumns ColumnLazy::scatter(ColumnIndex, const Selector &) const
+MutableColumns ColumnLazy::scatter(size_t, const Selector &) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method scatter is not supported for {}", getName());
 }

@@ -491,6 +491,7 @@ private:
         MULTIPLY,
         DIVIDE,
         TO_JSON,
+        COALESCE,
     };
     static ffi::EngineExpressionVisitor createVisitor(ExpressionVisitorData & data)
     {
@@ -528,13 +529,14 @@ private:
             .visit_minus = &throwNotImplemented<MINUS>,
             .visit_multiply = &throwNotImplemented<MULTIPLY>,
             .visit_divide = &throwNotImplemented<DIVIDE>,
+            .visit_coalesce = &throwNotImplemented<COALESCE>,
             .visit_column = &visitColumnExpression,
             .visit_struct_expr = &visitStructExpression,
             .visit_transform_expr = &visitTransformExpression,
             .visit_field_transform = &visitFieldTransform,
             .visit_opaque_expr = &throwNotImplementedOpaqueExpression,
             .visit_opaque_pred = &throwNotImplementedOpaquePredicate,
-            .visit_unknown = &throwNotImplementedUnknown
+            .visit_unknown = &throwNotImplementedUnknown,
         };
     }
 

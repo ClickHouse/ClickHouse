@@ -21,6 +21,7 @@ from helpers.s3_tools import (
     LocalUploader,
     S3Uploader,
     LocalDownloader,
+    S3Downloader,
     prepare_s3_bucket,
 )
 
@@ -113,6 +114,7 @@ def started_cluster():
 
         cluster.default_local_uploader = LocalUploader(cluster.instances["node1"])
         cluster.default_local_downloader = LocalDownloader(cluster.instances["node1"])
+        cluster.default_s3_downloader = S3Downloader(cluster.minio_client, cluster.minio_bucket)
 
         yield cluster
 
@@ -192,9 +194,10 @@ def get_creation_expression(
     use_version_hint=False,
     run_on_cluster=False,
     explicit_metadata_path="",
+    additional_settings = [],
     **kwargs,
 ):
-    settings_array = []
+    settings_array = list(additional_settings)
 
     if explicit_metadata_path:
         settings_array.append(f"iceberg_metadata_file_path = '{explicit_metadata_path}'")
@@ -216,7 +219,7 @@ def get_creation_expression(
 
     if_not_exists_prefix = ""
     if if_not_exists:
-        if_not_exists_prefix = "IF NOT EXISTS"        
+        if_not_exists_prefix = "IF NOT EXISTS"
 
     if storage_type == "s3":
         if "bucket" in kwargs:
@@ -312,7 +315,7 @@ def convert_schema_and_data_to_pandas_df(schema_raw, data_raw):
     pandas_types = [clickhouse_to_pandas_types[t]for t in types]
 
     schema_df = pd.DataFrame([types], columns=column_names)
-    
+
     # Convert data to DataFrame
     data_rows = list(
         map(
@@ -320,13 +323,13 @@ def convert_schema_and_data_to_pandas_df(schema_raw, data_raw):
             filter(lambda x: len(x) > 0, data_raw.strip().split("\n")),
         )
     )
-    
+
     if data_rows:
         data_df = pd.DataFrame(data_rows, columns=column_names, dtype='object')
     else:
         # Create empty DataFrame with correct columns
         data_df = pd.DataFrame(columns=column_names, dtype='object')
-    
+
     data_df = data_df.astype(dict(zip(column_names, pandas_types)))
     return schema_df, data_df
 
@@ -439,10 +442,14 @@ def default_download_directory(
         return started_cluster.default_local_downloader.download_directory(
             local_path, remote_path, **kwargs
         )
+    elif storage_type == "s3":
+        return started_cluster.default_s3_downloader.download_directory(
+            local_path, remote_path, **kwargs
+        )
     else:
         raise Exception(f"Unknown iceberg storage type for downloading: {storage_type}")
 
-        
+
 def execute_spark_query_general(
     spark, started_cluster, storage_type: str, table_name: str, query: str
 ):

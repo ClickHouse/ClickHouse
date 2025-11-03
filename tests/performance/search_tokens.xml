@@ -1,0 +1,16 @@
+<test>
+    <settings>
+        <allow_experimental_full_text_index>1</allow_experimental_full_text_index>
+    </settings>
+
+    <query>SELECT tokens(URL) FROM hits_10m_single FORMAT Null</query>
+    <query>SELECT tokens(URL, 'ngrams', 3) FROM hits_10m_single FORMAT Null</query>
+    <query>SELECT tokens(URL, 'splitByString', ['/', '.', ':']) FROM hits_10m_single FORMAT Null</query>
+    <query>SELECT tokens(URL, 'array') FROM hits_10m_single FORMAT Null</query>
+
+    <query>SELECT count() FROM hits_10m_single WHERE hasAllTokens(URL, ['market'])</query>
+    <query>SELECT count() FROM hits_10m_single WHERE hasAllTokens(URL, ['market', 'video', 'com'])</query>
+
+    <query>SELECT count() FROM hits_10m_single WHERE hasAnyTokens(URL, ['market'])</query>
+    <query>SELECT count() FROM hits_10m_single WHERE hasAnyTokens(URL, ['market', 'video', 'com'])</query>
+</test>

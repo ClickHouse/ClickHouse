@@ -699,7 +699,7 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
             {
                 if (create.is_dictionary)
                     flags |= AccessType::CREATE_DICTIONARY;
-                else if (create.is_ordinary_view || create.is_materialized_view || create.is_live_view)
+                else if (create.is_ordinary_view || create.is_materialized_view)
                     flags |= AccessType::CREATE_VIEW;
                 else
                     flags |= AccessType::CREATE_TABLE;
