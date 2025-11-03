@@ -13,14 +13,22 @@ class CIDBCluster:
     PASSWD_SECRET = Settings.SECRET_CI_DB_PASSWORD
     USER_SECRET = Settings.SECRET_CI_DB_USER
 
-    def __init__(self):
+    def __init__(self, url=None, user=None, pwd=None):
         info = Info()
-        self.user_secret = info.get_secret(self.USER_SECRET)
-        self.url_secret = info.get_secret(self.URL_SECRET)
-        self.pwd_secret = info.get_secret(self.PASSWD_SECRET)
-        self.user = None
-        self.url = None
-        self.pwd = None
+        if url and user and pwd is not None:
+            self.url_secret = None
+            self.user_secret = None
+            self.pwd_secret = None
+            self.url = url
+            self.user = user
+            self.pwd = pwd
+        else:
+            self.user_secret = info.get_secret(self.USER_SECRET)
+            self.url_secret = info.get_secret(self.URL_SECRET)
+            self.pwd_secret = info.get_secret(self.PASSWD_SECRET)
+            self.user = None
+            self.url = None
+            self.pwd = None
         self._session = None
         self._auth = None
 
@@ -30,20 +38,24 @@ class CIDBCluster:
             self._session = None
 
     def is_ready(self):
-        if not self.url:
-            self.url = self.url_secret.get_value()
-            self.user = self.user_secret.get_value()
-            passwd = self.pwd_secret.get_value()
+        if not self.url or not self.user:
+            self.url, self.user, passwd = (
+                self.url_secret.join_with(self.user_secret)
+                .join_with(self.pwd_secret)
+                .get_value()
+            )
             if not self.url:
-                print("ERROR: failed to retrive password for LogCluster")
+                print("ERROR: failed to retrieve password for LogCluster")
                 return False
             if not passwd:
-                print("ERROR: failed to retrive password for LogCluster")
+                print("ERROR: failed to retrieve password for LogCluster")
                 return False
-            self._auth = {
-                "X-ClickHouse-User": self.user,
-                "X-ClickHouse-Key": passwd,
-            }
+        else:
+            passwd = self.pwd
+        self._auth = {
+            "X-ClickHouse-User": self.user,
+            "X-ClickHouse-Key": passwd,
+        }
         params = {
             "query": f"SELECT 1",
         }
@@ -166,5 +178,5 @@ class CIDBCluster:
 
 
 if __name__ == "__main__":
-    CIDBCluster = CIDBCluster()
+    CIDBCluster = CIDBCluster(url="https://play.clickhouse.com", user="play", pwd="")
     assert CIDBCluster.is_ready()
