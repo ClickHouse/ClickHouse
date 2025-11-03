@@ -1,4 +1,3 @@
-# tests/integration/test_statistics_cache/test.py
 import uuid
 import threading
 import pytest
