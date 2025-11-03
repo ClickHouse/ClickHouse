@@ -1495,7 +1495,7 @@ Possible values:
     DECLARE(Bool, use_skip_indexes_if_final_exact_mode, true, R"(
 Controls whether granules returned by a skipping index are expanded in newer parts to return correct results when executing a query with the FINAL modifier.
 
-Using skip indexes may exclude rows (granules) containing the latest data which could lead to incorrect results. This setting can ensure that correct results are returned by scanning newer parts that overlap with the ranges returned by the skip index. This setting should be disabled only if approximate results based on looking up the skip index are okay for an application.
+Using skip indexes may exclude rows (granules) containing the latest data which could lead to incorrect results. This setting can ensure that correct results are returned by scanning newer parts that have overlap with the ranges returned by the skip index. This setting should be disabled only if approximate results based on looking up the skip index are okay for an application.
 
 Possible values:
 
