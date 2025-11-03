@@ -2127,17 +2127,22 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t al
                SQLFunc::FUNCanyLast,
                SQLFunc::FUNCavg,
                SQLFunc::FUNCcount,
-               SQLFunc::FUNCmin,
-               SQLFunc::FUNCmax,
-               SQLFunc::FUNCsum,
-               SQLFunc::FUNCsumWithOverflow,
+               SQLFunc::FUNCgroupArrayArray,
                SQLFunc::FUNCgroupBitAnd,
                SQLFunc::FUNCgroupBitOr,
                SQLFunc::FUNCgroupBitXor,
-               SQLFunc::FUNCgroupUniqArray,
-               SQLFunc::FUNCsumMap,
+               SQLFunc::FUNCgroupUniqArrayArray,
+               SQLFunc::FUNCgroupUniqArrayArrayMap,
+               SQLFunc::FUNCmax,
+               SQLFunc::FUNCmaxMap,
+               SQLFunc::FUNCmaxMappedArrays,
+               SQLFunc::FUNCmin,
                SQLFunc::FUNCminMap,
-               SQLFunc::FUNCmaxMap};
+               SQLFunc::FUNCminMappedArrays,
+               SQLFunc::FUNCsum,
+               SQLFunc::FUNCsumMap,
+               SQLFunc::FUNCsumMappedArrays,
+               SQLFunc::FUNCsumWithOverflow};
         SQLFunc aggr = rg.pickRandomly(available_aggrs);
 
         if (aggr == SQLFunc::FUNCcount && (simple || this->depth >= this->fc.max_depth))
