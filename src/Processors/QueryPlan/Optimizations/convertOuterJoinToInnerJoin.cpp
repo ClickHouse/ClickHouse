@@ -1,5 +1,5 @@
-#include <Common/Logger.h>
-#include <Common/logger_useful.h>
+#include <Processors/QueryPlan/Optimizations/Optimizations.h>
+
 #include <Common/typeid_cast.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/IJoin.h>
@@ -9,7 +9,6 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
-#include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 
 namespace DB::QueryPlanOptimizations
@@ -89,15 +88,14 @@ size_t tryConvertAnyOuterJoinToInnerJoin(
     auto * interesting_side_plan_node = check_left_stream ? join_node->children.front() : join_node->children.back();
     const auto & interesting_side_header = interesting_side_plan_node->step->getOutputHeader();
 
-    LOG_DEBUG(getLogger(__func__), "Will evaluate filter for header: {}\n{}", interesting_side_header->dumpNames(), filter->getExpression().dumpDAG());
     auto result_for_not_matched_rows = filterResultForNotMatchedRows(
         filter->getExpression(),
         filter->getFilterColumnName(),
         *interesting_side_header,
         /*allow_unknown_function_arguments=*/true);
 
-    LOG_DEBUG(getLogger(__func__), "Result for not matched rows on interesting side: {}", toString(result_for_not_matched_rows));
-
+    /// If not matched rows are not always filtered out, then we cannot convert ANY OUTER JOIN to INNER JOIN
+    /// See discussion in https://github.com/ClickHouse/ClickHouse/issues/66447
     if (result_for_not_matched_rows != FilterResult::FALSE)
         return 0;
 
@@ -105,11 +103,14 @@ size_t tryConvertAnyOuterJoinToInnerJoin(
     if (!key_dags)
         return 0;
 
-    auto get_node_name = [](const auto * e) { return e->result_name; };
     const auto & key_dags_interesting_side = check_left_stream ? key_dags->first : key_dags->second;
-    NameSet join_keys_interesting_side = std::ranges::to<NameSet>(key_dags_interesting_side.keys | std::views::transform(get_node_name));
+    NameSet join_keys_interesting_side = std::ranges::to<NameSet>(key_dags_interesting_side.keys | std::views::transform(
+        [](const auto * e) { return e->result_name; }
+    ));
 
-    /// TODO: Check expression
+    /// During scalar subquery decorrelation process, at the end there added renamings of useful columns.
+    /// This is done to avoid name conflicts. Instead of JOIN condition like 'a = a' it becomes 'a = <subquery name>.a'.
+    /// So, we need to revert such renaming to be able to compare columns with the aggregating step keys.
     if (auto * expr_step = typeid_cast<ExpressionStep *>(interesting_side_plan_node->step.get()))
     {
         LOG_DEBUG(getLogger(__func__), "Skipping expression step on interesting side:\n{}", expr_step->getExpression().dumpDAG());
@@ -130,16 +131,14 @@ size_t tryConvertAnyOuterJoinToInnerJoin(
         interesting_side_plan_node = interesting_side_plan_node->children.front();
     }
 
+    /// If there is no aggregating step on the "interesting" side, then we cannot guarantee that
+    /// there are only unique rows.
     auto * aggregating_step = typeid_cast<AggregatingStep *>(interesting_side_plan_node->step.get());
     if (!aggregating_step)
         return 0;
 
-    LOG_DEBUG(getLogger(__func__), "Analyzing interesting side: {}", toString(aggregating_step->getParams().keys));
-
-
-    for (const auto & key : join_keys_interesting_side)
-        LOG_DEBUG(getLogger(__func__), "Analyzing interesting side (JOIN KEYS): {}", key);
-
+    /// If JOIN condition uses all aggregation keys, then there always only one row to match for each row from the other side.
+    /// This means that we can safely convert ANY OUTER JOIN to INNER JOIN.
     for (const auto & aggregation_key : aggregating_step->getParams().keys)
     {
         if (!join_keys_interesting_side.contains(aggregation_key))
