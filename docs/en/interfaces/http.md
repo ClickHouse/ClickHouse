@@ -535,6 +535,71 @@ You can mitigate this problem by enabling `wait_end_of_query=1` ([Response Buffe
 The only way to catch all errors is to analyze the HTTP body before parsing it using the required format.
 :::
 
+Such exceptions in ClickHouse have consistent exception format as below irrespective of which format used (eg. `Native`, `TSV`, `JSON`, etc) when `http_write_exception_in_output_format=0` (default) . Which makes it easy to parse and extract error messages on the client side.
+
+```
+\r\n
+__exception__\r\n
+<TAG>\r\n
+<error message>\r\n
+<message_length> <TAG>\r\n
+__exception__\r\n
+
+```
+
+Where `<TAG>` is a random tag of 16bytes and `<error message>` can be upto 16KBytes max (exact length can be found in `<message_length>`)
+
+Here is an example in `JSON` format
+
+```
+$ curl -v -Ss "http://localhost:8123/?max_block_size=1&query=select+sleepEachRow(0.001),throwIf(number=2)from+numbers(5)+FORMAT+JSON"
+...
+{
+	"meta":
+	[
+		{
+			"name": "sleepEachRow(0.001)",
+			"type": "UInt8"
+		},
+		{
+			"name": "throwIf(equals(number, 2))",
+			"type": "UInt8"
+		}
+	],
+
+	"data":
+	[
+		{
+			"sleepEachRow(0.001)": 0,
+			"throwIf(equals(number, 2))": 0
+		},
+		{
+			"sleepEachRow(0.001)": 0,
+			"throwIf(equals(number, 2))": 0
+		}
+__exception__
+dmrdfnujjqvszhav
+Code: 395. DB::Exception: Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(equals(__table1.number, 2_UInt8) :: 1) -> throwIf(equals(__table1.number, 2_UInt8)) UInt8 : 0'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) (version 25.11.1.1)
+262 dmrdfnujjqvszhav
+__exception__
+```
+
+Here is similar example but in `CSV` format
+
+```
+$ curl -v -Ss "http://localhost:8123/?max_block_size=1&query=select+sleepEachRow(0.001),throwIf(number=2)from+numbers(5)+FORMAT+CSV"
+...
+<
+0,0
+0,0
+
+__exception__
+rumfyutuqkncbgau
+Code: 395. DB::Exception: Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(equals(__table1.number, 2_UInt8) :: 1) -> throwIf(equals(__table1.number, 2_UInt8)) UInt8 : 0'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) (version 25.11.1.1)
+262 rumfyutuqkncbgau
+__exception__
+```
+
 ## Queries with parameters {#cli-queries-with-parameters}
 
 You can create a query with parameters and pass values for them from the corresponding HTTP request parameters. For more information, see [Queries with Parameters for CLI](../interfaces/cli.md#cli-queries-with-parameters).
@@ -1027,7 +1092,7 @@ In the example below, every server response will contain two custom headers: `X-
 
 While query execution occurs over HTTP an exception can happen when part of the data has already been sent. Usually an exception is sent to the client in plain text.
 Even if some specific data format was used to output data and the output may become invalid in terms of specified data format.
-To prevent it, you can use setting [`http_write_exception_in_output_format`](/operations/settings/settings#http_write_exception_in_output_format) (enabled by default) that will tell ClickHouse to write an exception in specified format (currently supported for XML and JSON* formats).
+To prevent it, you can use setting [`http_write_exception_in_output_format`](/operations/settings/settings#http_write_exception_in_output_format) (disabled by default) that will tell ClickHouse to write an exception in specified format (currently supported for XML and JSON* formats).
 
 Examples:
 
