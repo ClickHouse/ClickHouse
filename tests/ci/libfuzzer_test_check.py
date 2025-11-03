@@ -175,7 +175,7 @@ def upload_corpus(path):
                 )
 
 
-def process_error(path: Path) -> list:
+def process_error(output_log: Path, fuzzer_result_dir: Path) -> list:
     ERROR = r"^==\d+==\s?ERROR: (\S+): (.*)"
     ERROR_END = r"^SUMMARY: .*"
     error_source = ""
@@ -186,7 +186,7 @@ def process_error(path: Path) -> list:
     error_info = [] # [(error_source, error_reason, test_unit, trace_file), ...]
     is_error = False
 
-    with open(path, "r", encoding="utf-8", errors='replace') as file:
+    with open(output_log, "r", encoding="utf-8", errors='replace') as file:
         for line in file:
             line = line.rstrip("\n")
             if is_error:
@@ -207,10 +207,9 @@ def process_error(path: Path) -> list:
 
             match = re.search(TEST_UNIT_LINE, line)
             if match:
-                test_unit_path = match.group(1).replace(RUNNER_OUTPUT, result_path)
-                test_unit = os.path.basename(test_unit_path)
+                test_unit = os.path.basename(match.group(1))
                 trace_file = f"{test_unit}.trace"
-                trace_path = f"{os.path.dirname(test_unit_path)}/{trace_file}"
+                trace_path = f"{fuzzer_result_dir}/{trace_file}"
                 with open(trace_path, "w", encoding="utf-8") as tracef:
                     tracef.write("\n".join(stack_trace))
                 error_info.append((error_source, error_reason, test_unit, trace_file))
@@ -255,7 +254,7 @@ def process_results(result_path: Path):
             errors += 1
             raw_logs.append("Corpus minimization FAILED.")
             if file_path_out_mini.exists():
-                err = process_error(file_path_out_mini)
+                err = process_error(file_path_out_mini, fuzzer_result_dir)
                 if len(err):
                     raw_logs.append("Possible regressions:")
                     for line in err:
@@ -270,7 +269,7 @@ def process_results(result_path: Path):
 
         else:
             if file_path_out_mini.exists():
-                err = process_error(file_path_out_mini)
+                err = process_error(file_path_out_mini, fuzzer_result_dir)
                 if len(err):
                     raw_logs.append("Regressions:")
                     for line in err:
@@ -295,7 +294,7 @@ def process_results(result_path: Path):
             else:
                 fails += 1
                 if file_path_out.exists():
-                    err = process_error(file_path_out)
+                    err = process_error(file_path_out, fuzzer_result_dir)
                     if len(err):
                         raw_logs.append("New findings:")
                         for line in err:
