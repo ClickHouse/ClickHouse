@@ -257,12 +257,12 @@ bool StorageObjectStorage::supportsSubsetOfColumns(const ContextPtr & context) c
 
 bool StorageObjectStorage::supportsPrewhere() const
 {
-    return supports_prewhere;
+    return false;
 }
 
 bool StorageObjectStorage::canMoveConditionsToPrewhere() const
 {
-    return supports_prewhere;
+    return false;
 }
 
 std::optional<NameSet> StorageObjectStorage::supportedPrewhereColumns() const

@@ -565,8 +565,16 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 format_filter_info->context.lock(),
                 (schema_changed && mapper) ? mapper : format_filter_info->column_mapper,
                 format_filter_info->row_level_filter,
-                need_to_remove_prewhere_info ? format_filter_info->prewhere_info : nullptr);
+                need_to_remove_prewhere_info ? nullptr : format_filter_info->prewhere_info);
         }();
+
+        LOG_DEBUG(
+            log,
+            "Reading object from path: {} with format: {}, has prewhere info: {}",
+            object_info->getPath(),
+            actual_format,
+            (filter_info->prewhere_info != nullptr ? "true" : "false"));
+
 
         auto input_format = FormatFactory::instance().getInput(
             actual_format,
