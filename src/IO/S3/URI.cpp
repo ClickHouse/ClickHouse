@@ -54,29 +54,30 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
     else
         uri_str = uri_;
 
-    // FIX: Pre-encode ONLY wildcard patterns (like '??') before initial parsing
-    // This fixes the s3:// scheme issue with wildcards
-    // But we DON'T encode query parameters here
-    bool is_wildcard_pattern = false;
-    size_t first_question = uri_str.find('?');
-    if (first_question != std::string::npos)
+    uri = Poco::URI(uri_str);
+    /// Keep a copy of how Poco parsed the original string before any mapping
+    Poco::URI original_uri(uri_str);
+    bool wildcard_question_mark = false;
+    bool looks_like_presigned = false;
+    if (uri_str.find('?') != std::string::npos)
     {
-        std::string after_question = uri_str.substr(first_question + 1);
-
-        // Only encode if it's clearly a wildcard pattern:
-        // - Starts with another '?' (like '??')
-        // - Or doesn't contain '=' (not a query parameter)
-        if (!after_question.empty() &&
-            (after_question[0] == '?' || after_question.find('=') == std::string::npos))
+        /// Heuristics: if query parameters look like pre-signed or real key=value, treat as query
+        for (const auto & [qk, qv] : original_uri.getQueryParameters())
         {
-            is_wildcard_pattern = true;
-            String encoded;
-            Poco::URI::encode(uri_str, "?", encoded);
-            uri_str = encoded;
+            if (qk == "versionId" || qk == "AWSAccessKeyId" || qk == "Signature" || qk == "Expires" || qk.rfind("X-Amz-", 0) == 0)
+            {
+                looks_like_presigned = true;
+                break;
+            }
+        }
+        if (!looks_like_presigned)
+        {
+            const std::string query_str = original_uri.getQuery();
+            /// If there is no '=', it's very likely a wildcard part that was split by URI parsing
+            if (query_str.find('=') == std::string::npos)
+                wildcard_question_mark = true;
         }
     }
-
-    uri = Poco::URI(uri_str);
 
     std::unordered_map<std::string, std::string> mapper;
     auto context = Context::getGlobalContextInstance();
@@ -107,24 +108,31 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Host is empty in S3 URI.");
 
     /// Extract object version ID from query string.
-    bool has_version_id = false;
     for (const auto & [query_key, query_value] : uri.getQueryParameters())
     {
         if (query_key == "versionId")
         {
             version_id = query_value;
-            has_version_id = true;
         }
     }
 
-    /// KEEP THIS LOGIC - it's needed for correct behavior!
-    /// When there's no versionId, query parameters should be part of the key
-    /// But skip if we already encoded wildcards
-    if (!has_version_id && !is_wildcard_pattern && uri_.contains('?'))
+    /// encode only the PATH when '?' was used as a wildcard in the original string.
+    /// We reconstruct the intended path by merging original path + '?' + original query,
+    /// percent-encode '?' in the path, and clear the query. This keeps mapped scheme/authority
+    if (wildcard_question_mark)
     {
-        String uri_with_question_mark_encode;
-        Poco::URI::encode(uri_, "?", uri_with_question_mark_encode);
-        uri = Poco::URI(uri_with_question_mark_encode);
+        std::string combined_path = original_uri.getPath();
+        const std::string original_query = original_uri.getQuery();
+        if (!original_query.empty())
+        {
+            combined_path.push_back('?');
+            combined_path += original_query;
+        }
+
+        std::string encoded_path;
+        Poco::URI::encode(combined_path, "?", encoded_path);
+        uri.setPath(encoded_path);
+        uri.setQuery("");
     }
 
     String name;
