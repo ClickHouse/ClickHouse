@@ -5,6 +5,7 @@ import shlex
 
 from minio.deleteobjects import DeleteObject
 from helpers.cluster import ClickHouseCluster
+from helpers.config_cluster import minio_secret_key
 
 cluster = ClickHouseCluster(__file__)
 
@@ -103,6 +104,48 @@ def test_backward_compatibility(start_cluster, storage_declaration, lost_blobs):
     blobs = [obj.object_name for obj in cluster.minio_client.list_objects(cluster.minio_bucket, 'data/', recursive=True)]
     assert len(blobs) == lost_blobs
 
+    if len(blobs) != 0:
+        to_remove = [DeleteObject(blob) for blob in blobs]
+        errors = cluster.minio_client.remove_objects(cluster.minio_bucket, to_remove)
+        for error in errors:
+            logging.error(f"Error occurred when deleting object {error}")
+
+
+def test_backward_compatibility_readonly_tables(start_cluster):
+    create_write_table_query = f"CREATE TABLE mt (version String) ENGINE = MergeTree ORDER BY () SETTINGS table_disk = 1, disk = 's3_plain_rewritable'"
+    create_readonly_table_query = f"CREATE TABLE mt (version String) ENGINE = MergeTree ORDER BY () settings table_disk = 1, disk = disk(readonly = 1, type = 's3_plain_rewritable', endpoint = 'http://minio1:9001/root/data/', access_key_id='minio', secret_access_key='{minio_secret_key}')"
+
+    node_25_6.start_clickhouse()
+    node_25_6.query(create_write_table_query)
+    node_25_6.query("INSERT INTO mt VALUES ('25.6')")
+    assert node_25_6.query("SELECT version FROM mt").split() == ["25.6"]
+    node_25_6.stop_clickhouse()
+
+    node_25_8.start_clickhouse()
+    node_25_8.query(create_readonly_table_query)
+    assert node_25_8.query("SELECT version FROM mt").split() == ["25.6"]
+    node_25_8.query("DROP TABLE mt SYNC")
+    node_25_8.stop_clickhouse()
+
+    node_25_10.start_clickhouse()
+    node_25_10.query(create_readonly_table_query)
+    assert node_25_10.query("SELECT version FROM mt").split() == ["25.6"]
+    node_25_10.query("DROP TABLE mt SYNC")
+    node_25_10.stop_clickhouse()
+
+    node_master.start_clickhouse()
+    node_master.query(create_readonly_table_query)
+    assert node_master.query("SELECT version FROM mt").split() == ["25.6"]
+    node_master.query("DROP TABLE mt SYNC")
+    node_master.stop_clickhouse()
+
+    node_25_6.start_clickhouse()
+    assert node_25_6.query("SELECT version FROM mt").split() == ["25.6"]
+    node_25_6.query("DROP TABLE mt SYNC")
+    node_25_6.stop_clickhouse()
+
+    blobs = [obj.object_name for obj in cluster.minio_client.list_objects(cluster.minio_bucket, 'data/', recursive=True)]
+    print(blobs)
     if len(blobs) != 0:
         to_remove = [DeleteObject(blob) for blob in blobs]
         errors = cluster.minio_client.remove_objects(cluster.minio_bucket, to_remove)
