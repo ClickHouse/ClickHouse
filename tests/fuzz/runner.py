@@ -15,6 +15,8 @@ DEBUGGER = os.getenv("DEBUGGER", "")
 TIMEOUT = int(os.getenv("TIMEOUT", "0"))
 OUTPUT = "/test_output"
 RUNNERS = int(os.getenv("RUNNERS", "16"))
+# timeout for a single input of fuzzer, translates into -timeout fuzzer's option
+INPUT_TIMEOUT = 20
 
 def run(*popenargs,
         input=None, capture_output=False, timeout=None, check=False, kill_signal=signal.SIGKILL, **kwargs):
@@ -69,7 +71,7 @@ class Stopwatch:
 
 
 def run_fuzzer(fuzzer: str, timeout: int):
-    timeout_hard = timeout + 120
+    timeout_hard = timeout + (INPUT_TIMEOUT * 2)
     logging.info(
         "Running fuzzer %s for %d seconds (hard timeout is %d)...",
         fuzzer,
@@ -136,7 +138,7 @@ def run_fuzzer(fuzzer: str, timeout: int):
         os.makedirs(results_path)
     artifact_prefix = f"{results_path}"
 
-    merge_libfuzzer_options = f" -artifact_prefix={artifact_prefix} -merge=1 -max_total_time={timeout} -merge_control_file={merge_control_file} {mini_corpus_dir} {active_corpus_dir}"
+    merge_libfuzzer_options = f" -artifact_prefix={artifact_prefix} -merge=1 -max_total_time={timeout} -timeout={INPUT_TIMEOUT} -merge_control_file={merge_control_file} {mini_corpus_dir} {active_corpus_dir}"
     cmd_line = f"{DEBUGGER} ./{fuzzer} {fuzzer_arguments}"
 
     with_fuzzer_args = ""
