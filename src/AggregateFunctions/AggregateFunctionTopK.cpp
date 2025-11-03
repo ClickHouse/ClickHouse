@@ -133,7 +133,10 @@ public:
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
-        this->data(place).value.write(buf);
+        auto & set = const_cast<typename State::Set &>(this->data(place).value);
+        if (set.capacity() != reserved)
+            set.resize(reserved);
+        set.write(buf);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version  */, Arena *) const override
@@ -269,7 +272,10 @@ public:
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
-        this->data(place).value.write(buf);
+        auto & set = const_cast<typename State::Set &>(this->data(place).value);
+        if (set.capacity() != reserved)
+            set.resize(reserved);
+        set.write(buf);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
