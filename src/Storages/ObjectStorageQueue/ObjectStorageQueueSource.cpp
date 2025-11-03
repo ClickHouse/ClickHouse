@@ -203,8 +203,7 @@ ObjectStorageQueueSource::FileIterator::next()
                 std::vector<String> paths;
                 paths.reserve(new_batch.size());
                 for (const auto & object_info : new_batch)
-                    paths.push_back(
-                        Source::getUniqueStoragePathIdentifier(*configuration, object_info->relative_path_with_metadata, false));
+                    paths.push_back(Source::getUniqueStoragePathIdentifier(*configuration, *object_info, false));
 
                 /// Hive partition columns were not being used in ObjectStorageQueue before the refactoring from (virtual -> physical).
                 /// So we are keeping it the way it is for now

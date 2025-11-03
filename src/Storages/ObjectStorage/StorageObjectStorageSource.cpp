@@ -118,7 +118,7 @@ StorageObjectStorageSource::~StorageObjectStorageSource()
 }
 
 std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
-    const StorageObjectStorageConfiguration & configuration, const RelativePathWithMetadata & object_info, bool include_connection_info)
+    const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, bool include_connection_info)
 {
     auto path = object_info.getPath();
     if (path.starts_with("/"))
@@ -305,7 +305,7 @@ Chunk StorageObjectStorageSource::generate()
 
             chassert(object_metadata);
 
-            const auto path = getUniqueStoragePathIdentifier(*configuration, object_info->relative_path_with_metadata, false);
+            const auto path = getUniqueStoragePathIdentifier(*configuration, *object_info, false);
 
             /// The order is important, hive partition columns must be added before virtual columns
             /// because they are part of the schema
@@ -413,7 +413,7 @@ Chunk StorageObjectStorageSource::generate()
 void StorageObjectStorageSource::addNumRowsToCache(const ObjectInfo & object_info, size_t num_rows)
 {
     const auto cache_key = getKeyForSchemaCache(
-        getUniqueStoragePathIdentifier(*configuration, object_info.relative_path_with_metadata),
+        getUniqueStoragePathIdentifier(*configuration, object_info),
         object_info.getFileFormat().value_or(configuration->format),
         format_settings,
         read_context);
@@ -490,7 +490,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             return std::nullopt;
 
         const auto cache_key = getKeyForSchemaCache(
-            getUniqueStoragePathIdentifier(*configuration, object_info->relative_path_with_metadata),
+            getUniqueStoragePathIdentifier(*configuration, *object_info),
             object_info->getFileFormat().value_or(configuration->format),
             format_settings,
             context_);
@@ -938,7 +938,7 @@ ObjectInfoPtr StorageObjectStorageSource::GlobIterator::nextUnlocked(size_t /* p
                 std::vector<String> paths;
                 paths.reserve(new_batch.size());
                 for (const auto & object_info : new_batch)
-                    paths.push_back(getUniqueStoragePathIdentifier(*configuration, object_info->relative_path_with_metadata, false));
+                    paths.push_back(getUniqueStoragePathIdentifier(*configuration, *object_info, false));
 
                 VirtualColumnUtils::filterByPathOrFile(new_batch, paths, filter_expr, virtual_columns, hive_columns, local_context);
 
