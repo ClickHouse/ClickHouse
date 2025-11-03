@@ -197,6 +197,9 @@ Skip pages using min/max values from column index.
     DECLARE(Bool, input_format_parquet_use_offset_index, true, R"(
 Minor tweak to how pages are read from parquet file when no page filtering is used.
 )", 0) \
+    DECLARE(Bool, input_format_parquet_verify_checksums, true, R"(
+Verify page checksums when reading parquet files.
+)", 0) \
     DECLARE(Bool, input_format_parquet_local_time_as_utc, true, R"(
 Determines the data type used by schema inference for Parquet timestamps with isAdjustedToUTC=false. If true: DateTime64(..., 'UTC'), if false: DateTime64(...). Neither behavior is fully correct as ClickHouse doesn't have a data type for local wall-clock time. Counterintuitively, 'true' is probably the less incorrect option, because formatting the 'UTC' timestamp as String will produce representation of the correct local time.
 )", 0) \
@@ -1134,6 +1137,9 @@ If dictionary size grows bigger than this many bytes, switch to encoding without
 )", 0) \
     DECLARE(Bool, output_format_parquet_enum_as_byte_array, true, R"(
 Write enum using parquet physical type: BYTE_ARRAY and logical type: ENUM
+)", 0) \
+    DECLARE(Bool, output_format_parquet_write_checksums, true, R"(
+Put crc32 checksums in parquet page headers.
 )", 0) \
     DECLARE(String, output_format_avro_codec, "", R"(
 Compression codec used for output. Possible values: 'null', 'deflate', 'snappy', 'zstd'.
