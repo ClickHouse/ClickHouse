@@ -1,21 +1,21 @@
 default	default
 
 --- EXECUTE AS app_user1 ---
-testuser_default	appuser1_default
+appuser1_default	testuser_default
 0
 
-testuser_default	appuser1_default
+appuser1_default	testuser_default
 testuser_default	testuser_default
 
 0
 testuser_default	testuser_default
 
 --- EXECUTE AS app_user2 ---
-testuser_default	appuser2_default
+appuser2_default	testuser_default
 
 OK
 
-testuser_default	appuser2_default
+appuser2_default	testuser_default
 testuser_default	testuser_default
 
 OK
@@ -26,9 +26,9 @@ OK
 OK
 
 --- Multiple EXECUTE AS ---
-testuser_default	appuser1_default
-testuser_default	appuser2_default
-testuser_default	appuser1_default
+appuser1_default	testuser_default
+appuser2_default	testuser_default
+appuser1_default	testuser_default
 testuser_default	testuser_default
 
 OK
