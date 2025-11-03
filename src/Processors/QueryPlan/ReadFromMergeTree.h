@@ -220,8 +220,6 @@ public:
         std::optional<std::unordered_set<String>> part_values;
     };
 
-    static bool areSkipIndexColumnsInPrimaryKey(const Names & primary_key_columns, const UsefulSkipIndexes & skip_indexes);
-
     static AnalysisResultPtr selectRangesToRead(
         RangesInDataParts parts,
         MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
