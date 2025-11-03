@@ -1434,9 +1434,9 @@ atanh
 atomicity
 auth
 authType
+authenticatedUser
 authenticator
 authenticators
-authUser
 autocompletion
 autodetect
 autodetected

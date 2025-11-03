@@ -31,12 +31,12 @@ GRANT IMPERSONATE ON * TO user3;
 allow user `user2` to execute commands `EXECUTE AS user1 ...` and also allow user `user3` to execute commands as any user.
 
 While impersonating another user function [currentUser()](/sql-reference/functions/other-functions#currentUser) returns the name of that other user,
-and function [authUser()](/sql-reference/functions/other-functions#authUser) returns the name of the user who has been actually authenticated.
+and function [authenticatedUser()](/sql-reference/functions/other-functions#authenticatedUser) returns the name of the user who has been actually authenticated.
 
 ## Examples {#examples}
 
 ```sql
-SELECT currentUser(); -- outputs "default"
+SELECT currentUser(), authenticatedUser(); -- outputs "default    default"
 CREATE USER james;
-EXECUTE AS james SELECT currentUser(), authUser(); -- outputs "james    default"
+EXECUTE AS james SELECT currentUser(), authenticatedUser(); -- outputs "james    default"
 ```
