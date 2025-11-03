@@ -6,8 +6,6 @@
 #include <azure/identity/workload_identity_credential.hpp>
 #include <azure/storage/blobs/blob_options.hpp>
 #include <azure/storage/blobs/blob_responses.hpp>
-#include <azure/storage/blobs/rest_client.hpp>
-#include <azure/core/credentials/credentials.hpp>
 
 #endif
 
@@ -585,20 +583,6 @@ std::unique_ptr<RequestSettings> getRequestSettings(const Poco::Util::AbstractCo
     settings->sdk_retry_max_backoff_ms = config.getUInt64(config_prefix + ".retry_max_backoff_ms", settings_ref[Setting::azure_sdk_retry_max_backoff_ms]);
 
     settings->check_objects_after_upload = config.getBool(config_prefix + ".check_objects_after_upload", settings_ref[Setting::azure_check_objects_after_upload]);
-
-
-#if USE_AZURE_BLOB_STORAGE
-    if (config.has(config_prefix + ".curl_ip_resolve"))
-    {
-        auto value = config.getString(config_prefix + ".curl_ip_resolve");
-        if (value == "ipv4")
-            settings->curl_ip_resolve = RequestSettings::CurlOptions::CURL_IPRESOLVE_V4;
-        else if (value == "ipv6")
-            settings->curl_ip_resolve = RequestSettings::CurlOptions::CURL_IPRESOLVE_V6;
-        else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected value for option 'curl_ip_resolve': {}. Expected one of 'ipv4' or 'ipv6'", value);
-    }
-#endif
 
     return settings;
 }
