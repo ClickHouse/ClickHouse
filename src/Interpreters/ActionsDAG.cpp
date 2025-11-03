@@ -30,7 +30,9 @@
 #include <unordered_map>
 #include <base/sort.h>
 #include <Common/JSONBuilder.h>
+#include <Common/Logger.h>
 #include <Common/SipHash.h>
+#include <Common/logger_useful.h>
 #include <DataTypes/DataTypeSet.h>
 
 #include <absl/container/flat_hash_map.h>
@@ -819,11 +821,19 @@ ActionsDAG ActionsDAG::cloneSubDAG(const NodeRawConstPtrs & outputs, NodeMapping
     return actions;
 }
 
-static ColumnWithTypeAndName executeActionForPartialResult(const ActionsDAG::Node * node, ColumnsWithTypeAndName arguments, size_t input_rows_count)
+static ColumnWithTypeAndName executeActionForPartialResult(
+    const ActionsDAG::Node * node,
+    ColumnsWithTypeAndName arguments,
+    size_t input_rows_count,
+    bool only_constant_arguments)
 {
     ColumnWithTypeAndName res_column;
     res_column.type = node->result_type;
     res_column.name = node->result_name;
+
+    LOG_DEBUG(getLogger(__func__), "Executing node '{}'", node->result_name);
+    for (const auto & arg : arguments)
+        LOG_DEBUG(getLogger(__func__), "  with argument: {}", arg.dumpStructure());
 
     switch (node->type)
     {
@@ -831,7 +841,11 @@ static ColumnWithTypeAndName executeActionForPartialResult(const ActionsDAG::Nod
         {
             try
             {
-                res_column.column = node->function->execute(arguments, res_column.type, input_rows_count, true);
+                if (only_constant_arguments)
+                    res_column.column = node->function->execute(arguments, res_column.type, input_rows_count, true);
+                else
+                    res_column.column = node->function_base->getConstantResultForNonConstArguments(arguments, res_column.type);
+                LOG_DEBUG(getLogger(__func__), "Executed node '{}' to: {}", node->result_name, res_column.column != nullptr);
             }
             catch (Exception & e)
             {
@@ -929,7 +943,7 @@ Block ActionsDAG::updateHeader(const Block & header) const
     ColumnsWithTypeAndName result_columns;
     try
     {
-        result_columns = evaluatePartialResult(node_to_column, outputs, /* input_rows_count= */ 0, /* throw_on_error= */ true);
+        result_columns = evaluatePartialResult(node_to_column, outputs, /* input_rows_count= */ 0, { .throw_on_error = true });
     }
     catch (Exception & e)
     {
@@ -959,8 +973,8 @@ ColumnsWithTypeAndName ActionsDAG::evaluatePartialResult(
     IntermediateExecutionResult & node_to_column,
     const NodeRawConstPtrs & outputs,
     size_t input_rows_count,
-    bool throw_on_error,
-    bool skip_materialize)
+    PartialEvaluationParameters params
+)
 {
     chassert(input_rows_count <= 1); /// evaluatePartialResult() should be used only to evaluate headers or constants
 
@@ -1019,24 +1033,27 @@ ColumnsWithTypeAndName ActionsDAG::evaluatePartialResult(
                         arguments[i] = node_to_column[node->children[i]];
                         if (!arguments[i].column)
                             has_all_arguments = false;
-                        if (!has_all_arguments && throw_on_error)
+                        if (!has_all_arguments && params.throw_on_error)
                             throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
                                             "Not found column {}", node->children[i]->result_name);
                     }
 
-                    if (node->type == ActionsDAG::ActionType::INPUT && throw_on_error)
+                    if (node->type == ActionsDAG::ActionType::INPUT && params.throw_on_error)
                         throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
                                         "Not found column {}",
                                         node->result_name);
 
-                    if (node->type != ActionsDAG::ActionType::INPUT && has_all_arguments)
+                    if (node->type != ActionsDAG::ActionType::INPUT)
                     {
-                        if (node->type == ActionType::FUNCTION && skip_materialize && node->function_base->getName() == "materialize")
+                        if (node->type == ActionType::FUNCTION && params.skip_materialize && node->function_base->getName() == "materialize")
                         {
                             node_to_column[node] = arguments.at(0);
                         }
 
-                        node_to_column[node] = executeActionForPartialResult(node, std::move(arguments), input_rows_count);
+                        if (has_all_arguments)
+                            node_to_column[node] = executeActionForPartialResult(node, std::move(arguments), input_rows_count, true);
+                        else if (params.allow_unknown_function_arguments)
+                            node_to_column[node] = executeActionForPartialResult(node, std::move(arguments), input_rows_count, false);
                     }
                 }
             }
