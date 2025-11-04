@@ -260,9 +260,9 @@ def process_results(result_path: Path):
                     for line in err:
                         raw_logs.append("\t".join(s for s in line))
 
-            if file_path_out.exists():
+            if file_path_out_mini.exists():
                 log_files.append(str(file_path_out_mini))
-            if file_path_stdout.exists():
+            if file_path_stdout_mini.exists():
                 log_files.append(str(file_path_stdout_mini))
 
             result = TestResult(fuzzer, "ERROR", float(status_mini[2]))
