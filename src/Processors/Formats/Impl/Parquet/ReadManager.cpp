@@ -785,7 +785,7 @@ void ReadManager::runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff)
     if (last_in_batch)
     {
         /// Decrement it before scheduling more tasks.
-        size_t prev_batches_in_progress = stages.at(size_t(task.stage)).batches_in_progress.fetch_sub(1, std::memory_order_relaxed);
+        size_t prev_batches_in_progress = stages.at(size_t(task.stage)).batches_in_progress.fetch_sub(1, std::memory_order_relaxed);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
         chassert(prev_batches_in_progress > 0);
         diff.scheduleStage(task.stage);
     }
