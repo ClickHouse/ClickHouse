@@ -282,10 +282,69 @@ struct ConversionImpl
 
 REGISTER_FUNCTION(MinSampleSize)
 {
-    factory.registerFunction<FunctionMinSampleSize<ContinuousImpl>>();
+    FunctionDocumentation::Description description_continuous = R"(
+Calculates the minimum required sample size for an A/B test comparing means of a continuous metric in two samples.
+
+Uses the formula described in [this article](https://towardsdatascience.com/required-sample-size-for-a-b-testing-6f6608dd330a).
+Assumes equal sizes of treatment and control groups.
+Returns the required sample size for one group (i.e. the sample size required for the whole experiment is twice the returned value).
+Also assumes equal variance of the test metric in treatment and control groups.
+)";
+    FunctionDocumentation::Syntax syntax_continuous = "minSampleSizeContinuous(baseline, sigma, mde, power, alpha)";
+    FunctionDocumentation::Arguments arguments_continuous = {
+        {"baseline", "Baseline value of a metric.", {"(U)Int*", "Float*"}},
+        {"sigma", "Baseline standard deviation of a metric.", {"(U)Int*", "Float*"}},
+        {"mde", "Minimum detectable effect (MDE) as percentage of the baseline value (e.g. for a baseline value 112.25 the MDE 0.03 means an expected change to 112.25 ± 112.25*0.03).", {"(U)Int*", "Float*"}},
+        {"power", "Required statistical power of a test (1 - probability of Type II error).", {"(U)Int*", "Float*"}},
+        {"alpha", "Required significance level of a test (probability of Type I error).", {"(U)Int*", "Float*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_continuous = {
+        "Returns a named Tuple with 3 elements: `minimum_sample_size`, `detect_range_lower` and  `detect_range_upper`. These are respectively: the required sample size, the lower bound of the range of values not detectable with the returned required sample size, calculated as `baseline * (1 - mde)`, and the upper bound of the range of values not detectable with the returned required sample size, calculated as `baseline * (1 + mde)` (Float64).",
+        {"Tuple(Float64, Float64, Float64)"}
+    };
+    FunctionDocumentation::Examples examples_continuous = {
+    {
+        "minSampleSizeContinuous",
+        R"(
+SELECT minSampleSizeContinuous(112.25, 21.1, 0.03, 0.80, 0.05) AS sample_size
+        )",
+        R"(
+(616.2931945826209,108.8825,115.6175)
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {23, 10};
+    FunctionDocumentation::Category category_continuous = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_continuous = {description_continuous, syntax_continuous, arguments_continuous, returned_value_continuous, examples_continuous, introduced_in, category_continuous};
+
+    factory.registerFunction<FunctionMinSampleSize<ContinuousImpl>>(documentation_continuous);
     /// Needed for backward compatibility
     factory.registerAlias("minSampleSizeContinous", FunctionMinSampleSize<ContinuousImpl>::name);
-    factory.registerFunction<FunctionMinSampleSize<ConversionImpl>>();
+
+    FunctionDocumentation::Description description_conversion = R"(
+Calculates minimum required sample size for an A/B test comparing conversions (proportions) in two samples.
+
+Uses the formula described in [this article](https://towardsdatascience.com/required-sample-size-for-a-b-testing-6f6608dd330a). Assumes equal sizes of treatment and control groups. Returns the sample size required for one group (i.e. the sample size required for the whole experiment is twice the returned value).
+)";
+    FunctionDocumentation::Syntax syntax_conversion = "minSampleSizeConversion(baseline, mde, power, alpha)";
+    FunctionDocumentation::Arguments arguments_conversion = {
+        {"baseline", "Baseline conversion.", {"Float*"}},
+        {"mde", "Minimum detectable effect (MDE) as percentage points (e.g. for a baseline conversion 0.25 the MDE 0.03 means an expected change to 0.25 ± 0.03).", {"Float*"}},
+        {"power", "Required statistical power of a test (1 - probability of Type II error).", {"Float*"}},
+        {"alpha", "Required significance level of a test (probability of Type I error).", {"Float*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_conversion = {
+        "Returns a named Tuple with 3 elements: `minimum_sample_size`, `detect_range_lower`, `detect_range_upper`. These are, respectively: the required sample size, the lower bound of the range of values not detectable with the returned required sample size, calculated as `baseline - mde`, the upper bound of the range of values not detectable with the returned required sample size, calculated as `baseline + mde`.",
+        {"Tuple(Float64, Float64, Float64)"}
+    };
+    FunctionDocumentation::Examples examples_conversion = {
+        {"minSampleSizeConversion", "SELECT minSampleSizeConversion(0.25, 0.03, 0.80, 0.05) AS sample_size", "(3396.077603219163,0.22,0.28)"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_conversion = {22, 6};
+    FunctionDocumentation::Category category_conversion = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_conversion = {description_conversion, syntax_conversion, arguments_conversion, returned_value_conversion, examples_conversion, introduced_in_conversion, category_conversion};
+
+    factory.registerFunction<FunctionMinSampleSize<ConversionImpl>>(documentation_conversion);
 }
 
 }

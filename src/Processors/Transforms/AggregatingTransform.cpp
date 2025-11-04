@@ -86,6 +86,50 @@ namespace
     };
 }
 
+/// Worker which merges states for single-level aggregation of FixedHashMap.
+/// Each worker is assigned to a subset of the keys, so that we can merge in-place without race conditions.
+class ConvertingAggregatedToChunksWithMergingSourceForFixedHashMap final : public ISource
+{
+public:
+    struct SharedData
+    {
+        std::atomic<bool> is_cancelled = false;
+    };
+
+    using SharedDataPtr = std::shared_ptr<SharedData>;
+
+    ConvertingAggregatedToChunksWithMergingSourceForFixedHashMap(AggregatingTransformParamsPtr params_, ManyAggregatedDataVariantsPtr data_, UInt32 thread_index_, UInt32 num_threads_, Arena * arena_)
+        : ISource(std::make_shared<const Block>(params_->getHeader()), false)
+        , params(std::move(params_))
+        , data(std::move(data_))
+        , shared_data(std::make_shared<SharedData>())
+        , thread_index(thread_index_)
+        , num_threads(num_threads_)
+        , arena(arena_)
+    {
+    }
+
+    String getName() const override { return "ConvertingAggregatedToChunksWithMergingSourceForFixedHashMap"; }
+
+protected:
+    Chunk generate() override
+    {
+        params->aggregator.mergeSingleLevelDataImplFixedMap(*data, arena, thread_index, num_threads, shared_data->is_cancelled);
+
+        finished = true;
+        data.reset();
+        return Chunk{};
+    }
+
+private:
+    AggregatingTransformParamsPtr params;
+    ManyAggregatedDataVariantsPtr data;
+    SharedDataPtr shared_data;
+    UInt32 thread_index;
+    UInt32 num_threads;
+    Arena * arena;
+};
+
 /// Worker which merges buckets for two-level aggregation.
 /// Atomically increments bucket counter and returns merged result.
 class ConvertingAggregatedToChunksWithMergingSource final : public ISource
@@ -310,6 +354,18 @@ public:
             if (inputs.empty())
                 createSources();
         }
+        else if (parallelize_single_level_merge || worthParallelMergeSingleLevel())
+        {
+            if (!parallelize_single_level_merge)
+            {
+                parallelize_single_level_merge = true;
+                LOG_TRACE(getLogger("AggregatingTransform"), "Use parallel merge for single level fixed hash map.");
+            }
+            if (inputs.empty())
+                createSourcesForFixedHashMap();
+            else
+                mergeSingleLevel();
+        }
         else
         {
             mergeSingleLevel();
@@ -365,6 +421,9 @@ public:
         /// Single level case.
         if (inputs.empty())
             return Status::Ready;
+        else if (parallelize_single_level_merge)
+            // Also single level, but need to check all input ports are finished.
+            return prepareParallelizeSingleLevel();
 
         /// Two-level case.
         return prepareTwoLevel();
@@ -376,6 +435,28 @@ public:
     }
 
 private:
+    bool worthParallelMergeSingleLevel()
+    {
+        if (num_threads <= 1)
+            return false;
+
+        if (!params->aggregator.isTypeFixedSize(*data))
+            return false;
+
+        return true;
+    }
+
+    IProcessor::Status prepareParallelizeSingleLevel()
+    {
+        for (auto & input : inputs)
+        {
+            if (!input.isFinished())
+                return Status::NeedData;
+        }
+
+        return Status::Ready;
+    }
+
     IProcessor::Status preparePushToOutput()
     {
         if (single_level_chunks.empty())
@@ -473,11 +554,19 @@ private:
             }
         }
 
-        if (auto chunk = get_ready_out_of_order_bucket(); chunk.hasRows())
+        /// We want to prevent the following situation:
+        /// 1. all inputs are finished and we tried to push all buckets (i.e., current_bucket_num == NUM_BUCKETS)
+        /// 2. the next in order out of order bucket (and there are still some more) is empty, so we won't push it
+        /// 3. if in that case we won't loop and make another `get_ready_out_of_order_bucket()`,
+        ///    but proceed straight to `return NeedData`, we'll get `Pipeline stuck`, because, again, all inputs are finished
+        while (auto chunk = get_ready_out_of_order_bucket())
         {
-            chunk.getChunkInfos().template get<AggregatedChunkInfo>()->out_of_order_buckets = out_of_order_buckets;
-            output.push(std::move(chunk));
-            return Status::PortFull;
+            if (chunk.hasRows())
+            {
+                chunk.getChunkInfos().template get<AggregatedChunkInfo>()->out_of_order_buckets = out_of_order_buckets;
+                output.push(std::move(chunk));
+                return Status::PortFull;
+            }
         }
 
         if (!out_of_order_buckets.empty())
@@ -496,6 +585,7 @@ private:
 
     bool is_initialized = false;
     bool finished = false;
+    bool parallelize_single_level_merge = false;
 
     Chunks single_level_chunks;
 
@@ -542,23 +632,34 @@ private:
     void mergeSingleLevel()
     {
         AggregatedDataVariantsPtr & first = data->at(0);
-
-        if (current_bucket_num > 0 || first->type == AggregatedDataVariants::Type::without_key)
+        if (parallelize_single_level_merge)
         {
-            finished = true;
-            return;
-        }
+            params->aggregator.resetAggregatorExceptFirst(*data);
 
-        ++current_bucket_num;
+            /// We skip the `max_rows_to_group_by` limit check during the merge to avoid race condition.
+            /// Therefore here we need to check additional after merges are completed from different threads.
+            params->aggregator.ensureLimitsFixedMapMerge(first);
+        }
+        else
+        {
+            // In case of single threaded single level merge, we have to merge the data here before converting to blocks.
+            if (current_bucket_num > 0 || first->type == AggregatedDataVariants::Type::without_key)
+            {
+                finished = true;
+                return;
+            }
+
+            ++current_bucket_num;
 
 #define M(NAME) \
     else if (first->type == AggregatedDataVariants::Type::NAME) \
         params->aggregator.mergeSingleLevelDataImpl<decltype(first->NAME)::element_type>(*data, shared_data->is_cancelled);
-        if (false) {} // NOLINT
-        APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)
+            if (false) {} // NOLINT
+            APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)
 #undef M
-        else
-            throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
+            else
+                throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
+        }
 
         auto blocks = params->aggregator.prepareBlockAndFillSingleLevel</* return_single_block */ false>(*first, params->final);
         for (auto & block : blocks)
@@ -584,6 +685,20 @@ private:
         }
 
         data.reset();
+    }
+
+    void createSourcesForFixedHashMap()
+    {
+        /// Disable min max optimization to avoid race condition.
+        params->aggregator.disableMinMaxOptimizationForFixedHashMaps(*data);
+
+        processors.reserve(num_threads);
+        AggregatedDataVariantsPtr & first = data->at(0);
+        for (size_t thread = 0; thread < num_threads; ++thread)
+        {
+            auto source = std::make_shared<ConvertingAggregatedToChunksWithMergingSourceForFixedHashMap>(params, data, thread, num_threads, first->aggregates_pools.at(thread).get());
+            processors.emplace_back(std::move(source));
+        }
     }
 };
 
@@ -800,7 +915,17 @@ void AggregatingTransform::initGenerate()
         return;
     }
 
-    if (!params->aggregator.hasTemporaryData())
+    /// In the case of two different aggregators existing simultaneously due to a mixed pipeline of aggregate projections,
+    /// it is necessary to check whether any of the aggregators contains temporary data.
+    auto aggregator_has_temporary_data = [&]()
+    {
+        return params->aggregator.hasTemporaryData()
+            || std::any_of(
+                params->aggregator_list_ptr->begin(),
+                params->aggregator_list_ptr->end(),
+                [](const Aggregator & aggregator) { return aggregator.hasTemporaryData(); });
+    };
+    if (!aggregator_has_temporary_data())
     {
         if (!skip_merging)
         {
@@ -880,16 +1005,18 @@ void AggregatingTransform::initGenerate()
         /// Merge external data from all aggregators used in query.
         for (auto & aggregator : *params->aggregator_list_ptr)
         {
-            tmp_files = aggregator.detachTemporaryData();
+            auto new_tmp_files = aggregator.detachTemporaryData();
             num_streams += tmp_files.size();
 
-            for (auto & tmp_stream : tmp_files)
+            for (auto & tmp_stream : new_tmp_files)
             {
                 auto stat = tmp_stream.finishWriting();
                 compressed_size += stat.compressed_size;
                 uncompressed_size += stat.uncompressed_size;
                 pipes.emplace_back(Pipe(std::make_unique<SourceFromNativeStream>(std::make_shared<const Block>(tmp_stream.getHeader()), tmp_stream.getReadStream())));
             }
+
+            tmp_files.splice(tmp_files.end(), new_tmp_files);
         }
 
         LOG_DEBUG(

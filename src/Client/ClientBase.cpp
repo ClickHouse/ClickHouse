@@ -7,6 +7,8 @@
 #include <Client/TerminalKeystrokeInterceptor.h>
 #include <Client/TestHint.h>
 #include <Client/TestTags.h>
+#include <Core/SortDescription.h>
+#include <Interpreters/sortBlock.h>
 
 #if USE_CLIENT_AI
 #include <Client/AI/AISQLGenerator.h>
@@ -55,6 +57,7 @@
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/Kusto/parseKQLQuery.h>
+#include <Parsers/Prometheus/ParserPrometheusQuery.h>
 
 #include <Processors/Formats/Impl/NullFormat.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -92,11 +95,13 @@
 #include <mutex>
 #include <string_view>
 #include <unordered_map>
+#include <csignal>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/split.hpp>
 
 #include <Common/config_version.h>
+#include <Common/XDGBaseDirectories.h>
 #include <base/find_symbols.h>
 
 
@@ -121,12 +126,15 @@ namespace Setting
     extern const SettingsBool throw_if_no_data_to_insert;
     extern const SettingsBool implicit_select;
     extern const SettingsBool apply_settings_from_server;
+    extern const SettingsString promql_database;
+    extern const SettingsString promql_table;
+    extern const SettingsFloatAuto promql_evaluation_time;
 }
 
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int CANNOT_PARSE_TEXT;
+    extern const int SYNTAX_ERROR;
     extern const int DEADLOCK_AVOIDED;
     extern const int CLIENT_OUTPUT_FORMAT_SPECIFIED;
     extern const int UNKNOWN_PACKET_FROM_SERVER;
@@ -333,6 +341,9 @@ class LocalFormatError : public Exception
 {
 public:
     using Exception::Exception;
+
+    LocalFormatError * clone() const override { return new LocalFormatError(*this); }
+    void rethrow() const override { throw *this; } /// NOLINT(cert-err60-cpp)
 };
 
 
@@ -381,6 +392,8 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
         parser = std::make_unique<ParserKQLStatement>(end, settings[Setting::allow_settings_after_format_in_insert]);
     else if (dialect == Dialect::prql)
         parser = std::make_unique<ParserPRQLQuery>(max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+    else if (dialect == Dialect::promql)
+        parser = std::make_unique<ParserPrometheusQuery>(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
     else
         parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
 
@@ -530,7 +543,9 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
 
     try
     {
-        output_format->write(materializeBlock(block));
+        output_format->write(materializeBlock(
+            block,
+            !output_format->supportsSpecialSerializationKinds()));
         written_first_block = true;
     }
     catch (const NetException &)
@@ -582,6 +597,13 @@ void ClientBase::onLogData(Block & block)
         std::unique_lock lock(tty_mutex);
         progress_table.clearTableOutput(*tty_buf, lock);
     }
+    /// Logs can be unsorted, i.e. if they were combined from multiple servers (in case of distributed queries)
+    {
+        SortDescription desc;
+        desc.push_back(SortColumnDescription("event_time"));
+        desc.push_back(SortColumnDescription("event_time_microseconds"));
+        sortBlock(block, desc, 0, IColumn::PermutationSortStability::Stable);
+    }
     logs_out_stream->writeLogs(block);
     logs_out_stream->flush();
 }
@@ -590,14 +612,14 @@ void ClientBase::onLogData(Block & block)
 void ClientBase::onTotals(Block & block, ASTPtr parsed_query)
 {
     initOutputFormat(block, parsed_query);
-    output_format->setTotals(materializeBlock(block));
+    output_format->setTotals(materializeBlock(block, !output_format->supportsSpecialSerializationKinds()));
 }
 
 
 void ClientBase::onExtremes(Block & block, ASTPtr parsed_query)
 {
     initOutputFormat(block, parsed_query);
-    output_format->setExtremes(materializeBlock(block));
+    output_format->setExtremes(materializeBlock(block, !output_format->supportsSpecialSerializationKinds()));
 }
 
 
@@ -635,18 +657,13 @@ try
         {
             if (SIG_ERR == signal(SIGPIPE, SIG_IGN))
                 throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler for SIGPIPE");
-            /// We need to reset signals that had been installed in the
-            /// setupSignalHandler() since terminal will send signals to both
-            /// processes and so signals will be delivered to the
-            /// clickhouse-client/local as well, which will be terminated when
-            /// signal will be delivered second time.
-            if (SIG_ERR == signal(SIGINT, SIG_IGN))
-                throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler for SIGINT");
             if (SIG_ERR == signal(SIGQUIT, SIG_IGN))
                 throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler for SIGQUIT");
 
             ShellCommand::Config config(pager);
             config.pipe_stdin_only = true;
+            config.terminate_in_destructor_strategy.terminate_in_destructor = true;
+            config.terminate_in_destructor_strategy.termination_signal = SIGTERM;
             pager_cmd = ShellCommand::execute(config);
             out_buf = &pager_cmd->in;
         }
@@ -961,59 +978,70 @@ void ClientBase::initTTYBuffer(ProgressOption progress_option, ProgressOption pr
     /// This size is usually greater than the window size.
     static constexpr size_t buf_size = 1024;
 
-    // If we are embedded into server, there is no need to access terminal device via opening a file.
-    // Actually we need to pass tty's name, if we don't want this condition statement,
-    // because /dev/tty stands for controlling terminal of the process, thus a client will not see progress line.
-    // So it's easier to just pass a descriptor, without the terminal name.
-    if (isEmbeeddedClient())
-    {
-        tty_buf = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>>(stdout_fd, buf_size);
-        return;
-    }
-
-    static constexpr auto tty_file_name = "/dev/tty";
-
-    if (is_interactive || progress == ProgressOption::TTY)
-    {
-        std::error_code ec;
-        std::filesystem::file_status tty = std::filesystem::status(tty_file_name, ec);
-
-        if (!ec && exists(tty) && is_character_file(tty)
-            && (tty.permissions() & std::filesystem::perms::others_write) != std::filesystem::perms::none)
-        {
-            try
-            {
-                tty_buf = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFile>>(tty_file_name, buf_size);
-
-                /// It is possible that the terminal file has writeable permissions
-                /// but we cannot write anything there. Check it with invisible character.
-                tty_buf->write('\0');
-                tty_buf->next();
-
-                return;
-            }
-            catch (const Exception & e)
-            {
-                tty_buf.reset();
-
-                if (e.code() != ErrorCodes::CANNOT_OPEN_FILE)
-                    throw;
-
-                /// It is normal if file exists, indicated as writeable but still cannot be opened.
-                /// Fallback to other options.
-            }
-        }
-    }
+    /// Prefer to use an existing fd for the tty, from stdin/stdout/stderr, to allow redirecting
+    /// progress indication to a different terminal.
+    int tty_fd = -1;
 
     if (stderr_is_a_tty || progress == ProgressOption::ERR)
     {
-        tty_buf = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>>(stderr_fd, buf_size);
+        tty_fd = stderr_fd;
     }
-    else
+    else if (stdout_is_a_tty || isEmbeeddedClient())
     {
-        need_render_progress = false;
-        need_render_progress_table = false;
+        // If we are embedded into server, there is no need to access terminal device via opening a file.
+        // Actually we need to pass tty's name, if we don't want this condition statement,
+        // because /dev/tty stands for controlling terminal of the process, thus a client will not see progress line.
+        // So it's easier to just pass a descriptor, without the terminal name.
+        tty_fd = stdout_fd;
     }
+    else if (stdin_is_a_tty)
+    {
+        /// If stdin is a tty, it's writable, tty can't be readonly.
+        tty_fd = stdin_fd;
+    }
+
+    if (tty_fd != -1)
+    {
+        tty_buf = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>>(tty_fd, buf_size);
+        return;
+    }
+
+    /// If none of stdin/stdout/stderr are tty but progress rendering was requested, open /dev/tty.
+
+    static constexpr auto tty_file_name = "/dev/tty";
+
+    std::error_code ec;
+    std::filesystem::file_status tty = std::filesystem::status(tty_file_name, ec);
+
+    if (!ec && exists(tty) && is_character_file(tty)
+        && (tty.permissions() & std::filesystem::perms::others_write) != std::filesystem::perms::none)
+    {
+        try
+        {
+            tty_buf = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFile>>(tty_file_name, buf_size);
+
+            /// It is possible that the terminal file has writeable permissions
+            /// but we cannot write anything there. Check it with invisible character.
+            tty_buf->write('\0');
+            tty_buf->next();
+
+            return;
+        }
+        catch (const Exception & e)
+        {
+            tty_buf.reset();
+
+            if (e.code() != ErrorCodes::CANNOT_OPEN_FILE)
+                throw;
+
+            /// It is normal if file exists, indicated as writeable but still cannot be opened.
+            /// Fallback to other options.
+        }
+    }
+
+    /// Failed to open /dev/tty.
+    need_render_progress = false;
+    need_render_progress_table = false;
 }
 
 void ClientBase::initKeystrokeInterceptor()
@@ -1631,12 +1659,12 @@ void ClientBase::resetOutput()
     if (pager_cmd)
     {
         pager_cmd->in.close();
-        pager_cmd->wait();
+        /// The process will terminated in destructor anyway (due to terminate_in_destructor_strategy.terminate_in_destructor=true)
+        if (!cancelled)
+            pager_cmd->wait();
 
         if (SIG_ERR == signal(SIGPIPE, SIG_DFL))
             throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler for SIGPIPE");
-        if (SIG_ERR == signal(SIGINT, SIG_DFL))
-            throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler for SIGINT");
         if (SIG_ERR == signal(SIGQUIT, SIG_DFL))
             throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler for SIGQUIT");
 
@@ -1670,7 +1698,7 @@ bool ClientBase::receiveSampleBlock(Block & out, ColumnsDescription & columns_de
                 break;
 
             case Protocol::Server::TableColumns:
-                columns_description = ColumnsDescription::parse(packet.multistring_message[1]);
+                columns_description = ColumnsDescription::parse(packet.columns_description);
                 return receiveSampleBlock(out, columns_description, parsed_query);
 
             case Protocol::Server::TimezoneUpdate:
@@ -1892,9 +1920,8 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
             ConstraintsDescription{},
             String{},
             {},
-            String{},
         };
-        StoragePtr storage = std::make_shared<StorageFile>(in_file, client_context->getUserFilesPath(), args);
+        StoragePtr storage = std::make_shared<StorageFile>(StorageFile::FileSource::parse(in_file, client_context), args);
         storage->startup();
         SelectQueryInfo query_info;
 
@@ -2550,21 +2577,21 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
             case MultiQueryProcessingStage::PARSING_FAILED:
             {
                 have_error |= buzz_house;
-                error_code = buzz_house ? ErrorCodes::CANNOT_PARSE_TEXT : error_code;
+                error_code = buzz_house ? ErrorCodes::SYNTAX_ERROR : error_code;
                 return true;
             }
             case MultiQueryProcessingStage::CONTINUE_PARSING:
             {
                 is_first = false;
                 have_error |= buzz_house;
-                error_code = buzz_house ? ErrorCodes::CANNOT_PARSE_TEXT : error_code;
+                error_code = buzz_house ? ErrorCodes::SYNTAX_ERROR : error_code;
                 continue;
             }
             case MultiQueryProcessingStage::PARSING_EXCEPTION:
             {
                 is_first = false;
                 have_error |= buzz_house;
-                error_code = buzz_house ? ErrorCodes::CANNOT_PARSE_TEXT : error_code;
+                error_code = buzz_house ? ErrorCodes::SYNTAX_ERROR : error_code;
                 this_query_end = find_first_symbols<'\n'>(this_query_end, all_queries_end);
 
                 // Try to find test hint for syntax error. We don't know where
@@ -3446,15 +3473,16 @@ void ClientBase::runInteractive()
     if (!isEmbeeddedClient())
     {
         /// Load command history if present.
+        bool should_create_parent_directories = false;
         if (getClientConfiguration().has("history_file"))
             history_file = getClientConfiguration().getString("history_file");
         else
         {
-            auto * history_file_from_env = getenv("CLICKHOUSE_HISTORY_FILE"); // NOLINT(concurrency-mt-unsafe)
-            if (history_file_from_env)
-                history_file = history_file_from_env;
-            else if (!home_path.empty())
-                history_file = home_path + "/.clickhouse-client-history";
+            history_file = getHistoryFilePath();
+
+            /// Avoid creating parent directories
+            /// if history file path was specified explicitly in config.
+            should_create_parent_directories = true;
         }
 
         if (!history_file.empty() && !fs::exists(history_file))
@@ -3462,6 +3490,9 @@ void ClientBase::runInteractive()
             /// Avoid TOCTOU issue.
             try
             {
+                if (should_create_parent_directories && history_file.has_parent_path())
+                    fs::create_directories(history_file.parent_path());
+
                 FS::createFile(history_file);
             }
             catch (const ErrnoException & e)
@@ -3702,6 +3733,31 @@ void ClientBase::runNonInteractive()
         else
             processQueryText(text);
     }
+}
+
+fs::path ClientBase::getHistoryFilePath()
+{
+    auto * history_file_from_env = getenv("CLICKHOUSE_HISTORY_FILE"); // NOLINT(concurrency-mt-unsafe)
+    if (history_file_from_env)
+        return history_file_from_env;
+
+    /// Client query history was stored in ~/.clickhouse-client-history
+    /// before moving to $XDG_STATE_HOME/clickhouse/client-query-history.
+    /// We'll pick up the old file and use it if it is already present.
+    auto * home_path = getenv("HOME"); // NOLINT(concurrency-mt-unsafe)
+    if (home_path)
+    {
+        auto path_in_home_dir = fs::path(home_path) / ".clickhouse-client-history";
+
+        if (fs::exists(path_in_home_dir))
+            return path_in_home_dir;
+    }
+
+    auto xdg_state_home = XDGBaseDirectories::getStateHome();
+    if (!xdg_state_home.empty())
+        return xdg_state_home / "client-query-history";
+
+    throw Exception(ErrorCodes::CANNOT_OPEN_FILE, "Neither $CLICKHOUSE_HISTORY_FILE, $HOME nor $XDG_STATE_HOME is set; cannot place history file.");
 }
 
 

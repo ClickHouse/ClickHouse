@@ -14,10 +14,8 @@
 #include <Parsers/ASTLiteral.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 
-namespace Iceberg
+namespace DB::Iceberg
 {
-
-using namespace DB;
 
 void mutate(
     const MutationCommands & commands,
@@ -28,6 +26,13 @@ void mutate(
     StorageObjectStorageConfigurationPtr configuration,
     const std::optional<FormatSettings> & format_settings,
     std::shared_ptr<DataLake::ICatalog> catalog);
+
+void alter(
+    const AlterCommands & params,
+    ContextPtr context,
+    ObjectStoragePtr object_storage,
+    StorageObjectStorageConfigurationPtr configuration
+);
 
 }
 

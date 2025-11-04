@@ -500,7 +500,7 @@ public:
 
         const auto & date_lut = DateLUT::instance(timezone);
 
-        const auto max_fraction = pow(10, precision) - 1;
+        const auto max_fraction = std::pow(10, precision) - 1;
         const auto min_date_time = minDateTime(date_lut);
         const auto max_date_time = maxDateTime(date_lut);
 
@@ -534,7 +534,7 @@ public:
                     fraction = max_fraction;
             }
 
-            result_data[i] = DecimalUtils::decimalFromComponents<DateTime64>(
+            result_data[i] = DecimalUtils::dateTimeFromComponents(
                 date_time,
                 static_cast<Int64>(fraction),
                 static_cast<UInt32>(precision));
