@@ -5,7 +5,7 @@
 #include <Common/StackTrace.h>
 #include <Common/TraceSender.h>
 #include <Common/setThreadName.h>
-#include "base/defines.h"
+#include <base/defines.h>
 
 #include <string_view>
 
