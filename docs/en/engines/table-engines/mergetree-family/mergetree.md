@@ -74,7 +74,7 @@ A tuple of column names or arbitrary expressions. Example: `ORDER BY (CounterID 
 If no primary key is defined (i.e. `PRIMARY KEY` was not specified), ClickHouse uses the the sorting key as primary key.
 
 If no sorting is required, you can use syntax `ORDER BY tuple()`.
-Alternatively, if setting `create_table_empty_primary_key_by_default` is enabled, `ORDER BY tuple()` is implicitly added to `CREATE TABLE` statements. See [Selecting a Primary Key](#selecting-a-primary-key).
+Alternatively, if setting `create_table_empty_primary_key_by_default` is enabled, `ORDER BY ()` is implicitly added to `CREATE TABLE` statements. See [Selecting a Primary Key](#selecting-a-primary-key).
 
 #### PARTITION BY {#partition-by}
 

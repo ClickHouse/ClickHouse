@@ -592,9 +592,6 @@ Idleness timeout for sending and receiving data to/from azure. Fail if a single 
     DECLARE(UInt64, azure_connect_timeout_ms, S3::DEFAULT_CONNECT_TIMEOUT_MS, R"(
 Connection timeout for host from azure disks.
 )", 0) \
-    DECLARE(Bool, azure_sdk_use_native_client, true, R"(
-Use clickhouse native HTTP client for Azure SDK.
-)", 0) \
     DECLARE(Bool, s3_validate_request_settings, true, R"(
 Enables s3 request settings validation.
 Possible values:
@@ -1519,7 +1516,7 @@ Possible values:
     DECLARE(Bool, use_skip_indexes_if_final_exact_mode, true, R"(
 Controls whether granules returned by a skipping index are expanded in newer parts to return correct results when executing a query with the FINAL modifier.
 
-Using skip indexes may exclude rows (granules) containing the latest data which could lead to incorrect results. This setting can ensure that correct results are returned by scanning newer parts that overlap with the ranges returned by the skip index. This setting should be disabled only if approximate results based on looking up the skip index are okay for an application.
+Using skip indexes may exclude rows (granules) containing the latest data which could lead to incorrect results. This setting can ensure that correct results are returned by scanning newer parts that have overlap with the ranges returned by the skip index. This setting should be disabled only if approximate results based on looking up the skip index are okay for an application.
 
 Possible values:
 
@@ -4866,6 +4863,12 @@ Possible values:
 
 - string: name of preferred projection
 )", 0) \
+    DECLARE(UInt64, max_projection_rows_to_use_projection_index, 1'000'000, R"(
+If the number of rows to read from the projection index is less than or equal to this threshold, ClickHouse will try to apply the projection index during query execution.
+)", 0) \
+    DECLARE(UInt64, min_table_rows_to_use_projection_index, 1'000'000, R"(
+If the estimated number of rows to read from the table is greater than or equal to this threshold, ClickHouse will try to use the projection index during query execution.
+)", 0) \
     DECLARE(Bool, async_socket_for_remote, true, R"(
 Enables asynchronous read from socket while executing remote query.
 
@@ -5632,7 +5635,7 @@ Use query plan for lazy materialization optimization.
 )", 0) \
     DECLARE(UInt64, query_plan_max_limit_for_lazy_materialization, 10, R"(Control maximum limit value that allows to use query plan for lazy materialization optimization. If zero, there is no limit.
 )", 0) \
-    DECLARE(Bool, enable_lazy_columns_replication, false, R"(
+    DECLARE(Bool, enable_lazy_columns_replication, true, R"(
 Enables lazy columns replication in JOIN and ARRAY JOIN, it allows to avoid unnecessary copy of the same rows multiple times in memory.
 )", 0) \
     DECLARE_WITH_ALIAS(Bool, query_plan_use_new_logical_join_step, true, R"(
@@ -6472,7 +6475,7 @@ Result:
 ```
 )", 0) \
     DECLARE(Float, ignore_drop_queries_probability, 0, R"(
-If enabled, server will ignore all DROP table queries with specified probability (for Memory and JOIN engines it will replcase DROP to TRUNCATE). Used for testing purposes
+If enabled, server will ignore all DROP table queries with specified probability (for Memory and JOIN engines it will replace DROP to TRUNCATE). Used for testing purposes
 )", 0) \
     DECLARE(Bool, traverse_shadow_remote_data_paths, false, R"(
 Traverse frozen data (shadow directory) in addition to actual table data when query system.remote_data_paths
@@ -7287,7 +7290,8 @@ Sets the evaluation time to be used with promql dialect. 'auto' means the curren
     MAKE_OBSOLETE(M, Bool, enable_dynamic_type, true) \
     MAKE_OBSOLETE(M, Bool, enable_json_type, true) \
     MAKE_OBSOLETE(M, Bool, s3_slow_all_threads_after_retryable_error, false) \
-    \
+    MAKE_OBSOLETE(M, Bool, azure_sdk_use_native_client, true) \
+\
     /* moved to config.xml: see also src/Core/ServerSettings.h */ \
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_buffer_flush_schedule_pool_size, 16) \
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_pool_size, 16) \
