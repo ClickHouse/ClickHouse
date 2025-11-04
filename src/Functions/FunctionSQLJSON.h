@@ -489,12 +489,11 @@ public:
             Element current_element = root;
             VisitorStatus status;
             bool success = false;
-            auto generator_json_path = json_paths[i];
             bool path_has_asterisk = path_asterisks[i];
-            generator_json_path->reinitialize();
+            json_paths[i]->reinitialize();
             JSONStringSerializer json_serializer(col_str);
             std::vector<Element> elements_to_serialize;
-            while ((status = generator_json_path->getNextItem(current_element)) != VisitorStatus::Exhausted)
+            while ((status = json_paths[i]->getNextItem(current_element)) != VisitorStatus::Exhausted)
             {
                 if (status == VisitorStatus::Ok)
                 {
