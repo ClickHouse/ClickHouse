@@ -58,11 +58,10 @@ inline UInt128 hashAt(const IColumn & column, size_t row_id)
 
 struct Key
 {
-    std::string dict_name;
-    std::string attr_name;
+    UInt128 domain_hash;
     UInt128 hash;
 
-    bool operator==(const Key & rhs) const { return dict_name == rhs.dict_name && attr_name == rhs.attr_name && hash == rhs.hash; }
+    bool operator==(const Key & rhs) const { return domain_hash == rhs.domain_hash && hash == rhs.hash; }
 };
 
 struct KeyHash
@@ -70,8 +69,7 @@ struct KeyHash
     UInt128 operator()(const Key & key) const noexcept
     {
         SipHash h;
-        h.update(key.dict_name.data(), key.dict_name.size());
-        h.update(key.attr_name.data(), key.attr_name.size());
+        h.update(key.domain_hash);
         h.update(key.hash);
         return h.get128();
     }
@@ -257,6 +255,11 @@ private:
         Map hash_to_bucket_id;
         hash_to_bucket_id.reserve(input_rows_count);
 
+        SipHash sip;
+        sip.update(dict_name.data(), dict_name.size());
+        sip.update(attr_name.data(), attr_name.size());
+        const UInt128 domain_hash = sip.get128();
+
         std::vector<size_t> row_id_to_bucket_id(input_rows_count);
 
         size_t num_buckets = 0;
@@ -288,7 +291,7 @@ private:
 
         for (size_t bucket_id = 0; bucket_id < num_buckets; ++bucket_id)
         {
-            Key key{dict_name, attr_name, bucket_hashes[bucket_id]};
+            Key key{domain_hash, bucket_hashes[bucket_id]};
             if (auto hit = cache.get(key))
                 bucket_cached[bucket_id] = hit;
             else
@@ -311,7 +314,7 @@ private:
                 remaining.reserve(missing_bucket_ids.size());
                 for (size_t bucket_id : missing_bucket_ids)
                 {
-                    Key key{dict_name, attr_name, bucket_hashes[bucket_id]};
+                    Key key{domain_hash, bucket_hashes[bucket_id]};
                     if (auto hit = cache.get(key))
                         bucket_cached[bucket_id] = hit;
                     else
@@ -332,7 +335,7 @@ private:
                 {
                     if (!bucket_cached[bucket_id])
                         bucket_cached[bucket_id] = std::make_shared<Mapped>();
-                    Key key{dict_name, attr_name, bucket_hashes[bucket_id]};
+                    Key key{domain_hash, bucket_hashes[bucket_id]};
                     cache.set(key, bucket_cached[bucket_id]);
                 }
 
