@@ -351,9 +351,10 @@ private:
         const size_t keys_cnt = key_types.size();
         MutableColumns result_cols;
         result_cols.reserve(keys_cnt);
-        for (const auto & t : key_types)
+        for (const auto & key_type : key_types)
         {
-            auto col = t->createColumn();
+            auto col = key_type->createColumn();
+            col->reserve(input_rows_count);
             result_cols.emplace_back(std::move(col));
         }
 
