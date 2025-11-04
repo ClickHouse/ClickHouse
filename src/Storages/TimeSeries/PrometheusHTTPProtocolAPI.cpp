@@ -32,7 +32,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_REQUEST_PARAMETER;
-    extern const int SYNTAX_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
 
