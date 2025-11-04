@@ -576,7 +576,7 @@ Chunk SystemZooKeeperSource::generate()
 {
     if (name.empty())
     {
-        chassert(0); // In fact, it must always have a default value.
+        UNREACHABLE(); // In fact, it must always have a default value.
         name = zkutil::DEFAULT_ZOOKEEPER_NAME;
     }
 
