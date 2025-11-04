@@ -147,8 +147,8 @@ jobs:
 {JOB_ADDONS}
       - name: Prepare env script
         run: |
-          rm -rf {INPUT_DIR} {OUTPUT_DIR} {TEMP_DIR}
-          mkdir -p {TEMP_DIR} {INPUT_DIR} {OUTPUT_DIR}
+          rm -rf {UNIQUE_WORK_DIRS}
+          mkdir -p {UNIQUE_WORK_DIRS}
           cat > {ENV_SETUP_SCRIPT} << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:{PYTHONPATH_EXTRA}
 {SETUP_ENVS}
@@ -352,8 +352,9 @@ class PullRequestPushYamlGen:
                 PYTHON=Settings.PYTHON_INTERPRETER,
                 WORKFLOW_STATUS_FILE=Settings.WORKFLOW_STATUS_FILE,
                 TEMP_DIR=Settings.TEMP_DIR,
-                INPUT_DIR=Settings.INPUT_DIR,
-                OUTPUT_DIR=Settings.OUTPUT_DIR,
+                UNIQUE_WORK_DIRS=" ".join(
+                    {Settings.TEMP_DIR, Settings.INPUT_DIR, Settings.OUTPUT_DIR}
+                ),
                 PYTHONPATH_EXTRA=Settings.PYTHONPATHS,
             )
             job_items.append(job_item)
