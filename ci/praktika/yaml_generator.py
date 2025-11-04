@@ -161,7 +161,7 @@ jobs:
         id: run
         run: |
           echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
-          . {TEMP_DIR}/praktika_setup_env.sh
+          . {ENV_SETUP_SCRIPT}
           set -o pipefail
           if command -v ts &> /dev/null; then
             python3 -m praktika run '{JOB_NAME}' --workflow "{WORKFLOW_NAME}" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee {TEMP_DIR}/job.log
