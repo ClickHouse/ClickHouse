@@ -1,3 +1,6 @@
+-- Tags: no-parallel
+-- Tag no-parallel: Messes with internal cache and global udf factory
+
 SET allow_experimental_full_text_index = 1;
 SET use_skip_indexes_on_data_read = 1;
 
@@ -81,6 +84,7 @@ SELECT count() FROM tab WHERE hasToken(str, 'bar');
 SELECT count() FROM tab WHERE hasToken(str, 'baz');
 
 DROP TABLE tab;
+DROP FUNCTION udf_preprocessor;
 
 SELECT 'Negative tests on preprocessor construction validations.';
 
