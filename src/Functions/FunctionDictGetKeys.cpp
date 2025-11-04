@@ -26,6 +26,7 @@
 
 #include <condition_variable>
 #include <mutex>
+#include <unordered_set>
 
 
 namespace DB
@@ -55,8 +56,6 @@ inline UInt128 hashAt(const IColumn & column, size_t row_id)
 }
 
 
-/// Cache key: (dictionary name, epoch, attribute, canonical bytes)
-/// TODO: Use 128 bit sip which should be strong enough to avoid collisions here and then skip storing full bytes?
 struct Key
 {
     std::string dict_name;
@@ -78,26 +77,16 @@ struct KeyHash
     }
 };
 
-/// Single-key dicts: ColumnArray(inner_key_column, offsets=[...])
-/// Multi-key dicts: ColumnArray(ColumnTuple(key_cols...), offsets=[...])
-struct Mapped
-{
-    ColumnPtr array;
-};
+using Mapped = std::vector<std::byte>;
 
+using MappedPtr = std::shared_ptr<Mapped>;
 
-/// Weight function for the SLRU: count allocated bytes of cached array
-/// TODO: add any other overheads from key?
 struct MappedWeight
 {
-    size_t operator()(const Mapped & mapped) const
-    {
-        return (mapped.array ? mapped.array->allocatedBytes() : 0) + sizeof(Mapped) + sizeof(Key);
-    }
+    size_t operator()(const Mapped & mapped) const { return mapped.capacity() + sizeof(Mapped); }
 };
 
 using DictGetKeysCache = CacheBase<Key, Mapped, KeyHash, MappedWeight>;
-
 
 struct DomainKey
 {
@@ -122,8 +111,8 @@ struct Domain
 {
     std::mutex m;
     std::condition_variable cv;
-    bool building = false; // a thread is scanning dict->read() for this (dict, attr)
-    UInt64 build_epoch_seen = 0; // to wake waiters
+    bool building = false;
+    UInt64 build_epoch_seen = 0;
 };
 
 
@@ -164,71 +153,6 @@ private:
 
     DictGetKeysCache cache;
 };
-
-/// Single key: Array(KeyType)
-/// Multi key:  Array(Tuple(key1,...,keyN))
-/// TODO: This is slow
-Mapped makeCachedArrayFromLinkedList(
-    const std::vector<MutableColumnPtr> & payload_key_cols,
-    const std::vector<size_t> & next_key_pos,
-    size_t last_key_pos_for_bucket,
-    const DataTypes & key_types)
-{
-    std::vector<MutableColumnPtr> key_cols;
-    key_cols.reserve(key_types.size());
-    for (const auto & t : key_types)
-        key_cols.emplace_back(t->createColumn());
-
-    size_t cur = last_key_pos_for_bucket;
-    size_t len = 0;
-    while (cur != std::numeric_limits<size_t>::max())
-    {
-        for (size_t key_pos = 0; key_pos < key_cols.size(); ++key_pos)
-            key_cols[key_pos]->insertFrom(*payload_key_cols[key_pos], cur);
-        cur = next_key_pos[cur];
-        ++len;
-    }
-
-    auto offsets = ColumnArray::ColumnOffsets::create();
-    offsets->getData().push_back(len);
-
-    if (key_cols.size() == 1)
-    {
-        auto array = ColumnArray::create(std::move(key_cols[0]), std::move(offsets));
-        Mapped mapped;
-        mapped.array = std::move(array);
-        return mapped;
-    }
-    auto tuple_column = ColumnTuple::create(std::move(key_cols));
-    auto array = ColumnArray::create(std::move(tuple_column), std::move(offsets));
-    Mapped mapped;
-    mapped.array = std::move(array);
-    return mapped;
-}
-
-Mapped makeEmptyCachedArray(const DataTypes & key_types)
-{
-    auto offsets = ColumnArray::ColumnOffsets::create();
-    offsets->getData().push_back(0);
-
-    if (key_types.size() == 1)
-    {
-        auto array = ColumnArray::create(key_types[0]->createColumn(), std::move(offsets));
-        Mapped mapped;
-        mapped.array = std::move(array);
-        return mapped;
-    }
-
-    std::vector<MutableColumnPtr> key_cols;
-    key_cols.reserve(key_types.size());
-    for (const auto & t : key_types)
-        key_cols.emplace_back(t->createColumn());
-    auto tuple_column = ColumnTuple::create(std::move(key_cols));
-    auto array = ColumnArray::create(std::move(tuple_column), std::move(offsets));
-    Mapped mapped;
-    mapped.array = std::move(array);
-    return mapped;
-}
 
 }
 
@@ -311,15 +235,8 @@ public:
         const auto & attribute_column_type = structure.getAttribute(attr_name).type;
 
 
-        /// In the event the dictionary has been reloaded and modified, we invalidate the previous cache by bumping the epoch that is
-        /// uniquely associated with the dictionary state.
-        const bool is_values_const = isColumnConst(*arguments[2].column);
-
         ColumnWithTypeAndName values_column_raw{arguments[2].column->convertToFullColumnIfConst(), arguments[2].type, arguments[2].name};
         ColumnPtr values_full = castColumnAccurate(values_column_raw, attribute_column_type)->convertToFullColumnIfLowCardinality();
-
-        if (is_values_const)
-            return executeConstPath(dict_name, attr_name, *values_full, key_types, input_rows_count, dict);
 
         return executeVectorPath(dict_name, attr_name, *values_full, key_types, input_rows_count, dict);
     }
@@ -328,32 +245,6 @@ private:
     mutable FunctionDictHelper helper;
 
     using Map = HashMap<UInt128, size_t, HashCRC32<UInt128>>;
-
-    ColumnPtr executeConstPath(
-        const String & dict_name,
-        const String & attr_name,
-        const IColumn & values_col,
-        const DataTypes & key_types,
-        size_t input_rows_count,
-        const auto & dict) const
-    {
-        UInt128 value_hash = hashAt(values_col, 0);
-        Key key{dict_name, attr_name, value_hash};
-
-        auto & cache = SharedCache::instance().getCache();
-
-        auto [mapped_ptr, was_built] = cache.getOrSet(
-            key,
-            [&]() -> DictGetKeysCache::MappedPtr
-            {
-                Map hash_to_bucket_id;
-                hash_to_bucket_id[value_hash] = 0;
-                auto results = getMissingBucketKeys(dict, attr_name, key_types, std::vector<size_t>{0}, hash_to_bucket_id, 1, 1);
-                return std::make_shared<Mapped>(std::move(results[0]));
-            });
-
-        return ColumnConst::create(mapped_ptr->array, input_rows_count);
-    }
 
     ColumnPtr executeVectorPath(
         const String & dict_name,
@@ -367,9 +258,8 @@ private:
         hash_to_bucket_id.reserve(input_rows_count);
 
         std::vector<size_t> row_id_to_bucket_id(input_rows_count);
-        std::vector<size_t> bucket_id_to_representative_row_id;
-        bucket_id_to_representative_row_id.reserve(input_rows_count);
 
+        size_t num_buckets = 0;
         std::vector<UInt128> bucket_hashes;
         bucket_hashes.reserve(input_rows_count);
 
@@ -385,17 +275,14 @@ private:
             }
 
             /// New unique value, create a new bucket
-            const size_t new_bucket_id = bucket_id_to_representative_row_id.size();
-            bucket_id_to_representative_row_id.push_back(cur_row_id);
+            const size_t new_bucket_id = num_buckets++;
             hash_to_bucket_id[hash] = new_bucket_id;
             row_id_to_bucket_id[cur_row_id] = new_bucket_id;
             bucket_hashes.push_back(hash);
         }
 
-        const size_t num_buckets = bucket_id_to_representative_row_id.size();
-
         auto & cache = SharedCache::instance().getCache();
-        std::vector<DictGetKeysCache::MappedPtr> bucket_cached(num_buckets); // may contain nullptr for misses
+        std::vector<MappedPtr> bucket_cached(num_buckets); // may contain nullptr for misses
         std::vector<size_t> missing_bucket_ids;
         missing_bucket_ids.reserve(num_buckets);
 
@@ -439,16 +326,14 @@ private:
                 dom.building = true;
                 lk.unlock();
 
-                auto results = getMissingBucketKeys(
-                    dict, attr_name, key_types, missing_bucket_ids, hash_to_bucket_id, num_buckets, input_rows_count);
+                getMissingBucketKeys(dict, attr_name, key_types, bucket_cached, missing_bucket_ids, hash_to_bucket_id);
 
-                // Insert computed results into cache and fill our local bucket_cached
                 for (size_t bucket_id : missing_bucket_ids)
                 {
+                    if (!bucket_cached[bucket_id])
+                        bucket_cached[bucket_id] = std::make_shared<Mapped>();
                     Key key{dict_name, attr_name, bucket_hashes[bucket_id]};
-                    auto mapped_ptr = std::make_shared<Mapped>(std::move(results[bucket_id]));
-                    cache.set(key, mapped_ptr);
-                    bucket_cached[bucket_id] = std::move(mapped_ptr);
+                    cache.set(key, bucket_cached[bucket_id]);
                 }
 
                 /// Wake waiters
@@ -460,122 +345,96 @@ private:
             }
         }
 
-        std::vector<size_t> bucket_len(num_buckets);
-        for (size_t bucket_id = 0; bucket_id < num_buckets; ++bucket_id)
-        {
-            const auto & array = static_cast<const ColumnArray &>(*bucket_cached[bucket_id]->array);
-            bucket_len[bucket_id] = array.getOffsets()[0];
-        }
-
-        if (num_buckets == 1)
-            return ColumnConst::create(bucket_cached[0]->array, input_rows_count);
-
-        auto offsets_col = ColumnArray::ColumnOffsets::create();
-        auto & offsets = offsets_col->getData();
-        offsets.resize(input_rows_count);
-
-        std::vector<size_t> bucket_use_count(num_buckets, 0);
-        for (size_t row_id = 0; row_id < input_rows_count; ++row_id)
-            ++bucket_use_count[row_id_to_bucket_id[row_id]];
-
-        size_t total_output = 0;
-        for (size_t bucket_id = 0; bucket_id < num_buckets; ++bucket_id)
-            total_output += bucket_len[bucket_id] * bucket_use_count[bucket_id];
-
         const size_t keys_cnt = key_types.size();
-        if (keys_cnt == 1)
-        {
-            std::vector<const IColumn *> src(num_buckets);
-            for (size_t bucket_id = 0; bucket_id < num_buckets; ++bucket_id)
-                src[bucket_id] = &static_cast<const ColumnArray &>(*bucket_cached[bucket_id]->array).getData();
-
-            auto data_col = key_types[0]->createColumn();
-            data_col->reserve(total_output);
-
-            size_t pos = 0;
-            for (size_t row_id = 0; row_id < input_rows_count;)
-            {
-                const size_t bucket_id = row_id_to_bucket_id[row_id];
-                const size_t len = bucket_len[bucket_id];
-                size_t j = row_id + 1;
-                while (j < input_rows_count && row_id_to_bucket_id[j] == bucket_id)
-                    ++j;
-
-                data_col->insertRangeFrom(*src[bucket_id], 0, len);
-
-                for (; row_id < j; ++row_id)
-                {
-                    pos += len;
-                    offsets[row_id] = pos;
-                }
-            }
-
-            return ColumnArray::create(std::move(data_col), std::move(offsets_col));
-        }
-
-        std::vector<const IColumn *> src(num_buckets * keys_cnt);
-        for (size_t bucket_id = 0; bucket_id < num_buckets; ++bucket_id)
-        {
-            const auto & arr = static_cast<const ColumnArray &>(*bucket_cached[bucket_id]->array);
-            const auto & tup = static_cast<const ColumnTuple &>(arr.getData());
-            const size_t base = bucket_id * keys_cnt;
-            for (size_t key_pos = 0; key_pos < keys_cnt; ++key_pos)
-                src[base + key_pos] = &tup.getColumn(key_pos);
-        }
-
         MutableColumns result_cols;
         result_cols.reserve(keys_cnt);
         for (const auto & t : key_types)
         {
             auto col = t->createColumn();
-            col->reserve(total_output);
             result_cols.emplace_back(std::move(col));
         }
 
-        size_t pos = 0;
-        for (size_t row_id = 0; row_id < input_rows_count;)
+        auto offsets_col = ColumnArray::ColumnOffsets::create();
+        auto & offsets = offsets_col->getData();
+        offsets.resize(input_rows_count);
+
+        std::vector<size_t> bucket_first_offset(num_buckets, std::numeric_limits<size_t>::max());
+        std::vector<size_t> bucket_len(num_buckets, 0);
+
+        size_t current_offset = 0;
+        for (size_t row_id = 0; row_id < input_rows_count; ++row_id)
         {
             const size_t bucket_id = row_id_to_bucket_id[row_id];
-            const size_t len = bucket_len[bucket_id];
-            const size_t base = bucket_id * keys_cnt;
-            size_t j = row_id + 1;
-            while (j < input_rows_count && row_id_to_bucket_id[j] == bucket_id)
-                ++j;
 
-            for (size_t key_pos = 0; key_pos < keys_cnt; ++key_pos)
-                result_cols[key_pos]->insertRangeFrom(*src[base + key_pos], 0, len);
-
-            for (; row_id < j; ++row_id)
+            // empty hit
+            if (!bucket_cached[bucket_id])
             {
-                pos += len;
-                offsets[row_id] = pos;
+                offsets[row_id] = current_offset;
+                continue;
             }
+
+            size_t start = bucket_first_offset[bucket_id];
+            size_t len = bucket_len[bucket_id];
+
+            if (start != std::numeric_limits<size_t>::max())
+            {
+                // fast path: reuse already materialized slice
+                if (len)
+                {
+                    for (size_t key_pos = 0; key_pos < keys_cnt; ++key_pos)
+                        result_cols[key_pos]->insertRangeFrom(*result_cols[key_pos], start, len);
+                    current_offset += len;
+                }
+                offsets[row_id] = current_offset;
+                continue;
+            }
+
+            // first time this bucket is seen: decode once from cached_bytes
+            const auto & cached_bytes = *bucket_cached[bucket_id];
+            if (cached_bytes.empty())
+            {
+                bucket_first_offset[bucket_id] = current_offset;
+                bucket_len[bucket_id] = 0;
+                offsets[row_id] = current_offset;
+                continue;
+            }
+
+            const size_t before = current_offset;
+            const char * pos = reinterpret_cast<const char *>(cached_bytes.data());
+            const char * end = pos + cached_bytes.size();
+
+            while (pos < end)
+            {
+                for (size_t key_pos = 0; key_pos < keys_cnt; ++key_pos)
+                    pos = result_cols[key_pos]->deserializeAndInsertFromArena(pos);
+                ++current_offset;
+            }
+
+            bucket_first_offset[bucket_id] = before;
+            bucket_len[bucket_id] = current_offset - before;
+            offsets[row_id] = current_offset;
+        }
+
+        if (keys_cnt == 1)
+        {
+            return ColumnArray::create(std::move(result_cols[0]), std::move(offsets_col));
         }
 
         return ColumnArray::create(ColumnTuple::create(std::move(result_cols)), std::move(offsets_col));
     }
 
     template <class DictionaryPtr>
-    std::vector<Mapped> getMissingBucketKeys(
+    void getMissingBucketKeys(
         const DictionaryPtr & dict,
         const String & attr_name,
         const DataTypes & key_types,
+        std::vector<MappedPtr> & out,
         const std::vector<size_t> & missing_bucket_ids,
-        const Map & hash_to_bucket_id,
-        size_t total_buckets,
-        size_t input_rows_count) const
+        const Map & hash_to_bucket_id) const
     {
-        std::vector<size_t> last_key_pos_for_bucket(total_buckets, std::numeric_limits<size_t>::max());
-        std::vector<size_t> num_matched_rows_per_bucket(total_buckets, 0);
-        std::vector<size_t> next_key_pos;
-        next_key_pos.reserve(input_rows_count);
-
-        std::vector<MutableColumnPtr> payload_key_cols;
+        std::unordered_set<size_t> is_bucket_id_missing(missing_bucket_ids.begin(), missing_bucket_ids.end());
 
         const size_t keys_cnt = key_types.size();
-        payload_key_cols.reserve(keys_cnt);
-        for (const auto & key_type : key_types)
-            payload_key_cols.emplace_back(key_type->createColumn());
 
         Names column_names = dict->getStructure().getKeysNames();
         column_names.push_back(attr_name);
@@ -584,6 +443,9 @@ private:
         QueryPipeline pipeline(std::move(pipe));
         PullingPipelineExecutor executor(pipeline);
 
+        /// The arena will not own any thing, just used for temporary allocations during serialization
+        /// of keys. Then rollback after use.
+        Arena arena;
         Block block;
         while (executor.pull(block))
         {
@@ -602,29 +464,41 @@ private:
                 if (it == hash_to_bucket_id.end())
                     continue;
 
-                const size_t cur_pos = payload_key_cols[0]->size();
+                const size_t bucket_id = it->getMapped();
+                if (!is_bucket_id_missing.contains(bucket_id))
+                    continue;
+
+                auto & mapped = out[bucket_id];
+                if (!mapped)
+                    mapped = std::make_shared<Mapped>();
+
                 for (size_t key_pos = 0; key_pos < keys_cnt; ++key_pos)
-                    payload_key_cols[key_pos]->insertFrom(*key_columns[key_pos], row_id);
-                  
-                const auto & bucket_id = it->getMapped();
-                next_key_pos.push_back(last_key_pos_for_bucket[bucket_id]);
-                last_key_pos_for_bucket[bucket_id] = cur_pos;
-                ++num_matched_rows_per_bucket[bucket_id];
+                {
+                    const auto & key_col = key_columns[key_pos];
+                    const char * begin = nullptr;
+                    StringRef ref = key_col->serializeValueIntoArena(row_id, arena, begin);
+
+                    const size_t old_size = mapped->size();
+                    const size_t need = old_size + ref.size;
+
+                    if (need > mapped->capacity())
+                    {
+                        size_t cap = mapped->capacity();
+                        if (cap == 0)
+                            cap = 64;
+                        while (cap < need)
+                            cap *= 2;
+                        mapped->reserve(cap);
+                    }
+
+                    mapped->resize(need);
+                    std::memcpy(mapped->data() + old_size, ref.data, ref.size);
+
+                    const size_t alloc = static_cast<size_t>((ref.data - begin) + ref.size);
+                    arena.rollback(alloc);
+                }
             }
         }
-
-        std::vector<Mapped> out(total_buckets);
-
-        for (size_t bucket_id : missing_bucket_ids)
-        {
-            if (num_matched_rows_per_bucket[bucket_id] == 0)
-                out[bucket_id] = makeEmptyCachedArray(key_types);
-            else
-                out[bucket_id]
-                    = makeCachedArrayFromLinkedList(payload_key_cols, next_key_pos, last_key_pos_for_bucket[bucket_id], key_types);
-        }
-
-        return out;
     }
 };
 
