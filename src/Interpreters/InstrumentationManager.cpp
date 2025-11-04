@@ -7,8 +7,6 @@
 #include <thread>
 #include <unistd.h>
 #include <variant>
-#include <iterator>
-#include <latch>
 
 #include <base/getThreadId.h>
 #include <Interpreters/InstrumentationTraceLog.h>
