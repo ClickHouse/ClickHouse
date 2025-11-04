@@ -1561,7 +1561,6 @@ std::tuple<SQLType *, Integers> StatementGenerator::randomIntType(RandomGenerato
         default:
             UNREACHABLE();
     }
-    return std::make_tuple(new IntType(32, false), Integers::Int32);
 }
 
 std::tuple<SQLType *, FloatingPoints> StatementGenerator::randomFloatType(RandomGenerator & rg, const uint64_t allowed_types)
