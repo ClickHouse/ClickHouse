@@ -16,6 +16,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
+#include <Common/Exception.h>
 #include <Common/JSONParsers/DummyJSONParser.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/FunctionHelpers.h>
@@ -47,6 +48,7 @@ namespace ErrorCodes
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
 extern const int BAD_ARGUMENTS;
+extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 /// Have implemented the operator << for json elements. So we could use stringstream to serialize json elements.
@@ -388,6 +390,10 @@ public:
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName & arguments, bool function_json_value_return_type_allow_nullable)
     {
+        if (arguments.size() != 2)
+        {
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function JSON_VALUE must have 2 arguments");
+        }
         if (isTuple(arguments[1].type))
         {
             const auto* tuple_type = checkAndGetDataType<DataTypeTuple>(arguments[1].type.get());
