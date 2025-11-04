@@ -141,7 +141,7 @@ def run_fuzzer(fuzzer: str, timeout: int):
     artifact_prefix = f"{results_path}"
 
     if active_corpus_present:
-        merge_libfuzzer_options = f" -artifact_prefix={artifact_prefix} -merge=1 -max_total_time={timeout} -timeout={INPUT_TIMEOUT} -merge_control_file={merge_control_file} {mini_corpus_dir} {active_corpus_dir}"
+        merge_libfuzzer_options = f" -artifact_prefix={artifact_prefix}mini- -merge=1 -max_total_time={timeout} -timeout={INPUT_TIMEOUT} -merge_control_file={merge_control_file} {mini_corpus_dir} {active_corpus_dir}"
         cmd_line = f"{DEBUGGER} ./{fuzzer} {fuzzer_arguments}"
 
         with_fuzzer_args = ""
