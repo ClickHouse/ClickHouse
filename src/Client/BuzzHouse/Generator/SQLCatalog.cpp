@@ -322,8 +322,8 @@ String SQLBase::getTablePath(const FuzzConfig & fc) const
     {
         return fmt::format("/aflight{}", tname);
     }
+
     UNREACHABLE();
-    return "";
 }
 
 String SQLBase::getTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bool allow_not_deterministic) const
