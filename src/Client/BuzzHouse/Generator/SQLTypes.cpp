@@ -2174,7 +2174,6 @@ SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint64_
     {
         UNREACHABLE();
     }
-    return nullptr;
 }
 
 String appendDecimal(RandomGenerator & rg, const bool use_func, const uint32_t left, const uint32_t right)
