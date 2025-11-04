@@ -1123,8 +1123,6 @@ void QueryOracle::processFirstOracleQueryResult(const int errcode, ExternalInteg
         }
     }
     first_errcode = errcode;
-    const auto err = std::filesystem::remove(qcfile);
-    UNUSED(err);
 }
 
 void QueryOracle::processSecondOracleQueryResult(const int errcode, ExternalIntegrations & ei, const String & oracle_name)
@@ -1162,8 +1160,6 @@ void QueryOracle::processSecondOracleQueryResult(const int errcode, ExternalInte
             }
         }
     }
-    const auto err = std::filesystem::remove(peer_query == PeerQuery::ClickHouseOnly ? qfile_peer : qcfile);
-    UNUSED(err);
 }
 
 }
