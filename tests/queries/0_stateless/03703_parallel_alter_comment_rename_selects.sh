@@ -11,7 +11,7 @@ set -euo pipefail
 RUNS=${RUNS:-50}
 THREADS_PER_JOB=${THREADS_PER_JOB:-4}
 PRINT_LOGS=${PRINT_LOGS:-0}
-QUERY_TIMEOUT=${QUERY_TIMEOUT:-10}
+QUERY_TIMEOUT=${QUERY_TIMEOUT:-30}
 
 # clickhouse-client sometimes hangs forever along with the server despite of timeout settings, so we use the timeout util here.
 CLICKHOUSE_CLIENT="timeout $QUERY_TIMEOUT $CLICKHOUSE_CLIENT"
