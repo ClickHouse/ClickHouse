@@ -135,6 +135,10 @@ size_t tryConvertAnyOuterJoinToInnerJoin(
     if (!aggregating_step)
         return 0;
 
+    /// GROUPING SETS does not guarantee unique rows.
+    if (aggregating_step->isGroupingSets())
+        return 0;
+
     /// If JOIN condition uses all aggregation keys, then there always only one row to match for each row from the other side.
     /// This means that we can safely convert ANY OUTER JOIN to INNER JOIN.
     for (const auto & aggregation_key : aggregating_step->getParams().keys)
@@ -166,12 +170,13 @@ size_t tryConvertOuterJoinToInnerJoin(QueryPlan::Node * parent_node, QueryPlan::
     auto * join = typeid_cast<JoinStepLogical *>(child.get());
     if (!join)
         return 0;
+    if (!join->typeChangingSides().empty())
+        return 0;
+
     auto & join_operator = join->getJoinOperator();
     if (join_operator.strictness == JoinStrictness::Any)
         return tryConvertAnyOuterJoinToInnerJoin(filter, child_node, join);
     if (join_operator.strictness != JoinStrictness::All)
-        return 0;
-    if (!join->typeChangingSides().empty())
         return 0;
     bool check_left_stream = isRightOrFull(join_operator.kind);
     bool check_right_stream = isLeftOrFull(join_operator.kind);
