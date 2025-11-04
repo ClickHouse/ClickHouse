@@ -24,7 +24,7 @@ SETTINGS use_statistics_cache = 0, log_comment='core-load' FORMAT Null;
 SYSTEM FLUSH LOGS;
 
 SELECT if(ProfileEvents['LoadedStatisticsMicroseconds'] > 0, 'yes', 'no')
-FROM system.query_log WHERE type='QueryFinish' AND log_comment='core-load' LIMIT 1;
+FROM system.query_log WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='core-load' LIMIT 1;
 
 SELECT sleep(1);
 
@@ -34,7 +34,7 @@ SETTINGS use_statistics_cache = 1, log_comment='core-hit' FORMAT Null;
 SYSTEM FLUSH LOGS;
 
 SELECT if(ProfileEvents['LoadedStatisticsMicroseconds'] = 0, 'yes', 'no')
-FROM system.query_log WHERE type='QueryFinish' AND log_comment='core-hit' LIMIT 1;
+FROM system.query_log WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='core-hit' LIMIT 1;
 
 -- B) No-usage guard (no stats used by SUM)
 DROP TABLE IF EXISTS sc_unused SYNC;
@@ -54,7 +54,7 @@ SETTINGS use_statistics_cache = 0, log_comment='nouse-agg' FORMAT Null;
 SYSTEM FLUSH LOGS;
 
 SELECT if(ProfileEvents['LoadedStatisticsMicroseconds']=0, 'yes', 'no')
-FROM system.query_log WHERE type='QueryFinish' AND log_comment='nouse-agg' LIMIT 1;
+FROM system.query_log WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='nouse-agg' LIMIT 1;
 
 -- C) OPTIMIZE FINAL (no data change -> still hit)
 OPTIMIZE TABLE sc_core FINAL;
@@ -67,7 +67,7 @@ SETTINGS use_statistics_cache=1, log_comment='core-after-opt' FORMAT Null;
 SYSTEM FLUSH LOGS;
 
 SELECT if(ProfileEvents['LoadedStatisticsMicroseconds']=0,'yes','no')
-FROM system.query_log WHERE type='QueryFinish' AND log_comment='core-after-opt' LIMIT 1;
+FROM system.query_log WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='core-after-opt' LIMIT 1;
 
 -- D) TDigest / CountMin / MinMax with NULLs
 DROP TABLE IF EXISTS st_tdg SYNC;
@@ -85,7 +85,7 @@ SETTINGS use_statistics_cache=0, log_comment='tdg-load' FORMAT Null;
 SYSTEM FLUSH LOGS;
 
 SELECT if(ProfileEvents['LoadedStatisticsMicroseconds']>0,'yes','no')
-FROM system.query_log WHERE type='QueryFinish' AND log_comment='tdg-load' LIMIT 1;
+FROM system.query_log WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='tdg-load' LIMIT 1;
 
 DROP TABLE IF EXISTS st_cm SYNC;
 
@@ -105,7 +105,7 @@ SETTINGS use_statistics_cache=0, log_comment='cm-load' FORMAT Null;
 SYSTEM FLUSH LOGS;
 
 SELECT if(ProfileEvents['LoadedStatisticsMicroseconds']>0,'yes','no')
-FROM system.query_log WHERE type='QueryFinish' AND log_comment='cm-load' LIMIT 1;
+FROM system.query_log WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='cm-load' LIMIT 1;
 
 DROP TABLE IF EXISTS st_mm SYNC;
 
@@ -122,7 +122,7 @@ SETTINGS use_statistics_cache=0, log_comment='mm-load' FORMAT Null;
 SYSTEM FLUSH LOGS;
 
 SELECT if(ProfileEvents['LoadedStatisticsMicroseconds']>0,'yes','no')
-FROM system.query_log WHERE type='QueryFinish' AND log_comment='mm-load' LIMIT 1;
+FROM system.query_log WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='mm-load' LIMIT 1;
 
 -- E) LowCardinality coverage - https://github.com/ClickHouse/ClickHouse/issues/87886
 DROP TABLE IF EXISTS st_cm_lc SYNC;
@@ -153,7 +153,7 @@ SYSTEM FLUSH LOGS;
 
 SELECT if(ProfileEvents['LoadedStatisticsMicroseconds'] > 0, 'yes', 'no')
 FROM system.query_log
-WHERE type = 'QueryFinish' AND log_comment = 'cm-lc-load' LIMIT 1;
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = 'cm-lc-load' LIMIT 1;
 
 -- Hit with cache
 SELECT sleep(1);
@@ -166,7 +166,7 @@ SYSTEM FLUSH LOGS;
 
 SELECT if(ProfileEvents['LoadedStatisticsMicroseconds'] = 0, 'yes', 'no')
 FROM system.query_log
-WHERE type = 'QueryFinish' AND log_comment = 'cm-lc-hit' LIMIT 1;
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = 'cm-lc-hit' LIMIT 1;
 
 DROP TABLE IF EXISTS sj_a SYNC; 
 DROP TABLE IF EXISTS sj_b SYNC;
@@ -192,7 +192,7 @@ FORMAT Null;
 SYSTEM FLUSH LOGS;
 
 SELECT if(ProfileEvents['LoadedStatisticsMicroseconds']>0,'yes','no')
-FROM system.query_log WHERE type='QueryFinish' AND log_comment='join-load' LIMIT 1;
+FROM system.query_log WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='join-load' LIMIT 1;
 
 DROP TABLE IF EXISTS sj_ac SYNC;
 DROP TABLE IF EXISTS sj_bc SYNC;
@@ -223,7 +223,7 @@ FORMAT Null;
 SYSTEM FLUSH LOGS;
 
 SELECT if(ProfileEvents['LoadedStatisticsMicroseconds']=0,'yes','no')
-FROM system.query_log WHERE type='QueryFinish' AND log_comment='join-hit' LIMIT 1;
+FROM system.query_log WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='join-hit' LIMIT 1;
 
 -- F) auto_statistics_types (with NULLs)
 DROP TABLE IF EXISTS sa_auto SYNC;
@@ -259,7 +259,7 @@ SELECT
     if(countIf(log_comment='auto-td' AND ProfileEvents['LoadedStatisticsMicroseconds']=0) >= 1, 'yes', 'no'),
     if(countIf(log_comment='auto-cm' AND ProfileEvents['LoadedStatisticsMicroseconds']=0) >= 1, 'yes', 'no')
 FROM system.query_log
-WHERE type='QueryFinish' AND log_comment IN ('auto-td','auto-cm');
+WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment IN ('auto-td','auto-cm');
 
 -- G) ALTER interval persists, takes effect after DETACH/ATTACH
 DROP TABLE IF EXISTS sc_alter SYNC;
@@ -280,7 +280,7 @@ SETTINGS use_statistics_cache=1, log_comment='alter-pre' FORMAT Null;
 SYSTEM FLUSH LOGS;
 
 SELECT if(ProfileEvents['LoadedStatisticsMicroseconds']>0,'yes','no')
-FROM system.query_log WHERE type='QueryFinish' AND log_comment='alter-pre' LIMIT 1;
+FROM system.query_log WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='alter-pre' LIMIT 1;
 
 ALTER TABLE sc_alter MODIFY SETTING refresh_statistics_interval = 1;
 SELECT
@@ -293,7 +293,7 @@ SETTINGS use_statistics_cache=1, log_comment='alter-immediate' FORMAT Null;
 SYSTEM FLUSH LOGS;
 
 SELECT if(ProfileEvents['LoadedStatisticsMicroseconds']>0,'yes','no')
-FROM system.query_log WHERE type='QueryFinish' AND log_comment='alter-immediate' LIMIT 1;
+FROM system.query_log WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='alter-immediate' LIMIT 1;
 
 DETACH TABLE sc_alter;
 ATTACH TABLE sc_alter;
@@ -305,7 +305,7 @@ SETTINGS use_statistics_cache=1, log_comment='alter-post' FORMAT Null;
 
 SYSTEM FLUSH LOGS;
 SELECT if(ProfileEvents['LoadedStatisticsMicroseconds']=0,'yes','no')
-FROM system.query_log WHERE type='QueryFinish' AND log_comment='alter-post' LIMIT 1;
+FROM system.query_log WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='alter-post' LIMIT 1;
 
 -- H) TRUNCATE
 DROP TABLE IF EXISTS sc_trunc SYNC;
@@ -327,7 +327,7 @@ SETTINGS use_statistics_cache=1, log_comment='trunc-warm' FORMAT Null;
 SYSTEM FLUSH LOGS;
 
 SELECT if(ProfileEvents['LoadedStatisticsMicroseconds']=0,'yes','no')
-FROM system.query_log WHERE type='QueryFinish' AND log_comment='trunc-warm' LIMIT 1;
+FROM system.query_log WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='trunc-warm' LIMIT 1;
 
 TRUNCATE TABLE sc_trunc;
 
@@ -338,7 +338,7 @@ SETTINGS use_statistics_cache=1, log_comment='trunc-after' FORMAT Null;
 SYSTEM FLUSH LOGS;
 SELECT if(ProfileEvents['LoadedStatisticsMicroseconds']=0,'yes','no')
 FROM system.query_log
-WHERE type='QueryFinish' AND log_comment='trunc-after' LIMIT 1;
+WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='trunc-after' LIMIT 1;
 
 -- Insert new data -> first query should load once
 INSERT INTO sc_trunc SELECT number, toFloat64(rand())/4294967296.0 FROM numbers(150000);
@@ -349,7 +349,7 @@ SETTINGS use_statistics_cache=1, log_comment='trunc-load' FORMAT Null;
 SYSTEM FLUSH LOGS;
 SELECT if(ProfileEvents['LoadedStatisticsMicroseconds']>0,'yes','no')
 FROM system.query_log
-WHERE type='QueryFinish' AND log_comment='trunc-load' LIMIT 1;
+WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='trunc-load' LIMIT 1;
 
 -- After interval tick -> hit (no per-query load)
 SELECT sleep(1);
@@ -360,4 +360,4 @@ SETTINGS use_statistics_cache=1, log_comment='trunc-hit' FORMAT Null;
 SYSTEM FLUSH LOGS;
 SELECT if(ProfileEvents['LoadedStatisticsMicroseconds']=0,'yes','no')
 FROM system.query_log
-WHERE type='QueryFinish' AND log_comment='trunc-hit' LIMIT 1;
+WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='trunc-hit' LIMIT 1;
