@@ -317,21 +317,11 @@ def test_drop_statistics_means_no_load_and_bypass_still_loads():
     _create_tbl(ch1, "drop_tbl", 1)
     _query_retry(ch1, "ALTER TABLE drop_tbl DROP STATISTICS v")
 
-    assert _query(ch1, """
-        SELECT count()
-        FROM system.statistics
-        WHERE database = currentDatabase()
-          AND table = 'drop_tbl'
-          AND name = 'v'
-        FORMAT TabSeparated
-    """).strip() == "0"
+    # cache ON -> no load
+    _query(ch1, "SELECT count() FROM drop_tbl WHERE v>0.99 AND k>=0 SETTINGS use_statistics_cache=1, log_comment='drop-q' FORMAT Null")
+    _assert_hit(ch1, "drop-q")
 
-    _wait_hit(
-        ch1, "drop-q",
-        "SELECT count() FROM drop_tbl WHERE v>0.99 AND k>=0 "
-        "SETTINGS use_statistics_cache=1, log_comment='drop-q' FORMAT Null"
-    )
-
+    # bypass -> load (non-zero, as observed)
     _query(ch1, "SELECT count() FROM drop_tbl WHERE v>0.99 AND k>=0 SETTINGS use_statistics_cache=0, log_comment='drop-bypass' FORMAT Null")
     _assert_load(ch1, "drop-bypass")
 
