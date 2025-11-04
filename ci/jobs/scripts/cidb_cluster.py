@@ -15,7 +15,7 @@ class CIDBCluster:
 
     def __init__(self, url=None, user=None, pwd=None):
         info = Info()
-        if url and user and pwd is not None:
+        if url and user is not None and pwd is not None:
             self.url_secret = None
             self.user_secret = None
             self.pwd_secret = None
@@ -38,7 +38,7 @@ class CIDBCluster:
             self._session = None
 
     def is_ready(self):
-        if not self.url or not self.user:
+        if not self.url:
             self.url, self.user, passwd = (
                 self.url_secret.join_with(self.user_secret)
                 .join_with(self.pwd_secret)
@@ -52,10 +52,13 @@ class CIDBCluster:
                 return False
         else:
             passwd = self.pwd
-        self._auth = {
-            "X-ClickHouse-User": self.user,
-            "X-ClickHouse-Key": passwd,
-        }
+        if passwd:
+            self._auth = {
+                "X-ClickHouse-User": self.user,
+                "X-ClickHouse-Key": passwd,
+            }
+        else:
+            self._auth = {}
         params = {
             "query": f"SELECT 1",
         }
@@ -88,8 +91,6 @@ class CIDBCluster:
 
         params = {
             "query": query,
-            "date_time_input_format": "best_effort",
-            "send_logs_level": "warning",
         }
         if db_name:
             params["database"] = db_name
@@ -106,9 +107,7 @@ class CIDBCluster:
                 if response.ok:
                     return response.text
                 else:
-                    print(
-                        f"WARNING: CIDB query failed with code {response.status_code}"
-                    )
+                    print(f"WARNING: CIDB query failed: {response.text}")
                     if response.status_code >= 500:
                         time.sleep(2**retry)  # exponential backoff
                         continue
@@ -178,5 +177,7 @@ class CIDBCluster:
 
 
 if __name__ == "__main__":
-    CIDBCluster = CIDBCluster(url="https://play.clickhouse.com", user="play", pwd="")
+    CIDBCluster = CIDBCluster(
+        url="https://play.clickhouse.com?user=play", user="", pwd=""
+    )
     assert CIDBCluster.is_ready()
