@@ -119,10 +119,14 @@ size_t tryConvertAnyOuterJoinToInnerJoin(
             {
                 if (join_keys_interesting_side.contains(output->result_name))
                 {
+                    const auto * current_node = output->children.front();
+                    /// Revert through possible chain of aliases.
+                    while (current_node->type == ActionsDAG::ActionType::ALIAS)
+                        current_node = current_node->children.front();
+
                     /// Found an alias for join key. Will revert it to original name.
-                    const auto & alias_child = output->children.front();
                     join_keys_interesting_side.erase(output->result_name);
-                    join_keys_interesting_side.insert(alias_child->result_name);
+                    join_keys_interesting_side.insert(current_node->result_name);
                 }
             }
         }
