@@ -524,7 +524,7 @@ static ContextMutablePtr updateContextForParallelReplicas(const LoggerPtr & logg
     {
         LOG_TRACE(
             logger,
-            "Disabling 'parallel_replicas_support_projection'. Parallel replicas local plan is not generated for specific shard");
+            "Disabling 'parallel_replicas_support_projection'. Currently, it's not supported for queries with parallel replicas over distributed tables");
         context_mutable->setSetting("parallel_replicas_support_projection", Field{false});
     }
 
