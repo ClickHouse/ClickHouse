@@ -1116,11 +1116,8 @@ const default_format = 'JSONStringsEachRowWithProgress';
 
 let controller = null;
 
-/// Buffer to copy data from query into clipboard
-let clipboard_buffer = '';
-
 async function disableCopyButtonIfEmpty() {
-	document.getElementById("copy_button").disabled = (!clipboard_buffer);
+    document.getElementById("copy_button").disabled = (history.state && history.state.data) ? false : true;
 }
 document.getElementById('copy_button').onclick = disableCopyButtonIfEmpty;
 
@@ -1305,7 +1302,6 @@ async function postImpl(posted_request_num, query)
         }
         document.title = title;
         previous_query = query;
-        clipboard_buffer = state.data;
     }
 }
 
@@ -2251,7 +2247,7 @@ async function getQueryUnderCursor() {
 
 async function copyResultsToClipboard() {
     try {
-        const data = clipboard_buffer;
+        const data = history.state.data;
         let copy_button = document.getElementById('copy_button')
         if (navigator.clipboard && navigator.clipboard.writeText) {
             // Modern clipboard API
