@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 SET allow_experimental_statistics = 1;
 SET allow_statistics_optimize = 1;
 SET log_queries = 1;
@@ -21,7 +23,7 @@ ALTER TABLE sc_core MATERIALIZE STATISTICS ALL;
 SELECT count() FROM sc_core WHERE v > 0.99
 SETTINGS use_statistics_cache = 0, log_comment='core-load' FORMAT Null;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT if(ProfileEvents['LoadedStatisticsMicroseconds'] > 0, 'yes', 'no')
 FROM system.query_log WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='core-load' LIMIT 1;
@@ -31,7 +33,7 @@ SELECT sleep(1);
 SELECT count() FROM sc_core WHERE v > 0.99
 SETTINGS use_statistics_cache = 1, log_comment='core-hit' FORMAT Null;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT if(ProfileEvents['LoadedStatisticsMicroseconds'] = 0, 'yes', 'no')
 FROM system.query_log WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='core-hit' LIMIT 1;
@@ -51,7 +53,7 @@ ALTER TABLE sc_unused MATERIALIZE STATISTICS ALL;
 SELECT sum(val) FROM sc_unused
 SETTINGS use_statistics_cache = 0, log_comment='nouse-agg' FORMAT Null;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT if(ProfileEvents['LoadedStatisticsMicroseconds']=0, 'yes', 'no')
 FROM system.query_log WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='nouse-agg' LIMIT 1;
@@ -64,7 +66,7 @@ SELECT sleep(1);
 SELECT count() FROM sc_core WHERE v > 0.99
 SETTINGS use_statistics_cache=1, log_comment='core-after-opt' FORMAT Null;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT if(ProfileEvents['LoadedStatisticsMicroseconds']=0,'yes','no')
 FROM system.query_log WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='core-after-opt' LIMIT 1;
@@ -82,7 +84,7 @@ ALTER TABLE st_tdg MATERIALIZE STATISTICS ALL;
 SELECT count() FROM st_tdg WHERE val > 0.99
 SETTINGS use_statistics_cache=0, log_comment='tdg-load' FORMAT Null;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT if(ProfileEvents['LoadedStatisticsMicroseconds']>0,'yes','no')
 FROM system.query_log WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='tdg-load' LIMIT 1;
@@ -102,7 +104,7 @@ ALTER TABLE st_cm MATERIALIZE STATISTICS ALL;
 SELECT count() FROM st_cm WHERE cat='PROMO'
 SETTINGS use_statistics_cache=0, log_comment='cm-load' FORMAT Null;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT if(ProfileEvents['LoadedStatisticsMicroseconds']>0,'yes','no')
 FROM system.query_log WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='cm-load' LIMIT 1;
@@ -119,7 +121,7 @@ ALTER TABLE st_mm MATERIALIZE STATISTICS ALL;
 SELECT count() FROM st_mm WHERE x BETWEEN 900000 AND 950000
 SETTINGS use_statistics_cache=0, log_comment='mm-load' FORMAT Null;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT if(ProfileEvents['LoadedStatisticsMicroseconds']>0,'yes','no')
 FROM system.query_log WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='mm-load' LIMIT 1;
@@ -149,7 +151,7 @@ SELECT count() FROM st_cm_lc WHERE cat = 'PROMO'
 SETTINGS use_statistics_cache = 0, log_comment = 'cm-lc-load'
 FORMAT Null;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT if(ProfileEvents['LoadedStatisticsMicroseconds'] > 0, 'yes', 'no')
 FROM system.query_log
@@ -162,7 +164,7 @@ SELECT count() FROM st_cm_lc WHERE cat = 'PROMO'
 SETTINGS use_statistics_cache = 1, log_comment = 'cm-lc-hit'
 FORMAT Null;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT if(ProfileEvents['LoadedStatisticsMicroseconds'] = 0, 'yes', 'no')
 FROM system.query_log
@@ -189,7 +191,7 @@ WHERE a.id=b.id AND b.t='PROMO'
 SETTINGS use_statistics_cache=0, query_plan_optimize_join_order_limit=10, log_comment='join-load'
 FORMAT Null;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT if(ProfileEvents['LoadedStatisticsMicroseconds']>0,'yes','no')
 FROM system.query_log WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='join-load' LIMIT 1;
@@ -220,7 +222,7 @@ WHERE a.id=b.id AND b.t='PROMO'
 SETTINGS use_statistics_cache=1, query_plan_optimize_join_order_limit=10, log_comment='join-hit'
 FORMAT Null;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT if(ProfileEvents['LoadedStatisticsMicroseconds']=0,'yes','no')
 FROM system.query_log WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='join-hit' LIMIT 1;
@@ -253,7 +255,7 @@ SELECT sleep(1);
 SELECT count() FROM sa_auto WHERE val>0.99 SETTINGS use_statistics_cache=1, log_comment='auto-td' FORMAT Null;
 SELECT count() FROM sa_auto WHERE cat='PROMO'  SETTINGS use_statistics_cache=1, log_comment='auto-cm' FORMAT Null;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT
     if(countIf(log_comment='auto-td' AND ProfileEvents['LoadedStatisticsMicroseconds']=0) >= 1, 'yes', 'no'),
@@ -277,7 +279,7 @@ ALTER TABLE sc_alter MATERIALIZE STATISTICS ALL;
 SELECT count() FROM sc_alter WHERE v > 0.99
 SETTINGS use_statistics_cache=1, log_comment='alter-pre' FORMAT Null;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT if(ProfileEvents['LoadedStatisticsMicroseconds']>0,'yes','no')
 FROM system.query_log WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='alter-pre' LIMIT 1;
@@ -290,7 +292,7 @@ FROM system.tables WHERE database=currentDatabase() AND name='sc_alter';
 SELECT count() FROM sc_alter WHERE v > 0.99
 SETTINGS use_statistics_cache=1, log_comment='alter-immediate' FORMAT Null;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT if(ProfileEvents['LoadedStatisticsMicroseconds']>0,'yes','no')
 FROM system.query_log WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='alter-immediate' LIMIT 1;
@@ -303,7 +305,7 @@ SELECT sleep(1);
 SELECT count() FROM sc_alter WHERE v > 0.99
 SETTINGS use_statistics_cache=1, log_comment='alter-post' FORMAT Null;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT if(ProfileEvents['LoadedStatisticsMicroseconds']=0,'yes','no')
 FROM system.query_log WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='alter-post' LIMIT 1;
 
@@ -324,7 +326,7 @@ SELECT sleep(1);
 SELECT count() FROM sc_trunc WHERE v > 0.99
 SETTINGS use_statistics_cache=1, log_comment='trunc-warm' FORMAT Null;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT if(ProfileEvents['LoadedStatisticsMicroseconds']=0,'yes','no')
 FROM system.query_log WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='trunc-warm' LIMIT 1;
@@ -335,7 +337,7 @@ TRUNCATE TABLE sc_trunc;
 SELECT count() FROM sc_trunc WHERE v > 0.99
 SETTINGS use_statistics_cache=1, log_comment='trunc-after' FORMAT Null;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT if(ProfileEvents['LoadedStatisticsMicroseconds']=0,'yes','no')
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='trunc-after' LIMIT 1;
@@ -346,7 +348,7 @@ INSERT INTO sc_trunc SELECT number, toFloat64(rand())/4294967296.0 FROM numbers(
 SELECT count() FROM sc_trunc WHERE v > 0.99
 SETTINGS use_statistics_cache=1, log_comment='trunc-load' FORMAT Null;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT if(ProfileEvents['LoadedStatisticsMicroseconds']>0,'yes','no')
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='trunc-load' LIMIT 1;
@@ -357,7 +359,7 @@ SELECT sleep(1);
 SELECT count() FROM sc_trunc WHERE v > 0.99
 SETTINGS use_statistics_cache=1, log_comment='trunc-hit' FORMAT Null;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT if(ProfileEvents['LoadedStatisticsMicroseconds']=0,'yes','no')
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='trunc-hit' LIMIT 1;
