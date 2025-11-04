@@ -524,7 +524,7 @@ SELECT
 └────────────┴────────────┴──────────┴────────────┴───────────┘
         )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::IntroducedIn introduced_in = {23, 4};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
