@@ -112,8 +112,6 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
     String endpoint_authority_from_uri;
 
     bool is_using_aws_private_link_interface = re2::RE2::FullMatch(uri.getAuthority(), aws_private_link_style_pattern);
-    bool path_style_matched = false;
-
     if (!is_using_aws_private_link_interface
         && re2::RE2::FullMatch(uri.getAuthority(), virtual_hosted_style_pattern, &bucket, &name, &endpoint_authority_from_uri))
     {
@@ -144,7 +142,6 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
     {
         is_virtual_hosted_style = false;
         endpoint = uri.getScheme() + "://" + uri.getAuthority();
-        path_style_matched = true;
     }
     else
     {
@@ -162,16 +159,16 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
     const std::string original_query = original_uri.getQuery();
     if (!original_query.empty() && !has_version_id && !looks_like_presigned)
     {
-        if (is_virtual_hosted_style || path_style_matched)
+        if (is_virtual_hosted_style)
         {
-            // AWS-style endpoints: always fold query into key (matches unit tests)
+            // Virtual-hosted style (AWS style): fold query into key (matches unit tests)
             key += "?";
             key += original_query;
             uri.setQuery("");
         }
         else
         {
-            // Custom endpoints: fold only wildcard-like queries (no '=')
+            // Path-style/custom endpoints: fold only wildcard-like queries (no '=')
             if (original_query.find('=') == std::string::npos)
             {
                 key += "?";

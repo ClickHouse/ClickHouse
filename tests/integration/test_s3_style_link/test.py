@@ -70,6 +70,7 @@ def test_s3_table_functions_line_as_string(started_cluster):
         """
     )
 
+    bucket = started_cluster.minio_bucket
     assert (
         node.query(
             f"""
@@ -83,7 +84,7 @@ def test_s3_table_functions_line_as_string(started_cluster):
             f"""
             SELECT _file FROM s3
             (
-                'http://minio1:9001/root/data/*as_string.tsv.gz', 'minio', '{minio_secret_key}', 'LineAsString'
+                'http://minio1:9001/{bucket}/data/*as_string.tsv.gz', 'minio', '{minio_secret_key}', 'LineAsString'
             ) LIMIT 1;
         """
         )
@@ -91,6 +92,7 @@ def test_s3_table_functions_line_as_string(started_cluster):
 
 
 def test_s3_question_mark_wildcards(started_cluster):
+    # Create sample files under the default bucket (root) with folder 'data/'
     node.query(
         f"""
             INSERT INTO FUNCTION s3
@@ -121,15 +123,16 @@ def test_s3_question_mark_wildcards(started_cluster):
         """
     )
 
-    result_http_scheme = node.query(f"""
+    result_s3_scheme = node.query(f"""
         SELECT count() AS c, arraySort(groupArray(DISTINCT id)) AS ids
-        FROM s3('http://minio1:9001/data/wildcard_test_??.tsv.gz', 'minio', '{minio_secret_key}')
+        FROM s3('s3://data/wildcard_test_a?.tsv.gz', 'minio', '{minio_secret_key}', 'TSV', 'id String, number UInt64')
         FORMAT TSV
     """)
 
-    result_s3_scheme = node.query(f"""
+    bucket = started_cluster.minio_bucket
+    result_http_scheme = node.query(f"""
         SELECT count() AS c, arraySort(groupArray(DISTINCT id)) AS ids
-        FROM s3('s3://data/wildcard_test_??.tsv.gz', 'minio', '{minio_secret_key}')
+        FROM s3('http://minio1:9001/{bucket}/data/wildcard_test_a?.tsv.gz', 'minio', '{minio_secret_key}', 'TSV', 'id String, number UInt64')
         FORMAT TSV
     """)
 
