@@ -996,18 +996,33 @@ static QueryPlanNode buildPhysicalJoinImpl(
             else
                 action = action->children.at(0);
         }
-
         used_expressions.emplace_back(action, expression_actions);
     }
+
     for (const auto * action : required_residual_nodes)
         used_expressions.emplace_back(action, expression_actions);
 
     for (const auto * child : children)
     {
+        /// We expect dag inputs to be a subsequence of child step header columns.
+        /// If column child step returns duplicate columns
+        /// we need to find corresponding duplicates in dag inputs, which will be different nodes.
+        const auto & dag_inputs = expression_actions.getActionsDAG()->getInputs();
+        auto input_it = dag_inputs.begin();
         for (const auto & column : *child->step->getOutputHeader())
         {
-            auto input_node = expression_actions.findNode(column.name, /* is_input */ true);
-            used_expressions.push_back(std::move(input_node));
+            while (input_it != dag_inputs.end() && (*input_it)->result_name != column.name)
+                ++input_it;
+
+            if (input_it == dag_inputs.end())
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Cannot find input column {} on its position in inputs of expression actions DAG, expected inputs {} in {}",
+                    column.name,
+                    fmt::join(children | std::views::transform([](const auto & c) { return fmt::format("[{}]", c->step->getOutputHeader()->dumpNames()); }), ", "),
+                    expression_actions.getActionsDAG()->dumpDAG());
+
+            used_expressions.emplace_back(*input_it, expression_actions);
+            ++input_it;
         }
     }
 
