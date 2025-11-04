@@ -2219,7 +2219,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
 }
 
 BlockIO InterpreterCreateQuery::doCreateOrReplaceTemporaryTable(ASTCreateQuery & create,
-                                                       const InterpreterCreateQuery::TableProperties & properties, LoadingStrictnessLevel mode)
+                                                                const InterpreterCreateQuery::TableProperties & properties, LoadingStrictnessLevel mode)
 {
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(DatabaseCatalog::TEMPORARY_DATABASE);
 
