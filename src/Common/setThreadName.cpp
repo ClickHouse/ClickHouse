@@ -15,7 +15,7 @@
 #include <Common/setThreadName.h>
 #include <Common/Jemalloc.h>
 
-constexpr size_t THREAD_NAME_SIZE = 16;
+constexpr size_t THREAD_NAME_SIZE = MAX_THREAD_NAME_SIZE + 1; // +1 for null terminator
 
 
 namespace DB

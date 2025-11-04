@@ -154,6 +154,10 @@ void TraceCollector::run()
             UInt64 thread_id;
             readPODBinary(thread_id, in);
 
+            std::string thread_name;
+            thread_name.reserve(MAX_THREAD_NAME_SIZE);
+            in.readStrict(thread_name.data(), MAX_THREAD_NAME_SIZE);
+
             Int64 size;
             readPODBinary(size, in);
 
@@ -188,6 +192,7 @@ void TraceCollector::run()
                     .timestamp_ns = timestamp_ns,
                     .trace_type = trace_type,
                     .thread_id = thread_id,
+                    .thread_name = thread_name,
                     .query_id = query_id,
                     .trace = std::move(trace),
                     .size = size,
