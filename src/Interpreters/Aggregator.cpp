@@ -2,9 +2,9 @@
 #include <mutex>
 #include <optional>
 #include <Core/Settings.h>
+#include <IO/NullWriteBuffer.h>
 #include <base/defines.h>
 #include <Poco/Util/Application.h>
-#include "IO/NullWriteBuffer.h"
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
@@ -208,8 +208,9 @@ size_t Aggregator::applyToAllStates(AggregatedDataVariants & result, ssize_t buc
                     else
                         aggregate_functions[j]->serialize(place + offsets_of_aggregate_states[j], wb);
                     ++processed;
-                    if (it++ % 100 != 0 || it > 10000)
+                    if (it % 100 != 0 || it > 10000)
                         stop = true;
+                    ++it;
                 });
             wbuf.finalize();
             if (processed)
