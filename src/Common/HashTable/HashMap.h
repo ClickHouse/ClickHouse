@@ -264,8 +264,20 @@ public:
     template <typename Func>
     void forEachMapped(Func && func)
     {
+        bool stop = false;
         for (auto & v : *this)
-            func(v.getMapped());
+        {
+            if constexpr (requires { func(v.getMapped(), stop); })
+            {
+                func(v.getMapped(), stop);
+                if (stop)
+                    break;
+            }
+            else
+            {
+                func(v.getMapped());
+            }
+        }
     }
 
     typename Cell::Mapped & ALWAYS_INLINE operator[](const Key & x)

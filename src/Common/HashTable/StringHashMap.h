@@ -175,15 +175,40 @@ public:
     template <typename Func>
     void ALWAYS_INLINE forEachMapped(Func && func)
     {
-        if (this->m0.size())
-            func(this->m0.zeroValue()->getMapped());
-        for (auto & v : this->m1)
-            func(v.getMapped());
-        for (auto & v : this->m2)
-            func(v.getMapped());
-        for (auto & v : this->m3)
-            func(v.getMapped());
-        for (auto & v : this->ms)
-            func(v.getMapped());
+        bool stop = false;
+        if constexpr (requires { func(this->m0.zeroValue()->getMapped(), stop); })
+        {
+            if (this->m0.size())
+                func(this->m0.zeroValue()->getMapped(), stop);
+            if (stop)
+                return;
+            for (auto & v : this->m1)
+                func(v.getMapped(), stop);
+            if (stop)
+                return;
+            for (auto & v : this->m2)
+                func(v.getMapped(), stop);
+            if (stop)
+                return;
+            for (auto & v : this->m3)
+                func(v.getMapped(), stop);
+            if (stop)
+                return;
+            for (auto & v : this->ms)
+                func(v.getMapped(), stop);
+        }
+        else
+        {
+            if (this->m0.size())
+                func(this->m0.zeroValue()->getMapped());
+            for (auto & v : this->m1)
+                func(v.getMapped());
+            for (auto & v : this->m2)
+                func(v.getMapped());
+            for (auto & v : this->m3)
+                func(v.getMapped());
+            for (auto & v : this->ms)
+                func(v.getMapped());
+        }
     }
 };

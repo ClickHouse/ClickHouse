@@ -200,16 +200,16 @@ size_t Aggregator::applyToAllStates(AggregatedDataVariants & result, ssize_t buc
             size_t it = 0;
             size_t processed = 0;
             table.forEachMapped(
-                [&](AggregateDataPtr place)
+                [&](AggregateDataPtr place, bool & stop)
                 {
                     chassert(place);
-                    if (it++ % 100 != 0)
-                        return;
                     if (is_simple_count)
                         writeVarUInt(getInlineCountState(place), wb);
                     else
                         aggregate_functions[j]->serialize(place + offsets_of_aggregate_states[j], wb);
                     ++processed;
+                    if (it++ % 100 != 0 || it > 10000)
+                        stop = true;
                 });
             wbuf.finalize();
             if (processed)
