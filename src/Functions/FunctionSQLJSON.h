@@ -466,12 +466,12 @@ public:
         return true;
     }
 
-    static bool insertResultToColumn(IColumn & dest, const Element & root, std::vector<std::shared_ptr<GeneratorJSONPath<JSONParser>>> & json_paths, std::vector<bool> & path_asterisks, bool) 
+    static bool insertResultToColumn(IColumn & dest, const Element & root, std::vector<std::shared_ptr<GeneratorJSONPath<JSONParser>>> & json_paths, std::vector<bool> & path_asterisks, bool function_json_value_return_type_allow_complex) 
     {
-        if (dest.getDataType() == TypeIndex::String)
+        if (dest.getDataType() == TypeIndex::String || (dest.isNullable() && assert_cast<ColumnNullable *>(&dest)->getNestedColumn().getDataType() == TypeIndex::String))
         {
             json_paths[0]->reinitialize();
-            return insertResultToColumn(dest, root, *json_paths[0], false);
+            return insertResultToColumn(dest, root, *json_paths[0], function_json_value_return_type_allow_complex);
         }
         for (size_t i = 0; i < json_paths.size(); ++i)
         {
