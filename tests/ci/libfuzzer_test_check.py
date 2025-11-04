@@ -250,7 +250,7 @@ def process_results(result_path: Path):
             result = None
 
             status_mini = read_status(file_path_status_mini)
-            result = TestResult(f"minimization of {fuzzer}", status[0], float(status_mini[2]))
+            result = TestResult(f"minimization of {fuzzer}", status_mini[0], float(status_mini[2]))
 
             if status_mini[0] == "ERROR":
                 errors += 1
