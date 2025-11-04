@@ -192,8 +192,8 @@ public:
         const auto & attribute_column_type = structure.getAttribute(attr_name).type;
 
 
-        ColumnWithTypeAndName values_column_raw{arguments[2].column->convertToFullColumnIfConst(), arguments[2].type, arguments[2].name};
-        ColumnPtr values = castColumnAccurate(values_column_raw, attribute_column_type)->convertToFullColumnIfLowCardinality();
+        ColumnWithTypeAndName values_column_raw{arguments[2].column, arguments[2].type, arguments[2].name};
+        ColumnPtr values = castColumnAccurate(values_column_raw, attribute_column_type)->convertToFullIfNeeded();
 
         return executeVectorPath(dict_name, attr_name, *values, key_types, input_rows_count, dict);
     }
