@@ -985,7 +985,7 @@ Allows or restricts using not comparable types (like JSON/Object/AggregateFuncti
     DECLARE(Bool, compile_expressions, true, R"(
 Compile some scalar functions and operators to native code.
 )", 0) \
-    DECLARE(UInt64, min_count_to_compile_expression, 0, R"(
+    DECLARE(UInt64, min_count_to_compile_expression, 3, R"(
 Minimum count of executing same expression before it is get compiled.
 )", 0) \
     DECLARE(Bool, compile_aggregate_expressions, true, R"(
