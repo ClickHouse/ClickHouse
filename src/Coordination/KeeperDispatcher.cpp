@@ -747,7 +747,6 @@ void KeeperDispatcher::addErrorResponses(const KeeperRequestsForSessions & reque
         response->xid = request_for_session.request->xid;
         response->zxid = 0;
         response->error = error;
-        response->enqueue_ts = std::chrono::steady_clock::now();
         if (!responses_queue.push(DB::KeeperResponseForSession{request_for_session.session_id, response}))
             throw Exception(ErrorCodes::SYSTEM_ERROR,
                 "Could not push error response xid {} zxid {} error message {} to responses queue",
@@ -1027,7 +1026,7 @@ Keeper4LWInfo KeeperDispatcher::getKeeper4LWInfo() const
 void KeeperDispatcher::cleanResources()
 {
 #if USE_JEMALLOC
-    Jemalloc::purgeArenas();
+    purgeJemallocArenas();
 #endif
 }
 

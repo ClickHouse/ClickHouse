@@ -50,6 +50,12 @@ public:
     String getEngineName() const override { return "MySQL"; }
     UUID getUUID() const override { return db_uuid; }
 
+    bool canContainMergeTreeTables() const override { return false; }
+
+    bool canContainDistributedTables() const override { return false; }
+
+    bool canContainRocksDBTables() const override { return false; }
+
     bool shouldBeEmptyOnDetach() const override { return false; }
 
     bool empty() const override;

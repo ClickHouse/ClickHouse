@@ -3,7 +3,6 @@ description: 'Computes an approximate quantile of a numeric data sequence.'
 sidebar_position: 170
 slug: /sql-reference/aggregate-functions/reference/quantile
 title: 'quantile'
-doc_type: 'reference'
 ---
 
 # quantile

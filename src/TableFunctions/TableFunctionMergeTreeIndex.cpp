@@ -40,11 +40,7 @@ private:
         ColumnsDescription cached_columns,
         bool is_insert_query) const override;
 
-    const char * getStorageEngineName() const override
-    {
-        /// Technically it's MergeTreeIndex but it doesn't register itself
-        return "";
-    }
+    const char * getStorageEngineName() const override { return "MergeTreeIndex"; }
 
     StorageID source_table_id{StorageID::createEmpty()};
     bool with_marks = false;
@@ -136,7 +132,7 @@ static NameSet getAllPossibleStreamNames(
     for (const auto & part : data_parts)
     {
         serialization = part->tryGetSerialization(column.name);
-        if (serialization && ISerialization::hasKind(serialization->getKindStack(), ISerialization::Kind::SPARSE))
+        if (serialization && serialization->getKind() == ISerialization::Kind::SPARSE)
         {
             serialization->enumerateStreams(callback);
             break;

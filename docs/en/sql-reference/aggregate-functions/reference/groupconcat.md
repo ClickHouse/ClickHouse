@@ -5,7 +5,6 @@ sidebar_label: 'groupConcat'
 sidebar_position: 363
 slug: /sql-reference/aggregate-functions/reference/groupconcat
 title: 'groupConcat'
-doc_type: 'reference'
 ---
 
 Calculates a concatenated string from a group of strings, optionally separated by a delimiter, and optionally limited by a maximum number of elements.

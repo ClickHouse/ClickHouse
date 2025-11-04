@@ -4,7 +4,6 @@ sidebar_label: 'Parametric'
 sidebar_position: 38
 slug: /sql-reference/aggregate-functions/parametric-functions
 title: 'Parametric Aggregate Functions'
-doc_type: 'reference'
 ---
 
 # Parametric aggregate functions

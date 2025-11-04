@@ -30,20 +30,11 @@ namespace ProfileEvents
     extern const Event DiskAzureGetProperties;
     extern const Event AzureCreateContainer;
     extern const Event DiskAzureCreateContainer;
-
     extern const Event AzureGetRequestThrottlerCount;
-    extern const Event AzureGetRequestThrottlerBlocked;
     extern const Event AzureGetRequestThrottlerSleepMicroseconds;
     extern const Event AzurePutRequestThrottlerCount;
-    extern const Event AzurePutRequestThrottlerBlocked;
     extern const Event AzurePutRequestThrottlerSleepMicroseconds;
 
-    extern const Event DiskAzureGetRequestThrottlerCount;
-    extern const Event DiskAzureGetRequestThrottlerBlocked;
-    extern const Event DiskAzureGetRequestThrottlerSleepMicroseconds;
-    extern const Event DiskAzurePutRequestThrottlerCount;
-    extern const Event DiskAzurePutRequestThrottlerBlocked;
-    extern const Event DiskAzurePutRequestThrottlerSleepMicroseconds;
 }
 
 namespace fs = std::filesystem;
@@ -351,43 +342,25 @@ BlobClientOptions getClientOptions(
 
     if (settings[Setting::azure_sdk_use_native_client])
     {
-        // Initialize HTTP request throttling
-        HTTPRequestThrottler request_throttler;
+        ThrottlerPtr get_request_throttler;
+        ThrottlerPtr put_request_throttler;
 
         if (settings[Setting::azure_max_get_rps] > 0 || settings[Setting::azure_max_get_burst] > 0)
         {
-            request_throttler.get_throttler = std::make_shared<Throttler>(
+            get_request_throttler = std::make_shared<Throttler>(
                 settings[Setting::azure_max_get_rps],
                 settings[Setting::azure_max_get_burst],
                 ProfileEvents::AzureGetRequestThrottlerCount,
                 ProfileEvents::AzureGetRequestThrottlerSleepMicroseconds);
-            request_throttler.get_blocked = ProfileEvents::AzureGetRequestThrottlerBlocked;
-
-            // Update additional profile events for DiskAzure
-            if (for_disk)
-            {
-                request_throttler.disk_get_amount = ProfileEvents::DiskAzureGetRequestThrottlerCount;
-                request_throttler.disk_get_blocked = ProfileEvents::DiskAzureGetRequestThrottlerBlocked;
-                request_throttler.disk_get_sleep_us = ProfileEvents::DiskAzureGetRequestThrottlerSleepMicroseconds;
-            }
         }
 
         if (settings[Setting::azure_max_put_rps] > 0 || settings[Setting::azure_max_put_burst] > 0)
         {
-            request_throttler.put_throttler = std::make_shared<Throttler>(
+            put_request_throttler = std::make_shared<Throttler>(
                 settings[Setting::azure_max_put_rps],
                 settings[Setting::azure_max_put_burst],
                 ProfileEvents::AzurePutRequestThrottlerCount,
                 ProfileEvents::AzurePutRequestThrottlerSleepMicroseconds);
-            request_throttler.put_blocked = ProfileEvents::AzurePutRequestThrottlerBlocked;
-
-            // Update additional profile events for DiskAzure
-            if (for_disk)
-            {
-                request_throttler.disk_put_amount = ProfileEvents::DiskAzurePutRequestThrottlerCount;
-                request_throttler.disk_put_blocked = ProfileEvents::DiskAzurePutRequestThrottlerBlocked;
-                request_throttler.disk_put_sleep_us = ProfileEvents::DiskAzurePutRequestThrottlerSleepMicroseconds;
-            }
         }
 
         auto http_keep_alive_seconds = static_cast<size_t>(context->getServerSettings()[ServerSetting::keep_alive_timeout].totalSeconds());
@@ -397,7 +370,8 @@ BlobClientOptions getClientOptions(
             .remote_host_filter = context->getRemoteHostFilter(),
             .max_redirects = settings[Setting::azure_max_redirects],
             .for_disk_azure = for_disk,
-            .request_throttler = request_throttler,
+            .get_request_throttler = get_request_throttler,
+            .put_request_throttler = put_request_throttler,
             .extra_headers = HTTPHeaderEntries{}, /// No extra headers so far
             .connect_timeout_ms = settings[Setting::azure_connect_timeout_ms],
             .request_timeout_ms = settings[Setting::azure_request_timeout_ms],
