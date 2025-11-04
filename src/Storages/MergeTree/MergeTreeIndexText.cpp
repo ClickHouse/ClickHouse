@@ -1327,8 +1327,8 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
             "Text index must be created on columns of type `String`, `FixedString`, `LowCardinality(String)`, `LowCardinality(FixedString)`, `Array(String)` or `Array(FixedString)`");
     }
 
-    /// check preprocessor now, after data_type and column_names and index.data_types were already checked because we want to get
-    /// accurate error messages.
+    /// Check preprocessor now, after data_type and column_names and index.data_types were already checked because we want to get accurate
+    /// error messages.
     if (preprocessor.has_value())
     {
         /// For very strict validation of the expression we fully parse it here.  However it will be parsed again for index construction,
@@ -1340,7 +1340,7 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
 
         const Names required_columns = expression.getRequiredColumns();
 
-        /// This is expected top no never happen because the `validatePreprocessorASTExpression` already checks that we have a single identifier.
+        /// This is expected that never happen because the `validatePreprocessorASTExpression` already checks that we have a single identifier.
         /// But once again, with user inputs: Don't trust, validate!
         if (required_columns.size() != 1 || required_columns.front() != index.column_names.front())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index preprocessor expression must depend only of column: {}", index.column_names.front());
