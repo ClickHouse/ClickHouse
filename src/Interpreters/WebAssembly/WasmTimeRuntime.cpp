@@ -139,11 +139,9 @@ struct WasmTimeRuntime::Impl
         return config;
     }
 
-    explicit Impl()
-        : engine(std::make_shared<wasmtime::Engine>(getConfig()))
-    {}
+    explicit Impl() : engine(getConfig()) {}
 
-    std::shared_ptr<wasmtime::Engine> engine;
+    wasmtime::Engine engine;
 };
 
 WasmTimeRuntime::WasmTimeRuntime()
@@ -182,20 +180,7 @@ public:
         return &memory_span[ptr];
     }
 
-    uint32_t growMemory(uint32_t num_pages) override
-    {
-        auto memory = getMemory();
-        auto grow_result = memory.grow(store, num_pages);
-        if (!grow_result)
-        {
-            throw Exception(ErrorCodes::WASM_ERROR, "Cannot grow memory of wasm compartment");
-        }
-        return static_cast<uint32_t>(memory.size(store));
-    }
-
-    WasmSizeT getMemorySize() override { return static_cast<uint32_t>(getMemory().size(store)); }
-
-    void invoke(std::string_view function_name, const std::vector<WasmVal> & params, std::vector<WasmVal> & returns) override
+    std::vector<WasmVal> invokeImpl(std::string_view function_name, const std::vector<WasmVal> & params) override
     {
         if (cfg.fuel_limit)
         {
@@ -245,9 +230,8 @@ public:
             returns_values = std::move(call_results.ok());
         }
 
-        returns.clear();
         __msan_unpoison(returns_values.data(), returns_values.size() * sizeof(wasmtime::Val));
-        std::transform(returns_values.begin(), returns_values.end(), std::back_inserter(returns), fromWasmTimeValue);
+        return std::ranges::to<std::vector>(returns_values | std::views::transform(fromWasmTimeValue));
     }
 
     wasmtime::Memory getMemory()
@@ -354,8 +338,8 @@ WasmFunctionDeclarationPtr buildFunctionDeclaration(std::string_view function_na
 class WasmTimeModule : public WasmModule
 {
 public:
-    explicit WasmTimeModule(std::shared_ptr<wasmtime::Engine> engine_, wasmtime::Module && module_)
-        : engine(engine_)
+    explicit WasmTimeModule(wasmtime::Engine engine_, wasmtime::Module && module_)
+        : engine(std::move(engine_))
         , module(std::move(module_))
     {
         all_exports_list = module.exports();
@@ -387,10 +371,7 @@ public:
 
     std::unique_ptr<WasmCompartment> instantiate(Config cfg) const override
     {
-        if (!engine)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Engine is not initialized");
-
-        wasmtime::Store store(*engine);
+        wasmtime::Store store(engine);
         if (cfg.memory_limit)
             store.limiter(cfg.memory_limit, -1, -1, -1, -1);
         if (cfg.fuel_limit)
@@ -400,7 +381,7 @@ public:
                 throw Exception(ErrorCodes::WASM_ERROR, "Failed to set fuel to wasm instance: {}", result.err().message());
         }
 
-        wasmtime::Linker linker(*engine);
+        wasmtime::Linker linker(engine);
         for (const auto & host_function_ptr : host_functions)
         {
             auto add_host_func_result = linker.func_new(
@@ -462,7 +443,7 @@ public:
     }
 
 private:
-    std::shared_ptr<wasmtime::Engine> engine;
+    mutable wasmtime::Engine engine;
     wasmtime::Module module;
 
     wasmtime::ExportType::List all_exports_list;
@@ -476,10 +457,10 @@ private:
     LoggerPtr log = getLogger("WasmTimeModule");
 };
 
-std::unique_ptr<WasmModule> WasmTimeRuntime::createModule(std::string_view wasm_code) const
+std::unique_ptr<WasmModule> WasmTimeRuntime::compileModule(std::string_view wasm_code) const
 {
     std::span<uint8_t> bytes(reinterpret_cast<uint8_t *>(const_cast<char *>(wasm_code.data())), wasm_code.size());
-    auto compilation_result = wasmtime::Module::compile(*impl->engine, bytes);
+    auto compilation_result = wasmtime::Module::compile(impl->engine, bytes);
     if (!compilation_result)
     {
         throw Exception(ErrorCodes::WASM_ERROR, "Failed to compile wasm code: {}", compilation_result.err().message());
@@ -510,7 +491,7 @@ struct WasmTimeRuntime::Impl
 
 WasmTimeRuntime::WasmTimeRuntime() : impl(std::make_unique<Impl>()) { }
 
-std::unique_ptr<WasmModule> WasmTimeRuntime::createModule(std::string_view /* wasm_code */) const
+std::unique_ptr<WasmModule> WasmTimeRuntime::compileModule(std::string_view /* wasm_code */) const
 {
     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Wasmtime support is disabled");
 }

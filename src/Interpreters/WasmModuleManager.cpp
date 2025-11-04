@@ -240,7 +240,7 @@ std::pair<std::shared_ptr<WasmModule>, UInt256> WasmModuleManager::getModule(std
     std::unique_lock write_lock(modules_mutex);
 
     auto wasm_code = loadModuleImpl(module_name);
-    std::shared_ptr<WasmModule> module = engine->createModule(wasm_code);
+    std::shared_ptr<WasmModule> module = engine->compileModule(wasm_code);
     UInt256 module_hash = caclculateHash(wasm_code);
 
     modules[std::string(module_name)] = {module, module_hash};

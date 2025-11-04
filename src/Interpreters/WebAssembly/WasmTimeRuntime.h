@@ -12,7 +12,7 @@ class WasmTimeRuntime final : public IWasmEngine
 public:
     explicit WasmTimeRuntime();
 
-    std::unique_ptr<WasmModule> createModule(std::string_view wasm_code) const override;
+    std::unique_ptr<WasmModule> compileModule(std::string_view wasm_code) const override;
     static void setLogLevel(LogsLevel level);
 
     ~WasmTimeRuntime() override;

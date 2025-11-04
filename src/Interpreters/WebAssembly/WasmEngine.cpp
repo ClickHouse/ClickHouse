@@ -25,8 +25,7 @@ WasmCompartment::WasmCompartment()
 template <typename ResultType>
 ResultType WasmCompartment::invoke(std::string_view function_name, const std::vector<WasmVal> & params)
 {
-    std::vector<WasmVal> returns;
-    invoke(function_name, params, returns);
+    auto returns = invokeImpl(function_name, params);
 
     if constexpr (std::is_same_v<ResultType, void>)
     {
@@ -34,45 +33,25 @@ ResultType WasmCompartment::invoke(std::string_view function_name, const std::ve
             return;
         throw Exception(ErrorCodes::WASM_ERROR, "Unexpected return value from wasm function '{}', expected void", function_name);
     }
-    else if constexpr (std::is_same_v<ResultType, std::optional<WasmVal>>)
-    {
-        if (returns.empty())
-            return {};
-        if (returns.size() == 1)
-            return returns[0];
-        throw Exception(ErrorCodes::WASM_ERROR, "Unexpected return value from wasm function '{}', expected single value", function_name);
-    }
-    else if constexpr (std::is_same_v<ResultType, WasmVal>)
-    {
-        if (returns.size() == 1)
-            return returns[0];
-        throw Exception(ErrorCodes::WASM_ERROR, "Unexpected return value from wasm function '{}', expected single value", function_name);
-    }
     else
     {
         if (returns.size() != 1)
         {
-            throw Exception(
-                ErrorCodes::WASM_ERROR,
+            throw Exception(ErrorCodes::WASM_ERROR,
                 "Unexpected return values count from wasm function '{}', got {} values, expected single value",
-                function_name,
-                returns.size());
+                function_name, returns.size());
         }
+
         if (std::holds_alternative<ResultType>(returns[0]))
             return std::get<ResultType>(returns[0]);
 
-        throw Exception(
-            ErrorCodes::WASM_ERROR,
+        throw Exception(ErrorCodes::WASM_ERROR,
             "Unexpected return value from wasm function '{}', expected: {}, got {}",
-            function_name,
-            WasmValTypeToKind<ResultType>::value,
-            getWasmValKind(returns[0]));
+            function_name, WasmValTypeToKind<ResultType>::value, getWasmValKind(returns[0]));
     }
 }
 
 template void WasmCompartment::invoke<>(std::string_view, const std::vector<WasmVal> &);
-template WasmVal WasmCompartment::invoke<>(std::string_view, const std::vector<WasmVal> &);
-template std::optional<WasmVal> WasmCompartment::invoke<>(std::string_view, const std::vector<WasmVal> &);
 
 #define M(T) template std::variant_alternative_t<std::to_underlying(WasmValKind::T), WasmVal> WasmCompartment::invoke<>(std::string_view, const std::vector<WasmVal> &);
 APPLY_FOR_WASM_TYPES(M)

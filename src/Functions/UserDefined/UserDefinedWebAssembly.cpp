@@ -938,10 +938,7 @@ struct WebAssemblyFunctionSettingsConstraits : public IHints<>
                         throw Exception(
                             ErrorCodes::BAD_ARGUMENTS,
                             "Value {} for setting '{}' is out of range [{}, {}]",
-                            val,
-                            name,
-                            min_,
-                            max_ == std::numeric_limits<UInt64>::max() ? "inf" : std::to_string(max_));
+                            val, name, min_, max_ == std::numeric_limits<UInt64>::max() ? "inf" : std::to_string(max_));
                 },
                 Field(default_value));
         }
@@ -974,12 +971,11 @@ struct WebAssemblyFunctionSettingsConstraits : public IHints<>
 
     const std::unordered_map<String, SettingDeffinition> settings_def = {
         /// Fuel limit for a single instance
-        {"max_fuel", SettingUInt64Range{0, std::numeric_limits<UInt64>::max()}.withDefault(100'000)},
+        {"max_fuel", SettingUInt64Range{}.withDefault(100'000)},
         /// Memory limit for a single instance
         {"max_memory", SettingUInt64Range{64_KiB, 4_GiB}.withDefault(100_MiB)},
         /// Serialization format for input/output data for ABI what uses serialization
-        {"serialization_format",
-         SettingStringFromSet{{"MsgPack", "JSONEachRow", "CSV", "TSV", "TSVRaw", "RowBinary"}}.withDefault("MsgPack")},
+        {"serialization_format", SettingStringFromSet{{"MsgPack", "JSONEachRow", "CSV", "TSV", "TSVRaw", "RowBinary"}}.withDefault("MsgPack")},
         /// Limit for the number of rows in a single block
         {"max_input_block_size", SettingUInt64Range{0, DEFAULT_BLOCK_SIZE * 10}.withDefault(0)},
         /// Maximum number of instances of the webassembly module can be run in parallel for a single function

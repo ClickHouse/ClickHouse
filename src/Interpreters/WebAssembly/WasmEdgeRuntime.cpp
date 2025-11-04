@@ -162,7 +162,7 @@ WasmEdge_String wasmedgeStringWrap(std::string_view data)
 void wasmedgeCheckResult(WasmEdge_Result result, const std::string_view & msg)
 {
     if (!WasmEdge_ResultOK(result))
-        throw Exception(ErrorCodes::WASM_ERROR, "Wasm error: {} ({})", msg, WasmEdge_ResultGetMessage(result));
+        throw Exception(ErrorCodes::WASM_ERROR, "{}: {}", msg, WasmEdge_ResultGetMessage(result));
 }
 
 struct WasmEdgeFunctionProps
@@ -299,10 +299,8 @@ public:
     }
 
     uint8_t * getMemory(WasmPtr ptr, WasmSizeT size) override;
-    uint32_t growMemory(uint32_t num_pages) override;
-    WasmSizeT getMemorySize() override;
 
-    void invoke(std::string_view function_name, const std::vector<WasmVal> & params, std::vector<WasmVal> & returns) override;
+    std::vector<WasmVal> invokeImpl(std::string_view function_name, const std::vector<WasmVal> & params) override;
 
     void loadModuleFromCode(std::string_view wasm_code);
     void loadModuleFromFile(const std::filesystem::path & file_path);
@@ -414,20 +412,6 @@ void WasmEdgeCompartment::loadModuleImpl()
     }
 }
 
-uint32_t WasmEdgeCompartment::growMemory(uint32_t num_pages)
-{
-    auto * memory_ctx = WasmEdge_ModuleInstanceFindMemory(vm_instance_cxt, wasmedgeStringWrap("memory"));
-    uint32_t memory_end = WasmEdge_MemoryInstanceGetPageSize(memory_ctx) * WASMEDGE_PAGE_SIZE;
-    wasmedgeCheckResult(WasmEdge_MemoryInstanceGrowPage(memory_ctx, num_pages), "cannot grow memory");
-    return memory_end;
-}
-
-uint32_t WasmEdgeCompartment::getMemorySize()
-{
-    const auto * memory_ctx = WasmEdge_ModuleInstanceFindMemory(vm_instance_cxt, wasmedgeStringWrap("memory"));
-    return WasmEdge_MemoryInstanceGetPageSize(memory_ctx) * WASMEDGE_PAGE_SIZE;
-}
-
 uint8_t * WasmEdgeCompartment::getMemory(WasmPtr ptr, WasmSizeT size)
 {
     auto * memory_ctx = WasmEdge_ModuleInstanceFindMemory(vm_instance_cxt, wasmedgeStringWrap("memory"));
@@ -443,7 +427,7 @@ uint8_t * WasmEdgeCompartment::getMemory(WasmPtr ptr, WasmSizeT size)
     return data;
 }
 
-void WasmEdgeCompartment::invoke(std::string_view function_name, const std::vector<WasmVal> & params, std::vector<WasmVal> & returns)
+std::vector<WasmVal> WasmEdgeCompartment::invokeImpl(std::string_view function_name, const std::vector<WasmVal> & params)
 {
     auto func_it = imported_functions.find(function_name);
     if (func_it == imported_functions.end())
@@ -480,12 +464,10 @@ void WasmEdgeCompartment::invoke(std::string_view function_name, const std::vect
 
         if (last_exception)
             last_exception->rethrow();
-        wasmedgeCheckResult(result, fmt::format("cannot execute function {}", function_name));
+        wasmedgeCheckResult(result, fmt::format("error while executing function '{}'", function_name));
     }
 
-    returns.clear();
-    std::transform(returns_values.begin(), returns_values.end(), std::back_inserter(returns), fromWasmEdgeValue);
-    LOG_TRACE(log, "Function {} invocation ended", function_name);
+    return std::ranges::to<std::vector>(returns_values | std::views::transform(fromWasmEdgeValue));
 }
 
 
@@ -573,7 +555,7 @@ WasmEdgeRuntime::WasmEdgeRuntime()
     setLogLevel(LogsLevel::warning);
 }
 
-std::unique_ptr<WasmModule> WasmEdgeRuntime::createModule(std::string_view wasm_code) const
+std::unique_ptr<WasmModule> WasmEdgeRuntime::compileModule(std::string_view wasm_code) const
 {
     auto loader_ctx = WasmEdgeResourcePtrCreate<WasmEdge_LoaderCreate>(nullptr);
     WasmEdge_ASTModuleContext * ast_module_ptr = nullptr;
@@ -656,7 +638,7 @@ namespace DB::WebAssembly
 
 WasmEdgeRuntime::WasmEdgeRuntime() = default;
 
-std::unique_ptr<WasmModule> WasmEdgeRuntime::createModule(std::string_view /* wasm_code */) const
+std::unique_ptr<WasmModule> WasmEdgeRuntime::compileModule(std::string_view /* wasm_code */) const
 {
     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "WasmEdge support is disabled");
 }

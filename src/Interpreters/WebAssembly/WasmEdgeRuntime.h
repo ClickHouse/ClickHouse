@@ -12,7 +12,7 @@ class WasmEdgeRuntime final : public IWasmEngine
 public:
     explicit WasmEdgeRuntime();
 
-    std::unique_ptr<WasmModule> createModule(std::string_view wasm_code) const override;
+    std::unique_ptr<WasmModule> compileModule(std::string_view wasm_code) const override;
     static void setLogLevel(LogsLevel level);
 };
 

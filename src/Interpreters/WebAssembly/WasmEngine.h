@@ -20,21 +20,24 @@ public:
 
     virtual ~WasmCompartment() = default;
 
+    /// Get a pointer to guest memory given a handle
     virtual uint8_t * getMemory(WasmPtr ptr, WasmSizeT size) = 0;
 
-    virtual WasmPtr growMemory(WasmSizeT num_pages) = 0;
+    /// Invoke a function expecting to return a single value of specific result type or void, if no return value expected.
+    /// If function returns multiple values or different type, an exception is thrown.
+    template <typename ResultType>
+    ResultType invoke(std::string_view function_name, const std::vector<WasmVal> & params);
 
-    /// Returns the current memory size in bytes
-    virtual WasmSizeT getMemorySize() = 0;
-
-    virtual void invoke(std::string_view function_name, const std::vector<WasmVal> & params, std::vector<WasmVal> & returns) = 0;
+protected:
+    /// Implementation provides generic invocation returning all result values of generic WasmVal type.
+    virtual std::vector<WasmVal> invokeImpl(std::string_view function_name, const std::vector<WasmVal> & params) = 0;
 
     template <typename ResultType>
     ResultType invoke(std::string_view function_name, const std::vector<WasmVal> & params);
 };
 
-/** WasmModule represents a WebAssembly module, typically containing WebAssembly code,
-  * which can be instantiated to create a WasmCompartment.
+/** WasmModule represents a WebAssembly module, typically containing code, imports and exports.
+  * Module can be instantiated to create a WasmCompartment.
   * The specific form of the code and instantiation behavior depends on the runtime implementation.
   */
 class WasmModule
@@ -59,10 +62,13 @@ public:
     virtual ~WasmModule() = default;
 };
 
+/** IWasmEngine is responsible for compiling WebAssembly code into WasmModule instances for a specific runtime.
+  * It contains global state for managing WebAssembly modules, including type of runtime used and runtime specific configurations.
+  */
 class IWasmEngine
 {
 public:
-    virtual std::unique_ptr<WasmModule> createModule(std::string_view wasm_code) const = 0;
+    virtual std::unique_ptr<WasmModule> compileModule(std::string_view wasm_code) const = 0;
     virtual ~IWasmEngine() = default;
 };
 
