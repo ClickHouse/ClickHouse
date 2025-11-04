@@ -138,8 +138,7 @@ public:
     /// It is guaranteed that the output header of the step will contain all columns from
     /// required_outputs and might contain some other columns too.
     /// Can be used only if canRemoveUnusedColumns returns true.
-    /// If none of the output columns are removed, then it is preferable to keep the order
-    /// of output columns in order to avoid excessive updates of input headers in parent steps.
+    /// The order of the remaining outputs must be preserved.
     virtual UnusedColumnRemovalResult removeUnusedColumns(NameMultiSet /*required_outputs*/, bool /*remove_inputs*/);
 
     /// Returns true if the step can remove any columns from the output using removeUnusedColumns.

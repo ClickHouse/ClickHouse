@@ -108,6 +108,18 @@ size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, c
 
 size_t tryAggregatePartitionsIndependently(QueryPlan::Node * node, QueryPlan::Nodes &, const Optimization::ExtraSettings &);
 
+/// Removes unused columns from the query plan. Unused columns can appear after other optimizations, such as filter
+/// push down over JOINs. If a column is only used for filtering after a JOIN, and the filter is pushed down into
+/// the JOIN condition, then the column may become unused in the plan.
+/// This optimization traverses the query plan and attempts to remove such unused columns from the steps if they
+/// support the optimization (canRemoveUnusedColumns method).
+/// It might happen that a child step supports removing unused columns, but it cannot remove any more columns
+/// (canRemoveColumnsFromOutput method returns false, e.g. JoinStepLogical always needs to keep at least one column for
+/// its output). In this case or when the children step doesn't support the optimization at all, then the inputs of the
+/// optimized step doesn't change.
+/// If the children support the optimization but cannot produce the expected output (e.g. JoinStepLogical can remove
+/// arbitrary number of columns as long as at least one column remains in the output), then the optimization adds an
+/// expression step to convert between the child's new output and the input of the parent node.
 size_t tryRemoveUnusedColumns(QueryPlan::Node * node, QueryPlan::Nodes &, const Optimization::ExtraSettings &);
 
 /// Build BloomFilter from right side of JOIN and add condition that looks up into this BloomFilter to the left side of the JOIN.
