@@ -392,10 +392,13 @@
             user-select: none;
             color: var(--button-text-color);
             background-color: var(--button-color);
-            padding: 0.25rem 1rem;
             cursor: pointer;
-            font-weight: bold;
-            font-size: 100%; /* Otherwise button element will have a lower font size. */
+            width: 2.25em;
+        }
+
+        #copy_button:disabled{
+           visibility: hidden;
+           pointer-events: none;
         }
 
         #copy_button:hover, #copy_button:focus
@@ -403,6 +406,7 @@
             color: var(--button-active-text-color);
             background-color: var(--button-active-color);
         }
+
 
         #hint
         {
@@ -783,7 +787,12 @@
                 <div id="hourglass">⧗</div>
                 <div id="check-mark">✔</div>
                 <div id="progress"></div>
-                <button type="submit" onclick="copyResultsToClipboard()" id="copy_button">Copy to clipboard</button>
+                <button type="button" onclick="copyResultsToClipboard()" id="copy_button">
+                    <svg id="clipboard-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6">
+                        <title>Copy to clipboard</title>
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.888A2.25 2.25 0 0 0 13.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 0 1-.75.75H9a.75.75 0 0 1-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 0 1-2.25 2.25H6.75A2.25 2.25 0 0 1 4.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 0 1 1.927-.184" />
+                    </svg>
+                </button>
                 <div id="stats"></div>
                 <div id="theme"><span id="toggle-dark">🌘</span><span id="toggle-light">☀️</span></div>
             </div>
@@ -1109,6 +1118,11 @@ let controller = null;
 
 /// Buffer to copy data from query into clipboard
 let clipboard_buffer = '';
+
+async function disableCopyButtonIfEmpty() {
+	document.getElementById("copy_button").disabled = (!clipboard_buffer);
+}
+document.getElementById('copy_button').onclick = disableCopyButtonIfEmpty;
 
 async function postImpl(posted_request_num, query)
 {
@@ -2235,7 +2249,7 @@ async function getQueryUnderCursor() {
 }
 
 
-function copyResultsToClipboard() {
+async function copyResultsToClipboard() {
     try {
         const data = clipboard_buffer;
         let copy_button = document.getElementById('copy_button')
@@ -2255,11 +2269,11 @@ function copyResultsToClipboard() {
             document.execCommand('copy')
             document.body.removeChild(textArea);
         }
-        copy_button.innerText = "Copied !";
+        copy_button.innerText = "Copied";
         copy_button.style.color = "white";
         copy_button.style.backgroundColor = "green";
     } catch (err) {
-        copy_button.innerText = "Failed !";
+        copy_button.innerText = "Can't copy";
         copy_button.style.backgroundColor = "red";
     }
 }
@@ -2308,5 +2322,8 @@ document.getElementById('toggle-light').onclick = function() {
 document.getElementById('toggle-dark').onclick = function() {
     setColorTheme('dark', true);
 }
+
+/// set the copy_button as disabled while there is no data at first
+disableCopyButtonIfEmpty()
 </script>
 </html>
