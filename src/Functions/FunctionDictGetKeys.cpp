@@ -24,11 +24,6 @@
 #include <Common/CacheBase.h>
 #include <Common/SLRUCachePolicy.h>
 
-#include <condition_variable>
-#include <mutex>
-#include <unordered_set>
-
-
 namespace DB
 {
 
@@ -86,34 +81,6 @@ struct MappedWeight
 
 using DictGetKeysCache = CacheBase<Key, Mapped, KeyHash, MappedWeight>;
 
-struct DomainKey
-{
-    std::string dict_name;
-    std::string attr_name;
-
-    bool operator==(const DomainKey & other) const { return dict_name == other.dict_name && attr_name == other.attr_name; }
-};
-
-struct DomainKeyHash
-{
-    size_t operator()(const DomainKey & key) const noexcept
-    {
-        SipHash h;
-        h.update(key.dict_name.data(), key.dict_name.size());
-        h.update(key.attr_name.data(), key.attr_name.size());
-        return static_cast<size_t>(h.get64());
-    }
-};
-
-struct Domain
-{
-    std::mutex m;
-    std::condition_variable cv;
-    bool building = false;
-    UInt64 build_epoch_seen = 0;
-};
-
-
 class SharedCache
 {
 public:
@@ -121,12 +88,6 @@ public:
     {
         static SharedCache inst;
         return inst;
-    }
-
-    Domain & getDomain(const std::string & dict_name, const std::string & attr)
-    {
-        std::lock_guard lk(domain_mutex);
-        return domains[DomainKey{dict_name, attr}];
     }
 
     DictGetKeysCache & getCache() { return cache; }
@@ -145,9 +106,6 @@ private:
 
     /// TODO: Change to be configurable via settings
     static size_t defaultMaxBytes() { return 100ULL << 20; }
-
-    std::mutex domain_mutex;
-    std::unordered_map<DomainKey, Domain, DomainKeyHash> domains;
 
     DictGetKeysCache cache;
 };
@@ -300,51 +258,17 @@ private:
 
         if (!missing_bucket_ids.empty())
         {
-            Domain & dom = SharedCache::instance().getDomain(dict_name, attr_name);
-            std::unique_lock lk(dom.m);
+            getMissingBucketKeys(dict, attr_name, key_types, bucket_cached, missing_bucket_ids, hash_to_bucket_id);
 
-            // If someone else is currently building for this (dict, attr), wait until their scan completes, then recheck cache.
-            if (dom.building)
+            for (size_t bucket_id : missing_bucket_ids)
             {
-                UInt64 seen = dom.build_epoch_seen;
-                dom.cv.wait(lk, [&] { return dom.build_epoch_seen != seen && !dom.building; });
-
-                // Recheck cache for our misses to pick up entries filled by the other builder
-                std::vector<size_t> remaining;
-                remaining.reserve(missing_bucket_ids.size());
-                for (size_t bucket_id : missing_bucket_ids)
+                if (!bucket_cached[bucket_id])
+                    bucket_cached[bucket_id] = std::make_shared<Mapped>();
+                Key key{domain_hash, bucket_hashes[bucket_id]};
+                if (!cache.contains(key))
                 {
-                    Key key{domain_hash, bucket_hashes[bucket_id]};
-                    if (auto hit = cache.get(key))
-                        bucket_cached[bucket_id] = hit;
-                    else
-                        remaining.push_back(bucket_id);
-                }
-                missing_bucket_ids.swap(remaining);
-            }
-
-            // If still have misses, we do the single scan; others will wait.
-            if (!missing_bucket_ids.empty())
-            {
-                dom.building = true;
-                lk.unlock();
-
-                getMissingBucketKeys(dict, attr_name, key_types, bucket_cached, missing_bucket_ids, hash_to_bucket_id);
-
-                for (size_t bucket_id : missing_bucket_ids)
-                {
-                    if (!bucket_cached[bucket_id])
-                        bucket_cached[bucket_id] = std::make_shared<Mapped>();
-                    Key key{domain_hash, bucket_hashes[bucket_id]};
                     cache.set(key, bucket_cached[bucket_id]);
                 }
-
-                /// Wake waiters
-                lk.lock();
-                dom.building = false;
-                ++dom.build_epoch_seen;
-                lk.unlock();
-                dom.cv.notify_all();
             }
         }
 
