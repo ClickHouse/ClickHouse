@@ -159,23 +159,11 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
     const std::string original_query = original_uri.getQuery();
     if (!original_query.empty() && !has_version_id && !looks_like_presigned)
     {
-        if (is_virtual_hosted_style)
-        {
-            // Virtual-hosted style (AWS style): fold query into key (matches unit tests)
-            key += "?";
-            key += original_query;
-            uri.setQuery("");
-        }
-        else
-        {
-            // Path-style/custom endpoints: fold only wildcard-like queries (no '=')
-            if (original_query.find('=') == std::string::npos)
-            {
-                key += "?";
-                key += original_query;
-                uri.setQuery("");
-            }
-        }
+        // For all styles except pre-signed/versioned, fold query into key
+        // This ensures consistent behavior for wildcard parsing and format detection
+        key += "?";
+        key += original_query;
+        uri.setQuery("");
     }
 
     validateBucket(bucket, uri);
