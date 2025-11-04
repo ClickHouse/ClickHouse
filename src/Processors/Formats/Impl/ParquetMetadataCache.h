@@ -39,6 +39,15 @@ struct ParquetMetadataCacheKey
     }
 };
 
+/// Hash function for ParquetMetadataCacheKey
+struct ParquetMetadataCacheKeyHash
+{
+    size_t operator()(const ParquetMetadataCacheKey & key) const
+    {
+        return std::hash<String>{}(key.file_path) ^ std::hash<String>{}(key.etag);
+    }
+};
+
 /// Cache cell containing Parquet metadata
 struct ParquetMetadataCacheCell : private boost::noncopyable
 {
@@ -92,10 +101,10 @@ struct ParquetMetadataCacheWeightFunction
 };
 
 /// Parquet metadata cache implementation
-class ParquetMetadataCache : public CacheBase<ParquetMetadataCacheKey, ParquetMetadataCacheCell, std::hash<String>, ParquetMetadataCacheWeightFunction>
+class ParquetMetadataCache : public CacheBase<ParquetMetadataCacheKey, ParquetMetadataCacheCell, ParquetMetadataCacheKeyHash, ParquetMetadataCacheWeightFunction>
 {
 public:
-    using Base = CacheBase<ParquetMetadataCacheKey, ParquetMetadataCacheCell, std::hash<String>, ParquetMetadataCacheWeightFunction>;
+    using Base = CacheBase<ParquetMetadataCacheKey, ParquetMetadataCacheCell, ParquetMetadataCacheKeyHash, ParquetMetadataCacheWeightFunction>;
 
     ParquetMetadataCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_count, double size_ratio)
         : Base(cache_policy, CurrentMetrics::ParquetMetadataCacheBytes, CurrentMetrics::ParquetMetadataCacheFiles, max_size_in_bytes, max_count, size_ratio)
