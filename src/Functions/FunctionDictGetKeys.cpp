@@ -96,7 +96,7 @@ public:
 private:
     SharedCache()
         : cache(
-              "SLRU",
+              "LRU",
               CurrentMetrics::end(),
               CurrentMetrics::end(),
               defaultMaxBytes(),
