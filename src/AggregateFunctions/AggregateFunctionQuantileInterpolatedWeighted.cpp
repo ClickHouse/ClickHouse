@@ -289,20 +289,20 @@ private:
                 }
             }
 
-            size_t l = idx;
-            size_t u = idx + 1 < size ? idx + 1 : idx;
+            size_t left_idx = idx;
+            size_t right_idx = idx + 1 < size ? idx + 1 : idx;
 
-            Float64 xl = value_weight_pairs[l].second;
-            Float64 xr = value_weight_pairs[u].second;
-            UnderlyingType yl = value_weight_pairs[l].first;
-            UnderlyingType yr = value_weight_pairs[u].first;
+            Float64 lower_percentile = value_weight_pairs[left_idx].second;
+            Float64 upper_percentile = value_weight_pairs[right_idx].second;
+            UnderlyingType lower_value = value_weight_pairs[left_idx].first;
+            UnderlyingType upper_value = value_weight_pairs[right_idx].first;
 
-            if (level < xl)
-                yr = yl;
-            if (level > xr)
-                yl = yr;
+            if (level < lower_percentile)
+                upper_value = lower_value;
+            if (level > upper_percentile)
+                lower_value = upper_value;
 
-            result[indices[level_index]] = static_cast<T>(interpolate(level, xl, xr, yl, yr));
+            result[indices[level_index]] = static_cast<T>(interpolate(level, lower_percentile, upper_percentile, lower_value, upper_value));
         }
     }
 
