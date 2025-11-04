@@ -1688,7 +1688,7 @@ Chunk StorageFileSource::generate()
 
         /// Close file prematurely if stream was ended.
         reader.reset();
-        pipeline.reset();
+        pipeline = nullptr;
         input_format.reset();
 
         if (files_iterator->isReadFromArchive() && !files_iterator->isSingleFileReadFromArchive())
