@@ -1872,7 +1872,6 @@ void ExternalIntegrations::createExternalDatabase(RandomGenerator & rg, SQLDatab
             break;
         default:
             UNREACHABLE();
-            break;
     }
     requires_external_call_check++;
     next_calls_succeeded.emplace_back(next->performDatabaseIntegration(rg, d));
@@ -1915,7 +1914,6 @@ void ExternalIntegrations::createExternalDatabaseTable(
             break;
         default:
             UNREACHABLE();
-            break;
     }
     requires_external_call_check++;
     next_calls_succeeded.emplace_back(next->performTableIntegration(rg, t, true, entries));
@@ -1933,7 +1931,6 @@ bool ExternalIntegrations::reRunCreateDatabase(const IntegrationCall ic, const S
             break;
         default:
             UNREACHABLE();
-            break;
     }
     return next ? next->reRunCreateDatabase(body) : false;
 }
@@ -1949,7 +1946,6 @@ bool ExternalIntegrations::reRunCreateTable(const IntegrationCall ic, const Stri
             break;
         default:
             UNREACHABLE();
-            break;
     }
     return next ? next->reRunCreateTable(body) : false;
 }
@@ -1966,7 +1962,6 @@ bool ExternalIntegrations::performExternalCommand(
             break;
         default:
             UNREACHABLE();
-            break;
     }
     if (next)
     {
@@ -2042,7 +2037,6 @@ void ExternalIntegrations::setBackupDetails(const IntegrationCall dc, const Stri
             break;
         default:
             UNREACHABLE();
-            break;
     }
 }
 
