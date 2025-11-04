@@ -270,18 +270,18 @@ private:
         {
             const UInt128 hash = hashAt(values_column, cur_row_id);
 
-            if (hash_to_bucket_id.contains(hash))
+            auto * it = hash_to_bucket_id.find(hash);
+            if (it)
             {
-                size_t bucket_id = hash_to_bucket_id[hash];
-                row_id_to_bucket_id[cur_row_id] = bucket_id;
-                continue;
+                row_id_to_bucket_id[cur_row_id] = it->getMapped();
             }
-
-            /// New unique value, create a new bucket
-            const size_t new_bucket_id = num_buckets++;
-            hash_to_bucket_id[hash] = new_bucket_id;
-            row_id_to_bucket_id[cur_row_id] = new_bucket_id;
-            bucket_hashes.push_back(hash);
+            else
+            {
+                const size_t new_bucket_id = num_buckets++;
+                hash_to_bucket_id[hash] = new_bucket_id;
+                row_id_to_bucket_id[cur_row_id] = new_bucket_id;
+                bucket_hashes.push_back(hash);
+            }
         }
 
         auto & cache = SharedCache::instance().getCache();
