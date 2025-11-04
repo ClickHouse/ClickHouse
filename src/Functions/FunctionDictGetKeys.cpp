@@ -183,8 +183,8 @@ Mapped makeCachedArrayFromLinkedList(
     size_t len = 0;
     while (cur != std::numeric_limits<size_t>::max())
     {
-        for (size_t key_id = 0; key_id < key_cols.size(); ++key_id)
-            key_cols[key_id]->insertFrom(*payload_key_cols[key_id], cur);
+        for (size_t key_pos = 0; key_pos < key_cols.size(); ++key_pos)
+            key_cols[key_pos]->insertFrom(*payload_key_cols[key_pos], cur);
         cur = next_key_pos[cur];
         ++len;
     }
@@ -347,14 +347,12 @@ private:
             [&]() -> DictGetKeysCache::MappedPtr
             {
                 Map hash_to_bucket_id;
-                hash_to_bucket_id.reserve(1);
                 hash_to_bucket_id[value_hash] = 0;
-                auto results = getMissingBucketKeys(attr_name, dict, key_types, 1, std::vector<size_t>{0}, hash_to_bucket_id, 1);
+                auto results = getMissingBucketKeys(dict, attr_name, key_types, std::vector<size_t>{0}, hash_to_bucket_id, 1, 1);
                 return std::make_shared<Mapped>(std::move(results[0]));
             });
 
-        ColumnPtr array = mapped_ptr->array;
-        return ColumnConst::create(array, input_rows_count);
+        return ColumnConst::create(mapped_ptr->array, input_rows_count);
     }
 
     ColumnPtr executeVectorPath(
@@ -442,7 +440,7 @@ private:
                 lk.unlock();
 
                 auto results = getMissingBucketKeys(
-                    attr_name, dict, key_types, num_buckets, missing_bucket_ids, hash_to_bucket_id, input_rows_count);
+                    dict, attr_name, key_types, missing_bucket_ids, hash_to_bucket_id, num_buckets, input_rows_count);
 
                 // Insert computed results into cache and fill our local bucket_cached
                 for (size_t bucket_id : missing_bucket_ids)
@@ -521,8 +519,8 @@ private:
             const auto & arr = static_cast<const ColumnArray &>(*bucket_cached[bucket_id]->array);
             const auto & tup = static_cast<const ColumnTuple &>(arr.getData());
             const size_t base = bucket_id * keys_cnt;
-            for (size_t key_id = 0; key_id < keys_cnt; ++key_id)
-                src[base + key_id] = &tup.getColumn(key_id);
+            for (size_t key_pos = 0; key_pos < keys_cnt; ++key_pos)
+                src[base + key_pos] = &tup.getColumn(key_pos);
         }
 
         MutableColumns result_cols;
@@ -544,8 +542,8 @@ private:
             while (j < input_rows_count && row_id_to_bucket_id[j] == bucket_id)
                 ++j;
 
-            for (size_t key_id = 0; key_id < keys_cnt; ++key_id)
-                result_cols[key_id]->insertRangeFrom(*src[base + key_id], 0, len);
+            for (size_t key_pos = 0; key_pos < keys_cnt; ++key_pos)
+                result_cols[key_pos]->insertRangeFrom(*src[base + key_pos], 0, len);
 
             for (; row_id < j; ++row_id)
             {
@@ -559,24 +557,25 @@ private:
 
     template <class DictionaryPtr>
     std::vector<Mapped> getMissingBucketKeys(
-        const String & attr_name,
         const DictionaryPtr & dict,
+        const String & attr_name,
         const DataTypes & key_types,
-        size_t total_buckets,
         const std::vector<size_t> & missing_bucket_ids,
         const Map & hash_to_bucket_id,
+        size_t total_buckets,
         size_t input_rows_count) const
     {
         std::vector<size_t> last_key_pos_for_bucket(total_buckets, std::numeric_limits<size_t>::max());
-        std::vector<size_t> counts(total_buckets, 0);
+        std::vector<size_t> num_matched_rows_per_bucket(total_buckets, 0);
         std::vector<size_t> next_key_pos;
         next_key_pos.reserve(input_rows_count);
 
         std::vector<MutableColumnPtr> payload_key_cols;
+
         const size_t keys_cnt = key_types.size();
         payload_key_cols.reserve(keys_cnt);
-        for (const auto & t : key_types)
-            payload_key_cols.emplace_back(t->createColumn());
+        for (const auto & key_type : key_types)
+            payload_key_cols.emplace_back(key_type->createColumn());
 
         Names column_names = dict->getStructure().getKeysNames();
         column_names.push_back(attr_name);
@@ -588,28 +587,29 @@ private:
         Block block;
         while (executor.pull(block))
         {
-            ColumnPtr attr_col = block.getByPosition(keys_cnt).column->convertToFullColumnIfLowCardinality();
+            ColumnPtr attr_col = block.getByPosition(keys_cnt).column->convertToFullIfNeeded();
 
-            std::vector<ColumnPtr> key_src(keys_cnt);
-            for (size_t key_id = 0; key_id < keys_cnt; ++key_id)
-                key_src[key_id] = block.getByPosition(key_id).column->convertToFullColumnIfLowCardinality();
+            std::vector<ColumnPtr> key_columns(keys_cnt);
+            for (size_t key_pos = 0; key_pos < keys_cnt; ++key_pos)
+                key_columns[key_pos] = block.getByPosition(key_pos).column->convertToFullIfNeeded();
 
-            const size_t rows = attr_col->size();
-            for (size_t i = 0; i < rows; ++i)
+            const size_t rows_in_block = attr_col->size();
+            for (size_t row_id = 0; row_id < rows_in_block; ++row_id)
             {
-                const UInt128 hash = hashAt(*attr_col, i);
+                const UInt128 hash = hashAt(*attr_col, row_id);
 
                 const auto * it = hash_to_bucket_id.find(hash);
                 if (it == hash_to_bucket_id.end())
                     continue;
 
-                const auto & bucket_id = it->getMapped();
                 const size_t cur_pos = payload_key_cols[0]->size();
-                for (size_t key_id = 0; key_id < keys_cnt; ++key_id)
-                    payload_key_cols[key_id]->insertFrom(*key_src[key_id], i);
+                for (size_t key_pos = 0; key_pos < keys_cnt; ++key_pos)
+                    payload_key_cols[key_pos]->insertFrom(*key_columns[key_pos], row_id);
+                  
+                const auto & bucket_id = it->getMapped();
                 next_key_pos.push_back(last_key_pos_for_bucket[bucket_id]);
                 last_key_pos_for_bucket[bucket_id] = cur_pos;
-                ++counts[bucket_id];
+                ++num_matched_rows_per_bucket[bucket_id];
             }
         }
 
@@ -617,7 +617,7 @@ private:
 
         for (size_t bucket_id : missing_bucket_ids)
         {
-            if (counts[bucket_id] == 0)
+            if (num_matched_rows_per_bucket[bucket_id] == 0)
                 out[bucket_id] = makeEmptyCachedArray(key_types);
             else
                 out[bucket_id]
