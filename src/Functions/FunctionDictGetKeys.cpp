@@ -56,37 +56,7 @@ inline UInt128 hashAt(const IColumn & column, size_t row_id)
 
 inline bool equalAt(const IColumn & left_column, size_t left_row_id, const IColumn & right_column, size_t right_row_id)
 {
-    if (const auto * left_nullable = checkAndGetColumn<ColumnNullable>(&left_column))
-    {
-        if (const auto * right_nullable = checkAndGetColumn<ColumnNullable>(&right_column))
-        {
-            const bool left_is_null = left_nullable->isNullAt(left_row_id);
-            const bool right_is_null = right_nullable->isNullAt(right_row_id);
-            if (left_is_null || right_is_null)
-                return left_is_null && right_is_null;
-
-            /// Both not null
-            return left_nullable->getNestedColumn().compareAt(
-                       left_row_id, right_row_id, right_nullable->getNestedColumn(), /*nan_direction_hint*/ 1)
-                == 0;
-        }
-
-        if (left_nullable->isNullAt(left_row_id))
-            return false;
-
-        /// Right is not nullable
-        return left_nullable->getNestedColumn().compareAt(left_row_id, right_row_id, right_column, /*nan_direction_hint*/ 1) == 0;
-    }
-
-    if (const auto * right_nullable = checkAndGetColumn<ColumnNullable>(&right_column))
-    {
-        if (right_nullable->isNullAt(right_row_id))
-            return false;
-
-        return left_column.compareAt(left_row_id, right_row_id, right_nullable->getNestedColumn(), /*nan_direction_hint*/ 1) == 0;
-    }
-
-    return left_column.compareAt(left_row_id, right_row_id, right_column, /*nan_direction_hint*/ 1) == 0;
+    return hashAt(left_column, left_row_id) == hashAt(right_column, right_row_id);
 }
 
 
@@ -412,7 +382,7 @@ private:
         size_t input_rows_count,
         const auto & dict) const
     {
-        auto value_hash = hashAt(values_col, 0);
+        UInt128 value_hash = hashAt(values_col, 0);
         Key key{dict_name, epoch, attr_name, value_hash};
 
         auto & cache = SharedCache::instance().getCache();
@@ -428,7 +398,7 @@ private:
                     keys_cnt,
                     [&](auto & target_map, auto & bucket_representatives, auto & interested_buckets)
                     {
-                        UInt64 hash = hashAt(values_col, 0);
+                        UInt128 hash = hashAt(values_col, 0);
                         target_map[hash].push_back(0);
                         bucket_representatives.push_back(0);
                         interested_buckets.push_back(0);
@@ -463,7 +433,7 @@ private:
 
         for (size_t cur_row_id = 0; cur_row_id < input_rows_count; ++cur_row_id)
         {
-            const UInt64 hash = hashAt(values_column, cur_row_id);
+            const UInt128 hash = hashAt(values_column, cur_row_id);
             auto & potential_bucket_ids = hash_to_bucket_ids[hash];
 
             bool previously_seen = false;
@@ -552,7 +522,7 @@ private:
 
                         for (size_t bucket_id : miss_bucket_ids)
                         {
-                            UInt64 hash = hashAt(values_column, bucket_representatives[bucket_id]);
+                            UInt128 hash = hashAt(values_column, bucket_representatives[bucket_id]);
                             target_map[hash].push_back(bucket_id);
                         }
                     },
@@ -719,7 +689,7 @@ private:
             const size_t rows = attr_col->size();
             for (size_t i = 0; i < rows; ++i)
             {
-                const UInt64 hash = hashAt(*attr_col, i);
+                const UInt128 hash = hashAt(*attr_col, i);
 
                 auto * it = target.find(hash);
                 if (it == target.end())
