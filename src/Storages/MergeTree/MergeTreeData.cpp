@@ -161,6 +161,9 @@ namespace ProfileEvents
 namespace CurrentMetrics
 {
     extern const Metric DelayedInserts;
+    extern const Metric FreezePartThreads;
+    extern const Metric FreezePartThreadsActive;
+    extern const Metric FreezePartThreadsScheduled;
 }
 
 
@@ -8231,7 +8234,8 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         {
             for (const auto & part : real_parts)
             {
-                const auto & primary_key_column = *part->getIndex()->at(0);
+                auto index = part->getIndex();
+                const auto & primary_key_column = *index->at(0);
                 auto & min_column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns[pos]);
                 insert(min_column, primary_key_column[0]);
             }
@@ -8242,7 +8246,8 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         {
             for (const auto & part : real_parts)
             {
-                const auto & primary_key_column = *part->getIndex()->at(0);
+                auto index = part->getIndex();
+                const auto & primary_key_column = *index->at(0);
                 auto & max_column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns[pos]);
                 insert(max_column, primary_key_column[primary_key_column.size() - 1]);
             }
@@ -8788,9 +8793,17 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
     String backup_name = (!with_name.empty() ? escapeForFileName(with_name) : toString(increment));
     String backup_path = fs::path(shadow_path) / backup_name / "";
 
-    PartitionCommandsResultInfo result;
 
-    size_t parts_processed = 0;
+    ThreadPool pool(
+        CurrentMetrics::FreezePartThreads,
+        CurrentMetrics::FreezePartThreadsActive,
+        CurrentMetrics::FreezePartThreadsScheduled,
+        local_context->getSettingsRef()[Setting::max_threads]);
+
+    PartitionCommandsResultInfo result;
+    std::mutex result_mutex;
+    ThreadPoolCallbackRunnerLocal<void> runner(pool, "FreezePart");
+
     for (const auto & part : data_parts)
     {
         if (local_context->isCurrentQueryKilled())
@@ -8798,47 +8811,55 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
         if (!matcher(part->info.getPartitionId()))
             continue;
 
-        LOG_DEBUG(log, "Freezing part {} snapshot will be placed at {}", part->name, backup_path);
+        runner(
+            [&]
+            {
+                LOG_DEBUG(log, "Freezing part {} snapshot will be placed at {}", part->name, backup_path);
 
-        auto data_part_storage = part->getDataPartStoragePtr();
-        String backup_part_path = fs::path(backup_path) / relative_data_path;
+                auto data_part_storage = part->getDataPartStoragePtr();
+                String backup_part_path = fs::path(backup_path) / relative_data_path;
 
-        scope_guard src_flushed_tmp_dir_lock;
-        MergeTreeData::MutableDataPartPtr src_flushed_tmp_part;
+                scope_guard src_flushed_tmp_dir_lock;
+                MergeTreeData::MutableDataPartPtr src_flushed_tmp_part;
 
-        auto callback = [this, &part, &backup_part_path](const DiskPtr & disk)
-        {
-            // Store metadata for replicated table.
-            // Do nothing for non-replicated.
-            createAndStoreFreezeMetadata(disk, part, fs::path(backup_part_path) / part->getDataPartStorage().getPartDirectory());
-        };
+                auto callback = [this, &part, &backup_part_path](const DiskPtr & disk)
+                {
+                    // Store metadata for replicated table.
+                    // Do nothing for non-replicated.
+                    createAndStoreFreezeMetadata(disk, part, fs::path(backup_part_path) / part->getDataPartStorage().getPartDirectory());
+                };
 
-        IDataPartStorage::ClonePartParams params
-        {
-            .make_source_readonly = true
-        };
+                IDataPartStorage::ClonePartParams params
+                {
+                    .make_source_readonly = true
+                };
 
-        auto new_storage = data_part_storage->freeze(
-            backup_part_path,
-            part->getDataPartStorage().getPartDirectory(),
-            local_context->getReadSettings(),
-            local_context->getWriteSettings(),
-            callback,
-            params);
+                auto new_storage = data_part_storage->freeze(
+                    backup_part_path,
+                    part->getDataPartStorage().getPartDirectory(),
+                    local_context->getReadSettings(),
+                    local_context->getWriteSettings(),
+                    callback,
+                    params);
 
-        part->is_frozen.store(true, std::memory_order_relaxed);
-        result.push_back(PartitionCommandResultInfo{
-            .command_type = "FREEZE PART",
-            .partition_id = part->info.getPartitionId(),
-            .part_name = part->name,
-            .backup_path = new_storage->getFullRootPath(),
-            .part_backup_path = new_storage->getFullPath(),
-            .backup_name = backup_name,
-        });
-        ++parts_processed;
+                part->is_frozen.store(true, std::memory_order_relaxed);
+                {
+                    std::lock_guard lock(result_mutex);
+                    result.push_back(PartitionCommandResultInfo{
+                        .command_type = "FREEZE PART",
+                        .partition_id = part->info.getPartitionId(),
+                        .part_name = part->name,
+                        .backup_path = new_storage->getFullRootPath(),
+                        .part_backup_path = new_storage->getFullPath(),
+                        .backup_name = backup_name,
+                    });
+                }
+            }, Priority{0});
     }
 
-    LOG_DEBUG(log, "Froze {} parts", parts_processed);
+    runner.waitForAllToFinishAndRethrowFirstError();
+
+    LOG_DEBUG(log, "Froze {} parts", result.size());
     return result;
 }
 
@@ -9894,18 +9915,21 @@ MergeTreeData::PartitionIdToMinBlockPtr MergeTreeData::getMinDataVersionForEachP
     return std::make_shared<PartitionIdToMinBlock>(std::move(partition_to_min_data_version));
 }
 
-StorageMetadataPtr MergeTreeData::getInMemoryMetadataPtr() const
+StorageMetadataPtr MergeTreeData::getInMemoryMetadataPtr(bool bypass_metadata_cache) const /// NOLINT
 {
+    if (bypass_metadata_cache)
+        return IStorage::getInMemoryMetadataPtr(bypass_metadata_cache);
+
     auto query_context = CurrentThread::get().getQueryContext();
     if (!query_context || !query_context->getSettingsRef()[Setting::enable_shared_storage_snapshot_in_query])
-        return IStorage::getInMemoryMetadataPtr();
+        return IStorage::getInMemoryMetadataPtr(bypass_metadata_cache);
 
     auto [cache, lock] = query_context->getStorageMetadataCache();
     auto it = cache->find(this);
     if (it != cache->end())
         return it->second;
 
-    return cache->emplace(this, IStorage::getInMemoryMetadataPtr()).first->second;
+    return cache->emplace(this, IStorage::getInMemoryMetadataPtr(bypass_metadata_cache)).first->second;
 }
 
 StorageSnapshotPtr MergeTreeData::createStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, bool without_data) const
