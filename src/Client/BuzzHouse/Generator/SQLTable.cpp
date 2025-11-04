@@ -794,7 +794,7 @@ void StatementGenerator::colRefOrExpression(
     }
     else
     {
-        chassert(0);
+        UNREACHABLE();
     }
 }
 
@@ -903,7 +903,7 @@ String StatementGenerator::setMergeTableParameter(RandomGenerator & rg, const St
     }
     else
     {
-        chassert(0);
+        UNREACHABLE();
     }
     if (noption < 7)
     {
@@ -1265,7 +1265,7 @@ void StatementGenerator::generateEngineDetails(
         }
         else
         {
-            chassert(0);
+            UNREACHABLE();
         }
 
         if (b.isDistributedEngine() && rg.nextBool())
@@ -2493,7 +2493,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
     }
     else
     {
-        chassert(0);
+        UNREACHABLE();
     }
 
     /// Set columns

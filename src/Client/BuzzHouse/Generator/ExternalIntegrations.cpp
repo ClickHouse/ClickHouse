@@ -1204,7 +1204,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
     }
     else
     {
-        chassert(0);
+        UNREACHABLE();
     }
 }
 
@@ -1350,7 +1350,7 @@ void MongoDBIntegration::documentAppendAnyValue(
     }
     else
     {
-        chassert(0);
+        UNREACHABLE();
     }
 }
 
@@ -1510,7 +1510,7 @@ bool DolorIntegration::performDatabaseIntegration(RandomGenerator & rg, SQLDatab
             catalog = "unity";
             break;
         default:
-            chassert(0);
+            UNREACHABLE();
     }
     buf += fmt::format(
         R"({{"seed":{},"database_name":"{}","storage":"{}","lake":"{}","catalog":"{}"}})",
@@ -1564,7 +1564,7 @@ void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabas
             catalog_str = d.format == LakeFormat::Iceberg ? "rest" : "unity";
             break;
         default:
-            chassert(0);
+            UNREACHABLE();
     }
 
     if (rg.nextMediumNumber() < 6)
@@ -1632,7 +1632,7 @@ void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabas
         }
         else
         {
-            chassert(0);
+            UNREACHABLE();
         }
     }
 }
@@ -1723,7 +1723,7 @@ void DolorIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTabl
                     t.getPossibleLakeFormat() == LakeFormat::Iceberg ? "/iceberg" : "");
                 break;
             default:
-                chassert(0);
+                UNREACHABLE();
         }
 
         /// The other storages are not tested yet
@@ -1803,7 +1803,7 @@ void DolorIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTabl
             }
             else
             {
-                chassert(0);
+                UNREACHABLE();
             }
         }
     }
@@ -1871,7 +1871,7 @@ void ExternalIntegrations::createExternalDatabase(RandomGenerator & rg, SQLDatab
             next = dolor.get();
             break;
         default:
-            chassert(0);
+            UNREACHABLE();
             break;
     }
     requires_external_call_check++;
@@ -1914,7 +1914,7 @@ void ExternalIntegrations::createExternalDatabaseTable(
             next = dolor.get();
             break;
         default:
-            chassert(0);
+            UNREACHABLE();
             break;
     }
     requires_external_call_check++;
@@ -1932,7 +1932,7 @@ bool ExternalIntegrations::reRunCreateDatabase(const IntegrationCall ic, const S
             next = dolor.get();
             break;
         default:
-            chassert(0);
+            UNREACHABLE();
             break;
     }
     return next ? next->reRunCreateDatabase(body) : false;
@@ -1948,7 +1948,7 @@ bool ExternalIntegrations::reRunCreateTable(const IntegrationCall ic, const Stri
             next = dolor.get();
             break;
         default:
-            chassert(0);
+            UNREACHABLE();
             break;
     }
     return next ? next->reRunCreateTable(body) : false;
@@ -1965,7 +1965,7 @@ bool ExternalIntegrations::performExternalCommand(
             next = dolor.get();
             break;
         default:
-            chassert(0);
+            UNREACHABLE();
             break;
     }
     if (next)
@@ -2041,7 +2041,7 @@ void ExternalIntegrations::setBackupDetails(const IntegrationCall dc, const Stri
             azurite->setBackupDetails(filename, br);
             break;
         default:
-            chassert(0);
+            UNREACHABLE();
             break;
     }
 }

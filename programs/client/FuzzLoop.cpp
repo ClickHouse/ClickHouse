@@ -889,7 +889,7 @@ bool Client::buzzHouse()
                 }
                 else
                 {
-                    chassert(0);
+                    UNREACHABLE();
                 }
             }
         }
