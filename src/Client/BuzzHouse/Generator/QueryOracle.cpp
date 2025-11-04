@@ -620,14 +620,9 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
     {
         /// INSERT INTO FILE EXPLAIN SELECT is not supported, so run
         /// INSERT INTO FILE SELECT * FROM (EXPLAIN SELECT);
-        ExplainQuery * eq = query->mutable_select_core()
-                                ->mutable_from()
-                                ->mutable_tos()
-                                ->mutable_join_clause()
-                                ->mutable_tos()
-                                ->mutable_joined_table()
-                                ->mutable_tof()
-                                ->mutable_select();
+        SelectStatementCore * nsel = query->mutable_select_core();
+        JoinedTableOrFunction * jtf = nsel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
+        ExplainQuery * eq = jtf->mutable_tof()->mutable_select();
 
         if (rg.nextBool())
         {
@@ -645,6 +640,43 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
             eopt->set_val(1);
         }
         eq->set_is_explain(true);
+        /// Remove `__set_` words
+        /// regexp_replace(line, '__set_[0-9]+', '')
+        ExprColAlias * eca = nsel->add_result_columns()->mutable_eca();
+        SQLFuncCall * fcall = eca->mutable_expr()->mutable_comp_expr()->mutable_func_call();
+
+        eca->mutable_col_alias()->set_column("explain");
+        fcall->mutable_func()->set_catalog_func(SQLFunc::FUNCREGEXP_REPLACE);
+        fcall->add_args()
+            ->mutable_expr()
+            ->mutable_comp_expr()
+            ->mutable_expr_stc()
+            ->mutable_col()
+            ->mutable_path()
+            ->mutable_col()
+            ->set_column("explain");
+        fcall->add_args()->mutable_expr()->mutable_lit_val()->set_no_quote_str("'__set_[0-9]+'");
+        fcall->add_args()->mutable_expr()->mutable_lit_val()->set_no_quote_str("''");
+
+        /// Filter out granules and parts read, because rows are being inserted all at once.
+        /// WHERE NOT match(explain, '^\ *(Parts|Granules|Ranges):')
+        UnaryExpr * uexpr = nsel->mutable_where()->mutable_expr()->mutable_expr()->mutable_comp_expr()->mutable_unary_expr();
+        SQLFuncCall * fcall2 = uexpr->mutable_expr()->mutable_comp_expr()->mutable_func_call();
+
+        uexpr->set_unary_op(UnaryOperator::UNOP_NOT);
+        fcall2->mutable_func()->set_catalog_func(SQLFunc::FUNCmatch);
+        fcall2->add_args()
+            ->mutable_expr()
+            ->mutable_comp_expr()
+            ->mutable_expr_stc()
+            ->mutable_col()
+            ->mutable_path()
+            ->mutable_col()
+            ->set_column("explain");
+        fcall2->add_args()->mutable_expr()->mutable_lit_val()->set_no_quote_str("'^\\ *(Parts|Granules|Ranges):'");
+        jtf->mutable_table_alias()->set_table("ex");
+        jtf->add_col_aliases()->set_column("explain");
+
         query = eq->mutable_inner_query()->mutable_select()->mutable_sel();
     }
     gen.resetAliasCounter();
