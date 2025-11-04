@@ -12,6 +12,33 @@
 namespace DB
 {
 
+struct S3StorageParsableArguments
+{
+    using Paths = StorageObjectStorageConfiguration::Paths;
+    using Path = StorageObjectStorageConfiguration::Path;
+    String format = "auto";
+    String compression_method = "auto";
+    String structure = "auto";
+    PartitionStrategyFactory::StrategyType partition_strategy_type = PartitionStrategyFactory::StrategyType::NONE;
+    bool partition_columns_in_data_file = true;
+    std::shared_ptr<IPartitionStrategy> partition_strategy;
+    S3::URI url;
+    std::unique_ptr<S3Settings> s3_settings;
+    std::unique_ptr<S3Capabilities> s3_capabilities;
+    HTTPHeaderEntries headers_from_ast;
+    Paths keys;
+    bool static_configuration = true;
+    Path read_path;
+
+public:
+    S3StorageParsableArguments() = default;
+
+    void fromNamedCollection(const NamedCollection & collection, ContextPtr context);
+    void fromAST(ASTs & args, ContextPtr context, bool with_structure);
+    void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure);
+};
+
+
 class StorageS3Configuration : public StorageObjectStorageConfiguration
 {
 public:
@@ -70,7 +97,7 @@ public:
     std::string getEngineName() const override { return url.storage_name; }
     std::string getNamespaceType() const override { return namespace_name; }
 
-    std::string getSignatures(bool with_structure = true) const
+    static constexpr std::string getSignatures(bool with_structure = true)
     {
         return with_structure ? signatures_with_structure : signatures_without_structure;
     }
@@ -106,41 +133,8 @@ public:
         ContextPtr context,
         bool with_structure) override;
 
-    static void addStructureAndFormatToArgsIfNeededSimple(
-        ASTs & args,
-        const String & structure,
-        const String & format,
-        ContextPtr context,
-        bool with_structure,
-        size_t max_number_of_arguments);
-
-    static bool collectCredentials(ASTPtr maybe_credentials, S3::S3AuthSettings & auth_settings_, ContextPtr local_context);
-
     S3::URI url;
 
-protected:
-    void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override;
-
-private:
-    static ASTPtr extractExtraCredentials(ASTs & args);
-    size_t getMaxNumberOfArguments(bool with_structure = true) const
-    {
-        return with_structure ? max_number_of_arguments_with_structure : max_number_of_arguments_without_structure;
-    }
-
-    void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;
-    static void
-    fromNamedCollectionSimple(StorageS3Configuration & entity_to_initialize, const NamedCollection & collection, ContextPtr context);
-    static void fromDiskSimple(
-        StorageS3Configuration & entity_to_initialize, const String & disk_name, ASTs & args, ContextPtr context, bool with_structure);
-
-    void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
-    static void fromASTSimple(
-        StorageS3Configuration & entity_to_initialize,
-        ASTs & args,
-        ContextPtr context,
-        bool with_structure,
-        size_t max_number_of_arguments);
 
     Paths keys;
 
@@ -151,8 +145,47 @@ private:
     /// If s3 configuration was passed from ast, then it is static.
     /// If from config - it can be changed with config reload.
     bool static_configuration = true;
+
+protected:
+    void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override;
+
+private:
+    void initializeFromParsableArguments(S3StorageParsableArguments && parsable_arguments)
+    {
+        url = std::move(parsable_arguments.url);
+        keys = std::move(parsable_arguments.keys);
+        s3_settings = std::move(parsable_arguments.s3_settings);
+        s3_capabilities = std::move(parsable_arguments.s3_capabilities);
+        headers_from_ast = std::move(parsable_arguments.headers_from_ast);
+        static_configuration = parsable_arguments.static_configuration;
+    }
+
+    size_t getMaxNumberOfArguments(bool with_structure = true) const
+    {
+        return with_structure ? max_number_of_arguments_with_structure : max_number_of_arguments_without_structure;
+    }
+
+    void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;
+
+    void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
 };
 
+void fromNamedCollectionSimple(S3StorageParsableArguments & entity_to_initialize, const NamedCollection & collection, ContextPtr context);
+
+void addStructureAndFormatToArgsIfNeededSimple(
+    ASTs & args, const String & structure, const String & format, ContextPtr context, bool with_structure, size_t max_number_of_arguments);
+
+void fromASTSimple(
+    S3StorageParsableArguments & entity_to_initialize,
+    ASTs & args,
+    ContextPtr context,
+    bool with_structure,
+    size_t max_number_of_arguments);
+
+void fromDiskSimple(
+    S3StorageParsableArguments & entity_to_initialize, const String & disk_name, ASTs & args, ContextPtr context, bool with_structure);
+
+bool collectCredentials(ASTPtr maybe_credentials, S3::S3AuthSettings & auth_settings_, ContextPtr local_context);
 }
 
 #endif

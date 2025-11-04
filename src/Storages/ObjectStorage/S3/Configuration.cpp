@@ -177,11 +177,12 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
 
 void StorageS3Configuration::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
 {
-    fromNamedCollectionSimple(*this, collection, context);
+    S3StorageParsableArguments parsable_arguments;
+    fromNamedCollectionSimple(parsable_arguments, collection, context);
+    initializeFromParsableArguments(std::move(parsable_arguments));
 }
 
-void StorageS3Configuration::fromNamedCollectionSimple(
-    StorageS3Configuration & entity_to_initialize, const NamedCollection & collection, ContextPtr context)
+void fromNamedCollectionSimple(S3StorageParsableArguments & entity_to_initialize, const NamedCollection & collection, ContextPtr context)
 {
     const auto & settings = context->getSettingsRef();
     validateNamedCollection(collection, required_configuration_keys, optional_configuration_keys);
@@ -263,7 +264,7 @@ void StorageS3Configuration::fromNamedCollectionSimple(
     entity_to_initialize.keys = {entity_to_initialize.url.key};
 }
 
-ASTPtr StorageS3Configuration::extractExtraCredentials(ASTs & args)
+static ASTPtr extractExtraCredentials(ASTs & args)
 {
     for (size_t i = 0; i != args.size(); ++i)
     {
@@ -278,7 +279,7 @@ ASTPtr StorageS3Configuration::extractExtraCredentials(ASTs & args)
     return nullptr;
 }
 
-bool StorageS3Configuration::collectCredentials(ASTPtr maybe_credentials, S3::S3AuthSettings & auth_settings_, ContextPtr local_context)
+bool collectCredentials(ASTPtr maybe_credentials, S3::S3AuthSettings & auth_settings_, ContextPtr local_context)
 {
     if (!maybe_credentials)
         return false;
@@ -327,11 +328,13 @@ bool StorageS3Configuration::collectCredentials(ASTPtr maybe_credentials, S3::S3
 
 void StorageS3Configuration::fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure)
 {
-    fromDiskSimple(*this, disk_name, args, context, with_structure);
+    S3StorageParsableArguments parsable_arguments;
+    fromDiskSimple(parsable_arguments, disk_name, args, context, with_structure);
+    initializeFromParsableArguments(std::move(parsable_arguments));
 }
 
-void StorageS3Configuration::fromDiskSimple(
-    StorageS3Configuration & entity_to_initialize, const String & disk_name, ASTs & args, ContextPtr context, bool with_structure)
+void fromDiskSimple(
+    S3StorageParsableArguments & entity_to_initialize, const String & disk_name, ASTs & args, ContextPtr context, bool with_structure)
 {
     auto disk = context->getDisk(disk_name);
     auto object_storage = disk->getObjectStorage();
@@ -352,8 +355,8 @@ void StorageS3Configuration::fromDiskSimple(
         String path = object_storage_disk->getObjectsKeyPrefix();
         fs::path root = path;
         fs::path suffix = parsing_result.path_suffix;
-        entity_to_initialize.setPathForRead(String(root / suffix));
-        entity_to_initialize.setPaths({String(root / suffix)});
+        entity_to_initialize.read_path = String(root / suffix);
+        entity_to_initialize.keys = {String(root / suffix)};
     }
     if (parsing_result.format.has_value())
         entity_to_initialize.format = *parsing_result.format;
@@ -366,11 +369,13 @@ void StorageS3Configuration::fromDiskSimple(
 
 void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_structure)
 {
-    fromASTSimple(*this, args, context, with_structure, getMaxNumberOfArguments(with_structure));
+    S3StorageParsableArguments parsable_arguments;
+    fromASTSimple(parsable_arguments, args, context, with_structure, getMaxNumberOfArguments(with_structure));
+    initializeFromParsableArguments(std::move(parsable_arguments));
 }
 
-void StorageS3Configuration::fromASTSimple(
-    StorageS3Configuration & entity_to_initialize, ASTs & args, ContextPtr context, bool with_structure, size_t max_number_of_arguments)
+void fromASTSimple(
+    S3StorageParsableArguments & entity_to_initialize, ASTs & args, ContextPtr context, bool with_structure, size_t max_number_of_arguments)
 {
     auto extra_credentials = extractExtraCredentials(args);
 
@@ -389,7 +394,7 @@ void StorageS3Configuration::fromASTSimple(
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "Storage S3 requires 1 to {} arguments. All supported signatures:\n{}",
             max_number_of_arguments,
-            entity_to_initialize.getSignatures(with_structure));
+            StorageS3Configuration::getSignatures(with_structure));
 
     auto key_value_args = parseKeyValueArguments(key_value_asts, context);
     if (key_value_args.contains("structure"))
@@ -733,7 +738,7 @@ void StorageS3Configuration::addStructureAndFormatToArgsIfNeeded(
     addStructureAndFormatToArgsIfNeededSimple(args, structure_, format_, context, with_structure, getMaxNumberOfArguments(with_structure));
 }
 
-void StorageS3Configuration::addStructureAndFormatToArgsIfNeededSimple(
+void addStructureAndFormatToArgsIfNeededSimple(
     ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure, size_t max_number_of_arguments)
 {
     if (auto collection = tryGetNamedCollectionWithOverrides(args, context))
