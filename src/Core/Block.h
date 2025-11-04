@@ -37,9 +37,10 @@ private:
     IndexByName index_by_name;
 
 public:
+    static size_t block_number;
     BlockInfo info;
 
-    Block() = default;
+    Block();
     Block(std::initializer_list<ColumnWithTypeAndName> il);
     Block(const ColumnsWithTypeAndName & data_); /// NOLINT
     Block(ColumnsWithTypeAndName && data_); /// NOLINT
@@ -179,6 +180,8 @@ public:
       *  with same structure, but different data.
       */
     void updateHash(SipHash & hash) const;
+
+    size_t my_block_number;
 
 private:
     void eraseImpl(size_t position);

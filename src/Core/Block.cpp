@@ -1,8 +1,8 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnReplicated.h>
+#include <Columns/ColumnSparse.h>
 #include <Core/Block.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -15,6 +15,7 @@
 #include <Common/Exception.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/assert_cast.h>
+#include <Common/logger_useful.h>
 
 #include <iterator>
 #include <ranges>
@@ -158,21 +159,58 @@ static ReturnType checkBlockStructure(const Block & lhs, const Block & rhs, std:
     return ReturnType(true);
 }
 
+size_t Block::block_number = 0;
 
-Block::Block(std::initializer_list<ColumnWithTypeAndName> il) : data{il}
+Block::Block()
+    : my_block_number{block_number++}
 {
-    initializeIndexByName();
+    LOG_DEBUG(
+        &Poco::Logger::get("Block"),
+        "Created empty Block: {}, block_number: {}, stacktrace: {}",
+        dumpStructure(),
+        my_block_number,
+        StackTrace().toString());
 }
 
 
-Block::Block(const ColumnsWithTypeAndName & data_) : data{data_}
+Block::Block(std::initializer_list<ColumnWithTypeAndName> il)
+    : data{il}
+    , my_block_number{block_number++}
 {
     initializeIndexByName();
+    LOG_DEBUG(
+        &Poco::Logger::get("Block"),
+        "Created Block from initializer list: {}, block_number: {}, stacktrace: {}",
+        dumpStructure(),
+        my_block_number,
+        StackTrace().toString());
 }
 
-Block::Block(ColumnsWithTypeAndName && data_) : data{std::move(data_)}
+
+Block::Block(const ColumnsWithTypeAndName & data_)
+    : data{data_}
+    , my_block_number{block_number++}
 {
     initializeIndexByName();
+    LOG_DEBUG(
+        &Poco::Logger::get("Block"),
+        "Created Block from lvalue columns: {}, block_number: {}, stacktrace: {}",
+        dumpStructure(),
+        my_block_number,
+        StackTrace().toString());
+}
+
+Block::Block(ColumnsWithTypeAndName && data_)
+    : data{std::move(data_)}
+    , my_block_number{block_number++}
+{
+    initializeIndexByName();
+    LOG_DEBUG(
+        &Poco::Logger::get("Block"),
+        "Created Block from rvalue columns: {}, block_number: {}, stacktrace: {}",
+        dumpStructure(),
+        my_block_number,
+        StackTrace().toString());
 }
 
 

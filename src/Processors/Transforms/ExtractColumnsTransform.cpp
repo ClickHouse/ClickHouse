@@ -1,5 +1,6 @@
 #include <Processors/Transforms/ExtractColumnsTransform.h>
 #include <Interpreters/getColumnFromBlock.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -22,6 +23,11 @@ Block ExtractColumnsTransform::transformHeader(Block header, const NamesAndTypes
 
 void ExtractColumnsTransform::transform(Chunk & chunk)
 {
+    LOG_DEBUG(
+        &Poco::Logger::get("ExtractColumnsTransform"),
+        "Extracting columns from chunk {}, requested columns: {}",
+        chunk.dumpStructure(),
+        requested_columns.toString());
     size_t num_rows = chunk.getNumRows();
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
     Columns columns;

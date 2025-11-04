@@ -209,7 +209,8 @@ StorageObjectStorage::StorageObjectStorage(
             sample_path);
     }
 
-    supports_prewhere = FormatFactory::instance().checkIfFormatSupportsPrewhere(configuration->format, context, format_settings);
+    supports_prewhere = !configuration_->isDataLakeConfiguration()
+        && FormatFactory::instance().checkIfFormatSupportsPrewhere(configuration->format, context, format_settings);
 
     StorageInMemoryMetadata metadata;
     metadata.setColumns(columns);
@@ -221,6 +222,8 @@ StorageObjectStorage::StorageObjectStorage(
     {
         metadata.partition_key = configuration->partition_strategy->getPartitionKeyDescription();
     }
+
+    LOG_DEBUG(log, "StorageObjectStorage: initialized with columns: {}", metadata.columns.toString(true));
 
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns));
     setInMemoryMetadata(metadata);

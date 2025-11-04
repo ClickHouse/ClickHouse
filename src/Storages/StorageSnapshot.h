@@ -13,7 +13,7 @@ struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 /// Snapshot of storage that fixes set columns that can be read in query.
-/// There are 3 sources of columns: regular columns from metadata,
+/// There are 3 sources of columns: ` columns from metadata,
 /// dynamic columns from object Types, virtual columns.
 struct StorageSnapshot
 {

@@ -999,6 +999,7 @@ AvroDeserializer::AvroDeserializer(const Block & header, avro::ValidSchema schem
 
 void AvroDeserializer::deserializeRow(MutableColumns & columns, avro::Decoder & decoder, RowReadExtension & ext) const
 {
+    chassert(!columns.empty());
     size_t row = columns[0]->size() + 1;
     ext.read_columns.assign(columns.size(), false);
     row_action.execute(columns, decoder, ext);

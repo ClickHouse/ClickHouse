@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Columns/IColumn_fwd.h>
+#include <Core/NamesAndTypes.h>
 namespace DB
 {
 

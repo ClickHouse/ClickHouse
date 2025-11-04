@@ -1,14 +1,17 @@
-#include <Storages/prepareReadingFromFormat.h>
-#include <Formats/FormatFactory.h>
 #include <Core/Settings.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Interpreters/DatabaseCatalog.h>
-#include <Storages/IStorage.h>
-#include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Formats/FormatFactory.h>
+#include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <IO/Operators.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Storages/IStorage.h>
+#include <Storages/prepareReadingFromFormat.h>
+#include <Common/logger_useful.h>
+
+#include <fmt/ranges.h>
 
 namespace DB
 {
@@ -31,19 +34,46 @@ ReadFromFormatInfo prepareReadingFromFormat(
     bool supports_tuple_elements,
     const PrepareReadingFromFormatHiveParams & hive_parameters)
 {
+    LOG_DEBUG(
+        &Poco::Logger::get("prepareReadingFromFormat"),
+        "supports_subset_of_columns: {}, supports_tuple_elements: {}, requested columns: {}",
+        supports_subset_of_columns,
+        supports_tuple_elements,
+        fmt::join(requested_columns, ", "));
     const NamesAndTypesList & columns_in_data_file =
         hive_parameters.file_columns.empty() ? storage_snapshot->metadata->getColumns().getAllPhysical() : hive_parameters.file_columns;
+    LOG_DEBUG(&Poco::Logger::get("prepareReadingFromFormat"), "Columns in data file: {}", columns_in_data_file.toString());
+    // LOG_DEBUG(&Poco::Logger::get("prepareReadingFromFormat"), "Virtual columns: {}", storage_snapshot->virtual_columns->toString());
     ReadFromFormatInfo info;
     /// Collect requested virtual columns and remove them from requested columns.
     Strings columns_to_read;
     for (const auto & column_name : requested_columns)
     {
+        LOG_DEBUG(&Poco::Logger::get("prepareReadingFromFormat"), "Processing requested column {}", column_name);
         if (auto virtual_column = storage_snapshot->virtual_columns->tryGet(column_name))
+        {
+            LOG_DEBUG(
+                &Poco::Logger::get("prepareReadingFromFormat"),
+                "Adding virtual column {} of type {} to requested virtual columns",
+                virtual_column->name,
+                virtual_column->type->getName());
             info.requested_virtual_columns.emplace_back(std::move(*virtual_column));
-        else if (auto it = hive_parameters.hive_partition_columns_to_read_from_file_path_map.find(column_name); it != hive_parameters.hive_partition_columns_to_read_from_file_path_map.end())
+        }
+        else if (auto it = hive_parameters.hive_partition_columns_to_read_from_file_path_map.find(column_name);
+                 it != hive_parameters.hive_partition_columns_to_read_from_file_path_map.end())
+        {
+            LOG_DEBUG(
+                &Poco::Logger::get("prepareReadingFromFormat"),
+                "Adding hive partition column {} of type {} to hive partition columns to read from file path",
+                it->first,
+                it->second->getName());
             info.hive_partition_columns_to_read_from_file_path.emplace_back(it->first, it->second);
+        }
         else
+        {
+            LOG_DEBUG(&Poco::Logger::get("prepareReadingFromFormat"), "Adding column {} to columns to read from data file", column_name);
             columns_to_read.push_back(column_name);
+        }
     }
 
     info.source_header = storage_snapshot->getSampleBlockForColumns(columns_to_read);
@@ -55,10 +85,22 @@ ReadFromFormatInfo prepareReadingFromFormat(
         info.source_header.insert({column_from_file_path.type->createColumn(), column_from_file_path.type, column_from_file_path.name});
 
     for (const auto & requested_virtual_column : info.requested_virtual_columns)
+    {
+        LOG_DEBUG(
+            &Poco::Logger::get("prepareReadingFromFormat"),
+            "Adding virtual column {} of type {} to source header, source header number: {}",
+            requested_virtual_column.name,
+            requested_virtual_column.type->getName(),
+            info.source_header.my_block_number);
         info.source_header.insert({requested_virtual_column.type->createColumn(), requested_virtual_column.type, requested_virtual_column.name});
-
+    }
     /// Set requested columns that should be read from data.
     info.requested_columns = storage_snapshot->getColumnsByNames(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), columns_to_read);
+
+    LOG_DEBUG(
+        &Poco::Logger::get("prepareReadingFromFormat"),
+        "Requested columns to read from data file after processing: {}",
+        info.requested_columns.toString());
 
     if (supports_subset_of_columns)
     {
@@ -91,14 +133,28 @@ ReadFromFormatInfo prepareReadingFromFormat(
             columns_to_read = std::move(new_columns_to_read);
         }
 
+        LOG_DEBUG(
+            &Poco::Logger::get("prepareReadingFromFormat"),
+            "Columns to read from data file after processing: {}",
+            fmt::join(columns_to_read, ", "));
+
         info.columns_description = storage_snapshot->getDescriptionForColumns(columns_to_read);
     }
     else
     {
+        LOG_DEBUG(
+            &Poco::Logger::get("prepareReadingFromFormat"),
+            "Columns in data file from data file after processing: {}",
+            fmt::join(columns_in_data_file.getNames(), ", "));
         /// If format doesn't support reading subset of columns, read all columns.
         /// Requested columns/subcolumns will be extracted after reading.
         info.columns_description = storage_snapshot->getDescriptionForColumns(columns_in_data_file.getNames());
     }
+
+    LOG_DEBUG(
+        &Poco::Logger::get("prepareReadingFromFormat"),
+        "Columns description for reading prepared with columns: {}",
+        info.columns_description.getAllPhysical().toString());
 
     /// Create header for InputFormat with columns that will be read from the data.
     for (const auto & column : info.columns_description)
@@ -110,6 +166,11 @@ ReadFromFormatInfo prepareReadingFromFormat(
 
     info.serialization_hints = getSerializationHintsForFileLikeStorage(storage_snapshot->metadata, context);
 
+    LOG_DEBUG(
+        &Poco::Logger::get("prepareReadingFromFormat"),
+        "Prepared ReadFromFormatInfo finished: format header columns: {}, source header columns: {}",
+        info.format_header.dumpNames(),
+        info.source_header.dumpNames());
     return info;
 }
 

@@ -4,7 +4,6 @@
 #include <IO/WithFileName.h>
 #include <Common/logger_useful.h>
 
-
 namespace DB
 {
 
@@ -108,6 +107,14 @@ Chunk IRowInputFormat::read()
     const Block & header = getPort().getHeader();
     size_t num_columns = header.columns();
     MutableColumns columns = header.cloneEmptyColumns(serializations);
+
+    LOG_DEBUG(&Poco::Logger::get("IRowInputFormat"), "Starting to read rows into chunk with {} columns, header number: {}", num_columns, header.my_block_number);
+
+    LOG_DEBUG(
+        &Poco::Logger::get("IRowInputFormat"),
+        "Reading rows starting from {}, current approx. bytes read for chunk: {}",
+        total_rows,
+        approx_bytes_read_for_chunk);
 
     ColumnCheckpoints checkpoints(columns.size());
     for (size_t column_idx = 0; column_idx < columns.size(); ++column_idx)
