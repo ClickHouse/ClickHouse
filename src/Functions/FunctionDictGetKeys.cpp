@@ -66,12 +66,12 @@ struct Key
 
 struct KeyHash
 {
-    UInt128 operator()(const Key & key) const noexcept
+    size_t operator()(const Key & key) const noexcept
     {
-        SipHash h;
-        h.update(key.domain_hash);
-        h.update(key.hash);
-        return h.get128();
+        SipHash sip;
+        sip.update(key.domain_hash);
+        sip.update(key.hash);
+        return static_cast<size_t>(sip.get64());
     }
 };
 
