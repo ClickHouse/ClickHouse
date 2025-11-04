@@ -3,7 +3,6 @@ DROP TABLE IF EXISTS alias_1;
 DROP TABLE IF EXISTS alias_2;
 DROP TABLE IF EXISTS alias_3;
 DROP TABLE IF EXISTS alias_4;
-DROP TABLE IF EXISTS source_other;
 
 -- Create source table
 CREATE TABLE source_table (id UInt32, value String) ENGINE = MergeTree ORDER BY id;
@@ -233,3 +232,30 @@ SELECT id, value, extra FROM metadata_alias WHERE id = 5;
 
 DROP TABLE metadata_alias;
 DROP TABLE metadata_target;
+
+SELECT 'Test alias with missing target table';
+DROP TABLE IF EXISTS missing_target_alias;
+DROP TABLE IF EXISTS temp_target;
+
+CREATE TABLE temp_target (id UInt32, value String) ENGINE = MergeTree ORDER BY id;
+INSERT INTO temp_target VALUES (1, 'data1'), (2, 'data2');
+
+CREATE TABLE missing_target_alias ENGINE = Alias('temp_target');
+SELECT * FROM missing_target_alias ORDER BY id;
+
+DROP TABLE temp_target;
+
+SELECT name, engine FROM system.tables WHERE database = currentDatabase() AND name = 'missing_target_alias';
+
+SELECT count() > 0 AS has_columns FROM system.columns WHERE database = currentDatabase();
+SELECT count() > 0 AS has_tables FROM system.tables WHERE database = currentDatabase();
+
+SELECT database, table, name FROM system.columns
+WHERE database = currentDatabase() AND table = 'missing_target_alias'
+ORDER BY name;
+
+SELECT name, engine, total_rows, total_bytes, data_paths
+FROM system.tables
+WHERE database = currentDatabase() AND name = 'missing_target_alias';
+
+DROP TABLE missing_target_alias;

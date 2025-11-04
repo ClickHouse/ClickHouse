@@ -151,10 +151,10 @@ public:
 
     ActionLock getActionLock(StorageActionBlockType type) override { return getTargetTable()->getActionLock(type); }
 
-    std::optional<UInt64> totalRows(ContextPtr query_context) const override { return getTargetTable()->totalRows(query_context); }
-    std::optional<UInt64> totalBytes(ContextPtr query_context) const override { return getTargetTable()->totalBytes(query_context); }
-    ColumnSizeByName getColumnSizes() const override { return getTargetTable()->getColumnSizes(); }
-    IndexSizeByName getSecondaryIndexSizes() const override { return getTargetTable()->getSecondaryIndexSizes(); }
+    std::optional<UInt64> totalRows(ContextPtr query_context) const override;
+    std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
+    ColumnSizeByName getColumnSizes() const override;
+    IndexSizeByName getSecondaryIndexSizes() const override;
 
     CancellationCode killPartMoveToShard(const UUID & task_uuid) override;
 

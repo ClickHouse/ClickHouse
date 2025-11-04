@@ -114,3 +114,10 @@ extra
 id
 value
 5	five	data5
+Test alias with missing target table
+1	data1
+2	data2
+missing_target_alias	Alias
+1
+1
+missing_target_alias	Alias	0	0	[]

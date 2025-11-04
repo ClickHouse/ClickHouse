@@ -271,6 +271,62 @@ Strings StorageAlias::getDataPaths() const
     }
 }
 
+IStorage::ColumnSizeByName StorageAlias::getColumnSizes() const
+{
+    try
+    {
+        return getTargetTable()->getColumnSizes();
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() == ErrorCodes::UNKNOWN_DATABASE || e.code() == ErrorCodes::UNKNOWN_TABLE)
+            return {};
+        throw;
+    }
+}
+
+IStorage::IndexSizeByName StorageAlias::getSecondaryIndexSizes() const
+{
+    try
+    {
+        return getTargetTable()->getSecondaryIndexSizes();
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() == ErrorCodes::UNKNOWN_DATABASE || e.code() == ErrorCodes::UNKNOWN_TABLE)
+            return {};
+        throw;
+    }
+}
+
+std::optional<UInt64> StorageAlias::totalRows(ContextPtr query_context) const
+{
+    try
+    {
+        return getTargetTable()->totalRows(query_context);
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() == ErrorCodes::UNKNOWN_DATABASE || e.code() == ErrorCodes::UNKNOWN_TABLE)
+            return 0;
+        throw;
+    }
+}
+
+std::optional<UInt64> StorageAlias::totalBytes(ContextPtr query_context) const
+{
+    try
+    {
+        return getTargetTable()->totalBytes(query_context);
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() == ErrorCodes::UNKNOWN_DATABASE || e.code() == ErrorCodes::UNKNOWN_TABLE)
+            return 0;
+        throw;
+    }
+}
+
 TableLockHolder StorageAlias::tryLockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout)
 {
     TableLockHolder alias_lock = IStorage::tryLockForShare(query_id, acquire_timeout);
