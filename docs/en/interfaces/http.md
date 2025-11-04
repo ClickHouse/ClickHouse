@@ -547,7 +547,8 @@ __exception__\r\n
 
 ```
 
-Where `<TAG>` is a random tag of 16bytes and `<error message>` can be up to 16 KiB max (exact length can be found in `<message_length>`)
+Where `<TAG>` is a 16 byte random tag, which is the same tag sent in the `X-ClickHouse-Exception-Tag` response header.
+The `<error message>` is the actual exception message (exact length can be found in `<message_length>`). The whole exception block described above can be up to 16 KiB.
 
 Here is an example in `JSON` format
 
