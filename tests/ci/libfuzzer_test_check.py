@@ -273,7 +273,7 @@ def process_results(result_path: Path):
                 if len(err):
                     raw_logs.append("Regressions:")
                     for line in err:
-                        raw_logs("\t".join(s) for s in line)
+                        raw_logs.append("\t".join(s) for s in line)
 
             # Process fuzzing results
             file_path_status = fuzzer_result_dir / "status.txt"
@@ -298,7 +298,7 @@ def process_results(result_path: Path):
                     if len(err):
                         raw_logs.append("New findings:")
                         for line in err:
-                            raw_logs("\t".join(s) for s in line)
+                            raw_logs.append("\t".join(s) for s in line)
                     else:
                         raw_logs.append("No stack traces found - this is unusual - check output files")
                         if file_path_out.exists():
@@ -306,11 +306,13 @@ def process_results(result_path: Path):
                         if file_path_stdout.exists():
                             log_files.append(str(file_path_stdout))
 
-        # Collect all crash files and trace files
+        # Collect all crash and trace files
         for file in list(fuzzer_result_dir.glob("crash-*")):
             log_files.append(str(file))
-        for file in list(fuzzer_result_dir.glob("*.trace")):
+        for file in list(fuzzer_result_dir.glob("timeout-*")):
             log_files.append(str(file))
+#        for file in list(fuzzer_result_dir.glob("*.trace")):
+#            log_files.append(str(file))
 
         result.set_raw_logs("\n".join(raw_logs))
         result.set_log_files("[" + ", ".join(f"'{f}'" for f in log_files) + "]")
