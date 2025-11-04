@@ -23,7 +23,9 @@ public:
         Split,
         NoOp,
         SparseGram,
+#if USE_CPPJIEBA
         Chinese,
+#endif
     };
 
     ITokenExtractor() = default;

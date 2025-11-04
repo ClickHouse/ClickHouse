@@ -433,7 +433,6 @@ bool ChineseTokenExtractor::nextInStringLike(const char * /*data*/, size_t /*len
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method nextInStringLike is not supported by ChineseTokenExtractor");
 }
-
 #endif
 
 }

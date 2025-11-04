@@ -169,8 +169,7 @@ add_contrib (sqids-cpp-cmake sqids-cpp)
 
 option(ENABLE_CPPJIEBA "Enable cppjieba support" ${ENABLE_LIBRARIES})
 if (ENABLE_CPPJIEBA)
-    add_contrib (limonp-cmake limonp)
-    add_contrib (cppjieba-cmake cppjieba) # requires: limonp
+    add_contrib (darts-clone-cmake darts-clone)
 endif()
 
 option(USE_MONGODB "Enable MongoDB support" ${ENABLE_LIBRARIES})

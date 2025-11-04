@@ -27,7 +27,10 @@ constexpr size_t arg_value = 0;
 constexpr size_t arg_tokenizer = 1;
 constexpr size_t arg_ngrams = 2;
 constexpr size_t arg_separators = 2;
+
+#if USE_CPPJIEBA
 constexpr size_t arg_chinese_granularity = 2;
+#endif
 
 std::unique_ptr<ITokenExtractor> createTokenizer(const ColumnsWithTypeAndName & arguments, std::string_view name)
 {

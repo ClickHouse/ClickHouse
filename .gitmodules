@@ -393,3 +393,6 @@
 [submodule "contrib/antlr4-cpp-runtime"]
 	path = contrib/antlr4-cpp-runtime
 	url = https://github.com/antlr/antlr4.git
+[submodule "contrib/darts-clone"]
+	path = contrib/darts-clone
+	url = https://github.com/s-yata/darts-clone
