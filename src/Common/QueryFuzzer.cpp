@@ -1467,20 +1467,20 @@ ASTPtr QueryFuzzer::addJoinClause()
 
             const String id1_alias = id1->tryGetAlias();
             const String & nidentifier = (id1_alias.empty() || (fuzz_rand() % 2 == 0)) ? id1->shortName() : id1_alias;
-            ASTPtr exp1 = std::make_shared<ASTIdentifier>(Strings{next_alias, nidentifier});
-            ASTPtr exp2 = rand_col2->second->clone();
+            ASTPtr expression_1 = std::make_shared<ASTIdentifier>(Strings{next_alias, nidentifier});
+            ASTPtr expression_2 = rand_col2->second->clone();
 
-            exp2 = setIdentifierAliasOrNot(exp2);
+            expression_2 = setIdentifierAliasOrNot(expression_2);
             if (fuzz_rand() % 3 == 0)
             {
                 /// Swap sides
-                auto exp3 = exp1;
-                exp1 = exp2;
-                exp2 = exp3;
+                auto expression_e = expression_1;
+                expression_1 = expression_2;
+                expression_2 = expression_e;
             }
             /// Run mostly equi-joins
             ASTPtr next_condition = makeASTFunction(
-                comparison_comparators[(fuzz_rand() % 10 == 0) ? (fuzz_rand() % comparison_comparators.size()) : 0], exp1, exp2);
+                comparison_comparators[(fuzz_rand() % 10 == 0) ? (fuzz_rand() % comparison_comparators.size()) : 0], expression_1, expression_2);
             next_condition = tryNegateNextPredicate(next_condition, 30);
 
             /// Sometimes use multiple conditions
