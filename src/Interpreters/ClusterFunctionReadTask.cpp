@@ -43,7 +43,7 @@ ObjectInfoPtr ClusterFunctionReadTaskResponse::getObjectInfo() const
     if (isEmpty())
         return {};
 
-    auto object = std::make_shared<ObjectInfo>(path);
+    auto object = std::make_shared<ObjectInfo>(RelativePathWithMetadata{path});
     object->data_lake_metadata = data_lake_metadata;
     return object;
 }
