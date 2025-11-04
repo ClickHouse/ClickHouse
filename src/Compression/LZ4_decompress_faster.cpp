@@ -28,13 +28,13 @@ ALWAYS_INLINE UInt16 LZ4_readLE16(const void * mem_ptr)
     return static_cast<UInt16>(p[0]) + (p[1] << 8);
 }
 
-template <size_t N>
+template <size_t block_size>
 ALWAYS_INLINE void copyFromOutput(UInt8 * dst, UInt8 * src)
 {
-    __builtin_memcpy(dst, src, N);
+    __builtin_memcpy(dst, src, block_size);
 }
 
-template <size_t N>
+template <size_t block_size>
 ALWAYS_INLINE void wildCopyFromInput(UInt8 * __restrict dst, const UInt8 * __restrict src, size_t size)
 {
     /// Unrolling with clang is doing >10% performance degrade.
@@ -42,15 +42,15 @@ ALWAYS_INLINE void wildCopyFromInput(UInt8 * __restrict dst, const UInt8 * __res
     #pragma nounroll
     do
     {
-        memcpy(dst, src, N);
-        dst += N;
-        src += N;
-        i += N;
+        __builtin_memcpy(dst, src, block_size);
+        dst += block_size;
+        src += block_size;
+        i += block_size;
     } while (i < size);
 }
 
 
-template <size_t N>
+template <size_t block_size>
 ALWAYS_INLINE void wildCopyFromOutput(UInt8 * dst, const UInt8 * src, size_t size)
 {
     /// Unrolling with clang is doing >10% performance degrade.
@@ -58,14 +58,14 @@ ALWAYS_INLINE void wildCopyFromOutput(UInt8 * dst, const UInt8 * src, size_t siz
     #pragma nounroll
     do
     {
-        memcpy(dst, src, N);
-        dst += N;
-        src += N;
-        i += N;
+        __builtin_memcpy(dst, src, block_size);
+        dst += block_size;
+        src += block_size;
+        i += block_size;
     } while (i < size);
 }
 
-template <size_t N>
+template <size_t block_size>
 void ALWAYS_INLINE copyOverlap(UInt8 * op, UInt8 *& match, size_t offset);
 
 template <>
@@ -194,10 +194,10 @@ template <>
     /// 4 % n.
     /// Or if 4 % n is zero, we use n.
     /// It gives equivalent result, but is better CPU friendly for unknown reason.
-    static constexpr int shift1[] = { 0, 1, 2, 1, 4, 4, 4, 4 };
+    static constexpr UInt8 shift1[] = {0, 1, 2, 1, 4, 4, 4, 4};
 
     /// Shift amount for match pointer.
-    static constexpr int shift2[] = { 0, 1, 2, 2, 4, 3, 2, 1 };
+    static constexpr UInt8 shift2[] = {0, 1, 2, 2, 4, 3, 2, 1};
 
     op[0] = match[0];
     op[1] = match[1];
@@ -276,26 +276,21 @@ template <>
 
 #else
     /// 4 % n.
-    static constexpr int shift1[]
-        = { 0,  1,  2,  1,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4 };
+    static constexpr Int8 shift1[] = {0, 1, 2, 1, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4};
 
-    /// 8 % n - 4 % n
-    static constexpr int shift2[]
-        = { 0,  0,  0,  1,  0, -1, -2, -3, -4,  4,  4,  4,  4,  4,  4,  4 };
+    /// 8 % n
+    static constexpr Int8 shift2[] = {0, 1, 2, 2, 4, 3, 2, 1, 0, 8, 8, 8, 8, 8, 8, 8};
 
-    /// 16 % n - 8 % n
-    static constexpr int shift3[]
-        = { 0,  0,  0, -1,  0, -2,  2,  1,  8, -1, -2, -3, -4, -5, -6, -7 };
+    /// 16 % n
+    static constexpr Int8 shift3[] = {0, 1, 2, 1, 4, 1, 4, 2, 8, 7, 6, 5, 4, 3, 2, 1};
 
     op[0] = match[0];
     op[1] = match[1];
     op[2] = match[2];
     op[3] = match[3];
 
-    match += shift1[offset];
-    memcpy(op + 4, match, 4);
-    match += shift2[offset];
-    memcpy(op + 8, match, 8);
+    memcpy(op + 4, match + shift1[offset], 4);
+    memcpy(op + 8, match + shift2[offset], 8);
     match += shift3[offset];
 #endif
 }
@@ -304,33 +299,28 @@ template <>
 template <>
 [[maybe_unused]] void ALWAYS_INLINE copyOverlap<32>(UInt8 * op, UInt8 *& match, size_t offset)
 {
-    /// 4 % n.
-    static constexpr int shift1[]
-        = { 0,  1,  2,  1,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4 };
+    /// 4 % n
+    static constexpr Int8 shift1[] = {0, 1, 2, 1, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4};
 
-    /// 8 % n - 4 % n
-    static constexpr int shift2[]
-        = { 0,  0,  0,  1,  0, -1, -2, -3, -4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4 };
+    /// 8 % n
+    static constexpr Int8 shift2[] = {0, 1, 2, 2, 4, 3, 2, 1, 0, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8};
 
-    /// 16 % n - 8 % n
-    static constexpr int shift3[]
-        = { 0,  0,  0, -1,  0, -2,  2,  1,  8, -1, -2, -3, -4, -5, -6, -7,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8 };
+    /// 16 % n
+    static constexpr Int8 shift3[]
+        = {0, 1, 2, 1, 4, 1, 4, 2, 8, 7, 6, 5, 4, 3, 2, 1, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16};
 
-    /// 32 % n - 16 % n
-    static constexpr int shift4[]
-        = { 0,  0,  0,  1,  0,  1, -2,  2,  0, -2, -4,  5,  4,  3,  2,  1,  0, -1, -2, -3, -4, -5, -6, -7, -8, -9,-10,-11,-12,-13,-14,-15 };
+    /// 32 % n
+    static constexpr Int8 shift4[]
+        = {0, 1, 2, 2, 4, 2, 2, 4, 8, 5, 2, 10, 8, 6, 4, 2, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1};
 
     op[0] = match[0];
     op[1] = match[1];
     op[2] = match[2];
     op[3] = match[3];
 
-    match += shift1[offset];
-    memcpy(op + 4, match, 4);
-    match += shift2[offset];
-    memcpy(op + 8, match, 8);
-    match += shift3[offset];
-    memcpy(op + 16, match, 16);
+    memcpy(op + 4, match + shift1[offset], 4);
+    memcpy(op + 8, match + shift2[offset], 8);
+    memcpy(op + 16, match + shift3[offset], 16);
     match += shift4[offset];
 }
 

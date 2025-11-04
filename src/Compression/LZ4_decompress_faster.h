@@ -82,7 +82,7 @@ struct PerformanceStatistics
             /// And in that case prefer variant with less number of invocations.
 
             if (adjustedCount() < NUM_INVOCATIONS_TO_THROW_OFF)
-                return 0;
+                return adjustedCount() - 1;
             return std::normal_distribution<>(mean(), sigma())(stat_rng);
         }
     };
