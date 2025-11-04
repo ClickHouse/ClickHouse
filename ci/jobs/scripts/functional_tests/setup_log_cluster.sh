@@ -95,7 +95,7 @@ function setup_logs_replication()
         )
         ENGINE = MergeTree
         ORDER BY test_name
-        SETTINGS use_const_adaptive_granularity=1
+        SETTINGS use_const_adaptive_granularity = 1
         COMMENT 'Contains information about per-test coverage from the CI, but used only for exporting to the CI cluster'
     "
 
