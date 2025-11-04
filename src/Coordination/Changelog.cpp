@@ -1881,7 +1881,14 @@ try
             }
 
             ChangelogReader reader(changelog_description_ptr);
-            last_log_read_result = reader.readChangelog(entry_storage, start_to_read_from, log);
+            auto log_read_result = reader.readChangelog(entry_storage, start_to_read_from, log);
+
+            /// We didn't find the first required log in this changelog so we move to the next changelog
+            /// This can happen in case we failed to rename changelog to a name with correct first and last log index
+            if (log_read_result.first_read_index == 0)
+                continue;
+
+            last_log_read_result = std::move(log_read_result);
 
             if (last_log_read_result->last_read_index != 0)
                 last_read_index = last_log_read_result->last_read_index;
