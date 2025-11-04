@@ -3,6 +3,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Core/Settings.h>
+#include <Core/Types.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionFactory.h>
@@ -46,11 +47,11 @@ extern const int ILLEGAL_COLUMN;
 namespace
 {
 
-inline UInt64 hashAt(const IColumn & column, size_t row_id)
+inline UInt128 hashAt(const IColumn & column, size_t row_id)
 {
     SipHash h;
     column.updateHashWithValue(row_id, h);
-    return h.get64();
+    return h.get128();
 }
 
 inline bool equalAt(const IColumn & left_column, size_t left_row_id, const IColumn & right_column, size_t right_row_id)
@@ -88,24 +89,6 @@ inline bool equalAt(const IColumn & left_column, size_t left_row_id, const IColu
     return left_column.compareAt(left_row_id, right_row_id, right_column, /*nan_direction_hint*/ 1) == 0;
 }
 
-struct ValueBytes
-{
-    std::string bytes;
-    UInt64 sip = 0;
-
-    /// TODO: Maybe we do not need to store the null value? maybe its already encoded?
-    void setAndHash(const char * data, size_t size, bool is_null)
-    {
-        bytes.resize(size + 1);
-        bytes[0] = static_cast<char>(!is_null);
-        if (size)
-            memcpy(bytes.data() + 1, data, size);
-
-        SipHash h;
-        h.update(bytes.data(), bytes.size());
-        sip = h.get64();
-    }
-};
 
 /// Cache key: (dictionary name, epoch, attribute, canonical bytes)
 /// TODO: Use 128 bit sip which should be strong enough to avoid collisions here and then skip storing full bytes?
@@ -114,25 +97,24 @@ struct Key
     std::string dict_name;
     UInt64 epoch = 0;
     std::string attr_name;
-    ValueBytes value;
+    UInt128 hash;
 
     bool operator==(const Key & rhs) const
     {
-        return epoch == rhs.epoch && value.sip == rhs.value.sip && dict_name == rhs.dict_name && attr_name == rhs.attr_name
-            && value.bytes == rhs.value.bytes;
+        return dict_name == rhs.dict_name && epoch == rhs.epoch && attr_name == rhs.attr_name && hash == rhs.hash;
     }
 };
 
 struct KeyHash
 {
-    size_t operator()(const Key & key) const noexcept
+    UInt128 operator()(const Key & key) const noexcept
     {
         SipHash h;
         h.update(key.dict_name.data(), key.dict_name.size());
         h.update(key.attr_name.data(), key.attr_name.size());
         h.update(key.epoch);
-        h.update(key.value.sip);
-        return static_cast<size_t>(h.get64());
+        h.update(key.hash);
+        return h.get128();
     }
 };
 
@@ -250,60 +232,6 @@ private:
 
     DictGetKeysCache cache;
 };
-
-inline ValueBytes serializeValueWithNullTag(const IColumn & col, size_t row_id)
-{
-    ValueBytes out;
-    if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&col))
-    {
-        if (nullable->isNullAt(row_id))
-        {
-            out.setAndHash(nullptr, 0, /*is_null=*/true);
-            return out;
-        }
-        const IColumn & nested = nullable->getNestedColumn();
-        if (auto sz = nested.getSerializedValueSize(row_id))
-        {
-            out.bytes.resize(1 + *sz);
-            out.bytes[0] = 1;
-            char * dst = out.bytes.data() + 1;
-            nested.serializeValueIntoMemory(row_id, dst);
-            SipHash h;
-            h.update(out.bytes.data(), out.bytes.size());
-            out.sip = h.get64();
-            return out;
-        }
-
-        // Fallback to arena
-        Arena scratch;
-        const char * begin = nullptr;
-        StringRef ref = nested.serializeValueIntoArena(row_id, scratch, begin);
-        out.setAndHash(ref.data, ref.size, /*is_null=*/false);
-        return out;
-    }
-
-    // Non-nullable case
-    if (auto sz = col.getSerializedValueSize(row_id))
-    {
-        out.bytes.resize(1 + *sz);
-        out.bytes[0] = 1;
-        char * dst = out.bytes.data() + 1;
-        col.serializeValueIntoMemory(row_id, dst);
-        SipHash h;
-        h.update(out.bytes.data(), out.bytes.size());
-        out.sip = h.get64();
-        return out;
-    }
-
-    // Arena fallback
-    {
-        Arena scratch;
-        const char * begin = nullptr;
-        StringRef ref = col.serializeValueIntoArena(row_id, scratch, begin);
-        out.setAndHash(ref.data, ref.size, /*is_null=*/false);
-        return out;
-    }
-}
 
 /// Single key: Array(KeyType)
 /// Multi key:  Array(Tuple(key1,...,keyN))
@@ -484,8 +412,8 @@ private:
         size_t input_rows_count,
         const auto & dict) const
     {
-        auto value_bytes = serializeValueWithNullTag(values_col, 0);
-        Key key{dict_name, epoch, attr_name, std::move(value_bytes)};
+        auto value_hash = hashAt(values_col, 0);
+        Key key{dict_name, epoch, attr_name, value_hash};
 
         auto & cache = SharedCache::instance().getCache();
 
@@ -562,10 +490,10 @@ private:
 
         const size_t num_buckets = bucket_id_to_representative_row_id.size();
 
-        std::vector<ValueBytes> bucket_bytes;
-        bucket_bytes.reserve(num_buckets);
+        std::vector<UInt128> bucket_hashes;
+        bucket_hashes.reserve(num_buckets);
         for (size_t bucket_id = 0; bucket_id < num_buckets; ++bucket_id)
-            bucket_bytes.emplace_back(serializeValueWithNullTag(values_column, bucket_id_to_representative_row_id[bucket_id]));
+            bucket_hashes.emplace_back(hashAt(values_column, bucket_id_to_representative_row_id[bucket_id]));
 
         auto & cache = SharedCache::instance().getCache();
         std::vector<DictGetKeysCache::MappedPtr> bucket_cached(num_buckets); // may contain nullptr for misses
@@ -574,7 +502,7 @@ private:
 
         for (size_t bucket_id = 0; bucket_id < num_buckets; ++bucket_id)
         {
-            Key key{dict_name, epoch, attr_name, bucket_bytes[bucket_id]};
+            Key key{dict_name, epoch, attr_name, bucket_hashes[bucket_id]};
             if (auto hit = cache.get(key))
                 bucket_cached[bucket_id] = hit;
             else
@@ -597,7 +525,7 @@ private:
                 remaining.reserve(miss_bucket_ids.size());
                 for (size_t bucket_id : miss_bucket_ids)
                 {
-                    Key key{dict_name, epoch, attr_name, bucket_bytes[bucket_id]};
+                    Key key{dict_name, epoch, attr_name, bucket_hashes[bucket_id]};
                     if (auto hit = cache.get(key))
                         bucket_cached[bucket_id] = hit;
                     else
@@ -634,7 +562,7 @@ private:
                 // Insert computed results into cache and fill our local bucket_cached
                 for (size_t bucket_id : miss_bucket_ids)
                 {
-                    Key key{dict_name, epoch, attr_name, bucket_bytes[bucket_id]};
+                    Key key{dict_name, epoch, attr_name, bucket_hashes[bucket_id]};
                     auto mapped_ptr = std::make_shared<Mapped>(std::move(results[bucket_id]));
                     cache.set(key, mapped_ptr);
                     bucket_cached[bucket_id] = std::move(mapped_ptr);
