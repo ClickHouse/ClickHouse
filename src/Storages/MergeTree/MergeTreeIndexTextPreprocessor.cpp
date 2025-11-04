@@ -2,6 +2,7 @@
 
 #include <Core/ColumnWithTypeAndName.h>
 #include <Columns/IColumn_fwd.h>
+#include <Columns/IColumn.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ActionsMatcher.h>
 #include <Interpreters/ActionsVisitor.h>
@@ -15,6 +16,8 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Storages/IndicesDescription.h>
 #include <DataTypes/DataTypeArray.h>
+#include "Columns/ColumnArray.h"
+#include "Columns/ColumnString.h"
 
 
 namespace DB
@@ -105,6 +108,41 @@ std::pair<ColumnPtr,size_t> MergeTreeIndexTextPreprocessor::processColumn(const 
     expression.execute(block, n_rows);
 
     return {block.safeGetByPosition(0).column, 0};
+}
+
+std::pair<ColumnPtr, size_t> MergeTreeIndexTextPreprocessor::processColumnArray(const ColumnWithTypeAndName & index_column_with_type_and_name, size_t start_row, size_t n_rows) const
+{
+    chassert(isArray(index_column_with_type_and_name.type));
+
+    const DataTypeArray * array_type = typeid_cast<const DataTypeArray*>(index_column_with_type_and_name.type.get());
+    chassert(isStringOrFixedString(array_type->getNestedType()));
+
+    const ColumnArray & column_array = assert_cast<const ColumnArray &>(*index_column_with_type_and_name.column);
+
+    if (expression.getActions().empty())
+        return {index_column_with_type_and_name.column, start_row};
+
+    const auto & column_data = column_array.getData();
+    const auto & column_offsets = column_array.getOffsets();
+
+    const size_t start_offset = column_offsets[start_row - 1];
+    const size_t length = column_offsets[start_row + n_rows - 1] - start_offset;
+
+    auto flatten_copy = column_data.cut(start_offset, length);
+
+    Block block({ColumnWithTypeAndName(flatten_copy, array_type->getNestedType(), index_column_with_type_and_name.name)});
+
+    expression.execute(block, n_rows);
+
+    auto offsets_column = ColumnVector<UInt64>::create();
+    ColumnArray::Offsets & offsets_data = assert_cast<ColumnVector<UInt64> &>(*offsets_column).getData();
+
+    for (size_t i = 0; i < n_rows; ++i)
+        offsets_data.push_back(column_offsets[start_offset + i] - start_offset);
+
+    ColumnPtr result = ColumnArray::create(block.safeGetByPosition(0).column, std::move(offsets_column));
+
+    return {result, 0};
 }
 
 String MergeTreeIndexTextPreprocessor::process(const String &input) const

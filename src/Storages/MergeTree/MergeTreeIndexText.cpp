@@ -1102,22 +1102,19 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
 
     const auto & index_column = block.getByName(index_column_name);
 
-    if (isArray(index_column.type))
+    if (isArray(index_column.column->getDataType()))
     {
-        size_t offset = *pos;
+        auto [processed_column, offset] = preprocessor->processColumnArray(index_column, *pos, rows_read);
 
-        const auto & column_array = assert_cast<const ColumnArray &>(*index_column.column);
+        const auto & column_array = assert_cast<const ColumnArray &>(*processed_column);
         const auto & column_data = column_array.getData();
         const auto & column_offsets = column_array.getOffsets();
 
-        for (size_t i = 0; i < rows_read; ++i)
+        for (size_t i = offset; i < offset + rows_read; ++i)
         {
-            size_t element_start_row = column_offsets[offset + i - 1];
-            size_t elements_size = column_offsets[offset + i] - element_start_row;
-
-            for (size_t element_idx = 0; element_idx < elements_size; ++element_idx)
+            for (size_t element_idx = column_offsets[i - 1]; element_idx < column_offsets[i]; ++element_idx)
             {
-                auto ref = column_data.getDataAt(element_start_row + element_idx);
+                const StringRef ref = column_data.getDataAt(element_idx);
                 granule_builder.addDocument(ref);
             }
 
@@ -1127,7 +1124,6 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
     else
     {
         auto [processed_column, offset] = preprocessor->processColumn(index_column, *pos, rows_read);
-
         for (size_t i = 0; i < rows_read; ++i)
         {
             const std::string_view ref = processed_column->getDataAt(offset + i);
@@ -1372,9 +1368,6 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
     WhichDataType data_type(index.data_types[0]);
     if (data_type.isArray())
     {
-        if (preprocessor.has_value())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index created on Array columns does not support preprocessor argument yet.");
-
         const auto & array_type = assert_cast<const DataTypeArray &>(*index.data_types[0]);
         data_type = WhichDataType(array_type.getNestedType());
     }
