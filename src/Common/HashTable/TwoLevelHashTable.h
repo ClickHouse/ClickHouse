@@ -92,7 +92,7 @@ public:
     /// Cached prefix sums of bucket capacities in cells to speed up offsetInternal
     /// bucket_cells_prefix[b] = sum_{i=0..b-1} impls[i].getBufferSizeInCells()
     mutable std::array<size_t, NUM_BUCKETS> bucket_cells_prefix{};
-    mutable bool bucket_prefix_ready = false;
+    mutable std::once_flag bucket_prefix_once;
 
 
     TwoLevelHashTable() = default;
@@ -367,7 +367,7 @@ public:
             return 0;
 
         // Lazily compute prefix sums across buckets once; subsequent calls are O(1).
-        if (!bucket_prefix_ready)
+        std::call_once(bucket_prefix_once, [this]()
         {
             size_t run = 0;
             for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
@@ -375,8 +375,7 @@ public:
                 bucket_cells_prefix[i] = run;
                 run += impls[i].getBufferSizeInCells();
             }
-            bucket_prefix_ready = true;
-        }
+        });
 
         return bucket_cells_prefix[buck] + (ptr - impls[buck].buf) + 1;
     }
