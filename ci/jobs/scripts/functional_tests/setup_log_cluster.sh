@@ -130,7 +130,7 @@ function setup_logs_replication()
             /^SETTINGS /d
             /^COMMENT /d
             ')
-        statement+=" SETTINGS use_const_adaptive_granularity=1"
+        statement+=" SETTINGS use_const_adaptive_granularity = 1"
 
         echo -e "Creating remote destination table ${table}_${hash} with statement:" >&2
 
