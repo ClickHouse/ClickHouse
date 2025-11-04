@@ -1129,10 +1129,9 @@ void QueryOracle::processSecondOracleQueryResult(const int errcode, ExternalInte
 {
     if (other_steps_sucess && can_test_oracle_result)
     {
-        if (first_errcode != errcode
-            && ((first_errcode && errcode)
-                || fc.oracle_ignore_error_codes.find(static_cast<uint32_t>(first_errcode ? first_errcode : errcode))
-                    == fc.oracle_ignore_error_codes.end()))
+        if (((first_errcode && !errcode) || (!first_errcode && errcode))
+            && (fc.oracle_ignore_error_codes.find(static_cast<uint32_t>(first_errcode ? first_errcode : errcode))
+                == fc.oracle_ignore_error_codes.end()))
         {
             throw DB::Exception(
                 DB::ErrorCodes::BUZZHOUSE,
