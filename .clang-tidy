@@ -37,9 +37,11 @@ Checks: [
   '-cert-dcl16-c',
   '-cert-err58-cpp',
 
+  '-clang-analyzer-core.BitwiseShift', # false positive on boost::dynamic_bitset::to_ulong
+
   '-clang-analyzer-optin.performance.Padding',
 
-  '-clang-analyzer-core.BitwiseShift', # false positive on boost::dynamic_bitset::to_ulong
+  '-clang-analyzer-security.ArrayBound', # only false positives
 
   '-cppcoreguidelines-*', # impractical in a codebase as large as ClickHouse, also slow
 
