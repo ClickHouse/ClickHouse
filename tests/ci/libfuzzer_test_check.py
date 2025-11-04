@@ -258,7 +258,7 @@ def process_results(result_path: Path):
                 if len(err):
                     raw_logs.append("Possible regressions:")
                     for line in err:
-                        raw_logs("\t".join(s) for s in line)
+                        raw_logs.append("\t".join(s for s in line))
 
             if file_path_out.exists():
                 log_files.append(str(file_path_out_mini))
@@ -273,7 +273,7 @@ def process_results(result_path: Path):
                 if len(err):
                     raw_logs.append("Regressions:")
                     for line in err:
-                        raw_logs.append("\t".join(s) for s in line)
+                        raw_logs.append("\t".join(s for s in line))
 
             # Process fuzzing results
             file_path_status = fuzzer_result_dir / "status.txt"
@@ -298,7 +298,7 @@ def process_results(result_path: Path):
                     if len(err):
                         raw_logs.append("New findings:")
                         for line in err:
-                            raw_logs.append("\t".join(s) for s in line)
+                            raw_logs.append("\t".join(s for s in line))
                     else:
                         raw_logs.append("No stack traces found - this is unusual - check output files")
                         if file_path_out.exists():
