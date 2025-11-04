@@ -60,14 +60,10 @@ inline UInt128 hashAt(const IColumn & column, size_t row_id)
 struct Key
 {
     std::string dict_name;
-    UInt64 epoch = 0;
     std::string attr_name;
     UInt128 hash;
 
-    bool operator==(const Key & rhs) const
-    {
-        return dict_name == rhs.dict_name && epoch == rhs.epoch && attr_name == rhs.attr_name && hash == rhs.hash;
-    }
+    bool operator==(const Key & rhs) const { return dict_name == rhs.dict_name && attr_name == rhs.attr_name && hash == rhs.hash; }
 };
 
 struct KeyHash
@@ -77,7 +73,6 @@ struct KeyHash
         SipHash h;
         h.update(key.dict_name.data(), key.dict_name.size());
         h.update(key.attr_name.data(), key.attr_name.size());
-        h.update(key.epoch);
         h.update(key.hash);
         return h.get128();
     }
@@ -142,25 +137,6 @@ public:
         return inst;
     }
 
-    /// Called fast-path on every executeImpl to compute dictionary epoch.
-    /// If the source is reported modified, bump epoch and opportunistically delete old entries for this dict.
-    UInt64 getEpochAndMaybeBump(const std::string & dict_name, const auto & dict)
-    {
-        bool modified = dict->isModified();
-
-        std::lock_guard lk(epoch_mutex);
-        auto & rec = epochs[dict_name];
-        if (modified)
-        {
-            ++rec.epoch;
-
-            // Proactively evict old-epoch keys for this dictionary
-            cache.remove([&](const Key & key, const DictGetKeysCache::MappedPtr &)
-                         { return key.dict_name == dict_name && key.epoch < rec.epoch; });
-        }
-        return rec.epoch;
-    }
-
     Domain & getDomain(const std::string & dict_name, const std::string & attr)
     {
         std::lock_guard lk(domain_mutex);
@@ -183,14 +159,6 @@ private:
 
     /// TODO: Change to be configurable via settings
     static size_t defaultMaxBytes() { return 100ULL << 20; }
-
-    struct EpochRec
-    {
-        UInt64 epoch = 0;
-    };
-
-    std::mutex epoch_mutex;
-    std::unordered_map<std::string, EpochRec> epochs;
 
     std::mutex domain_mutex;
     std::unordered_map<DomainKey, Domain, DomainKeyHash> domains;
@@ -351,17 +319,15 @@ public:
 
         /// In the event the dictionary has been reloaded and modified, we invalidate the previous cache by bumping the epoch that is
         /// uniquely associated with the dictionary state.
-        UInt64 epoch = SharedCache::instance().getEpochAndMaybeBump(dict_name, dict);
-
         const bool is_values_const = isColumnConst(*arguments[2].column);
 
         ColumnWithTypeAndName values_column_raw{arguments[2].column->convertToFullColumnIfConst(), arguments[2].type, arguments[2].name};
         ColumnPtr values_full = castColumnAccurate(values_column_raw, attribute_column_type)->convertToFullColumnIfLowCardinality();
 
         if (is_values_const)
-            return executeConstPath(dict_name, epoch, attr_name, *values_full, key_types, keys_cnt, input_rows_count, dict);
+            return executeConstPath(dict_name, attr_name, *values_full, key_types, keys_cnt, input_rows_count, dict);
 
-        return executeVectorPath(dict_name, epoch, attr_name, *values_full, key_types, keys_cnt, input_rows_count, dict);
+        return executeVectorPath(dict_name, attr_name, *values_full, key_types, keys_cnt, input_rows_count, dict);
     }
 
 private:
@@ -371,7 +337,6 @@ private:
 
     ColumnPtr executeConstPath(
         const String & dict_name,
-        UInt64 epoch,
         const String & attr_name,
         const IColumn & values_col,
         const DataTypes & key_types,
@@ -380,7 +345,7 @@ private:
         const auto & dict) const
     {
         UInt128 value_hash = hashAt(values_col, 0);
-        Key key{dict_name, epoch, attr_name, value_hash};
+        Key key{dict_name, attr_name, value_hash};
 
         auto & cache = SharedCache::instance().getCache();
 
@@ -401,7 +366,6 @@ private:
 
     ColumnPtr executeVectorPath(
         const String & dict_name,
-        UInt64 epoch,
         const String & attr_name,
         const IColumn & values_column,
         const DataTypes & key_types,
@@ -447,7 +411,7 @@ private:
 
         for (size_t bucket_id = 0; bucket_id < num_buckets; ++bucket_id)
         {
-            Key key{dict_name, epoch, attr_name, bucket_hashes[bucket_id]};
+            Key key{dict_name, attr_name, bucket_hashes[bucket_id]};
             if (auto hit = cache.get(key))
                 bucket_cached[bucket_id] = hit;
             else
@@ -470,7 +434,7 @@ private:
                 remaining.reserve(missing_bucket_ids.size());
                 for (size_t bucket_id : missing_bucket_ids)
                 {
-                    Key key{dict_name, epoch, attr_name, bucket_hashes[bucket_id]};
+                    Key key{dict_name, attr_name, bucket_hashes[bucket_id]};
                     if (auto hit = cache.get(key))
                         bucket_cached[bucket_id] = hit;
                     else
@@ -491,7 +455,7 @@ private:
                 // Insert computed results into cache and fill our local bucket_cached
                 for (size_t bucket_id : missing_bucket_ids)
                 {
-                    Key key{dict_name, epoch, attr_name, bucket_hashes[bucket_id]};
+                    Key key{dict_name, attr_name, bucket_hashes[bucket_id]};
                     auto mapped_ptr = std::make_shared<Mapped>(std::move(results[bucket_id]));
                     cache.set(key, mapped_ptr);
                     bucket_cached[bucket_id] = std::move(mapped_ptr);
