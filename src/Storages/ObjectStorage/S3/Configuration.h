@@ -70,8 +70,10 @@ public:
     std::string getEngineName() const override { return url.storage_name; }
     std::string getNamespaceType() const override { return namespace_name; }
 
-    std::string getSignatures(bool with_structure = true) const { return with_structure ? signatures_with_structure : signatures_without_structure; }
-    size_t getMaxNumberOfArguments(bool with_structure = true) const { return with_structure ? max_number_of_arguments_with_structure : max_number_of_arguments_without_structure; }
+    std::string getSignatures(bool with_structure = true) const
+    {
+        return with_structure ? signatures_with_structure : signatures_without_structure;
+    }
 
     const S3::S3AuthSettings & getAuthSettings() const { return s3_settings->auth_settings; }
 
@@ -104,7 +106,14 @@ public:
         ContextPtr context,
         bool with_structure) override;
 
-    static ASTPtr extractExtraCredentials(ASTs & args);
+    static void addStructureAndFormatToArgsIfNeededSimple(
+        ASTs & args,
+        const String & structure,
+        const String & format,
+        ContextPtr context,
+        bool with_structure,
+        size_t max_number_of_arguments);
+
     static bool collectCredentials(ASTPtr maybe_credentials, S3::S3AuthSettings & auth_settings_, ContextPtr local_context);
 
     S3::URI url;
@@ -113,8 +122,25 @@ protected:
     void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override;
 
 private:
+    static ASTPtr extractExtraCredentials(ASTs & args);
+    size_t getMaxNumberOfArguments(bool with_structure = true) const
+    {
+        return with_structure ? max_number_of_arguments_with_structure : max_number_of_arguments_without_structure;
+    }
+
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;
+    static void
+    fromNamedCollectionSimple(StorageS3Configuration & entity_to_initialize, const NamedCollection & collection, ContextPtr context);
+    static void fromDiskSimple(
+        StorageS3Configuration & entity_to_initialize, const String & disk_name, ASTs & args, ContextPtr context, bool with_structure);
+
     void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
+    static void fromASTSimple(
+        StorageS3Configuration & entity_to_initialize,
+        ASTs & args,
+        ContextPtr context,
+        bool with_structure,
+        size_t max_number_of_arguments);
 
     Paths keys;
 
