@@ -256,6 +256,7 @@ def run_fuzzer(fuzzer: str, timeout: int):
     stdout_path = f"{results_path}/stdout.txt"
 
 # TESTING TESTING TESTING
+    stopwatch = Stopwatch()
     with open(status_path, "w", encoding="utf-8") as status:
         status.write(
             f"OK\n{stopwatch.start_time_str}\n{stopwatch.duration_seconds}\n"
