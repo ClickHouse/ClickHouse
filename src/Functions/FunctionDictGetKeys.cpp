@@ -367,6 +367,8 @@ public:
 private:
     mutable FunctionDictHelper helper;
 
+    using Map = HashMap<UInt128, size_t, HashCRC32<UInt128>>;
+
     ColumnPtr executeConstPath(
         const String & dict_name,
         UInt64 epoch,
@@ -386,19 +388,10 @@ private:
             key,
             [&]() -> DictGetKeysCache::MappedPtr
             {
-                auto results = computeForMissesSingleScan(
-                    attr_name,
-                    dict,
-                    key_types,
-                    keys_cnt,
-                    [&](auto & target_map, auto & bucket_representatives, auto & interested_buckets)
-                    {
-                        UInt128 hash = hashAt(values_col, 0);
-                        target_map[hash] = 0;
-                        bucket_representatives.push_back(0);
-                        interested_buckets.push_back(0);
-                    },
-                    1);
+                Map hash_to_bucket_id;
+                hash_to_bucket_id.reserve(1);
+                hash_to_bucket_id[value_hash] = 0;
+                auto results = getMissingBucketKeys(attr_name, dict, key_types, keys_cnt, 1, std::vector<size_t>{0}, hash_to_bucket_id, 1);
                 return std::make_shared<Mapped>(std::move(results[0]));
             });
 
@@ -416,7 +409,6 @@ private:
         size_t input_rows_count,
         const auto & dict) const
     {
-        using Map = HashMap<UInt64, size_t, HashCRC32<UInt64>>;
         Map hash_to_bucket_id;
         hash_to_bucket_id.reserve(input_rows_count);
 
@@ -450,8 +442,8 @@ private:
 
         auto & cache = SharedCache::instance().getCache();
         std::vector<DictGetKeysCache::MappedPtr> bucket_cached(num_buckets); // may contain nullptr for misses
-        std::vector<size_t> miss_bucket_ids;
-        miss_bucket_ids.reserve(num_buckets);
+        std::vector<size_t> missing_bucket_ids;
+        missing_bucket_ids.reserve(num_buckets);
 
         for (size_t bucket_id = 0; bucket_id < num_buckets; ++bucket_id)
         {
@@ -459,10 +451,10 @@ private:
             if (auto hit = cache.get(key))
                 bucket_cached[bucket_id] = hit;
             else
-                miss_bucket_ids.push_back(bucket_id);
+                missing_bucket_ids.push_back(bucket_id);
         }
 
-        if (!miss_bucket_ids.empty())
+        if (!missing_bucket_ids.empty())
         {
             Domain & dom = SharedCache::instance().getDomain(dict_name, attr_name);
             std::unique_lock lk(dom.m);
@@ -475,8 +467,8 @@ private:
 
                 // Recheck cache for our misses to pick up entries filled by the other builder
                 std::vector<size_t> remaining;
-                remaining.reserve(miss_bucket_ids.size());
-                for (size_t bucket_id : miss_bucket_ids)
+                remaining.reserve(missing_bucket_ids.size());
+                for (size_t bucket_id : missing_bucket_ids)
                 {
                     Key key{dict_name, epoch, attr_name, bucket_hashes[bucket_id]};
                     if (auto hit = cache.get(key))
@@ -484,35 +476,20 @@ private:
                     else
                         remaining.push_back(bucket_id);
                 }
-                miss_bucket_ids.swap(remaining);
+                missing_bucket_ids.swap(remaining);
             }
 
             // If still have misses, we do the single scan; others will wait.
-            if (!miss_bucket_ids.empty())
+            if (!missing_bucket_ids.empty())
             {
                 dom.building = true;
                 lk.unlock();
 
-                auto results = computeForMissesSingleScan(
-                    attr_name,
-                    dict,
-                    key_types,
-                    keys_cnt,
-                    [&](auto & target_map, auto & bucket_representatives, auto & interested_buckets)
-                    {
-                        bucket_representatives = bucket_id_to_representative_row_id; // use same representatives
-                        interested_buckets = miss_bucket_ids;
-
-                        for (size_t bucket_id : miss_bucket_ids)
-                        {
-                            UInt128 hash = hashAt(values_column, bucket_representatives[bucket_id]);
-                            target_map[hash] = bucket_id;
-                        }
-                    },
-                    input_rows_count);
+                auto results = getMissingBucketKeys(
+                    attr_name, dict, key_types, keys_cnt, num_buckets, missing_bucket_ids, hash_to_bucket_id, input_rows_count);
 
                 // Insert computed results into cache and fill our local bucket_cached
-                for (size_t bucket_id : miss_bucket_ids)
+                for (size_t bucket_id : missing_bucket_ids)
                 {
                     Key key{dict_name, epoch, attr_name, bucket_hashes[bucket_id]};
                     auto mapped_ptr = std::make_shared<Mapped>(std::move(results[bucket_id]));
@@ -623,25 +600,19 @@ private:
         return ColumnArray::create(ColumnTuple::create(std::move(result_cols)), std::move(offsets_col));
     }
 
-    template <class SetupTargets>
-    std::vector<Mapped> computeForMissesSingleScan(
+    template <class DictionaryPtr>
+    std::vector<Mapped> getMissingBucketKeys(
         const String & attr_name,
-        const auto & dict,
+        const DictionaryPtr & dict,
         const DataTypes & key_types,
         size_t keys_cnt,
-        SetupTargets && setup_targets,
+        size_t total_buckets,
+        const std::vector<size_t> & missing_bucket_ids,
+        const Map & hash_to_bucket_id,
         size_t input_rows_count) const
     {
-        using Map = HashMap<UInt64, size_t, HashCRC32<UInt64>>;
-
-        Map target_map;
-        std::vector<size_t> bucket_representatives;
-        std::vector<size_t> interested_buckets;
-        setup_targets(target_map, bucket_representatives, interested_buckets);
-
-        const size_t num_buckets_total = bucket_representatives.size();
-        std::vector<size_t> last_key_pos_for_bucket(num_buckets_total, std::numeric_limits<size_t>::max());
-        std::vector<size_t> counts(num_buckets_total, 0);
+        std::vector<size_t> last_key_pos_for_bucket(total_buckets, std::numeric_limits<size_t>::max());
+        std::vector<size_t> counts(total_buckets, 0);
         std::vector<size_t> next_key_pos;
         next_key_pos.reserve(input_rows_count);
 
@@ -671,8 +642,8 @@ private:
             {
                 const UInt128 hash = hashAt(*attr_col, i);
 
-                auto * it = target_map.find(hash);
-                if (it == target_map.end())
+                const auto * it = hash_to_bucket_id.find(hash);
+                if (it == hash_to_bucket_id.end())
                     continue;
 
                 const auto & bucket_id = it->getMapped();
@@ -685,9 +656,9 @@ private:
             }
         }
 
-        std::vector<Mapped> out(num_buckets_total);
+        std::vector<Mapped> out(total_buckets);
 
-        for (size_t bucket_id : interested_buckets)
+        for (size_t bucket_id : missing_bucket_ids)
         {
             if (counts[bucket_id] == 0)
                 out[bucket_id] = makeEmptyCachedArray(key_types);
