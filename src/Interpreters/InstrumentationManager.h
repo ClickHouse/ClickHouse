@@ -34,6 +34,7 @@ public:
         LOG,
         PROFILE,
     };
+
     struct InstrumentedPointInfo
     {
         ContextPtr context;
@@ -72,8 +73,8 @@ public:
 
     static InstrumentationManager & instance();
 
-    void patchFunction(ContextPtr context, const String & function_name, const String & handler_name, std::optional<XRayEntryType> entry_type, std::optional<std::vector<InstrumentedParameter>> & parameters);
-    void unpatchFunction(std::variant<UInt64, bool> id);
+    [[clang::xray_never_instrument]] void patchFunction(ContextPtr context, const String & function_name, const String & handler_name, std::optional<XRayEntryType> entry_type, std::optional<std::vector<InstrumentedParameter>> & parameters);
+    [[clang::xray_never_instrument]] void unpatchFunction(std::variant<UInt64, bool> id);
 
     using InstrumentedPoints = std::vector<InstrumentedPointInfo>;
     InstrumentedPoints getInstrumentedPoints();
@@ -151,8 +152,8 @@ private:
         >>;
 
     InstrumentationManager();
-    void registerHandler(const String & name, XRayHandlerFunction handler);
-    void parseInstrumentationMap();
+    [[clang::xray_never_instrument]] void registerHandler(const String & name, XRayHandlerFunction handler);
+    [[clang::xray_never_instrument]] void parseInstrumentationMap();
 
     [[clang::xray_never_instrument]] void patchFunctionIfNeeded(Int32 function) TSA_REQUIRES(shared_mutex);
     [[clang::xray_never_instrument]] void unpatchFunctionIfNeeded(Int32 function) TSA_REQUIRES(shared_mutex);

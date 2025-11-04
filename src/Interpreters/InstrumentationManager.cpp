@@ -52,8 +52,6 @@ static constexpr String SLEEP_HANDLER = "sleep";
 static constexpr String LOG_HANDLER = "log";
 static constexpr String PROFILE_HANDLER = "profile";
 
-static constexpr String UNKNOWN = "<unknown>";
-
 auto logger = getLogger("InstrumentationManager");
 
 void InstrumentationManager::registerHandler(const String & name, XRayHandlerFunction handler)
@@ -259,99 +257,44 @@ void InstrumentationManager::parseInstrumentationMap()
 {
     auto binary_path = std::filesystem::canonical(std::filesystem::path("/proc/self/exe")).string();
 
-    /// Load the XRay instrumentation map from the binary
     auto instr_map_or_error = loadInstrumentationMap(binary_path);
     if (!instr_map_or_error)
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Failed to load instrumentation map: {}", toString(instr_map_or_error.takeError()));
 
     auto & instr_map = *instr_map_or_error;
 
-    /// Retrieve the mapping of function IDs to addresses
-    auto function_addresses = instr_map.getFunctionAddresses();
+    const auto function_addresses = instr_map.getFunctionAddresses();
+    const auto & context = CurrentThread::getQueryContext();
 
+    LOG_DEBUG(logger, "Starting to parse the XRay instrumentation map. This takes a few seconds...");
+
+    LLVMSymbolizer symbolizer;
+    std::optional<String> function_name;
     functions_container.reserve(function_addresses.size());
 
-    const auto & context = CurrentThread::getQueryContext();
-    const auto num_jobs = std::thread::hardware_concurrency();
-
-    LOG_DEBUG(logger, "Starting to parse the XRay instrumentation map using {} jobs. This takes a few seconds...", num_jobs);
-
-    struct Job
+    for (const auto & [func_id, addr] : function_addresses)
     {
-        std::pair<UInt64, UInt64> range;
-        FunctionsContainer functions_container;
-        BackgroundSchedulePool::TaskHolder task;
-    };
-    std::latch work_done(num_jobs);
+        object::SectionedAddress module_address;
+        module_address.Address = addr;
+        module_address.SectionIndex = object::SectionedAddress::UndefSection;
 
-    auto work = [&function_addresses, &binary_path, &work_done](Job & job)
-    {
-        LOG_TRACE(logger, "Start work job with range [{}, {})", job.range.first, job.range.second);
+        function_name.reset();
 
-        /// Initialize the LLVM symbolizer to resolve function names
-        LLVMSymbolizer symbolizer;
-
-        /// Iterate over all instrumented functions
-        for (UInt64 i = job.range.first; i < job.range.second; ++i)
+        if (auto res_or_err = symbolizer.symbolizeCode(binary_path, module_address))
         {
-            auto it = std::next(function_addresses.begin(), i);
-
-            auto func_id = it->first;
-            auto addr = it->second;
-
-            /// Create a SectionedAddress structure to hold the function address
-            object::SectionedAddress module_address;
-            module_address.Address = addr;
-            module_address.SectionIndex = object::SectionedAddress::UndefSection;
-
-            /// Default function name if symbolization fails
-            String function_name = UNKNOWN;
-
-            /// Attempt to symbolize the function address (resolve its name)
-            if (auto res_or_err = symbolizer.symbolizeCode(binary_path, module_address))
-            {
-                auto & di = *res_or_err;
-                if (di.FunctionName != DILineInfo::BadString)
-                    function_name = di.FunctionName;
-            }
-
-            /// map function ID to its resolved name and vice versa
-            if (function_name != UNKNOWN)
-            {
-                auto stripped_function_name = extractNearestNamespaceAndFunction(function_name);
-                job.functions_container.emplace(func_id, function_name, stripped_function_name);
-            }
+            auto & di = *res_or_err;
+            if (di.FunctionName != DILineInfo::BadString)
+                function_name = di.FunctionName;
         }
 
-        LOG_TRACE(logger, "Finish work job with range [{}, {})", job.range.first, job.range.second);
-        work_done.count_down();
-    };
-
-    std::vector<Job> jobs(num_jobs);
-    auto chunk_size = function_addresses.size() / num_jobs;
-    auto remainder = function_addresses.size() % num_jobs;
-
-    LOG_DEBUG(logger, "Dividing the work to parse {} symbols into {} parallel jobs. Chunk size: {}, remainder for last job: {}", function_addresses.size(), num_jobs, chunk_size, remainder);
-    for (size_t i = 0; i < jobs.size(); ++i)
-    {
-        auto & job = jobs[i];
-        job.range.first = i * chunk_size;
-        job.range.second = job.range.first + chunk_size;
-        if (i == (jobs.size() - 1))
-            job.range.second += remainder;
-
-        job.task = context->getSchedulePool().createTask(fmt::format("{}_{}", "ParserXRayFunctions", i), [work, &job]() { work(job); });
-        job.task->schedule();
+        if (function_name.has_value())
+        {
+            auto stripped_function_name = extractNearestNamespaceAndFunction(function_name.value());
+            functions_container.emplace(func_id, function_name.value(), stripped_function_name);
+        }
     }
 
-    work_done.wait();
-    for (const auto & job : jobs)
-    {
-        for (const auto & function_info : job.functions_container)
-            functions_container.emplace(function_info);
-    }
-
-    LOG_DEBUG(logger, "Finished parsing the XRay instrumentation map");
+    LOG_DEBUG(logger, "Finished parsing the XRay instrumentation map: {} symbols parsed successfully", functions_container.size());
 }
 
 void InstrumentationManager::sleep([[maybe_unused]] XRayEntryType entry_type, const InstrumentedPointInfo & instrumented_point)
