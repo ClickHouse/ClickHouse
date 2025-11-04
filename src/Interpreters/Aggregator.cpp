@@ -4,6 +4,7 @@
 #include <Core/Settings.h>
 #include <base/defines.h>
 #include <Poco/Util/Application.h>
+#include "IO/NullWriteBuffer.h"
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
@@ -194,7 +195,7 @@ size_t Aggregator::applyToAllStates(AggregatedDataVariants & result, ssize_t buc
     {
         for (size_t j = 0; j < params.aggregates_size; ++j)
         {
-            WriteBufferFromOwnString wb;
+            NullWriteBuffer wb;
             CompressedWriteBuffer wbuf(wb);
             size_t it = 0;
             size_t processed = 0;

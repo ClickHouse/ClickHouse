@@ -146,7 +146,9 @@ private:
 
     bool unsupported_case = false;
 
-    size_t cnt = 0;
+    std::atomic_size_t cnt{0};
+
+    std::array<size_t, 5> elapsed{};
 };
 
 using UpdaterPtr = std::shared_ptr<Updater>;

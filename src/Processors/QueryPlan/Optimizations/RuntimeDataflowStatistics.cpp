@@ -20,11 +20,12 @@ Updater::~Updater()
         return;
     LOG_DEBUG(
         &Poco::Logger::get("debug"),
-        "statistics.input_bytes={}, input_bytes_sample={}, input_bytes_compressed={}, statistics.output_bytes={}",
+        "statistics.input_bytes={}, input_bytes_sample={}, input_bytes_compressed={}, statistics.output_bytes={}, elapsed=[{}]",
         statistics.input_bytes,
         input_bytes_sample,
         input_bytes_compressed,
-        statistics.output_bytes);
+        statistics.output_bytes,
+        fmt::join(elapsed, ","));
     if (input_bytes_compressed && (input_bytes_sample / input_bytes_compressed))
         statistics.input_bytes = static_cast<size_t>(statistics.input_bytes / (input_bytes_sample / input_bytes_compressed));
     if (output_bytes_compressed && (output_bytes_sample / output_bytes_compressed))
@@ -42,10 +43,12 @@ void Updater::addOutputBytes(const Chunk & chunk)
     if (!cache_key)
         return;
 
-    std::lock_guard lock(mutex);
+    Stopwatch watch;
+
     const auto source_bytes = chunk.bytes();
-    statistics.output_bytes += source_bytes;
-    if (cnt % 50 == 0 && cnt < 150 && chunk.hasRows())
+    size_t key_columns_compressed_size = 0;
+    const auto curr = cnt.fetch_add(1, std::memory_order_relaxed);
+    if (curr % 50 == 0 && curr < 150 && chunk.hasRows())
     {
         if (chunk.getNumColumns() != header.columns())
         {
@@ -56,17 +59,27 @@ void Updater::addOutputBytes(const Chunk & chunk)
                 header.columns());
         }
 
-        output_bytes_sample += source_bytes;
         for (size_t i = 0; i < chunk.getNumColumns(); ++i)
-            output_bytes_compressed += compressedColumnSize({chunk.getColumns()[i], header.getByPosition(i).type, ""});
+            key_columns_compressed_size += compressedColumnSize({chunk.getColumns()[i], header.getByPosition(i).type, ""});
     }
-    ++cnt;
+
+    std::lock_guard lock(mutex);
+    statistics.output_bytes += source_bytes;
+    if (key_columns_compressed_size)
+    {
+        output_bytes_sample += source_bytes;
+        output_bytes_compressed += key_columns_compressed_size;
+    }
+
+    elapsed[0] += watch.elapsedMicroseconds();
 }
 
 void Updater::addOutputBytes(const Aggregator &, AggregatedDataVariants & variant, ssize_t bucket)
 {
     if (!cache_key)
         return;
+
+    Stopwatch watch;
 
     if (bucket == -1
         && std::ranges::any_of(
@@ -83,12 +96,17 @@ void Updater::addOutputBytes(const Aggregator &, AggregatedDataVariants & varian
     statistics.output_bytes += res;
     output_bytes_sample += res;
     output_bytes_compressed += res;
+
+    // LOG_DEBUG(&Poco::Logger::get("debug"), "watch.elapsedMicroseconds());={}", watch.elapsedMicroseconds());
+    elapsed[1] += watch.elapsedMicroseconds();
 }
 
 void Updater::addOutputBytes(const Aggregator & aggregator, const Block & block)
 {
     if (!cache_key)
         return;
+
+    Stopwatch watch;
 
     auto getKeyColumnsSize = [&](bool compressed)
     {
@@ -102,21 +120,29 @@ void Updater::addOutputBytes(const Aggregator & aggregator, const Block & block)
         return total_size;
     };
 
-    std::lock_guard lock(mutex);
     const auto source_bytes = getKeyColumnsSize(/*compressed=*/false);
+    size_t key_columns_compressed_size = 0;
+    const auto curr = cnt.fetch_add(1, std::memory_order_relaxed);
+    if (curr % 50 == 0 && curr < 150 && block.rows())
+        key_columns_compressed_size = getKeyColumnsSize(/*compressed=*/true);
+
+    std::lock_guard lock(mutex);
     statistics2.output_bytes += source_bytes;
-    if (cnt % 50 == 0 && cnt < 150 && block.rows())
+    if (key_columns_compressed_size)
     {
         output_bytes_sample2 += source_bytes;
-        output_bytes_compressed2 += getKeyColumnsSize(/*compressed=*/true);
+        output_bytes_compressed2 += key_columns_compressed_size;
     }
-    ++cnt;
+
+    elapsed[2] += watch.elapsedMicroseconds();
 }
 
 void Updater::addInputBytes(const ColumnsWithTypeAndName & columns, const IMergeTreeDataPart::ColumnSizeByName & column_sizes, size_t bytes)
 {
     if (!cache_key)
         return;
+
+    Stopwatch watch;
 
     std::lock_guard lock(mutex);
     statistics.input_bytes += bytes;
@@ -130,12 +156,16 @@ void Updater::addInputBytes(const ColumnsWithTypeAndName & columns, const IMerge
             input_bytes_compressed += column_sizes.at(column.name).data_compressed;
         }
     }
+
+    elapsed[3] += watch.elapsedMicroseconds();
 }
 
 void Updater::addInputBytes(const ColumnsWithTypeAndName & columns, const IMergeTreeDataPart::ColumnSizeByName & column_sizes)
 {
     if (!cache_key)
         return;
+
+    Stopwatch watch;
 
     std::lock_guard lock(mutex);
     for (const auto & column : columns)
@@ -149,5 +179,7 @@ void Updater::addInputBytes(const ColumnsWithTypeAndName & columns, const IMerge
             input_bytes_compressed += column_sizes.at(column.name).data_compressed;
         }
     }
+
+    elapsed[4] += watch.elapsedMicroseconds();
 }
 }
