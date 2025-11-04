@@ -862,7 +862,7 @@ static void highlightRegexps(const ASTPtr & node, Expected & expected, size_t de
              || func->name == "countMatches" || func->name == "splitByRegexp"
              || func->name == "regexp_replace" || func->name == "REGEXP_REPLACE")
     {
-        is_regexp = true;
+        is_regexp = true;  /// NOLINT(clang-analyzer-deadcode.DeadStores)
     }
     else
     {
